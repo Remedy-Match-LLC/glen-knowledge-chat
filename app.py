@@ -25263,6 +25263,18 @@ def _enabled_offer_keys() -> set:
     return keys
 
 
+def _curated_unit_cents(item):
+    """The practitioner's courtesy price on a curated reorder item, or None. Absent, blank,
+    zero or negative is None, so the store price applies. A publish with the price box
+    left blank once stored 0 on every item, and the portal priced them at $0 (30 portals,
+    found 2026-10-09). The publish button never accepted 0, so no stored 0 was intended."""
+    try:
+        v = int((item or {}).get("price_cents"))
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
+
+
 def _portal_priced_lines(items, email=None):
     """Build QBO invoice lines from a portal's reorder items, honoring the client's
     current saved per-SKU/FF-flat price first, then an older per-item ``price_cents``
@@ -25318,7 +25330,7 @@ def _portal_priced_lines(items, email=None):
                 p, None, total_ff_qty, settings, repertoire_slugs=rep_slugs,
                 program_member=program_member, line_qty=qty))
         else:
-            unit_cents = _inhouse_line_unit_cents(p, it.get("price_cents"), total_ff_qty, settings,
+            unit_cents = _inhouse_line_unit_cents(p, _curated_unit_cents(it), total_ff_qty, settings,
                                                   repertoire_slugs=rep_slugs,
                                                   program_member=program_member, line_qty=qty)
         subtotal_cents += unit_cents * qty
@@ -26683,7 +26695,7 @@ def api_client_portal(token):
         slug = (it.get("slug") or "").strip()
         p = _get_product(slug) if slug else None
         regular = (p or {}).get("price_cents")
-        override = it.get("price_cents")
+        override = _curated_unit_cents(it)
         # A current saved special outranks an older baked price, but only ever lowers
         # the regular price (Glen, 2026-10-04).
         _saved = _client_special_for(slug, p, _cp_by_slug, _cp_ff_flat)
@@ -29535,8 +29547,8 @@ def _portal_cart_payload(cx, cart_token, portal):
     for item in raw_items:
         priced_item = dict(item)
         curated = curated_by_slug.get(item["slug"]) or {}
-        if curated.get("price_cents") is not None:
-            priced_item["price_cents"] = curated["price_cents"]
+        if _curated_unit_cents(curated) is not None:
+            priced_item["price_cents"] = _curated_unit_cents(curated)
         price_input.append(priced_item)
     _lines, priced, _subtotal = _portal_priced_lines(price_input, email=email)
     priced_by_slug = {item["slug"]: item for item in priced}
@@ -32345,8 +32357,8 @@ def api_client_portal_checkout(token):
             # price all the way into Stripe Checkout.
             priced_item = {"slug": slug, "qty": qty}
             curated_item = curated_by_slug.get(slug) or {}
-            if curated_item.get("price_cents") is not None:
-                priced_item["price_cents"] = curated_item["price_cents"]
+            if _curated_unit_cents(curated_item) is not None:
+                priced_item["price_cents"] = _curated_unit_cents(curated_item)
             items.append(priced_item)
     else:
         # No body = the "Order my remedies" button. Charge the SAME merged set the
