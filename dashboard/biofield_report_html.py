@@ -405,7 +405,7 @@ async function uploadPhoto(tid, eq, nq){
 
 
 def render_report_html(report, notes="", narrative="", video_script="", stresses=None,
-                       notes_updated=""):
+                       notes_updated="", courtesy_cents=None):
     c = report.get("client") or {}
     name = _e(c.get("name") or "(unknown)")
     email = _e(c.get("email") or "")
@@ -541,32 +541,41 @@ async function schedDrop(e){e.preventDefault();var zone=e.currentTarget;zone.cla
         # Blank publishes at store prices (Glen, 2026-10-09: "It should publish to portal
         # when I leave the special pricing blank"). The box once asked for cents and
         # stopped silently on a blank or unreadable entry, so a report never published.
+        # The whole entry is checked before anything is stripped: "1,50" and "5$0" once
+        # read as $150 and $50 (review round 2). Commas only as thousands separators.
         "<script>\nfunction courtesyCents(raw){\n"
-        "  var t=String(raw).replace(/[$,\\s]/g,'');\n"
+        "  var t=String(raw).trim();\n"
         "  if(t==='')return 0;\n"
-        "  if(!/^\\d+(\\.\\d{1,2})?$/.test(t))return null;\n"
-        "  return Math.round(parseFloat(t)*100);\n"
+        "  if(!/^\\$?\\s*(\\d{1,3}(,\\d{3})+|\\d+)(\\.\\d{1,2})?$/.test(t))return null;\n"
+        "  return Math.round(parseFloat(t.replace(/[$,\\s]/g,''))*100);\n"
         "}\n"
         "async function publishPortal(){\n"
         "  var el=document.getElementById('portal-url');\n"
+        # The box opens with the price this report was last published at, so a blank
+        # entry is a choice to clear it, never an accident (review round 1).
         "  var raw=prompt('Courtesy price per bottle, in dollars (for example 50). "
-        "Leave blank for store prices.','');\n"
+        "Leave blank for store prices.','__PREV__');\n"
         "  if(raw===null){el.textContent='Publish cancelled.';return;}\n"
         "  var cents=courtesyCents(raw);\n"
         "  if(cents===null){el.textContent='Could not read \"'+raw+'\" as a price. "
         "Type dollars, like 50 or 50.00, or leave it blank. Nothing was published.';return;}\n"
+        "  if(cents===0&&String(raw).trim()!==''){el.textContent='A $0 price is not supported here. "
+        "Leave the box blank for store prices. Nothing was published.';return;}\n"
         "  if(cents>50000){el.textContent='$'+(cents/100).toFixed(2)+' per bottle looks like cents. "
         "Type dollars, like 50. Nothing was published.';return;}\n"
         "  el.textContent='Publishing...';\n"
         "  var d;\n"
         "  try{var r=await fetch('/test/__TID__/publish-portal',{method:'POST',"
         "headers:{'Content-Type':'application/json'},body:JSON.stringify({special_price_cents:cents})});\n"
-        "  d=await r.json();}catch(e){el.textContent='Error: the publish did not complete ('+e+').';return;}\n"
+        "  d=await r.json();}catch(e){el.textContent='The result is unknown ('+e+'). "
+        "Reload this page and check the client portal before publishing again.';return;}\n"
         "  if(d.ok){if(d.url){el.innerHTML='<a href=\"'+d.url+'\" target=\"_blank\">'+d.url+'</a> (copy into her email)';}else{el.textContent=d.note||'Portal updated — previously shared link still works.';}}\n"
         "  else if(d.unresolved){el.textContent='Unresolved remedies (fix names): '+d.unresolved.join(', ');}\n"
         "  else{el.textContent='Error: '+(d.error||'publish failed');}\n"
         "}\n</script>"
-    ).replace("__TID__", tid)
+    ).replace("__TID__", tid).replace(
+        "__PREV__", f"{int(courtesy_cents) / 100:.2f}" if courtesy_cents and int(courtesy_cents) > 0
+        else "")
 
     stresses_section = ""
     if stresses is not None:

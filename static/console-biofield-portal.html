@@ -482,7 +482,7 @@ function addItem(it, specialCents){
     <div class="top">
       <input class="rs" list="catalog" placeholder="product-slug" value="${esc(it.slug||'')}" style="flex:1">
       <input class="rq" type="number" min="1" value="${it.qty||1}" style="width:64px" title="qty">
-      <input class="rp" type="number" min="0" placeholder="¢ override" value="${priceVal!==''?priceVal:''}" style="width:110px" title="price override (cents) — blank uses the FF special price">
+      <input class="rp" type="number" min="1" placeholder="¢ override" value="${priceVal!==''?priceVal:''}" style="width:110px" title="price override (cents) — blank or 0 uses the store or FF special price">
       <button class="x" onclick="this.closest('.reitem').remove()">delete</button>
     </div>`;
   $('reitems').appendChild(el);
