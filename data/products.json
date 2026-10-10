@@ -2540,7 +2540,7 @@
    "ingredients": [
     {
      "name": "Biotin, Vitamin B7",
-     "dose": "1 mg"
+     "dose": "0.1 mg (100 mcg)"
     },
     {
      "name": "Natural Vitamin C, L-Ascorbic Acid",
@@ -2548,7 +2548,7 @@
     },
     {
      "name": "Bamboo Silica Botanical quartz",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "MSM Methylsulfonylmethane",
@@ -2560,7 +2560,7 @@
     },
     {
      "name": "Frankincense",
-     "dose": ""
+     "dose": "0 mg"
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
