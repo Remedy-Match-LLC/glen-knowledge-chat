@@ -2357,12 +2357,8 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         # Glen, 2026-10-09, "yes, chat too": no condition is named with a product, in
         # chat as on product pages. A live answer had said enzyme support "can genuinely
         # shift fibroid patterns" when the user named fibroids.
-        "Never say or suggest that this product treats, helps, dissolves, shrinks or is "
-        "for any disease or condition, even one the user names. If the user asks about a "
-        "condition, say what this text says the product supports, in its words. Then say "
-        "the product page makes no claim about that condition, and that their own health "
-        "provider is the one to evaluate it. In that answer cite no study, article or "
-        "clinical observation about the condition. "
+        "Never name a disease or condition with this product, even one the user names; "
+        "the last rule below says how to answer. "
         "Pair or compare it only with products this text names. In such an "
         "answer, name no other product at all unless this text or the user names it.\n"
         "When the question asks what the product is, what is in it, how to take it or "
@@ -2432,24 +2428,25 @@ def _carried_query(query_text: str, prior_user_turns) -> str:
     return query_text
 
 
-# A question that asks whether a named product helps a condition (Glen, 2026-10-09, "yes,
-# chat too"). The rule in the facts preamble alone failed 6 of 9 live answers, so these
-# questions also get a closing instruction, the position the model follows best.
-_CONDITION_ASK = re.compile(
-    r"\b(?:help|helps|helpful|treat|treats|treatment|cure|cures|dissolve|dissolves|shrink|"
-    r"shrinks|heal|heals|fix|fixes|reverse|reverses|get\s+rid\s+of|work\s+for|works\s+for|"
-    r"good\s+for|right\s+for|for\s+my|reduce|reduces|eliminate|i\s+have|i've\s+got|"
-    r"diagnosed)\b", re.I)
+# Glen, 2026-10-09, "yes, chat too": no condition is named with a product. The rule in the
+# preamble alone failed 6 of 9 live answers, so it is repeated last, the position the model
+# follows best. It is on every facts block and the model judges whether a condition came
+# up: a verb list missed 17 of 50 probe questions and misfired on 6 (review, 2026-10-10).
 _CONDITION_ANSWER = (
-    "CONDITION QUESTION. The user asked whether the product above helps a disease or "
-    "condition. This instruction outranks the answer structure given earlier. Answer in "
-    "three short paragraphs and nothing else. First, what the product supports, using only "
-    "the words of the product text above. Second, one sentence saying the product page "
-    "makes no claim about that condition, and that their own health provider is the one to "
-    "evaluate it. Third, its dose and full caution from the text above. Do not say it "
-    "treats, helps, dissolves, shrinks, reduces or works on the condition. Do not describe "
-    "the condition, its causes, conventional care, studies, articles or clinical "
-    "observation. Name no other product, herb or practice.")
+    "LAST RULE, ON CONDITIONS. If the user's own words, in this message or earlier in the "
+    "conversation, name or ask about a disease, condition or symptom, follow this. A "
+    "condition named only in a product's caution above does not count. Where this "
+    "conflicts with the structure above, this wins; everything else above still applies. "
+    "Write the condition's name in one sentence only: the product page makes no claim "
+    "about it, and their own health provider is the one to evaluate it. Nowhere else, "
+    "not in a heading. Do not say or suggest that any product treats, helps, prevents, "
+    "relieves, dissolves, shrinks, reduces or works on it. Say what the named product "
+    "supports, in the words of its text above. Do not describe the condition, its "
+    "causes, its care, or Glen's or anyone's approach to it. Cite no study, article or "
+    "clinical observation about it. Name and link no product other than those in the "
+    "text above, and recommend none of them for it. Still answer anything else they "
+    "asked from the text above, and keep the Sources line, the CTA line and any "
+    "invitation the text above asks for. If no condition came up, ignore this rule.")
 
 
 def named_product_facts_block(query_text: str, gated: bool = False,
@@ -2469,7 +2466,7 @@ def named_product_facts_block(query_text: str, gated: bool = False,
         facts = (f"FOLLOW-UP: the user's message is about {name}, which they named in their "
                  f"previous question. Answer it about {name} from the text below, in the "
                  f"format the text below sets for a dose or safety question.\n" + facts)
-    if facts and _CONDITION_ASK.search(html.unescape(query_text or "")):
+    if facts:
         facts += "\n\n" + _CONDITION_ANSWER
     return f"\n\n{facts}" if facts else ""
 

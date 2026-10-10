@@ -332,14 +332,27 @@ def test_an_unpinned_waiting_list_product_carries_no_dose_or_caution(fresh_app, 
     assert "9 scoops" not in block and "Unapproved caution" not in block
 
 
-@pytest.mark.parametrize("question", [
-    "Can Fibrolysis Factors dissolve fibroids?",
-    "Does Fibrosolve help with scar tissue?",
-    "What is the Estrogen and Fibrin Balance Program?",
+@pytest.mark.parametrize("question,prior", [
+    ("Can Fibrolysis Factors dissolve fibroids?", None),
+    ("How much Fibrosolve should I take?", None),
+    ("What is the Estrogen and Fibrin Balance Program?", None),
+    ("Can I order Angiostasis for my mom?", None),
+    ("How much should I take?", ["Does Fibrosolve help with fibroids?"]),
 ])
-def test_no_condition_is_named_with_a_product_even_when_the_user_names_it(fresh_app, question):
-    # Glen, 2026-10-09, "yes, chat too".
-    block = fresh_app.named_product_facts_block(question)
-    assert "even one the user names" in block
-    assert "the product page makes no claim about that condition" in block
+def test_every_facts_block_ends_with_the_condition_rule(fresh_app, question, prior):
+    # Glen, 2026-10-09, "yes, chat too". Last, because the model follows the last rule best.
+    block = fresh_app.named_product_facts_block(question, prior_user_turns=prior)
+    assert block.rstrip().endswith(fresh_app._CONDITION_ANSWER)
     assert "unless this text or the user's question names it" not in block
+
+
+def test_a_gated_block_keeps_its_invitation_and_the_condition_rule(fresh_app):
+    block = fresh_app.named_product_facts_block("How much Fibrosolve should I take?",
+                                                gated=True)
+    assert fresh_app._GATED_FACTS_NOTE.strip()[:40] in block
+    assert block.rstrip().endswith(fresh_app._CONDITION_ANSWER)
+    assert "keep the Sources line, the CTA line and any invitation" in block
+
+
+def test_no_block_means_no_condition_rule(fresh_app):
+    assert fresh_app.named_product_facts_block("What helps with fibroids?") == ""
