@@ -1134,8 +1134,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 stresses = _st.list_stresses(cx, test_id, chain_rows)
             except Exception:
                 stresses = None
+        try:
+            prev = _published_special(test_id)
+        except Exception:
+            prev = "unknown"   # the box says so; never block the page
         return Response(render_report_html(rep, notes, narrative, vscript, stresses=stresses,
-                                           notes_updated=notes_updated),
+                                           notes_updated=notes_updated, courtesy_cents=prev),
                         mimetype="text/html")
 
     @app.route("/client-photo/<path:email>")
