@@ -267,3 +267,66 @@ def test_fibrolysis_in_ordinary_wording_matches_nothing(fresh_app):
 def test_the_article_cue_is_for_the_program_name_only(fresh_app, question):
     # Review round 3: "the appestat" is the body's appetite set point.
     assert fresh_app.named_product_facts_block(question) == "", question
+
+
+def test_what_is_in_it_gets_the_pinned_label_panel(fresh_app):
+    block = fresh_app._named_product_facts("What is in Fibrosolve?")
+    assert "- Lumbrokinase: 18 mg (20,000 IU/mg)" in block
+    assert "- Protease (Aspergillus niger)" in block
+    assert "15 mg" not in block
+
+
+def test_a_product_without_pinned_ingredients_gets_no_panel(fresh_app):
+    assert "from the label:" not in fresh_app._named_product_facts("What is in Estro-Clear?")
+
+
+def test_each_program_product_carries_its_own_page(fresh_app):
+    block = fresh_app._named_product_facts("What is the Estrogen and Fibrin Balance Program?")
+    for slug in ("fibrosolve", "fibrolysis-factors", "estro-clear"):
+        assert f"/begin/product/{slug}\n" in block + "\n", slug
+
+
+def test_a_retired_component_links_to_its_survivor(fresh_app):
+    products = fresh_app._PRODUCTS["products"]
+    assert fresh_app._named_facts_survivor("msm-syntropy-powder", products) == "msm-syntropy"
+    assert fresh_app._named_facts_survivor("fibrosolve", products) == "fibrosolve"
+    assert fresh_app._named_facts_survivor("no-such-product", products) is None
+
+
+def test_a_waiting_list_product_says_so(fresh_app):
+    block = fresh_app._named_product_facts("Can I order Scar Soft Drink?")
+    assert ("Availability: Scar Soft Drink is not ready to order yet. "
+            "Join the waiting list on its page.") in block
+
+
+def test_a_waiting_list_product_carries_no_unapproved_description(fresh_app):
+    block = fresh_app._named_product_facts("Can I order Scar Soft Drink?")
+    assert "1 scoop 2 times a day" not in block
+
+
+def test_the_survivor_is_never_retired_info_only_or_never_recommended(fresh_app):
+    products = {"old": {"inactive": True}, "older": {"inactive": True, "superseded_by": "old"},
+                "ext": {"info_only": True}, "live": {}}
+    assert fresh_app._named_facts_survivor("old", products) is None
+    assert fresh_app._named_facts_survivor("older", products) is None
+    assert fresh_app._named_facts_survivor("ext", products) is None
+    assert fresh_app._named_facts_survivor("live", products) == "live"
+    banned = next(iter(fresh_app._DO_NOT_RECOMMEND_FACTS))
+    assert fresh_app._named_facts_survivor(banned, {banned: {}}) is None
+
+
+def test_the_panel_hides_zero_mg_note_rows(fresh_app, monkeypatch):
+    fs = dict(fresh_app._PRODUCTS["products"]["fibrosolve"])
+    fs["ingredients"] = fs["ingredients"] + [{"name": "Future Note Herb", "dose": "0 mg"}]
+    monkeypatch.setitem(fresh_app._PRODUCTS["products"], "fibrosolve", fs)
+    block = fresh_app._named_product_facts("What is in Fibrosolve?")
+    assert "Lumbrokinase" in block and "Future Note Herb" not in block
+
+
+def test_an_unpinned_waiting_list_product_carries_no_dose_or_caution(fresh_app, monkeypatch):
+    sd = dict(fresh_app._PRODUCTS["products"]["scar-soft-drink"])
+    sd.update(directions="Take 9 scoops.", warning="Unapproved caution.")
+    monkeypatch.setitem(fresh_app._PRODUCTS["products"], "scar-soft-drink", sd)
+    block = fresh_app._named_product_facts("Can I order Scar Soft Drink?")
+    assert "Availability:" in block and "No dose or ingredient text is approved" in block
+    assert "9 scoops" not in block and "Unapproved caution" not in block
