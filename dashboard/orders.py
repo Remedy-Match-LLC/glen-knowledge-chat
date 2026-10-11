@@ -1084,10 +1084,13 @@ def set_below_store_price_check(fn):
 
 
 def _has_line_below_store_price(order):
-    """True when the registered check finds a line below store price. A check that raises
-    counts as True, so a failure never pays points the rule would refuse."""
+    """True when the registered check finds a line below store price. A check that raises,
+    or no check registered at all (a process that never imported app), counts as True, so
+    a failure never pays points the rule would refuse (round 2)."""
     if not _below_store_price_check:
-        return False
+        print(f"[orders] no below-store-price check registered; #{order.get('id')} earns "
+              "nothing", flush=True)
+        return True
     try:
         return bool(_below_store_price_check(order))
     except Exception as e:

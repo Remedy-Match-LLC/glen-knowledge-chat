@@ -8764,7 +8764,8 @@ def _order_has_line_below_store_price(order) -> bool:
     Full store price is the catalog price this client pays at the store, so a full
     member's Biofield Analysis at its member price still earns, as it does there. A line
     with no catalog product or no recorded unit price is not judged. A line stored under a
-    retired slug is judged against its live product (round 1: emf is $0, its twin $40).
+    retired slug is judged against its live product (round 1: emf is $0, its twin $40). A
+    catalog line with no unit or line price refuses earn (round 2).
 
     The 10-02 rounding moved every .97 price up to the next dollar (Glen, 2026-10-02), so a
     line at the old .97 price is still full price: an invoice issued at $69.97 and paid
@@ -8773,12 +8774,23 @@ def _order_has_line_below_store_price(order) -> bool:
     catalog = _PRODUCTS.get("products") or {}
     for it in (order or {}).get("items") or []:
         p = catalog.get(_superseded((it.get("slug") or "").strip()))
-        if not p or it.get("unit_cents") in (None, "") or int(it.get("qty") or 0) <= 0:
+        if not p:
             continue
+        qty = int(it.get("qty") if it.get("qty") not in (None, "") else 1)
+        if qty <= 0:
+            continue
+        # A catalog line with no recorded price cannot be shown to be at full price, so it
+        # refuses earn rather than passing unjudged (round 2).
+        unit = it.get("unit_cents")
+        if unit in (None, ""):
+            lc = it.get("line_cents")
+            if lc in (None, ""):
+                return True
+            unit = int(lc) // qty
+        unit = int(unit)
         p = dict(p)
         p.setdefault("price_cents", _PRODUCTS.get("default_price_cents", 7000))
         store = _member_list_cents(p, email)
-        unit = int(it["unit_cents"])
         if store and unit < store and not _is_pre_rounding_price(unit, store):
             return True
     return False

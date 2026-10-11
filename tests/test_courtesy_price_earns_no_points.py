@@ -139,3 +139,28 @@ def test_the_record_payment_settler_fails_closed(monkeypatch, tmp_path):
                                     "discount_cents": 0, "points_redeemed_cents": 0,
                                     "items": [{"slug": SLUG, "qty": 1, "unit_cents": full}]})
     assert points.balance(cx, "c@x.com") == 0
+
+
+def test_a_catalog_line_with_no_price_refuses_earn(monkeypatch, tmp_path):
+    items = [{"slug": SLUG, "qty": 1, "unit_cents": _store(SLUG)}, {"slug": "lipid-cleanse", "qty": 1}]
+    order = {"email": "d@x.com", "items": items}
+    assert appmod._order_has_line_below_store_price(order) is True
+
+
+def test_line_cents_stands_in_for_a_missing_unit_price():
+    full = _store(SLUG)
+    assert appmod._order_has_line_below_store_price(
+        {"items": [{"slug": SLUG, "qty": 2, "line_cents": 2 * full}]}) is False
+    assert appmod._order_has_line_below_store_price(
+        {"items": [{"slug": SLUG, "qty": 2, "line_cents": 2 * full - 4000}]}) is True
+
+
+def test_a_missing_qty_is_judged_as_one():
+    assert appmod._order_has_line_below_store_price(
+        {"items": [{"slug": SLUG, "unit_cents": _store(SLUG) - 2000}]}) is True
+
+
+def test_the_record_payment_settler_refuses_when_no_check_is_registered(monkeypatch):
+    from dashboard import orders
+    monkeypatch.setattr(orders, "_below_store_price_check", None)
+    assert orders._has_line_below_store_price({"id": 1}) is True
