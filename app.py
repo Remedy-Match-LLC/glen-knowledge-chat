@@ -13949,13 +13949,17 @@ def _course_plan_charge(invoice):
         until = float(sub.get("current_period_end") or 0) or None
         # A signed-out buyer's subscription metadata carries no email. Their Stripe
         # customer record does, so read it now (outside the db lock) as the last
-        # fallback for when checkout.session.completed never stored a row.
+        # fallback, but only when checkout.session.completed never stored a row.
         cust_email = ""
         if not (sub_md.get("email") or "").strip() and sub.get("customer"):
-            try:
-                cust_email = stripe_pay.get_customer_email(sub.get("customer"))
-            except Exception as e:
-                print(f"[course] plan customer email lookup failed sub={sub_id}: {e!r}", flush=True)
+            with _db_lock, db.connect(LOG_DB) as cx0:
+                known = _ce.email_for_stripe_ref(cx0, sub_id)
+            if not known:
+                try:
+                    cust_email = stripe_pay.get_customer_email(sub.get("customer"))
+                except Exception as e:
+                    print(f"[course] plan customer email lookup failed sub={sub_id}: {e!r}",
+                          flush=True)
         with _db_lock, db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
             _ce.init_course_entitlements_table(cx)
@@ -13964,6 +13968,9 @@ def _course_plan_charge(invoice):
             # arrives before checkout.session.completed has stored the buyer's email
             # (anonymous plan checkout). Access itself is granted by the completed
             # event; under-counting here would permanently stall the conversion.
+            _ce.init_course_plan_charges_table(cx)
+            replay = cx.execute("SELECT 1 FROM course_plan_charges WHERE invoice_id=?",
+                                (invoice_id,)).fetchone() is not None
             count = _ce.record_plan_charge(cx, sub_id, invoice_id)
             email = (sub_md.get("email") or "").strip().lower()
             if not email:
@@ -13980,6 +13987,10 @@ def _course_plan_charge(invoice):
                     _ce.grant_plan(cx, email, until_epoch=until, source="stripe",
                                    stripe_ref=sub_id, customer=sub.get("customer"))
             cx.commit()
+        # A redelivered invoice.paid was already handled: cancelling or alerting again
+        # would only send a false "cancel FAILED" for an already-cancelled plan.
+        if replay:
+            return "ok"
         # The cancel and the alerts below run whether or not a buyer email resolved:
         # billing must stop at 12 even when nobody can be granted the cert.
         if count >= 12:  # stop billing after conversion

@@ -241,17 +241,27 @@ def main():
             sys.exit("checkout was not completed within 15 minutes")
         print(f"checkout complete, subscription {sub_id}")
 
-        for month in range(1, 13):
-            for _ in range(15):
-                if deliver_new():
-                    time.sleep(3)
-                    deliver_new()
-                    break
-                time.sleep(2)
+        def charges_counted():
             cx = sqlite3.connect(str(appmod.LOG_DB))
-            charges = cx.execute("SELECT COUNT(*) FROM course_plan_charges WHERE sub_id=?",
-                                 (sub_id,)).fetchone()[0]
-            cx.close()
+            try:
+                return cx.execute("SELECT COUNT(*) FROM course_plan_charges WHERE sub_id=?",
+                                  (sub_id,)).fetchone()[0]
+            except sqlite3.OperationalError:
+                return 0
+            finally:
+                cx.close()
+
+        for month in range(1, 13):
+            # Stripe can take a while to charge and emit invoice.paid after a clock
+            # advance, so wait for this month's charge rather than a fixed time.
+            for _ in range(60):
+                deliver_new()
+                if charges_counted() >= month:
+                    break
+                time.sleep(3)
+            time.sleep(3)
+            deliver_new()
+            charges = charges_counted()
             sub = stripe_pay.get_subscription(sub_id)
             plan = [r for r in rows() if r[0] == "plan"]
             print(f"month {month}: charges counted {charges}, stripe status {sub['status']}")

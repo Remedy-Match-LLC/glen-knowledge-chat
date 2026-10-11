@@ -114,3 +114,25 @@ def test_failed_cancel_at_twelve_alerts(appmod, monkeypatch):
         appmod._course_plan_charge({"subscription": "sub_anon", "id": f"in_{i}",
                                     "amount_paid": 29700})
     assert len(appmod.ALERTS) == 1 and "cancel FAILED" in appmod.ALERTS[0][0]
+
+
+def test_stored_row_wins_and_skips_the_customer_lookup(appmod, monkeypatch):
+    _buy_signed_out(appmod, monkeypatch, cpe=1_000_000_000)
+    from dashboard import stripe_pay
+    looked_up = []
+    monkeypatch.setattr(stripe_pay, "get_customer_email",
+                        lambda cid: looked_up.append(cid) or "someone-else@x.com")
+    monkeypatch.setattr(stripe_pay, "get_subscription", lambda sid: _sub(2_000_000_000))
+    appmod._course_plan_charge({"subscription": "sub_anon", "id": "in_1", "amount_paid": 29700})
+    plan = [r for r in _rows(appmod) if r[0] == "plan"]
+    assert [r[2] for r in plan] == ["buyer@x.com"]
+    assert looked_up == []
+
+
+def test_replayed_twelfth_invoice_does_not_cancel_or_alert_again(appmod, monkeypatch):
+    cancelled = _twelve_charges_without_checkout(appmod, monkeypatch)
+    alerts = list(appmod.ALERTS)
+    for inv in ("in_12", "in_5"):
+        appmod._course_plan_charge({"subscription": "sub_anon", "id": inv, "amount_paid": 29700})
+    assert cancelled == ["sub_anon"]
+    assert appmod.ALERTS == alerts
