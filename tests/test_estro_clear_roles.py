@@ -85,6 +85,17 @@ def test_the_corrections_file_carries_the_same_fields(products, corrections):
         assert corrections[SLUG].get(field) == products[SLUG][field], field
 
 
+def test_the_enrichment_replay_restores_every_new_field(products, corrections):
+    import copy
+    from scripts.apply_enrichment import apply_corrections
+    damaged = copy.deepcopy(products)
+    for field in FIELDS:
+        damaged[SLUG].pop(field, None)
+    apply_corrections(damaged, copy.deepcopy(corrections))
+    for field, value in FIELDS.items():
+        assert damaged[SLUG].get(field) == value, field
+
+
 @pytest.fixture
 def fresh_app(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
@@ -135,6 +146,17 @@ def test_a_product_without_roles_gets_no_roles_rule(fresh_app):
 
 def test_the_page_serves_the_pinned_texts(fresh_app, monkeypatch):
     monkeypatch.setattr(fresh_app, "_product_how", lambda p: "AI HOW cofactor MARKER")
+    # Live had a stored AI intro draft. A stored draft, dated after content_since so the
+    # reset leaves it, must lose to the pin.
+    import sqlite3
+    from dashboard import sales_pages as sp
+    with sqlite3.connect(fresh_app.LOG_DB) as cx:
+        sp.init_table(cx)
+        for sec in ("intro", "description", "research", "benefits"):
+            sp.upsert_section(cx, SLUG, sec, "AI DRAFT cofactor MARKER")
+        cx.execute("UPDATE sales_pages SET generated_at='2099-01-01T00:00:00' "
+                   "WHERE product_slug=?", (SLUG,))
+        cx.commit()
     c = fresh_app.app.test_client()
     pd = c.get(f"/begin/product-data/{SLUG}").get_json()
     assert pd["how_it_works"] == HOW
@@ -144,15 +166,28 @@ def test_the_page_serves_the_pinned_texts(fresh_app, monkeypatch):
     assert secs["intro"]["body"] == INTRO and "ai" not in secs["intro"]
     assert secs["research"]["body"]["how_it_works"] == HOW and "ai" not in secs["research"]
     assert "cofactor" not in json.dumps(data).lower()
+    assert "cofactor" not in json.dumps(pd).lower()
     assert c.get(f"/begin/product-page-gen/{SLUG}/intro").status_code == 404
     assert c.get(f"/begin/learn-data/{SLUG}").get_json()["markdown"] == HOW
 
 
-def test_no_ai_image_is_queued_or_served(fresh_app, tmp_path):
+def test_no_ai_image_is_queued_or_served(fresh_app):
+    import sqlite3
     from dashboard import sales_images as si
-    assert si.ai_images_off(SLUG)
-    d = fresh_app._SALES_IMG_DIR / SLUG
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "mechanism-1.png").write_bytes(b"\x89PNG")
-    assert fresh_app.app.test_client().get(
-        f"/begin/product-image/{SLUG}/mechanism-1.png").status_code == 404
+    with sqlite3.connect(fresh_app.LOG_DB) as cx:
+        si.init_tables(cx)
+        assert si.enqueue(cx, SLUG) is False
+        # A row written before the opt-out is never drained.
+        cx.execute("INSERT INTO sales_image_queue (product_slug, state, requested_at, updated_at) "
+                   "VALUES (?, 'pending', '1', '1')", (SLUG,))
+        assert si.enqueue(cx, "angiogenx") is True
+        assert si.list_pending(cx) == ["angiogenx"]
+    # The same file serves for a product that is not opted out, so the 404 is the opt-out.
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+    for slug in (SLUG, "angiogenx"):
+        d = fresh_app._SALES_IMG_DIR / slug
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "mechanism-1.png").write_bytes(png)
+    c = fresh_app.app.test_client()
+    assert c.get("/begin/product-image/angiogenx/mechanism-1.png").status_code == 200
+    assert c.get(f"/begin/product-image/{SLUG}/mechanism-1.png").status_code == 404
