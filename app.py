@@ -7559,9 +7559,11 @@ def _plan_ship_credit(email, chargeable_cents):
         from dashboard import ship_credit as _ship_credit
         with db.connect(LOG_DB) as _scx:
             _points_init_ship(_scx)
-            bal = _ship_credit.balance(_scx, email)
             _bos_orders.init_orders_table(_scx)
+            # Holds are read BEFORE the balance: a payment settling in between then makes
+            # this offer too small, never the same credit twice (review round 2).
             held, _ = _bos_orders.held_credit_cents(_scx, email)
+            bal = _ship_credit.balance(_scx, email)
         return _ship_credit.plan_application(max(0, bal - held), chargeable_cents)
     except Exception as e:  # noqa: BLE001
         print(f"[ship_credit] plan skipped: {e!r}", flush=True)
@@ -40999,11 +41001,12 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
         from dashboard import points as _pts_co
         with db.connect(LOG_DB) as _cx_pts:
             _pts_co.init_points_table(_cx_pts)
-            _bal = _pts_co.balance(_cx_pts, email)
             _bos_orders.init_orders_table(_cx_pts)
             # Points already applied to this customer's unpaid orders are on hold until
-            # those orders are paid or cancelled (Glen, 2026-10-10).
-            _bal -= _bos_orders.held_credit_cents(_cx_pts, email)[1]
+            # those orders are paid or cancelled (Glen, 2026-10-10). Read before the
+            # balance, so a payment settling in between under-offers (review round 2).
+            _held_pts = _bos_orders.held_credit_cents(_cx_pts, email)[1]
+            _bal = _pts_co.balance(_cx_pts, email) - _held_pts
         requested_redeem = max(0, min(requested_redeem, _bal))
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(referral_code, email)
     pc = _price_cart(cart, ship=ship, coupon_pct=_ref_pct, points_to_redeem_cents=requested_redeem,
