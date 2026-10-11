@@ -9077,9 +9077,16 @@ def _settle_order_points(order, *, order_ref):
         # Earn only on a full-price order (no discount, no points used, and no line below its
         # store price) -- the "full-price only" rule.
         # Additional suppression: skip buyer earn on an affiliate-acquired FIRST order.
+        try:
+            below_store = _order_has_line_below_store_price(order)
+        except Exception as _bse:
+            # A malformed line must not skip the credits below; it only refuses earn.
+            print(f"[points] below-store-price check failed ref={order_ref}: {_bse!r}",
+                  flush=True)
+            below_store = True
         if discount == 0 and redeemed == 0 and product_cents > 0 \
                 and not _is_wholesale_order(order) \
-                and not _order_has_line_below_store_price(order) \
+                and not below_store \
                 and not _points.has_entry(cx, order_ref=order_ref, reason="earn"):
             # Suppression gate: if rewards are enabled AND this is buyer's first order
             # AND there is an attributed referrer, don't give the buyer earn points.

@@ -19,7 +19,7 @@ def _settle(monkeypatch, tmp_path, items, email="a@x.com", ref="INV-C"):
     monkeypatch.setattr(appmod, "LOG_DB", db)
     cx = sqlite3.connect(db); cx.row_factory = sqlite3.Row
     points.init_points_table(cx); cx.commit()
-    total = sum(int(i["unit_cents"]) * int(i["qty"]) for i in items)
+    total = sum(int(i["unit_cents"]) * int(float(i["qty"])) for i in items)
     order = {"email": email, "total_cents": total, "shipping_cents": 0,
              "discount_cents": 0, "points_redeemed_cents": 0, "source": "in-house",
              "items": items}
@@ -164,3 +164,17 @@ def test_the_record_payment_settler_refuses_when_no_check_is_registered(monkeypa
     from dashboard import orders
     monkeypatch.setattr(orders, "_below_store_price_check", None)
     assert orders._has_line_below_store_price({"id": 1}) is True
+
+
+def test_a_malformed_line_refuses_earn_without_raising(monkeypatch, tmp_path):
+    """A bad line refuses earn but must not raise out of the settler, which would skip
+    the image-pick, referrer and dispensary credits that follow (round 3)."""
+    items = [{"slug": SLUG, "qty": "2.5", "unit_cents": _store(SLUG)}]
+    assert _settle(monkeypatch, tmp_path, items) == 0
+
+
+def test_a_zero_quantity_line_is_not_judged():
+    full = _store(SLUG)
+    assert appmod._order_has_line_below_store_price(
+        {"items": [{"slug": SLUG, "qty": 1, "unit_cents": full},
+                   {"slug": "lipid-cleanse", "qty": 0, "unit_cents": 0}]}) is False
