@@ -7570,6 +7570,20 @@ def _plan_ship_credit(email, chargeable_cents):
         return 0
 
 
+def _available_points_cents(email):
+    """Points this customer can apply to a NEW order: the balance less points already
+    applied to their unpaid, uncancelled orders, which are debited only at payment.
+    Glen, 2026-10-10: credit is on hold while payment is pending. Holds are read before
+    the balance, so a payment settling in between under-offers (review round 2). Used by
+    the store cart, the reorder checkout and the /begin buy route."""
+    from dashboard import points as _pts
+    with db.connect(LOG_DB) as cx:
+        _pts.init_points_table(cx)
+        _bos_orders.init_orders_table(cx)
+        held = _bos_orders.held_credit_cents(cx, email)[1]
+        return max(0, _pts.balance(cx, email) - held)
+
+
 def _points_init_ship(cx):
     from dashboard import points as _points
     _points.init_points_table(cx)
@@ -12567,10 +12581,7 @@ def begin_checkout(slug):
     except (TypeError, ValueError):
         redeem = 0
     if redeem > 0:
-        from dashboard import points as _points
-        with db.connect(LOG_DB) as _bcx:
-            _points.init_points_table(_bcx)
-            redeem = min(redeem, _points.balance(_bcx, email))
+        redeem = max(0, min(redeem, _available_points_cents(email)))
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(data.get("referral_code"), email)
     _coupon_code = (data.get("coupon_code") or "").strip() or _best_active_self_coupon_code(email, slug)
     _self_pct, _self_coupon = _resolve_self_coupon_pct(_coupon_code, slug)
@@ -40998,16 +41009,7 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
     so it can find a Zelle order whose reply never arrived)."""
     requested_redeem = int(points_to_redeem_cents or 0)
     if requested_redeem > 0:
-        from dashboard import points as _pts_co
-        with db.connect(LOG_DB) as _cx_pts:
-            _pts_co.init_points_table(_cx_pts)
-            _bos_orders.init_orders_table(_cx_pts)
-            # Points already applied to this customer's unpaid orders are on hold until
-            # those orders are paid or cancelled (Glen, 2026-10-10). Read before the
-            # balance, so a payment settling in between under-offers (review round 2).
-            _held_pts = _bos_orders.held_credit_cents(_cx_pts, email)[1]
-            _bal = _pts_co.balance(_cx_pts, email) - _held_pts
-        requested_redeem = max(0, min(requested_redeem, _bal))
+        requested_redeem = max(0, min(requested_redeem, _available_points_cents(email)))
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(referral_code, email)
     pc = _price_cart(cart, ship=ship, coupon_pct=_ref_pct, points_to_redeem_cents=requested_redeem,
                      program_member=_mix_match_member(email), email=email)

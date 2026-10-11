@@ -96,3 +96,31 @@ def test_points_fully_held_redeem_nothing(db, monkeypatch):
     with pytest.raises(app.CheckoutError):
         app._checkout_cart(EMAIL, [{"slug": "x", "qty": 1}], ship={}, points_to_redeem_cents=500)
     assert seen["redeem"] == 0
+
+
+def test_a_mixed_case_address_on_the_order_still_holds(db):
+    _order(db, "M1", ship_credit_cents=1000, email="Held@X.com")
+    assert app._plan_ship_credit("held@x.com", 10000) == 500
+    assert app._plan_ship_credit("HELD@x.COM", 10000) == 500
+
+
+def test_an_order_with_no_pay_status_holds(db):
+    _order(db, "N1", ship_credit_cents=1000)
+    cx = sqlite3.connect(db)
+    cx.execute("UPDATE orders SET pay_status=NULL WHERE external_ref='N1'"); cx.commit(); cx.close()
+    assert app._plan_ship_credit(EMAIL, 10000) == 500
+
+
+def test_a_hold_larger_than_the_balance_offers_zero_not_negative(db):
+    _order(db, "H1", points_cents=5000)
+    assert app._available_points_cents(EMAIL) == 0
+
+
+def test_the_begin_buy_route_uses_the_held_balance():
+    """The /begin/checkout/<slug> route clamps points with the same helper (round 3)."""
+    from pathlib import Path
+    src = Path(app.__file__).read_text()
+    start = src.index("def begin_checkout(")
+    body = src[start:src.index("\n@app.route", start)]
+    assert "_available_points_cents(email)" in body
+    assert "_points.balance(" not in body
