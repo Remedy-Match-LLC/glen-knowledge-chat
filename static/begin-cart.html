@@ -61,6 +61,11 @@
     .ship-form{ margin-top:14px; padding:16px; background:var(--surface); border:1px solid var(--border);
       border-radius:var(--radius); }
     .ship-note{ font-size:13px; color:var(--muted); margin-bottom:14px; }
+    .pay-methods{ border:1px solid var(--border, #ccc); border-radius:8px; padding:10px 14px; margin:16px 0 8px; }
+    .pay-methods legend{ padding:0 6px; font-size:14px; }
+    .pay-methods label{ display:block; margin:6px 0; }
+    .zelle-box{ border:1px solid var(--border, #ccc); border-radius:8px; padding:12px 14px; margin:12px 0; }
+    .zelle-box .kv{ display:flex; justify-content:space-between; gap:12px; margin:6px 0; flex-wrap:wrap; }
     .field{ display:flex; flex-direction:column; gap:5px; margin-bottom:12px; }
     .field label{ font-family:var(--heading); font-weight:600; font-size:12px; letter-spacing:0.03em;
       color:var(--muted); }
@@ -134,7 +139,13 @@
         </div>
       </div>
     </div>
+    <fieldset id="pay-methods" class="pay-methods">
+      <legend>Payment method</legend>
+      <label><input type="radio" name="payMethod" value="card" checked> Credit or debit card</label>
+      <label><input type="radio" name="payMethod" value="zelle"> Zelle (US)</label>
+    </fieldset>
     <p id="cart-msg" class="muted" role="status"></p>
+    <div id="zelle-done" aria-live="polite"></div>
     <div class="cart-actions">
       <a class="text-link" id="keep-shopping" href="#">Keep shopping</a>
       <button id="cart-checkout" class="cta-btn" type="button" disabled>Checkout</button>
@@ -244,8 +255,47 @@
         .then(function(d){ render(d); announceCancelledIfNeeded(d); })
         .catch(function(){ box.textContent = "Your cart could not load. Please try again."; });
     }
+    // ── Zelle (Glen 2026-10-10): the order is placed unpaid and the page shows how to pay.
+    // The instructions live outside the cart box and in this browser's storage, so a
+    // re-render or a reload never loses them. The newest five are kept for 30 days; a
+    // later card order does not clear them, because those Zelle orders are still unpaid.
+    var ZELLE_KEY = "rm_cart_zelle", ZELLE_KEEP_MS = 30 * 24 * 3600 * 1000;
+    var zelleBox = document.getElementById("zelle-done");
+    function payMethod(){
+      var r = document.querySelector('input[name="payMethod"]:checked');
+      return r ? r.value : "card";
+    }
+    function zelleDone(){
+      var v = [];
+      try { v = JSON.parse(localStorage.getItem(ZELLE_KEY) || "[]"); } catch (e) {}
+      if (!Array.isArray(v)) return [];
+      var now = Date.now();
+      return v.filter(function(x){ return x && typeof x.html === "string" && now - (x.at || 0) < ZELLE_KEEP_MS; });
+    }
+    function setZelleDone(list){
+      try { if (list.length) localStorage.setItem(ZELLE_KEY, JSON.stringify(list));
+            else localStorage.removeItem(ZELLE_KEY); } catch (e) {}
+      zelleBox.innerHTML = list.map(function(x){ return x.html; }).join("");
+    }
+    // Wording matches the portal's Zelle instructions (client-portal.html zelleInstructionsHtml).
+    function money(c){ return "$" + (Number(c || 0) / 100).toFixed(2); }
+    function zelleHtml(d){
+      var z = d.pay_instructions || {};
+      var link = z.pay_link || z.bank_url || "";
+      return '<div class="zelle-box"><strong>Your Zelle payment instructions</strong>' +
+        (d.order_id ? '<div class="kv"><span>Order</span><strong>#' + esc(d.order_id) + '</strong></div>' : '') +
+        '<div class="kv"><span>Amount</span><strong>' + esc(money(d.total_cents)) + '</strong></div>' +
+        '<div class="kv"><span>Shipping included</span><strong>' + esc(money(d.shipping_cents)) + '</strong></div>' +
+        '<div class="kv"><span>Send to</span><strong>' + esc(z.to || "") + '</strong></div>' +
+        '<div class="kv"><span>Memo / order reference</span><strong>' + esc(z.memo || "") + '</strong></div>' +
+        '<p class="ship-note">In your bank\u2019s Zelle screen, enter the recipient, exact amount, and memo above. Confirm the recipient name in your bank before sending.</p>' +
+        (link ? '<p><a class="text-link" href="' + esc(link) + '" rel="noopener">' + (z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle") + '</a></p>' : '') +
+        '<p class="ship-note">' + esc(z.note || "") + '</p></div>';
+    }
+    setZelleDone(zelleDone());
+
     function checkout(){
-      var body = {};
+      var body = {method: payMethod()};
       if (!shipForm.hidden){
         var addr = collectShipAddress();
         var missing = firstMissingShipField(addr);
@@ -261,6 +311,9 @@
         var status = res.status, d = res.body;
         if (d && d.need_optin && window.OptinGate){ btn.disabled = false; msg.textContent = "";
           OptinGate.show({base: "", onAgree: function(){ checkout(); }}); return; }
+        if (d && d.ok && d.method === "zelle"){
+          setZelleDone([{html: zelleHtml(d), at: Date.now()}].concat(zelleDone()).slice(0, 5));
+          msg.textContent = ""; load(); return; }
         if (d && d.ok && d.stripe_url){ location.href = d.stripe_url; return; }
         if (d && d.ok){ msg.textContent = "Your order is placed. A confirmation is on its way."; load(); return; }
         if (d && d.unavailable){ msg.textContent = "Some items are no longer available. Remove them to continue."; load(); return; }
