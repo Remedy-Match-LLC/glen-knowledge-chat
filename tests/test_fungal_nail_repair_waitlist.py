@@ -43,3 +43,22 @@ def test_the_page_sells_nothing_and_offers_the_list(client):
 
 def test_checkout_refuses_it():
     assert app._cart_waitlist_refusal([{"slug": SLUG, "qty": 1}], skip_zero_qty=False)
+
+
+def test_the_wording_is_the_approved_wording():
+    """Glen approved this wording on 2026-10-10 (platform tab). Pinned literally, so an
+    edit to any field, email subject and body included, fails here (review round 3)."""
+    from dashboard import product_waitlist as pw
+    assert pw.TEXTS["fungal-nail-repair"] == {
+        "product": "Fungal Nail Repair",
+        "consent": "We will email you when Fungal Nail Repair is ready to order. "
+                   "Joining this list does not add you to any other mailing list.",
+        "intro": "Fungal Nail Repair is not ready to order yet. Join the waiting list and "
+                 "we will email you when it is ready. No card, no charge.",
+        "reserve_line": "",
+        "subject": "Confirm your Fungal Nail Repair email",
+        "body_lead": "Please confirm you'd like an email when Fungal Nail Repair is ready to order:",
+        "page_title": "Confirm your Fungal Nail Repair email",
+        "success": "We'll email you when Fungal Nail Repair is ready.",
+    }
+    assert pw.LISTS["fungal-nail-repair"] == "fungal-nail-repair-waitlist"
