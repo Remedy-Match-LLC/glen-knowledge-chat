@@ -77,7 +77,8 @@ def test_every_role_names_a_label_line(products):
 
 
 def test_no_other_product_carries_roles(products):
-    assert [s for s, p in products.items() if "ingredient_roles" in p] == [SLUG]
+    # AngiogenX joined on Glen's yes, 2026-10-11 (2026-10-11-angiogenx-how-it-works.md).
+    assert sorted(s for s, p in products.items() if "ingredient_roles" in p) == ["angiogenx", SLUG]
 
 
 def test_the_corrections_file_carries_the_same_fields(products, corrections):

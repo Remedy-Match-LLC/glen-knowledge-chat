@@ -3047,6 +3047,28 @@
     "directions": "Take 1 capsule daily with food, or as guided.",
     "warning": "Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
     "bottle_type": "30 Caps",
+    "intro": "AngiogenX supports the health of the small blood vessels in your eyes. It combines pine bark OPCs, trans-resveratrol, curcumin, notoginseng and crocin from gardenia fruit.",
+    "how_it_works": "The retina depends on a dense network of very small blood vessels. Here is what each ingredient in AngiogenX does.\n\nIn human eye studies, a pine bark extract helped small blood vessels keep fluid inside. One study used 150 mg of that extract a day.\n\nIn animal studies, resveratrol helped regulate the signals that drive new blood vessel growth. After oral doses, it and its breakdown products have been found in human eye tissue.\n\nIn an animal study, curcumin helped calm inflammatory signals in the retina.\n\nIn an animal study, notoginseng saponins helped keep the barrier between blood and retina intact.\n\nCrocin is a pigment found in gardenia fruit. It supports the retina. Two human eye trials used 15 mg a day, the amount in one capsule.",
+    "learn_markdown": "The retina depends on a dense network of very small blood vessels. Here is what each ingredient in AngiogenX does.\n\nIn human eye studies, a pine bark extract helped small blood vessels keep fluid inside. One study used 150 mg of that extract a day.\n\nIn animal studies, resveratrol helped regulate the signals that drive new blood vessel growth. After oral doses, it and its breakdown products have been found in human eye tissue.\n\nIn an animal study, curcumin helped calm inflammatory signals in the retina.\n\nIn an animal study, notoginseng saponins helped keep the barrier between blood and retina intact.\n\nCrocin is a pigment found in gardenia fruit. It supports the retina. Two human eye trials used 15 mg a day, the amount in one capsule.\n\n## Sources\n\n### Pine bark OPCs\n- [Treatment of vascular retinopathies with Pycnogenol](https://pubmed.ncbi.nlm.nih.gov/11351356/). Phytother Res, 2001.\n- [Pycnogenol improves microcirculation, retinal edema, and visual acuity in early diabetic retinopathy](https://pubmed.ncbi.nlm.nih.gov/19916788/). J Ocul Pharmacol Ther, 2009.\n\n### Resveratrol\n- [Resveratrol Inhibits Hypoxia-Induced Vascular Endothelial Growth Factor Expression and Pathological Neovascularization](https://pubmed.ncbi.nlm.nih.gov/26446654/). Yonsei Med J, 2015.\n- [Resveratrol inhibits pathologic retinal neovascularization in Vldlr(-/-) mice](https://pubmed.ncbi.nlm.nih.gov/21282584/). Invest Ophthalmol Vis Sci, 2011.\n- [Tissue Distribution of trans-Resveratrol and Its Metabolites after Oral Administration in Human Eyes](https://pubmed.ncbi.nlm.nih.gov/28409021/). J Ophthalmol, 2017.\n\n### Curcumin\n- [Curcumin prevents experimental diabetic retinopathy in rats through its hypoglycemic, antioxidant, and anti-inflammatory mechanisms](https://pubmed.ncbi.nlm.nih.gov/21314438/). J Ocul Pharmacol Ther, 2011.\n\n### Notoginseng\n- [Panax notoginseng saponins alleviate diabetic retinopathy by inhibiting retinal inflammation: Association with the NF-κB signaling pathway](https://pubmed.ncbi.nlm.nih.gov/37689326/). J Ethnopharmacol, 2024.\n\n### Crocin\n- [Effects of Crocin on Diabetic Maculopathy: A Placebo-Controlled Randomized Clinical Trial](https://pubmed.ncbi.nlm.nih.gov/29550187/). Am J Ophthalmol, 2018.\n- [Evaluation of the monotherapy effect of crocin on mild-to-moderate diabetic retinopathy: A randomized clinical trial](https://pubmed.ncbi.nlm.nih.gov/42011352/). Avicenna J Phytomed, 2026.",
+    "benefits": [
+      "Helps small blood vessels keep fluid where it belongs",
+      "Supports the retina with ingredients used in human eye trials"
+    ],
+    "ingredient_roles": {
+      "Pine Bark OPCs 95% (Pinus pinaster) (cortex)": "Helped small blood vessels keep fluid inside in human eye studies of a pine bark extract.",
+      "Trans-Resveratrol 98% (Polygonum cuspidatum) (radix)": "Helped regulate the signals that drive new blood vessel growth in animal studies.",
+      "Curcumin 95% (Curcuma longa) (rhizoma)": "Helped calm inflammatory signals in the retina in an animal study.",
+      "Notoginsenosides 80% (Panax notoginseng) (radix)": "Helped keep the barrier between blood and retina intact in an animal study.",
+      "Crocin 45% (Gardenia jasminoides) (fructus)": "Supports the retina and has been used in human eye trials."
+    },
+    "copy_pinned": [
+      "ingredients",
+      "intro",
+      "description",
+      "benefits",
+      "research",
+      "roles"
+    ],
     "note": "October 2026 five-ingredient eye formula, one capsule a day; FileMaker 411 updated 2026-10-05 (Glen, via formulation). Replaces the 17-line June 2025 formulations-database list. Spec: production/05 Formulations/_store-updates/2026-10-06-angiogenx.md."
   },
   "angiostasis": {
