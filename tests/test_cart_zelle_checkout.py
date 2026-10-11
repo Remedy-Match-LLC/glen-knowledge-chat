@@ -50,6 +50,13 @@ def env(monkeypatch, tmp_path):
     return {"db": path, "client": c, "stripe_calls": stripe_calls}
 
 
+REF = "a" * 32
+
+
+def _zelle(ref=REF):
+    return {"address": ADDRESS, "method": "zelle", "checkout_request_id": ref}
+
+
 def _orders(db):
     cx = sqlite3.connect(db); cx.row_factory = sqlite3.Row
     rows = [dict(r) for r in cx.execute("SELECT * FROM orders").fetchall()]
@@ -65,7 +72,7 @@ def _cart_status(db):
 
 
 def test_zelle_places_an_unpaid_order_and_returns_the_instructions(env):
-    r = env["client"].post("/api/cart/checkout", json={"address": ADDRESS, "method": "zelle"})
+    r = env["client"].post("/api/cart/checkout", json=_zelle())
     assert r.status_code == 200, r.get_data(as_text=True)
     d = r.get_json()
     assert d["ok"] is True and d["method"] == "zelle"
@@ -83,17 +90,17 @@ def test_zelle_places_an_unpaid_order_and_returns_the_instructions(env):
     pi = d["pay_instructions"]
     assert pi["to"] == app._ALT_PAY["zelle"]["to"]
     assert pi["memo"] == f"Order {o['id']}"
-    assert d["order_ref"] == o["external_ref"]
+    assert d["order_ref"] == o["external_ref"] == REF
 
 
 def test_the_cart_is_closed_after_a_zelle_order(env):
-    env["client"].post("/api/cart/checkout", json={"address": ADDRESS, "method": "zelle"})
+    env["client"].post("/api/cart/checkout", json=_zelle())
     assert "open" not in _cart_status(env["db"])
     assert "checking_out" not in _cart_status(env["db"])
 
 
 def test_a_day_old_zelle_order_is_not_expired(env):
-    env["client"].post("/api/cart/checkout", json={"address": ADDRESS, "method": "zelle"})
+    env["client"].post("/api/cart/checkout", json=_zelle())
     cx = sqlite3.connect(env["db"]); cx.row_factory = sqlite3.Row
     later = datetime.now(timezone.utc) + timedelta(hours=72)
     O.expire_abandoned_checkouts(cx, now=later)
@@ -117,12 +124,16 @@ def test_an_unknown_method_is_refused_before_anything_happens(env):
 
 
 def test_a_zelle_order_that_did_not_save_releases_the_cart(env, monkeypatch):
+    side = []
     monkeypatch.setattr(app, "_ingest_order", lambda **k: None)
-    r = env["client"].post("/api/cart/checkout", json={"address": ADDRESS, "method": "zelle"})
+    monkeypatch.setattr(app, "_record_referral_if_any", lambda *a, **k: side.append("referral"))
+    monkeypatch.setattr(O, "set_order_qbo_lines", lambda *a, **k: side.append("qbo"))
+    r = env["client"].post("/api/cart/checkout", json=_zelle())
     assert r.status_code == 503
     assert r.get_json()["ok"] is False
     assert "pay_instructions" not in r.get_json()
     assert "open" in _cart_status(env["db"])
+    assert side == []
 
 
 def test_a_cart_that_owes_nothing_takes_the_card_path(monkeypatch):
@@ -138,11 +149,15 @@ def test_the_cart_page_offers_zelle_and_shows_the_instructions():
     assert 'name="payMethod" value="card" checked' in html
     assert 'name="payMethod" value="zelle"' in html
     assert "var body = {method: payMethod()};" in html
-    assert 'd.method === "zelle"' in html
+    assert "body.checkout_request_id = zelleRef;" in html
+    # The key is saved BEFORE the request goes out, so a lost reply can be looked up.
+    assert html.index("setZelleRefs([zelleRef]") < html.index('post("/api/cart/checkout"')
+    assert 'post("/api/cart/zelle-orders"' in html
     assert 'id="zelle-done"' in html
-    # The instructions sit outside the cart box, which render() rewrites.
     assert html.index('id="zelle-done"') > html.index('id="cart-items"')
-    assert "box.innerHTML" in html and "zelleBox.innerHTML" in html
+    # Only keys are stored; instructions come from the server, never stored HTML.
+    assert "localStorage.setItem(ZELLE_KEY, JSON.stringify(list.slice(0, 5)))" in html
+    assert "html:" not in html
 
 
 def test_the_cart_uses_the_portals_zelle_wording():
@@ -153,3 +168,58 @@ def test_the_cart_uses_the_portals_zelle_wording():
                  "enter the recipient, exact amount, and memo above",
                  "Open Zelle payment page", "Find or open your bank for Zelle"):
         assert line in cart and line in portal, line
+
+
+def test_zelle_needs_the_pages_request_id(env):
+    for bad in (None, "", "short", "g" * 32, "A" * 31):
+        body = {"address": ADDRESS, "method": "zelle"}
+        if bad is not None:
+            body["checkout_request_id"] = bad
+        r = env["client"].post("/api/cart/checkout", json=body)
+        assert r.status_code == 400, bad
+    assert _orders(env["db"]) == []
+
+
+def test_a_reused_request_id_is_refused(env):
+    env["client"].post("/api/cart/checkout", json=_zelle())
+    env["client"].post("/api/cart/add", json={"slug": SLUG})
+    r = env["client"].post("/api/cart/checkout", json=_zelle())
+    assert r.status_code == 409
+    assert len(_orders(env["db"])) == 1
+
+
+def _lookup(env, refs):
+    return env["client"].post("/api/cart/zelle-orders", json={"refs": refs}).get_json()["orders"]
+
+
+def test_the_page_can_look_up_its_unpaid_zelle_order(env):
+    d = env["client"].post("/api/cart/checkout", json=_zelle()).get_json()
+    got = _lookup(env, [REF, "b" * 32, "not-a-ref"])
+    assert len(got) == 1
+    assert got[0]["order_id"] == d["order_id"]
+    assert got[0]["pay_instructions"] == d["pay_instructions"]
+    assert got[0]["total_cents"] == d["total_cents"]
+
+
+def test_a_paid_or_cancelled_order_drops_out(env):
+    env["client"].post("/api/cart/checkout", json=_zelle())
+    cx = sqlite3.connect(env["db"])
+    cx.execute("UPDATE orders SET pay_status='paid'"); cx.commit()
+    assert _lookup(env, [REF]) == []
+    cx.execute("UPDATE orders SET pay_status='unpaid', status='cancelled'"); cx.commit()
+    cx.close()
+    assert _lookup(env, [REF]) == []
+
+
+def test_another_shoppers_key_shows_nothing(env, monkeypatch):
+    env["client"].post("/api/cart/checkout", json=_zelle())
+    monkeypatch.setattr(app, "_cart_email", lambda: "someone-else@x.com")
+    assert _lookup(env, [REF]) == []
+    monkeypatch.setattr(app, "_cart_email", lambda: "")
+    assert _lookup(env, [REF]) == []
+
+
+def test_a_card_order_is_never_returned_as_zelle(env):
+    env["client"].post("/api/cart/checkout", json={"address": ADDRESS})
+    ref = _orders(env["db"])[0]["external_ref"]
+    assert _lookup(env, [ref]) == []

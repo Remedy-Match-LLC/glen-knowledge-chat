@@ -24209,6 +24209,17 @@ def api_cart_checkout():
     method = (data.get("method") or "card").strip().lower()
     if method not in ("card", "zelle"):
         return jsonify({"ok": False, "error": "Unsupported payment method."}), 400
+    # A Zelle order's key comes from the page, so a page whose reply was lost can still
+    # look the order up (/api/cart/zelle-orders). 32 hex characters, like our own refs.
+    request_ref = ""
+    if method == "zelle":
+        request_ref = (data.get("checkout_request_id") or "").strip().lower()
+        if not _CHECKOUT_REF_RE.fullmatch(request_ref):
+            return jsonify({"ok": False, "error": "Invalid checkout request."}), 400
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            if _bos_orders.find_order_by_external_ref(cx, request_ref):
+                return jsonify({"ok": False, "error": "This order is already placed."}), 409
     email = _cart_email()
     _sid = (request.cookies.get("amg_session") or "").strip()
     if not is_member(_sid, email):
@@ -24311,7 +24322,8 @@ def api_cart_checkout():
                                           "format": c["format"]} for c in cart],
                                  ship=ship, points_to_redeem_cents=redeem,
                                  referral_code=(data.get("referral_code") or "").strip(),
-                                 cancel_to_cart=True, method=method)
+                                 cancel_to_cart=True, method=method,
+                                 checkout_ref=(request_ref or None))
         except CheckoutError as e:
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
@@ -24330,17 +24342,10 @@ def api_cart_checkout():
                 return jsonify({"ok": False, "error": "Your order did not save. "
                                 "Please try again, or contact us."}), 503
             _mark_ordered_resilient(token, out.get("invoice_id", ""))
-            zelle = _ALT_PAY["zelle"]
-            memo = (f"Order {res['order_id']}" if res.get("order_id")
-                    else out.get("invoice_id", ""))
-            return jsonify({"ok": True, "method": "zelle", "order_id": res.get("order_id"),
-                            "order_ref": out.get("invoice_id", ""),
-                            "total_cents": int(res.get("charge_cents") or 0),
-                            "shipping_cents": int(res.get("shipping_cents") or 0),
-                            "pay_instructions": {
-                                "label": zelle["label"], "to": zelle["to"], "memo": memo,
-                                "pay_link": zelle["pay_link"],
-                                "bank_url": zelle["bank_url"], "note": zelle["note"]}})
+            return jsonify({"ok": True, "method": "zelle", **_zelle_instructions({
+                "id": res["order_id"], "external_ref": out.get("invoice_id", ""),
+                "total_cents": res.get("charge_cents"),
+                "shipping_cents": res.get("shipping_cents")})})
         if not stripe_url and not res.get("no_payment_required"):
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
@@ -24363,6 +24368,46 @@ def api_cart_checkout():
 
 
 _CHECKOUT_REF_RE = re.compile(r"[0-9a-f]{32}")
+
+
+def _zelle_instructions(order):
+    """The Zelle payment instructions for one unpaid store-cart order, as the cart page
+    shows them. The memo is the order number."""
+    zelle = _ALT_PAY["zelle"]
+    return {"order_id": order["id"], "order_ref": order.get("external_ref") or "",
+            "total_cents": int(order.get("total_cents") or 0),
+            "shipping_cents": int(order.get("shipping_cents") or 0),
+            "pay_instructions": {"label": zelle["label"], "to": zelle["to"],
+                                 "memo": f"Order {order['id']}", "pay_link": zelle["pay_link"],
+                                 "bank_url": zelle["bank_url"], "note": zelle["note"]}}
+
+
+@app.route("/api/cart/zelle-orders", methods=["POST"])
+def api_cart_zelle_orders():
+    """The cart page's own unpaid Zelle orders, so their instructions survive a reload or
+    a lost reply (review round 1). The page sends the order keys it minted; an order is
+    returned only when it is that key, belongs to this visitor's email, is a store-cart
+    Zelle order, and is neither paid nor cancelled. Anything else is simply absent, so a
+    paid order's instructions disappear and another shopper's keys show nothing."""
+    if not _PORTAL_CART_ENABLED:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    email = _cart_email()
+    refs = (request.get_json(silent=True) or {}).get("refs") or []
+    if not isinstance(refs, list):
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    refs = [r.strip().lower() for r in refs[:5] if isinstance(r, str)]
+    refs = [r for r in refs if _CHECKOUT_REF_RE.fullmatch(r)]
+    out = []
+    if email and refs:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            for r in refs:
+                o = _bos_orders.find_order_by_external_ref(cx, r)
+                if (o and (o.get("email") or "").strip().lower() == email
+                        and o.get("source") == "reorder" and o.get("pay_method") == "zelle"
+                        and o.get("pay_status") != "paid" and o.get("status") != "cancelled"):
+                    out.append(_zelle_instructions(o))
+    return jsonify({"ok": True, "orders": out})
 
 
 @app.route("/begin/cart/cancelled")
@@ -40926,7 +40971,7 @@ def _resolve_ship_address(email, body_address):
 
 
 def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code=None,
-                   cancel_to_cart=False, method="card"):
+                   cancel_to_cart=False, method="card", checkout_ref=None):
     """Price a cart through the engine, ingest the order (paid-only: no QBO invoice/customer
     at checkout time), and mint the Stripe URL (metadata kind=reorder -> recorded by
     /begin/checkout-return, which books the line-faithful QBO Sales Receipt on payment).
@@ -40937,7 +40982,9 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
     accept Zelle") mints no Stripe session. It records the order unpaid with
     pay_method='zelle', which keeps it out of the 24-hour abandoned-checkout expiry, and
     returns zelle=True with the order id. Payment is matched later by the Zelle import or
-    by hand, and the order settles then. A cart that owes nothing takes the card path."""
+    by hand, and the order settles then. A cart that owes nothing takes the card path.
+    checkout_ref, when given, is the caller's own order key (the cart page's request id,
+    so it can find a Zelle order whose reply never arrived)."""
     requested_redeem = int(points_to_redeem_cents or 0)
     if requested_redeem > 0:
         from dashboard import points as _pts_co
@@ -40954,7 +41001,7 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
     # customer's ship_credit balance (bounded by net product + shipping) into the
     # invoice discount; the ledger is debited at payment settle.
     _sc_apply = _plan_ship_credit(email, int(pc["priced"]["subtotal_cents"]) + int(pc["shipping_cents"]))
-    checkout_ref = _uuid.uuid4().hex   # stable order/correlation key (no QBO invoice yet)
+    checkout_ref = checkout_ref or _uuid.uuid4().hex   # stable order key (no QBO invoice yet)
     qbo_payload = {
         "lines": pc["qbo_lines"] + _shipping_line(pc["shipping_cents"]),
         "discount_cents": pc["discount_cents"] + pc["points_redeemed_cents"] + _sc_apply,
@@ -40994,6 +41041,12 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
                   ship_credit_applied_cents=_sc_apply,
                   paid_cents=(0 if no_payment_required else None),
                   pay_method=("zelle" if zelle else None))
+    if zelle and not order_id:
+        # Nothing was recorded, so nothing else is: no QBO lines, no referral redemption
+        # held by an order that does not exist (review round 1).
+        return {"out": out, "stripe_url": "", "no_payment_required": False,
+                "zelle": True, "order_id": None, "charge_cents": _charge_cents,
+                "shipping_cents": int(pc["shipping_cents"])}
     try:
         with db.connect(LOG_DB) as _lcx:
             _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
