@@ -6278,7 +6278,8 @@ def chat():
 
         full_answer = []
         try:
-            from dashboard.chat_cta import parse_cta, stream_visible
+            from dashboard.chat_cta import (parse_cta, stream_visible, strip_leading_label,
+                                            strip_leading_label_text)
 
             def _toks():
                 with _cl.messages.stream(
@@ -6291,7 +6292,7 @@ def chat():
                         full_answer.append(token)
                         yield token
 
-            for delta in _store_links_stream(stream_visible(_toks())):
+            for delta in _store_links_stream(stream_visible(strip_leading_label(_toks()))):
                 yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"})
@@ -6303,7 +6304,7 @@ def chat():
             yield sse({"token": "\n\n_You've reached this month's full-report limit — here's the summary. Members get unlimited full reports._"})
 
         try:
-            _clean, _cta = parse_cta("".join(full_answer))
+            _clean, _cta = parse_cta(strip_leading_label_text("".join(full_answer)))
         except Exception:
             _clean, _cta = "".join(full_answer), None
         _clean = _store_links_text(_clean)  # log and downstream use what the client saw
@@ -6911,19 +6912,20 @@ def begin_match_chat():
 
         full = []
         try:
-            from dashboard.chat_cta import stream_visible, parse_chips, CHIPS_SENTINEL
+            from dashboard.chat_cta import (stream_visible, parse_chips, CHIPS_SENTINEL,
+                                            strip_leading_label, strip_leading_label_text)
             with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=900,
                                      system=_match_system, messages=messages) as stream:
                 def _toks():
                     for tok in stream.text_stream:
                         t = _strip_dash(tok); full.append(t); yield t
                 for delta in _store_links_stream(
-                        stream_visible(_toks(), sentinel=CHIPS_SENTINEL)):
+                        stream_visible(strip_leading_label(_toks()), sentinel=CHIPS_SENTINEL)):
                     yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"}); return
         try:
-            _clean, _chips = parse_chips("".join(full))
+            _clean, _chips = parse_chips(strip_leading_label_text("".join(full)))
         except Exception:
             _clean, _chips = "".join(full), []
         _clean = _store_links_text(_clean)
