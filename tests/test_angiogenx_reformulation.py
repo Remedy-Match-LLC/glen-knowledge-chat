@@ -222,5 +222,9 @@ def test_the_chat_carries_each_role_beside_its_own_ingredient(appmod):
         # The whole line: label name, panel dose, approved role. Nothing else on it.
         assert block.count(f"\n- {name}: {dose}. Role: {ROLES[name]}\n") == 1, name
     assert block.count("Role: ") == 5
+    assert ("Ingredient roles for AngiogenX: when you say what an ingredient in AngiogenX does, "
+            "give only the Role written beside it, in its words. An ingredient with no Role gets "
+            "no role: list it without one. Add no organ, pathway, phase or cofactor that the Role "
+            "does not state.") in block
     other = appmod._named_product_facts("What is Angiostasis?")
     assert "Role:" not in other
