@@ -151,13 +151,10 @@ def test_the_cart_page_offers_zelle_and_shows_the_instructions():
     assert "var body = {method: payMethod()};" in html
     assert "body.checkout_request_id = zelleRef;" in html
     # The key is saved BEFORE the request goes out, so a lost reply can be looked up.
-    assert html.index("setZelleRefs([zelleRef]") < html.index('post("/api/cart/checkout"')
+    assert html.index("addZelleKey(zelleRef)") < html.index('post("/api/cart/checkout"')
     assert 'post("/api/cart/zelle-orders"' in html
-    assert 'id="zelle-done"' in html
     assert html.index('id="zelle-done"') > html.index('id="cart-items"')
-    # Only keys are stored; instructions come from the server, never stored HTML.
-    assert "localStorage.setItem(ZELLE_KEY, JSON.stringify(list.slice(0, 5)))" in html
-    assert "html:" not in html
+    # Behaviour is driven in a browser by tests/test_cart_zelle_page_e2e.py.
 
 
 def test_the_cart_uses_the_portals_zelle_wording():
@@ -201,14 +198,26 @@ def test_the_page_can_look_up_its_unpaid_zelle_order(env):
     assert got[0]["total_cents"] == d["total_cents"]
 
 
-def test_a_paid_or_cancelled_order_drops_out(env):
+def _closed(env, refs):
+    return env["client"].post("/api/cart/zelle-orders", json={"refs": refs}).get_json()["closed"]
+
+
+def test_a_paid_or_cancelled_order_drops_out_and_is_named_closed(env):
     env["client"].post("/api/cart/checkout", json=_zelle())
+    assert _closed(env, [REF]) == []
     cx = sqlite3.connect(env["db"])
     cx.execute("UPDATE orders SET pay_status='paid'"); cx.commit()
-    assert _lookup(env, [REF]) == []
+    assert _lookup(env, [REF]) == [] and _closed(env, [REF]) == [REF]
     cx.execute("UPDATE orders SET pay_status='unpaid', status='cancelled'"); cx.commit()
     cx.close()
-    assert _lookup(env, [REF]) == []
+    assert _lookup(env, [REF]) == [] and _closed(env, [REF]) == [REF]
+
+
+def test_another_shoppers_paid_order_is_not_named_closed(env, monkeypatch):
+    """Naming it closed would make this browser forget the first shopper's key."""
+    env["client"].post("/api/cart/checkout", json=_zelle())
+    monkeypatch.setattr(app, "_cart_email", lambda: "someone-else@x.com")
+    assert _closed(env, [REF]) == []
 
 
 def test_another_shoppers_key_shows_nothing(env, monkeypatch):

@@ -24387,27 +24387,32 @@ def api_cart_zelle_orders():
     """The cart page's own unpaid Zelle orders, so their instructions survive a reload or
     a lost reply (review round 1). The page sends the order keys it minted; an order is
     returned only when it is that key, belongs to this visitor's email, is a store-cart
-    Zelle order, and is neither paid nor cancelled. Anything else is simply absent, so a
-    paid order's instructions disappear and another shopper's keys show nothing."""
+    Zelle order, and is neither paid nor cancelled. "closed" lists this visitor's keys
+    whose order is paid or cancelled, so the page may forget them. Any other key, such as
+    another shopper's or one whose order is still being written, is absent from both and
+    the page keeps it (review round 2)."""
     if not _PORTAL_CART_ENABLED:
         return jsonify({"ok": False, "error": "not found"}), 404
     email = _cart_email()
     refs = (request.get_json(silent=True) or {}).get("refs") or []
     if not isinstance(refs, list):
         return jsonify({"ok": False, "error": "Invalid request."}), 400
-    refs = [r.strip().lower() for r in refs[:5] if isinstance(r, str)]
+    refs = [r.strip().lower() for r in refs[:10] if isinstance(r, str)]
     refs = [r for r in refs if _CHECKOUT_REF_RE.fullmatch(r)]
-    out = []
+    out, closed = [], []
     if email and refs:
         with db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
             for r in refs:
                 o = _bos_orders.find_order_by_external_ref(cx, r)
-                if (o and (o.get("email") or "").strip().lower() == email
-                        and o.get("source") == "reorder" and o.get("pay_method") == "zelle"
-                        and o.get("pay_status") != "paid" and o.get("status") != "cancelled"):
+                if not (o and (o.get("email") or "").strip().lower() == email
+                        and o.get("source") == "reorder" and o.get("pay_method") == "zelle"):
+                    continue
+                if o.get("pay_status") == "paid" or o.get("status") == "cancelled":
+                    closed.append(r)
+                else:
                     out.append(_zelle_instructions(o))
-    return jsonify({"ok": True, "orders": out})
+    return jsonify({"ok": True, "orders": out, "closed": closed})
 
 
 @app.route("/begin/cart/cancelled")

@@ -256,39 +256,63 @@
         .catch(function(){ box.textContent = "Your cart could not load. Please try again."; });
     }
     // ── Zelle (Glen 2026-10-10): the order is placed unpaid and the page shows how to pay.
-    // This browser keeps only the order keys it minted (newest five). The server returns
-    // the instructions for those that are still unpaid Zelle orders of this shopper, so a
-    // reload or a lost reply never loses them, and a paid order's box disappears.
-    var ZELLE_KEY = "rm_cart_zelle_refs";
+    // This browser keeps only the order keys it minted, as {r: key, at: ms}. The server
+    // returns the instructions for this shopper's unpaid Zelle orders among them, and
+    // names the ones that are paid or cancelled. Only those are forgotten, plus a key no
+    // order ever appeared for after a day, so another shopper on this browser, a slow
+    // write or a failed lookup never erases a real unpaid order (review round 2).
+    var ZELLE_KEY = "rm_cart_zelle_keys", ZELLE_MAX = 10, ZELLE_ORPHAN_MS = 24 * 3600 * 1000;
     var zelleBox = document.getElementById("zelle-done");
+    var zelleShown = {};   // order_ref -> instructions, from replies and lookups
     function payMethod(){
       var r = document.querySelector('input[name="payMethod"]:checked');
       return r ? r.value : "card";
     }
-    function zelleRefs(){
+    function zelleKeys(){
       var v = [];
       try { v = JSON.parse(localStorage.getItem(ZELLE_KEY) || "[]"); } catch (e) {}
-      return Array.isArray(v) ? v.filter(function(r){ return /^[0-9a-f]{32}$/.test(r); }).slice(0, 5) : [];
+      return Array.isArray(v) ? v.filter(function(k){
+        return k && /^[0-9a-f]{32}$/.test(k.r || ""); }) : [];
     }
-    function setZelleRefs(list){
-      try { if (list.length) localStorage.setItem(ZELLE_KEY, JSON.stringify(list.slice(0, 5)));
+    function writeZelleKeys(list){
+      try { if (list.length) localStorage.setItem(ZELLE_KEY, JSON.stringify(list.slice(0, ZELLE_MAX)));
             else localStorage.removeItem(ZELLE_KEY); } catch (e) {}
     }
+    function addZelleKey(ref){
+      writeZelleKeys([{r: ref, at: Date.now()}].concat(zelleKeys().filter(function(k){ return k.r !== ref; })));
+    }
+    // Re-reads storage at write time, so a lookup never overwrites a key saved meanwhile.
+    function forgetZelleKeys(refs){
+      if (!refs.length) return;
+      writeZelleKeys(zelleKeys().filter(function(k){ return refs.indexOf(k.r) < 0; }));
+    }
+    function renderZelle(){
+      var list = Object.keys(zelleShown).map(function(k){ return zelleShown[k]; });
+      list.sort(function(a, b){ return (b.order_id || 0) - (a.order_id || 0); });
+      zelleBox.innerHTML = list.map(zelleHtml).join("");
+    }
     function newRequestId(){
-      var b = new Uint8Array(16); (window.crypto || window.msCrypto).getRandomValues(b);
+      var b = new Uint8Array(16); window.crypto.getRandomValues(b);
       return Array.prototype.map.call(b, function(x){ return ("0" + x.toString(16)).slice(-2); }).join("");
     }
-    // Resolves to the number of unpaid Zelle orders shown.
-    function showZelleOrders(){
-      var refs = zelleRefs();
-      if (!refs.length){ zelleBox.innerHTML = ""; return Promise.resolve(0); }
-      return post("/api/cart/zelle-orders", {refs: refs}).then(function(res){
-        var orders = (res.body && res.body.orders) || [];
-        var live = orders.map(function(o){ return o.order_ref; });
-        setZelleRefs(refs.filter(function(r){ return live.indexOf(r) >= 0; }));
-        zelleBox.innerHTML = orders.map(zelleHtml).join("");
-        return orders.length;
-      }).catch(function(){ return 0; });
+    // Resolves to the set of refs the server returned as unpaid Zelle orders.
+    function lookUpZelleOrders(){
+      var keys = zelleKeys();
+      if (!keys.length) return Promise.resolve({});
+      return post("/api/cart/zelle-orders", {refs: keys.map(function(k){ return k.r; })})
+        .then(function(res){
+          var d = res.body || {};
+          if (!d.ok || !Array.isArray(d.orders)) return {};   // a failed lookup changes nothing
+          var found = {};
+          d.orders.forEach(function(o){ found[o.order_ref] = true; zelleShown[o.order_ref] = o; });
+          var gone = (d.closed || []).slice();
+          gone.forEach(function(r){ delete zelleShown[r]; });
+          var now = Date.now();
+          keys.forEach(function(k){ if (!found[k.r] && now - (k.at || 0) > ZELLE_ORPHAN_MS) gone.push(k.r); });
+          forgetZelleKeys(gone);
+          renderZelle();
+          return found;
+        }).catch(function(){ return {}; });
     }
 
     // Wording matches the portal's Zelle instructions (client-portal.html zelleInstructionsHtml).
@@ -306,17 +330,11 @@
         (link ? '<p><a class="text-link" href="' + esc(link) + '" rel="noopener">' + (z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle") + '</a></p>' : '') +
         '<p class="ship-note">' + esc(z.note || "") + '</p></div>';
     }
-    showZelleOrders();
+    lookUpZelleOrders();
 
     function checkout(){
       var body = {method: payMethod()};
       var zelleRef = "";
-      if (body.method === "zelle"){
-        // Saved before the request, so a reply that never arrives can still be looked up.
-        zelleRef = newRequestId();
-        body.checkout_request_id = zelleRef;
-        setZelleRefs([zelleRef].concat(zelleRefs()));
-      }
       if (!shipForm.hidden){
         var addr = collectShipAddress();
         var missing = firstMissingShipField(addr);
@@ -327,13 +345,22 @@
         }
         body.address = addr;
       }
+      if (body.method === "zelle"){
+        // Saved just before the request, after the form checks, so a reply that never
+        // arrives can still be looked up and a refused form leaves nothing behind.
+        zelleRef = newRequestId();
+        body.checkout_request_id = zelleRef;
+        addZelleKey(zelleRef);
+      }
       btn.disabled = true; msg.textContent = "Starting checkout…";
       post("/api/cart/checkout", body).then(function(res){
         var status = res.status, d = res.body;
         if (d && d.need_optin && window.OptinGate){ btn.disabled = false; msg.textContent = "";
           OptinGate.show({base: "", onAgree: function(){ checkout(); }}); return; }
         if (d && d.ok && d.method === "zelle"){
-          msg.textContent = ""; showZelleOrders(); load(); return; }
+          // Shown from this reply, so missing browser storage never hides them.
+          zelleShown[d.order_ref] = d; renderZelle();
+          msg.textContent = ""; load(); return; }
         if (d && d.ok && d.stripe_url){ location.href = d.stripe_url; return; }
         if (d && d.ok){ msg.textContent = "Your order is placed. A confirmation is on its way."; load(); return; }
         if (d && d.unavailable){ msg.textContent = "Some items are no longer available. Remove them to continue."; load(); return; }
@@ -352,13 +379,20 @@
       }).catch(function(){ lostReply(); });
       // No usable reply. A Zelle order may still have been placed: look it up before
       // inviting a retry that would place a second one.
+      // The order may still be being written, so ask three times, 3 seconds apart.
       function lostReply(){
-        var check = zelleRef ? showZelleOrders() : Promise.resolve(0);
-        check.then(function(n){
-          if (zelleRef && n && zelleRefs().indexOf(zelleRef) >= 0){
-            msg.textContent = ""; load(); return; }
-          msg.textContent = "Checkout did not start. Please try again."; btn.disabled = false;
-        });
+        if (!zelleRef){
+          msg.textContent = "Checkout did not start. Please try again."; btn.disabled = false; return; }
+        msg.textContent = "Checking whether your order was placed…";
+        var tries = 0;
+        (function ask(){
+          lookUpZelleOrders().then(function(found){
+            if (found[zelleRef]){ msg.textContent = ""; load(); return; }
+            if (++tries < 3){ setTimeout(ask, 3000); return; }
+            msg.textContent = "We could not confirm your order. Please reload this page before trying again.";
+            btn.disabled = false; load();
+          });
+        })();
       }
     }
     btn.onclick = checkout;
