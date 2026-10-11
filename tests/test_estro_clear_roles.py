@@ -126,7 +126,10 @@ def test_the_chat_carries_each_role_beside_its_own_ingredient(fresh_app):
         assert _line(block, name).endswith(f". Role: {role}"), name
     assert "Role:" not in _line(block, PEPPER)
     assert block.count("Role: ") == 8
-    assert "Ingredient roles for Estro-Clear:" in block
+    assert ("Ingredient roles for Estro-Clear: when you say what an ingredient in Estro-Clear "
+            "does, give only the Role written beside it, in its words. An ingredient with no Role "
+            "gets no role: list it without one. Add no organ, pathway, phase or cofactor that the "
+            "Role does not state.") in block
 
 
 def test_without_the_roles_pin_the_chat_carries_no_roles(fresh_app, monkeypatch):
