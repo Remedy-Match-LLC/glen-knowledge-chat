@@ -1,9 +1,13 @@
-"""Points redeem on services only, and points held on unpaid orders are not offered twice.
+"""Own-purchase points redeem on services only; points held on unpaid orders are not
+offered twice; referral and other non-purchase points also redeem on products.
 
 Glen, 2026-10-10: "the 5% is earned on purchase of products at full price, and redeemable
 on services", and "membership and courses, too". Glen, 2026-10-11, on the $13,997 Oasis
 tools install: "It could pay for a portion of it, say up to $1000". Glen, 2026-10-10:
-"put the credit on hold while payment is pending so it can't be used again."
+"put the credit on hold while payment is pending so it can't be used again." Glen,
+2026-10-11: the limit applies to points from the client's own full-price orders; referral
+tier 1 and 2 points, and review, image-pick and milestone points ("referral rule for those
+too"), also reduce product prices, within the existing points floor.
 """
 import importlib
 import sqlite3
@@ -33,6 +37,26 @@ def test_points_skip_the_product_and_land_on_the_service():
     r = pricing.compute([_item("estro-clear", 7000), _item("biofield-analysis", 30000)],
                         settings=S, points_to_redeem_cents=50000)
     assert [ln["points_cents"] for ln in r["lines"]] == [0, 17100]   # 57% of $300, whole dollars
+
+
+def test_a_product_allowance_reaches_products_after_services():
+    r = pricing.compute([_item("estro-clear", 7000), _item("biofield-analysis", 30000)],
+                        settings=S, points_to_redeem_cents=50000, product_points_cents=2000)
+    assert [ln["points_cents"] for ln in r["lines"]] == [2000, 17100]
+    assert r["points_product_cents"] == 2000
+
+
+def test_a_product_allowance_stops_at_the_points_floor():
+    r = pricing.compute([_item("estro-clear", 7000)], settings=S,
+                        points_to_redeem_cents=90000, product_points_cents=90000)
+    assert r["lines"][0]["line_total_cents"] == 3100   # 43% of $70, next whole dollar
+
+
+def test_services_take_points_before_products():
+    # $150 asked, $100 of it may go on products: the service takes its $85 first.
+    r = pricing.compute([_item("estro-clear", 7000), _item("evox-session", 15000)],
+                        settings=S, points_to_redeem_cents=15000, product_points_cents=10000)
+    assert [ln["points_cents"] for ln in r["lines"]] == [3900, 8500]
 
 
 @pytest.mark.parametrize("slug", sorted(pricing.POINTS_REDEEM_SLUGS) + ["membership:year_prepay"])
@@ -71,7 +95,7 @@ SERVICE = {"slug": "evox-session", "name": "EVOX", "price_cents": 15000, "servic
 PRODUCT = {"slug": "thing", "name": "Thing", "price_cents": 7000}
 
 
-def _app(tmp_path, monkeypatch, *, orders):
+def _app(tmp_path, monkeypatch, *, orders, earn=5000, referral=0):
     """orders: list of (external_ref, slug, points_redeemed_cents, pay_status)."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     db = str(tmp_path / "chat_log.db")
@@ -88,7 +112,11 @@ def _app(tmp_path, monkeypatch, *, orders):
             if pay == "paid":
                 cx.execute("UPDATE orders SET pay_status='paid' WHERE external_ref=?", (ref,))
         P.init_points_table(cx)
-        P.credit(cx, EMAIL, value_cents=5000, reason="earn", order_ref="OLD-1")
+        if earn:
+            P.credit(cx, EMAIL, value_cents=earn, reason="earn", order_ref="OLD-1")
+        if referral:
+            P.credit(cx, EMAIL, value_cents=referral, reason="referral_reward",
+                     order_ref="referral:friend@x.com")
         cx.commit()
     repo = Path(__file__).resolve().parent.parent
     if str(repo) not in sys.path:
@@ -172,3 +200,65 @@ def test_the_staff_builder_respects_holds(tmp_path, monkeypatch):
     priced = appmod._price_inhouse_invoice([{"slug": "evox-session", "qty": 1}], email=EMAIL,
                                            pickup=True, ship={}, points_redeem_cents_in=9000)
     assert priced["points_redeemed_cents"] == 2000
+
+
+def test_referral_points_reach_a_product_invoice(tmp_path, monkeypatch):
+    appmod, client, db = _app(tmp_path, monkeypatch, orders=[("INH-1", "thing", 0, "unpaid")],
+                              earn=5000, referral=2000)
+    monkeypatch.setattr("dashboard.practitioner_portal._LOG_DB", Path(db))
+    assert _apply(appmod, client, db, 1, 9000).status_code == 200
+    assert _order(db, 1)["points_redeemed_cents"] == 2000   # the referral points only
+
+
+def test_referral_points_on_one_unpaid_product_order_are_not_offered_again(tmp_path, monkeypatch):
+    appmod, client, db = _app(tmp_path, monkeypatch,
+                              orders=[("INH-1", "thing", 1500, "unpaid"),
+                                      ("INH-2", "thing", 0, "unpaid")],
+                              earn=5000, referral=2000)
+    monkeypatch.setattr("dashboard.practitioner_portal._LOG_DB", Path(db))
+    assert _apply(appmod, client, db, 2, 9000).status_code == 200
+    assert _order(db, 2)["points_redeemed_cents"] == 500
+
+
+def test_a_service_spend_uses_own_purchase_points_first(tmp_path, monkeypatch):
+    # $30 already set on a service invoice comes from the $50 own-purchase points, so the
+    # $20 of referral points is still free for a product.
+    appmod, client, db = _app(tmp_path, monkeypatch,
+                              orders=[("INH-1", "evox-session", 3000, "paid"),
+                                      ("INH-2", "thing", 0, "unpaid")],
+                              earn=5000, referral=2000)
+    assert appmod._product_usable_points_cents(EMAIL) == 2000
+
+
+def test_a_paid_product_spend_uses_up_the_referral_allowance(tmp_path, monkeypatch):
+    appmod, client, db = _app(tmp_path, monkeypatch,
+                              orders=[("INH-1", "thing", 2000, "paid"),
+                                      ("INH-2", "thing", 0, "unpaid")],
+                              earn=5000, referral=2000)
+    assert appmod._product_usable_points_cents(EMAIL) == 0
+
+
+def test_review_and_milestone_points_follow_the_referral_rule():
+    from dashboard import points as P
+    with sqlite3.connect(":memory:") as cx:
+        P.init_points_table(cx)
+        P.credit(cx, EMAIL, value_cents=500, reason="earn", order_ref="o1")
+        P.credit(cx, EMAIL, value_cents=300, reason="review:evox-session", order_ref="r1")
+        P.credit(cx, EMAIL, value_cents=200, reason="healing_milestone", order_ref="m1")
+        P.credit(cx, EMAIL, value_cents=100, reason="image_pick", order_ref="i1")
+        assert P.product_usable_credits(cx, EMAIL) == 600
+
+
+def test_a_checkout_line_records_its_product_points(tmp_path, monkeypatch):
+    appmod, _, db = _app(tmp_path, monkeypatch, orders=[], earn=0, referral=2000)
+    monkeypatch.setattr(appmod, "_get_product",
+                        lambda s: {**SERVICE, "slug": s} if s == "evox-session" else
+                        {**PRODUCT, "slug": s, "service": True} if s == "thing" else None)
+    pc = appmod._price_cart([{"slug": "thing", "qty": 1}, {"slug": "evox-session", "qty": 1}],
+                            ship={"country": "US", "state": "CA"}, points_to_redeem_cents=12000,
+                            product_points_cents=2000)
+    # The service takes $85 first, then the product takes the $20 allowance.
+    assert [r["points_product_cents"] for r in pc["items_rec"]] == [2000, 0]
+    assert pc["points_redeemed_cents"] == 10500
+    assert appmod._order_product_points_cents({"items": pc["items_rec"],
+                                               "points_redeemed_cents": 10500}) == 2000

@@ -148,28 +148,40 @@ class PointsCapTracker:
         self._used[s] = self._used.get(s, 0) + max(0, int(cents))
 
 
-def points_room_cents(lines, settings, product_for):
-    """Most points (cents, whole dollars) an order's stored lines can take: the services
-    only, each above its points floor, within any per-order cap. Used by the invoice
-    paths, which price outside compute(). lines: stored order items with slug,
+def points_room_cents(lines, settings, product_for, product_points_cents=0):
+    """Most points (cents, whole dollars) an order's stored lines can take: the services,
+    each above its points floor and within any per-order cap, plus up to
+    product_points_cents on the products, each above its points floor. Used by the
+    invoice paths, which price outside compute(). lines: stored order items with slug,
     unit_cents and qty. product_for(slug) returns the catalog product or {}."""
+    service, product = _room_split(lines, settings, product_for)
+    return whole_dollars(service + min(product, max(0, int(product_points_cents or 0))))
+
+
+def service_room_cents(lines, settings, product_for):
+    """The part of points_room_cents the service lines can take."""
+    return whole_dollars(_room_split(lines, settings, product_for)[0])
+
+
+def _room_split(lines, settings, product_for):
     caps = PointsCapTracker()
-    room = 0
+    service = product = 0
     for it in lines or []:
         if not isinstance(it, dict) or it.get("gift"):
             continue
         slug = it.get("slug") or ""
-        if not points_redeemable(slug):
-            continue
         p = product_for(slug) or {}
         unit = int(it.get("unit_cents") or 0)
         list_cents = int(p.get("price_cents") or unit)
         floor = unit_floor_cents(p, list_cents, settings, "points")
         line_room = max(0, unit - floor) * int(it.get("qty") or 1)
-        take = caps.allow(slug, line_room)
-        caps.record(slug, take)
-        room += take
-    return whole_dollars(room)
+        if points_redeemable(slug):
+            take = caps.allow(slug, line_room)
+            caps.record(slug, take)
+            service += take
+        else:
+            product += line_room
+    return service, product
 
 
 def _ramp_pct(qty, anchors):
@@ -225,7 +237,8 @@ def open_total_pct(total_qty, settings):
 
 def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
             points_to_redeem_cents=0, channel="retail", ship_to_state=None,
-            resale_ok=False, tax_fn=None, program_member=False, repertoire_slugs=None):
+            resale_ok=False, tax_fn=None, program_member=False, repertoire_slugs=None,
+            product_points_cents=0):
     """Price a cart. The single % discount per line = the best (non-additive) of:
     type1 same-SKU (this line's own qty, open to everyone, default ON), type2
     program-total (order-total months, gated on program_member, default ON) or
@@ -242,7 +255,10 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
     bundle lines vs. single-SKU lines within the same subscription/order).
 
     Points are allocated greedily in item-list order; the first item consumes points first.
-    Only service lines take points (points_redeemable), within POINTS_REDEEM_CAP_CENTS.
+    Service lines take points first (points_redeemable), within POINTS_REDEEM_CAP_CENTS.
+    Product lines then take at most product_points_cents of what is left: the buyer's
+    referral and other non-purchase points (Glen, 2026-10-11). Own-purchase points never
+    reach a product. Each line still stops at its points floor.
     """
     def _sub_pct(it):
         v = subscriber_tier_pct(it) if callable(subscriber_tier_pct) else subscriber_tier_pct
@@ -253,7 +269,7 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
     prog_pct = program_total_pct(total_months, settings, program_member)
     points_left = whole_dollars(points_to_redeem_cents or 0)
     caps = PointsCapTracker()
-    lines, subtotal, total_discount, total_points = [], 0, 0, 0
+    priced = []   # (item, qty, line_list, after_disc, pts_floor, line_pct)
 
     for it in items:
         p = it["product"]
@@ -275,16 +291,34 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
         line_pct = max(t1, order_pct, base_pct, rep_pct)             # non-additive: best single offer
         disc_floor = unit_floor_cents(p, unit_list, settings, "discount")
         pts_floor = unit_floor_cents(p, unit_list, settings, "points") * qty
-
         # Per unit, then times qty, so every bottle is a whole dollar (see apply_discount).
         after_disc = apply_discount(unit_list, line_pct, disc_floor) * qty
-        # Services only, within any per-order cap on the slug.
-        offer = (caps.allow(it.get("slug"), points_left)
-                 if points_redeemable(it.get("slug")) else 0)
-        after_pts, used = apply_points(after_disc, offer, pts_floor)
+        priced.append([it, qty, line_list, after_disc, pts_floor, line_pct, 0])
+
+    # Services first, within any per-order cap on the slug; then products, from the
+    # product allowance only.
+    for row in priced:
+        it, after_disc, pts_floor = row[0], row[3], row[4]
+        if not points_redeemable(it.get("slug")):
+            continue
+        _, used = apply_points(after_disc, caps.allow(it.get("slug"), points_left), pts_floor)
         caps.record(it.get("slug"), used)
         points_left -= used
+        row[6] = used
+    product_left = min(points_left, whole_dollars(product_points_cents or 0))
+    product_points = 0
+    for row in priced:
+        it, after_disc, pts_floor = row[0], row[3], row[4]
+        if points_redeemable(it.get("slug")):
+            continue
+        _, used = apply_points(after_disc, product_left, pts_floor)
+        product_left -= used
+        product_points += used
+        row[6] = used
 
+    lines, subtotal, total_discount, total_points = [], 0, 0, 0
+    for it, qty, line_list, after_disc, _floor, line_pct, used in priced:
+        after_pts = after_disc - used
         lines.append({
             "slug": it["slug"], "name": it["name"], "qty": qty,
             "list_cents": line_list, "discount_cents": line_list - after_disc,
@@ -301,6 +335,7 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
         "subtotal_cents": subtotal,
         "discount_cents": total_discount,
         "points_redeemed_cents": total_points,
+        "points_product_cents": product_points,
         "volume_months": total_months,
         "volume_pct": max(prog_pct, open_pct),
         "get_cents": get_cents,
