@@ -95,8 +95,11 @@ SERVICE = {"slug": "evox-session", "name": "EVOX", "price_cents": 15000, "servic
 PRODUCT = {"slug": "thing", "name": "Thing", "price_cents": 7000}
 
 
-def _app(tmp_path, monkeypatch, *, orders, earn=5000, referral=0):
-    """orders: list of (external_ref, slug, points_redeemed_cents, pay_status)."""
+def _app(tmp_path, monkeypatch, *, orders, earn=5000, referral=0, ledger=None):
+    """orders: list of (external_ref, slug, points_redeemed_cents, pay_status). A paid
+    order's points leave the ledger after the credits, as settlement does. ledger, when
+    given, replaces the credits: (reason, cents, order_ref) rows in time order, a
+    negative row being a redeem."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     db = str(tmp_path / "chat_log.db")
     from dashboard import orders as O, points as P
@@ -112,11 +115,21 @@ def _app(tmp_path, monkeypatch, *, orders, earn=5000, referral=0):
             if pay == "paid":
                 cx.execute("UPDATE orders SET pay_status='paid' WHERE external_ref=?", (ref,))
         P.init_points_table(cx)
-        if earn:
-            P.credit(cx, EMAIL, value_cents=earn, reason="earn", order_ref="OLD-1")
-        if referral:
-            P.credit(cx, EMAIL, value_cents=referral, reason="referral_reward",
-                     order_ref="referral:friend@x.com")
+        if ledger is not None:
+            for reason, cents, ref in ledger:
+                if cents > 0:
+                    P.credit(cx, EMAIL, value_cents=cents, reason=reason, order_ref=ref)
+                else:
+                    P.redeem(cx, EMAIL, value_cents=-cents, order_ref=ref)
+        else:
+            if earn:
+                P.credit(cx, EMAIL, value_cents=earn, reason="earn", order_ref="OLD-1")
+            if referral:
+                P.credit(cx, EMAIL, value_cents=referral, reason="referral_reward",
+                         order_ref="referral:friend@x.com")
+            for ref, slug, pts, pay in orders:
+                if pay == "paid" and pts:
+                    P.redeem(cx, EMAIL, value_cents=pts, order_ref=ref)
         cx.commit()
     repo = Path(__file__).resolve().parent.parent
     if str(repo) not in sys.path:
@@ -171,7 +184,8 @@ def test_a_paid_order_holds_nothing(tmp_path, monkeypatch):
                                       ("INH-2", "evox-session", 0, "unpaid")])
     monkeypatch.setattr("dashboard.practitioner_portal._LOG_DB", Path(db))
     assert _apply(appmod, client, db, 2, 5000).status_code == 200
-    assert _order(db, 2)["points_redeemed_cents"] == 5000
+    # The paid order's $30 has left the ledger; nothing more is held for it.
+    assert _order(db, 2)["points_redeemed_cents"] == 2000
 
 
 def test_the_invoice_shows_no_room_on_a_product_invoice(tmp_path, monkeypatch):
@@ -262,3 +276,66 @@ def test_a_checkout_line_records_its_product_points(tmp_path, monkeypatch):
     assert pc["points_redeemed_cents"] == 10500
     assert appmod._order_product_points_cents({"items": pc["items_rec"],
                                                "points_redeemed_cents": 10500}) == 2000
+
+
+def test_referral_points_spent_on_a_service_do_not_return_when_points_are_earned_later(
+        tmp_path, monkeypatch):
+    # Review rounds 1 and 2: $20 referral, a $20 service paid with it, then $50 earned.
+    # Only own-purchase points are left, so nothing may go on a product.
+    appmod, _, _ = _app(tmp_path, monkeypatch,
+                        orders=[("INH-1", "evox-session", 2000, "paid")],
+                        ledger=[("referral_reward", 2000, "referral:f@x.com"),
+                                ("redeem", -2000, "INH-1"),
+                                ("earn", 5000, "OLD-1")])
+    assert appmod._product_usable_points_cents(EMAIL) == 0
+
+
+def test_a_service_paid_after_earning_uses_own_purchase_points(tmp_path, monkeypatch):
+    appmod, _, _ = _app(tmp_path, monkeypatch,
+                        orders=[("INH-1", "evox-session", 2000, "paid")],
+                        ledger=[("referral_reward", 2000, "referral:f@x.com"),
+                                ("earn", 5000, "OLD-1"),
+                                ("redeem", -2000, "INH-1")])
+    assert appmod._product_usable_points_cents(EMAIL) == 2000
+
+
+def test_an_edit_that_swaps_a_service_for_a_product_drops_own_purchase_points(
+        tmp_path, monkeypatch):
+    # Review round 1: /update with no points field kept $50 on a product-only invoice.
+    appmod, client, db = _app(tmp_path, monkeypatch,
+                              orders=[("INH-1", "evox-session", 5000, "unpaid")])
+    r = client.post("/api/orders/1/edit", json={"lines": [{"slug": "thing", "qty": 1}],
+                                               "pickup": True})
+    assert r.status_code == 200, r.get_json()
+    o = _order(db, 1)
+    assert int(o["points_redeemed_cents"] or 0) == 0
+    assert int(o["total_cents"]) == PRODUCT["price_cents"]
+
+
+def test_an_edit_keeps_points_that_still_fit(tmp_path, monkeypatch):
+    appmod, client, db = _app(tmp_path, monkeypatch,
+                              orders=[("INH-1", "evox-session", 3000, "unpaid")])
+    r = client.post("/api/orders/1/edit", json={"lines": [{"slug": "evox-session", "qty": 1}],
+                                               "pickup": True})
+    assert r.status_code == 200, r.get_json()
+    assert _order(db, 1)["points_redeemed_cents"] == 3000
+
+
+def test_invoice_points_stamp_their_split(tmp_path, monkeypatch):
+    # Review round 2: a later points change must not leave a stale split behind.
+    appmod, client, db = _app(tmp_path, monkeypatch, orders=[("INH-1", "thing", 0, "unpaid")],
+                              earn=0, referral=2000)
+    monkeypatch.setattr("dashboard.practitioner_portal._LOG_DB", Path(db))
+    assert _apply(appmod, client, db, 1, 2000).status_code == 200
+    o = dict(_order(db, 1))
+    assert o["items"][0]["points_split_of_cents"] == 2000
+    assert appmod._order_product_points_cents(o) == 2000
+
+
+def test_a_stale_split_is_ignored():
+    import app as appmod
+    items = [{"slug": "thing", "unit_cents": 7000, "qty": 1,
+              "points_product_cents": 0, "points_split_of_cents": 0}]
+    # Points were later set to $20 without a re-stamp: the split is rebuilt, not trusted.
+    assert appmod._order_product_points_cents({"items": items,
+                                               "points_redeemed_cents": 2000}) == 2000

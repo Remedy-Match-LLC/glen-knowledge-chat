@@ -7613,17 +7613,46 @@ def _invoice_points_room_cents(items, email=None, exclude_order_id=None):
                                       lambda s: _get_product(s) or {}, allowance)
 
 
+def _stamp_points_split(items, redeemed_cents, product_cents):
+    """Record on an order's lines how many of its points went on products, and for which
+    points total. A later points change without a re-stamp leaves the record stale, and
+    _order_product_points_cents then ignores it (review round 2)."""
+    first = True
+    for it in items or []:
+        if not isinstance(it, dict) or it.get("gift"):
+            continue
+        it["points_product_cents"] = int(product_cents) if first else 0
+        it["points_split_of_cents"] = int(redeemed_cents)
+        first = False
+    return items
+
+
+def _stamp_order_points_split(items, redeemed_cents):
+    """Stamp an invoice's split at the moment its points are set: service lines take
+    points first, the rest is on products. Freezing it here keeps a later catalog price
+    change from rewriting history (review round 2)."""
+    from dashboard import pricing as _pricing
+    redeemed = int(redeemed_cents or 0)
+    room = (_pricing.service_room_cents([i for i in items if isinstance(i, dict)],
+                                        _pricing.load_settings(_pricing_settings()),
+                                        lambda s: _get_product(s) or {})
+            if redeemed > 0 else 0)
+    return _stamp_points_split(items, redeemed, max(0, redeemed - room))
+
+
 def _order_product_points_cents(order):
-    """Points an order put on product lines. A checkout line records it
-    (points_product_cents); otherwise service lines take points first, as every
-    invoice path applies them, so the rest landed on products."""
+    """Points an order put on product lines. The lines record it (points_product_cents)
+    when the order was priced, valid while points_split_of_cents equals the order's
+    points. Otherwise service lines take points first, as every invoice path applies
+    them, so the rest landed on products."""
     from dashboard import pricing as _pricing
     items = order.get("items") or []
-    if any(isinstance(i, dict) and "points_product_cents" in i for i in items):
-        return sum(int(i.get("points_product_cents") or 0) for i in items if isinstance(i, dict))
     redeemed = int(order.get("points_redeemed_cents") or 0)
     if redeemed <= 0:
         return 0
+    marked = [i for i in items if isinstance(i, dict) and "points_product_cents" in i]
+    if marked and all(int(i.get("points_split_of_cents", -1)) == redeemed for i in marked):
+        return min(redeemed, sum(int(i.get("points_product_cents") or 0) for i in marked))
     room = _pricing.service_room_cents(items, _pricing.load_settings(_pricing_settings()),
                                        lambda s: _get_product(s) or {})
     return max(0, redeemed - room)
@@ -7642,20 +7671,55 @@ def _product_usable_points_cents(email, exclude_order_id=None):
         cx.row_factory = _sqlite3.Row
         _pts.init_points_table(cx)
         _bos_orders.init_orders_table(cx)
-        credits = _pts.product_usable_credits(cx, email)
-        if credits <= 0:
+        if _pts.product_usable_credits(cx, email) <= 0:
             return 0
+        # Walk the ledger in order, keeping own-purchase points and all other points
+        # apart. A debit's product part comes from the other points. Its service part
+        # comes from own-purchase points first, and only then from the other points,
+        # judged at the time of the debit (review rounds 1 and 2). Any other negative
+        # row, or a debit whose order is not found, comes from the other points first.
+        own = other = 0
+        rows = cx.execute(
+            "SELECT delta_cents, reason, order_ref FROM points_ledger "
+            "WHERE lower(email)=? AND scope='rm' ORDER BY id", (email,)).fetchall()
+        for r in rows:
+            delta, reason, ref = int(r[0] or 0), (r[1] or ""), (r[2] or "")
+            if delta > 0:
+                if reason in _pts.SERVICES_ONLY_REASONS:
+                    own += delta
+                else:
+                    other += delta
+                continue
+            out = -delta
+            o = (_bos_orders.find_order_by_external_ref(cx, ref)
+                 if reason == "redeem" and ref else None)
+            if o:
+                product = min(out, _order_product_points_cents(dict(o)))
+                service = out - product
+                from_own = min(own, service)
+                own -= from_own
+                other -= product + (service - from_own)
+            else:
+                from_other = min(max(0, other), out)
+                other -= from_other
+                own -= out - from_other
+        # Points already planned on unpaid orders leave the ledger only at payment.
         sql = ("SELECT id FROM orders WHERE lower(email)=? AND COALESCE(points_redeemed_cents,0) > 0 "
-               "AND (COALESCE(pay_status,'') = 'paid' OR COALESCE(status,'') != 'cancelled')")
-        ids = [int(r[0]) for r in cx.execute(sql, (email,)).fetchall()]
-        spent = 0
-        for oid in ids:
+               "AND COALESCE(pay_status,'') != 'paid' AND COALESCE(status,'') != 'cancelled'")
+        for (oid,) in [(int(x[0]),) for x in cx.execute(sql, (email,)).fetchall()]:
             if exclude_order_id is not None and oid == int(exclude_order_id):
                 continue
             o = _bos_orders.get_order(cx, oid)
-            if o:
-                spent += _order_product_points_cents(dict(o))
-    return min(max(0, credits - spent), _unheld_points_cents(email, exclude_order_id=exclude_order_id))
+            if not o:
+                continue
+            o = dict(o)
+            redeemed = int(o.get("points_redeemed_cents") or 0)
+            product = min(redeemed, _order_product_points_cents(o))
+            service = redeemed - product
+            from_own = min(max(0, own), service)
+            own -= from_own
+            other -= product + (service - from_own)
+    return min(max(0, other), _unheld_points_cents(email, exclude_order_id=exclude_order_id))
 
 
 def _unheld_points_cents(email, exclude_order_id=None):
@@ -8830,6 +8894,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     from dashboard.pricing import points_redeemable as _redeemable
     for _rec, _ln in zip(items_rec, priced["lines"]):
         _rec["points_product_cents"] = 0 if _redeemable(_ln["slug"]) else int(_ln["points_cents"])
+        _rec["points_split_of_cents"] = int(priced["points_redeemed_cents"])
     shipping_cents = flat_ship_cents + _shipping_for_cart(box_counts, total_bottles + total_cello)
     return {
         "priced": priced, "qbo_lines": qbo_lines, "items_rec": items_rec,
@@ -12534,7 +12599,8 @@ def _price_biofield(points_to_redeem_cents=0, tier=PROGRAM_PREMIUM_TIER):
                   "amount": round(_price / 100.0, 2), "qty": 1,
                   "description": _name}]
     # A service line: none of its points are on a product (_order_product_points_cents).
-    items_rec = [{"name": _name, "qty": 1, "desc": _name, "points_product_cents": 0}]
+    items_rec = [{"name": _name, "qty": 1, "desc": _name, "points_product_cents": 0,
+                  "points_split_of_cents": int(priced["points_redeemed_cents"])}]
     return {"priced": priced, "qbo_lines": qbo_lines, "items_rec": items_rec,
             "discount_cents": priced["discount_cents"],
             "points_redeemed_cents": priced["points_redeemed_cents"],
@@ -12647,6 +12713,8 @@ def biofield_checkout():
         with db.connect(LOG_DB) as _bcx:
             _points.init_points_table(_bcx)
             redeem = min(redeem, _points.balance(_bcx, email))
+        # Never offer points already held on the buyer's other unpaid orders.
+        redeem = min(redeem, _unheld_points_cents(email))
     elif PROGRAM_CARE_TASTER_ENABLED:
         # No explicit redeem requested: auto-apply the $1 deposit credit (if any) so
         # it actually lands as $1 off the program at checkout.
@@ -57221,6 +57289,15 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         # Glen, 2026-09-19: "apply her points to 194".
         existing_points = _points_to_set_on_unpaid_order(
             order, priced, int(points_redeem_cents_in))
+    elif existing_points > 0:
+        # Carried points must still fit the edited lines (review round 1: a service line
+        # swapped for a product kept its own-purchase points). A paid order, or one whose
+        # points already left the ledger, keeps them unchanged.
+        try:
+            existing_points = _points_to_set_on_unpaid_order(order, priced, existing_points)
+        except CheckoutError:
+            pass
+    _stamp_order_points_split(priced["items_rec"], existing_points)
     priced["points_redeemed_cents"] = existing_points
     priced["total_cents"] = max(0, priced["total_cents"] - existing_points)
     # Same for a shipping credit already auto-applied to this order: carry it
@@ -59560,6 +59637,15 @@ def api_invoice_apply_plan(token):
         adj = int(order.get("adjustment_cents") or 0)
         ship = int(order.get("shipping_cents") or 0)
         pts = int(order.get("points_redeemed_cents") or 0)
+        if pts > 0:
+            # Lower prices can leave less room above the points floor (review round 2).
+            try:
+                pts = _points_to_set_on_unpaid_order(
+                    order, {"items_rec": new_items,
+                            "total_cents": max(0, new_sub - disc + adj) + ship}, pts)
+            except CheckoutError:
+                pass
+            _stamp_order_points_split(new_items, pts)
         new_total = max(0, max(0, new_sub - disc + adj) + ship - pts)
         _bos_orders.upsert_order(
             cx, source=order["source"], external_ref=order["external_ref"],
@@ -59684,13 +59770,15 @@ def api_invoice_apply_points(token):
                                                        email=order.get("email"),
                                                        exclude_order_id=order.get("id")))) // 100 * 100
     new_total = gross_total - new_points
+    items = _stamp_order_points_split([dict(i) if isinstance(i, dict) else i
+                                       for i in (order.get("items") or [])], new_points)
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
         _bos_orders.upsert_order(
             cx, source=order["source"], external_ref=order["external_ref"],
             email=order.get("email") or "", name=order.get("name") or "",
             phone=order.get("phone") or "", person_id=order.get("person_id"),
-            items=order.get("items"), total_cents=new_total, address=order.get("address") or {},
+            items=items, total_cents=new_total, address=order.get("address") or {},
             channel="retail", get_cents=int(order.get("get_cents") or 0),
             discount_cents=int(order.get("discount_cents") or 0),
             points_redeemed_cents=new_points, shipping_cents=int(order.get("shipping_cents") or 0))
