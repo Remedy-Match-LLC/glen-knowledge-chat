@@ -1085,13 +1085,42 @@ def held_credit_cents(cx, email):
     return (max(0, int(row[0] or 0)), max(0, int(row[1] or 0))) if row else (0, 0)
 
 
+# App-layer test for a line sold below its store price (app._order_has_line_below_store_price),
+# injected so this module keeps no app import. Glen, 2026-10-10: an order earns points only
+# when every line is at full store price. Signature: fn(order) -> bool.
+_below_store_price_check = None
+
+
+def set_below_store_price_check(fn):
+    """Register the app-side below-store-price test (fn(order) -> bool)."""
+    global _below_store_price_check
+    _below_store_price_check = fn
+
+
+def _has_line_below_store_price(order):
+    """True when the registered check finds a line below store price. A check that raises,
+    or no check registered at all (a process that never imported app), counts as True, so
+    a failure never pays points the rule would refuse (round 2)."""
+    if not _below_store_price_check:
+        print(f"[orders] no below-store-price check registered; #{order.get('id')} earns "
+              "nothing", flush=True)
+        return True
+    try:
+        return bool(_below_store_price_check(order))
+    except Exception as e:
+        print(f"[orders] below-store-price check failed for #{order.get('id')}: {e!r}",
+              flush=True)
+        return True
+
+
 def settle_order_points(cx, order, *, scope="rm", earn_pct=0.05):
     """On a PAID in-house order: redeem the points the customer applied and earn
     on full-price product spend. Idempotent per external_ref (guarded by
     points.has_entry), best-effort — never raises into the payment path. Email is
     lowercased to match the ledger (the funnel settler lowercases on write).
 
-    Earn mirrors the funnel rule (full-price only: no discount AND no points used)
+    Earn mirrors the funnel rule (full-price only: no discount, no points used, and no
+    line below its store price)
     but omits the affiliate-first-order suppression — in-house manual orders are
     not affiliate-acquired, so that gate is a no-op for them."""
     from dashboard import points as _points
@@ -1113,6 +1142,7 @@ def settle_order_points(cx, order, *, scope="rm", earn_pct=0.05):
             except ValueError:
                 pass  # balance already spent elsewhere; don't block the payment
         if discount == 0 and redeemed == 0 and product_cents > 0 \
+                and not _has_line_below_store_price(order) \
                 and not _points.has_entry(cx, order_ref=ref, reason="earn", scope=scope):
             _points.earn(cx, email, full_price_cents=product_cents, earn_pct=earn_pct,
                          order_ref=ref, scope=scope)

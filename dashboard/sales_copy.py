@@ -19,8 +19,10 @@ SECTION_BRIEFS = {
 }
 
 def _ingredient_lines(product):
+    # Only what the page shows: a 0 mg line is Glen's note, never a selling point.
+    from dashboard.products import shown_ingredients
     out = []
-    for ing in (product.get("ingredients") or []):
+    for ing in (shown_ingredients(product.get("ingredients") or []) or []):
         if isinstance(ing, dict):
             out.append((f"- {ing.get('name','')} {ing.get('dose','')}").rstrip())
         elif isinstance(ing, str) and ing.strip():

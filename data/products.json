@@ -506,7 +506,7 @@
     },
     {
      "name": "L-Theanine",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Melatonin",
@@ -538,11 +538,11 @@
     },
     {
      "name": "Hops",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Bacosides",
-     "dose": ""
+     "dose": "0 mg"
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
@@ -2540,7 +2540,7 @@
    "ingredients": [
     {
      "name": "Biotin, Vitamin B7",
-     "dose": "1 mg"
+     "dose": "0.1 mg (100 mcg)"
     },
     {
      "name": "Natural Vitamin C, L-Ascorbic Acid",
@@ -2548,7 +2548,7 @@
     },
     {
      "name": "Bamboo Silica Botanical quartz",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "MSM Methylsulfonylmethane",
@@ -2560,7 +2560,7 @@
     },
     {
      "name": "Frankincense",
-     "dose": ""
+     "dose": "0 mg"
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
@@ -3014,7 +3014,7 @@
     },
     {
      "name": "Tetrahydrocurcumin, water soluble Curcuminoid",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "S-Acetyl Glutathione, S-Acetyl GSH",
@@ -3748,15 +3748,15 @@
     },
     {
      "name": "Black pepper extract in Trikatu",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Sulforaphane",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Saffron",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Astaxanthin",
@@ -10603,7 +10603,7 @@
     },
     {
      "name": "Honokiol",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "L-Theanine",
@@ -10623,7 +10623,7 @@
     },
     {
      "name": "Rosmarinic acid",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "(formerly Rosmarinus officinalis)",
@@ -10639,7 +10639,7 @@
     },
     {
      "name": "PS",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Xanthan Gum is made by Xanthomonas campestris fermenting bacterium",
@@ -12204,7 +12204,7 @@
     },
     {
      "name": "Saikosaponin A",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Asian water plantain, ze xie",
@@ -12212,7 +12212,7 @@
     },
     {
      "name": "Alisma",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Rehmannia 50:1 root extract",
@@ -12220,11 +12220,11 @@
     },
     {
      "name": "Rehmannia",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Catalpol",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Ashitaba",
@@ -12240,7 +12240,7 @@
     },
     {
      "name": "Saffron",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Latin names: Caulis mutong, Akebia caulis, Akebia trifoliata, Aristolochia manshuriensis Chinese name: mu tong Other names: chocolate vine, clematis stem",
@@ -12252,11 +12252,11 @@
     },
     {
      "name": "total acid (Glycyrrhizic acid, Glycyrrhizinic acid)",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Glycyrrhizin is a triterpenoid saponin, a type of natural compound found in the roots and rhizomes of the licorice plant. It is relatively insoluble in water and has a bitter taste. Glycyrrhizinate, on the other hand, is the sodium salt of glycyrrhizin, making it more soluble in water. This modified form is often used in pharmaceutical applications due to its increased bioavailability and reduced gastrointestinal side effects.",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Glycyrrhiza glabra",
@@ -14770,7 +14770,7 @@
     },
     {
      "name": "Portobello Chitosan Oligosaccharide (Agaricus bisporus) 98% deacetylated",
-     "dose": ""
+     "dose": "0 mg"
     }
    ]
   },
@@ -20420,7 +20420,7 @@
     },
     {
      "name": "MSM (Methylsulfonylmethane)",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Yuzu Spray-Dried Fruit Juice (Citrus junos)",
@@ -20451,7 +20451,7 @@
     },
     {
      "name": "Finger Lime Freeze-Dried Fruit Juice (Citrus australasica)",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Zinc Bisglycinate (20% Zn)",
@@ -20930,6 +20930,7 @@
   },
   "fungal-nail-repair": {
    "name": "Fungal Nail Repair",
+   "waitlist_only": true,
    "price_cents": 7000,
    "pinecone_title": "Fungal Nail Repair",
    "qty_pricing": true,
@@ -21651,8 +21652,10 @@
      "dose": "50 mg"
     },
     {
-     "name": "Black pepper extract (95% piperine)",
-     "dose": "5 mg"
+     "name": "Black pepper extract (Piper nigrum), 95% piperine",
+     "dose": "5 mg",
+     "page_slug": "black-pepper-extract-95-piperine",
+     "page_name": "Black pepper extract (95% piperine)"
     },
     {
      "name": "Vitamin D3 (cholecalciferol)",
@@ -21676,7 +21679,8 @@
    "bottle_type": "30 Caps",
    "enrichment_note": "SKU 3 of the Fibrolysis line, specced as 'Estrolytic' in the 2026-06-06 product-line spec and PRODUCED as Estro-Clear (Glen, 2026-09-09). BOM from FMP product 1190, extract 2026-08-31: the nine dosed lines sum to 496.939 mg, matching FMP zc_total_mg 496.939. Three zero-quantity lines are PROPOSED FUTURE ENHANCEMENTS and are not panel rows: raw 4326 Glucoraphanin, 5608 Myrosinase, and 5606 potassium iodate. D3 is 4 mg at 500,000 IU/g = 2,000 IU; selenium 0.244 mg MSC at 41% = 100 mcg Se; iodine 0.195 mg KI at 77% = 150 mcg I. Dosing and timing from the same extract. The spec's 50% glucoraphanin and red cabbage myrosinase are the PROPOSED upgrades recorded as the zero-quantity lines, not a defect in what ships. What is in the bottle is 17% glucoraphanin and 2.5 mg of black mustard seed, and that is what the panel states. Glen's ruling, 2026-09-09: a BOM line with zero quantity is a PROPOSED FUTURE ENHANCEMENT and must not be listed publicly until it is implemented. It is not a marker, an alternate grade or a duplicate. Never surface one on a page, and never borrow its standardization percentage for the dosed line above it.",
    "copy_pinned": [
-    "description"
+    "description",
+    "ingredients"
    ],
    "content_since": "2026-10-09T23:04:21Z"
   },
