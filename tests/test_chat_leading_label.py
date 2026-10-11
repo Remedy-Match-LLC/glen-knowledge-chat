@@ -112,3 +112,42 @@ def test_stream_matches_text_for_every_split():
                 n = rng.randint(0, 6)
                 cuts.append(text[i:i + n]); i += n
             assert "".join(strip_leading_label(cuts)) == strip_leading_label_text(text), repr(text)
+
+
+def _pulled_before_first_chunk(tokens):
+    pulled = []
+
+    def gen():
+        for t in tokens:
+            pulled.append(t)
+            yield t
+
+    next(strip_leading_label(gen()))
+    return len(pulled)
+
+
+def test_ordinary_answer_streams_without_waiting_for_a_newline():
+    assert _pulled_before_first_chunk(["Hello ", "there ", "friend\n"]) == 1
+
+
+def test_body_after_a_label_streams_without_waiting_for_the_end():
+    assert _pulled_before_first_chunk(["[A]\n", "body ", "more", "more"]) == 2
+
+
+def test_label_length_boundaries():
+    body = "\nbody"
+    assert strip_leading_label_text("[" + "a" * 100 + "]" + body) == "body"
+    assert strip_leading_label_text("[" + "a" * 101 + "]" + body) == "[" + "a" * 101 + "]" + body
+    # 120 characters after leading whitespace is the most a label line may be.
+    at_limit = "## **[" + "a" * 100 + "]**:" + " " * 10
+    assert len(at_limit) == 120
+    assert strip_leading_label_text(at_limit + body) == "body"
+    assert _stream(at_limit + body, 1) == "body"
+    over = at_limit + " "
+    assert strip_leading_label_text(over + body) == over + body
+    assert _stream(over + body, 1) == over + body
+
+
+def test_label_then_only_whitespace_logs_nothing():
+    assert strip_leading_label_text("[LABEL]\n   ") == ""
+    assert _stream("[LABEL]\n   ", 1) == ""
