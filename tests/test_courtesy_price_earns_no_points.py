@@ -94,3 +94,48 @@ def test_the_record_payment_settler_applies_the_same_rule(tmp_path):
     orders.settle_order_points(cx, {**base, "external_ref": "R2", "total_cents": full,
                                     "items": [{"slug": SLUG, "qty": 1, "unit_cents": full}]})
     assert points.balance(cx, "b@x.com") == round(full * 0.05)
+
+
+def test_a_retired_slug_is_judged_against_its_live_product(monkeypatch, tmp_path):
+    """emf is retired at $0; its live twin costs more. A cheap emf line is below store."""
+    live = appmod._superseded("emf")
+    assert live != "emf" and _store(live) > 0
+    items = [{"slug": "emf", "qty": 1, "unit_cents": _store(live) - 1000}]
+    assert _settle(monkeypatch, tmp_path, items) == 0
+
+
+def test_the_old_97_price_still_counts_as_full_price(monkeypatch, tmp_path):
+    """The 10-02 rounding lifted $69.97 to $70; an invoice issued before it still earns."""
+    assert _store(SLUG) % 100 == 0
+    unit = _store(SLUG) - 3
+    items = [{"slug": SLUG, "qty": 1, "unit_cents": unit}]
+    assert _settle(monkeypatch, tmp_path, items) == round(unit * 0.05)
+
+
+def test_four_cents_under_is_not_the_rounding(monkeypatch, tmp_path):
+    items = [{"slug": SLUG, "qty": 1, "unit_cents": _store(SLUG) - 4}]
+    assert _settle(monkeypatch, tmp_path, items) == 0
+
+
+def test_a_review_gift_line_blocks_earn(monkeypatch, tmp_path):
+    """A $0 gift line is a line below store price. Kept as the rule reads until Glen says
+    otherwise."""
+    items = [{"slug": SLUG, "qty": 1, "unit_cents": _store(SLUG)},
+             {"slug": "lipid-cleanse", "qty": 1, "unit_cents": 0, "gift": True}]
+    assert _settle(monkeypatch, tmp_path, items) == 0
+
+
+def test_the_record_payment_settler_fails_closed(monkeypatch, tmp_path):
+    from dashboard import orders
+
+    def boom(order):
+        raise ValueError("bad price")
+    monkeypatch.setattr(orders, "_below_store_price_check", boom)
+    cx = sqlite3.connect(str(tmp_path / "f.db")); cx.row_factory = sqlite3.Row
+    points.init_points_table(cx)
+    full = _store(SLUG)
+    orders.settle_order_points(cx, {"email": "c@x.com", "external_ref": "F1",
+                                    "total_cents": full, "shipping_cents": 0,
+                                    "discount_cents": 0, "points_redeemed_cents": 0,
+                                    "items": [{"slug": SLUG, "qty": 1, "unit_cents": full}]})
+    assert points.balance(cx, "c@x.com") == 0

@@ -8763,19 +8763,31 @@ def _order_has_line_below_store_price(order) -> bool:
 
     Full store price is the catalog price this client pays at the store, so a full
     member's Biofield Analysis at its member price still earns, as it does there. A line
-    with no catalog product or no recorded unit price is not judged."""
+    with no catalog product or no recorded unit price is not judged. A line stored under a
+    retired slug is judged against its live product (round 1: emf is $0, its twin $40).
+
+    The 10-02 rounding moved every .97 price up to the next dollar (Glen, 2026-10-02), so a
+    line at the old .97 price is still full price: an invoice issued at $69.97 and paid
+    after the change must not lose its points (round 1)."""
     email = ((order or {}).get("email") or "").strip().lower()
     catalog = _PRODUCTS.get("products") or {}
     for it in (order or {}).get("items") or []:
-        p = catalog.get((it.get("slug") or "").strip())
+        p = catalog.get(_superseded((it.get("slug") or "").strip()))
         if not p or it.get("unit_cents") in (None, "") or int(it.get("qty") or 0) <= 0:
             continue
         p = dict(p)
         p.setdefault("price_cents", _PRODUCTS.get("default_price_cents", 7000))
         store = _member_list_cents(p, email)
-        if store and int(it["unit_cents"]) < store:
+        unit = int(it["unit_cents"])
+        if store and unit < store and not _is_pre_rounding_price(unit, store):
             return True
     return False
+
+
+def _is_pre_rounding_price(unit_cents, store_cents):
+    """True when unit_cents is the old .97 price that the 10-02 rounding lifted to
+    store_cents, the next whole dollar (e.g. 6997 against 7000)."""
+    return unit_cents % 100 == 97 and store_cents % 100 == 0 and store_cents - unit_cents == 3
 
 
 def _rewards_enabled() -> bool:
