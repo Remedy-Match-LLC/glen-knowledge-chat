@@ -13987,6 +13987,16 @@ def _course_plan_charge(invoice):
                 stripe_pay.cancel_subscription(sub_id)
             except Exception as e:
                 print(f"[course] plan cancel-at-12 failed sub={sub_id}: {e!r}", flush=True)
+                try:
+                    _send_token_alert(
+                        "MentorshipU cert plan cancel FAILED at 12",
+                        f"A $297x12 course plan reached its 12th payment but the Stripe "
+                        f"cancel failed, so a 13th charge may follow. Cancel the "
+                        f"subscription in Stripe by hand.\n"
+                        f"subscription={sub_id}\ninvoice={invoice_id}\nerror={e!r}")
+                except Exception as e2:
+                    print(f"[course] plan cancel-failed alert failed sub={sub_id}: {e2!r}",
+                          flush=True)
         if count >= 12 and not email:
             try:
                 _send_token_alert(

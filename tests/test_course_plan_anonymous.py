@@ -100,3 +100,17 @@ def test_customer_email_fallback_grants_access_and_cert(appmod, monkeypatch):
     assert ("plan", "active", "buyer@x.com") in kinds, kinds
     assert cancelled == ["sub_anon"]
     assert appmod.ALERTS == []
+
+
+def test_failed_cancel_at_twelve_alerts(appmod, monkeypatch):
+    from dashboard import stripe_pay
+    monkeypatch.setattr(stripe_pay, "get_customer_email", lambda cid: "buyer@x.com")
+    monkeypatch.setattr(stripe_pay, "get_subscription", lambda sid: _sub(2_000_000_000))
+
+    def boom(sid):
+        raise RuntimeError("stripe timeout")
+    monkeypatch.setattr(stripe_pay, "cancel_subscription", boom)
+    for i in range(1, 13):
+        appmod._course_plan_charge({"subscription": "sub_anon", "id": f"in_{i}",
+                                    "amount_paid": 29700})
+    assert len(appmod.ALERTS) == 1 and "cancel FAILED" in appmod.ALERTS[0][0]

@@ -63,7 +63,9 @@ def _reexec_clean():
         # Keep every database and background job local and off.
         "DB_BACKEND": "sqlite",
         "DATABASE_URL": "",
-        "DATA_DIR": "",
+        # LOG_DB is read from DATA_DIR at import, so the app opens a temp database
+        # from the first line, never the checkout's own chat_log.db.
+        "DATA_DIR": tempfile.mkdtemp(prefix="plan-e2e-data-"),
         "NO_BACKGROUND_SCHEDULER": "1",
         CLEAN_FLAG: "1",
         "STRIPE_SECRET_KEY": key,
@@ -78,9 +80,20 @@ def _reexec_clean():
     os.execve(sys.executable, [sys.executable, "-u", __file__, *sys.argv[1:]], env)
 
 
+CLEAN_KEYS = {"PATH", "HOME", "PYTHONUSERBASE", "DB_BACKEND", "DATABASE_URL", "DATA_DIR",
+              "NO_BACKGROUND_SCHEDULER", CLEAN_FLAG, "STRIPE_SECRET_KEY",
+              "STRIPE_WEBHOOK_SECRET", "PINECONE_API_KEY", "OPENAI_API_KEY",
+              "ANTHROPIC_API_KEY", "SECRET_KEY", "CONSOLE_SECRET"}
+# Set by macOS itself, not by the caller.
+OS_KEYS = {"__CF_USER_TEXT_ENCODING", "__PYVENV_LAUNCHER__", "LC_CTYPE"}
+
 if os.environ.get(CLEAN_FLAG) != "1":
     _reexec_clean()
 
+# The flag alone proves nothing: check the environment really is the clean one.
+_extra = set(os.environ) - CLEAN_KEYS - OS_KEYS
+if _extra or os.environ.get("DATABASE_URL") or os.environ.get("DB_BACKEND") != "sqlite":
+    sys.exit(f"environment is not the clean one (unexpected: {sorted(_extra)}). Refusing.")
 if not os.environ.get("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
     sys.exit("not a test key. Refusing.")
 
@@ -102,7 +115,8 @@ import app as appmod  # noqa: E402
 from dashboard import stripe_pay  # noqa: E402
 
 SENT = {"setup_link": [], "provision": [], "alert": []}
-appmod.LOG_DB = Path(tempfile.mkdtemp(prefix="plan-e2e-")) / "chat_log.db"
+if not str(appmod.LOG_DB).startswith(os.environ["DATA_DIR"]):
+    sys.exit(f"app database is {appmod.LOG_DB}, not the temp folder. Refusing.")
 appmod.send_mentorship_setup_link = lambda *a, **k: SENT["setup_link"].append(a) or ("test", None)
 appmod._autoprovision_course_access = lambda email: SENT["provision"].append(email)
 appmod._send_token_alert = lambda *a, **k: SENT["alert"].append(a)
@@ -174,6 +188,13 @@ def test_price():
 
 def main():
     keep = "--keep" in sys.argv
+    # Stripe also sends test events to any test-mode webhook endpoint on the account.
+    # If one exists, a deployed app could act on this run, so refuse.
+    hooks = [h for h in stripe_pay._get("/webhook_endpoints?limit=100").get("data") or []
+             if h.get("status") == "enabled"]
+    if hooks:
+        sys.exit(f"{len(hooks)} test-mode webhook endpoint(s) are enabled on this account. "
+                 "Their servers would receive this run's events. Refusing.")
     t0 = int(time.time()) - 5
     seen = set()
 
