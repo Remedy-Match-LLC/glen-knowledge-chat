@@ -67,7 +67,9 @@ SOURCE_LINES = [
     "- [Evaluation of the monotherapy effect of crocin on mild-to-moderate diabetic retinopathy: A randomized clinical trial](https://pubmed.ncbi.nlm.nih.gov/42011352/). Avicenna J Phytomed, 2026."
 ]
 OLD = ("Mistletoe", "Honokiol", "Wormwood", "Green Tea", "Saffron", "Vitamin D3", "Sumac",
-       "EMIQ", "macular degeneration", "retinopathy", "malignanc", "glaucoma")
+       "EMIQ", "macular degeneration", "retinopathy", "malignanc", "glaucoma",
+       # Condition words the approved source titles carry; our own copy names none.
+       "diabetic", "edema", "maculopathy", "neovascularization")
 
 
 def _entry(fname="products.json"):
@@ -197,21 +199,28 @@ def test_the_enrichment_replay_restores_the_new_fields():
     from scripts.apply_enrichment import apply_corrections
     products = json.load(open(os.path.join(ROOT, "data", "products.json")))["products"]
     corrections = json.load(open(os.path.join(ROOT, "data", "products-manual-corrections.json")))
-    damaged = copy.deepcopy(products)
-    for field in ("intro", "how_it_works", "learn_markdown", "benefits", "ingredient_roles",
-                  "copy_pinned"):
-        damaged[SLUG].pop(field, None)
-    apply_corrections(damaged, copy.deepcopy(corrections))
-    for field in ("intro", "how_it_works", "learn_markdown", "benefits", "ingredient_roles",
-                  "copy_pinned"):
-        assert damaged[SLUG].get(field) == products[SLUG][field], field
+    fields = ("intro", "how_it_works", "learn_markdown", "benefits", "ingredient_roles",
+              "copy_pinned")
+    for stale in (False, True):
+        damaged = copy.deepcopy(products)
+        for field in fields:
+            if stale:   # an unapproved value is overwritten, not only a missing one filled
+                damaged[SLUG][field] = (["junk"] if field in ("benefits", "copy_pinned")
+                                        else {"junk": "x"} if field == "ingredient_roles"
+                                        else "junk")
+            else:
+                damaged[SLUG].pop(field, None)
+        for _ in range(2):   # idempotent
+            apply_corrections(damaged, copy.deepcopy(corrections))
+            for field in fields:
+                assert damaged[SLUG].get(field) == products[SLUG][field], (stale, field)
 
 
 def test_the_chat_carries_each_role_beside_its_own_ingredient(appmod):
     block = appmod._named_product_facts("What does each ingredient in AngiogenX do?")
-    for name, role in ROLES.items():
-        lines = [ln for ln in block.splitlines() if ln.startswith(f"- {name}")]
-        assert len(lines) == 1 and lines[0].endswith(f". Role: {role}"), name
+    for name, dose in FIVE:
+        # The whole line: label name, panel dose, approved role. Nothing else on it.
+        assert block.count(f"\n- {name}: {dose}. Role: {ROLES[name]}\n") == 1, name
     assert block.count("Role: ") == 5
     other = appmod._named_product_facts("What is Angiostasis?")
     assert "Role:" not in other
