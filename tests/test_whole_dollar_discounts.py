@@ -109,7 +109,8 @@ def test_repertoire_reorder_rounds_up_too():
 
 def test_points_redeem_in_whole_dollars_only():
     """Glen, 2026-10-01: points redeem in whole dollars, 20 points at a time."""
-    out = pricing.compute([{"slug": "ff", "name": "FF", "qty": 1, "product": FF,
+    # A service line: points redeem on services only (Glen 2026-10-10).
+    out = pricing.compute([{"slug": "evox-session", "name": "EVOX", "qty": 1, "product": FF,
                             "unit_cents": 7000, "months": 1, "volume_eligible": True}],
                           settings=S, points_to_redeem_cents=135)
     assert out["lines"][0]["line_total_cents"] == 7000 - 100

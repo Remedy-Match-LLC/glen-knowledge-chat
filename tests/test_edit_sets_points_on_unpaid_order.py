@@ -24,7 +24,7 @@ def _app(tmp_path, monkeypatch, *, pay_status="unpaid", balance=2713, redeemed_r
     with sqlite3.connect(db) as cx:
         O.init_orders_table(cx)
         O.upsert_order(cx, source="in-house", external_ref="INH-P1", status="proposed",
-                       email=EMAIL, name="Carer", items=[{"slug": "ff", "qty": 1}],
+                       email=EMAIL, name="Carer", items=[{"slug": "evox-session", "qty": 1}],
                        total_cents=10000)
         if pay_status == "paid":
             cx.execute("UPDATE orders SET pay_status='paid' WHERE id=1")
@@ -46,11 +46,11 @@ def _app(tmp_path, monkeypatch, *, pay_status="unpaid", balance=2713, redeemed_r
     monkeypatch.setattr(appmod, "_bos_actor", lambda: _rbac.Actor(role="owner", name="glen"))
     # One $100 item listed at $100: the 43% points floor leaves $57 of room.
     monkeypatch.setattr(appmod, "_get_product",
-                        lambda slug: {"slug": "ff", "name": "FF", "price_cents": 10000})
+                        lambda slug: {"slug": "evox-session", "name": "FF", "price_cents": 10000})
     monkeypatch.setattr(appmod, "_price_inhouse_invoice", lambda *a, **k: {
-        "items_rec": [{"slug": "ff", "name": "FF", "qty": 1, "unit_cents": 10000,
+        "items_rec": [{"slug": "evox-session", "name": "FF", "qty": 1, "unit_cents": 10000,
                        "line_cents": 10000}],
-        "cart": [{"slug": "ff", "qty": 1}], "subtotal_cents": 10000, "shipping_cents": 0,
+        "cart": [{"slug": "evox-session", "qty": 1}], "subtotal_cents": 10000, "shipping_cents": 0,
         "get_cents": 0, "discount_cents": 0, "adjustment_cents": 0,
         "points_redeemed_cents": 0, "total_cents": 10000})
     monkeypatch.setattr(appmod, "_push_invoice_edit_to_qbo", lambda *a, **k: {"pushed": False})
@@ -65,7 +65,7 @@ def _order(db):
 
 
 def _edit(client, **extra):
-    return client.post("/api/orders/1/edit", json={"lines": [{"slug": "ff", "qty": 1}], **extra})
+    return client.post("/api/orders/1/edit", json={"lines": [{"slug": "evox-session", "qty": 1}], **extra})
 
 
 def test_points_are_set_on_an_unpaid_order_up_to_the_balance(tmp_path, monkeypatch):
