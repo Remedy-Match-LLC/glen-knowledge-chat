@@ -8751,6 +8751,57 @@ def _is_wholesale_order(order) -> bool:
     return (str((order or {}).get("source") or "").strip().lower() in _WHOLESALE_SOURCES)
 
 
+def _order_has_line_below_store_price(order) -> bool:
+    """True when any line sold below its full store price, so the order earns no points.
+
+    Glen, 2026-10-10: "No points on courtesy prices; close the gap." Then rule (a): an
+    order earns only when every line is at full store price, and volume and member rates
+    earn nothing, as in the store cart. The store records each line at its price and puts
+    volume rates in discount_cents, which already stops earn. An in-house invoice instead
+    puts a courtesy, client-special, volume or typed price into the line's unit_cents, so
+    discount_cents stays 0 and those orders earned 5% (Debra Herndon, orders 63 and 165).
+
+    Full store price is the catalog price this client pays at the store, so a full
+    member's Biofield Analysis at its member price still earns, as it does there. A line
+    with no catalog product or no recorded unit price is not judged. A line stored under a
+    retired slug is judged against its live product (round 1: emf is $0, its twin $40). A
+    catalog line with no unit or line price refuses earn (round 2).
+
+    The 10-02 rounding moved every .97 price up to the next dollar (Glen, 2026-10-02), so a
+    line at the old .97 price is still full price: an invoice issued at $69.97 and paid
+    after the change must not lose its points (round 1)."""
+    email = ((order or {}).get("email") or "").strip().lower()
+    catalog = _PRODUCTS.get("products") or {}
+    for it in (order or {}).get("items") or []:
+        p = catalog.get(_superseded((it.get("slug") or "").strip()))
+        if not p:
+            continue
+        qty = int(it.get("qty") if it.get("qty") not in (None, "") else 1)
+        if qty <= 0:
+            continue
+        # A catalog line with no recorded price cannot be shown to be at full price, so it
+        # refuses earn rather than passing unjudged (round 2).
+        unit = it.get("unit_cents")
+        if unit in (None, ""):
+            lc = it.get("line_cents")
+            if lc in (None, ""):
+                return True
+            unit = int(lc) // qty
+        unit = int(unit)
+        p = dict(p)
+        p.setdefault("price_cents", _PRODUCTS.get("default_price_cents", 7000))
+        store = _member_list_cents(p, email)
+        if store and unit < store and not _is_pre_rounding_price(unit, store):
+            return True
+    return False
+
+
+def _is_pre_rounding_price(unit_cents, store_cents):
+    """True when unit_cents is the old .97 price that the 10-02 rounding lifted to
+    store_cents, the next whole dollar (e.g. 6997 against 7000)."""
+    return unit_cents % 100 == 97 and store_cents % 100 == 0 and store_cents - unit_cents == 3
+
+
 def _rewards_enabled() -> bool:
     """True when the rewards/referral system is switched on."""
     return bool(os.environ.get("REWARDS_TIERS_ENABLED", ""))
@@ -9023,10 +9074,19 @@ def _settle_order_points(order, *, order_ref):
         if applied > 0:
             from dashboard import ship_credit as _ship_credit
             _ship_credit.consume(cx, email, applied, applied_ref=order_ref)
-        # Earn only on a full-price order (no discount AND no points used) -- the "full-price only" rule.
+        # Earn only on a full-price order (no discount, no points used, and no line below its
+        # store price) -- the "full-price only" rule.
         # Additional suppression: skip buyer earn on an affiliate-acquired FIRST order.
+        try:
+            below_store = _order_has_line_below_store_price(order)
+        except Exception as _bse:
+            # A malformed line must not skip the credits below; it only refuses earn.
+            print(f"[points] below-store-price check failed ref={order_ref}: {_bse!r}",
+                  flush=True)
+            below_store = True
         if discount == 0 and redeemed == 0 and product_cents > 0 \
                 and not _is_wholesale_order(order) \
+                and not below_store \
                 and not _points.has_entry(cx, order_ref=order_ref, reason="earn"):
             # Suppression gate: if rewards are enabled AND this is buyer's first order
             # AND there is an attributed referrer, don't give the buyer earn points.
@@ -54999,6 +55059,7 @@ def _settle_referrals_on_altpay(order):
 
 
 _bos_orders.set_referral_settle_hook(lambda _cx, _o: _settle_referrals_on_altpay(_o))
+_bos_orders.set_below_store_price_check(_order_has_line_below_store_price)
 
 
 def _settle_points_on_altpay(order):
