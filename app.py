@@ -13947,6 +13947,19 @@ def _course_plan_charge(invoice):
         if sub_md.get("kind") != "course_plan":
             return "skip"
         until = float(sub.get("current_period_end") or 0) or None
+        # A signed-out buyer's subscription metadata carries no email. Their Stripe
+        # customer record does, so read it now (outside the db lock) as the last
+        # fallback, but only when checkout.session.completed never stored a row.
+        cust_email = ""
+        if not (sub_md.get("email") or "").strip() and sub.get("customer"):
+            with _db_lock, db.connect(LOG_DB) as cx0:
+                known = _ce.email_for_stripe_ref(cx0, sub_id)
+            if not known:
+                try:
+                    cust_email = stripe_pay.get_customer_email(sub.get("customer"))
+                except Exception as e:
+                    print(f"[course] plan customer email lookup failed sub={sub_id}: {e!r}",
+                          flush=True)
         with _db_lock, db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
             _ce.init_course_entitlements_table(cx)
@@ -13955,27 +13968,57 @@ def _course_plan_charge(invoice):
             # arrives before checkout.session.completed has stored the buyer's email
             # (anonymous plan checkout). Access itself is granted by the completed
             # event; under-counting here would permanently stall the conversion.
+            _ce.init_course_plan_charges_table(cx)
+            replay = cx.execute("SELECT 1 FROM course_plan_charges WHERE invoice_id=?",
+                                (invoice_id,)).fetchone() is not None
             count = _ce.record_plan_charge(cx, sub_id, invoice_id)
             email = (sub_md.get("email") or "").strip().lower()
             if not email:
                 email = (_ce.email_for_stripe_ref(cx, sub_id) or "").strip().lower()
             if not email:
-                cx.commit()
-                return "ok"  # charge counted; grant deferred until the email resolves
-            _credit_course_referral(cx, sub_md.get("ref"), email,
-                                    int((invoice or {}).get("amount_paid") or 0), invoice_id)
-            if count >= 12:
-                _ce.grant_cert(cx, email, source="stripe", stripe_ref=sub_id,
-                               customer=sub.get("customer"))
-            else:
-                _ce.grant_plan(cx, email, until_epoch=until, source="stripe",
-                               stripe_ref=sub_id, customer=sub.get("customer"))
+                email = (cust_email or "").strip().lower()
+            if email:
+                _credit_course_referral(cx, sub_md.get("ref"), email,
+                                        int((invoice or {}).get("amount_paid") or 0), invoice_id)
+                if count >= 12:
+                    _ce.grant_cert(cx, email, source="stripe", stripe_ref=sub_id,
+                                   customer=sub.get("customer"))
+                else:
+                    _ce.grant_plan(cx, email, until_epoch=until, source="stripe",
+                                   stripe_ref=sub_id, customer=sub.get("customer"))
             cx.commit()
-        if count >= 12:  # stop billing after conversion; cert already granted above
+        # A redelivered invoice.paid was already handled: cancelling or alerting again
+        # would only send a false "cancel FAILED" for an already-cancelled plan.
+        if replay:
+            return "ok"
+        # The cancel and the alerts below run whether or not a buyer email resolved:
+        # billing must stop at 12 even when nobody can be granted the cert.
+        if count >= 12:  # stop billing after conversion
             try:
                 stripe_pay.cancel_subscription(sub_id)
             except Exception as e:
                 print(f"[course] plan cancel-at-12 failed sub={sub_id}: {e!r}", flush=True)
+                try:
+                    _send_token_alert(
+                        "MentorshipU cert plan cancel FAILED at 12",
+                        f"A $297x12 course plan reached its 12th payment but the Stripe "
+                        f"cancel failed, so a 13th charge may follow. Cancel the "
+                        f"subscription in Stripe by hand.\n"
+                        f"subscription={sub_id}\ninvoice={invoice_id}\nerror={e!r}")
+                except Exception as e2:
+                    print(f"[course] plan cancel-failed alert failed sub={sub_id}: {e2!r}",
+                          flush=True)
+        if count >= 12 and not email:
+            try:
+                _send_token_alert(
+                    "MentorshipU cert plan finished with no buyer email",
+                    f"A $297x12 course plan reached its 12th payment, but no buyer email "
+                    f"could be found, so the lifetime certification was NOT granted. Find "
+                    f"the buyer from the Stripe customer and grant it by hand.\n"
+                    f"subscription={sub_id}\ninvoice={invoice_id}\n"
+                    f"customer={sub.get('customer')}\ncharge_count={count}")
+            except Exception as e:
+                print(f"[course] plan no-email alert failed sub={sub_id}: {e!r}", flush=True)
         if count > 12:  # a charge slipped past the 12-payment conversion — a refund is owed
             try:
                 _send_token_alert(

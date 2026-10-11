@@ -194,6 +194,14 @@ def get_subscription(sub_id) -> dict:
             "customer": j.get("customer"), "metadata": j.get("metadata") or {}}
 
 
+def get_customer_email(customer_id) -> str:
+    """Return a Stripe Customer's email, lowercased, or "" if it has none."""
+    if not customer_id:
+        return ""
+    j = _get(f"/customers/{customer_id}")
+    return (j.get("email") or "").strip().lower()
+
+
 def cancel_subscription(sub_id) -> dict:
     """Cancel a Stripe subscription immediately (stops further charges). Returns
     {id, status}. Used when a $297x12 plan reaches its 12th payment and converts to
