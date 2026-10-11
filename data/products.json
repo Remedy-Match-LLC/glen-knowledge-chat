@@ -21651,8 +21651,10 @@
      "dose": "50 mg"
     },
     {
-     "name": "Black pepper extract (95% piperine)",
-     "dose": "5 mg"
+     "name": "Black pepper extract (Piper nigrum), 95% piperine",
+     "dose": "5 mg",
+     "page_slug": "black-pepper-extract-95-piperine",
+     "page_name": "Black pepper extract (95% piperine)"
     },
     {
      "name": "Vitamin D3 (cholecalciferol)",
@@ -21676,7 +21678,8 @@
    "bottle_type": "30 Caps",
    "enrichment_note": "SKU 3 of the Fibrolysis line, specced as 'Estrolytic' in the 2026-06-06 product-line spec and PRODUCED as Estro-Clear (Glen, 2026-09-09). BOM from FMP product 1190, extract 2026-08-31: the nine dosed lines sum to 496.939 mg, matching FMP zc_total_mg 496.939. Three zero-quantity lines are PROPOSED FUTURE ENHANCEMENTS and are not panel rows: raw 4326 Glucoraphanin, 5608 Myrosinase, and 5606 potassium iodate. D3 is 4 mg at 500,000 IU/g = 2,000 IU; selenium 0.244 mg MSC at 41% = 100 mcg Se; iodine 0.195 mg KI at 77% = 150 mcg I. Dosing and timing from the same extract. The spec's 50% glucoraphanin and red cabbage myrosinase are the PROPOSED upgrades recorded as the zero-quantity lines, not a defect in what ships. What is in the bottle is 17% glucoraphanin and 2.5 mg of black mustard seed, and that is what the panel states. Glen's ruling, 2026-09-09: a BOM line with zero quantity is a PROPOSED FUTURE ENHANCEMENT and must not be listed publicly until it is implemented. It is not a marker, an alternate grade or a duplicate. Never surface one on a page, and never borrow its standardization percentage for the dosed line above it.",
    "copy_pinned": [
-    "description"
+    "description",
+    "ingredients"
    ],
    "content_since": "2026-10-09T23:04:21Z"
   },

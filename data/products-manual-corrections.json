@@ -143,8 +143,10 @@
         "dose": "50 mg"
       },
       {
-        "name": "Black pepper extract (95% piperine)",
-        "dose": "5 mg"
+        "name": "Black pepper extract (Piper nigrum), 95% piperine",
+        "dose": "5 mg",
+        "page_slug": "black-pepper-extract-95-piperine",
+        "page_name": "Black pepper extract (95% piperine)"
       },
       {
         "name": "Vitamin D3 (cholecalciferol)",

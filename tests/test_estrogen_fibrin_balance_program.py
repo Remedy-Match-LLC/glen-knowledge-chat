@@ -117,7 +117,7 @@ def test_content_since_is_a_utc_timestamp(products, slug):
 def test_the_pins_carry_these_texts_into_the_chat(products):
     assert products["fibrosolve"]["copy_pinned"] == ["description", "ingredients", "research"]
     assert products["fibrolysis-factors"]["copy_pinned"] == ["description", "ingredients"]
-    assert products["estro-clear"]["copy_pinned"] == ["description"]
+    assert products["estro-clear"]["copy_pinned"] == ["description", "ingredients"]
     assert products["fibrosolve"]["ingredients_source"] == "label-2026-06"
 
 
@@ -277,7 +277,8 @@ def test_what_is_in_it_gets_the_pinned_label_panel(fresh_app):
 
 
 def test_a_product_without_pinned_ingredients_gets_no_panel(fresh_app):
-    assert "from the label:" not in fresh_app._named_product_facts("What is in Estro-Clear?")
+    # Estro-Clear was the example until its ingredients were pinned (2026-10-10).
+    assert "from the label:" not in fresh_app._named_product_facts("What is in Bone Builder?")
 
 
 def test_each_program_product_carries_its_own_page(fresh_app):
@@ -398,3 +399,34 @@ def test_research_still_matches_the_old_page_names():
                                         "page_name": "Gotu kola (Centella asiatica)"}]
              for n in (i["name"], i["page_name"])]
     assert pc._ingredient_in_product("Gotu kola (Centella asiatica)", norms)
+
+
+EC_PEPPER = "Black pepper extract (Piper nigrum), 95% piperine"
+
+
+def test_estro_clear_pepper_line_names_its_species(products, corrections):
+    # Glen, 2026-10-10, formulation tab: keep the store's names, add the species to
+    # the black pepper line. Its ingredient page keeps the slug it was built under.
+    for src in (products, corrections):
+        line = next(i for i in src["estro-clear"]["ingredients"] if "piperine" in i["name"])
+        assert (line["name"], line["dose"]) == (EC_PEPPER, "5 mg")
+        assert line["page_slug"] == "black-pepper-extract-95-piperine"
+    assert products["estro-clear"]["ingredients"] == corrections["estro-clear"]["ingredients"]
+
+
+def test_estro_clear_pepper_line_keeps_its_page(fresh_app):
+    data = fresh_app.app.test_client().get(
+        "/begin/product-page-data/estro-clear").get_json()
+    body = next(s for s in data["sections"] if s["id"] == "ingredients")["body"]
+    got = {i["name"]: i["slug"] for i in body["ingredients"]}
+    assert got[EC_PEPPER] == "black-pepper-extract-95-piperine"
+    assert not any("page_slug" in i or "page_name" in i for i in body["ingredients"])
+    pub = fresh_app.app.test_client().get("/begin/product-data/estro-clear").get_json()
+    assert not any("page_slug" in i or "page_name" in i for i in pub["ingredients"])
+
+
+def test_what_is_in_estro_clear_gets_all_nine_lines(fresh_app, products):
+    block = fresh_app._named_product_facts("What is in Estro-Clear?")
+    for i in products["estro-clear"]["ingredients"]:
+        assert f"- {i['name']}: {i['dose']}" in block
+    assert "page_slug" not in block
