@@ -170,6 +170,33 @@
     "directions": "Take 1 capsule 1 to 2 times daily with oils or a fatty meal. Keep the bottle tightly closed and dry.",
     "warning": "Contains piperine, which can raise blood levels of some medications. Consult your health professional before use with medications, thyroid or hormone-sensitive conditions, pregnancy, or nursing.",
     "bottle_type": "30 Caps",
+    "intro": "Estro-Clear helps processed estrogen leave the body and supports a healthy balance of estrogen metabolites.",
+    "how_it_works": "Your body is always working to clear hormones that have already done their job. Here is what each ingredient in Estro-Clear does.\n\nCalcium-D-glucarate helps processed estrogen leave the body instead of being reabsorbed. DIM supports a healthy balance of estrogen metabolites. Broccoli extract supplies glucoraphanin, which supports the body's own detox enzymes. Black mustard seed supplies myrosinase, the enzyme that activates broccoli glucoraphanin. Vitamin C helps activate the enzyme that releases sulforaphane from broccoli. Iodine supports normal thyroid hormone production. Selenium supports the body's own antioxidant enzymes. Vitamin D3 supports normal cell growth and division.",
+    "learn_markdown": "Your body is always working to clear hormones that have already done their job. Here is what each ingredient in Estro-Clear does.\n\nCalcium-D-glucarate helps processed estrogen leave the body instead of being reabsorbed. DIM supports a healthy balance of estrogen metabolites. Broccoli extract supplies glucoraphanin, which supports the body's own detox enzymes. Black mustard seed supplies myrosinase, the enzyme that activates broccoli glucoraphanin. Vitamin C helps activate the enzyme that releases sulforaphane from broccoli. Iodine supports normal thyroid hormone production. Selenium supports the body's own antioxidant enzymes. Vitamin D3 supports normal cell growth and division.",
+    "benefits": [
+      "Helps processed estrogen leave the body instead of being reabsorbed",
+      "Supports a healthy balance of estrogen metabolites",
+      "Supports the body's own detox and antioxidant enzymes",
+      "Supports normal thyroid hormone production"
+    ],
+    "ingredient_roles": {
+      "Calcium-D-glucarate": "Helps processed estrogen leave the body instead of being reabsorbed.",
+      "DIM 98% (diindolylmethane)": "Supports a healthy balance of estrogen metabolites.",
+      "Broccoli extract (Brassica oleracea), 17% glucoraphanin": "Supplies glucoraphanin, which supports the body's own detox enzymes.",
+      "Vitamin C (L-ascorbic acid)": "Helps activate the enzyme that releases sulforaphane from broccoli.",
+      "Vitamin D3 (cholecalciferol)": "Supports normal cell growth and division.",
+      "Black mustard seed (Brassica nigra)": "Supplies myrosinase, the enzyme that activates broccoli glucoraphanin.",
+      "Iodine (from potassium iodide)": "Supports normal thyroid hormone production.",
+      "Selenium (as methylselenocysteine)": "Supports the body's own antioxidant enzymes."
+    },
+    "copy_pinned": [
+      "description",
+      "ingredients",
+      "intro",
+      "research",
+      "benefits",
+      "roles"
+    ],
     "note": "SKU 3 of the Fibrolysis line, specced as 'Estrolytic' in the 2026-06-06 product-line spec and PRODUCED as Estro-Clear (Glen, 2026-09-09). BOM from FMP product 1190, extract 2026-08-31: the nine dosed lines sum to 496.939 mg, matching FMP zc_total_mg 496.939. Three zero-quantity lines are PROPOSED FUTURE ENHANCEMENTS and are not panel rows: raw 4326 Glucoraphanin, 5608 Myrosinase, and 5606 potassium iodate. D3 is 4 mg at 500,000 IU/g = 2,000 IU; selenium 0.244 mg MSC at 41% = 100 mcg Se; iodine 0.195 mg KI at 77% = 150 mcg I. Dosing and timing from the same extract. The spec's 50% glucoraphanin and red cabbage myrosinase are the PROPOSED upgrades recorded as the zero-quantity lines, not a defect in what ships. What is in the bottle is 17% glucoraphanin and 2.5 mg of black mustard seed, and that is what the panel states. Glen's ruling, 2026-09-09: a BOM line with zero quantity is a PROPOSED FUTURE ENHANCEMENT and must not be listed publicly until it is implemented. It is not a marker, an alternate grade or a duplicate. Never surface one on a page, and never borrow its standardization percentage for the dosed line above it."
   },
   "vitamin-p-polyphenols": {

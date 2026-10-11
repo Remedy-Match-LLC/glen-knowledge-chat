@@ -2321,11 +2321,27 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         # The store page's own filter: no 0 mg note rows, no capsule shell (Glen, 2026-10-03).
         if "ingredients" in _pinned_copy(product):
             from dashboard.products import shown_ingredients as _shown_ings
-            ings = [f"- {i['name']}" + (f": {i['dose']}" if i.get("dose") else "")
-                    for i in (_shown_ings(product.get("ingredients") or []) or [])
-                    if isinstance(i, dict) and (i.get("name") or "").strip()]
+            # Research-checked roles, keyed by label name and pinned separately, so a
+            # renamed line drops its role rather than pairing it with a neighbour
+            # (Estro-Clear, spec 2026-10-10-estro-clear-roles). Without the pin, the
+            # block is unchanged.
+            roles = product.get("ingredient_roles") if "roles" in _pinned_copy(product) else None
+            roles = roles if isinstance(roles, dict) else {}
+            ings = []
+            for i in (_shown_ings(product.get("ingredients") or []) or []):
+                if not (isinstance(i, dict) and (i.get("name") or "").strip()):
+                    continue
+                line = f"- {i['name']}" + (f": {i['dose']}" if i.get("dose") else "")
+                role = (roles.get(i["name"]) or "").strip() if isinstance(roles.get(i["name"]), str) else ""
+                ings.append(line + (f". Role: {role}" if role else ""))
             if ings:
                 parts.append("Ingredients from the label:\n" + "\n".join(ings))
+                if roles:
+                    parts.append(
+                        f"Ingredient roles for {name}: when you say what an ingredient in "
+                        f"{name} does, give only the Role written beside it, in its words. "
+                        "An ingredient with no Role gets no role: list it without one. Add "
+                        "no organ, pathway, phase or cofactor that the Role does not state.")
         # Directions and caution only from a product whose copy Glen pinned.
         for label, key in (("Directions", "directions"), ("Caution", "warning")) if pinned else ():
             val = (product.get(key) or "").strip()
