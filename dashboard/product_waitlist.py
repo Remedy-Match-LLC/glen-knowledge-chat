@@ -65,7 +65,7 @@ TEXTS = {
     },
     # Third list, 2026-10-10: Fungal Nail Repair has never been made. Glen: "the
     # formulation needs completion and production" (formulation tab, via formulation-1b).
-    # DRAFT wording, modelled on Scar Soft Drink's: waits for Glen's approval.
+    # Wording modelled on Scar Soft Drink's; approved by Glen 2026-10-10 (platform tab).
     "fungal-nail-repair": {
         "product": "Fungal Nail Repair",
         "consent": ("We will email you when Fungal Nail Repair is ready to order. Joining this "
