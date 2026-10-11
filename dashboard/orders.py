@@ -1071,6 +1071,20 @@ def mark_invoice_sent(cx, order_id):
     return cur.rowcount > 0
 
 
+def held_credit_cents(cx, email):
+    """Ship credit and points already promised to this customer's unpaid orders, as
+    (ship_credit_cents, points_cents). Both are debited only when an order is paid, so
+    until then a new order must not plan the same balance again. Glen, 2026-10-10: "put
+    the credit on hold while payment is pending so it can't be used again." A cancelled
+    order releases its hold; the 24-hour abandoned-checkout expiry cancels card ones."""
+    row = cx.execute(
+        "SELECT COALESCE(SUM(ship_credit_applied_cents),0), COALESCE(SUM(points_redeemed_cents),0) "
+        "FROM orders WHERE lower(email)=? AND COALESCE(pay_status,'') != 'paid' "
+        "AND COALESCE(status,'') != 'cancelled'",
+        ((email or "").strip().lower(),)).fetchone()
+    return (max(0, int(row[0] or 0)), max(0, int(row[1] or 0))) if row else (0, 0)
+
+
 def settle_order_points(cx, order, *, scope="rm", earn_pct=0.05):
     """On a PAID in-house order: redeem the points the customer applied and earn
     on full-price product spend. Idempotent per external_ref (guarded by

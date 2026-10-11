@@ -232,3 +232,27 @@ def test_a_card_order_is_never_returned_as_zelle(env):
     env["client"].post("/api/cart/checkout", json={"address": ADDRESS})
     ref = _orders(env["db"])[0]["external_ref"]
     assert _lookup(env, [ref]) == []
+
+
+def test_a_non_store_zelle_order_is_not_returned(env):
+    env["client"].post("/api/cart/checkout", json=_zelle())
+    cx = sqlite3.connect(env["db"])
+    cx.execute("UPDATE orders SET source='portal-reorder'"); cx.commit(); cx.close()
+    assert _lookup(env, [REF]) == [] and _closed(env, [REF]) == []
+
+
+def test_a_lookup_reads_at_most_ten_keys(env, monkeypatch):
+    asked = []
+    real = O.find_order_by_external_ref
+    monkeypatch.setattr(O, "find_order_by_external_ref",
+                        lambda cx, r: asked.append(r) or real(cx, r))
+    env["client"].post("/api/cart/zelle-orders", json={"refs": [f"{i:032x}" for i in range(40)]})
+    assert len(asked) == 10
+
+
+def test_a_visitor_with_no_email_never_matches_an_order_with_none(env, monkeypatch):
+    env["client"].post("/api/cart/checkout", json=_zelle())
+    cx = sqlite3.connect(env["db"])
+    cx.execute("UPDATE orders SET email=''"); cx.commit(); cx.close()
+    monkeypatch.setattr(app, "_cart_email", lambda: "")
+    assert _lookup(env, [REF]) == [] and _closed(env, [REF]) == []

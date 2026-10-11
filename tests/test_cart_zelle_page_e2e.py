@@ -140,3 +140,41 @@ def test_a_form_refused_on_the_page_saves_no_key():
         assert _keys(pg) == []
         assert not [u for u, b in seen["posts"] if u == "/api/cart/checkout"]
     _run({"/api/cart/checkout": lambda b: (200, {"ok": True})}, steps)
+
+
+def test_every_value_in_the_box_is_escaped():
+    evil = '<img src=x onerror="window.__xss=1">'
+
+    def checkout(body):
+        o = _order(body["checkout_request_id"])
+        o["order_id"] = evil
+        o["pay_instructions"] = dict(ZELLE, to=evil, memo=evil, note=evil, pay_link='javascript:"><b>x</b>')
+        return 200, {"ok": True, "method": "zelle", **o}
+
+    def steps(pg, seen):
+        pg.check('input[name="payMethod"][value="zelle"]')
+        pg.click("#cart-checkout")
+        pg.wait_for_selector(".zelle-box")
+        assert pg.evaluate("window.__xss") is None
+        assert pg.query_selector("#zelle-done img") is None
+        assert pg.query_selector("#zelle-done b") is None
+    _run({"/api/cart/checkout": checkout,
+          "/api/cart/zelle-orders": lambda b: (200, {"ok": True, "orders": [], "closed": []})}, steps)
+
+
+def test_a_server_error_after_the_order_saved_is_recovered_not_retried():
+    state = {"ref": None}
+
+    def checkout(body):
+        state["ref"] = body["checkout_request_id"]
+        return 500, {"ok": False, "error": "TypeError: boom"}
+
+    def lookup(body):
+        return 200, {"ok": True, "orders": [_order(state["ref"])], "closed": []}
+
+    def steps(pg, seen):
+        pg.check('input[name="payMethod"][value="zelle"]')
+        pg.click("#cart-checkout")
+        pg.wait_for_selector(".zelle-box", timeout=15000)
+        assert "try again" not in pg.inner_text("#cart-msg").lower()
+    _run({"/api/cart/checkout": checkout, "/api/cart/zelle-orders": lookup}, steps)

@@ -7550,7 +7550,9 @@ def _plan_ship_credit(email, chargeable_cents):
     order whose payable total is chargeable_cents. Returns cents (0 when the flag is
     off, no email, or no balance). The caller folds this into the order's discount +
     records it in ship_credit_applied_cents; the ledger is debited centrally at payment
-    settle (_settle_order_points). Best-effort — never raises into a checkout."""
+    settle (_settle_order_points). Best-effort — never raises into a checkout.
+    Credit already planned on this customer's unpaid orders is on hold and not offered
+    again (Glen, 2026-10-10)."""
     if not _ship_credit_enabled():
         return 0
     try:
@@ -7558,7 +7560,9 @@ def _plan_ship_credit(email, chargeable_cents):
         with db.connect(LOG_DB) as _scx:
             _points_init_ship(_scx)
             bal = _ship_credit.balance(_scx, email)
-        return _ship_credit.plan_application(bal, chargeable_cents)
+            _bos_orders.init_orders_table(_scx)
+            held, _ = _bos_orders.held_credit_cents(_scx, email)
+        return _ship_credit.plan_application(max(0, bal - held), chargeable_cents)
     except Exception as e:  # noqa: BLE001
         print(f"[ship_credit] plan skipped: {e!r}", flush=True)
         return 0
@@ -40996,7 +41000,11 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
         with db.connect(LOG_DB) as _cx_pts:
             _pts_co.init_points_table(_cx_pts)
             _bal = _pts_co.balance(_cx_pts, email)
-        requested_redeem = min(requested_redeem, _bal)
+            _bos_orders.init_orders_table(_cx_pts)
+            # Points already applied to this customer's unpaid orders are on hold until
+            # those orders are paid or cancelled (Glen, 2026-10-10).
+            _bal -= _bos_orders.held_credit_cents(_cx_pts, email)[1]
+        requested_redeem = max(0, min(requested_redeem, _bal))
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(referral_code, email)
     pc = _price_cart(cart, ship=ship, coupon_pct=_ref_pct, points_to_redeem_cents=requested_redeem,
                      program_member=_mix_match_member(email), email=email)
