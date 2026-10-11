@@ -16,7 +16,10 @@ def appmod(monkeypatch, tmp_path):
     monkeypatch.setattr(m, "LOG_DB", tmp_path / "chat_log.db")
     monkeypatch.setattr(m, "send_mentorship_setup_link", lambda *a, **k: ("test", None))
     monkeypatch.setattr(m, "_autoprovision_course_access", lambda email: None)
-    monkeypatch.setattr(m, "_send_token_alert", lambda *a, **k: None)
+    m.ALERTS = []
+    monkeypatch.setattr(m, "_send_token_alert", lambda *a, **k: m.ALERTS.append(a))
+    from dashboard import stripe_pay
+    monkeypatch.setattr(stripe_pay, "get_customer_email", lambda cid: "")
     m.app.config["TESTING"] = True
     return m
 
@@ -67,3 +70,33 @@ def test_signed_out_plan_converts_and_cancels_at_twelve(appmod, monkeypatch):
     kinds = {(r[0], r[1], r[2]) for r in _rows(appmod)}
     assert ("cert_onetime", "active", "buyer@x.com") in kinds, kinds
     assert cancelled == ["sub_anon"]
+
+
+def _twelve_charges_without_checkout(appmod, monkeypatch):
+    # checkout.session.completed never stored a row (its handler failed once).
+    from dashboard import stripe_pay
+    cancelled = []
+    monkeypatch.setattr(stripe_pay, "get_subscription", lambda sid: _sub(2_000_000_000))
+    monkeypatch.setattr(stripe_pay, "cancel_subscription", lambda sid: cancelled.append(sid))
+    for i in range(1, 13):
+        appmod._course_plan_charge({"subscription": "sub_anon", "id": f"in_{i}",
+                                    "amount_paid": 29700})
+    return cancelled
+
+
+def test_no_email_anywhere_still_cancels_and_alerts_at_twelve(appmod, monkeypatch):
+    cancelled = _twelve_charges_without_checkout(appmod, monkeypatch)
+    assert cancelled == ["sub_anon"]
+    assert not [r for r in _rows(appmod) if r[0] == "cert_onetime"]
+    assert len(appmod.ALERTS) == 1 and "no buyer email" in appmod.ALERTS[0][0]
+
+
+def test_customer_email_fallback_grants_access_and_cert(appmod, monkeypatch):
+    from dashboard import stripe_pay
+    monkeypatch.setattr(stripe_pay, "get_customer_email", lambda cid: "buyer@x.com")
+    cancelled = _twelve_charges_without_checkout(appmod, monkeypatch)
+    kinds = {(r[0], r[1], r[2]) for r in _rows(appmod)}
+    assert ("cert_onetime", "active", "buyer@x.com") in kinds, kinds
+    assert ("plan", "active", "buyer@x.com") in kinds, kinds
+    assert cancelled == ["sub_anon"]
+    assert appmod.ALERTS == []

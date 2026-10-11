@@ -23,10 +23,18 @@ Run:  doppler run --project remedy-match --config prd -- \
           python3 scripts/stripe_plan_testmode_e2e.py
 Add --keep to leave the test clock in Stripe for inspection (default: deleted).
 """
-import hashlib
+# Same as app.py: the gevent patch must run before ssl or requests are imported.
+try:
+    from gevent import monkey
+    monkey.patch_all()
+except ImportError:
+    pass
+
+import hashlib  # noqa: E402
 import hmac
 import json
 import os
+import site
 import sqlite3
 import sys
 import tempfile
@@ -44,9 +52,19 @@ def _reexec_clean():
     key = os.environ.get("STRIPE_TEST_SECRET_KEY", "")
     if not key.startswith("sk_test_"):
         sys.exit("STRIPE_TEST_SECRET_KEY is missing or is not a test key (sk_test_). Refusing.")
+    if (REPO / ".env").exists():
+        sys.exit(f"{REPO / '.env'} exists and app.py would load it. Refusing.")
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "HOME": os.environ.get("HOME", ""),
+        # A throwaway HOME, so app.py cannot load ~/.env into the run.
+        "HOME": tempfile.mkdtemp(prefix="plan-e2e-home-"),
+        # The throwaway HOME hides user-installed packages; point Python back at them.
+        "PYTHONUSERBASE": site.getuserbase(),
+        # Keep every database and background job local and off.
+        "DB_BACKEND": "sqlite",
+        "DATABASE_URL": "",
+        "DATA_DIR": "",
+        "NO_BACKGROUND_SCHEDULER": "1",
         CLEAN_FLAG: "1",
         "STRIPE_SECRET_KEY": key,
         "STRIPE_WEBHOOK_SECRET": WEBHOOK_SECRET,
@@ -68,6 +86,17 @@ if not os.environ.get("STRIPE_SECRET_KEY", "").startswith("sk_test_"):
 
 sys.path.insert(0, str(REPO))
 os.chdir(REPO)
+
+# app.py starts a QuickBooks cache warm-up at import. Disable it before the import so
+# no stored QuickBooks token is ever touched by this run.
+from dashboard import money as _money  # noqa: E402
+
+
+def _no_quickbooks(*a, **k):
+    raise RuntimeError("QuickBooks is disabled in the plan test-mode run")
+
+
+_money.qb_banks = _no_quickbooks
 
 import app as appmod  # noqa: E402
 from dashboard import stripe_pay  # noqa: E402
