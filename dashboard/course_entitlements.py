@@ -197,13 +197,15 @@ def expire_membership(cx, *, stripe_ref: str) -> None:
 
 
 def email_for_stripe_ref(cx, stripe_ref: str) -> str | None:
-    """Return the membership row's stored email for a Stripe subscription ref, or None.
-    Lets a renewal extend the right member even when the Stripe subscription metadata
-    carries no email (anonymous checkout). Never raises."""
+    """Return the membership or plan row's stored email for a Stripe subscription ref,
+    or None. Lets a renewal extend the right member, and a plan reach its 12th-charge
+    conversion, even when the Stripe subscription metadata carries no email (anonymous
+    checkout). Never raises."""
     try:
         init_course_entitlements_table(cx)
         row = cx.execute(
-            "SELECT email FROM course_entitlements WHERE kind='membership' AND stripe_ref=? "
+            "SELECT email FROM course_entitlements WHERE kind IN ('membership', 'plan') "
+            "AND stripe_ref=? "
             "ORDER BY id DESC LIMIT 1", (stripe_ref,)).fetchone()
         return row[0] if row else None
     except Exception:
