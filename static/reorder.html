@@ -83,9 +83,8 @@
            so the apply control shows only when some points may go on products. -->
       <div class="points-row hide" id="pointsRow">
         <div>You have <span class="pts-label" id="ptsBalLabel">$0.00</span> in loyalty points.
-          <span id="ptsProductNote"></span> Points earned from your own purchases can be used
-          toward services: a Biofield Analysis, an EVOX session, membership, or the ASH
-          Practitioner Certification.</div>
+          Points earned from your own purchases can be used toward services. Points from
+          referrals apply toward both products and services.</div>
         <div class="points-apply hide" id="ptsApply">
           <label for="ptsInput">Apply: $</label>
           <input type="number" id="ptsInput" min="0" step="0.01" placeholder="0.00"
@@ -278,8 +277,6 @@ async function loadPointsBalance(){
     if (pointsBalanceCents > 0){
       $('#ptsBalLabel').textContent = cents(pointsBalanceCents);
       if (pointsProductCents > 0){
-        $('#ptsProductNote').textContent = 'Up to ' + cents(pointsProductCents)
-          + ' of them, from referrals and other rewards, can be used on this order.';
         $('#ptsInput').max = (pointsProductCents / 100).toFixed(2);
         $('#ptsApply').classList.remove('hide');
       }

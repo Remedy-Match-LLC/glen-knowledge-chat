@@ -402,7 +402,8 @@ function renderTotals() {
       + ' <button onclick="applyPoints()">Apply</button></span></div>';
   } else if (t.editable && bal>0 && !t.points_redeemed_cents){
     pointsRow = '<div class="row muted"><span>You have '+money(bal)+' in loyalty points. '
-      + 'Points earned from your own purchases can be used toward services, not products.</span></div>';
+      + 'Points earned from your own purchases can be used toward services. '
+      + 'Points from referrals apply toward both products and services.</span></div>';
   }
   $('totals').innerHTML =
     row('Subtotal', t.subtotal_cents) + (t.discount_cents?row('Discount','-'+money(t.discount_cents),true):'')
