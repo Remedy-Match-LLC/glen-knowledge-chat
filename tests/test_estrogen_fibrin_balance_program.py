@@ -117,7 +117,8 @@ def test_content_since_is_a_utc_timestamp(products, slug):
 def test_the_pins_carry_these_texts_into_the_chat(products):
     assert products["fibrosolve"]["copy_pinned"] == ["description", "ingredients", "research"]
     assert products["fibrolysis-factors"]["copy_pinned"] == ["description", "ingredients"]
-    assert products["estro-clear"]["copy_pinned"] == ["description", "ingredients"]
+    # Estro-Clear also pins its research-checked texts and roles (tests/test_estro_clear_roles.py).
+    assert products["estro-clear"]["copy_pinned"][:2] == ["description", "ingredients"]
     assert products["fibrosolve"]["ingredients_source"] == "label-2026-06"
 
 

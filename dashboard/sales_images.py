@@ -20,7 +20,10 @@ def init_tables(cx):
 # Angiostasis (2026-10-08), and the mechanism prompt would draw one. Clear the Way carries
 # two approved photos (spec 2026-10-08-clear-the-way). Checked here, inside
 # enqueue and list_pending, so every caller is covered: page view, variations, backfill, scheduler.
-NO_AI_IMAGES = frozenset({"angiostasis", "clear-the-way", "estrogen-fibrin-balance-program"})
+# Estro-Clear's mechanism image drew a liver, which its research report rejects (spec
+# 2026-10-10-estro-clear-roles).
+NO_AI_IMAGES = frozenset({"angiostasis", "clear-the-way", "estrogen-fibrin-balance-program",
+                          "estro-clear"})
 
 def ai_images_off(slug):
     return slug in NO_AI_IMAGES
