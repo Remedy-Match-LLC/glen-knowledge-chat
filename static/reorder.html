@@ -78,15 +78,13 @@
       <div id="allList"></div>
     </div>
     <div class="sticky">
-      <!-- Points balance + apply control (shown only when balance > 0) -->
+      <!-- Points balance (shown only when balance > 0). Points redeem on services only
+           (Glen, 2026-10-10), and this page reorders products, so there is no apply control. -->
       <div class="points-row hide" id="pointsRow">
-        <div>You have <span class="pts-label" id="ptsBalLabel">$0.00</span> in loyalty points.</div>
-        <div class="points-apply">
-          <label for="ptsInput">Apply: $</label>
-          <input type="number" id="ptsInput" min="0" step="0.01" placeholder="0.00"
-                 oninput="onPtsInput()" onblur="clampPts()">
-          <span class="pts-saving hide" id="ptsSaving"></span>
-        </div>
+        <div>You have <span class="pts-label" id="ptsBalLabel">$0.00</span> in loyalty points.
+          Points can be used toward services: a Biofield Analysis, an EVOX session, membership,
+          or the ASH Practitioner Certification.</div>
+        <input type="hidden" id="ptsInput" value="">
       </div>
       <div class="bar" style="margin-bottom:.6rem">
         <span class="muted" id="count">0 items selected</span>
@@ -270,7 +268,6 @@ async function loadPointsBalance(){
     pointsBalanceCents = d.balance_cents || 0;
     if (pointsBalanceCents > 0){
       $('#ptsBalLabel').textContent = cents(pointsBalanceCents);
-      $('#ptsInput').max = (pointsBalanceCents / 100).toFixed(2);
       $('#pointsRow').classList.remove('hide');
     }
   } catch(e){ /* network error — hide points UI */ }

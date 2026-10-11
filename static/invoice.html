@@ -392,11 +392,17 @@ function renderTotals() {
   const t = ORDER;
   let pointsRow = t.points_redeemed_cents ? row('Points','-'+money(t.points_redeemed_cents),true) : '';
   // When the invoice is still editable and the customer has a balance, let them apply points.
+  // Points redeem on services only (Glen, 2026-10-10); points_room_cents is the most this
+  // invoice's service lines can take.
   const bal = Number(t.points_balance_cents||0);
-  if (t.editable && bal>0){
-    pointsRow = '<div class="row"><span>Points (avail '+money(bal)+')</span><span>'
+  const usable = Math.floor(Math.min(bal, Number(t.points_room_cents||0))/100)*100;
+  if (t.editable && usable>0){
+    pointsRow = '<div class="row"><span>Points (up to '+money(usable)+' on services)</span><span>'
       + '<input id="pts-in" type="number" min="0" step="1" style="width:80px" value="'+Math.floor((t.points_redeemed_cents||0)/100)+'">'
       + ' <button onclick="applyPoints()">Apply</button></span></div>';
+  } else if (t.editable && bal>0 && !t.points_redeemed_cents){
+    pointsRow = '<div class="row muted"><span>You have '+money(bal)+' in loyalty points. '
+      + 'They can be used toward services, not products.</span></div>';
   }
   $('totals').innerHTML =
     row('Subtotal', t.subtotal_cents) + (t.discount_cents?row('Discount','-'+money(t.discount_cents),true):'')
