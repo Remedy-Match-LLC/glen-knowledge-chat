@@ -7602,6 +7602,28 @@ def _available_points_cents(email):
         return max(0, _pts.balance(cx, email) - held)
 
 
+def _invoice_points_room_cents(items):
+    """Most points an invoice's stored lines can take: services only, above each
+    points floor, within any per-order cap (dashboard.pricing.points_room_cents)."""
+    from dashboard import pricing as _pricing
+    return _pricing.points_room_cents(items, _pricing.load_settings(_pricing_settings()),
+                                      lambda s: _get_product(s) or {})
+
+
+def _unheld_points_cents(email, exclude_order_id=None):
+    """Balance less points held on this customer's OTHER unpaid, uncancelled orders
+    (Glen, 2026-10-10: credit is on hold while payment is pending)."""
+    from dashboard import points as _pts
+    email = (email or "").strip().lower()
+    if not email:
+        return 0
+    with db.connect(LOG_DB) as cx:
+        _pts.init_points_table(cx)
+        _bos_orders.init_orders_table(cx)
+        held = _bos_orders.held_credit_cents(cx, email, exclude_order_id=exclude_order_id)[1]
+        return max(0, _pts.balance(cx, email) - held)
+
+
 def _points_init_ship(cx):
     from dashboard import points as _points
     _points.init_points_table(cx)
@@ -57040,16 +57062,12 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     total_cents = max(0, subtotal_list - discount_cents + adjustment_cents) + shipping_cents
     points_redeemed_cents = 0
     if points_redeem_cents_in not in (None, ""):
-        from dashboard import points as _points
-        _pemail = (email or "").strip().lower()
-        _pcx = db.connect(LOG_DB)
-        try:
-            _points.init_points_table(_pcx)
-            _pbal = _points.balance(_pcx, _pemail) if _pemail else 0
-        finally:
-            _pcx.close()
+        # Services only, held balance excluded (a new order has no row of its own yet).
+        _pbal = _unheld_points_cents(email)
+        _room = _invoice_points_room_cents(items_rec)
         # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
-        points_redeemed_cents = max(0, min(int(points_redeem_cents_in), total_cents, _pbal)) // 100 * 100
+        points_redeemed_cents = max(0, min(int(points_redeem_cents_in), total_cents, _pbal,
+                                           _room)) // 100 * 100
         total_cents -= points_redeemed_cents
     return {"items_rec": items_rec, "cart": cart, "subtotal_cents": subtotal_list,
             "shipping_cents": shipping_cents, "get_cents": get_cents,
@@ -57231,10 +57249,11 @@ def _points_to_set_on_unpaid_order(order, priced, want_cents):
     """How many points (cents) may be set on this unpaid invoice.
 
     Refuses (CheckoutError) a paid order, or one whose points already left the ledger.
-    Otherwise clamps to the smallest of: what was asked, the buyer's balance, the
-    order's pre-points total, and the per-item points floor (dashboard.pricing: points
-    never take an item below points_floor_pct of its list price)."""
-    from dashboard import points as _points, pricing as _pricing
+    Otherwise clamps to the smallest of: what was asked, the buyer's balance less points
+    held on their other unpaid orders, the order's pre-points total, and the room on its
+    service lines (points redeem on services only, above each points floor, within any
+    per-order cap: dashboard.pricing.points_room_cents)."""
+    from dashboard import points as _points
     if order.get("pay_status") == "paid":
         raise CheckoutError("points can only be set on an unpaid order")
     ref = (order.get("external_ref") or "").strip()
@@ -57244,18 +57263,10 @@ def _points_to_set_on_unpaid_order(order, priced, want_cents):
         _points.init_points_table(_pcx)
         if ref and _points.has_entry(_pcx, order_ref=ref, reason="redeem"):
             raise CheckoutError("this order's points were already redeemed")
-        balance = _points.balance(_pcx, email) if email else 0
     finally:
         _pcx.close()
-    settings = _pricing.load_settings(_pricing_settings())
-    room = 0
-    for it in priced.get("items_rec") or []:
-        if it.get("gift") or it.get("kind") == "membership":
-            continue
-        p = _get_product(it.get("slug") or "") or {}
-        list_cents = int(p.get("price_cents") or it.get("unit_cents") or 0)
-        floor = _pricing.unit_floor_cents(p, list_cents, settings, "points")
-        room += max(0, int(it.get("unit_cents") or 0) - floor) * int(it.get("qty") or 1)
+    balance = _unheld_points_cents(email, exclude_order_id=order.get("id"))
+    room = _invoice_points_room_cents(priced.get("items_rec") or [])
     # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
     return max(0, min(int(want_cents), balance, room, int(priced.get("total_cents") or 0))) // 100 * 100
 
@@ -59063,17 +59074,9 @@ def _invoice_order_for_token(token):
 
 
 def _invoice_points_balance(order):
-    """Customer's redeemable points balance (email-keyed, lowercased to match the ledger)."""
-    from dashboard import points as _points
-    email = (order.get("email") or "").strip().lower()
-    if not email:
-        return 0
-    cx = db.connect(LOG_DB)
-    try:
-        _points.init_points_table(cx)
-        return _points.balance(cx, email)
-    finally:
-        cx.close()
+    """Points the customer can apply to this invoice: the balance less points held on
+    their other unpaid orders (email-keyed, lowercased to match the ledger)."""
+    return _unheld_points_cents(order.get("email"), exclude_order_id=order.get("id"))
 
 
 def _invoice_line_view(l):
@@ -59195,6 +59198,8 @@ def _invoice_summary(order):
     return {
         "member_credit_cents": member_credit_cents,
         "points_balance_cents": _invoice_points_balance(order),
+        # Points redeem on services only: the most this invoice's lines can take.
+        "points_room_cents": _invoice_points_room_cents(order.get("items") or []),
         "external_ref": order.get("external_ref"),
         "created_at": order.get("created_at"),
         "name": _invoice_display_name(order),
@@ -59608,7 +59613,10 @@ def api_invoice_apply_points(token):
     # Work from the pre-points (gross) total so re-applying is idempotent.
     gross_total = int(order.get("total_cents") or 0) + int(order.get("points_redeemed_cents") or 0)
     # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
-    new_points = max(0, min(requested, gross_total, _invoice_points_balance(order))) // 100 * 100
+    # Services only, and never points already held on the customer's other unpaid orders.
+    new_points = max(0, min(requested, gross_total,
+                            _unheld_points_cents(order.get("email"), exclude_order_id=order.get("id")),
+                            _invoice_points_room_cents(order.get("items") or []))) // 100 * 100
     new_total = gross_total - new_points
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:

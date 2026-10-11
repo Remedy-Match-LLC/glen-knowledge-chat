@@ -109,6 +109,69 @@ def apply_points(price_cents, points_cents, floor_cents):
     return price_cents - used, used
 
 
+# Points redeem on services only (Glen, 2026-10-10: "the 5% is earned on purchase of
+# products at full price, and redeemable on services"; "membership and courses, too").
+# Never on a product line or shipping. water-ionizer-installment is a payment toward an
+# ionizer balance, so it is not a service here.
+POINTS_REDEEM_SLUGS = frozenset({
+    "biofield-analysis", "evox-session", "membership", "family-membership",
+    "ash-practitioner-cert", "ash-practitioner-cert-monthly", "oasis-tools-install-cert",
+})
+# Invoice membership lines carry "membership:<tier>" slugs (dashboard.membership_products).
+_MEMBERSHIP_LINE_PREFIX = "membership:"
+# Per-order points cap on one service. Glen, 2026-10-11, on the $13,997 install: "It could
+# pay for a portion of it, say up to $1000". Sold as one item, so the cap is per order.
+POINTS_REDEEM_CAP_CENTS = {"oasis-tools-install-cert": 100_000}
+
+
+def points_redeemable(slug):
+    """True when points may be spent on a line with this slug."""
+    s = (slug or "").strip().lower()
+    return s in POINTS_REDEEM_SLUGS or s.startswith(_MEMBERSHIP_LINE_PREFIX)
+
+
+class PointsCapTracker:
+    """Per-order points cap per slug across the order's lines."""
+
+    def __init__(self):
+        self._used = {}
+
+    def allow(self, slug, cents):
+        """How much of `cents` the slug's cap still allows. Records nothing."""
+        s = (slug or "").strip().lower()
+        cap = POINTS_REDEEM_CAP_CENTS.get(s)
+        cents = max(0, int(cents))
+        return cents if cap is None else min(cents, max(0, cap - self._used.get(s, 0)))
+
+    def record(self, slug, cents):
+        s = (slug or "").strip().lower()
+        self._used[s] = self._used.get(s, 0) + max(0, int(cents))
+
+
+def points_room_cents(lines, settings, product_for):
+    """Most points (cents, whole dollars) an order's stored lines can take: the services
+    only, each above its points floor, within any per-order cap. Used by the invoice
+    paths, which price outside compute(). lines: stored order items with slug,
+    unit_cents and qty. product_for(slug) returns the catalog product or {}."""
+    caps = PointsCapTracker()
+    room = 0
+    for it in lines or []:
+        if not isinstance(it, dict) or it.get("gift"):
+            continue
+        slug = it.get("slug") or ""
+        if not points_redeemable(slug):
+            continue
+        p = product_for(slug) or {}
+        unit = int(it.get("unit_cents") or 0)
+        list_cents = int(p.get("price_cents") or unit)
+        floor = unit_floor_cents(p, list_cents, settings, "points")
+        line_room = max(0, unit - floor) * int(it.get("qty") or 1)
+        take = caps.allow(slug, line_room)
+        caps.record(slug, take)
+        room += take
+    return whole_dollars(room)
+
+
 def _ramp_pct(qty, anchors):
     """Linear-interpolated pct through ascending [qty, pct] anchors; flat beyond the last."""
     q = max(0, int(qty or 0))
@@ -179,6 +242,7 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
     bundle lines vs. single-SKU lines within the same subscription/order).
 
     Points are allocated greedily in item-list order; the first item consumes points first.
+    Only service lines take points (points_redeemable), within POINTS_REDEEM_CAP_CENTS.
     """
     def _sub_pct(it):
         v = subscriber_tier_pct(it) if callable(subscriber_tier_pct) else subscriber_tier_pct
@@ -188,6 +252,7 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
     open_pct = open_total_pct(total_months, settings)
     prog_pct = program_total_pct(total_months, settings, program_member)
     points_left = whole_dollars(points_to_redeem_cents or 0)
+    caps = PointsCapTracker()
     lines, subtotal, total_discount, total_points = [], 0, 0, 0
 
     for it in items:
@@ -213,7 +278,11 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
 
         # Per unit, then times qty, so every bottle is a whole dollar (see apply_discount).
         after_disc = apply_discount(unit_list, line_pct, disc_floor) * qty
-        after_pts, used = apply_points(after_disc, points_left, pts_floor)
+        # Services only, within any per-order cap on the slug.
+        offer = (caps.allow(it.get("slug"), points_left)
+                 if points_redeemable(it.get("slug")) else 0)
+        after_pts, used = apply_points(after_disc, offer, pts_floor)
+        caps.record(it.get("slug"), used)
         points_left -= used
 
         lines.append({
