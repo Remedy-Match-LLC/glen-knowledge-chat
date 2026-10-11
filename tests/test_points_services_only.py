@@ -339,3 +339,44 @@ def test_a_stale_split_is_ignored():
     # Points were later set to $20 without a re-stamp: the split is rebuilt, not trusted.
     assert appmod._order_product_points_cents({"items": items,
                                                "points_redeemed_cents": 2000}) == 2000
+
+
+def test_switch_to_save_rechecks_points_after_lowering_prices(tmp_path, monkeypatch):
+    # Review rounds 2 and 3: a $40 plan price leaves $9.90 of room above the $30.10 points
+    # floor of a $70 product, so $20 of referral points comes down to $9.
+    from dashboard import cohorts as C
+    appmod, client, db = _app(tmp_path, monkeypatch, orders=[("INH-1", "thing", 2000, "unpaid")],
+                              earn=0, referral=2000)
+    with sqlite3.connect(db) as cx:
+        C.init_tables(cx)
+        C.upsert_cohort(cx, key="save", name="Save", policy={"type": "per_sku", "prices": {"thing": 4000}})
+        cx.commit()
+    from dashboard import practitioner_portal as PP
+    PP._LOG_DB = Path(db)
+    token = PP.create_order_invoice_token(1)
+    r = client.post(f"/api/invoice/{token}/apply-plan", json={"cohort_key": "save"})
+    assert r.status_code == 200, r.get_json()
+    o = _order(db, 1)
+    assert o["points_redeemed_cents"] == 900
+    assert o["total_cents"] == 4000 - 900
+
+
+def test_a_legacy_product_spend_from_own_points_leaves_later_referrals_free(tmp_path, monkeypatch):
+    # Review round 3: before the rule, own-purchase points could go on products. A $20
+    # product spend then came out of them, so a later $20 referral is still usable.
+    appmod, _, _ = _app(tmp_path, monkeypatch,
+                        orders=[("INH-1", "thing", 2000, "paid")],
+                        ledger=[("earn", 5000, "OLD-1"),
+                                ("redeem", -2000, "INH-1"),
+                                ("referral_reward", 2000, "referral:f@x.com")])
+    assert appmod._product_usable_points_cents(EMAIL) == 2000
+
+
+def test_saving_an_invoice_keeps_legacy_cent_points_that_still_fit(tmp_path, monkeypatch):
+    # Review round 3: $13.47 set before whole dollars must not become $13 on a plain save.
+    appmod, client, db = _app(tmp_path, monkeypatch,
+                              orders=[("INH-1", "evox-session", 1347, "unpaid")])
+    r = client.post("/api/orders/1/edit", json={"lines": [{"slug": "evox-session", "qty": 1}],
+                                               "pickup": True})
+    assert r.status_code == 200, r.get_json()
+    assert _order(db, 1)["points_redeemed_cents"] == 1347

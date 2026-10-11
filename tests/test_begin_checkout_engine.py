@@ -82,3 +82,31 @@ def test_begin_checkout_guest_no_order_total_rate(monkeypatch):
     assert r.status_code == 200
     assert cap["qbo_payload"]["discount_cents"] == 0
     assert cap["order"]["discount_cents"] == 0
+
+
+def test_begin_checkout_puts_no_own_purchase_points_on_a_product(monkeypatch):
+    # Own-purchase points redeem on services only (Glen, 2026-10-10). A product buyer with
+    # $50 of points and no referral allowance gets no points off (review round 3).
+    cap = _setup(monkeypatch)
+    monkeypatch.setattr(appmod, "_available_points_cents", lambda e: 5000)
+    monkeypatch.setattr(appmod, "_product_usable_points_cents", lambda e, **k: 0)
+    c = appmod.app.test_client()
+    r = c.post("/begin/checkout/brain-boost", json={
+        "email": "buyer@x.com", "name": "B", "method": "card", "qty": 1,
+        "points_to_redeem_cents": 5000,
+        "address": {"state": "CA", "country": "US", "name": "B"}})
+    assert r.status_code == 200, r.get_json()
+    assert int(cap["order"].get("points_redeemed_cents") or 0) == 0
+
+
+def test_begin_checkout_puts_referral_points_on_a_product(monkeypatch):
+    cap = _setup(monkeypatch)
+    monkeypatch.setattr(appmod, "_available_points_cents", lambda e: 5000)
+    monkeypatch.setattr(appmod, "_product_usable_points_cents", lambda e, **k: 2000)
+    c = appmod.app.test_client()
+    r = c.post("/begin/checkout/brain-boost", json={
+        "email": "buyer@x.com", "name": "B", "method": "card", "qty": 1,
+        "points_to_redeem_cents": 5000,
+        "address": {"state": "CA", "country": "US", "name": "B"}})
+    assert r.status_code == 200, r.get_json()
+    assert int(cap["order"].get("points_redeemed_cents") or 0) == 2000

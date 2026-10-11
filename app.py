@@ -7696,9 +7696,13 @@ def _product_usable_points_cents(email, exclude_order_id=None):
             if o:
                 product = min(out, _order_product_points_cents(dict(o)))
                 service = out - product
-                from_own = min(own, service)
+                from_own = min(max(0, own), service)
                 own -= from_own
-                other -= product + (service - from_own)
+                # Before 2026-10-11 any points could go on products, so a product spend
+                # larger than the other points came from own-purchase points (round 3).
+                from_other = min(max(0, other), product + (service - from_own))
+                other -= from_other
+                own -= product + (service - from_own) - from_other
             else:
                 from_other = min(max(0, other), out)
                 other -= from_other
@@ -57282,6 +57286,7 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     if priced is None:
         return None, None
     existing_points = int(order.get("points_redeemed_cents") or 0)
+    settled = False
     if points_redeem_cents_in not in (None, ""):
         # Setting points on an existing invoice. Safe ONLY before payment: points leave
         # the ledger in _settle_order_points when the order is paid, keyed on its
@@ -57291,13 +57296,21 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
             order, priced, int(points_redeem_cents_in))
     elif existing_points > 0:
         # Carried points must still fit the edited lines (review round 1: a service line
-        # swapped for a product kept its own-purchase points). A paid order, or one whose
-        # points already left the ledger, keeps them unchanged.
+        # swapped for a product kept its own-purchase points). They come down only when
+        # they no longer fit (round 3: a legacy $13.47 must not round to $13 on a save).
+        # A paid order, or one whose points already left the ledger, keeps them unchanged.
         try:
-            existing_points = _points_to_set_on_unpaid_order(order, priced, existing_points)
+            limit = _points_to_set_on_unpaid_order(order, priced, existing_points + 99)
+            if existing_points > limit:
+                existing_points = limit
         except CheckoutError:
-            pass
-    _stamp_order_points_split(priced["items_rec"], existing_points)
+            settled = True
+    if settled:
+        # Settled points: keep the split the order was settled with (round 3).
+        _stamp_points_split(priced["items_rec"], existing_points,
+                            _order_product_points_cents(order))
+    else:
+        _stamp_order_points_split(priced["items_rec"], existing_points)
     priced["points_redeemed_cents"] = existing_points
     priced["total_cents"] = max(0, priced["total_cents"] - existing_points)
     # Same for a shipping credit already auto-applied to this order: carry it
@@ -59640,12 +59653,14 @@ def api_invoice_apply_plan(token):
         if pts > 0:
             # Lower prices can leave less room above the points floor (review round 2).
             try:
-                pts = _points_to_set_on_unpaid_order(
+                limit = _points_to_set_on_unpaid_order(
                     order, {"items_rec": new_items,
-                            "total_cents": max(0, new_sub - disc + adj) + ship}, pts)
+                            "total_cents": max(0, new_sub - disc + adj) + ship}, pts + 99)
+                pts = min(pts, limit)
+                _stamp_order_points_split(new_items, pts)
             except CheckoutError:
-                pass
-            _stamp_order_points_split(new_items, pts)
+                # Settled points: keep the split the order was settled with (round 3).
+                _stamp_points_split(new_items, pts, _order_product_points_cents(order))
         new_total = max(0, max(0, new_sub - disc + adj) + ship - pts)
         _bos_orders.upsert_order(
             cx, source=order["source"], external_ref=order["external_ref"],

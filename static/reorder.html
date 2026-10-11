@@ -79,8 +79,8 @@
     </div>
     <div class="sticky">
       <!-- Points balance (shown only when balance > 0). Own-purchase points redeem on
-           services only; referral and other points also on products (Glen, 2026-10-10/11).
-           The server applies only what the cart's lines can take. -->
+           services only; referral and other points also on products (Glen, 2026-10-10/11),
+           so the apply control shows only when some points may go on products. -->
       <div class="points-row hide" id="pointsRow">
         <div>You have <span class="pts-label" id="ptsBalLabel">$0.00</span> in loyalty points.
           Points earned from your own purchases can be used toward services. Points from
@@ -120,6 +120,7 @@ const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 let rows = {};            // slug -> {..., qty, checked}
 let lastData = [], allData = [];
 let pointsBalanceCents = 0;  // loyalty balance from /api/points/balance
+let pointsProductCents = 0;  // the part that may go on products (referral and other points)
 let starRatings = {};    // slug -> chosen star rating (0 = none chosen)
 
 function showSignin(){ $('#sub').textContent=''; $('#signin').classList.remove('hide'); }
@@ -204,7 +205,7 @@ function getPtsRedeemCents(){
   const v = parseFloat($('#ptsInput').value);
   if (!v || isNaN(v) || v <= 0) return 0;
   // Points redeem in whole dollars only (Glen, 2026-10-01).
-  return Math.floor(Math.min(v, pointsBalanceCents / 100)) * 100;
+  return Math.floor(Math.min(v, pointsProductCents / 100)) * 100;
 }
 
 function onPtsInput(){
@@ -221,7 +222,7 @@ function onPtsInput(){
 
 function clampPts(){
   const el = $('#ptsInput');
-  const max = Math.floor(pointsBalanceCents / 100);
+  const max = Math.floor(pointsProductCents / 100);
   const v = parseFloat(el.value);
   if (!isNaN(v) && v > max) el.value = max.toFixed(2);
   onPtsInput();
@@ -272,12 +273,13 @@ async function loadPointsBalance(){
     if (!r.ok) return;  // 401 or any error → silently hide points UI
     const d = await r.json();
     pointsBalanceCents = d.balance_cents || 0;
+    pointsProductCents = Math.floor((d.product_cents || 0) / 100) * 100;
     if (pointsBalanceCents > 0){
       $('#ptsBalLabel').textContent = cents(pointsBalanceCents);
-      // The server applies only what the cart's lines can take (services, and products
-      // up to the referral allowance), so the box shows for any balance (review round 1).
-      $('#ptsInput').max = (pointsBalanceCents / 100).toFixed(2);
-      $('#ptsApply').classList.remove('hide');
+      if (pointsProductCents > 0){
+        $('#ptsInput').max = (pointsProductCents / 100).toFixed(2);
+        $('#ptsApply').classList.remove('hide');
+      }
       $('#pointsRow').classList.remove('hide');
     }
   } catch(e){ /* network error — hide points UI */ }
