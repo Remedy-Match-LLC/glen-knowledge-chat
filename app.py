@@ -7550,18 +7550,38 @@ def _plan_ship_credit(email, chargeable_cents):
     order whose payable total is chargeable_cents. Returns cents (0 when the flag is
     off, no email, or no balance). The caller folds this into the order's discount +
     records it in ship_credit_applied_cents; the ledger is debited centrally at payment
-    settle (_settle_order_points). Best-effort — never raises into a checkout."""
+    settle (_settle_order_points). Best-effort — never raises into a checkout.
+    Credit already planned on this customer's unpaid orders is on hold and not offered
+    again (Glen, 2026-10-10)."""
     if not _ship_credit_enabled():
         return 0
     try:
         from dashboard import ship_credit as _ship_credit
         with db.connect(LOG_DB) as _scx:
             _points_init_ship(_scx)
+            _bos_orders.init_orders_table(_scx)
+            # Holds are read BEFORE the balance: a payment settling in between then makes
+            # this offer too small, never the same credit twice (review round 2).
+            held, _ = _bos_orders.held_credit_cents(_scx, email)
             bal = _ship_credit.balance(_scx, email)
-        return _ship_credit.plan_application(bal, chargeable_cents)
+        return _ship_credit.plan_application(max(0, bal - held), chargeable_cents)
     except Exception as e:  # noqa: BLE001
         print(f"[ship_credit] plan skipped: {e!r}", flush=True)
         return 0
+
+
+def _available_points_cents(email):
+    """Points this customer can apply to a NEW order: the balance less points already
+    applied to their unpaid, uncancelled orders, which are debited only at payment.
+    Glen, 2026-10-10: credit is on hold while payment is pending. Holds are read before
+    the balance, so a payment settling in between under-offers (review round 2). Used by
+    the store cart, the reorder checkout and the /begin buy route."""
+    from dashboard import points as _pts
+    with db.connect(LOG_DB) as cx:
+        _pts.init_points_table(cx)
+        _bos_orders.init_orders_table(cx)
+        held = _bos_orders.held_credit_cents(cx, email)[1]
+        return max(0, _pts.balance(cx, email) - held)
 
 
 def _points_init_ship(cx):
@@ -12621,10 +12641,7 @@ def begin_checkout(slug):
     except (TypeError, ValueError):
         redeem = 0
     if redeem > 0:
-        from dashboard import points as _points
-        with db.connect(LOG_DB) as _bcx:
-            _points.init_points_table(_bcx)
-            redeem = min(redeem, _points.balance(_bcx, email))
+        redeem = max(0, min(redeem, _available_points_cents(email)))
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(data.get("referral_code"), email)
     _coupon_code = (data.get("coupon_code") or "").strip() or _best_active_self_coupon_code(email, slug)
     _self_pct, _self_coupon = _resolve_self_coupon_pct(_coupon_code, slug)
@@ -24266,6 +24283,20 @@ def api_cart_checkout():
     if not _PORTAL_CART_ENABLED:
         return jsonify({"ok": False, "error": "not found"}), 404
     data = request.get_json(silent=True) or {}
+    method = (data.get("method") or "card").strip().lower()
+    if method not in ("card", "zelle"):
+        return jsonify({"ok": False, "error": "Unsupported payment method."}), 400
+    # A Zelle order's key comes from the page, so a page whose reply was lost can still
+    # look the order up (/api/cart/zelle-orders). 32 hex characters, like our own refs.
+    request_ref = ""
+    if method == "zelle":
+        request_ref = (data.get("checkout_request_id") or "").strip().lower()
+        if not _CHECKOUT_REF_RE.fullmatch(request_ref):
+            return jsonify({"ok": False, "error": "Invalid checkout request."}), 400
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            if _bos_orders.find_order_by_external_ref(cx, request_ref):
+                return jsonify({"ok": False, "error": "This order is already placed."}), 409
     email = _cart_email()
     _sid = (request.cookies.get("amg_session") or "").strip()
     if not is_member(_sid, email):
@@ -24368,7 +24399,8 @@ def api_cart_checkout():
                                           "format": c["format"]} for c in cart],
                                  ship=ship, points_to_redeem_cents=redeem,
                                  referral_code=(data.get("referral_code") or "").strip(),
-                                 cancel_to_cart=True)
+                                 cancel_to_cart=True, method=method,
+                                 checkout_ref=(request_ref or None))
         except CheckoutError as e:
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
@@ -24376,6 +24408,21 @@ def api_cart_checkout():
 
         out = res.get("out") or {}
         stripe_url = res.get("stripe_url") or ""
+        if res.get("zelle"):
+            # The order exists unpaid; the cart is done. Same instructions as the portal's
+            # Zelle branch, with the order number as the memo. _ingest_order never raises
+            # and returns None when it could not record the order: then there is nothing
+            # to pay for, so the cart is released and the customer is told to retry.
+            if not res.get("order_id"):
+                with db.connect(LOG_DB) as cx:
+                    _cart_store.release_claim(cx, token)
+                return jsonify({"ok": False, "error": "Your order did not save. "
+                                "Please try again, or contact us."}), 503
+            _mark_ordered_resilient(token, out.get("invoice_id", ""))
+            return jsonify({"ok": True, "method": "zelle", **_zelle_instructions({
+                "id": res["order_id"], "external_ref": out.get("invoice_id", ""),
+                "total_cents": res.get("charge_cents"),
+                "shipping_cents": res.get("shipping_cents")})})
         if not stripe_url and not res.get("no_payment_required"):
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
@@ -24398,6 +24445,51 @@ def api_cart_checkout():
 
 
 _CHECKOUT_REF_RE = re.compile(r"[0-9a-f]{32}")
+
+
+def _zelle_instructions(order):
+    """The Zelle payment instructions for one unpaid store-cart order, as the cart page
+    shows them. The memo is the order number."""
+    zelle = _ALT_PAY["zelle"]
+    return {"order_id": order["id"], "order_ref": order.get("external_ref") or "",
+            "total_cents": int(order.get("total_cents") or 0),
+            "shipping_cents": int(order.get("shipping_cents") or 0),
+            "pay_instructions": {"label": zelle["label"], "to": zelle["to"],
+                                 "memo": f"Order {order['id']}", "pay_link": zelle["pay_link"],
+                                 "bank_url": zelle["bank_url"], "note": zelle["note"]}}
+
+
+@app.route("/api/cart/zelle-orders", methods=["POST"])
+def api_cart_zelle_orders():
+    """The cart page's own unpaid Zelle orders, so their instructions survive a reload or
+    a lost reply (review round 1). The page sends the order keys it minted; an order is
+    returned only when it is that key, belongs to this visitor's email, is a store-cart
+    Zelle order, and is neither paid nor cancelled. "closed" lists this visitor's keys
+    whose order is paid or cancelled, so the page may forget them. Any other key, such as
+    another shopper's or one whose order is still being written, is absent from both and
+    the page keeps it (review round 2)."""
+    if not _PORTAL_CART_ENABLED:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    email = _cart_email()
+    refs = (request.get_json(silent=True) or {}).get("refs") or []
+    if not isinstance(refs, list):
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    refs = [r.strip().lower() for r in refs[:10] if isinstance(r, str)]
+    refs = [r for r in refs if _CHECKOUT_REF_RE.fullmatch(r)]
+    out, closed = [], []
+    if email and refs:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            for r in refs:
+                o = _bos_orders.find_order_by_external_ref(cx, r)
+                if not (o and (o.get("email") or "").strip().lower() == email
+                        and o.get("source") == "reorder" and o.get("pay_method") == "zelle"):
+                    continue
+                if o.get("pay_status") == "paid" or o.get("status") == "cancelled":
+                    closed.append(r)
+                else:
+                    out.append(_zelle_instructions(o))
+    return jsonify({"ok": True, "orders": out, "closed": closed})
 
 
 @app.route("/begin/cart/cancelled")
@@ -40961,19 +41053,23 @@ def _resolve_ship_address(email, body_address):
 
 
 def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code=None,
-                   cancel_to_cart=False):
+                   cancel_to_cart=False, method="card", checkout_ref=None):
     """Price a cart through the engine, ingest the order (paid-only: no QBO invoice/customer
     at checkout time), and mint the Stripe URL (metadata kind=reorder -> recorded by
     /begin/checkout-return, which books the line-faithful QBO Sales Receipt on payment).
     Returns {out, stripe_url}. Raises CheckoutError for a pricing problem or an empty
-    priced cart."""
+    priced cart.
+
+    method="zelle" (the /begin store cart, Glen 2026-10-10: "fix the /begin store cart to
+    accept Zelle") mints no Stripe session. It records the order unpaid with
+    pay_method='zelle', which keeps it out of the 24-hour abandoned-checkout expiry, and
+    returns zelle=True with the order id. Payment is matched later by the Zelle import or
+    by hand, and the order settles then. A cart that owes nothing takes the card path.
+    checkout_ref, when given, is the caller's own order key (the cart page's request id,
+    so it can find a Zelle order whose reply never arrived)."""
     requested_redeem = int(points_to_redeem_cents or 0)
     if requested_redeem > 0:
-        from dashboard import points as _pts_co
-        with db.connect(LOG_DB) as _cx_pts:
-            _pts_co.init_points_table(_cx_pts)
-            _bal = _pts_co.balance(_cx_pts, email)
-        requested_redeem = min(requested_redeem, _bal)
+        requested_redeem = max(0, min(requested_redeem, _available_points_cents(email)))
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(referral_code, email)
     pc = _price_cart(cart, ship=ship, coupon_pct=_ref_pct, points_to_redeem_cents=requested_redeem,
                      program_member=_mix_match_member(email), email=email)
@@ -40983,7 +41079,7 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
     # customer's ship_credit balance (bounded by net product + shipping) into the
     # invoice discount; the ledger is debited at payment settle.
     _sc_apply = _plan_ship_credit(email, int(pc["priced"]["subtotal_cents"]) + int(pc["shipping_cents"]))
-    checkout_ref = _uuid.uuid4().hex   # stable order/correlation key (no QBO invoice yet)
+    checkout_ref = checkout_ref or _uuid.uuid4().hex   # stable order key (no QBO invoice yet)
     qbo_payload = {
         "lines": pc["qbo_lines"] + _shipping_line(pc["shipping_cents"]),
         "discount_cents": pc["discount_cents"] + pc["points_redeemed_cents"] + _sc_apply,
@@ -41002,15 +41098,17 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
         # The storefront cart's own cancel return, so a buyer who backs out at Stripe
         # gets their cart back instead of a sign-in page (see begin_cart_cancelled).
         out["cancel_url"] = f"{PUBLIC_BASE_URL}/begin/cart/cancelled?ref={checkout_ref}"
-    stripe_url = _stripe_checkout_url_for_reorder(out, email) if _STRIPE_ACTIVE else ""
     no_payment_required = (_charge_cents == 0)
-    if not stripe_url and not no_payment_required:
+    zelle = (method == "zelle" and not no_payment_required)
+    stripe_url = (_stripe_checkout_url_for_reorder(out, email)
+                  if _STRIPE_ACTIVE and not zelle else "")
+    if not stripe_url and not no_payment_required and not zelle:
         return {"out": out, "stripe_url": ""}
 
     # Persistence intentionally follows successful Stripe-session creation.  A
     # transient Stripe failure therefore leaves neither an unpaid order nor a
     # consumed referral behind.
-    _ingest_order(source="reorder", external_ref=checkout_ref, email=email,
+    order_id = _ingest_order(source="reorder", external_ref=checkout_ref, email=email,
                   name=ship.get("name", ""), items=pc["items_rec"],
                   total_cents=_charge_cents,
                   address=ship, channel="retail",
@@ -41019,7 +41117,14 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
                   points_redeemed_cents=pc["points_redeemed_cents"],
                   shipping_cents=pc["shipping_cents"],
                   ship_credit_applied_cents=_sc_apply,
-                  paid_cents=(0 if no_payment_required else None))
+                  paid_cents=(0 if no_payment_required else None),
+                  pay_method=("zelle" if zelle else None))
+    if zelle and not order_id:
+        # Nothing was recorded, so nothing else is: no QBO lines, no referral redemption
+        # held by an order that does not exist (review round 1).
+        return {"out": out, "stripe_url": "", "no_payment_required": False,
+                "zelle": True, "order_id": None, "charge_cents": _charge_cents,
+                "shipping_cents": int(pc["shipping_cents"])}
     try:
         with db.connect(LOG_DB) as _lcx:
             _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
@@ -41027,7 +41132,9 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
         print(f"[reorder] persist qbo_lines failed: {_e!r}", flush=True)
     _record_referral_if_any(_ref_ctx, email, checkout_ref)
     return {"out": out, "stripe_url": stripe_url,
-            "no_payment_required": no_payment_required}
+            "no_payment_required": no_payment_required,
+            "zelle": zelle, "order_id": order_id, "charge_cents": _charge_cents,
+            "shipping_cents": int(pc["shipping_cents"])}
 
 
 @app.route("/reorder/checkout", methods=["POST"])
