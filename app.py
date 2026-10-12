@@ -41346,6 +41346,15 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
             _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
     except Exception as _e:
         print(f"[reorder] persist qbo_lines failed: {_e!r}", flush=True)
+    if no_payment_required and order_id:
+        # Saved as paid, which releases the hold on the points and ship credit that
+        # cover it, so spend them now, as any paid order does. Idempotent per ref.
+        try:
+            with db.connect(LOG_DB) as _scx:
+                _scx.row_factory = sqlite3.Row
+                _settle_points_on_altpay(_bos_orders.get_order(_scx, order_id))
+        except Exception as _se:  # noqa: BLE001
+            print(f"[reorder] $0 settle failed ref={checkout_ref}: {_se!r}", flush=True)
     _record_referral_if_any(_ref_ctx, email, checkout_ref)
     return {"out": out, "stripe_url": stripe_url,
             "no_payment_required": no_payment_required,
