@@ -134,7 +134,7 @@
       <label><input type="radio" name="m" value="zelle">Zelle</label>
       <label><input type="radio" name="m" value="wise">Wise</label>
     </div>
-    <p class="muted fee-free-note" style="margin:6px 0 10px">Pay by Zelle or Wise and 3.5% of your payment comes back to you as loyalty points, for use toward services. The points are added when your payment arrives.</p>
+    <p class="muted fee-free-note" hidden style="margin:6px 0 10px">Pay by Zelle or Wise and 3.5% of your payment comes back to you as loyalty points, for use toward services. The points are added when your payment arrives.</p>
     <div id="pay-instr" class="notice" style="display:none"></div>
     <button class="primary" id="pay-btn" onclick="pay()">Pay now</button>
     <button class="ghost" id="claim-btn" style="display:none" onclick="claim()">I’ve sent payment</button>
@@ -392,7 +392,7 @@ function renderLines() {
 function renderTotals() {
   const t = ORDER;
   // Fee-free points apply to client orders only, not practitioner sales.
-  document.querySelectorAll('.fee-free-note').forEach(el => { el.hidden = t.fee_free_points === false; });
+  document.querySelectorAll('.fee-free-note').forEach(el => { el.hidden = t.fee_free_points !== true; });
   let pointsRow = t.points_redeemed_cents ? row('Points','-'+money(t.points_redeemed_cents),true) : '';
   // When the invoice is still editable and the customer has a balance, let them apply points.
   // Own-purchase points redeem on services only; referral and other points also on

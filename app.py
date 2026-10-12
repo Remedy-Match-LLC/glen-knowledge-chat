@@ -58650,9 +58650,12 @@ def api_console_order_settle_points(oid):
     _settle_order_points(order, order_ref=ref)
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
+        # Also the Zelle/Wise fee-free points, so a credit that failed at payment can be
+        # run again (review round 2). Idempotent per order.
+        fee_free = _bos_orders.credit_fee_free_on_payment(cx, order)
         after = _points.balance(cx, email)
         earned = _points.has_entry(cx, order_ref=ref, reason="earn")
-    return jsonify({**out, "applied": True, "earned": earned,
+    return jsonify({**out, "applied": True, "earned": earned, "fee_free_cents": fee_free,
                     "credited_cents": after - before, "balance_after_cents": after})
 
 

@@ -161,3 +161,50 @@ def test_each_page_states_the_rate_the_code_pays(page):
 def test_the_invoice_shows_the_note_only_where_it_applies(cx, source, shown):
     oid = _order(cx, ref="INV-FF12", source=source)
     assert appmod._invoice_summary(orders.get_order(cx, oid))["fee_free_points"] is shown
+
+
+def test_record_payment_by_zelle_after_a_partial_ledger_payment_earns_on_its_part(cx):
+    # Review rounds 1 and 2: a $60 check in the ledger, then Record payment by Zelle.
+    oid = _order(cx, ref="INH-FF13")
+    op.add_payment(cx, oid, 6000, "Check")
+    orders._record_payment_exec({"order_id": oid, "method": "Zelle", "amount_cents": 4000},
+                                {"cx": cx})
+    assert _fee_free(cx, "INH-FF13") == [("buyer@x.com", 140)]
+
+
+def test_an_overpayment_earns_only_on_the_order_total(cx):
+    oid = _order(cx, ref="INH-FF14")
+    op.add_payment(cx, oid, 20000, "Zelle")
+    assert _fee_free(cx, "INH-FF14") == [("buyer@x.com", 350)]
+
+
+def test_a_failed_credit_leaves_the_connection_usable(cx, monkeypatch):
+    # Review rounds 1 and 2: on Postgres a failed statement aborts the transaction.
+    rolled = []
+    monkeypatch.setattr(orders, "_safe_rollback", lambda c: rolled.append(1))
+    monkeypatch.setattr(points, "credit", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db")))
+    oid = _order(cx, ref="INH-FF15")
+    cx.execute("UPDATE orders SET pay_method='Zelle', paid_cents=10000 WHERE id=?", (oid,))
+    cx.commit()
+    assert orders.credit_fee_free_on_payment(cx, orders.get_order(cx, oid)) == 0
+    assert rolled == [1]
+
+
+def test_the_console_settle_route_reruns_a_missed_credit(cx, monkeypatch):
+    monkeypatch.setattr(appmod, "CONSOLE_SECRET", "k")
+    oid = _order(cx, ref="INH-FF16")
+    cx.execute("UPDATE orders SET pay_status='paid', status='done', pay_method='Zelle', "
+               "paid_cents=10000 WHERE id=?", (oid,))
+    cx.commit()
+    r = appmod.app.test_client().post(f"/api/console/orders/{oid}/settle-points?apply=1",
+                                      headers={"X-Console-Key": "k"})
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()["fee_free_cents"] == 350
+    assert _fee_free(cx, "INH-FF16") == [("buyer@x.com", 350)]
+
+
+def test_the_invoice_note_starts_hidden():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "static/invoice.html").read_text()
+    assert '<p class="muted fee-free-note" hidden' in html
+    assert "el.hidden = t.fee_free_points !== true;" in html

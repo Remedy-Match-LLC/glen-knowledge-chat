@@ -1366,20 +1366,20 @@ def earns_fee_free_points(order):
 
 
 def fee_free_paid_cents(cx, order):
-    """What the client paid on this order by Zelle or Wise. The payment ledger is the
-    record; an order with no ledger rows falls back to its own pay_method and paid_cents."""
+    """What the client paid on this order by Zelle or Wise, never more than its total.
+    The payment ledger holds most payments. The Record payment action writes no ledger
+    row: it sets the order's pay_method and paid_cents, so that amount counts when the
+    ledger alone does not cover the order (review rounds 1 and 2)."""
     oid = order.get("id")
-    try:
-        rows = cx.execute(
-            "SELECT method, amount_cents FROM order_payments WHERE order_id=? "
-            "AND kind='payment' AND status='active'", (oid,)).fetchall()
-    except Exception:
-        rows = []
-    if rows:
-        return sum(int(r[1] or 0) for r in rows if _is_fee_free_method(r[0]))
-    if _is_fee_free_method(order.get("pay_method")):
-        return int(order.get("paid_cents") or order.get("total_cents") or 0)
-    return 0
+    rows = cx.execute(
+        "SELECT method, amount_cents FROM order_payments WHERE order_id=? "
+        "AND kind='payment' AND status='active'", (oid,)).fetchall()
+    total = int(order.get("total_cents") or 0)
+    ledger_all = sum(int(r[1] or 0) for r in rows)
+    paid = sum(int(r[1] or 0) for r in rows if _is_fee_free_method(r[0]))
+    if _is_fee_free_method(order.get("pay_method")) and ledger_all < total:
+        paid += int(order.get("paid_cents") or 0) or (total - ledger_all)
+    return max(0, min(paid, total))
 
 
 def credit_fee_free_on_payment(cx, order):
@@ -1393,7 +1393,12 @@ def credit_fee_free_on_payment(cx, order):
         ref = (order.get("external_ref") or "").strip()
         if not email or not ref or not earns_fee_free_points(order):
             return 0
-        paid = fee_free_paid_cents(cx, order)
+        try:
+            paid = fee_free_paid_cents(cx, order)
+        except Exception:
+            # An order with no payments table yet (some local setups): nothing to read.
+            _safe_rollback(cx)
+            paid = 0
         cents = int(round(paid * _points.FEE_FREE_PCT))
         if cents <= 0:
             return 0
@@ -1405,8 +1410,18 @@ def credit_fee_free_on_payment(cx, order):
         cx.commit()
         return cents
     except Exception as e:
+        # Postgres leaves a failed transaction aborted: roll it back so the caller's next
+        # statement still runs (review rounds 1 and 2). The payment itself is committed.
+        _safe_rollback(cx)
         print(f"[orders] fee-free credit skipped for #{order.get('id')}: {e!r}", flush=True)
         return 0
+
+
+def _safe_rollback(cx):
+    try:
+        cx.rollback()
+    except Exception:
+        pass
 
 
 def _record_payment_exec(params, ctx):
