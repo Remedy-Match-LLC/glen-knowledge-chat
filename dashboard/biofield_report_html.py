@@ -2473,7 +2473,15 @@ def render_dispensed_panel(rows, open_=False, error=None):
     n = rows[0]["orders_considered"] if rows else 0
     head = ("<button class='btn ghost' onclick=toggleDispensed() id=dispbtn>"
             + ("Hide" if open_ else "Show") + " previously dispensed</button>")
-    if error:
+    # Store orders that could not be read, above FileMaker rows that could. The error
+    # used to replace the rows: a timed-out store lookup hid all 8 of Linda Maher's
+    # FileMaker invoices (2026-10-12).
+    partial = ""
+    if error and rows:
+        partial = ("<div class=food style='margin-top:8px'>"
+                   "<b>Store orders unavailable:</b> " + _e(str(error)) +
+                   ". The list below is from FileMaker only.</div>")
+    if error and not rows:
         # An empty panel used to say "no order history" whether the client had none or
         # the lookup had failed. Those are opposite facts and it stated the reassuring
         # one. Say which it is, and say what to do about it.
@@ -2508,7 +2516,7 @@ def render_dispensed_panel(rows, open_=False, error=None):
                 f"onclick=\"pickCondition(this)\" title='Add this remedy to a condition'>{nm}</button>"
                 f"<span style='flex:1.2;display:flex;flex-wrap:wrap;gap:4px'>{chips}</span>"
                 "<span class=food data-msg></span></div>")
-        body = (f"<div class=food style='margin:6px 0'>Across this client's last {n} "
+        body = (partial + f"<div class=food style='margin:6px 0'>Across this client's last {n} "
                 f"order{'' if n == 1 else 's'}.</div>"
                 + items)
     style = "" if open_ else "display:none"

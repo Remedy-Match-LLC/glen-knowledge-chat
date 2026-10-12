@@ -1416,6 +1416,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             _client_orders = client_orders(c_email)
             dispensed_error = getattr(_client_orders, "error", None)
             dispensed = _disp.frequency(list(_client_orders) + _older, c_email)
+            if dispensed_error:
+                # Which test, and when. The lookup's own line carries neither, so on
+                # 2026-10-12 25 failures could be traced only to between 4 and 13 clients.
+                print(f"[dispensed] {datetime.datetime.now().isoformat(timespec='seconds')} "
+                      f"test {test_id}: store orders unavailable ({dispensed_error}); "
+                      f"showing {len(_older)} FileMaker orders", flush=True)
             # The conditions each remedy is already used for, so the row can offer
             # them as one-click pairings.
             from dashboard.biofield_clinical_checklist import conditions_for_remedy
