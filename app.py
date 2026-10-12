@@ -61217,7 +61217,8 @@ def console_top_products_page():
 
 def _record_browser_language(lang):
     try:
-        with db.connect(LOG_DB) as _lcx:
+        # A short wait: a burst of page loads must not hold pool slots real requests need.
+        with db.connect(LOG_DB, timeout=0.5) as _lcx:
             _browser_languages.record(_lcx, lang)
     except Exception as e:  # a count must never cost a page
         print(f"[browser-language] count skipped: {e!r}", flush=True)
@@ -61231,6 +61232,8 @@ def _count_browser_language(response):
         if (request.method == "GET" and response.status_code == 200
                 and (response.mimetype or "") == "text/html"
                 and _browser_languages.counted_path(request.path)
+                # Browsers always send a language. Render's health check on / does not.
+                and request.headers.get("Accept-Language")
                 and not _browser_languages.is_bot(request.headers.get("User-Agent"))):
             lang = _browser_languages.primary_language(request.headers.get("Accept-Language"))
             threading.Thread(target=_record_browser_language, args=(lang,), daemon=True).start()

@@ -44,6 +44,7 @@ def test_only_home_and_begin_pages_are_counted(path, counted):
     ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Safari/604.1", False),
     ("Googlebot/2.1 (+http://www.google.com/bot.html)", True),
     ("python-urllib/3.12", True),
+    ("Render/1.0", True),
     ("", True),
     (None, True),
 ])
@@ -125,3 +126,11 @@ def test_a_failed_count_never_costs_the_page(served, monkeypatch, capsys):
     r = client.get("/begin", headers={"Accept-Language": "es", "User-Agent": BROWSER})
     assert r.status_code == 200
     assert "count skipped" in capsys.readouterr().out
+
+
+def test_a_load_with_no_language_is_not_counted(served):
+    """Render's health check hits / every few seconds and sends no language."""
+    client, dbp = served
+    r = client.get("/", headers={"User-Agent": BROWSER})
+    assert r.status_code == 200 and r.mimetype == "text/html", "the check needs a real page"
+    assert not dbp.exists() or _counts(dbp) == {}

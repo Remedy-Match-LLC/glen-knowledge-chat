@@ -4,8 +4,9 @@ Step 0 of the translate button (Glen, 2026-10-12: "start step 0"). Two weeks of
 these counts decide which languages to offer first.
 
 Each home or begin page load adds 1 to (day, language). Nothing else is kept: no
-address, no visitor, no page. "none" counts loads whose browser sent no language,
-so the language counts can be read against how many loads they cover.
+address, no visitor, no page. A load with no language header is skipped: every
+browser sends one, and Render's health check on / does not. "none" counts a header
+that names no usable language, such as "*".
 """
 import datetime
 import re
@@ -20,7 +21,7 @@ TABLE = "browser_language_daily"
 NONE = "none"
 _LANG = re.compile(r"^[a-z]{2,3}$")
 _BOT = re.compile(r"bot|crawl|spider|slurp|preview|monitor|headless|curl|wget|python|"
-                  r"httpclient|go-http|java/|okhttp|axios|node-fetch|uptime", re.I)
+                  r"httpclient|go-http|java/|okhttp|axios|node-fetch|uptime|render/", re.I)
 _ready = False
 
 
