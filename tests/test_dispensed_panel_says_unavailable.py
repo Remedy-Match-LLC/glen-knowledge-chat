@@ -251,3 +251,12 @@ def test_a_failed_lookup_logs_which_test_and_when(tmp_path, monkeypatch, capsys)
     assert line, out[-500:]
     assert f"test {tid}" in line[0] and "timed out" in line[0]
     assert "jane@example.com" not in line[0], "the log must not carry the client's email"
+
+
+def test_the_invoice_lookup_also_asks_by_client_with_the_key_in_the_header(monkeypatch):
+    import urllib.parse
+    bi, seen = _capture_url(monkeypatch)
+    bi.default_latest_invoice("Some.One@Example.com")
+    url = seen[0].full_url
+    assert "fake-key" not in url
+    assert urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get("q") == ["some.one@example.com"]

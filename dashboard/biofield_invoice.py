@@ -420,7 +420,7 @@ def client_orders_with_status(email, limit=300):
     try:
         # Ask for THIS client's orders, the board's own client search. The newest N
         # orders shop-wide (the old read) drops an older client's store history once the
-        # shop passes N, and it is the heavier query, which is the one that timed out.
+        # shop passes N.
         # The key goes in the header only: a key in the URL lands in server logs.
         url = (f"{base}/api/orders?limit={int(limit)}&q="
                + urllib.parse.quote(email.strip().lower()))
@@ -451,7 +451,9 @@ def default_latest_invoice(email):
     if not base or not (email or "").strip():
         return {"ok": False, "error": "invoice unavailable"}
     try:
-        url = f"{base}/api/orders?limit=300&key=" + urllib.parse.quote(key)
+        # This client's orders, newest first, key in the header only. See
+        # client_orders_with_status.
+        url = f"{base}/api/orders?limit=300&q=" + urllib.parse.quote(email.strip().lower())
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         with urllib.request.urlopen(req, timeout=10) as r:
             rows = (_json.loads(r.read().decode() or "{}").get("data") or [])

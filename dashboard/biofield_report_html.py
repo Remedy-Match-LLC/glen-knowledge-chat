@@ -2479,7 +2479,7 @@ def render_dispensed_panel(rows, open_=False, error=None):
     partial = ""
     if error and rows:
         partial = ("<div class=food style='margin-top:8px'>"
-                   "<b>Store orders unavailable.</b> " + _e(str(error)) +
+                   "<b>Store orders unavailable:</b> " + _e(str(error)) +
                    ". The list below is from FileMaker only.</div>")
     if error and not rows:
         # An empty panel used to say "no order history" whether the client had none or
