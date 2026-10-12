@@ -12875,25 +12875,35 @@ def begin_checkout(slug):
                 detail=f"buy-{slug}-{method}")
     except Exception:
         pass
-    def persist_funnel_order():
-        _ingest_order(source="funnel", external_ref=checkout_ref, email=email, name=name,
+    def persist_funnel_order(pay_method=None):
+        _oid = _ingest_order(source="funnel", external_ref=checkout_ref, email=email, name=name,
                       items=pc["items_rec"], total_cents=_charged,
                       address=ship, channel="retail", get_cents=pc["priced"]["get_cents"],
                       discount_cents=pc["discount_cents"],
                       points_redeemed_cents=pc["points_redeemed_cents"],
                       shipping_cents=pc["shipping_cents"],
-                      ship_credit_applied_cents=_sc_apply)
+                      ship_credit_applied_cents=_sc_apply,
+                      pay_method=pay_method)
         try:
             with db.connect(LOG_DB) as _lcx:
                 _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
         except Exception as _e:
             print(f"[funnel] persist qbo_lines failed: {_e!r}", flush=True)
+        return _oid
 
     order_persisted = False
     if method in ("zelle", "wise"):
-        persist_funnel_order()
+        # pay_method keeps an unpaid Zelle or Wise order out of the 24-hour
+        # abandoned-checkout expiry: the customer pays from their bank afterwards, and
+        # a cancelled order can no longer be matched by the Zelle import.
+        order_id = persist_funnel_order(pay_method=method)
+        if not order_id:
+            # Never hand out payment instructions for an order that was not recorded.
+            return jsonify({"ok": False, "error": "We could not save your order. "
+                            "Please try again in a moment."}), 503
         order_persisted = True
-        out["pay_instructions"] = _ALT_PAY.get(method, {})
+        out["order_id"] = order_id
+        out["pay_instructions"] = {**_ALT_PAY.get(method, {}), "memo": f"Order {order_id}"}
     elif method == "card" and _STRIPE_ACTIVE:
         # Group-bundle opt-in: when the flag is on AND the buyer opted in AND the buyer
         # is a PAID Biofield Analysis client (designed-program gate; the free E4L scan
