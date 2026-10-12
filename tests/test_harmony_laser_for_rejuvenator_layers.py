@@ -38,7 +38,13 @@ def test_pelvic_codes_keep_the_laser(code):
 @pytest.mark.parametrize("codes,expected", [
     (["ER25", "ER33"], None),                          # Linda Maher's layer, scan 1066032
     (["ER18", "ER28", "ER44", "ER61"], LASER),         # Kimberly Jantz's layer keeps it
-    (["er25"], None),                                  # case does not matter
+    (["ER18", "er25"], None),                          # case and padding do not matter
+    (["ER18", " ER33 "], None),
+    (["er18"], LASER),
+    (["ER18", "ER 33"], None),                          # forms the AI might write
+    (["ER18", "ER033"], None),
+    (["ER18", "ER25 Stomach"], None),
+    (["ER180"], LASER),                                # not ER18 + 0
     (["ES1", "MB8"], None),
     (["MR3", "ER"], None),            # not a numbered ER code
     ([], None),

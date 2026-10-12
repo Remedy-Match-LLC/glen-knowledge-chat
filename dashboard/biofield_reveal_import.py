@@ -38,7 +38,13 @@ HARMONY_CAUTION = ("Take care using infrared directly over the thyroid or the co
 def harmony_laser_for(codes):
     """The Harmony Laser row for a layer's codes, or None. Humans and animals alike."""
     import re as _re
-    ers = {c for c in (str(x).strip().upper() for x in (codes or [])) if _re.fullmatch(r"ER\d+", c)}
+    # Read "ER 33", "ER033" and "ER33 Thyroid" as ER33: the codes come from the AI's
+    # layer synthesis, and a missed blocked code would put the laser back (review).
+    ers = set()
+    for x in (codes or []):
+        m = _re.match(r"ER\s*0*(\d+)(?!\d)", str(x).strip().upper())
+        if m:
+            ers.add("ER" + m.group(1))
     if not ers or ers & LASER_BLOCKED_ERS:
         return None
     return {"name": HARMONY_LASER, "caution": ""}
