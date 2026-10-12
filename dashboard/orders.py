@@ -1337,13 +1337,101 @@ def set_points_settle_hook(fn):
 def settle_points_on_payment(cx, order):
     """Run the registered points settlement for an order that has just become paid.
     Best-effort: a points hiccup never fails the payment record."""
-    if not _points_settle_hook or not order:
+    if not order:
+        return
+    credit_fee_free_on_payment(cx, order)
+    if not _points_settle_hook:
         return
     try:
         _points_settle_hook(cx, order)
     except Exception as e:
         print(f"[orders] points settle on payment skipped for #{order.get('id')}: {e!r}",
               flush=True)
+
+
+# Practitioner sales: their own wallet already carries a fee-free credit (dashboard/wallet.py).
+_FEE_FREE_EXCLUDED_SOURCES = {"dropship", "dispensary", "personal", "wholesale"}
+
+
+def _is_fee_free_method(method):
+    """Zelle and Wise only. A mailed check does not earn it (Glen, 2026-09-10)."""
+    m = str(method or "").strip().lower()
+    return "zelle" in m or m == "wise" or m.startswith("wise ")
+
+
+def earns_fee_free_points(order):
+    """True when a Zelle or Wise payment on this order earns the client fee-free points."""
+    source = str((order or {}).get("source") or "").strip().lower()
+    return source not in _FEE_FREE_EXCLUDED_SOURCES
+
+
+def fee_free_paid_cents(cx, order, *, action_method=None, action_cents=None):
+    """What the client paid on this order by Zelle or Wise, never more than its total.
+
+    The payment ledger holds most payments, and when it has any rows it is the whole
+    record: the order row's pay_method and paid_cents are then copied from it, so adding
+    them would count the same money twice (review round 3). An order with no ledger rows
+    falls back to its pay_method and paid_cents. The Record payment action writes no
+    ledger row, so it passes its own method and amount; its part is at most what the
+    ledger left unpaid (its confirm button sends the order total)."""
+    oid = order.get("id")
+    rows = cx.execute(
+        "SELECT method, amount_cents FROM order_payments WHERE order_id=? "
+        "AND kind='payment' AND status='active'", (oid,)).fetchall()
+    total = int(order.get("total_cents") or 0)
+    ledger_all = sum(int(r[1] or 0) for r in rows)
+    paid = sum(int(r[1] or 0) for r in rows if _is_fee_free_method(r[0]))
+    if action_method is not None:
+        if _is_fee_free_method(action_method):
+            paid += min(int(action_cents or total), max(0, total - ledger_all))
+    elif not rows and _is_fee_free_method(order.get("pay_method")):
+        paid = int(order.get("paid_cents") or 0) or total
+    return max(0, min(paid, total))
+
+
+def credit_fee_free_on_payment(cx, order, *, action_method=None, action_cents=None):
+    """Credit the client 3.5% of what they paid by Zelle or Wise, as loyalty points, when
+    the order becomes paid (Glen, 2026-10-10). Shipping is part of what they paid. A
+    courtesy price still earns it (Glen, 2026-10-11): it rewards how they paid. Idempotent
+    per order (points.credit keys on order_ref and reason). Best-effort."""
+    try:
+        from . import points as _points
+        email = (order.get("email") or "").strip().lower()
+        ref = (order.get("external_ref") or "").strip()
+        if not email or not ref or not earns_fee_free_points(order):
+            return 0
+        try:
+            paid = fee_free_paid_cents(cx, order, action_method=action_method,
+                                       action_cents=action_cents)
+        except Exception as e:
+            # An order with no payments table yet (some local setups) lands here too.
+            # Logged, so a missed credit can be found and re-run (review round 3).
+            _safe_rollback(cx)
+            print(f"[orders] fee-free read failed for #{order.get('id')}: {e!r}", flush=True)
+            paid = 0
+        cents = int(round(paid * _points.FEE_FREE_PCT))
+        if cents <= 0:
+            return 0
+        _points.init_points_table(cx)
+        if _points.has_entry(cx, order_ref=ref, reason=_points.FEE_FREE_REASON):
+            return 0
+        _points.credit(cx, email, value_cents=cents, reason=_points.FEE_FREE_REASON,
+                       order_ref=ref)
+        cx.commit()
+        return cents
+    except Exception as e:
+        # Postgres leaves a failed transaction aborted: roll it back so the caller's next
+        # statement still runs (review rounds 1 and 2). The payment itself is committed.
+        _safe_rollback(cx)
+        print(f"[orders] fee-free credit skipped for #{order.get('id')}: {e!r}", flush=True)
+        return 0
+
+
+def _safe_rollback(cx):
+    try:
+        cx.rollback()
+    except Exception:
+        pass
 
 
 def _record_payment_exec(params, ctx):
@@ -1367,6 +1455,8 @@ def _record_payment_exec(params, ctx):
     set_order_payment(cx, oid, method=method, amount_cents=amount_cents)
     # Settle points now that it's paid: redeem applied points + earn (idempotent).
     settle_order_points(cx, get_order(cx, oid))
+    credit_fee_free_on_payment(cx, get_order(cx, oid), action_method=method,
+                               action_cents=amount_cents)
     _o = get_order(cx, oid)
     if _o and (_o.get("source") or "") == "dispensary":
         try:

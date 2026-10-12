@@ -134,7 +134,11 @@ def spend(cx, email, *, value_cents, reason, order_ref, scope="rm"):
 # only (Glen, 2026-10-10). Every other credit (referral tiers 1 and 2, reviews, image picks,
 # healing milestones, deposit credit) also redeems on products, within the points floor
 # (Glen, 2026-10-11: "referral rule for those too").
-SERVICES_ONLY_REASONS = frozenset({"earn"})
+# Fee-free credit: 3.5% of what a client paid by Zelle or Wise (Glen, 2026-10-10:
+# "points"). It redeems like own-purchase points, on services only.
+FEE_FREE_REASON = "fee_free"
+FEE_FREE_PCT = 0.035
+SERVICES_ONLY_REASONS = frozenset({"earn", FEE_FREE_REASON})
 
 
 def product_usable_credits(cx, email, *, scope="rm"):
