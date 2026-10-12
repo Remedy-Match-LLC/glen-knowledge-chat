@@ -208,3 +208,56 @@ def test_the_invoice_note_starts_hidden():
     html = (Path(__file__).resolve().parent.parent / "static/invoice.html").read_text()
     assert '<p class="muted fee-free-note" hidden' in html
     assert "el.hidden = t.fee_free_points !== true;" in html
+
+
+def test_confirming_a_zelle_claim_after_a_check_earns_only_the_zelle_part(cx):
+    # Review round 3: the console confirm button sends no amount, so it is the order total.
+    oid = _order(cx, ref="INH-FF17")
+    op.add_payment(cx, oid, 6000, "Check")
+    orders._record_payment_exec({"order_id": oid, "method": "Zelle"}, {"cx": cx})
+    assert _fee_free(cx, "INH-FF17") == [("buyer@x.com", 140)]
+
+
+def test_a_rerun_after_a_bounced_check_does_not_count_money_twice(cx, monkeypatch):
+    # Review round 3: check $60 then Zelle $40, no credit at the time, then the check voids.
+    # The order row then mirrors the ledger (pay_method Zelle, paid_cents 10000).
+    monkeypatch.setattr(orders, "credit_fee_free_on_payment", lambda *a, **k: 0)
+    oid = _order(cx, ref="INH-FF18")
+    op.add_payment(cx, oid, 6000, "Check")
+    op.add_payment(cx, oid, 4000, "Zelle")
+    monkeypatch.undo()
+    check = cx.execute("SELECT id FROM order_payments WHERE order_id=? AND method='Check'",
+                       (oid,)).fetchone()[0]
+    cx.execute("UPDATE order_payments SET status='void' WHERE id=?", (check,))
+    cx.commit()
+    orders.credit_fee_free_on_payment(cx, orders.get_order(cx, oid))
+    assert _fee_free(cx, "INH-FF18") == [("buyer@x.com", 140)]
+
+
+def test_a_total_raised_after_payment_does_not_raise_the_credit(cx, monkeypatch):
+    monkeypatch.setattr(orders, "credit_fee_free_on_payment", lambda *a, **k: 0)
+    oid = _order(cx, ref="INH-FF19")
+    op.add_payment(cx, oid, 10000, "Zelle")
+    monkeypatch.undo()
+    cx.execute("UPDATE orders SET total_cents=15000 WHERE id=?", (oid,))
+    cx.commit()
+    orders.credit_fee_free_on_payment(cx, orders.get_order(cx, oid))
+    assert _fee_free(cx, "INH-FF19") == [("buyer@x.com", 350)]
+
+
+def test_a_failed_read_rolls_back_and_credits_nothing(cx, monkeypatch, capsys):
+    rolled = []
+    monkeypatch.setattr(orders, "_safe_rollback", lambda c: rolled.append(1))
+    monkeypatch.setattr(orders, "fee_free_paid_cents",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db")))
+    oid = _order(cx, ref="INH-FF20")
+    assert orders.credit_fee_free_on_payment(cx, orders.get_order(cx, oid)) == 0
+    assert rolled == [1]
+    assert "fee-free read failed" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("method,earns", [("Wise", True), ("wise transfer", True),
+                                          ("Zelle (BofA)", True), ("otherwise", False),
+                                          ("Check", False)])
+def test_the_method_match(method, earns):
+    assert orders._is_fee_free_method(method) is earns
