@@ -262,6 +262,7 @@ from dashboard import auth_limits as _auth_limits
 from dashboard import client_address as _client_address
 from dashboard import response_timing as _response_timing
 from dashboard import db
+from dashboard import browser_languages as _browser_languages
 from dashboard import dbwrite
 from dashboard.chat_limits import (client_ip, VelocityLimiter, LIMITS,
                                     tier_for, monthly_full_words, is_flagged)
@@ -61212,6 +61213,30 @@ def console_top_products_page():
     resp = send_from_directory(STATIC, "console-top-products.html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
+
+
+def _record_browser_language(lang):
+    try:
+        with db.connect(LOG_DB) as _lcx:
+            _browser_languages.record(_lcx, lang)
+    except Exception as e:  # a count must never cost a page
+        print(f"[browser-language] count skipped: {e!r}", flush=True)
+
+
+@app.after_request
+def _count_browser_language(response):
+    """Translate step 0 (Glen, 2026-10-12): count the language each home or begin page
+    load asks for. Counts only. Written off the request so a page never waits on it."""
+    try:
+        if (request.method == "GET" and response.status_code == 200
+                and (response.mimetype or "") == "text/html"
+                and _browser_languages.counted_path(request.path)
+                and not _browser_languages.is_bot(request.headers.get("User-Agent"))):
+            lang = _browser_languages.primary_language(request.headers.get("Accept-Language"))
+            threading.Thread(target=_record_browser_language, args=(lang,), daemon=True).start()
+    except Exception as e:  # noqa: BLE001
+        print(f"[browser-language] skipped: {e!r}", flush=True)
+    return response
 
 
 @app.after_request
