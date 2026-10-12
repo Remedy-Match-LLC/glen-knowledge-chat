@@ -3,7 +3,8 @@
 Glen, 2026-10-01: "For Rejuvenator layers, add the Harmony Laser as a 1st order remedy".
 Glen, 2026-10-12: no laser on any layer that touches the thyroid or the abdomen, mixed
 layers included. Pelvic codes, the other neck codes, the diaphragm and the oesophagus keep
-it. This replaced the 2026-10-01 caution rule. Humans and animals alike.
+it. This replaced the 2026-10-01 caution rule. Every laser row carries Glen's caution,
+approved 2026-10-12. Humans and animals alike.
 """
 import sqlite3
 
@@ -11,13 +12,13 @@ import pytest
 
 from dashboard import biofield_reveal_import as RI
 
-CAUTION = ("Take care using infrared directly over the thyroid or the colon. Cleansing "
-           "reactions are more likely there, so start with the smallest dose and increase "
-           "only as you tolerate it.")
+# Glen's approved wording, 2026-10-12, word for word.
+CAUTION = ("Start with the smallest dose and increase only as you tolerate it. During "
+           "pregnancy, do not use it over the abdomen or pelvis. Never use it over the testes.")
 BLOCKED = ["ER33", "ER11", "ER2", "ER10", "ER12", "ER17", "ER20", "ER25", "ER29", "ER34",
            "ER42", "ER43", "ER58", "ER60", "ER62"]
 PELVIC = ["ER14", "ER22", "ER45", "ER50", "ER55", "ER56", "ER64"]
-LASER = {"name": "Harmony Laser", "caution": ""}
+LASER = {"name": "Harmony Laser", "caution": CAUTION}
 
 
 def test_the_blocked_list_is_glens_list_exactly():
@@ -53,7 +54,7 @@ def test_which_layers_get_the_laser(codes, expected):
     assert RI.harmony_laser_for(codes) == expected
 
 
-def test_the_held_caution_wording_is_unchanged():
+def test_the_caution_is_glens_approved_wording():
     assert RI.HARMONY_CAUTION == CAUTION
     assert "\u2014" not in CAUTION
 
@@ -86,7 +87,7 @@ def test_import_adds_the_laser_beside_the_layers_remedy(tmp_path, is_animal):
     assert n == 2
     assert rows[0][:2] == (1, first)
     assert rows[1][0] == 1 and rows[1][1] == "Harmony Laser"
-    assert CAUTION not in rows[1][2]
+    assert CAUTION in rows[1][2], "every laser row carries the caution"
 
 
 def test_a_layer_touching_the_thyroid_gets_no_laser_row(tmp_path):

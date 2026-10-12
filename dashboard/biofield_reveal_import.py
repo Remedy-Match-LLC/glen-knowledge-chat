@@ -28,11 +28,11 @@ LASER_BLOCKED_ERS = frozenset({
     "ER2", "ER10", "ER12", "ER17", "ER20", "ER25", "ER29", "ER34",
     "ER42", "ER43", "ER58", "ER60", "ER62",            # abdomen
 })
-# Glen's 2026-10-01 caution ("perfect"). No layer that would carry it gets the laser any
-# more, so it is not attached. Kept word for word while new laser wording is confirmed.
-HARMONY_CAUTION = ("Take care using infrared directly over the thyroid or the colon. "
-                   "Cleansing reactions are more likely there, so start with the smallest dose "
-                   "and increase only as you tolerate it.")
+# Glen approved this wording 2026-10-12 (via clinical). It goes on every laser row: the
+# thyroid and colon layers that carried the 2026-10-01 caution no longer get the laser.
+HARMONY_CAUTION = ("Start with the smallest dose and increase only as you tolerate it. "
+                   "During pregnancy, do not use it over the abdomen or pelvis. "
+                   "Never use it over the testes.")
 
 
 def harmony_laser_for(codes):
@@ -47,7 +47,7 @@ def harmony_laser_for(codes):
             ers.add("ER" + m.group(1))
     if not ers or ers & LASER_BLOCKED_ERS:
         return None
-    return {"name": HARMONY_LASER, "caution": ""}
+    return {"name": HARMONY_LASER, "caution": HARMONY_CAUTION}
 
 
 def _days_ago(scan_date, today):
