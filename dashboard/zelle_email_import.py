@@ -109,9 +109,10 @@ def process_notifications(svc, db_path, *, dry_run=False, max_messages=50):
                         paid_at=paid_at,
                         note=f"Bank of America notification: {parsed['payer']}",
                         actor="zelle-email-import")
+                    # Label only. Nothing marks mail read: unread is the reply queue
+                    # (Glen, 2026-09-07 and 2026-10-11). The query skips this label.
                     svc.users().messages().modify(
-                        userId="me", id=mid,
-                        body={"addLabelIds": [processed_id], "removeLabelIds": ["UNREAD"]},
+                        userId="me", id=mid, body={"addLabelIds": [processed_id]},
                     ).execute()
                 out["zelle_applied"] += 1
                 out["zelle_details"].append(
