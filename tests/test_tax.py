@@ -163,7 +163,7 @@ def _stub_retail_checkout(app_module, monkeypatch, tmp_path):
     monkeypatch.setattr(app_module._shipping, "quote", lambda b: {"shipping_cents": 0})
     seen = {}
     monkeypatch.setattr(app_module, "_ingest_order",
-                        lambda **k: seen.update({"order_get_cents": k.get("get_cents")}))
+                        lambda **k: seen.update({"order_get_cents": k.get("get_cents")}) or 1)
     from dashboard import qbo_billing as qb
 
     def _fake_invoice(cust, lines, **kw):

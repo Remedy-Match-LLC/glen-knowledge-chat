@@ -121,7 +121,8 @@ def _stub_checkout_deps(app_module, monkeypatch):
                                       "info_only": False, "qbo_item_id": None,
                                       "price_cents": 1000})
     monkeypatch.setattr(app_module._shipping, "quote", lambda b: {"shipping_cents": 0})
-    monkeypatch.setattr(app_module, "_ingest_order", lambda **k: None)
+    # The buy page returns 503 for a Zelle order that did not save, so report an id.
+    monkeypatch.setattr(app_module, "_ingest_order", lambda **k: 1)
     fake_qb = types.ModuleType("dashboard.qbo_billing")
     fake_qb.find_or_create_customer = lambda email, name: {"Id": "C1"}
     fake_qb.create_invoice = lambda *a, **k: {

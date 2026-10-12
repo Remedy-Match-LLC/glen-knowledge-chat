@@ -309,7 +309,7 @@ def expire_abandoned_checkouts(cx, *, now=None, ttl_hours=ABANDONED_CHECKOUT_TTL
 
     The rows are retained for audit/search history.  Only an unpaid ``new`` row
     from a customer checkout source is eligible; proposals, confirmed invoices,
-    manual orders, and practitioner flows are never aged out here.  A Zelle order
+    manual orders, and practitioner flows are never aged out here.  A Zelle or Wise order
     is not abandoned when unpaid: the customer pays from their bank afterwards.
     """
     now = now or datetime.now(timezone.utc)
@@ -318,7 +318,7 @@ def expire_abandoned_checkouts(cx, *, now=None, ttl_hours=ABANDONED_CHECKOUT_TTL
     cur = cx.execute(
         f"UPDATE orders SET status='cancelled', updated_at=? "
         f"WHERE status='new' AND COALESCE(pay_status,'unpaid')='unpaid' "
-        f"AND COALESCE(pay_method,'') != 'zelle' "
+        f"AND COALESCE(pay_method,'') NOT IN ('zelle', 'wise') "
         # ISO-8601 timestamps sort chronologically as text. Keep this comparison
         # portable across SQLite and PostgreSQL (Postgres has no datetime(text)).
         f"AND source IN ({placeholders}) AND created_at < ?",
