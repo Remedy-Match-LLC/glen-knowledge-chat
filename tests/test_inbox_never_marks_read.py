@@ -186,12 +186,26 @@ def test_the_unread_scan_catches_a_removal_however_written(tmp_path):
     assert _unread_literals([probe], tmp_path) == [("probe.py", "f", 2), ("probe.py", "g", 5)]
 
 
-def test_mark_read_refuses():
-    with pytest.raises(RuntimeError):
+def test_mark_read_refuses(monkeypatch):
+    # Never reach Gmail from this test: if mark_read regressed it would call the real
+    # service, and the token loader falls back to the Mac's own token file (round 3).
+    def _no_gmail(*a, **k):
+        raise AssertionError("mark_read reached the Gmail service")
+    monkeypatch.setattr(_inbox, "_get_gmail_service", _no_gmail)
+    monkeypatch.setattr(_inbox, "_modify_thread", _no_gmail)
+    with pytest.raises(RuntimeError, match="not allowed"):
         _inbox.mark_read("T1")
 
 
 # ── Guard 4: IMAP readers open mailboxes read-only and only PEEK ─────────────
+
+def _sets_seen(spec):
+    """A fetch item that sets \\Seen: RFC822, RFC822.TEXT or BODY[...] without PEEK.
+    RFC822.HEADER and RFC822.SIZE do not."""
+    import re
+    u = spec.upper()
+    return bool(re.search(r"RFC822(?!\.(HEADER|SIZE))", u) or re.search(r"BODY\[", u))
+
 
 def _imap_marks_read(paths, root):
     """IMAP calls that would set \\Seen: select() of a named mailbox without
@@ -210,11 +224,10 @@ def _imap_marks_read(paths, root):
             attr = n.func.attr
             where = f"{p.relative_to(root)}:{n.lineno}"
             if attr == "select" and strs and strs[0].upper() in ("INBOX", "[GMAIL]/ALL MAIL"):
-                ro = [k for k in n.keywords if k.arg == "readonly"]
-                if not (ro and isinstance(ro[0].value, ast.Constant) and ro[0].value.value is True):
+                ro = [k.value for k in n.keywords if k.arg == "readonly"] + n.args[1:2]
+                if not (ro and isinstance(ro[0], ast.Constant) and ro[0].value is True):
                     out.append(where)
-            elif attr == "fetch" and any(("RFC822" in s.upper() or "BODY[" in s.upper())
-                                         and "PEEK" not in s.upper() for s in strs):
+            elif attr == "fetch" and any(_sets_seen(s) for s in strs):
                 out.append(where)
             elif attr == "store" and any("\\SEEN" in s.upper() for s in strs) \
                     and any(s.startswith("+") for s in strs):
@@ -234,5 +247,7 @@ def test_the_imap_scan_catches_each_form(tmp_path):
     probe = tmp_path / "probe.py"
     probe.write_text('imap.select("INBOX")\nimap.fetch(n, "(RFC822)")\n'
                      'imap.store(n, "+FLAGS", "\\\\Seen")\n'
-                     'imap.select("INBOX", readonly=True)\nimap.fetch(n, "(BODY.PEEK[])")\n')
+                     'imap.select("INBOX", readonly=True)\nimap.fetch(n, "(BODY.PEEK[])")\n'
+                     'imap.select("INBOX", True)\nimap.fetch(n, "(RFC822.HEADER)")\n'
+                     'imap.fetch(n, "(RFC822.SIZE)")\n')
     assert _imap_marks_read([probe], tmp_path) == ["probe.py:1", "probe.py:2", "probe.py:3"]
