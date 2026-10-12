@@ -204,3 +204,32 @@ def test_buy_page_shows_the_memo_and_promises_no_email():
         assert phrase not in low, phrase
     assert "Please save these payment details. They are not sent by email." in html
     assert "if (data.no_payment_required) return;" in html
+
+
+@pytest.mark.parametrize("method", ["zelle", "wise"])
+def test_zero_total_order_covered_by_ship_credit_spends_the_credit(monkeypatch, tmp_path, method):
+    """A $0 order is marked paid, which releases the hold on the credit covering it, so
+    the credit must be spent then, or it could pay for a second order (review round 3)."""
+    db = _prep(monkeypatch, tmp_path)
+    monkeypatch.setattr(app, "_ship_credit_enabled", lambda: True)
+    from dashboard import ship_credit
+    cx = sqlite3.connect(db)
+    try:
+        app._points_init_ship(cx)
+        ship_credit.grant(cx, "c@b.com", 20000, source_ref="seed")
+        cx.commit()
+    finally:
+        cx.close()
+    r = _buy(method)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.get_json()["no_payment_required"] is True
+    cx = sqlite3.connect(db)
+    try:
+        applied, pay_status = cx.execute(
+            "SELECT ship_credit_applied_cents, pay_status FROM orders").fetchone()
+        left = ship_credit.balance(cx, "c@b.com")
+    finally:
+        cx.close()
+    assert pay_status == "paid"
+    assert applied > 0
+    assert left == 20000 - applied

@@ -12911,6 +12911,14 @@ def begin_checkout(slug):
         if not order_id:
             return jsonify({"ok": False, "error": "We could not save your order. "
                             "Please try again in a moment."}), 503
+        # Marking it paid releases the hold on the points and ship credit that cover it,
+        # so spend them now, as any paid order does (review round 3). Idempotent per ref.
+        try:
+            with db.connect(LOG_DB) as _scx:
+                _scx.row_factory = sqlite3.Row
+                _settle_points_on_altpay(_bos_orders.get_order(_scx, order_id))
+        except Exception as _se:  # noqa: BLE001
+            print(f"[funnel] $0 settle failed ref={checkout_ref}: {_se!r}", flush=True)
         record_checkout_effects()
         order_persisted = True
         out["order_id"] = order_id
