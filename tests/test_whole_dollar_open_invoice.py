@@ -17,9 +17,11 @@ from dashboard import rbac as _rbac
 
 EMAIL = "buyer@x.com"
 PRODUCT = {"slug": "thing", "name": "Thing", "price_cents": 7000}
+# Points redeem on services only (Glen 2026-10-10), so the points tests bill a service.
+SERVICE = {"slug": "evox-session", "name": "EVOX", "price_cents": 7000, "service": True}
 
 
-def _app(tmp_path, monkeypatch, *, unit_cents=6997, qty=1, pay_status="unpaid"):
+def _app(tmp_path, monkeypatch, *, unit_cents=6997, qty=1, pay_status="unpaid", slug="thing"):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     db = str(tmp_path / "chat_log.db")
     from dashboard import orders as O
@@ -27,7 +29,7 @@ def _app(tmp_path, monkeypatch, *, unit_cents=6997, qty=1, pay_status="unpaid"):
         O.init_orders_table(cx)
         O.upsert_order(cx, source="in-house", external_ref="INH-W1", status="proposed",
                        email=EMAIL, name="Buyer", channel="pickup",
-                       items=[{"slug": "thing", "name": "Thing", "qty": qty,
+                       items=[{"slug": slug, "name": "Thing", "qty": qty,
                                "unit_cents": unit_cents, "line_cents": unit_cents * qty}],
                        total_cents=unit_cents * qty)
         if pay_status == "paid":
@@ -44,7 +46,8 @@ def _app(tmp_path, monkeypatch, *, unit_cents=6997, qty=1, pay_status="unpaid"):
     appmod.app.config["TESTING"] = True
     monkeypatch.setattr(appmod, "_bos_actor", lambda: _rbac.Actor(role="owner", name="glen"))
     monkeypatch.setattr(appmod, "_get_product",
-                        lambda slug: dict(PRODUCT) if slug == "thing" else None)
+                        lambda s: dict(PRODUCT) if s == "thing" else
+                        dict(SERVICE) if s == "evox-session" else None)
     monkeypatch.setattr(appmod, "_push_invoice_edit_to_qbo", lambda *a, **k: {"pushed": False})
     return appmod, appmod.app.test_client(), db
 
@@ -171,14 +174,24 @@ def test_the_order_builder_redeems_points_in_whole_dollars(tmp_path, monkeypatch
     appmod, _, db = _app(tmp_path, monkeypatch, unit_cents=7000)
     _credit(db, 1347)
     priced = appmod._price_inhouse_invoice(
-        [{"slug": "thing", "qty": 1}], email=EMAIL, pickup=True, ship={},
+        [{"slug": "evox-session", "qty": 1}], email=EMAIL, pickup=True, ship={},
         points_redeem_cents_in=1347)
     assert priced["points_redeemed_cents"] == 1300
     assert priced["total_cents"] == 7000 - 1300
 
 
+def test_the_order_builder_redeems_no_points_on_a_product(tmp_path, monkeypatch):
+    appmod, _, db = _app(tmp_path, monkeypatch, unit_cents=7000)
+    _credit(db, 1347)
+    priced = appmod._price_inhouse_invoice(
+        [{"slug": "thing", "qty": 1}], email=EMAIL, pickup=True, ship={},
+        points_redeem_cents_in=1347)
+    assert priced["points_redeemed_cents"] == 0
+    assert priced["total_cents"] == 7000
+
+
 def test_the_customer_invoice_applies_points_in_whole_dollars(tmp_path, monkeypatch):
-    appmod, client, db = _app(tmp_path, monkeypatch, unit_cents=7000)
+    appmod, client, db = _app(tmp_path, monkeypatch, unit_cents=7000, slug="evox-session")
     _credit(db, 1347)
     from dashboard import practitioner_portal as PP
     monkeypatch.setattr(PP, "_LOG_DB", Path(db))
@@ -188,3 +201,16 @@ def test_the_customer_invoice_applies_points_in_whole_dollars(tmp_path, monkeypa
     o = _order(db)
     assert o["points_redeemed_cents"] == 1300
     assert o["total_cents"] == 7000 - 1300
+
+
+def test_the_customer_invoice_applies_no_points_to_a_product(tmp_path, monkeypatch):
+    appmod, client, db = _app(tmp_path, monkeypatch, unit_cents=7000)
+    _credit(db, 1347)
+    from dashboard import practitioner_portal as PP
+    monkeypatch.setattr(PP, "_LOG_DB", Path(db))
+    token = PP.create_order_invoice_token(1)
+    r = client.post(f"/api/invoice/{token}/apply-points", json={"cents": 1347})
+    assert r.status_code == 200, r.get_json()
+    o = _order(db)
+    assert o["points_redeemed_cents"] == 0
+    assert o["total_cents"] == 7000
