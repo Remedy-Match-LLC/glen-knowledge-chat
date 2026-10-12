@@ -8,10 +8,13 @@ wasn't working properly") came through this page. Three defects:
 - the page promised an email that nothing sends.
 """
 import sqlite3
+
+import pytest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import app
+from dashboard import order_payments
 from dashboard import orders as O
 from dashboard import qbo_billing
 
@@ -25,6 +28,7 @@ def _prep(monkeypatch, tmp_path):
     cx = sqlite3.connect(db)
     try:
         O.init_orders_table(cx)
+        order_payments.ensure_table(cx)
         cx.commit()
     finally:
         cx.close()
@@ -115,11 +119,12 @@ def _watch_effects(monkeypatch):
     return calls
 
 
-def test_unsaved_zelle_order_gets_no_instructions_and_spends_nothing(monkeypatch, tmp_path):
+@pytest.mark.parametrize("method", ["zelle", "wise"])
+def test_unsaved_alt_pay_order_gets_no_instructions_and_spends_nothing(monkeypatch, tmp_path, method):
     _prep(monkeypatch, tmp_path)
     calls = _watch_effects(monkeypatch)
     monkeypatch.setattr(app, "_ingest_order", lambda **k: None)
-    r = _buy("zelle")
+    r = _buy(method)
     assert r.status_code == 503
     body = r.get_json()
     assert body["ok"] is False
@@ -142,20 +147,25 @@ def test_card_order_still_records_its_coupon_and_referral(monkeypatch, tmp_path)
     assert sorted(calls) == ["coupon", "referral", "unlock"]
 
 
-def test_zero_total_zelle_order_is_settled_with_no_instructions(monkeypatch, tmp_path):
+@pytest.mark.parametrize("method", ["zelle", "wise"])
+def test_zero_total_alt_pay_order_is_settled_with_no_instructions(monkeypatch, tmp_path, method):
     db = _prep(monkeypatch, tmp_path)
     monkeypatch.setattr(app, "_charge_cents", lambda pc: 0)
-    r = _buy("zelle")
+    r = _buy(method)
     assert r.status_code == 200, r.get_data(as_text=True)
     body = r.get_json()
     assert body["no_payment_required"] is True
     assert "pay_instructions" not in body
     cx = sqlite3.connect(db)
     try:
-        row = cx.execute("SELECT pay_status, total_cents FROM orders").fetchone()
+        row = cx.execute("SELECT pay_status, total_cents, pay_method FROM orders").fetchone()
+        paid = cx.execute("SELECT COALESCE(SUM(amount_cents), 0) FROM order_payments "
+                          "WHERE kind='payment'").fetchone()[0]
     finally:
         cx.close()
-    assert row == ("paid", 0)
+    assert row[:2] == ("paid", 0)
+    assert row[2] != method          # not an open Zelle/Wise intent
+    assert paid == 0
 
 
 def test_buy_page_note_points_at_the_memo_not_an_invoice(monkeypatch, tmp_path):
