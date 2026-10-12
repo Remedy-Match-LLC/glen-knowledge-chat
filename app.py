@@ -7929,6 +7929,15 @@ _ALT_PAY = {
                       "You earn extra loyalty points for choosing a fee-free method."},
 }
 
+# The single-product buy page shows its own memo ("Order <id>"), so its note points at
+# that memo; the shared notes above speak of an invoice number the page does not have.
+_BUY_PAGE_ALT_PAY_NOTE = {
+    "zelle": "Send the total via Zelle, with the memo above. "
+             "You earn extra loyalty points for choosing a fee-free method.",
+    "wise": "Send the total via Wise, with the memo above as the reference. "
+            "You earn extra loyalty points for choosing a fee-free method.",
+}
+
 
 # Functional Formulations ($70 base) — volume pricing is OPEN TO ALL, driven by the
 # order-wide FF quantity through the pricing engine (_inhouse_ff_unit_cents below).
@@ -12840,42 +12849,45 @@ def begin_checkout(slug):
         "lines": pc["qbo_lines"] + _shipping_line(pc["shipping_cents"]),
         "discount_cents": pc["discount_cents"] + pc["points_redeemed_cents"] + _sc_apply,
         "tax_cents": 0}
-    _gift_won = bool(_gift_coupon and _gift_pct >= max(_ref_pct or 0, _self_pct or 0))
-    if not _gift_won:
-        _record_referral_if_any(_ref_ctx, email, checkout_ref)
-    if _self_coupon and _self_pct >= (_ref_pct or 0) and _self_pct > (_gift_pct or 0):
-        try:
-            from dashboard import coupons as _coupons
-            with _db_lock, db.connect(LOG_DB) as _ccx:
-                _coupons.mark_redeemed(_ccx, _self_coupon["code"], order_ref=checkout_ref)
-        except Exception as e:  # noqa: BLE001
-            print(f"[coupons] redeem-mark failed: {e!r}", flush=True)
-    if _gift_won:
-        try:
-            from dashboard import coupons as _coupons
-            from dashboard import referrals as _rf
-            with _db_lock, db.connect(LOG_DB) as _gcx:
-                _coupons.mark_redeemed(_gcx, _gift_coupon["code"], order_ref=checkout_ref)
-                _rf.record_redemption(_gcx, _gift_coupon["code"], _gift_coupon["email"], email, checkout_ref)
-        except Exception as e:  # noqa: BLE001
-            print(f"[coupons] gift redeem/attrib failed: {e!r}", flush=True)
     out = {"ok": True, "invoice_id": checkout_ref, "doc_number": "",
            "total": round(_charged / 100.0, 2),
            "method": method, "customer_id": ""}
-    try:
-        with _db_lock, db.connect(LOG_DB) as cx:
-            # record_unlock, not a bare INSERT: this wrote the audit row and stopped,
-            # so the `purchase` GATE was never set on journey_state. compute_rung
-            # therefore topped out at choose_path and the top two rungs of the ladder
-            # -- ascend and advocate -- were unreachable by any client. record_unlock
-            # sets the gate AND writes the same timestamped event, so there is no
-            # double-logging.
-            begin_funnel.record_unlock(
-                cx, session_id=session_id, trigger="purchase", email=email,
-                detail=f"buy-{slug}-{method}")
-    except Exception:
-        pass
-    def persist_funnel_order(pay_method=None):
+    def record_checkout_effects():
+        # Referral, coupon and journey records. They name checkout_ref, so on the
+        # Zelle / Wise path they run only once the order is saved (review round 1).
+        _gift_won = bool(_gift_coupon and _gift_pct >= max(_ref_pct or 0, _self_pct or 0))
+        if not _gift_won:
+            _record_referral_if_any(_ref_ctx, email, checkout_ref)
+        if _self_coupon and _self_pct >= (_ref_pct or 0) and _self_pct > (_gift_pct or 0):
+            try:
+                from dashboard import coupons as _coupons
+                with _db_lock, db.connect(LOG_DB) as _ccx:
+                    _coupons.mark_redeemed(_ccx, _self_coupon["code"], order_ref=checkout_ref)
+            except Exception as e:  # noqa: BLE001
+                print(f"[coupons] redeem-mark failed: {e!r}", flush=True)
+        if _gift_won:
+            try:
+                from dashboard import coupons as _coupons
+                from dashboard import referrals as _rf
+                with _db_lock, db.connect(LOG_DB) as _gcx:
+                    _coupons.mark_redeemed(_gcx, _gift_coupon["code"], order_ref=checkout_ref)
+                    _rf.record_redemption(_gcx, _gift_coupon["code"], _gift_coupon["email"], email, checkout_ref)
+            except Exception as e:  # noqa: BLE001
+                print(f"[coupons] gift redeem/attrib failed: {e!r}", flush=True)
+        try:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                # record_unlock, not a bare INSERT: this wrote the audit row and stopped,
+                # so the `purchase` GATE was never set on journey_state. compute_rung
+                # therefore topped out at choose_path and the top two rungs of the ladder
+                # -- ascend and advocate -- were unreachable by any client. record_unlock
+                # sets the gate AND writes the same timestamped event, so there is no
+                # double-logging.
+                begin_funnel.record_unlock(
+                    cx, session_id=session_id, trigger="purchase", email=email,
+                    detail=f"buy-{slug}-{method}")
+        except Exception:
+            pass
+    def persist_funnel_order(pay_method=None, paid_cents=None):
         _oid = _ingest_order(source="funnel", external_ref=checkout_ref, email=email, name=name,
                       items=pc["items_rec"], total_cents=_charged,
                       address=ship, channel="retail", get_cents=pc["priced"]["get_cents"],
@@ -12883,7 +12895,7 @@ def begin_checkout(slug):
                       points_redeemed_cents=pc["points_redeemed_cents"],
                       shipping_cents=pc["shipping_cents"],
                       ship_credit_applied_cents=_sc_apply,
-                      pay_method=pay_method)
+                      pay_method=pay_method, paid_cents=paid_cents)
         try:
             with db.connect(LOG_DB) as _lcx:
                 _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
@@ -12892,7 +12904,18 @@ def begin_checkout(slug):
         return _oid
 
     order_persisted = False
-    if method in ("zelle", "wise"):
+    if method in ("zelle", "wise") and _charged == 0:
+        # Nothing to send: record it as settled, as the cart does, so it neither waits
+        # for a $0 bank payment nor shows payment instructions.
+        order_id = persist_funnel_order(paid_cents=0)
+        if not order_id:
+            return jsonify({"ok": False, "error": "We could not save your order. "
+                            "Please try again in a moment."}), 503
+        record_checkout_effects()
+        order_persisted = True
+        out["order_id"] = order_id
+        out["no_payment_required"] = True
+    elif method in ("zelle", "wise"):
         # pay_method keeps an unpaid Zelle or Wise order out of the 24-hour
         # abandoned-checkout expiry: the customer pays from their bank afterwards, and
         # a cancelled order can no longer be matched by the Zelle import.
@@ -12901,10 +12924,14 @@ def begin_checkout(slug):
             # Never hand out payment instructions for an order that was not recorded.
             return jsonify({"ok": False, "error": "We could not save your order. "
                             "Please try again in a moment."}), 503
+        record_checkout_effects()
         order_persisted = True
         out["order_id"] = order_id
-        out["pay_instructions"] = {**_ALT_PAY.get(method, {}), "memo": f"Order {order_id}"}
-    elif method == "card" and _STRIPE_ACTIVE:
+        out["pay_instructions"] = {**_ALT_PAY.get(method, {}), "memo": f"Order {order_id}",
+                                   "note": _BUY_PAGE_ALT_PAY_NOTE.get(method, "")}
+    else:
+        record_checkout_effects()
+    if method == "card" and _STRIPE_ACTIVE:
         # Group-bundle opt-in: when the flag is on AND the buyer opted in AND the buyer
         # is a PAID Biofield Analysis client (designed-program gate; the free E4L scan
         # does not qualify) AND the cart carries >=1 program month, grant 1 free

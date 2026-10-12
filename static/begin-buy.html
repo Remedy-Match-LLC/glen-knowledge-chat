@@ -299,7 +299,7 @@
         </div>
 
         <div class="field">
-          <label for="email">Email <span class="hint">(required, your invoice goes here)</span></label>
+          <label for="email">Email <span class="hint">(required)</span></label>
           <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required />
         </div>
 
@@ -346,7 +346,7 @@
           <p class="card-soon hidden" id="card-soon">Card payment is coming soon. For now, Zelle or Wise both work today and earn you extra loyalty points.</p>
         </div>
 
-        <p class="reassure">A simple one-time purchase. Your invoice and payment are recorded in QuickBooks, and a copy is emailed to you. Zelle and Wise are fee-free and earn extra loyalty points.</p>
+        <p class="reassure">A simple one-time purchase. Zelle and Wise are fee-free and earn extra loyalty points.</p>
 
         <label class="method-opt hidden" id="group-bundle-opt" style="cursor:pointer;">
           <input type="checkbox" id="group-bundle-check" />
@@ -737,7 +737,7 @@
       if (ordering) return;
 
       if (!emailValid()) {
-        setInlineMsg('Please add a valid email so we can send your invoice.');
+        setInlineMsg('Please add a valid email address.');
         document.getElementById('email').focus();
         return;
       }
@@ -942,8 +942,9 @@
           if (pi.note) document.getElementById('pd-note').textContent = pi.note;
           show('pay-detail');
         }
-        document.getElementById('cc-email-note').textContent =
-          'Please save these payment details. They are not sent by email.';
+        document.getElementById('cc-email-note').textContent = data.no_payment_required
+          ? 'Your points and credits cover this order, so there is nothing to pay.'
+          : 'Please save these payment details. They are not sent by email.';
       }
 
       show('confirm');
@@ -959,6 +960,7 @@
     var cg = { invoiceId:'', total:0, method:'', payInstr:null, history:[], items:[], busy:false, started:false };
 
     function initConcierge(data){
+      if (data.no_payment_required) return;   // a settled $0 order takes no add-ons
       cg.invoiceId = data.invoice_id || '';
       cg.total = parseFloat(data.total) || 0;
       cg.method = data.method || '';
@@ -1092,9 +1094,9 @@
         html += '<div class="f-note">Use the secure payment link above to complete your order.</div>';
       } else if (cg.payInstr && (cg.payInstr.to || cg.payInstr.label)){
         html += '<div class="f-note">Please send <strong>$' + cg.total.toFixed(2) + '</strong> via ' + escHtml(cg.payInstr.label||'') +
-                ' to <strong>' + escHtml(cg.payInstr.to||'') + '</strong>, using your invoice number as the memo. A copy is in your email too.</div>';
+                ' to <strong>' + escHtml(cg.payInstr.to||'') + '</strong>, with the memo <strong>' + escHtml(cg.payInstr.memo||'') + '</strong>.</div>';
       } else {
-        html += '<div class="f-note">Your invoice is in your email with the payment details.</div>';
+        html += '<div class="f-note">Please use the payment details shown above.</div>';
       }
       box.innerHTML = html; show('cg-final');
       box.scrollIntoView({ behavior:'smooth', block:'center' });

@@ -99,14 +99,71 @@ def test_card_order_keeps_no_pay_method(monkeypatch, tmp_path):
     assert "order_id" not in r.get_json()
 
 
-def test_unsaved_zelle_order_gets_no_instructions(monkeypatch, tmp_path):
+def _watch_effects(monkeypatch):
+    """Record the referral, coupon and journey writes that name the checkout."""
+    calls = []
+    monkeypatch.setattr(app, "_best_active_self_coupon_code", lambda e, s: "SELF10")
+    monkeypatch.setattr(app, "_resolve_self_coupon_pct",
+                        lambda code, slug: (10, {"code": code}) if code else (0, None))
+    monkeypatch.setattr(app, "_record_referral_if_any",
+                        lambda ctx, email, ref: calls.append("referral"))
+    from dashboard import coupons
+    monkeypatch.setattr(coupons, "mark_redeemed",
+                        lambda cx, code, *, order_ref: calls.append("coupon"))
+    monkeypatch.setattr(app.begin_funnel, "record_unlock",
+                        lambda cx, **k: calls.append("unlock"))
+    return calls
+
+
+def test_unsaved_zelle_order_gets_no_instructions_and_spends_nothing(monkeypatch, tmp_path):
     _prep(monkeypatch, tmp_path)
+    calls = _watch_effects(monkeypatch)
     monkeypatch.setattr(app, "_ingest_order", lambda **k: None)
     r = _buy("zelle")
     assert r.status_code == 503
     body = r.get_json()
     assert body["ok"] is False
     assert "pay_instructions" not in body
+    # The coupon must survive for the retry, and no referral names a missing order.
+    assert calls == []
+
+
+def test_saved_zelle_order_records_its_coupon_and_referral(monkeypatch, tmp_path):
+    _prep(monkeypatch, tmp_path)
+    calls = _watch_effects(monkeypatch)
+    assert _buy("zelle").status_code == 200
+    assert sorted(calls) == ["coupon", "referral", "unlock"]
+
+
+def test_card_order_still_records_its_coupon_and_referral(monkeypatch, tmp_path):
+    _prep(monkeypatch, tmp_path)
+    calls = _watch_effects(monkeypatch)
+    assert _buy("card").status_code == 200
+    assert sorted(calls) == ["coupon", "referral", "unlock"]
+
+
+def test_zero_total_zelle_order_is_settled_with_no_instructions(monkeypatch, tmp_path):
+    db = _prep(monkeypatch, tmp_path)
+    monkeypatch.setattr(app, "_charge_cents", lambda pc: 0)
+    r = _buy("zelle")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["no_payment_required"] is True
+    assert "pay_instructions" not in body
+    cx = sqlite3.connect(db)
+    try:
+        row = cx.execute("SELECT pay_status, total_cents FROM orders").fetchone()
+    finally:
+        cx.close()
+    assert row == ("paid", 0)
+
+
+def test_buy_page_note_points_at_the_memo_not_an_invoice(monkeypatch, tmp_path):
+    _prep(monkeypatch, tmp_path)
+    for m in ("zelle", "wise"):
+        note = _buy(m).get_json()["pay_instructions"]["note"]
+        assert note == app._BUY_PAGE_ALT_PAY_NOTE[m]
+        assert "memo above" in note and "invoice" not in note
 
 
 def test_unpaid_buy_page_zelle_and_wise_orders_are_not_expired(monkeypatch, tmp_path):
@@ -129,6 +186,11 @@ def test_unpaid_buy_page_zelle_and_wise_orders_are_not_expired(monkeypatch, tmp_
 def test_buy_page_shows_the_memo_and_promises_no_email():
     html = (ROOT / "static" / "begin-buy.html").read_text()
     assert 'id="pd-memo"' in html and 'id="pd-memo-value"' in html
-    assert "pi.memo" in html
-    assert "receive this invoice by email" not in html
+    assert "pi.memo" in html and "cg.payInstr.memo" in html
+    # Nothing on this page emails an invoice, so nothing may promise one.
+    low = html.lower()
+    for phrase in ("by email too", "in your email", "emailed to you", "send your invoice",
+                   "invoice goes here", "invoice number"):
+        assert phrase not in low, phrase
     assert "Please save these payment details. They are not sent by email." in html
+    assert "if (data.no_payment_required) return;" in html
