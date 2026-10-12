@@ -122,3 +122,44 @@ def test_open_thread_sends_no_mark_read():
     """)
     r = subprocess.run(["node", "-e", script], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ── Guard 3: no code removes the UNREAD label ────────────────────────────────
+
+def _unread_removals(paths, root):
+    """Every dict in the given source that puts UNREAD under removeLabelIds. Parsed, so a
+    comment or docstring mentioning it does not count."""
+    import ast
+    hits = []
+    for p in paths:
+        try:
+            tree = ast.parse(p.read_text())
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            for k, v in zip(node.keys, node.values):
+                if (isinstance(k, ast.Constant) and k.value == "removeLabelIds"
+                        and any(isinstance(c, ast.Constant) and c.value == "UNREAD"
+                                for c in ast.walk(v))):
+                    hits.append(f"{p.relative_to(root)}:{node.lineno}")
+    return hits
+
+
+def test_no_source_removes_the_unread_label():
+    # Glen, 2026-10-11: "stop marking read". The Zelle import removed UNREAD from the bank
+    # notifications it applied, from 2026-08-29.
+    skip = {"tests", ".venv", "venv", "node_modules", ".git"}
+    paths = [p for p in _repo().rglob("*.py") if not skip & set(p.relative_to(_repo()).parts)]
+    assert len(paths) > 100
+    assert _unread_removals(paths, _repo()) == []
+
+
+def test_the_unread_scan_catches_a_removal(tmp_path):
+    probe = tmp_path / "probe.py"
+    probe.write_text('body = {"addLabelIds": ["X"], "removeLabelIds": ["UNREAD"]}\n')
+    assert _unread_removals([probe], tmp_path) == ["probe.py:1"]
+    ok = tmp_path / "ok.py"
+    ok.write_text('# removeLabelIds UNREAD in a comment does not count\nbody = {"removeLabelIds": ["INBOX"]}\n')
+    assert _unread_removals([ok], tmp_path) == []
