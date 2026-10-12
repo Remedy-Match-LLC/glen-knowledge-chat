@@ -1337,13 +1337,71 @@ def set_points_settle_hook(fn):
 def settle_points_on_payment(cx, order):
     """Run the registered points settlement for an order that has just become paid.
     Best-effort: a points hiccup never fails the payment record."""
-    if not _points_settle_hook or not order:
+    if not order:
+        return
+    credit_fee_free_on_payment(cx, order)
+    if not _points_settle_hook:
         return
     try:
         _points_settle_hook(cx, order)
     except Exception as e:
         print(f"[orders] points settle on payment skipped for #{order.get('id')}: {e!r}",
               flush=True)
+
+
+# Practitioner sales: their own wallet already carries a fee-free credit (dashboard/wallet.py).
+_FEE_FREE_EXCLUDED_SOURCES = {"dropship", "dispensary", "personal", "wholesale"}
+
+
+def _is_fee_free_method(method):
+    """Zelle and Wise only. A mailed check does not earn it (Glen, 2026-09-10)."""
+    m = str(method or "").strip().lower()
+    return "zelle" in m or m == "wise" or m.startswith("wise ")
+
+
+def fee_free_paid_cents(cx, order):
+    """What the client paid on this order by Zelle or Wise. The payment ledger is the
+    record; an order with no ledger rows falls back to its own pay_method and paid_cents."""
+    oid = order.get("id")
+    try:
+        rows = cx.execute(
+            "SELECT method, amount_cents FROM order_payments WHERE order_id=? "
+            "AND kind='payment' AND status='active'", (oid,)).fetchall()
+    except Exception:
+        rows = []
+    if rows:
+        return sum(int(r[1] or 0) for r in rows if _is_fee_free_method(r[0]))
+    if _is_fee_free_method(order.get("pay_method")):
+        return int(order.get("paid_cents") or order.get("total_cents") or 0)
+    return 0
+
+
+def credit_fee_free_on_payment(cx, order):
+    """Credit the client 3.5% of what they paid by Zelle or Wise, as loyalty points, when
+    the order becomes paid (Glen, 2026-10-10). Shipping is part of what they paid. A
+    courtesy price still earns it (Glen, 2026-10-11): it rewards how they paid. Idempotent
+    per order (points.credit keys on order_ref and reason). Best-effort."""
+    try:
+        from . import points as _points
+        email = (order.get("email") or "").strip().lower()
+        ref = (order.get("external_ref") or "").strip()
+        source = str(order.get("source") or "").strip().lower()
+        if not email or not ref or source in _FEE_FREE_EXCLUDED_SOURCES:
+            return 0
+        paid = fee_free_paid_cents(cx, order)
+        cents = int(round(paid * _points.FEE_FREE_PCT))
+        if cents <= 0:
+            return 0
+        _points.init_points_table(cx)
+        if _points.has_entry(cx, order_ref=ref, reason=_points.FEE_FREE_REASON):
+            return 0
+        _points.credit(cx, email, value_cents=cents, reason=_points.FEE_FREE_REASON,
+                       order_ref=ref)
+        cx.commit()
+        return cents
+    except Exception as e:
+        print(f"[orders] fee-free credit skipped for #{order.get('id')}: {e!r}", flush=True)
+        return 0
 
 
 def _record_payment_exec(params, ctx):
@@ -1367,6 +1425,7 @@ def _record_payment_exec(params, ctx):
     set_order_payment(cx, oid, method=method, amount_cents=amount_cents)
     # Settle points now that it's paid: redeem applied points + earn (idempotent).
     settle_order_points(cx, get_order(cx, oid))
+    credit_fee_free_on_payment(cx, get_order(cx, oid))
     _o = get_order(cx, oid)
     if _o and (_o.get("source") or "") == "dispensary":
         try:
