@@ -137,3 +137,27 @@ def test_fee_free_points_redeem_on_services_only(cx):
     points.credit(cx, "buyer@x.com", value_cents=200, reason="referral_reward",
                   order_ref="referral:f@x.com")
     assert points.product_usable_credits(cx, "buyer@x.com") == 200
+
+
+# The client wording Glen approved on 2026-10-11, and every page that carries it.
+_ZELLE = ("Pay by Zelle and {pct}% of your payment comes back to you as loyalty points, "
+          "for use toward services. The points are added when your payment arrives.")
+_ZELLE_WISE = _ZELLE.replace("Pay by Zelle and", "Pay by Zelle or Wise and")
+_PAGES = {"static/begin-cart.html": (_ZELLE, 1), "static/client-portal.html": (_ZELLE, 2),
+          "static/invoice.html": (_ZELLE_WISE, 1), "static/begin-buy.html": (_ZELLE_WISE, 1)}
+
+
+@pytest.mark.parametrize("page", sorted(_PAGES))
+def test_each_page_states_the_rate_the_code_pays(page):
+    from pathlib import Path
+    text, n = _PAGES[page]
+    pct = f"{points.FEE_FREE_PCT * 100:g}"
+    html = (Path(__file__).resolve().parent.parent / page).read_text()
+    assert html.count(text.format(pct=pct)) == n
+
+
+@pytest.mark.parametrize("source,shown", [("in-house", True), ("cart", True),
+                                          ("dropship", False), ("dispensary", False)])
+def test_the_invoice_shows_the_note_only_where_it_applies(cx, source, shown):
+    oid = _order(cx, ref="INV-FF12", source=source)
+    assert appmod._invoice_summary(orders.get_order(cx, oid))["fee_free_points"] is shown

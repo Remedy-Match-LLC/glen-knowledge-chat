@@ -59350,6 +59350,8 @@ def _invoice_summary(order):
     return {
         "member_credit_cents": member_credit_cents,
         "points_balance_cents": _invoice_points_balance(order),
+        # Zelle/Wise fee-free points: client orders only (dashboard.orders).
+        "fee_free_points": _bos_orders.earns_fee_free_points(order),
         # Points redeem on services only: the most this invoice's lines can take.
         "points_room_cents": _invoice_points_room_cents(order.get("items") or [],
                                                         email=order.get("email"),

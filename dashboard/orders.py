@@ -1359,6 +1359,12 @@ def _is_fee_free_method(method):
     return "zelle" in m or m == "wise" or m.startswith("wise ")
 
 
+def earns_fee_free_points(order):
+    """True when a Zelle or Wise payment on this order earns the client fee-free points."""
+    source = str((order or {}).get("source") or "").strip().lower()
+    return source not in _FEE_FREE_EXCLUDED_SOURCES
+
+
 def fee_free_paid_cents(cx, order):
     """What the client paid on this order by Zelle or Wise. The payment ledger is the
     record; an order with no ledger rows falls back to its own pay_method and paid_cents."""
@@ -1385,8 +1391,7 @@ def credit_fee_free_on_payment(cx, order):
         from . import points as _points
         email = (order.get("email") or "").strip().lower()
         ref = (order.get("external_ref") or "").strip()
-        source = str(order.get("source") or "").strip().lower()
-        if not email or not ref or source in _FEE_FREE_EXCLUDED_SOURCES:
+        if not email or not ref or not earns_fee_free_points(order):
             return 0
         paid = fee_free_paid_cents(cx, order)
         cents = int(round(paid * _points.FEE_FREE_PCT))

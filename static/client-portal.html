@@ -2767,6 +2767,7 @@ function renderOrdersBasket(){
       <legend class="small"><strong>Payment method</strong></legend>
       <label style="display:block;margin:.25rem 0"><input type="radio" name="ordersPayMethod" value="card"${method === "zelle" ? "" : " checked"}> Credit or debit card</label>
       <label style="display:block;margin:.45rem 0 .25rem"><input type="radio" name="ordersPayMethod" value="zelle"${method === "zelle" ? " checked" : ""}> Zelle (US)</label>
+      <p class="muted small fee-free-note" style="margin:.2rem 0 0">Pay by Zelle and 3.5% of your payment comes back to you as loyalty points, for use toward services. The points are added when your payment arrives.</p>
     </fieldset>
     <button type="button" class="btn full" id="orders-place-order">Place order</button>
     <p id="orders-order-message" class="small" hidden></p>`;
@@ -5264,6 +5265,7 @@ function render(d, v){
         <legend class="small"><strong>Payment method</strong></legend>
         <label style="display:block;margin:.25rem 0"><input type="radio" name="portalPayMethod" value="card" checked> Credit or debit card</label>
         <label style="display:block;margin:.45rem 0 .25rem"><input type="radio" name="portalPayMethod" value="zelle"> Zelle (US)</label>
+        <p class="muted small fee-free-note" style="margin:.2rem 0 0">Pay by Zelle and 3.5% of your payment comes back to you as loyalty points, for use toward services. The points are added when your payment arrives.</p>
         <div id="portalZellePreview" class="note small" hidden style="margin-top:.6rem">Loading Zelle instructions…</div>
       </fieldset>
       <button type="button" class="btn ghost full portal-continue-shopping" style="margin-bottom:.5rem">Continue Shopping</button>
