@@ -77,7 +77,7 @@ def test_a_cart_paid_with_points_and_ship_credit_debits_both(env, monkeypatch):
     assert _ship_balance(env["db"]) == 5000 - int(order["ship_credit_applied_cents"])
 
 
-def test_the_credit_is_spent_before_the_slow_steps_after_saving(env, monkeypatch):
+def test_the_credit_is_spent_before_the_hold_hook_runs(env, monkeypatch):
     # Being paid releases the hold, so the debit must come straight after mark-paid,
     # before the portal welcome email and the other post-save steps (review of #1981).
     monkeypatch.setattr(app, "_ship_credit_enabled", lambda: True)
