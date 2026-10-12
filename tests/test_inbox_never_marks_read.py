@@ -126,40 +126,113 @@ def test_open_thread_sends_no_mark_read():
 
 # ── Guard 3: no code removes the UNREAD label ────────────────────────────────
 
-def _unread_removals(paths, root):
-    """Every dict in the given source that puts UNREAD under removeLabelIds. Parsed, so a
+# Every "UNREAD" literal in the app's Python, by file and enclosing function. Each one
+# here was read and only reads or adds the label. A new one fails the test below until
+# someone checks it does not mark mail read (review round 2: a variable or a keyword
+# argument hides a removal from any pattern match).
+_UNREAD_ALLOWED = {
+    ("dashboard/inbox.py", "_summarize_thread"),   # reads labels
+    ("dashboard/inbox.py", "mark_unread"),         # adds UNREAD
+    ("scripts/inbox_triage.py", "label_stats"),    # counts a label
+}
+
+
+def _unread_literals(paths, root):
+    """(file, enclosing function, line) for every "UNREAD" string constant, parsed, so a
     comment or docstring mentioning it does not count."""
     import ast
-    hits = []
+    out = []
     for p in paths:
         try:
             tree = ast.parse(p.read_text())
         except (SyntaxError, UnicodeDecodeError):
             continue
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Dict):
-                continue
-            for k, v in zip(node.keys, node.values):
-                if (isinstance(k, ast.Constant) and k.value == "removeLabelIds"
-                        and any(isinstance(c, ast.Constant) and c.value == "UNREAD"
-                                for c in ast.walk(v))):
-                    hits.append(f"{p.relative_to(root)}:{node.lineno}")
-    return hits
+        for fn in [tree] + [n for n in ast.walk(tree)
+                            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+            name = getattr(fn, "name", "<module>")
+            body = fn.body if fn is tree else [fn]
+            for top in body:
+                for node in ast.walk(top):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node is not fn:
+                        continue
+                    if isinstance(node, ast.Constant) and node.value == "UNREAD":
+                        out.append((str(p.relative_to(root)), name, node.lineno))
+    # A literal inside a nested function is reported for each enclosing scope; keep the
+    # innermost name per line.
+    best = {}
+    for f, name, line in out:
+        if (f, line) not in best or name != "<module>":
+            best[(f, line)] = name
+    return sorted((f, n, line) for (f, line), n in best.items())
 
 
-def test_no_source_removes_the_unread_label():
+def test_no_unreviewed_unread_literal_in_source():
     # Glen, 2026-10-11: "stop marking read". The Zelle import removed UNREAD from the bank
     # notifications it applied, from 2026-08-29.
     skip = {"tests", ".venv", "venv", "node_modules", ".git"}
     paths = [p for p in _repo().rglob("*.py") if not skip & set(p.relative_to(_repo()).parts)]
     assert len(paths) > 100
-    assert _unread_removals(paths, _repo()) == []
+    found = _unread_literals(paths, _repo())
+    unreviewed = [x for x in found if (x[0], x[1]) not in _UNREAD_ALLOWED]
+    assert unreviewed == []
+    assert {(f, n) for f, n, _ in found} == _UNREAD_ALLOWED   # stale entries come out
 
 
-def test_the_unread_scan_catches_a_removal(tmp_path):
+def test_the_unread_scan_catches_a_removal_however_written(tmp_path):
     probe = tmp_path / "probe.py"
-    probe.write_text('body = {"addLabelIds": ["X"], "removeLabelIds": ["UNREAD"]}\n')
-    assert _unread_removals([probe], tmp_path) == ["probe.py:1"]
-    ok = tmp_path / "ok.py"
-    ok.write_text('# removeLabelIds UNREAD in a comment does not count\nbody = {"removeLabelIds": ["INBOX"]}\n')
-    assert _unread_removals([ok], tmp_path) == []
+    probe.write_text('def f(s):\n    labels = ["UNREAD"]\n    s.modify(body={"removeLabelIds": labels})\n'
+                     'def g(t):\n    _modify_thread(t, remove=["UNREAD"])\n'
+                     '# "UNREAD" in a comment does not count\n')
+    assert _unread_literals([probe], tmp_path) == [("probe.py", "f", 2), ("probe.py", "g", 5)]
+
+
+def test_mark_read_refuses():
+    with pytest.raises(RuntimeError):
+        _inbox.mark_read("T1")
+
+
+# ── Guard 4: IMAP readers open mailboxes read-only and only PEEK ─────────────
+
+def _imap_marks_read(paths, root):
+    """IMAP calls that would set \\Seen: select() of a named mailbox without
+    readonly=True, a fetch of RFC822 or BODY[] without PEEK, or a store() adding \\Seen."""
+    import ast
+    out = []
+    for p in paths:
+        try:
+            tree = ast.parse(p.read_text())
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        for n in ast.walk(tree):
+            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)):
+                continue
+            strs = [a.value for a in n.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+            attr = n.func.attr
+            where = f"{p.relative_to(root)}:{n.lineno}"
+            if attr == "select" and strs and strs[0].upper() in ("INBOX", "[GMAIL]/ALL MAIL"):
+                ro = [k for k in n.keywords if k.arg == "readonly"]
+                if not (ro and isinstance(ro[0].value, ast.Constant) and ro[0].value.value is True):
+                    out.append(where)
+            elif attr == "fetch" and any(("RFC822" in s.upper() or "BODY[" in s.upper())
+                                         and "PEEK" not in s.upper() for s in strs):
+                out.append(where)
+            elif attr == "store" and any("\\SEEN" in s.upper() for s in strs) \
+                    and any(s.startswith("+") for s in strs):
+                out.append(where)
+    return out
+
+
+def test_no_imap_reader_marks_mail_read():
+    # Review round 1 (2026-10-11): the daily supplier-quote scan fetched RFC822 from a
+    # read-write INBOX, marking every message it opened read.
+    skip = {"tests", ".venv", "venv", "node_modules", ".git"}
+    paths = [p for p in _repo().rglob("*.py") if not skip & set(p.relative_to(_repo()).parts)]
+    assert _imap_marks_read(paths, _repo()) == []
+
+
+def test_the_imap_scan_catches_each_form(tmp_path):
+    probe = tmp_path / "probe.py"
+    probe.write_text('imap.select("INBOX")\nimap.fetch(n, "(RFC822)")\n'
+                     'imap.store(n, "+FLAGS", "\\\\Seen")\n'
+                     'imap.select("INBOX", readonly=True)\nimap.fetch(n, "(BODY.PEEK[])")\n')
+    assert _imap_marks_read([probe], tmp_path) == ["probe.py:1", "probe.py:2", "probe.py:3"]
