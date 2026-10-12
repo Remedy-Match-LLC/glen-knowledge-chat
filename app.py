@@ -41334,7 +41334,8 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
                   shipping_cents=pc["shipping_cents"],
                   ship_credit_applied_cents=_sc_apply,
                   paid_cents=(0 if no_payment_required else None),
-                  pay_method=("zelle" if zelle else None))
+                  pay_method=("zelle" if zelle else None),
+                  settle_credits_on_paid=no_payment_required)
     if zelle and not order_id:
         # Nothing was recorded, so nothing else is: no QBO lines, no referral redemption
         # held by an order that does not exist (review round 1).
@@ -41346,15 +41347,6 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
             _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
     except Exception as _e:
         print(f"[reorder] persist qbo_lines failed: {_e!r}", flush=True)
-    if no_payment_required and order_id:
-        # Saved as paid, which releases the hold on the points and ship credit that
-        # cover it, so spend them now, as any paid order does. Idempotent per ref.
-        try:
-            with db.connect(LOG_DB) as _scx:
-                _scx.row_factory = sqlite3.Row
-                _settle_points_on_altpay(_bos_orders.get_order(_scx, order_id))
-        except Exception as _se:  # noqa: BLE001
-            print(f"[reorder] $0 settle failed ref={checkout_ref}: {_se!r}", flush=True)
     _record_referral_if_any(_ref_ctx, email, checkout_ref)
     return {"out": out, "stripe_url": stripe_url,
             "no_payment_required": no_payment_required,
@@ -55526,13 +55518,17 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
                   items=None, total_cents=0, address=None, channel="retail",
                   get_cents=0, discount_cents=0, points_redeemed_cents=0, shipping_cents=0,
                   status="new", paid_cents=None, pay_method=None, practitioner_id=None,
-                  margin_cents=None, ship_credit_applied_cents=None, recipient_email=None):
+                  margin_cents=None, ship_credit_applied_cents=None, recipient_email=None,
+                  settle_credits_on_paid=False):
     """Best-effort: record an order into the BOS orders table. Never raises into
     a checkout path. get_cents = absorbed Hawai'i GET owed (recorded, not charged).
     status defaults to 'new' (enters fulfillment); pass 'done' for digital charges
     with nothing to ship (e.g. the $1 biofield trial membership unlock).
     paid_cents (when not None) records the order as paid for that captured amount
-    WITHOUT moving it off `status` — for already-captured charges like the trial."""
+    WITHOUT moving it off `status` — for already-captured charges like the trial.
+    settle_credits_on_paid: with paid_cents, spend the order's points and ship credit
+    straight after marking it paid. Being paid releases their hold, so this keeps the
+    gap before the debit as short as possible (a $0 cart order, review of #1981)."""
     try:
         cx = db.connect(LOG_DB)
         try:
@@ -55550,6 +55546,14 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
             if paid_cents is not None and _oid:
                 _bos_orders.mark_order_paid_keep_status(
                     cx, _oid, method="card", amount_cents=int(paid_cents))
+                if settle_credits_on_paid:
+                    try:
+                        with db.connect(LOG_DB) as _scx:
+                            _scx.row_factory = sqlite3.Row
+                            _settle_points_on_altpay(_bos_orders.get_order(_scx, _oid))
+                    except Exception as _se:  # noqa: BLE001
+                        print(f"[orders] CREDIT SETTLE FAILED {source}/{external_ref}: "
+                              f"{_se!r}", flush=True)
             # Hold hook runs AFTER the mark-paid block above so a pre-paid ingested
             # order (e.g. GrooveKart) is already marked paid when eligible_for_hold
             # checks it — an already-paid order must never be held (Task: don't

@@ -75,3 +75,16 @@ def test_a_cart_paid_with_points_and_ship_credit_debits_both(env, monkeypatch):
     finally:
         cx.close()
     assert _ship_balance(env["db"]) == 5000 - int(order["ship_credit_applied_cents"])
+
+
+def test_the_credit_is_spent_before_the_slow_steps_after_saving(env, monkeypatch):
+    # Being paid releases the hold, so the debit must come straight after mark-paid,
+    # before the portal welcome email and the other post-save steps (review of #1981).
+    monkeypatch.setattr(app, "_ship_credit_enabled", lambda: True)
+    _seed_ship_credit(env["db"], 20000)
+    seen = []
+    monkeypatch.setattr(app, "_hold_new_order_and_invite",
+                        lambda cx, oid: seen.append(_ship_balance(env["db"])))
+    assert env["client"].post("/api/cart/checkout", json={"address": ADDRESS}).status_code == 200
+    applied = int(_orders(env["db"])[0]["ship_credit_applied_cents"])
+    assert seen == [20000 - applied]
