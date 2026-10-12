@@ -55527,8 +55527,8 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
     paid_cents (when not None) records the order as paid for that captured amount
     WITHOUT moving it off `status` — for already-captured charges like the trial.
     settle_credits_on_paid: with paid_cents, spend the order's points and ship credit
-    straight after marking it paid. Being paid releases their hold, so this keeps the
-    gap before the debit as short as possible (a $0 cart order, review of #1981)."""
+    just BEFORE marking it paid. Being paid releases their hold, so the debit must land
+    while the hold still stands (a $0 cart order, review of #1981)."""
     try:
         cx = db.connect(LOG_DB)
         try:
@@ -55544,9 +55544,10 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
                 ship_credit_applied_cents=ship_credit_applied_cents,
                 recipient_email=recipient_email)
             if paid_cents is not None and _oid:
-                _bos_orders.mark_order_paid_keep_status(
-                    cx, _oid, method="card", amount_cents=int(paid_cents))
                 if settle_credits_on_paid:
+                    # Spend first, while the order is still unpaid and so still holds
+                    # its credit; mark it paid after. A concurrent checkout then sees
+                    # the credit held or spent, never free. upsert_order has committed.
                     try:
                         with db.connect(LOG_DB) as _scx:
                             _scx.row_factory = sqlite3.Row
@@ -55554,6 +55555,8 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
                     except Exception as _se:  # noqa: BLE001
                         print(f"[orders] CREDIT SETTLE FAILED {source}/{external_ref}: "
                               f"{_se!r}", flush=True)
+                _bos_orders.mark_order_paid_keep_status(
+                    cx, _oid, method="card", amount_cents=int(paid_cents))
             # Hold hook runs AFTER the mark-paid block above so a pre-paid ingested
             # order (e.g. GrooveKart) is already marked paid when eligible_for_hold
             # checks it — an already-paid order must never be held (Task: don't

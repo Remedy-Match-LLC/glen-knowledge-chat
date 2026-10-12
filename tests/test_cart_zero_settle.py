@@ -88,3 +88,33 @@ def test_the_credit_is_spent_before_the_slow_steps_after_saving(env, monkeypatch
     assert env["client"].post("/api/cart/checkout", json={"address": ADDRESS}).status_code == 200
     applied = int(_orders(env["db"])[0]["ship_credit_applied_cents"])
     assert seen == [20000 - applied]
+
+
+def test_the_credit_is_spent_while_the_order_still_holds_it(env, monkeypatch):
+    # The debit lands before mark-paid ends the hold, so a concurrent checkout sees the
+    # credit held or spent, never free (review round 2 of #1981).
+    monkeypatch.setattr(app, "_ship_credit_enabled", lambda: True)
+    _seed_ship_credit(env["db"], 20000)
+    seen = []
+    real = app._bos_orders.mark_order_paid_keep_status
+
+    def spy(cx, oid, **k):
+        seen.append(_ship_balance(env["db"]))
+        return real(cx, oid, **k)
+    monkeypatch.setattr(app._bos_orders, "mark_order_paid_keep_status", spy)
+    assert env["client"].post("/api/cart/checkout", json={"address": ADDRESS}).status_code == 200
+    applied = int(_orders(env["db"])[0]["ship_credit_applied_cents"])
+    assert applied > 0
+    assert seen == [20000 - applied]
+
+
+def test_a_failed_settle_still_records_the_paid_order(env, monkeypatch, capsys):
+    monkeypatch.setattr(app, "_ship_credit_enabled", lambda: True)
+    _seed_ship_credit(env["db"], 20000)
+
+    def boom(order):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(app, "_settle_points_on_altpay", boom)
+    assert env["client"].post("/api/cart/checkout", json={"address": ADDRESS}).status_code == 200
+    assert _orders(env["db"])[0]["pay_status"] == "paid"
+    assert "CREDIT SETTLE FAILED" in capsys.readouterr().out
