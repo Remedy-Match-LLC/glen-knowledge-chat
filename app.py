@@ -3306,6 +3306,10 @@ def _r2():
 
 @app.route("/clip/<path:key>")
 def serve_clip(key):
+    # This route is public. Packing photos share the bucket and are served only through
+    # the signed-in order routes, so their folder is never reachable here.
+    if key.lstrip("/").startswith("packing-photos/") or ".." in key:
+        return "not found", 404
     rng = request.headers.get("Range")
     kw = {"Bucket": os.environ.get("R2_BUCKET", "rm-clips"), "Key": key}
     if rng:
@@ -57957,6 +57961,94 @@ def api_orders_supersede(oid):
                     "superseded_by_order_id": replacement_id})
 
 
+# ── Packing photos on the order card (Glen, 2026-09-25; storage approved 2026-10-13) ──
+def _packing_photo_actor(*roles):
+    actor = _bos_actor()
+    if actor is None or actor.role not in roles:
+        return None
+    return actor
+
+
+def _r2_bucket():
+    return os.environ.get("R2_BUCKET", "rm-clips")
+
+
+@app.route("/api/orders/<int:oid>/packing-photos", methods=["GET", "POST"])
+def api_order_packing_photos(oid):
+    """GET: the order's photos. POST (multipart, field `photos`): add one or more."""
+    actor = _packing_photo_actor(_bos_rbac.OWNER, _bos_rbac.OPS, _bos_rbac.VA)
+    if actor is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import packing_photos as _pkp
+    cx = db.connect(LOG_DB)
+    cx.row_factory = _sqlite3.Row
+    try:
+        if not _bos_orders.get_order(cx, oid):
+            return jsonify({"ok": False, "error": "order not found"}), 404
+        if request.method == "GET":
+            return jsonify({"ok": True, "photos": _pkp.list_for(cx, oid)})
+        files = request.files.getlist("photos")
+        if not files:
+            return jsonify({"ok": False, "error": "no photo attached"}), 400
+
+        def _put(key, data):
+            _r2().put_object(Bucket=_r2_bucket(), Key=key, Body=data,
+                             ContentType="image/jpeg")
+
+        added, errors = [], []
+        for f in files:
+            raw = f.read(_pkp.MAX_UPLOAD_BYTES + 1)
+            try:
+                added.append(_pkp.add(cx, oid, raw, put=_put,
+                                      uploaded_by=getattr(actor, "role", "")))
+            except _pkp.PhotoError as e:
+                errors.append({"file": (f.filename or "")[:80], "error": str(e)})
+            except Exception as e:  # noqa: BLE001 - storage failure: report, keep the rest
+                print(f"[packing-photos] upload failed for order {oid}: {e!r}", flush=True)
+                errors.append({"file": (f.filename or "")[:80],
+                               "error": "The photo could not be saved. Try again."})
+        status = 200 if added else 400
+        return jsonify({"ok": bool(added), "added": added, "errors": errors,
+                        "photos": _pkp.list_for(cx, oid)}), status
+    finally:
+        cx.close()
+
+
+@app.route("/api/orders/<int:oid>/packing-photos/<int:pid>", methods=["GET", "DELETE"])
+def api_order_packing_photo(oid, pid):
+    """GET ?size=thumb|full: the image. DELETE: remove it (Glen and Rae only)."""
+    from dashboard import packing_photos as _pkp
+    if request.method == "DELETE":
+        if _packing_photo_actor(_bos_rbac.OWNER, _bos_rbac.OPS) is None:
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
+        cx = db.connect(LOG_DB)
+        try:
+            gone = _pkp.delete(cx, oid, pid, remove=lambda k: _r2().delete_object(
+                Bucket=_r2_bucket(), Key=k))
+        finally:
+            cx.close()
+        return (jsonify({"ok": True}), 200) if gone else (
+            jsonify({"ok": False, "error": "photo not found"}), 404)
+    if _packing_photo_actor(_bos_rbac.OWNER, _bos_rbac.OPS, _bos_rbac.VA) is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    size = "thumb" if request.args.get("size") == "thumb" else "full"
+    cx = db.connect(LOG_DB)
+    try:
+        key = _pkp.key_for(cx, oid, pid, size)
+    finally:
+        cx.close()
+    if not key:
+        return jsonify({"ok": False, "error": "photo not found"}), 404
+    try:
+        obj = _r2().get_object(Bucket=_r2_bucket(), Key=key)
+    except Exception:
+        return jsonify({"ok": False, "error": "photo not found"}), 404
+    resp = Response(obj["Body"].read(), mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
 @app.route("/api/orders/<int:oid>/review-hold", methods=["GET", "POST"])
 @app.route("/api/orders/<int:oid>/review-hold/release", methods=["POST"],
            endpoint="api_orders_review_hold_release")
@@ -60852,6 +60944,19 @@ def bos_orders_create():
                 rows = _bos_orders.list_orders(cx, include_cancelled=False)
             for o in rows:
                 o["source_label"] = _order_board_source_label(o.get("source"))
+            # Packing photos: a count per order, for the card and its drop-ship reminder.
+            try:
+                from dashboard import packing_photos as _pkp
+                _pcx = db.connect(LOG_DB)
+                try:
+                    _pcounts = _pkp.counts(_pcx)
+                    _pcx.commit()
+                finally:
+                    _pcx.close()
+                for o in rows:
+                    o["packing_photo_count"] = _pcounts.get(int(o.get("id")), 0)
+            except Exception as _e:
+                print(f"[orders] packing-photo count skipped: {_e!r}", flush=True)
             # Bill with caregiver: which caregivers may take each order's lines. One query,
             # on its own connection so a failure cannot abort the board's transaction.
             try:
