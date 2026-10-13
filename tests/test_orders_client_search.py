@@ -247,3 +247,56 @@ def test_a_whole_address_matches_exactly(cx):
     assert _refs(O.search_client_orders(cx, "ann@x.com")) == ["GK-1001", "GK-1002", "GK-1003"]
     assert _refs(O.search_client_orders(cx, " ANN@X.COM ")) == ["GK-1001", "GK-1002", "GK-1003"]
     assert _refs(O.search_client_orders(cx, "ann@x")) == ["GK-1001", "GK-1002", "GK-1003", "JO-1"]
+
+
+# ── The ship-to name (Glen, 2026-10-13) ───────────────────────────────────────
+def test_a_ship_to_name_finds_that_order_alone(cx):
+    # A drop-ship: the buyer is the practitioner, the recipient lives only in the address.
+    O.upsert_order(cx, source="dropship", external_ref="DS-1", email="ann@x.com", name="Ann Lee",
+                   address={"name": "Tony Profaci", "city": "Hazlet"})
+    cx.commit()
+    rows = O.search_client_orders(cx, "profaci")
+    assert _refs(rows) == ["DS-1"] and rows[0]["search_match"] == "ship_to"
+    assert _refs(O.search_client_orders(cx, "Tony P")) == ["DS-1"]
+    assert O.search_client_orders(cx, "Hazlet") == []                 # the name, not the address
+
+
+def test_a_buyer_match_keeps_the_whole_history_and_no_ship_to_mark(cx):
+    O.upsert_order(cx, source="dropship", external_ref="DS-1", email="ann@x.com", name="Ann Lee",
+                   address={"name": "Ann Lee"})
+    cx.commit()
+    rows = O.search_client_orders(cx, "Ann Lee")
+    assert _refs(rows) == ["DS-1", "GK-1001", "GK-1002", "GK-1003"]
+    assert all("search_match" not in r for r in rows)
+
+
+def test_a_superseded_ship_to_match_stays_hidden(cx):
+    O.upsert_order(cx, source="dropship", external_ref="DS-1", email="ann@x.com",
+                   address={"name": "Tony Profaci"})
+    cx.commit()
+    O.supersede_order(cx, _id(cx, "DS-1"), _id(cx, "GK-2001"))
+    cx.commit()
+    assert O.search_client_orders(cx, "Profaci") == []
+
+
+def test_an_accented_ship_to_name_is_found(cx):
+    O.upsert_order(cx, source="dropship", external_ref="DS-2", email="bo@x.com",
+                   address={"name": "Zoë Ångström"})
+    cx.commit()
+    assert _refs(O.search_client_orders(cx, "ångström")) == ["DS-2"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_ship_to_card_links_the_history(tmp_path):
+    page = (ROOT / "static" / "console-orders.html").read_text()
+    a, b = page.find("// BEGIN order search"), page.find("// END order search")
+    js = tmp_path / "s.js"
+    js.write_text(NUM_JS.split("BLOCK")[0] + page[a:b] + r"""
+const h = numberHitHtml({id: 203, search_match: 'ship_to', email: 'a@x.com'});
+assert.ok(h.includes("All of this client's orders") && !h.includes('Replaced'), h);
+assert.ok(searchNote('Profaci', [{search_match: 'ship_to'}]).startsWith('Order shipped to'));
+assert.ok(searchNote('x', [{search_match: 'ship_to'}, {}]).startsWith('All 2 orders'));
+console.log('OK');
+""")
+    out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout

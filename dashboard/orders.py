@@ -369,7 +369,11 @@ def search_client_orders(cx, q, limit=500):
 
     Glen, 2026-10-13: an order number (digits, optional leading #) shows that one order, not
     the client's history; see _orders_by_number. Digits that match no order fall through to
-    the phone search, unless they start with #."""
+    the phone search, unless they start with #.
+
+    Glen, 2026-10-13: text also matches the ship-to name in the order's address. An order
+    found only that way comes back on its own, marked search_match="ship_to", without the
+    buyer's history: a drop-ship's recipient is not the buyer."""
     import re
     q = (q or "").strip().lower()
     if len(q) < 2 and not q.isdigit():
@@ -380,7 +384,7 @@ def search_client_orders(cx, q, limit=500):
         found = _orders_by_number(cx, num)
         if found or q.startswith("#"):
             return found[:int(limit)]
-    hits, emails = set(), set()
+    hits, emails, ship_to = set(), set(), set()
 
     def take(rows):
         for oid, email in rows:
@@ -412,6 +416,7 @@ def search_client_orders(cx, q, limit=500):
                 cx.rollback()
             except Exception:  # noqa: BLE001
                 pass
+        ship_to.update(_orders_by_ship_to_name(cx, q, base))
 
     def _phone(d):
         return d[1:] if len(d) == 11 and d.startswith("1") else d
@@ -421,18 +426,46 @@ def search_client_orders(cx, q, limit=500):
                 f"SELECT id, email, phone FROM orders WHERE {base} AND coalesce(phone,'')<>''").fetchall():
             if digits in _phone(re.sub(r"\D", "", phone or "")):
                 take([(oid, email)])
-    if not hits and not emails:
+    ship_to -= hits
+    if not hits and not emails and not ship_to:
         return []
     conds, args = [], []
     if emails:
         conds.append(f"lower(trim(email)) IN ({','.join('?' * len(emails))})")
         args += sorted(emails)
-    if hits:
-        conds.append(f"id IN ({','.join('?' * len(hits))})")
-        args += sorted(hits)
+    if hits | ship_to:
+        conds.append(f"id IN ({','.join('?' * len(hits | ship_to))})")
+        args += sorted(hits | ship_to)
     cur = cx.execute(f"SELECT * FROM orders WHERE {base} AND ({' OR '.join(conds)}) "
                      "ORDER BY id DESC LIMIT ?", args + [int(limit)])
-    return [_row_to_dict(r) for r in cur.fetchall()]
+    out = [_row_to_dict(r) for r in cur.fetchall()]
+    for d in out:
+        if int(d["id"]) in ship_to and (d.get("email") or "").strip().lower() not in emails:
+            d["search_match"] = "ship_to"
+    return out
+
+
+def _orders_by_ship_to_name(cx, q, base):
+    """Ids of visible orders whose ship-to name contains q, ignoring case.
+
+    The address is JSON text, so the name is read in Python. A plain-ASCII query narrows
+    the rows in SQL first; any other query reads every address, because json.dumps writes
+    accented letters as escapes the SQL match would miss."""
+    sql = f"SELECT id, address_json FROM orders WHERE {base} AND coalesce(address_json,'') <> ''"
+    args = ()
+    if q.isascii():
+        sql += " AND lower(address_json) LIKE ?"
+        args = (f"%{q}%",)
+    found = set()
+    for oid, raw in cx.execute(sql, args).fetchall():
+        try:
+            addr = raw if isinstance(raw, dict) else json.loads(raw or "{}")
+            name = (addr or {}).get("name") or ""
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if isinstance(name, str) and q in name.lower():
+            found.add(int(oid))
+    return found
 
 
 def _orders_by_number(cx, num):
