@@ -34,3 +34,17 @@ def test_a_name_is_escaped_in_the_html(monkeypatch):
                          total_cents=100, email="a@b.com", name="<b>bob</b>")
     O._send_invoice_exec({"order_id": oid}, {"cx": cx})
     assert "<b>bob" not in cap["html"].lower() and "&lt;b&gt;" in cap["html"].lower()
+
+
+@pytest.mark.parametrize("odd", [b"linda", 42])
+def test_a_name_that_is_not_text_still_sends(monkeypatch, odd):
+    """Review round 2: a non-text stored name must not stop the email."""
+    O, cx = _orders_db()
+    monkeypatch.setenv("INVOICE_PAYLINK_ENABLED", "1")
+    cap = _capture_send_email(monkeypatch)
+    oid = O.upsert_order(cx, source="in-house", external_ref="INH-3", status="new",
+                         total_cents=100, email="a@b.com")
+    real = O.get_order
+    monkeypatch.setattr(O, "get_order", lambda c, i: {**real(c, i), "name": odd})
+    O._send_invoice_exec({"order_id": oid}, {"cx": cx})
+    assert cap["plain"].startswith("Hi there,")

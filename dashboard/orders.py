@@ -1209,7 +1209,9 @@ def _send_invoice_exec(params, ctx):
     # Glen's name rules capitalise it; mixed case is left as typed. Escaped for the HTML.
     import html as _html
     from dashboard.name_case import normalize_name
-    name = normalize_name(_html.unescape((order.get("name") or "").strip())) or "there"
+    raw_name = order.get("name")
+    raw_name = raw_name.strip() if isinstance(raw_name, str) else ""   # never stop the send
+    name = normalize_name(_html.unescape(raw_name)) or "there"
     name_html = _html.escape(name)
     ref = order.get("external_ref") or f"#{oid}"
     total = f"${(int(order.get('total_cents') or 0))/100:,.2f}"
