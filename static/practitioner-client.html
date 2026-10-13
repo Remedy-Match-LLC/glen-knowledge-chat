@@ -406,7 +406,10 @@
     .row2 { flex-direction: column; gap: 0; }
     .field-sm { max-width: none; }
   }
+  .order-notes { margin-top: 16px; padding: 12px 14px; border: 1px solid rgba(201,168,76,.4); border-radius: 8px; }
+  .order-notes p { margin: 0 0 8px; } .order-notes p:last-child { margin-bottom: 0; }
 </style>
+<script src="/static/js/order-notes.js"></script>
 </head>
 <body>
 
@@ -597,6 +600,7 @@
       </div>
       <a class="pay-link-btn hidden" id="pay-link" href="#" target="_blank" rel="noopener">Pay securely &rarr;</a>
       <div class="email-note" id="email-note"></div>
+      <div class="order-notes hidden" id="order-notes"></div>
     </div>
   </div>
 </div>
@@ -1291,6 +1295,7 @@
       if (pi.note) document.getElementById('pd-note').textContent = pi.note;
       if (pi.to || pi.label || pi.note) show('pay-detail');
     }
+    if (window.renderOrderNotes) renderOrderNotes(document.getElementById('order-notes'), data.order_notes);
 
     var emailNote = document.getElementById('email-note');
     if (data.method === 'card') {
