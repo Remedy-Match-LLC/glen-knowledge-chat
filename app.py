@@ -11642,7 +11642,11 @@ def _send_review_invites(email: str, name: str, slugs) -> bool:
             tok = _review_token_mint(email, slug)
             lines.append(f"{pname}: {PUBLIC_BASE_URL}/review/{tok}")
         if not lines:
-            return True    # nothing reviewable; mark them so they are not retried daily
+            # Nothing resolves: maybe a catalog that failed to load. Retry tomorrow;
+            # the max-age window ends it (review round 1).
+            print(f"[reviews] no reviewable product for {email}; left for the next run",
+                  flush=True)
+            return False
         subject = "How are your remedies? Share a quick review"
         body = (
             f"Aloha {name or ''},\n\n"
@@ -54771,9 +54775,14 @@ def cron_review_invites():
         if not ok:
             failed += len(g)
             continue   # leave the whole buyer unmarked so the next run retries it
-        with _db_lock, db.connect(LOG_DB) as cx:
-            for r in g:
-                _ri.mark_invited(cx, r["email"], r["slug"], r["order_id"])
+        # The email went out: mark every row, and never let one row's error leave the
+        # rest unmarked to be listed again tomorrow or stop the run (review round 1).
+        for r in g:
+            try:
+                with _db_lock, db.connect(LOG_DB) as cx:
+                    _ri.mark_invited(cx, r["email"], r["slug"], r["order_id"])
+            except Exception as _e:
+                print(f"[reviews] mark_invited failed for {r['slug']}: {_e!r}", flush=True)
         invited += len(g)
         emails += 1
     return jsonify({"invited": invited, "failed": failed, "emails": emails,

@@ -133,3 +133,27 @@ def test_a_retired_twin_and_its_survivor_are_listed_once(monkeypatch, tmp_path):
     _post(monkeypatch)
     (_, _, body), = sent
     assert body.count("/review/") == 1
+
+
+def test_nothing_reviewable_sends_nothing_and_retries(monkeypatch, tmp_path):
+    """Review round 1: an empty catalog must not mark buyers invited for ever."""
+    db_path = _db(monkeypatch, tmp_path, [("s@x.com", ["a", "b"])])
+    monkeypatch.setattr(appmod, "_get_product", lambda s: None)
+    sent = _capture(monkeypatch)
+    r = _post(monkeypatch)
+    assert sent == [] and r["failed"] == 2 and r["invited"] == 0
+    assert len(_pending(db_path)) == 2
+
+
+def test_one_failed_mark_does_not_stop_the_others(monkeypatch, tmp_path):
+    db_path = _db(monkeypatch, tmp_path, [("s@x.com", ["a", "b", "c"])])
+    real = _ri.mark_invited
+
+    def flaky(cx, email, slug, order_id):
+        if slug == "a":
+            raise RuntimeError("db blip")
+        return real(cx, email, slug, order_id)
+    monkeypatch.setattr(_ri, "mark_invited", flaky)
+    _capture(monkeypatch)
+    _post(monkeypatch)
+    assert [p["slug"] for p in _pending(db_path)] == ["a"]
