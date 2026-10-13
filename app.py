@@ -57990,7 +57990,7 @@ def api_order_packing_photos(oid):
         if not _bos_orders.get_order(cx, oid):
             return jsonify({"ok": False, "error": "order not found"}), 404
         if request.method == "GET":
-            return jsonify({"ok": True, "photos": _pkp.list_for(cx, oid)})
+            return jsonify({"ok": True, "photos": _pkp.photos_for(cx, oid)})
         files = request.files.getlist("photos")
         if not files:
             return jsonify({"ok": False, "error": "no photo attached"}), 400
@@ -58016,7 +58016,7 @@ def api_order_packing_photos(oid):
                                "error": "The photo could not be saved. Try again."})
         status = 200 if added else 400
         return jsonify({"ok": bool(added), "added": added, "errors": errors,
-                        "photos": _pkp.list_for(cx, oid)}), status
+                        "photos": _pkp.photos_for(cx, oid)}), status
     finally:
         cx.close()
 

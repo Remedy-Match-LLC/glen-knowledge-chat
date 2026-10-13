@@ -113,7 +113,7 @@ def test_delete_removes_the_row_and_both_files():
     cx, st = _cx(), Store()
     row = P.add(cx, 7, _jpeg(10, 10), put=st.put)
     assert P.delete(cx, 7, row["id"], remove=st.remove) is True
-    assert st.files == {} and P.list_for(cx, 7) == [] and P.counts(cx) == {}
+    assert st.files == {} and P.photos_for(cx, 7) == [] and P.counts(cx) == {}
 
 
 def test_a_failed_store_writes_no_row():
@@ -123,7 +123,7 @@ def test_a_failed_store_writes_no_row():
         raise RuntimeError("r2 down")
     with pytest.raises(RuntimeError):
         P.add(cx, 9, _jpeg(10, 10), put=boom)
-    assert P.list_for(cx, 9) == []
+    assert P.photos_for(cx, 9) == []
 
 
 def test_an_iphone_heic_photo_is_stored_as_jpeg():
@@ -199,7 +199,7 @@ def test_a_failed_second_put_removes_the_first():
         st.put(k, b)
     with pytest.raises(RuntimeError):
         P.add(cx, 9, _jpeg(10, 10), put=put, remove=st.remove)
-    assert st.files == {} and P.list_for(cx, 9) == []
+    assert st.files == {} and P.photos_for(cx, 9) == []
 
 
 def test_setup_leaves_no_transaction_open():
@@ -227,7 +227,7 @@ def test_a_failed_row_write_rolls_back_so_the_connection_still_works():
             P.add(cx, 4, _jpeg(10, 10), put=put, remove=st.remove)
     finally:
         dbw.insert_returning_id = real
-    assert P.list_for(cx, 4) == [] and st.files == {}
+    assert P.photos_for(cx, 4) == [] and st.files == {}
 
 
 def test_a_large_png_is_shrunk_before_any_copy(monkeypatch):

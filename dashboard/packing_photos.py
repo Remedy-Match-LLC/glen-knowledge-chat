@@ -157,7 +157,7 @@ def add(cx, order_id, raw, *, put, remove=None, uploaded_by=""):
             "uploaded_by": uploaded_by or "", "created_at": now}
 
 
-def list_for(cx, order_id):
+def photos_for(cx, order_id):
     init_table(cx)
     rows = cx.execute(
         "SELECT id, width, height, uploaded_by, created_at FROM packing_photos "
