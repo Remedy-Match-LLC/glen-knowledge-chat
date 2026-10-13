@@ -388,7 +388,13 @@ def search_client_orders(cx, q, limit=500):
             if (email or "").strip():
                 emails.add(email.strip().lower())
 
-    if not num.isdigit():
+    if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", q):
+        # A whole address names one client: match it exactly, so "ann@x.com" never brings
+        # in "joann@x.com", and "_" is not a wildcard (review, 2026-10-13).
+        take(cx.execute(f"SELECT id, email FROM orders WHERE {base} AND lower(trim(email))=?",
+                        (q,)).fetchall())
+        emails.add(q)
+    elif not num.isdigit():
         like = f"%{q}%"
         take(cx.execute(
             f"SELECT id, email FROM orders WHERE {base} AND (lower(coalesce(name,'')) LIKE ? "

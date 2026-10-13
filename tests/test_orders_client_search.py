@@ -237,3 +237,13 @@ def test_the_card_names_the_replaced_number_and_links_the_history(tmp_path):
     js.write_text(NUM_JS.replace("BLOCK", page[a:b]))
     out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
+
+
+def test_a_whole_address_matches_exactly(cx):
+    # The card's history link searches by address (review round 1).
+    O.upsert_order(cx, source="funnel", external_ref="JO-1", email="joann@x.com")
+    O.upsert_order(cx, source="funnel", external_ref="US-1", email="annXx@x.com")
+    cx.commit()
+    assert _refs(O.search_client_orders(cx, "ann@x.com")) == ["GK-1001", "GK-1002", "GK-1003"]
+    assert _refs(O.search_client_orders(cx, " ANN@X.COM ")) == ["GK-1001", "GK-1002", "GK-1003"]
+    assert _refs(O.search_client_orders(cx, "ann@x")) == ["GK-1001", "GK-1002", "GK-1003", "JO-1"]

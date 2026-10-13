@@ -241,7 +241,7 @@
     var rep = (o.search_replaced || []).map(function(n){ return '#' + Number(n); }).join(', ');
     var who = String(o.email || '').trim();
     var link = who ? '<a href="#" class="client-orders" data-q="' + esc(who) + '"'
-      + ' onclick="event.preventDefault(); event.stopPropagation(); searchFor(this.dataset.q)">'
+      + ' onclick="event.preventDefault(); event.stopPropagation(); window.searchFor && searchFor(this.dataset.q)">'
       + 'All of this client\'s orders</a>' : '';
     if (!rep && !link) return '';
     return '<div class="meta number-hit">' + (rep ? 'Replaced ' + rep : '')
