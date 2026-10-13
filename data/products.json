@@ -10725,6 +10725,8 @@
    "qty_pricing": true,
    "regular_cents": 8000,
    "fmp_id": "887",
+   "bottle_type": "Dropper 50 mL",
+   "bottles_per_unit": 2,
    "aliases": [
     "CDS",
     "CDS Activator"

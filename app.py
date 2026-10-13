@@ -8883,11 +8883,17 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                         )
                     bt = _shipping.FALLBACK_BOTTLE_TYPE
                     packaging_review.append(p.get("name") or p.get("slug"))
-                box_counts[bt] = box_counts.get(bt, 0) + qty
+                # One item can be several identical bottles: the CDS pair is two 50 mL
+                # droppers (FileMaker 887, 2026-10-13). Packing only; price is per item.
+                try:
+                    _per = max(1, int(p.get("bottles_per_unit") or 1))
+                except (TypeError, ValueError):
+                    _per = 1
+                box_counts[bt] = box_counts.get(bt, 0) + qty * _per
                 if bt == _shipping.CELLO_BOTTLE_TYPE:
-                    total_cello += qty
+                    total_cello += qty * _per
                 else:
-                    total_bottles += qty
+                    total_bottles += qty * _per
     # US-only shipping — but only a cart with something to ship has an opinion
     # about the address. An overseas client buying a service prices fine.
     if (box_counts or flat_ship_cents) and country not in ("US", "USA", ""):
