@@ -147,3 +147,23 @@ def test_an_unpriced_order_claims_no_saving(tmp_path, monkeypatch):
         return real(lines, **kw)
     monkeypatch.setattr(appmod, "_price_inhouse_invoice", half)
     assert _offer(client, token) == {"included": True, "savings_cents": 0, "has_line": False}
+
+
+def test_removing_the_membership_line_keeps_zero_lines_at_zero(tmp_path, monkeypatch):
+    appmod, client, token = _client(tmp_path, monkeypatch, membership_line=True)
+    from dashboard import orders as O
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        cx.row_factory = sqlite3.Row
+        o = O.get_order(cx, 1)
+        items = o["items"] + [{"slug": "immune-modulation", "name": "Immune Modulation",
+                               "qty": 0, "unit_cents": 5600, "line_cents": 0}]
+        cx.execute("UPDATE orders SET items_json=? WHERE id=1", (json.dumps(items),))
+        cx.commit()
+    r = client.post(f"/api/invoice/{token}/membership", json={"action": "remove"})
+    assert r.status_code == 200, r.get_json()
+    j = r.get_json()["order"]
+    qty = {l["slug"]: l["qty"] for l in j["lines"]}
+    assert "membership:month" not in qty
+    assert qty["immune-modulation"] == 0
+    assert j["membership_offer"]["included"] is True and j["membership_offer"]["has_line"] is False

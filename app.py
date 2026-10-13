@@ -59764,7 +59764,9 @@ def api_invoice_membership(token):
     elif action != "remove":
         return jsonify({"ok": False, "error": "action must be add or remove"}), 400
     # Rebuild the reprice payload: slug + qty, carrying an owner override forward.
-    payload = [{"slug": l["slug"], "qty": int(l.get("qty") or 1),
+    # A zero-quantity line is a reorder reference and must stay zero; `or 1` turned
+    # each one into a charge (review round 3, 2026-10-13). Only a missing qty is 1.
+    payload = [{"slug": l["slug"], "qty": 1 if l.get("qty") is None else int(l.get("qty") or 0),
                 **({"unit_cents": l["unit_cents"]} if l.get("override") else {})}
                for l in lines]
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row

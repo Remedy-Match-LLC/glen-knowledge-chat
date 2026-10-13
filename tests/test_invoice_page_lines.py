@@ -212,11 +212,13 @@ def test_the_open_is_recorded_on_first_use_not_on_load():
       %s
       recordOpenOnFirstUse('tok/1');
       const before = posts.length;
+      const kinds = Object.keys(handlers).sort();
       (handlers.pointerdown || []).slice().forEach(f => f());
       (handlers.keydown || []).slice().forEach(f => f());
-      console.log(JSON.stringify({before, posts, left: Object.values(handlers).flat().length}));
+      console.log(JSON.stringify({before, posts, kinds, left: Object.values(handlers).flat().length}));
     """ % _fn("recordOpenOnFirstUse"))
-    assert out == {"before": 0, "posts": [["/api/invoice/tok%2F1/open", "POST", True]], "left": 0}
+    assert out == {"before": 0, "posts": [["/api/invoice/tok%2F1/open", "POST", True]],
+                   "kinds": ["keydown", "pointerdown", "touchstart", "wheel"], "left": 0}
 
 
 def test_no_line_is_hidden_behind_a_header():
