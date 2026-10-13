@@ -24764,10 +24764,17 @@ def api_cart_checkout():
                 return jsonify({"ok": False, "error": "Your order did not save. "
                                 "Please try again, or contact us."}), 503
             _mark_ordered_resilient(token, out.get("invoice_id", ""))
+            _z_items = []
+            try:
+                with db.connect(LOG_DB) as _zcx:
+                    _zcx.row_factory = sqlite3.Row
+                    _z_items = (_bos_orders.get_order(_zcx, res["order_id"]) or {}).get("items") or []
+            except Exception as _e:  # noqa: BLE001 - the notes card is optional
+                print(f"[cart-zelle] order notes skipped: {_e!r}", flush=True)
             return jsonify({"ok": True, "method": "zelle", **_zelle_instructions({
                 "id": res["order_id"], "external_ref": out.get("invoice_id", ""),
                 "total_cents": res.get("charge_cents"),
-                "shipping_cents": res.get("shipping_cents")})})
+                "shipping_cents": res.get("shipping_cents"), "items": _z_items})})
         if not stripe_url and not res.get("no_payment_required"):
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
@@ -24797,6 +24804,7 @@ def _zelle_instructions(order):
     shows them. The memo is the order number."""
     zelle = _ALT_PAY["zelle"]
     return {"order_id": order["id"], "order_ref": order.get("external_ref") or "",
+            "order_notes": _order_notes_for(order.get("items")),
             "total_cents": int(order.get("total_cents") or 0),
             "shipping_cents": int(order.get("shipping_cents") or 0),
             "pay_instructions": {"label": zelle["label"], "to": zelle["to"],
@@ -32997,6 +33005,7 @@ def api_client_portal_checkout(token):
             zelle = _ALT_PAY["zelle"]
             return jsonify({"ok": True, "method": "zelle", "order_ref": checkout_ref,
                             "order_id": order_id, "not_ready": not_ready,
+                            "order_notes": _order_notes_for(items_rec),
                             "total_cents": order_total_cents,
                             "shipping_cents": shipping_cents, "pay_instructions": {
                                 "label": zelle["label"], "to": zelle["to"],
@@ -43956,6 +43965,32 @@ def _send_kloud_order_instructions(email, first_name, product_names, order_ref):
         except Exception:
             pass
         print(f"[gk-webhook] Kloud instructions send failed: {e!r}", flush=True)
+
+
+def _order_notes_for(items):
+    """[{name, paras}] for each bought line whose product has an order note, once per
+    product, in order. Shown in its own card under the Zelle instructions, which list
+    no items (Glen, 2026-10-13: "yes. probably in a separate card")."""
+    out, seen = [], set()
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        slug = str(it.get("slug") or "").strip()
+        q = it.get("qty")
+        try:
+            bought = q is None or int(q) > 0
+        except (TypeError, ValueError):
+            bought = False
+        if not slug or slug in seen or not bought:
+            continue
+        note = _order_note_for_slug(slug)
+        if not note:
+            continue
+        seen.add(slug)
+        p = ((_PRODUCTS or {}).get("products", {}) or {}).get(slug) or {}
+        out.append({"name": html.unescape(p.get("name") or it.get("name") or slug).strip(),
+                    "paras": [x.strip() for x in re.split(r"\n\s*\n", note) if x.strip()]})
+    return out
 
 
 def _order_note_for_slug(slug):

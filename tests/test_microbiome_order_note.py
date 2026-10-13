@@ -196,3 +196,103 @@ def test_the_note_on_the_confirmation_page_is_escaped(monkeypatch):
     monkeypatch.setattr(app, "_PRODUCTS", prods)
     page = _confirmation(monkeypatch, [{"slug": "microbiome", "name": "Microbiome", "qty": 1}])
     assert "&lt;b&gt;bold&lt;/b&gt;" in page and "<b>bold</b>" not in page
+
+
+# --- Zelle buyers: a separate card under the instructions (Glen, 2026-10-13) ----------
+
+def test_order_notes_lists_each_bought_product_with_a_note_once():
+    import app
+    got = app._order_notes_for([
+        {"slug": "golden-book", "qty": 1}, {"slug": "microbiome", "qty": 2},
+        {"slug": "microbiome", "qty": 1}, {"slug": "immune-modulation", "qty": 0}, "junk"])
+    assert got == [{"name": "Microbiome", "paras": [S1, S2]}]
+    assert app._order_notes_for([{"slug": "microbiome", "qty": 0}]) == []
+
+
+def test_the_cart_zelle_reply_carries_the_note(monkeypatch, tmp_path):
+    import sqlite3
+    import app
+    import dashboard.orders as O
+    from dashboard import cart_store as CS, qbo_billing
+    path = str(tmp_path / "log.db")
+    monkeypatch.setattr(app, "LOG_DB", path)
+    monkeypatch.setattr(app, "_PORTAL_CART_ENABLED", True)
+    cx = sqlite3.connect(path)
+    CS.init_cart_tables(cx)
+    O.init_orders_table(cx)
+    cx.commit()
+    cx.close()
+    monkeypatch.setattr(app, "is_member", lambda sid, email: True)
+    monkeypatch.setattr(app, "_cart_email", lambda: "z@x.com")
+    monkeypatch.setattr(app, "_get_product", lambda s: {
+        "slug": s, "name": "Microbiome", "price_cents": 7000, "qty_pricing": True,
+        "qbo_item_id": "29"} if s == "microbiome" else None)
+    monkeypatch.setattr(app._shipping, "quote", lambda b: {"shipping_cents": 1265})
+    monkeypatch.setattr(qbo_billing, "create_invoice",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no QBO")))
+    monkeypatch.setattr(app, "_STRIPE_ACTIVE", True)
+    c = app.app.test_client()
+    c.post("/api/cart/add", json={"slug": "microbiome"})
+    d = c.post("/api/cart/checkout", json={
+        "address": {"name": "A B", "street": "1 Main", "city": "Hilo", "state": "HI",
+                    "zip": "96720", "country": "US"},
+        "method": "zelle", "checkout_request_id": "c" * 32}).get_json()
+    assert d["method"] == "zelle"
+    assert d["order_notes"] == [{"name": "Microbiome", "paras": [S1, S2]}]
+    again = c.post("/api/cart/zelle-orders", json={"refs": ["c" * 32]}).get_json()["orders"]
+    assert again[0]["order_notes"] == d["order_notes"]
+
+
+def _node(js):
+    import shutil
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    out = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+def _fn(path, name):
+    src = open(os.path.join(ROOT, *path.split("/")), encoding="utf-8").read()
+    i = src.index("function %s(" % name)
+    d, j = 0, src.index("{", i)
+    while True:
+        d += {"{": 1, "}": -1}.get(src[j], 0)
+        if d == 0:
+            return src[i:j + 1]
+        j += 1
+
+
+NOTES = [{"name": "Microbiome", "paras": [S1, S2]}]
+ESC = ("function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,"
+       "function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c];});}"
+       "function money(c){return '$'+(Number(c||0)/100).toFixed(2);}")
+
+
+@pytest.mark.parametrize("page,box", [("static/begin-cart.html", "zelleHtml"),
+                                      ("static/client-portal.html", "zelleInstructionsHtml")])
+def test_the_note_is_its_own_card_after_the_zelle_box(page, box):
+    js = ESC + _fn(page, "orderNotesHtml") + _fn(page, box) + (
+        "console.log(JSON.stringify([%s({order_id:5,total_cents:100,pay_instructions:{to:'x'},"
+        "order_notes:%s}), %s({order_id:5,pay_instructions:{}})]));" % (box, json.dumps(NOTES), box))
+    with_note, without = _node(js)
+    card = with_note.index("order-notes")
+    assert with_note.rindex("</div>", 0, card) > with_note.index("Zelle payment instructions")
+    assert "<p><strong>Microbiome</strong></p><p>" + S1 + "</p><p>" + S2 + "</p>" in with_note
+    assert "order-notes" not in without
+
+
+def test_the_portal_basket_zelle_reply_carries_the_note(client, monkeypatch):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="zelle-micro@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "microbiome", "qty": 1}]})
+    monkeypatch.setattr(appmod, "_ingest_order", lambda **kw: 77)
+    r = c.post(f"/api/portal/{tok}/checkout", json={
+        "method": "zelle", "checkout_request_id": "zelle_micro_12345678",
+        "items": [{"slug": "microbiome", "qty": 1}]})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.get_json()["order_notes"] == [{"name": "Microbiome", "paras": [S1, S2]}]
+
+
+from tests.test_portal_item_reorder import client, _seed_portal  # noqa: E402,F401  fixtures

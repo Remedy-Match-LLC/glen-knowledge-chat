@@ -2804,7 +2804,14 @@ function zelleInstructionsHtml(cj){
     <p class="small">In your bank’s Zelle screen, enter the recipient, exact amount, and memo above. Confirm the recipient name in your bank before sending.</p>
     ${z.qr_image_url ? `<div style="margin:.75rem 0"><img src="${esc(z.qr_image_url)}" alt="Scan to pay Remedy Match with Zelle" style="display:block;width:220px;max-width:100%;background:#fff;padding:8px;border-radius:8px"></div><strong class="small">Scan this code with Zelle in your banking app.</strong>` : ""}
     ${link ? `<p><a class="btn" href="${esc(link)}" rel="noopener">${z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle"}</a></p>` : ""}
-    <p class="small muted">${esc(z.note || "")}</p></div>`;
+    <p class="small muted">${esc(z.note || "")}</p></div>${orderNotesHtml(cj.order_notes)}`;
+}
+// A product's approved note, in its own card under the Zelle box: the box lists no
+// items (Glen, 2026-10-13: "yes. probably in a separate card").
+function orderNotesHtml(notes){
+  if(!notes || !notes.length) return "";
+  return `<div class="note order-notes" style="margin-top:1rem">${notes.map(n =>
+    `<p><strong>${esc(n.name || "")}</strong></p>${(n.paras || []).map(t => `<p>${esc(t)}</p>`).join("")}`).join("")}</div>`;
 }
 
 document.addEventListener("submit", async function(ev){
