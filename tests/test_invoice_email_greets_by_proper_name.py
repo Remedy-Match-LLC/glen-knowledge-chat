@@ -48,3 +48,11 @@ def test_a_name_that_is_not_text_still_sends(monkeypatch, odd):
     monkeypatch.setattr(O, "get_order", lambda c, i: {**real(c, i), "name": odd})
     O._send_invoice_exec({"order_id": oid}, {"cx": cx})
     assert cap["plain"].startswith("Hi there,")
+
+
+@pytest.mark.parametrize("stored,expect", [("linda maher", "Linda Maher"), ("", "there"),
+                                           (None, "there"), ("DeAnna McDonald", "DeAnna McDonald")])
+def test_the_portal_invoice_email_greets_the_same_way(stored, expect):
+    """Review round 1: the publish-to-portal invoice email said "Aloha linda maher,"."""
+    import app
+    assert app._greeting_name(stored) == expect
