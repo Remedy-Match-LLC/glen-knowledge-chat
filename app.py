@@ -59646,6 +59646,14 @@ def _invoice_membership_offer(order):
             with db.connect(LOG_DB) as _mc:
                 if _mp.owns_group(_mc, email):
                     return None
+        # A Biofield Analysis includes a month of membership, and its remedies are
+        # already quoted at member pricing. Nothing to add: say what it saves instead
+        # (Glen, 2026-10-13).
+        # A membership line already present keeps the usual card, which holds the
+        # only "Remove membership" button.
+        if not _has_line and any((it.get("slug") or "").strip() == "biofield-analysis"
+                                 for it in (order.get("items") or [])):
+            return _included_membership_offer(order)
         tiers = _mp.invoice_offer_tiers()
         if not tiers:
             return None
@@ -59669,6 +59677,40 @@ def _invoice_membership_offer(order):
     except Exception as _e:  # noqa: BLE001 — offer is cosmetic; never break the invoice
         print(f"[invoice] membership offer skipped: {_e!r}", flush=True)
         return None
+
+
+def _included_membership_offer(order):
+    """The card for an invoice carrying a Biofield Analysis: membership is included,
+    with what member pricing saves on these products. savings_cents is the product
+    subtotal priced without the Biofield line minus the subtotal priced with it, by the
+    same pricer the invoice uses. Never raises."""
+    try:
+        email = (order.get("email") or "").strip().lower()
+        products = []
+        for it in (order.get("items") or []):
+            slug = (it.get("slug") or "").strip()
+            if not slug or slug == "biofield-analysis" or slug.startswith("membership:"):
+                continue
+            ln = {"slug": slug, "qty": int(it.get("qty") or 0)}
+            if it.get("override"):
+                ln["unit_cents"] = it.get("unit_cents")
+            products.append(ln)
+
+        def _sub(lines):
+            priced = _price_inhouse_invoice(lines, email=email, pickup=True, ship=None)
+            if not priced:
+                return 0
+            return sum(int(it.get("line_cents") or 0) for it in priced["items_rec"]
+                       if (it.get("slug") or "") in {p["slug"] for p in products})
+
+        savings = 0
+        if products:
+            savings = max(0, _sub(list(products))
+                          - _sub(list(products) + [{"slug": "biofield-analysis", "qty": 1}]))
+        return {"included": True, "savings_cents": savings}
+    except Exception as _e:  # noqa: BLE001 - the card is cosmetic; never break the invoice
+        print(f"[invoice] included membership card skipped: {_e!r}", flush=True)
+        return {"included": True, "savings_cents": 0}
 
 
 @app.route("/api/invoice/<token>/membership", methods=["POST"])

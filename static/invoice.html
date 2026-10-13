@@ -215,66 +215,28 @@ async function load() {
   // Console "Print invoice" deep-links here with ?print=1 to auto-open the dialog.
   if (new URLSearchParams(location.search).get('print')) setTimeout(printInvoice, 250);
 
-  // Read-receipt: collapse invoice detail behind a New/date header; expand = tracked open.
-  if (ORDER.opened !== undefined) {
-    const isNew = !ORDER.opened;
-    const invoiceDateStr = ORDER.created_at || '';
-    const invoiceDate = invoiceDateStr
-      ? new Date(invoiceDateStr).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
-      : '—';
-
-    // Guarded so re-clicking an already-expanded header doesn't re-POST the
-    // open event (mirrors client-portal.html's rr-header dataset.opened flag).
-    let _invoiceOpened = false;
-    window.__openInvoice = async () => {
-      if (_invoiceOpened) return;
-      _invoiceOpened = true;
-      try { await fetch('/api/invoice/' + encodeURIComponent(TOKEN) + '/open', {method:'POST'}); } catch(e) {}
-      const det = document.getElementById('inv-detail'); if (det) det.style.display = '';
-      const b = document.getElementById('inv-new'); if (b) b.remove();
-    };
-
-    const headerHtml = `<div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="window.__openInvoice()">
-      <strong>Invoice — ${esc(invoiceDate)}</strong>
-      ${isNew ? `<span id="inv-new" style="background:#d4a843;color:#000;font-size:12px;font-weight:700;padding:1px 7px;border-radius:10px">New</span>` : ``}
-      <span style="flex:1"></span><span style="color:var(--muted)">▾</span>
-    </div>`;
-
-    // Find items and summary cards
-    const cards = document.querySelectorAll('.card');
-    let itemsCardIdx = -1, summaryCardIdx = -1;
-    for (let i = 0; i < cards.length; i++) {
-      const h2 = cards[i].querySelector('h2');
-      if (h2) {
-        if (h2.textContent === 'Items') itemsCardIdx = i;
-        else if (h2.textContent === 'Summary') summaryCardIdx = i;
-      }
-    }
-
-    if (itemsCardIdx >= 0) {
-      const itemsCard = cards[itemsCardIdx];
-      const summaryCard = summaryCardIdx >= 0 ? cards[summaryCardIdx] : null;
-
-      // Create wrapper for invoice detail
-      const wrapper = document.createElement('div');
-      wrapper.id = 'inv-detail';
-      wrapper.style.display = isNew ? 'none' : '';
-
-      // Insert wrapper before items card
-      itemsCard.parentNode.insertBefore(wrapper, itemsCard);
-
-      // Move items and summary cards into wrapper
-      wrapper.appendChild(itemsCard);
-      if (summaryCard) wrapper.appendChild(summaryCard);
-
-      // Insert header before wrapper
-      wrapper.insertAdjacentHTML('beforebegin', headerHtml);
-    }
-  }
+  // Read-receipt. The lines used to sit collapsed behind a "New" header until it was
+  // clicked, so the client saw only the payment card (Glen, 2026-10-13: "opens payment
+  // without line items"). Now everything shows at once, and the open is recorded on the
+  // client's first tap, click or key. Recording it on load would count email link
+  // scanners as opens.
+  if (ORDER.opened !== undefined && !ORDER.opened) recordOpenOnFirstUse(TOKEN);
 
   try { const cr = await fetch(API+'/products'); CATALOG = (await cr.json()).products||[]; fillAdd();
     if($('add-search')) $('add-search').addEventListener('input', fillAdd);
   } catch(e){}
+}
+
+function recordOpenOnFirstUse(token){
+  const kinds = ['pointerdown', 'keydown', 'touchstart'];
+  let done = false;
+  const fire = () => {
+    if (done) return;
+    done = true;
+    kinds.forEach(k => removeEventListener(k, fire, true));
+    fetch('/api/invoice/' + encodeURIComponent(token) + '/open', {method:'POST'}).catch(() => {});
+  };
+  kinds.forEach(k => addEventListener(k, fire, {capture:true, passive:true}));
 }
 
 // ── Print / Save-as-PDF: a self-contained invoice (logo header + line items +
@@ -491,6 +453,15 @@ function renderMembershipOffer(){
   if(!o || ORDER.pay_status==='paid'){ el.style.display='none'; return; }
   el.style.display='block';
   const head='<div class="card" style="border:1px solid #2f7d4f;background:#f4fbf6">';
+  if(o.included){
+    // A Biofield Analysis includes the month: no button, just what it saves (Glen, 2026-10-13).
+    el.innerHTML=head
+      +'<div style="font-weight:600;color:#22623c">A month of membership is included</div>'
+      +'<div style="margin:6px 0 0">Your Biofield Analysis fee includes one month of membership.'
+      +(o.savings_cents>0 ? ' Member pricing saves you '+money(o.savings_cents)+' on this order.' : '')
+      +'</div></div>';
+    return;
+  }
   const msg='<div id="mem-msg" class="muted" style="margin-top:6px"></div></div>';
   if(hasLine){
     const line1=(o.net_add_cents>0)
