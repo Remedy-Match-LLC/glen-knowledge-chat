@@ -279,11 +279,16 @@ def test_cds_pair_drop_ships_as_one_formulation_bottle(monkeypatch):
     assert line["base_cents"] == 5000 and q["subtotal_cents"] == 5700
 
 
-def test_the_retired_halves_resolve_to_the_pair():
+def test_an_old_two_line_cart_becomes_one_pair_not_two():
+    """Review round 2: if both retired slugs pointed at the pair, an old cart holding
+    CDS and CDS Activator would buy two $70 pairs. Only CDS points at the pair; the
+    Activator is retired with no replacement, so its line resolves to nothing."""
     import app as _app
-    for old in ("cds", "cds-activator"):
-        p = _app._get_product(old) or {}
-        assert p.get("name") == "CDS Water Purifier & Activator" and p.get("price_cents") == 7000
+    assert (_app._get_product("cds") or {}).get("slug") == "cds-water-purifier--activator"
+    assert _app._get_product("cds-activator") is None
+    cart = [{"slug": "cds", "qty": 1}, {"slug": "cds-activator", "qty": 1}]
+    live = [_app._live_slug(i["slug"]) for i in cart]
+    assert [s for s in live if s] == ["cds-water-purifier--activator"]
 
 
 def test_cds_pair_counts_as_one_bottle_on_the_curve():
