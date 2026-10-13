@@ -303,3 +303,12 @@ def test_the_portal_basket_zelle_reply_carries_the_note(client, monkeypatch):
 
 
 from tests.test_portal_item_reorder import client, _seed_portal  # noqa: E402,F401  fixtures
+
+
+def test_the_reorder_card_shows_the_note_after_its_zelle_box():
+    # reorder() draws its own Zelle box from the same checkout reply (review round 1).
+    body = _fn("static/client-portal.html", "reorder")
+    zelle = body[body.index('cj.method === "zelle"'):]
+    zelle = zelle[:zelle.index("return;")]
+    box_end = zelle.index('esc(z.note || "")}</p></div>')
+    assert zelle.index("${orderNotesHtml(cj.order_notes)}`") > box_end
