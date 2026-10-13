@@ -306,3 +306,23 @@ def test_the_old_activator_page_reaches_the_pair_but_its_slug_buys_nothing():
     assert _app._get_product("cds-activator") is None
     assert c.get("/begin/product/cds").status_code == 302
     assert c.get("/begin/product/no-such-product").status_code == 404
+
+
+def test_a_stored_cart_holding_the_retired_activator_still_quotes(monkeypatch):
+    """Review round 3: _retail_for raised on a retired slug and failed the whole cart."""
+    monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents", lambda pid: None)
+    q = dc.quote_dropship_cart([{"slug": "cds-activator", "qty": 1},
+                                {"slug": "cds-water-purifier--activator", "qty": 1}],
+                               {"id": "p1", "modules_completed": 0})
+    assert [l["slug"] for l in q["lines"]] == ["cds-water-purifier--activator"]
+    assert q["subtotal_cents"] == 5700
+
+
+def test_the_name_cds_activator_finds_the_pair():
+    """Review round 3: the retired record kept the name, so lookups found it, not the pair."""
+    import app as _app
+    pair = "cds-water-purifier--activator"
+    for name in ("CDS Activator", "CDS", "CDS Water Purifier & Activator"):
+        assert _app._live_slug(_app._resolve_buy_slug(name)) == pair, name
+        assert (_app._get_product(_app._resolve_buy_slug(name)) or {}).get("slug") == pair, name
+    assert _app._live_slug(_app._TITLE_TO_SLUG.get("CDS Activator")) == pair
