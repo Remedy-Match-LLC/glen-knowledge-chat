@@ -266,20 +266,63 @@ def test_own_wholesale_base_is_whole_dollars():
     assert pp.sku_base_cents(1, 0, 3500, 50, is_ff=False) == 1800   # $17.50 rounds up
 
 
-# ── CDS and CDS Activator sell as a pair, priced as one formulation bottle ───
+# ── CDS and CDS Activator are one item, priced as one formulation bottle ───
 
 def test_cds_pair_drop_ships_as_one_formulation_bottle(monkeypatch):
-    """Glen, 2026-10-06: "the two sell as a pair always"; the pair drop-ships as one bottle."""
+    """Glen, 2026-10-06: "the two sell as a pair always". On 2026-10-13 the pair became
+    one item, cds-water-purifier--activator, so it is one whole bottle with no share."""
     monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents", lambda pid: None)
-    q = dc.quote_dropship_cart([{"slug": "cds", "qty": 1}, {"slug": "cds-activator", "qty": 1}],
+    q = dc.quote_dropship_cart([{"slug": "cds-water-purifier--activator", "qty": 1}],
                                {"id": "p1", "modules_completed": 0})
-    by = {l["slug"]: l for l in q["lines"]}
-    # each half: base $25 (half of $50), fee 33% of ($35 - $25) = $3.30 -> $4; pair $58, not $100
-    assert by["cds"]["base_cents"] == by["cds-activator"]["base_cents"] == 2500
-    assert q["subtotal_cents"] == 5800
+    (line,) = q["lines"]
+    # base $50, fee 33% of ($70 - $50) = $6.60 -> $7
+    assert line["base_cents"] == 5000 and q["subtotal_cents"] == 5700
+
+
+def test_an_old_two_line_cart_becomes_one_pair_not_two():
+    """Review round 2: if both retired slugs pointed at the pair, an old cart holding
+    CDS and CDS Activator would buy two $70 pairs. Only CDS points at the pair; the
+    Activator is retired with no replacement, so its line resolves to nothing."""
+    import app as _app
+    assert (_app._get_product("cds") or {}).get("slug") == "cds-water-purifier--activator"
+    assert _app._get_product("cds-activator") is None
+    cart = [{"slug": "cds", "qty": 1}, {"slug": "cds-activator", "qty": 1}]
+    live = [_app._live_slug(i["slug"]) for i in cart]
+    assert [s for s in live if s] == ["cds-water-purifier--activator"]
 
 
 def test_cds_pair_counts_as_one_bottle_on_the_curve():
     terms = {"cds": (None, True, 0.5), "cds-activator": (None, True, 0.5), "ff": (None, True, 1.0)}
     cart = [{"slug": "cds", "qty": 3}, {"slug": "cds-activator", "qty": 3}, {"slug": "ff", "qty": 2}]
     assert dc._curve_bottles(cart, terms) == 5
+
+
+def test_the_old_activator_page_reaches_the_pair_but_its_slug_buys_nothing():
+    import app as _app
+    c = _app.app.test_client()
+    r = c.get("/begin/product/cds-activator?utm_source=email")
+    assert r.status_code == 302
+    assert r.headers["Location"].endswith("/begin/product/cds-water-purifier--activator?utm_source=email")
+    assert _app._get_product("cds-activator") is None
+    assert c.get("/begin/product/cds").status_code == 302
+    assert c.get("/begin/product/no-such-product").status_code == 404
+
+
+def test_a_stored_cart_holding_the_retired_activator_still_quotes(monkeypatch):
+    """Review round 3: _retail_for raised on a retired slug and failed the whole cart."""
+    monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents", lambda pid: None)
+    q = dc.quote_dropship_cart([{"slug": "cds-activator", "qty": 1},
+                                {"slug": "cds-water-purifier--activator", "qty": 1}],
+                               {"id": "p1", "modules_completed": 0})
+    assert [l["slug"] for l in q["lines"]] == ["cds-water-purifier--activator"]
+    assert q["subtotal_cents"] == 5700
+
+
+def test_the_name_cds_activator_finds_the_pair():
+    """Review round 3: the retired record kept the name, so lookups found it, not the pair."""
+    import app as _app
+    pair = "cds-water-purifier--activator"
+    for name in ("CDS Activator", "CDS", "CDS Water Purifier & Activator"):
+        assert _app._live_slug(_app._resolve_buy_slug(name)) == pair, name
+        assert (_app._get_product(_app._resolve_buy_slug(name)) or {}).get("slug") == pair, name
+    assert _app._live_slug(_app._TITLE_TO_SLUG.get("CDS Activator")) == pair

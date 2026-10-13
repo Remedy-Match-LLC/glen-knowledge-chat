@@ -8883,11 +8883,15 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                         )
                     bt = _shipping.FALLBACK_BOTTLE_TYPE
                     packaging_review.append(p.get("name") or p.get("slug"))
-                box_counts[bt] = box_counts.get(bt, 0) + qty
+                # One item can be several identical bottles: the CDS pair is two 50 mL
+                # droppers (FileMaker 887, 2026-10-13). Packing only; price is per item.
+                from dashboard.orders import bottles_per_unit as _bpu
+                _per = _bpu(p)
+                box_counts[bt] = box_counts.get(bt, 0) + qty * _per
                 if bt == _shipping.CELLO_BOTTLE_TYPE:
-                    total_cello += qty
+                    total_cello += qty * _per
                 else:
-                    total_bottles += qty
+                    total_bottles += qty * _per
     # US-only shipping — but only a cart with something to ship has an opinion
     # about the address. An overseas client buying a service prices fine.
     if (box_counts or flat_ship_cents) and country not in ("US", "USA", ""):
@@ -9856,6 +9860,15 @@ def shop_page():
 def begin_product_page(slug):
     product = _get_product(slug)
     if not product:
+        # A retired record with no replacement can still send its old PAGE address on,
+        # without its slug buying anything: CDS Activator is retired so an old cart
+        # holding both halves buys one pair, but links to its page reach the pair
+        # (2026-10-13). Only the page follows `page_redirect`, never a cart or order.
+        raw = (_PRODUCTS.get("products") or {}).get(slug) or {}
+        to = raw.get("page_redirect") if raw.get("inactive") else None
+        if to and to != slug and _get_product(to):
+            qs = request.query_string.decode("latin-1")
+            return redirect(f"/begin/product/{to}" + (f"?{qs}" if qs else ""), code=302)
         return ("", 404)
     if product["slug"] != slug:
         # A superseded slug (`superseded_by`) is served as its survivor by a redirect,

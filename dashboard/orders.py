@@ -830,8 +830,17 @@ def physical_units(items, catalog):
                 n = sum(int(c.get("qty") or 1) for c in comps) if comps else 1
                 total += n * qty
         else:
-            total += qty
+            total += qty * bottles_per_unit(p)
     return total
+
+
+def bottles_per_unit(p):
+    """Identical bottles in one item: the CDS pair is two 50 mL droppers (FileMaker
+    887, 2026-10-13). Packing and pack counts only, never price or credit."""
+    try:
+        return max(1, int((p or {}).get("bottles_per_unit") or 1))
+    except (TypeError, ValueError):
+        return 1
 
 
 def pack_breakdown(items, catalog):
@@ -881,7 +890,7 @@ def pack_breakdown(items, catalog):
                 n = (sum(int(c.get("qty") or 1) for c in comps) if comps else 1) * qty
                 sizes = None
         else:
-            n = qty
+            n = qty * bottles_per_unit(p)
             sizes = None
         if (it.get("format") or "").strip().lower() in _sh.CELLO_FORMATS:
             cello += n

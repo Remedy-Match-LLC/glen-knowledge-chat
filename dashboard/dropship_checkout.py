@@ -42,7 +42,8 @@ def _settings():
 def _retail_for(slug: str) -> int:
     """Retail price in cents for a product slug. Monkeypatchable in tests."""
     import app as _app
-    return _app._get_product(slug)["price_cents"]
+    p = _app._get_product(slug)
+    return p["price_cents"] if p else None     # retired with no replacement: unsellable
 
 
 def _wholesale_pct_for(slug: str):
@@ -172,6 +173,9 @@ def _practitioner_dropship_unit_cents(pid: str) -> int | None:
 
 def quote_dropship_cart(cart: List[dict], practitioner: dict) -> dict:
     """Canonical quote used by both the browser preview and checkout."""
+    # A stored cart can hold a slug retired since it was added (CDS Activator,
+    # 2026-10-13). Drop that line rather than fail the whole cart.
+    cart = [i for i in (cart or []) if _retail_for(i["slug"]) is not None]
     total_bottles = sum(int(item.get("qty", 0)) for item in (cart or []))
     if total_bottles <= 0:
         return {"lines": [], "subtotal_cents": 0}
