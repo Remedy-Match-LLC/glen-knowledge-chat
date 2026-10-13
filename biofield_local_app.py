@@ -3471,14 +3471,54 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                            "WHERE test_id=?", (test_id,)).fetchone()
         return r[0] if r else None
 
-    def _do_publish(test_id, special, send, send_if_new=False):
+    def _own_init(cx):
+        cx.execute("CREATE TABLE IF NOT EXISTS biofield_own_remedies("
+                   "test_id TEXT NOT NULL, remedy TEXT NOT NULL, confirmed_at TEXT, "
+                   "PRIMARY KEY(test_id, remedy))")
+
+    def _own_remedies(test_id):
+        """Remedies Glen confirmed for this report as the client's own. The store does
+        not sell them, so they show on the portal with no buy button (Glen,
+        2026-10-13, Linda Maher's Passion Flower Capsule)."""
+        with sqlite3.connect(db_path) as cx:
+            _own_init(cx)
+            return {r[0] for r in cx.execute(
+                "SELECT remedy FROM biofield_own_remedies WHERE test_id=?", (test_id,))}
+
+    def _remember_own(test_id, names):
+        if not names:
+            return
+        now = datetime.datetime.utcnow().isoformat()
+        with sqlite3.connect(db_path) as cx:
+            _own_init(cx)
+            cx.executemany("INSERT OR IGNORE INTO biofield_own_remedies VALUES(?,?,?)",
+                           [(test_id, n, now) for n in names])
+            cx.commit()
+
+    def _do_publish(test_id, special, send, send_if_new=False, own_remedies=()):
         """Build + upload PDF/audio assets + upsert the portal for a test. Returns the
-        upsert response dict (or {"unresolved": [...]}); raises on hard errors."""
+        upsert response dict (or {"unresolved": [...]}); raises on hard errors.
+
+        A remedy the store does not sell blocks the publish, because it is usually a
+        misspelling. Glen may confirm it as the client's own remedy (own_remedies,
+        remembered per report). It then shows on its layer with no buy button and
+        no cart line."""
+        # Only an authored report can be published. A bare "48" built Steve
+        # Herzfeld's FMP report as the PDF and Linda Maher's authored a48 as the
+        # portal content, because authored_report strips the "a" (2026-10-13).
+        if not re.fullmatch(r"a+\d+", str(test_id)):
+            raise ValueError(f"only an authored report (a<number>) can be published, not {test_id!r}")
         from dashboard import biofield_portal_publish as _bpp
         with sqlite3.connect(db_path) as cx:
             pre = _bpp.build_portal_content(cx, test_id, special_price_cents=special)
-            if pre["unresolved"]:
-                return {"unresolved": pre["unresolved"]}
+        confirmed = _own_remedies(test_id) | {str(n).strip() for n in (own_remedies or ())}
+        missing = [u for u in pre["unresolved"] if u not in confirmed]
+        if missing:
+            return {"unresolved": missing}
+        # Remember before the remote publish: a failed local write after it would
+        # report a failure for a publish that already emailed the client.
+        _remember_own(test_id, pre["unresolved"])
+        with sqlite3.connect(db_path) as cx:
             rep = _report_for(cx, test_id)
             narrative = get_narrative(cx, test_id)
         base = os.environ.get("PORTAL_PUBLISH_BASE_URL", "")
@@ -3498,8 +3538,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             payload = _bpp.build_portal_content(cx, test_id, special_price_cents=special,
                                                 audio_url=audio_url, report_pdf_url=pdf_url)
-        return _bpp.publish_to_portal(payload, base_url=base, console_key=key, send=send,
-                                      send_if_new=send_if_new)
+        # The report can change while the PDF renders. Check what actually goes out.
+        late = [u for u in payload["unresolved"] if u not in confirmed]
+        if late:
+            return {"unresolved": late}
+        res = _bpp.publish_to_portal(payload, base_url=base, console_key=key, send=send,
+                                     send_if_new=send_if_new)
+        if isinstance(res, dict):
+            res = {**res, "own_remedies": list(payload["unresolved"])}
+        return res
 
     def _auto_publish(test_id):
         """Put this test's report on the client portal because it was just printed or
@@ -3536,8 +3583,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             special = int(body.get("special_price_cents") or 0)
         except (TypeError, ValueError):
             return {"ok": False, "error": "special_price_cents must be an integer"}, 400
+        own = body.get("own_remedies") or []
+        if not isinstance(own, list) or not all(isinstance(n, str) for n in own):
+            return {"ok": False, "error": "own_remedies must be a list of names"}, 400
+        if not re.fullmatch(r"a+\d+", test_id):
+            return {"ok": False, "error": "Only an authored report can be published."}, 400
         try:
-            res = _do_publish(test_id, special, send=True)
+            res = _do_publish(test_id, special, send=True, own_remedies=own)
         except Exception as e:
             return {"ok": False, "error": str(e)[:300]}, 502
         if res.get("unresolved"):
@@ -3545,7 +3597,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         _mark_published(test_id, special)   # remember for auto-attach on later audio
         return {"ok": True, "url": res.get("url", ""),
                 "updated": bool(res.get("updated")), "note": res.get("note", ""),
-                "emailed": bool(res.get("emailed")), "unresolved": []}
+                "emailed": bool(res.get("emailed")), "unresolved": [],
+                "own_remedies": res.get("own_remedies") or []}
 
     # --- Task 5: Practice Better intake paste / parse / review / import ---
     @app.route("/intake-import/parse", methods=["POST"])
