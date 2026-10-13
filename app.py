@@ -9813,6 +9813,12 @@ def _resolve_buy_slug(name):
     for slug, p in products.items():
         if (p.get("name") or "").strip().lower() == nl:
             return slug
+    # Then a live record's pinecone_title or alias, exactly. Renaming "Clear Lens
+    # Eyedrops" to "Clear Lens Eye Drops" (2026-10-13) left the old name matching
+    # nothing, and order history and Pinecone still carry it.
+    hit = _RESOLVE_NAME_INDEX.get(nl)
+    if hit:
+        return hit
     for slug, p in products.items():
         pn = (p.get("name") or "").lower()
         if pn and len(nl) > 4 and (nl in pn or pn in nl):
