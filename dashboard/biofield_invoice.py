@@ -88,9 +88,65 @@ def resolve_line_slug(name, catalog):
     # The infoceutical merge (2026-10-03) renamed 80 survivors; reports authored before
     # carry "BFA Big Field Aligner", "PL Polarity", "ED1 Source Driver".
     slug = _old_names().get(norm)
+    via_retired = _superseded_names().get(norm)
+    if slug and via_retired and via_retired != slug:
+        return None       # two sources name two products: bill neither (review round 2)
+    if slug and any(it.get("slug") == slug and not it.get("inactive") for it in catalog or []):
+        return slug
+    # A retired listing's name, followed to the live product that replaced it. Linda
+    # Maher's layer named FileMaker 372 "Clear Lens Eye Drops ACES+CAT Eye Drops"; the
+    # live product is "Clear Lens Eyedrops", so the drops never reached her invoice
+    # (Glen, 2026-10-13).
+    slug = via_retired
     if slug and any(it.get("slug") == slug and not it.get("inactive") for it in catalog or []):
         return slug
     return None
+
+
+def _superseded_names():
+    """Old name -> live slug for retired listings that name a `superseded_by`: their
+    `name` and `pinecone_title` (the FileMaker name), exact and lowercased. The pointer
+    chain is followed to its end. A name two live products answer to is dropped."""
+    import json
+    import re as _re
+    try:
+        from dashboard.biofield_authoring import _PRODUCTS_JSON
+        with open(_PRODUCTS_JSON) as f:
+            products = json.load(f).get("products") or {}
+    except Exception:
+        return {}
+
+    def live(s):
+        """The first active product down the chain, or None for a loop or a dead end."""
+        seen = set()
+        while isinstance(s, str) and s in products and s not in seen:
+            p = products[s]
+            if not isinstance(p, dict):
+                return None
+            if not p.get("inactive"):
+                return s
+            seen.add(s)
+            s = p.get("superseded_by")
+        return None
+
+    out, clash = {}, set()
+    for s, p in products.items():
+        if not isinstance(p, dict) or not p.get("inactive") or not p.get("superseded_by"):
+            continue
+        to = live(s)
+        if not to:
+            continue
+        for v in (p.get("name"), p.get("pinecone_title")):
+            k = " ".join(v.lower().split()) if isinstance(v, str) else ""
+            # A bare code never bills, as in _old_names ("MB 5" vs "MB 15"), and nor
+            # does one word: "EMF" was a $0 listing, and "Day" or "Relax" may be advice.
+            if (" " not in k
+                    or _re.fullmatch(r"(?:ed|ei|es|et|mb|mr|er|sk|pl|bfa) ?\d*", k)):
+                continue
+            if k in out and out[k] != to:
+                clash.add(k)
+            out[k] = to
+    return {k: v for k, v in out.items() if k not in clash}
 
 
 def _old_names():
