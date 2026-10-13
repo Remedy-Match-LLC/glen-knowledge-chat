@@ -1163,7 +1163,12 @@
    ],
    "ingredients_source": "production-sheet-2026-07-08",
    "bottle_type": "30 Caps",
-   "fmp_id": "425"
+   "fmp_id": "425",
+   "directions": "1 capsule on rising.\n\nIt is beneficial to open the capsule and take a small amount of the powder straight into your mouth.\n\nThen close the capsule and swallow it, so the rest of the powder reaches your intestines.",
+   "copy_pinned": [
+    "directions"
+   ],
+   "order_note": "It is beneficial to open the capsule and take a small amount of the powder straight into your mouth.\n\nThen close the capsule and swallow it, so the rest of the powder reaches your intestines."
   },
   "golden-book": {
    "name": "Golden Book",

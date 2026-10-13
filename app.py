@@ -43930,6 +43930,24 @@ def _send_kloud_order_instructions(email, first_name, product_names, order_ref):
         print(f"[gk-webhook] Kloud instructions send failed: {e!r}", flush=True)
 
 
+def _order_note_for_name(name):
+    """A product's approved `order_note` for a buyer's order email, found by its exact
+    name or exact alias, never by containment: a loose match would put one product's
+    instruction under another. A retired record carries no note. Glen, 2026-10-13:
+    Microbiome's open-capsule note, built per product so the next one needs no code."""
+    nl = html.unescape(str(name or "")).replace("\u2122", "").strip().lower()
+    if not nl:
+        return ""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    slug = next((sl for sl, p in products.items()
+                 if html.unescape(p.get("name") or "").replace("\u2122", "").strip().lower() == nl),
+                None) or (_RESOLVE_NAME_INDEX.get(nl) if " " in nl else None)
+    p = products.get(slug) or {}
+    if not slug or p.get("inactive"):
+        return ""
+    return str(p.get("order_note") or "").strip()
+
+
 def _notify_store_order(payload):
     """Email Glen and Rae that a store order arrived. Never raises.
 
@@ -43952,7 +43970,7 @@ def _notify_store_order(payload):
         try:
             buyer = _gkn.buyer_address(payload)
             if buyer:
-                b_subject, b_body = _gkn.buyer_email(payload)
+                b_subject, b_body = _gkn.buyer_email(payload, note_for=_order_note_for_name)
                 _inbox.send_email(buyer, b_subject, b_body)
             else:
                 print("[gk-notify] no buyer email on this order, none sent", flush=True)
