@@ -272,10 +272,17 @@ ESC = ("function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,"
 @pytest.mark.parametrize("page,box", [("static/begin-cart.html", "zelleHtml"),
                                       ("static/client-portal.html", "zelleInstructionsHtml")])
 def test_the_note_is_its_own_card_after_the_zelle_box(page, box):
-    js = ESC + _fn(page, "orderNotesHtml") + _fn(page, box) + (
+    # Each page's own esc, so a broken escape fails here (review round 2).
+    src = open(os.path.join(ROOT, *page.split("/")), encoding="utf-8").read()
+    esc = (_fn(page, "esc") if "function esc(" in src
+           else next(l for l in src.splitlines() if l.startswith("const esc =")))
+    money = "function money(c){return '$'+(Number(c||0)/100).toFixed(2);}"
+    js = esc + money + _fn(page, "orderNotesHtml") + _fn(page, box) + (
         "console.log(JSON.stringify([%s({order_id:5,total_cents:100,pay_instructions:{to:'x'},"
-        "order_notes:%s}), %s({order_id:5,pay_instructions:{}})]));" % (box, json.dumps(NOTES), box))
-    with_note, without = _node(js)
+        "order_notes:%s}), %s({order_id:5,pay_instructions:{}}),"
+        "orderNotesHtml([{name:'<i>x</i>',paras:['a<b']}])]));" % (box, json.dumps(NOTES), box))
+    with_note, without, hostile = _node(js)
+    assert "<i>" not in hostile and "&lt;i&gt;x&lt;/i&gt;" in hostile and "a&lt;b" in hostile
     card = with_note.index("order-notes")
     assert with_note.rindex("</div>", 0, card) > with_note.index("Zelle payment instructions")
     assert "<p><strong>Microbiome</strong></p><p>" + S1 + "</p><p>" + S2 + "</p>" in with_note

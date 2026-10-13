@@ -24764,17 +24764,11 @@ def api_cart_checkout():
                 return jsonify({"ok": False, "error": "Your order did not save. "
                                 "Please try again, or contact us."}), 503
             _mark_ordered_resilient(token, out.get("invoice_id", ""))
-            _z_items = []
-            try:
-                with db.connect(LOG_DB) as _zcx:
-                    _zcx.row_factory = sqlite3.Row
-                    _z_items = (_bos_orders.get_order(_zcx, res["order_id"]) or {}).get("items") or []
-            except Exception as _e:  # noqa: BLE001 - the notes card is optional
-                print(f"[cart-zelle] order notes skipped: {_e!r}", flush=True)
+            # The cart's own lines carry the notes, so no second read can lose them.
             return jsonify({"ok": True, "method": "zelle", **_zelle_instructions({
                 "id": res["order_id"], "external_ref": out.get("invoice_id", ""),
                 "total_cents": res.get("charge_cents"),
-                "shipping_cents": res.get("shipping_cents"), "items": _z_items})})
+                "shipping_cents": res.get("shipping_cents"), "items": cart})})
         if not stripe_url and not res.get("no_payment_required"):
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
