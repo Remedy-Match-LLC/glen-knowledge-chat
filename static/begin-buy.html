@@ -140,6 +140,8 @@
     text-transform:uppercase; color:var(--green); margin-bottom:10px; }
   .confirm-card .cc-head{ font-family:var(--heading); font-weight:700; font-size:18px; color:var(--cream); line-height:1.3; }
   .pay-detail{ margin-top:16px; }
+  .order-notes{ margin-top:16px; padding:12px 14px; border:1px solid rgba(201,168,76,.4); border-radius:8px; }
+  .order-notes p{ margin:0 0 8px; } .order-notes p:last-child{ margin-bottom:0; }
   .pay-detail .pd-label{ font-size:13px; color:var(--muted); }
   .pay-detail .pd-to{ font-size:17px; color:var(--gold); font-weight:600; font-family:var(--heading); margin-top:3px; word-break:break-word; }
   .pay-detail .pd-memo{ font-size:14px; color:var(--cream); margin-top:8px; }
@@ -213,6 +215,7 @@
   <script src="/static/theme-mode.js"></script>
   <script src="/static/text-size.js"></script>
   <script src="/static/theme-toggle.js"></script>
+<script src="/static/js/order-notes.js"></script>
 </head>
 <body>
   <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode" style="position:fixed;top:14px;right:14px;z-index:9999;"></span>
@@ -397,6 +400,7 @@
         </div>
         <a class="pay-link hidden" id="pay-link" href="#" target="_blank" rel="noopener">Pay securely &#8599;</a>
         <div class="cc-email-note" id="cc-email-note"></div>
+        <div class="order-notes hidden" id="order-notes"></div>
         <div class="cc-referral hidden" id="cc-referral"></div>
       </div>
 
@@ -942,6 +946,7 @@
           if (pi.note) document.getElementById('pd-note').textContent = pi.note;
           show('pay-detail');
         }
+        if (window.renderOrderNotes) renderOrderNotes(document.getElementById('order-notes'), data.order_notes);
         document.getElementById('cc-email-note').textContent = data.no_payment_required
           ? 'Your points and credits cover this order, so there is nothing to pay.'
           : 'Please save these payment details. They are not sent by email.';

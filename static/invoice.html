@@ -102,6 +102,7 @@
   #print-root .pd-note-k{ display:block; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#8a8a8a; margin-bottom:3px; }
   #print-root .pd-foot{ margin-top:20px; padding-top:10px; border-top:1px solid #e2e2e2; font-style:italic; color:#555; font-size:12px; }
 </style>
+<script src="/static/js/order-notes.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -148,6 +149,7 @@
     </div>
     <p class="muted fee-free-note" hidden style="margin:6px 0 10px">Pay by Zelle or Wise and 3.5% of your payment comes back to you as loyalty points, for use toward services. The points are added when your payment arrives.</p>
     <div id="pay-instr" class="notice" style="display:none"></div>
+    <div id="order-notes" class="notice order-notes" hidden></div>
     <button class="primary" id="pay-btn" onclick="pay()">Pay now</button>
     <button class="ghost" id="claim-btn" style="display:none" onclick="claim()">I’ve sent payment</button>
     <div id="pay-msg" class="muted" style="margin-top:8px"></div>
@@ -558,7 +560,7 @@ function setupPay(){
   $('pay-due').style.display = '';
   $('pay-btn').textContent = 'Pay '+money(ORDER.total_cents);
   if (!ORDER.paylink_enabled){ $('pay-notice').innerHTML='<div class="notice">Online payment isn’t enabled yet — we’ll be in touch.</div>'; $('pay-btn').disabled=true; return; }
-  document.querySelectorAll('input[name=m]').forEach(el=>el.onchange=()=>{curMethod=el.value; $('claim-btn').style.display='none'; $('pay-instr').style.display='none';});
+  document.querySelectorAll('input[name=m]').forEach(el=>el.onchange=()=>{curMethod=el.value; $('claim-btn').style.display='none'; $('pay-instr').style.display='none'; $('order-notes').hidden=true;});
 }
 async function pay(){
   $('pay-msg').textContent='…';
@@ -567,6 +569,7 @@ async function pay(){
   $('pay-msg').textContent='';
   if (j.method==='card' && j.url){ location.href=j.url; return; }
   if (j.instructions){ $('pay-instr').textContent=j.instructions; $('pay-instr').style.display='block'; $('claim-btn').style.display='inline-block'; }
+  if (window.renderOrderNotes) renderOrderNotes($('order-notes'), j.order_notes);   // Glen, 2026-10-13
 }
 async function claim(){
   const r = await fetch(API+'/claim-paid', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({method:curMethod})});

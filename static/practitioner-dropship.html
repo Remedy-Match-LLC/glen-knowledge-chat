@@ -57,10 +57,13 @@
     .workspace-nav{position:sticky;top:0;z-index:50;display:flex;gap:8px;overflow-x:auto;margin:14px 0 18px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.22);-webkit-overflow-scrolling:touch}
     .workspace-nav a{min-height:44px;display:inline-flex;align-items:center;padding:8px 12px;color:var(--gold);font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap;border-radius:8px}
     .workspace-nav a.primary{background:var(--green);color:#fff}
-  </style>
+    .order-notes { margin-top: 12px; padding: 12px 14px; border: 1px solid rgba(201,168,76,.4); border-radius: 8px; }
+  .order-notes p { margin: 0 0 8px; } .order-notes p:last-child { margin-bottom: 0; }
+</style>
   <script>(function(){var t=localStorage.getItem('rm-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
   <script src="/static/theme-mode.js"></script>
   <script src="/static/text-size.js"></script>
+<script src="/static/js/order-notes.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -102,6 +105,7 @@
     <div class="panel" id="order-confirmation" style="display:none;border-color:#3f8f68">
       <h2>Payment received — your drop-ship order is confirmed</h2>
       <div id="order-confirmation-detail" class="muted"></div>
+      <div id="order-notes-paid" class="order-notes" hidden></div>
       <div style="margin-top:10px">We’ll prepare the order for shipment. You can safely start another order below.</div>
     </div>
     <!-- Product assistant — inline chat at the top of the portal -->
@@ -200,6 +204,7 @@
       </div>
       <button id="checkout-btn" style="margin-top:16px" disabled>Place drop-ship order</button>
       <div id="msg"></div>
+      <div id="order-notes" class="order-notes" hidden></div>
     </div>
   </div>
 </div>
@@ -439,6 +444,7 @@ function showOrderConfirmation(){
   if(cents) detail.push('Payment: ' + money(cents));
   $('order-confirmation-detail').textContent = detail.join(' · ');
   $('order-confirmation').style.display = 'block';
+  if(window.renderOrderNotes) renderOrderNotes($('order-notes-paid'), takeOrderNotes());
   try { localStorage.removeItem(DRAFT_KEY); } catch(e) {}
 }
 
@@ -513,7 +519,11 @@ $('checkout-btn').addEventListener('click', function(){
     .then(function(r){ return r.json(); })
     .then(function(d){
       if(d.ok){
+        // Glen, 2026-10-13: a product's order note shows after checkout. A card payment
+        // leaves for Stripe, so the note is kept for showOrderConfirmation on return.
+        if(window.keepOrderNotes) keepOrderNotes(d.order_notes);
         if(d.stripe_url){ window.location.href = d.stripe_url; return; }
+        if(window.renderOrderNotes) renderOrderNotes($('order-notes'), takeOrderNotes());
         var inv = d.invoice_id || d.doc_number || '';
         var tot = typeof d.total === 'number' ? money(Math.round(d.total * 100)) : '';
         var m = 'Order placed' + (inv ? ' — Invoice #' + inv : '') + (tot ? ' for ' + tot : '') + '.';

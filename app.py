@@ -13019,6 +13019,7 @@ def begin_checkout(slug):
         out["order_id"] = order_id
         out["pay_instructions"] = {**_ALT_PAY.get(method, {}), "memo": f"Order {order_id}",
                                    "note": _BUY_PAGE_ALT_PAY_NOTE.get(method, "")}
+        out["order_notes"] = _order_notes_for(pc["items_rec"])   # Glen, 2026-10-13
     else:
         record_checkout_effects()
     if method == "card" and _STRIPE_ACTIVE:
@@ -19778,6 +19779,8 @@ def api_practitioner_checkout():
                     _bos_orders.set_order_qbo_lines(_lcx, out.get("invoice_id"), out["qbo_payload"])
             except Exception as e:
                 print(f"[practitioner-checkout] persist qbo_lines failed: {e!r}", flush=True)
+        # Glen, 2026-10-13: a product's order note shows after checkout, by any method.
+        out["order_notes"] = _order_notes_for(items)
         if method in ("zelle", "wise"):
             out["pay_instructions"] = _ALT_PAY.get(method, {})
         elif method == "card":
@@ -19876,6 +19879,8 @@ def api_practitioner_personal_checkout():
             except Exception as e:
                 print(f"[practitioner-personal-checkout] earn credit failed: {e!r}",
                       flush=True)
+        # Glen, 2026-10-13: a product's order note shows after checkout, by any method.
+        out["order_notes"] = _order_notes_for(items)
         if method in ("zelle", "wise"):
             out["pay_instructions"] = _ALT_PAY.get(method, {})
         elif method == "card":
@@ -19977,6 +19982,8 @@ def api_practitioner_dropship_checkout():
                     _bos_orders.set_order_qbo_lines(_lcx, out.get("invoice_id"), out["qbo_payload"])
             except Exception as e:
                 print(f"[dropship-checkout] persist qbo_lines failed: {e!r}", flush=True)
+        # Glen, 2026-10-13: a product's order note shows after checkout, by any method.
+        out["order_notes"] = _order_notes_for(items)
         if method in ("zelle", "wise"):
             out["pay_instructions"] = _ALT_PAY.get(method, {})
         elif method == "card":
@@ -23763,6 +23770,7 @@ def api_client_checkout(code):
     # checkout-return handler (Task 3) can credit the margin to the wallet.
     if method in ("zelle", "wise"):
         out["pay_instructions"] = _ALT_PAY.get(method, {})
+        out["order_notes"] = _order_notes_for(items)   # Glen, 2026-10-13
     elif method == "card" and _STRIPE_ACTIVE:
         try:
             from dashboard import stripe_pay as _sp
@@ -60299,7 +60307,8 @@ def api_invoice_pay(token):
             link = os.environ.get("WISE_PAY_LINK", "")
             instr = (f"Pay {amt} via Wise" + (f": {link}" if link else " — we’ll email you Wise details")
                      + ", then tap “I’ve sent payment”.")
-        return jsonify({"ok": True, "method": method, "instructions": instr})
+        return jsonify({"ok": True, "method": method, "instructions": instr,
+                        "order_notes": _order_notes_for(order.get("items"))})
     return jsonify({"ok": False, "error": "unknown payment method"}), 400
 
 

@@ -150,10 +150,13 @@
     #partner-program .flow{ grid-template-columns:1fr; } #partner-program .arrow{ transform:rotate(90deg); }
     #tr-mods{ grid-template-columns:repeat(2,1fr); grid-template-rows:none; grid-auto-flow:row; }
   }
+  .order-notes { margin-top: 12px; padding: 12px 14px; border: 1px solid rgba(201,168,76,.4); border-radius: 8px; }
+  .order-notes p { margin: 0 0 8px; } .order-notes p:last-child { margin-bottom: 0; }
 </style>
 <script>(function(){var t=localStorage.getItem('rm-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 <script src="/static/theme-mode.js"></script>
 <script src="/static/text-size.js"></script>
+<script src="/static/js/order-notes.js"></script>
 </head>
 <body>
 <div class="qualification-gate" id="qualificationGate" role="dialog" aria-modal="true" aria-labelledby="qualificationTitle">
@@ -359,6 +362,7 @@
     <button id="checkout" style="margin-top:14px">Place personal order</button>
     <div id="order-note" class="muted" style="margin-top:6px;font-size:13px"></div>
     <div id="msg"></div>
+    <div id="order-notes" class="order-notes" hidden></div>
   </div>
 
   <div class="panel" id="resell-panel">
@@ -1900,7 +1904,11 @@ $('checkout').addEventListener('click', function(){
     .then(function(r){ return r.json(); })
     .then(function(d){
       if(d.ok){
+        // Glen, 2026-10-13: a product's order note shows after checkout. A card payment
+        // leaves for Stripe, so the note is kept for the return below.
+        if(window.keepOrderNotes) keepOrderNotes(d.order_notes);
         if(d.stripe_url){ window.location.href = d.stripe_url; return; }
+        if(window.renderOrderNotes) renderOrderNotes($('order-notes'), takeOrderNotes());
         var m = 'Order placed. Invoice #' + d.doc_number + ' for ' + money((d.total||0)*100);
         if(d.credit_redeemed_cents) m += ' (credit applied: ' + money(d.credit_redeemed_cents) + ')';
         if(d.fee_free_credit_cents) m += '. You earned ' + money(d.fee_free_credit_cents) + ' fee-free credit';
@@ -1912,7 +1920,8 @@ $('checkout').addEventListener('click', function(){
     })
     .catch(function(){ $('msg').textContent='Network error.'; $('checkout').disabled=false; });
 });
-(function(){ if(new URLSearchParams(location.search).get('paid')==='1'){ $('msg').textContent='Payment received — thank you. Your invoice is marked paid.'; } })();
+(function(){ if(new URLSearchParams(location.search).get('paid')==='1'){ $('msg').textContent='Payment received — thank you. Your invoice is marked paid.';
+  if(window.renderOrderNotes) renderOrderNotes($('order-notes'), takeOrderNotes()); } })();
 
 // ── reselling activation (resale license) ──
 $('resale-submit').addEventListener('click', function(){
