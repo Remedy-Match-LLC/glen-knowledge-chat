@@ -173,3 +173,26 @@ def test_a_rebuilt_record_gets_the_three_fields_back():
     assert (got["directions"], got["copy_pinned"], got["order_note"]) == (
         M["directions"], M["copy_pinned"], M["order_note"])
     assert got["ingredients_source"] == M["ingredients_source"]
+
+
+@pytest.mark.parametrize("q", ["what is microbiome?", "what is microbiome and why does it matter",
+                               "What's Microbiome?"])
+def test_asking_what_microbiome_is_is_not_a_product_question(q):
+    import app
+    assert "### Microbiome" not in app.named_product_facts_block(q)
+
+
+@pytest.mark.parametrize("q", ["How much reverse age per year can I expect?",
+                               "take clear the way per se", "what is appestat per se"])
+def test_per_does_not_widen_other_product_names(q):
+    import app
+    assert "###" not in app.named_product_facts_block(q)
+
+
+def test_the_note_on_the_confirmation_page_is_escaped(monkeypatch):
+    import app
+    prods = json.loads(json.dumps(app._PRODUCTS))
+    prods["products"]["microbiome"]["order_note"] = "<b>bold</b>"
+    monkeypatch.setattr(app, "_PRODUCTS", prods)
+    page = _confirmation(monkeypatch, [{"slug": "microbiome", "name": "Microbiome", "qty": 1}])
+    assert "&lt;b&gt;bold&lt;/b&gt;" in page and "<b>bold</b>" not in page

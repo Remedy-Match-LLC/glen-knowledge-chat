@@ -2214,17 +2214,23 @@ _PRODUCT_CUE_AFTER = re.compile(
 # name into a longer noun phrase ("reverse age discrimination").
 _AFTER_NAME_OK = re.compile(
     r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
-    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each|per)\b)", re.IGNORECASE)
+    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
 
 
-def _has_product_cue(text: str, start: int, end: int) -> bool:
+def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> bool:
     """True when the words beside a lowercase product name read as asking about the
     product: "how much clear the way should I take", "clear the way dose", "is clear the
     way safe". "Can I clear the way for my lymph" and "about reverse age discrimination"
     have no cue, or run the name into a longer phrase."""
-    if not _AFTER_NAME_OK.search(text[end:end + 20]):
+    # strict (_ALWAYS_CUE_NAMES): "how much microbiome per day" counts, while "what is
+    # microbiome?" asks about biology and does not (review round 3, 2026-10-13). Kept to
+    # those names, so "reverse age per year" stays an ordinary phrase.
+    after = text[end:end + 20]
+    if not (_AFTER_NAME_OK.search(after) or (strict and re.match(r"^\s*per\b", after, re.I))):
         return False
     before = _PRODUCT_CUE_BEFORE.search(text[max(0, start - 24):start])
+    if strict and before and re.match(r"\s*what", before.group(0), re.I):
+        before = None
     # "how much of the Estrogen and Fibrin Balance Program" takes "of the"; a single
     # word does not: "what is the appestat?" asks about the body's appetite set point
     # (review round 3, 2026-10-09).
@@ -2262,7 +2268,7 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         m = None if slug in _ALWAYS_CUE_NAMES else re.search(pattern, query_text)
         if slug in _ALWAYS_CUE_NAMES:
             m = next((mi for mi in re.finditer(pattern, query_text, re.IGNORECASE)
-                      if _has_product_cue(query_text, *mi.span())), None)
+                      if _has_product_cue(query_text, *mi.span(), strict=True)), None)
         elif not m:
             # Any case: a coined name cannot occur in ordinary speech. A name that is also
             # an everyday phrase ("clear the way", "reverse age") needs a product cue
