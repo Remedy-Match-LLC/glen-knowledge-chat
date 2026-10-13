@@ -60,9 +60,12 @@ def test_the_clear_lens_survivor_is_live_and_owns_no_fmp_id():
     prods = _products()
     e = prods[LIVE_CLEAR_LENS]
     assert not e.get("inactive") and "superseded_by" not in e
-    # Keeps its own name: an active record may not wear a retired one's name
-    # (test_es1_lymph_canonical.test_no_active_catalog_name_is_also_a_retired_name).
-    assert e["name"] == "Clear Lens Eyedrops"
+    # Renamed to match the label (Glen, 2026-10-13). It now shares its name with the
+    # retired twin, which is safe: _deprecated_catalog_names() subtracts live names
+    # (test_es1_lymph_canonical.test_a_live_products_own_name_is_never_dropped...).
+    assert e["name"] == "Clear Lens Eye Drops"
+    assert {"Clear Lens Eyedrops", "Clear Lens Eye Drops ACES+CAT Eye Drops"} <= set(e["aliases"])
+    assert e.get("report_aliases") is True
     assert e["price_cents"] == 7000 and e["bottle_type"] == "Dropper 5 mL"
     assert e.get("ingredients"), "the survivor must be the record carrying ingredients"
     assert "fmp_id" not in e, "fmp_id 372 stays on the retired twin so 372 still resolves"
