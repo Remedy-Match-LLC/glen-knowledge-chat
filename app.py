@@ -54763,6 +54763,11 @@ def cron_review_invites():
     for g in groups.values():
         if n >= REVIEW_INVITE_MAX_PER_RUN:
             break
+        # A buyer of several products none of which resolves sends nothing and is
+        # retried; it must not take room under the cap from buyers who can be sent
+        # (review round 3).
+        if len(g) > 1 and not any(_get_product(r["slug"]) for r in g):
+            continue
         picked.append(g)
         n += len(g)
     invited, failed, emails = 0, 0, 0

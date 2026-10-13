@@ -141,7 +141,7 @@ def test_nothing_reviewable_sends_nothing_and_retries(monkeypatch, tmp_path):
     monkeypatch.setattr(appmod, "_get_product", lambda s: None)
     sent = _capture(monkeypatch)
     r = _post(monkeypatch)
-    assert sent == [] and r["failed"] == 2 and r["invited"] == 0
+    assert sent == [] and r["invited"] == 0 and r["emails"] == 0
     assert len(_pending(db_path)) == 2
 
 
@@ -157,3 +157,11 @@ def test_one_failed_mark_does_not_stop_the_others(monkeypatch, tmp_path):
     _capture(monkeypatch)
     _post(monkeypatch)
     assert [p["slug"] for p in _pending(db_path)] == ["a"]
+
+
+def test_an_unreviewable_buyer_takes_no_room_under_the_cap(monkeypatch, tmp_path):
+    _db(monkeypatch, tmp_path, [("gone@x.com", ["x", "y"]), ("ok@x.com", ["a"])])
+    monkeypatch.setattr(appmod, "REVIEW_INVITE_MAX_PER_RUN", 1)
+    sent = _capture(monkeypatch)
+    _post(monkeypatch)
+    assert [s[0] for s in sent] == ["ok@x.com"]
