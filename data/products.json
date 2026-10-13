@@ -7886,9 +7886,14 @@
    "fmp_id": "378"
   },
   "clear-lens-eye-drops": {
-    "name": "Clear Lens Eyedrops",
+    "name": "Clear Lens Eye Drops",
     "price_cents": 7000,
     "pinecone_title": "Clear Lens Eyedrops",
+    "aliases": [
+      "Clear Lens Eyedrops",
+      "Clear Lens Eye Drops ACES+CAT Eye Drops"
+    ],
+    "report_aliases": true,
     "url": "https://myhealingoasis.com/begin/product/clear-lens-eye-drops",
     "legacy_store_url": "https://remedymatch.com/remedies/syntropy/19-clear-lens-eye-drops",
     "ingredients": [
@@ -7938,7 +7943,7 @@
       }
     ],
     "ingredients_source": "label-2026-09-25",
-    "description": "Clear Lens Eyedrops . Price: $70.",
+    "description": "Clear Lens Eye Drops . Price: $70.",
     "bottle_type": "Dropper 5 mL",
     "qty_pricing": true,
     "copy_pinned": [
