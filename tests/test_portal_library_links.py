@@ -95,7 +95,7 @@ def _render(items):
 
 def test_the_library_renders_a_link_that_opens_in_a_new_tab():
     html = _render([{"kind": "link", "title": "Titration <b>", "url": URL}])
-    assert '<a class="lib-read" href="%s" target="_blank" rel="noopener">Open</a>' % URL in html
+    assert '<a class="lib-read" href="%s" target="_blank" rel="noopener noreferrer">Open</a>' % URL in html
     assert "Titration &lt;b&gt;" in html
 
 
@@ -124,3 +124,16 @@ def test_a_broken_link_store_still_serves_the_library(tmp_path, monkeypatch):
     monkeypatch.setattr(lib, "links_for_email", lambda *a: (_ for _ in ()).throw(RuntimeError("db")))
     r = c.get(f"/api/portal/{tok}/library")
     assert r.status_code == 200 and r.get_json()["items"] == []
+
+
+def test_staff_can_list_and_remove_a_link_by_mixed_case_email(tmp_path, monkeypatch):
+    appmod, c, tok = _app(tmp_path, monkeypatch)
+    h = {"X-Console-Key": "s3cret"}
+    c.post("/api/console/portal-library-links", headers=h,
+           json={"email": " L@X.com ", "url": URL, "title": "Titration"})
+    got = c.get("/api/console/portal-library-links?email=l@x.com", headers=h).get_json()
+    assert [l["url"] for l in got["links"]] == [URL]
+    r = c.post("/api/console/portal-library-links", headers=h,
+               json={"email": "l@x.com", "url": URL, "action": "remove"})
+    assert r.get_json()["changed"] is True
+    assert c.get(f"/api/portal/{tok}/library").get_json()["items"] == []

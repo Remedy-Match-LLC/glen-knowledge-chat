@@ -27908,7 +27908,8 @@ def api_console_portal_library_links():
             elif action == "add":
                 actor = _bos_actor()
                 changed = _lib.add_link(cx, email, body.get("url"), body.get("title"),
-                                        added_by=getattr(actor, "role", "") if actor else "")
+                                        added_by=(getattr(actor, "name", "") or getattr(actor, "role", ""))
+                                        if actor else "")
             else:
                 return jsonify({"ok": False, "error": "action must be add or remove"}), 400
             cx.commit()

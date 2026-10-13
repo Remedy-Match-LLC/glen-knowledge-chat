@@ -10,7 +10,7 @@ function renderLibrary(items) {
       var href = /^https:\/\//.test(String(it.url || '')) ? it.url : '';
       return '<li class="lib-item lib-link">' +
         '<span class="lib-title">' + escapeHtml(it.title) + '</span>' +
-        (href ? '<a class="lib-read" href="' + escapeHtml(href) + '" target="_blank" rel="noopener">Open</a>' : '') +
+        (href ? '<a class="lib-read" href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer">Open</a>' : '') +
       '</li>';
     }
     if (it.kind === 'course') {
