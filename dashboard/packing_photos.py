@@ -74,7 +74,7 @@ def _open_image(raw):
         raise
     except Exception:
         raise PhotoError("That file is not a photo this page can read. Use a JPEG, PNG or HEIC.")
-    im = ImageOps.exif_transpose(im)
+    ImageOps.exif_transpose(im, in_place=True)   # a returned copy would double memory
     # Shrink in place to the stored size straight away, so the full-resolution pixels of
     # a HEIC, PNG or WebP are released before any copy is made.
     im.thumbnail((FULL_EDGE, FULL_EDGE), Image.LANCZOS)
