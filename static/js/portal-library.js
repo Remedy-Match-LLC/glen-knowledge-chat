@@ -4,6 +4,15 @@
 function renderLibrary(items) {
   if (!items || !items.length) return '';
   const rows = items.map(function (it) {
+    if (it.kind === 'link') {
+      // A protocol page Glen added for this client. Only https is stored server-side;
+      // checked again here so a bad row can never become a javascript: link.
+      var href = /^https:\/\//.test(String(it.url || '')) ? it.url : '';
+      return '<li class="lib-item lib-link">' +
+        '<span class="lib-title">' + escapeHtml(it.title) + '</span>' +
+        (href ? '<a class="lib-read" href="' + escapeHtml(href) + '" target="_blank" rel="noopener">Open</a>' : '') +
+      '</li>';
+    }
     if (it.kind === 'course') {
       return '<li class="lib-item lib-course">' +
         '<span class="lib-title">' + escapeHtml(it.title) +

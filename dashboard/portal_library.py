@@ -50,3 +50,62 @@ def has(cx, email, slug) -> bool:
     return cx.execute(
         "SELECT 1 FROM ebook_grants WHERE email=? AND ebook_slug=?",
         (email, (slug or "").strip())).fetchone() is not None
+
+
+# --- Links Glen adds to one client's Library (2026-10-13) ---------------------------
+# A protocol page or handout for one client: Linda Maher's Constitutional Hydrotherapy
+# and Titration were the first. Keyed by email like the grants above, with the URL in
+# the composite key, so adding the same link twice is a no-op. Only https links are
+# stored, because the portal renders them as clickable anchors.
+
+def init_links_table(cx) -> None:
+    cx.execute(
+        "CREATE TABLE IF NOT EXISTS portal_library_links ("
+        "  email TEXT,"
+        "  url TEXT,"
+        "  title TEXT,"
+        "  added_at TEXT,"
+        "  added_by TEXT,"
+        "  PRIMARY KEY (email, url))")
+
+
+def clean_link(url, title):
+    """(url, title) when both are acceptable, else raises ValueError with the reason."""
+    from urllib.parse import urlsplit
+    url = (url or "").strip()
+    title = " ".join((title or "").split())
+    parts = urlsplit(url)
+    if parts.scheme != "https" or not parts.netloc or any(c in url for c in ' "<>\''):
+        raise ValueError("The link must be a full https:// address.")
+    if not title:
+        raise ValueError("The link needs a title.")
+    if len(url) > 1000 or len(title) > 120:
+        raise ValueError("The link or its title is too long.")
+    return url, title
+
+
+def add_link(cx, email, url, title, added_by="") -> bool:
+    email = (email or "").strip().lower()
+    if not email:
+        raise ValueError("No client email.")
+    url, title = clean_link(url, title)
+    init_links_table(cx)
+    cur = cx.execute(
+        "INSERT OR IGNORE INTO portal_library_links (email, url, title, added_at, added_by) "
+        "VALUES (?,?,?,?,?)", (email, url, title, _now(), (added_by or "")[:40]))
+    return cur.rowcount == 1
+
+
+def remove_link(cx, email, url) -> bool:
+    init_links_table(cx)
+    cur = cx.execute("DELETE FROM portal_library_links WHERE email=? AND url=?",
+                     ((email or "").strip().lower(), (url or "").strip()))
+    return cur.rowcount == 1
+
+
+def links_for_email(cx, email) -> list:
+    init_links_table(cx)
+    rows = cx.execute(
+        "SELECT url, title, added_at FROM portal_library_links WHERE email=? "
+        "ORDER BY added_at, title", ((email or "").strip().lower(),)).fetchall()
+    return [{"url": r[0], "title": r[1], "added_at": r[2]} for r in rows]
