@@ -56,3 +56,13 @@ def test_the_portal_invoice_email_greets_the_same_way(stored, expect):
     """Review round 1: the publish-to-portal invoice email said "Aloha linda maher,"."""
     import app
     assert app._greeting_name(stored) == expect
+
+
+def test_the_household_invoice_email_capitalises_each_name():
+    """Review round 3: the household email listed "linda maher, $X"."""
+    from dashboard import payer_links as PL
+    subject, plain, html = PL.compose("Rae", [
+        {"name": "linda maher", "total_cents": 7000, "invoice_token": "t1"},
+        {"name": "", "total_cents": 100, "invoice_token": "t2"}], "https://x")
+    assert "Linda Maher, $70.00" in plain and "View and pay Linda's invoice" in html
+    assert "linda maher" not in plain

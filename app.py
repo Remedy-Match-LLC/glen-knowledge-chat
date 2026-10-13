@@ -15162,7 +15162,8 @@ def _send_full_report_email(to_email: str, name: str,
     try:
         from dashboard import ghl_email as _ghl
         if _ghl.is_configured():
-            _html = "<p>" + body.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+            _esc = _ihtml.escape(body, quote=False)   # a stored name must not become markup
+            _html = "<p>" + _esc.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
             _ghl.send_via_ghl(to_email, subject, html=_html, text=body)
             return ("ghl", None)
     except Exception as e:
