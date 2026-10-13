@@ -31,6 +31,7 @@ CLASH_RULES = {
     "portal_notify_state": "notify",
     "portal_cart_seeded": "survivor",      # an "already seeded" marker
     "portal_fold_state": "survivor",       # which cards are folded
+    "portal_library_links": "survivor",    # the same link under both addresses
     # The cart touched last stays open; the other's items fold into it (Glen, 2026-09-27).
     "carts": "fold_cart:updated_at",
     "scan_freshness": "newest:last_scan_date",

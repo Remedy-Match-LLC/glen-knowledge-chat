@@ -156,3 +156,25 @@ def test_remove_matches_an_uppercase_scheme():
     cx = _cx()
     lib.add_link(cx, "l@x.com", URL, "Titration")
     assert lib.remove_link(cx, "l@x.com", URL.replace("https", "HTTPS", 1)) is True
+
+
+def test_a_client_merge_moves_her_links_and_keeps_one_of_a_shared_link(tmp_path):
+    # CI: a new table with an address column must be classified for client merges.
+    from dashboard import person_aliases as pa
+    from dashboard import person_merge as pm
+    from tests.test_person_merge_engine import AOL, DDL, GMAIL, _fields
+    cx = sqlite3.connect(str(tmp_path / "m.db"))
+    cx.execute(DDL[0])                                   # people only
+    cx.execute("INSERT INTO people VALUES (1, ?, 'Mel', '[]')", (AOL,))
+    cx.execute("INSERT INTO people VALUES (2, ?, 'Mel', '[]')", (GMAIL,))
+    pa.init_tables(cx)
+    lib.init_links_table(cx)
+    lib.add_link(cx, AOL, URL, "Constitutional Hydrotherapy")
+    lib.add_link(cx, AOL, "https://example.com/titration", "Titration")
+    lib.add_link(cx, GMAIL, URL, "Constitutional Hydrotherapy")
+    cx.commit()
+    pm.apply(cx, survivor_id=2, merged_id=1, mail_old="stop", evidence={}, suggestion={},
+             applied_by="test", merge_people_fields=_fields)
+    assert lib.links_for_email(cx, AOL) == []
+    assert sorted(l["title"] for l in lib.links_for_email(cx, GMAIL)) == [
+        "Constitutional Hydrotherapy", "Titration"]
