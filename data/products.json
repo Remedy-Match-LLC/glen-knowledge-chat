@@ -23090,6 +23090,7 @@
    "name": "CDS Activator",
    "price_cents": 3500,
    "inactive": true,
+   "page_redirect": "cds-water-purifier--activator",
    "pinecone_title": "CDS Activator",
    "qty_pricing": true,
    "fmp_id": "574",

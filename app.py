@@ -9856,6 +9856,15 @@ def shop_page():
 def begin_product_page(slug):
     product = _get_product(slug)
     if not product:
+        # A retired record with no replacement can still send its old PAGE address on,
+        # without its slug buying anything: CDS Activator is retired so an old cart
+        # holding both halves buys one pair, but links to its page reach the pair
+        # (2026-10-13). Only the page follows `page_redirect`, never a cart or order.
+        raw = (_PRODUCTS.get("products") or {}).get(slug) or {}
+        to = raw.get("page_redirect") if raw.get("inactive") else None
+        if to and to != slug and _get_product(to):
+            qs = request.query_string.decode("latin-1")
+            return redirect(f"/begin/product/{to}" + (f"?{qs}" if qs else ""), code=302)
         return ("", 404)
     if product["slug"] != slug:
         # A superseded slug (`superseded_by`) is served as its survivor by a redirect,

@@ -295,3 +295,14 @@ def test_cds_pair_counts_as_one_bottle_on_the_curve():
     terms = {"cds": (None, True, 0.5), "cds-activator": (None, True, 0.5), "ff": (None, True, 1.0)}
     cart = [{"slug": "cds", "qty": 3}, {"slug": "cds-activator", "qty": 3}, {"slug": "ff", "qty": 2}]
     assert dc._curve_bottles(cart, terms) == 5
+
+
+def test_the_old_activator_page_reaches_the_pair_but_its_slug_buys_nothing():
+    import app as _app
+    c = _app.app.test_client()
+    r = c.get("/begin/product/cds-activator?utm_source=email")
+    assert r.status_code == 302
+    assert r.headers["Location"].endswith("/begin/product/cds-water-purifier--activator?utm_source=email")
+    assert _app._get_product("cds-activator") is None
+    assert c.get("/begin/product/cds").status_code == 302
+    assert c.get("/begin/product/no-such-product").status_code == 404
