@@ -51,10 +51,13 @@ def test_a_search_returns_every_order_for_that_client(cx, q):
     assert _refs(O.search_client_orders(cx, q)) == ["GK-1001", "GK-1002", "GK-1003"]
 
 
-def test_an_order_number_finds_its_client(cx):
+def test_an_order_number_shows_only_that_order(cx):
+    # Glen, 2026-10-13: "203" buried order 203 under the client's 16 other orders.
     oid = cx.execute("SELECT id FROM orders WHERE external_ref='GK-1002'").fetchone()[0]
-    for q in (str(oid), f"#{oid}"):
-        assert _refs(O.search_client_orders(cx, q)) == ["GK-1001", "GK-1002", "GK-1003"]
+    for q in (str(oid), f"#{oid}", f" # {oid} "):
+        rows = O.search_client_orders(cx, q)
+        assert _refs(rows) == ["GK-1002"]
+        assert rows[0]["search_match"] == "number" and rows[0]["search_replaced"] == []
 
 
 def test_a_search_never_brings_in_another_client(cx):
@@ -162,3 +165,85 @@ def test_an_older_response_never_overwrites_a_newer_search(tmp_path):
     out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
     assert "if (!isCurrent(my)) return;" in page
+
+
+# ── An order number shows one order (Glen, 2026-10-13) ────────────────────────
+def _id(cx, ref):
+    return cx.execute("SELECT id FROM orders WHERE external_ref=?", (ref,)).fetchone()[0]
+
+
+def test_a_replaced_number_shows_the_order_that_replaced_it(cx):
+    old, new = _id(cx, "GK-1001"), _id(cx, "GK-1002")
+    O.supersede_order(cx, old, new)
+    cx.commit()
+    rows = O.search_client_orders(cx, str(old))
+    assert _refs(rows) == ["GK-1002"] and rows[0]["search_replaced"] == [old]
+    assert _refs(O.search_client_orders(cx, "GK-1001")) == []    # text search is unchanged
+
+
+def test_a_chain_of_replacements_resolves_to_the_last(cx):
+    a, b, c = _id(cx, "GK-1001"), _id(cx, "GK-1002"), _id(cx, "GK-1003")
+    O.supersede_order(cx, a, b)
+    O.supersede_order(cx, b, c)
+    cx.commit()
+    rows = O.search_client_orders(cx, f"#{a}")
+    assert _refs(rows) == ["GK-1003"] and rows[0]["search_replaced"] == [a]
+
+
+def test_a_replacement_loop_returns_nothing_rather_than_hanging(cx):
+    a, b = _id(cx, "GK-1001"), _id(cx, "GK-1002")
+    cx.execute("UPDATE orders SET superseded_by_order_id=? WHERE id=?", (b, a))
+    cx.execute("UPDATE orders SET superseded_by_order_id=? WHERE id=?", (a, b))
+    cx.commit()
+    assert O.search_client_orders(cx, str(a)) == []
+
+
+def test_a_name_still_brings_the_whole_history(cx):
+    rows = O.search_client_orders(cx, "Ann Lee")
+    assert _refs(rows) == ["GK-1001", "GK-1002", "GK-1003"]
+    assert all("search_match" not in r for r in rows)
+
+
+def test_digits_that_name_no_order_still_search_phones(cx):
+    assert _refs(O.search_client_orders(cx, "8085550199")) == ["GK-1001", "GK-1002", "GK-1003"]
+    assert O.search_client_orders(cx, "#8085550199") == []          # a # means an order number
+
+
+NUM_JS = r"""
+const assert = require('assert');
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+BLOCK
+assert.strictEqual(numberHitHtml({id: 1, email: 'a@x.com'}), '');
+const hit = numberHitHtml({id: 225, search_match: 'number', search_replaced: [222], email: 'l"m@x.com'});
+assert.ok(hit.includes('Replaced #222'), hit);
+assert.ok(hit.includes('data-q="l&quot;m@x.com"'), hit);
+assert.ok(hit.includes("All of this client's orders"), hit);
+assert.ok(!numberHitHtml({search_match: 'number', search_replaced: [], email: 'a@x.com'}).includes('Replaced'));
+assert.strictEqual(numberHitHtml({search_match: 'number', search_replaced: [], email: ''}), '');
+assert.ok(searchNote('203', [{search_match: 'number'}]).startsWith('Order "'));
+assert.ok(searchNote('Ann', [{}, {}]).startsWith('All 2 orders'));
+assert.ok(searchNote('<b>', []).includes('&lt;b&gt;'));
+console.log('OK');
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_card_names_the_replaced_number_and_links_the_history(tmp_path):
+    page = (ROOT / "static" / "console-orders.html").read_text()
+    a, b = page.find("// BEGIN order search"), page.find("// END order search")
+    assert "numberHitHtml(o)" in page[page.find("function cardHtml("):]
+    assert "window.searchFor = " in page
+    js = tmp_path / "n.js"
+    js.write_text(NUM_JS.replace("BLOCK", page[a:b]))
+    out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
+
+
+def test_a_whole_address_matches_exactly(cx):
+    # The card's history link searches by address (review round 1).
+    O.upsert_order(cx, source="funnel", external_ref="JO-1", email="joann@x.com")
+    O.upsert_order(cx, source="funnel", external_ref="US-1", email="annXx@x.com")
+    cx.commit()
+    assert _refs(O.search_client_orders(cx, "ann@x.com")) == ["GK-1001", "GK-1002", "GK-1003"]
+    assert _refs(O.search_client_orders(cx, " ANN@X.COM ")) == ["GK-1001", "GK-1002", "GK-1003"]
+    assert _refs(O.search_client_orders(cx, "ann@x")) == ["GK-1001", "GK-1002", "GK-1003", "JO-1"]

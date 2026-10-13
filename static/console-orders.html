@@ -234,6 +234,25 @@
   var _loadSeq = 0;
   function beginSearch(){ return ++_loadSeq; }
   function isCurrent(ticket){ return ticket === _loadSeq; }
+  // Glen, 2026-10-13: an order number shows that one order. Its card names any number it
+  // replaced and links to the client's whole history, which is the email search.
+  function numberHitHtml(o){
+    if (!o || o.search_match !== 'number') return '';
+    var rep = (o.search_replaced || []).map(function(n){ return '#' + Number(n); }).join(', ');
+    var who = String(o.email || '').trim();
+    var link = who ? '<a href="#" class="client-orders" data-q="' + esc(who) + '"'
+      + ' onclick="event.preventDefault(); event.stopPropagation(); window.searchFor && searchFor(this.dataset.q)">'
+      + 'All of this client\'s orders</a>' : '';
+    if (!rep && !link) return '';
+    return '<div class="meta number-hit">' + (rep ? 'Replaced ' + rep : '')
+      + (rep && link ? ' &middot; ' : '') + link + '</div>';
+  }
+  function searchNote(q, orders){
+    var byNumber = orders.length && orders.every(function(o){ return o.search_match === 'number'; });
+    if (byNumber) return 'Order "<b>' + esc(q) + '</b>"';
+    return 'All ' + orders.length + ' order' + (orders.length===1?'':'s')
+      + ' for "<b>' + esc(q) + '</b>", cancelled and completed included';
+  }
   // END order search
   var SEARCH = (new URLSearchParams(location.search).get('q') || '').trim();
   function key(){ return localStorage.getItem('console_key') || ''; }
@@ -340,6 +359,7 @@
       ? '<span class="hh-badge">shipment #'+Number(o.group_shipment_id)+'</span>' : '';
     var head = '<div class="card-head" onclick="toggleCard(this)">'
       + '<div class="who">'+sel+esc(displayName)+gb+badge+'<span class="chev">&#9656;</span></div>'
+      + numberHitHtml(o)
       + '<div class="meta"><span class="onum">#'+Number(o.id)+'</span>'
         + (o.external_ref?' &middot; '+esc(o.external_ref):'')
         + ' &middot; '+esc(dateStr(o.created_at))+' &middot; <span class="src">'+esc(whereLabel(o))+'</span>'
@@ -732,8 +752,7 @@
     if (q) {
       var note = document.createElement('div');
       note.style.cssText = 'padding:6px 12px;margin-bottom:8px;color:#9aa0b4;font-size:13px';
-      note.innerHTML = 'All ' + orders.length + ' order' + (orders.length===1?'':'s')
-        + ' for "<b>' + esc(q) + '</b>", cancelled and completed included'
+      note.innerHTML = searchNote(q, orders)
         + ' · <a href="#" id="order-search-clear" style="color:#7c9cff">clear</a>';
       board.appendChild(note);
     }
@@ -1060,6 +1079,7 @@
       load();
     }
     box.addEventListener('input', function(){ clearTimeout(t); t = setTimeout(run, 300); });
+    window.searchFor = function(v){ clearTimeout(t); box.value = v || ''; run(); };
     document.addEventListener('click', function(e){
       if (e.target && e.target.id === 'order-search-clear'){ e.preventDefault(); box.value = ''; run(); }
     });

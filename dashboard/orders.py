@@ -362,17 +362,24 @@ def search_client_orders(cx, q, limit=500):
 
     Glen, 2026-09-28: the Orders board's search shows ALL of a client's orders. Text matches
     an order's name, email or external ref, or a name in People (the board shows that name
-    when an order has none). A number matches an order number or external ref exactly, never
-    inside another number (review). A phone matches on 7+ digits, ignoring a leading country
-    code 1. Every order sharing a matched email then comes with it, so older orders beyond the
-    board's own limit and cancelled ones are included. Replaced (superseded) order numbers stay
-    hidden, as on the board. Fewer than 2 characters matches nothing, unless it is a number."""
+    when an order has none). A phone matches on 7+ digits, ignoring a leading country code 1.
+    Every order sharing a matched email then comes with it, so older orders beyond the board's
+    own limit and cancelled ones are included. Replaced (superseded) order numbers stay
+    hidden, as on the board. Fewer than 2 characters matches nothing, unless it is a number.
+
+    Glen, 2026-10-13: an order number (digits, optional leading #) shows that one order, not
+    the client's history; see _orders_by_number. Digits that match no order fall through to
+    the phone search, unless they start with #."""
     import re
     q = (q or "").strip().lower()
     if len(q) < 2 and not q.isdigit():
         return []
     base = "superseded_by_order_id IS NULL"
     num = q.lstrip("#").strip()
+    if num.isdigit():
+        found = _orders_by_number(cx, num)
+        if found or q.startswith("#"):
+            return found[:int(limit)]
     hits, emails = set(), set()
 
     def take(rows):
@@ -381,10 +388,13 @@ def search_client_orders(cx, q, limit=500):
             if (email or "").strip():
                 emails.add(email.strip().lower())
 
-    if num.isdigit():
-        take(cx.execute(f"SELECT id, email FROM orders WHERE {base} AND (id=? OR external_ref=?)",
-                        (int(num), num)).fetchall())
-    else:
+    if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", q):
+        # A whole address names one client: match it exactly, so "ann@x.com" never brings
+        # in "joann@x.com", and "_" is not a wildcard (review, 2026-10-13).
+        take(cx.execute(f"SELECT id, email FROM orders WHERE {base} AND lower(trim(email))=?",
+                        (q,)).fetchall())
+        emails.add(q)
+    elif not num.isdigit():
         like = f"%{q}%"
         take(cx.execute(
             f"SELECT id, email FROM orders WHERE {base} AND (lower(coalesce(name,'')) LIKE ? "
@@ -423,6 +433,46 @@ def search_client_orders(cx, q, limit=500):
     cur = cx.execute(f"SELECT * FROM orders WHERE {base} AND ({' OR '.join(conds)}) "
                      "ORDER BY id DESC LIMIT ?", args + [int(limit)])
     return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+def _orders_by_number(cx, num):
+    """The order(s) an order number or external ref names exactly, newest first.
+
+    A replaced (superseded) number resolves to the order that replaced it, and that row
+    carries search_replaced, the numbers it stands in for. Every row found carries
+    search_match="number", so the board can offer the client's whole history."""
+    rows = cx.execute("SELECT id, superseded_by_order_id FROM orders WHERE id=? OR external_ref=?",
+                      (int(num), num)).fetchall()
+    found = {}
+    for oid, nxt in rows:
+        cur, seen = int(oid), {int(oid)}
+        while nxt is not None:
+            if int(nxt) in seen:
+                cur = None
+                break
+            cur = int(nxt)
+            seen.add(cur)
+            r = cx.execute("SELECT superseded_by_order_id FROM orders WHERE id=?", (cur,)).fetchone()
+            if r is None:
+                cur = None
+                break
+            nxt = r[0]
+        if cur is None:
+            continue
+        rep = found.setdefault(cur, [])
+        if cur != int(oid):
+            rep.append(int(oid))
+    if not found:
+        return []
+    cur = cx.execute(f"SELECT * FROM orders WHERE id IN ({','.join('?' * len(found))}) "
+                     "ORDER BY id DESC", sorted(found))
+    out = []
+    for r in cur.fetchall():
+        d = _row_to_dict(r)
+        d["search_match"] = "number"
+        d["search_replaced"] = sorted(found[int(d["id"])])
+        out.append(d)
+    return out
 
 
 def list_orders_by_email(cx, email, limit=200):
