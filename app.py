@@ -43932,8 +43932,9 @@ def _send_kloud_order_instructions(email, first_name, product_names, order_ref):
 
 def _order_note_for_name(name):
     """A product's approved `order_note` for a buyer's order email, found by its exact
-    name or exact alias, never by containment: a loose match would put one product's
-    instruction under another. A retired record carries no note. Glen, 2026-10-13:
+    name or an exact alias of two words or more, never by containment: a loose match
+    would put one product's instruction under another. A one-word alias such as "Sleep"
+    belongs to a different product than its name suggests, as in _resolve_buy_slug. A retired record carries no note. Glen, 2026-10-13:
     Microbiome's open-capsule note, built per product so the next one needs no code."""
     nl = html.unescape(str(name or "")).replace("\u2122", "").strip().lower()
     if not nl:
