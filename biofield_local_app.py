@@ -3175,9 +3175,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"added": 0, "error": str(e)}
             except Exception as e:
                 return {"error": str(e)[:200]}
+            # The transcript numbers its layers from 1. Writing those numbers as they
+            # stood filed Linda Maher's live-session layer as layer 1, among her 8
+            # clinical and scan layers (Glen, 2026-10-12). Continue after the last
+            # stored layer, as the scan import and the program buttons already do.
+            after = _last_layer_no(_report_for(cx, test_id))
             added = 0
             for l in layers:
-                add_chain_row(cx, test_id, l["layer"], l["head"], l["most_affected"],
+                n = l["layer"]
+                add_chain_row(cx, test_id, (int(n) + after) if n is not None else None,
+                              l["head"], l["most_affected"],
                               l["remedy"], l["dosage"], l["frequency"], l["timing"],
                               confirmed=0)  # voice -> unconfirmed
                 added += 1
