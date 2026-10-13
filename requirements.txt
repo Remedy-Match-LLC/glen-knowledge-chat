@@ -4,6 +4,9 @@ PyJWT[crypto]>=2.8,<3
 flask-cors
 gunicorn
 gevent
+# truststore 0.10.5 (2026-10-12) calls SSLSocket.do_handshake(block), which gevent's
+# patched socket does not take: every chatbot embedding call failed. Keep below it.
+truststore<0.10.5
 packaging
 anthropic
 openai
