@@ -112,3 +112,31 @@ def test_the_store_webhook_sends_the_buyer_the_note(monkeypatch):
     buyer = [b for to, b in sent if to == "buyer@example.com"]
     assert buyer and S1 in buyer[0] and S2 in buyer[0]
     assert all(S1 not in b for to, b in sent if to != "buyer@example.com")
+
+
+def _confirmation(monkeypatch, items):
+    import app
+    from dashboard import stripe_pay
+    monkeypatch.setattr(stripe_pay, "get_session", lambda sid: {
+        "payment_status": "paid", "amount_total": 7000, "customer_email": "b@example.com",
+        "metadata": {"invoice_id": "INH-TEST", "kind": "store"}})
+    monkeypatch.setattr(app._bos_orders, "find_order_by_external_ref",
+                        lambda cx, ref: {"id": 9, "items": items, "total_cents": 7000})
+    app.app.config["TESTING"] = True
+    r = app.app.test_client().get("/order-confirmation?session_id=cs_test")
+    assert r.status_code == 200
+    return r.get_data(as_text=True)
+
+
+def test_the_payment_received_page_shows_the_note_under_microbiome(monkeypatch):
+    page = _confirmation(monkeypatch, [{"slug": "golden-book", "name": "Golden Book", "qty": 1},
+                                       {"slug": "microbiome", "name": "Microbiome", "qty": 2}])
+    i = page.index("Microbiome")
+    assert page.index('<p class="note">' + S1 + "</p>") > i
+    assert page.index('<p class="note">' + S2 + "</p>") > page.index(S1)
+    assert page.count('class="note"') == 2 and page.index("Golden Book") < i
+
+
+def test_a_zero_quantity_line_gets_no_note(monkeypatch):
+    page = _confirmation(monkeypatch, [{"slug": "microbiome", "name": "Microbiome", "qty": 0}])
+    assert S1 not in page

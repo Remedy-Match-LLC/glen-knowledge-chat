@@ -14650,6 +14650,21 @@ def order_confirmation():
     email = ((sess.get("customer_details") or {}).get("email")
              or sess.get("customer_email") or (order or {}).get("email") or "")
     items = (order or {}).get("items") or []
+    # A product's approved order note under its line (Microbiome, Glen 2026-10-13):
+    # store and portal-basket buyers get no product email, so this page is where they
+    # see it. A zero-quantity line was not bought and gets none.
+    shown = []
+    for it in items:
+        it = dict(it) if isinstance(it, dict) else {}
+        q = it.get("qty")
+        try:
+            bought = q is None or int(q) > 0
+        except (TypeError, ValueError):
+            bought = False
+        note = _order_note_for_slug(it.get("slug")) if bought else ""
+        it["note_paras"] = [x.strip() for x in re.split(r"\n\s*\n", note) if x.strip()]
+        shown.append(it)
+    items = shown
     return_to = (md.get("return_to") or "").strip()
     if not (return_to.startswith("/portal/") or return_to == "/portal/me"
             or return_to.startswith(portal_base().rstrip("/") + "/portal/")
@@ -14677,8 +14692,8 @@ _ORDER_CONFIRMATION_ERROR = """<!doctype html><html><head><meta name="viewport" 
 _ORDER_CONFIRMATION_HTML = """<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Order {{ order_number }} confirmed</title>
-<style>body{margin:0;background:#f4f7f3;color:#21362c;font:16px/1.5 system-ui,-apple-system,sans-serif}.card{max-width:640px;margin:48px auto;background:#fff;border-radius:18px;padding:34px;box-shadow:0 8px 32px #19322618}.check{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:#267a56;color:#fff;font-size:30px}h1{margin:18px 0 4px;font-size:30px}.muted{color:#66756d}.summary{margin:26px 0;padding:18px;background:#f3f7f4;border-radius:12px}.row{display:flex;justify-content:space-between;gap:20px;padding:7px 0}.total{font-size:20px;font-weight:700;border-top:1px solid #dce5df;margin-top:8px;padding-top:14px}.button{display:block;text-align:center;background:#267a56;color:#fff;text-decoration:none;padding:14px 18px;border-radius:10px;font-weight:700}@media(max-width:700px){.card{margin:0;min-height:100vh;border-radius:0;padding:28px 20px}}</style></head>
-<body><main class="card"><div class="check">&#10003;</div><h1>Payment received</h1><p class="muted">Your order is confirmed. A receipt will also be sent to {{ email or 'the email used at checkout' }}.</p><section class="summary"><div class="row"><span>Order number</span><strong>#{{ order_number }}</strong></div>{% for item in items %}<div class="row"><span>{{ item.get('name') or item.get('slug') or 'Product' }}{% if (item.get('qty') or 1)|int > 1 %} &times; {{ item.get('qty') }}{% endif %}</span></div>{% endfor %}<div class="row total"><span>Total paid</span><span>{{ amount }}</span></div></section><p class="muted">Please keep this order number for your records.</p><a class="button" href="{{ return_to }}">{{ return_label }}</a></main></body></html>"""
+<style>body{margin:0;background:#f4f7f3;color:#21362c;font:16px/1.5 system-ui,-apple-system,sans-serif}.card{max-width:640px;margin:48px auto;background:#fff;border-radius:18px;padding:34px;box-shadow:0 8px 32px #19322618}.check{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:#267a56;color:#fff;font-size:30px}h1{margin:18px 0 4px;font-size:30px}.muted{color:#66756d}.summary{margin:26px 0;padding:18px;background:#f3f7f4;border-radius:12px}.row{display:flex;justify-content:space-between;gap:20px;padding:7px 0}.total{font-size:20px;font-weight:700;border-top:1px solid #dce5df;margin-top:8px;padding-top:14px}.button{display:block;text-align:center;background:#267a56;color:#fff;text-decoration:none;padding:14px 18px;border-radius:10px;font-weight:700}@media(max-width:700px){.card{margin:0;min-height:100vh;border-radius:0;padding:28px 20px}}.summary .note{margin:2px 0 12px;font-size:14px;line-height:1.5;color:#3f5a4c}</style></head>
+<body><main class="card"><div class="check">&#10003;</div><h1>Payment received</h1><p class="muted">Your order is confirmed. A receipt will also be sent to {{ email or 'the email used at checkout' }}.</p><section class="summary"><div class="row"><span>Order number</span><strong>#{{ order_number }}</strong></div>{% for item in items %}<div class="row"><span>{{ item.get('name') or item.get('slug') or 'Product' }}{% if (item.get('qty') or 1)|int > 1 %} &times; {{ item.get('qty') }}{% endif %}</span></div>{% for para in item.get('note_paras') or [] %}<p class="note">{{ para }}</p>{% endfor %}{% endfor %}<div class="row total"><span>Total paid</span><span>{{ amount }}</span></div></section><p class="muted">Please keep this order number for your records.</p><a class="button" href="{{ return_to }}">{{ return_label }}</a></main></body></html>"""
 
 
 # ── Post-buy concierge (consultative upsell) ─────────────────────────────────
@@ -43928,6 +43943,14 @@ def _send_kloud_order_instructions(email, first_name, product_names, order_ref):
         except Exception:
             pass
         print(f"[gk-webhook] Kloud instructions send failed: {e!r}", flush=True)
+
+
+def _order_note_for_slug(slug):
+    """A product's approved `order_note` by its catalog slug; "" for a retired record."""
+    p = ((_PRODUCTS or {}).get("products", {}) or {}).get(str(slug or "").strip()) or {}
+    if not p or p.get("inactive"):
+        return ""
+    return str(p.get("order_note") or "").strip()
 
 
 def _order_note_for_name(name):
