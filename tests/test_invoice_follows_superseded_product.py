@@ -64,3 +64,37 @@ def test_lindas_invoice_now_carries_the_drops():
                                   CATALOG, include_fee=False)
     assert built["lines"] == [{"slug": "clear-lens-eye-drops", "qty": 1, "source": "biofield"}]
     assert built["skipped"] == []
+
+
+def test_one_word_names_bill_nothing(tmp_path, monkeypatch):
+    data = json.loads(json.dumps(PRODUCTS))
+    data["products"]["emf-old"] = {"name": "EMF", "inactive": True, "superseded_by": "a-live"}
+    p = tmp_path / "p2.json"
+    p.write_text(json.dumps(data))
+    monkeypatch.setattr(A, "_PRODUCTS_JSON", str(p))
+    assert B.resolve_line_slug("EMF", CATALOG) is None
+
+
+def test_a_dead_end_chain_does_not_hide_a_good_replacement(tmp_path, monkeypatch):
+    data = json.loads(json.dumps(PRODUCTS))
+    data["products"]["twin-b"]["superseded_by"] = "nowhere"      # dead end
+    p = tmp_path / "p3.json"
+    p.write_text(json.dumps(data))
+    monkeypatch.setattr(A, "_PRODUCTS_JSON", str(p))
+    data["products"]["twin-a"]["name"] = data["products"]["twin-b"]["name"] = "Twin Drops"
+    p.write_text(json.dumps(data))
+    assert B.resolve_line_slug("Twin Drops", CATALOG) == "a-live"
+
+
+def test_an_active_product_ends_the_chain(tmp_path, monkeypatch):
+    data = json.loads(json.dumps(PRODUCTS))
+    data["products"]["clear-lens-eye-drops"]["superseded_by"] = "a-live"   # active, not retired
+    p = tmp_path / "p4.json"
+    p.write_text(json.dumps(data))
+    monkeypatch.setattr(A, "_PRODUCTS_JSON", str(p))
+    assert B.resolve_line_slug("Clear Lens Eye Drops ACES+CAT Eye Drops", CATALOG) == "clear-lens-eye-drops"
+
+
+def test_two_sources_naming_two_products_bill_neither(monkeypatch):
+    monkeypatch.setattr(B, "_old_names", lambda: {"clear lens eye drops": "a-live"})
+    assert B.resolve_line_slug("Clear Lens Eye Drops", CATALOG) is None

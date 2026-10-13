@@ -88,13 +88,16 @@ def resolve_line_slug(name, catalog):
     # The infoceutical merge (2026-10-03) renamed 80 survivors; reports authored before
     # carry "BFA Big Field Aligner", "PL Polarity", "ED1 Source Driver".
     slug = _old_names().get(norm)
+    via_retired = _superseded_names().get(norm)
+    if slug and via_retired and via_retired != slug:
+        return None       # two sources name two products: bill neither (review round 2)
     if slug and any(it.get("slug") == slug and not it.get("inactive") for it in catalog or []):
         return slug
     # A retired listing's name, followed to the live product that replaced it. Linda
     # Maher's layer named FileMaker 372 "Clear Lens Eye Drops ACES+CAT Eye Drops"; the
     # live product is "Clear Lens Eyedrops", so the drops never reached her invoice
     # (Glen, 2026-10-13).
-    slug = _superseded_names().get(norm)
+    slug = via_retired
     if slug and any(it.get("slug") == slug and not it.get("inactive") for it in catalog or []):
         return slug
     return None
@@ -114,21 +117,29 @@ def _superseded_names():
         return {}
 
     def live(s):
+        """The first active product down the chain, or None for a loop or a dead end."""
         seen = set()
-        while s in products and (products[s] or {}).get("superseded_by") and s not in seen:
+        while s in products and s not in seen:
+            p = products[s] or {}
+            if not p.get("inactive"):
+                return s
             seen.add(s)
-            s = products[s]["superseded_by"]
-        return s
+            s = p.get("superseded_by")
+        return None
 
     out, clash = {}, set()
     for s, p in products.items():
         if not isinstance(p, dict) or not p.get("inactive") or not p.get("superseded_by"):
             continue
         to = live(s)
+        if not to:
+            continue
         for v in (p.get("name"), p.get("pinecone_title")):
             k = " ".join(v.lower().split()) if isinstance(v, str) else ""
-            # A bare code never bills, as in _old_names ("MB 5" vs "MB 15").
-            if not k or _re.fullmatch(r"(?:ed|ei|es|et|mb|mr|er|sk|pl|bfa) ?\d*", k):
+            # A bare code never bills, as in _old_names ("MB 5" vs "MB 15"), and nor
+            # does one word: "EMF" was a $0 listing, and "Day" or "Relax" may be advice.
+            if (" " not in k
+                    or _re.fullmatch(r"(?:ed|ei|es|et|mb|mr|er|sk|pl|bfa) ?\d*", k)):
                 continue
             if k in out and out[k] != to:
                 clash.add(k)
