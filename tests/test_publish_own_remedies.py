@@ -61,11 +61,33 @@ def test_confirming_one_name_does_not_pass_another(tmp_path, monkeypatch):
     assert r.status_code == 409 and sent == []
 
 
-def test_a_confirmation_is_remembered_for_later_silent_publishes(tmp_path, monkeypatch):
+def test_printing_later_publishes_silently_with_the_remembered_confirmation(
+        tmp_path, monkeypatch):
     c, aid, _, sent = _setup(tmp_path, monkeypatch)
-    c.post(f"/test/{aid}/publish-portal", json={"own_remedies": ["Passion Flower Capsule"]})
-    r = c.post(f"/test/{aid}/publish-portal", json={})
-    assert r.status_code == 200 and len(sent) == 2
+    assert c.post(f"/test/{aid}/publish-portal",
+                  json={"own_remedies": ["Passion Flower Capsule"]}).status_code == 200
+    monkeypatch.setenv("BIOFIELD_REPORTS_DIR", str(tmp_path))
+    monkeypatch.setattr(biofield_local_app, "save_report_pdf",
+                        lambda html, out: open(out, "wb").write(b"%PDF-FAKE"))
+    assert c.get(f"/test/{aid}/report.pdf").status_code == 200
+    assert len(sent) == 2
+    assert sent[1][1]["send"] is False and sent[1][1]["send_if_new"] is True
+
+
+def test_a_remedy_added_while_publishing_is_not_sent(tmp_path, monkeypatch):
+    c, aid, _, sent = _setup(tmp_path, monkeypatch)
+    real = bpp.build_portal_content
+    calls = {"n": 0}
+
+    def changing(*a, **kw):
+        calls["n"] += 1
+        out = real(*a, **kw)
+        if calls["n"] == 2:            # the report was edited after the first check
+            out["unresolved"] = out["unresolved"] + ["Vitalty"]
+        return out
+    monkeypatch.setattr(bpp, "build_portal_content", changing)
+    r = c.post(f"/test/{aid}/publish-portal", json={"own_remedies": ["Passion Flower Capsule"]})
+    assert r.status_code == 409 and r.get_json()["unresolved"] == ["Vitalty"] and sent == []
 
 
 def test_a_confirmation_belongs_to_one_report(tmp_path, monkeypatch):

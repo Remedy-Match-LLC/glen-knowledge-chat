@@ -3515,6 +3515,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         missing = [u for u in pre["unresolved"] if u not in confirmed]
         if missing:
             return {"unresolved": missing}
+        # Remember before the remote publish: a failed local write after it would
+        # report a failure for a publish that already emailed the client.
+        _remember_own(test_id, pre["unresolved"])
         with sqlite3.connect(db_path) as cx:
             rep = _report_for(cx, test_id)
             narrative = get_narrative(cx, test_id)
@@ -3535,11 +3538,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             payload = _bpp.build_portal_content(cx, test_id, special_price_cents=special,
                                                 audio_url=audio_url, report_pdf_url=pdf_url)
+        # The report can change while the PDF renders. Check what actually goes out.
+        late = [u for u in payload["unresolved"] if u not in confirmed]
+        if late:
+            return {"unresolved": late}
         res = _bpp.publish_to_portal(payload, base_url=base, console_key=key, send=send,
                                      send_if_new=send_if_new)
-        _remember_own(test_id, pre["unresolved"])
         if isinstance(res, dict):
-            res = {**res, "own_remedies": list(pre["unresolved"])}
+            res = {**res, "own_remedies": list(payload["unresolved"])}
         return res
 
     def _auto_publish(test_id):
