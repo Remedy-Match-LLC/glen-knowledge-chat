@@ -1906,9 +1906,11 @@ $('checkout').addEventListener('click', function(){
       if(d.ok){
         // Glen, 2026-10-13: a product's order note shows after checkout. A card payment
         // leaves for Stripe, so the note is kept for the return below.
-        if(window.keepOrderNotes) keepOrderNotes(d.order_notes);
-        if(d.stripe_url){ window.location.href = d.stripe_url; return; }
-        if(window.renderOrderNotes) renderOrderNotes($('order-notes'), takeOrderNotes());
+        if(d.stripe_url){
+          if(window.keepOrderNotes) keepOrderNotes(d.order_notes, d.invoice_id);
+          window.location.href = d.stripe_url; return;
+        }
+        if(window.renderOrderNotes) renderOrderNotes($('order-notes'), d.order_notes);
         var m = 'Order placed. Invoice #' + d.doc_number + ' for ' + money((d.total||0)*100);
         if(d.credit_redeemed_cents) m += ' (credit applied: ' + money(d.credit_redeemed_cents) + ')';
         if(d.fee_free_credit_cents) m += '. You earned ' + money(d.fee_free_credit_cents) + ' fee-free credit';
@@ -1921,7 +1923,7 @@ $('checkout').addEventListener('click', function(){
     .catch(function(){ $('msg').textContent='Network error.'; $('checkout').disabled=false; });
 });
 (function(){ if(new URLSearchParams(location.search).get('paid')==='1'){ $('msg').textContent='Payment received — thank you. Your invoice is marked paid.';
-  if(window.renderOrderNotes) renderOrderNotes($('order-notes'), takeOrderNotes()); } })();
+  if(window.renderOrderNotes) renderOrderNotes($('order-notes'), takeOrderNotes(new URLSearchParams(location.search).get('order'))); } })();
 
 // ── reselling activation (resale license) ──
 $('resale-submit').addEventListener('click', function(){

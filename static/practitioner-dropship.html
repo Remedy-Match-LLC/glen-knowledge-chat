@@ -444,7 +444,7 @@ function showOrderConfirmation(){
   if(cents) detail.push('Payment: ' + money(cents));
   $('order-confirmation-detail').textContent = detail.join(' · ');
   $('order-confirmation').style.display = 'block';
-  if(window.renderOrderNotes) renderOrderNotes($('order-notes-paid'), takeOrderNotes());
+  if(window.renderOrderNotes) renderOrderNotes($('order-notes-paid'), takeOrderNotes(ref));
   try { localStorage.removeItem(DRAFT_KEY); } catch(e) {}
 }
 
@@ -521,9 +521,11 @@ $('checkout-btn').addEventListener('click', function(){
       if(d.ok){
         // Glen, 2026-10-13: a product's order note shows after checkout. A card payment
         // leaves for Stripe, so the note is kept for showOrderConfirmation on return.
-        if(window.keepOrderNotes) keepOrderNotes(d.order_notes);
-        if(d.stripe_url){ window.location.href = d.stripe_url; return; }
-        if(window.renderOrderNotes) renderOrderNotes($('order-notes'), takeOrderNotes());
+        if(d.stripe_url){
+          if(window.keepOrderNotes) keepOrderNotes(d.order_notes, d.invoice_id);
+          window.location.href = d.stripe_url; return;
+        }
+        if(window.renderOrderNotes) renderOrderNotes($('order-notes'), d.order_notes);
         var inv = d.invoice_id || d.doc_number || '';
         var tot = typeof d.total === 'number' ? money(Math.round(d.total * 100)) : '';
         var m = 'Order placed' + (inv ? ' — Invoice #' + inv : '') + (tot ? ' for ' + tot : '') + '.';

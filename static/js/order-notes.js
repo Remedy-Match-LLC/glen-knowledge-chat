@@ -27,20 +27,24 @@
     return n;
   }
 
-  // A card payment leaves for Stripe, so the page keeps the notes for its return.
+  // A card payment leaves for Stripe, so the page keeps the notes for its return. They
+  // are tied to the order: the return names its order, and only a match is shown, so
+  // an earlier checkout's notes never appear on a later order's return (review).
   var KEY = 'order_notes_pending';
-  function keepOrderNotes(notes) {
+  function keepOrderNotes(notes, orderRef) {
     try {
-      if (Array.isArray(notes) && notes.length) sessionStorage.setItem(KEY, JSON.stringify(notes));
+      if (Array.isArray(notes) && notes.length && orderRef)
+        sessionStorage.setItem(KEY, JSON.stringify({ref: String(orderRef), notes: notes}));
       else sessionStorage.removeItem(KEY);
-    } catch (e) { /* storage blocked: the receipt still carries the note */ }
+    } catch (e) { /* storage blocked: the page still shows what it was sent */ }
   }
-  function takeOrderNotes() {
+  function takeOrderNotes(orderRef) {
     try {
       var raw = sessionStorage.getItem(KEY);
+      var v = raw ? JSON.parse(raw) : null;
+      if (!v || !orderRef || String(v.ref) !== String(orderRef)) return [];
       sessionStorage.removeItem(KEY);
-      var v = raw ? JSON.parse(raw) : [];
-      return Array.isArray(v) ? v : [];
+      return Array.isArray(v.notes) ? v.notes : [];
     } catch (e) { return []; }
   }
 

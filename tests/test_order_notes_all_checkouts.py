@@ -135,12 +135,17 @@ def test_each_page_loads_the_helper_in_its_head_and_renders_the_note(page):
 
 
 @pytest.mark.parametrize("page", ["static/practitioner-portal.html", "static/practitioner-dropship.html"])
-def test_a_practitioner_card_payment_keeps_the_note_for_its_return(page):
+def test_a_practitioner_card_payment_keeps_the_note_for_its_own_return(page):
     src = _read(page)
-    keep = src.index("keepOrderNotes(d.order_notes)")
-    assert keep < src.index("window.location.href = d.stripe_url", keep)
+    branch = src[src.index("if(d.stripe_url){\n"):]
+    branch = branch[:branch.index("return;")]
+    assert "keepOrderNotes(d.order_notes, d.invoice_id)" in branch
+    # Without a redirect the note comes straight from the reply, never via storage
+    # (review round 2: blocked storage hid it).
+    assert "renderOrderNotes($('order-notes'), d.order_notes)" in src
     ret = src.index("get('paid')")
-    assert "takeOrderNotes()" in src[ret:ret + 900]
+    assert re.search(r"takeOrderNotes\((ref|new URLSearchParams\(location\.search\)\.get\('order'\))\)",
+                     src[ret:ret + 900])
 
 
 JS = r"""
@@ -170,12 +175,16 @@ assert.strictEqual(renderOrderNotes(host, []), 0);
 assert.strictEqual(host.hidden, true);
 assert.strictEqual(host.children.length, 0);
 assert.strictEqual(renderOrderNotes(host, [{name: 'X', paras: []}]), 0);
-// Kept across the Stripe round trip, then taken once.
-keepOrderNotes(NOTES);
-assert.deepStrictEqual(takeOrderNotes(), NOTES);
-assert.deepStrictEqual(takeOrderNotes(), []);
-keepOrderNotes(NOTES); keepOrderNotes([]);
-assert.deepStrictEqual(takeOrderNotes(), []);
+// Kept across the Stripe round trip for its own order only, then taken once.
+keepOrderNotes(NOTES, 'INV-2');
+assert.deepStrictEqual(takeOrderNotes('INV-1'), []);           // another order's return
+assert.deepStrictEqual(takeOrderNotes(null), []);
+assert.deepStrictEqual(takeOrderNotes('INV-2'), NOTES);
+assert.deepStrictEqual(takeOrderNotes('INV-2'), []);
+keepOrderNotes(NOTES, 'INV-3'); keepOrderNotes([], 'INV-4');   // a later order with no note
+assert.deepStrictEqual(takeOrderNotes('INV-3'), []);
+keepOrderNotes(NOTES, '');
+assert.deepStrictEqual(takeOrderNotes(''), []);
 console.log('OK');
 """
 
