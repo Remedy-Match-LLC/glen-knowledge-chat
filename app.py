@@ -2199,6 +2199,10 @@ _CUE_NAMES = frozenset({
     "stamina-plus", "off-syrup", "acetaldehyde-detox", "sinus-terrain-nasal-spray",
     "fibrolysis-factors", "estrogen-fibrin-balance-program",
 })
+# Pinned products whose name is an everyday biology word in any casing ("What does the
+# Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
+# not (review round 1, 2026-10-13).
+_ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 _PRODUCT_CUE_BEFORE = re.compile(
     r"\b(?:what\s+is|what's|whats|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
     r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of)"
@@ -2210,7 +2214,7 @@ _PRODUCT_CUE_AFTER = re.compile(
 # name into a longer noun phrase ("reverse age discrimination").
 _AFTER_NAME_OK = re.compile(
     r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
-    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
+    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each|per)\b)", re.IGNORECASE)
 
 
 def _has_product_cue(text: str, start: int, end: int) -> bool:
@@ -2255,8 +2259,11 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             continue
         words = name.split()
         pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
-        m = re.search(pattern, query_text)
-        if not m:
+        m = None if slug in _ALWAYS_CUE_NAMES else re.search(pattern, query_text)
+        if slug in _ALWAYS_CUE_NAMES:
+            m = next((mi for mi in re.finditer(pattern, query_text, re.IGNORECASE)
+                      if _has_product_cue(query_text, *mi.span())), None)
+        elif not m:
             # Any case: a coined name cannot occur in ordinary speech. A name that is also
             # an everyday phrase ("clear the way", "reverse age") needs a product cue
             # beside it (formulation-9d and Glen, 2026-10-09: clients type lowercase).

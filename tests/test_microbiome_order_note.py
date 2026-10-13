@@ -140,3 +140,36 @@ def test_the_payment_received_page_shows_the_note_under_microbiome(monkeypatch):
 def test_a_zero_quantity_line_gets_no_note(monkeypatch):
     page = _confirmation(monkeypatch, [{"slug": "microbiome", "name": "Microbiome", "qty": 0}])
     assert S1 not in page
+
+
+@pytest.mark.parametrize("q", [
+    "Microbiome health: how do I rebuild it after antibiotics?",
+    "What does the Microbiome do for immunity?",
+    "Gut Microbiome and eczema",
+    "microbiome and mood"])
+def test_a_general_microbiome_question_is_not_a_product_question(q):
+    import app
+    assert "### Microbiome" not in app.named_product_facts_block(q)
+
+
+@pytest.mark.parametrize("q", ["How should I take Microbiome?", "how much microbiome per day?",
+                               "Microbiome dose for a child", "Is Microbiome safe with warfarin?"])
+def test_a_product_question_about_microbiome_still_gets_the_directions(q):
+    import app
+    assert S1 in app.named_product_facts_block(q)
+
+
+def test_a_rebuilt_record_gets_the_three_fields_back():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "apply_enrichment", os.path.join(ROOT, "scripts", "apply_enrichment.py"))
+    ae = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ae)
+    corr = json.load(open(os.path.join(ROOT, "data", "products-manual-corrections.json")))
+    bare = {k: v for k, v in M.items() if k not in ("directions", "copy_pinned", "order_note")}
+    products = {"microbiome": bare}
+    ae.apply_corrections(products, {"microbiome": corr["microbiome"]})
+    got = products["microbiome"]
+    assert (got["directions"], got["copy_pinned"], got["order_note"]) == (
+        M["directions"], M["copy_pinned"], M["order_note"])
+    assert got["ingredients_source"] == M["ingredients_source"]

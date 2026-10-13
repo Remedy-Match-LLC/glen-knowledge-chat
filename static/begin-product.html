@@ -515,9 +515,8 @@
       // A blank line starts a new paragraph, so an approved note keeps one sentence per
       // paragraph (Microbiome's open-capsule note, Glen 2026-10-13).
       if (body && body.directions){
-        String(body.directions).split(/\n\s*\n/).forEach(function(para, k){
-          para = para.trim();
-          if (!para) return;
+        String(body.directions).split(/\n\s*\n/).map(function(x){ return x.trim(); })
+          .filter(Boolean).forEach(function(para, k){
           var dp = document.createElement('p');
           dp.className = 'sp-ing-directions';
           if (k === 0){
