@@ -225,3 +225,12 @@ def test_the_helper_renders_text_hides_when_empty_and_survives_the_round_trip(tm
                   .replace("NOTES_JSON", json.dumps(notes)))
     out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
+
+
+def test_the_buy_page_shows_the_note_before_the_method_check():
+    # Round 3: a fully credited card order skips Stripe, so the note cannot sit in the
+    # Zelle branch only.
+    src = _read("static/begin-buy.html")
+    fn = src[src.index("function renderConfirmation(data){"):]
+    assert fn.index("renderOrderNotes(document.getElementById('order-notes'), data.order_notes)") \
+        < fn.index("if (data.method === 'card') {")

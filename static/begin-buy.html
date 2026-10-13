@@ -927,6 +927,9 @@
       var head = document.getElementById('cc-head');
       var total = (data.total != null) ? data.total : '';
       head.textContent = 'Order received — $' + total + '.';
+      // Glen, 2026-10-13: a product's order note, whatever the method. A card order the
+      // buyer's points cover in full skips Stripe and reaches no receipt (review round 3).
+      if (window.renderOrderNotes) renderOrderNotes(document.getElementById('order-notes'), data.order_notes);
 
       if (data.method === 'card') {
         if (data.stripe_url) { window.location.href = data.stripe_url; return; }
@@ -946,7 +949,6 @@
           if (pi.note) document.getElementById('pd-note').textContent = pi.note;
           show('pay-detail');
         }
-        if (window.renderOrderNotes) renderOrderNotes(document.getElementById('order-notes'), data.order_notes);
         document.getElementById('cc-email-note').textContent = data.no_payment_required
           ? 'Your points and credits cover this order, so there is nothing to pay.'
           : 'Please save these payment details. They are not sent by email.';
