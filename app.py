@@ -13019,7 +13019,6 @@ def begin_checkout(slug):
         out["order_id"] = order_id
         out["pay_instructions"] = {**_ALT_PAY.get(method, {}), "memo": f"Order {order_id}",
                                    "note": _BUY_PAGE_ALT_PAY_NOTE.get(method, "")}
-        out["order_notes"] = _order_notes_for(pc["items_rec"])   # Glen, 2026-10-13
     else:
         record_checkout_effects()
     if method == "card" and _STRIPE_ACTIVE:
@@ -13052,6 +13051,9 @@ def begin_checkout(slug):
             _record_dispensary_sale(disp, email, qty, checkout_ref)
     except Exception as e:
         print(f"[dispensary] hook: {e!r}", flush=True)
+    # Glen, 2026-10-13: a product's order note, on every reply. A $0 order settled by
+    # points shows no Zelle box and goes to no receipt, so it needs it too (review).
+    out["order_notes"] = _order_notes_for(pc["items_rec"])
     return jsonify(out)
 
 
@@ -23768,9 +23770,11 @@ def api_client_checkout(code):
     # 7. Payment method: alt-pay or Stripe.
     # Stripe metadata carries kind/practitioner_id/margin_cents/invoice_id so the
     # checkout-return handler (Task 3) can credit the margin to the wallet.
+    # Glen, 2026-10-13: a product's order note, on every reply. A $0 card order skips
+    # Stripe and lands on this page's own confirmation (review).
+    out["order_notes"] = _order_notes_for(items)
     if method in ("zelle", "wise"):
         out["pay_instructions"] = _ALT_PAY.get(method, {})
-        out["order_notes"] = _order_notes_for(items)   # Glen, 2026-10-13
     elif method == "card" and _STRIPE_ACTIVE:
         try:
             from dashboard import stripe_pay as _sp

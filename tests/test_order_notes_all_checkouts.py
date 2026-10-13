@@ -107,17 +107,45 @@ def _route_body(name):
     return src[i:j]
 
 
-def test_the_buy_page_zelle_branch_sets_the_note():
-    src = _read("app.py")
-    k = src.index('"note": _BUY_PAGE_ALT_PAY_NOTE.get(method, "")}')
-    assert 'out["order_notes"] = _order_notes_for(pc["items_rec"])' in src[k:k + 200]
+@pytest.fixture
+def buy(monkeypatch, tmp_path):
+    from tests.test_buy_page_zelle_order import _prep
+    _prep(monkeypatch, tmp_path)
+    product = {"slug": "microbiome", "name": "Microbiome", "price_cents": 4000,
+               "qty_pricing": True, "qbo_item_id": "27"}
+    monkeypatch.setattr(appmod, "_get_product", lambda s: dict(product) if s == "microbiome" else None)
+
+    def post(method):
+        return appmod.app.test_client().post("/begin/checkout/microbiome", json={
+            "email": "c@b.com", "name": "C Buyer", "qty": 1, "method": method,
+            "address": {"state": "CA", "country": "US", "name": "C Buyer"}})
+    return post, product, monkeypatch
 
 
-def test_the_client_checkout_zelle_branch_sets_the_note():
+@pytest.mark.parametrize("method", ["zelle", "wise", "card"])
+def test_the_buy_page_reply_carries_the_note(buy, method):
+    post, _, _ = buy
+    r = post(method)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    _assert_microbiome(r.get_json()["order_notes"])
+
+
+def test_a_buy_page_order_covered_in_full_still_carries_the_note(buy):
+    # Review round 1: a $0 order settled by points shows no Zelle box and reaches no receipt.
+    post, product, mp = buy
+    mp.setattr(appmod, "_charge_cents", lambda pc: 0)     # points and credit cover it all
+    r = post("zelle")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body.get("no_payment_required") is True, body
+    _assert_microbiome(body["order_notes"])
+
+
+def test_the_client_checkout_sets_the_note_on_every_reply():
     body = _route_body("api_client_checkout")
-    branch = body[body.index('if method in ("zelle", "wise"):'):]
-    branch = branch[:branch.index("elif method")]
-    assert 'out["order_notes"] = _order_notes_for(items)' in branch
+    # On every reply, before the method branches: a $0 card order skips Stripe (round 1).
+    assert body.index('out["order_notes"] = _order_notes_for(items)') < body.index(
+        'if method in ("zelle", "wise"):\n        out["pay_instructions"]')
 
 
 # ── The pages ─────────────────────────────────────────────────────────────────
