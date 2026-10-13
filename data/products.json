@@ -10722,7 +10722,14 @@
     }
    ],
    "ingredients_source": "unverified",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "regular_cents": 8000,
+   "fmp_id": "887",
+   "aliases": [
+    "CDS",
+    "CDS Activator"
+   ],
+   "report_aliases": true
   },
   "phosphatides": {
    "name": "Phosphatides",
@@ -18546,11 +18553,11 @@
   },
   "cds": {
    "name": "CDS",
-   "ff_bottle_share": 0.5,
    "price_cents": 3500,
    "pinecone_title": "CDS",
    "qty_pricing": true,
-   "fmp_id": "887",
+   "inactive": true,
+   "superseded_by": "cds-water-purifier--activator",
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
    "regular_cents": 4000,
@@ -23081,8 +23088,9 @@
   },
   "cds-activator": {
    "name": "CDS Activator",
-   "ff_bottle_share": 0.5,
    "price_cents": 3500,
+   "inactive": true,
+   "superseded_by": "cds-water-purifier--activator",
    "pinecone_title": "CDS Activator",
    "qty_pricing": true,
    "fmp_id": "574",

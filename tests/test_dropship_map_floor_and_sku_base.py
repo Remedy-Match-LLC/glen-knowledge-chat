@@ -266,17 +266,24 @@ def test_own_wholesale_base_is_whole_dollars():
     assert pp.sku_base_cents(1, 0, 3500, 50, is_ff=False) == 1800   # $17.50 rounds up
 
 
-# ── CDS and CDS Activator sell as a pair, priced as one formulation bottle ───
+# ── CDS and CDS Activator are one item, priced as one formulation bottle ───
 
 def test_cds_pair_drop_ships_as_one_formulation_bottle(monkeypatch):
-    """Glen, 2026-10-06: "the two sell as a pair always"; the pair drop-ships as one bottle."""
+    """Glen, 2026-10-06: "the two sell as a pair always". On 2026-10-13 the pair became
+    one item, cds-water-purifier--activator, so it is one whole bottle with no share."""
     monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents", lambda pid: None)
-    q = dc.quote_dropship_cart([{"slug": "cds", "qty": 1}, {"slug": "cds-activator", "qty": 1}],
+    q = dc.quote_dropship_cart([{"slug": "cds-water-purifier--activator", "qty": 1}],
                                {"id": "p1", "modules_completed": 0})
-    by = {l["slug"]: l for l in q["lines"]}
-    # each half: base $25 (half of $50), fee 33% of ($35 - $25) = $3.30 -> $4; pair $58, not $100
-    assert by["cds"]["base_cents"] == by["cds-activator"]["base_cents"] == 2500
-    assert q["subtotal_cents"] == 5800
+    (line,) = q["lines"]
+    # base $50, fee 33% of ($70 - $50) = $6.60 -> $7
+    assert line["base_cents"] == 5000 and q["subtotal_cents"] == 5700
+
+
+def test_the_retired_halves_resolve_to_the_pair():
+    import app as _app
+    for old in ("cds", "cds-activator"):
+        p = _app._get_product(old) or {}
+        assert p.get("name") == "CDS Water Purifier & Activator" and p.get("price_cents") == 7000
 
 
 def test_cds_pair_counts_as_one_bottle_on_the_curve():
