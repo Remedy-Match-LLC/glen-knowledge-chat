@@ -456,6 +456,8 @@ def _orders_by_ship_to_name(cx, q, base):
     if q.isascii():
         sql += " AND lower(address_json) LIKE ?"
         args = (f"%{q}%",)
+    import unicodedata
+    nq = unicodedata.normalize("NFC", q)
     found = set()
     for oid, raw in cx.execute(sql, args).fetchall():
         try:
@@ -463,7 +465,9 @@ def _orders_by_ship_to_name(cx, q, base):
             name = (addr or {}).get("name") or ""
         except (TypeError, ValueError, AttributeError):
             continue
-        if isinstance(name, str) and q in name.lower():
+        # NFC on both sides: a name stored as e plus a combining accent still matches a
+        # query typed as one letter (review).
+        if isinstance(name, str) and nq in unicodedata.normalize("NFC", name).lower():
             found.add(int(oid))
     return found
 

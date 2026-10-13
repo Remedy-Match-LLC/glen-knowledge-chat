@@ -300,3 +300,20 @@ console.log('OK');
 """)
     out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
+
+
+def test_a_decomposed_accent_still_matches(cx):
+    O.upsert_order(cx, source="dropship", external_ref="DS-3", email="bo@x.com",
+                   address={"name": "Rene\u0301e Roy"})                # e + combining accent
+    cx.commit()
+    assert _refs(O.search_client_orders(cx, "ren\u00e9e")) == ["DS-3"]
+
+
+def test_a_ship_to_match_of_a_searched_buyer_is_not_marked(cx):
+    # Found by ship-to AND its buyer's address is in the results: it is part of the history.
+    O.upsert_order(cx, source="dropship", external_ref="DS-4", email="ann@x.com", name="",
+                   address={"name": "Ann Leeward"})
+    cx.commit()
+    rows = O.search_client_orders(cx, "Ann Lee")
+    assert "DS-4" in _refs(rows)
+    assert all("search_match" not in r for r in rows)
