@@ -59745,6 +59745,13 @@ def _invoice_membership_offer(order):
             with db.connect(LOG_DB) as _mc:
                 if _mp.owns_group(_mc, email):
                     return None
+        # A Biofield Analysis includes a month of membership, and its remedies are
+        # already quoted at member pricing. Nothing to add: say what it saves instead
+        # (Glen, 2026-10-13).
+        # With a membership line too, the card still says it is included, and offers
+        # to remove the paid line, which would otherwise be charged twice over.
+        if _order_has_biofield(order):
+            return _included_membership_offer(order, has_line=_has_line)
         tiers = _mp.invoice_offer_tiers()
         if not tiers:
             return None
@@ -59770,6 +59777,59 @@ def _invoice_membership_offer(order):
         return None
 
 
+def _order_has_biofield(order):
+    """True when the order charges a Biofield Analysis. A zero-quantity line is a reorder
+    reference, not a purchase, so it includes nothing. A missing qty counts as 1, as
+    the invoice's own line reader does."""
+    for it in (order.get("items") or []):
+        if (it.get("slug") or "").strip() != "biofield-analysis":
+            continue
+        q = it.get("qty")
+        try:
+            if q is None or int(q) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _included_membership_offer(order, has_line=False):
+    """The card for an invoice carrying a Biofield Analysis: membership is included,
+    with what member pricing saves on these products. savings_cents is the product
+    subtotal priced without the Biofield line minus the subtotal priced with it, by the
+    same pricer the invoice uses. Never raises."""
+    try:
+        email = (order.get("email") or "").strip().lower()
+        products = []
+        for it in (order.get("items") or []):
+            slug = (it.get("slug") or "").strip()
+            if not slug or slug == "biofield-analysis" or slug.startswith("membership:"):
+                continue
+            q = it.get("qty")
+            ln = {"slug": slug, "qty": 1 if q is None else int(q or 0)}
+            if it.get("override"):
+                ln["unit_cents"] = it.get("unit_cents")
+            products.append(ln)
+
+        def _sub(lines):
+            priced = _price_inhouse_invoice(lines, email=email, pickup=True, ship=None)
+            if not priced:
+                return None          # unpriced is unknown, never a $0 subtotal
+            return sum(int(it.get("line_cents") or 0) for it in priced["items_rec"]
+                       if (it.get("slug") or "") in {p["slug"] for p in products})
+
+        savings = 0
+        if products:
+            plain = _sub(list(products))
+            member = _sub(list(products) + [{"slug": "biofield-analysis", "qty": 1}])
+            if plain is not None and member is not None:
+                savings = max(0, plain - member)
+        return {"included": True, "savings_cents": savings, "has_line": bool(has_line)}
+    except Exception as _e:  # noqa: BLE001 - the card is cosmetic; never break the invoice
+        print(f"[invoice] included membership card skipped: {_e!r}", flush=True)
+        return {"included": True, "savings_cents": 0, "has_line": bool(has_line)}
+
+
 @app.route("/api/invoice/<token>/membership", methods=["POST"])
 def api_invoice_membership(token):
     """Customer-facing: add or remove the membership line on their own (unpaid) invoice
@@ -59793,6 +59853,9 @@ def api_invoice_membership(token):
         tier_key = (body.get("tier") or "month").strip()
         if tier_key not in _mp.invoice_offer_tiers():
             return jsonify({"ok": False, "error": "tier not offered"}), 400
+        if _order_has_biofield(order):
+            return jsonify({"ok": False, "error":
+                            "A month of membership is already included with your Biofield Analysis."}), 409
         with db.connect(LOG_DB) as _mc:
             if _mp.owns_group(_mc, (order.get("email") or "").strip().lower()):
                 return jsonify({"ok": False, "error": "already a member"}), 409
@@ -59800,7 +59863,9 @@ def api_invoice_membership(token):
     elif action != "remove":
         return jsonify({"ok": False, "error": "action must be add or remove"}), 400
     # Rebuild the reprice payload: slug + qty, carrying an owner override forward.
-    payload = [{"slug": l["slug"], "qty": int(l.get("qty") or 1),
+    # A zero-quantity line is a reorder reference and must stay zero; `or 1` turned
+    # each one into a charge (review round 3, 2026-10-13). Only a missing qty is 1.
+    payload = [{"slug": l["slug"], "qty": 1 if l.get("qty") is None else int(l.get("qty") or 0),
                 **({"unit_cents": l["unit_cents"]} if l.get("override") else {})}
                for l in lines]
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
