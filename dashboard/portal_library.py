@@ -72,10 +72,15 @@ def init_links_table(cx) -> None:
 def clean_link(url, title):
     """(url, title) when both are acceptable, else raises ValueError with the reason."""
     from urllib.parse import urlsplit
-    url = (url or "").strip()
-    title = " ".join((title or "").split())
+    if not isinstance(url, str) or not isinstance(title, str):
+        raise ValueError("The link and its title must be text.")
+    url = url.strip()
+    title = " ".join(title.split())
+    if url[:8].lower() == "https://":
+        url = "https://" + url[8:]       # stored lowercase, as the page checks it
     parts = urlsplit(url)
-    if parts.scheme != "https" or not parts.netloc or any(c in url for c in ' "<>\''):
+    if (not url.startswith("https://") or not parts.netloc
+            or any(c in url for c in ' "<>\'')):
         raise ValueError("The link must be a full https:// address.")
     if not title:
         raise ValueError("The link needs a title.")

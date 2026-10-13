@@ -102,3 +102,25 @@ def test_the_library_renders_a_link_that_opens_in_a_new_tab():
 def test_a_non_https_link_is_never_rendered_as_an_anchor():
     html = _render([{"kind": "link", "title": "x", "url": "javascript:alert(1)"}])
     assert "href" not in html and "javascript" not in html
+
+
+def test_an_uppercase_scheme_is_stored_lowercase_so_the_page_shows_it():
+    cx = _cx()
+    lib.add_link(cx, "l@x.com", "HTTPS://example.com/Titration", "Titration")
+    assert lib.links_for_email(cx, "l@x.com")[0]["url"] == "https://example.com/Titration"
+
+
+@pytest.mark.parametrize("body", [[1, 2], {"email": 5, "url": URL, "title": "x"},
+                                  {"email": "l@x.com", "url": URL, "title": 7}])
+def test_a_malformed_body_is_refused_not_crashed(tmp_path, monkeypatch, body):
+    appmod, c, tok = _app(tmp_path, monkeypatch)
+    r = c.post("/api/console/portal-library-links", json=body,
+               headers={"X-Console-Key": "s3cret"})
+    assert r.status_code == 400
+
+
+def test_a_broken_link_store_still_serves_the_library(tmp_path, monkeypatch):
+    appmod, c, tok = _app(tmp_path, monkeypatch)
+    monkeypatch.setattr(lib, "links_for_email", lambda *a: (_ for _ in ()).throw(RuntimeError("db")))
+    r = c.get(f"/api/portal/{tok}/library")
+    assert r.status_code == 200 and r.get_json()["items"] == []

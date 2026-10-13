@@ -27800,7 +27800,11 @@ def api_portal_library(token):
             return jsonify({"error": "not found"}), 404
         email = (portal.get("email") or "").strip().lower()
         granted = _lib.list_for_email(cx, email) if email else []
-        links = _lib.links_for_email(cx, email) if email else []
+        try:
+            links = _lib.links_for_email(cx, email) if email else []
+        except Exception as _e:  # noqa: BLE001 - a link list must never break the Library
+            print(f"[library] links skipped: {_e!r}", flush=True)
+            links = []
         _ce.init_course_entitlements_table(cx)
         course_qualified = bool(email and (
             _ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)))
@@ -27891,7 +27895,10 @@ def api_console_portal_library_links():
         email = (request.args.get("email") or "").strip().lower()
         with db.connect(LOG_DB) as cx:
             return jsonify({"ok": True, "links": _lib.links_for_email(cx, email)})
-    body = request.get_json(silent=True) or {}
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not all(
+            isinstance(body.get(k, ""), str) for k in ("email", "url", "title", "action")):
+        return jsonify({"ok": False, "error": "send email, url, title and action as text"}), 400
     email = (body.get("email") or "").strip().lower()
     action = (body.get("action") or "add").strip()
     try:
