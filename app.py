@@ -8885,10 +8885,8 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                     packaging_review.append(p.get("name") or p.get("slug"))
                 # One item can be several identical bottles: the CDS pair is two 50 mL
                 # droppers (FileMaker 887, 2026-10-13). Packing only; price is per item.
-                try:
-                    _per = max(1, int(p.get("bottles_per_unit") or 1))
-                except (TypeError, ValueError):
-                    _per = 1
+                from dashboard.orders import bottles_per_unit as _bpu
+                _per = _bpu(p)
                 box_counts[bt] = box_counts.get(bt, 0) + qty * _per
                 if bt == _shipping.CELLO_BOTTLE_TYPE:
                     total_cello += qty * _per

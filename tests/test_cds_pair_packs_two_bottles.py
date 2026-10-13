@@ -36,3 +36,14 @@ def test_the_real_pair_record_packs_two_droppers():
     p = json.loads((repo / "data" / "products.json").read_text())["products"]["cds-water-purifier--activator"]
     assert p["bottle_type"] == "Dropper 50 mL" and p["bottles_per_unit"] == 2
     assert p["price_cents"] == 7000
+
+
+def test_the_orders_board_counts_two_bottles_per_pair():
+    from dashboard import orders as O
+    cat = {"pair": {"slug": "pair", "name": "Pair", "price_cents": 7000,
+                    "bottle_type": "Dropper 50 mL", "bottles_per_unit": 2},
+           "one": {"slug": "one", "name": "One", "price_cents": 7000, "bottle_type": "Dropper 50 mL"}}
+    items = [{"slug": "pair", "qty": 3}, {"slug": "one", "qty": 1}]
+    assert O.physical_units(items, cat) == 7
+    b = O.pack_breakdown(items, cat)
+    assert b["bottle_units"] == 7 and b["by_size"] == {"Dropper 50 mL": 7}
