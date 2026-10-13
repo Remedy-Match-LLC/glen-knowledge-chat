@@ -397,6 +397,10 @@
   async function loadPackingPhotos(oid){
     var box = document.getElementById('pk-'+Number(oid)); if (!box) return;
     var wrap = box.querySelector('.pk-thumbs'), st = box.querySelector('.pk-status');
+    if (box._pkLoading) return;             // a second click while loading would duplicate
+    box._pkLoading = true;
+    (box._pkUrls||[]).forEach(function(u){ URL.revokeObjectURL(u); });
+    box._pkUrls = [];
     st.textContent = 'Loading...';
     try {
       var r = await fetch('/api/orders/'+Number(oid)+'/packing-photos', {headers:hdr()});
@@ -409,16 +413,20 @@
         var p = j.photos[i];
         var cell = document.createElement('span'); cell.className = 'pk-cell';
         var img = document.createElement('img'); img.className = 'pk-thumb'; img.alt = 'Packing photo';
-        img.title = 'Open full size'; img.src = await _pkBlobUrl(oid, p.id, 'thumb');
+        img.title = 'Open full size';
+        try { img.src = await _pkBlobUrl(oid, p.id, 'thumb'); box._pkUrls.push(img.src); }
+        catch(e) { img.alt = 'Photo could not load'; }
         img.onclick = (function(pid){ return async function(){
-          var w = window.open('', '_blank'); var u = await _pkBlobUrl(oid, pid, 'full');
-          if (w) w.location.href = u; }; })(p.id);
+          var w = window.open('', '_blank');
+          try { var u = await _pkBlobUrl(oid, pid, 'full'); if (w) w.location.href = u; }
+          catch(e) { if (w) w.close(); st.textContent = 'Could not open that photo.'; } }; })(p.id);
         var del = document.createElement('button'); del.className = 'pk-del'; del.textContent = 'Delete';
         del.onclick = (function(pid){ return function(){ deletePackingPhoto(oid, pid); }; })(p.id);
         cell.appendChild(img); cell.appendChild(del); wrap.appendChild(cell);
       }
       st.textContent = '';
     } catch(e) { st.textContent = 'Could not load photos: '+e.message; }
+    finally { box._pkLoading = false; }
   }
   async function uploadPackingPhotos(oid, input){
     var box = document.getElementById('pk-'+Number(oid)); if (!box || !input.files.length) return;
@@ -429,11 +437,11 @@
     try {
       var r = await fetch('/api/orders/'+Number(oid)+'/packing-photos',
                           {method:'POST', headers:{'X-Console-Key': key()}, body:fd});
-      var j = await r.json();
+      var j; try { j = await r.json(); } catch(_) { throw new Error(r.status === 413 ? 'the photos are too large together' : 'status '+r.status); }
+      if (r.status === 401) throw new Error('you are signed out. Reload the page.');
       var errs = (j.errors||[]).map(function(e){ return e.file+': '+e.error; }).join('; ');
       input.value = '';
       await loadPackingPhotos(oid);
-      var rem = box.querySelector('.pk-remind'); if (rem && (j.added||[]).length) rem.remove();
       st.textContent = (j.added||[]).length+' added'+(errs ? '. Not added: '+errs : '');
     } catch(e) { st.textContent = 'Upload failed: '+e.message; }
   }
@@ -442,7 +450,8 @@
     var r = await fetch('/api/orders/'+Number(oid)+'/packing-photos/'+Number(pid),
                         {method:'DELETE', headers:hdr()});
     var box = document.getElementById('pk-'+Number(oid));
-    if (!r.ok) { if (box) box.querySelector('.pk-status').textContent = 'Only Glen or Rae can delete a photo.'; return; }
+    if (!r.ok) { if (box) box.querySelector('.pk-status').textContent = r.status === 401
+      ? 'Only Glen or Rae can delete a photo.' : 'The photo was not deleted (status '+r.status+').'; return; }
     loadPackingPhotos(oid);
   }
   // Click the header to expand/collapse a card. Bound to .card-head (not the buttons),

@@ -200,3 +200,46 @@ def test_a_failed_second_put_removes_the_first():
     with pytest.raises(RuntimeError):
         P.add(cx, 9, _jpeg(10, 10), put=put, remove=st.remove)
     assert st.files == {} and P.list_for(cx, 9) == []
+
+
+def test_setup_leaves_no_transaction_open():
+    # Postgres holds a table lock from CREATE INDEX until commit; two uploads deadlocked.
+    cx = sqlite3.connect(":memory:")
+    cx.execute("CREATE TABLE t (x)")   # make the connection's next DDL join a transaction
+    cx.execute("INSERT INTO t VALUES (1)")
+    P.count_for(cx, 1)
+    assert not cx.in_transaction
+
+
+def test_a_failed_row_write_rolls_back_so_the_connection_still_works():
+    cx, st = _cx(), Store()
+
+    class Boom(Exception):
+        pass
+
+    def put(k, b):
+        st.put(k, b)
+    import dashboard.dbwrite as dbw
+    real = dbw.insert_returning_id
+    dbw.insert_returning_id = lambda *a, **k: (_ for _ in ()).throw(Boom())
+    try:
+        with pytest.raises(Boom):
+            P.add(cx, 4, _jpeg(10, 10), put=put, remove=st.remove)
+    finally:
+        dbw.insert_returning_id = real
+    assert P.list_for(cx, 4) == [] and st.files == {}
+
+
+def test_a_large_png_is_shrunk_before_any_copy(monkeypatch):
+    out = io.BytesIO()
+    Image.new("RGB", (4000, 3000), (9, 9, 9)).save(out, "PNG")
+    raw = out.getvalue()
+    sizes = []
+    real = Image.Image.copy
+
+    def spy(self):
+        sizes.append(self.size)
+        return real(self)
+    monkeypatch.setattr(Image.Image, "copy", spy)
+    P.prepare(raw)
+    assert sizes and max(max(s) for s in sizes) <= P.FULL_EDGE, sizes

@@ -45,6 +45,9 @@ def init_table(cx):
         "bytes INTEGER, uploaded_by TEXT, created_at TEXT NOT NULL)")
     cx.execute("CREATE INDEX IF NOT EXISTS idx_packing_photos_order "
                "ON packing_photos(order_id)")
+    # Postgres takes a table lock for CREATE INDEX even when the index exists. Commit at
+    # once, or the lock is held through decoding and storage, and two uploads deadlock.
+    cx.commit()
 
 
 def _open_image(raw):
@@ -54,7 +57,6 @@ def _open_image(raw):
         pillow_heif.register_heif_opener()
     except Exception:  # noqa: BLE001 - without it a HEIC upload is refused below
         pass
-    Image.MAX_IMAGE_PIXELS = _MAX_PIXELS
     try:
         im = Image.open(io.BytesIO(raw), formats=_FORMATS)
         if im.width * im.height > _MAX_PIXELS:
@@ -72,7 +74,11 @@ def _open_image(raw):
         raise
     except Exception:
         raise PhotoError("That file is not a photo this page can read. Use a JPEG, PNG or HEIC.")
-    return ImageOps.exif_transpose(im)
+    im = ImageOps.exif_transpose(im)
+    # Shrink in place to the stored size straight away, so the full-resolution pixels of
+    # a HEIC, PNG or WebP are released before any copy is made.
+    im.thumbnail((FULL_EDGE, FULL_EDGE), Image.LANCZOS)
+    return im
 
 
 def _jpeg(im, edge):
@@ -136,6 +142,10 @@ def add(cx, order_id, raw, *, put, remove=None, uploaded_by=""):
             (order_id, full_key, thumb_key, w, h, len(full), (uploaded_by or "")[:40], now))
         cx.commit()
     except Exception:
+        try:
+            cx.rollback()       # Postgres refuses every later query in a failed transaction
+        except Exception:  # noqa: BLE001
+            pass
         for key in stored:
             try:
                 if remove:
