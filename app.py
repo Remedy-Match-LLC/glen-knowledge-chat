@@ -11626,6 +11626,41 @@ def _send_review_invite(email: str, name: str, slug: str) -> bool:
         return False
 
 
+def _send_review_invites(email: str, name: str, slugs) -> bool:
+    """One review invite listing several products, each with its own link (Glen,
+    2026-10-13: Sharon Connour got 7 separate emails one morning). Same contract as
+    _send_review_invite: True only when send_email was reached without raising."""
+    try:
+        from dashboard import inbox as _inbox
+        lines, seen = [], set()
+        for slug in slugs:
+            p = _get_product(slug) or {}
+            pname = p.get("name")
+            if not pname or pname in seen:
+                continue   # unknown product: its link would 404; a twin: listed once
+            seen.add(pname)
+            tok = _review_token_mint(email, slug)
+            lines.append(f"{pname}: {PUBLIC_BASE_URL}/review/{tok}")
+        if not lines:
+            return True    # nothing reviewable; mark them so they are not retried daily
+        subject = "How are your remedies? Share a quick review"
+        body = (
+            f"Aloha {name or ''},\n\n"
+            "If you have a moment, I would love your honest review of each of these. "
+            "It helps others and earns you store credit:\n\n"
+            + "\n\n".join(lines) +
+            "\n\nIn wellness,\nDr. Glen & Rae"
+        )
+        _inbox.send_email(
+            email, subject, _strip_dash(body), from_name="Dr. Glen Swartwout"
+        )
+        return True
+    except Exception as _e:
+        print(f"[reviews] _send_review_invites failed for {email}/{len(list(slugs))}: {_e!r}",
+              flush=True)
+        return False
+
+
 # ── Testimonials (Phase 1: in-house Boast.io replacement) ─────────────────────
 # Reuse the product_reviews engine under the reserved campaign slug "_results"
 # (kind='testimonial'). Open submission (no verified-buyer gate, no points/gift);
@@ -54713,19 +54748,36 @@ def cron_review_invites():
     with db.connect(LOG_DB) as cx:
         rows = _ri.pending(cx, days=REVIEW_INVITE_DELAY_DAYS,
                            max_age_days=REVIEW_INVITE_MAX_AGE_DAYS,
-                           limit=REVIEW_INVITE_MAX_PER_RUN)
-    invited, failed = 0, 0
+                           limit=10 ** 9)
+    # One email per buyer listing every product, never one per product (Glen,
+    # 2026-10-13). The run cap counts rows but never splits a buyer: the buyer that
+    # reaches it is sent whole, and the rest wait for the next run.
+    groups = {}
     for row in rows:
+        groups.setdefault((row["email"] or "").strip().lower(), []).append(row)
+    picked, n = [], 0
+    for g in groups.values():
+        if n >= REVIEW_INVITE_MAX_PER_RUN:
+            break
+        picked.append(g)
+        n += len(g)
+    invited, failed, emails = 0, 0, 0
+    for g in picked:
         if dry_run:
             continue
-        if not _send_review_invite(row["email"], row["name"], row["slug"]):
-            failed += 1
-            continue   # leave it unmarked so the next run retries it
+        email, name = g[0]["email"], g[0]["name"]
+        ok = (_send_review_invite(email, name, g[0]["slug"]) if len(g) == 1 else
+              _send_review_invites(email, name, [r["slug"] for r in g]))
+        if not ok:
+            failed += len(g)
+            continue   # leave the whole buyer unmarked so the next run retries it
         with _db_lock, db.connect(LOG_DB) as cx:
-            _ri.mark_invited(cx, row["email"], row["slug"], row["order_id"])
-        invited += 1
-    return jsonify({"invited": invited, "failed": failed,
-                    "candidates": len(rows), "dry_run": dry_run}), 200
+            for r in g:
+                _ri.mark_invited(cx, r["email"], r["slug"], r["order_id"])
+        invited += len(g)
+        emails += 1
+    return jsonify({"invited": invited, "failed": failed, "emails": emails,
+                    "candidates": n, "dry_run": dry_run}), 200
 
 
 @app.route("/coaching/login-request", methods=["POST"])
