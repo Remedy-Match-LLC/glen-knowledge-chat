@@ -112,3 +112,24 @@ def test_a_second_run_sends_nothing(monkeypatch, tmp_path):
     _post(monkeypatch)
     _post(monkeypatch)
     assert len(sent) == 1
+
+
+def test_two_products_sharing_a_name_both_get_a_link(monkeypatch, tmp_path):
+    """Review round 2: listing by name dropped one link but marked both invited."""
+    _db(monkeypatch, tmp_path, [("s@x.com", ["a", "b"])])
+    monkeypatch.setattr(appmod, "_get_product",
+                        lambda s: {"slug": s, "name": "Same Name"} if s in ("a", "b") else None)
+    sent = _capture(monkeypatch)
+    _post(monkeypatch)
+    (_, _, body), = sent
+    assert body.count("/review/") == 2
+
+
+def test_a_retired_twin_and_its_survivor_are_listed_once(monkeypatch, tmp_path):
+    _db(monkeypatch, tmp_path, [("s@x.com", ["a", "b"])])
+    monkeypatch.setattr(appmod, "_get_product",
+                        lambda s: {"slug": "a", "name": "Alpha Drops"} if s in ("a", "b") else None)
+    sent = _capture(monkeypatch)
+    _post(monkeypatch)
+    (_, _, body), = sent
+    assert body.count("/review/") == 1

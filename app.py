@@ -11635,10 +11635,10 @@ def _send_review_invites(email: str, name: str, slugs) -> bool:
         lines, seen = [], set()
         for slug in slugs:
             p = _get_product(slug) or {}
-            pname = p.get("name")
-            if not pname or pname in seen:
-                continue   # unknown product: its link would 404; a twin: listed once
-            seen.add(pname)
+            pname, live = p.get("name"), p.get("slug") or slug
+            if not pname or live in seen:
+                continue   # unknown product: its link would 404; a retired twin: listed once
+            seen.add(live)
             tok = _review_token_mint(email, slug)
             lines.append(f"{pname}: {PUBLIC_BASE_URL}/review/{tok}")
         if not lines:
