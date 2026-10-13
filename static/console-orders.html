@@ -237,7 +237,8 @@
   // Glen, 2026-10-13: an order number shows that one order. Its card names any number it
   // replaced and links to the client's whole history, which is the email search.
   function numberHitHtml(o){
-    if (!o || o.search_match !== 'number') return '';
+    // Also an order found only by its ship-to name (Glen, 2026-10-13).
+    if (!o || (o.search_match !== 'number' && o.search_match !== 'ship_to')) return '';
     var rep = (o.search_replaced || []).map(function(n){ return '#' + Number(n); }).join(', ');
     var who = String(o.email || '').trim();
     var link = who ? '<a href="#" class="client-orders" data-q="' + esc(who) + '"'
@@ -250,6 +251,8 @@
   function searchNote(q, orders){
     var byNumber = orders.length && orders.every(function(o){ return o.search_match === 'number'; });
     if (byNumber) return 'Order "<b>' + esc(q) + '</b>"';
+    var byShipTo = orders.length && orders.every(function(o){ return o.search_match === 'ship_to'; });
+    if (byShipTo) return 'Order' + (orders.length===1?'':'s') + ' shipped to "<b>' + esc(q) + '</b>"';
     return 'All ' + orders.length + ' order' + (orders.length===1?'':'s')
       + ' for "<b>' + esc(q) + '</b>", cancelled and completed included';
   }
