@@ -52,6 +52,18 @@
   #chatlog .u { color:var(--brand); } #chatlog .a { color:#1c1830; margin-bottom:8px; }
   .sugg button { margin:4px 4px 0 0; }
   .row-add { display:flex; gap:8px; margin-top:10px; }
+  .row-add select, .row-add input { min-width:0; }
+  /* On a phone the name, packaging, stepper, price and remove did not fit one row:
+     the stepper was cut off and remove sat off-screen (Linda Maher, 2026-10-13).
+     The name takes its own row and the controls wrap beneath it. */
+  @media (max-width: 560px) {
+    .line { flex-wrap:wrap; row-gap:6px; }
+    .line .nm { flex:1 1 100%; }
+    .line .pr { margin-left:auto; min-width:0; }
+    .line select { max-width:100%; }
+    .row-add { flex-wrap:wrap; }
+    .row-add input, .row-add select { flex:1 1 100%; width:100%; }
+  }
   .muted { color:var(--muted); font-size:12px; }
 
   /* ── Print / Save-as-PDF: render ONLY #print-root (no chat, no pay buttons). ── */
