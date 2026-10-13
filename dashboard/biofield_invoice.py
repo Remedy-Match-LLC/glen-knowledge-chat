@@ -119,8 +119,10 @@ def _superseded_names():
     def live(s):
         """The first active product down the chain, or None for a loop or a dead end."""
         seen = set()
-        while s in products and s not in seen:
-            p = products[s] or {}
+        while isinstance(s, str) and s in products and s not in seen:
+            p = products[s]
+            if not isinstance(p, dict):
+                return None
             if not p.get("inactive"):
                 return s
             seen.add(s)
