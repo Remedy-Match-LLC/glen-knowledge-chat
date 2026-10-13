@@ -89,7 +89,7 @@ def test_a_failed_send_is_not_marked_and_retries(monkeypatch, tmp_path):
     monkeypatch.setattr(appmod, "_REVIEWS_ENABLED", True)
     monkeypatch.setattr(appmod, "_send_review_invite", lambda e, n, s: False)
     first = _post(monkeypatch)
-    assert first.get_json() == {"invited": 0, "failed": 1, "candidates": 1,
+    assert first.get_json() == {"invited": 0, "failed": 1, "candidates": 1, "emails": 0,
                                 "dry_run": False}
 
     sent = []
