@@ -69,7 +69,7 @@ def test_owner_uploads_lists_views_and_deletes(env):
     assert len(photos) == 2
     img = c.get(f"/api/orders/203/packing-photos/{photos[0]['id']}?size=thumb")
     assert img.status_code == 200 and img.mimetype == "image/jpeg"
-    assert img.headers["Cache-Control"].startswith("private")
+    assert img.headers["Cache-Control"] == "no-store"
     assert c.delete(f"/api/orders/203/packing-photos/{photos[0]['id']}").status_code == 200
     assert len(r2.files) == 2
 
@@ -110,6 +110,26 @@ def test_the_public_clip_route_never_serves_packing_photos(env):
     role["r"] = None
     assert c.get("/clip/" + key).status_code == 404
     assert c.get("/clip//" + key, follow_redirects=True).status_code == 404
+    # Suppose the store normalised keys: "./" or an encoded dot must still be refused.
+    import posixpath
+    real_get = r2.get_object
+    r2.get_object = lambda Bucket, Key, **kw: real_get(Bucket, posixpath.normpath(Key), **kw)
+    for variant in ("./" + key, "%2E/" + key, "a/../" + key, "packing-photos%2F" + key[15:]):
+        assert c.get("/clip/" + variant).status_code == 404, variant
+
+
+def test_a_failed_upload_leaves_no_file_behind(env):
+    c, r2, role = env
+    real_put, n = r2.put_object, {"i": 0}
+
+    def flaky(**kw):
+        n["i"] += 1
+        if n["i"] == 2:
+            raise RuntimeError("r2 down")
+        real_put(**kw)
+    r2.put_object = flaky
+    r = _upload(c, 203)
+    assert r.status_code == 400 and r2.files == {}
 
 
 def test_a_bad_file_is_reported_and_the_good_ones_kept(env):

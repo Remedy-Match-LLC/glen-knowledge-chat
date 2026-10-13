@@ -3308,7 +3308,11 @@ def _r2():
 def serve_clip(key):
     # This route is public. Packing photos share the bucket and are served only through
     # the signed-in order routes, so their folder is never reachable here.
-    if key.lstrip("/").startswith("packing-photos/") or ".." in key:
+    # Normalised first, so "./packing-photos/..." or an encoded dot cannot slip past.
+    import posixpath as _pp
+    from urllib.parse import unquote as _unq
+    _norm = _pp.normpath("/" + _unq(key)).lstrip("/")
+    if _norm.startswith("packing-photos") or ".." in key or ".." in _unq(key):
         return "not found", 404
     rng = request.headers.get("Range")
     kw = {"Bucket": os.environ.get("R2_BUCKET", "rm-clips"), "Key": key}
@@ -57995,11 +57999,14 @@ def api_order_packing_photos(oid):
             _r2().put_object(Bucket=_r2_bucket(), Key=key, Body=data,
                              ContentType="image/jpeg")
 
+        def _remove(key):
+            _r2().delete_object(Bucket=_r2_bucket(), Key=key)
+
         added, errors = [], []
         for f in files:
             raw = f.read(_pkp.MAX_UPLOAD_BYTES + 1)
             try:
-                added.append(_pkp.add(cx, oid, raw, put=_put,
+                added.append(_pkp.add(cx, oid, raw, put=_put, remove=_remove,
                                       uploaded_by=getattr(actor, "role", "")))
             except _pkp.PhotoError as e:
                 errors.append({"file": (f.filename or "")[:80], "error": str(e)})
@@ -58044,7 +58051,7 @@ def api_order_packing_photo(oid, pid):
     except Exception:
         return jsonify({"ok": False, "error": "photo not found"}), 404
     resp = Response(obj["Body"].read(), mimetype="image/jpeg")
-    resp.headers["Cache-Control"] = "private, max-age=3600"
+    resp.headers["Cache-Control"] = "no-store"   # a deleted photo must not linger in a cache
     resp.headers["X-Content-Type-Options"] = "nosniff"
     return resp
 

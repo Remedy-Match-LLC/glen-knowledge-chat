@@ -374,8 +374,10 @@
   // never blocks packing.
   function packingPhotosHtml(o){
     var id = Number(o.id), n = Number(o.packing_photo_count||0);
-    var remind = (o.source==='dropship' && n===0 && (o.status==='new' || o.status==='packed'))
-      ? '<div class="meta pk-remind">&#128247; Drop ship: photograph the packed box before sealing it. This does not block packing.</div>' : '';
+    // Rendered for every drop-ship order still being packed, and shown only while it has
+    // no photo, so deleting the last photo brings the reminder back (review round 2).
+    var remind = (o.source==='dropship' && (o.status==='new' || o.status==='packed'))
+      ? '<div class="meta pk-remind"'+(n>0?' style="display:none"':'')+'>&#128247; Drop ship: photograph the packed box before sealing it. This does not block packing.</div>' : '';
     return '<div class="pk" id="pk-'+id+'">'
       + '<div class="detail-title">Packing photos (<span class="pk-n">'+n+'</span>)</div>'
       + remind
@@ -402,6 +404,7 @@
       if (!r.ok) throw new Error(j.error || r.status);
       wrap.innerHTML = '';
       box.querySelector('.pk-n').textContent = j.photos.length;
+      var rm = box.querySelector('.pk-remind'); if (rm) rm.style.display = j.photos.length ? 'none' : '';
       for (var i=0; i<j.photos.length; i++) {
         var p = j.photos[i];
         var cell = document.createElement('span'); cell.className = 'pk-cell';

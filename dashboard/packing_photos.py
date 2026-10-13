@@ -22,7 +22,11 @@ MAX_UPLOAD_BYTES = 30 * 1024 * 1024     # one photo; an iPhone HEIC is 2-5 MB
 MAX_PER_ORDER = 40
 FULL_EDGE = 2400                        # the size order 203's copies were filed at
 THUMB_EDGE = 360
-_MAX_PIXELS = 80_000_000                # refuse a decompression bomb before decoding
+_MAX_PIXELS = 50_000_000                # refuse a decompression bomb before decoding;
+                                        # a 48 MP iPhone photo still fits
+# Only photo formats. Pillow would otherwise open EPS through Ghostscript, and
+# TIFF, BMP and the rest for no purpose (security review, 2026-10-13).
+_FORMATS = ("JPEG", "PNG", "WEBP", "HEIF")
 
 
 class PhotoError(ValueError):
@@ -52,9 +56,17 @@ def _open_image(raw):
         pass
     Image.MAX_IMAGE_PIXELS = _MAX_PIXELS
     try:
-        im = Image.open(io.BytesIO(raw))
+        im = Image.open(io.BytesIO(raw), formats=_FORMATS)
         if im.width * im.height > _MAX_PIXELS:
             raise PhotoError("That image is too large to store.")
+        if im.format == "JPEG":
+            # Decode a large JPEG at a reduced scale. This keeps memory near the
+            # stored size instead of the camera's full resolution.
+            # Ask for the stored size at the photo's own aspect; a square request
+            # would never reduce a 3:2 photo.
+            scale = FULL_EDGE / max(im.width, im.height)
+            if scale < 1:
+                im.draft("RGB", (max(1, int(im.width * scale)), max(1, int(im.height * scale))))
         im.load()
     except PhotoError:
         raise
@@ -67,6 +79,7 @@ def _jpeg(im, edge):
     from PIL import Image
     im = im.copy()
     im.thumbnail((edge, edge), Image.LANCZOS)
+    im.info.clear()          # a JPEG comment would otherwise be written back out
     if im.mode not in ("RGB", "L"):
         im = im.convert("RGB")
     out = io.BytesIO()
@@ -99,25 +112,37 @@ def counts(cx):
         "SELECT order_id, COUNT(*) FROM packing_photos GROUP BY order_id").fetchall()}
 
 
-def add(cx, order_id, raw, *, put, uploaded_by=""):
+def add(cx, order_id, raw, *, put, remove=None, uploaded_by=""):
     """Store one photo for an order. Returns its row as a dict. `put(key, bytes)` writes
-    to storage; the row is written only after both files are stored."""
+    to storage; the row is written only after both files are stored. When a later step
+    fails, `remove(key)` deletes the files already stored, so none is left orphaned."""
     order_id = int(order_id)
     if count_for(cx, order_id) >= MAX_PER_ORDER:
         raise PhotoError(f"This order already has {MAX_PER_ORDER} photos.")
     full, thumb, w, h = prepare(raw)
     stem = f"{PREFIX}{order_id}/{secrets.token_urlsafe(18)}"
     full_key, thumb_key = stem + ".jpg", stem + "_t.jpg"
-    put(full_key, full)
-    put(thumb_key, thumb)
     now = _now()
-    from dashboard import dbwrite
-    pid = dbwrite.insert_returning_id(
-        cx,
-        "INSERT INTO packing_photos (order_id, full_key, thumb_key, width, height, bytes, "
-        "uploaded_by, created_at) VALUES (?,?,?,?,?,?,?,?)",
-        (order_id, full_key, thumb_key, w, h, len(full), (uploaded_by or "")[:40], now))
-    cx.commit()
+    stored = []
+    try:
+        for key, data in ((full_key, full), (thumb_key, thumb)):
+            put(key, data)
+            stored.append(key)
+        from dashboard import dbwrite
+        pid = dbwrite.insert_returning_id(
+            cx,
+            "INSERT INTO packing_photos (order_id, full_key, thumb_key, width, height, bytes, "
+            "uploaded_by, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (order_id, full_key, thumb_key, w, h, len(full), (uploaded_by or "")[:40], now))
+        cx.commit()
+    except Exception:
+        for key in stored:
+            try:
+                if remove:
+                    remove(key)
+            except Exception as e:  # noqa: BLE001 - the original failure is what matters
+                print(f"[packing-photos] could not clean up {key}: {e!r}", flush=True)
+        raise
     return {"id": pid, "order_id": order_id, "width": w, "height": h,
             "uploaded_by": uploaded_by or "", "created_at": now}
 

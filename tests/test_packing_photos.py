@@ -134,3 +134,69 @@ def test_an_iphone_heic_photo_is_stored_as_jpeg():
     heif.save(out, quality=80)
     full, thumb, w, h = P.prepare(out.getvalue())
     assert full[:3] == b"\xff\xd8\xff" and (w, h) == (800, 600)
+
+
+def test_only_photo_formats_are_opened():
+    # EPS would run Ghostscript; TIFF and BMP have no purpose here (security review).
+    for fmt in ("EPS", "TIFF", "BMP"):
+        out = io.BytesIO()
+        try:
+            Image.new("RGB", (20, 20)).save(out, fmt)
+        except Exception:  # noqa: BLE001 - a writer this Pillow lacks proves nothing
+            continue
+        with pytest.raises(P.PhotoError, match="not a photo"):
+            P.prepare(out.getvalue())
+
+
+def test_a_jpeg_comment_does_not_survive():
+    im = Image.new("RGB", (40, 40))
+    out = io.BytesIO()
+    im.save(out, "JPEG", comment=b"SECRETCOMMENT")
+    assert b"SECRETCOMMENT" in out.getvalue()
+    full, thumb, _, _ = P.prepare(out.getvalue())
+    assert b"SECRETCOMMENT" not in full and b"SECRETCOMMENT" not in thumb
+
+
+def test_a_large_jpeg_is_decoded_at_reduced_scale(monkeypatch):
+    raw = _jpeg(6000, 4000)            # made before the spy, so only prepare() is seen
+    seen = {}
+    real = Image.Image.load
+
+    def spy(self):
+        seen.setdefault("size", self.size)
+        return real(self)
+    monkeypatch.setattr(Image.Image, "load", spy)
+    P.prepare(raw)
+    assert max(seen["size"]) <= 3000, seen
+
+
+def test_a_failed_row_write_removes_the_stored_files():
+    cx, st = _cx(), Store()
+    cx.execute("DROP TABLE packing_photos")
+    cx.execute("CREATE TABLE packing_photos (id INTEGER PRIMARY KEY, order_id INTEGER, "
+               "CHECK (0))")                      # every insert fails
+
+    def count_ok(c, o):
+        return 0
+    orig = P.count_for
+    P.count_for = count_ok
+    try:
+        with pytest.raises(Exception):
+            P.add(cx, 9, _jpeg(10, 10), put=st.put, remove=st.remove)
+    finally:
+        P.count_for = orig
+    assert st.files == {}
+
+
+def test_a_failed_second_put_removes_the_first():
+    cx, st = _cx(), Store()
+    calls = []
+
+    def put(k, b):
+        calls.append(k)
+        if len(calls) == 2:
+            raise RuntimeError("r2 down")
+        st.put(k, b)
+    with pytest.raises(RuntimeError):
+        P.add(cx, 9, _jpeg(10, 10), put=put, remove=st.remove)
+    assert st.files == {} and P.list_for(cx, 9) == []
