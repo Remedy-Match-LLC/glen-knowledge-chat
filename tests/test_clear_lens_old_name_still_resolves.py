@@ -15,3 +15,9 @@ def test_the_old_and_new_names_find_the_live_product():
 
 def test_an_exact_name_still_wins_over_an_alias():
     assert app._resolve_buy_slug("Terrain Restore") == "terrain-restore"
+
+
+def test_a_one_word_name_keeps_its_old_match():
+    """"Sleep" is an alias of Sleep Infoceutical but has always found Sleep Syntropy."""
+    assert app._resolve_buy_slug("Sleep") == app._resolve_buy_slug("sleep")
+    assert "syntropy" in (app._resolve_buy_slug("Sleep") or "")

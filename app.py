@@ -9815,8 +9815,10 @@ def _resolve_buy_slug(name):
             return slug
     # Then a live record's pinecone_title or alias, exactly. Renaming "Clear Lens
     # Eyedrops" to "Clear Lens Eye Drops" (2026-10-13) left the old name matching
-    # nothing, and order history and Pinecone still carry it.
-    hit = _RESOLVE_NAME_INDEX.get(nl)
+    # nothing, and order history and Pinecone still carry it. Two words or more: a
+    # single word such as "Sleep" or "SeaAmino" is an alias of a DIFFERENT product
+    # than the one its substring has always found (review round 3).
+    hit = _RESOLVE_NAME_INDEX.get(nl) if " " in nl else None
     if hit:
         return hit
     for slug, p in products.items():
