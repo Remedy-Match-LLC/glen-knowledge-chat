@@ -27811,6 +27811,17 @@ def api_portal_library(token):
         _ce.init_course_entitlements_table(cx)
         course_qualified = bool(email and (
             _ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)))
+        # Last, and rolled back on failure: on Postgres a failed query aborts the
+        # transaction, and any query after it would fail too (review round 3).
+        try:
+            links = _lib.links_for_email(cx, email) if email else []
+        except Exception as _e:  # noqa: BLE001 - a link list must never break the Library
+            print(f"[library] links skipped: {_e!r}", flush=True)
+            links = []
+            try:
+                cx.rollback()
+            except Exception:  # noqa: BLE001
+                pass
     course_qualified = (_map.override_for(email) is not False and
                         (course_qualified or _is_certification_student(email)))
     items = []
@@ -27823,6 +27834,9 @@ def api_portal_library(token):
             "pdf_url": f"/api/portal/{token}/library/{g['slug']}/pdf",
             "audio_url": f"/api/portal/{token}/library/{g['slug']}/audio",
         })
+    for ln in links:   # protocol pages Glen added for this client (2026-10-13)
+        items.append({"kind": "link", "title": ln["title"], "url": ln["url"],
+                      "granted_at": ln["added_at"]})
     if course_qualified:
         items.append({
             "kind": "course", "slug": _ASH_CERT_COURSE,
@@ -27882,6 +27896,41 @@ def api_portal_courses_link(token):
             _ce.grant_cert(cx, email, source="certification_roster")
         course_token = _ct.mint_course_token(cx, email, portal.get("name") or "")
     return redirect(f"{mentorship_base()}/learn?token={course_token}", code=302)
+
+
+@app.route("/api/console/portal-library-links", methods=["GET", "POST"])
+def api_console_portal_library_links():
+    """Staff: list (GET ?email=), add or remove (POST {email, url, title, action}) the
+    links in one client's portal Library. Glen, 2026-10-13: Linda Maher's protocols."""
+    if not _portal_console_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import portal_library as _lib
+    if request.method == "GET":
+        email = (request.args.get("email") or "").strip().lower()
+        with db.connect(LOG_DB) as cx:
+            return jsonify({"ok": True, "links": _lib.links_for_email(cx, email)})
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not all(
+            isinstance(body.get(k, ""), str) for k in ("email", "url", "title", "action")):
+        return jsonify({"ok": False, "error": "send email, url, title and action as text"}), 400
+    email = (body.get("email") or "").strip().lower()
+    action = (body.get("action") or "add").strip()
+    try:
+        with db.connect(LOG_DB) as cx:
+            if action == "remove":
+                changed = _lib.remove_link(cx, email, body.get("url"))
+            elif action == "add":
+                actor = _bos_actor()
+                changed = _lib.add_link(cx, email, body.get("url"), body.get("title"),
+                                        added_by=(getattr(actor, "name", "") or getattr(actor, "role", ""))
+                                        if actor else "")
+            else:
+                return jsonify({"ok": False, "error": "action must be add or remove"}), 400
+            cx.commit()
+            links = _lib.links_for_email(cx, email)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "changed": changed, "links": links})
 
 
 @app.route("/api/portal/<token>/library/<slug>/<asset>", methods=["GET"])

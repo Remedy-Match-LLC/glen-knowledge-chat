@@ -79,6 +79,7 @@ MOVE_TABLES = frozenset({
     "family_sub_charges", "family_sub_grants", "healing_oasis_requests", "journey_state",
     "member_interest", "membership_product_grants", "memberships", "order_membership_grants",
     "order_payments", "peer_interest", "peer_matches", "portal_library", "prepay_term_grants",
+    "portal_library_links",   # a client's Library links, keyed by address (2026-10-13)
     "quiz_responses", "studio_credit_intents", "voice_signals",
 })
 _PERSON_COLUMNS = ("person_id", "people_id")
