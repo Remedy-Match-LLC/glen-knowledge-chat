@@ -103,8 +103,11 @@ def add_link(cx, email, url, title, added_by="") -> bool:
 
 def remove_link(cx, email, url) -> bool:
     init_links_table(cx)
+    url = (url or "").strip() if isinstance(url, str) else ""
+    if url[:8].lower() == "https://":
+        url = "https://" + url[8:]       # stored that way by clean_link
     cur = cx.execute("DELETE FROM portal_library_links WHERE email=? AND url=?",
-                     ((email or "").strip().lower(), (url or "").strip()))
+                     ((email or "").strip().lower(), url))
     return cur.rowcount == 1
 
 

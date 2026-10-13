@@ -27800,14 +27800,20 @@ def api_portal_library(token):
             return jsonify({"error": "not found"}), 404
         email = (portal.get("email") or "").strip().lower()
         granted = _lib.list_for_email(cx, email) if email else []
+        _ce.init_course_entitlements_table(cx)
+        course_qualified = bool(email and (
+            _ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)))
+        # Last, and rolled back on failure: on Postgres a failed query aborts the
+        # transaction, and any query after it would fail too (review round 3).
         try:
             links = _lib.links_for_email(cx, email) if email else []
         except Exception as _e:  # noqa: BLE001 - a link list must never break the Library
             print(f"[library] links skipped: {_e!r}", flush=True)
             links = []
-        _ce.init_course_entitlements_table(cx)
-        course_qualified = bool(email and (
-            _ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)))
+            try:
+                cx.rollback()
+            except Exception:  # noqa: BLE001
+                pass
     course_qualified = (_map.override_for(email) is not False and
                         (course_qualified or _is_certification_student(email)))
     items = []

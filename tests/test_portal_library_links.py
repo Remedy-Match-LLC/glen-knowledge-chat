@@ -137,3 +137,22 @@ def test_staff_can_list_and_remove_a_link_by_mixed_case_email(tmp_path, monkeypa
                json={"email": "l@x.com", "url": URL, "action": "remove"})
     assert r.get_json()["changed"] is True
     assert c.get(f"/api/portal/{tok}/library").get_json()["items"] == []
+
+
+def test_a_link_failure_comes_after_every_other_library_query(tmp_path, monkeypatch):
+    """On Postgres a failed query poisons the transaction, so the link lookup must be
+    the last query the Library route makes."""
+    appmod, c, tok = _app(tmp_path, monkeypatch)
+    from dashboard import course_entitlements as ce
+    order = []
+    real_links, real_paid = lib.links_for_email, ce.paid_level_for
+    monkeypatch.setattr(lib, "links_for_email", lambda *a: order.append("links") or real_links(*a))
+    monkeypatch.setattr(ce, "paid_level_for", lambda *a: order.append("course") or real_paid(*a))
+    c.get(f"/api/portal/{tok}/library")
+    assert order == ["course", "links"]
+
+
+def test_remove_matches_an_uppercase_scheme():
+    cx = _cx()
+    lib.add_link(cx, "l@x.com", URL, "Titration")
+    assert lib.remove_link(cx, "l@x.com", URL.replace("https", "HTTPS", 1)) is True
