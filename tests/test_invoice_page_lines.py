@@ -208,7 +208,7 @@ def test_the_open_is_recorded_on_first_use_not_on_load():
       const handlers = {}, posts = [];
       const addEventListener = (k, f) => { (handlers[k] = handlers[k] || []).push(f); };
       const removeEventListener = (k, f) => { handlers[k] = (handlers[k] || []).filter(g => g !== f); };
-      const fetch = (u, o) => { posts.push([u, o.method]); return Promise.resolve({}); };
+      const fetch = (u, o) => { posts.push([u, o.method, !!o.keepalive]); return Promise.resolve({}); };
       %s
       recordOpenOnFirstUse('tok/1');
       const before = posts.length;
@@ -216,7 +216,7 @@ def test_the_open_is_recorded_on_first_use_not_on_load():
       (handlers.keydown || []).slice().forEach(f => f());
       console.log(JSON.stringify({before, posts, left: Object.values(handlers).flat().length}));
     """ % _fn("recordOpenOnFirstUse"))
-    assert out == {"before": 0, "posts": [["/api/invoice/tok%2F1/open", "POST"]], "left": 0}
+    assert out == {"before": 0, "posts": [["/api/invoice/tok%2F1/open", "POST", True]], "left": 0}
 
 
 def test_no_line_is_hidden_behind_a_header():

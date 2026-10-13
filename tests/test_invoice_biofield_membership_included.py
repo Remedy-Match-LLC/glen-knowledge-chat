@@ -117,3 +117,15 @@ def test_the_included_card_has_no_button_and_names_the_saving():
 def test_the_included_card_drops_the_saving_when_there_is_none():
     html = _render({"included": True, "savings_cents": 0})
     assert "saves you" not in html and "<button" not in html
+
+
+def test_an_unpriced_order_claims_no_saving(tmp_path, monkeypatch):
+    appmod, client, token = _client(tmp_path, monkeypatch)
+    real = appmod._price_inhouse_invoice
+
+    def half(lines, **kw):
+        if any(l.get("slug") == "biofield-analysis" for l in lines):
+            return None              # the pricer could not price this cart
+        return real(lines, **kw)
+    monkeypatch.setattr(appmod, "_price_inhouse_invoice", half)
+    assert _offer(client, token) == {"included": True, "savings_cents": 0}

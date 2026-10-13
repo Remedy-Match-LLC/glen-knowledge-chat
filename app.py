@@ -59699,14 +59699,16 @@ def _included_membership_offer(order):
         def _sub(lines):
             priced = _price_inhouse_invoice(lines, email=email, pickup=True, ship=None)
             if not priced:
-                return 0
+                return None          # unpriced is unknown, never a $0 subtotal
             return sum(int(it.get("line_cents") or 0) for it in priced["items_rec"]
                        if (it.get("slug") or "") in {p["slug"] for p in products})
 
         savings = 0
         if products:
-            savings = max(0, _sub(list(products))
-                          - _sub(list(products) + [{"slug": "biofield-analysis", "qty": 1}]))
+            plain = _sub(list(products))
+            member = _sub(list(products) + [{"slug": "biofield-analysis", "qty": 1}])
+            if plain is not None and member is not None:
+                savings = max(0, plain - member)
         return {"included": True, "savings_cents": savings}
     except Exception as _e:  # noqa: BLE001 - the card is cosmetic; never break the invoice
         print(f"[invoice] included membership card skipped: {_e!r}", flush=True)

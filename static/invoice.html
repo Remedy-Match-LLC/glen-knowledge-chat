@@ -234,7 +234,9 @@ function recordOpenOnFirstUse(token){
     if (done) return;
     done = true;
     kinds.forEach(k => removeEventListener(k, fire, true));
-    fetch('/api/invoice/' + encodeURIComponent(token) + '/open', {method:'POST'}).catch(() => {});
+    // keepalive: the first tap may also leave the page, which would cancel a plain fetch.
+    fetch('/api/invoice/' + encodeURIComponent(token) + '/open',
+          {method:'POST', keepalive:true}).catch(() => {});
   };
   kinds.forEach(k => addEventListener(k, fire, {capture:true, passive:true}));
 }
