@@ -16,14 +16,14 @@ import pytest
 FFS = ["paracleanse", "nerve-repair", "microbiome"]
 
 
-def _client(tmp_path, monkeypatch, *, biofield=True, membership_line=False):
+def _client(tmp_path, monkeypatch, *, biofield=True, membership_line=False, biofield_qty=1):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     db = str(tmp_path / "chat_log.db")
     from dashboard import orders as O
     items = [{"slug": s, "qty": 1, "name": s, "unit_cents": 5600, "line_cents": 5600}
              for s in FFS]
     if biofield:
-        items.insert(0, {"slug": "biofield-analysis", "qty": 1, "name": "Biofield Analysis",
+        items.insert(0, {"slug": "biofield-analysis", "qty": biofield_qty, "name": "Biofield Analysis",
                          "unit_cents": 30000, "line_cents": 30000, "service": True})
     if membership_line:
         items.append({"slug": "membership:month", "qty": 1, "name": "Membership",
@@ -64,7 +64,7 @@ def test_a_biofield_invoice_says_membership_is_included_with_its_saving(tmp_path
         if i.get("slug") in FFS)
     expected = sub(lines) - sub(lines + [{"slug": "biofield-analysis", "qty": 1}])
     assert expected > 0
-    assert o == {"included": True, "savings_cents": expected}
+    assert o == {"included": True, "savings_cents": expected, "has_line": False}
 
 
 def test_an_order_without_biofield_keeps_the_join_offer(tmp_path, monkeypatch):
@@ -73,10 +73,22 @@ def test_an_order_without_biofield_keeps_the_join_offer(tmp_path, monkeypatch):
     assert o and not o.get("included") and o["savings_cents"] > 0
 
 
-def test_a_membership_line_keeps_its_remove_button(tmp_path, monkeypatch):
+def test_a_membership_line_beside_biofield_can_be_removed(tmp_path, monkeypatch):
     appmod, client, token = _client(tmp_path, monkeypatch, membership_line=True)
     o = _offer(client, token)
+    assert o["included"] is True and o["has_line"] is True
+
+
+def test_a_zero_quantity_biofield_line_includes_nothing(tmp_path, monkeypatch):
+    appmod, client, token = _client(tmp_path, monkeypatch, biofield_qty=0)
+    o = _offer(client, token)
     assert o and not o.get("included")
+
+
+def test_membership_cannot_be_added_to_a_biofield_invoice(tmp_path, monkeypatch):
+    appmod, client, token = _client(tmp_path, monkeypatch)
+    r = client.post(f"/api/invoice/{token}/membership", json={"action": "add", "tier": "month"})
+    assert r.status_code == 409 and "already included" in r.get_json()["error"]
 
 
 PAGE = Path(__file__).resolve().parent.parent / "static" / "invoice.html"
@@ -114,6 +126,12 @@ def test_the_included_card_has_no_button_and_names_the_saving():
     assert "<button" not in html
 
 
+def test_the_included_card_offers_removal_of_a_separate_membership_line():
+    html = _render({"included": True, "savings_cents": 12600, "has_line": True})
+    assert "A month of membership is included" in html
+    assert "Remove the separate membership charge" in html and "toggleInvoiceMembership('remove')" in html
+
+
 def test_the_included_card_drops_the_saving_when_there_is_none():
     html = _render({"included": True, "savings_cents": 0})
     assert "saves you" not in html and "<button" not in html
@@ -128,4 +146,4 @@ def test_an_unpriced_order_claims_no_saving(tmp_path, monkeypatch):
             return None              # the pricer could not price this cart
         return real(lines, **kw)
     monkeypatch.setattr(appmod, "_price_inhouse_invoice", half)
-    assert _offer(client, token) == {"included": True, "savings_cents": 0}
+    assert _offer(client, token) == {"included": True, "savings_cents": 0, "has_line": False}

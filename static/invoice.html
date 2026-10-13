@@ -228,7 +228,8 @@ async function load() {
 }
 
 function recordOpenOnFirstUse(token){
-  const kinds = ['pointerdown', 'keydown', 'touchstart'];
+  // wheel: a desktop reader may only scroll, which fires none of the others.
+  const kinds = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
   let done = false;
   const fire = () => {
     if (done) return;
@@ -455,16 +456,18 @@ function renderMembershipOffer(){
   if(!o || ORDER.pay_status==='paid'){ el.style.display='none'; return; }
   el.style.display='block';
   const head='<div class="card" style="border:1px solid #2f7d4f;background:#f4fbf6">';
+  const msg='<div id="mem-msg" class="muted" style="margin-top:6px"></div></div>';
   if(o.included){
     // A Biofield Analysis includes the month: no button, just what it saves (Glen, 2026-10-13).
     el.innerHTML=head
       +'<div style="font-weight:600;color:#22623c">A month of membership is included</div>'
       +'<div style="margin:6px 0 0">Your Biofield Analysis fee includes one month of membership.'
       +(o.savings_cents>0 ? ' Member pricing saves you '+money(o.savings_cents)+' on this order.' : '')
-      +'</div></div>';
+      +'</div>'
+      +(o.has_line ? '<button class="ghost" style="margin-top:10px" onclick="toggleInvoiceMembership(\'remove\')">Remove the separate membership charge</button>' : '')
+      +msg;
     return;
   }
-  const msg='<div id="mem-msg" class="muted" style="margin-top:6px"></div></div>';
   if(hasLine){
     const line1=(o.net_add_cents>0)
       ? 'Your products are now at the member price, saving '+money(o.savings_cents)+' on this order. The '

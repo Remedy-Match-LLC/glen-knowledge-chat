@@ -59649,11 +59649,10 @@ def _invoice_membership_offer(order):
         # A Biofield Analysis includes a month of membership, and its remedies are
         # already quoted at member pricing. Nothing to add: say what it saves instead
         # (Glen, 2026-10-13).
-        # A membership line already present keeps the usual card, which holds the
-        # only "Remove membership" button.
-        if not _has_line and any((it.get("slug") or "").strip() == "biofield-analysis"
-                                 for it in (order.get("items") or [])):
-            return _included_membership_offer(order)
+        # With a membership line too, the card still says it is included, and offers
+        # to remove the paid line, which would otherwise be charged twice over.
+        if _order_has_biofield(order):
+            return _included_membership_offer(order, has_line=_has_line)
         tiers = _mp.invoice_offer_tiers()
         if not tiers:
             return None
@@ -59679,7 +59678,23 @@ def _invoice_membership_offer(order):
         return None
 
 
-def _included_membership_offer(order):
+def _order_has_biofield(order):
+    """True when the order charges a Biofield Analysis. A zero-quantity line is a reorder
+    reference, not a purchase, so it includes nothing. A missing qty counts as 1, as
+    the invoice's own line reader does."""
+    for it in (order.get("items") or []):
+        if (it.get("slug") or "").strip() != "biofield-analysis":
+            continue
+        q = it.get("qty")
+        try:
+            if q is None or int(q) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _included_membership_offer(order, has_line=False):
     """The card for an invoice carrying a Biofield Analysis: membership is included,
     with what member pricing saves on these products. savings_cents is the product
     subtotal priced without the Biofield line minus the subtotal priced with it, by the
@@ -59691,7 +59706,8 @@ def _included_membership_offer(order):
             slug = (it.get("slug") or "").strip()
             if not slug or slug == "biofield-analysis" or slug.startswith("membership:"):
                 continue
-            ln = {"slug": slug, "qty": int(it.get("qty") or 0)}
+            q = it.get("qty")
+            ln = {"slug": slug, "qty": 1 if q is None else int(q or 0)}
             if it.get("override"):
                 ln["unit_cents"] = it.get("unit_cents")
             products.append(ln)
@@ -59709,10 +59725,10 @@ def _included_membership_offer(order):
             member = _sub(list(products) + [{"slug": "biofield-analysis", "qty": 1}])
             if plain is not None and member is not None:
                 savings = max(0, plain - member)
-        return {"included": True, "savings_cents": savings}
+        return {"included": True, "savings_cents": savings, "has_line": bool(has_line)}
     except Exception as _e:  # noqa: BLE001 - the card is cosmetic; never break the invoice
         print(f"[invoice] included membership card skipped: {_e!r}", flush=True)
-        return {"included": True, "savings_cents": 0}
+        return {"included": True, "savings_cents": 0, "has_line": bool(has_line)}
 
 
 @app.route("/api/invoice/<token>/membership", methods=["POST"])
@@ -59738,6 +59754,9 @@ def api_invoice_membership(token):
         tier_key = (body.get("tier") or "month").strip()
         if tier_key not in _mp.invoice_offer_tiers():
             return jsonify({"ok": False, "error": "tier not offered"}), 400
+        if _order_has_biofield(order):
+            return jsonify({"ok": False, "error":
+                            "A month of membership is already included with your Biofield Analysis."}), 409
         with db.connect(LOG_DB) as _mc:
             if _mp.owns_group(_mc, (order.get("email") or "").strip().lower()):
                 return jsonify({"ok": False, "error": "already a member"}), 409
