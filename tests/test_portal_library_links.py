@@ -171,10 +171,17 @@ def test_a_client_merge_moves_her_links_and_keeps_one_of_a_shared_link(tmp_path)
     lib.init_links_table(cx)
     lib.add_link(cx, AOL, URL, "Constitutional Hydrotherapy")
     lib.add_link(cx, AOL, "https://example.com/titration", "Titration")
-    lib.add_link(cx, GMAIL, URL, "Constitutional Hydrotherapy")
+    lib.add_link(cx, GMAIL, URL, "Hydrotherapy, survivor's copy")
     cx.commit()
-    pm.apply(cx, survivor_id=2, merged_id=1, mail_old="stop", evidence={}, suggestion={},
-             applied_by="test", merge_people_fields=_fields)
-    assert lib.links_for_email(cx, AOL) == []
-    assert sorted(l["title"] for l in lib.links_for_email(cx, GMAIL)) == [
-        "Constitutional Hydrotherapy", "Titration"]
+
+    def titles(email):
+        return sorted(l["title"] for l in lib.links_for_email(cx, email))
+    before = (titles(AOL), titles(GMAIL))
+    mid = pm.apply(cx, survivor_id=2, merged_id=1, mail_old="stop", evidence={}, suggestion={},
+                   applied_by="test", merge_people_fields=_fields)
+    cx.commit()
+    assert titles(AOL) == []
+    assert titles(GMAIL) == ["Hydrotherapy, survivor's copy", "Titration"]   # review round 1
+    report = pm.undo(cx, mid, "test")
+    cx.commit()
+    assert report["skipped"] == [] and (titles(AOL), titles(GMAIL)) == before
