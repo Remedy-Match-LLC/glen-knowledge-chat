@@ -128,7 +128,7 @@ def test_the_webhook_sends_the_buyer_copy_after_the_internal_one():
     fn = src[src.index("def _notify_store_order"):]
     fn = fn[:fn.index("\ndef ")]
     assert "buyer_address(payload)" in fn
-    assert "buyer_email(payload)" in fn
+    assert "buyer_email(payload, note_for=" in fn      # the order-note lookup (2026-10-13)
     # Rae's notification is sent first and the buyer send is guarded on its own,
     # so a failure reaching the customer cannot cost her the packing email.
     assert fn.index("_gkn.RECIPIENTS") < fn.index("buyer_address")

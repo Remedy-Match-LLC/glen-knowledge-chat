@@ -2199,6 +2199,10 @@ _CUE_NAMES = frozenset({
     "stamina-plus", "off-syrup", "acetaldehyde-detox", "sinus-terrain-nasal-spray",
     "fibrolysis-factors", "estrogen-fibrin-balance-program",
 })
+# Pinned products whose name is an everyday biology word in any casing ("What does the
+# Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
+# not (review round 1, 2026-10-13).
+_ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 _PRODUCT_CUE_BEFORE = re.compile(
     r"\b(?:what\s+is|what's|whats|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
     r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of)"
@@ -2213,14 +2217,20 @@ _AFTER_NAME_OK = re.compile(
     r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
 
 
-def _has_product_cue(text: str, start: int, end: int) -> bool:
+def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> bool:
     """True when the words beside a lowercase product name read as asking about the
     product: "how much clear the way should I take", "clear the way dose", "is clear the
     way safe". "Can I clear the way for my lymph" and "about reverse age discrimination"
     have no cue, or run the name into a longer phrase."""
-    if not _AFTER_NAME_OK.search(text[end:end + 20]):
+    # strict (_ALWAYS_CUE_NAMES): "how much microbiome per day" counts, while "what is
+    # microbiome?" asks about biology and does not (review round 3, 2026-10-13). Kept to
+    # those names, so "reverse age per year" stays an ordinary phrase.
+    after = text[end:end + 20]
+    if not (_AFTER_NAME_OK.search(after) or (strict and re.match(r"^\s*per\b", after, re.I))):
         return False
     before = _PRODUCT_CUE_BEFORE.search(text[max(0, start - 24):start])
+    if strict and before and re.match(r"\s*what", before.group(0), re.I):
+        before = None
     # "how much of the Estrogen and Fibrin Balance Program" takes "of the"; a single
     # word does not: "what is the appestat?" asks about the body's appetite set point
     # (review round 3, 2026-10-09).
@@ -2255,8 +2265,11 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             continue
         words = name.split()
         pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
-        m = re.search(pattern, query_text)
-        if not m:
+        m = None if slug in _ALWAYS_CUE_NAMES else re.search(pattern, query_text)
+        if slug in _ALWAYS_CUE_NAMES:
+            m = next((mi for mi in re.finditer(pattern, query_text, re.IGNORECASE)
+                      if _has_product_cue(query_text, *mi.span(), strict=True)), None)
+        elif not m:
             # Any case: a coined name cannot occur in ordinary speech. A name that is also
             # an everyday phrase ("clear the way", "reverse age") needs a product cue
             # beside it (formulation-9d and Glen, 2026-10-09: clients type lowercase).
@@ -14658,6 +14671,21 @@ def order_confirmation():
     email = ((sess.get("customer_details") or {}).get("email")
              or sess.get("customer_email") or (order or {}).get("email") or "")
     items = (order or {}).get("items") or []
+    # A product's approved order note under its line (Microbiome, Glen 2026-10-13):
+    # store and portal-basket buyers get no product email, so this page is where they
+    # see it. A zero-quantity line was not bought and gets none.
+    shown = []
+    for it in items:
+        it = dict(it) if isinstance(it, dict) else {}
+        q = it.get("qty")
+        try:
+            bought = q is None or int(q) > 0
+        except (TypeError, ValueError):
+            bought = False
+        note = _order_note_for_slug(it.get("slug")) if bought else ""
+        it["note_paras"] = [x.strip() for x in re.split(r"\n\s*\n", note) if x.strip()]
+        shown.append(it)
+    items = shown
     return_to = (md.get("return_to") or "").strip()
     if not (return_to.startswith("/portal/") or return_to == "/portal/me"
             or return_to.startswith(portal_base().rstrip("/") + "/portal/")
@@ -14685,8 +14713,8 @@ _ORDER_CONFIRMATION_ERROR = """<!doctype html><html><head><meta name="viewport" 
 _ORDER_CONFIRMATION_HTML = """<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Order {{ order_number }} confirmed</title>
-<style>body{margin:0;background:#f4f7f3;color:#21362c;font:16px/1.5 system-ui,-apple-system,sans-serif}.card{max-width:640px;margin:48px auto;background:#fff;border-radius:18px;padding:34px;box-shadow:0 8px 32px #19322618}.check{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:#267a56;color:#fff;font-size:30px}h1{margin:18px 0 4px;font-size:30px}.muted{color:#66756d}.summary{margin:26px 0;padding:18px;background:#f3f7f4;border-radius:12px}.row{display:flex;justify-content:space-between;gap:20px;padding:7px 0}.total{font-size:20px;font-weight:700;border-top:1px solid #dce5df;margin-top:8px;padding-top:14px}.button{display:block;text-align:center;background:#267a56;color:#fff;text-decoration:none;padding:14px 18px;border-radius:10px;font-weight:700}@media(max-width:700px){.card{margin:0;min-height:100vh;border-radius:0;padding:28px 20px}}</style></head>
-<body><main class="card"><div class="check">&#10003;</div><h1>Payment received</h1><p class="muted">Your order is confirmed. A receipt will also be sent to {{ email or 'the email used at checkout' }}.</p><section class="summary"><div class="row"><span>Order number</span><strong>#{{ order_number }}</strong></div>{% for item in items %}<div class="row"><span>{{ item.get('name') or item.get('slug') or 'Product' }}{% if (item.get('qty') or 1)|int > 1 %} &times; {{ item.get('qty') }}{% endif %}</span></div>{% endfor %}<div class="row total"><span>Total paid</span><span>{{ amount }}</span></div></section><p class="muted">Please keep this order number for your records.</p><a class="button" href="{{ return_to }}">{{ return_label }}</a></main></body></html>"""
+<style>body{margin:0;background:#f4f7f3;color:#21362c;font:16px/1.5 system-ui,-apple-system,sans-serif}.card{max-width:640px;margin:48px auto;background:#fff;border-radius:18px;padding:34px;box-shadow:0 8px 32px #19322618}.check{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:#267a56;color:#fff;font-size:30px}h1{margin:18px 0 4px;font-size:30px}.muted{color:#66756d}.summary{margin:26px 0;padding:18px;background:#f3f7f4;border-radius:12px}.row{display:flex;justify-content:space-between;gap:20px;padding:7px 0}.total{font-size:20px;font-weight:700;border-top:1px solid #dce5df;margin-top:8px;padding-top:14px}.button{display:block;text-align:center;background:#267a56;color:#fff;text-decoration:none;padding:14px 18px;border-radius:10px;font-weight:700}@media(max-width:700px){.card{margin:0;min-height:100vh;border-radius:0;padding:28px 20px}}.summary .note{margin:2px 0 12px;font-size:14px;line-height:1.5;color:#3f5a4c}</style></head>
+<body><main class="card"><div class="check">&#10003;</div><h1>Payment received</h1><p class="muted">Your order is confirmed. A receipt will also be sent to {{ email or 'the email used at checkout' }}.</p><section class="summary"><div class="row"><span>Order number</span><strong>#{{ order_number }}</strong></div>{% for item in items %}<div class="row"><span>{{ item.get('name') or item.get('slug') or 'Product' }}{% if (item.get('qty') or 1)|int > 1 %} &times; {{ item.get('qty') }}{% endif %}</span></div>{% for para in item.get('note_paras') or [] %}<p class="note">{{ para }}</p>{% endfor %}{% endfor %}<div class="row total"><span>Total paid</span><span>{{ amount }}</span></div></section><p class="muted">Please keep this order number for your records.</p><a class="button" href="{{ return_to }}">{{ return_label }}</a></main></body></html>"""
 
 
 # ── Post-buy concierge (consultative upsell) ─────────────────────────────────
@@ -24744,10 +24772,11 @@ def api_cart_checkout():
                 return jsonify({"ok": False, "error": "Your order did not save. "
                                 "Please try again, or contact us."}), 503
             _mark_ordered_resilient(token, out.get("invoice_id", ""))
+            # The cart's own lines carry the notes, so no second read can lose them.
             return jsonify({"ok": True, "method": "zelle", **_zelle_instructions({
                 "id": res["order_id"], "external_ref": out.get("invoice_id", ""),
                 "total_cents": res.get("charge_cents"),
-                "shipping_cents": res.get("shipping_cents")})})
+                "shipping_cents": res.get("shipping_cents"), "items": cart})})
         if not stripe_url and not res.get("no_payment_required"):
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
@@ -24777,6 +24806,7 @@ def _zelle_instructions(order):
     shows them. The memo is the order number."""
     zelle = _ALT_PAY["zelle"]
     return {"order_id": order["id"], "order_ref": order.get("external_ref") or "",
+            "order_notes": _order_notes_for(order.get("items")),
             "total_cents": int(order.get("total_cents") or 0),
             "shipping_cents": int(order.get("shipping_cents") or 0),
             "pay_instructions": {"label": zelle["label"], "to": zelle["to"],
@@ -33026,6 +33056,7 @@ def api_client_portal_checkout(token):
             zelle = _ALT_PAY["zelle"]
             return jsonify({"ok": True, "method": "zelle", "order_ref": checkout_ref,
                             "order_id": order_id, "not_ready": not_ready,
+                            "order_notes": _order_notes_for(items_rec),
                             "total_cents": order_total_cents,
                             "shipping_cents": shipping_cents, "pay_instructions": {
                                 "label": zelle["label"], "to": zelle["to"],
@@ -43987,6 +44018,59 @@ def _send_kloud_order_instructions(email, first_name, product_names, order_ref):
         print(f"[gk-webhook] Kloud instructions send failed: {e!r}", flush=True)
 
 
+def _order_notes_for(items):
+    """[{name, paras}] for each bought line whose product has an order note, once per
+    product, in order. Shown in its own card under the Zelle instructions, which list
+    no items (Glen, 2026-10-13: "yes. probably in a separate card")."""
+    out, seen = [], set()
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        slug = str(it.get("slug") or "").strip()
+        q = it.get("qty")
+        try:
+            bought = q is None or int(q) > 0
+        except (TypeError, ValueError):
+            bought = False
+        if not slug or slug in seen or not bought:
+            continue
+        note = _order_note_for_slug(slug)
+        if not note:
+            continue
+        seen.add(slug)
+        p = ((_PRODUCTS or {}).get("products", {}) or {}).get(slug) or {}
+        out.append({"name": html.unescape(p.get("name") or it.get("name") or slug).strip(),
+                    "paras": [x.strip() for x in re.split(r"\n\s*\n", note) if x.strip()]})
+    return out
+
+
+def _order_note_for_slug(slug):
+    """A product's approved `order_note` by its catalog slug; "" for a retired record."""
+    p = ((_PRODUCTS or {}).get("products", {}) or {}).get(str(slug or "").strip()) or {}
+    if not p or p.get("inactive"):
+        return ""
+    return str(p.get("order_note") or "").strip()
+
+
+def _order_note_for_name(name):
+    """A product's approved `order_note` for a buyer's order email, found by its exact
+    name or an exact alias of two words or more, never by containment: a loose match
+    would put one product's instruction under another. A one-word alias such as "Sleep"
+    belongs to a different product than its name suggests, as in _resolve_buy_slug. A retired record carries no note. Glen, 2026-10-13:
+    Microbiome's open-capsule note, built per product so the next one needs no code."""
+    nl = html.unescape(str(name or "")).replace("\u2122", "").strip().lower()
+    if not nl:
+        return ""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    slug = next((sl for sl, p in products.items()
+                 if html.unescape(p.get("name") or "").replace("\u2122", "").strip().lower() == nl),
+                None) or (_RESOLVE_NAME_INDEX.get(nl) if " " in nl else None)
+    p = products.get(slug) or {}
+    if not slug or p.get("inactive"):
+        return ""
+    return str(p.get("order_note") or "").strip()
+
+
 def _notify_store_order(payload):
     """Email Glen and Rae that a store order arrived. Never raises.
 
@@ -44009,7 +44093,7 @@ def _notify_store_order(payload):
         try:
             buyer = _gkn.buyer_address(payload)
             if buyer:
-                b_subject, b_body = _gkn.buyer_email(payload)
+                b_subject, b_body = _gkn.buyer_email(payload, note_for=_order_note_for_name)
                 _inbox.send_email(buyer, b_subject, b_body)
             else:
                 print("[gk-notify] no buyer email on this order, none sent", flush=True)

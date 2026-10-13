@@ -512,15 +512,22 @@
       }
       // Suggested use, served straight from the catalog so no generated copy can
       // paraphrase a dose away.
+      // A blank line starts a new paragraph, so an approved note keeps one sentence per
+      // paragraph (Microbiome's open-capsule note, Glen 2026-10-13).
       if (body && body.directions){
-        var dp = document.createElement('p');
-        dp.className = 'sp-ing-directions';
-        var dh = document.createElement('span');
-        dh.className = 'sp-ing-label';
-        dh.textContent = 'Suggested use: ';
-        dp.appendChild(dh);
-        dp.appendChild(document.createTextNode(body.directions));
-        wrapEl.appendChild(dp);
+        String(body.directions).split(/\n\s*\n/).map(function(x){ return x.trim(); })
+          .filter(Boolean).forEach(function(para, k){
+          var dp = document.createElement('p');
+          dp.className = 'sp-ing-directions';
+          if (k === 0){
+            var dh = document.createElement('span');
+            dh.className = 'sp-ing-label';
+            dh.textContent = 'Suggested use: ';
+            dp.appendChild(dh);
+          }
+          dp.appendChild(document.createTextNode(para));
+          wrapEl.appendChild(dp);
+        });
       }
       // Label line under the formula (e.g. "Synergistic with Glutathione Syntropy"),
       // with the named product linked to its own page when the catalog supplies one.

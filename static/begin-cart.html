@@ -329,7 +329,16 @@
         '<div class="kv"><span>Memo / order reference</span><strong>' + esc(z.memo || "") + '</strong></div>' +
         '<p class="ship-note">In your bank\u2019s Zelle screen, enter the recipient, exact amount, and memo above. Confirm the recipient name in your bank before sending.</p>' +
         (link ? '<p><a class="text-link" href="' + esc(link) + '" rel="noopener">' + (z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle") + '</a></p>' : '') +
-        '<p class="ship-note">' + esc(z.note || "") + '</p></div>';
+        '<p class="ship-note">' + esc(z.note || "") + '</p></div>' + orderNotesHtml(d.order_notes);
+    }
+    // A product's approved note, in its own card under the Zelle box: the box lists no
+    // items (Glen, 2026-10-13: "yes. probably in a separate card").
+    function orderNotesHtml(notes){
+      if (!notes || !notes.length) return '';
+      return '<div class="zelle-box order-notes">' + notes.map(function(n){
+        return '<p><strong>' + esc(n.name || "") + '</strong></p>' +
+          (n.paras || []).map(function(t){ return '<p>' + esc(t) + '</p>'; }).join('');
+      }).join('') + '</div>';
     }
     lookUpZelleOrders();
 
