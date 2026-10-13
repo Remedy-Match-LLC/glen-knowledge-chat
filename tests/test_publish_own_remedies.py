@@ -147,3 +147,56 @@ def test_cancel_publishes_nothing_more():
     out = _button_run("false")
     assert out["posts"] == [[]]
     assert out["msg"].startswith("Not published.") and "Passion Flower Capsule" in out["msg"]
+
+
+def test_printing_a_bare_number_never_reaches_the_portal(tmp_path, monkeypatch):
+    c, aid, tid, sent = _setup(tmp_path, monkeypatch)
+    c.post(f"/test/{aid}/publish-portal", json={"own_remedies": ["Passion Flower Capsule"]})
+    # Confirm it under the bare key too, so only the id guard can stop this publish.
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    cx.execute("INSERT INTO biofield_own_remedies VALUES(?,?,?)",
+               (tid, "Passion Flower Capsule", "now"))
+    cx.commit()
+    cx.close()
+    monkeypatch.setenv("BIOFIELD_REPORTS_DIR", str(tmp_path))
+    monkeypatch.setattr(biofield_local_app, "save_report_pdf",
+                        lambda html, out: open(out, "wb").write(b"%PDF-FAKE"))
+    monkeypatch.setattr(biofield_local_app, "causal_chain_report",
+                        lambda cx, t: {"client": {}, "layers": [], "date": ""}, raising=False)
+    monkeypatch.setattr(biofield_local_app, "render_present", lambda rep, narr: "<html></html>")
+    assert c.get(f"/test/{tid}/report.pdf").status_code == 200   # the print itself works
+    assert len(sent) == 1, "the bare number must not publish"
+
+
+def test_the_confirmation_is_kept_when_the_publish_fails(tmp_path, monkeypatch):
+    c, aid, _, sent = _setup(tmp_path, monkeypatch)
+
+    def down(payload, **kw):
+        raise RuntimeError("portal down")
+    monkeypatch.setattr(bpp, "publish_to_portal", down)
+    r = c.post(f"/test/{aid}/publish-portal", json={"own_remedies": ["Passion Flower Capsule"]})
+    assert r.status_code == 502
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    assert cx.execute("SELECT remedy FROM biofield_own_remedies").fetchall() == [
+        ("Passion Flower Capsule",)]
+
+
+def test_the_button_asks_only_once():
+    import json
+    import subprocess
+    from tests.test_blank_courtesy_price import _node_js
+    harness = """
+var el={textContent:''}, posts=[], asked=0;
+var document={getElementById:function(){return el;}};
+function prompt(){return '';}
+function confirm(){asked++;return true;}
+async function fetch(u,o){posts.push(1);
+  return {json:async function(){return {ok:false,unresolved:['Passion Flower Capsule']};}};}
+"""
+    js = harness + _node_js() + (
+        "\npublishPortal().then(function(){console.log(JSON.stringify("
+        "{posts:posts.length,asked:asked,msg:el.textContent}));});")
+    out = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True,
+                                    check=True).stdout)
+    assert out == {"posts": 2, "asked": 1, "msg": out["msg"]}
+    assert out["msg"].startswith("Not published.")
