@@ -1058,7 +1058,7 @@
       var hash = u.indexOf('#'), frag = hash >= 0 ? u.slice(hash) : '';
       var base = hash >= 0 ? u.slice(0, hash) : u;
       if (/[?&](amp;)?ref=/.test(base)) return u;
-      return base + (base.indexOf('?') >= 0 ? '&amp;' : '?') + 'ref=' + ref + frag;
+      return base + (base.indexOf('?') >= 0 ? '&amp;' : '?') + 'ref=' + encodeURIComponent(ref) + frag;
     }
     // Escape, then make any http(s) URL a tappable link (so links the AI gives survive + work).
     window.heroLinkify = function(text){

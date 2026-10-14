@@ -40,6 +40,12 @@ def test_product_links_follow_the_client_host_not_the_funnel_host(client_host, m
     assert app._catalog_page_url("coq10") == "https://myhealingoasis.com/begin/product/coq10"
 
 
+def test_product_links_fall_back_to_the_funnel_host_when_no_client_host_is_set(monkeypatch):
+    monkeypatch.delenv("PORTAL_BASE_URL", raising=False)
+    monkeypatch.setattr(app, "PUBLIC_BASE_URL", "https://funnel.example")
+    assert app._catalog_page_url("coq10") == "https://funnel.example/begin/product/coq10"
+
+
 def test_every_sellable_catalog_product_has_a_reachable_page_url(client_host):
     """No sellable product may be unlinkable — the root cause of the bug."""
     products = app._PRODUCTS["products"]

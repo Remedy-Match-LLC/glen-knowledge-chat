@@ -17,9 +17,9 @@ const hostsDef = grab(/var HERO_REF_HOSTS = \[[\s\S]*?\];/, "HERO_REF_HOSTS");
 const refDef = grab(/function heroWithRef\(u\)\{[\s\S]*?\n    \}/, "heroWithRef");
 const linkDef = grab(/window\.heroLinkify = function\(text\)\{[\s\S]*?\n    \};/, "heroLinkify");
 
-function build(ref) {
+function build(ref, host) {
   const window = {};
-  const location = {host: "illtowell.com"};
+  const location = {host: host || "illtowell.com"};
   const getRef = () => ref;
   eval(escDef + "\n" + hostsDef + "\n" + refDef + "\n" + linkDef);
   return window.heroLinkify;
@@ -52,6 +52,21 @@ eq(build("janedoe")(P + "#ingredients"), a(P + "?ref=janedoe#ingredients", P + "
 eq(build("janedoe")("https://illtowell.com/begin/product/coq10"),
    a("https://illtowell.com/begin/product/coq10?ref=janedoe", "https://illtowell.com/begin/product/coq10"),
    "the funnel host is ours too");
+
+eq(build('x"onmouseover=alert(1)')(P), a(P, P), "a code that could break out of the href is never written");
+eq(build("janedoe")("https://MyHealingOasis.com/begin/product/coq10"),
+   a("https://MyHealingOasis.com/begin/product/coq10?ref=janedoe", "https://MyHealingOasis.com/begin/product/coq10"),
+   "the host check ignores case");
+eq(build("janedoe")("https://myhealingoasis.com.evil.com/begin/product/coq10"),
+   a("https://myhealingoasis.com.evil.com/begin/product/coq10", "https://myhealingoasis.com.evil.com/begin/product/coq10"),
+   "a look-alike host gets nothing");
+eq(build("janedoe", "localhost:8011")("http://localhost:8011/begin/product/coq10"),
+   a("http://localhost:8011/begin/product/coq10?ref=janedoe", "http://localhost:8011/begin/product/coq10"),
+   "the page's own host counts as ours");
+eq(build("janedoe")(P + "?a=1&ref=other"), a(P + "?a=1&amp;ref=other", P + "?a=1&amp;ref=other"),
+   "an existing ref after an escaped & is kept");
+eq(build("janedoe")(P + "?xref=1"), a(P + "?xref=1&amp;ref=janedoe", P + "?xref=1"),
+   "a parameter that merely ends in ref is not a ref");
 
 if (failed) { console.error(`${failed} failed`); process.exit(1); }
 console.log("all passed");
