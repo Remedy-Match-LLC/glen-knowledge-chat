@@ -64,3 +64,29 @@ def test_a_bad_answer_flags_and_emails_glen(client, monkeypatch):
     to, name, subject, text = sent[0]
     assert to == "drglenswartwout@gmail.com"
     assert "754" in text  # the flagged figure is in the email Glen gets
+
+
+def test_an_invented_mechanism_flags_as_claim_and_reaches_the_email(client, monkeypatch):
+    """The claim questions must be audited with their group, or the CLAIM check never
+    runs in the weekly cron. Email is stubbed by _stub_audit: nothing sends."""
+    app, c = client
+    clean = ("[Terrain Restore](https://illtowell.com/begin/product/terrain-restore)"
+             " is $70 list price.")
+    invented = ("These five clinically active compounds, including notoginseng (a "
+                "traditional adaptogen), reduce abnormal vessel growth "
+                "(neovascularization). It supports vascular remodeling, which can "
+                "interfere with hemostasis. One capsule maximizes bioavailability.")
+    real = app._load_answer_audit()
+    claim_qs = {q for g, q in real.QUESTIONS if g == "claim"}
+    assert claim_qs, "no claim questions to exercise"
+    sent = _stub_audit(app, monkeypatch,
+                       lambda q: invented if q in claim_qs else clean)
+    r = c.post("/api/cron/answer-audit", headers={"X-Cron-Secret": "sekret"})
+    body = r.get_json()
+    assert body["flagged"] == len(claim_qs) and body["emailed"] is True
+    assert len(sent) == 1
+    text = sent[0][3]
+    assert "CLAIM:" in text
+    for q in claim_qs:
+        assert q in text
+    assert "check whether a retrieved source states it" in text  # the header covers claims
