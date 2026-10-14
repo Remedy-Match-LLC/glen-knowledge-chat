@@ -240,3 +240,107 @@ def test_a_failed_row_write_still_records_the_other_boxes(cx, monkeypatch):
     assert seen == N and len(sends) == 1
     assert shipment_exists(cx, N[0]) and shipment_exists(cx, N[2]) and not shipment_exists(cx, N[1])
     assert next(r for r in res if r["tracking"] == N[1])["record_error"].startswith("RuntimeError")
+
+
+# --- review round 3: each rule pinned by its own test ---------------------------------
+
+def _two(name_a, name_b, street_b="77 PALM CT"):
+    return _confirmation(_block(N[0], name_a, "77 PALM CT", "HILO HI 96720-1234 US"),
+                         _block(N[1], name_b, street_b, "HILO HI 96720-1234 US"))
+
+
+def test_a_less_certain_box_does_not_ride_on_an_auto_send(cx):
+    find = lambda name: {"email": "ann@example.com", "contact_id": "c1", "name": name,
+                         "confidence": "high" if name == "Ann Kalani" else "medium"}
+    res, sends, drafts = _run(cx, _two("Ann Kalani", "A Kalani"), find=find)
+    assert len(sends) == 1 and N[0] in sends[0]["text"] and N[1] not in sends[0]["text"]
+    assert len(drafts) == 1 and N[1] in drafts[0]["text"]
+
+
+def test_one_person_at_two_addresses_gets_two_emails(cx):
+    res, sends, _ = _run(cx, _two("Ann Kalani", "Ann Kalani", street_b="9 MAUKA RD"),
+                         addr=_to("ann@example.com"))
+    assert len(sends) == 2 and all(len([n for n in N[:2] if n in c["text"]]) == 1 for c in sends)
+
+
+def test_labels_with_no_street_never_merge(cx):
+    html = _confirmation(_block(N[0], "Ann Kalani", "HILO HI 96720-1234 US"),
+                         _block(N[1], "Bea Lee", "HILO HI 96720-1234 US"))
+    res, sends, drafts = _run(cx, html)
+    assert len(drafts) == 2
+
+
+def test_each_box_links_to_its_own_number():
+    from dashboard.tracking import tracking_url
+    em = build_tracking_email(N, "Ann Kalani", resolved_email="a@example.com")
+    for i, n in enumerate(N, 1):
+        assert f'<h3>Box {i}: <a href="{tracking_url(n)}">{n}</a></h3>' in em["html"]
+        assert f"Box {i}: {n}\n{tracking_url(n)}" in em["text"]
+
+
+def test_a_drafted_group_shares_one_draft_id(cx):
+    res, _, drafts = _run(cx, _confirmation(*[_block(n, *ANN) for n in N]))
+    assert len(drafts) == 1 and {r["draft_id"] for r in res} == {"draft_1"}
+
+
+def test_a_failing_order_search_sends_the_rest_and_reviews_its_box(cx):
+    other = _block(OTHER, "Cal Lee", "9 MAUKA RD", "HILO HI 96720-1234 US")
+    def harvest(name):
+        if name == "Cal Lee":
+            raise RuntimeError("gmail down")
+        return None
+    sends, drafts = _rec("msg"), _rec("draft")
+    res = handle_confirmation(_confirmation(_block(N[0], *ANN), other), "m1", cx,
+                              lambda n: None, drafts, harvest_fn=harvest, send_fn=sends,
+                              auto_send=True, dry_run=False,
+                              address_resolve=lambda s: (None if s["recipient_name"] == "Cal Lee"
+                                                         else {"email": "ann@example.com",
+                                                               "source": "fmp", "conflict": False}))
+    assert [c["to"] for c in sends.calls] == ["ann@example.com"]
+    cal = next(r for r in res if r["tracking"] == OTHER)
+    assert cal["status"] == "needs_review" and "search failed" in cal["review_reason"]
+
+
+def test_a_failed_row_write_rolls_back_before_the_next_box(cx, monkeypatch):
+    import cns_tracking_watcher as W
+    real, rollbacks = W.record_shipment, []
+    class Cx:
+        def __init__(self, inner): self.inner = inner
+        def rollback(self): rollbacks.append(1); self.inner.rollback()
+        def __getattr__(self, k): return getattr(self.inner, k)
+    def flaky(cx_, **f):
+        if f["tracking_number"] == N[1]:
+            raise RuntimeError("db hiccup")
+        return real(cx_.inner if isinstance(cx_, Cx) else cx_, **f)
+    monkeypatch.setattr(W, "record_shipment", flaky)
+    sends, drafts = _rec("msg"), _rec("draft")
+    handle_confirmation(_confirmation(*[_block(n, *ANN) for n in N]), "m1", Cx(cx),
+                        lambda n: None, drafts, send_fn=sends, auto_send=True, dry_run=False,
+                        address_resolve=_to("ann@example.com"))
+    assert rollbacks == [1]
+
+
+def test_a_conflict_on_the_whole_street_is_never_overridden_by_the_retry():
+    # Two board orders on the whole street are a conflict for review; a name-matched order
+    # on the shortened street must not override it.
+    db2 = _addr_db()
+    _board(db2, "one@example.com", "Cal Lee", "Kalani Wellness Center 77 Palm Ct")
+    _board(db2, "two@example.com", "Dee Lee", "Kalani Wellness Center 77 Palm Ct")
+    _board(db2, "ann@example.com", "Ann Kalani", "77 Palm Ct")
+    r = tr.resolve_by_address(db2, _label("Ann Kalani", "Kalani Wellness Center", "77 PALM CT"))
+    assert r["conflict"] and r["email"] is None
+
+
+def test_one_street_line_is_never_shortened():
+    assert tr._street_after_business_line(_label("Ann Kalani", "77 PALM CT")) is None
+    assert tr._street_after_business_line(
+        _label("Ann Kalani", "Kalani Wellness Center", "77 PALM CT")) == "77 PALM CT"
+
+
+def test_one_person_at_two_unreadable_addresses_gets_two_emails(cx):
+    html = _confirmation(_block(N[0], "Ann Kalani", "HILO HI 96720-1234 US"),
+                         _block(N[1], "Ann Kalani", "KONA HI 96740-1234 US"))
+    find = lambda name: {"email": "ann@example.com", "contact_id": "c1", "name": name,
+                         "confidence": "high"}
+    res, sends, _ = _run(cx, html, find=find)
+    assert len(sends) == 2
