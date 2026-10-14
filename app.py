@@ -41869,36 +41869,52 @@ def _start_founding_membership_on_ship(cx, sub, order_ref):
     delivery, through _extend_founding_membership_on_delivery. If no delivery is
     ever recorded, it ends 30 days after shipment.
 
-    Best-effort inside a savepoint: the card has already been charged, so a
-    failure here must not hide that or undo the bookkeeping written before it."""
+    Best-effort. The card has already been charged, so nothing here may raise.
+    Each step commits on its own, so one failure cannot take another with it,
+    and a failed statement on Postgres is rolled back before the next step:
+      1. Commit what the ship path wrote. The charge happened, so it must stand.
+      2. Record the order. Delivery uses it to set the end, even if 3 fails.
+         An order already recorded means this ran before, so nothing is granted.
+      3. Grant 30 days."""
     from dashboard import founding as _founding
+    from dashboard import customers as _customers
     email = (sub.get("email") or "").strip().lower()
-    try:
-        from dashboard import customers as _customers
-        _customers.find_or_create_by_email(cx, email=email)   # may commit; nothing pending
-    except Exception as e:
-        print(f"[founding-ship] people upsert skipped sub={sub.get('id')}: {e!r}", flush=True)
-    try:
-        cx.execute("SAVEPOINT founding_ship")
-    except Exception as e:
-        print(f"[founding-ship] savepoint failed sub={sub.get('id')}: {e!r}", flush=True)
-        return
-    try:
-        _grant_membership(cx, email, _founding.MEMBERSHIP_DAYS_AFTER_DELIVERY, "founding",
-                          skip_customer_upsert=True)
-        if order_ref:
-            _founding.record_ship(cx, order_ref=order_ref, sub_id=sub["id"], email=email,
-                                  shipped_at=datetime.utcnow().isoformat() + "Z")
-        cx.execute("RELEASE SAVEPOINT founding_ship")
-    except Exception as e:
-        print(f"[founding-ship] membership grant failed sub={sub.get('id')}: {e!r}", flush=True)
+
+    def _step(label, fn):
         try:
-            cx.execute("ROLLBACK TO SAVEPOINT founding_ship")
-            cx.execute("RELEASE SAVEPOINT founding_ship")
-        except Exception:
-            pass
-        return
-    cx.commit()
+            out = fn()
+            cx.commit()
+            return out
+        except Exception as e:
+            print(f"[founding-ship] {label} failed sub={sub.get('id')}: {e!r}", flush=True)
+            try:
+                cx.rollback()
+            except Exception:
+                pass
+            return None
+
+    _step("commit", lambda: None)
+    if order_ref:
+        recorded = _step("record order", lambda: _founding.record_ship(
+            cx, order_ref=order_ref, sub_id=sub["id"], email=email,
+            shipped_at=datetime.utcnow().isoformat() + "Z"))
+        if recorded is False:
+            return
+    _step("people upsert", lambda: _customers.find_or_create_by_email(cx, email=email))
+    _step("membership grant", lambda: _grant_membership(
+        cx, email, _founding.MEMBERSHIP_DAYS_AFTER_DELIVERY, "founding",
+        skip_customer_upsert=True))
+
+
+def _founding_delivery_time(delivered_at):
+    """A delivery time as naive UTC, or now when it cannot be read."""
+    try:
+        t = datetime.fromisoformat(str(delivered_at).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.utcnow()
+    if t.tzinfo is not None:
+        t = t.astimezone(timezone.utc).replace(tzinfo=None)
+    return t
 
 
 def _extend_founding_membership_on_delivery(cx, delivered_order, delivered_at):
@@ -41906,7 +41922,8 @@ def _extend_founding_membership_on_delivery(cx, delivered_order, delivered_at):
 
     Only the order the founding ship charge recorded qualifies, and only its first
     delivery signal counts. It extends and never shortens, so autoship or any
-    other membership keeps whatever reaches further.
+    other membership keeps whatever reaches further. The time stored is the one
+    used, read as UTC, so the record always matches the end date.
 
     Best-effort inside a savepoint: a failure here must not block marking a
     shipment delivered, nor undo the delivery work already done on this connection."""
@@ -41914,20 +41931,17 @@ def _extend_founding_membership_on_delivery(cx, delivered_order, delivered_at):
     ref = (delivered_order or {}).get("external_ref") or ""
     if not ref:
         return "none"
+    start = _founding_delivery_time(delivered_at)
     try:
         cx.execute("SAVEPOINT founding_delivery")
     except Exception as e:
         print(f"[founding-delivery] savepoint failed ref={ref!r}: {e!r}", flush=True)
         return "error"
     try:
-        email = _founding.claim_delivery(cx, ref, delivered_at)
+        email = _founding.claim_delivery(cx, ref, start.isoformat() + "Z")
         if not email:
             cx.execute("RELEASE SAVEPOINT founding_delivery")
             return "none"
-        try:
-            start = datetime.fromisoformat(str(delivered_at).replace("Z", "")).replace(tzinfo=None)
-        except ValueError:
-            start = datetime.utcnow()
         until = (start + timedelta(days=_founding.MEMBERSHIP_DAYS_AFTER_DELIVERY)).isoformat() + "Z"
         _extend_membership_grant(cx, email, until, "founding")
         cx.execute("RELEASE SAVEPOINT founding_delivery")

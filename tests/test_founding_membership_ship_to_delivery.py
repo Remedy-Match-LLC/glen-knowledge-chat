@@ -164,3 +164,59 @@ def test_shipment_delivery_runs_the_founding_extension_without_a_member_email(mo
         cx, {"id": 1, "order_uuid": "u", "delivered_at": None, "coaching_opened": 0,
              "resolved_email": None}, delivered_at="2026-10-20T10:00:00Z")
     assert calls == [("pi_1", "2026-10-20T10:00:00Z")]
+
+
+def test_offset_delivery_time_is_read_as_utc(monkeypatch):
+    cx = _cx()
+    _ship(cx, monkeypatch)
+    local = (datetime.utcnow() + timedelta(days=5)).replace(microsecond=0)
+    stamp = local.isoformat() + "-10:00"          # Hawaii time: ten hours behind UTC
+    appmod._extend_founding_membership_on_delivery(cx, {"external_ref": "pi_1"}, stamp)
+    assert _expiry(cx) == local + timedelta(hours=10, days=30)
+
+
+def test_stored_delivery_time_is_the_one_used(monkeypatch):
+    cx = _cx()
+    _ship(cx, monkeypatch)
+    appmod._extend_founding_membership_on_delivery(cx, {"external_ref": "pi_1"}, "not a date")
+    stored = cx.execute("SELECT delivered_at FROM founding_ship_memberships").fetchone()[0]
+    assert stored != "not a date"
+    assert _expiry(cx) >= datetime.fromisoformat(stored.rstrip("Z")) + timedelta(days=30)
+
+
+def test_shipping_the_same_order_twice_grants_once(monkeypatch):
+    cx = _cx()
+    _ship(cx, monkeypatch)
+    sub = dict(subs.get(cx, 1))
+    appmod._start_founding_membership_on_ship(cx, sub, "pi_1")
+    assert cx.execute("SELECT COUNT(*) FROM memberships").fetchone()[0] == 1
+
+
+def test_failed_grant_keeps_the_order_so_delivery_still_sets_the_end(monkeypatch):
+    cx = _cx()
+
+    def _boom(*a, **k):
+        raise RuntimeError("grant failed")
+    monkeypatch.setattr(appmod, "_grant_membership", _boom)
+    res = _ship(cx, monkeypatch)
+    assert res["charged"] is True
+    assert _expiry(cx) is None
+    delivered = datetime.utcnow().replace(microsecond=0) + timedelta(days=3)
+    assert appmod._extend_founding_membership_on_delivery(
+        cx, {"external_ref": "pi_1"}, _iso(delivered)) == "extended"
+    assert _expiry(cx) == delivered + timedelta(days=30)
+
+
+def test_ship_bookkeeping_survives_a_failed_grant(monkeypatch):
+    """The charge happened, so what the ship path wrote must be committed."""
+    cx = _cx()
+    cx.execute("CREATE TABLE marks (v TEXT)")
+    cx.commit()
+    cx.execute("INSERT INTO marks VALUES ('booked')")   # unsaved ship bookkeeping
+
+    def _boom(*a, **k):
+        raise RuntimeError("grant failed")
+    monkeypatch.setattr(appmod, "_grant_membership", _boom)
+    appmod._start_founding_membership_on_ship(cx, {"id": 9, "email": EMAIL}, "")   # no order ref: nothing else commits
+    cx.rollback()
+    assert cx.execute("SELECT COUNT(*) FROM marks").fetchone()[0] == 1

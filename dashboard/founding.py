@@ -67,12 +67,14 @@ def init_ship_memberships(cx) -> None:
                " shipped_at TEXT, delivered_at TEXT)")
 
 
-def record_ship(cx, *, order_ref: str, sub_id: int, email: str, shipped_at: str) -> None:
-    """Remember which order carried a founding bottle. Does not commit."""
+def record_ship(cx, *, order_ref: str, sub_id: int, email: str, shipped_at: str) -> bool:
+    """Remember which order carried a founding bottle. True only the first time
+    for that order. Does not commit."""
     init_ship_memberships(cx)
-    cx.execute("INSERT INTO founding_ship_memberships (order_ref, sub_id, email, shipped_at) "
+    cur = cx.execute("INSERT INTO founding_ship_memberships (order_ref, sub_id, email, shipped_at) "
                "VALUES (?,?,?,?) ON CONFLICT(order_ref) DO NOTHING",
                (order_ref, sub_id, email, shipped_at))
+    return bool(cur.rowcount)
 
 
 def claim_delivery(cx, order_ref: str, delivered_at: str) -> str | None:
