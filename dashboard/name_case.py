@@ -10,7 +10,10 @@ the person typed it into a form. Rules he approved:
   3. Credentials from a fixed list go to capitals, PhD as PhD. After the first
      comma anything not on the list stays as typed.
   4. A value holding an email address is left alone.
-  5. In an all-capitals value, a 2 or 3 letter word with no vowel stays in
+  5. II, III and IV go to capitals as the last word of a name, or just before
+     its first comma, without needing a comma in front (Glen, 2026-10-13: an
+     invoice greeting read "John Smith Iii"). Never as the first word.
+  6. In an all-capitals value, a 2 or 3 letter word with no vowel stays in
      capitals: JC, KBH, RDN. Titles such as DR are not initials. A lowercase
      "jc" carries no sign of initials and becomes "Jc".
 
@@ -32,6 +35,8 @@ CREDENTIALS = {"od", "md", "nd", "dc", "do", "dds", "dmd", "lac", "lmt", "np",
                "cns", "llc", "pllc", "ii", "iii", "iv"}
 BARE_CREDENTIALS = CREDENTIALS - {"do", "ms", "ma", "pa", "ii", "iii", "iv"}
 SPECIAL = {"phd": "PhD"}
+# Generational suffixes. Unambiguous only at the end of the name proper.
+SUFFIXES = {"ii", "iii", "iv"}
 
 TITLES = {"dr", "mr", "ms", "mrs", "jr", "sr", "st", "mt", "ft", "ltd"}
 
@@ -68,7 +73,7 @@ def _title(token):
 
 
 def normalize_name(value, leading_particle=False):
-    """The name with rules 1 to 4 applied. Anything else comes back unchanged.
+    """The name with rules 1 to 6 applied. Anything else comes back unchanged.
 
     leading_particle: True for a last_name field, so "van der vegt" matches the
     full name "Maria van der Vegt" rather than becoming "Van der Vegt".
@@ -82,8 +87,9 @@ def normalize_name(value, leading_particle=False):
 
     all_capitals = value == value.upper()
     parts = re.split(r"(\s+)", value)
+    last_word = max(i for i, p in enumerate(parts) if p and not p.isspace())
     out, word_index, after_comma = [], 0, False
-    for part in parts:
+    for i, part in enumerate(parts):
         if not part or part.isspace():
             out.append(part)
             continue
@@ -92,6 +98,9 @@ def normalize_name(value, leading_particle=False):
             out.append(_credential(part))
         elif after_comma:
             out.append(part)
+        elif (word_index > 0 and core in SUFFIXES
+              and (i == last_word or part.endswith(","))):
+            out.append(part.upper())
         elif all_capitals and _is_initials(part):
             out.append(part)
         elif word_index > 0 and (core in BARE_CREDENTIALS or core in SPECIAL):
