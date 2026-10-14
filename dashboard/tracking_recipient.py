@@ -61,8 +61,15 @@ def zip5(value):
 
 def street_key(street):
     """'12 Ocean View Drive, Apt. 3' -> '12oceanviewdrapt3'. Common words shortened so a
-    typed label and an exported record compare equal."""
+    typed label and an exported record compare equal.
+
+    Words before the house number are dropped. A label's business or care-of line is
+    joined onto its street: "Fukushima Health & Wellbeing 32703 RAY CT" never matched
+    "32703 Ray Court" on file, and 6 labels on 2026-10-14 went out as blank drafts.
+    A street with no number at all is kept whole."""
     words = re.findall(r"[a-z0-9#]+", _ascii(street))
+    first_number = next((i for i, w in enumerate(words) if any(ch.isdigit() for ch in w)), 0)
+    words = words[first_number:]
     return "".join(_STREET_WORDS.get(w.replace("#", ""), w.replace("#", "apt"))
                    for w in words)
 

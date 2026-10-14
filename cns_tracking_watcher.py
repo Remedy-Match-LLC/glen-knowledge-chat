@@ -208,6 +208,7 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
     so an uncertain match is never auto-mailed."""
     parsed = parse_cns_confirmation(html)
     results = []
+    fresh = []
     for s in parsed["shipments"]:
         if shipment_exists(cx, s["tracking"]):
             result = {"tracking": s["tracking"],
@@ -229,84 +230,143 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
                                             "reason": str(exc)}
             results.append(result)
             continue
+        fresh.append(s)
 
-        match = find_contact(s["recipient_name"])
-        conf = match["confidence"] if match else "none"
-        to = match["email"] if (match and conf in ("high", "medium")) else None
-        ghl_contact_id = (match or {}).get("contact_id")
+    # Glen, 2026-10-14: "Please consolidate tracking number emails when going to the same
+    # address the same day." He chose "same checkout": the boxes of one confirmation that
+    # go to one address and one person become ONE email listing every number, sent as
+    # soon as now. Fukushima's 6 boxes on 2026-10-14 had made 6 drafts. The recipient is
+    # resolved once per name at an address, and the groups are formed after resolution so
+    # two names that resolve to one email still get one email.
+    resolved_for = {}
+    groups = {}
+    for s in fresh:
+        rkey = (_addr_key(s), _norm(s["recipient_name"]))
+        if rkey not in resolved_for:
+            resolved_for[rkey] = _resolve(s, find_contact, address_resolve, harvest_fn)
+        r = resolved_for[rkey]
+        gkey = (rkey[0], ("to", r["to"].strip().lower()) if r["to"] else ("name", rkey[1]))
+        groups.setdefault(gkey, {"r": r, "shipments": []})["shipments"].append(s)
 
-        # The SHIP-TO ADDRESS comes first (Glen, 2026-09-22): a board order at the
-        # address, else a FileMaker client there whose name agrees. See
-        # dashboard/tracking_recipient.py. A name-only GHL match then counts only when
-        # it names the same email; FileMaker against GHL with different emails is a
-        # conflict of equal standing and goes to review. The board outranks GHL.
-        review_reason = ""
-        addr = None
-        if address_resolve is not None:
-            try:
-                addr = address_resolve(s)
-            except Exception as exc:
-                addr = None
-                review_reason = f"address lookup failed: {type(exc).__name__}"
-        ghl_email = (to or "").strip().lower() or None
-        if addr and addr.get("email"):
-            a_email = addr["email"]
-            if addr.get("source") == "fmp" and ghl_email and ghl_email != a_email:
-                to, conf = None, "conflict"
-                review_reason = f"FileMaker has {a_email}, GHL has {ghl_email}"
-            else:
-                to, conf = a_email, f"address-{addr.get('source')}"
-                if ghl_email != a_email:
-                    ghl_contact_id = None      # that GHL contact is someone else
-        elif addr and addr.get("conflict"):
+    for g in groups.values():
+        results.extend(_notify_group(g["r"], g["shipments"], parsed, msg_id, cx, draft_fn,
+                                     persist_contact, send_fn, auto_send, dry_run,
+                                     link_orders))
+    return results
+
+
+def _norm(value):
+    return " ".join(str(value or "").lower().split())
+
+
+def _addr_key(s):
+    """One address however the label spells it. Falls back to the printed address block
+    when the label has no street or ZIP, so two unparsed labels never merge by accident."""
+    from dashboard import tracking_recipient as _trc
+    z, sk = _trc.zip5(s.get("zip")), _trc.street_key(s.get("street"))
+    if z and sk:
+        return ("addr", z, sk)
+    return ("block", _norm(s.get("address_block")), _norm(s.get("recipient_name")))
+
+
+def _resolve(s, find_contact, address_resolve, harvest_fn):
+    """Who this box goes to: {to, conf, ghl_contact_id, review_reason, harvested}."""
+    match = find_contact(s["recipient_name"])
+    conf = match["confidence"] if match else "none"
+    to = match["email"] if (match and conf in ("high", "medium")) else None
+    ghl_contact_id = (match or {}).get("contact_id")
+
+    # The SHIP-TO ADDRESS comes first (Glen, 2026-09-22): a board order at the
+    # address, else a FileMaker client there whose name agrees. See
+    # dashboard/tracking_recipient.py. A name-only GHL match then counts only when
+    # it names the same email; FileMaker against GHL with different emails is a
+    # conflict of equal standing and goes to review. The board outranks GHL.
+    review_reason = ""
+    addr = None
+    if address_resolve is not None:
+        try:
+            addr = address_resolve(s)
+        except Exception as exc:
+            addr = None
+            review_reason = f"address lookup failed: {type(exc).__name__}"
+    ghl_email = (to or "").strip().lower() or None
+    if addr and addr.get("email"):
+        a_email = addr["email"]
+        if addr.get("source") == "fmp" and ghl_email and ghl_email != a_email:
             to, conf = None, "conflict"
-            review_reason = addr.get("reason") or "several people at the address"
-
-        # No confident match of any kind: try a precision-safe harvest from order
-        # emails. Never after a conflict: harvest is name-only and would pick a side.
-        harvested = None
-        if to is None and conf != "conflict" and harvest_fn is not None:
-            harvested = harvest_fn(s["recipient_name"])
-            if harvested and harvested.get("email"):
-                to = harvested["email"]
-                conf = "harvested"
-
-        # Auto-send only high-confidence recipients; everything else drafts.
-        send_eligible = (auto_send and to is not None
-                         and conf in AUTO_SEND_CONFIDENCES)
-        status = ("sent" if send_eligible else
-                  "drafted" if to else "needs_review")
-        email = build_tracking_email(s["tracking"], s["recipient_name"], resolved_email=to)
-
-        draft_id = None
-        onboarded = False
-        notification_error = None
-        if dry_run:
-            verb = "would send" if send_eligible else "would draft"
-            action = f"{verb} (harvested)" if conf == "harvested" else verb
+            review_reason = f"FileMaker has {a_email}, GHL has {ghl_email}"
         else:
-            if harvested and conf == "harvested" and persist_contact is not None:
-                pc = persist_contact(harvested, s["recipient_name"]) or {}
-                ghl_contact_id = pc.get("contact_id") or ghl_contact_id
-                onboarded = bool(pc.get("onboarded"))
-            if send_eligible and send_fn is not None:
-                try:
-                    draft_id = send_fn(to=to, subject=email["subject"],
-                                       html=email["html"], text=email["text"])
-                    action = "sent via GHL"
-                except Exception as exc:
-                    # Never substitute a different outbound channel. Keep a Gmail
-                    # draft for review and audit the GHL failure for operations.
-                    notification_error = f"{type(exc).__name__}: {exc}"
-                    draft_id = draft_fn(to=to, subject=email["subject"],
-                                        html=email["html"], text=email["text"])
-                    status = "send_failed"
-                    action = "drafted (GHL send failed)"
-            else:
-                status = "drafted" if to else "needs_review"  # never sent
+            to, conf = a_email, f"address-{addr.get('source')}"
+            if ghl_email != a_email:
+                ghl_contact_id = None      # that GHL contact is someone else
+    elif addr and addr.get("conflict"):
+        to, conf = None, "conflict"
+        review_reason = addr.get("reason") or "several people at the address"
+
+    # No confident match of any kind: try a precision-safe harvest from order
+    # emails. Never after a conflict: harvest is name-only and would pick a side.
+    harvested = None
+    if to is None and conf != "conflict" and harvest_fn is not None:
+        harvested = harvest_fn(s["recipient_name"])
+        if harvested and harvested.get("email"):
+            to = harvested["email"]
+            conf = "harvested"
+    return {"to": to, "conf": conf, "ghl_contact_id": ghl_contact_id,
+            "review_reason": review_reason, "harvested": harvested}
+
+
+def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, send_fn,
+                  auto_send, dry_run, link_orders):
+    """One email (sent or drafted) for every box in the group; one shipments row each."""
+    to, conf = r["to"], r["conf"]
+    ghl_contact_id, harvested = r["ghl_contact_id"], r["harvested"]
+    first = shipments[0]
+    numbers = [s["tracking"] for s in shipments]
+
+    # Auto-send only high-confidence recipients; everything else drafts.
+    send_eligible = (auto_send and to is not None
+                     and conf in AUTO_SEND_CONFIDENCES)
+    status = ("sent" if send_eligible else
+              "drafted" if to else "needs_review")
+    email = build_tracking_email(numbers if len(numbers) > 1 else numbers[0],
+                                 first["recipient_name"], resolved_email=to)
+
+    draft_id = None
+    onboarded = False
+    notification_error = None
+    if dry_run:
+        verb = "would send" if send_eligible else "would draft"
+        action = f"{verb} (harvested)" if conf == "harvested" else verb
+    else:
+        if harvested and conf == "harvested" and persist_contact is not None:
+            pc = persist_contact(harvested, first["recipient_name"]) or {}
+            ghl_contact_id = pc.get("contact_id") or ghl_contact_id
+            onboarded = bool(pc.get("onboarded"))
+        if send_eligible and send_fn is not None:
+            try:
+                draft_id = send_fn(to=to, subject=email["subject"],
+                                   html=email["html"], text=email["text"])
+                action = "sent via GHL"
+            except Exception as exc:
+                # Never substitute a different outbound channel. Keep a Gmail
+                # draft for review and audit the GHL failure for operations.
+                notification_error = f"{type(exc).__name__}: {exc}"
                 draft_id = draft_fn(to=to, subject=email["subject"],
                                     html=email["html"], text=email["text"])
-                action = "drafted"
+                status = "send_failed"
+                action = "drafted (GHL send failed)"
+        else:
+            status = "drafted" if to else "needs_review"  # never sent
+            draft_id = draft_fn(to=to, subject=email["subject"],
+                                html=email["html"], text=email["text"])
+            action = "drafted"
+    if len(numbers) > 1:
+        action += f" (one email for {len(numbers)} boxes)"
+
+    results = []
+    for s in shipments:
+        order_link = None
+        if not dry_run:
             shipment_id = record_shipment(
                 cx, tracking_number=s["tracking"], order_uuid=parsed["order_uuid"],
                 recipient_name=s["recipient_name"], address_block=s["address_block"],
@@ -318,7 +378,6 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
                 notification_sent_at=(_iso_now() if status == "sent" else None),
                 notification_error=notification_error)
 
-            order_link = None
             if link_orders and shipment_id is not None:
                 try:
                     order_link = link_shipment_to_orders(
@@ -332,12 +391,12 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
         results.append({"tracking": s["tracking"], "recipient": s["recipient_name"],
                         "to": to or "(blank — needs review)", "confidence": conf,
                         "status": status, "action": action, "draft_id": draft_id,
-                        "onboarded": onboarded,
+                        "onboarded": onboarded, "boxes_in_email": len(numbers),
                         "scheduled_delivery_date": normalize_delivery_date(
                             s.get("delivery_date")),
                         "notification_channel": "ghl" if status == "sent" else None,
                         "notification_error": notification_error,
-                        "review_reason": review_reason,
+                        "review_reason": r["review_reason"],
                         "order_link": order_link if not dry_run else None})
     return results
 
