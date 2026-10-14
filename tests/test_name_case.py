@@ -107,6 +107,11 @@ def test_only_vowel_less_capitals_count_as_initials(typed, expected):
     ("john smith iii, md", "John Smith III, MD"),
     ("john smith, iii", "John Smith, III"),
     ("smith iii", "Smith III"),
+    ("john smith iii , md", "John Smith III , MD"),
+    ("john smith iii md", "John Smith III MD"),
+    ("JOHN SMITH III MD", "John Smith III MD"),
+    ("john smith iii jr", "John Smith III Jr"),
+    ("john smith iii, phd", "John Smith III, PhD"),
 ])
 def test_a_generational_suffix_goes_to_capitals_without_a_comma(typed, expected):
     assert normalize_name(typed) == expected
@@ -116,6 +121,7 @@ def test_a_generational_suffix_goes_to_capitals_without_a_comma(typed, expected)
     ("iv smith", "Iv Smith"),
     ("ii", "Ii"),
     ("john iii smith", "John Iii Smith"),
+    ("john iii smith md", "John Iii Smith MD"),
 ])
 def test_a_suffix_word_elsewhere_in_the_name_is_capitalised_as_a_word(typed, expected):
     assert normalize_name(typed) == expected
