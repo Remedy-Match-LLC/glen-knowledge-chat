@@ -278,3 +278,85 @@ def test_mark_delivered_without_a_shipment_runs_the_extension(monkeypatch):
     monkeypatch.setattr(appmod, "_open_coaching_for_order", lambda *a, **k: {"ok": True})
     appmod._activate_coaching_by_order(cx, 5)
     assert calls == ["pi_1"]
+
+
+def test_reservation_card_with_no_ref_does_nothing(monkeypatch):
+    cx = _cx()
+    _ship(cx, monkeypatch)
+    end = _expiry(cx)
+    card = {"external_ref": "", "source": "founding", "email": EMAIL}
+    assert appmod._extend_founding_membership_on_delivery(
+        cx, card, _iso(datetime.utcnow() + timedelta(days=4))) == "none"
+    assert _expiry(cx) == end
+
+
+def test_two_bottles_reservation_cards_settle_oldest_first():
+    cx = _cx()
+    founding.record_ship(cx, order_ref="pi_a", sub_id=1, email=EMAIL, shipped_at="2026-11-01T00:00:00Z")
+    founding.record_ship(cx, order_ref="pi_b", sub_id=2, email=EMAIL, shipped_at="2026-12-01T00:00:00Z")
+    assert founding.claim_delivery_by_email(cx, EMAIL, "2026-11-05T00:00:00Z") == EMAIL
+    assert founding.claim_delivery_by_email(cx, EMAIL, "2026-12-05T00:00:00Z") == EMAIL
+    got = dict(cx.execute("SELECT order_ref, delivered_at FROM founding_ship_memberships").fetchall())
+    assert got == {"pi_a": "2026-11-05T00:00:00Z", "pi_b": "2026-12-05T00:00:00Z"}
+
+
+def test_mixed_case_email_still_matches(monkeypatch):
+    cx = _cx()
+    appmod._start_founding_membership_on_ship(cx, {"id": 3, "email": " F@X.com "}, "pi_3")
+    card = {"external_ref": "seti_3", "source": "founding", "email": "f@x.COM"}
+    assert appmod._extend_founding_membership_on_delivery(
+        cx, card, _iso(datetime.utcnow() + timedelta(days=4))) == "extended"
+
+
+def test_founder_gets_a_people_record(monkeypatch):
+    from dashboard import customers
+    cx = _cx()
+    seen = []
+    monkeypatch.setattr(customers, "find_or_create_by_email", lambda cx, email: seen.append(email))
+    monkeypatch.setattr(appmod, "_member_join_welcome", lambda *a, **k: None)
+    appmod._start_founding_membership_on_ship(cx, {"id": 4, "email": EMAIL}, "pi_4")
+    assert seen == [EMAIL]
+
+
+def test_delivery_end_is_saved(monkeypatch, tmp_path):
+    """The end date must be committed, not left on the caller's open transaction."""
+    path = str(tmp_path / "f.db")
+    cx = sqlite3.connect(path)
+    cx.row_factory = sqlite3.Row
+    cx.execute("CREATE TABLE memberships (id TEXT, email TEXT, granted_at TEXT, expires_at TEXT,"
+               " granted_by TEXT, source TEXT, truly_vip_ref TEXT, notes TEXT)")
+    founding.record_ship(cx, order_ref="pi_1", sub_id=1, email=EMAIL, shipped_at="2026-11-01T00:00:00Z")
+    cx.commit()
+    # Open a transaction first, as a pooled Postgres connection always has one.
+    # Otherwise SQLite's outermost RELEASE commits by itself and hides a missing commit.
+    cx.execute("INSERT INTO memberships (id, email) VALUES ('mark', 'caller@x.com')")
+    delivered = datetime.utcnow().replace(microsecond=0) + timedelta(days=4)
+    appmod._extend_founding_membership_on_delivery(cx, {"external_ref": "pi_1"}, _iso(delivered))
+    other = sqlite3.connect(path)
+    assert _expiry(other) == delivered + timedelta(days=30)
+
+
+class _Recorder:
+    """A connection that fails one statement and records rollbacks, as Postgres needs."""
+    def __init__(self, cx, fail_on):
+        self._cx, self._fail_on, self.rollbacks = cx, fail_on, 0
+
+    def execute(self, sql, *a):
+        if self._fail_on in sql:
+            raise RuntimeError("statement failed")
+        return self._cx.execute(sql, *a)
+
+    def commit(self):
+        self._cx.commit()
+
+    def rollback(self):
+        self.rollbacks += 1
+        self._cx.rollback()
+
+
+def test_a_failed_ship_step_is_rolled_back_before_the_next(monkeypatch):
+    cx = _Recorder(_cx(), fail_on="founding_ship_memberships (order_ref")
+    monkeypatch.setattr(appmod, "_member_join_welcome", lambda *a, **k: None)
+    appmod._start_founding_membership_on_ship(cx, {"id": 5, "email": EMAIL}, "pi_5")
+    assert cx.rollbacks >= 1
+    assert _expiry(cx._cx) is not None      # the grant still went through
