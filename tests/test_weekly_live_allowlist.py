@@ -116,7 +116,7 @@ def _wire(monkeypatch, tmp_path, weekly):
     monkeypatch.setattr(weekly, "_create_contact",
                         lambda email, name="": looked_up.append(email) or None)
     monkeypatch.setattr(weekly.client_portal, "ensure_token", lambda cx, email, name: "tok")
-    monkeypatch.setattr(weekly.email_suppression, "is_suppressed", lambda cx, email: False)
+    monkeypatch.setattr(weekly.email_suppression, "suppression_reason", lambda cx, email: None)
     monkeypatch.setattr(weekly.time, "sleep", lambda s: None)
     sent = []
 

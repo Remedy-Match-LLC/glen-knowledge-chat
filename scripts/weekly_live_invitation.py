@@ -407,6 +407,23 @@ def _send(contact_id, subject, text, body_html, *, email_to="",
     return status, message_id, data
 
 
+def _suppressed_for_invitation(cx, email, eligible):
+    """True when this invitation must not go to `email`.
+
+    A paying member or certified coach is still invited to the sessions they pay
+    for, even after an unsubscribe recorded only as the People hub tag (Glen,
+    2026-09-13). Every suppression-table row still blocks: a hard bounce, a GHL
+    do-not-disturb, and any opt-out row, including an unsubscribe clicked on this
+    invitation itself (source unsubscribe-link:weekly-live)."""
+    reason = email_suppression.suppression_reason(cx, email)
+    if reason is None:
+        return False
+    if (reason == email_suppression.UNSUBSCRIBED_TAG
+            and email_suppression.normalize(email) in eligible):
+        return False
+    return True
+
+
 def run(args):
     target_date = datetime.fromisoformat(args.date).date()
     campaign_id = f"weekly-live-community-{target_date.isoformat()}"
@@ -483,7 +500,7 @@ def run(args):
             if prior in {"queued", "sent", "delivered", "opened", "clicked"}:
                 counts["already_queued"] += 1
                 continue
-            if email_suppression.is_suppressed(cx, email):
+            if _suppressed_for_invitation(cx, email, eligible):
                 counts["suppressed"] += 1
                 _record_recipient(cx, campaign_id, email, contact.get("id") or "", "",
                                   "suppressed")
@@ -707,7 +724,7 @@ def run_correction(args, *, portal_check=None, find_contact=None, send=None, sle
                               "already_have_it": sum(1 for e in audience if
                                                      _existing_status(cx, campaign_id, e) in REACHED),
                               "suppressed_now": sum(1 for e in audience
-                                                    if email_suppression.is_suppressed(cx, e)),
+                                                    if _suppressed_for_invitation(cx, e, eligible)),
                               "group_eligible": len(set(audience) & eligible),
                               "portal_routes_calendar": portal_ready}, sort_keys=True))
             return 0
@@ -730,7 +747,7 @@ def run_correction(args, *, portal_check=None, find_contact=None, send=None, sle
             if prior in REACHED:
                 counts["already_queued"] += 1
                 continue
-            if email_suppression.is_suppressed(cx, email):
+            if _suppressed_for_invitation(cx, email, eligible):
                 counts["suppressed"] += 1
                 _record_recipient(cx, campaign_id, email, "", "", "suppressed")
                 continue
