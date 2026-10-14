@@ -6743,6 +6743,7 @@
    "source": "manual-add-2026-07-11"
   },
   "book-refreshing-vision": {
+   "volume_eligible": false,
    "name": "Refreshing Vision (book)",
    "price_cents": 4000,
    "regular_cents": 5000,
@@ -6751,6 +6752,7 @@
    "source": "manual-add-2026-07-10"
   },
   "book-cataract-solutions": {
+   "volume_eligible": false,
    "name": "Cataract Solutions (book)",
    "price_cents": 2000,
    "regular_cents": 3000,
@@ -6759,6 +6761,7 @@
    "source": "manual-add-2026-07-10"
   },
   "book-healing-glaucoma": {
+   "volume_eligible": false,
    "name": "Healing Glaucoma (book)",
    "price_cents": 2000,
    "regular_cents": 3000,
@@ -6767,6 +6770,7 @@
    "source": "manual-add-2026-07-10"
   },
   "book-macular-regeneration": {
+   "volume_eligible": false,
    "name": "Macular Degeneration → Macular Regeneration (book)",
    "price_cents": 2000,
    "regular_cents": 3000,
@@ -6775,6 +6779,7 @@
    "source": "manual-add-2026-07-10"
   },
   "book-emf-pollution-solutions": {
+   "volume_eligible": false,
    "name": "Electromagnetic Pollution Solutions (book)",
    "price_cents": 2000,
    "regular_cents": 3000,
@@ -6783,6 +6788,7 @@
    "source": "manual-add-2026-07-10"
   },
   "book-materia-medica": {
+   "volume_eligible": false,
    "name": "Materia Medica (book)",
    "price_cents": 4000,
    "regular_cents": 5000,
@@ -6791,6 +6797,7 @@
    "source": "manual-add-2026-07-10"
   },
   "book-anima-medica": {
+   "volume_eligible": false,
    "name": "Anima Medica (book)",
    "price_cents": 4000,
    "regular_cents": 5000,
@@ -6799,24 +6806,28 @@
    "source": "manual-add-2026-07-10"
   },
   "book-the-shire": {
+   "volume_eligible": false,
    "name": "The Shire (book)",
    "price_cents": 2000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
   "book-living-universe": {
+   "volume_eligible": false,
    "name": "The Living Universe (book)",
    "price_cents": 2000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
   "book-as-above-so-below": {
+   "volume_eligible": false,
    "name": "As Above, So Below (book)",
    "price_cents": 2000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
   "book-dry-eye-relief": {
+   "volume_eligible": false,
    "name": "Dry Eye Relief (book)",
    "price_cents": 2000,
    "regular_cents": 3000,
@@ -6832,6 +6843,7 @@
    ]
   },
   "book-nous-energy": {
+   "volume_eligible": false,
    "name": "Nous Energy (book)",
    "price_cents": 2000,
    "bottle_type": "book",
@@ -23259,6 +23271,7 @@
    "_note": "Ships in a USPS Large Flat Rate box — $32 as of 2026-07-20 (Glen). The $100/unit rate belongs to the WATER IONIZERS, not this. NOTE: this is a hardcoded flat rate, so it does NOT track usps_rates when USPS raises the L-box price; the packer-driven items do."
   },
   "book-dry-eye-relief-ebook": {
+   "volume_eligible": false,
    "name": "Dry Eye Relief (ebook)",
    "price_cents": 1000,
    "digital": true,
@@ -23268,6 +23281,7 @@
    "_note": "Digital edition of book-dry-eye-relief (print $20, SRP $30, ships). Digital is $10 and must never be packed or charged postage. Delivery is MANUAL today — the app has no automated file delivery."
   },
   "book-macular-regeneration-ebook": {
+   "volume_eligible": false,
    "name": "Macular Degeneration → Macular Regeneration (ebook)",
    "price_cents": 1000,
    "digital": true,
@@ -23657,48 +23671,56 @@
    "intro": "A Faraday cage for your cell phone..."
   },
   "book-refreshing-vision-ebook": {
+   "volume_eligible": false,
    "name": "Refreshing Vision ebook",
    "price_cents": 1000,
    "digital": true,
    "source": "gk-ebook-import-2026-07-20"
   },
   "book-cataract-solutions-ebook": {
+   "volume_eligible": false,
    "name": "Cataract Solutions ebook",
    "price_cents": 1000,
    "digital": true,
    "source": "gk-ebook-import-2026-07-20"
   },
   "book-healing-glaucoma-ebook": {
+   "volume_eligible": false,
    "name": "Healing Glaucoma ebook",
    "price_cents": 1000,
    "digital": true,
    "source": "gk-ebook-import-2026-07-20"
   },
   "book-emf-pollution-solutions-ebook": {
+   "volume_eligible": false,
    "name": "Electromagnetic Pollution Solutions ebook",
    "price_cents": 1000,
    "digital": true,
    "source": "gk-ebook-import-2026-07-20"
   },
   "book-materia-medica-ebook": {
+   "volume_eligible": false,
    "name": "Materia Medica ebook",
    "price_cents": 1000,
    "digital": true,
    "source": "gk-ebook-import-2026-07-20"
   },
   "book-anima-medica-ebook": {
+   "volume_eligible": false,
    "name": "Anima Medica ebook",
    "price_cents": 1000,
    "digital": true,
    "source": "gk-ebook-import-2026-07-20"
   },
   "book-the-shire-ebook": {
+   "volume_eligible": false,
    "name": "The Shire ebook",
    "price_cents": 1000,
    "digital": true,
    "source": "gk-ebook-import-2026-07-20"
   },
   "book-living-universe-ebook": {
+   "volume_eligible": false,
    "name": "The Living Universe ebook",
    "price_cents": 1000,
    "digital": true,
@@ -23712,6 +23734,7 @@
    "source": "gk-physical-goods-import-2026-07-20"
   },
   "book-alternative-medicine": {
+   "volume_eligible": false,
    "name": "Alternative Medicine (book)",
    "price_cents": 5000,
    "bottle_type": "book",
@@ -23719,6 +23742,7 @@
    "intro": "70% of Americans currently use some form of alternative medicine. &amp;nbsp;This book is considered the &quot;Bible&quot; of Alternative Medicine. &amp;nbsp;Learn the health secrets that millions of r"
   },
   "book-natural-eye-care": {
+   "volume_eligible": false,
    "name": "Natural Eye Care (book)",
    "price_cents": 5000,
    "bottle_type": "book",
@@ -23726,6 +23750,7 @@
    "intro": "Drawing on the wisdom of both ancient and modern-day healers, Dr. Glen Swartwout and&amp;nbsp;Dr. Marc Grossman, authors of Natural Eye Care: An Encyclopedia offer a unique approach to improving visio"
   },
   "book-transforming-your-life-iv": {
+   "volume_eligible": false,
    "name": "Transforming Your Life Volume IV (book)",
    "price_cents": 1800,
    "bottle_type": "book",
@@ -23733,6 +23758,7 @@
    "intro": "Rae&#039;s review:\r\n&amp;nbsp;\r\nTransforming Your Life is a very inspiring book. \r\n&amp;nbsp;\r\nI am a life coach and health coach, and I love to see how my clients are able to change their lives in re"
   },
   "book-achievement-of-excellence": {
+   "volume_eligible": false,
    "name": "Achievement of Excellence — A Transformational Solution (book)",
    "price_cents": 3000,
    "bottle_type": "book",
@@ -23740,6 +23766,7 @@
    "intro": "Eliminate distractions, SMASH procrastination, and crank your productivity up to a high level you&#039;ve never seen before!\r\n&amp;nbsp;\r\nThis book is going to help you break through the walls that ha"
   },
   "book-achievement-of-excellence-audiobook": {
+   "volume_eligible": false,
    "name": "Achievement of Excellence — A Transformational Solution (audiobook)",
    "price_cents": 1500,
    "digital": true,
