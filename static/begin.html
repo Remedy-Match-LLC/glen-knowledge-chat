@@ -1043,10 +1043,27 @@
       return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
         return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]); });
     }
+    // A product link may open on the client host (myhealingoasis.com), where this host's
+    // rm_ref cookie cannot reach. Carry the referral in the link's address so the product
+    // page's /ref-capture.js can keep it (Glen, 2026-10-13). The link's text stays as the AI wrote it.
+    // Only our own hosts: a referral code never goes to anyone else's site.
+    var HERO_REF_HOSTS = ['myhealingoasis.com', 'www.myhealingoasis.com',
+                          'illtowell.com', 'www.illtowell.com', location.host];
+    function heroWithRef(u){
+      var ref = '';
+      try { ref = (typeof getRef === 'function' ? getRef() : '') || ''; } catch (_) {}
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(ref)) return u;
+      var m = /^https?:\/\/([^\/?#]+)\/begin\/product\//.exec(u);
+      if (!m || HERO_REF_HOSTS.indexOf(m[1].toLowerCase()) < 0) return u;
+      var hash = u.indexOf('#'), frag = hash >= 0 ? u.slice(hash) : '';
+      var base = hash >= 0 ? u.slice(0, hash) : u;
+      if (/[?&](amp;)?ref=/.test(base)) return u;
+      return base + (base.indexOf('?') >= 0 ? '&amp;' : '?') + 'ref=' + encodeURIComponent(ref) + frag;
+    }
     // Escape, then make any http(s) URL a tappable link (so links the AI gives survive + work).
     window.heroLinkify = function(text){
       return escapeHtml(text).replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, function(u){
-        return '<a href="' + u + '" target="_blank" rel="noopener">' + u + '</a>'; });
+        return '<a href="' + heroWithRef(u) + '" target="_blank" rel="noopener">' + u + '</a>'; });
     };
 
     window.heroAppend = function(role, text){
