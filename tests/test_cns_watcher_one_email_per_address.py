@@ -144,9 +144,16 @@ def test_a_failed_send_drafts_once_for_the_group(cx):
 
 
 def test_one_box_reads_exactly_as_before():
+    from dashboard import tracking as T
+    url = T.tracking_url(N[0])
     one = build_tracking_email(N[0], "Ann Kalani", resolved_email="a@example.com")
+    assert one["subject"] == "tracking number"
+    assert one["text"] == ("Aloha Ann,\n\nYour order is on its way. Here is your USPS "
+                           f"tracking number:\n\n{N[0]}\n{url}" + T.SIGNATURE_TEXT)
+    assert one["html"] == ('<div dir="ltr"><p>Aloha Ann,</p><p>Your order is on its way. '
+                           'Here is your USPS tracking number:</p>'
+                           f'<h3><a href="{url}">{N[0]}</a></h3>' + T.SIGNATURE_HTML + "</div>")
     assert one == build_tracking_email([N[0]], "Ann Kalani", resolved_email="a@example.com")
-    assert "Here is your USPS tracking number:" in one["text"] and "Box" not in one["text"]
 
 
 def test_the_review_note_survives_in_a_grouped_draft():
@@ -156,15 +163,7 @@ def test_the_review_note_survives_in_a_grouped_draft():
 
 # --- the business line that hid Fukushima's address ------------------------------------
 
-def test_a_business_line_before_the_street_still_matches_the_address_on_file():
-    assert tr.street_key("Kalani Wellness Center 77 PALM CT") == tr.street_key("77 Palm Court")
-
-
-def test_a_street_with_no_number_is_kept_whole():
-    assert tr.street_key("Rural Route Kalani Farm") == "ruralroutekalanifarm"
-
-
-def test_the_fukushima_shaped_label_resolves_by_filemaker_address(cx):
+def _addr_db():
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
     db.execute("CREATE TABLE orders (id INTEGER PRIMARY KEY, email TEXT, name TEXT, "
@@ -173,9 +172,71 @@ def test_the_fukushima_shaped_label_resolves_by_filemaker_address(cx):
                "email TEXT)")
     db.execute("CREATE TABLE fmp_client_addresses (id_pk TEXT, id_fk_client TEXT, "
                "street TEXT, postal_code TEXT)")
+    return db
+
+
+def _label(name, *street_lines, csz="HILO HI 96720 US"):
+    from dashboard.tracking import parse_cns_confirmation
+    return parse_cns_confirmation(_confirmation(_block(N[0], name, *street_lines, csz)))["shipments"][0]
+
+
+def _board(db, email, name, street):
+    import json
+    db.execute("INSERT INTO orders (email, name, status, address_json) VALUES (?,?,?,?)",
+               (email, name, "packed", json.dumps({"street": street, "zip": "96720"})))
+
+
+def test_the_fukushima_shaped_label_resolves_by_filemaker_address(cx):
+    db = _addr_db()
     db.execute("INSERT INTO fmp_clients VALUES ('1','Ann','Kalani','ann@example.com')")
     db.execute("INSERT INTO fmp_client_addresses VALUES ('a1','1','77 Palm Court','96720')")
     html = _confirmation(*[_block(n, *ANN) for n in N])
     res, sends, drafts = _run(cx, html, addr=lambda s: tr.resolve_by_address(db, s))
     assert [c["to"] for c in sends] == ["ann@example.com"] and drafts == []
     assert {r["confidence"] for r in res} == {"address-fmp"}
+
+
+def test_a_board_order_needs_the_name_when_the_business_line_is_dropped():
+    db = _addr_db()
+    _board(db, "someone@example.com", "Cal Lee", "77 Palm Ct")
+    r = tr.resolve_by_address(db, _label("Ann Kalani", "Kalani Wellness Center", "77 PALM CT"))
+    assert r["email"] is None
+    _board(db, "ann@example.com", "Ann Kalani", "77 Palm Ct")
+    r = tr.resolve_by_address(db, _label("Ann Kalani", "Kalani Wellness Center", "77 PALM CT"))
+    assert r["email"] == "ann@example.com"
+
+
+def test_the_whole_street_still_wins_with_no_name_check_as_before():
+    db = _addr_db()
+    _board(db, "someone@example.com", "Cal Lee", "77 Palm Ct")
+    assert tr.resolve_by_address(db, _label("Ann Kalani", "77 PALM CT"))["email"] == \
+        "someone@example.com"
+
+
+def test_different_streets_that_share_a_number_never_match():
+    db = _addr_db()
+    _board(db, "old@example.com", "Ann Kalani", "Old Mamalahoa Hwy 11")
+    _board(db, "box@example.com", "Ann Kalani", "PO Box 5")
+    for lines in (("Mamalahoa Hwy 11",), ("Kinoole St Apt 5",), ("Kalani Farm", "Box 5")):
+        assert tr.resolve_by_address(db, _label("Ann Kalani", *lines))["email"] is None, lines
+
+
+def test_a_second_line_that_is_a_unit_is_never_used_alone():
+    db = _addr_db()
+    _board(db, "apt@example.com", "Ann Kalani", "Apt 3")
+    assert tr.resolve_by_address(db, _label("Ann Kalani", "12 Main St", "Apt 3"))["email"] is None
+
+
+def test_a_failed_row_write_still_records_the_other_boxes(cx, monkeypatch):
+    import cns_tracking_watcher as W
+    real, seen = W.record_shipment, []
+    def flaky(cx_, **f):
+        seen.append(f["tracking_number"])
+        if f["tracking_number"] == N[1]:
+            raise RuntimeError("db hiccup")
+        return real(cx_, **f)
+    monkeypatch.setattr(W, "record_shipment", flaky)
+    res, sends, _ = _run(cx, _confirmation(*[_block(n, *ANN) for n in N]), addr=_to("ann@example.com"))
+    assert seen == N and len(sends) == 1
+    assert shipment_exists(cx, N[0]) and shipment_exists(cx, N[2]) and not shipment_exists(cx, N[1])
+    assert next(r for r in res if r["tracking"] == N[1])["record_error"].startswith("RuntimeError")

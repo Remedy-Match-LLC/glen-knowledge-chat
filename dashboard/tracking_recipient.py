@@ -61,15 +61,8 @@ def zip5(value):
 
 def street_key(street):
     """'12 Ocean View Drive, Apt. 3' -> '12oceanviewdrapt3'. Common words shortened so a
-    typed label and an exported record compare equal.
-
-    Words before the house number are dropped. A label's business or care-of line is
-    joined onto its street: "Fukushima Health & Wellbeing 32703 RAY CT" never matched
-    "32703 Ray Court" on file, and 6 labels on 2026-10-14 went out as blank drafts.
-    A street with no number at all is kept whole."""
+    typed label and an exported record compare equal."""
     words = re.findall(r"[a-z0-9#]+", _ascii(street))
-    first_number = next((i for i, w in enumerate(words) if any(ch.isdigit() for ch in w)), 0)
-    words = words[first_number:]
     return "".join(_STREET_WORDS.get(w.replace("#", ""), w.replace("#", "apt"))
                    for w in words)
 
@@ -142,13 +135,46 @@ def _one_email(found):
     return None, len(emails) > 1
 
 
+def _street_after_business_line(shipment):
+    """The label's street without its first line, when that first line looks like a
+    business or care-of name: "Fukushima Health & Wellbeing / 32703 RAY CT" -> "32703 RAY
+    CT". None unless the label has two or more street lines and the rest starts with a
+    house number, so "12 Main St / Apt 3" is never cut down to "Apt 3"."""
+    lines = [ln.strip() for ln in str(shipment.get("address_block") or "").split(" / ")
+             if ln.strip()]
+    street_lines = lines[:-1]            # the last line is city, state and ZIP
+    if len(street_lines) < 2:
+        return None
+    rest = " ".join(street_lines[1:])
+    first = re.findall(r"[a-z0-9#]+", _ascii(rest))[:1]
+    return rest if first and first[0][:1].isdigit() else None
+
+
 def resolve_by_address(cx, shipment):
-    """{email, source: 'board'|'fmp'|None, conflict, reason, candidates}."""
+    """{email, source: 'board'|'fmp'|None, conflict, reason, candidates}.
+
+    A label's business line is joined onto its street, and then the street matches
+    nothing on file: Fukushima's 6 labels on 2026-10-14 became 6 blank drafts. When the
+    whole street finds nobody, it is tried once more without that line, and then a board
+    order must ALSO agree on the name, because a shortened street is a weaker key."""
     name = shipment.get("recipient_name") or ""
-    z, sk = zip5(shipment.get("zip")), street_key(shipment.get("street"))
+    z = zip5(shipment.get("zip"))
+    sk = street_key(shipment.get("street"))
     if not z or not sk:
         return _result(reason="label has no street or ZIP")
+    found = _resolve_at(cx, name, z, sk, require_name=False)
+    if found["email"] or found["conflict"]:
+        return found
+    alt = _street_after_business_line(shipment)
+    if alt and street_key(alt) != sk:
+        again = _resolve_at(cx, name, z, street_key(alt), require_name=True)
+        if again["email"] or again["conflict"]:
+            again["reason"] += " (street read without the label's first line)"
+            return again
+    return found
 
+
+def _resolve_at(cx, name, z, sk, require_name):
     # 1. Board orders at this address.
     marks = ",".join("?" for _ in _OPEN)
     board = []
@@ -163,6 +189,9 @@ def resolve_by_address(cx, shipment):
         if zip5(a.get("zip") or a.get("postal_code")) == z and \
                 street_key(a.get("street") or a.get("address1")) == sk:
             board.append(o)
+    if require_name:
+        board = [o for o in board
+                 if names_agree(name, *(((o.get("name") or "").split(" ", 1) + [""])[:2]))]
     if board:
         email, clash = _one_email([(o.get("email"), True) for o in board])
         if email:

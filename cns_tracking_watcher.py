@@ -245,7 +245,10 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
         if rkey not in resolved_for:
             resolved_for[rkey] = _resolve(s, find_contact, address_resolve, harvest_fn)
         r = resolved_for[rkey]
-        gkey = (rkey[0], ("to", r["to"].strip().lower()) if r["to"] else ("name", rkey[1]))
+        # The confidence is in the key: a box resolved with less certainty never rides
+        # along on another box's auto-send (review round 2).
+        gkey = (rkey[0], r["conf"],
+                ("to", r["to"].strip().lower()) if r["to"] else ("name", rkey[1]))
         groups.setdefault(gkey, {"r": r, "shipments": []})["shipments"].append(s)
 
     for g in groups.values():
@@ -307,7 +310,13 @@ def _resolve(s, find_contact, address_resolve, harvest_fn):
     # emails. Never after a conflict: harvest is name-only and would pick a side.
     harvested = None
     if to is None and conf != "conflict" and harvest_fn is not None:
-        harvested = harvest_fn(s["recipient_name"])
+        try:
+            harvested = harvest_fn(s["recipient_name"])
+        except Exception as exc:
+            # One failing search must not stop every other box in the checkout; this one
+            # goes to review with the reason (review round 2).
+            harvested = None
+            review_reason = review_reason or f"order-email search failed: {type(exc).__name__}"
         if harvested and harvested.get("email"):
             to = harvested["email"]
             conf = "harvested"
@@ -366,17 +375,28 @@ def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, s
     results = []
     for s in shipments:
         order_link = None
+        record_error = None
         if not dry_run:
-            shipment_id = record_shipment(
-                cx, tracking_number=s["tracking"], order_uuid=parsed["order_uuid"],
-                recipient_name=s["recipient_name"], address_block=s["address_block"],
-                resolved_email=to, match_confidence=conf,
-                ghl_contact_id=ghl_contact_id,
-                draft_id=draft_id, status=status, source_msg_id=msg_id,
-                scheduled_delivery_date=normalize_delivery_date(s.get("delivery_date")),
-                notification_channel=("ghl" if status == "sent" else None),
-                notification_sent_at=(_iso_now() if status == "sent" else None),
-                notification_error=notification_error)
+            # One box's failed write must not leave the boxes after it unrecorded: the
+            # next run would mail those again (review round 1). Each box is written alone.
+            try:
+                shipment_id = record_shipment(
+                    cx, tracking_number=s["tracking"], order_uuid=parsed["order_uuid"],
+                    recipient_name=s["recipient_name"], address_block=s["address_block"],
+                    resolved_email=to, match_confidence=conf,
+                    ghl_contact_id=ghl_contact_id,
+                    draft_id=draft_id, status=status, source_msg_id=msg_id,
+                    scheduled_delivery_date=normalize_delivery_date(s.get("delivery_date")),
+                    notification_channel=("ghl" if status == "sent" else None),
+                    notification_sent_at=(_iso_now() if status == "sent" else None),
+                    notification_error=notification_error)
+            except Exception as exc:
+                shipment_id = None
+                record_error = f"{type(exc).__name__}: {exc}"
+                try:
+                    cx.rollback()      # on Postgres a failed INSERT blocks the next one
+                except Exception:
+                    pass
 
             if link_orders and shipment_id is not None:
                 try:
@@ -397,6 +417,7 @@ def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, s
                         "notification_channel": "ghl" if status == "sent" else None,
                         "notification_error": notification_error,
                         "review_reason": r["review_reason"],
+                        "record_error": record_error,
                         "order_link": order_link if not dry_run else None})
     return results
 
