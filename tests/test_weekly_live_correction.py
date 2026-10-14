@@ -34,7 +34,8 @@ def world(monkeypatch, tmp_path):
     monkeypatch.setattr(weekly, "_authoritative_access_sets", lambda: ({"paid@x.com"}, set()))
     monkeypatch.setattr(weekly.client_portal, "ensure_token", lambda cx, email, name: "tok-" + email)
     suppressed = set()
-    monkeypatch.setattr(weekly.email_suppression, "is_suppressed", lambda cx, e: e in suppressed)
+    monkeypatch.setattr(weekly.email_suppression, "suppression_reason",
+                        lambda cx, e: "hard" if e in suppressed else None)
     # never@x.com IS on the consent list: only the reached filter can keep it out.
     consent = {"a@x.com", "b@x.com", "paid@x.com", "dnd@x.com", "sup@x.com", "never@x.com"}
     monkeypatch.setattr(weekly.allowlist, "decode", lambda s: set(consent))
