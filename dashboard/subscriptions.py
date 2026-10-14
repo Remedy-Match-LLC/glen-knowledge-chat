@@ -785,6 +785,15 @@ def count_founding(cx, founding_slug: str) -> int:
             " AND status!='cancelled'", (founding_slug,)
         ).fetchone()
     except db.OperationalError:
+        # On Postgres the failed SELECT aborts the transaction, and the caller's next
+        # statement then fails too. The founding columns are added only when the first
+        # bottle is reserved, so until then /begin/founding/status/<slug> counted once
+        # (is_open), swallowed this, counted again (remaining) and returned 500 on both
+        # domains (2026-10-14, Neuro Magnesium). Roll back so "none reserved" stays true.
+        try:
+            cx.rollback()
+        except Exception:
+            pass
         return 0
     return int(row[0]) if row else 0
 

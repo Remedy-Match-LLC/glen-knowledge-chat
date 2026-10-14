@@ -48,3 +48,34 @@ def test_founding_status_route_alive_without_subscriptions_table(monkeypatch, tm
     assert body["cap"] == 2500
     assert body["remaining"] == 2500   # 0 reserved -> full cap
     assert body["open"] is True
+
+
+class _PgLike:
+    """Behaves like a pooled Postgres connection: after a failed statement every later
+    one fails until rollback. The founding columns are missing, as on production
+    before the first reservation (2026-10-14: the status route 500ed on both domains)."""
+
+    def __init__(self):
+        self.aborted = False
+        self.rollbacks = 0
+
+    def execute(self, sql, params=()):
+        from dashboard import db
+        if self.aborted:
+            raise RuntimeError("InFailedSqlTransaction: current transaction is aborted")
+        self.aborted = True
+        raise db.OperationalError[0]("no such column: founding") \
+            if isinstance(db.OperationalError, tuple) else db.OperationalError("no such column")
+
+    def rollback(self):
+        self.aborted = False
+        self.rollbacks += 1
+
+
+def test_the_counter_survives_two_counts_on_a_postgres_like_connection():
+    from dashboard import founding
+    cx = _PgLike()
+    # The route counts twice: is_open() calls remaining(), then remaining() again.
+    assert founding.is_open(cx, "neuro-magnesium", now_iso="2026-10-14") is True
+    assert founding.remaining(cx, "neuro-magnesium") == 2500
+    assert cx.rollbacks == 2
