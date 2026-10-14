@@ -14568,7 +14568,8 @@ def begin_checkout_return():
             if _kind == "biofield_trial":
                 _fulfill_biofield_trial(sid)
 
-            # ── Founding reserve: vault card, create pending reservation, comp membership ──
+            # ── Founding reserve: vault card, create pending reservation ──
+            # No membership here: it starts when the bottle ships (Glen, 2026-10-14).
             # Setup-mode ($0) session: payment_status == "no_payment_required" (NOT "paid"),
             # so this block lives OUTSIDE the payment_status == "paid" gate.
             if md.get("kind") == "founding_reserve" and sess.get("setup_intent") and \
@@ -14613,7 +14614,6 @@ def begin_checkout_return():
                                 _fcx, email=f_email, stripe_customer_id=stripe_cus,
                                 stripe_payment_method_id=stripe_pm, items=items_list,
                                 ship_address=ship_dict, founding_slug=f_slug)
-                            _grant_membership(_fcx, f_email, 30, "founding")
                             _fcx.commit()
                         _ingest_order(source="founding", external_ref=seti or "",
                                       email=f_email, items=items_list, total_cents=0,
@@ -18144,6 +18144,9 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
     single = len(members) == 1
     opened, results = 0, []
     for m in members:
+        _delivered_order = _bos_orders.get_order(cx, m["id"])
+        # Before the email check: the founder's email comes from the ship record.
+        _extend_founding_membership_on_delivery(cx, _delivered_order, delivered_at)
         email = m["email"] or ((resolved_email or "").strip().lower() if single else "") or None
         if not email:
             results.append({"order_id": m["id"], "ok": False, "reason": "no_email"})
@@ -18156,7 +18159,7 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
         # delivery path gets it -- carrier status, and both manual "mark
         # delivered" routes all funnel through this function. Best-effort by
         # contract: it never raises, so a grant failure cannot block delivery.
-        _extend_biofield_month_on_delivery(cx, email, _bos_orders.get_order(cx, m["id"]))
+        _extend_biofield_month_on_delivery(cx, email, _delivered_order)
         if res.get("ok"):
             opened += 1
     if opened:
@@ -41805,8 +41808,9 @@ def _ship_founding_reservation(cx, sub):
     from dashboard import qbo_sale as _qsale
     items = sub.get("items") or []
     ship = sub.get("ship_address") or {}
+    # A founder is priced as a member: the membership starts with this shipment.
     pc = _price_cart(items, ship=ship, subscriber_tier_pct=None,
-                     program_member=_is_paid_member(sub["email"]),
+                     program_member=True,
                      email=sub["email"])
     # Charge basis (2026-07-16 design spec): GET is absorbed/recorded, never
     # charged; shipping IS charged. pc["priced"]["total_cents"] = subtotal + GET,
@@ -41854,7 +41858,89 @@ def _ship_founding_reservation(cx, sub):
             _qsale.book_sale_on_payment(cx, dict(order))
     except Exception as e:
         print(f"[founding-ship] qbo sale booking failed sub={sub['id']}: {e!r}")
+    _start_founding_membership_on_ship(cx, sub, external_ref)
     return {"charged": True, "sub_id": sub["id"], "amount_cents": charge_cents}
+
+
+def _start_founding_membership_on_ship(cx, sub, order_ref):
+    """Open the founder's membership when the bottle ships (Glen, 2026-10-14).
+
+    It runs 30 days from today for now. Delivery moves the end to 30 days after
+    delivery, through _extend_founding_membership_on_delivery. If no delivery is
+    ever recorded, it ends 30 days after shipment.
+
+    Best-effort inside a savepoint: the card has already been charged, so a
+    failure here must not hide that or undo the bookkeeping written before it."""
+    from dashboard import founding as _founding
+    email = (sub.get("email") or "").strip().lower()
+    try:
+        from dashboard import customers as _customers
+        _customers.find_or_create_by_email(cx, email=email)   # may commit; nothing pending
+    except Exception as e:
+        print(f"[founding-ship] people upsert skipped sub={sub.get('id')}: {e!r}", flush=True)
+    try:
+        cx.execute("SAVEPOINT founding_ship")
+    except Exception as e:
+        print(f"[founding-ship] savepoint failed sub={sub.get('id')}: {e!r}", flush=True)
+        return
+    try:
+        _grant_membership(cx, email, _founding.MEMBERSHIP_DAYS_AFTER_DELIVERY, "founding",
+                          skip_customer_upsert=True)
+        if order_ref:
+            _founding.record_ship(cx, order_ref=order_ref, sub_id=sub["id"], email=email,
+                                  shipped_at=datetime.utcnow().isoformat() + "Z")
+        cx.execute("RELEASE SAVEPOINT founding_ship")
+    except Exception as e:
+        print(f"[founding-ship] membership grant failed sub={sub.get('id')}: {e!r}", flush=True)
+        try:
+            cx.execute("ROLLBACK TO SAVEPOINT founding_ship")
+            cx.execute("RELEASE SAVEPOINT founding_ship")
+        except Exception:
+            pass
+        return
+    cx.commit()
+
+
+def _extend_founding_membership_on_delivery(cx, delivered_order, delivered_at):
+    """End a founder's membership 30 days after the bottle is delivered.
+
+    Only the order the founding ship charge recorded qualifies, and only its first
+    delivery signal counts. It extends and never shortens, so autoship or any
+    other membership keeps whatever reaches further.
+
+    Best-effort inside a savepoint: a failure here must not block marking a
+    shipment delivered, nor undo the delivery work already done on this connection."""
+    from dashboard import founding as _founding
+    ref = (delivered_order or {}).get("external_ref") or ""
+    if not ref:
+        return "none"
+    try:
+        cx.execute("SAVEPOINT founding_delivery")
+    except Exception as e:
+        print(f"[founding-delivery] savepoint failed ref={ref!r}: {e!r}", flush=True)
+        return "error"
+    try:
+        email = _founding.claim_delivery(cx, ref, delivered_at)
+        if not email:
+            cx.execute("RELEASE SAVEPOINT founding_delivery")
+            return "none"
+        try:
+            start = datetime.fromisoformat(str(delivered_at).replace("Z", "")).replace(tzinfo=None)
+        except ValueError:
+            start = datetime.utcnow()
+        until = (start + timedelta(days=_founding.MEMBERSHIP_DAYS_AFTER_DELIVERY)).isoformat() + "Z"
+        _extend_membership_grant(cx, email, until, "founding")
+        cx.execute("RELEASE SAVEPOINT founding_delivery")
+    except Exception as e:
+        print(f"[founding-delivery] extend failed ref={ref!r}: {e!r}", flush=True)
+        try:
+            cx.execute("ROLLBACK TO SAVEPOINT founding_delivery")
+            cx.execute("RELEASE SAVEPOINT founding_delivery")
+        except Exception:
+            pass
+        return "error"
+    cx.commit()
+    return "extended"
 
 
 @app.route("/api/founding/ship", methods=["POST"])
