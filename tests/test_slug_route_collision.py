@@ -63,3 +63,13 @@ def test_guard_detects_a_planted_collision(tmp_path):
     reserved = ps.route_segments(appmod.app.url_map)
     collisions = sorted(_published_slugs(db) & reserved)
     assert collisions == [real_segment]
+
+
+def test_stories_is_a_reserved_route_segment():
+    """/stories (story pages) must be a static first segment, so the practitioner
+    catch-all can never take it and no practitioner can be given the slug."""
+    assert "stories" in ps.route_segments(appmod.app.url_map)
+    adapter = appmod.app.url_map.bind("myhealingoasis.com")
+    assert adapter.match("/stories")[0] == "stories_index"
+    assert adapter.match("/stories/sitemap.xml")[0] == "stories_sitemap"
+    assert adapter.match("/stories/some-story")[0] == "story_page"
