@@ -771,6 +771,18 @@ def list_founding_pending(cx, founding_slug: str) -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
+def _schema_missing(exc) -> bool:
+    """True only for "this table or column does not exist yet", never for other failures."""
+    try:
+        import psycopg
+        if isinstance(exc, (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn)):
+            return True
+    except ImportError:
+        pass
+    import sqlite3
+    return isinstance(exc, sqlite3.OperationalError) and "no such" in str(exc).lower()
+
+
 def count_founding(cx, founding_slug: str) -> int:
     """Count of founding slots consumed for a launch (pending + active, not cancelled).
 
@@ -778,23 +790,31 @@ def count_founding(cx, founding_slug: str) -> int:
     (no subscription ever written) the table is created lazily on first write, so
     a read-only founding path (e.g. the public /begin/founding/status counter or
     the reserve open-check) would otherwise raise 'no such table: subscriptions'
-    and 500. No table means no reservations, which is exactly 0."""
+    and 500. No table means no reservations, which is exactly 0.
+
+    The count runs inside a savepoint. On Postgres a failed SELECT aborts the whole
+    transaction, and the founding columns are added only when the first bottle is
+    reserved: the status route counted twice, swallowed the first failure and 500ed on
+    the second, on both domains (2026-10-14, Neuro Magnesium). Rolling back to the
+    savepoint undoes only this SELECT, never a caller's earlier writes. Only a missing
+    table or column means 0; any other failure is raised, so a broken count can never
+    read as "bottles left" in the payment path (review round 2)."""
+    cx.execute("SAVEPOINT founding_count")
     try:
         row = cx.execute(
             "SELECT COUNT(*) FROM subscriptions WHERE founding=1 AND founding_slug=?"
             " AND status!='cancelled'", (founding_slug,)
         ).fetchone()
-    except db.OperationalError:
-        # On Postgres the failed SELECT aborts the transaction, and the caller's next
-        # statement then fails too. The founding columns are added only when the first
-        # bottle is reserved, so until then /begin/founding/status/<slug> counted once
-        # (is_open), swallowed this, counted again (remaining) and returned 500 on both
-        # domains (2026-10-14, Neuro Magnesium). Roll back so "none reserved" stays true.
+    except Exception as exc:
         try:
-            cx.rollback()
+            cx.execute("ROLLBACK TO SAVEPOINT founding_count")
+            cx.execute("RELEASE SAVEPOINT founding_count")
         except Exception:
-            pass
-        return 0
+            raise exc       # a dead connection: report the count's own failure
+        if _schema_missing(exc):
+            return 0
+        raise
+    cx.execute("RELEASE SAVEPOINT founding_count")
     return int(row[0]) if row else 0
 
 

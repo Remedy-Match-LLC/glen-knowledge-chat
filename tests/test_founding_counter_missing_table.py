@@ -52,24 +52,39 @@ def test_founding_status_route_alive_without_subscriptions_table(monkeypatch, tm
 
 class _PgLike:
     """Behaves like a pooled Postgres connection: after a failed statement every later
-    one fails until rollback. The founding columns are missing, as on production
-    before the first reservation (2026-10-14: the status route 500ed on both domains)."""
+    one fails until a rollback to a savepoint taken before it. The founding columns are
+    missing, as on production before the first reservation (2026-10-14: the status route
+    500ed on both domains)."""
 
-    def __init__(self):
+    backend = "postgres"                 # as dashboard.db._PgConn
+
+    def __init__(self, error=None, dead=False):
+        self.dead = dead
         self.aborted = False
-        self.rollbacks = 0
+        self.savepoints = 0
+        self.error = error
 
     def execute(self, sql, params=()):
-        from dashboard import db
+        import psycopg
+        s = sql.strip().upper()
+        if s.startswith("ROLLBACK TO SAVEPOINT"):
+            if self.dead:
+                import psycopg
+                raise psycopg.OperationalError("the connection is closed")
+            self.aborted = False
+            return self
         if self.aborted:
-            raise RuntimeError("InFailedSqlTransaction: current transaction is aborted")
+            raise psycopg.errors.InFailedSqlTransaction("current transaction is aborted")
+        if s.startswith("SAVEPOINT"):
+            self.savepoints += 1
+            return self
+        if s.startswith("RELEASE"):
+            return self
         self.aborted = True
-        raise db.OperationalError[0]("no such column: founding") \
-            if isinstance(db.OperationalError, tuple) else db.OperationalError("no such column")
+        raise self.error or psycopg.errors.UndefinedColumn('column "founding" does not exist')
 
     def rollback(self):
-        self.aborted = False
-        self.rollbacks += 1
+        raise AssertionError("a full rollback would discard the caller's writes")
 
 
 def test_the_counter_survives_two_counts_on_a_postgres_like_connection():
@@ -78,4 +93,39 @@ def test_the_counter_survives_two_counts_on_a_postgres_like_connection():
     # The route counts twice: is_open() calls remaining(), then remaining() again.
     assert founding.is_open(cx, "neuro-magnesium", now_iso="2026-10-14") is True
     assert founding.remaining(cx, "neuro-magnesium") == 2500
-    assert cx.rollbacks == 2
+    assert cx.savepoints == 2 and not cx.aborted
+
+
+def test_any_other_database_failure_is_raised_not_read_as_zero():
+    import psycopg
+    cx = _PgLike(error=psycopg.OperationalError("server closed the connection"))
+    with pytest.raises(psycopg.OperationalError):
+        subs.count_founding(cx, "neuro-magnesium")
+    assert not cx.aborted
+
+
+def test_a_real_reservation_is_counted():
+    cx = sqlite3.connect(":memory:")
+    subs.init_subscriptions_table(cx)
+    subs.migrate_add_founding_columns(cx)
+    subs.create_founding_reservation(cx, email="a@example.com", stripe_customer_id="cus",
+                                     stripe_payment_method_id="pm", items=[], ship_address={},
+                                     founding_slug="neuro-magnesium")
+    assert subs.count_founding(cx, "neuro-magnesium") == 1
+
+
+def test_a_missing_column_keeps_the_callers_unsaved_write():
+    cx = sqlite3.connect(":memory:")
+    cx.execute("CREATE TABLE subscriptions (id INTEGER PRIMARY KEY, status TEXT)")
+    cx.execute("CREATE TABLE other (x TEXT)")
+    cx.commit()
+    cx.execute("INSERT INTO other VALUES ('kept')")          # not committed yet
+    assert subs.count_founding(cx, "neuro-magnesium") == 0   # founding column missing
+    assert cx.execute("SELECT x FROM other").fetchall() == [("kept",)]
+
+
+def test_on_a_dead_connection_the_counts_own_error_is_raised():
+    import psycopg
+    cx = _PgLike(dead=True)
+    with pytest.raises(psycopg.errors.UndefinedColumn):
+        subs.count_founding(cx, "neuro-magnesium")
