@@ -1292,7 +1292,14 @@ def _send_invoice_exec(params, ctx):
         cx.commit()
     except Exception:
         pass
-    name = order.get("name") or "there"
+    # The stored name can be all lowercase ("Hi linda maher," to Linda Maher, 2026-10-13).
+    # Glen's name rules capitalise it; mixed case is left as typed. Escaped for the HTML.
+    import html as _html
+    from dashboard.name_case import normalize_name
+    raw_name = order.get("name")
+    raw_name = raw_name.strip() if isinstance(raw_name, str) else ""   # never stop the send
+    name = normalize_name(_html.unescape(raw_name)) or "there"
+    name_html = _html.escape(name)
     ref = order.get("external_ref") or f"#{oid}"
     total = f"${(int(order.get('total_cents') or 0))/100:,.2f}"
     # Paid orders get a receipt; everything else (incl. claimed) gets the
@@ -1314,7 +1321,7 @@ def _send_invoice_exec(params, ctx):
                      f"adjust quantities, ask questions, and pay securely here:")
         btn_color, btn_label = "#7c5cbf", "View &amp; pay your invoice"
     plain = f"Hi {name},\n\n{lead_plain}\n{link}\n\nMahalo,\nDr. Glen Swartwout"
-    html = (f"<p>Hi {name},</p><p>{lead_html}</p>"
+    html = (f"<p>Hi {name_html},</p><p>{lead_html}</p>"
             f"<p><a href='{link}' style='background:{btn_color};color:#fff;padding:10px 18px;"
             f"border-radius:6px;text-decoration:none'>{btn_label}</a></p>"
             f"<p>Mahalo,<br>Dr. Glen Swartwout</p>")

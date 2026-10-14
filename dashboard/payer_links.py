@@ -95,10 +95,13 @@ def compose(payer_first_name, orders, base_url):
     lines_plain, lines_html = [], []
     for o in orders:
         url = f"{base_url}/invoice/{o['invoice_token']}"
-        first = (o["name"].split() or ["this"])[0]
+        # The order name as typed can be all lowercase; Glen's name rules fix it.
+        from dashboard.name_case import normalize_name
+        who = normalize_name(o["name"] if isinstance(o.get("name"), str) else "") or "Invoice"
+        first = (who.split() or ["this"])[0]
         amount = f"${o['total_cents'] / 100:,.2f}"
-        lines_plain.append(f"{o['name']}, {amount}: {url}")
-        lines_html.append(f"<p>{escape(o['name'])}, {amount}: "
+        lines_plain.append(f"{who}, {amount}: {url}")
+        lines_html.append(f"<p>{escape(who)}, {amount}: "
                           f"<a href=\"{escape(url)}\">View and pay {escape(first)}'s invoice</a></p>")
     n = len(orders)
     lead = ("Here are the invoices for your household's order. You can pay each one from its link."

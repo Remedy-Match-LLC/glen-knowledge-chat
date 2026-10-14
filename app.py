@@ -15209,7 +15209,8 @@ def _send_full_report_email(to_email: str, name: str,
     try:
         from dashboard import ghl_email as _ghl
         if _ghl.is_configured():
-            _html = "<p>" + body.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+            _esc = _ihtml.escape(body, quote=False)   # a stored name must not become markup
+            _html = "<p>" + _esc.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
             _ghl.send_via_ghl(to_email, subject, html=_html, text=body)
             return ("ghl", None)
     except Exception as e:
@@ -56130,7 +56131,7 @@ def console_order_publish_to_portal(oid):
             purl = portal_link(ptok)
             _send_full_report_email(
                 cli_email, cli_name, "Your invoice is ready 🌺",
-                f"Aloha {cli_name or ''},\n\nYour invoice is ready. You can view it and "
+                f"Aloha {_greeting_name(cli_name)},\n\nYour invoice is ready. You can view it and "
                 f"pay right on your healing home page:\n\n{purl}\n\nWith aloha,\n"
                 f"Dr. Glen & Rae")
             emailed = True
@@ -56138,6 +56139,15 @@ def console_order_publish_to_portal(oid):
             print(f"[order-publish] invoice email failed: {e!r}", flush=True)
     return jsonify({"ok": True, "emailed": emailed,
                     "link": f"{PUBLIC_BASE_URL.rstrip('/')}/invoice/{tok}"})
+
+
+def _greeting_name(stored):
+    """A stored name for "Aloha {name}," in a client email: Glen's name rules
+    (all-lowercase or all-capitals capitalised, mixed case kept), or "there"
+    (2026-10-13: "Aloha linda maher," and, with no name, "Aloha ,")."""
+    from dashboard.name_case import normalize_name
+    raw = stored.strip() if isinstance(stored, str) else ""
+    return normalize_name(_ihtml.unescape(raw)) or "there"
 
 
 def _biofield_paid_order(cx, email):
