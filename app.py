@@ -1821,8 +1821,11 @@ def _catalog_page_url(slug: str) -> str:
     Every catalog slug renders a real sales page at this path (see the
     /begin/product/<slug> route), so this is always a valid buy destination —
     unlike the `url` field, which only 304 of ~1,013 products carry.
+
+    On the client host (portal_base, myhealingoasis.com in prod). Glen, 2026-10-12:
+    the chat's product link table and prompt product URLs use myhealingoasis.com.
     """
-    return f"{PUBLIC_BASE_URL}/begin/product/{slug}"
+    return f"{portal_base()}/begin/product/{slug}"
 
 
 # Only pure connectives are dropped. Sizes and package words ("120",

@@ -10,26 +10,44 @@ invent URLs" rule left the bot with nothing, and it improvised a Practice Better
 referral from the clinical-qa corpus. Practice Better cannot sell products and
 is being deprecated.
 """
+import pytest
+
 import app
 
+# Prod's client host. Glen, 2026-10-12: chat product links use myhealingoasis.com.
+CLIENT_HOST = "https://myhealingoasis.com"
 
-def test_catalog_backstop_links_product_named_only_in_the_question():
+
+@pytest.fixture
+def client_host(monkeypatch):
+    monkeypatch.setenv("PORTAL_BASE_URL", CLIENT_HOST)
+
+
+def test_catalog_backstop_links_product_named_only_in_the_question(client_host):
     """The failing case: product named in the question, absent from retrieval."""
     directive = app.build_product_directive(
         snippets_text="",
         query_text="what is the link for the product page for the Therapeutic Nightlight",
     )
-    assert "Therapeutic Nightlight → https://illtowell.com/begin/product/therapeutic-nightlight" in directive
+    assert ("Therapeutic Nightlight → https://myhealingoasis.com/begin/product/therapeutic-nightlight"
+            in directive)
+    assert "illtowell.com/begin/product/" not in directive
 
 
-def test_every_sellable_catalog_product_has_a_reachable_page_url():
+def test_product_links_follow_the_client_host_not_the_funnel_host(client_host, monkeypatch):
+    """PUBLIC_BASE_URL stays illtowell.com; it must not decide the chat's product links."""
+    monkeypatch.setattr(app, "PUBLIC_BASE_URL", "https://illtowell.com")
+    assert app._catalog_page_url("coq10") == "https://myhealingoasis.com/begin/product/coq10"
+
+
+def test_every_sellable_catalog_product_has_a_reachable_page_url(client_host):
     """No sellable product may be unlinkable — the root cause of the bug."""
     products = app._PRODUCTS["products"]
     sellable = {s: p for s, p in products.items()
                 if not p.get("inactive") and not p.get("info_only")}
     assert len(sellable) > 900, "catalog unexpectedly small — check the fixture"
     for slug in sellable:
-        assert app._catalog_page_url(slug) == f"https://illtowell.com/begin/product/{slug}"
+        assert app._catalog_page_url(slug) == f"{CLIENT_HOST}/begin/product/{slug}"
 
 
 def test_curated_alias_is_not_duplicated_by_the_catalog_backstop():
