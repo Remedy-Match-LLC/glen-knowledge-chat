@@ -9934,9 +9934,6 @@ def begin_product_page(slug):
         session = uuid.uuid4().hex
         resp.set_cookie("amg_session", session, max_age=60 * 60 * 24 * 365,
                         httponly=True, samesite="Lax", secure=request.is_secure)
-    # A chat product link opens on the client host, which never sees the funnel host's
-    # rm_ref cookie, so the link carries ?ref= (Glen, 2026-10-13). First touch still wins.
-    _persist_ref_attribution(resp, request, request.args.get("ref"))
     _record_store_arrival(product.get("slug") or slug, session)
     return resp
 

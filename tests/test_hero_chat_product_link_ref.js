@@ -13,13 +13,15 @@ function grab(re, label) {
   return m[0];
 }
 const escDef = grab(/function escapeHtml\(s\)\{[\s\S]*?\n    \}/, "escapeHtml");
+const hostsDef = grab(/var HERO_REF_HOSTS = \[[\s\S]*?\];/, "HERO_REF_HOSTS");
 const refDef = grab(/function heroWithRef\(u\)\{[\s\S]*?\n    \}/, "heroWithRef");
 const linkDef = grab(/window\.heroLinkify = function\(text\)\{[\s\S]*?\n    \};/, "heroLinkify");
 
 function build(ref) {
   const window = {};
+  const location = {host: "illtowell.com"};
   const getRef = () => ref;
-  eval(escDef + "\n" + refDef + "\n" + linkDef);
+  eval(escDef + "\n" + hostsDef + "\n" + refDef + "\n" + linkDef);
   return window.heroLinkify;
 }
 
@@ -41,6 +43,15 @@ eq(build("janedoe")("https://illtowell.com/begin/match"), a("https://illtowell.c
 eq(build("janedoe")(P + "?ref=other"), a(P + "?ref=other", P + "?ref=other"), "an existing ref is kept");
 eq(build("janedoe")(P + "?utm_source=x&y=1"), a(P + "?utm_source=x&amp;y=1&amp;ref=janedoe", P + "?utm_source=x&amp;y=1"),
    "a query string gets &ref");
+
+eq(build("janedoe")("https://other.example/begin/product/coq10"),
+   a("https://other.example/begin/product/coq10", "https://other.example/begin/product/coq10"),
+   "another site's link never gets the code");
+eq(build("janedoe")(P + "#ingredients"), a(P + "?ref=janedoe#ingredients", P + "#ingredients"),
+   "a fragment stays last");
+eq(build("janedoe")("https://illtowell.com/begin/product/coq10"),
+   a("https://illtowell.com/begin/product/coq10?ref=janedoe", "https://illtowell.com/begin/product/coq10"),
+   "the funnel host is ours too");
 
 if (failed) { console.error(`${failed} failed`); process.exit(1); }
 console.log("all passed");
