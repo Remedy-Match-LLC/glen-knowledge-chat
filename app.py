@@ -18223,6 +18223,7 @@ def _activate_coaching_by_order(cx, order_id):
         sh = cx.execute("SELECT * FROM shipments WHERE id=?", (order["shipment_id"],)).fetchone()
         if sh:
             return _activate_coaching_for_shipment(cx, sh, delivered_at=now_iso)
+    _extend_founding_membership_on_delivery(cx, _bos_orders.get_order(cx, order["id"]), now_iso)
     email = (order["email"] or "").strip().lower()
     if not email:
         return {"ok": False, "reason": "unresolved"}
@@ -41829,6 +41830,9 @@ def _ship_founding_reservation(cx, sub):
     today = _now_utc().strftime("%Y-%m-%d")
     _subs.mark_founding_active(cx, sub["id"], next_charge_date=_subs.add_months(today, 1))
     external_ref = res.get("id") or ""
+    # Before the order row: coaching on delivery checks that a membership covered
+    # the order's creation time, so the grant must already exist.
+    _start_founding_membership_on_ship(cx, sub, external_ref)
     try:
         _ingest_order(
             source="reorder",  # "reorder" is in coaching.QUALIFYING_SOURCES → delivery opens coaching window
@@ -41858,7 +41862,6 @@ def _ship_founding_reservation(cx, sub):
             _qsale.book_sale_on_payment(cx, dict(order))
     except Exception as e:
         print(f"[founding-ship] qbo sale booking failed sub={sub['id']}: {e!r}")
-    _start_founding_membership_on_ship(cx, sub, external_ref)
     return {"charged": True, "sub_id": sub["id"], "amount_cents": charge_cents}
 
 
@@ -41939,6 +41942,10 @@ def _extend_founding_membership_on_delivery(cx, delivered_order, delivered_at):
         return "error"
     try:
         email = _founding.claim_delivery(cx, ref, start.isoformat() + "Z")
+        if not email and (delivered_order or {}).get("source") == "founding":
+            # The $0 card made at reservation, if fulfilment shipped against it.
+            email = _founding.claim_delivery_by_email(
+                cx, delivered_order.get("email"), start.isoformat() + "Z")
         if not email:
             cx.execute("RELEASE SAVEPOINT founding_delivery")
             return "none"

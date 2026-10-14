@@ -90,3 +90,16 @@ def claim_delivery(cx, order_ref: str, delivered_at: str) -> str | None:
     row = cx.execute("SELECT email FROM founding_ship_memberships WHERE order_ref=?",
                      (order_ref,)).fetchone()
     return row[0] if row else None
+
+
+def claim_delivery_by_email(cx, email: str, delivered_at: str) -> str | None:
+    """Mark a founder's oldest undelivered shipped bottle delivered, for a delivery
+    seen on the reservation's own order card. Same contract as claim_delivery."""
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    init_ship_memberships(cx)
+    row = cx.execute("SELECT order_ref FROM founding_ship_memberships "
+                     "WHERE email=? AND delivered_at IS NULL ORDER BY shipped_at LIMIT 1",
+                     (email,)).fetchone()
+    return claim_delivery(cx, row[0], delivered_at) if row else None

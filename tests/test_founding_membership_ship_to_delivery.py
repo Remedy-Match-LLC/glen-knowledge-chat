@@ -220,3 +220,61 @@ def test_ship_bookkeeping_survives_a_failed_grant(monkeypatch):
     appmod._start_founding_membership_on_ship(cx, {"id": 9, "email": EMAIL}, "")   # no order ref: nothing else commits
     cx.rollback()
     assert cx.execute("SELECT COUNT(*) FROM marks").fetchone()[0] == 1
+
+
+def test_membership_exists_before_the_order_row_is_created(monkeypatch):
+    """Coaching on delivery needs a membership that covered the order's creation time."""
+    cx = _cx()
+    at_ingest = []
+    _ship(cx, monkeypatch)   # sets the stubs; re-run below with a capturing ingest
+    cx.execute("DELETE FROM memberships")
+    cx.execute("DELETE FROM founding_ship_memberships")
+    cx.execute("UPDATE subscriptions SET founding_state='pending'")
+    cx.commit()
+    monkeypatch.setattr(appmod, "_ingest_order", lambda **kw: at_ingest.append(_expiry(cx)))
+    appmod._ship_founding_reservation(cx, subs.get(cx, 1))
+    assert at_ingest and at_ingest[0] is not None
+
+
+def test_reservation_card_delivery_sets_the_end(monkeypatch):
+    """Fulfilment may ship against the $0 card made at reservation."""
+    cx = _cx()
+    _ship(cx, monkeypatch)
+    delivered = datetime.utcnow().replace(microsecond=0) + timedelta(days=4)
+    card = {"external_ref": "seti_1", "source": "founding", "email": EMAIL}
+    assert appmod._extend_founding_membership_on_delivery(cx, card, _iso(delivered)) == "extended"
+    assert _expiry(cx) == delivered + timedelta(days=30)
+
+
+def test_other_cards_for_the_founder_do_not_set_the_end(monkeypatch):
+    cx = _cx()
+    _ship(cx, monkeypatch)
+    end = _expiry(cx)
+    other = {"external_ref": "pi_later", "source": "reorder", "email": EMAIL}
+    assert appmod._extend_founding_membership_on_delivery(
+        cx, other, _iso(datetime.utcnow() + timedelta(days=4))) == "none"
+    assert _expiry(cx) == end
+
+
+def test_reservation_card_for_someone_else_does_nothing(monkeypatch):
+    cx = _cx()
+    _ship(cx, monkeypatch)
+    end = _expiry(cx)
+    card = {"external_ref": "seti_9", "source": "founding", "email": "other@x.com"}
+    assert appmod._extend_founding_membership_on_delivery(
+        cx, card, _iso(datetime.utcnow() + timedelta(days=4))) == "none"
+    assert _expiry(cx) == end
+
+
+def test_mark_delivered_without_a_shipment_runs_the_extension(monkeypatch):
+    cx = _cx()
+    cx.execute("CREATE TABLE orders (id INTEGER, email TEXT, source TEXT, shipment_id INTEGER)")
+    cx.execute("INSERT INTO orders VALUES (5, ?, 'reorder', NULL)", (EMAIL,))
+    calls = []
+    monkeypatch.setattr(appmod._bos_orders, "get_order",
+                        lambda cx, oid: {"id": oid, "external_ref": "pi_1"})
+    monkeypatch.setattr(appmod, "_extend_founding_membership_on_delivery",
+                        lambda cx, order, at: calls.append(order["external_ref"]))
+    monkeypatch.setattr(appmod, "_open_coaching_for_order", lambda *a, **k: {"ok": True})
+    appmod._activate_coaching_by_order(cx, 5)
+    assert calls == ["pi_1"]
