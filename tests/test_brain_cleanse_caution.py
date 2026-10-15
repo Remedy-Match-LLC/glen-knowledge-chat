@@ -334,7 +334,7 @@ DOSE_RULE = "Give its dose from this text"
 
 
 @pytest.mark.parametrize("q", [
-    "Is the Sleep Bundle safe?",
+    "Is the Brain Program safe?",
     "how much brain program should i take?",
 ])
 def test_a_caution_only_answer_asks_for_no_dose_or_description_from_the_text(q):
@@ -348,7 +348,7 @@ def test_a_caution_only_answer_asks_for_no_dose_or_description_from_the_text(q):
 
 
 def test_the_gated_note_still_reaches_a_caution_only_answer():
-    b = app.named_product_facts_block("Is the Sleep Bundle safe?", gated=True)
+    b = app.named_product_facts_block("Is the Brain Program safe?", gated=True)
     assert app._GATED_FACTS_NOTE in b and DOSE_RULE not in b
 
 

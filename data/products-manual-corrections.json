@@ -3160,7 +3160,13 @@
       "brain-cleanse",
       "sleep-syntropy"
     ],
-    "note": "Bundle cautions by component, Glen 2026-10-15 (formulation spec 2026-10-15-sleep-syntropy-caution)."
+    "intro": "The Sleep Bundle includes Brain Cleanse, Sleep Syntropy, the Therapeutic Nightlight and the Biocompatible Nightlight.\n\nTake 1 capsule of Brain Cleanse at bedtime and turn the lights out within 30 minutes. Take 1 capsule of Sleep Syntropy in the middle of the night to help you fall back to sleep. You may also take it at bedtime or at both times. If you need light during the night, use the red nightlights rather than white light.",
+    "description": "Brain Cleanse is the bedtime formula. It pairs 20 mg of melatonin with calming botanicals and amino acids to support the cleansing of the brain and nervous system while you sleep.\n\nSleep Syntropy is the gentle formula for the middle of the night, with 250 mcg of melatonin. It helps you relax and fall back to sleep.\n\nWhite light at night suppresses the pineal gland's melatonin production. The two nightlights let you see in the dark using red light instead. The Therapeutic Nightlight uses 660 nm soft-laser red light and turns itself on in low light. The Biocompatible Nightlight filters white LED light through red for hallways, bathrooms and bedrooms.",
+    "copy_pinned": [
+      "intro",
+      "description"
+    ],
+    "note": "Bundle cautions by component, Glen 2026-10-15 (formulation spec 2026-10-15-sleep-syntropy-caution). Approved intro and description, Glen 2026-10-15 (formulation spec 2026-10-15-sleep-bundle-copy)."
   },
   "brain-program": {
     "ingredients_source": "none",

@@ -175,9 +175,10 @@ NOTE = ("Only the caution below is approved text. Repeat it in full. "
         "For anything else, answer from the snippets as usual.")
 
 
+# The Sleep Bundle is pinned since its copy spec (2026-10-15), so its block carries its
+# approved text too: tests/test_sleep_bundle_copy.py. The caution-only shape is the
+# Brain Program's.
 @pytest.mark.parametrize("q,bundle", [
-    ("Is the Sleep Bundle safe?", "sleep-bundle"),
-    ("is sleep bundle safe with my meds?", "sleep-bundle"),
     ("What is in the Brain Program?", "brain-program"),
     ("how much brain program should i take?", "brain-program"),
 ])
@@ -190,13 +191,13 @@ def test_a_listed_bundle_gets_each_component_caution_by_name(q, bundle):
         + [f"Caution for {NAMES[c]}: {APPROVED[c]}" for c in EXPECTED[bundle]]), q
 
 
-def test_a_bundle_block_carries_no_description_or_components():
-    b = _block("Is the Sleep Bundle safe?")
-    p = PRODUCTS["sleep-bundle"]
-    assert p["bundle_description"] not in b
-    assert (p.get("description") or "x" * 40)[:40] not in b
+def test_an_unpinned_bundle_block_carries_no_description_or_components():
+    b = _block("Is the Brain Program safe?")
+    assert "### Brain Program" in b
+    # The Brain Program has no description or bundle_description of its own, so the
+    # block's shape is the check (review round 3): no component list, no directions.
     assert "Products in this program" not in b
-    assert "Nightlight" not in b
+    assert "Directions:" not in b and "Program directions and cautions" not in b
 
 
 def test_an_unlisted_bundle_gets_no_component_caution():
@@ -253,25 +254,24 @@ def test_no_listed_component_carries_its_caution_in_a_pinned_description(bundle)
 
 def test_a_listed_bundle_with_no_opted_in_component_is_not_admitted(monkeypatch):
     # Review round 1: it would outrank other names with an empty block.
+    # The Brain Program: a pinned Sleep Bundle is admitted on copy_pinned instead.
     products = copy.deepcopy(app._PRODUCTS)
-    for slug in ("brain-cleanse", "sleep-syntropy"):
-        products["products"][slug].pop("chat_caution")
+    products["products"]["brain-cleanse"].pop("chat_caution")
     monkeypatch.setattr(app, "_PRODUCTS", products)
-    assert "### Sleep Bundle" not in _block("Is the Sleep Bundle safe?")
+    assert "### Brain Program" not in _block("Is the Brain Program safe?")
     # The empty block is dropped anyway; the match itself is what must not happen.
-    spans = app._named_product_spans("Is the Sleep Bundle safe?", products["products"])
-    assert "sleep-bundle" not in spans
+    spans = app._named_product_spans("Is the Brain Program safe?", products["products"])
+    assert "brain-program" not in spans
 
 
 def test_a_listed_component_with_no_warning_does_not_admit_the_bundle(monkeypatch):
     # Review round 3: the opt-in alone is not enough; the bundle would match with an
     # empty block.
     products = copy.deepcopy(app._PRODUCTS)
-    for slug in ("brain-cleanse", "sleep-syntropy"):
-        products["products"][slug]["warning"] = ""
+    products["products"]["brain-cleanse"]["warning"] = ""
     monkeypatch.setattr(app, "_PRODUCTS", products)
-    assert "sleep-bundle" not in app._named_product_spans(
-        "Is the Sleep Bundle safe?", products["products"])
+    assert "brain-program" not in app._named_product_spans(
+        "Is the Brain Program safe?", products["products"])
 
 
 def test_the_page_follows_the_bundle_list_not_the_bot_opt_in(appmod, monkeypatch):

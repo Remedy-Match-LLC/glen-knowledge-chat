@@ -2153,7 +2153,22 @@ def _product_guidance_hint(slug: str) -> str:
     purpose = (product.get("intro") or product.get("description") or "").strip()
     purpose = re.sub(r"\s+", " ", purpose)
     if len(purpose) > 220:
-        purpose = purpose[:217].rsplit(" ", 1)[0] + "..."
+        # End at the last whole sentence that fits, so a dose is never cut mid-way
+        # ("Take 1..."), Sleep Bundle copy spec 2026-10-15. A first sentence longer
+        # than the limit still falls back to a word cut.
+        # Sentence ends are found in the whole text, so a decimal at the limit ("1.5")
+        # is never one, and only where the next word starts a sentence, so "20 mg. only
+        # if ..." and "e.g. hops" are not (review round 2).
+        ends = [m.end() for m in re.finditer(r"[.!?](?=\s+[A-Z0-9\"\u201c(]|\s*$)", purpose)
+                if m.end() <= 216
+                and not re.search(r"\b(?:e\.g|i\.e|etc|vs|approx|Dr|St|No|mg|mcg|g|kg|ml|l|IU|oz|lb|tsp|tbsp|"
+                                  r"caps?|tabs?|min|hrs?|wks?|mos?|nm|mm|cm)\.$",
+                                  purpose[:m.end()], re.IGNORECASE)]
+        # A sentence cut that keeps under 60% of the limit is a stub ("Vitality ." from
+        # scraped text), so the word cut is used instead. Either way "..." marks that
+        # more follows (review round 3).
+        purpose = (purpose[:ends[-1]] + " ..." if ends and ends[-1] >= 132
+                   else purpose[:217].rsplit(" ", 1)[0] + "...")
     return f" | class: {kind}" + (f" | purpose: {purpose}" if purpose else "")
 
 
@@ -2387,7 +2402,11 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         # 2026-10-09). Carried whole, only when Glen pinned it.
         intro = (product.get("intro") or "").strip()
         if product.get("bundle") and intro and "intro" in _pinned_copy(product):
-            parts.append(f"Program directions and cautions:\n{intro}")
+            # A bundle whose cautions come from its components keeps them out of the
+            # intro, so its intro is directions only (Sleep Bundle copy spec, 2026-10-15).
+            label = ("Directions" if product.get("caution_components")
+                     else "Program directions and cautions")
+            parts.append(f"{label}:\n{intro}")
         # Each component's own page. Without it the model linked all three products to
         # the program's page (knowledge-5a, 2026-10-09). A retired component record is
         # followed to its survivor, so no link goes to an inactive slug.
@@ -2476,6 +2495,10 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
             # such as Estro-Clear, keep the header they had.
             any_copy_rule = any_copy_rule or caution_only or bool(
                 pinned and product.get("chat_caution") and any(c.key == slug for c in cautions))
+            # A pinned bundle that shows its components' cautions keeps the copy rule too
+            # (Sleep Bundle copy spec, 2026-10-15).
+            any_copy_rule = any_copy_rule or bool(
+                product.get("bundle") and any(c.text and c.key != slug for c in cautions))
         if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
             break
     if not blocks:
