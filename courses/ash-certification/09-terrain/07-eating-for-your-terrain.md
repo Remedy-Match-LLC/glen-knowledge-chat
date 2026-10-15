@@ -97,7 +97,7 @@ title: Eating for Your Terrain
 <tr>
 <td>5 Regulate</td>
 <td>Désadaptation syndrome</td>
-<td>Zinc, nickel, cobalt</td>
+<td>Zinc-copper, or zinc-nickel-cobalt</td>
 </tr>
 </tbody>
 </table>
@@ -112,7 +112,8 @@ title: Eating for Your Terrain
 <p>About 23% of blood genes varied by season in one study (Dopico et al. 2015).</p>
 <p>The Hadza gut microbiome changes through the year (Smits et al. 2017).</p>
 <p>Eating earlier in the day improved metabolic markers in controlled trials.</p>
-<p>No trial has yet tested a diet matched to terrain or constitution.</p>
+<p>Two small trials have tested Chinese constitution diets, with mixed results (Shen et al. 2010, Chung et al. 2023).</p>
+<p>No trial has yet tested a diet matched to terrain.</p>
 <h2>Sources</h2>
 <ul>
 <li>Hippocrates, <em>Regimen in Health</em>, <em>Nature of Man</em> and <em>Aphorisms</em>, trans. W. H. S. Jones, Loeb Hippocrates vol. IV. <a href="https://archive.org/details/hippocrates04hippuoft">Archive.org</a></li>
@@ -126,6 +127,8 @@ title: Eating for Your Terrain
 <li>Henry Lindlahr, <em>Nature Cure</em> (1913). <a href="https://www.gutenberg.org/ebooks/4273">Project Gutenberg</a></li>
 <li>Dopico et al. 2015, "Widespread seasonal gene expression reveals annual differences in human immunity and physiology." <a href="https://pubmed.ncbi.nlm.nih.gov/25965853/">PubMed</a></li>
 <li>Smits et al. 2017, "Seasonal cycling in the gut microbiome of the Hadza hunter-gatherers of Tanzania." <a href="https://pubmed.ncbi.nlm.nih.gov/28839072/">PubMed</a></li>
+<li>Shen et al. 2010, Chinese food therapy for hypertensive patients with yin deficiency. <a href="https://pubmed.ncbi.nlm.nih.gov/20492045/">PubMed</a></li>
+<li>Chung et al. 2023, a Chinese-medicine mobile health app for prediabetes. <a href="https://pubmed.ncbi.nlm.nih.gov/37338977/">PubMed</a></li>
 <li>Sutton et al. 2018, early time-restricted feeding. <a href="https://pubmed.ncbi.nlm.nih.gov/29754952/">PubMed</a></li>
 <li>Jakubowicz et al. 2013, a large breakfast against a large dinner. <a href="https://pubmed.ncbi.nlm.nih.gov/23512957/">PubMed</a></li>
 </ul>
