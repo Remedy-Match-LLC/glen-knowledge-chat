@@ -73,7 +73,10 @@ def test_a_forged_member_cookie_sees_none_of_the_analysis(monkeypatch):
     try:
         c = appmod.app.test_client()
         c.set_cookie("rm_member_email", EMAIL)
-        body = c.get("/member/scan-analysis").get_data(as_text=True)
+        r = c.get("/member/scan-analysis")
+        body = r.get_data(as_text=True)
+        # The same locked page a visitor with no cookie gets (review round 2).
+        assert r.status_code == 200 and '"access": "locked"' in body
         assert '"access": "full"' not in body
         assert "Nervous System" not in body and "Calm Mind pattern recurs" not in body
     finally:

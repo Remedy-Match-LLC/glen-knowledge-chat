@@ -150,18 +150,24 @@ def test_a_magic_link_token_still_signs_in(appmod):
 def test_an_unsent_magic_link_is_never_logged(appmod, monkeypatch, capsys):
     for k in ("GHL_MAGIC_LINK_WORKFLOW_ID", "SMTP_HOST", "SMTP_USER", "SMTP_PASS"):
         monkeypatch.delenv(k, raising=False)
-    url = "https://example.test/auth/magic-link/verify?token=SECRET-TOKEN-XYZ"
+    token = "SECRET-TOKEN-XYZ"
+    url = f"https://example.test/auth/magic-link/verify?token={token}"
     via, _ = appmod.send_magic_link_email("buyer@example.com", "B", url)
     assert via == "console-log"
-    assert "SECRET-TOKEN-XYZ" not in capsys.readouterr().out
+    out = capsys.readouterr()
+    assert token not in out.out + out.err and url not in out.out + out.err
+    assert "magic link NOT sent" in out.out
 
 
 def test_an_unsent_affiliate_link_is_never_logged(appmod, monkeypatch, capsys):
     for k in ("SMTP_HOST", "SMTP_USER", "SMTP_PASS"):
         monkeypatch.delenv(k, raising=False)
-    url = "https://example.test/affiliate/login-verify?token=SECRET-TOKEN-XYZ"
+    token = "SECRET-TOKEN-XYZ"
+    url = f"https://example.test/affiliate/login-verify?token={token}"
     appmod._send_affiliate_magic_link("aff@example.com", "A", url)
-    assert "SECRET-TOKEN-XYZ" not in capsys.readouterr().out
+    out = capsys.readouterr()
+    assert token not in out.out + out.err and url not in out.out + out.err
+    assert "magic link NOT sent" in out.out
 
 
 # ---- 4. private JSON -----------------------------------------------------------------
