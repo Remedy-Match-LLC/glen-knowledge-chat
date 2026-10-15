@@ -2201,6 +2201,9 @@ _CUE_NAMES = frozenset({
     "angiostasis", "apoptogenesis", "appestat", "clear-the-way", "reverse-age",
     "stamina-plus", "off-syrup", "acetaldehyde-detox", "sinus-terrain-nasal-spray",
     "fibrolysis-factors", "estrogen-fibrin-balance-program",
+    # Caution-only products (chat_caution): "brain cleanse" in lowercase still brings
+    # the caution (formulation spec 2026-10-15-brain-cleanse-caution, review round 3).
+    "brain-cleanse", "sleep-bundle", "brain-program",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
@@ -2259,7 +2262,10 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
     for slug, p in products.items():
         # A waiting-list product qualifies unpinned: its block carries only the
         # availability sentence checkout gives, never its unapproved description.
-        if (not (p.get("copy_pinned") or p.get("waitlist_only")) or p.get("inactive")
+        # A chat_caution product qualifies unpinned too: its block carries only its
+        # caution, which Glen approved word for word (Brain Cleanse, 2026-10-15).
+        if (not (p.get("copy_pinned") or p.get("waitlist_only") or p.get("chat_caution"))
+                or p.get("inactive")
                 or p.get("info_only")
                 or slug in _DO_NOT_RECOMMEND_FACTS or slug in _COMMON_WORD_NAMES):
             continue
@@ -2359,9 +2365,14 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                         f"{name} does, give only the Role written beside it, in its words. "
                         "An ingredient with no Role gets no role: list it without one. Add "
                         "no organ, pathway, phase or cofactor that the Role does not state.")
-        # Directions and caution only from a product whose copy Glen pinned.
-        for label, key in (("Directions", "directions"), ("Caution", "warning")) if pinned else ():
-            val = (product.get(key) or "").strip()
+        # Directions only from a product whose copy Glen pinned. The caution also from a
+        # chat_caution product: an opt-in for the warning alone, so its scraped
+        # description, directions and components stay out (Brain Cleanse, 2026-10-15).
+        # Eleven unpinned products carry directions that are not approved for the bot.
+        for label, key, shown in (("Directions", "directions", pinned),
+                                  ("Caution", "warning",
+                                   pinned or bool(product.get("chat_caution")))):
+            val = (product.get(key) or "").strip() if shown else ""
             if val and val not in desc:
                 parts.append(f"{label}: {val}")
         # A waiting-list product: the same sentence checkout gives. Unpinned, it has no
@@ -10340,6 +10351,24 @@ def _related_semantic(slug, k=12):
     return slugs
 
 
+def _bundle_caution_section(p):
+    """A bundle's caution as a section of its own, or None. The title names each component
+    whose own warning is this same text, so the bedtime line plainly belongs to Brain
+    Cleanse and not to the whole bundle. With no such component it is plain "Caution"."""
+    warning = (p.get("warning") or "").strip()
+    if not (p.get("bundle") and warning):
+        return None
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    names = []
+    for c in p.get("bundle_component_slugs") or []:
+        cslug = c.get("slug") if isinstance(c, dict) else c
+        comp = products.get(cslug) or {}
+        if (comp.get("warning") or "").strip() == warning:
+            names.append(html.unescape(comp.get("name") or cslug).strip())
+    title = ("Caution for " + " and ".join(names)) if names else "Caution"
+    return {"id": "caution", "title": title, "default_open": False, "body": warning}
+
+
 @app.route("/begin/product-page-data/<slug>")
 def begin_product_page_data(slug):
     p = _get_product(slug)
@@ -10433,6 +10462,14 @@ def begin_product_page_data(slug):
                                 # failed to generate (review round 1, 2026-10-09).
                                 is_bundle=bool(p.get("bundle")) and "research" in _pin,
                                 has_research_text=bool((p.get("how_it_works") or "").strip()))
+    # A bundle has no ingredients, so "What's inside", where a caution renders, is gone.
+    # Its caution gets its own section, titled for the component whose caution it is, and
+    # the text is shown as stored with no "Caution: " added (Brain Cleanse in the Sleep
+    # Bundle and Brain Program, formulation spec 2026-10-15).
+    _bundle_caution = _bundle_caution_section(p)
+    if _bundle_caution and not any(s["id"] == "ingredients" for s in sections):
+        _ci = next((i for i, s in enumerate(sections) if s["id"] == "cta"), len(sections))
+        sections.insert(_ci, _bundle_caution)
     # A product with AI images off has no Images section: its photos are in the top gallery,
     # and an empty section would open to nothing.
     from dashboard.sales_images import ai_images_off as _ai_images_off

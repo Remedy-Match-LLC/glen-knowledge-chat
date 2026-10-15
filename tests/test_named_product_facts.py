@@ -301,7 +301,9 @@ def test_a_malformed_history_turn_is_ignored():
 
 def test_every_cue_name_is_a_pinned_product():
     products = app._PRODUCTS["products"]
-    assert all(products.get(s, {}).get("copy_pinned") for s in app._CUE_NAMES)
+    # A chat_caution product carries only its approved caution (Brain Cleanse, 2026-10-15).
+    assert all(products.get(s, {}).get("copy_pinned") or products.get(s, {}).get("chat_caution")
+               for s in app._CUE_NAMES)
     assert not (app._CUE_NAMES & app._CASE_FREE_NAMES)
 
 

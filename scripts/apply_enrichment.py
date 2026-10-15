@@ -69,7 +69,7 @@ def apply_corrections(products, corr):
         # Pinned page texts and chat roles (Estro-Clear, spec 2026-10-10-estro-clear-roles).
         # Restored here so a writer that rebuilds the record cannot drop them silently.
         for _pinned_field in ("how_it_works", "learn_markdown", "benefits", "ingredient_roles",
-                              "copy_pinned", "order_note"):
+                              "copy_pinned", "order_note", "chat_caution"):
             if c.get(_pinned_field):
                 p[_pinned_field] = c[_pinned_field]
         if c.get("bottle_type"):
