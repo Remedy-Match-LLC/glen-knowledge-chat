@@ -6,6 +6,12 @@ from dashboard import coaching
 
 EMAIL = "activate-test@example.com"
 
+def _signed(name, email):
+    # The sign-in email cookies are signed since 2026-10-15; a plain value is refused.
+    import app
+    return app._sign_email_cookie(name, email)
+
+
 
 def _seed():
     cx = sqlite3.connect(appmod.LOG_DB)
@@ -81,7 +87,7 @@ def test_self_serve_start_opens_for_logged_in_member():
     _seed()
     try:
         c = appmod.app.test_client()
-        c.set_cookie("rm_member_email", EMAIL)
+        c.set_cookie("rm_member_email", _signed("rm_member_email", EMAIL))
         r = c.post("/coaching/start")
         assert r.status_code == 200
         d = json.loads(r.get_data(as_text=True))
@@ -92,7 +98,7 @@ def test_self_serve_start_opens_for_logged_in_member():
 
 def test_self_serve_start_no_member_offers_99():
     c = appmod.app.test_client()
-    c.set_cookie("rm_member_email", "nobody-here@example.com")
+    c.set_cookie("rm_member_email", _signed("rm_member_email", "nobody-here@example.com"))
     r = c.post("/coaching/start")
     d = json.loads(r.get_data(as_text=True))
     assert d["ok"] is False and d.get("offer_99") is True

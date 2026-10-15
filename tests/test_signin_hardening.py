@@ -180,3 +180,23 @@ def test_a_routes_own_caching_rule_is_kept(appmod):
         return resp
     r = appmod.app.test_client().get("/__test_cached_json")
     assert r.headers["Cache-Control"] == "public, max-age=60"
+
+
+# ---- the coaching member cookie (review round 1) -----------------------------------
+
+def test_a_plain_member_cookie_reads_as_nobody(appmod):
+    signed = appmod._sign_email_cookie("rm_member_email", "member@example.com")
+    assert _read(appmod, "rm_member_email", signed) == "member@example.com"
+    assert _read(appmod, "rm_member_email", "member@example.com") == ""
+
+
+def test_with_no_secret_the_coaching_link_is_kept_for_a_retry(appmod, monkeypatch):
+    plain = appmod._mint_membership_magic_link("member@example.com")
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    monkeypatch.delenv("WEBHOOK_SECRET", raising=False)
+    monkeypatch.setattr(appmod, "_validate_membership_magic_link", lambda t: "member@example.com")
+    assert appmod.app.test_client().post(f"/coaching/auth/{plain}").status_code == 503
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        row = cx.execute("SELECT consumed_at FROM auth_tokens WHERE token_hash=?",
+                         (appmod._hash_token(plain),)).fetchone()
+    assert row[0] is None

@@ -4414,6 +4414,9 @@ def _confirm_post_page(action_url, *, title, heading, blurb, button,
 # The value is now signed with a key derived from CONSOLE_SECRET and expires with the
 # cookie. With no secret, nothing is signed and nothing is accepted.
 _EMAIL_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
+# The coaching member cookie lives a year; round 1 found it plain too, trusted for
+# scan analysis, intake in the chat and coaching (2026-10-15).
+_MEMBER_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 
 
 def _email_cookie_serializer(name):
@@ -4439,7 +4442,8 @@ def _email_from_cookie(name):
     if not raw or s is None:
         return ""
     try:
-        val = s.loads(raw, max_age=_EMAIL_COOKIE_MAX_AGE)
+        val = s.loads(raw, max_age=(_MEMBER_COOKIE_MAX_AGE if name == "rm_member_email"
+                                    else _EMAIL_COOKIE_MAX_AGE))
     except Exception:
         return ""
     return val.strip().lower() if isinstance(val, str) else ""
@@ -6408,7 +6412,7 @@ def chat():
         # If the visitor is an active member, prepend a MEMBER CONTEXT block to
         # context_str.  Free-tier path (no cookie / no active membership) is
         # byte-identical to pre-Slice-4 behavior.
-        _member_email = request.cookies.get("rm_member_email", "").strip().lower()
+        _member_email = _email_from_cookie("rm_member_email").strip().lower()
         _member_active = _active_membership_for_email(_member_email) if _member_email else None
         if _member_active:
             try:
@@ -40201,7 +40205,7 @@ def member_scan_analysis_page():
     upsell. Viewer email comes from the rm_member_email cookie (coaching magic-link).
     Withheld sections are emptied server-side (never serialized) — no client bypass."""
     from dashboard import scan_analysis as _sa, scan_analysis_view as _sav
-    email = (request.cookies.get("rm_member_email", "") or "").strip().lower()
+    email = (_email_from_cookie("rm_member_email") or "").strip().lower()
     is_paid = bool(_active_membership_for_email(email)) if email else False
     has_tos = is_member(email=email) if email else False
     tier = _sav.resolve_tier(is_paid=is_paid, has_tos=has_tos)
@@ -40250,7 +40254,7 @@ def member_scan_analysis_chat():
     if not q:
         return jsonify({"error": "query required"}), 400
 
-    email = (request.cookies.get("rm_member_email", "") or "").strip().lower()
+    email = (_email_from_cookie("rm_member_email") or "").strip().lower()
     is_paid = bool(_active_membership_for_email(email)) if email else False
     has_tos = is_member(email=email) if email else False
     tier = _sav.resolve_tier(is_paid=is_paid, has_tos=has_tos)
@@ -54793,7 +54797,7 @@ def admin_escalations_list():
 @app.route("/coaching/escalate", methods=["POST"])
 def coaching_escalate():
     import json as _json, uuid
-    email = request.cookies.get("rm_member_email", "").strip().lower()
+    email = _email_from_cookie("rm_member_email").strip().lower()
     membership = _active_membership_for_email(email) if email else None
     if not membership:
         return jsonify({"error": "membership required"}), 403
@@ -54919,6 +54923,11 @@ def coaching_auth_token(token):
             heading="Welcome back",
             blurb="Continue to open your coaching dashboard.",
             button="Continue")
+    if _email_cookie_serializer("rm_member_email") is None:
+        # No signing key: keep the link usable rather than burn it (see
+        # _magic_link_login_view).
+        return ("Sign-in is unavailable right now. Please try this link again "
+                "shortly."), 503
     # Consume the token
     th = _hash_token(token)
     now_iso = datetime.utcnow().isoformat() + "Z"
@@ -54940,8 +54949,8 @@ def coaching_auth_token(token):
         resp.set_cookie("amg_session", session_id,
                         max_age=60 * 60 * 24 * 365, httponly=True,
                         samesite="Lax", secure=request.is_secure)
-    resp.set_cookie("rm_member_email", email,
-                    max_age=60 * 60 * 24 * 365, httponly=True,
+    resp.set_cookie("rm_member_email", _sign_email_cookie("rm_member_email", email),
+                    max_age=_MEMBER_COOKIE_MAX_AGE, httponly=True,
                     samesite="Lax", secure=request.is_secure)
     return resp
 
@@ -55339,7 +55348,7 @@ def coaching_login_request():
 def coaching_start():
     """Self-serve 'Start my coaching month' from the portal. Requires an active
     member; opens a window for their most-recent qualifying, unactivated order."""
-    email = (request.cookies.get("rm_member_email", "") or "").strip().lower()
+    email = (_email_from_cookie("rm_member_email") or "").strip().lower()
     if not email or not _active_membership_for_email(email):
         return jsonify({"ok": False, "reason": "not_member", "offer_99": True}), 200
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -55357,7 +55366,7 @@ def coaching_start():
 
 @app.route("/coaching", methods=["GET"])
 def coaching_dashboard():
-    email = request.cookies.get("rm_member_email", "").strip().lower()
+    email = _email_from_cookie("rm_member_email").strip().lower()
     membership = _active_membership_for_email(email) if email else None
     if not membership:
         html = _render_static_template("coaching.html", status="lapsed")
