@@ -282,14 +282,15 @@ def test_the_page_follows_the_bundle_list_not_the_bot_opt_in(appmod, monkeypatch
 
 # ---- formulation read-back, 2026-10-15 -------------------------------------------
 
-@pytest.mark.parametrize("q", [
-    "what should i know before taking the sleep bundle?",
-    "What should I know before taking the Sleep Bundle?",
-    "how much of the brain program should i take?",
+@pytest.mark.parametrize("q,name", [
+    ("what should i know before taking the sleep bundle?", "Sleep Bundle"),
+    ("What should I know before taking the Sleep Bundle?", "Sleep Bundle"),
+    ("how much of the brain program should i take?", "Brain Program"),
 ])
-def test_the_before_a_bundle_name_still_matches(q):
+def test_the_before_a_bundle_name_still_matches(q, name):
     b = _block(q)
-    assert "### Sleep Bundle" in b or "### Brain Program" in b, q
+    headings = [l for l in b.split("\n") if l.startswith("### ")]
+    assert headings == [f"### {name}"], q
 
 
 def test_the_still_blocks_a_one_word_lowercase_name():
@@ -297,8 +298,12 @@ def test_the_still_blocks_a_one_word_lowercase_name():
     assert "### Appestat" not in _block("what is the appestat?")
 
 
-def test_two_cautions_get_the_keep_them_separate_rule():
-    b = _block("What should I know before taking the Sleep Bundle?")
+@pytest.mark.parametrize("q", [
+    "What should I know before taking the Sleep Bundle?",
+    "what should i know before taking the sleep bundle?",
+])
+def test_two_cautions_get_the_keep_them_separate_rule(q):
+    b = _block(q)
     assert app._SEVERAL_CAUTIONS_RULE in b
     assert b.count(BRAIN_CLEANSE) == 1 and b.count(SLEEP_SYNTROPY) == 1
 
@@ -308,5 +313,10 @@ def test_two_cautions_get_the_keep_them_separate_rule():
     "What should I know before taking Brain Cleanse?",
     "How much Angiostasis should I take each day?",
 ])
-def test_one_caution_leaves_the_header_unchanged(q):
-    assert app._SEVERAL_CAUTIONS_RULE not in _block(q)
+def test_one_caution_leaves_the_header_unchanged(q, monkeypatch):
+    # Byte for byte: with the rule switched off entirely, the block is the same.
+    b = _block(q)
+    assert "### " in b and "Caution" in b, q
+    assert app._SEVERAL_CAUTIONS_RULE not in b
+    monkeypatch.setattr(app, "_SEVERAL_CAUTIONS_RULE", "SHOULD NOT APPEAR")
+    assert _block(q) == b
