@@ -2303,6 +2303,8 @@ from collections import namedtuple as _namedtuple  # noqa: E402
 # One caution held until the product cap is applied: `key` is the product whose caution
 # it is, `ref` names it when a repeat only points back.
 _CautionLine = _namedtuple("_CautionLine", "key text ref")
+_CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
+                      "For anything else, answer from the snippets as usual.")
 
 
 def _caution_component_slugs(bundle, products):
@@ -2343,6 +2345,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         return ""
     spans = _named_product_spans(query_text, products)
     blocks = []
+    all_caution_only = True
     for slug in sorted(spans, key=lambda s: spans[s][0]):
         product = products[slug]
         name = html.unescape(product.get("name") or slug).strip()
@@ -2423,9 +2426,11 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                 cname = html.unescape(comp.get("name") or cslug).strip()
                 cautions.append(_CautionLine(cslug, f"Caution for {cname}: {cval}",
                                              f"the {cname} caution"))
-        if any(c.text for c in cautions) and not pinned:
-            parts.append("Only the caution below is approved text. Repeat it in full. "
-                         "For anything else, answer from the snippets as usual.")
+        # A waiting-list product keeps its own "give no dose" line instead (formulation,
+        # 2026-10-15); its caution is still repeated in full.
+        caution_only = any(c.text for c in cautions) and not pinned
+        if caution_only and not _waitlist_refusal(slug):
+            parts.append(_CAUTION_ONLY_NOTE)
         parts.extend(cautions)
         # A waiting-list product: the same sentence checkout gives. Unpinned, it has no
         # approved dose, so the block says so rather than ask for one it lacks.
@@ -2437,6 +2442,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                              "and do not take one from the snippets.")
         if len(parts) > 2:
             blocks.append(parts)
+            all_caution_only = all_caution_only and caution_only
         if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
             break
     if not blocks:
@@ -2456,6 +2462,21 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
             if part:
                 lines.append(part)
         blocks[i] = "\n".join(lines)
+    if all_caution_only:
+        # Only cautions are approved for these products, so the header asks for no dose and
+        # no description from this text: those come from the snippets, as they did before
+        # these products had a block (formulation and review round 3, 2026-10-15).
+        return (
+            "PRODUCT FACTS FOR THE PRODUCT(S) THE USER NAMED. This is the approved store "
+            "text for each product's caution and it outranks every snippet about that "
+            "caution. Each product here exists under the name the user used, so never tell "
+            "them they meant a different product. Repeat its full caution, every sentence of "
+            "it, in its own words. Do not attach to it any condition, mechanism, pairing or "
+            "dose that the snippets give for a different product, even one with a similar "
+            "name.\n"
+            + (_GATED_FACTS_NOTE if gated else "") + "\n"
+            + "\n\n".join(blocks)
+        )
     return (
         "PRODUCT FACTS FOR THE PRODUCT(S) THE USER NAMED. This is the approved store "
         "text and it outranks every snippet about this product. Each product here exists "

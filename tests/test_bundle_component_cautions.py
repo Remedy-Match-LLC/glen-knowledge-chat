@@ -258,3 +258,23 @@ def test_a_listed_bundle_with_no_opted_in_component_is_not_admitted(monkeypatch)
     # The empty block is dropped anyway; the match itself is what must not happen.
     spans = app._named_product_spans("Is the Sleep Bundle safe?", products["products"])
     assert "sleep-bundle" not in spans
+
+
+def test_a_listed_component_with_no_warning_does_not_admit_the_bundle(monkeypatch):
+    # Review round 3: the opt-in alone is not enough; the bundle would match with an
+    # empty block.
+    products = copy.deepcopy(app._PRODUCTS)
+    for slug in ("brain-cleanse", "sleep-syntropy"):
+        products["products"][slug]["warning"] = ""
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    assert "sleep-bundle" not in app._named_product_spans(
+        "Is the Sleep Bundle safe?", products["products"])
+
+
+def test_the_page_follows_the_bundle_list_not_the_bot_opt_in(appmod, monkeypatch):
+    # Review round 3: withdrawing a component's bot opt-in must not drop it from the page.
+    products = copy.deepcopy(appmod._PRODUCTS)
+    products["products"]["sleep-syntropy"].pop("chat_caution")
+    monkeypatch.setattr(appmod, "_PRODUCTS", products)
+    ids = [s["id"] for s in appmod._bundle_caution_sections(products["products"]["sleep-bundle"])]
+    assert ids == ["caution-brain-cleanse", "caution-sleep-syntropy"]

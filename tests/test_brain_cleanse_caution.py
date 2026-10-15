@@ -213,3 +213,55 @@ def test_unpinned_products_with_directions_send_none():
         p = PRODUCTS[slug]
         b = _block(f"How much {p['name']} should I take?")
         assert (p["directions"] or "").strip() not in b, slug
+
+
+# ---- the header for caution-only answers (formulation and review round 3) ----------
+
+DOSE_RULE = "Give its dose from this text"
+
+
+@pytest.mark.parametrize("q", [
+    "How much Brain Cleanse should I take?",
+    "how much sleep syntropy should i take?",
+    "Is the Sleep Bundle safe?",
+    "Is Brain Cleanse in the Sleep Bundle safe?",
+])
+def test_a_caution_only_answer_asks_for_no_dose_or_description_from_the_text(q):
+    b = _block(q)
+    assert "### " in b, q
+    assert DOSE_RULE not in b
+    assert "Describe it only by what this text says" not in b
+    assert "Answer directly from this text" not in b and "directly from this text" not in b
+    assert "outranks every snippet about that caution" in b
+    assert "Repeat its full caution, every sentence of it" in b
+
+
+def test_the_gated_note_still_reaches_a_caution_only_answer():
+    b = app.named_product_facts_block("How much Brain Cleanse should I take?", gated=True)
+    assert app._GATED_FACTS_NOTE in b and DOSE_RULE not in b
+
+
+def test_a_mixed_answer_keeps_the_full_header():
+    # A pinned product's dose still comes from its text.
+    b = _block("Is Angiostasis or Brain Cleanse safe?")
+    assert "### Angiostasis" in b and "### Brain Cleanse" in b
+    assert DOSE_RULE in b
+    assert b.count(BRAIN_CLEANSE) == 1
+
+
+def test_waiting_list_and_caution_only_gives_no_dose_and_the_full_caution(monkeypatch):
+    # Formulation 2026-10-15: the waiting-list line wins, and the caution is still
+    # repeated in full. No product is both today.
+    products = copy.deepcopy(app._PRODUCTS)
+    products["products"]["brain-cleanse"]["waitlist_only"] = True
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    monkeypatch.setattr(app, "_waitlist_refusal",
+                        lambda slug: "WAITLIST SENTENCE." if slug == "brain-cleanse" else "")
+    b = _block("How much Brain Cleanse should I take?")
+    assert "WAITLIST SENTENCE." in b
+    assert "No dose or ingredient text is approved for it yet. Give none" in b
+    assert app._CAUTION_ONLY_NOTE not in b
+    assert b.count(f"Caution: {BRAIN_CLEANSE}") == 1
+    assert "repeat its full caution" in b.lower()
+    # Outside review: the header must not ask for a dose the waiting-list line forbids.
+    assert DOSE_RULE not in b
