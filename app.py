@@ -2180,8 +2180,9 @@ def _named_facts_survivor(slug, products):
 _GATED_FACTS_NOTE = (
     "This user has not yet agreed to the Terms. The consent rule still holds: do not tailor "
     "anything to their body or condition, and do not recommend this product for a condition. "
-    "You may read back this label text as label information: what the product is, and "
-    "\"The label directions are ...\" and \"The label caution is ...\" in the label's words. "
+    "You may read back this text: what the product is, and "
+    "\"The label directions are ...\" and \"The caution on the product page is ...\", in "
+    "this text's words. "
     "This overrides the rule above about naming a condition from the user's question: even "
     "if they name their own condition, do not say this product is for, helps or suits it, "
     "and do not say the dose suits them. Then invite them to agree to the Terms for guidance "
@@ -2511,9 +2512,11 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                else (_ONE_CAUTION_RULE + "\n") if shown == 1 and any_copy_rule
                else "")
     if gated and any_copy_rule:
-        # The gated note asks for "The label caution is ..."; one label, not two.
+        # The gated note asks for "The caution on the product page is ..."; one page, not
+        # two. Labels carry no cautions since Glen's ruling of 2026-10-15, so the caution
+        # is the product page's (Glen "yes", 2026-10-15).
         several = several.replace('"Caution for <product name>:"',
-                                  '"The label caution for <product name> is:"')
+                                  '"The caution on the product page for <product name> is:"')
     if all_caution_only:
         # Only cautions are approved for these products, so the header asks for no dose and
         # no description from this text: those come from the snippets, as they did before

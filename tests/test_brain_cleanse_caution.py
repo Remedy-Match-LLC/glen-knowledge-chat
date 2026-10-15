@@ -243,7 +243,7 @@ def test_a_lone_pinned_caution_gets_the_copy_rule(slug):
     b = _block(f"How much {NAMES[slug]} should I take?")
     assert app._ONE_CAUTION_RULE in b and app._SEVERAL_CAUTIONS_RULE not in b
     gated = app.named_product_facts_block(f"How much {NAMES[slug]} should I take?", gated=True)
-    assert '"The label caution for <product name> is:"' in gated
+    assert '"The caution on the product page for <product name> is:"' in gated
     assert '"Caution for <product name>:"' not in gated
 
 
@@ -256,7 +256,7 @@ def test_both_pinned_cautions_get_the_several_rule():
     # opt-in clause changes when two pinned cautions are already counted).
     gated = app.named_product_facts_block(
         "Can I take Brain Cleanse and Sleep Syntropy together?", gated=True)
-    assert '"The label caution for <product name> is:"' in gated
+    assert '"The caution on the product page for <product name> is:"' in gated
     assert '"Caution for <product name>:"' not in gated
 
 

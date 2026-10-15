@@ -346,11 +346,11 @@ def test_a_pinned_product_alone_keeps_its_header_unchanged(q, gated, monkeypatch
     "What should I know before taking the Sleep Bundle?",
 ])
 def test_a_gated_answer_asks_for_the_label_caution_wording(q):
-    # Review round 1: the gated note asks for "The label caution is ...". Brain Cleanse
+    # Review round 1: the gated note asks for the page caution wording. Brain Cleanse
     # keeps the rewording through its opt-in after pinning (copy spec, 2026-10-15).
     b = app.named_product_facts_block(q, gated=True)
     assert app._GATED_FACTS_NOTE in b
-    assert '"The label caution for <product name> is:"' in b
+    assert '"The caution on the product page for <product name> is:"' in b
     assert '"Caution for <product name>:"' not in b
 
 
@@ -359,7 +359,9 @@ def test_a_gated_pinned_only_answer_with_several_cautions_is_unchanged():
     q = "Vitamin A Syntropy, Estro-Clear and Phytolacca americana Oil Roll-On?"
     b = app.named_product_facts_block(q, gated=True)
     assert app._SEVERAL_CAUTIONS_RULE in b
-    assert '"The label caution for <product name> is:"' not in b
+    assert '"The caution on the product page for <product name> is:"' not in b
+    # Positive check, so a revert of the rewording cannot pass silently (review round 1).
+    assert '"Caution for <product name>:"' in b
 
 
 def test_a_caution_inside_a_pinned_description_counts_beside_an_opted_in_caution():

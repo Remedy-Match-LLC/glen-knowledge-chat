@@ -3186,6 +3186,7 @@
   "scar-silk": {
     "ingredients_source": "db-formulations-2026-06-25",
     "warning": "Ask your practitioner before use if you take a blood thinner or prescription medication, or before surgery.",
+    "chat_caution": true,
     "note": "Scar Silk caution moved from the label to the store page, Glen 2026-10-09 and 2026-10-15 (production spec 2026-10-15-scar-silk-caution)."
   }
 }
