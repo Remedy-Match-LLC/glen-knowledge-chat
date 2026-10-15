@@ -346,3 +346,19 @@ def test_a_gated_answer_asks_for_the_label_caution_wording(q):
     assert app._GATED_FACTS_NOTE in b
     assert '"The label caution for <product name> is:"' in b
     assert '"Caution for <product name>:"' not in b
+
+
+def test_a_gated_pinned_only_answer_with_several_cautions_is_unchanged():
+    # Review round 3: the gated rewording belongs to caution-only answers.
+    q = "Vitamin A Syntropy, Estro-Clear and Phytolacca americana Oil Roll-On?"
+    b = app.named_product_facts_block(q, gated=True)
+    assert app._SEVERAL_CAUTIONS_RULE in b
+    assert '"The label caution for <product name> is:"' not in b
+
+
+def test_a_caution_inside_a_pinned_description_counts_beside_a_caution_only_product():
+    # Review round 3: AngiogenX carries its caution in its pinned description, so with
+    # Brain Cleanse the answer shows two cautions and needs the plural rule.
+    b = _block("What is Brain Cleanse and AngiogenX?")
+    assert "### AngiogenX" in b and "### Brain Cleanse" in b
+    assert app._SEVERAL_CAUTIONS_RULE in b and app._ONE_CAUTION_RULE not in b

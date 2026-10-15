@@ -2463,6 +2463,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     # takes a caution with it. A repeat points back to the text already given.
     given = set()
     written = 0
+    held = 0
     for i, parts in enumerate(blocks):
         lines = []
         for part in parts:
@@ -2473,6 +2474,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                     given.add(part.key)
                     part = part.text
                     written += 1 if part else 0
+                    held += 0 if part else 1
             if part:
                 lines.append(part)
         blocks[i] = "\n".join(lines)
@@ -2481,10 +2483,14 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     # caution keeps its header unchanged.
     # A lone caution from a caution-only product was paraphrased too, losing most lines
     # (read-back on 17ba8a1e). An answer about pinned products alone keeps its header.
-    several = ((_SEVERAL_CAUTIONS_RULE + "\n") if written > 1
-               else (_ONE_CAUTION_RULE + "\n") if written == 1 and any_caution_only
+    # A caution held inside a pinned description is shown too, so it counts here, but
+    # only beside a caution-only product: answers about pinned products alone keep the
+    # header they had (review round 3).
+    shown = written + held if any_caution_only else written
+    several = ((_SEVERAL_CAUTIONS_RULE + "\n") if shown > 1
+               else (_ONE_CAUTION_RULE + "\n") if shown == 1 and any_caution_only
                else "")
-    if gated:
+    if gated and any_caution_only:
         # The gated note asks for "The label caution is ..."; one label, not two.
         several = several.replace('"Caution for <product name>:"',
                                   '"The label caution for <product name> is:"')
