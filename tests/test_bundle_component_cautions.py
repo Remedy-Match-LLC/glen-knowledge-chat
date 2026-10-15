@@ -255,3 +255,6 @@ def test_a_listed_bundle_with_no_opted_in_component_is_not_admitted(monkeypatch)
         products["products"][slug].pop("chat_caution")
     monkeypatch.setattr(app, "_PRODUCTS", products)
     assert "### Sleep Bundle" not in _block("Is the Sleep Bundle safe?")
+    # The empty block is dropped anyway; the match itself is what must not happen.
+    spans = app._named_product_spans("Is the Sleep Bundle safe?", products["products"])
+    assert "sleep-bundle" not in spans
