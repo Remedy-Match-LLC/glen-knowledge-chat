@@ -97,10 +97,18 @@ def test_the_chatbot_carries_the_caution_alone_once(q):
     assert "Give its dose from this text" not in b
 
 
-def test_a_gated_answer_gets_the_label_wording():
+def test_the_gated_note_names_the_product_page_not_the_label():
+    # Labels carry no cautions (Glen, 2026-10-15), so the caution is read back as the
+    # product page's (Glen "yes", 2026-10-15). Directions keep the label wording.
+    assert "label caution" not in app._GATED_FACTS_NOTE.lower()
+    assert '"The caution on the product page is ..."' in app._GATED_FACTS_NOTE
+    assert '"The label directions are ..."' in app._GATED_FACTS_NOTE
+
+
+def test_a_gated_answer_gets_the_product_page_wording():
     b = app.named_product_facts_block("Is Scar Silk safe if I take a blood thinner?", gated=True)
     assert app._GATED_FACTS_NOTE in b and b.count(APPROVED) == 1
-    assert '"The label caution for <product name> is:"' in b
+    assert '"The caution on the product page for <product name> is:"' in b
 
 
 def test_lowercase_scar_silk_without_a_cue_is_a_known_gap():
