@@ -2193,6 +2193,8 @@ _CASE_FREE_NAMES = frozenset({
     "iron-syntropy", "zinc-syntropy", "vitamin-a-syntropy", "vitamin-c-syntropy",
     "adrenal-syntropy", "sanctuary-c60", "phytolacca-americana-oil-roll-on",
     "fibrosolve", "estro-clear",
+    # Caution-only (chat_caution), Sleep Syntropy spec 2026-10-15.
+    "sleep-syntropy",
 })
 # Pinned products whose name a client may type in lowercase, beside a product cue. Every
 # other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
@@ -2201,6 +2203,9 @@ _CUE_NAMES = frozenset({
     "angiostasis", "apoptogenesis", "appestat", "clear-the-way", "reverse-age",
     "stamina-plus", "off-syrup", "acetaldehyde-detox", "sinus-terrain-nasal-spray",
     "fibrolysis-factors", "estrogen-fibrin-balance-program",
+    # Caution-only products (chat_caution): "brain cleanse" in lowercase still brings
+    # the caution (formulation spec 2026-10-15-brain-cleanse-caution, review round 3).
+    "brain-cleanse", "sleep-bundle", "brain-program",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
@@ -2259,7 +2264,12 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
     for slug, p in products.items():
         # A waiting-list product qualifies unpinned: its block carries only the
         # availability sentence checkout gives, never its unapproved description.
-        if (not (p.get("copy_pinned") or p.get("waitlist_only")) or p.get("inactive")
+        # A chat_caution product qualifies unpinned too: its block carries only its
+        # caution, which Glen approved word for word (Brain Cleanse, 2026-10-15). So does a
+        # bundle that lists caution_components: its block carries only those cautions.
+        if (not (p.get("copy_pinned") or p.get("waitlist_only") or p.get("chat_caution")
+                 or _bundle_bot_cautions(p, products))
+                or p.get("inactive")
                 or p.get("info_only")
                 or slug in _DO_NOT_RECOMMEND_FACTS or slug in _COMMON_WORD_NAMES):
             continue
@@ -2289,6 +2299,35 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                        for o, o_sp in spans.items())}
 
 
+from collections import namedtuple as _namedtuple  # noqa: E402
+# One caution held until the product cap is applied: `key` is the product whose caution
+# it is, `ref` names it when a repeat only points back.
+_CautionLine = _namedtuple("_CautionLine", "key text ref")
+_CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
+                      "For anything else, answer from the snippets as usual.")
+
+
+def _caution_component_slugs(bundle, products):
+    """The live components whose cautions a bundle shows, in its listed order. Only the
+    bundle's own `caution_components` allowlist counts, so a warning added later to
+    another component never appears without Glen's yes. A retired component resolves to
+    its survivor; one with none is dropped, and so is a second naming the same survivor."""
+    out = []
+    for c in (bundle or {}).get("caution_components") or []:
+        cslug = _named_facts_survivor(c, products)
+        if cslug and cslug not in out:
+            out.append(cslug)
+    return out
+
+
+def _bundle_bot_cautions(bundle, products):
+    """The listed components whose caution the bot may carry: each needs its own
+    chat_caution and a warning. A bundle with none is not admitted, so it never outranks
+    another name or breaks a follow-up with an empty block (review round 1)."""
+    return [c for c in _caution_component_slugs(bundle, products)
+            if products[c].get("chat_caution") and (products[c].get("warning") or "").strip()]
+
+
 def _named_product_facts(query_text: str, gated: bool = False) -> str:
     """Approved store text for the catalog products the user names in the question.
 
@@ -2306,6 +2345,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         return ""
     spans = _named_product_spans(query_text, products)
     blocks = []
+    all_caution_only = True
     for slug in sorted(spans, key=lambda s: spans[s][0]):
         product = products[slug]
         name = html.unescape(product.get("name") or slug).strip()
@@ -2359,11 +2399,39 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                         f"{name} does, give only the Role written beside it, in its words. "
                         "An ingredient with no Role gets no role: list it without one. Add "
                         "no organ, pathway, phase or cofactor that the Role does not state.")
-        # Directions and caution only from a product whose copy Glen pinned.
-        for label, key in (("Directions", "directions"), ("Caution", "warning")) if pinned else ():
-            val = (product.get(key) or "").strip()
-            if val and val not in desc:
-                parts.append(f"{label}: {val}")
+        # Directions only from a product whose copy Glen pinned. Eleven unpinned products
+        # carry directions that are not approved for the bot.
+        val = (product.get("directions") or "").strip() if pinned else ""
+        if val and val not in desc:
+            parts.append(f"Directions: {val}")
+        # The caution also from a chat_caution product: an opt-in for the warning alone,
+        # so its scraped description, directions and components stay out (Brain Cleanse,
+        # 2026-10-15). A caution is held as an entry and written after the product cap,
+        # so each one reaches the bot once per answer (Sleep Syntropy spec, 2026-10-15).
+        cautions = []
+        val = ((product.get("warning") or "").strip()
+               if pinned or product.get("chat_caution") else "")
+        if val and val not in desc:
+            cautions.append(_CautionLine(slug, f"Caution: {val}", f"the {name} caution"))
+        elif val:
+            # Already inside the approved description: counted as given, written nothing,
+            # so a bundle later in the answer only points back to it (review round 2).
+            cautions.append(_CautionLine(slug, "", f"the {name} caution"))
+        # A bundle shows only the component cautions Glen listed for it, each read from
+        # the component's own record and only where that component opted in.
+        for cslug in _bundle_bot_cautions(product, products):
+            comp = products[cslug]
+            cval = (comp.get("warning") or "").strip()
+            if cval:
+                cname = html.unescape(comp.get("name") or cslug).strip()
+                cautions.append(_CautionLine(cslug, f"Caution for {cname}: {cval}",
+                                             f"the {cname} caution"))
+        # A waiting-list product keeps its own "give no dose" line instead (formulation,
+        # 2026-10-15); its caution is still repeated in full.
+        caution_only = any(c.text for c in cautions) and not pinned
+        if caution_only and not _waitlist_refusal(slug):
+            parts.append(_CAUTION_ONLY_NOTE)
+        parts.extend(cautions)
         # A waiting-list product: the same sentence checkout gives. Unpinned, it has no
         # approved dose, so the block says so rather than ask for one it lacks.
         refusal = _waitlist_refusal(slug)
@@ -2373,11 +2441,42 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                 parts.append("No dose or ingredient text is approved for it yet. Give none, "
                              "and do not take one from the snippets.")
         if len(parts) > 2:
-            blocks.append("\n".join(parts))
+            blocks.append(parts)
+            all_caution_only = all_caution_only and caution_only
         if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
             break
     if not blocks:
         return ""
+    # Once per answer, counted only over the blocks kept, so a block cut by the cap never
+    # takes a caution with it. A repeat points back to the text already given.
+    given = set()
+    for i, parts in enumerate(blocks):
+        lines = []
+        for part in parts:
+            if isinstance(part, _CautionLine):
+                if part.key in given:
+                    part = f"Caution: {part.ref} is given in full above and applies here too."
+                else:
+                    given.add(part.key)
+                    part = part.text
+            if part:
+                lines.append(part)
+        blocks[i] = "\n".join(lines)
+    if all_caution_only:
+        # Only cautions are approved for these products, so the header asks for no dose and
+        # no description from this text: those come from the snippets, as they did before
+        # these products had a block (formulation and review round 3, 2026-10-15).
+        return (
+            "PRODUCT FACTS FOR THE PRODUCT(S) THE USER NAMED. This is the approved store "
+            "text for each product's caution and it outranks every snippet about that "
+            "caution. Each product here exists under the name the user used, so never tell "
+            "them they meant a different product. Repeat its full caution, every sentence of "
+            "it, in its own words. Do not attach to it any condition, mechanism, pairing or "
+            "dose that the snippets give for a different product, even one with a similar "
+            "name.\n"
+            + (_GATED_FACTS_NOTE if gated else "") + "\n"
+            + "\n\n".join(blocks)
+        )
     return (
         "PRODUCT FACTS FOR THE PRODUCT(S) THE USER NAMED. This is the approved store "
         "text and it outranks every snippet about this product. Each product here exists "
@@ -10340,6 +10439,22 @@ def _related_semantic(slug, k=12):
     return slugs
 
 
+def _bundle_caution_sections(p):
+    """One section per component caution a bundle lists, read from the component's own
+    record. Each has its own id, because the page keys open state by id, and a string
+    body shown as stored, with no "Caution: " added (Sleep Syntropy spec, 2026-10-15)."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    sections = []
+    for cslug in _caution_component_slugs(p, products):
+        comp = products[cslug]
+        warning = (comp.get("warning") or "").strip()
+        if warning:
+            name = html.unescape(comp.get("name") or cslug).strip()
+            sections.append({"id": f"caution-{cslug}", "title": f"Caution for {name}",
+                             "default_open": False, "body": warning})
+    return sections
+
+
 @app.route("/begin/product-page-data/<slug>")
 def begin_product_page_data(slug):
     p = _get_product(slug)
@@ -10433,6 +10548,11 @@ def begin_product_page_data(slug):
                                 # failed to generate (review round 1, 2026-10-09).
                                 is_bundle=bool(p.get("bundle")) and "research" in _pin,
                                 has_research_text=bool((p.get("how_it_works") or "").strip()))
+    # A bundle has no ingredients, so "What's inside", where a caution renders, is gone.
+    # Each component caution the bundle lists gets its own section before Order, titled
+    # for its component (Brain Cleanse and Sleep Syntropy, formulation 2026-10-15).
+    _ci = next((i for i, s in enumerate(sections) if s["id"] == "cta"), len(sections))
+    sections[_ci:_ci] = _bundle_caution_sections(p)
     # A product with AI images off has no Images section: its photos are in the top gallery,
     # and an empty section would open to nothing.
     from dashboard.sales_images import ai_images_off as _ai_images_off

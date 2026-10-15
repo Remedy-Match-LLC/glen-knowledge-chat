@@ -490,6 +490,8 @@
    "bottle_type": "30 Caps"
   },
   "brain-cleanse": {
+   "warning": "Causes drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
+   "chat_caution": true,
    "name": "Brain Cleanse",
    "qbo_item_id": "28",
    "price_cents": 7000,
@@ -4109,6 +4111,8 @@
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising"
   },
   "sleep-syntropy": {
+   "warning": "May cause drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. This product contains CBD, which can change how the body processes some medicines. If you take a seizure medicine or any prescription medicine, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
+   "chat_caution": true,
    "name": "Sleep Syntropy",
    "aliases": ["Sleep Synergy"],
    "qbo_item_id": "48",
@@ -10831,6 +10835,8 @@
    "fmp_id": "370"
   },
   "brain-program": {
+   "caution_components": ["brain-cleanse"],
+   "ingredients_source": "none",
    "name": "Brain Program",
    "price_cents": 31500,
    "pinecone_title": "Brain Program",
@@ -23227,6 +23233,8 @@
    "price_cents": 9900
   },
   "sleep-bundle": {
+   "caution_components": ["brain-cleanse", "sleep-syntropy"],
+   "ingredients_source": "none",
    "name": "Sleep Bundle",
    "bundle": true,
    "price_rule": "components_less_10pct",

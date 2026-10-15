@@ -72,6 +72,15 @@ def apply_corrections(products, corr):
                               "copy_pinned", "order_note"):
             if c.get(_pinned_field):
                 p[_pinned_field] = c[_pinned_field]
+        # The chatbot's caution opt-in is a switch, so an explicit false is replayed too:
+        # withdrawing it must take the caution back out of the bot (review round 2,
+        # Brain Cleanse, 2026-10-15).
+        if "chat_caution" in c:
+            p["chat_caution"] = bool(c["chat_caution"])
+        # A bundle's allowlist of component cautions, replayed by key presence too, so an
+        # emptied list also withdraws them (Sleep Syntropy spec, 2026-10-15).
+        if "caution_components" in c:
+            p["caution_components"] = list(c["caution_components"] or [])
         if c.get("bottle_type"):
             p["bottle_type"] = c["bottle_type"]
         for _label_field in ("directions", "warning"):

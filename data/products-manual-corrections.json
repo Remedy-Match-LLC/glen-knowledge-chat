@@ -3139,5 +3139,32 @@
     ],
     "order_note": "It is beneficial to open the capsule and take a small amount of the powder straight into your mouth.\n\nThen close the capsule and swallow it, so the rest of the powder reaches your intestines.",
     "note": "Open-capsule note, Glen 2026-10-13 (production spec 2026-10-13-microbiome-note)."
+  },
+  "brain-cleanse": {
+    "ingredients_source": "db-formulations-2026-06-25",
+    "warning": "Causes drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
+    "chat_caution": true,
+    "note": "Brain Cleanse caution, Glen 2026-10-15, word for word (formulation spec 2026-10-15-brain-cleanse-caution)."
+  },
+  "sleep-bundle": {
+    "ingredients_source": "none",
+    "caution_components": [
+      "brain-cleanse",
+      "sleep-syntropy"
+    ],
+    "note": "Bundle cautions by component, Glen 2026-10-15 (formulation spec 2026-10-15-sleep-syntropy-caution)."
+  },
+  "brain-program": {
+    "ingredients_source": "none",
+    "caution_components": [
+      "brain-cleanse"
+    ],
+    "note": "Bundle cautions by component, Glen 2026-10-15 (formulation spec 2026-10-15-sleep-syntropy-caution)."
+  },
+  "sleep-syntropy": {
+    "ingredients_source": "db-formulations-2026-06-25",
+    "warning": "May cause drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. This product contains CBD, which can change how the body processes some medicines. If you take a seizure medicine or any prescription medicine, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
+    "chat_caution": true,
+    "note": "Sleep Syntropy caution, Glen 2026-10-15, word for word (formulation spec 2026-10-15-sleep-syntropy-caution)."
   }
 }
