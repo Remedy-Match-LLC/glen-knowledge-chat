@@ -77,6 +77,10 @@ def apply_corrections(products, corr):
         # Brain Cleanse, 2026-10-15).
         if "chat_caution" in c:
             p["chat_caution"] = bool(c["chat_caution"])
+        # A bundle's allowlist of component cautions, replayed by key presence too, so an
+        # emptied list also withdraws them (Sleep Syntropy spec, 2026-10-15).
+        if "caution_components" in c:
+            p["caution_components"] = list(c["caution_components"] or [])
         if c.get("bottle_type"):
             p["bottle_type"] = c["bottle_type"]
         for _label_field in ("directions", "warning"):
