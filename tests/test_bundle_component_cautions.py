@@ -360,6 +360,8 @@ def test_a_gated_pinned_only_answer_with_several_cautions_is_unchanged():
     b = app.named_product_facts_block(q, gated=True)
     assert app._SEVERAL_CAUTIONS_RULE in b
     assert '"The caution on the product page for <product name> is:"' not in b
+    # Positive check, so a revert of the rewording cannot pass silently (review round 1).
+    assert '"Caution for <product name>:"' in b
 
 
 def test_a_caution_inside_a_pinned_description_counts_beside_an_opted_in_caution():
