@@ -311,12 +311,24 @@ def test_two_cautions_get_the_keep_them_separate_rule(q):
 @pytest.mark.parametrize("q", [
     "What should I know before taking the Brain Program?",
     "What should I know before taking Brain Cleanse?",
-    "How much Angiostasis should I take each day?",
+    "what should i know before taking brain cleanse?",
+    "What should I know before taking Sleep Syntropy?",
 ])
-def test_one_caution_leaves_the_header_unchanged(q, monkeypatch):
-    # Byte for byte: with the rule switched off entirely, the block is the same.
+def test_one_caution_only_caution_gets_the_word_for_word_rule(q):
+    # Read-back on 17ba8a1e: a lone caution was paraphrased and lost most lines.
     b = _block(q)
-    assert "### " in b and "Caution" in b, q
+    assert app._ONE_CAUTION_RULE in b, q
     assert app._SEVERAL_CAUTIONS_RULE not in b
+
+
+@pytest.mark.parametrize("q", [
+    "How much Angiostasis should I take each day?",
+    "What is Estro-Clear?",
+])
+def test_a_pinned_product_alone_keeps_its_header_unchanged(q, monkeypatch):
+    # Byte for byte: with both rules switched off entirely, the block is the same.
+    b = _block(q)
+    assert "### " in b and "Caution: " in b, q
     monkeypatch.setattr(app, "_SEVERAL_CAUTIONS_RULE", "SHOULD NOT APPEAR")
+    monkeypatch.setattr(app, "_ONE_CAUTION_RULE", "SHOULD NOT APPEAR")
     assert _block(q) == b
