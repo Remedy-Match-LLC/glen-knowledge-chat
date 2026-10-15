@@ -69,9 +69,14 @@ def apply_corrections(products, corr):
         # Pinned page texts and chat roles (Estro-Clear, spec 2026-10-10-estro-clear-roles).
         # Restored here so a writer that rebuilds the record cannot drop them silently.
         for _pinned_field in ("how_it_works", "learn_markdown", "benefits", "ingredient_roles",
-                              "copy_pinned", "order_note", "chat_caution"):
+                              "copy_pinned", "order_note"):
             if c.get(_pinned_field):
                 p[_pinned_field] = c[_pinned_field]
+        # The chatbot's caution opt-in is a switch, so an explicit false is replayed too:
+        # withdrawing it must take the caution back out of the bot (review round 2,
+        # Brain Cleanse, 2026-10-15).
+        if "chat_caution" in c:
+            p["chat_caution"] = bool(c["chat_caution"])
         if c.get("bottle_type"):
             p["bottle_type"] = c["bottle_type"]
         for _label_field in ("directions", "warning"):

@@ -82,6 +82,16 @@ def test_a_rebuild_restores_the_caution_and_keeps_the_real_source():
     assert bc.get("gk_stale") is True
 
 
+def test_a_correction_that_withdraws_the_opt_in_turns_it_off():
+    # Review round 2: an explicit false must not leave an earlier true in place.
+    from scripts.apply_enrichment import apply_corrections
+    products = copy.deepcopy(PRODUCTS)
+    corrections = copy.deepcopy(CORRECTIONS)
+    corrections["brain-cleanse"]["chat_caution"] = False
+    apply_corrections(products, corrections)
+    assert products["brain-cleanse"]["chat_caution"] is False
+
+
 # ---- the pages --------------------------------------------------------------------
 
 @pytest.fixture
