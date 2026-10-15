@@ -23,6 +23,25 @@ def test_the_warning_is_the_approved_text_in_both_files():
     assert CORRECTIONS["scar-silk"]["warning"] == APPROVED
 
 
+def _no_duplicate_keys(pairs):
+    keys = [k for k, _ in pairs]
+    assert len(keys) == len(set(keys)), [k for k in keys if keys.count(k) > 1]
+    return dict(pairs)
+
+
+def test_neither_file_holds_a_second_scar_silk_entry():
+    # Review round 2: json.load keeps only the last of a repeated key.
+    for path in ("data/products.json", "data/products-manual-corrections.json"):
+        json.load(open(path), object_pairs_hook=_no_duplicate_keys)
+
+
+def test_no_other_field_already_carries_the_caution():
+    # The page could show it twice if the description or intro held it too.
+    p = PRODUCTS["scar-silk"]
+    for field in ("description", "intro", "panel_note", "directions"):
+        assert APPROVED not in (p.get(field) or ""), field
+
+
 def test_nothing_else_about_scar_silk_is_opted_in():
     p = PRODUCTS["scar-silk"]
     assert not p.get("copy_pinned") and not p.get("chat_caution") and not p.get("directions")
@@ -58,5 +77,8 @@ def test_the_page_carries_the_caution_once(appmod):
     assert json.dumps(d).count(APPROVED) == 1
 
 
-def test_the_chatbot_does_not_carry_it():
-    assert "Scar Silk" not in app.named_product_facts_block("Is Scar Silk safe?")
+@pytest.mark.parametrize("q", ["Is Scar Silk safe?", "What is Scar Silk?",
+                               "How much Scar Silk should I take?"])
+def test_the_chatbot_does_not_carry_it(q):
+    b = app.named_product_facts_block(q)
+    assert APPROVED not in b and "Scar Silk" not in b
