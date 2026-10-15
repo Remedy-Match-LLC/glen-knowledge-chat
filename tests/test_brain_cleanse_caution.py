@@ -20,11 +20,12 @@ APPROVED = (
     "liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. "
     "If you take an antidepressant, a migraine medicine, tramadol, St John's wort "
     "or the cough suppressant dextromethorphan, consult your physician before use. "
-    "If you take thyroid medicine, a blood thinner or blood sugar medicine, consult "
-    "your physician before use. If you take blood pressure medicine or an "
-    "immune-suppressing medicine, or have an autoimmune or hormone-sensitive "
-    "condition, consult your physician before use. Stop a few days before surgery. "
-    "If you are under medical treatment, consult your physician before use.")
+    "If you have a thyroid condition, or take thyroid medicine, a blood thinner or "
+    "blood sugar medicine, consult your physician before use. If you take blood "
+    "pressure medicine or an immune-suppressing medicine, or have an autoimmune or "
+    "hormone-sensitive condition, consult your physician before use. Stop a few "
+    "days before surgery. If you are under medical treatment, consult your "
+    "physician before use.")
 
 SLUGS = ("brain-cleanse", "sleep-bundle", "brain-program")
 BUNDLES = ("sleep-bundle", "brain-program")
