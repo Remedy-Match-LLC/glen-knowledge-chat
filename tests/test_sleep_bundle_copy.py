@@ -188,3 +188,31 @@ def test_a_short_first_sentence_is_not_kept_as_a_stub(monkeypatch):
     monkeypatch.setattr(app, "_PRODUCTS", products)
     purpose = app._product_guidance_hint(SLUG).split("| purpose: ", 1)[1]
     assert len(purpose) > 132 and purpose.endswith("...")
+
+
+# ---- live read-back on 087e718f (formulation, 2026-10-15) -------------------------
+# A long answer merged both cautions into one "Safety:" summary, and a dose question got
+# old knowledge-base advice ("try two or more capsules during that first week").
+
+@pytest.mark.parametrize("q,name", [
+    ("what should i know before taking the sleep bundle?", "Sleep Bundle"),
+    ("Can I take more Sleep Syntropy in the first week?", "Sleep Syntropy"),
+    ("How much Brain Cleanse should I take?", "Brain Cleanse"),
+])
+def test_an_opted_in_pinned_block_carries_the_dose_rule_and_the_copy_reminder(q, name):
+    b = _block(q)
+    section = b[b.index(f"### {name}"):]
+    assert app._PINNED_DOSE_RULE.format(name=name) in section
+    assert app._CAUTION_COPY_REMINDER in section
+    # The reminder sits right above the first caution line.
+    after = section.split(app._CAUTION_COPY_REMINDER, 1)[1].lstrip("\n")
+    assert after.startswith("Caution")
+
+
+@pytest.mark.parametrize("q", ["What is Estro-Clear?", "What is Angiostasis?",
+                               "Is the Brain Program safe?", "Is Scar Silk safe?"])
+def test_other_products_get_neither(q):
+    b = _block(q)
+    assert "### " in b, q
+    assert "These directions are the only dose" not in b
+    assert app._CAUTION_COPY_REMINDER not in b

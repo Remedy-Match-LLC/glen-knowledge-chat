@@ -233,6 +233,8 @@ def test_the_block_holds_the_approved_description_directions_and_caution(slug):
         f"### {NAMES[slug]}", f"Page: {app._catalog_page_url(slug)}",
         COPY[slug]["description"],
         f"Directions: {COPY[slug]['directions']}",
+        app._PINNED_DOSE_RULE.format(name=NAMES[slug]),
+        app._CAUTION_COPY_REMINDER,
         f"Caution: {APPROVED[slug]}"])
     assert app._CAUTION_ONLY_NOTE not in b
 
