@@ -7,6 +7,7 @@ title: Eating for Your Terrain
 <p>Each phase of terrain has a season, a healing direction and a way of eating that supports it.</p>
 <p>The seasons and directions are Dr Glen's own scheme.</p>
 <p>The food columns show where the classical traditions agree, and where Dr Glen's scheme parts from them.</p>
+<div>
 <table>
 <thead>
 <tr>
@@ -61,7 +62,9 @@ title: Eating for Your Terrain
 </tr>
 </tbody>
 </table>
+</div>
 <h2>Ménétrier and the oligoelements</h2>
+<div>
 <table>
 <thead>
 <tr>
@@ -98,6 +101,7 @@ title: Eating for Your Terrain
 </tr>
 </tbody>
 </table>
+</div>
 <p>Ménétrier numbered his diatheses in the opposite order for phases 1 to 4.</p>
 <h2>A note on yin and yang</h2>
 <p>This course uses yin and yang as the Huangdi Neijing defines them.</p>
@@ -111,11 +115,17 @@ title: Eating for Your Terrain
 <p>No trial has yet tested a diet matched to terrain or constitution.</p>
 <h2>Sources</h2>
 <ul>
-<li>Hippocrates, <em>Regimen in Health</em> and <em>Nature of Man</em>, trans. W. H. S. Jones, Loeb Hippocrates vol. IV. <a href="https://archive.org/details/hippocrates04hippuoft">Archive.org</a></li>
-<li>Charaka Samhita, Sutrasthana 6. <a href="https://www.carakasamhitaonline.com/index.php?title=Tasyashiteeya_Adhyaya">Charaka Samhita Online</a></li>
-<li>Huangdi Neijing Suwen. <a href="https://zh.wikisource.org/wiki/黃帝內經/素問第一卷">Wikisource</a></li>
+<li>Hippocrates, <em>Regimen in Health</em>, <em>Nature of Man</em> and <em>Aphorisms</em>, trans. W. H. S. Jones, Loeb Hippocrates vol. IV. <a href="https://archive.org/details/hippocrates04hippuoft">Archive.org</a></li>
+<li>Charaka Samhita, Sutrasthana 6, on the seasons. <a href="https://www.carakasamhitaonline.com/index.php?title=Tasyashiteeya_Adhyaya">Charaka Samhita Online</a></li>
+<li>Charaka Samhita, Sutrasthana 22, on nourishing and reducing therapy. <a href="https://www.carakasamhitaonline.com/index.php?title=Langhanabrimhaniya_Adhyaya">Charaka Samhita Online</a></li>
+<li>Huangdi Neijing Suwen, chapters 2 and 4. <a href="https://zh.wikisource.org/wiki/黃帝內經/素問第一卷">Wikisource</a></li>
+<li>Huangdi Neijing Suwen, chapter 5, on yin and yang. <a href="https://zh.wikisource.org/wiki/黃帝內經/素問第二卷">Wikisource</a></li>
+<li>Huangdi Neijing Suwen, chapters 22 and 29, on the spleen. <a href="https://zh.wikisource.org/wiki/黃帝內經/素問第七卷">Wikisource, chapter 22</a> and <a href="https://zh.wikisource.org/wiki/黃帝內經/素問第八卷">chapter 29</a></li>
+<li>Jerry Stassiaux, "Les diathèses fondamentales de Ménétrier." <a href="http://www.naturopathie-holistique.fr/les-diatheses-fondamentales-de-menetrier-15-134.html">Naturopathie Holistique</a></li>
+<li>Carl Ferré, "There's Yin in My Yang! The Yin/Yang Controversy Revisited," <em>Macrobiotics Today</em>, 2010. <a href="https://ohsawamacrobiotics.com/wp-content/uploads/2022/05/yin-and-yang-cf.pdf">PDF</a></li>
 <li>Henry Lindlahr, <em>Nature Cure</em> (1913). <a href="https://www.gutenberg.org/ebooks/4273">Project Gutenberg</a></li>
 <li>Dopico et al. 2015, "Widespread seasonal gene expression reveals annual differences in human immunity and physiology." <a href="https://pubmed.ncbi.nlm.nih.gov/25965853/">PubMed</a></li>
 <li>Smits et al. 2017, "Seasonal cycling in the gut microbiome of the Hadza hunter-gatherers of Tanzania." <a href="https://pubmed.ncbi.nlm.nih.gov/28839072/">PubMed</a></li>
 <li>Sutton et al. 2018, early time-restricted feeding. <a href="https://pubmed.ncbi.nlm.nih.gov/29754952/">PubMed</a></li>
+<li>Jakubowicz et al. 2013, a large breakfast against a large dinner. <a href="https://pubmed.ncbi.nlm.nih.gov/23512957/">PubMed</a></li>
 </ul>
