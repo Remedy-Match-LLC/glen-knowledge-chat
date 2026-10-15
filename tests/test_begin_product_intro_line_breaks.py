@@ -10,6 +10,8 @@ reviewed, so `.sp-text` itself stays as it is.
 import re
 from pathlib import Path
 
+import pytest
+
 PAGE = (Path(__file__).parents[1] / "static" / "begin-product.html").read_text()
 
 
@@ -77,3 +79,64 @@ def test_an_unapproved_written_intro_is_flattened(monkeypatch, tmp_path):
     body = _page_intro(monkeypatch, tmp_path, {"intro": "Para one.\r\n&amp;nbsp;\r\nPara two.",
                                                "description": "x. y."})
     assert body == "Para one. &amp;nbsp; Para two."
+
+
+# An approved (copy_pinned) description keeps its paragraph breaks too (Glen, 2026-10-15,
+# Brain Cleanse and Sleep Syntropy copy spec). 33 approved descriptions carry breaks.
+
+def _render_description_fn():
+    m = re.search(r"function renderDescriptionBody\(body, keepBreaks\)\{(.*?)\n    \}", PAGE, flags=re.S)
+    assert m, "renderDescriptionBody(body, keepBreaks) not found"
+    return re.sub(r"//[^\n]*", "", m.group(1))
+
+
+def test_only_a_flagged_description_gets_the_breaks_class():
+    fn = _render_description_fn()
+    assert "p.className = keepBreaks === true ? 'sp-text sp-breaks' : 'sp-text';" in fn
+    assert "renderDescriptionBody(sec.body, sec.keep_breaks)" in PAGE
+
+
+def test_breaks_class_keeps_line_breaks():
+    rule = re.search(r"\.sp-breaks\{([^}]*)\}", _css())
+    assert rule, "no rule for .sp-breaks"
+    assert "white-space:pre-line" in rule.group(1).replace(" ", "")
+
+
+def _page_description(monkeypatch, tmp_path, product):
+    import importlib
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SALES_PAGES_ENABLED", "true")
+    monkeypatch.setenv("SALES_PAGES_AI_COPY", "false")
+    import app as appmod
+    importlib.reload(appmod)
+    slug = next(iter(appmod._PRODUCTS["products"].keys()))
+    p = dict(appmod._PRODUCTS["products"][slug])
+    for k in ("intro", "copy_pinned"):
+        p.pop(k, None)
+    p.update(product)
+    monkeypatch.setitem(appmod._PRODUCTS["products"], slug, p)
+    monkeypatch.setattr(appmod, "_product_card", lambda prod: {"description": prod.get("description", ""),
+                                                               "ingredients": [], "benefits": []})
+    data = appmod.app.test_client().get(f"/begin/product-page-data/{slug}").get_json()
+    return {s["id"]: s for s in data["sections"]}["description"]
+
+
+def test_an_approved_description_is_flagged_to_keep_its_breaks(monkeypatch, tmp_path):
+    sec = _page_description(monkeypatch, tmp_path, {"description": "Para one.\n\nPara two.",
+                                                    "copy_pinned": ["description"]})
+    assert sec["body"] == "Para one.\n\nPara two." and sec["keep_breaks"] is True
+
+
+@pytest.mark.parametrize("pinned", [None, ["intro"]])
+def test_an_unapproved_description_is_not_flagged(monkeypatch, tmp_path, pinned):
+    product = {"description": "Para one.\n\nPara two."}
+    if pinned:
+        product["copy_pinned"] = pinned
+    sec = _page_description(monkeypatch, tmp_path, product)
+    assert "keep_breaks" not in sec
+
+
+def test_a_pinned_product_without_a_description_keeps_the_fallback_flat(monkeypatch, tmp_path):
+    # Review round 2: the card's fallback text is not the approved description.
+    sec = _page_description(monkeypatch, tmp_path, {"description": "", "copy_pinned": ["description"]})
+    assert "keep_breaks" not in sec

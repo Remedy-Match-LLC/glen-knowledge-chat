@@ -1,13 +1,18 @@
-"""Brain Cleanse and Sleep Syntropy cautions on their own pages and in the chatbot.
+"""Brain Cleanse and Sleep Syntropy cautions and approved copy, on their pages and in the chatbot.
 
 Glen approved both cautions word for word on 2026-10-15. Formulation specs, both released
 on Glen's "send it": production/05 Formulations/_store-updates/
 2026-10-15-brain-cleanse-caution.md and 2026-10-15-sleep-syntropy-caution.md. The page
 adds its own "Caution: " heading, so the stored text has none.
+
+Glen then approved each product's intro, description and directions, and two caution
+changes for night-time use (formulation spec, sha 42d1b4fd: production/05 Formulations/
+_store-updates/2026-10-15-brain-cleanse-sleep-syntropy-copy.md). All three sections are pinned.
 """
 import copy
 import importlib
 import json
+import sqlite3
 
 import pytest
 
@@ -15,7 +20,8 @@ import app
 
 BRAIN_CLEANSE = (
     "Causes drowsiness. Take only at bedtime. Do not drive or operate machinery "
-    "after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in "
+    "after taking. Do not combine with alcohol, sedatives, or sleep aids other "
+    "than Brain Cleanse and Sleep Syntropy. Avoid in "
     "pregnancy or while breastfeeding. Not for children. Do not use if you have "
     "liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. "
     "If you take an antidepressant, a migraine medicine, tramadol, St John's wort "
@@ -28,8 +34,10 @@ BRAIN_CLEANSE = (
     "physician before use.")
 
 SLEEP_SYNTROPY = (
-    "May cause drowsiness. Take only at bedtime. Do not drive or operate machinery "
-    "after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in "
+    "May cause drowsiness. Take at bedtime, when wakeful during the night, or both, "
+    "as desired or guided. Do not drive or operate machinery "
+    "after taking. Do not combine with alcohol, sedatives, or sleep aids other "
+    "than Brain Cleanse and Sleep Syntropy. Avoid in "
     "pregnancy or while breastfeeding. Not for children. Do not use if you have "
     "liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. "
     "If you take an antidepressant, a migraine medicine, tramadol, St John's wort "
@@ -42,6 +50,44 @@ SLEEP_SYNTROPY = (
     "take a seizure medicine or any prescription medicine, consult your physician "
     "before use. Stop a few days before surgery. If you are under medical "
     "treatment, consult your physician before use.")
+
+COPY = {
+    "brain-cleanse": {
+        "intro": "One capsule at bedtime, to support the cleansing of the brain and nervous "
+                 "system while you sleep.",
+        "description": "\n\n".join([
+            "Brain Cleanse is a bedtime formula. It pairs 20 mg of melatonin with calming "
+            "botanicals and amino acids.",
+            "The brain clears the day's waste during deep sleep, through its own drainage "
+            "network, the glymphatic system. Brain Cleanse is made to support the relaxation "
+            "and deep sleep that this work depends on.",
+            "Each capsule holds 5-HTP, GABA, ashwagandha root extract, honokiol, hops "
+            "(xanthohumol) and bacosides from bacopa, with konjac glucomannan and xanthan gum.",
+        ]),
+        "directions": "1 capsule at bedtime. Turn the lights out within 30 minutes, and avoid "
+                      "turning lights on during the night.",
+    },
+    "sleep-syntropy": {
+        "intro": "A gentle formula to help you fall back to sleep in the middle of the night, "
+                 "or to relax and fall asleep at bedtime.",
+        "description": "\n\n".join([
+            "Sleep Syntropy brings together nutritional and botanical factors that help relax "
+            "the mind and nervous system for sleep. A small amount of melatonin, 250 mcg, "
+            "supports the pineal gland's own rhythm.",
+            "It leaves out valerian, which most herbal sleep remedies include. Some people feel "
+            "more wakeful, not less, after valerian.",
+            "Each capsule holds 5-HTP, GABA, L-theanine, magnesium L-threonate, ashwagandha root "
+            "extract, lemon balm, passionflower, hops (xanthohumol), bacosides from bacopa, "
+            "phellodendron, honokiol and CBD. Vitamin B1 as benfotiamine, active forms of B6, "
+            "folate and B12, zinc and chromium round it out, along with a blend that aids "
+            "absorption.",
+            "Brain Cleanse carries a larger melatonin dose, 20 mg.",
+        ]),
+        "directions": "1 capsule in the middle of the night, to help you fall back to sleep. "
+                      "You may also take 1 at bedtime, or at both times.",
+    },
+}
+SECTIONS = ["intro", "description", "directions"]
 
 PRODUCTS = json.load(open("data/products.json"))["products"]
 CORRECTIONS = json.load(open("data/products-manual-corrections.json"))
@@ -59,11 +105,24 @@ def test_each_warning_is_the_approved_text_in_both_files(slug):
 
 
 @pytest.mark.parametrize("slug", sorted(APPROVED))
-def test_each_opts_in_to_the_bot_without_pinning_anything(slug):
+def test_each_opts_in_to_the_bot_and_pins_the_approved_copy(slug):
     for record in (PRODUCTS[slug], CORRECTIONS[slug]):
         assert record["chat_caution"] is True
-    assert not PRODUCTS[slug].get("copy_pinned")
-    assert not PRODUCTS[slug].get("directions")
+        assert record["copy_pinned"] == SECTIONS
+        for field in SECTIONS:
+            assert record[field] == COPY[slug][field], (slug, field)
+
+
+def test_the_caution_changes_for_night_time_use():
+    # Sleep Syntropy may now be taken in the night; Brain Cleanse stays bedtime only.
+    assert "Take only at bedtime." in BRAIN_CLEANSE
+    assert "Take only at bedtime." not in SLEEP_SYNTROPY
+    assert ("Take at bedtime, when wakeful during the night, or both, as desired or guided."
+            in SLEEP_SYNTROPY)
+    for text in (BRAIN_CLEANSE, SLEEP_SYNTROPY):
+        assert "sleep aids or sedatives" not in text
+        assert ("Do not combine with alcohol, sedatives, or sleep aids other than Brain "
+                "Cleanse and Sleep Syntropy.") in text
 
 
 def test_the_two_texts_differ_only_where_glen_made_them_differ():
@@ -81,10 +140,14 @@ def test_a_rebuild_restores_the_caution_and_keeps_the_real_source(slug):
     from scripts.apply_enrichment import apply_corrections
     products = copy.deepcopy(PRODUCTS)
     before = dict(products[slug])
-    products[slug].pop("warning")
-    products[slug].pop("chat_caution")
+    for field in ["warning", "chat_caution", "copy_pinned"] + SECTIONS:
+        products[slug].pop(field)
+    products[slug]["description"] = "SCRAPED STORE TEXT"
     apply_corrections(products, copy.deepcopy(CORRECTIONS))
     assert products[slug]["warning"] == APPROVED[slug]
+    assert products[slug]["copy_pinned"] == SECTIONS
+    for field in SECTIONS:
+        assert products[slug][field] == COPY[slug][field], field
     assert products[slug]["chat_caution"] is True
     assert products[slug]["ingredients_source"] == "db-formulations-2026-06-25"
     assert products[slug].get("gk_stale") == before.get("gk_stale")
@@ -123,6 +186,24 @@ def test_the_product_page_carries_its_caution_once(appmod, slug):
     assert secs["ingredients"]["body"]["warning"] == APPROVED[slug]
     assert not any(s["id"].startswith("caution") for s in d["sections"])
     assert json.dumps(d).count(APPROVED[slug][:80]) == 1
+    assert secs["ingredients"]["body"]["directions"] == COPY[slug]["directions"]
+    assert secs["intro"]["body"] == COPY[slug]["intro"]
+    assert secs["description"]["body"] == COPY[slug]["description"]
+    assert secs["description"]["keep_breaks"] is True
+
+
+@pytest.mark.parametrize("slug", sorted(APPROVED))
+def test_a_cached_ai_draft_cannot_replace_the_intro_or_description(appmod, monkeypatch, slug):
+    from dashboard import sales_pages as sp
+    monkeypatch.setattr(appmod, "_SALES_AI_COPY_ENABLED", True)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        for section in ("intro", "description"):
+            sp.upsert_section(cx, slug, section, f"AI DRAFT MARKER {section}")
+    d = appmod.app.test_client().get(f"/begin/product-page-data/{slug}").get_json()
+    secs = {s["id"]: s for s in d["sections"]}
+    assert secs["intro"]["body"] == COPY[slug]["intro"]
+    assert secs["description"]["body"] == COPY[slug]["description"]
+    assert "AI DRAFT MARKER" not in json.dumps(d)
 
 
 # ---- the chatbot ------------------------------------------------------------------
@@ -145,22 +226,54 @@ def test_the_bot_gets_the_caution_exactly_once(q, slug):
 
 
 @pytest.mark.parametrize("slug", sorted(APPROVED))
-def test_the_block_holds_only_heading_link_note_and_caution(slug):
+def test_the_block_holds_the_approved_description_directions_and_caution(slug):
     b = _block(f"What should I know before taking {NAMES[slug]}?")
     section = b[b.index("### "):]
-    assert section.split("\n") == [
+    assert section == "\n".join([
         f"### {NAMES[slug]}", f"Page: {app._catalog_page_url(slug)}",
-        "Only the caution below is approved text. Repeat it in full. "
-        "For anything else, answer from the snippets as usual.",
-        f"Caution: {APPROVED[slug]}"]
+        COPY[slug]["description"],
+        f"Directions: {COPY[slug]['directions']}",
+        f"Caution: {APPROVED[slug]}"])
+    assert app._CAUTION_ONLY_NOTE not in b
 
 
 @pytest.mark.parametrize("slug", sorted(APPROVED))
-def test_the_scraped_description_and_ingredients_stay_out(slug):
+def test_a_lone_pinned_caution_gets_the_copy_rule(slug):
+    # Pinning ends caution-only status; the word-for-word rule must not go with it.
     b = _block(f"How much {NAMES[slug]} should I take?")
-    desc = (PRODUCTS[slug].get("description") or "").strip()
-    assert desc[:40] not in b
-    assert "Ingredients from the label" not in b and "Directions:" not in b
+    assert app._ONE_CAUTION_RULE in b and app._SEVERAL_CAUTIONS_RULE not in b
+    gated = app.named_product_facts_block(f"How much {NAMES[slug]} should I take?", gated=True)
+    assert '"The label caution for <product name> is:"' in gated
+    assert '"Caution for <product name>:"' not in gated
+
+
+def test_both_pinned_cautions_get_the_several_rule():
+    b = _block("Can I take Brain Cleanse and Sleep Syntropy together?")
+    assert b.count(f"Caution: {BRAIN_CLEANSE}") == 1
+    assert b.count(f"Caution: {SLEEP_SYNTROPY}") == 1
+    assert app._SEVERAL_CAUTIONS_RULE in b
+    # Gated, both cautions take the label wording (review round 1: this is what the
+    # opt-in clause changes when two pinned cautions are already counted).
+    gated = app.named_product_facts_block(
+        "Can I take Brain Cleanse and Sleep Syntropy together?", gated=True)
+    assert '"The label caution for <product name> is:"' in gated
+    assert '"Caution for <product name>:"' not in gated
+
+
+@pytest.mark.parametrize("slug", sorted(APPROVED))
+def test_the_scraped_text_and_ingredients_stay_out(slug):
+    b = _block(f"How much {NAMES[slug]} should I take?")
+    for scraped in ("cleans your brain", "40%", "backfires"):
+        assert scraped not in b, scraped
+    assert "Ingredients from the label" not in b
+
+
+@pytest.mark.parametrize("slug", sorted(APPROVED))
+def test_the_guidance_hint_uses_the_approved_intro(slug):
+    hint = app._product_guidance_hint(slug)
+    assert f"purpose: {COPY[slug]['intro']}" in hint
+    for scraped in ("cleans your brain", "40%", "backfires"):
+        assert scraped not in hint, scraped
 
 
 def test_lowercase_brain_cleanse_without_a_cue_stays_out():
@@ -221,10 +334,8 @@ DOSE_RULE = "Give its dose from this text"
 
 
 @pytest.mark.parametrize("q", [
-    "How much Brain Cleanse should I take?",
-    "how much sleep syntropy should i take?",
     "Is the Sleep Bundle safe?",
-    "Is Brain Cleanse in the Sleep Bundle safe?",
+    "how much brain program should i take?",
 ])
 def test_a_caution_only_answer_asks_for_no_dose_or_description_from_the_text(q):
     b = _block(q)
@@ -237,31 +348,29 @@ def test_a_caution_only_answer_asks_for_no_dose_or_description_from_the_text(q):
 
 
 def test_the_gated_note_still_reaches_a_caution_only_answer():
-    b = app.named_product_facts_block("How much Brain Cleanse should I take?", gated=True)
+    b = app.named_product_facts_block("Is the Sleep Bundle safe?", gated=True)
     assert app._GATED_FACTS_NOTE in b and DOSE_RULE not in b
 
 
 def test_a_mixed_answer_keeps_the_full_header():
     # A pinned product's dose still comes from its text.
-    b = _block("Is Angiostasis or Brain Cleanse safe?")
-    assert "### Angiostasis" in b and "### Brain Cleanse" in b
+    b = _block("Is Brain Cleanse in the Sleep Bundle safe?")
+    assert "### Brain Cleanse" in b and "### Sleep Bundle" in b
     assert DOSE_RULE in b
-    assert b.count(BRAIN_CLEANSE) == 1
+    assert b.count(BRAIN_CLEANSE) == 1 and b.count(SLEEP_SYNTROPY) == 1
 
 
 def test_waiting_list_and_caution_only_gives_no_dose_and_the_full_caution(monkeypatch):
     # Formulation 2026-10-15: the waiting-list line wins, and the caution is still
     # repeated in full. No product is both today.
-    products = copy.deepcopy(app._PRODUCTS)
-    products["products"]["brain-cleanse"]["waitlist_only"] = True
-    monkeypatch.setattr(app, "_PRODUCTS", products)
+    _synthetic(monkeypatch, chat_caution=True, waitlist_only=True, warning="ZWARN text.")
     monkeypatch.setattr(app, "_waitlist_refusal",
-                        lambda slug: "WAITLIST SENTENCE." if slug == "brain-cleanse" else "")
-    b = _block("How much Brain Cleanse should I take?")
+                        lambda slug: "WAITLIST SENTENCE." if slug == "zorblax-test" else "")
+    b = _block("How much Zorblax should I take?")
     assert "WAITLIST SENTENCE." in b
     assert "No dose or ingredient text is approved for it yet. Give none" in b
     assert app._CAUTION_ONLY_NOTE not in b
-    assert b.count(f"Caution: {BRAIN_CLEANSE}") == 1
+    assert b.count("Caution: ZWARN text.") == 1
     assert "repeat its full caution" in b.lower()
     # Outside review: the header must not ask for a dose the waiting-list line forbids.
     assert DOSE_RULE not in b

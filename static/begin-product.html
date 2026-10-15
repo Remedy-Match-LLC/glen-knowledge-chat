@@ -71,6 +71,7 @@
     /* ── Section body styles ── */
     .sp-text{ font-size:14.5px; color:var(--cream); opacity:0.93; line-height:1.68; }
     .sp-intro{ white-space:pre-line; }
+    .sp-breaks{ white-space:pre-line; }
     .sp-ingredients{ list-style:none; margin:0; padding:0; }
     .sp-ingredients li{ font-size:13.5px; color:var(--cream); opacity:0.9; padding:7px 0;
       border-bottom:1px solid rgba(33,71,45,0.4); line-height:1.5; }
@@ -393,9 +394,10 @@
       return p;
     }
 
-    function renderDescriptionBody(body){
+    function renderDescriptionBody(body, keepBreaks){
       var p = document.createElement('p');
-      p.className = 'sp-text';
+      // Only an approved (copy_pinned) description keeps its paragraph breaks.
+      p.className = keepBreaks === true ? 'sp-text sp-breaks' : 'sp-text';
       p.setAttribute('data-ai-text', '1');
       p.textContent = typeof body === 'string' ? body : '';
       return p;
@@ -1375,7 +1377,7 @@
     function buildSectionBody(sec, ctaUrl, mironAssets, mironStory){
       switch(sec.id){
         case 'intro':       return renderIntroBody(sec.body);
-        case 'description': return renderDescriptionBody(sec.body);
+        case 'description': return renderDescriptionBody(sec.body, sec.keep_breaks);
         case 'video':       return renderVideoBody(sec.body);
         case 'ingredients': return renderIngredientsBody(sec.body);
         case 'comparison':  return renderComparisonBody(sec.body, mironAssets, mironStory);

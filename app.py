@@ -2357,6 +2357,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     blocks = []
     all_caution_only = True
     any_caution_only = False
+    any_copy_rule = False
     for slug in sorted(spans, key=lambda s: spans[s][0]):
         product = products[slug]
         name = html.unescape(product.get("name") or slug).strip()
@@ -2455,6 +2456,12 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
             blocks.append(parts)
             all_caution_only = all_caution_only and caution_only
             any_caution_only = any_caution_only or caution_only
+            # A pinned product that opted its caution into the chat gets the copy rule
+            # too: its caution was paraphrased before the rule existed (Brain Cleanse and
+            # Sleep Syntropy copy spec, 2026-10-15). Pinned products without the opt-in,
+            # such as Estro-Clear, keep the header they had.
+            any_copy_rule = any_copy_rule or caution_only or bool(
+                pinned and product.get("chat_caution") and any(c.key == slug for c in cautions))
         if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
             break
     if not blocks:
@@ -2486,11 +2493,11 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     # A caution held inside a pinned description is shown too, so it counts here, but
     # only beside a caution-only product: answers about pinned products alone keep the
     # header they had (review round 3).
-    shown = written + held if any_caution_only else written
+    shown = written + held if any_copy_rule else written
     several = ((_SEVERAL_CAUTIONS_RULE + "\n") if shown > 1
-               else (_ONE_CAUTION_RULE + "\n") if shown == 1 and any_caution_only
+               else (_ONE_CAUTION_RULE + "\n") if shown == 1 and any_copy_rule
                else "")
-    if gated and any_caution_only:
+    if gated and any_copy_rule:
         # The gated note asks for "The label caution is ..."; one label, not two.
         several = several.replace('"Caution for <product name>:"',
                                   '"The label caution for <product name> is:"')
@@ -10547,7 +10554,11 @@ def begin_product_page_data(slug):
     sections = [
         {"id": "intro",       "title": "What this does",  "default_open": True,  "body": intro},
         {"id": "description", "title": "Overview",        "default_open": False,
-         "body": p.get("description") or card.get("description", "")},
+         "body": p.get("description") or card.get("description", ""),
+         # An approved description keeps its paragraph breaks, as an approved intro does
+         # (Glen, 2026-10-15). Unapproved ones carry scraped breaks and stay as they were,
+         # and so does the fallback when a pinned product has no description (round 2).
+         **({"keep_breaks": True} if "description" in _pin and p.get("description") else {})},
         {"id": "video",       "title": "Watch",           "default_open": False, "body": {"videos": _vids}},
         # Label lines, served with the formula rather than inside the prose sections.
         # `directions` and `warning` are deterministic on purpose: the cached AI draft
