@@ -3,6 +3,12 @@ import importlib, sqlite3, sys
 from pathlib import Path
 import pytest
 
+def _signed(name, email):
+    # The sign-in email cookies are signed since 2026-10-15; a plain value is refused.
+    import app
+    return app._sign_email_cookie(name, email)
+
+
 
 def _load_app():
     repo_root = Path(__file__).resolve().parent.parent
@@ -76,7 +82,7 @@ def test_affiliate_form_without_tos_redirects_to_error(monkeypatch, tmp_path):
 
 def _reorder_client(app_module, email):
     c = app_module.app.test_client()
-    c.set_cookie("rm_reorder_email", email)
+    c.set_cookie("rm_reorder_email", _signed("rm_reorder_email", email))
     return c
 
 
@@ -117,7 +123,7 @@ def test_referral_mycode_blocked_for_non_member(monkeypatch, tmp_path):
     app_module = _load_app(); _fresh(app_module, monkeypatch, tmp_path)
     monkeypatch.setattr(app_module, "_REFERRALS", True)
     c = app_module.app.test_client()
-    c.set_cookie("rm_reorder_email", "ann@x.com")
+    c.set_cookie("rm_reorder_email", _signed("rm_reorder_email", "ann@x.com"))
     r = c.get("/api/referral/my-code")
     assert r.status_code == 403 and r.get_json().get("need_optin") is True
 
@@ -127,7 +133,7 @@ def test_referral_mycode_member_not_gated(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "_REFERRALS", True)
     _make_member(app_module, db, "lee@x.com")
     c = app_module.app.test_client()
-    c.set_cookie("rm_reorder_email", "lee@x.com")
+    c.set_cookie("rm_reorder_email", _signed("rm_reorder_email", "lee@x.com"))
     r = c.get("/api/referral/my-code")
     assert r.status_code != 403
 

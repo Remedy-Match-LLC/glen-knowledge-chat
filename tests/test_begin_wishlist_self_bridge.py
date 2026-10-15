@@ -2,6 +2,12 @@ import sqlite3
 import app as app_module
 from dashboard import recommendation_events as re, wishlist as wl
 
+def _signed(name, email):
+    # The sign-in email cookies are signed since 2026-10-15; a plain value is refused.
+    import app
+    return app._sign_email_cookie(name, email)
+
+
 
 def _seed(tmp_path, monkeypatch):
     db = str(tmp_path / "log.db")
@@ -16,7 +22,7 @@ def test_identified_add_emits_self_anonymous_does_not(tmp_path, monkeypatch):
     db = _seed(tmp_path, monkeypatch)
     c = app_module.app.test_client()
     # identified via rm_reorder_email cookie -> self event
-    c.set_cookie("rm_reorder_email", "a@b.com")
+    c.set_cookie("rm_reorder_email", _signed("rm_reorder_email", "a@b.com"))
     c.post("/begin/wishlist/toggle", json={"slug": "neuro-magnesium"})
     cx = sqlite3.connect(db)
     assert len([e for e in re.list_events(cx, "a@b.com") if e["source_key"] == "self"]) == 1

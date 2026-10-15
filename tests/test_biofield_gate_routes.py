@@ -8,6 +8,12 @@ from pathlib import Path
 import app as appmod
 from dashboard import biofield_store
 
+def _signed(name, email):
+    # The sign-in email cookies are signed since 2026-10-15; a plain value is refused.
+    import app
+    return app._sign_email_cookie(name, email)
+
+
 
 def _db(monkeypatch, tmp_path):
     """Point LOG_DB + the runtime DATA_DIR (PHI photo root) at tmp_path."""
@@ -26,7 +32,7 @@ def _auth_client(email="p@x.com"):
     """A test client carrying the biofield cookie set directly (the
     _biofield_email() helper reads the plain rm_biofield_email cookie)."""
     c = appmod.app.test_client()
-    c.set_cookie("rm_biofield_email", email, domain="localhost")
+    c.set_cookie("rm_biofield_email", _signed("rm_biofield_email", email), domain="localhost")
     return c
 
 

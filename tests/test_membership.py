@@ -4,6 +4,12 @@ from datetime import datetime, timedelta
 
 from tests.test_begin_routes import _load_app
 
+def _signed(name, email):
+    # The sign-in email cookies are signed since 2026-10-15; a plain value is refused.
+    import app
+    return app._sign_email_cookie(name, email)
+
+
 
 def test_init_membership_tables_idempotent_creates_three_tables(tmp_path):
     app_module = _load_app()
@@ -434,7 +440,12 @@ def test_auth_token_consumes_and_sets_cookie_redirects_to_coaching(app_client_me
     cookies = r.headers.getlist("Set-Cookie")
     blob = "\n".join(cookies)
     assert "rm_member_email" in blob
-    assert "jane%40example.com" in blob or "jane@example.com" in blob
+    # Signed since 2026-10-15: the plain address is not in the cookie, and the signed
+    # value reads back as Jane.
+    assert "jane%40example.com" not in blob and "jane@example.com" not in blob
+    value = blob.split("rm_member_email=", 1)[1].split(";", 1)[0]
+    with app_module.app.test_request_context("/", headers={"Cookie": f"rm_member_email={value}"}):
+        assert app_module._email_from_cookie("rm_member_email") == "jane@example.com"
     # token consumed_at flipped
     cx = sqlite3.connect(db)
     th = app_module._hash_token(plain)
@@ -477,7 +488,7 @@ def test_login_request_for_active_member_sends_magic_link(app_client_member, fak
 def test_coaching_active_renders_iframe_and_days_remaining(app_client_member):
     client, app_module, db = app_client_member
     # Set the rm_member_email cookie
-    client.set_cookie("rm_member_email", "jane@example.com")
+    client.set_cookie("rm_member_email", _signed("rm_member_email", "jane@example.com"))
     r = client.get("/coaching")
     assert r.status_code == 200
     # Iframe to /embed exists
@@ -499,7 +510,7 @@ def test_coaching_lifetime_membership_renders_without_renewal_copy(app_client_me
     cx.commit()
     cx.close()
 
-    client.set_cookie("rm_member_email", "jane@example.com")
+    client.set_cookie("rm_member_email", _signed("rm_member_email", "jane@example.com"))
     r = client.get("/coaching")
 
     assert r.status_code == 200
@@ -611,7 +622,7 @@ def test_chat_member_mode_prepends_member_context_to_rag(app_client_member, monk
     monkeypatch.setattr(app_module, "query_all_namespaces",
                         lambda vec: [_make_fake_match()])
     # Set the member cookie
-    client.set_cookie("rm_member_email", "jane@example.com")
+    client.set_cookie("rm_member_email", _signed("rm_member_email", "jane@example.com"))
     try:
         r = client.post("/chat",
                         json={"query": "What should I do about my fatigue?",
@@ -652,7 +663,7 @@ def test_chat_seam_not_written_on_non_pytest_traffic(app_client_member, monkeypa
     monkeypatch.setattr(app_module, "query_all_namespaces",
                         lambda vec: [_make_fake_match()])
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    client.set_cookie("rm_member_email", "jane@example.com")
+    client.set_cookie("rm_member_email", _signed("rm_member_email", "jane@example.com"))
     try:
         client.post("/chat",
                     json={"query": "What should I do about my fatigue?",
@@ -672,14 +683,14 @@ def test_escalate_requires_active_membership_else_403(app_client_member):
     r = client.post("/coaching/escalate", json={"query_text": "hi"})
     assert r.status_code == 403
     # Cookie present but no row
-    client.set_cookie("rm_member_email", "nobody@example.com")
+    client.set_cookie("rm_member_email", _signed("rm_member_email", "nobody@example.com"))
     r = client.post("/coaching/escalate", json={"query_text": "hi"})
     assert r.status_code == 403
 
 
 def test_escalate_inserts_pending_row_and_logs_event(app_client_member):
     client, app_module, db = app_client_member
-    client.set_cookie("rm_member_email", "jane@example.com")
+    client.set_cookie("rm_member_email", _signed("rm_member_email", "jane@example.com"))
     r = client.post("/coaching/escalate",
                     json={"query_text":"What about my hashimoto situation?",
                           "ai_response":"AI said something"})
