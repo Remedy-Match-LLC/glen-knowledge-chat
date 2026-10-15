@@ -2161,7 +2161,8 @@ def _product_guidance_hint(slug: str) -> str:
         # if ..." and "e.g. hops" are not (review round 2).
         ends = [m.end() for m in re.finditer(r"[.!?](?=\s+[A-Z0-9\"\u201c(]|\s*$)", purpose)
                 if m.end() <= 216
-                and not re.search(r"\b(?:e\.g|i\.e|etc|vs|approx|Dr|St|No|mg|mcg|g|ml|IU|oz)\.$",
+                and not re.search(r"\b(?:e\.g|i\.e|etc|vs|approx|Dr|St|No|mg|mcg|g|kg|ml|l|IU|oz|lb|tsp|tbsp|"
+                                  r"caps?|tabs?|min|hrs?|wks?|mos?|nm|mm|cm)\.$",
                                   purpose[:m.end()], re.IGNORECASE)]
         # A sentence cut that keeps under 60% of the limit is a stub ("Vitality ." from
         # scraped text), so the word cut is used instead. Either way "..." marks that
