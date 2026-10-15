@@ -216,11 +216,42 @@ def test_a_product_and_its_bundle_together_send_each_caution_once():
     assert "Caution: the Brain Cleanse caution is given in full above and applies here too." in b
 
 
-def test_once_only_is_applied_after_the_product_cap(monkeypatch):
-    # Four products named: the fourth is cut. A caution must not be withheld from a kept
-    # block because a cut block would have carried it (round 3).
+def test_four_names_keep_three_blocks_and_each_caution_once(monkeypatch):
+    # Four products named: the fourth is cut, and each kept caution appears once (spec
+    # round 3). The loop stops before building a fourth block, so this pins the outcome;
+    # it cannot tell a dedupe before the cap from one after it (review round 1).
     assert app._NAMED_FACTS_MAX_PRODUCTS == 3
     b = _block("Angiostasis, Fibrosolve, Sleep Bundle and Brain Cleanse: which is safe?")
     assert "### Brain Cleanse" not in b               # the fourth block is cut
     assert b.count(BRAIN_CLEANSE) == 1 and b.count(SLEEP_SYNTROPY) == 1
     assert "given in full above" not in b
+
+
+def test_a_pinned_description_holding_its_caution_counts_as_given(monkeypatch):
+    # Review round 2: the caution inside a pinned description must count, or a bundle
+    # named after it sends the text a second time.
+    products = copy.deepcopy(app._PRODUCTS)
+    bc = products["products"]["brain-cleanse"]
+    bc["copy_pinned"] = ["description"]
+    bc["description"] = "Approved text. " + BRAIN_CLEANSE
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    b = _block("Is Brain Cleanse in the Sleep Bundle safe?")
+    assert b.count(BRAIN_CLEANSE) == 1
+
+
+@pytest.mark.parametrize("bundle", sorted(EXPECTED))
+def test_no_listed_component_carries_its_caution_in_a_pinned_description(bundle):
+    # The reverse order (bundle named first) cannot be deduplicated against a
+    # description, so the data must not create that case without a decision.
+    for slug in EXPECTED[bundle]:
+        p = PRODUCTS[slug]
+        assert not (p.get("copy_pinned") and p["warning"] in (p.get("description") or ""))
+
+
+def test_a_listed_bundle_with_no_opted_in_component_is_not_admitted(monkeypatch):
+    # Review round 1: it would outrank other names with an empty block.
+    products = copy.deepcopy(app._PRODUCTS)
+    for slug in ("brain-cleanse", "sleep-syntropy"):
+        products["products"][slug].pop("chat_caution")
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    assert "### Sleep Bundle" not in _block("Is the Sleep Bundle safe?")
