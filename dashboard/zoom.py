@@ -113,8 +113,11 @@ def add_meeting_registrant(token, *, meeting_id, email, first_name,
     email = str(email or "").strip().lower()
     if not meeting_id or "@" not in email:
         raise ValueError("meeting_id and email are required")
+    # Zoom refuses a registrant with no last name (HTTP 400 "The parameter is required:
+    # last_name"), so a one-word name failed every Reserve click. A full stop stands in
+    # here only, never in our own records (Glen, 2026-10-15).
     body = {"email": email, "first_name": (first_name or email.split("@", 1)[0]).strip(),
-            "last_name": (last_name or "").strip()}
+            "last_name": (last_name or "").strip() or "."}
     if occurrence_id:
         body["occurrence_ids"] = str(occurrence_id)
     encoded_id = urllib.parse.quote(meeting_id, safe="")
