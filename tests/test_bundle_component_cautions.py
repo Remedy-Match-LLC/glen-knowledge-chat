@@ -311,12 +311,54 @@ def test_two_cautions_get_the_keep_them_separate_rule(q):
 @pytest.mark.parametrize("q", [
     "What should I know before taking the Brain Program?",
     "What should I know before taking Brain Cleanse?",
-    "How much Angiostasis should I take each day?",
+    "what should i know before taking brain cleanse?",
+    "What should I know before taking Sleep Syntropy?",
 ])
-def test_one_caution_leaves_the_header_unchanged(q, monkeypatch):
-    # Byte for byte: with the rule switched off entirely, the block is the same.
+def test_one_caution_only_caution_gets_the_word_for_word_rule(q):
+    # Read-back on 17ba8a1e: a lone caution was paraphrased and lost most lines.
     b = _block(q)
-    assert "### " in b and "Caution" in b, q
+    assert app._ONE_CAUTION_RULE in b, q
     assert app._SEVERAL_CAUTIONS_RULE not in b
+
+
+@pytest.mark.parametrize("q", [
+    "What is Estro-Clear?",
+    "How much Estro-Clear should I take?",
+])
+@pytest.mark.parametrize("gated", [False, True])
+def test_a_pinned_product_alone_keeps_its_header_unchanged(q, gated, monkeypatch):
+    # Byte for byte: with both rules switched off entirely, the block is the same.
+    _block = lambda q: app.named_product_facts_block(q, gated=gated)  # noqa: E731
+    b = _block(q)
+    assert "### " in b and "Caution: " in b, q
     monkeypatch.setattr(app, "_SEVERAL_CAUTIONS_RULE", "SHOULD NOT APPEAR")
+    monkeypatch.setattr(app, "_ONE_CAUTION_RULE", "SHOULD NOT APPEAR")
     assert _block(q) == b
+
+
+@pytest.mark.parametrize("q", [
+    "What should I know before taking Brain Cleanse?",
+    "What should I know before taking the Sleep Bundle?",
+])
+def test_a_gated_answer_asks_for_the_label_caution_wording(q):
+    # Review round 1: the gated note asks for "The label caution is ...".
+    b = app.named_product_facts_block(q, gated=True)
+    assert app._GATED_FACTS_NOTE in b
+    assert '"The label caution for <product name> is:"' in b
+    assert '"Caution for <product name>:"' not in b
+
+
+def test_a_gated_pinned_only_answer_with_several_cautions_is_unchanged():
+    # Review round 3: the gated rewording belongs to caution-only answers.
+    q = "Vitamin A Syntropy, Estro-Clear and Phytolacca americana Oil Roll-On?"
+    b = app.named_product_facts_block(q, gated=True)
+    assert app._SEVERAL_CAUTIONS_RULE in b
+    assert '"The label caution for <product name> is:"' not in b
+
+
+def test_a_caution_inside_a_pinned_description_counts_beside_a_caution_only_product():
+    # Review round 3: AngiogenX carries its caution in its pinned description, so with
+    # Brain Cleanse the answer shows two cautions and needs the plural rule.
+    b = _block("What is Brain Cleanse and AngiogenX?")
+    assert "### AngiogenX" in b and "### Brain Cleanse" in b
+    assert app._SEVERAL_CAUTIONS_RULE in b and app._ONE_CAUTION_RULE not in b

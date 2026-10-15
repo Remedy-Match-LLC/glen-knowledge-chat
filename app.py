@@ -2309,6 +2309,10 @@ _SEVERAL_CAUTIONS_RULE = (
     "paragraph starting \"Caution for <product name>:\", every sentence of it, even where "
     "two cautions share sentences. Do not shorten, reword, merge or summarise them, and do "
     "not fold them into the rest of the answer.")
+_ONE_CAUTION_RULE = (
+    "Copy the caution below word for word, as its own paragraph starting \"Caution for "
+    "<product name>:\", every sentence of it. Do not shorten, reword, merge or summarise "
+    "it, and do not fold it into the rest of the answer.")
 _CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
                       "For anything else, answer from the snippets as usual.")
 
@@ -2352,6 +2356,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     spans = _named_product_spans(query_text, products)
     blocks = []
     all_caution_only = True
+    any_caution_only = False
     for slug in sorted(spans, key=lambda s: spans[s][0]):
         product = products[slug]
         name = html.unescape(product.get("name") or slug).strip()
@@ -2449,6 +2454,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         if len(parts) > 2:
             blocks.append(parts)
             all_caution_only = all_caution_only and caution_only
+            any_caution_only = any_caution_only or caution_only
         if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
             break
     if not blocks:
@@ -2457,6 +2463,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     # takes a caution with it. A repeat points back to the text already given.
     given = set()
     written = 0
+    held = 0
     for i, parts in enumerate(blocks):
         lines = []
         for part in parts:
@@ -2467,13 +2474,26 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                     given.add(part.key)
                     part = part.text
                     written += 1 if part else 0
+                    held += 0 if part else 1
             if part:
                 lines.append(part)
         blocks[i] = "\n".join(lines)
     # Two cautions in one answer were merged into one paraphrase, losing lines (Sleep
     # Bundle read-back, 2026-10-15). Said only when there are two, so an answer with one
     # caution keeps its header unchanged.
-    several = (_SEVERAL_CAUTIONS_RULE + "\n") if written > 1 else ""
+    # A lone caution from a caution-only product was paraphrased too, losing most lines
+    # (read-back on 17ba8a1e). An answer about pinned products alone keeps its header.
+    # A caution held inside a pinned description is shown too, so it counts here, but
+    # only beside a caution-only product: answers about pinned products alone keep the
+    # header they had (review round 3).
+    shown = written + held if any_caution_only else written
+    several = ((_SEVERAL_CAUTIONS_RULE + "\n") if shown > 1
+               else (_ONE_CAUTION_RULE + "\n") if shown == 1 and any_caution_only
+               else "")
+    if gated and any_caution_only:
+        # The gated note asks for "The label caution is ..."; one label, not two.
+        several = several.replace('"Caution for <product name>:"',
+                                  '"The label caution for <product name> is:"')
     if all_caution_only:
         # Only cautions are approved for these products, so the header asks for no dose and
         # no description from this text: those come from the snippets, as they did before
