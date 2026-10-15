@@ -2,7 +2,8 @@
 
 Glen approved the caution on 2026-10-09 and the move on 2026-10-15 (production spec
 production/05 Formulations/_store-updates/2026-10-15-scar-silk-caution.md). It is not
-pinned and has no chat_caution, so it shows on the page only, not in the chatbot.
+pinned. Glen then said yes to the chatbot carrying it (the spec's addendum, 2026-10-15), so
+it opts in with chat_caution and the bot block carries the warning alone, word for word.
 """
 import copy
 import importlib
@@ -42,17 +43,21 @@ def test_no_other_field_already_carries_the_caution():
         assert APPROVED not in (p.get(field) or ""), field
 
 
-def test_nothing_else_about_scar_silk_is_opted_in():
+def test_only_the_caution_is_opted_in_to_the_chatbot():
+    for record in (PRODUCTS["scar-silk"], CORRECTIONS["scar-silk"]):
+        assert record["chat_caution"] is True
     p = PRODUCTS["scar-silk"]
-    assert not p.get("copy_pinned") and not p.get("chat_caution") and not p.get("directions")
+    assert not p.get("copy_pinned") and not p.get("directions")
 
 
 def test_a_rebuild_keeps_the_caution_and_the_real_source():
     from scripts.apply_enrichment import apply_corrections
     products = copy.deepcopy(PRODUCTS)
     products["scar-silk"].pop("warning")
+    products["scar-silk"].pop("chat_caution")
     apply_corrections(products, copy.deepcopy(CORRECTIONS))
     assert products["scar-silk"]["warning"] == APPROVED
+    assert products["scar-silk"]["chat_caution"] is True
     assert products["scar-silk"]["ingredients_source"] == "db-formulations-2026-06-25"
 
 
@@ -78,7 +83,28 @@ def test_the_page_carries_the_caution_once(appmod):
 
 
 @pytest.mark.parametrize("q", ["Is Scar Silk safe?", "What is Scar Silk?",
-                               "How much Scar Silk should I take?"])
-def test_the_chatbot_does_not_carry_it(q):
+                               "How much Scar Silk should I take?",
+                               "Is Scar Silk safe if I take a blood thinner?"])
+def test_the_chatbot_carries_the_caution_alone_once(q):
     b = app.named_product_facts_block(q)
-    assert APPROVED not in b and "Scar Silk" not in b
+    section = b[b.index("### Scar Silk"):]
+    assert section.split("\n") == [
+        "### Scar Silk", f"Page: {app._catalog_page_url('scar-silk')}",
+        app._CAUTION_ONLY_NOTE, f"Caution: {APPROVED}"]
+    assert b.count(APPROVED) == 1
+    assert app._ONE_CAUTION_RULE in b
+    # Caution-only: the header asks for no dose or description from this text.
+    assert "Give its dose from this text" not in b
+
+
+def test_a_gated_answer_gets_the_label_wording():
+    b = app.named_product_facts_block("Is Scar Silk safe if I take a blood thinner?", gated=True)
+    assert app._GATED_FACTS_NOTE in b and b.count(APPROVED) == 1
+    assert '"The label caution for <product name> is:"' in b
+
+
+def test_lowercase_scar_silk_without_a_cue_is_a_known_gap():
+    # Lowercase names match only with a product cue unless listed as case-free. The spec
+    # changes nothing else, so "is scar silk safe?" gets no block. Pinned here so a change
+    # is a decision, not an accident.
+    assert "### Scar Silk" not in app.named_product_facts_block("is scar silk safe?")
