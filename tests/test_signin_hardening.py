@@ -86,13 +86,44 @@ def test_the_reorder_link_sets_a_signed_cookie(appmod):
     assert _read(appmod, "rm_reorder_email", value) == "buyer@example.com"
 
 
-def test_a_forged_cookie_cannot_read_another_customers_autoship(appmod):
-    c = appmod.app.test_client()
-    c.set_cookie("rm_reorder_email", "victim@example.com")
-    with appmod.app.test_request_context("/", headers={"Cookie": "rm_reorder_email=victim@example.com"}):
-        assert appmod._reorder_email_from_cookie() == ""
-    r = c.get("/api/subscription/details")
-    assert "victim@example.com" not in r.get_data(as_text=True)
+def test_a_forged_cookie_cannot_read_or_cancel_another_customers_autoship(appmod):
+    # Review round 2: seed a real subscription, prove the signed owner reaches it, then
+    # prove a forged plain cookie gets none of it and cannot cancel it.
+    from dashboard import subscriptions as subs
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        subs.init_subscriptions_table(cx)
+        subs.migrate_add_failed_count(cx)
+        sid = subs.create(cx, email="victim@example.com", stripe_customer_id="c",
+                          stripe_payment_method_id="p", items=[{"slug": "zorblax", "qty": 1}],
+                          cadence_months=1, ship_address={}, next_charge_date="2030-01-01")
+        cx.commit()
+    owner = appmod.app.test_client()
+    owner.set_cookie("rm_reorder_email",
+                     appmod._sign_email_cookie("rm_reorder_email", "victim@example.com"))
+    d = owner.get("/api/subscription/details").get_json()
+    assert [s["id"] for s in d["subscriptions"]] == [sid]
+
+    forger = appmod.app.test_client()
+    forger.set_cookie("rm_reorder_email", "victim@example.com")
+    r = forger.get("/api/subscription/details")
+    assert r.status_code == 401 and "zorblax" not in r.get_data(as_text=True)
+    assert forger.post("/api/subscription/cancel", json={"id": sid}).status_code == 401
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        assert subs.get(cx, sid)["status"] != "cancelled"
+
+
+def test_with_no_secret_the_link_is_kept_for_a_retry(appmod, monkeypatch):
+    # Review round 2: without a key the cookie cannot be set, so the token stays unused.
+    tok = _mint(appmod, "reorder")
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    monkeypatch.delenv("WEBHOOK_SECRET", raising=False)
+    assert appmod.app.test_client().post(f"/reorder/auth/{tok}").status_code == 503
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        row = cx.execute("SELECT consumed_at FROM auth_tokens WHERE token_hash=?",
+                         (appmod._hash_token(tok),)).fetchone()
+    assert row[0] is None
 
 
 # ---- 2. only a sign-in token signs in ----------------------------------------------

@@ -4467,6 +4467,11 @@ def _magic_link_login_view(token, *, purpose, cookie, dest, invalid_html,
                 email = None
         if not email:
             return invalid_html, 400
+        if request.method == "POST" and _email_cookie_serializer(cookie) is None:
+            # No signing key: the cookie could not be set, so keep the link usable
+            # rather than burn it and leave the visitor signed out (review round 2).
+            return ("Sign-in is unavailable right now. Please try this link again "
+                    "shortly."), 503
         if request.method == "POST":
             # consumed_at IS NULL makes the burn atomic: a double submit loses
             # the race and falls through to the invalid page rather than

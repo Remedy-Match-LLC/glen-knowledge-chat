@@ -30,6 +30,9 @@ def _app(tmp_path, monkeypatch):
         importlib.reload(appmod)
     except Exception as e:
         pytest.skip(f"app not importable: {e}")
+    # The sign-in cookies are signed with a key read from the environment at call time
+    # (2026-10-15). The console guard keeps the empty copy captured at reload above.
+    monkeypatch.setenv("CONSOLE_SECRET", "scanner-burn-cookie-key")
     return appmod
 
 
