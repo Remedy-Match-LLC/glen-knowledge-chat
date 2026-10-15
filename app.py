@@ -2465,7 +2465,8 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         bundle_cautions = bool(product.get("bundle") and _bundle_bot_cautions(product, products))
         copy_block = pinned and bool(product.get("chat_caution") or bundle_cautions)
         if copy_block and ((val and val not in desc and "directions" in _pinned_copy(product))
-                           or (product.get("bundle") and intro and "intro" in _pinned_copy(product))):
+                           or (product.get("bundle") and intro and "intro" in _pinned_copy(product)
+                               and not val)):
             parts.append(_PINNED_DOSE_RULE.format(name=name))
         # The caution also from a chat_caution product: an opt-in for the warning alone,
         # so its scraped description, directions and components stay out (Brain Cleanse,
