@@ -171,6 +171,9 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   }
   main { max-width: 760px; margin: 2rem auto; padding: 0 1rem 3rem; }
   a { color: var(--mu-link); }
+  main table { display: block; overflow-x: auto; border-collapse: collapse; font-size: .95em; }
+  main th, main td { border: 1px solid var(--mu-border); padding: 6px; vertical-align: top; text-align: left; }
+  @media (max-width: 600px) { main td { min-width: 9em; } }
   input, textarea, select, button {
     color: var(--mu-text);
     background: var(--mu-surface);
