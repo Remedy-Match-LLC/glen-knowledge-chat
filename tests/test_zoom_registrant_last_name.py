@@ -52,6 +52,17 @@ def test_a_blank_name_still_sends_both_names():
     assert body["last_name"] == "."
 
 
+def test_a_spaces_only_first_name_falls_back_to_the_email():
+    # Review round 2: "   " is truthy, so it used to skip the fallback and reach
+    # Zoom as a blank first name.
+    assert _sent("   ")["first_name"] == "maria"
+
+
+def test_an_empty_email_local_part_still_sends_a_first_name():
+    # Review round 1: "@x.com" passes the "@" check and leaves no local part.
+    assert _sent("", "", email="@example.com")["first_name"] == "Guest"
+
+
 def test_a_real_last_name_is_sent_unchanged():
     assert _sent("Maria", "Ktenas")["last_name"] == "Ktenas"
     assert _sent("Mary", " Ann Lee ")["last_name"] == "Ann Lee"
