@@ -2484,6 +2484,10 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     several = ((_SEVERAL_CAUTIONS_RULE + "\n") if written > 1
                else (_ONE_CAUTION_RULE + "\n") if written == 1 and any_caution_only
                else "")
+    if gated:
+        # The gated note asks for "The label caution is ..."; one label, not two.
+        several = several.replace('"Caution for <product name>:"',
+                                  '"The label caution for <product name> is:"')
     if all_caution_only:
         # Only cautions are approved for these products, so the header asks for no dose and
         # no description from this text: those come from the snippets, as they did before

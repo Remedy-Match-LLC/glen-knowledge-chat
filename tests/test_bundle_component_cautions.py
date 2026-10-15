@@ -322,13 +322,27 @@ def test_one_caution_only_caution_gets_the_word_for_word_rule(q):
 
 
 @pytest.mark.parametrize("q", [
-    "How much Angiostasis should I take each day?",
     "What is Estro-Clear?",
+    "How much Estro-Clear should I take?",
 ])
-def test_a_pinned_product_alone_keeps_its_header_unchanged(q, monkeypatch):
+@pytest.mark.parametrize("gated", [False, True])
+def test_a_pinned_product_alone_keeps_its_header_unchanged(q, gated, monkeypatch):
     # Byte for byte: with both rules switched off entirely, the block is the same.
+    _block = lambda q: app.named_product_facts_block(q, gated=gated)  # noqa: E731
     b = _block(q)
     assert "### " in b and "Caution: " in b, q
     monkeypatch.setattr(app, "_SEVERAL_CAUTIONS_RULE", "SHOULD NOT APPEAR")
     monkeypatch.setattr(app, "_ONE_CAUTION_RULE", "SHOULD NOT APPEAR")
     assert _block(q) == b
+
+
+@pytest.mark.parametrize("q", [
+    "What should I know before taking Brain Cleanse?",
+    "What should I know before taking the Sleep Bundle?",
+])
+def test_a_gated_answer_asks_for_the_label_caution_wording(q):
+    # Review round 1: the gated note asks for "The label caution is ...".
+    b = app.named_product_facts_block(q, gated=True)
+    assert app._GATED_FACTS_NOTE in b
+    assert '"The label caution for <product name> is:"' in b
+    assert '"Caution for <product name>:"' not in b
