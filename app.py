@@ -2156,7 +2156,13 @@ def _product_guidance_hint(slug: str) -> str:
         # End at the last whole sentence that fits, so a dose is never cut mid-way
         # ("Take 1..."), Sleep Bundle copy spec 2026-10-15. A first sentence longer
         # than the limit still falls back to a word cut.
-        ends = [m.end() for m in re.finditer(r"[.!?](?=\s|$)", purpose[:220])]
+        # Sentence ends are found in the whole text, so a decimal at the limit ("1.5")
+        # is never one, and only where the next word starts a sentence, so "20 mg. only
+        # if ..." and "e.g. hops" are not (review round 2).
+        ends = [m.end() for m in re.finditer(r"[.!?](?=\s+[A-Z0-9\"\u201c(]|\s*$)", purpose)
+                if m.end() <= 220
+                and not re.search(r"\b(?:e\.g|i\.e|etc|vs|approx|Dr|St|No)\.$",
+                                  purpose[:m.end()])]
         purpose = (purpose[:ends[-1]] if ends
                    else purpose[:217].rsplit(" ", 1)[0] + "...")
     return f" | class: {kind}" + (f" | purpose: {purpose}" if purpose else "")

@@ -150,3 +150,21 @@ def test_a_first_sentence_longer_than_the_limit_falls_back_to_a_word_cut(monkeyp
     monkeypatch.setattr(app, "_PRODUCTS", products)
     purpose = app._product_guidance_hint(SLUG).split("| purpose: ", 1)[1]
     assert purpose.endswith("...") and len(purpose) <= 220
+
+
+@pytest.mark.parametrize("intro,bad_end", [
+    # Review round 2: an abbreviation is not a sentence end, so the condition stays.
+    ("Take 20 mg. only if directed by your clinician " + "and keep reading " * 15 + "end.",
+     "20 mg."),
+    # A decimal at the limit is not a sentence end either.
+    ("A" * 210 + " take 1.5 mg daily. More text follows here.", "1."),
+    ("Use it as directed, e.g. Brain Cleanse at bedtime " + "and more words " * 14 + "end.",
+     "e.g."),
+])
+def test_the_hint_never_cuts_at_an_abbreviation_or_a_decimal(monkeypatch, intro, bad_end):
+    products = copy.deepcopy(app._PRODUCTS)
+    products["products"][SLUG]["intro"] = intro
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    purpose = app._product_guidance_hint(SLUG).split("| purpose: ", 1)[1]
+    assert not purpose.endswith(bad_end), purpose
+    assert len(purpose) <= 220
