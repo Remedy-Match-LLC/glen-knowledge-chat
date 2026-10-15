@@ -134,3 +134,9 @@ def test_an_unapproved_description_is_not_flagged(monkeypatch, tmp_path, pinned)
         product["copy_pinned"] = pinned
     sec = _page_description(monkeypatch, tmp_path, product)
     assert "keep_breaks" not in sec
+
+
+def test_a_pinned_product_without_a_description_keeps_the_fallback_flat(monkeypatch, tmp_path):
+    # Review round 2: the card's fallback text is not the approved description.
+    sec = _page_description(monkeypatch, tmp_path, {"description": "", "copy_pinned": ["description"]})
+    assert "keep_breaks" not in sec

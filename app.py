@@ -10556,8 +10556,9 @@ def begin_product_page_data(slug):
         {"id": "description", "title": "Overview",        "default_open": False,
          "body": p.get("description") or card.get("description", ""),
          # An approved description keeps its paragraph breaks, as an approved intro does
-         # (Glen, 2026-10-15). Unapproved ones carry scraped breaks and stay as they were.
-         **({"keep_breaks": True} if "description" in _pin else {})},
+         # (Glen, 2026-10-15). Unapproved ones carry scraped breaks and stay as they were,
+         # and so does the fallback when a pinned product has no description (round 2).
+         **({"keep_breaks": True} if "description" in _pin and p.get("description") else {})},
         {"id": "video",       "title": "Watch",           "default_open": False, "body": {"videos": _vids}},
         # Label lines, served with the formula rather than inside the prose sections.
         # `directions` and `warning` are deterministic on purpose: the cached AI draft
