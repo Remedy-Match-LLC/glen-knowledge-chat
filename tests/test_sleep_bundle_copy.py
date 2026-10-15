@@ -162,6 +162,9 @@ def test_a_first_sentence_longer_than_the_limit_falls_back_to_a_word_cut(monkeyp
     # A dose unit before a capital: "20 mg. Only if ..." keeps its condition (round 2).
     ("Use it as directed and " + "more words " * 11 + "take 20 mg. Only if your clinician "
      + "advises it " * 8 + "end.", "mg."),
+    # Any case: "mL", "MG" (round 2).
+    ("Use it as directed and " + "more words " * 11 + "take 20 mL. Only if your clinician "
+     + "advises it " * 8 + "end.", "mL."),
     # Past 60% of the limit, so the stub guard cannot mask it.
     ("Use it as directed and " + "more words " * 11 + "e.g. Brain Cleanse at bedtime "
      + "and more words " * 10 + "end.", "e.g."),
