@@ -202,6 +202,8 @@ def test_a_short_first_sentence_is_not_kept_as_a_stub(monkeypatch):
 def test_an_opted_in_pinned_block_carries_the_dose_rule_and_the_copy_reminder(q, name):
     b = _block(q)
     section = b[b.index(f"### {name}"):]
+    if "\n### " in section[4:]:
+        section = section[:section.index("\n### ", 4)]  # this product's block only
     assert app._PINNED_DOSE_RULE.format(name=name) in section
     assert app._CAUTION_COPY_REMINDER in section
     # The reminder sits right above the first caution line.
@@ -216,3 +218,26 @@ def test_other_products_get_neither(q):
     assert "### " in b, q
     assert "These directions are the only dose" not in b
     assert app._CAUTION_COPY_REMINDER not in b
+
+
+@pytest.mark.parametrize("q", ["Can I take Sleep Syntropy with the Sleep Bundle?",
+                               "Can I take Brain Cleanse and the Sleep Bundle together?",
+                               "Is the Sleep Bundle safe with Brain Cleanse and Sleep Syntropy?"])
+def test_the_copy_reminder_sits_only_above_a_caution_given_in_full(q):
+    # Review round 1: above a pointer line alone, the bot could print the pointer.
+    for block in _block(q).split("\n### ")[1:]:
+        lines = block.split("\n")
+        if app._CAUTION_COPY_REMINDER in lines:
+            nxt = lines[lines.index(app._CAUTION_COPY_REMINDER) + 1:]
+            assert any(l.startswith("Caution") and "is given in full above" not in l
+                       for l in nxt), block
+
+
+def test_the_dose_rule_needs_approved_directions(monkeypatch):
+    # Review round 1: a pinned description alone does not make scraped directions the dose.
+    products = copy.deepcopy(app._PRODUCTS)
+    products["products"]["brain-cleanse"]["copy_pinned"] = ["intro", "description"]
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    b = _block("How much Brain Cleanse should I take?")
+    assert "### Brain Cleanse" in b
+    assert "are the only dose" not in b
