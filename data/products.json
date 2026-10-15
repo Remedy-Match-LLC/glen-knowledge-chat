@@ -490,7 +490,7 @@
    "bottle_type": "30 Caps"
   },
   "brain-cleanse": {
-   "warning": "Causes drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
+   "warning": "Causes drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sedatives, or sleep aids other than Brain Cleanse and Sleep Syntropy. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
    "chat_caution": true,
    "name": "Brain Cleanse",
    "qbo_item_id": "28",
@@ -548,7 +548,14 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Brain Cleanse . Brain Cleanse Brain Cleanse One cap at bedtime cleans your brain while you sleep... Brain Cleanse supports detoxification of the central nervous system via the glymph system while you sleep. Take Brain Cleanse before you go to bed. Relax. Rest your mind. Sleep better... And have sweet dreams while your brain gets clean So you can wake to a fresh start the next day. Get this: Clarity. Focus. Energy. And health. Relaxation and restful sleep is supported by the same high-quality ingredients as in our Sleep Syntropy formula, though in lower dosages to make room for 20 mg of...",
+   "intro": "One capsule at bedtime, to support the cleansing of the brain and nervous system while you sleep.",
+   "description": "Brain Cleanse is a bedtime formula. It pairs 20 mg of melatonin with calming botanicals and amino acids.\n\nThe brain clears the day's waste during deep sleep, through its own drainage network, the glymphatic system. Brain Cleanse is made to support the relaxation and deep sleep that this work depends on.\n\nEach capsule holds 5-HTP, GABA, ashwagandha root extract, honokiol, hops (xanthohumol) and bacosides from bacopa, with konjac glucomannan and xanthan gum.",
+   "directions": "1 capsule at bedtime. Turn the lights out within 30 minutes, and avoid turning lights on during the night.",
+   "copy_pinned": [
+    "intro",
+    "description",
+    "directions"
+   ],
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Xanthohumol, Xanthan Gum, Glucomannan",
    "gk_extra_accepted": true,
@@ -4111,7 +4118,7 @@
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising"
   },
   "sleep-syntropy": {
-   "warning": "May cause drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. This product contains CBD, which can change how the body processes some medicines. If you take a seizure medicine or any prescription medicine, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
+   "warning": "May cause drowsiness. Take at bedtime, when wakeful during the night, or both, as desired or guided. Do not drive or operate machinery after taking. Do not combine with alcohol, sedatives, or sleep aids other than Brain Cleanse and Sleep Syntropy. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. This product contains CBD, which can change how the body processes some medicines. If you take a seizure medicine or any prescription medicine, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
    "chat_caution": true,
    "name": "Sleep Syntropy",
    "aliases": ["Sleep Synergy"],
@@ -4204,7 +4211,14 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Sleep Syntropy . Sleep Syntropy Sleep Syntropy Most natural sleep aids include the herb Valerian. That's a bad idea... because 40% of people have an opposite reaction to the desired soporific effect... We include a wide range of other botanical, nutritional and endocrine factors to support relaxing and falling asleep at the end of your day. We also include a number of factors that help boost bioavailability, absorption and delivery of all the other ingredients. What we don't include is any excipients, artificial colorings (our green Vegicaps are made with Chlorophyll), flow agents or other...",
+   "intro": "A gentle formula to help you fall back to sleep in the middle of the night, or to relax and fall asleep at bedtime.",
+   "description": "Sleep Syntropy brings together nutritional and botanical factors that help relax the mind and nervous system for sleep. A small amount of melatonin, 250 mcg, supports the pineal gland's own rhythm.\n\nIt leaves out valerian, which most herbal sleep remedies include. Some people feel more wakeful, not less, after valerian.\n\nEach capsule holds 5-HTP, GABA, L-theanine, magnesium L-threonate, ashwagandha root extract, lemon balm, passionflower, hops (xanthohumol), bacosides from bacopa, phellodendron, honokiol and CBD. Vitamin B1 as benfotiamine, active forms of B6, folate and B12, zinc and chromium round it out, along with a blend that aids absorption.\n\nBrain Cleanse carries a larger melatonin dose, 20 mg.",
+   "directions": "1 capsule in the middle of the night, to help you fall back to sleep. You may also take 1 at bedtime, or at both times.",
+   "copy_pinned": [
+    "intro",
+    "description",
+    "directions"
+   ],
    "bottle_type": "30 Caps",
    "fmp_id": "328"
   },

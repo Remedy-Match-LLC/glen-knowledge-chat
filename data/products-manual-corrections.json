@@ -3142,9 +3142,17 @@
   },
   "brain-cleanse": {
     "ingredients_source": "db-formulations-2026-06-25",
-    "warning": "Causes drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
+    "warning": "Causes drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sedatives, or sleep aids other than Brain Cleanse and Sleep Syntropy. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
     "chat_caution": true,
-    "note": "Brain Cleanse caution, Glen 2026-10-15, word for word (formulation spec 2026-10-15-brain-cleanse-caution)."
+    "intro": "One capsule at bedtime, to support the cleansing of the brain and nervous system while you sleep.",
+    "description": "Brain Cleanse is a bedtime formula. It pairs 20 mg of melatonin with calming botanicals and amino acids.\n\nThe brain clears the day's waste during deep sleep, through its own drainage network, the glymphatic system. Brain Cleanse is made to support the relaxation and deep sleep that this work depends on.\n\nEach capsule holds 5-HTP, GABA, ashwagandha root extract, honokiol, hops (xanthohumol) and bacosides from bacopa, with konjac glucomannan and xanthan gum.",
+    "directions": "1 capsule at bedtime. Turn the lights out within 30 minutes, and avoid turning lights on during the night.",
+    "copy_pinned": [
+      "intro",
+      "description",
+      "directions"
+    ],
+    "note": "Brain Cleanse caution, Glen 2026-10-15, word for word (formulation spec 2026-10-15-brain-cleanse-caution).; approved copy and caution changes, Glen 2026-10-15 (formulation spec 2026-10-15-brain-cleanse-sleep-syntropy-copy)."
   },
   "sleep-bundle": {
     "ingredients_source": "none",
@@ -3163,9 +3171,17 @@
   },
   "sleep-syntropy": {
     "ingredients_source": "db-formulations-2026-06-25",
-    "warning": "May cause drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. This product contains CBD, which can change how the body processes some medicines. If you take a seizure medicine or any prescription medicine, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
+    "warning": "May cause drowsiness. Take at bedtime, when wakeful during the night, or both, as desired or guided. Do not drive or operate machinery after taking. Do not combine with alcohol, sedatives, or sleep aids other than Brain Cleanse and Sleep Syntropy. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. This product contains CBD, which can change how the body processes some medicines. If you take a seizure medicine or any prescription medicine, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
     "chat_caution": true,
-    "note": "Sleep Syntropy caution, Glen 2026-10-15, word for word (formulation spec 2026-10-15-sleep-syntropy-caution)."
+    "intro": "A gentle formula to help you fall back to sleep in the middle of the night, or to relax and fall asleep at bedtime.",
+    "description": "Sleep Syntropy brings together nutritional and botanical factors that help relax the mind and nervous system for sleep. A small amount of melatonin, 250 mcg, supports the pineal gland's own rhythm.\n\nIt leaves out valerian, which most herbal sleep remedies include. Some people feel more wakeful, not less, after valerian.\n\nEach capsule holds 5-HTP, GABA, L-theanine, magnesium L-threonate, ashwagandha root extract, lemon balm, passionflower, hops (xanthohumol), bacosides from bacopa, phellodendron, honokiol and CBD. Vitamin B1 as benfotiamine, active forms of B6, folate and B12, zinc and chromium round it out, along with a blend that aids absorption.\n\nBrain Cleanse carries a larger melatonin dose, 20 mg.",
+    "directions": "1 capsule in the middle of the night, to help you fall back to sleep. You may also take 1 at bedtime, or at both times.",
+    "copy_pinned": [
+      "intro",
+      "description",
+      "directions"
+    ],
+    "note": "Sleep Syntropy caution, Glen 2026-10-15, word for word (formulation spec 2026-10-15-sleep-syntropy-caution).; approved copy and caution changes, Glen 2026-10-15 (formulation spec 2026-10-15-brain-cleanse-sleep-syntropy-copy)."
   },
   "scar-silk": {
     "ingredients_source": "db-formulations-2026-06-25",

@@ -15,7 +15,8 @@ import app
 
 BRAIN_CLEANSE = (
     "Causes drowsiness. Take only at bedtime. Do not drive or operate machinery "
-    "after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in "
+    "after taking. Do not combine with alcohol, sedatives, or sleep aids other "
+    "than Brain Cleanse and Sleep Syntropy. Avoid in "
     "pregnancy or while breastfeeding. Not for children. Do not use if you have "
     "liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. "
     "If you take an antidepressant, a migraine medicine, tramadol, St John's wort "
@@ -28,8 +29,10 @@ BRAIN_CLEANSE = (
     "physician before use.")
 
 SLEEP_SYNTROPY = (
-    "May cause drowsiness. Take only at bedtime. Do not drive or operate machinery "
-    "after taking. Do not combine with alcohol, sleep aids or sedatives. Avoid in "
+    "May cause drowsiness. Take at bedtime, when wakeful during the night, or both, "
+    "as desired or guided. Do not drive or operate machinery "
+    "after taking. Do not combine with alcohol, sedatives, or sleep aids other "
+    "than Brain Cleanse and Sleep Syntropy. Avoid in "
     "pregnancy or while breastfeeding. Not for children. Do not use if you have "
     "liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. "
     "If you take an antidepressant, a migraine medicine, tramadol, St John's wort "
@@ -314,8 +317,10 @@ def test_two_cautions_get_the_keep_them_separate_rule(q):
     "what should i know before taking brain cleanse?",
     "What should I know before taking Sleep Syntropy?",
 ])
-def test_one_caution_only_caution_gets_the_word_for_word_rule(q):
-    # Read-back on 17ba8a1e: a lone caution was paraphrased and lost most lines.
+def test_one_opted_in_caution_gets_the_word_for_word_rule(q):
+    # Read-back on 17ba8a1e: a lone caution was paraphrased and lost most lines. Brain
+    # Cleanse and Sleep Syntropy are pinned since the copy spec (2026-10-15) and keep the
+    # rule through their chat_caution opt-in; the Brain Program is still caution-only.
     b = _block(q)
     assert app._ONE_CAUTION_RULE in b, q
     assert app._SEVERAL_CAUTIONS_RULE not in b
@@ -341,7 +346,8 @@ def test_a_pinned_product_alone_keeps_its_header_unchanged(q, gated, monkeypatch
     "What should I know before taking the Sleep Bundle?",
 ])
 def test_a_gated_answer_asks_for_the_label_caution_wording(q):
-    # Review round 1: the gated note asks for "The label caution is ...".
+    # Review round 1: the gated note asks for "The label caution is ...". Brain Cleanse
+    # keeps the rewording through its opt-in after pinning (copy spec, 2026-10-15).
     b = app.named_product_facts_block(q, gated=True)
     assert app._GATED_FACTS_NOTE in b
     assert '"The label caution for <product name> is:"' in b
@@ -349,16 +355,17 @@ def test_a_gated_answer_asks_for_the_label_caution_wording(q):
 
 
 def test_a_gated_pinned_only_answer_with_several_cautions_is_unchanged():
-    # Review round 3: the gated rewording belongs to caution-only answers.
+    # Review round 3: the gated rewording belongs to answers with an opted-in caution.
     q = "Vitamin A Syntropy, Estro-Clear and Phytolacca americana Oil Roll-On?"
     b = app.named_product_facts_block(q, gated=True)
     assert app._SEVERAL_CAUTIONS_RULE in b
     assert '"The label caution for <product name> is:"' not in b
 
 
-def test_a_caution_inside_a_pinned_description_counts_beside_a_caution_only_product():
+def test_a_caution_inside_a_pinned_description_counts_beside_an_opted_in_caution():
     # Review round 3: AngiogenX carries its caution in its pinned description, so with
-    # Brain Cleanse the answer shows two cautions and needs the plural rule.
+    # Brain Cleanse the answer shows two cautions and needs the plural rule. Brain Cleanse
+    # is pinned with the opt-in since the copy spec (2026-10-15); the count still holds.
     b = _block("What is Brain Cleanse and AngiogenX?")
     assert "### AngiogenX" in b and "### Brain Cleanse" in b
     assert app._SEVERAL_CAUTIONS_RULE in b and app._ONE_CAUTION_RULE not in b
