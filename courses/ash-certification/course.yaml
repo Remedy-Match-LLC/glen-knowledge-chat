@@ -71,6 +71,7 @@ modules:
       - 04-navigating-terrain-discussion-1a-2-25-26
       - 05-terrain-2-05-20-26
       - 06-scar-tissue-and-terrain
+      - 07-eating-for-your-terrain
   - slug: 10-diagnoses
     title: "Diagnoses"
     lessons:
