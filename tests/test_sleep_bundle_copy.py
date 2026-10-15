@@ -159,6 +159,9 @@ def test_a_first_sentence_longer_than_the_limit_falls_back_to_a_word_cut(monkeyp
      "20 mg."),
     # A decimal is not a sentence end, even where "1." ends exactly at the limit (216).
     ("A" * 150 + ". " + "B" * 56 + " take 1.5 mg daily. More text follows here.", "1."),
+    # A dose unit before a capital: "20 mg. Only if ..." keeps its condition (round 2).
+    ("Use it as directed and " + "more words " * 11 + "take 20 mg. Only if your clinician "
+     + "advises it " * 8 + "end.", "mg."),
     # Past 60% of the limit, so the stub guard cannot mask it.
     ("Use it as directed and " + "more words " * 11 + "e.g. Brain Cleanse at bedtime "
      + "and more words " * 10 + "end.", "e.g."),
