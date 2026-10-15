@@ -2242,7 +2242,8 @@ def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> b
     # "how much of the Estrogen and Fibrin Balance Program" takes "of the"; a single
     # word does not: "what is the appestat?" asks about the body's appetite set point
     # (review round 3, 2026-10-09).
-    if before and before.group("the") and not text[start:end].lower().endswith("program"):
+    # "taking the sleep bundle" reads the same way (formulation read-back, 2026-10-15).
+    if before and before.group("the") and not text[start:end].lower().endswith(("program", "bundle")):
         before = None
     return bool(before or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
 
@@ -2303,6 +2304,11 @@ from collections import namedtuple as _namedtuple  # noqa: E402
 # One caution held until the product cap is applied: `key` is the product whose caution
 # it is, `ref` names it when a repeat only points back.
 _CautionLine = _namedtuple("_CautionLine", "key text ref")
+_SEVERAL_CAUTIONS_RULE = (
+    "There is more than one caution below. Copy each one word for word, as its own "
+    "paragraph starting \"Caution for <product name>:\", every sentence of it, even where "
+    "two cautions share sentences. Do not shorten, reword, merge or summarise them, and do "
+    "not fold them into the rest of the answer.")
 _CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
                       "For anything else, answer from the snippets as usual.")
 
@@ -2450,6 +2456,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     # Once per answer, counted only over the blocks kept, so a block cut by the cap never
     # takes a caution with it. A repeat points back to the text already given.
     given = set()
+    written = 0
     for i, parts in enumerate(blocks):
         lines = []
         for part in parts:
@@ -2459,9 +2466,14 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                 else:
                     given.add(part.key)
                     part = part.text
+                    written += 1 if part else 0
             if part:
                 lines.append(part)
         blocks[i] = "\n".join(lines)
+    # Two cautions in one answer were merged into one paraphrase, losing lines (Sleep
+    # Bundle read-back, 2026-10-15). Said only when there are two, so an answer with one
+    # caution keeps its header unchanged.
+    several = (_SEVERAL_CAUTIONS_RULE + "\n") if written > 1 else ""
     if all_caution_only:
         # Only cautions are approved for these products, so the header asks for no dose and
         # no description from this text: those come from the snippets, as they did before
@@ -2474,6 +2486,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
             "it, in its own words. Do not attach to it any condition, mechanism, pairing or "
             "dose that the snippets give for a different product, even one with a similar "
             "name.\n"
+            + several
             + (_GATED_FACTS_NOTE if gated else "") + "\n"
             + "\n\n".join(blocks)
         )
@@ -2495,6 +2508,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         "describe what mainstream medicine says about related conditions, and do not list "
         "diseases or conditions as examples of where it helps, even in passing. The Sources "
         "line names this product text only, and a page CTA links this product's Page.\n"
+        + several
         + (_GATED_FACTS_NOTE if gated else "") + "\n"
         + "\n\n".join(blocks)
     )
