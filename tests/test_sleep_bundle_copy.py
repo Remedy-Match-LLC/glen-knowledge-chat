@@ -135,13 +135,14 @@ def test_the_guidance_hint_ends_at_a_whole_sentence(slug):
     assert len(intro) > 220
     purpose = app._product_guidance_hint(slug).split("| purpose: ", 1)[1]
     assert len(purpose) <= 220
-    assert purpose.endswith(".") and not purpose.endswith("...")
-    assert intro.startswith(purpose)
+    # A whole sentence, then the mark that more follows (review round 3).
+    assert purpose.endswith(". ...")
+    assert intro.startswith(purpose[:-len(" ...")])
 
 
 def test_the_sleep_bundle_hint_never_ends_mid_dose():
     purpose = app._product_guidance_hint(SLUG).split("| purpose: ", 1)[1]
-    assert purpose.endswith("within 30 minutes.")
+    assert purpose.endswith("within 30 minutes. ...")
 
 
 def test_a_first_sentence_longer_than_the_limit_falls_back_to_a_word_cut(monkeypatch):
@@ -156,15 +157,26 @@ def test_a_first_sentence_longer_than_the_limit_falls_back_to_a_word_cut(monkeyp
     # Review round 2: an abbreviation is not a sentence end, so the condition stays.
     ("Take 20 mg. only if directed by your clinician " + "and keep reading " * 15 + "end.",
      "20 mg."),
-    # A decimal at the limit is not a sentence end either.
-    ("A" * 210 + " take 1.5 mg daily. More text follows here.", "1."),
-    ("Use it as directed, e.g. Brain Cleanse at bedtime " + "and more words " * 14 + "end.",
-     "e.g."),
+    # A decimal is not a sentence end, even where "1." ends exactly at the limit (216).
+    ("A" * 150 + ". " + "B" * 56 + " take 1.5 mg daily. More text follows here.", "1."),
+    # Past 60% of the limit, so the stub guard cannot mask it.
+    ("Use it as directed and " + "more words " * 11 + "e.g. Brain Cleanse at bedtime "
+     + "and more words " * 10 + "end.", "e.g."),
 ])
 def test_the_hint_never_cuts_at_an_abbreviation_or_a_decimal(monkeypatch, intro, bad_end):
     products = copy.deepcopy(app._PRODUCTS)
     products["products"][SLUG]["intro"] = intro
     monkeypatch.setattr(app, "_PRODUCTS", products)
     purpose = app._product_guidance_hint(SLUG).split("| purpose: ", 1)[1]
-    assert not purpose.endswith(bad_end), purpose
+    core = purpose.removesuffix(" ...").removesuffix("...")
+    assert not core.endswith(bad_end), purpose
     assert len(purpose) <= 220
+
+
+def test_a_short_first_sentence_is_not_kept_as_a_stub(monkeypatch):
+    # Review round 3: scraped text such as "Vitality . <long sentence>" cut to "Vitality .".
+    products = copy.deepcopy(app._PRODUCTS)
+    products["products"][SLUG]["intro"] = "Vitality . Price: $70. " + "word " * 60 + "end."
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    purpose = app._product_guidance_hint(SLUG).split("| purpose: ", 1)[1]
+    assert len(purpose) > 132 and purpose.endswith("...")

@@ -193,11 +193,11 @@ def test_a_listed_bundle_gets_each_component_caution_by_name(q, bundle):
 
 def test_an_unpinned_bundle_block_carries_no_description_or_components():
     b = _block("Is the Brain Program safe?")
-    p = PRODUCTS["brain-program"]
     assert "### Brain Program" in b
-    assert (p.get("bundle_description") or "x" * 40)[:40] not in b
-    assert (p.get("description") or "x" * 40)[:40] not in b
+    # The Brain Program has no description or bundle_description of its own, so the
+    # block's shape is the check (review round 3): no component list, no directions.
     assert "Products in this program" not in b
+    assert "Directions:" not in b and "Program directions and cautions" not in b
 
 
 def test_an_unlisted_bundle_gets_no_component_caution():
