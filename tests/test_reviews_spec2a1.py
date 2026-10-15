@@ -2,6 +2,12 @@ import sqlite3
 import begin_funnel
 from dashboard import product_reviews as pr
 
+def _signed(name, email):
+    # The sign-in email cookies are signed since 2026-10-15; a plain value is refused.
+    import app
+    return app._sign_email_cookie(name, email)
+
+
 
 def _cx():
     return sqlite3.connect(":memory:")
@@ -201,7 +207,7 @@ def test_reorder_items_reviewed_annotation_false_when_no_review(monkeypatch, tmp
     _seed_paid_order(appmod, "buyer@x.com", name)
     _seed_membership(appmod, "buyer@x.com")
     c = appmod.app.test_client()
-    c.set_cookie("rm_reorder_email", "buyer@x.com")
+    c.set_cookie("rm_reorder_email", _signed("rm_reorder_email", "buyer@x.com"))
     d = c.get("/api/reorder/items").get_json()
     assert d and "items" in d
     item = next((i for i in d["items"] if i.get("slug") == slug), None)
@@ -221,7 +227,7 @@ def test_reorder_items_reviewed_annotation_true_after_review(monkeypatch, tmp_pa
     with sqlite3.connect(appmod.LOG_DB) as cx:
         _pr.upsert_review(cx, slug, "buyer@x.com", "Buyer", 5, body="great")
     c = appmod.app.test_client()
-    c.set_cookie("rm_reorder_email", "buyer@x.com")
+    c.set_cookie("rm_reorder_email", _signed("rm_reorder_email", "buyer@x.com"))
     d = c.get("/api/reorder/items").get_json()
     item = next((i for i in d["items"] if i.get("slug") == slug), None)
     assert item is not None
@@ -236,7 +242,7 @@ def test_reorder_items_reviewed_true_when_flag_off(monkeypatch, tmp_path):
     _seed_paid_order(appmod, "buyer@x.com", name)
     _seed_membership(appmod, "buyer@x.com")
     c = appmod.app.test_client()
-    c.set_cookie("rm_reorder_email", "buyer@x.com")
+    c.set_cookie("rm_reorder_email", _signed("rm_reorder_email", "buyer@x.com"))
     d = c.get("/api/reorder/items").get_json()
     item = next((i for i in d["items"] if i.get("slug") == slug), None)
     assert item is not None

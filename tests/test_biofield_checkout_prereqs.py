@@ -13,6 +13,12 @@ from dashboard import biofield_store, client_photos, client_scans, intake, scan_
 
 E = "buyer@x.com"
 
+def _signed(name, email):
+    # The sign-in email cookies are signed since 2026-10-15; a plain value is refused.
+    import app
+    return app._sign_email_cookie(name, email)
+
+
 
 def _setup(monkeypatch, tmp_path):
     db = str(tmp_path / "log.db")
@@ -93,7 +99,7 @@ def test_readiness_page_posts_no_email_and_the_signed_in_one_is_used(monkeypatch
     cap, db = _setup(monkeypatch, tmp_path)
     _prepare_in_portal(db, "signed@x.com")
     c = appmod.app.test_client()
-    c.set_cookie("rm_biofield_email", "signed@x.com", domain="localhost")
+    c.set_cookie("rm_biofield_email", _signed("rm_biofield_email", "signed@x.com"), domain="localhost")
     r = c.post("/biofield/checkout", json={"signed_in": True})
     assert r.status_code == 200, r.get_data(as_text=True)
     assert cap["email"] == "signed@x.com"
@@ -105,7 +111,7 @@ def test_a_post_with_no_email_and_no_flag_never_uses_the_cookie(monkeypatch, tmp
     cap, db = _setup(monkeypatch, tmp_path)
     _prepare_in_portal(db, "cookie@x.com")
     c = appmod.app.test_client()
-    c.set_cookie("rm_biofield_email", "cookie@x.com", domain="localhost")
+    c.set_cookie("rm_biofield_email", _signed("rm_biofield_email", "cookie@x.com"), domain="localhost")
     r = c.post("/biofield/checkout?token=someone-else", json={})
     assert r.status_code == 400
     assert "amount" not in cap
@@ -177,7 +183,7 @@ def test_a_portal_photo_turns_the_readiness_page_photo_green(monkeypatch, tmp_pa
     cx.commit()
     cx.close()
     c = appmod.app.test_client()
-    c.set_cookie("rm_biofield_email", E, domain="localhost")
+    c.set_cookie("rm_biofield_email", _signed("rm_biofield_email", E), domain="localhost")
     st = c.get("/api/biofield/ready").get_json()
     assert st["items"]["photo"]["status"] == "green"
 
@@ -190,7 +196,7 @@ def test_steps_confirmed_on_the_readiness_page_open_the_checkout(monkeypatch, tm
     biofield_store.set_photo_on_file(cx, E, "x.jpg")
     cx.close()
     c = appmod.app.test_client()
-    c.set_cookie("rm_biofield_email", E, domain="localhost")
+    c.set_cookie("rm_biofield_email", _signed("rm_biofield_email", E), domain="localhost")
     assert c.post("/biofield/checkout", json={"signed_in": True}).status_code == 409
     for item in ("scan", "intake"):
         assert c.post("/api/biofield/confirm", json={"item": item}).status_code == 200

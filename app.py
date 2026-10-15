@@ -151,6 +151,18 @@ def _start_request_timing():
 
 
 @app.after_request
+def _private_json_by_default(response):
+    """A JSON answer that sets no caching rule is private and never stored. Many carry
+    per-viewer data (wishlist, membership, orders, autoship), so a shared cache must not
+    hand one viewer's answer to another (2026-10-15). A route that sets its own
+    Cache-Control keeps it, and static files are left alone."""
+    if (response.mimetype == "application/json" and "Cache-Control" not in response.headers
+            and not request.path.startswith("/static/")):
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@app.after_request
 def _finish_request_timing(response):
     if not getattr(g, "_timed_request", False):
         return response
@@ -725,7 +737,7 @@ def send_magic_link_email(to_email: str, name: str, magic_url: str) -> tuple:
     """Send a magic-link email. Tries (in order):
       1. GHL workflow trigger (if GHL_MAGIC_LINK_WORKFLOW_ID env var is set)
       2. SMTP (if SMTP_HOST/USER/PASS env vars are set)
-      3. Console log (development fallback — link visible in Render logs)
+      3. Neither: logs that it was not sent. The link itself is never logged.
 
     Returns (sent_via, error_or_none).
     """
@@ -795,7 +807,8 @@ def send_magic_link_email(to_email: str, name: str, magic_url: str) -> tuple:
             print(f"[auth] SMTP magic-link send failed: {e}", flush=True)
 
     # Path 3: console fallback (development / pre-config)
-    print(f"\n[auth] MAGIC LINK for {to_email}: {magic_url}\n", flush=True)
+    # Never the link itself: anyone who can read the logs could sign in with it.
+    print(f"[auth] magic link NOT sent to {to_email}: no email path worked", flush=True)
     return "console-log", "no email send mechanism configured"
 
 
@@ -4395,9 +4408,46 @@ def _confirm_post_page(action_url, *, title, heading, blurb, button,
     ), status, {"Content-Type": "text/html; charset=utf-8"}
 
 
+# The emailed sign-in links (reorder, cert, biofield) leave the visitor's email in a
+# cookie. It was stored plain, so anyone could set another customer's address and read
+# their orders or cancel their autoship (verified locally 2026-10-15, Glen "yes" to fix).
+# The value is now signed with a key derived from CONSOLE_SECRET and expires with the
+# cookie. With no secret, nothing is signed and nothing is accepted.
+_EMAIL_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
+
+
+def _email_cookie_serializer(name):
+    # Read from the environment each time, the way CONSOLE_SECRET itself is resolved.
+    secret = os.environ.get("CONSOLE_SECRET", os.environ.get("WEBHOOK_SECRET", ""))
+    if not secret:
+        return None
+    from itsdangerous import URLSafeTimedSerializer
+    key = hmac.new(secret.encode("utf-8"), b"email-cookie-v1", hashlib.sha256).hexdigest()
+    return URLSafeTimedSerializer(key, salt=f"email-cookie:{name}")
+
+
+def _sign_email_cookie(name, email):
+    s = _email_cookie_serializer(name)
+    return s.dumps((email or "").strip().lower()) if s else ""
+
+
+def _email_from_cookie(name):
+    """The verified email in a signed sign-in cookie, or "" for a missing, forged,
+    expired or old plain-text value."""
+    raw = request.cookies.get(name, "") or ""
+    s = _email_cookie_serializer(name)
+    if not raw or s is None:
+        return ""
+    try:
+        val = s.loads(raw, max_age=_EMAIL_COOKIE_MAX_AGE)
+    except Exception:
+        return ""
+    return val.strip().lower() if isinstance(val, str) else ""
+
+
 def _magic_link_login_view(token, *, purpose, cookie, dest, invalid_html,
                            heading, blurb, button, title="Sign in",
-                           cookie_max_age=60 * 60 * 24 * 30):
+                           cookie_max_age=_EMAIL_COOKIE_MAX_AGE):
     """Shared body for the emailed sign-in links (reorder / cert / biofield /
     coaching). GET validates and renders the confirm page; POST consumes the
     token and sets the cookie. See _confirm_post_page for why."""
@@ -4451,8 +4501,8 @@ def _magic_link_login_view(token, *, purpose, cookie, dest, invalid_html,
         return _confirm_post_page(request.path, title=title, heading=heading,
                                   blurb=blurb, button=button)
     resp = _redirect(dest, code=302)
-    resp.set_cookie(cookie, email, max_age=cookie_max_age, httponly=True,
-                    samesite="Lax", secure=request.is_secure)
+    resp.set_cookie(cookie, _sign_email_cookie(cookie, email), max_age=cookie_max_age,
+                    httponly=True, samesite="Lax", secure=request.is_secure)
     return resp
 
 
@@ -9886,7 +9936,7 @@ def begin_section_pref():
 
 def _wishlist_ids(request):
     au = get_authenticated_user(request) or {}
-    email = (au.get("email") or request.cookies.get("rm_reorder_email", "") or "").strip().lower()
+    email = (au.get("email") or _email_from_cookie("rm_reorder_email") or "").strip().lower()
     session_id = request.cookies.get("amg_session", "")
     return email, session_id
 
@@ -10350,7 +10400,7 @@ def begin_product_data(slug):
             (get_authenticated_user(request) or {}).get("email", "")),
     }
     _viewer_email = (((get_authenticated_user(request) or {}).get("email", "")
-                      or request.cookies.get("rm_reorder_email", "")).strip().lower())
+                      or _email_from_cookie("rm_reorder_email")).strip().lower())
     # Autoship eligibility: a bundle must carry autoship_eligible (device bundles are
     # false); a single SKU must be a Functional Formulation (_qty_eligible = qty_pricing
     # and not info_only), which excludes devices (ionizers/nightlights) and services.
@@ -10918,7 +10968,7 @@ def begin_product_page_gen(slug, section):
 
 def _ingredient_viewer_email():
     au = get_authenticated_user(request) or {}
-    return (au.get("email") or request.cookies.get("rm_reorder_email", "") or "").strip().lower()
+    return (au.get("email") or _email_from_cookie("rm_reorder_email") or "").strip().lower()
 
 
 def _ingredient_paid_ok(email):
@@ -15537,7 +15587,7 @@ def auth_magic_link_request():
         "expires_in_minutes": AUTH_TOKEN_TTL_MIN,
         "note":     ("Check your email for the sign-in link."
                      if sent_via in ("ghl-workflow", "smtp")
-                     else "Email sending not yet configured. Check Render logs for the magic link.")
+                     else "We could not send the sign-in email. Please try again shortly.")
     })
 
 
@@ -15556,7 +15606,11 @@ def auth_magic_link_verify():
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         row = cx.execute(
-            "SELECT email, expires_at, consumed_at FROM auth_tokens WHERE token_hash = ?",
+            # Only a sign-in token signs in. Without the purpose, any emailed token
+            # (a staff view pass bound to a client's email among them) made a 30-day
+            # session (2026-10-15).
+            "SELECT email, expires_at, consumed_at FROM auth_tokens "
+            "WHERE token_hash = ? AND purpose = 'magic_link'",
             (th,)
         ).fetchone()
         if not row:
@@ -18793,7 +18847,8 @@ def _send_affiliate_magic_link(to_email: str, name: str, magic_url: str) -> tupl
         except Exception as e:
             print(f"[affiliate-magic] SMTP send failed: from={smtp_from} to={to_email} err={e!r}", flush=True)
             return "smtp-failed", str(e)
-    print(f"\n[affiliate-magic] MAGIC LINK for {to_email}: {magic_url}\n", flush=True)
+    # Never the link itself: anyone who can read the logs could sign in with it.
+    print(f"[affiliate-magic] magic link NOT sent to {to_email}: no SMTP configured", flush=True)
     return "console-log", "no SMTP configured"
 
 
@@ -24476,7 +24531,7 @@ def _stripe_checkout_url_for_reorder(out, email):
 
 
 def _reorder_email_from_cookie():
-    return (request.cookies.get("rm_reorder_email", "") or "").strip().lower()
+    return (_email_from_cookie("rm_reorder_email") or "").strip().lower()
 
 
 _CART_COOKIE = "rm_cart"
@@ -39513,7 +39568,7 @@ def _cert_data_dir():
 
 
 def _cert_email_from_cookie():
-    return (request.cookies.get("rm_cert_email", "") or "").strip().lower()
+    return (_email_from_cookie("rm_cert_email") or "").strip().lower()
 
 
 @app.route("/cert")
@@ -39850,7 +39905,7 @@ def _biofield_data_dir():
 def _biofield_email():
     """Resolve the gate's email from the biofield magic-link cookie, falling
     back to an authenticated member session if one exists."""
-    em = (request.cookies.get("rm_biofield_email", "") or "").strip().lower()
+    em = (_email_from_cookie("rm_biofield_email") or "").strip().lower()
     if em:
         return em
     user = get_authenticated_user(request)

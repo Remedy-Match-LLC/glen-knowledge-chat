@@ -1,6 +1,12 @@
 import sqlite3
 from dashboard import referrals as rf
 
+def _signed(name, email):
+    # The sign-in email cookies are signed since 2026-10-15; a plain value is refused.
+    import app
+    return app._sign_email_cookie(name, email)
+
+
 
 def _cx():
     return sqlite3.connect(":memory:")
@@ -85,7 +91,7 @@ def test_my_code_endpoint(monkeypatch, tmp_path):
         begin_funnel.record_unlock(_cx, session_id="sess-mycode-001", trigger="tos",
                                    email="owner@x.com", tos=True)
     c = appmod.app.test_client()
-    c.set_cookie("rm_reorder_email", "owner@x.com")     # _reorder_email_from_cookie source
+    c.set_cookie("rm_reorder_email", _signed("rm_reorder_email", "owner@x.com"))     # _reorder_email_from_cookie source
     r1 = c.get("/api/referral/my-code").get_json()
     r2 = c.get("/api/referral/my-code").get_json()
     assert r1["code"] and r1["code"] == r2["code"]       # stable
@@ -97,7 +103,7 @@ def test_my_code_endpoint(monkeypatch, tmp_path):
 
 def test_my_code_404_when_flag_off(monkeypatch, tmp_path):
     appmod = _reload_ref_app(monkeypatch, tmp_path, referrals="false")
-    c = appmod.app.test_client(); c.set_cookie("rm_reorder_email", "owner@x.com")
+    c = appmod.app.test_client(); c.set_cookie("rm_reorder_email", _signed("rm_reorder_email", "owner@x.com"))
     assert c.get("/api/referral/my-code").status_code == 404
 
 
