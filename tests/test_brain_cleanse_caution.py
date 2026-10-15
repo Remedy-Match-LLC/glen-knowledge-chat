@@ -189,6 +189,7 @@ def test_the_product_page_carries_its_caution_once(appmod, slug):
     assert secs["ingredients"]["body"]["directions"] == COPY[slug]["directions"]
     assert secs["intro"]["body"] == COPY[slug]["intro"]
     assert secs["description"]["body"] == COPY[slug]["description"]
+    assert secs["description"]["keep_breaks"] is True
 
 
 @pytest.mark.parametrize("slug", sorted(APPROVED))
@@ -251,6 +252,12 @@ def test_both_pinned_cautions_get_the_several_rule():
     assert b.count(f"Caution: {BRAIN_CLEANSE}") == 1
     assert b.count(f"Caution: {SLEEP_SYNTROPY}") == 1
     assert app._SEVERAL_CAUTIONS_RULE in b
+    # Gated, both cautions take the label wording (review round 1: this is what the
+    # opt-in clause changes when two pinned cautions are already counted).
+    gated = app.named_product_facts_block(
+        "Can I take Brain Cleanse and Sleep Syntropy together?", gated=True)
+    assert '"The label caution for <product name> is:"' in gated
+    assert '"Caution for <product name>:"' not in gated
 
 
 @pytest.mark.parametrize("slug", sorted(APPROVED))
