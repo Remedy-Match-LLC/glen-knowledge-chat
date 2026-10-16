@@ -7301,6 +7301,10 @@
   "scar-silk": {
    "warning": "Ask your practitioner before use if you take a blood thinner or prescription medication, or before surgery.",
    "chat_caution": true,
+   "directions": "Up to 3 capsules a day between meals.",
+   "copy_pinned": [
+    "directions"
+   ],
    "name": "Scar Silk",
    "price_cents": 7000,
    "pinecone_title": "Scar Silk",
