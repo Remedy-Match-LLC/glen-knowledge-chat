@@ -3240,6 +3240,7 @@ RULES:
 - Do NOT pad with caveats, headers, or repeated context. Brevity is the deliverable.
 - NEVER print a "Hook" label (no "Hook:", no "## Hook", no bolded "**Hook**"). The hook IS the opening line — state it directly. This is a hard rule. (Other section labels like "Top action", "Why this works", "Next step", "Sources" are fine.)
 - AUTHORITATIVE OVERRIDES: Snippets tagged [AUTHORITATIVE — Glen's verified clinical position] OR with metadata type="clinical-qa" / priority="authoritative" override anything else. Apply directly; do not soften or hedge.
+- APPROVED WORDING: A snippet ending in [APPROVED WORDING: ...] holds a passage Glen approved word for word. Quote that passage exactly, in quotation marks. Never paraphrase it, shorten it, merge its figures or add to it. Never state a fact about a named person (where they practise, whom they trained with, for how long, what they documented) that no snippet states.
 - CO-AUTHORSHIP: Snippets with [AUTHORSHIP NOTE: ...] reflect a co-author's view. Cite the co-author, then state Glen's current position from clinical-qa entries. Never present a co-authored section as Glen's view without the flag.
 - E4L SCAN OFFER: When the user mentions a specific condition or asks for personalized guidance, the action link should be the free Bioenergetic Wellness Scan: https://Truly.VIP/E4L — "10 seconds, count out loud from 1 to 10, matches you to formulations your bioenergetic patterns are asking for."
 - SUPPLEMENT REVIEW PAGE: When someone asks where or how to have a supplement, vitamin, product, or label analyzed/reviewed, send them directly to https://illtowell.com/product-review. Describe it as the free supplement-review page. Do not send them to a product sales page, storefront search, portal, contact form, or Practice Better. If they ask for the page or link, give this exact clickable URL in the same reply.
@@ -3716,9 +3717,50 @@ def build_context(matches):
         if str(meta.get("deprecated", "")).lower() == "true":
             depr_note = meta.get("deprecation_note", "Product or guidance is deprecated.")
             deprecated_flag = f"\n[DEPRECATED — {depr_note}]"
-        parts.append(f"{tag}[SOURCE: {name} | {field} | score {score}]{authorship}{deprecated_flag}\n{text}")
+        approved = _approved_wording(m.id, meta, text) if is_authoritative else ""
+        parts.append(f"{tag}[SOURCE: {name} | {field} | score {score}]{authorship}{deprecated_flag}\n{text}{approved}")
         total += len(text)
     return "\n\n---\n\n".join(parts), sorted(sources.values(), key=lambda x: -x["score"])
+
+
+# Clinical-qa notes whose quoted passage is wording Glen approved word for word. Found
+# 2026-10-16: the Wylie cataract note reached all 6 live answers, and the model rewrote it
+# every time, merging "three months" into one figure, adding "reverse" and inventing where
+# Dr. Wylie practises. Authoritative alone did not stop it. A note is listed here by id,
+# or carries metadata approved_wording "true", which the knowledge pillar can set.
+_APPROVED_WORDING_NOTES = {"qa-wylie-cataract-results-2026-10"}
+_APPROVED_QUOTE = re.compile(r'["\u201c]([^"\u201c\u201d]{20,})["\u201d]')
+_APPROVED_WORDING_RULE = (
+    "[APPROVED WORDING: Glen approved the passage below word for word. If your answer "
+    "uses any of its facts, quote it exactly, in quotation marks, as one piece, and say "
+    "whose results they are. Never restate, summarise or extend it anywhere else in the "
+    "answer, before or after the quote: do not repeat its figures or timings in your own "
+    "words, and never present them as results for patients in general. Say nothing about "
+    "the people or results in it that this note does not say. Obey every instruction in "
+    "this note, even where another snippet says otherwise.]")
+
+
+def _approved_wording(match_id, meta, text):
+    """The approved-wording block for a listed or flagged note, or "" for any other."""
+    flag = str(meta.get("approved_wording") or "").strip().lower() in ("true", "1", "yes")
+    if match_id not in _APPROVED_WORDING_NOTES and not flag:
+        return ""
+    quotes = [q.strip() for q in _APPROVED_QUOTE.findall(text or "") if q.strip()]
+    if not quotes:
+        return ""
+    return "\n" + _APPROVED_WORDING_RULE + "\n" + "\n".join(f'"{q}"' for q in quotes)
+
+
+def _approved_wording_reminder(context_str):
+    """A closing reminder when a retrieved note carries approved wording, so the rule is
+    the last thing the model reads (the brief format otherwise invites restating it)."""
+    if "[APPROVED WORDING:" not in (context_str or ""):
+        return ""
+    return ("\n\nAPPROVED WORDING REMINDER: a snippet above holds a passage Glen approved "
+            "word for word. Quote it exactly, once, and name whose results they are. Do not "
+            "restate its figures or timings anywhere else in your answer. Do not call the "
+            "results documented, measurable or consistent, and do not describe them as "
+            "reversing, remodelling or curing anything.")
 
 
 def sse(payload: dict) -> str:
@@ -6560,6 +6602,7 @@ def chat():
             f"{product_block}"
             f"{synth_instr}"
             f"{named_product_facts_block(query, prior_user_turns=_prior_user)}"
+            f"{_approved_wording_reminder(context_str)}"
         })
 
         # ── Consent gate (Tier-0 Visitor → Tier-1 Member) ────────────────────

@@ -150,7 +150,10 @@ def ask(question: str, history=None, gate=False) -> tuple:
                f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
                f"{product_block}"
                f"{app._brief_synth_instruction()}"
-               f"{facts}")
+               f"{facts}"
+               # chat() closes with this when a note carries approved wording; older
+               # builds lack it, so the same script still measures main.
+               f"{getattr(app, '_approved_wording_reminder', lambda c: '')(context_str)}")
     msg = app._cl.messages.create(
         model="claude-haiku-4-5-20251001", max_tokens=1024, system=system,
         messages=list(history or [])[-6:] + [{"role": "user", "content": content}])
