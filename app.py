@@ -3214,7 +3214,7 @@ Logged-in users get the long-form structured to actually shift belief, not just 
 2. **Justify the false belief** (2-4 sentences): name the limiting belief the reader almost certainly holds — and steelman it. Acknowledge the reasons it feels true (mainstream medicine reinforces it, every authority says it, etc.). They should nod, not feel attacked.
 3. **Break** (2-4 sentences): show why the belief is incomplete or wrong — one decisive piece of evidence or mechanism that cracks it open. This is the moment of break.
 4. **Rebuild** (4-8 sentences): install the new pattern — Glen's clinical paradigm on this question. Mechanism, what to do differently, what changes. Include named formulations + product links exactly as in the executive-summary rules.
-5. **Journey** (2-4 sentences): how Glen (or a representative client) discovered or lived this shift — concrete, dated, named. Anchor it in lived experience, not theory alone.
+5. **Journey** (2-4 sentences): how Glen (or a representative client) discovered or lived this shift — concrete, dated, named, with names and dates only from the snippets. Anchor it in lived experience, not theory alone.
 6. **The one thing + next step** (1-2 sentences): the single take-home + action link (E4L scan or product).
 
 Voice: Glen's, not Brunson's. Practitioner-clinical, not hype. The Break & Rebuild architecture goes in; the gameshow energy stays out. Speckhart boundary: a credential is *authority*, never a treatment claim for a named disease — never let a credential or formulation imply diagnosis or cure of a named condition.
@@ -3240,6 +3240,7 @@ RULES:
 - Do NOT pad with caveats, headers, or repeated context. Brevity is the deliverable.
 - NEVER print a "Hook" label (no "Hook:", no "## Hook", no bolded "**Hook**"). The hook IS the opening line — state it directly. This is a hard rule. (Other section labels like "Top action", "Why this works", "Next step", "Sources" are fine.)
 - AUTHORITATIVE OVERRIDES: Snippets tagged [AUTHORITATIVE — Glen's verified clinical position] OR with metadata type="clinical-qa" / priority="authoritative" override anything else. Apply directly; do not soften or hedge.
+- APPROVED WORDING: A snippet carrying an [APPROVED WORDING: ...] block holds a passage Glen approved word for word. If your answer mentions any of its facts, quote that passage exactly, in quotation marks, and never give those facts in your own words instead. Never paraphrase it, shorten it, merge its figures or add to it. When such a block is present, state nothing about a person named in it (where they practise, whom they trained with, for how long, what they documented) that no snippet states.
 - CO-AUTHORSHIP: Snippets with [AUTHORSHIP NOTE: ...] reflect a co-author's view. Cite the co-author, then state Glen's current position from clinical-qa entries. Never present a co-authored section as Glen's view without the flag.
 - E4L SCAN OFFER: When the user mentions a specific condition or asks for personalized guidance, the action link should be the free Bioenergetic Wellness Scan: https://Truly.VIP/E4L — "10 seconds, count out loud from 1 to 10, matches you to formulations your bioenergetic patterns are asking for."
 - SUPPLEMENT REVIEW PAGE: When someone asks where or how to have a supplement, vitamin, product, or label analyzed/reviewed, send them directly to https://illtowell.com/product-review. Describe it as the free supplement-review page. Do not send them to a product sales page, storefront search, portal, contact form, or Practice Better. If they ask for the page or link, give this exact clickable URL in the same reply.
@@ -3682,7 +3683,9 @@ def build_context(matches):
         seen.add(m.id)
         meta = m.metadata or {}
         text = _redact_transcript_prices(meta.get("text", "").strip(), meta)
-        if not text or total + len(text) > MAX_CONTEXT_CHARS:
+        is_authoritative = meta.get("type") == "clinical-qa" or meta.get("priority") == "authoritative"
+        approved = _approved_wording(m.id, meta, text) if is_authoritative and text else ""
+        if not text or total + len(text) + len(approved) > MAX_CONTEXT_CHARS:
             continue
         name  = meta.get("name") or meta.get("book") or meta.get("source") or "Unknown"
         field = meta.get("field") or meta.get("source_type") or ""
@@ -3693,7 +3696,6 @@ def build_context(matches):
                              "score": score, "chunks": []}
         sources[name]["chunks"].append(meta.get("chunk_index", 0))
         sources[name]["score"] = max(sources[name]["score"], score)
-        is_authoritative = meta.get("type") == "clinical-qa" or meta.get("priority") == "authoritative"
         tag = "[AUTHORITATIVE — Glen's verified clinical position] " if is_authoritative else ""
         authorship = meta.get("authorship_note") or ""
         # clinical-references holds OTHER AUTHORS' published books. They carry `author`
@@ -3716,9 +3718,78 @@ def build_context(matches):
         if str(meta.get("deprecated", "")).lower() == "true":
             depr_note = meta.get("deprecation_note", "Product or guidance is deprecated.")
             deprecated_flag = f"\n[DEPRECATED — {depr_note}]"
-        parts.append(f"{tag}[SOURCE: {name} | {field} | score {score}]{authorship}{deprecated_flag}\n{text}")
+        total += len(approved)
+        parts.append(f"{tag}[SOURCE: {name} | {field} | score {score}]{authorship}{deprecated_flag}\n{text}{approved}")
         total += len(text)
     return "\n\n---\n\n".join(parts), sorted(sources.values(), key=lambda x: -x["score"])
+
+
+# Clinical-qa notes holding wording Glen approved word for word. Found 2026-10-16: the
+# Wylie cataract note reached all 6 live answers, and the model rewrote it every time,
+# merging "three months" into one figure and adding "reverse". Authoritative alone did
+# not stop it. The approved text is held here, by note id, and is used only while the
+# note still contains it word for word, so an edited note fails closed. A note can opt in
+# instead with metadata approved_wording "true" plus approved_text (a string or a list).
+# Quote marks are never read: a note's own instructions quote forbidden phrases too.
+_APPROVED_WORDING_NOTES = {
+    "qa-wylie-cataract-results-2026-10": [
+        "He puts his cataract patients on a six-month program, with a first checkup at "
+        "three months. About half of them show improvement, often by that first checkup. "
+        "Most of the rest are more stable than they were before."],
+}
+_APPROVED_WORDING_RULE = (
+    "[APPROVED WORDING: Glen approved the passage below word for word. If your answer "
+    "mentions any of its facts, it must quote the passage exactly, inside quotation "
+    "marks, as one piece, and say whose words they are. Never give these facts in your "
+    "own words instead. Never restate, summarise or extend it anywhere else in the "
+    "answer, before or after the quote: do not repeat its figures or timings in your own "
+    "words, and never present one person's results as results for people in general. Say "
+    "nothing about the people or results in it that this note does not say, and follow "
+    "this note's own instructions about these facts.]")
+
+
+def _approved_passages(match_id, meta, text):
+    """The approved passages for a note, or [] when it has none or has drifted from them.
+    Listed notes use the text held above; flagged notes their approved_text field. Every
+    passage must appear word for word in the note, or the note gets nothing."""
+    given = _APPROVED_WORDING_NOTES.get(match_id)
+    if given is None and str(meta.get("approved_wording") or "").strip().lower() in (
+            "true", "1", "yes"):
+        given = meta.get("approved_text")
+    if isinstance(given, str):
+        given = [given]
+    if not isinstance(given, list):
+        return []
+    passages = [g.strip() for g in given if isinstance(g, str) and g.strip()]
+    if not passages or any(p not in (text or "") for p in passages):
+        return []
+    return passages
+
+
+def _approved_wording(match_id, meta, text):
+    """The approved-wording block for a listed or flagged authoritative note, or "".
+    build_context calls this only for authoritative snippets, so a flagged note that is
+    not authoritative gets no block."""
+    quotes = _approved_passages(match_id, meta, text)
+    if not quotes:
+        return ""
+    return "\n" + _APPROVED_WORDING_RULE + "\n" + "\n".join(f'"{q}"' for q in quotes)
+
+
+def _approved_wording_reminder(context_str):
+    """A closing reminder when a retrieved note carries approved wording, so the rule is
+    the last thing the model reads (the brief format otherwise invites restating it).
+    It keys on the whole rule text, which only build_context writes, so a snippet that
+    merely mentions the marker does not trigger it."""
+    if _APPROVED_WORDING_RULE not in (context_str or ""):
+        return ""
+    return ("\n\nAPPROVED WORDING REMINDER: a snippet above holds a passage Glen approved "
+            "word for word. Leave it out only if the question has nothing to do with it. If "
+            "your answer mentions any of its facts, quote the passage exactly, once, and say "
+            "whose words they are: never give those facts in your own words instead. Do not restate its figures or "
+            "timings anywhere else in your answer, add no describing words it does not use "
+            "(such as documented, measurable or consistent), and add no claim about the "
+            "people or results in it that the note does not make or that it forbids.")
 
 
 def sse(payload: dict) -> str:
@@ -6560,6 +6631,7 @@ def chat():
             f"{product_block}"
             f"{synth_instr}"
             f"{named_product_facts_block(query, prior_user_turns=_prior_user)}"
+            f"{_approved_wording_reminder(context_str)}"
         })
 
         # ── Consent gate (Tier-0 Visitor → Tier-1 Member) ────────────────────
@@ -7206,7 +7278,8 @@ def begin_match_chat():
             f"{tools_block}{attach_block}"
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             "Continue the Socratic match. If you can now name the ONE best remedy, name it and "
-            "invite them to open its page; otherwise ask the single best next question."})
+            "invite them to open its page; otherwise ask the single best next question."
+            f"{_approved_wording_reminder(context_str)}"})
 
         # ── Consent gate ── the matcher follows the SAME education-vs-recommendation
         # rule as the main chat. A non-member gets educate-only on a gated turn,
@@ -15206,7 +15279,8 @@ def begin_concierge_chat():
             f"RETRIEVED SNIPPETS (for rationale/benefits):\n{context_str}\n\n"
             f"MEMBER MESSAGE: {query}\n\n"
             "Continue as the concierge: affirm, ask the single best next question, or suggest ONE "
-            "complement with a short why. Keep it warm and brief."})
+            "complement with a short why. Keep it warm and brief."
+            f"{_approved_wording_reminder(context_str)}"})
         full = []
         try:
             with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=700,
@@ -15433,6 +15507,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"{product_block}"
         f"{synth_instr}"
         f"{named_product_facts_block(query)}"
+        f"{_approved_wording_reminder(context_str)}"
     )
 
     answer = ""
@@ -15608,6 +15683,7 @@ def _full_report_stream(log_id, query, level, session_id,
             f"{product_block}"
             f"{synth_instr}"
             f"{named_product_facts_block(query)}"
+            f"{_approved_wording_reminder(context_str)}"
         )
 
         try:
@@ -20451,7 +20527,8 @@ def api_practitioner_assist():
             f"{_assist_orderable_catalog_text()}\n\n"
             "Continue the clinical formulation match. If you can name the best primary Functional "
             "Formulation (and any adjuncts), name them with brief clinical rationale; otherwise ask "
-            "the single best clinical question."})
+            "the single best clinical question."
+            f"{_approved_wording_reminder(context_str)}"})
         full = []
         try:
             with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=900,
@@ -32539,7 +32616,8 @@ def api_portal_chat(token):
             continue  # Anthropic rejects empty content strings
         r = "user" if m.get("role") == "user" else "assistant"
         messages.append({"role": r, "content": c[:2000]})
-    user_block = (f"CONTEXT:\n{context_str}\n\n" if context_str else "") + query
+    user_block = ((f"CONTEXT:\n{context_str}\n\n" if context_str else "") + query
+                  + _approved_wording_reminder(context_str))
     messages.append({"role": "user", "content": user_block})
 
     def generate():
