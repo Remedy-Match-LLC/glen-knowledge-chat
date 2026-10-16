@@ -42,7 +42,8 @@ def test_the_listed_note_carries_the_rule_and_its_exact_passage():
     ctx, _ = app.build_context([_M(WYLIE_ID, _qa(WYLIE_TEXT))])
     block = _block(ctx)
     assert block == app._APPROVED_WORDING_RULE + f'\n"{QUOTE}"'
-    assert "quote it exactly" in block and "do not repeat its figures" in block
+    assert "it must quote the passage exactly" in block and "do not repeat its figures" in block
+    assert "Never give these facts in your own words instead" in block
 
 
 def test_a_note_flagged_in_its_metadata_uses_its_approved_text():
@@ -121,7 +122,7 @@ def test_the_block_counts_toward_the_context_cap(monkeypatch):
 
 def test_the_system_prompt_names_the_rule_conditionally():
     assert ("- APPROVED WORDING: A snippet carrying an [APPROVED WORDING: ...] block holds a "
-            "passage Glen approved word for word. If your answer uses its facts, quote"
+            "passage Glen approved word for word. If your answer mentions any of its facts, quote"
             ) in app._SYSTEM_BASE
     assert ("When such a block is present, state nothing about a person named in it"
             in app._SYSTEM_BASE)
@@ -131,7 +132,8 @@ def test_the_reminder_is_conditional_scoped_and_only_for_a_real_block():
     ctx, _ = app.build_context([_M(WYLIE_ID, _qa(WYLIE_TEXT))])
     tail = app._approved_wording_reminder(ctx)
     assert tail.startswith("\n\nAPPROVED WORDING REMINDER:")
-    assert "Use it only if it answers the question" in tail
+    assert "Leave it out only if the question has nothing to do with it" in tail
+    assert "never give those facts in your own words instead" in tail
     assert "Do not restate its figures" in tail and "documented" in tail
     assert tail.endswith("add no claim about the people or results in it that the note "
                          "does not make or that it forbids.")

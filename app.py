@@ -3240,7 +3240,7 @@ RULES:
 - Do NOT pad with caveats, headers, or repeated context. Brevity is the deliverable.
 - NEVER print a "Hook" label (no "Hook:", no "## Hook", no bolded "**Hook**"). The hook IS the opening line — state it directly. This is a hard rule. (Other section labels like "Top action", "Why this works", "Next step", "Sources" are fine.)
 - AUTHORITATIVE OVERRIDES: Snippets tagged [AUTHORITATIVE — Glen's verified clinical position] OR with metadata type="clinical-qa" / priority="authoritative" override anything else. Apply directly; do not soften or hedge.
-- APPROVED WORDING: A snippet carrying an [APPROVED WORDING: ...] block holds a passage Glen approved word for word. If your answer uses its facts, quote that passage exactly, in quotation marks. Never paraphrase it, shorten it, merge its figures or add to it. When such a block is present, state nothing about a person named in it (where they practise, whom they trained with, for how long, what they documented) that no snippet states.
+- APPROVED WORDING: A snippet carrying an [APPROVED WORDING: ...] block holds a passage Glen approved word for word. If your answer mentions any of its facts, quote that passage exactly, in quotation marks, and never give those facts in your own words instead. Never paraphrase it, shorten it, merge its figures or add to it. When such a block is present, state nothing about a person named in it (where they practise, whom they trained with, for how long, what they documented) that no snippet states.
 - CO-AUTHORSHIP: Snippets with [AUTHORSHIP NOTE: ...] reflect a co-author's view. Cite the co-author, then state Glen's current position from clinical-qa entries. Never present a co-authored section as Glen's view without the flag.
 - E4L SCAN OFFER: When the user mentions a specific condition or asks for personalized guidance, the action link should be the free Bioenergetic Wellness Scan: https://Truly.VIP/E4L — "10 seconds, count out loud from 1 to 10, matches you to formulations your bioenergetic patterns are asking for."
 - SUPPLEMENT REVIEW PAGE: When someone asks where or how to have a supplement, vitamin, product, or label analyzed/reviewed, send them directly to https://illtowell.com/product-review. Describe it as the free supplement-review page. Do not send them to a product sales page, storefront search, portal, contact form, or Practice Better. If they ask for the page or link, give this exact clickable URL in the same reply.
@@ -3739,8 +3739,9 @@ _APPROVED_WORDING_NOTES = {
 }
 _APPROVED_WORDING_RULE = (
     "[APPROVED WORDING: Glen approved the passage below word for word. If your answer "
-    "uses any of its facts, quote it exactly, inside quotation marks, as one piece, and "
-    "say whose words they are. Never restate, summarise or extend it anywhere else in the "
+    "mentions any of its facts, it must quote the passage exactly, inside quotation "
+    "marks, as one piece, and say whose words they are. Never give these facts in your "
+    "own words instead. Never restate, summarise or extend it anywhere else in the "
     "answer, before or after the quote: do not repeat its figures or timings in your own "
     "words, and never present one person's results as results for people in general. Say "
     "nothing about the people or results in it that this note does not say, and follow "
@@ -3783,8 +3784,9 @@ def _approved_wording_reminder(context_str):
     if _APPROVED_WORDING_RULE not in (context_str or ""):
         return ""
     return ("\n\nAPPROVED WORDING REMINDER: a snippet above holds a passage Glen approved "
-            "word for word. Use it only if it answers the question. If you use it, quote it "
-            "exactly, once, and say whose words they are. Do not restate its figures or "
+            "word for word. Leave it out only if the question has nothing to do with it. If "
+            "your answer mentions any of its facts, quote the passage exactly, once, and say "
+            "whose words they are: never give those facts in your own words instead. Do not restate its figures or "
             "timings anywhere else in your answer, add no describing words it does not use "
             "(such as documented, measurable or consistent), and add no claim about the "
             "people or results in it that the note does not make or that it forbids.")
