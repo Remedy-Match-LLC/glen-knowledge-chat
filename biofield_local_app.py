@@ -251,6 +251,46 @@ def _fetch_life_stress_curation(email):
     except Exception:
         return None
 
+def _fetch_intake_answers(email):
+    """Best-effort: a client's intake answers from the prod console endpoint, for the
+    diet guidance's fallback phase when the report has no tested phase (Glen,
+    2026-10-16). None on any failure, so it never blocks the report. The key goes in
+    a header only, never in the URL."""
+    import json as _json
+    import urllib.parse
+    import urllib.request
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    try:
+        key = os.environ["CONSOLE_SECRET"]
+        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+        req = urllib.request.Request(
+            f"{base}/api/console/intake/" + urllib.parse.quote(email),
+            headers={"X-Console-Key": key})
+
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            # A redirect would carry the key header to wherever it points (review round 2).
+            def redirect_request(self, *a, **k):
+                return None
+        opener = urllib.request.build_opener(_NoRedirect)
+        data = _json.load(opener.open(req, timeout=5))
+        from dashboard.diet_guidance import report_fallback_answers
+        return report_fallback_answers(data)
+    except Exception:
+        return None
+
+
+def _add_intake_fallback(rep):
+    """Put the intake answers on a report that has no tested phase, so the diet guidance
+    can fall back to them. A report with a tested phase makes no request."""
+    from dashboard.terrain_phase import phase_num
+    if not phase_num(rep.get("phase")):
+        rep["intake_answers"] = _fetch_intake_answers(
+            ((rep.get("client") or {}).get("email") or ""))
+    return rep
+
+
 DEFAULT_DB = os.environ.get(
     "BIOFIELD_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_log.db"))
 
@@ -1281,6 +1321,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             narrative = get_narrative(cx, test_id)
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
+        _add_intake_fallback(rep)
         return Response(render_present(rep, narrative), mimetype="text/html")
 
     @app.route("/test/<test_id>/report.pdf")
@@ -1291,6 +1332,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             narrative = get_narrative(cx, test_id)
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
+        _add_intake_fallback(rep)
         html = render_present(rep, narrative)
         reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
                                      os.path.join(os.path.expanduser("~"), "biofield-reports"))
@@ -3527,6 +3569,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             raise RuntimeError("PORTAL_PUBLISH_BASE_URL not set")
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
+        _add_intake_fallback(rep)
         pdf_bytes = report_pdf_bytes(render_present(rep, narrative))
         pdf_url = _bpp.upload_asset(pdf_bytes, _bpp._asset_name("pdf"), base_url=base, console_key=key)
         audio_url = None

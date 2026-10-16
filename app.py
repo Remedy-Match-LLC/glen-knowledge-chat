@@ -27985,6 +27985,24 @@ def api_client_portal(token):
                     print(f"[life-stress/selected] {_e!r}", flush=True)
         except Exception as _e:
             print(f"[life-stress/payload] {_e!r}", flush=True)
+    # Diet guidance for the client's terrain phase (Glen approved the text 2026-10-16,
+    # rnd-1b): the report's tested phase, else the intake answer's scored phase. Only that
+    # phase's section, always with the intro cautions. Best-effort, like the cards above.
+    payload["diet_guidance"] = None
+    try:
+        from dashboard import diet_guidance as _dg
+        _intake_answers = None
+        if not _dg.report_phase(payload.get("phase")):
+            from dashboard import intake as _intake_dg
+            with db.connect(LOG_DB) as _cx_dg:
+                _cx_dg.row_factory = sqlite3.Row
+                _intake_dg.init_intake_table(_cx_dg)
+                _intake_answers = _dg.report_fallback_answers(
+                    _intake_dg.get_response(_cx_dg, email_for_reports))
+        payload["diet_guidance"] = _dg.guidance(
+            _dg.report_phase(payload.get("phase"), _intake_answers))
+    except Exception as _e:
+        print(f"[diet-guidance/payload] {_e!r}", flush=True)
     # PRL Supplement flag (always present, mirrors ff_matches_enabled) + card
     # (flag-gated, best-effort). email_for_reports is member-re-pointed.
     payload["prl_supplement_enabled"] = _prl_supplement_enabled()
@@ -35991,7 +36009,8 @@ def intake_form():
         _intake.seed_suggestions(cx, supplements=remedy_names)
         cx.commit()
         suggestions = _intake.list_suggestions(cx)
-    return jsonify({**_intake.INTAKE_FORM, "suggestions": suggestions})
+    from dashboard.diet_guidance import form_with_guidance
+    return jsonify({**form_with_guidance(_intake.INTAKE_FORM), "suggestions": suggestions})
 
 
 @app.route("/api/intake/state")
@@ -36202,7 +36221,9 @@ def intake_public_form():
             if not submitted:
                 row = _intake.get_response(cx, email)
                 answers = (row["answers"] if row else {}) or {}
-    return jsonify({"form": _intake.INTAKE_FORM, "answers": answers, "submitted": submitted})
+    from dashboard.diet_guidance import form_with_guidance
+    return jsonify({"form": form_with_guidance(_intake.INTAKE_FORM), "answers": answers,
+                    "submitted": submitted})
 
 
 @app.route("/api/intake/public/save-draft", methods=["POST"])
