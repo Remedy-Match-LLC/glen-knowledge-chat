@@ -2359,6 +2359,11 @@ _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The sni
 _WITHDRAWN_DOSE_EXAMPLE = {
     slug: ", such as two capsules at one time or extra capsules in the first week"
     for slug in ("brain-cleanse", "sleep-syntropy", "sleep-bundle")}
+_NO_DESCRIPTION = ("No description of {name} is approved here. If asked what it is, describe "
+                   "it briefly from the snippets about {name} itself, adding no claim they do "
+                   "not make. Its dose and caution come only from this text.")
+_NO_DESCRIPTION_GATED = ("No description of {name} is approved here. If asked what it is, "
+                         "give its name and its Page, and describe it no further.")
 _CAUTION_COPY_REMINDER = ("Copy each caution below word for word, as its own paragraph. "
                           "Do not merge them into one safety summary.")
 _CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
@@ -2517,6 +2522,11 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                 parts.append("No dose or ingredient text is approved for it yet. Give none, "
                              "and do not take one from the snippets.")
         if len(parts) > 2:
+            if not desc and product.get("copy_pinned") and not product.get("bundle"):
+                # The header says to describe it only by this text, which holds no
+                # description now that only a pinned one reaches the bot (review round 3).
+                parts.insert(2, (_NO_DESCRIPTION_GATED if gated else _NO_DESCRIPTION)
+                             .format(name=name))
             blocks.append(parts)
             all_caution_only = all_caution_only and caution_only
             any_caution_only = any_caution_only or caution_only

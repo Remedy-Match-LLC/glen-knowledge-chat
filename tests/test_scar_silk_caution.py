@@ -100,6 +100,7 @@ def test_the_chatbot_carries_the_directions_and_the_caution_once(q):
     # No description: it is not approved, and only a pinned description reaches the bot.
     assert section.split("\n") == [
         "### Scar Silk", f"Page: {app._catalog_page_url('scar-silk')}",
+        app._NO_DESCRIPTION.format(name="Scar Silk"),
         f"Directions: {DIRECTIONS}",
         app._PINNED_DOSE_RULE.format(name="Scar Silk", example=""),
         app._CAUTION_COPY_REMINDER, f"Caution: {APPROVED}"]
@@ -128,3 +129,10 @@ def test_lowercase_scar_silk_without_a_cue_is_a_known_gap():
     # changes nothing else, so "is scar silk safe?" gets no block. Pinned here so a change
     # is a decision, not an accident.
     assert "### Scar Silk" not in app.named_product_facts_block("is scar silk safe?")
+
+
+def test_a_gated_answer_does_not_describe_it_from_the_snippets():
+    # Review round 3: no approved description, and a gated answer reads back this text only.
+    b = app.named_product_facts_block("What is Scar Silk?", gated=True)
+    assert app._NO_DESCRIPTION_GATED.format(name="Scar Silk") in b
+    assert app._NO_DESCRIPTION.format(name="Scar Silk") not in b
