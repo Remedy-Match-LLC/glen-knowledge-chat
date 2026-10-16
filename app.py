@@ -3240,7 +3240,7 @@ RULES:
 - Do NOT pad with caveats, headers, or repeated context. Brevity is the deliverable.
 - NEVER print a "Hook" label (no "Hook:", no "## Hook", no bolded "**Hook**"). The hook IS the opening line — state it directly. This is a hard rule. (Other section labels like "Top action", "Why this works", "Next step", "Sources" are fine.)
 - AUTHORITATIVE OVERRIDES: Snippets tagged [AUTHORITATIVE — Glen's verified clinical position] OR with metadata type="clinical-qa" / priority="authoritative" override anything else. Apply directly; do not soften or hedge.
-- APPROVED WORDING: A snippet ending in [APPROVED WORDING: ...] holds a passage Glen approved word for word. If your answer uses its facts, quote that passage exactly, in quotation marks. Never paraphrase it, shorten it, merge its figures or add to it. Never state a fact about a named person (where they practise, whom they trained with, for how long, what they documented) that no snippet states.
+- APPROVED WORDING: A snippet carrying an [APPROVED WORDING: ...] block holds a passage Glen approved word for word. If your answer uses its facts, quote that passage exactly, in quotation marks. Never paraphrase it, shorten it, merge its figures or add to it. When such a block is present, state nothing about a person named in it (where they practise, whom they trained with, for how long, what they documented) that no snippet states.
 - CO-AUTHORSHIP: Snippets with [AUTHORSHIP NOTE: ...] reflect a co-author's view. Cite the co-author, then state Glen's current position from clinical-qa entries. Never present a co-authored section as Glen's view without the flag.
 - E4L SCAN OFFER: When the user mentions a specific condition or asks for personalized guidance, the action link should be the free Bioenergetic Wellness Scan: https://Truly.VIP/E4L — "10 seconds, count out loud from 1 to 10, matches you to formulations your bioenergetic patterns are asking for."
 - SUPPLEMENT REVIEW PAGE: When someone asks where or how to have a supplement, vitamin, product, or label analyzed/reviewed, send them directly to https://illtowell.com/product-review. Describe it as the free supplement-review page. Do not send them to a product sales page, storefront search, portal, contact form, or Practice Better. If they ask for the page or link, give this exact clickable URL in the same reply.
@@ -3683,7 +3683,9 @@ def build_context(matches):
         seen.add(m.id)
         meta = m.metadata or {}
         text = _redact_transcript_prices(meta.get("text", "").strip(), meta)
-        if not text or total + len(text) > MAX_CONTEXT_CHARS:
+        is_authoritative = meta.get("type") == "clinical-qa" or meta.get("priority") == "authoritative"
+        approved = _approved_wording(m.id, meta, text) if is_authoritative and text else ""
+        if not text or total + len(text) + len(approved) > MAX_CONTEXT_CHARS:
             continue
         name  = meta.get("name") or meta.get("book") or meta.get("source") or "Unknown"
         field = meta.get("field") or meta.get("source_type") or ""
@@ -3694,7 +3696,6 @@ def build_context(matches):
                              "score": score, "chunks": []}
         sources[name]["chunks"].append(meta.get("chunk_index", 0))
         sources[name]["score"] = max(sources[name]["score"], score)
-        is_authoritative = meta.get("type") == "clinical-qa" or meta.get("priority") == "authoritative"
         tag = "[AUTHORITATIVE — Glen's verified clinical position] " if is_authoritative else ""
         authorship = meta.get("authorship_note") or ""
         # clinical-references holds OTHER AUTHORS' published books. They carry `author`
@@ -3717,20 +3718,25 @@ def build_context(matches):
         if str(meta.get("deprecated", "")).lower() == "true":
             depr_note = meta.get("deprecation_note", "Product or guidance is deprecated.")
             deprecated_flag = f"\n[DEPRECATED — {depr_note}]"
-        approved = _approved_wording(m.id, meta, text) if is_authoritative else ""
         total += len(approved)
         parts.append(f"{tag}[SOURCE: {name} | {field} | score {score}]{authorship}{deprecated_flag}\n{text}{approved}")
         total += len(text)
     return "\n\n---\n\n".join(parts), sorted(sources.values(), key=lambda x: -x["score"])
 
 
-# Clinical-qa notes whose quoted passage is wording Glen approved word for word. Found
-# 2026-10-16: the Wylie cataract note reached all 6 live answers, and the model rewrote it
-# every time, merging "three months" into one figure, adding "reverse" and inventing where
-# Dr. Wylie practises. Authoritative alone did not stop it. A note is listed here by id,
-# or carries metadata approved_wording "true", which the knowledge pillar can set.
-_APPROVED_WORDING_NOTES = {"qa-wylie-cataract-results-2026-10"}
-_APPROVED_MIN_CHARS = 60
+# Clinical-qa notes holding wording Glen approved word for word. Found 2026-10-16: the
+# Wylie cataract note reached all 6 live answers, and the model rewrote it every time,
+# merging "three months" into one figure and adding "reverse". Authoritative alone did
+# not stop it. The approved text is held here, by note id, and is used only while the
+# note still contains it word for word, so an edited note fails closed. A note can opt in
+# instead with metadata approved_wording "true" plus approved_text (a string or a list).
+# Quote marks are never read: a note's own instructions quote forbidden phrases too.
+_APPROVED_WORDING_NOTES = {
+    "qa-wylie-cataract-results-2026-10": [
+        "He puts his cataract patients on a six-month program, with a first checkup at "
+        "three months. About half of them show improvement, often by that first checkup. "
+        "Most of the rest are more stable than they were before."],
+}
 _APPROVED_WORDING_RULE = (
     "[APPROVED WORDING: Glen approved the passage below word for word. If your answer "
     "uses any of its facts, quote it exactly, inside quotation marks, as one piece, and "
@@ -3741,40 +3747,29 @@ _APPROVED_WORDING_RULE = (
     "this note's own instructions about these facts.]")
 
 
-def _approved_passages(meta, text):
-    """The approved passages of a note. Metadata approved_text wins and is used as it
-    stands. Otherwise quote marks are paired in order, curly pairs first, and only
-    passages of _APPROVED_MIN_CHARS or more on one line count, so a short quoted word or
-    an instruction quoting a phrase is not taken as approved text. An odd count of
-    straight quote marks outside curly pairs means the pairing is unknowable: nothing."""
-    given = meta.get("approved_text")
-    if isinstance(given, str) and given.strip():
-        return [given.strip()]
-    if isinstance(given, list):
-        return [g.strip() for g in given if isinstance(g, str) and g.strip()]
-    text = text or ""
-    out, rest, pos = [], [], 0
-    for m in re.finditer("\u201c([^\u201c\u201d]*)\u201d", text):
-        rest.append(text[pos:m.start()])
-        out.append(m.group(1))
-        pos = m.end()
-    rest.append(text[pos:])
-    outside = " ".join(rest)
-    if outside.count('"') % 2:
+def _approved_passages(match_id, meta, text):
+    """The approved passages for a note, or [] when it has none or has drifted from them.
+    Listed notes use the text held above; flagged notes their approved_text field. Every
+    passage must appear word for word in the note, or the note gets nothing."""
+    given = _APPROVED_WORDING_NOTES.get(match_id)
+    if given is None and str(meta.get("approved_wording") or "").strip().lower() in (
+            "true", "1", "yes"):
+        given = meta.get("approved_text")
+    if isinstance(given, str):
+        given = [given]
+    if not isinstance(given, list):
         return []
-    out += outside.split('"')[1::2]
-    return [q.strip() for q in out
-            if len(q.strip()) >= _APPROVED_MIN_CHARS and "\n" not in q.strip()]
+    passages = [g.strip() for g in given if isinstance(g, str) and g.strip()]
+    if not passages or any(p not in (text or "") for p in passages):
+        return []
+    return passages
 
 
 def _approved_wording(match_id, meta, text):
     """The approved-wording block for a listed or flagged authoritative note, or "".
     build_context calls this only for authoritative snippets, so a flagged note that is
     not authoritative gets no block."""
-    flag = str(meta.get("approved_wording") or "").strip().lower() in ("true", "1", "yes")
-    if match_id not in _APPROVED_WORDING_NOTES and not flag:
-        return ""
-    quotes = _approved_passages(meta, text)
+    quotes = _approved_passages(match_id, meta, text)
     if not quotes:
         return ""
     return "\n" + _APPROVED_WORDING_RULE + "\n" + "\n".join(f'"{q}"' for q in quotes)
@@ -3791,8 +3786,8 @@ def _approved_wording_reminder(context_str):
             "word for word. Use it only if it answers the question. If you use it, quote it "
             "exactly, once, and say whose words they are. Do not restate its figures or "
             "timings anywhere else in your answer, add no describing words it does not use "
-            "(such as documented, measurable or consistent), and add no claim the note does "
-            "not make or that it forbids.")
+            "(such as documented, measurable or consistent), and add no claim about the "
+            "people or results in it that the note does not make or that it forbids.")
 
 
 def sse(payload: dict) -> str:
