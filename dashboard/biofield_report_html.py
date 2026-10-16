@@ -1115,7 +1115,7 @@ function mstat(t){var e=document.getElementById('minestat');if(e)e.textContent=t
 async function mineProfile(){mstat('Mining the profile for stresses…');
  try{var j=await post('/author/__TID__/mine-profile',{})}
  catch(e){mstat('Mine profile failed: the server returned an error ('+e.message+').');return}
- if(j.error){mstat('Mine profile: '+j.error);return}
+ if(j.error){mstat('Mine profile: '+j.error+(j.added>0?' Added '+j.added+' before that.':''));if(j.added>0)loadStress();return}
  mstat(j.added?'Added '+j.added+' stress(es) from the profile.':'No new stresses found in the profile.');loadStress()}
 async function mineComms(){mstat('Mining recent comms for stresses…');
  try{var j=await post('/author/__TID__/mine-comms',{})}
