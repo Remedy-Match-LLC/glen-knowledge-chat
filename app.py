@@ -2242,7 +2242,10 @@ _CUE_NAMES = frozenset({
 _ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 _PRODUCT_CUE_BEFORE = re.compile(
     r"\b(?:what\s+is|what's|whats|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
-    r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of)"
+    r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of|"
+    # "what is in fibrolysis factors" asks what the product holds (formulation-32,
+    # 2026-10-16: lowercase phrasings got no facts block and the model invented one).
+    r"(?:what\s+is|what's|whats|what\u2019s)\s+in|ingredients\s+(?:in|of))"
     r"(?P<the>(?:\s+of)?(?:\s+the))?\s*$", re.IGNORECASE)
 _PRODUCT_CUE_AFTER = re.compile(
     r"^\s*(?:dose|dosage|capsules?|caps|bottles?|product|supplement|formula|safe|interact)\b",
