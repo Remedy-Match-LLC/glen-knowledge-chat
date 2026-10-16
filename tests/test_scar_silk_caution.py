@@ -54,7 +54,9 @@ def test_only_the_caution_and_the_directions_reach_the_chatbot():
 
 def test_the_page_gives_the_directions(appmod):
     d = appmod.app.test_client().get("/begin/product-page-data/scar-silk").get_json()
-    assert json.dumps(d).count(DIRECTIONS) >= 1
+    # Suggested use on the page reads the What's inside section (review round 1).
+    secs = {s["id"]: s for s in d["sections"]}
+    assert secs["ingredients"]["body"]["directions"] == DIRECTIONS
 
 
 def test_a_rebuild_keeps_the_caution_and_the_real_source():
