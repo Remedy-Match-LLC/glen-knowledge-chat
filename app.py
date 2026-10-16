@@ -2342,6 +2342,19 @@ _ONE_CAUTION_RULE = (
     "Copy the caution below word for word, as its own paragraph starting \"Caution for "
     "<product name>:\", every sentence of it. Do not shorten, reword, merge or summarise "
     "it, and do not fold it into the rest of the answer.")
+# For a pinned product whose cautions reach the chat (Brain Cleanse, Sleep Syntropy, the
+# Sleep Bundle). Live read-back on 087e718f, 2026-10-15: "try two or more capsules during
+# that first week" came from old knowledge-base advice, and a long answer merged the two
+# cautions into one "Safety:" summary.
+_PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The snippets may "
+                     "hold older advice to take more than these Directions give, such as two "
+                     "capsules at one time or extra capsules in the first week. That advice is withdrawn: never give it, "
+                     "even when the user asks about taking more. Answer such a question with "
+                     "these directions, and say to ask Dr. Glen about anything beyond them. "
+                     "Do not mention the older advice to the user. This rule never "
+                     "shortens a caution: copy every caution in full.")
+_CAUTION_COPY_REMINDER = ("Copy each caution below word for word, as its own paragraph. "
+                          "Do not merge them into one safety summary.")
 _CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
                       "For anything else, answer from the snippets as usual.")
 
@@ -2449,6 +2462,12 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         val = (product.get("directions") or "").strip() if pinned else ""
         if val and val not in desc:
             parts.append(f"Directions: {val}")
+        bundle_cautions = bool(product.get("bundle") and _bundle_bot_cautions(product, products))
+        copy_block = pinned and bool(product.get("chat_caution") or bundle_cautions)
+        if copy_block and ((val and val not in desc and "directions" in _pinned_copy(product))
+                           or (product.get("bundle") and intro and "intro" in _pinned_copy(product)
+                               and not val)):
+            parts.append(_PINNED_DOSE_RULE.format(name=name))
         # The caution also from a chat_caution product: an opt-in for the warning alone,
         # so its scraped description, directions and components stay out (Brain Cleanse,
         # 2026-10-15). A caution is held as an entry and written after the product cap,
@@ -2476,6 +2495,8 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         caution_only = any(c.text for c in cautions) and not pinned
         if caution_only and not _waitlist_refusal(slug):
             parts.append(_CAUTION_ONLY_NOTE)
+        if copy_block and any(c.text for c in cautions):
+            parts.append(_CAUTION_COPY_REMINDER)
         parts.extend(cautions)
         # A waiting-list product: the same sentence checkout gives. Unpinned, it has no
         # approved dose, so the block says so rather than ask for one it lacks.
@@ -2521,6 +2542,11 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                     held += 0 if part else 1
             if part:
                 lines.append(part)
+        # The copy reminder stays only above a caution given in full here. Above a
+        # pointer line alone it could make the bot print the pointer (review round 1).
+        if _CAUTION_COPY_REMINDER in lines and not any(
+                l.startswith("Caution") and "is given in full above" not in l for l in lines):
+            lines.remove(_CAUTION_COPY_REMINDER)
         blocks[i] = "\n".join(lines)
     # Two cautions in one answer were merged into one paraphrase, losing lines (Sleep
     # Bundle read-back, 2026-10-15). Said only when there are two, so an answer with one

@@ -188,3 +188,70 @@ def test_a_short_first_sentence_is_not_kept_as_a_stub(monkeypatch):
     monkeypatch.setattr(app, "_PRODUCTS", products)
     purpose = app._product_guidance_hint(SLUG).split("| purpose: ", 1)[1]
     assert len(purpose) > 132 and purpose.endswith("...")
+
+
+# ---- live read-back on 087e718f (formulation, 2026-10-15) -------------------------
+# A long answer merged both cautions into one "Safety:" summary, and a dose question got
+# old knowledge-base advice ("try two or more capsules during that first week").
+
+@pytest.mark.parametrize("q,name", [
+    ("what should i know before taking the sleep bundle?", "Sleep Bundle"),
+    ("Can I take more Sleep Syntropy in the first week?", "Sleep Syntropy"),
+    ("How much Brain Cleanse should I take?", "Brain Cleanse"),
+])
+def test_an_opted_in_pinned_block_carries_the_dose_rule_and_the_copy_reminder(q, name):
+    b = _block(q)
+    section = b[b.index(f"### {name}"):]
+    if "\n### " in section[4:]:
+        section = section[:section.index("\n### ", 4)]  # this product's block only
+    assert app._PINNED_DOSE_RULE.format(name=name) in section
+    assert app._CAUTION_COPY_REMINDER in section
+    # The reminder sits right above the first caution line.
+    after = section.split(app._CAUTION_COPY_REMINDER, 1)[1].lstrip("\n")
+    assert after.startswith("Caution")
+
+
+@pytest.mark.parametrize("q", ["What is Estro-Clear?", "What is Angiostasis?",
+                               "Is the Brain Program safe?", "Is Scar Silk safe?"])
+def test_other_products_get_neither(q):
+    b = _block(q)
+    assert "### " in b, q
+    assert "are the only dose" not in b
+    assert app._CAUTION_COPY_REMINDER not in b
+
+
+@pytest.mark.parametrize("q", ["Can I take Sleep Syntropy with the Sleep Bundle?",
+                               "Can I take Brain Cleanse and the Sleep Bundle together?",
+                               "Is the Sleep Bundle safe with Brain Cleanse and Sleep Syntropy?"])
+def test_the_copy_reminder_sits_only_above_a_caution_given_in_full(q):
+    # Review round 1: above a pointer line alone, the bot could print the pointer.
+    checked = 0
+    for block in _block(q).split("\n### ")[1:]:
+        lines = block.split("\n")
+        if app._CAUTION_COPY_REMINDER in lines:
+            checked += 1
+            nxt = lines[lines.index(app._CAUTION_COPY_REMINDER) + 1:]
+            assert nxt[0].startswith("Caution"), block
+            assert any(l.startswith("Caution") and "is given in full above" not in l
+                       for l in nxt), block
+    assert checked, q  # at least one block carries the reminder, so the check ran
+
+
+def test_the_dose_rule_needs_approved_directions(monkeypatch):
+    # Review round 1: a pinned description alone does not make scraped directions the dose.
+    products = copy.deepcopy(app._PRODUCTS)
+    products["products"]["brain-cleanse"]["copy_pinned"] = ["intro", "description"]
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    b = _block("How much Brain Cleanse should I take?")
+    assert "### Brain Cleanse" in b
+    assert "are the only dose" not in b
+
+
+def test_a_bundle_with_unapproved_directions_gets_no_dose_rule(monkeypatch):
+    # Review round 3: a pinned intro must not vouch for a directions field beside it.
+    products = copy.deepcopy(app._PRODUCTS)
+    products["products"][SLUG]["directions"] = "Take 3 of each, twice daily."
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    b = _block("How should I take the Sleep Bundle?")
+    assert "### Sleep Bundle" in b
+    assert "are the only dose" not in b
