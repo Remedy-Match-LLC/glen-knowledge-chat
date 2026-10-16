@@ -22,6 +22,18 @@ import pytest  # noqa: F401
 import app
 
 CASES = {
+    # formulation-32, 2026-10-16: lowercase phrasings got no facts block, so the model named
+    # none of the five actives and added scar claims.
+    "fibrolysis-factors": {
+        "questions": ["What is in Fibrolysis Factors?", "what is in fibrolysis factors",
+                      "whats in fibrolysis factors?"],
+        "required": {i: ["green tea", "salvianolic", "resveratrol", "boswell", "gotu kola"]
+                     for i in range(3)},
+        # Scar wording in any form: the approved copy makes no scar claim at all.
+        "forbidden": [r"nattokinase", r"serrapeptase", r"lumbrokinase", r"soften",
+                      r"\bscar", r"remodel", r"dissolv", r"resorb", r"break\w*\s+down",
+                      r"doesn't specify", r"does not specify"],
+    },
     "angiostasis": {
         "questions": [
             "What is Angiostasis?",
