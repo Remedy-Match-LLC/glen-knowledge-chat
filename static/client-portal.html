@@ -615,6 +615,7 @@
   #print-root .pd-terrain .pd-k{ display:block; font-size:10px; margin-bottom:2px; }
   #print-root .pd-sec{ margin:14px 0; }
   #print-root .pd-sec h3{ font-size:14px; color:#3a5a40; border-bottom:1px solid #e2e2e2; padding-bottom:3px; margin:0 0 8px; }
+  #print-root .diet-guidance{ border:0; padding:0; } #print-root .diet-guidance p{ margin:0 0 5px; } #print-root .diet-guidance h4{ font-size:13px; margin:10px 0 5px; }
   #print-root .pd-muted{ color:#777; font-size:11px; margin:0 0 8px; }
   #print-root .pd-layer{ margin:0 0 11px; break-inside:avoid; }
   #print-root .pd-layer-h{ display:flex; align-items:baseline; gap:8px; }
@@ -656,6 +657,9 @@
   textarea.intake-input{resize:vertical}
   .intake-scale{display:flex;flex-direction:column;gap:.15rem}
   .intake-scale-opt{display:flex;align-items:flex-start;gap:8px;font-weight:400;font-size:.9rem;margin:.15rem 0}
+  .intake-diet-guidance,.diet-guidance{margin:.9rem 0 .4rem;padding:.7rem .9rem;border:1px solid var(--border,#e2e2e2);border-radius:10px;font-size:.92rem}
+  .intake-diet-guidance p,.diet-guidance p{margin:0 0 .45rem}
+  .intake-diet-guidance h4,.intake-diet-guidance h5,.diet-guidance h3,.diet-guidance h4{margin:.3rem 0 .5rem}
   .intake-scale-opt input{margin-top:.25rem}
   .intake-table-wrap{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--card2)}
   .intake-row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;padding:8px 0;border-bottom:1px dashed var(--line)}
@@ -1409,6 +1413,19 @@ const TERRAIN_PHASE_NAMES = {1:"Terrain Revive",2:"Terrain Repair",3:"Terrain Re
 function terrainPhaseName(p){ return TERRAIN_PHASE_NAMES[parseInt(p,10)] || ""; }
 // Terrain banner for the report (screen or print). `kind` picks the class set.
 // "" when no phase was read, so reveal/FMP reports simply omit it.
+// Diet guidance for the client's terrain phase (Glen approved the text 2026-10-16). The
+// server sends one phase's section with the intro cautions, or null. Every sentence is
+// its own paragraph, as in the approved source. kind "print" uses the print classes.
+function dietGuidanceHtml(g, kind){
+  if(!g || !g.heading || !Array.isArray(g.intro) || !Array.isArray(g.paragraphs)) return "";
+  const p = (t)=>`<p>${esc(t)}</p>`;
+  const cls = kind === "print" ? "pd-sec diet-guidance" : "diet-guidance";
+  return `<div class="${cls}"><h3>${esc(g.title||"Eating for your terrain")}</h3>`
+    + g.intro.map(p).join("")
+    + `<h4>${esc(g.heading)}</h4>`
+    + g.paragraphs.map(p).join("") + `</div>`;
+}
+
 function terrainBanner(d, kind){
   const nm = terrainPhaseName(d && d.phase);
   if(!nm) return "";
@@ -3129,6 +3146,7 @@ function buildReportPrintHtml(d){
     ${d.greeting?`<div class="pd-greeting">${escGreeting(d.greeting)}</div>`:""}
     ${path?`<div class="pd-sec"><h3>Your healing path</h3><p class="pd-muted">From the surface layer down to the deepest root, supported in order, so the whole chain unwinds.</p>${path}</div>`:""}
     ${finds}
+    ${dietGuidanceHtml(d.diet_guidance, "print")}
     <div class="pd-foot">It is an honor to be on your wellness team. Aloha, Dr. Glen &amp; Rae</div>
   </div>`;
 }
@@ -5012,6 +5030,7 @@ function render(d, v){
         <div class="path">${path}</div>
         ${status === "confirmed" ? scheduleHtml(d.schedule) : ""}
         ${extra}
+        ${dietGuidanceHtml(d.diet_guidance, "screen")}
         ${status === "confirmed" ? `<div style="margin-top:1.1rem"><button class="btn" onclick="printReport()">🖨 Save Report as PDF</button></div>` : ""}
         ${status !== "confirmed" ? disclose : ""}`;
       // Read-receipt: collapse the report behind a New/date header; expand = tracked open.
@@ -7319,6 +7338,26 @@ function renderIntakeField(f, val, getters, fieldEls, onChange, suggestions, sav
     if(f.multi_select && f.selection_field){
       getters[f.selection_field] = ()=> Array.from(group.querySelectorAll("input:checked"))
         .map(input => Number(input.value)).sort((a, b)=>a-b);
+    }
+    // Terrain: once answered, show the diet guidance for the phase the answer scores (the
+    // lowest number ticked), with the intro cautions. Only that phase, never another.
+    if(f.diet_guidance){
+      const dg = document.createElement("div");
+      dg.className = "intake-diet-guidance";
+      const showGuidance = ()=>{
+        while(dg.firstChild) dg.removeChild(dg.firstChild);
+        const g = f.diet_guidance[String(getters[f.id]())];
+        dg.hidden = !g;
+        if(!g) return;
+        const add = (tag, text)=>{ const el = document.createElement(tag); el.textContent = text; dg.appendChild(el); };
+        add("h4", g.title);
+        g.intro.forEach(t => add("p", t));
+        add("h5", g.heading);
+        g.paragraphs.forEach(t => add("p", t));
+      };
+      group.querySelectorAll("input").forEach(input => input.addEventListener("change", showGuidance));
+      showGuidance();
+      wrap.appendChild(dg);
     }
     fieldEls[f.id] = group;
     return wrap;
