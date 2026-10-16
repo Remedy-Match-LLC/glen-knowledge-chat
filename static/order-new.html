@@ -1050,6 +1050,7 @@ function showInvoice(j){
 const INV_STATUS_LABEL = {proposed:"Proposed invoice", confirmed:"Confirmed, awaiting payment",
   new:"In fulfillment", packed:"Packed", shipped:"Shipped", delivered:"Delivered", done:"Done",
   cancelled:"Cancelled"};
+const INV_STATUS_ORDER = ["proposed","confirmed","new","packed","shipped","delivered","done"];
 // The status line, and Confirm only while the order is a proposed invoice (the only state
 // orders.confirm accepts). With the status unknown the button stays, as before.
 function refreshInvStatus(){
@@ -1078,22 +1079,33 @@ function refreshInvMethod(){
 }
 async function lifecycle(key, params){
   if (!LAST_ORDER){ toast("No order is open on this page","error"); return false; }
-  params.order_id = LAST_ORDER.order_id;
+  const oid = LAST_ORDER.order_id;
+  params.order_id = oid;
   let j = null;
   try{
     const r = await fetch("/api/action/"+key, {method:"POST", headers:HEADERS, body:JSON.stringify(params)});
     j = await r.json();
-  }catch(e){ j = {error: (e && e.message) || "no response"}; }
+  }catch(e){
+    // No reply does not mean it failed: the server may have done it (review round 2).
+    const why = "No reply from the server, so this may or may not have gone through. Reload the page to see the order's status.";
+    toast(why,"error"); if (LAST_ORDER && LAST_ORDER.order_id===oid) invMsg(why, true); return false;
+  }
+  // The card may now show a different order; a late reply must not write onto it.
+  const same = LAST_ORDER && LAST_ORDER.order_id===oid;
   if (!j || j.status!=="done") {
     const why = "Action failed: "+((j&&j.result&&j.result.error)||(j&&(j.reason||j.error))||(j&&j.status)||"no response");
-    toast(why,"error"); invMsg(why, true); return false;
+    toast(why,"error"); if (same) invMsg(why, true); return false;
   }
   const res = j.result || {};
-  if (res.status) INV_STATUS = res.status;
-  if (res.pay_status) INV_PAY = res.pay_status;
-  refreshInvStatus();
+  if (same){
+    // Two replies can land out of order, so a status only moves forward.
+    if (res.status && (INV_STATUS===null || res.status==="cancelled"
+        || INV_STATUS_ORDER.indexOf(res.status) > INV_STATUS_ORDER.indexOf(INV_STATUS))) INV_STATUS = res.status;
+    if (res.pay_status) INV_PAY = res.pay_status;
+    refreshInvStatus();
+  }
   const msg = res.message || (key==="orders.confirm" ? "Invoice confirmed" : key==="orders.send_invoice" ? "Invoice sent" : "Payment recorded — in fulfillment");
-  toast(msg); invMsg(msg, false);
+  toast(msg); if (same) invMsg(msg, false);
   return true;
 }
 function invSentStr(iso){ try{ return new Date(iso).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'2-digit'}); }catch(e){ return ''; } }

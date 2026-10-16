@@ -61,7 +61,8 @@ def _extract(name):
 
 def _label_table():
     start = PAGE.index("const INV_STATUS_LABEL")
-    return PAGE[start:PAGE.index("};", start) + 2]
+    end = PAGE.index("const INV_STATUS_ORDER", start)
+    return PAGE[start:PAGE.index(";", end) + 1]
 
 
 def _run(call_js):
@@ -120,10 +121,28 @@ def test_recording_payment_moves_the_status_to_paid():
     assert (got["st"], got["pay"], got["btn"]) == ("new", "paid", "none")
 
 
-def test_a_network_failure_is_reported_not_swallowed():
+def test_no_reply_is_reported_as_unknown_not_as_failed():
     got = _run('REPLY = "throw"; const ok = await lifecycle("orders.confirm", {});'
                'if (ok !== false) throw new Error("should be false");')
-    assert got["msg"] == "Action failed: network down"
+    assert got["msg"].startswith("No reply from the server, so this may or may not have gone")
+    assert "failed" not in got["msg"] and got["msgClass"] == "inv-msg error"
+
+
+def test_a_late_reply_for_another_order_leaves_the_card_alone():
+    got = _run('INV_STATUS = "proposed"; INV_PAY = "unpaid";'
+               'REPLY = {status: "done", result: {status: "confirmed", message: "A confirmed"}};'
+               'const p = lifecycle("orders.confirm", {}); LAST_ORDER = {order_id: 231}; await p;')
+    assert got["posts"] == [["/api/action/orders.confirm", {"order_id": 230}]]
+    assert (got["st"], got["msg"], got["btn"]) == ("proposed", "", "")
+    assert got["toasts"] == [["A confirmed", "ok"]]
+
+
+def test_an_out_of_order_reply_never_moves_the_status_back():
+    got = _run('INV_STATUS = "new"; INV_PAY = "paid";'
+               'REPLY = {status: "done", result: {status: "confirmed", message: "late"}};'
+               'await lifecycle("orders.confirm", {});')
+    assert (got["st"], got["pay"]) == ("new", "paid")
+    assert got["status"] == "Order status: In fulfillment, paid."
 
 
 def test_a_denied_action_names_the_reason():
