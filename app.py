@@ -2347,8 +2347,8 @@ _ONE_CAUTION_RULE = (
 # that first week" came from old knowledge-base advice, and a long answer merged the two
 # cautions into one "Safety:" summary.
 _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The snippets may "
-                     "hold older advice to start with more than these Directions give, for "
-                     "example in the first week. That advice is withdrawn: never give it, "
+                     "hold older advice to take more than these Directions give, such as two "
+                     "capsules at one time or extra capsules in the first week. That advice is withdrawn: never give it, "
                      "even when the user asks about taking more. Answer such a question with "
                      "these directions, and say to ask Dr. Glen about anything beyond them. "
                      "Do not mention the older advice to the user. This rule never "
