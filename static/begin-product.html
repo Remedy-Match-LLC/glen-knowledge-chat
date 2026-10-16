@@ -323,6 +323,9 @@
         <p id="waitlist-consent" style="margin:0.6rem 0 0;font-size:0.9em;color:var(--muted,#666);"></p>
         <p id="product-waitlist-msg" role="status" aria-live="polite" style="margin:0.6rem 0 0;font-weight:600;"></p>
       </form>
+      <!-- Out of stock (Glen, 2026-10-16): one line, from page-data `out_of_stock_line`,
+           in place of every buy link until the flag is removed. -->
+      <p id="product-out-of-stock" role="status" style="display:none;margin:1rem 0;padding:1rem;background:var(--surface,#f5f5f5);border-radius:12px;font-weight:700;"></p>
 
       <div id="sp-sections" class="sections"></div>
     </div>
@@ -1744,8 +1747,15 @@
 
       var openSet = Array.isArray(data.open_sections) ? data.open_sections : [];
       // Not ready to order (waitlist_only, 2026-10-09): every buy link points at the form.
-      var ctaUrl = data.waitlist_only ? '#product-waitlist'
+      // Out of stock (2026-10-16): every buy link points at the one line instead.
+      var ctaUrl = data.out_of_stock_line ? '#product-out-of-stock'
+        : data.waitlist_only ? '#product-waitlist'
         : (data.cta_url || ('/begin/buy/' + encodeURIComponent(slug)));
+      var oos = document.getElementById('product-out-of-stock');
+      if (oos){
+        oos.textContent = data.out_of_stock_line || '';
+        oos.style.display = data.out_of_stock_line ? 'block' : 'none';
+      }
       var mironAssets = Array.isArray(data.miron_assets) ? data.miron_assets : [];
       var mironStory = Array.isArray(data.miron_story) ? data.miron_story : [];
       var container = document.getElementById('sp-sections');
@@ -1769,7 +1779,7 @@
 
       renderFounding(data);
       renderWaitlist(data);
-      /*__CART_CONTROL_CALL_START__*/if (!data.waitlist_only) { renderCartControl(slug); }/*__CART_CONTROL_CALL_END__*/
+      /*__CART_CONTROL_CALL_START__*/if (!data.waitlist_only && !data.out_of_stock_line) { renderCartControl(slug); }/*__CART_CONTROL_CALL_END__*/
       show('sp-product');
       show('sp-back');
     }

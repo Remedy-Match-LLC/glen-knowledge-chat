@@ -107,7 +107,7 @@ def test_the_product_data_endpoint_sells_nothing(client):
 def test_the_page_hides_the_cart_for_a_waitlist_only_product():
     from pathlib import Path
     page = (Path(__file__).resolve().parent.parent / "static" / "begin-product.html").read_text()
-    assert "if (!data.waitlist_only) { renderCartControl(slug); }" in page
+    assert "if (!data.waitlist_only && !data.out_of_stock_line) { renderCartControl(slug); }" in page
     assert "data.waitlist_only ? '#product-waitlist'" in page
 
 

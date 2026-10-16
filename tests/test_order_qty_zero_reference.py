@@ -72,12 +72,15 @@ def test_the_spinner_can_reach_zero():
     assert 'min="0"' in row, "the qty input still clamps at min=1"
 
 
-def test_a_zero_line_does_not_count_toward_the_volume_tier():
+def test_a_zero_line_does_not_count_toward_the_volume_tier(monkeypatch):
     """The order-wide FF count drives the volume discount. Counting a zero line as
-    one unit would quietly cheapen every other bottle on the invoice."""
+    one unit would quietly cheapen every other bottle on the invoice.
+    monkeypatch, not assignment: a plain assignment left every later test in the run
+    with a fake _get_product (2026-10-16, it broke tests/test_out_of_stock_flag.py)."""
     import app as _app
-    _app._get_product = lambda slug: {"slug": slug, "price_cents": 6997, "qty_pricing": True}
-    _app._qty_eligible = lambda p: True
+    monkeypatch.setattr(_app, "_get_product",
+                        lambda slug: {"slug": slug, "price_cents": 6997, "qty_pricing": True})
+    monkeypatch.setattr(_app, "_qty_eligible", lambda p: True)
     lines = [{"slug": "a", "qty": 3}, {"slug": "b", "qty": 0}, {"slug": "c", "qty": 2}]
     assert _app._inhouse_total_ff_qty(lines) == 5
 

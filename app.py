@@ -8933,7 +8933,10 @@ def _split_not_ready(items):
         slug = (it.get("slug") if isinstance(it, dict) else it) or ""
         b = _waitlist_block(slug)
         if b:
-            not_ready.append({"name": b["name"], "url": f"/begin/product/{b['slug']}"})
+            nr = {"name": b["name"], "url": f"/begin/product/{b['slug']}"}
+            if b.get("out_of_stock"):   # its own line, not "not ready" (2026-10-16)
+                nr["line"] = str(_waitlist_refusal(slug))
+            not_ready.append(nr)
         else:
             keep.append(it)
     return keep, not_ready
@@ -10615,9 +10618,16 @@ def _apply_waitlist_page_data(data, slug, p):
         # The list has closed, but a late click on a confirmation link still lands here
         # and must read this list's own success note (review round 2).
         data["waitlist_closed"] = {"success": _pwl.TEXTS[slug]["success"]}
-    if not p.get("waitlist_only"):
+    # Out of stock (Glen, 2026-10-16): the page stays, nothing on it sells. A bundle
+    # holding an out-of-stock product shows that product's line (review round 2).
+    _oos = None if p.get("waitlist_only") else _waitlist_block(slug)
+    if _oos and _oos.get("out_of_stock"):
+        from dashboard import practitioner_portal as _ppw
+        data["out_of_stock_line"] = _ppw.out_of_stock_line(_oos["name"], _oos["out_of_stock"])
+    elif not p.get("waitlist_only"):
         return data
-    data["waitlist_only"] = True
+    else:
+        data["waitlist_only"] = True
     data["price"] = ""
     data["price_cents"] = None
     data["regular"] = ""
@@ -27694,7 +27704,9 @@ def api_client_portal(token):
                             "name": p.get("name", slug), "price_cents": None,
                             "regular_price_cents": None, "is_special": False,
                             "refill_eligible": False, "available": False,
-                            "not_ready": {"url": f"/begin/product/{p.get('slug') or slug}"}})
+                            "not_ready": {"url": f"/begin/product/{p.get('slug') or slug}",
+                                          **({"line": str(_waitlist_refusal(slug))}
+                                             if _nr.get("out_of_stock") else {})}})
             continue
         display.append({
             "slug": slug, "qty": int(it.get("qty", 1) or 1),

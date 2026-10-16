@@ -5246,7 +5246,7 @@ function render(d, v){
       if (it.not_ready) {
         // Not ready to order (2026-10-09): its name and page, never an order row.
         rows += `<div class="reitem not-ready-item"><span class="nm"><a href="${esc(it.not_ready.url)}">${esc(it.name||it.slug)}</a></span>
-          <span class="small muted">Not ready to order yet</span></div>`;
+          <span class="small muted">${esc(it.not_ready.line || "Not ready to order yet")}</span></div>`;
         return;
       }
       const price = (it.is_special && it.regular_price_cents)

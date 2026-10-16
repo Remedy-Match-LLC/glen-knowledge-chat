@@ -9527,6 +9527,7 @@
   },
   "vitamin-d-syntropy": {
    "name": "Vitamin D Syntropy",
+   "out_of_stock": "The new formula arrives Monday, 19 October.",
    "price_cents": 7000,
    "pinecone_title": "Vitamin D Syntropy",
    "aliases": [

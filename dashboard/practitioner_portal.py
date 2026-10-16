@@ -486,8 +486,8 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
             cp = cat.get(cs) if cs else None
             if not cp or cp.get("inactive") or cs in seen:
                 continue
-            if cp.get("waitlist_only"):
-                return {"slug": cs, "name": cp.get("name") or cs}
+            if cp.get("waitlist_only") or _stock_note(cp):
+                return _block(cs, cp)
             hit = _components(cp, seen | {cs})
             if hit:
                 return hit
@@ -496,9 +496,35 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
     s, p = _resolve(slug)
     if not p:
         return None
-    if p.get("waitlist_only"):
-        return {"slug": s, "name": p.get("name") or s}
+    if p.get("waitlist_only") or _stock_note(p):
+        return _block(s, p)
     return _components(p, {s})
+
+
+def _stock_note(p):
+    """The `out_of_stock` sentence on a product, or "". Glen, 2026-10-16: Vitamin D
+    Syntropy's shelf is empty until the new formula on 19 October. The field holds what
+    follows "{name} is out of stock." on the page and in every refusal; any non-empty
+    string blocks ordering, exactly as `waitlist_only` does, until it is removed."""
+    v = p.get("out_of_stock") if isinstance(p, dict) else None
+    if isinstance(v, str):
+        return v.strip()
+    # `true` (written like waitlist_only) must block too, never fail open (review round 1);
+    # with no note the line is just "{name} is out of stock."
+    return " " if v else ""
+
+
+def _block(slug, p):
+    b = {"slug": slug, "name": p.get("name") or slug}
+    note = _stock_note(p)
+    if note and not p.get("waitlist_only"):
+        b["out_of_stock"] = note
+    return b
+
+
+def out_of_stock_line(name, note):
+    """The one line a buyer sees for an out-of-stock product: page and refusals alike."""
+    return f"{name} is out of stock. {note}".strip()
 
 
 class WaitlistRefusal(str):
@@ -511,8 +537,11 @@ def waitlist_refusal(block) -> "WaitlistRefusal":
     """The refusal a buyer sees for a waitlist_only product (spec 2026-10-09):
     "{name} is not ready to order yet. Join the waiting list on its page." The page
     rides as `.url`."""
-    r = WaitlistRefusal(f"{block['name']} is not ready to order yet. "
-                        "Join the waiting list on its page.")
+    if block.get("out_of_stock"):
+        r = WaitlistRefusal(out_of_stock_line(block["name"], block["out_of_stock"]))
+    else:
+        r = WaitlistRefusal(f"{block['name']} is not ready to order yet. "
+                            "Join the waiting list on its page.")
     r.url = f"/begin/product/{block['slug']}"
     return r
 

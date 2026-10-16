@@ -949,6 +949,8 @@
             // Matched remedies not ready to order are named with a link to their page,
             // and are not in the order (Scar Soft Drink, 2026-10-09).
             var notReady = (p.not_ready || []).map(function(n){
+              // Out of stock (2026-10-16): the server's own line, linked to the page.
+              if (n.line) return '<div class="r-line"><span><a href="'+esc(n.url)+'">'+esc(n.line)+'</a></span><span></span></div>';
               return '<div class="r-line"><span><a href="'+esc(n.url)+'">'+esc(n.name)+'</a> is not ready to order yet</span><span></span></div>';
             }).join("");
             rItems.innerHTML = lines + notReady + '<div class="r-line r-total"><span>Total</span><span>$'+(((p.total_cents||0))/100).toFixed(2)+' + shipping</span></div>';
