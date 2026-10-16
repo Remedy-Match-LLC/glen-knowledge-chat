@@ -182,7 +182,9 @@ def _default_fetch_profile(email):
 
 def _default_fetch_recent_comms(email):
     """Best-effort: pull a client's windowed recent comms from the prod endpoint.
-    Returns {} on any failure (incl. missing CONSOLE_SECRET -> no network call)."""
+    Returns None on any failure (incl. missing CONSOLE_SECRET -> no network call), so
+    "Mine recent comms" can say it could not reach them. {} used to mean both "could not
+    reach" and "nothing there" (Glen, Josie Gagnon, 2026-10-16). Callers still `or {}`."""
     import json as _json
     import urllib.parse
     import urllib.request
@@ -199,7 +201,7 @@ def _default_fetch_recent_comms(email):
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         return _json.load(urllib.request.urlopen(req, timeout=20)) or {}
     except Exception:
-        return {}
+        return None
 
 
 def _default_fetch_client_photo(email, client_id=None):
@@ -937,13 +939,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not email:
             return {"added": 0, "error": "No client selected yet"}
         try:
-            profile = fetch_profile(email) or {}
+            profile = fetch_profile(email)
+            if profile is None:
+                # A failed fetch, not an empty profile (2026-10-16).
+                return {"added": 0, "error": "Could not reach the console for this "
+                                             "client's profile. Nothing was mined."}
             labels = mine_profile_stresses(
                 profile, lambda t: interpret_stresses(t, interpret_complete))
-            added = sum(1 for label in labels
-                        if _st.add_stress(cx, test_id, label, source="tag"))
         except Exception as e:
             return {"added": 0, "error": str(e)[:200]}
+        added = 0
+        try:
+            for label in labels:   # counted one by one: a later failure keeps the count
+                if _st.add_stress(cx, test_id, label, source="tag"):
+                    added += 1
+        except Exception as e:
+            return {"added": added, "error": str(e)[:200]}
         return {"added": added}
 
     def _mine_comms(cx, test_id):
@@ -956,12 +967,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not email:
             return {"added": 0, "error": "No client selected yet"}
         try:
-            ctx = fetch_recent_comms(email) or {}
+            ctx = fetch_recent_comms(email)
+            if not isinstance(ctx, dict):   # None, or a reply that is not a payload
+                # A failed fetch, not an empty inbox (2026-10-16).
+                return {"added": 0, "error": "Could not reach the console for this "
+                                             "client's recent comms. Nothing was mined."}
             text = comms_to_text(ctx)
             labels = interpret_stresses(text, interpret_complete) if text.strip() else []
-            added = sum(1 for label in labels if _st.add_stress(cx, test_id, label, source="comm"))
         except Exception as e:
             return {"added": 0, "error": str(e)[:200]}
+        added = 0
+        try:
+            for label in labels:   # counted one by one: a later failure keeps the count
+                if _st.add_stress(cx, test_id, label, source="comm"):
+                    added += 1
+        except Exception as e:
+            return {"added": added, "error": str(e)[:200]}
+        missed = [s for s in (ctx.get("unavailable") or []) if isinstance(s, str)]
+        if missed:
+            return {"added": added, "error": "Some recent comms could not be read ("
+                                             + ", ".join(missed) + ")."}
         return {"added": added}
 
     PASTE_MAX_CHARS = 50_000

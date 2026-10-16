@@ -12506,7 +12506,8 @@ def _gather_comms_text(cx, email, days=14):
             parts.append("Inquiry: " + str(inq.get("main_challenge") or "")
                          + " / " + str(inq.get("main_goal") or ""))
         for fb in (rc.get("recent_feedback") or []):
-            parts.append("Email feedback: " + str(fb.get("ai_summary") or ""))
+            # recent_comms names it `summary` (review, 2026-10-16: never reached here).
+            parts.append("Email feedback: " + str(fb.get("summary") or fb.get("ai_summary") or ""))
     except Exception as e:  # noqa: BLE001
         print(f"[testimonial-invites] gather failed for {email!r}: {e!r}", flush=True)
     return "\n".join(p for p in parts if p.strip())
@@ -18734,26 +18735,31 @@ def _member_context_for_email(email, *, query_log_n=5):
         print(f"[member-context] inquiries fetch failed: {e!r}", flush=True)
 
     # Recent queries. Production table uses 'query' column; test table uses
-    # 'question'.  Try 'question' first; fall back to 'query' on OperationalError.
+    # 'question'. Try 'query' first: on Postgres a failed SELECT aborts the
+    # transaction, so trying 'question' first made the fallback fail too and
+    # recent_queries was always empty in prod (found 2026-10-16).
     try:
         with db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
             try:
-                rows = cx.execute(
-                    "SELECT question, ts FROM query_log WHERE email=? "
-                    "ORDER BY id DESC LIMIT ?",
-                    (email, int(query_log_n))
-                ).fetchall()
-                out["recent_queries"] = [{"question": r["question"], "ts": r["ts"]}
-                                         for r in rows]
-            except Exception:
-                # Production table uses 'query' column; normalise to 'question' key
                 rows = cx.execute(
                     "SELECT query, ts FROM query_log WHERE email=? "
                     "ORDER BY id DESC LIMIT ?",
                     (email, int(query_log_n))
                 ).fetchall()
                 out["recent_queries"] = [{"question": r["query"], "ts": r["ts"]}
+                                         for r in rows]
+            except Exception:
+                try:
+                    cx.rollback()
+                except Exception:
+                    pass
+                rows = cx.execute(
+                    "SELECT question, ts FROM query_log WHERE email=? "
+                    "ORDER BY id DESC LIMIT ?",
+                    (email, int(query_log_n))
+                ).fetchall()
+                out["recent_queries"] = [{"question": r["question"], "ts": r["ts"]}
                                          for r in rows]
     except Exception as e:
         print(f"[member-context] query_log fetch failed: {e!r}", flush=True)
