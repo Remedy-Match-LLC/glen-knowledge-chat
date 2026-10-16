@@ -62,6 +62,8 @@
   #invoice h2 { color:var(--accent-light); }
   #invoice pre { white-space:pre-wrap; font-family:ui-monospace,Menlo,monospace; font-size:13px; color:var(--text); }
   .inv-actions { display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
+  .inv-status { margin-top:10px; font-size:14px; color:var(--accent-light); }
+  .inv-msg { margin-top:8px; font-size:14px; color:#9fd3a6; } .inv-msg.error { color:var(--red); }
   button.inv-sent { background:rgba(58,90,64,0.28); border-color:#3a5a40; color:#9fd3a6; }
   .inv-send-status { margin-left:8px; font-size:14px; color:#9fd3a6; }
   .inv-send-status.error { color:var(--red); } .inv-send-status.unknown { color:var(--accent-light); }
@@ -216,6 +218,10 @@ let LINES = [];            // [{slug,name,qty,unit_cents,edited,note,source}]
 const SOURCE_OPTS = ['self','biofield','scan','intake','chat'];
 let SNIPPETS = [];         // shared saved-message library [{id,text}] for the per-line note dropdown
 let LAST_ORDER = null;     // {order_id, external_ref, totals}
+// The open order's status, so the invoice card offers only what the order can still take.
+// Glen, 2026-10-16: "the 'Confirm' button shows no change when clicked." On a paid order
+// the server refused it and said so only in a two-second corner toast. Null = not known.
+let INV_STATUS = null, INV_PAY = null;
 const EDIT_OID = new URLSearchParams(location.search).get("edit_order");  // edit mode if set
 let POINTS_BAL = 0;        // selected customer's redeemable points balance (cents)
 let PREVIEW = {subtotal_cents:null, lines:[]};  // server price preview
@@ -798,6 +804,7 @@ async function loadOrderForEdit(oid){
   $("grant-member-btn").style.display = "inline-block";
   loadReviewHold();
   INV_ORDER = oid; INV_SENT_AT = o.invoice_sent_at || null;
+  INV_STATUS = o.status || null; INV_PAY = o.pay_status || null;
   if (o.invoice_sent_at){ _sib.textContent = "Invoice Sent "+invSentStr(o.invoice_sent_at)+" (re-send)"; _sib.classList.add("inv-sent"); }
   // Prefill customer (read-only context — pricing/membership keyed off email).
   $("person_id").value = o.person_id||""; $("c-name").value = o.name||""; $("c-email").value = o.email||""; $("c-phone").value = o.phone||"";
@@ -854,6 +861,11 @@ function renderPayments(rows, bal){
 async function reloadPayments(){
   const r=await fetch(`/api/orders/${EDIT_OID}/payments`,{headers:HEADERS});
   const j=await r.json(); if(j.ok) renderPayments(j.rows,j.balance);
+  // A ledger payment that clears the balance moves the order on (review round 1).
+  // It runs only in edit mode, where the open order is always EDIT_OID.
+  if (j.ok && j.order && j.order.status){
+    INV_STATUS=j.order.status; INV_PAY=j.order.pay_status||INV_PAY; refreshInvStatus();
+  }
 }
 async function addPayment(){
   const amt=parseFloat($("pay-amt").value); if(isNaN(amt)||amt<=0){toast("Enter an amount","error");return;}
@@ -997,6 +1009,9 @@ async function createInvoice(){
     // second order onto the first.
     SUBMIT_TOKEN = newSubmitToken();
     invTrackOrder(j.order_id);   // a new order starts unsent; the same order returned keeps its state
+    // Every new in-house order is created proposed and unpaid; a repeat of the same
+    // submit returns the first order, whose state is not in the reply.
+    INV_STATUS = j.idempotent_repeat ? null : "proposed"; INV_PAY = j.idempotent_repeat ? null : "unpaid";
     LAST_ORDER=j; showInvoice(j);
     toast(j.warning || "Proposed invoice created", j.warning ? "error" : "ok");
     if (j.warning) alert(j.warning);   // special pricing missed: catch it before it's sent
@@ -1021,7 +1036,7 @@ function showInvoice(j){
   // card was drawn, so a Zelle payment recorded later still read "Credit card".
   inv.innerHTML=`<h2>Proposed invoice ${esc(j.external_ref)} created</h2><pre>${esc(summary)}<span id="inv-method"></span></pre>`
     +`<div class="inv-actions">`
-    +`<button class="primary" onclick="lifecycle('orders.confirm',{})">Confirm</button>`
+    +`<button class="primary" id="inv-confirm-btn" onclick="lifecycle('orders.confirm',{})">Confirm</button>`
     +`<button class="ghost inv-send-btn${INV_SENT_AT?' inv-sent':''}" onclick="sendInvoice(this, LAST_ORDER&&LAST_ORDER.order_id)">${INV_SENT_AT?'Invoice Sent '+invSentStr(INV_SENT_AT)+' (re-send)':'Send invoice'}</button>`
     +`<button class="ghost" onclick="recordPayment()">Record payment</button>`
     +`<span id="rp-form" style="display:none;align-items:end;gap:6px;flex-wrap:wrap">`
@@ -1031,9 +1046,30 @@ function showInvoice(j){
     +`<button class="mini" onclick="$('rp-form').style.display='none'">Cancel</button></span>`
     +`<button class="ghost" onclick="printInvoiceFor(LAST_ORDER&&LAST_ORDER.order_id)">Print invoice</button>`
     +`<button class="mini" onclick="copyInv()">Copy</button>`
-    +`<a class="mini" href="/console/orders?key=${encodeURIComponent(KEY)}" style="text-decoration:none">Open orders board</a></div>`;
+    +`<a class="mini" href="/console/orders?key=${encodeURIComponent(KEY)}" style="text-decoration:none">Open orders board</a></div>`
+    +`<div id="inv-status" class="inv-status"></div><div id="inv-msg" class="inv-msg"></div>`;
   inv.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
   refreshInvMethod();
+  refreshInvStatus();
+}
+const INV_STATUS_LABEL = {proposed:"Proposed invoice", confirmed:"Confirmed, awaiting payment",
+  new:"In fulfillment", packed:"Packed", shipped:"Shipped", delivered:"Delivered", done:"Done",
+  cancelled:"Cancelled"};
+const INV_STATUS_ORDER = ["proposed","confirmed","new","packed","shipped","delivered","done"];
+// The status line, and Confirm only while the order is a proposed invoice (the only state
+// orders.confirm accepts). With the status unknown the button stays, as before.
+function refreshInvStatus(){
+  const el=$("inv-status"), btn=$("inv-confirm-btn");
+  if (btn) btn.style.display = (INV_STATUS===null || INV_STATUS==="proposed") ? "" : "none";
+  if (!el) return;
+  if (INV_STATUS===null){ el.textContent=""; return; }
+  const pay = INV_PAY==="paid" ? "paid" : INV_PAY==="claimed" ? "payment claimed" : "unpaid";
+  el.textContent = "Order status: "+(INV_STATUS_LABEL[INV_STATUS]||INV_STATUS)+", "+pay+".";
+}
+// The outcome of a card action stays on the card. A toast alone was missed.
+function invMsg(text, isError){
+  const el=$("inv-msg"); if (!el) return;
+  el.textContent=text; el.className="inv-msg"+(isError?" error":"");
 }
 // What the card says for payment: the methods actually recorded on this order, else the
 // method chosen in the Pricing & payment dropdown.
@@ -1047,12 +1083,34 @@ function refreshInvMethod(){
     : `Payment method: ${$("o-method").value}`;
 }
 async function lifecycle(key, params){
-  if (!LAST_ORDER) return;
-  params.order_id = LAST_ORDER.order_id;
-  const r = await fetch("/api/action/"+key, {method:"POST", headers:HEADERS, body:JSON.stringify(params)});
-  const j = await r.json();
-  if (!j || j.status!=="done") { toast("Action failed: "+((j&&j.result&&j.result.error)||(j&&(j.reason||j.error))||""),"error"); return false; }
-  toast((j.result&&j.result.message) || (key==="orders.confirm" ? "Invoice confirmed" : key==="orders.send_invoice" ? "Invoice sent" : "Payment recorded — in fulfillment"));
+  if (!LAST_ORDER){ toast("No order is open on this page","error"); return false; }
+  const oid = LAST_ORDER.order_id;
+  params.order_id = oid;
+  let j = null;
+  try{
+    const r = await fetch("/api/action/"+key, {method:"POST", headers:HEADERS, body:JSON.stringify(params)});
+    j = await r.json();
+  }catch(e){
+    // No reply does not mean it failed: the server may have done it (review round 2).
+    const why = "No reply from the server, so this may or may not have gone through. Reload the page to see the order's status.";
+    toast(why,"error"); if (LAST_ORDER && LAST_ORDER.order_id===oid) invMsg(why, true); return false;
+  }
+  // The card may now show a different order; a late reply must not write onto it.
+  const same = LAST_ORDER && LAST_ORDER.order_id===oid;
+  if (!j || j.status!=="done") {
+    const why = "Action failed: "+((j&&j.result&&j.result.error)||(j&&(j.reason||j.error))||(j&&j.status)||"no response");
+    toast(why,"error"); if (same) invMsg(why, true); return false;
+  }
+  const res = j.result || {};
+  if (same){
+    // Two replies can land out of order, so a status only moves forward.
+    if (res.status && (INV_STATUS===null || res.status==="cancelled"
+        || INV_STATUS_ORDER.indexOf(res.status) > INV_STATUS_ORDER.indexOf(INV_STATUS))) INV_STATUS = res.status;
+    if (res.pay_status) INV_PAY = res.pay_status;
+    refreshInvStatus();
+  }
+  const msg = res.message || (key==="orders.confirm" ? "Invoice confirmed" : key==="orders.send_invoice" ? "Invoice sent" : "Payment recorded — in fulfillment");
+  toast(msg); if (same) invMsg(msg, false);
   return true;
 }
 function invSentStr(iso){ try{ return new Date(iso).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'2-digit'}); }catch(e){ return ''; } }
