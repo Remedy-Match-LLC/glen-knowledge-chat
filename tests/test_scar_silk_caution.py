@@ -15,6 +15,7 @@ import app
 
 APPROVED = ("Ask your practitioner before use if you take a blood thinner or prescription "
             "medication, or before surgery.")
+DIRECTIONS = "Up to 3 capsules a day between meals."
 PRODUCTS = json.load(open("data/products.json"))["products"]
 CORRECTIONS = json.load(open("data/products-manual-corrections.json"))
 
@@ -43,11 +44,19 @@ def test_no_other_field_already_carries_the_caution():
         assert APPROVED not in (p.get(field) or ""), field
 
 
-def test_only_the_caution_is_opted_in_to_the_chatbot():
+def test_only_the_caution_and_the_directions_reach_the_chatbot():
+    # Addendum 2 (Glen "yes", 2026-10-15): the label directions, pinned alone.
     for record in (PRODUCTS["scar-silk"], CORRECTIONS["scar-silk"]):
         assert record["chat_caution"] is True
-    p = PRODUCTS["scar-silk"]
-    assert not p.get("copy_pinned") and not p.get("directions")
+        assert record["directions"] == DIRECTIONS
+        assert record["copy_pinned"] == ["directions"]
+
+
+def test_the_page_gives_the_directions(appmod):
+    d = appmod.app.test_client().get("/begin/product-page-data/scar-silk").get_json()
+    # Suggested use on the page reads the What's inside section (review round 1).
+    secs = {s["id"]: s for s in d["sections"]}
+    assert secs["ingredients"]["body"]["directions"] == DIRECTIONS
 
 
 def test_a_rebuild_keeps_the_caution_and_the_real_source():
@@ -85,16 +94,20 @@ def test_the_page_carries_the_caution_once(appmod):
 @pytest.mark.parametrize("q", ["Is Scar Silk safe?", "What is Scar Silk?",
                                "How much Scar Silk should I take?",
                                "Is Scar Silk safe if I take a blood thinner?"])
-def test_the_chatbot_carries_the_caution_alone_once(q):
+def test_the_chatbot_carries_the_directions_and_the_caution_once(q):
     b = app.named_product_facts_block(q)
     section = b[b.index("### Scar Silk"):]
+    # No description: it is not approved, and only a pinned description reaches the bot.
     assert section.split("\n") == [
         "### Scar Silk", f"Page: {app._catalog_page_url('scar-silk')}",
-        app._CAUTION_ONLY_NOTE, f"Caution: {APPROVED}"]
+        app._NO_DESCRIPTION.format(name="Scar Silk"),
+        f"Directions: {DIRECTIONS}",
+        app._PINNED_DOSE_RULE.format(name="Scar Silk", example=""),
+        app._CAUTION_COPY_REMINDER, f"Caution: {APPROVED}"]
     assert b.count(APPROVED) == 1
     assert app._ONE_CAUTION_RULE in b
-    # Caution-only: the header asks for no dose or description from this text.
-    assert "Give its dose from this text" not in b
+    # The sleep products' example could forbid two at once, which up to 3 a day allows.
+    assert "two capsules at one time" not in b
 
 
 def test_the_gated_note_names_the_product_page_not_the_label():
@@ -116,3 +129,10 @@ def test_lowercase_scar_silk_without_a_cue_is_a_known_gap():
     # changes nothing else, so "is scar silk safe?" gets no block. Pinned here so a change
     # is a decision, not an accident.
     assert "### Scar Silk" not in app.named_product_facts_block("is scar silk safe?")
+
+
+def test_a_gated_answer_does_not_describe_it_from_the_snippets():
+    # Review round 3: no approved description, and a gated answer reads back this text only.
+    b = app.named_product_facts_block("What is Scar Silk?", gated=True)
+    assert app._NO_DESCRIPTION_GATED.format(name="Scar Silk") in b
+    assert app._NO_DESCRIPTION.format(name="Scar Silk") not in b

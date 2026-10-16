@@ -204,7 +204,9 @@ def test_an_opted_in_pinned_block_carries_the_dose_rule_and_the_copy_reminder(q,
     section = b[b.index(f"### {name}"):]
     if "\n### " in section[4:]:
         section = section[:section.index("\n### ", 4)]  # this product's block only
-    assert app._PINNED_DOSE_RULE.format(name=name) in section
+    slug = name.lower().replace(" ", "-")
+    assert app._PINNED_DOSE_RULE.format(
+        name=name, example=app._WITHDRAWN_DOSE_EXAMPLE[slug]) in section
     assert app._CAUTION_COPY_REMINDER in section
     # The reminder sits right above the first caution line.
     after = section.split(app._CAUTION_COPY_REMINDER, 1)[1].lstrip("\n")
@@ -212,7 +214,7 @@ def test_an_opted_in_pinned_block_carries_the_dose_rule_and_the_copy_reminder(q,
 
 
 @pytest.mark.parametrize("q", ["What is Estro-Clear?", "What is Angiostasis?",
-                               "Is the Brain Program safe?", "Is Scar Silk safe?"])
+                               "Is the Brain Program safe?"])
 def test_other_products_get_neither(q):
     b = _block(q)
     assert "### " in b, q

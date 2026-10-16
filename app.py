@@ -2347,12 +2347,23 @@ _ONE_CAUTION_RULE = (
 # that first week" came from old knowledge-base advice, and a long answer merged the two
 # cautions into one "Safety:" summary.
 _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The snippets may "
-                     "hold older advice to take more than these Directions give, such as two "
-                     "capsules at one time or extra capsules in the first week. That advice is withdrawn: never give it, "
+                     "hold older advice to take more than these Directions give{example}. "
+                     "That advice is withdrawn: never give it, "
                      "even when the user asks about taking more. Answer such a question with "
                      "these directions, and say to ask Dr. Glen about anything beyond them. "
                      "Do not mention the older advice to the user. This rule never "
                      "shortens a caution: copy every caution in full.")
+# The example names the withdrawn advice only where it was found (Sleep read-back,
+# 2026-10-15). Elsewhere it could forbid a dose the label allows: Scar Silk takes up to 3
+# a day, so two at one time may be right there.
+_WITHDRAWN_DOSE_EXAMPLE = {
+    slug: ", such as two capsules at one time or extra capsules in the first week"
+    for slug in ("brain-cleanse", "sleep-syntropy", "sleep-bundle")}
+_NO_DESCRIPTION = ("No description of {name} is approved here. If asked what it is, describe "
+                   "it briefly from the snippets about {name} itself, adding no claim they do "
+                   "not make. Its dose and caution come only from this text.")
+_NO_DESCRIPTION_GATED = ("No description of {name} is approved here. If asked what it is, "
+                         "give its name and its Page, and describe it no further.")
 _CAUTION_COPY_REMINDER = ("Copy each caution below word for word, as its own paragraph. "
                           "Do not merge them into one safety summary.")
 _CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
@@ -2404,7 +2415,10 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         product = products[slug]
         name = html.unescape(product.get("name") or slug).strip()
         desc = _PRICE_SENTENCE.sub("", html.unescape(product.get("description") or ""))
-        desc = re.sub(r"[ \t]+", " ", desc).strip() if product.get("copy_pinned") else ""
+        # Only an approved description. Any other pin used to let a scraped one through,
+        # with claims Glen never approved (Glen "yes", 2026-10-15).
+        desc = (re.sub(r"[ \t]+", " ", desc).strip()
+                if "description" in _pinned_copy(product) else "")
         if len(desc) > _NAMED_FACTS_MAX_CHARS:
             desc = desc[:_NAMED_FACTS_MAX_CHARS].rsplit(" ", 1)[0] + "..."
         parts = [f"### {name}", f"Page: {_catalog_page_url(slug)}"]
@@ -2467,7 +2481,8 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         if copy_block and ((val and val not in desc and "directions" in _pinned_copy(product))
                            or (product.get("bundle") and intro and "intro" in _pinned_copy(product)
                                and not val)):
-            parts.append(_PINNED_DOSE_RULE.format(name=name))
+            parts.append(_PINNED_DOSE_RULE.format(
+                name=name, example=_WITHDRAWN_DOSE_EXAMPLE.get(slug, "")))
         # The caution also from a chat_caution product: an opt-in for the warning alone,
         # so its scraped description, directions and components stay out (Brain Cleanse,
         # 2026-10-15). A caution is held as an entry and written after the product cap,
@@ -2507,6 +2522,11 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                 parts.append("No dose or ingredient text is approved for it yet. Give none, "
                              "and do not take one from the snippets.")
         if len(parts) > 2:
+            if not desc and product.get("copy_pinned") and not product.get("bundle"):
+                # The header says to describe it only by this text, which holds no
+                # description now that only a pinned one reaches the bot (review round 3).
+                parts.insert(2, (_NO_DESCRIPTION_GATED if gated else _NO_DESCRIPTION)
+                             .format(name=name))
             blocks.append(parts)
             all_caution_only = all_caution_only and caution_only
             any_caution_only = any_caution_only or caution_only
