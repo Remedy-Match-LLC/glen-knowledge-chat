@@ -33,7 +33,7 @@ title: Eating for Your Terrain
 <td>Autumn</td>
 <td>Anabolic healing, high fever, bacterial or parasitic activity</td>
 <td>Support the fever. Lighten the load.</td>
-<td>Light food, broths and fluids. A short fast during an acute high fever. Less fat and heavy meat.</td>
+<td>Light food, broths and fluids. Fast while the fever lasts, then return to light food. Less fat and heavy meat.</td>
 <td>Charaka, the Neijing and Hippocrates all place fever in autumn. Charaka's autumn diet is sweet, bitter, cool and light, without curd or fatty meat. Lindlahr fasts in acute fever.</td>
 </tr>
 <tr>
