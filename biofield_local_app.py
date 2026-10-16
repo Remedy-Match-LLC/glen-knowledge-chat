@@ -274,9 +274,9 @@ def _fetch_intake_answers(email):
             def redirect_request(self, *a, **k):
                 return None
         opener = urllib.request.build_opener(_NoRedirect)
-        data = _json.load(opener.open(req, timeout=20))
-        answers = data.get("answers")
-        return answers if isinstance(answers, dict) else None
+        data = _json.load(opener.open(req, timeout=5))
+        from dashboard.diet_guidance import report_fallback_answers
+        return report_fallback_answers(data)
     except Exception:
         return None
 

@@ -1411,8 +1411,6 @@ const money = (c)=> (c==null? "" : "$"+(c/100).toFixed(2));
 // Mirrors dashboard/terrain_phase.py. Empty when there is no valid phase 1-5.
 const TERRAIN_PHASE_NAMES = {1:"Terrain Revive",2:"Terrain Repair",3:"Terrain Renew",4:"Terrain Refresh",5:"Terrain Relief"};
 function terrainPhaseName(p){ return TERRAIN_PHASE_NAMES[parseInt(p,10)] || ""; }
-// Terrain banner for the report (screen or print). `kind` picks the class set.
-// "" when no phase was read, so reveal/FMP reports simply omit it.
 // Diet guidance for the client's terrain phase (Glen approved the text 2026-10-16). The
 // server sends one phase's section with the intro cautions, or null. Every sentence is
 // its own paragraph, as in the approved source. kind "print" uses the print classes.
@@ -1426,6 +1424,8 @@ function dietGuidanceHtml(g, kind){
     + g.paragraphs.map(p).join("") + `</div>`;
 }
 
+// Terrain banner for the report (screen or print). `kind` picks the class set.
+// "" when no phase was read, so reveal/FMP reports simply omit it.
 function terrainBanner(d, kind){
   const nm = terrainPhaseName(d && d.phase);
   if(!nm) return "";

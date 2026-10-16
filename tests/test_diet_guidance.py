@@ -66,8 +66,28 @@ def test_the_intake_phase_is_the_lowest_ticked():
     assert dg.intake_phase({"terrain": 2, "terrain_selections": [4, 2, 5]}) == 2
     assert dg.intake_phase({"terrain_selections": ["5", "3"]}) == 3
     assert dg.intake_phase({"terrain": 4}) == 4
+
+
+def test_an_edited_terrain_beats_selections_left_behind():
+    """intake_public.merge_answers keeps old selections when terrain is edited (round 1)."""
+    from dashboard import intake_public
+    merged = intake_public.merge_answers({"terrain": 2, "terrain_selections": [2, 5]},
+                                         {"terrain": 4, "terrain_selections": [4]})
+    assert merged["terrain"] == 4
+    assert dg.intake_phase(merged) == 4
     assert dg.intake_phase({"_external": True}) is None
     assert dg.intake_phase(None) is None
+
+
+@pytest.mark.parametrize("row,want", [
+    ({"status": "submitted", "answers": {"terrain": 3}}, {"terrain": 3}),
+    ({"status": "draft", "answers": {"terrain": 3}}, None),
+    ({"status": "submitted", "answers": {"terrain": 3, "_external": True}}, None),
+    ({"status": "submitted", "answers": None}, None),
+    (None, None),
+])
+def test_only_a_submitted_intake_can_be_the_report_fallback(row, want):
+    assert dg.report_fallback_answers(row) == want
 
 
 def test_the_report_uses_the_tested_phase_and_falls_back_to_the_intake():
@@ -141,7 +161,7 @@ def test_the_local_fetch_sends_the_key_in_a_header_only(monkeypatch):
 
     class _R:
         def read(self):
-            return b'{"answers": {"terrain": 2}}'
+            return b'{"status": "submitted", "answers": {"terrain": 2}}'
 
     class _Opener:
         def open(self, req, timeout=0):
@@ -218,14 +238,14 @@ def portal(tmp_db, monkeypatch):
     from dashboard import client_portal as cp
     monkeypatch.setattr(app, "LOG_DB", tmp_db)
 
-    def make(email, content, answers=None):
+    def make(email, content, answers=None, status="submitted"):
         with sqlite3.connect(tmp_db) as cx:
             cx.row_factory = sqlite3.Row
             cp.init_client_portal_table(cx)
             token, _ = cp.upsert_portal(cx, email, "Client", content)
             if answers is not None:
                 intake.init_intake_table(cx)
-                intake.save_draft(cx, email, answers, "t")
+                (intake.save_draft if status == "draft" else intake.submit)(cx, email, answers, "t")
         return app.app.test_client().get(f"/api/portal/{token}").get_json()
     return make
 
@@ -238,6 +258,11 @@ def test_the_portal_payload_carries_the_tested_phase(portal):
 def test_the_portal_payload_falls_back_to_the_intake(portal):
     j = portal("p2@example.com", {}, {"terrain": 2, "terrain_selections": [2, 5]})
     assert j["diet_guidance"]["heading"] == "Terrain Repair (Phase 2)"
+
+
+def test_a_draft_intake_is_not_a_report_fallback(portal):
+    j = portal("p5@example.com", {}, {"terrain": 2}, status="draft")
+    assert j["diet_guidance"] is None
 
 
 def test_the_portal_payload_has_none_without_either(portal):
@@ -351,3 +376,19 @@ def test_the_public_intake_shows_it_on_change_and_on_a_chat_fill():
     assert 'rd.addEventListener("change",showGuidance)' in block
     assert "if(r)r.checked=true;showGuidance();" in block
     assert "innerHTML" not in block
+
+
+def test_the_local_fetch_ignores_a_draft_intake(monkeypatch):
+    import urllib.request
+    import biofield_local_app as bla
+
+    class _R:
+        def read(self):
+            return b'{"status": "draft", "answers": {"terrain": 2}}'
+
+    class _Opener:
+        def open(self, req, timeout=0):
+            return _R()
+    monkeypatch.setenv("CONSOLE_SECRET", "ci-secret")
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *h: _Opener())
+    assert bla._fetch_intake_answers("a@example.com") is None

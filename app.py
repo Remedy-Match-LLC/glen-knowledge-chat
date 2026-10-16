@@ -27997,8 +27997,8 @@ def api_client_portal(token):
             with db.connect(LOG_DB) as _cx_dg:
                 _cx_dg.row_factory = sqlite3.Row
                 _intake_dg.init_intake_table(_cx_dg)
-                _intake_answers = (_intake_dg.get_response(_cx_dg, email_for_reports)
-                                   or {}).get("answers")
+                _intake_answers = _dg.report_fallback_answers(
+                    _intake_dg.get_response(_cx_dg, email_for_reports))
         payload["diet_guidance"] = _dg.guidance(
             _dg.report_phase(payload.get("phase"), _intake_answers))
     except Exception as _e:

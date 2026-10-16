@@ -84,15 +84,32 @@ def guidance_html(phase):
 
 
 def intake_phase(answers):
-    """The phase an intake answer scores: the lowest terrain number ticked, else the
-    stored single value, else None."""
+    """The phase an intake answer scores. Every writer stores `terrain` as the lowest
+    number ticked, and an edit can leave older `terrain_selections` behind (review
+    round 1), so `terrain` wins; the lowest selection is used only when it is empty."""
     answers = answers or {}
+    n = phase_num(answers.get("terrain"))
+    if n:
+        return n
     picks = answers.get("terrain_selections")
     if isinstance(picks, (list, tuple)):
-        nums = [n for n in (phase_num(p) for p in picks) if n]
+        nums = [m for m in (phase_num(p) for p in picks) if m]
         if nums:
             return min(nums)
-    return phase_num(answers.get("terrain"))
+    return None
+
+
+def report_fallback_answers(row):
+    """The intake answers the report may fall back to: a submitted intake only, never a
+    draft and never an imported stub. A draft is unfinished, and the public form saves
+    one for any typed address (review round 1)."""
+    row = row or {}
+    answers = row.get("answers")
+    if row.get("status") != "submitted" or not isinstance(answers, dict):
+        return None
+    if answers.get("_external"):
+        return None
+    return answers
 
 
 def report_phase(tested_phase, intake_answers=None):
