@@ -216,8 +216,11 @@ def _chain(report):
 def _diet(report):
     """Diet guidance for the tested phase, else the intake answer's phase (Glen,
     2026-10-16). The caller puts the client's intake answers on report["intake_answers"]."""
-    from dashboard.diet_guidance import guidance_html, report_phase
-    return guidance_html(report_phase(report.get("phase"), report.get("intake_answers")))
+    try:
+        from dashboard.diet_guidance import guidance_html, report_phase
+        return guidance_html(report_phase(report.get("phase"), report.get("intake_answers")))
+    except Exception:  # noqa: BLE001 -- never blocks the report
+        return ""
 
 
 def render_present(report, narrative=""):

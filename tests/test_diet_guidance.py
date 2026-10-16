@@ -143,14 +143,71 @@ def test_the_local_fetch_sends_the_key_in_a_header_only(monkeypatch):
         def read(self):
             return b'{"answers": {"terrain": 2}}'
 
-    def _open(req, timeout=0):
-        seen["url"], seen["key"] = req.full_url, req.get_header("X-console-key")
-        return _R()
+    class _Opener:
+        def open(self, req, timeout=0):
+            seen["url"], seen["key"] = req.full_url, req.get_header("X-console-key")
+            return _R()
+
+    def _build(*handlers):
+        seen["handlers"] = handlers
+        return _Opener()
     monkeypatch.setenv("CONSOLE_SECRET", "ci-secret")
-    monkeypatch.setattr(urllib.request, "urlopen", _open)
+    monkeypatch.setattr(urllib.request, "build_opener", _build)
     assert bla._fetch_intake_answers("T@Example.com") == {"terrain": 2}
     assert seen["key"] == "ci-secret" and "ci-secret" not in seen["url"]
     assert seen["url"].endswith("/api/console/intake/t%40example.com")
+    # The opener refuses redirects, so the key header never follows one elsewhere.
+    (handler,) = seen["handlers"]
+    assert handler().redirect_request(None, None, 302, "Found", {}, "https://evil.example/") is None
+
+
+def test_the_local_fetch_never_follows_a_redirect_for_real(monkeypatch):
+    import http.server
+    import threading
+    import biofield_local_app as bla
+    hits = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append((self.path, self.headers.get("X-Console-Key")))
+            if self.path.startswith("/api/console/intake/"):
+                self.send_response(302)
+                self.send_header("Location", "/elsewhere")
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"answers": {"terrain": 1}}')
+
+        def log_message(self, *a):
+            pass
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        monkeypatch.setenv("CONSOLE_SECRET", "ci-secret")
+        monkeypatch.setenv("PUBLIC_BASE_URL", f"http://127.0.0.1:{srv.server_port}")
+        assert bla._fetch_intake_answers("a@example.com") is None
+        assert [p for p, _ in hits] == ["/api/console/intake/a%40example.com"]
+    finally:
+        srv.shutdown()
+
+
+def test_a_missing_file_shows_nothing_and_breaks_nothing(monkeypatch, tmp_path):
+    from dashboard.biofield_report_present import render_present
+    monkeypatch.setattr(dg, "_PATH", str(tmp_path / "nope.md"))
+    monkeypatch.setattr(dg, "_LOADED", None)
+    assert dg.guidance(3) is None and dg.guidance_html(3) == ""
+    out = dg.form_with_guidance(intake.INTAKE_FORM)
+    assert all("diet_guidance" not in f for s in out["sections"] for f in s["fields"])
+    assert "Remedy Schedule" in render_present(_report(phase=3))
+
+
+def test_a_malformed_file_shows_nothing(monkeypatch, tmp_path):
+    bad = tmp_path / "bad.md"
+    bad.write_text("## Something else\n\nHello.\n")
+    monkeypatch.setattr(dg, "_PATH", str(bad))
+    monkeypatch.setattr(dg, "_LOADED", None)
+    assert dg.guidance(1) is None
 
 
 # --- the portal report payload ---

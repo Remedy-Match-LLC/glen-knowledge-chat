@@ -268,7 +268,13 @@ def _fetch_intake_answers(email):
         req = urllib.request.Request(
             f"{base}/api/console/intake/" + urllib.parse.quote(email),
             headers={"X-Console-Key": key})
-        data = _json.load(urllib.request.urlopen(req, timeout=20))
+
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            # A redirect would carry the key header to wherever it points (review round 2).
+            def redirect_request(self, *a, **k):
+                return None
+        opener = urllib.request.build_opener(_NoRedirect)
+        data = _json.load(opener.open(req, timeout=20))
         answers = data.get("answers")
         return answers if isinstance(answers, dict) else None
     except Exception:

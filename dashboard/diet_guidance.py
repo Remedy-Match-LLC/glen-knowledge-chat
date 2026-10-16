@@ -40,18 +40,33 @@ def _parse(text):
     return intro, sections
 
 
-with open(_PATH, encoding="utf-8") as _f:
-    _INTRO, _SECTIONS = _parse(_f.read())
+_LOADED = None
+
+
+def _load():
+    """(intro, sections), read once. A missing or malformed file logs and shows nothing,
+    so it can never take down the intake form or the report around it (review round 2).
+    tests/test_diet_guidance.py fails loudly on the same file instead."""
+    global _LOADED
+    if _LOADED is None:
+        try:
+            with open(_PATH, encoding="utf-8") as f:
+                _LOADED = _parse(f.read())
+        except Exception as e:  # noqa: BLE001
+            print(f"[diet-guidance] not loaded: {e!r}", flush=True)
+            _LOADED = ([], {})
+    return _LOADED
 
 
 def guidance(phase):
     """{"title", "intro", "heading", "paragraphs"} for one phase, or None with no valid
     phase. The intro always comes with the section."""
     n = phase_num(phase)
-    if not n:
+    intro, sections = _load()
+    if not n or n not in sections or not intro:
         return None
-    heading, paras = _SECTIONS[n]
-    return {"title": _TITLE, "intro": list(_INTRO), "heading": heading,
+    heading, paras = sections[n]
+    return {"title": _TITLE, "intro": list(intro), "heading": heading,
             "paragraphs": list(paras), "phase": n}
 
 
@@ -92,8 +107,11 @@ def form_with_guidance(form):
     as they answer. The form itself is never changed."""
     import copy
     out = copy.deepcopy(form)
+    by_phase = {str(n): g for n, g in ((n, guidance(n)) for n in range(1, 6)) if g}
+    if len(by_phase) != 5:
+        return out
     for sec in out.get("sections") or []:
         for f in sec.get("fields") or []:
             if f.get("id") == "terrain":
-                f["diet_guidance"] = {str(n): guidance(n) for n in range(1, 6)}
+                f["diet_guidance"] = by_phase
     return out
