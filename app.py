@@ -3753,14 +3753,17 @@ def _approved_wording(match_id, meta, text):
 
 def _approved_wording_reminder(context_str):
     """A closing reminder when a retrieved note carries approved wording, so the rule is
-    the last thing the model reads (the brief format otherwise invites restating it)."""
-    if "[APPROVED WORDING:" not in (context_str or ""):
+    the last thing the model reads (the brief format otherwise invites restating it).
+    It keys on the whole rule text, which only build_context writes, so a snippet that
+    merely mentions the marker does not trigger it."""
+    if _APPROVED_WORDING_RULE not in (context_str or ""):
         return ""
     return ("\n\nAPPROVED WORDING REMINDER: a snippet above holds a passage Glen approved "
-            "word for word. Quote it exactly, once, and name whose results they are. Do not "
-            "restate its figures or timings anywhere else in your answer. Do not call the "
-            "results documented, measurable or consistent, and do not describe them as "
-            "reversing, remodelling or curing anything.")
+            "word for word. Use it only if it answers the question. If you use it, quote it "
+            "exactly, once, and name whose words or results they are. Do not restate its "
+            "figures or timings anywhere else in your answer, do not call it documented, "
+            "measurable or consistent, and add no claim the note does not make or that it "
+            "forbids, such as reversing, remodelling or curing anything.")
 
 
 def sse(payload: dict) -> str:

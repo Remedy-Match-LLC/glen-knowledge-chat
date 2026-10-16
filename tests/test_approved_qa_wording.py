@@ -87,6 +87,7 @@ def test_the_request_closes_with_a_reminder_only_when_a_note_carries_approved_wo
     tail = app._approved_wording_reminder(ctx)
     assert tail.startswith("\n\nAPPROVED WORDING REMINDER:")
     assert "Do not restate its figures" in tail and "reversing" in tail
+    assert "Use it only if it answers the question" in tail
     plain, _ = app.build_context([_M("qa-other", _qa(WYLIE_TEXT))])
     assert app._approved_wording_reminder(plain) == ""
     assert app._approved_wording_reminder("") == ""
@@ -97,3 +98,11 @@ def test_chat_appends_the_reminder_to_the_user_turn():
     src = inspect.getsource(app.chat)
     facts = 'f"{named_product_facts_block(query, prior_user_turns=_prior_user)}"'
     assert facts + '\n            f"{_approved_wording_reminder(context_str)}"' in src
+
+
+def test_a_snippet_that_only_mentions_the_marker_triggers_no_reminder():
+    meta = {"type": "transcript", "source": "x",
+            "text": 'Notes: "[APPROVED WORDING: copy this" was discussed in a meeting.'}
+    ctx, _ = app.build_context([_M("t-1", meta)])
+    assert "[APPROVED WORDING:" in ctx
+    assert app._approved_wording_reminder(ctx) == ""
