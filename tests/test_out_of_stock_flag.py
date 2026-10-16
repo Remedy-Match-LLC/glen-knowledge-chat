@@ -166,3 +166,26 @@ def test_a_bundle_with_a_waitlist_only_component_keeps_its_page(client, catalog,
     monkeypatch.setitem(catalog, VD, dict(catalog[VD], waitlist_only=True))
     d = client.get(f"/begin/product-page-data/{BUNDLE}").get_json()
     assert "out_of_stock_line" not in d and d["price_cents"]
+
+
+@pytest.mark.parametrize("value", [True, 1])
+def test_a_true_flag_blocks_too_with_the_bare_line(catalog, monkeypatch, value):
+    """Review round 1: `true`, written like waitlist_only, left it on sale."""
+    monkeypatch.setitem(catalog, VD, dict(catalog[VD], out_of_stock=value))
+    assert pp.is_orderable(VD, catalog) is False
+    assert pp.waitlist_refusal(pp.waitlist_block(VD, catalog)) == "Vitamin D Syntropy is out of stock."
+
+
+def test_a_recommended_line_carries_the_out_of_stock_line_not_not_ready():
+    """Review round 1: the biofield preview and portal reorder said "not ready to order"."""
+    keep, nr = app._split_not_ready([{"slug": "scar-silk"}, {"slug": VD}])
+    assert keep == [{"slug": "scar-silk"}]
+    assert nr == [{"name": "Vitamin D Syntropy", "url": URL, "line": LINE}]
+
+
+def test_the_two_client_pages_print_the_line_when_it_is_given():
+    root = os.path.join(os.path.dirname(__file__), "..", "static")
+    bio = open(os.path.join(root, "begin-biofield.html")).read()
+    portal = open(os.path.join(root, "client-portal.html")).read()
+    assert "if (n.line) return '<div class=\"r-line\"><span><a href=\"'+esc(n.url)+'\">'+esc(n.line)+'</a>" in bio
+    assert '${esc(it.not_ready.line || "Not ready to order yet")}' in portal

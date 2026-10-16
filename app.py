@@ -8933,7 +8933,10 @@ def _split_not_ready(items):
         slug = (it.get("slug") if isinstance(it, dict) else it) or ""
         b = _waitlist_block(slug)
         if b:
-            not_ready.append({"name": b["name"], "url": f"/begin/product/{b['slug']}"})
+            nr = {"name": b["name"], "url": f"/begin/product/{b['slug']}"}
+            if b.get("out_of_stock"):   # its own line, not "not ready" (2026-10-16)
+                nr["line"] = str(_waitlist_refusal(slug))
+            not_ready.append(nr)
         else:
             keep.append(it)
     return keep, not_ready
@@ -27701,7 +27704,9 @@ def api_client_portal(token):
                             "name": p.get("name", slug), "price_cents": None,
                             "regular_price_cents": None, "is_special": False,
                             "refill_eligible": False, "available": False,
-                            "not_ready": {"url": f"/begin/product/{p.get('slug') or slug}"}})
+                            "not_ready": {"url": f"/begin/product/{p.get('slug') or slug}",
+                                          **({"line": str(_waitlist_refusal(slug))}
+                                             if _nr.get("out_of_stock") else {})}})
             continue
         display.append({
             "slug": slug, "qty": int(it.get("qty", 1) or 1),

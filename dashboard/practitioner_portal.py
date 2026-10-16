@@ -507,7 +507,11 @@ def _stock_note(p):
     follows "{name} is out of stock." on the page and in every refusal; any non-empty
     string blocks ordering, exactly as `waitlist_only` does, until it is removed."""
     v = p.get("out_of_stock") if isinstance(p, dict) else None
-    return v.strip() if isinstance(v, str) else ""
+    if isinstance(v, str):
+        return v.strip()
+    # `true` (written like waitlist_only) must block too, never fail open (review round 1);
+    # with no note the line is just "{name} is out of stock."
+    return " " if v else ""
 
 
 def _block(slug, p):
