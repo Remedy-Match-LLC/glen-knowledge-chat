@@ -946,10 +946,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                              "client's profile. Nothing was mined."}
             labels = mine_profile_stresses(
                 profile, lambda t: interpret_stresses(t, interpret_complete))
-            added = sum(1 for label in labels
-                        if _st.add_stress(cx, test_id, label, source="tag"))
         except Exception as e:
             return {"added": 0, "error": str(e)[:200]}
+        added = 0
+        try:
+            for label in labels:   # counted one by one: a later failure keeps the count
+                if _st.add_stress(cx, test_id, label, source="tag"):
+                    added += 1
+        except Exception as e:
+            return {"added": added, "error": str(e)[:200]}
         return {"added": added}
 
     def _mine_comms(cx, test_id):
@@ -969,9 +974,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                              "client's recent comms. Nothing was mined."}
             text = comms_to_text(ctx)
             labels = interpret_stresses(text, interpret_complete) if text.strip() else []
-            added = sum(1 for label in labels if _st.add_stress(cx, test_id, label, source="comm"))
         except Exception as e:
             return {"added": 0, "error": str(e)[:200]}
+        added = 0
+        try:
+            for label in labels:   # counted one by one: a later failure keeps the count
+                if _st.add_stress(cx, test_id, label, source="comm"):
+                    added += 1
+        except Exception as e:
+            return {"added": added, "error": str(e)[:200]}
         missed = [s for s in (ctx.get("unavailable") or []) if isinstance(s, str)]
         if missed:
             return {"added": added, "error": "Some recent comms could not be read ("

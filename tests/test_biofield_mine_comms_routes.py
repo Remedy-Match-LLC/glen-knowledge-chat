@@ -99,12 +99,42 @@ def test_an_empty_profile_and_inbox_are_not_errors(tmp_path):
 
 
 def test_a_section_the_server_could_not_read_is_named_and_the_rest_still_mined(tmp_path):
+    import json as _j
     comms = dict(_COMMS, unavailable=["feedback"])
-    client = _app_with(str(tmp_path / "c.db"), comms=comms, profile={},
-                       stresses=["Chronic fatigue"]).test_client()
+    calls = []
+
+    def complete(s, u):   # header save mines first; only the explicit click finds this one
+        calls.append(1)
+        return _j.dumps({"stresses": ["Chronic fatigue"] if len(calls) > 1 else []})
+
+    client = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: _NONE,
+                        fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: comms,
+                        interpret_complete=complete).test_client()
     tid = _new(client, "j@x.com")
     j = client.post(f"/author/{tid}/mine-comms", json={}).get_json()
-    assert j["error"] == "Some recent comms could not be read (feedback)."
-    # Header save already mined once, so the stress may be on the test before this click.
-    data = client.get(f"/author/{tid}/stresses").get_json()["data"]
-    assert "Chronic fatigue" in {x["label"] for x in data["active"] + data["balanced"]}
+    assert j == {"added": 1, "error": "Some recent comms could not be read (feedback)."}
+
+
+def test_a_failure_part_way_keeps_the_count_of_stresses_already_added(tmp_path, monkeypatch):
+    """Review round 2: a raise after one add reported added 0."""
+    import json as _j
+    from dashboard import biofield_stress as _st
+    real, adds, calls = _st.add_stress, [], []
+
+    def flaky(*a, **k):
+        adds.append(1)
+        if len(adds) > 1:
+            raise RuntimeError("disk full")
+        return real(*a, **k)
+
+    def complete(s, u):   # header save finds nothing; the click finds two
+        calls.append(1)
+        return _j.dumps({"stresses": ["Chronic fatigue", "Poor sleep"] if len(calls) > 1 else []})
+
+    client = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: _NONE,
+                        fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: _COMMS,
+                        interpret_complete=complete).test_client()
+    tid = _new(client, "j@x.com")
+    monkeypatch.setattr(_st, "add_stress", flaky)
+    j = client.post(f"/author/{tid}/mine-comms", json={}).get_json()
+    assert j == {"added": 1, "error": "disk full"}
