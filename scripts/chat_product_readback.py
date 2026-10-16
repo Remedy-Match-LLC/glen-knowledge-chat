@@ -29,8 +29,10 @@ CASES = {
                       "whats in fibrolysis factors?"],
         "required": {i: ["green tea", "salvianolic", "resveratrol", "boswell", "gotu kola"]
                      for i in range(3)},
+        # Scar wording in any form: the approved copy makes no scar claim at all.
         "forbidden": [r"nattokinase", r"serrapeptase", r"lumbrokinase", r"soften",
-                      r"scar[- ]reduction", r"doesn't specify", r"does not specify"],
+                      r"\bscar", r"remodel", r"dissolv", r"resorb", r"break\w*\s+down",
+                      r"doesn't specify", r"does not specify"],
     },
     "angiostasis": {
         "questions": [
