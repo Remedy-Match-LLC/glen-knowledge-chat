@@ -861,6 +861,11 @@ function renderPayments(rows, bal){
 async function reloadPayments(){
   const r=await fetch(`/api/orders/${EDIT_OID}/payments`,{headers:HEADERS});
   const j=await r.json(); if(j.ok) renderPayments(j.rows,j.balance);
+  // A ledger payment that clears the balance moves the order on (review round 1).
+  // It runs only in edit mode, where the open order is always EDIT_OID.
+  if (j.ok && j.order && j.order.status){
+    INV_STATUS=j.order.status; INV_PAY=j.order.pay_status||INV_PAY; refreshInvStatus();
+  }
 }
 async function addPayment(){
   const amt=parseFloat($("pay-amt").value); if(isNaN(amt)||amt<=0){toast("Enter an amount","error");return;}

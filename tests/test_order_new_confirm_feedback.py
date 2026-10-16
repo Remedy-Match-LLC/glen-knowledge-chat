@@ -162,3 +162,41 @@ def test_edit_mode_reads_the_orders_status_and_a_new_order_starts_proposed():
     assert "INV_STATUS = o.status || null; INV_PAY = o.pay_status || null;" in load
     create = _extract("createInvoice")
     assert 'INV_STATUS = j.idempotent_repeat ? null : "proposed"' in create
+
+
+def test_a_ledger_payment_updates_the_status_from_the_server():
+    fn = _extract("reloadPayments")
+    got = _run('const EDIT_OID = "230"; let PAY_SEEN = null;'
+               'function renderPayments(rows, bal){ PAY_SEEN = bal; }'
+               'INV_STATUS = "proposed"; INV_PAY = "unpaid";'
+               'REPLY = {ok: true, rows: [], balance: {}, order: {status: "new", pay_status: "paid"}};'
+               + fn.replace("{headers:HEADERS}", "{headers:HEADERS, body:'{}'}") +
+               'await reloadPayments();')
+    assert (got["st"], got["pay"], got["btn"]) == ("new", "paid", "none")
+
+
+def test_the_payments_list_route_returns_the_orders_status(tmp_path, monkeypatch):
+    import importlib
+    import sqlite3
+    import sys
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    from dashboard import orders as O
+    from dashboard import order_payments as OP
+    from dashboard import rbac
+    with sqlite3.connect(str(tmp_path / "chat_log.db")) as cx:
+        O.init_orders_table(cx)
+        OP.ensure_table(cx)
+        O.upsert_order(cx, source="in-house", external_ref="INH-T", email="t@e.com",
+                       total_cents=5000, status="proposed")
+        cx.commit()
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    try:
+        import app as appmod
+        importlib.reload(appmod)
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"app not importable: {e}")
+    monkeypatch.setattr(appmod, "_bos_actor", lambda: rbac.Actor(role="owner", name="owner"))
+    appmod.app.config["TESTING"] = True
+    g = appmod.app.test_client().get("/api/orders/1/payments").get_json()
+    assert g["order"] == {"status": "proposed", "pay_status": "unpaid"}

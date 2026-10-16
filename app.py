@@ -59502,8 +59502,13 @@ def api_order_payments_list(oid):
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
         _op.ensure_table(cx)
+        # The order's own status too: a payment that clears the balance moves a proposed
+        # invoice into fulfillment, and the order editor's card must show that (2026-10-16).
+        _o = _bos_orders.get_order(cx, oid) or {}
         return jsonify({"ok": True, "rows": _op.list_payments(cx, oid),
-                        "balance": _op.balance(cx, oid)})
+                        "balance": _op.balance(cx, oid),
+                        "order": {"status": _o.get("status"),
+                                  "pay_status": _o.get("pay_status")}})
     finally:
         cx.close()
 
