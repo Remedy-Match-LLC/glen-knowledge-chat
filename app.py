@@ -18724,26 +18724,31 @@ def _member_context_for_email(email, *, query_log_n=5):
         print(f"[member-context] inquiries fetch failed: {e!r}", flush=True)
 
     # Recent queries. Production table uses 'query' column; test table uses
-    # 'question'.  Try 'question' first; fall back to 'query' on OperationalError.
+    # 'question'. Try 'query' first: on Postgres a failed SELECT aborts the
+    # transaction, so trying 'question' first made the fallback fail too and
+    # recent_queries was always empty in prod (found 2026-10-16).
     try:
         with db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
             try:
-                rows = cx.execute(
-                    "SELECT question, ts FROM query_log WHERE email=? "
-                    "ORDER BY id DESC LIMIT ?",
-                    (email, int(query_log_n))
-                ).fetchall()
-                out["recent_queries"] = [{"question": r["question"], "ts": r["ts"]}
-                                         for r in rows]
-            except Exception:
-                # Production table uses 'query' column; normalise to 'question' key
                 rows = cx.execute(
                     "SELECT query, ts FROM query_log WHERE email=? "
                     "ORDER BY id DESC LIMIT ?",
                     (email, int(query_log_n))
                 ).fetchall()
                 out["recent_queries"] = [{"question": r["query"], "ts": r["ts"]}
+                                         for r in rows]
+            except Exception:
+                try:
+                    cx.rollback()
+                except Exception:
+                    pass
+                rows = cx.execute(
+                    "SELECT question, ts FROM query_log WHERE email=? "
+                    "ORDER BY id DESC LIMIT ?",
+                    (email, int(query_log_n))
+                ).fetchall()
+                out["recent_queries"] = [{"question": r["question"], "ts": r["ts"]}
                                          for r in rows]
     except Exception as e:
         print(f"[member-context] query_log fetch failed: {e!r}", flush=True)

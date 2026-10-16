@@ -66,3 +66,45 @@ def test_header_save_mines_comms_run_once(tmp_path):
     data = client.get(f"/author/{tid}/stresses").get_json()["data"]
     labels = {x["label"] for x in data["active"] + data["balanced"]}
     assert "Chronic fatigue" in labels
+
+
+def _app_with(db, *, comms=None, profile=None, stresses=()):
+    import json as _j
+    return create_app(db, scan_lookup=lambda e: _NONE,
+                      fetch_profile=lambda e: profile,
+                      fetch_recent_comms=lambda e: comms,
+                      interpret_complete=lambda s, u: _j.dumps({"stresses": list(stresses)}))
+
+
+def test_a_failed_comms_fetch_says_so_instead_of_finding_nothing(tmp_path):
+    """Glen, 2026-10-16 (Josie Gagnon): a failure must not read as no information."""
+    client = _app_with(str(tmp_path / "c.db"), comms=None, profile={}).test_client()
+    tid = _new(client, "j@x.com")
+    j = client.post(f"/author/{tid}/mine-comms", json={}).get_json()
+    assert j["added"] == 0 and j["error"].startswith("Could not reach the console")
+
+
+def test_a_failed_profile_fetch_says_so_instead_of_finding_nothing(tmp_path):
+    client = _app_with(str(tmp_path / "c.db"), comms={}, profile=None).test_client()
+    tid = _new(client, "j@x.com")
+    j = client.post(f"/author/{tid}/mine-profile", json={}).get_json()
+    assert j["added"] == 0 and j["error"].startswith("Could not reach the console")
+
+
+def test_an_empty_profile_and_inbox_are_not_errors(tmp_path):
+    client = _app_with(str(tmp_path / "c.db"), comms={}, profile={}).test_client()
+    tid = _new(client, "j@x.com")
+    assert client.post(f"/author/{tid}/mine-comms", json={}).get_json() == {"added": 0}
+    assert client.post(f"/author/{tid}/mine-profile", json={}).get_json() == {"added": 0}
+
+
+def test_a_section_the_server_could_not_read_is_named_and_the_rest_still_mined(tmp_path):
+    comms = dict(_COMMS, unavailable=["feedback"])
+    client = _app_with(str(tmp_path / "c.db"), comms=comms, profile={},
+                       stresses=["Chronic fatigue"]).test_client()
+    tid = _new(client, "j@x.com")
+    j = client.post(f"/author/{tid}/mine-comms", json={}).get_json()
+    assert j["error"] == "Some recent comms could not be read (feedback)."
+    # Header save already mined once, so the stress may be on the test before this click.
+    data = client.get(f"/author/{tid}/stresses").get_json()["data"]
+    assert "Chronic fatigue" in {x["label"] for x in data["active"] + data["balanced"]}

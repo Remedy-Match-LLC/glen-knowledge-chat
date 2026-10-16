@@ -34,6 +34,36 @@ def _intake_summary(first_name, raw_json_str):
     return "\n".join(parts)
 
 
+_SP = 0
+
+
+def _guarded(cx, out, section, fn):
+    """Run one section's reads inside a savepoint. On Postgres a failed statement aborts
+    the whole transaction, so before this one failed read emptied every section after it.
+    Prod's query_log has no `question` column, so recent_queries and recent_feedback came
+    back empty for every client (found 2026-10-16). A failed section is named in
+    out["unavailable"], so a caller can tell "could not read" from "nothing there"."""
+    global _SP
+    _SP += 1
+    name = f"rc_{_SP}"
+    try:
+        cx.execute(f"SAVEPOINT {name}")
+    except Exception:
+        name = None
+    try:
+        fn()
+        if name:
+            cx.execute(f"RELEASE SAVEPOINT {name}")
+    except Exception:
+        if name:
+            try:
+                cx.execute(f"ROLLBACK TO SAVEPOINT {name}")
+                cx.execute(f"RELEASE SAVEPOINT {name}")
+            except Exception:
+                pass
+        out.setdefault("unavailable", []).append(section)
+
+
 def recent_comms(cx, email, *, days_window=7, query_log_n=20):
     out = {"intake_summary": "", "recent_inquiries": [], "recent_queries": [],
            "recent_feedback": []}
@@ -42,16 +72,16 @@ def recent_comms(cx, email, *, days_window=7, query_log_n=20):
         return out
     cx.row_factory = sqlite3.Row
     win = f"-{int(days_window)} days"                      # int() guards against injection
-    try:                                                  # intake: latest, age-agnostic
+
+    def _intake():                                        # intake: latest, age-agnostic
         row = cx.execute(
             "SELECT first_name, raw_json FROM inbound_leads WHERE email=? "
             "AND source IN ('scoreapp','practice-better','concierge') "
             "ORDER BY id DESC LIMIT 1", (email,)).fetchone()
         if row:
             out["intake_summary"] = _intake_summary(row["first_name"], row["raw_json"])
-    except Exception:
-        pass
-    try:                                                  # inquiries: windowed
+
+    def _inquiries():                                     # inquiries: windowed
         out["recent_inquiries"] = [
             {"main_challenge": r["main_challenge"], "main_goal": r["main_goal"],
              "created_at": r["created_at"]}
@@ -59,22 +89,14 @@ def recent_comms(cx, email, *, days_window=7, query_log_n=20):
                 "SELECT main_challenge, main_goal, created_at FROM inquiries "
                 "WHERE client_email=? AND created_at > datetime('now', ?) "
                 "ORDER BY created_at DESC", (email, win)).fetchall()]
-    except Exception:
-        pass
-    try:                                                  # queries: windowed, col fallback
-        try:
-            rows = cx.execute(
-                "SELECT question, ts FROM query_log WHERE email=? AND ts > datetime('now', ?) "
-                "ORDER BY id DESC LIMIT ?", (email, win, int(query_log_n))).fetchall()
-            out["recent_queries"] = [{"question": r["question"], "ts": r["ts"]} for r in rows]
-        except Exception:
-            rows = cx.execute(
-                "SELECT query, ts FROM query_log WHERE email=? AND ts > datetime('now', ?) "
-                "ORDER BY id DESC LIMIT ?", (email, win, int(query_log_n))).fetchall()
-            out["recent_queries"] = [{"question": r["query"], "ts": r["ts"]} for r in rows]
-    except Exception:
-        pass
-    try:                                                  # email feedback: windowed, joined
+
+    def _queries(col):                                    # queries: windowed
+        rows = cx.execute(
+            f"SELECT {col}, ts FROM query_log WHERE email=? AND ts > datetime('now', ?) "
+            "ORDER BY id DESC LIMIT ?", (email, win, int(query_log_n))).fetchall()
+        out["recent_queries"] = [{"question": r[col], "ts": r["ts"]} for r in rows]
+
+    def _feedback():                                      # email feedback: windowed, joined
         out["recent_feedback"] = [
             {"summary": r["ai_summary"] or "",
              "topics": _json_list(r["extracted_topics"]),
@@ -86,6 +108,16 @@ def recent_comms(cx, email, *, days_window=7, query_log_n=20):
                 "JOIN users u ON u.id = pf.user_id "
                 "WHERE lower(u.email)=lower(?) AND pf.received_at > datetime('now', ?) "
                 "ORDER BY pf.received_at DESC", (email, win)).fetchall()]
-    except Exception:
-        pass
+
+    _guarded(cx, out, "intake", _intake)
+    _guarded(cx, out, "inquiries", _inquiries)
+    # The real table's column is `query` (app.py's CREATE TABLE); some test tables use
+    # `question`. The real one goes first, each in its own savepoint.
+    _guarded(cx, out, "queries", lambda: _queries("query"))
+    if "queries" in out.get("unavailable", []):
+        out["unavailable"].remove("queries")
+        _guarded(cx, out, "queries", lambda: _queries("question"))
+    _guarded(cx, out, "feedback", _feedback)
+    if not out.get("unavailable"):
+        out.pop("unavailable", None)
     return out
