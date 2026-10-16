@@ -29,9 +29,12 @@ CASES = {
                       "whats in fibrolysis factors?"],
         "required": {i: ["green tea", "salvianolic", "resveratrol", "boswell", "gotu kola"]
                      for i in range(3)},
-        # Scar wording in any form: the approved copy makes no scar claim at all.
-        "forbidden": [r"nattokinase", r"serrapeptase", r"lumbrokinase", r"soften",
-                      r"\bscar", r"remodel", r"dissolv", r"resorb", r"break\w*\s+down",
+        # Glen, formulation tab 2026-10-16: "tissue remodeling", "fibrin clearance" and the
+        # Clear the Way serrapeptase pairing stay. Scar claims stay forbidden.
+        "forbidden": [r"nattokinase", r"lumbrokinase", r"dissolv\w*\s+(?:\w+\s+){0,3}scar",
+                      r"resorb", r"reduc\w*\s+(?:\w+\s+){0,3}scar", r"scar[- ]reduction",
+                      r"break\w*\s+down\s+scar", r"soften\w*\s+(?:\w+\s+){0,3}scar",
+                      r"scar\w*\s+(?:\w+\s+){0,4}(?:soften|resolv)",
                       r"doesn't specify", r"does not specify"],
     },
     "angiostasis": {
