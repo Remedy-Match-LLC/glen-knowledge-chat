@@ -10,21 +10,23 @@ import pytest
 import app
 
 
-def _section(q, name):
-    b = app.named_product_facts_block(q)
-    return b[b.index(f"### {name}"):] if f"### {name}" in b else ""
+MARKER = "Unapproved marker sentence for the description test."
 
 
 @pytest.mark.parametrize("slug", ["zinc-syntropy", "clear-lens-eye-drops", "scar-silk",
                                   "microbiome"])
-def test_a_description_that_is_not_pinned_stays_out(slug):
-    p = app._PRODUCTS["products"][slug]
+def test_a_description_that_is_not_pinned_stays_out(monkeypatch, slug):
+    # Review round 2: a marker, so a truncated leak or a missing block cannot pass quietly.
+    products = copy.deepcopy(app._PRODUCTS)
+    p = products["products"][slug]
     assert "description" not in app._pinned_copy(p)
-    name = p["name"]
-    desc = app._PRICE_SENTENCE.sub("", p.get("description") or "").strip()
-    section = _section(f"Tell me about {name}", name)
-    for line in section.split("\n")[2:]:
-        assert not (desc and line.strip() and line.strip() in desc), line
+    p["description"] = MARKER
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    b = app.named_product_facts_block(f"How do I take {p['name']}?")
+    assert MARKER not in b
+    # Control: pinning the description lets the same marker through.
+    p["copy_pinned"] = sorted(app._pinned_copy(p) | {"description"})
+    assert MARKER in app.named_product_facts_block(f"How do I take {p['name']}?")
 
 
 def test_zinc_syntropys_scraped_claim_stays_out():
