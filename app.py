@@ -10615,11 +10615,12 @@ def _apply_waitlist_page_data(data, slug, p):
         # The list has closed, but a late click on a confirmation link still lands here
         # and must read this list's own success note (review round 2).
         data["waitlist_closed"] = {"success": _pwl.TEXTS[slug]["success"]}
-    from dashboard import practitioner_portal as _ppw
-    _oos = _ppw._stock_note(p) if not p.get("waitlist_only") else ""
-    if _oos:
-        # Out of stock (Glen, 2026-10-16): the page stays, nothing on it sells.
-        data["out_of_stock_line"] = _ppw.out_of_stock_line(p.get("name") or slug, _oos)
+    # Out of stock (Glen, 2026-10-16): the page stays, nothing on it sells. A bundle
+    # holding an out-of-stock product shows that product's line (review round 2).
+    _oos = None if p.get("waitlist_only") else _waitlist_block(slug)
+    if _oos and _oos.get("out_of_stock"):
+        from dashboard import practitioner_portal as _ppw
+        data["out_of_stock_line"] = _ppw.out_of_stock_line(_oos["name"], _oos["out_of_stock"])
     elif not p.get("waitlist_only"):
         return data
     else:

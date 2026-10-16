@@ -153,3 +153,16 @@ def test_the_page_shows_the_line_and_points_every_buy_link_at_it():
     assert re.search(r"data\.out_of_stock_line \? '#product-out-of-stock'", PAGE)
     assert "oos.textContent = data.out_of_stock_line || '';" in PAGE
     assert "if (!data.waitlist_only && !data.out_of_stock_line) { renderCartControl(slug); }" in PAGE
+
+
+def test_a_bundle_page_holding_it_sells_nothing_and_names_it(client):
+    """Review round 2: the bundle page kept its price and buy links."""
+    d = client.get(f"/begin/product-page-data/{BUNDLE}").get_json()
+    assert d["out_of_stock_line"] == LINE
+    assert d["price"] == "" and d["price_cents"] is None and "cta_url" not in d
+
+
+def test_a_bundle_with_a_waitlist_only_component_keeps_its_page(client, catalog, monkeypatch):
+    monkeypatch.setitem(catalog, VD, dict(catalog[VD], waitlist_only=True))
+    d = client.get(f"/begin/product-page-data/{BUNDLE}").get_json()
+    assert "out_of_stock_line" not in d and d["price_cents"]
