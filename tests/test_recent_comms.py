@@ -192,3 +192,12 @@ def test_a_failed_section_is_named_and_does_not_empty_the_rest(tmp_path):
     out = recent_comms(pg, "j@x.com")
     assert out["unavailable"] == ["inquiries"]
     assert out["recent_queries"] and out["recent_feedback"]
+
+
+def test_testimonial_scan_text_carries_the_email_feedback_summary(tmp_path, monkeypatch):
+    """recent_comms returns `summary`; the scan read `ai_summary` and always got ""."""
+    import app
+    monkeypatch.setattr("dashboard.recent_comms.recent_comms", lambda cx, e, **k: {
+        "intake_summary": "", "recent_inquiries": [], "recent_queries": [],
+        "recent_feedback": [{"summary": "my vision is clearer", "topics": [], "conditions": []}]})
+    assert app._gather_comms_text(None, "j@x.com") == "Email feedback: my vision is clearer"

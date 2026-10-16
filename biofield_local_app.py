@@ -968,7 +968,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"added": 0, "error": "No client selected yet"}
         try:
             ctx = fetch_recent_comms(email)
-            if ctx is None:
+            if not isinstance(ctx, dict):   # None, or a reply that is not a payload
                 # A failed fetch, not an empty inbox (2026-10-16).
                 return {"added": 0, "error": "Could not reach the console for this "
                                              "client's recent comms. Nothing was mined."}

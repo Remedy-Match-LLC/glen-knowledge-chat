@@ -12496,7 +12496,8 @@ def _gather_comms_text(cx, email, days=14):
             parts.append("Inquiry: " + str(inq.get("main_challenge") or "")
                          + " / " + str(inq.get("main_goal") or ""))
         for fb in (rc.get("recent_feedback") or []):
-            parts.append("Email feedback: " + str(fb.get("ai_summary") or ""))
+            # recent_comms names it `summary` (review, 2026-10-16: never reached here).
+            parts.append("Email feedback: " + str(fb.get("summary") or fb.get("ai_summary") or ""))
     except Exception as e:  # noqa: BLE001
         print(f"[testimonial-invites] gather failed for {email!r}: {e!r}", flush=True)
     return "\n".join(p for p in parts if p.strip())

@@ -138,3 +138,11 @@ def test_a_failure_part_way_keeps_the_count_of_stresses_already_added(tmp_path, 
     monkeypatch.setattr(_st, "add_stress", flaky)
     j = client.post(f"/author/{tid}/mine-comms", json={}).get_json()
     assert j == {"added": 1, "error": "disk full"}
+
+
+@pytest.mark.parametrize("bad", [None, ["not", "a", "dict"], "oops"])
+def test_a_reply_that_is_not_a_payload_is_a_failed_lookup(tmp_path, bad):
+    client = _app_with(str(tmp_path / "c.db"), comms=bad, profile={}).test_client()
+    tid = _new(client, "j@x.com")
+    j = client.post(f"/author/{tid}/mine-comms", json={}).get_json()
+    assert j["added"] == 0 and j["error"].startswith("Could not reach the console")
