@@ -2241,11 +2241,11 @@ _CUE_NAMES = frozenset({
 # not (review round 1, 2026-10-13).
 _ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 _PRODUCT_CUE_BEFORE = re.compile(
-    r"\b(?:what\s+is|what's|whats|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
+    r"\b(?:what\s+is|what's|whats|what\u2019s|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
     r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of|"
     # "what is in fibrolysis factors" asks what the product holds (formulation-32,
     # 2026-10-16: lowercase phrasings got no facts block and the model invented one).
-    r"(?:what\s+is|what's|whats|what\u2019s)\s+in|ingredients\s+(?:in|of))"
+    r"(?P<holds>(?:what\s+is|what's|whats|what\u2019s)\s+in|ingredients\s+(?:in|of)))"
     r"(?P<the>(?:\s+of)?(?:\s+the))?\s*$", re.IGNORECASE)
 _PRODUCT_CUE_AFTER = re.compile(
     r"^\s*(?:dose|dosage|capsules?|caps|bottles?|product|supplement|formula|safe|interact)\b",
@@ -2269,8 +2269,17 @@ def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> b
     if not (_AFTER_NAME_OK.search(after) or (strict and re.match(r"^\s*per\b", after, re.I))):
         return False
     before = _PRODUCT_CUE_BEFORE.search(text[max(0, start - 24):start])
-    if strict and before and re.match(r"\s*what", before.group(0), re.I):
+    if strict and before and re.match(r"\s*(?:what|ingredients)", before.group(0), re.I):
         before = None
+    # "what is in X" and "ingredients of X" hold only when the name ends the clause:
+    # "what is in brain cleanse and liver flush protocols" names no product (review round
+    # 1, 2026-10-16). Before a name of two or more words they take "the" too: "what is in
+    # the fibrolysis factors?" asks about the product, unlike "the appestat".
+    if before and before.group("holds"):
+        if not re.match(r"^\s*(?:$|[?.!,;:)])", after):
+            before = None
+        elif before.group("the") and len(text[start:end].split()) >= 2:
+            return True
     # "how much of the Estrogen and Fibrin Balance Program" takes "of the"; a single
     # word does not: "what is the appestat?" asks about the body's appetite set point
     # (review round 3, 2026-10-09).
