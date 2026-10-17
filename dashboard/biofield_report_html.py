@@ -210,6 +210,48 @@ _BACK_JS = ("<script>(function(){var a=document.getElementById('opconsole');if(!
             "if(ok(p))a.href=" + json.dumps(CONSOLE_BASE) + "+p;})();</script>")
 
 
+# The client's records: findings to review, then the approved ones with their source.
+# Filled by the page itself, so the summary renders even when Gmail is slow.
+_RECORDS_HTML = ("<style>.records{margin-top:14px;padding:10px 12px;border:1px dashed var(--line);"
+    "border-radius:9px}.records h4{margin:0 0 6px;font-size:13px}.records .rf{display:grid;"
+    "grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:6px 0;border-top:1px solid var(--line)}"
+    ".records .rf:first-of-type{border-top:0}.records .src{font-size:11px;color:var(--muted)}"
+    ".records .kind{font-size:11px;font-weight:700;color:var(--muted);margin-right:6px}"
+    ".records .rf input{width:100%;margin:3px 0 0;padding:5px}.records .acts{display:flex;gap:5px;align-items:start}"
+    ".records .btn{font-size:11px;padding:3px 8px}</style>"
+    "<div id=recordFindings class=records><div class=food>Checking the client's records…</div></div>"
+    "<script>(function(){"
+    "var m=location.pathname.match(/^\\/author\\/(a[0-9]+)/);if(!m)return;var base='/author/'+m[1]+'/records';"
+    "var box=document.getElementById('recordFindings');var reading=false;"
+    "function esc(s){var e=document.createElement('div');e.textContent=(s==null?'':String(s));return e.innerHTML}"
+    "function src(f){return esc(f.filename)+(f.page?', page '+f.page:'')+' &middot; email '+esc(f.email_date)"
+    "+(f.subject?' &ldquo;'+esc(f.subject)+'&rdquo;':'')+(f.date?' &middot; dated '+esc(f.date):'')}"
+    "function render(j,note){if(!j.ok){box.innerHTML='<div class=food>'+esc(j.error||'Records unavailable')+'</div>';return}"
+    "var h='';if(j.held)h+='<div class=food>Records were not read: E4L shows more than one person on this address.</div>';"
+    "if(j.pending.length){h+='<h4>Findings from records to review ('+j.pending.length+')</h4>';"
+    "j.pending.forEach(function(f){h+='<div class=rf data-id='+f.id+'><div><span class=kind>'+esc(f.kind_label)+'</span>'"
+    "+'<input value=\"'+esc(f.text)+'\" aria-label=\"Finding wording\"><div class=src>'+src(f)+'</div></div>'"
+    "+'<div class=acts><button class=btn data-d=approve>Approve</button><button class=\"btn ghost\" data-d=reject>Reject</button></div></div>'})}"
+    "if(j.approved.length){h+='<h4>From records</h4>';j.approved.forEach(function(f){h+='<div class=rf><div><span class=kind>'"
+    "+esc(f.kind_label)+'</span>'+esc(f.text)+'<div class=src>'+src(f)+'</div></div><div></div></div>'})}"
+    "if(j.unread)h+='<div class=food>'+(reading?'Reading '+j.unread+' record(s)… OCR can take a minute.':j.unread+' record(s) not read yet.')+'</div>';"
+    "if(j.failed&&j.failed.length)h+='<div class=food>Could not be read: '+j.failed.map(esc).join(', ')+'</div>';"
+    "if(note)h+='<div class=food>'+esc(note)+'</div>';"
+    "if(!h)h='<div class=food>No clinical records in this client&rsquo;s email.</div>';box.innerHTML=h}"
+    "async function load(note){try{var j=await (await fetch(base,{cache:'no-store'})).json();render(j,note);return j}"
+    "catch(e){render({ok:false,error:'Records unavailable'});return null}}"
+    "async function readAll(){var j=await load();var rounds=0;"
+    "while(j&&j.ok&&j.unread&&j.reader&&!j.held&&rounds<5){reading=true;render(j);rounds++;"
+    "var r;try{r=await (await fetch(base+'/read',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json()}"
+    "catch(e){r={ok:false,error:'Records could not be read.'}}reading=false;"
+    "j=await load(r.ok?'':r.error);if(!r.ok||!r.read)break}}"
+    "box.addEventListener('click',async function(ev){var b=ev.target.closest('button[data-d]');if(!b)return;"
+    "var row=b.closest('.rf'),d=b.dataset.d;b.disabled=true;"
+    "var r=await (await fetch(base+'/'+row.dataset.id,{method:'POST',headers:{'Content-Type':'application/json'},"
+    "body:JSON.stringify({decision:d,text:row.querySelector('input').value})})).json();"
+    "if(r.ok&&d==='approve'&&/Diagnosis/.test(row.textContent)){location.reload();return}load(r.ok?'':r.error)});"
+    "readAll()})();</script>")
+
 def _page(title, body, client_name="", client_email=""):
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -2196,6 +2238,9 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "onkeydown=\"if(event.key==='Enter'){event.preventDefault();addClinicalItem()}\">"
             "<datalist id=clinicalCatalog></datalist>"
             "<button class='btn ghost' onclick=addClinicalItem()>+ Add item</button></div>"
+            # Glen, 2026-10-16: findings read from the client's own records, "review
+            # first". Nothing joins the summary until he approves it.
+            + _RECORDS_HTML +
             # Glen, 2026-09-16: the checked items' stress patterns join the Stresses
             # list, so clinical and energetic findings are balanced as one set rather
             # than in two places that never meet.
