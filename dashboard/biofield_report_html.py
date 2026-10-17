@@ -1412,6 +1412,36 @@ async function selectClinicalRemedy(box){
  var j=await post('/author/__TID__/clinical-items/selection',
   {label:row.dataset.label,remedies:remedies});
  if(stat)stat.textContent=(j&&j.ok)?'Remedies saved':'Could not save remedy selection'}
+async function approveClinicalSectionItem(btn){
+ var row=btn.closest('.clinical-item');if(!row)return;btn.disabled=true;
+ var j=await post('/author/__TID__/clinical-sections/approve',
+  {label:row.dataset.label,section:btn.dataset.section,name:btn.dataset.name});
+ if(j&&j.ok){location.reload();return}
+ btn.disabled=false;var stat=document.getElementById('clinicalOrderStat');
+ if(stat)stat.textContent=(j&&j.error)||'Could not approve'}
+async function saveClinicalBotanical(){
+ var stat=document.getElementById('clinicalOrderStat');
+ if(stat)stat.textContent='Saving…';
+ var j=await post('/author/__TID__/clinical-sections/botanical',
+  {avoid:document.getElementById('clinicalAvoidBotanicals').checked,
+   exceptions:document.getElementById('clinicalBotanicalExceptions').value});
+ if(j&&j.ok){location.reload();return}
+ if(stat)stat.textContent=(j&&j.error)||'Could not save'}
+async function saveClinicalSectionItem(el,field){
+ var row=el.closest('.clinical-item');if(!row)return;
+ var body={label:row.dataset.label,section:el.dataset.section,name:el.dataset.name};
+ if(field==='checked')body.checked=el.checked;
+ else if(field==='dose')body.dose=el.value;
+ else{var v=(el.value||'').trim().toUpperCase();
+  if(!/^[1-9X]{3}$/.test(v)){el.classList.add('bad');
+   el.title='Three of 1-9 or X, such as X74';return}
+  el.classList.remove('bad');body.rating=v}
+ var stat=document.getElementById('clinicalOrderStat');
+ if(stat)stat.textContent='Saving…';
+ var j=await post('/author/__TID__/clinical-sections/pick',body);
+ if(stat)stat.textContent=(j&&j.ok)?'Saved':((j&&j.error)||'Could not save');
+ // A new rating moves the item, so the section is redrawn in its new order.
+ if(j&&j.ok&&field==='rating')location.reload()}
 function clinicalStressTyped(input){
  var btn=input.closest('.clinical-item').querySelector('.clinical-stress-save');if(!btn)return;
  var now=(input.value||'').trim().toLowerCase(),was=(input.dataset.remembered||'').trim().toLowerCase();
@@ -2005,10 +2035,93 @@ def _summary_bottles_chip(name, bottles_by_remedy, unavailable=False):
             f"{n} bottle{'' if n == 1 else 's'}</span>")
 
 
+def _clinical_sections_html(sections, remedy_choice):
+    """The five sections of one Clinical Summary row. Each item shows its rating as
+    three digits (10 as X) that Glen can retype for this client; nutrients carry an
+    editable dose; Fullscript items link to the store front door only."""
+    from dashboard.biofield_clinical_sections import (
+        FORMULATIONS, FULLSCRIPT, NUTRIENTS, fullscript_store_url)
+    out = []
+    for section in sections:
+        key, title = section.get("key"), section.get("title") or ""
+        bits = []
+        for entry in section.get("items") or []:
+            name = entry.get("name") or ""
+            rating = entry.get("rating") or ""
+            why = " · ".join(x for x in (entry.get("reason"), entry.get("source")) if x)
+            rating_box = (f"<input class=clinical-section-rating value=\"{_e(rating)}\" "
+                          "maxlength=3 size=3 placeholder='---' "
+                          f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
+                          "title='Overall, research, uniqueness. 10 is X.' "
+                          f"aria-label=\"Rating for {_e(name)}\" "
+                          "onchange=saveClinicalSectionItem(this,'rating')>")
+            flags = ""
+            if entry.get("lowers_bp"):
+                flags += "<span class=clinical-section-flag>lowers BP</span>"
+            if entry.get("botanical"):
+                flags += "<span class=clinical-section-flag>botanical</span>"
+            for other in entry.get("conflicts") or []:
+                flags += (f"<span class='clinical-section-flag conflict'>"
+                          f"conflicts with {_e(other)}</span>")
+            if not entry.get("reviewed", True):
+                flags += ("<span class='clinical-section-flag unreviewed'>not reviewed</span>"
+                          f"<button type=button class='btn ghost clinical-section-approve' "
+                          f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
+                          "title='Add to the shared catalog for every client' "
+                          "onclick=approveClinicalSectionItem(this)>Approve</button>")
+            note = (f"<span class=clinical-section-note>{_e(entry['note'])}</span>"
+                    if entry.get("note") else "")
+            if key == FORMULATIONS:
+                bits.append(f"<div class=clinical-section-item title=\"{_e(why)}\">"
+                            f"{rating_box}{remedy_choice(name)}{flags}{note}</div>")
+                continue
+            shown = _e(name)
+            if key == FULLSCRIPT:
+                brand = f" <span class=clinical-section-brand>{_e(entry.get('brand'))}</span>" \
+                    if entry.get("brand") else ""
+                shown = (f"<a href=\"{_e(fullscript_store_url())}\" target=_blank "
+                         f"rel=noopener>{_e(name)}</a>{brand}")
+            dose = ""
+            if key == NUTRIENTS:
+                dose = (f"<input class=clinical-section-dose value=\"{_e(entry.get('dose') or '')}\" "
+                        f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
+                        f"placeholder='Dose' aria-label=\"Dose of {_e(name)}\" "
+                        "onchange=saveClinicalSectionItem(this,'dose')>")
+            bits.append(
+                f"<div class=clinical-section-item title=\"{_e(why)}\">{rating_box}"
+                f"<label><input class=clinical-section-choice type=checkbox "
+                f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\""
+                f"{' checked' if entry.get('checked') else ''} "
+                f"onchange=saveClinicalSectionItem(this,'checked')> {shown}</label>"
+                f"{dose}{flags}{note}</div>")
+        empty = ("No common remedies recorded yet" if key == FORMULATIONS
+                 else "Nothing listed yet")
+        body = "".join(bits) or f"<span class=clinical-open>{empty}</span>"
+        if section.get("botanical_hidden"):
+            n = section["botanical_hidden"]
+            body += (f"<span class=clinical-open>{n} botanical item{'s' if n != 1 else ''} "
+                     "hidden for this client</span>")
+        out.append(f"<div class=clinical-section data-section=\"{_e(key)}\">"
+                   f"<div class=clinical-section-title>{_e(title)}</div>{body}</div>")
+    return "".join(out)
+
+
+def _botanical_switch_html(setting):
+    """Per client (Glen, 2026-10-17): hide botanical items, except named ones."""
+    setting = setting or {}
+    return ("<div class=clinical-botanical><label><input type=checkbox "
+            f"id=clinicalAvoidBotanicals{' checked' if setting.get('avoid') else ''} "
+            "onchange=saveClinicalBotanical()> Avoids botanicals</label>"
+            "<label>Except <input id=clinicalBotanicalExceptions "
+            f"value=\"{_e(setting.get('exceptions') or '')}\" placeholder='ginger, milk thistle' "
+            "onchange=saveClinicalBotanical()></label></div>")
+
+
 def render_clinical_checklist(items, layers=None, intake_priorities=None,
                              profile_unavailable=False, alias_map=None,
                              display_map=None, bottles_by_remedy=None,
-                             bottles_unavailable=False, free_factors=None):
+                             bottles_unavailable=False, free_factors=None,
+                             botanical=None):
     """Scannable editable checklist; completion follows the current remedy program."""
     items = items or []
     layer_groups = group_layers(layers or [])
@@ -2078,15 +2191,23 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
                       "addGroupFactor(this)}\"><button type=button class='btn ghost' "
                       "onclick=addGroupFactor(this.previousElementSibling)>+ Factor</button></span>")
         factors_html = f"<div class=clinical-factors>Factors: {factor_bits}{add_factor}</div>"
-        common = "".join(
-            f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
-            f"{' checked' if name.strip().lower() in chosen else ''}"
-            f" onchange=selectClinicalRemedy(this)> {_e(name)}"
-            f"{_summary_bottles_chip(name, bottles_by_remedy, bottles_unavailable)} "
-            f"<button type=button class=clinical-remedy-delete data-remedy=\"{_e(name)}\" "
-            f"onclick=deleteClinicalRemedy(this) title='Delete remembered remedy'>&times;</button></label>"
-            for name in item.get("common_remedies") or []
-        ) or "<span class=clinical-open>No common remedies recorded yet</span>"
+        def remedy_choice(name, extra=""):
+            return (f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
+                    f"{' checked' if name.strip().lower() in chosen else ''}"
+                    f" onchange=selectClinicalRemedy(this)> {_e(name)}"
+                    f"{_summary_bottles_chip(name, bottles_by_remedy, bottles_unavailable)} "
+                    f"{extra}"
+                    f"<button type=button class=clinical-remedy-delete data-remedy=\"{_e(name)}\" "
+                    f"onclick=deleteClinicalRemedy(this) title='Delete remembered remedy'>&times;</button></label>")
+        if item.get("sections"):
+            # Five titled sections (Glen, 2026-10-17). The first is the remedy list
+            # above under a new title, sorted by rating; its ticks still save as the
+            # row's remedies, so the chain and the program read them unchanged.
+            common = _clinical_sections_html(item["sections"], remedy_choice)
+        else:
+            common = "".join(
+                remedy_choice(name) for name in item.get("common_remedies") or []
+            ) or "<span class=clinical-open>No common remedies recorded yet</span>"
         selected_layer = item.get("layer")
         options = "<option value=''>Choose layer…</option>" + "".join(
             f"<option value='{number}'{' selected' if str(selected_layer or '') == str(number) else ''}>"
@@ -2252,6 +2373,24 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(160px,1fr) minmax(260px,1.25fr) auto;gap:8px;margin-top:9px;align-items:end}"
             ".clinical-common{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11px;color:var(--muted)}"
             ".clinical-common label{white-space:nowrap}.clinical-common input{width:auto;margin:0 3px 0 0}"
+            ".clinical-section{flex-basis:100%;margin:4px 0 2px}"
+            ".clinical-section-title{font-weight:600;color:var(--text,inherit);margin:2px 0}"
+            ".clinical-section-item{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:1px 0}"
+            ".clinical-common .clinical-section-item input.clinical-section-rating,"
+            ".clinical-common .clinical-section-item input.clinical-section-dose{padding:1px 4px;margin:0;"
+            "font-size:11px;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:4px}"
+            ".clinical-common .clinical-section-item input.clinical-section-rating{width:3.6em;font-family:monospace;text-align:center}"
+            ".clinical-section-item>label{flex:0 1 auto}"
+            ".clinical-common .clinical-section-note{white-space:normal;flex:1 1 220px;min-width:0}"
+            ".clinical-section-item input.clinical-section-rating.bad{outline:2px solid #c0392b}"
+            ".clinical-common .clinical-section-item input.clinical-section-dose{width:18em;max-width:100%}"
+            ".clinical-section-flag{border:1px solid var(--muted);border-radius:8px;padding:0 5px;font-size:10px}"
+            ".clinical-section-note{font-style:italic}"
+            ".clinical-section-flag.conflict{border-color:#c0392b;color:#e07a6f}"
+            ".clinical-section-flag.unreviewed{border-color:#a56a25;color:#d9a05b}"
+            ".clinical-balance .btn.clinical-section-approve{font-size:10px;padding:1px 6px}"
+            ".clinical-botanical{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin:0 0 8px;font-size:12px}"
+            ".clinical-botanical input{width:auto;margin:0 4px 0 0}.clinical-botanical #clinicalBotanicalExceptions{width:16em}"
             # Glen, 2026-09-18: "Combine another row..." covered most of the stress field. The
             # picker sized itself to its longest condition label and squeezed the field
             # to 69px. The row now wraps, the field keeps 260px, the picker is capped.
@@ -2288,6 +2427,7 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             f"<div class=clinical-count>{checked} of {len(items)} covered"
             "<span id=clinicalOrderStat style='margin-left:8px'></span></div></div>"
             f"{warn_html}"
+            f"{_botanical_switch_html(botanical) if any(i.get('sections') for i in items) else ''}"
             f"<div class=clinical-grid>{rows}</div>"
             # One list for every row's factor search box.
             + "<datalist id=groupFactorOptions>"
@@ -2472,7 +2612,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                        intake_priorities=None,
                        profile_unavailable=False, alias_map=None, display_map=None,
                        narrative_warnings=None, history_links_html="",
-                       clinical_free_factors=None):
+                       clinical_free_factors=None, clinical_botanical=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -2612,7 +2752,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                                             alias_map=alias_map, display_map=display_map,
                                             bottles_by_remedy=_bottles_by_remedy(dispensed),
                                             bottles_unavailable=bool(dispensed_error),
-                                            free_factors=clinical_free_factors)
+                                            free_factors=clinical_free_factors,
+                                            botanical=clinical_botanical)
                  + history_links_html
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
