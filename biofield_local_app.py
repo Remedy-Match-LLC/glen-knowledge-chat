@@ -988,6 +988,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         ctx = scan_lookup((rep.get("client") or {}).get("email") or "")
         return ctx, rep
 
+    def _e4l_panel(test_id, ctx):
+        """The scan panel, with the PRL section under Infoceuticals (Glen,
+        2026-10-17). A PRL failure leaves the rest of the panel as it was."""
+        prl = ""
+        if (ctx or {}).get("found"):
+            try:
+                from dashboard import biofield_prl_section as _ps
+                from dashboard.biofield_report_html import render_prl_section
+                codes = _ps.scan_item_codes(e4l_db, ctx.get("scan_id"))
+                with sqlite3.connect(db_path) as pcx:
+                    prl = render_prl_section(_ps.view(pcx, test_id, codes))
+            except Exception as _pe:
+                print(f"[prl-section] {test_id}: skipped: {_pe!r}", flush=True)
+        return render_e4l_panel(ctx, prl_html=prl)
+
     def _mine_profile(cx, test_id):
         """Mine the client's consolidated People-hub profile into tag stresses.
         Best-effort: returns {"added": n} on success, {"added": 0, "error": ...} on
@@ -1571,6 +1586,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         chosen_remedies=_item.get("selected_remedies") or [],
                         botanical=clinical_botanical)
                 # A row counts as checked when it is ticked or any remedy on it is.
+                # The scan panel loads separately; it reads these labels to link a
+                # PRL focus area to this client's own conditions.
+                from dashboard.biofield_prl_section import remember_rows
+                remember_rows(cx, test_id, [_i.get("label") for _i in clinical_checklist])
                 _cs.flag_food_conflicts([
                     (_item.get("display_label") or _item.get("label"),
                      bool(_item.get("checked") or _item.get("selected_remedies")),
@@ -1746,7 +1765,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         [{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}],
                         invoice_note=biofield_invoice.DEFAULT_INVOICE_NOTE,
                         idempotency_key=(d.get("idempotency_key") or ""))
-        return {"ok": True, "e4l": ctx, "html": render_e4l_panel(ctx),
+        return {"ok": True, "e4l": ctx, "html": _e4l_panel(test_id, ctx),
                 "invoice": invoice}
 
     @app.route("/author/<test_id>/fee", methods=["POST"])
@@ -2044,7 +2063,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_e4l(test_id):
         with sqlite3.connect(db_path) as cx:
             ctx, _ = _e4l(cx, test_id)
-        return {"e4l": ctx, "html": render_e4l_panel(ctx)}
+        return {"e4l": ctx, "html": _e4l_panel(test_id, ctx)}
 
     @app.route("/api/e4l/clients")
     def api_e4l_clients():
@@ -2081,7 +2100,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
               flush=True)
         return {"ok": bool(res.get("ok")), "error": res.get("error"),
                 "newer": newer, "download_errors": res.get("download_errors", 0),
-                "e4l": after, "html": render_e4l_panel(after)}
+                "e4l": after, "html": _e4l_panel(test_id, after)}
 
     @app.route("/author/<test_id>/species", methods=["POST"])
     def author_species_answer(test_id):
@@ -3542,6 +3561,37 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             save_botanical_setting(cx, test_id, avoid=avoid,
                                    exceptions=body.get("exceptions"))
+        return {"ok": True}
+
+    @app.route("/author/<test_id>/prl", methods=["POST"])
+    def author_prl(test_id):
+        """One PRL checkbox, rating or empty-group choice, for this client only."""
+        from dashboard.biofield_prl_section import act
+        body = request.get_json(silent=True) or {}
+        try:
+            fa = int(body.get("focus_area_id"))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "focus_area_id is required"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                act(cx, test_id, fa, str(body.get("action") or ""),
+                    name=body.get("name"), value=body.get("value"))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        return {"ok": True}
+
+    @app.route("/author/<test_id>/prl/approve", methods=["POST"])
+    def author_prl_approve(test_id):
+        from dashboard.biofield_prl_section import approve_rating
+        body = request.get_json(silent=True) or {}
+        try:
+            fa = int(body.get("focus_area_id"))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "focus_area_id is required"}, 400
+        with sqlite3.connect(db_path) as cx:
+            ok = approve_rating(cx, fa, body.get("name"))
+        if not ok:
+            return {"ok": False, "error": "No rating for that product"}, 404
         return {"ok": True}
 
     @app.route("/author/<test_id>/clinical-items/stress", methods=["POST"])
