@@ -63,9 +63,10 @@ def test_rae_passes_a_route_scoped_to_another_workspace(app, monkeypatch):
     monkeypatch.setattr(app.db, "connect", fake_connect)
     with app.app.test_request_context(headers={"X-Console-Key": "tok-rae"}):
         ok, ctx, code = app._auth("workspace:shaira")
-    if ctx is None:
-        pytest.skip("token table shape differs from this fixture")
-    assert (ok, code) == (True, 200)
+    assert ctx is not None and (ok, code) == (True, 200)
+    with app.app.test_request_context(headers={"X-Console-Key": "tok-rae"}):
+        ok, ctx, code = app._auth("admin")
+    assert (ok, code) == (False, 403), "an owner never passes the literal admin scope"
     with app.app.test_request_context(headers={"X-Console-Key": "tok-sh"}):
         ok, ctx, code = app._auth("workspace:glen")
     assert (ok, code) == (False, 403)

@@ -49760,7 +49760,10 @@ def _auth(required_scope=None):
     except Exception:
         pass
 
-    if required_scope is None or scope == required_scope or _is_owner_scope(scope):
+    if required_scope is None or scope == required_scope or scope == "admin":
+        return True, ctx, 200
+    # An owner (Rae) passes any workspace scope, never the literal admin one (round 2).
+    if required_scope != "admin" and _is_owner_scope(scope):
         return True, ctx, 200
     return False, ctx, 403
 
