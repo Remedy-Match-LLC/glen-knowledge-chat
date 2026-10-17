@@ -21876,13 +21876,14 @@ def console_biofield_intake():
                                "with your sign-in."),
                 }), 409
             return jsonify({"error": "Unauthorized"}), 401
-    from dashboard.console_launcher import local_tool_url
+    from dashboard.console_launcher import local_tool_url, console_back_path
     # Hand over the key THIS SERVER holds, not the one the browser sent. op-nav.js
     # builds its ?key= from localStorage, so after the 2026-09-16 rotation every
     # browser was forwarding a dead key and the local app refused the only link its
     # own error message tells you to use.
     return redirect(local_tool_url("BIOFIELD_LOCAL_URL", "http://127.0.0.1:8011",
-                                   _dashboard.CONSOLE_SECRET))
+                                   _dashboard.CONSOLE_SECRET,
+                                   back=console_back_path(request.referrer, request.host)))
 
 
 @app.route("/console/clinical-tags")
