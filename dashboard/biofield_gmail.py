@@ -13,6 +13,7 @@ An address that E4L shows for more than one person is held: whose email is it? N
 from it is fetched or mined, and the page says so.
 """
 import base64
+import email.utils
 import io
 import json
 import os
@@ -24,6 +25,8 @@ from datetime import datetime, timedelta, timezone
 DAYS = 365          # how far back a client's mail is read
 LIMIT = 25          # newest messages per client
 TEXT_MAX = 20_000   # characters kept per message body or attachment
+FETCH_MAX = 10_000_000   # bytes: a larger attachment is named, never downloaded
+TIMEOUT = 20        # seconds per Gmail call: header save waits on mining
 MINE_MAX = 40_000   # characters handed to mining for one client
 
 TOKEN = os.path.expanduser("~/.config/google/token.json")
@@ -40,6 +43,7 @@ def ensure_table(cx):
         subject      TEXT,
         body         TEXT,
         attachments  TEXT,
+        kept         INTEGER NOT NULL DEFAULT 1,
         fetched_at   TEXT NOT NULL)""")
     cx.execute("CREATE INDEX IF NOT EXISTS ix_client_gmail_messages_email "
                "ON client_gmail_messages(client_email)")
@@ -73,13 +77,19 @@ def people_on_address(e4l_db, email):
 
 
 def strip_quoted(text):
-    """The client's own words: a reply's quoted history and its "On ... wrote:" line go."""
+    """The client's own words. Quoted ">" lines and the "On ... wrote:" line go, but text
+    after it stays: a client may answer inline (review round 1). An Outlook-style reply
+    quotes with no marks, so its "From:" block ends her words."""
+    lines = (text or "").splitlines()
     out = []
-    for line in (text or "").splitlines():
+    for i, line in enumerate(lines):
         s = line.strip()
-        if re.match(r"^On .{4,200} wrote:$", s) or s.startswith("-----Original Message"):
+        if s.startswith("-----Original Message"):
             break
-        if s.startswith(">"):
+        if (re.match(r"^From:\s", s)
+                and any(re.match(r"^(Sent|Date):\s", x.strip()) for x in lines[i + 1:i + 3])):
+            break
+        if re.match(r"^On .{4,200} wrote:$", s) or s.startswith(">"):
             continue
         out.append(line)
     return "\n".join(out).strip()
@@ -101,6 +111,12 @@ def _html_to_text(html):
                  ("&#39;", "'"), ("&quot;", '"')):
         text = text.replace(a, b)
     return re.sub(r"[ \t]+", " ", text)
+
+
+def _readable(mime, filename):
+    mime, name = (mime or "").lower(), (filename or "").lower()
+    return (mime == "application/pdf" or name.endswith((".pdf", ".txt", ".csv"))
+            or mime.startswith("text/"))
 
 
 def attachment_text(mime, filename, data):
@@ -147,6 +163,11 @@ def parse_message(msg, get_attachment):
         body = p.get("body") or {}
         fname = p.get("filename") or ""
         if fname:
+            # A photo, video or logo is named, never downloaded (review round 1).
+            if not _readable(mime, fname) or int(body.get("size") or 0) > FETCH_MAX:
+                atts.append({"filename": fname[:200], "mime": mime, "text": "",
+                             "unreadable": False})
+                continue
             text = attachment_text(mime, fname, _data(body) or b"")
             atts.append({"filename": fname[:200], "mime": mime, "text": text or "",
                          "unreadable": text is None})
@@ -160,7 +181,8 @@ def parse_message(msg, get_attachment):
                                       timezone.utc).isoformat(timespec="seconds")
     except (TypeError, ValueError):
         sent = ""
-    return headers.get("subject", "")[:300], sent, strip_quoted(body)[:TEXT_MAX], atts
+    sender = email.utils.parseaddr(headers.get("from", ""))[1].strip().lower()
+    return headers.get("subject", "")[:300], sent, strip_quoted(body)[:TEXT_MAX], atts, sender
 
 
 def default_service():
@@ -172,7 +194,10 @@ def default_service():
     creds = Credentials.from_authorized_user_file(TOKEN)
     if not creds.valid:
         creds.refresh(Request())
-    svc = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    import google_auth_httplib2
+    import httplib2
+    http = google_auth_httplib2.AuthorizedHttp(creds, http=httplib2.Http(timeout=TIMEOUT))
+    svc = build("gmail", "v1", http=http, cache_discovery=False)
     # The token could be re-authorised for another account: read only Glen's.
     who = (svc.users().getProfile(userId="me").execute().get("emailAddress") or "").lower()
     if who != MAILBOX:
@@ -182,7 +207,8 @@ def default_service():
 
 def ingest(cx, email, service, *, days=DAYS, limit=LIMIT):
     """Store this client's newest messages that are not stored yet. Returns how many
-    were listed and how many are new. Raises when Gmail cannot be reached."""
+    were listed, how many are new, and how many could not be read this time (they are
+    tried again next run). Raises when the search itself fails."""
     ensure_table(cx)
     users = service.users()
     listed = users.messages().list(userId="me", q=f"from:{email} newer_than:{days}d",
@@ -190,24 +216,33 @@ def ingest(cx, email, service, *, days=DAYS, limit=LIMIT):
     have = {r[0] for r in cx.execute(
         "SELECT message_id FROM client_gmail_messages WHERE client_email=?", (email,))}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    new = 0
+    new = failed = 0
     for m in listed:
         mid = m.get("id")
         if not mid or mid in have:
             continue
-        full = users.messages().get(userId="me", id=mid, format="full").execute()
 
         def _att(aid, _mid=mid):
             got = users.messages().attachments().get(userId="me", messageId=_mid,
                                                      id=aid).execute()
             return _b64(got.get("data"))
-        subject, sent, body, atts = parse_message(full, _att)
+        try:   # one bad message must not stop the rest (review round 1)
+            full = users.messages().get(userId="me", id=mid, format="full").execute()
+            subject, sent, body, atts, sender = parse_message(full, _att)
+        except Exception:
+            failed += 1
+            continue
+        # Gmail's from: is looser than one address; keep only an exact sender. Any
+        # other is remembered as not kept, so it is not fetched again.
+        kept = int(sender == email)
         cx.execute("INSERT OR IGNORE INTO client_gmail_messages(message_id, client_email, "
-                   "sent_at, subject, body, attachments, fetched_at) VALUES(?,?,?,?,?,?,?)",
-                   (mid, email, sent, subject, body, json.dumps(atts), now))
-        new += 1
+                   "sent_at, subject, body, attachments, kept, fetched_at) "
+                   "VALUES(?,?,?,?,?,?,?,?)",
+                   (mid, email, sent, subject if kept else "", body if kept else "",
+                    json.dumps(atts) if kept else "[]", kept, now))
+        new += kept
     cx.commit()
-    return {"listed": len(listed), "new": new}
+    return {"listed": len(listed), "new": new, "failed": failed}
 
 
 def stored_text(cx, email, *, days=DAYS, limit=LIMIT, max_chars=MINE_MAX):
@@ -216,7 +251,7 @@ def stored_text(cx, email, *, days=DAYS, limit=LIMIT, max_chars=MINE_MAX):
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
     # The window applies to what is mined, not only to what is fetched (review round 2).
     rows = cx.execute("SELECT sent_at, subject, body, attachments FROM client_gmail_messages "
-                      "WHERE client_email=? AND sent_at >= ? ORDER BY sent_at DESC LIMIT ?",
+                      "WHERE client_email=? AND kept=1 AND sent_at >= ? ORDER BY sent_at DESC LIMIT ?",
                       (email, since, limit)).fetchall()
     parts, unreadable = [], 0
     for sent, subject, body, atts in rows:
@@ -245,7 +280,9 @@ def client_email_text(cx, email, e4l_db, service_factory=default_service):
         return {"text": "", "held": n, "error": None}
     error = None
     try:
-        ingest(cx, email, service_factory())
+        got = ingest(cx, email, service_factory())
+        if got.get("failed"):
+            error = f"{got['failed']} email(s) could not be read; they are retried next time."
     except Exception as e:
         error = f"Gmail could not be read ({type(e).__name__})."
     try:

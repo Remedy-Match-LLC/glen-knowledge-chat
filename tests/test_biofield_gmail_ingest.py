@@ -17,6 +17,9 @@ from dashboard import biofield_gmail as bg
 _NOW_MS = int(time.time() * 1000) - 86400_000   # yesterday
 
 
+_FROM = {"name": "From", "value": "Pat Testerson <Pat.Test@example.com>"}
+
+
 def _b(s):
     return base64.urlsafe_b64encode(s if isinstance(s, bytes) else s.encode()).decode().rstrip("=")
 
@@ -41,7 +44,7 @@ def _pdf(text):
 def _msg(mid, subject, body, ms=None, parts=()):
     return {"id": mid, "internalDate": str(ms or _NOW_MS), "payload": {
         "mimeType": "multipart/mixed",
-        "headers": [{"name": "Subject", "value": subject}],
+        "headers": [{"name": "Subject", "value": subject}, _FROM],
         "parts": [{"mimeType": "text/plain", "body": {"data": _b(body)}}, *parts]}}
 
 
@@ -151,7 +154,7 @@ def test_gmail_down_still_returns_what_was_stored(tmp_path, e4l):
 
 def test_html_only_mail_is_read_as_text(tmp_path, e4l):
     m = {"id": "h1", "internalDate": str(_NOW_MS), "payload": {
-        "mimeType": "text/html", "headers": [], "body": {"data": _b(
+        "mimeType": "text/html", "headers": [_FROM], "body": {"data": _b(
             "<p>Low&nbsp;energy</p><script>x()</script>")}}}
     cx = sqlite3.connect(str(tmp_path / "chat.db"))
     out = bg.client_email_text(cx, "pat.test@example.com", e4l, lambda: FakeGmail([m]))
@@ -230,7 +233,13 @@ def test_a_held_address_is_named_on_the_page(tmp_path):
 
 def test_quoted_lines_and_the_reply_history_are_each_dropped():
     assert bg.strip_quoted("Mine\n> theirs\nMine too") == "Mine\n\nMine too".replace("\n\n", "\n")
-    assert bg.strip_quoted("Mine\nOn Tue, 14 Oct 2026, Dr Glen wrote:\nTheir unquoted text") == "Mine"
+    # Text after the attribution line stays: a client may answer inline.
+    assert bg.strip_quoted("On Tue, 14 Oct 2026, Dr Glen wrote:\n> Sleep?\nBadly") == "Badly"
+    outlook = "My reply\nFrom: Dr Glen <g@example.com>\nSent: Monday\nHis old advice"
+    assert bg.strip_quoted(outlook) == "My reply"
+    assert bg.strip_quoted("From: work I came home tired") == "From: work I came home tired"
+    far = "From: June I felt off\na\nb\nc\nDate: 3 May it eased"
+    assert bg.strip_quoted(far) == far
 
 
 def _cx(tmp_path):
@@ -273,7 +282,7 @@ def test_an_unreadable_pdf_is_reported(tmp_path, e4l):
 
 def test_a_body_handed_by_attachment_id_is_fetched(tmp_path, e4l):
     m = {"id": "b1", "internalDate": str(_NOW_MS), "payload": {
-        "mimeType": "text/plain", "headers": [], "body": {"attachmentId": "big"}}}
+        "mimeType": "text/plain", "headers": [_FROM], "body": {"attachmentId": "big"}}}
     svc = FakeGmail([m], attachments={"big": "A long letter about headaches"})
     out = bg.client_email_text(_cx(tmp_path), "pat.test@example.com", e4l, lambda: svc)
     assert "headaches" in out["text"]
@@ -283,7 +292,7 @@ def test_html_quoted_history_is_dropped(tmp_path, e4l):
     html = ('<div>My own words</div><div class="gmail_quote">On Mon wrote<br>'
             'Dr Glen old advice</div>')
     m = {"id": "q1", "internalDate": str(_NOW_MS), "payload": {
-        "mimeType": "text/html", "headers": [], "body": {"data": _b(html)}}}
+        "mimeType": "text/html", "headers": [_FROM], "body": {"data": _b(html)}}}
     out = bg.client_email_text(_cx(tmp_path), "pat.test@example.com", e4l,
                                lambda: FakeGmail([m]))
     assert "My own words" in out["text"] and "old advice" not in out["text"]
@@ -319,3 +328,51 @@ def test_the_real_reader_is_never_wired_under_pytest(tmp_path, monkeypatch):
     tid = _new(c)
     c.post(f"/author/{tid}/mine-comms", json={})
     assert called == []
+
+
+def test_a_looser_from_match_is_not_mined_or_fetched_again(tmp_path, e4l):
+    m = _msg("x1", "hi", "Someone else's news")
+    m["payload"]["headers"] = [{"name": "From", "value": "Al <al.pat.test@example.com>"}]
+    svc = FakeGmail([m, _msg("m2", "mine", "My own news")])
+    cx = _cx(tmp_path)
+    out = bg.client_email_text(cx, "pat.test@example.com", e4l, lambda: svc)
+    assert "Someone else" not in out["text"] and "My own news" in out["text"]
+    assert out["text"].count("email ") == 1
+    svc.calls.clear()
+    bg.client_email_text(cx, "pat.test@example.com", e4l, lambda: svc)
+    assert [c for c in svc.calls if c[0] == "get"] == []
+
+
+def test_a_photo_or_an_oversized_file_is_never_downloaded(tmp_path, e4l):
+    svc = FakeGmail([_msg("p1", "pics", "see", parts=[
+        {"mimeType": "image/jpeg", "filename": "eye.jpg", "body": {"attachmentId": "img"}},
+        {"mimeType": "application/pdf", "filename": "huge.pdf",
+         "body": {"attachmentId": "big", "size": bg.FETCH_MAX + 1}}])])
+    bg.client_email_text(_cx(tmp_path), "pat.test@example.com", e4l, lambda: svc)
+    assert [c for c in svc.calls if c[0] == "attachment"] == []
+
+
+def test_one_bad_message_does_not_stop_the_rest(tmp_path, e4l):
+    svc = FakeGmail([_msg("bad", "x", "x"), _msg("ok", "fine", "Back pain")])
+    real_get = svc.get
+    def get(userId, id, format=None, messageId=None):
+        if id == "bad":
+            raise OSError("404")
+        return real_get(userId, id, format, messageId)
+    svc.get = get
+    out = bg.client_email_text(_cx(tmp_path), "pat.test@example.com", e4l, lambda: svc)
+    assert "Back pain" in out["text"] and "1 email(s) could not be read" in out["error"]
+
+
+def test_a_console_fetch_that_raises_still_mines_email(tmp_path):
+    def boom(e):
+        raise RuntimeError("")
+    c = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: _NONE,
+                   fetch_profile=lambda e: {}, fetch_recent_comms=boom,
+                   interpret_complete=lambda s, u: json.dumps(
+                       {"stresses": ["From email"] if "Floaters" in u else []}),
+                   client_gmail=lambda cx, e: {"text": "Floaters", "held": 0,
+                                               "error": None}).test_client()
+    tid = _new(c)
+    j = c.post(f"/author/{tid}/mine-comms", json={}).get_json()
+    assert "Only email was mined." in j["error"]
