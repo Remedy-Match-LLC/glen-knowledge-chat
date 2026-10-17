@@ -180,6 +180,37 @@ def _default_fetch_profile(email):
         return None
 
 
+def _default_fetch_fmp_history(email):
+    """The client's FileMaker order history from prod, which matches emails found later
+    for rows that had none. A list (maybe empty) on success, None on any failure so the
+    caller can fall back to the local copy and say so. The key goes in the header only."""
+    import json as _json
+    import urllib.parse
+    import urllib.request
+    email = (email or "").strip().lower()
+    if not email:
+        return []
+    try:
+        key = os.environ["CONSOLE_SECRET"]
+        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+        _u = urllib.parse.urlsplit(base)
+        if not (_u.scheme == "https" or (_u.scheme == "http" and _u.hostname == "127.0.0.1")):
+            return None     # the key never travels in clear text
+        url = base + "/api/console/fmp-orders?email=" + urllib.parse.quote(email)
+        req = urllib.request.Request(url, headers={"X-Console-Key": key})
+
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            # A redirect would carry the key header to wherever it points (review round 2).
+            def redirect_request(self, *a, **k):
+                return None
+        data = _json.load(urllib.request.build_opener(_NoRedirect).open(req, timeout=15))
+        if not data.get("ok") or not isinstance(data.get("results"), list):
+            return None
+        return data["results"]
+    except Exception:
+        return None
+
+
 def _default_fetch_recent_comms(email):
     """Best-effort: pull a client's windowed recent comms from the prod endpoint.
     Returns None on any failure (incl. missing CONSOLE_SECRET -> no network call), so
@@ -682,7 +713,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                invoice_paid_check=None, invoice_latest=None, client_orders=None,
                caregiver_billing=None,
                ingredients_db=None,
-               portal_link_fetch=None, auto_publish=None):
+               portal_link_fetch=None, auto_publish=None, fetch_fmp_history=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -747,6 +778,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     fetch_recent_comms = fetch_recent_comms or _default_fetch_recent_comms
     using_default_fetch_client_photo = fetch_client_photo is None
     fetch_client_photo = fetch_client_photo or _default_fetch_client_photo
+    # Tests never reach prod: under CI (or with no console key) the local copy is read
+    # as before, with no "unavailable" note.
+    if (fetch_fmp_history is None and not os.environ.get("CI")
+            and not os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("CONSOLE_SECRET")):
+        fetch_fmp_history = _default_fetch_fmp_history
     photo_refresh_at = {}
 
     def _refresh_client_photo(email, client_id=None):
@@ -1468,12 +1504,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # Most of a long-standing client's history predates this system:
             # Debra Herndon had 2 orders here and 8 in FileMaker. Matched on NAME
             # as well as email, because one household email can be five people.
-            _hist = []
-            try:
-                with sqlite3.connect(db_path) as _fcx:
-                    _hist = _fmpo.client_order_history(_fcx, email=c_email) or []
-            except Exception as _fe:
-                print(f"[dispensed] fmp history skipped: {_fe!r}", flush=True)
+            # Prod holds the full legacy history and the emails found for rows that had
+            # none; the local copy held 424 invoices of about 15,700
+            # (2026-10-16). The local copy is the fallback, and the panel says so.
+            _hist = fetch_fmp_history(c_email) if fetch_fmp_history else None
+            if _hist is None and fetch_fmp_history:
+                print(f"[dispensed] {datetime.datetime.now().isoformat(timespec='seconds')} "
+                      f"test {test_id}: prod FileMaker history unavailable; "
+                      f"using the local copy", flush=True)
+                dispensed_error = dispensed_error or "FileMaker history from prod unavailable"
+            if _hist is None:
+                _hist = []
+                try:
+                    with sqlite3.connect(db_path) as _fcx:
+                        _hist = _fmpo.client_order_history(_fcx, email=c_email) or []
+                except Exception as _fe:
+                    print(f"[dispensed] fmp history skipped: {_fe!r}", flush=True)
             _older = _disp.fmp_orders_for(_hist, (rep.get("client") or {}).get("name"), c_email)
             # Call the INJECTED seam, not the concrete function: client_orders is a
             # create_app dependency and the author route's tests assert it is used.
@@ -1481,7 +1527,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # may be empty, so a failed lookup can be told from an empty history without
             # changing the seam's contract.
             _client_orders = client_orders(c_email)
-            dispensed_error = getattr(_client_orders, "error", None)
+            dispensed_error = getattr(_client_orders, "error", None) or dispensed_error
             dispensed = _disp.frequency(list(_client_orders) + _older, c_email)
             if dispensed_error:
                 # Which test, and when. The lookup's own line carries neither, so on
