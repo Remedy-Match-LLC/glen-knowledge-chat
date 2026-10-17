@@ -1,0 +1,428 @@
+"""Five rated sections under each Clinical Summary condition.
+
+Spec: vault clinical/specs/2026-10-17-clinical-summary-five-sections.md (Glen, 17 Oct).
+
+Every condition row carries Functional Formulations, Foods to emphasize, Foods to
+avoid, Nutrients and Fullscript supplements. The shared content lives in
+biofield_clinical_section_item, one row per (condition, section, item). What one
+client has ticked, and any score or dose Glen edits for that client, lives in
+biofield_clinical_section_pick.
+
+Functional Formulations is the row's existing remedy list. Its ticks stay in
+biofield_clinical_selection.remedies, the store the causal chain and the program
+already read, so this module only adds ratings to it and never a second tick store.
+
+Three rules Glen approved the same day ("all three"):
+- An item he has not approved shows "not reviewed", and shows only on the client it
+  was added for (origin_test) until he approves it into the shared catalog.
+- An avoids-botanicals switch per client hides botanical items, apart from the
+  client's named exceptions and anything already ticked.
+- A food one checked condition emphasizes and another checked condition avoids is
+  flagged on both.
+"""
+import os
+
+from dashboard.biofield_clinical_checklist import _norm, forgotten_remedies
+
+
+FORMULATIONS = "functional_formulations"
+FULLSCRIPT = "fullscript"
+NUTRIENTS = "nutrients"
+SECTIONS = (
+    (FORMULATIONS, "Functional Formulations"),
+    ("foods_emphasize", "Foods to emphasize"),
+    ("foods_avoid", "Foods to avoid"),
+    (NUTRIENTS, "Nutrients"),
+    (FULLSCRIPT, "Fullscript supplements"),
+)
+SECTION_KEYS = tuple(key for key, _ in SECTIONS)
+SCORES = ("overall", "research", "uniqueness")
+
+
+def fullscript_store_url():
+    """The store front door, never a product page. Same rule and same config as
+    app._fullscript_dispensary_url: attribution of a new sign-up through a product
+    link is unconfirmed, so every Fullscript item links here."""
+    slug = (os.environ.get("FULLSCRIPT_DISPENSARY_SLUG", "") or "remedymatch").strip()
+    return f"https://us.fullscript.com/welcome/{slug}/store-start"
+
+
+def ensure_schema(cx):
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_section_item (
+        item_key TEXT NOT NULL, section TEXT NOT NULL,
+        name_key TEXT NOT NULL, name TEXT NOT NULL,
+        brand TEXT NOT NULL DEFAULT '', dose TEXT NOT NULL DEFAULT '',
+        overall INTEGER, research INTEGER, uniqueness INTEGER,
+        reason TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '',
+        botanical INTEGER NOT NULL DEFAULT 0, lowers_bp INTEGER,
+        reviewed INTEGER NOT NULL DEFAULT 0,
+        origin_test TEXT NOT NULL DEFAULT '',
+        food_keys TEXT NOT NULL DEFAULT '',
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (item_key, section, name_key)
+    )""")
+    cols = {row[1] for row in
+            cx.execute("PRAGMA table_info(biofield_clinical_section_item)").fetchall()}
+    for col in ("origin_test", "food_keys"):
+        if col not in cols:
+            cx.execute(f"ALTER TABLE biofield_clinical_section_item "
+                       f"ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    # One row per client test: is the switch on, and which botanicals are allowed.
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_botanical (
+        test_id TEXT PRIMARY KEY, avoid INTEGER NOT NULL DEFAULT 0,
+        exceptions TEXT NOT NULL DEFAULT '',
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    # checked is NULL for Functional Formulations: their ticks live in
+    # biofield_clinical_selection. A NULL score or dose means "use the catalog's".
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_section_pick (
+        test_id TEXT NOT NULL, item_key TEXT NOT NULL, section TEXT NOT NULL,
+        name_key TEXT NOT NULL, checked INTEGER,
+        overall INTEGER, research INTEGER, uniqueness INTEGER,
+        dose TEXT, note TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (test_id, item_key, section, name_key)
+    )""")
+
+
+def _score(value):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if 1 <= number <= 10 else None
+
+
+def rating_code(overall, research, uniqueness):
+    """Three digits, 10 written as X: (10, 7, 4) -> "X74". Blank unless all three exist."""
+    scores = [_score(v) for v in (overall, research, uniqueness)]
+    if None in scores:
+        return ""
+    return "".join("X" if s == 10 else str(s) for s in scores)
+
+
+def parse_rating(code):
+    """"X74" -> (10, 7, 4). Anything that is not three of 1-9 or X gives None."""
+    code = str(code or "").strip().upper()
+    if len(code) != 3:
+        return None
+    out = []
+    for ch in code:
+        if ch == "X":
+            out.append(10)
+        elif ch in "123456789":
+            out.append(int(ch))
+        else:
+            return None
+    return tuple(out)
+
+
+def sort_items(items):
+    """Highest rating first: Overall, then Research, then Uniqueness. X counts as 10.
+    Unrated items follow the rated ones in the order they arrived."""
+    def key(pair):
+        index, item = pair
+        scores = [_score(item.get(s)) for s in SCORES]
+        if None in scores:
+            return (1, 0, 0, 0, index)
+        return (0, -scores[0], -scores[1], -scores[2], index)
+    return [item for _, item in sorted(enumerate(items), key=key)]
+
+
+def upsert_item(cx, label, section, item, origin_test=""):
+    """Write one shared catalog item. Returns "added" or "updated".
+
+    A new item records the client it was added for; until Glen approves it, only
+    that client sees it. Updating an item never changes its origin or its review."""
+    ensure_schema(cx)
+    if section not in SECTION_KEYS:
+        raise ValueError(f"unknown section {section!r}")
+    item_key, name = _norm(label), str(item.get("name") or "").strip()[:160]
+    name_key = _norm(name)
+    if not item_key or not name_key:
+        raise ValueError("a condition and an item name are required")
+    exists = cx.execute(
+        "SELECT 1 FROM biofield_clinical_section_item "
+        "WHERE item_key=? AND section=? AND name_key=?",
+        (item_key, section, name_key)).fetchone()
+    lowers_bp = item.get("lowers_bp")
+    cx.execute("""INSERT INTO biofield_clinical_section_item
+        (item_key,section,name_key,name,brand,dose,overall,research,uniqueness,
+         reason,source,botanical,lowers_bp,reviewed,origin_test,food_keys,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(item_key,section,name_key) DO UPDATE SET
+          name=excluded.name,brand=excluded.brand,dose=excluded.dose,
+          overall=excluded.overall,research=excluded.research,
+          uniqueness=excluded.uniqueness,reason=excluded.reason,
+          source=excluded.source,botanical=excluded.botanical,
+          lowers_bp=excluded.lowers_bp,food_keys=excluded.food_keys,
+          updated_at=CURRENT_TIMESTAMP""",
+               (item_key, section, name_key, name,
+                str(item.get("brand") or "").strip()[:160],
+                str(item.get("dose") or "").strip()[:200] if section == NUTRIENTS else "",
+                _score(item.get("overall")), _score(item.get("research")),
+                _score(item.get("uniqueness")),
+                str(item.get("reason") or "").strip()[:400],
+                str(item.get("source") or "").strip()[:600],
+                1 if item.get("botanical") else 0,
+                None if lowers_bp is None else (1 if lowers_bp else 0),
+                1 if item.get("reviewed") else 0, str(origin_test or ""),
+                ",".join(_food_keys(item.get("food_keys")))))
+    return "updated" if exists else "added"
+
+
+def _food_keys(value):
+    """The plain foods an item covers, e.g. ["black tea", "green tea"]. Content
+    names are phrases ("Black or green tea with meals"), so conflicts match on
+    these rather than on the whole name."""
+    if isinstance(value, str):
+        value = value.split(",")
+    out = []
+    for raw in value or []:
+        key = _norm(raw)
+        if key and key not in out:
+            out.append(key)
+    return out
+
+
+def approve_item(cx, label, section, name):
+    """Glen's approval: the item joins the shared catalog for every client."""
+    ensure_schema(cx)
+    cur = cx.execute("UPDATE biofield_clinical_section_item SET reviewed=1,"
+                     "updated_at=CURRENT_TIMESTAMP WHERE item_key=? AND section=? "
+                     "AND name_key=?", (_norm(label), section, _norm(name)))
+    cx.commit()
+    return bool(cur.rowcount)
+
+
+def botanical_setting(cx, test_id):
+    ensure_schema(cx)
+    row = cx.execute("SELECT avoid,exceptions FROM biofield_clinical_botanical "
+                     "WHERE test_id=?", (str(test_id),)).fetchone()
+    return {"avoid": bool(row and row[0]), "exceptions": (row[1] if row else "") or ""}
+
+
+def save_botanical_setting(cx, test_id, avoid=None, exceptions=None):
+    ensure_schema(cx)
+    cx.execute("INSERT INTO biofield_clinical_botanical (test_id) VALUES (?) "
+               "ON CONFLICT(test_id) DO NOTHING", (str(test_id),))
+    if avoid is not None:
+        cx.execute("UPDATE biofield_clinical_botanical SET avoid=?,"
+                   "updated_at=CURRENT_TIMESTAMP WHERE test_id=?",
+                   (1 if avoid else 0, str(test_id)))
+    if exceptions is not None:
+        cx.execute("UPDATE biofield_clinical_botanical SET exceptions=?,"
+                   "updated_at=CURRENT_TIMESTAMP WHERE test_id=?",
+                   (str(exceptions).strip()[:300], str(test_id)))
+    cx.commit()
+
+
+def _exception_keys(text):
+    return [k for k in (_norm(part) for part in str(text or "").split(",")) if k]
+
+
+def _allowed_botanical(name, exception_keys):
+    # "ginger" allows "Gingerol" and "Ginger root"; "milk thistle" allows
+    # "Milk thistle seed". Matched on the item's name, the only thing on the row.
+    key = _norm(name)
+    return any(e in key for e in exception_keys)
+
+
+def save_pick(cx, test_id, label, section, name, checked=None, rating=None,
+              dose=None, note=None, commit=True):
+    """Record one client's tick, edited rating, edited dose or note on one item.
+    Only the fields passed change; the rest keep what was saved. commit=False lets
+    a dry-run loader roll the whole run back."""
+    ensure_schema(cx)
+    if section not in SECTION_KEYS:
+        raise ValueError(f"unknown section {section!r}")
+    if section == FORMULATIONS and checked is not None:
+        raise ValueError("Functional Formulations ticks are saved as the row's remedies")
+    item_key, name_key = _norm(label), _norm(name)
+    if not item_key or not name_key:
+        raise ValueError("a condition and an item name are required")
+    scores = (None, None, None)
+    if rating is not None:
+        scores = parse_rating(rating)
+        if scores is None:
+            raise ValueError("a rating is three of 1-9 or X, such as X74")
+    cx.execute("""INSERT INTO biofield_clinical_section_pick
+        (test_id,item_key,section,name_key,updated_at)
+        VALUES (?,?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(test_id,item_key,section,name_key) DO NOTHING""",
+               (str(test_id), item_key, section, name_key))
+    sets, args = [], []
+    if checked is not None:
+        sets.append("checked=?")
+        args.append(1 if checked else 0)
+    if rating is not None:
+        sets.append("overall=?,research=?,uniqueness=?")
+        args.extend(scores)
+    if dose is not None:
+        sets.append("dose=?")
+        args.append(str(dose).strip()[:200])
+    if note is not None:
+        sets.append("note=?")
+        args.append(str(note).strip()[:600])
+    if sets:
+        cx.execute("UPDATE biofield_clinical_section_pick SET "
+                   + ",".join(sets) + ",updated_at=CURRENT_TIMESTAMP "
+                   "WHERE test_id=? AND item_key=? AND section=? AND name_key=?",
+                   args + [str(test_id), item_key, section, name_key])
+    if commit:
+        cx.commit()
+
+
+def _catalog(cx, item_key):
+    rows = cx.execute(
+        "SELECT section,name_key,name,brand,dose,overall,research,uniqueness,"
+        "reason,source,botanical,lowers_bp,reviewed,origin_test,food_keys "
+        "FROM biofield_clinical_section_item WHERE item_key=?", (item_key,)).fetchall()
+    cols = ("section", "name_key", "name", "brand", "dose", "overall", "research",
+            "uniqueness", "reason", "source", "botanical", "lowers_bp", "reviewed",
+            "origin_test", "food_keys")
+    return [dict(zip(cols, row)) for row in rows]
+
+
+def _picks(cx, test_id, item_key):
+    rows = cx.execute(
+        "SELECT section,name_key,checked,overall,research,uniqueness,dose,note "
+        "FROM biofield_clinical_section_pick WHERE test_id=? AND item_key=?",
+        (str(test_id), item_key)).fetchall()
+    return {(r[0], r[1]): {"checked": r[2], "overall": r[3], "research": r[4],
+                           "uniqueness": r[5], "dose": r[6], "note": r[7]} for r in rows}
+
+
+def _apply_pick(entry, pick):
+    entry = dict(entry)
+    entry["catalog_rating"] = rating_code(entry.get("overall"), entry.get("research"),
+                                          entry.get("uniqueness"))
+    if pick:
+        if pick.get("overall") is not None:
+            for s in SCORES:
+                entry[s] = pick[s]
+        if pick.get("dose") is not None:
+            entry["dose"] = pick["dose"]
+        entry["note"] = pick.get("note") or ""
+        entry["checked"] = bool(pick.get("checked"))
+    entry.setdefault("note", "")
+    entry.setdefault("checked", False)
+    entry["rating"] = rating_code(entry.get("overall"), entry.get("research"),
+                                  entry.get("uniqueness"))
+    entry["lowers_bp"] = bool(entry.get("lowers_bp"))
+    entry["botanical"] = bool(entry.get("botanical"))
+    entry["reviewed"] = bool(entry.get("reviewed"))
+    entry.setdefault("conflicts", [])
+    return entry
+
+
+def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=None):
+    """The five sections for one condition row, each sorted highest rating first.
+
+    `remedies` is the row's existing remedy list. Formulations the content adds
+    follow it, unless Glen deleted them from this condition. `chosen_remedies` is
+    the row's saved tick set. Nothing is ticked that the practitioner did not tick.
+    Each section reports how many botanical items the client's switch hid.
+    """
+    ensure_schema(cx)
+    item_key = _norm(label)
+    test_id = str(test_id)
+    setting = botanical if botanical is not None else botanical_setting(cx, test_id)
+    exceptions = _exception_keys(setting.get("exceptions"))
+    catalog = [e for e in _catalog(cx, item_key)
+               if e["reviewed"] or e["origin_test"] in ("", test_id)]
+    picks = _picks(cx, test_id, item_key)
+    by_section = {key: [] for key in SECTION_KEYS}
+    rated = {}
+    for entry in catalog:
+        if entry["section"] == FORMULATIONS:
+            rated[entry["name_key"]] = entry
+        elif entry["section"] in by_section:
+            pick = picks.get((entry["section"], entry["name_key"]))
+            by_section[entry["section"]].append(_apply_pick(entry, pick))
+    chosen = {str(name).strip().lower() for name in chosen_remedies or []}
+    names, seen = [], set()
+    for name in remedies or []:
+        if _norm(name) not in seen:
+            seen.add(_norm(name))
+            names.append(name)
+    deleted = forgotten_remedies(cx, label)
+    for key, entry in rated.items():
+        if key not in seen and key not in deleted:
+            seen.add(key)
+            names.append(entry["name"])
+    for name in names:
+        key = _norm(name)
+        # A remedy already on the row but never rated counts as reviewed: it was in
+        # the catalog before this content, so it carries no "not reviewed" mark.
+        base = rated.get(key) or {"section": FORMULATIONS, "name_key": key, "brand": "",
+                                  "dose": "", "overall": None, "research": None,
+                                  "uniqueness": None, "reason": "", "source": "",
+                                  "botanical": 0, "lowers_bp": None, "reviewed": 1,
+                                  "origin_test": ""}
+        entry = _apply_pick(dict(base, name=name), picks.get((FORMULATIONS, key)))
+        # The row's remedy name, as the existing list spells it, is what the tick
+        # store and the bottles chip key on.
+        entry["checked"] = str(name).strip().lower() in chosen
+        by_section[FORMULATIONS].append(entry)
+    out = []
+    for key, title in SECTIONS:
+        items, hidden = by_section[key], 0
+        if setting.get("avoid"):
+            kept = []
+            for entry in items:
+                # A ticked item stays: hiding it would hide a choice already made.
+                if entry["botanical"] and not entry["checked"] \
+                        and not _allowed_botanical(entry["name"], exceptions):
+                    hidden += 1
+                else:
+                    kept.append(entry)
+            items = kept
+        out.append({"key": key, "title": title, "items": sort_items(items),
+                    "botanical_hidden": hidden})
+    return out
+
+
+def flag_food_conflicts(rows):
+    """Mark a food one checked row emphasizes and another checked row avoids.
+    `rows` is [(label, is_checked, sections)]; each clashing item gets the other
+    row's label in its `conflicts` list. An item matches on its food_keys, or on
+    its whole normalised name when it has none."""
+    emphasize, avoid = {}, {}
+    for label, is_checked, sections in rows:
+        if not is_checked:
+            continue
+        for section in sections or []:
+            target = {"foods_emphasize": emphasize, "foods_avoid": avoid}.get(section["key"])
+            if target is None:
+                continue
+            for entry in section["items"]:
+                for key in _food_keys(entry.get("food_keys")) or [_norm(entry["name"])]:
+                    target.setdefault(key, []).append((label, entry))
+    count, seen = 0, set()
+    for key in set(emphasize) & set(avoid):
+        for label, entry in emphasize[key]:
+            for other, against in avoid[key]:
+                # One pair of items is one conflict, however many foods they share.
+                if other == label or (id(entry), id(against)) in seen:
+                    continue
+                seen.add((id(entry), id(against)))
+                if other not in entry["conflicts"]:
+                    entry["conflicts"].append(other)
+                if label not in against["conflicts"]:
+                    against["conflicts"].append(label)
+                count += 1
+    return count
+
+
+def checked_items(cx, test_id):
+    """Every ticked food, nutrient and Fullscript item for one client, by condition.
+    Formulations are left out: the report already carries them through the chain."""
+    ensure_schema(cx)
+    rows = cx.execute(
+        "SELECT p.item_key,p.section,i.name,i.brand,COALESCE(p.dose,i.dose) "
+        "FROM biofield_clinical_section_pick p JOIN biofield_clinical_section_item i "
+        "ON i.item_key=p.item_key AND i.section=p.section AND i.name_key=p.name_key "
+        "WHERE p.test_id=? AND p.checked=1", (str(test_id),)).fetchall()
+    return [{"item_key": r[0], "section": r[1], "name": r[2], "brand": r[3], "dose": r[4]}
+            for r in rows]

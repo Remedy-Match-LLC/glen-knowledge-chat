@@ -1558,6 +1558,25 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                   if item_key(item.get("label")) not in hidden]
             clinical_checklist = apply_order(cx, test_id, clinical_checklist)
             clinical_checklist = apply_selection(cx, test_id, clinical_checklist)
+            # Five rated sections under every row (Glen, 2026-10-17). The remedy list
+            # becomes the first one; a failure here leaves the plain list showing.
+            clinical_botanical = None
+            try:
+                from dashboard import biofield_clinical_sections as _cs
+                clinical_botanical = _cs.botanical_setting(cx, test_id)
+                for _item in clinical_checklist:
+                    _item["sections"] = _cs.sections_for(
+                        cx, test_id, _item.get("label"),
+                        remedies=_item.get("common_remedies") or [],
+                        chosen_remedies=_item.get("selected_remedies") or [],
+                        botanical=clinical_botanical)
+                # A row counts as checked when it is ticked or any remedy on it is.
+                _cs.flag_food_conflicts([
+                    (_item.get("display_label") or _item.get("label"),
+                     bool(_item.get("checked") or _item.get("selected_remedies")),
+                     _item["sections"]) for _item in clinical_checklist])
+            except Exception as _se:
+                print(f"[clinical-sections] {test_id}: skipped: {_se!r}", flush=True)
             # Each item's grouped factors, kept as their own list (Glen, 2026-10-16:
             # "separate"), and the factors still free to add to one.
             clinical_free_factors = None
@@ -1656,6 +1675,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                            narrative_warnings=_narr_warnings,
                                            clinical_checklist=clinical_checklist,
                                            clinical_free_factors=clinical_free_factors,
+                                           clinical_botanical=clinical_botanical,
                                            dispensed=dispensed,
                                            dispensed_error=dispensed_error,
                                            intake_priorities=(profile or {}).get(
@@ -3478,6 +3498,51 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             count = save_selection(cx, test_id, label, remedies)
         return {"ok": True, "count": count}
+
+    @app.route("/author/<test_id>/clinical-sections/pick", methods=["POST"])
+    def author_clinical_section_pick(test_id):
+        """One tick, rating or dose on a section item, for this client only."""
+        from dashboard.biofield_clinical_sections import save_pick
+        body = request.get_json(silent=True) or {}
+        label = str(body.get("label") or "").strip()
+        section = str(body.get("section") or "").strip()
+        name = str(body.get("name") or "").strip()
+        checked = body.get("checked")
+        if checked is not None and not isinstance(checked, bool):
+            return {"ok": False, "error": "checked must be true or false"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                save_pick(cx, test_id, label, section, name, checked=checked,
+                          rating=body.get("rating"), dose=body.get("dose"))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        return {"ok": True}
+
+    @app.route("/author/<test_id>/clinical-sections/approve", methods=["POST"])
+    def author_clinical_section_approve(test_id):
+        """Glen approves an item into the shared catalog: every client sees it."""
+        from dashboard.biofield_clinical_sections import approve_item
+        body = request.get_json(silent=True) or {}
+        label = str(body.get("label") or "").strip()
+        section = str(body.get("section") or "").strip()
+        name = str(body.get("name") or "").strip()
+        with sqlite3.connect(db_path) as cx:
+            ok = approve_item(cx, label, section, name)
+        if not ok:
+            return {"ok": False, "error": "No such item in the catalog"}, 404
+        return {"ok": True}
+
+    @app.route("/author/<test_id>/clinical-sections/botanical", methods=["POST"])
+    def author_clinical_section_botanical(test_id):
+        from dashboard.biofield_clinical_sections import save_botanical_setting
+        body = request.get_json(silent=True) or {}
+        avoid = body.get("avoid")
+        if avoid is not None and not isinstance(avoid, bool):
+            return {"ok": False, "error": "avoid must be true or false"}, 400
+        with sqlite3.connect(db_path) as cx:
+            save_botanical_setting(cx, test_id, avoid=avoid,
+                                   exceptions=body.get("exceptions"))
+        return {"ok": True}
 
     @app.route("/author/<test_id>/clinical-items/stress", methods=["POST"])
     def author_clinical_item_stress(test_id):
