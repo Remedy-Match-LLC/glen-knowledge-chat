@@ -61258,9 +61258,52 @@ def api_console_fmp_orders():
     name = (request.args.get("name") or "").strip() or None
     if not (client_id or email or (name and len(name) >= 2)):
         return jsonify({"ok": True, "results": []})
+    from dashboard import client_email_fills as _cef
     with db.connect(LOG_DB) as cx:
-        results = _fo.client_order_history(cx, client_id=client_id, email=email, name=name)
+        try:
+            _cef.ensure_table(cx)
+            cx.commit()
+            fills = True
+        except Exception:   # a first-ever race on CREATE: look up without fills
+            cx.rollback()
+            fills = False
+        results = _fo.client_order_history(cx, client_id=client_id, email=email, name=name,
+                                           fills=fills)
     return jsonify({"ok": True, "results": results})
+
+
+@app.route("/api/console/client-email-fills", methods=["POST"])
+def api_console_client_email_fills():
+    """Fill missing FileMaker client emails (Glen, 2026-10-16: "Add other clients' emails
+    always when missing and when possible"). Owner only. The caller may post E4L or Gmail
+    candidates as {"candidates": [{"source", "name", "email"}]}; the people table is read
+    here. Dry run unless ?commit=1. Only unambiguous fills are made; see
+    dashboard/client_email_fills.py for the rule."""
+    actor = _bos_actor()
+    if actor is None or actor.role != "owner":
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import client_email_fills as _cef
+    body = request.get_json(silent=True) or {}
+    posted = body.get("candidates") if isinstance(body.get("candidates"), list) else []
+    cands = []
+    for c in posted:
+        if not isinstance(c, dict) or c.get("source") not in ("e4l", "gmail"):
+            continue
+        k = _cef.full_name_key(str(c.get("name") or ""))
+        if k:
+            cands.append({"source": c["source"], "key": k, "email": c.get("email")})
+    commit = request.args.get("commit", "0") == "1"
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cef.ensure_table(cx)
+        cands += _cef.people_candidates(cx)
+        clients = cx.execute(
+            "SELECT id_pk, name_first, name_last, email FROM fmp_clients").fetchall()
+        result = _cef.plan([tuple(r) for r in clients], cands, _cef.filled_map(cx))
+        written = _cef.apply(cx, result["fills"]) if commit else 0
+        # Only the counts and ids go back; the addresses stay on the server.
+        result["fills"] = [{k: v for k, v in f.items() if k != "email"}
+                           for f in result["fills"]]
+    return jsonify({"ok": True, "committed": commit, "written": written, **result})
 
 
 @app.route("/api/console/fmp-product-buyers", methods=["POST"])

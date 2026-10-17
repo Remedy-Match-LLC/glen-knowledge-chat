@@ -186,9 +186,18 @@ def build_projection_from_csv(cx, export_dir, *, replace=False):
     return counts
 
 
-def _clients_where(client_id, email, name):
+def _clients_where(client_id, email, name, fills=False):
     if client_id:
         return "id_pk=?", [client_id]
+    if email and fills:
+        # An email found later for a row that had none (dashboard/client_email_fills).
+        # A fill counts only while its row still has no email and no row has that one:
+        # an ingest that brings either wins (review round 2).
+        return ("(lower(email)=lower(?) OR id_pk IN (SELECT f.fmp_client_id FROM "
+                "client_email_fills f JOIN fmp_clients c ON c.id_pk = f.fmp_client_id "
+                "WHERE lower(f.email)=lower(?) AND coalesce(trim(c.email),'')='' "
+                "AND NOT EXISTS (SELECT 1 FROM fmp_clients o "
+                "WHERE lower(o.email)=lower(f.email))))"), [email, email]
     if email:
         return "lower(email)=lower(?)", [email]
     if name:
@@ -196,12 +205,12 @@ def _clients_where(client_id, email, name):
     return "0", []
 
 
-def client_order_history(cx, *, client_id=None, email=None, name=None):
+def client_order_history(cx, *, client_id=None, email=None, name=None, fills=False):
     """Resolve matching client(s) and return their order history newest-first,
     each order with its line items, plus the client's address(es) on file.
     None-raising; empty list if nothing matches."""
     cx.row_factory = None
-    where, args = _clients_where(client_id, email, name)
+    where, args = _clients_where(client_id, email, name, fills)
     clients = cx.execute(
         f"SELECT {','.join(_CLIENT_COLS)} FROM fmp_clients WHERE {where} "
         f"ORDER BY name_last, name_first LIMIT 50", args).fetchall()
