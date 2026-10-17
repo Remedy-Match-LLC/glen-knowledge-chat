@@ -19,7 +19,7 @@ import os
 import re
 import sqlite3
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 DAYS = 365          # how far back a client's mail is read
 LIMIT = 25          # newest messages per client
@@ -27,6 +27,7 @@ TEXT_MAX = 20_000   # characters kept per message body or attachment
 MINE_MAX = 40_000   # characters handed to mining for one client
 
 TOKEN = os.path.expanduser("~/.config/google/token.json")
+MAILBOX = "drglenswartwout@gmail.com"   # Glen's choice; support@ forwards into it
 
 _EMAIL = re.compile(r"[a-z0-9._%+'-]+@[a-z0-9.-]+\.[a-z]{2,}")
 
@@ -57,15 +58,18 @@ def _name_key(name):
 
 
 def people_on_address(e4l_db, email):
-    """How many differently named E4L records carry this address (people and pets).
-    0 when e4l.db cannot be read: that is not a household."""
+    """How many differently named E4L records carry this address (people and pets), or
+    None when e4l.db cannot be read. A failed check is never taken as "one person"
+    (review round 2). One person's duplicate E4L accounts count once; a name with no
+    Latin letters is compared as written."""
     try:
         with sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True) as cx:
             rows = cx.execute("SELECT name FROM e4l_clients WHERE lower(trim(email))=?",
                               (email,)).fetchall()
     except sqlite3.Error:
-        return 0
-    return len({_name_key(r[0]) for r in rows if _name_key(r[0])})
+        return None
+    keys = {_name_key(r[0]) or (r[0] or "").strip().lower() for r in rows}
+    return len({k for k in keys if k})
 
 
 def strip_quoted(text):
@@ -87,6 +91,10 @@ def _b64(data):
 
 def _html_to_text(html):
     html = re.sub(r"(?is)<(script|style).*?</\1>", " ", html or "")
+    # A reply's quoted history: the earlier message is not the client's words.
+    html = re.sub(r"(?is)<blockquote.*?</blockquote>", " ", html)
+    html = re.sub(r'(?is)<div[^>]*class="?[^">]*(gmail_quote|yahoo_quoted|divRplyFwdMsg)'
+                  r'.*$', " ", html)
     html = re.sub(r"(?i)<br\s*/?>|</p>|</div>", "\n", html)
     text = re.sub(r"<[^>]+>", " ", html)
     for a, b in (("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
@@ -112,7 +120,7 @@ def attachment_text(mime, filename, data):
         else:
             return ""
     except Exception:
-        return ""
+        return None       # it should have been readable: the caller says so
     return text.strip()[:TEXT_MAX]
 
 
@@ -128,20 +136,25 @@ def parse_message(msg, get_attachment):
     payload = msg.get("payload") or {}
     headers = {h.get("name", "").lower(): h.get("value", "") for h in payload.get("headers") or []}
     plain, html, atts = [], [], []
+
+    def _data(body):
+        if body.get("data"):
+            return _b64(body["data"])
+        # Gmail hands a large body, or any attachment, by id (review round 2).
+        return get_attachment(body["attachmentId"]) if body.get("attachmentId") else b""
     for p in _walk(payload):
         mime = (p.get("mimeType") or "").lower()
         body = p.get("body") or {}
         fname = p.get("filename") or ""
         if fname:
-            data = _b64(body["data"]) if body.get("data") else (
-                get_attachment(body["attachmentId"]) if body.get("attachmentId") else b"")
-            text = attachment_text(mime, fname, data or b"")
-            atts.append({"filename": fname[:200], "mime": mime, "text": text})
-        elif mime == "text/plain" and body.get("data"):
-            plain.append(_b64(body["data"]).decode("utf-8", "replace"))
-        elif mime == "text/html" and body.get("data"):
-            html.append(_html_to_text(_b64(body["data"]).decode("utf-8", "replace")))
-    body = "\n".join(plain) if plain else "\n".join(html)
+            text = attachment_text(mime, fname, _data(body) or b"")
+            atts.append({"filename": fname[:200], "mime": mime, "text": text or "",
+                         "unreadable": text is None})
+        elif mime == "text/plain":
+            plain.append((_data(body) or b"").decode("utf-8", "replace"))
+        elif mime == "text/html":
+            html.append(_html_to_text((_data(body) or b"").decode("utf-8", "replace")))
+    body = "\n".join(plain) if any(x.strip() for x in plain) else "\n".join(html)
     try:
         sent = datetime.fromtimestamp(int(msg.get("internalDate")) / 1000,
                                       timezone.utc).isoformat(timespec="seconds")
@@ -159,7 +172,12 @@ def default_service():
     creds = Credentials.from_authorized_user_file(TOKEN)
     if not creds.valid:
         creds.refresh(Request())
-    return build("gmail", "v1", credentials=creds, cache_discovery=False)
+    svc = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    # The token could be re-authorised for another account: read only Glen's.
+    who = (svc.users().getProfile(userId="me").execute().get("emailAddress") or "").lower()
+    if who != MAILBOX:
+        raise PermissionError("the Gmail token is not for the drglen mailbox")
+    return svc
 
 
 def ingest(cx, email, service, *, days=DAYS, limit=LIMIT):
@@ -192,20 +210,23 @@ def ingest(cx, email, service, *, days=DAYS, limit=LIMIT):
     return {"listed": len(listed), "new": new}
 
 
-def stored_text(cx, email, *, limit=LIMIT, max_chars=MINE_MAX):
+def stored_text(cx, email, *, days=DAYS, limit=LIMIT, max_chars=MINE_MAX):
     """The stored messages as one text for mining, newest first."""
     ensure_table(cx)
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+    # The window applies to what is mined, not only to what is fetched (review round 2).
     rows = cx.execute("SELECT sent_at, subject, body, attachments FROM client_gmail_messages "
-                      "WHERE client_email=? ORDER BY sent_at DESC LIMIT ?",
-                      (email, limit)).fetchall()
-    parts = []
+                      "WHERE client_email=? AND sent_at >= ? ORDER BY sent_at DESC LIMIT ?",
+                      (email, since, limit)).fetchall()
+    parts, unreadable = [], 0
     for sent, subject, body, atts in rows:
         chunk = [f"email {(sent or '')[:10]}: {subject or ''}".strip(), body or ""]
         for a in json.loads(atts or "[]"):
+            unreadable += bool(a.get("unreadable"))
             if a.get("text"):
                 chunk.append(f"attachment {a.get('filename', '')}:\n{a['text']}")
         parts.append("\n".join(c for c in chunk if c))
-    return "\n\n".join(parts)[:max_chars]
+    return "\n\n".join(parts)[:max_chars], unreadable
 
 
 def client_email_text(cx, email, e4l_db, service_factory=default_service):
@@ -217,6 +238,9 @@ def client_email_text(cx, email, e4l_db, service_factory=default_service):
     if not email:
         return {"text": "", "held": 0, "error": None}
     n = people_on_address(e4l_db, email)
+    if n is None:
+        return {"text": "", "held": 0, "error": "Email was not read: E4L could not be "
+                                                 "checked for a shared address."}
     if n > 1:
         return {"text": "", "held": n, "error": None}
     error = None
@@ -225,6 +249,10 @@ def client_email_text(cx, email, e4l_db, service_factory=default_service):
     except Exception as e:
         error = f"Gmail could not be read ({type(e).__name__})."
     try:
-        return {"text": stored_text(cx, email), "held": 0, "error": error}
+        text, unreadable = stored_text(cx, email)
+        if unreadable:
+            note = f"{unreadable} attachment(s) could not be read."
+            error = f"{error} {note}" if error else note
+        return {"text": text, "held": 0, "error": error}
     except Exception as e:
         return {"text": "", "held": 0, "error": f"Stored email could not be read ({type(e).__name__})."}

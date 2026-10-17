@@ -20,6 +20,7 @@ import argparse
 import datetime
 import logging
 import os
+import sys
 import re
 import sqlite3
 import time
@@ -786,8 +787,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         fetch_fmp_history = _default_fetch_fmp_history
     # The client's own emails, read from the drglen mailbox (Glen, 2026-10-16). Never
     # under tests, and not without the local Gmail token.
+    # "pytest" in sys.modules also covers app creation at collection (review round 2).
     if (client_gmail is None and not os.environ.get("CI")
-            and not os.environ.get("PYTEST_CURRENT_TEST")):
+            and not os.environ.get("PYTEST_CURRENT_TEST") and "pytest" not in sys.modules):
         from dashboard import biofield_gmail as _bg
         if os.path.exists(_bg.TOKEN):
             client_gmail = lambda cx, email: _bg.client_email_text(cx, email, e4l_db)

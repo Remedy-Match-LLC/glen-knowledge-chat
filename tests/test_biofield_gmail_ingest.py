@@ -7,10 +7,14 @@ import base64
 import io
 import json
 import sqlite3
+import time
 
 import pytest
 
 from dashboard import biofield_gmail as bg
+
+
+_NOW_MS = int(time.time() * 1000) - 86400_000   # yesterday
 
 
 def _b(s):
@@ -34,8 +38,8 @@ def _pdf(text):
     return buf.getvalue()
 
 
-def _msg(mid, subject, body, ms=1760000000000, parts=()):
-    return {"id": mid, "internalDate": str(ms), "payload": {
+def _msg(mid, subject, body, ms=None, parts=()):
+    return {"id": mid, "internalDate": str(ms or _NOW_MS), "payload": {
         "mimeType": "multipart/mixed",
         "headers": [{"name": "Subject", "value": subject}],
         "parts": [{"mimeType": "text/plain", "body": {"data": _b(body)}}, *parts]}}
@@ -146,7 +150,7 @@ def test_gmail_down_still_returns_what_was_stored(tmp_path, e4l):
 
 
 def test_html_only_mail_is_read_as_text(tmp_path, e4l):
-    m = {"id": "h1", "internalDate": "1760000000000", "payload": {
+    m = {"id": "h1", "internalDate": str(_NOW_MS), "payload": {
         "mimeType": "text/html", "headers": [], "body": {"data": _b(
             "<p>Low&nbsp;energy</p><script>x()</script>")}}}
     cx = sqlite3.connect(str(tmp_path / "chat.db"))
@@ -156,7 +160,7 @@ def test_html_only_mail_is_read_as_text(tmp_path, e4l):
 
 def test_an_image_is_named_but_not_read():
     assert bg.attachment_text("image/jpeg", "eye.jpg", b"\xff\xd8") == ""
-    assert bg.attachment_text("application/pdf", "bad.pdf", b"not a pdf") == ""
+    assert bg.attachment_text("application/pdf", "bad.pdf", b"not a pdf") is None
 
 
 # --- the route --------------------------------------------------------------------
@@ -227,3 +231,91 @@ def test_a_held_address_is_named_on_the_page(tmp_path):
 def test_quoted_lines_and_the_reply_history_are_each_dropped():
     assert bg.strip_quoted("Mine\n> theirs\nMine too") == "Mine\n\nMine too".replace("\n\n", "\n")
     assert bg.strip_quoted("Mine\nOn Tue, 14 Oct 2026, Dr Glen wrote:\nTheir unquoted text") == "Mine"
+
+
+def _cx(tmp_path):
+    return sqlite3.connect(str(tmp_path / "chat.db"))
+
+
+def test_an_unreadable_e4l_db_holds_the_mail(tmp_path):
+    svc = FakeGmail([_msg("m1", "hi", "x")])
+    out = bg.client_email_text(_cx(tmp_path), "pat.test@example.com",
+                               str(tmp_path / "missing.db"), lambda: svc)
+    assert out["text"] == "" and "E4L could not be checked" in out["error"]
+    assert svc.calls == []
+
+
+def test_non_latin_names_are_still_two_people(tmp_path):
+    p = tmp_path / "e.db"; cx = sqlite3.connect(str(p))
+    cx.executescript("""CREATE TABLE e4l_clients(client_id INTEGER, name TEXT, email TEXT);
+        INSERT INTO e4l_clients VALUES(1,'田中','x.test@example.com');
+        INSERT INTO e4l_clients VALUES(2,'佐藤','x.test@example.com');""")
+    cx.commit(); cx.close()
+    assert bg.people_on_address(str(p), "x.test@example.com") == 2
+
+
+def test_mail_older_than_the_window_is_not_mined(tmp_path, e4l):
+    import time
+    old = int((time.time() - 400 * 86400) * 1000)
+    cx = _cx(tmp_path)
+    bg.client_email_text(cx, "pat.test@example.com", e4l,
+                         lambda: FakeGmail([_msg("o1", "old", "Ancient complaint", ms=old)]))
+    out = bg.client_email_text(cx, "pat.test@example.com", e4l, lambda: FakeGmail([]))
+    assert "Ancient complaint" not in out["text"]
+
+
+def test_an_unreadable_pdf_is_reported(tmp_path, e4l):
+    svc = FakeGmail([_msg("m1", "labs", "see attached", parts=[
+        {"mimeType": "application/pdf", "filename": "x.pdf", "body": {"data": _b(b"junk")}}])])
+    out = bg.client_email_text(_cx(tmp_path), "pat.test@example.com", e4l, lambda: svc)
+    assert "1 attachment(s) could not be read." in out["error"]
+
+
+def test_a_body_handed_by_attachment_id_is_fetched(tmp_path, e4l):
+    m = {"id": "b1", "internalDate": str(_NOW_MS), "payload": {
+        "mimeType": "text/plain", "headers": [], "body": {"attachmentId": "big"}}}
+    svc = FakeGmail([m], attachments={"big": "A long letter about headaches"})
+    out = bg.client_email_text(_cx(tmp_path), "pat.test@example.com", e4l, lambda: svc)
+    assert "headaches" in out["text"]
+
+
+def test_html_quoted_history_is_dropped(tmp_path, e4l):
+    html = ('<div>My own words</div><div class="gmail_quote">On Mon wrote<br>'
+            'Dr Glen old advice</div>')
+    m = {"id": "q1", "internalDate": str(_NOW_MS), "payload": {
+        "mimeType": "text/html", "headers": [], "body": {"data": _b(html)}}}
+    out = bg.client_email_text(_cx(tmp_path), "pat.test@example.com", e4l,
+                               lambda: FakeGmail([m]))
+    assert "My own words" in out["text"] and "old advice" not in out["text"]
+    assert "x" not in bg._html_to_text("<blockquote>x</blockquote>")
+
+
+def test_a_token_for_another_mailbox_is_refused(monkeypatch):
+    import types, sys as _s
+    class Svc(FakeGmail):
+        def getProfile(self, userId):
+            return _Exec({"emailAddress": "someone.else@example.com"})
+    fake_creds = types.SimpleNamespace(valid=True)
+    mods = {"google.oauth2.credentials": types.SimpleNamespace(
+                Credentials=types.SimpleNamespace(from_authorized_user_file=lambda p: fake_creds)),
+            "google.auth.transport.requests": types.SimpleNamespace(Request=object),
+            "googleapiclient.discovery": types.SimpleNamespace(build=lambda *a, **k: Svc([]))}
+    for k, v in mods.items():
+        monkeypatch.setitem(_s.modules, k, v)
+    with pytest.raises(PermissionError):
+        bg.default_service()
+
+
+def test_the_real_reader_is_never_wired_under_pytest(tmp_path, monkeypatch):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(bg, "TOKEN", str(tmp_path / "token.json"))
+    (tmp_path / "token.json").write_text("{}")
+    called = []
+    monkeypatch.setattr(bg, "client_email_text", lambda *a, **k: called.append(1) or {})
+    c = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: _NONE,
+                   fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: {},
+                   interpret_complete=lambda s, u: json.dumps({"stresses": []})).test_client()
+    tid = _new(c)
+    c.post(f"/author/{tid}/mine-comms", json={})
+    assert called == []
