@@ -42,7 +42,7 @@ def _seed_cx():
     """The portal's PRL tables, built in memory from the seed once per process."""
     global _SEED_CX
     if _SEED_CX is None:
-        cx = sqlite3.connect(":memory:", check_same_thread=False)
+        cx = sqlite3.connect(":memory:", check_same_thread=False)  # raw-sqlite-ok: in-memory PRL seed
         cx.row_factory = sqlite3.Row
         prl_supplement.init_tables(cx)
         prl_supplement.sync_from_seed(
@@ -390,7 +390,7 @@ def scan_item_codes(e4l_db, scan_id):
     """Every item code on one E4L scan, bare ("ED12", not "ED12 - Pancreas")."""
     if not scan_id or not e4l_db or not os.path.exists(e4l_db):
         return []
-    cx = sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)
+    cx = sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)  # raw-sqlite-ok: e4l.db, read only
     try:
         rows = cx.execute("SELECT item_code FROM e4l_scan_results WHERE scan_id=? "
                           "ORDER BY priority_rank", (scan_id,)).fetchall()
