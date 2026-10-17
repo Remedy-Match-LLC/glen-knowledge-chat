@@ -2702,6 +2702,26 @@ def render_layer_candidates_panel(layer_candidates):
             f"letter-spacing:.04em'>Layer alternatives</div>{blocks}</div>")
 
 
+# Glen, 2026-10-16: "The list needs to be categorized: 1. Body Energetics (e4l
+# findings) 2. Mind Observations (symptoms, conditions), and 3. Spirit (Biofield
+# findings: Terrain phase)". Which source is which is his 2026-09-18 ruling, kept in
+# biofield_program, so this list and the program can never disagree.
+STRESS_GROUPS = (("body", "Body Energetics", "E4L findings"),
+                 ("mind", "Mind Observations", "symptoms, conditions"),
+                 ("spirit", "Spirit", "Biofield findings"))
+
+
+def stress_group(source):
+    from dashboard.biofield_program import BODY_SOURCES, SPIRIT_SOURCES
+    source = (source or "").strip()
+    if source in BODY_SOURCES:
+        return "body"
+    # 'chain' rows came off the causal chain the Biofield test built.
+    if source in SPIRIT_SOURCES or source == "chain":
+        return "spirit"
+    return "mind"      # the Clinical summary, tags, comms, pasted notes, records
+
+
 def render_stress_panel(data):
     data = data or {}
     layer_options = "<option value=''>Select layer…</option>"
@@ -2752,7 +2772,18 @@ def render_stress_panel(data):
         # Per-layer grouping: every AI-created stress under each causal-chain layer
         # (covered-by-remedy or head match), a stress may appear under several layers.
         def _list(stresses, drag=False):
-            return "".join(_row(s, not s.get("balanced"), drag) for s in stresses or [])
+            groups = {}
+            for s in stresses or []:
+                groups.setdefault(stress_group(s.get("source")), []).append(s)
+            out = ""
+            for key, title, what in STRESS_GROUPS:
+                rows = "".join(_row(s, not s.get("balanced"), drag) for s in groups.get(key, []))
+                if rows:
+                    out += (f"<li class=stress-group data-group={key} style='list-style:none;"
+                            "margin:6px 0 2px -18px;font-size:11px;font-weight:700;"
+                            f"color:var(--muted)'>{title} <span style='font-weight:400'>"
+                            f"&middot; {what}</span></li>{rows}")
+            return out
         parts = []
         for L in data.get("by_layer") or []:
             sub = " &middot; ".join(x for x in [_e(L.get("head") or ""),
