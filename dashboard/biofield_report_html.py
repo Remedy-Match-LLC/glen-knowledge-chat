@@ -667,7 +667,7 @@ async function schedDrop(e){e.preventDefault();var zone=e.currentTarget;zone.cla
         bal = stresses.get("balanced") or []
         if bal:
             items = "".join(
-                f"<li><b>{_e(s.get('code') or '')}</b> {_e(s.get('label') or '')} "
+                f"<li>{_code_html(s)}{_e(s.get('label') or '')} "
                 f"<span class=food>&mdash; {_e(s.get('balanced_by') or '')}</span></li>"
                 for s in bal)
             stresses_section = ("<h2>Stresses balanced</h2>"
@@ -763,7 +763,13 @@ async function pickCondition(el){
  attachRemedyTo(el, answer);
 }
 function setStress(j){if(j&&j.html!==undefined)document.getElementById('stresspanel').innerHTML=j.html}
-async function loadStress(){try{setStress(await (await fetch('/author/__TID__/stresses')).json())}catch(e){}}
+async function loadStress(){try{var j=await (await fetch('/author/__TID__/stresses')).json();setStress(j);
+ // Sort new Mind stresses into Symptoms, Labs and Conditions, once per page load.
+ // Asked again only when the unsorted count changes, as after new stresses are mined.
+ if(j&&j.data&&j.data.unsorted>0&&window.__stressUnsorted!==j.data.unsorted){
+  window.__stressUnsorted=j.data.unsorted;
+  // A failed sort may still have kept earlier batches, so the list is refreshed then too.
+  var r=await post('/author/__TID__/stresses/sort',{});if(r&&(!r.ok||r.sorted>0))loadStress()}}catch(e){}}
 async function balanceStress(sid,val){await post('/author/__TID__/stress/'+sid+'/balance',{value:val});loadStress()}
 async function balanceToLayer(sid,sel){var rids=(sel.value||'').split(',').filter(Boolean);
  if(!rids.length){astat('Select a layer first.');return}
@@ -2840,6 +2846,17 @@ STRESS_GROUPS = (("body", "Body Energetics", "E4L findings"),
                  ("spirit", "Spirit", "Biofield findings"))
 
 
+def _code_html(s):
+    """The stress's code in bold, only where it says something the label does not.
+    A mined stress's code is its own label normalised, so it read "anemia anemia"
+    (Glen, 2026-10-16). Only an E4L scan code is a separate fact."""
+    from dashboard.biofield_stress import _norm
+    code = (s.get("code") or "").strip()
+    if not code or s.get("source") not in (None, "", "scan") or _norm(code) == _norm(s.get("label")):
+        return ""
+    return f"<b>{_e(code)}</b> "
+
+
 def stress_group(source):
     from dashboard.biofield_program import BODY_SOURCES, SPIRIT_SOURCES
     source = (source or "").strip()
@@ -2895,7 +2912,7 @@ def render_stress_panel(data):
         drag_attr = (f" class=sdrag draggable=true ondragstart=\"stressDragStart(event,{sid})\" "
                      "ondragend=stressDragEnd(event) title='Drag onto a layer to cover it'"
                      if drag else "")
-        return (f"<li{drag_attr}><b>{_e(s.get('code') or '')}</b> {_e(s.get('label') or '')} "
+        return (f"<li{drag_attr}>{_code_html(s)}{_e(s.get('label') or '')} "
                 f"<span class=pill>{tag}</span>{bytxt} {btn}{assign_btn}{delete_btn}</li>")
     if "by_layer" in data:
         # Per-layer grouping: every AI-created stress under each causal-chain layer
@@ -2906,12 +2923,26 @@ def render_stress_panel(data):
                 groups.setdefault(stress_group(s.get("source")), []).append(s)
             out = ""
             for key, title, what in STRESS_GROUPS:
-                rows = "".join(_row(s, not s.get("balanced"), drag) for s in groups.get(key, []))
-                if rows:
-                    out += (f"<li class=stress-group data-group={key} style='list-style:none;"
-                            "margin:6px 0 2px -18px;font-size:11px;font-weight:700;"
-                            f"color:var(--muted)'>{title} <span style='font-weight:400'>"
-                            f"&middot; {what}</span></li>{rows}")
+                members = groups.get(key, [])
+                if not members:
+                    continue
+                out += (f"<li class=stress-group data-group={key} style='list-style:none;"
+                        "margin:6px 0 2px -18px;font-size:11px;font-weight:700;"
+                        f"color:var(--muted)'>{title} <span style='font-weight:400'>"
+                        f"&middot; {what}</span></li>")
+                if key != "mind":
+                    out += "".join(_row(s, not s.get("balanced"), drag) for s in members)
+                    continue
+                # Glen, 2026-10-16: "categorize within Mind: Symptoms, Labs, Conditions".
+                # Unsorted, or not sorted yet, goes under Symptoms (his ruling).
+                from dashboard.stress_kinds import SUBGROUPS
+                for kind, name in SUBGROUPS:
+                    rows = "".join(_row(s, not s.get("balanced"), drag) for s in members
+                                   if (s.get("kind") or "symptom") == kind)
+                    if rows:
+                        out += (f"<li class=stress-subgroup data-kind={kind} "
+                                "style='list-style:none;margin:3px 0 1px -8px;font-size:11px;"
+                                f"font-style:italic;color:var(--muted)'>{name}</li>{rows}")
             return out
         parts = []
         for L in data.get("by_layer") or []:

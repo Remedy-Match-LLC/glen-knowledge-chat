@@ -2149,6 +2149,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             data = _st.list_stresses(cx, test_id, chain_rows)
         return {"data": data, "html": render_stress_panel(data)}
 
+    @app.route("/author/<test_id>/stresses/sort", methods=["POST"])
+    def author_sort_stresses(test_id):
+        """Sort this intake's unsorted Mind stresses into Symptoms, Labs and Conditions.
+        The page calls it once when the list says some are unsorted."""
+        from dashboard import biofield_stress as _st
+        from dashboard import stress_kinds as _sk
+        with sqlite3.connect(db_path) as cx:
+            rep = _report_for(cx, test_id)
+            data = _st.list_stresses(cx, test_id, _chain_rows_for(rep))
+            items = {i["id"]: i for i in data["active"] + data["balanced"]}
+            labels = _sk.unsorted_labels(cx, list(items.values()))
+            if not labels:
+                return {"ok": True, "sorted": 0}
+            try:
+                n = _sk.classify(cx, labels, interpret_complete)
+            except Exception as e:
+                cx.rollback()
+                return {"ok": False, "error": f"Could not sort ({type(e).__name__})."}
+        return {"ok": True, "sorted": n}
+
     def _do_stress_assign(test_id, stress_ids):
         """LLM-assign unassigned stress(es) each to their best-fit layer, then
         cover_stress. stress_ids=None -> all unassigned. Returns the refreshed panel."""
