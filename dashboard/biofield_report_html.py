@@ -230,10 +230,12 @@ _RECORDS_HTML = ("<style>.records{margin-top:14px;padding:10px 12px;border:1px d
     "+(f.subject?' &ldquo;'+esc(f.subject)+'&rdquo;':'')+(f.date?' &middot; dated '+esc(f.date):'')}"
     "function render(j,note){if(!j.ok){box.innerHTML='<div class=food>'+esc(j.error||'Records unavailable')+'</div>';return}"
     "var h='';if(j.held)h+='<div class=food>Records were not read: E4L shows more than one person on this address.</div>';"
-    "if(j.pending.length){h+='<h4>Findings from records to review ('+j.pending.length+')</h4>';"
-    "j.pending.forEach(function(f){h+='<div class=rf data-id='+f.id+'><div><span class=kind>'+esc(f.kind_label)+'</span>'"
-    "+'<input value=\"'+esc(f.text)+'\" aria-label=\"Finding wording\"><div class=src>'+src(f)+'</div></div>'"
-    "+'<div class=acts><button class=btn data-d=approve>Approve</button><button class=\"btn ghost\" data-d=reject>Reject</button></div></div>'})}"
+    "var p='';if(j.pending.length){p+='<div class=proposal-head><b>Proposed from records</b>'"
+    "+'<span>Check each against the record. Edit the wording before you add it.</span></div>';"
+    "j.pending.forEach(function(f){p+='<div class=\"proposal-row rf\" data-id='+f.id+'><div><span class=kind>'+esc(f.kind_label)+'</span>'"
+    "+'<input value=\"'+esc(f.text)+'\" aria-label=\"Finding wording\"><div class=proposal-evidence>'+src(f)+'</div></div>'"
+    "+'<div class=proposal-actions><button class=btn data-d=approve>Add</button><button class=\"btn ghost\" data-d=reject>Not relevant</button></div></div>'})}"
+    "var pbox=document.getElementById('recordProposals');if(pbox){pbox.innerHTML=p}else{h+=p}"
     "if(j.approved.length){h+='<h4>From records</h4>';j.approved.forEach(function(f){h+='<div class=rf><div><span class=kind>'"
     "+esc(f.kind_label)+'</span>'+esc(f.text)+'<div class=src>'+src(f)+'</div></div>'"
     "+'<div class=acts><button class=\"btn ghost\" data-d=withdraw data-id='+f.id+'>Withdraw</button></div></div>'})}"
@@ -252,12 +254,13 @@ _RECORDS_HTML = ("<style>.records{margin-top:14px;padding:10px 12px;border:1px d
     "j=await load(n);if(!r.ok||!r.read)break}}"
     "async function call(url,body){try{return await (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},"
     "body:JSON.stringify(body||{})})).json()}catch(e){return {ok:false,error:'The server did not answer. Nothing was changed.'}}}"
-    "box.addEventListener('click',async function(ev){"
+    "async function onClick(ev){"
     "if(ev.target.closest('button[data-retry]')){await call(base+'/retry');readAll();return}"
     "var b=ev.target.closest('button[data-d]');if(!b)return;"
     "var row=b.closest('.rf'),d=b.dataset.d,id=b.dataset.id||row.dataset.id,inp=row.querySelector('input');b.disabled=true;"
     "var r=await call(base+'/'+id,{decision:d,text:inp?inp.value:''});b.disabled=false;"
-    "if(r.ok&&d!=='reject'&&/Diagnosis/.test(row.textContent)){location.reload();return}load(r.ok?'':r.error)});"
+    "if(r.ok&&d!=='reject'&&/Diagnosis/.test(row.textContent)){location.reload();return}load(r.ok?'':r.error)}"
+    "box.addEventListener('click',onClick);var pb=document.getElementById('recordProposals');if(pb)pb.addEventListener('click',onClick);"
     "readAll()})();</script>")
 
 def _page(title, body, client_name="", client_email=""):
@@ -2290,7 +2293,10 @@ def render_clinical_proposals():
             ".proposal-row:last-child{border-radius:0 0 9px 9px}.proposal-evidence{max-width:760px;margin-top:3px;"
             "font-size:11px;line-height:1.35;color:var(--muted)}.proposal-actions{display:flex;gap:6px}"
             "@media(max-width:700px){.proposal-head{display:block}.proposal-row{grid-template-columns:1fr}}"
-            "</style><section id=clinicalProposals class=clinical-proposals aria-live=polite></section>")
+            ".proposal-row input{width:100%;margin:4px 0 0;padding:5px}"
+            # One review place (Glen, 2026-10-16: "one box"): communications and records.
+            "</style><section class=clinical-proposals aria-live=polite>"
+            "<div id=clinicalProposals></div><div id=recordProposals></div></section>")
 
 
 def _render_fold_notice(groups):

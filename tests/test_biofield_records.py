@@ -536,14 +536,41 @@ def test_the_panel_renders_hostile_record_text_inert():
              "approved": [{"id": 2, "kind": "diagnosis", "kind_label": "Diagnosis",
                            "text": bad, "date": "", "filename": bad, "page": None,
                            "email_date": bad, "subject": bad}]}
-    harness = ("var box={innerHTML:'',addEventListener:function(){}};"
-               "global.document={getElementById:function(){return box}};"
+    harness = ("var box={innerHTML:'',addEventListener:function(){}},"
+               "pbox={innerHTML:'',addEventListener:function(){}};"
+               "global.document={getElementById:function(id){"
+               "return id==='recordProposals'?pbox:box}};"
                "global.location={pathname:'/author/a1'};"
                "global.fetch=async function(){return {json:async function(){return "
                + json.dumps(reply) + "}}};" + js +
-               ";setTimeout(function(){process.stdout.write(box.innerHTML)},50);")
+               ";setTimeout(function(){process.stdout.write(pbox.innerHTML+'|||'+box.innerHTML)},50);")
     html = subprocess.run(["node", "-e", harness], capture_output=True, text=True,
                           timeout=20).stdout
-    assert "Findings from records to review" in html and "From records" in html
+    proposed, listed = html.split("|||")
+    # One review place: pending findings sit in the proposals box (Glen: "one box").
+    assert "Proposed from records" in proposed and ">Add<" in proposed
+    assert "Not relevant" in proposed and "Proposed from records" not in listed
+    assert "From records" in listed
     assert bad not in html and "<img" not in html and "' onfocus='" not in html
     assert html.count("&lt;img src=x") >= 8      # each field shown, escaped
+
+
+
+def test_a_photo_with_no_text_is_noted_not_failed(tmp_path):
+    files = {"m1": {"Josie 1.jpeg": ("image/jpeg", b"x")}}
+    cx = _cx(tmp_path, files)
+
+    def blank(mime, name, data, **k):
+        raise br.NoText("none")
+    got = br.read_records(cx, EMAIL, FakeGmail(files), _model([]), extract=blank)
+    f = br.findings(cx, EMAIL)
+    assert got["failed"] == 0 and f["failed"] == []
+    assert f["notes"] == ["Josie 1.jpeg: a photo with no text in it"]
+
+
+def test_the_proposals_box_holds_both_sources():
+    from dashboard.biofield_report_html import _RECORDS_HTML
+    import dashboard.biofield_report_html as h
+    src = open(h.__file__).read()
+    assert "<div id=clinicalProposals></div><div id=recordProposals></div>" in src
+    assert "getElementById('recordProposals')" in _RECORDS_HTML

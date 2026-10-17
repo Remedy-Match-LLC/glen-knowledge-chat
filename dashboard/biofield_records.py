@@ -290,6 +290,10 @@ def _attachment_bytes(service, message_id, part, filename):
     return _b64(got.get("data"))
 
 
+def br_kind(rec):
+    return record_kind(rec.get("mime"), rec.get("filename"))
+
+
 _LOCKS = {}
 _LOCKS_GUARD = threading.Lock()
 
@@ -343,7 +347,11 @@ def read_records(cx, email, service, complete, *, budget=BUDGET, clock=None,
                     found = ask(complete, pages, name)
                     error = None
                 except NoText:
-                    pages, found, error, final = [], [], "no words could be read", True
+                    if br_kind(rec) == "image":
+                        # A photo, not a document: say so rather than "failed".
+                        pages, found, error, note = [], [], None, "a photo with no text in it"
+                    else:
+                        pages, found, error, final = [], [], "no words could be read", True
                 except Exception as e:      # OCR, a broken file, or the model
                     pages, found, error = [], [], type(e).__name__
             if error and not unreached:
