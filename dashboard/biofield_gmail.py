@@ -78,7 +78,7 @@ def people_on_address(e4l_db, email):
     (review round 2). One person's duplicate E4L accounts count once; a name with no
     Latin letters is compared as written."""
     try:
-        with sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True) as cx:
+        with sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True) as cx:  # raw-sqlite-ok: e4l.db, read only
             rows = cx.execute("SELECT name FROM e4l_clients WHERE lower(trim(email))=?",
                               (email,)).fetchall()
     except sqlite3.Error:

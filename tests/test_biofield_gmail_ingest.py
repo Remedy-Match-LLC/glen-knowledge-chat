@@ -105,6 +105,7 @@ def e4l(tmp_path):
 
 
 def test_a_message_and_its_pdf_are_stored_and_read_back(tmp_path, e4l):
+    pytest.importorskip("pypdf")
     svc = FakeGmail([_msg("m1", "My eyes", "Floaters since June.\n\nOn Mon, Dr Glen wrote:\n> old")],
                     )
     svc.messages_by_id["m1"]["payload"]["parts"].append(
@@ -164,7 +165,7 @@ def test_html_only_mail_is_read_as_text(tmp_path, e4l):
 def test_an_image_is_named_but_not_read():
     assert bg.attachment_text("image/jpeg", "eye.jpg", b"\xff\xd8") == ""
     assert bg.attachment_text("text/rtf", "notes.rtf", b"{\\rtf1\\ansi Hi}") == ""
-    assert bg.attachment_text("application/pdf", "bad.pdf", b"not a pdf") is None
+
 
 
 # --- the route --------------------------------------------------------------------
@@ -275,6 +276,8 @@ def test_mail_older_than_the_window_is_not_mined(tmp_path, e4l):
 
 
 def test_an_unreadable_pdf_is_reported(tmp_path, e4l):
+    pytest.importorskip("pypdf")
+    assert bg.attachment_text("application/pdf", "bad.pdf", b"not a pdf") is None
     svc = FakeGmail([_msg("m1", "labs", "see attached", parts=[
         {"mimeType": "application/pdf", "filename": "x.pdf", "body": {"data": _b(b"junk")}}])])
     out = bg.client_email_text(_cx(tmp_path), "pat.test@example.com", e4l, lambda: svc)
