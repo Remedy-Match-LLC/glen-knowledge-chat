@@ -1919,8 +1919,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         newer = bool(after.get("found") and (
             not before.get("found")
             or (after.get("scan_date") or "") > (before.get("scan_date") or "")))
+        # One line per refresh, so "it needed two clicks" can be read back later.
+        print(f"[e4l-refresh] {datetime.datetime.now().isoformat(timespec='seconds')} "
+              f"test {test_id}: ok={bool(res.get('ok'))} newer={newer} "
+              f"new_scans={res.get('new_scans', '?')} "
+              f"download_errors={res.get('download_errors', '?')} "
+              f"latest={after.get('scan_date') or '-'}"
+              + (f" error={str(res.get('error'))[:120]!r}" if res.get("error") else ""),
+              flush=True)
         return {"ok": bool(res.get("ok")), "error": res.get("error"),
-                "newer": newer, "e4l": after, "html": render_e4l_panel(after)}
+                "newer": newer, "download_errors": res.get("download_errors", 0),
+                "e4l": after, "html": render_e4l_panel(after)}
 
     @app.route("/author/<test_id>/species", methods=["POST"])
     def author_species_answer(test_id):

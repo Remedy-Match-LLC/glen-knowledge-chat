@@ -12,6 +12,7 @@ the vault tool `02 Skills/e4l_synthesis.py`, which is not importable by this app
 """
 import datetime
 import os
+import re
 import subprocess
 import sqlite3
 from dashboard import db
@@ -345,11 +346,19 @@ def _default_fetch_runner(client_id=None, name=None):
     parser = os.path.join(vault, "02 Skills", "parse-e4l-scans.py")
     sel = (["--client", str(client_id)] if client_id is not None
            else ["--client-name", str(name)])
-    subprocess.run(["python3", scraper, *sel], check=True, capture_output=True,
-                   text=True, timeout=180)
+    scraped = subprocess.run(["python3", scraper, *sel], check=True, capture_output=True,
+                             text=True, timeout=180)
     subprocess.run(["python3", parser], check=True, capture_output=True,
                    text=True, timeout=120)
-    return {"ok": True}
+    return {"ok": True, **scrape_counts(scraped.stdout)}
+
+
+def scrape_counts(stdout):
+    """What the scraper reported: scans the portal listed as new, and PDFs that failed
+    to download. It exits 0 either way, so this is the only record of either."""
+    text = stdout or ""
+    return {"new_scans": sum(int(n) for n in re.findall(r"(\d+) new scan\(s\)", text)),
+            "download_errors": len(re.findall(r"download error scan", text))}
 
 
 def fetch_live(client_id=None, name=None, *, runner=None):

@@ -21,12 +21,35 @@ import os
 import urllib.parse
 
 
-def local_tool_url(base_env, default_base, secret, path="/"):
+def console_back_path(referrer, host):
+    """The console page the launcher was clicked from, as a path, or "".
+
+    Only a same-host /console page counts, so the local tool's back button can never
+    be pointed anywhere else."""
+    try:
+        u = urllib.parse.urlsplit(referrer or "")
+    except ValueError:
+        return ""
+    if not host or u.netloc.lower() != host.lower() or u.scheme not in ("http", "https"):
+        return ""
+    path = u.path or ""
+    if not (path == "/console" or path.startswith("/console/")) or "//" in path:
+        return ""
+    if path.startswith("/console/biofield-intake"):
+        return ""
+    return path + ("?" + u.query if u.query else "")
+
+
+def local_tool_url(base_env, default_base, secret, path="/", back=""):
     """Where to send the browser for a local tool. `secret` is the server's own
-    current console key; a blank one yields a keyless URL rather than `?key=`."""
+    current console key; a blank one yields a keyless URL rather than `?key=`.
+    `back` is the console path the tool's back button returns to."""
     base = (os.environ.get(base_env) or default_base).rstrip("/")
     path = "/" + (path or "").strip("/")
     secret = (secret or "").strip()
-    if not secret:
-        return base + path
-    return base + path + "?key=" + urllib.parse.quote(secret, safe="")
+    params = []
+    if secret:
+        params.append("key=" + urllib.parse.quote(secret, safe=""))
+    if back:
+        params.append("back=" + urllib.parse.quote(back, safe=""))
+    return base + path + ("?" + "&".join(params) if params else "")

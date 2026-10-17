@@ -4,6 +4,7 @@ Pure string builders so they're unit-testable without Flask. ALL dynamic values
 (remedy names, timing, client names) come from FileMaker free-text fields and are
 HTML-escaped.
 """
+import json
 import os
 from html import escape as _e
 from urllib.parse import quote as _q
@@ -194,14 +195,26 @@ def _bar(client_name="", client_email=""):
     return ("<nav class=opbar><span class=opbrand>GLEN <b>&middot;</b> OPS</span>"
             "<span class=opsub>Biofield Intake</span>" + who_html + "<span class=opspacer></span>"
             "<a class=optab href='/'>All tests</a>"
-            f"<a class=optab href='{CONSOLE_BASE}/console'>&larr; Console</a></nav>")
+            f"<a class=optab id=opconsole href='{CONSOLE_BASE}/console'>&larr; Console</a></nav>")
+
+
+# "← Console" returns to the console page the launcher was opened from. The launcher
+# passes it as ?back=<path>; it is kept for the tab and only ever a /console path on
+# CONSOLE_BASE, so the button cannot be pointed at another site.
+_BACK_JS = ("<script>(function(){var a=document.getElementById('opconsole');if(!a)return;"
+            "var ok=function(p){return typeof p==='string'&&/^\\/console(\\/|\\?|$)/.test(p)"
+            "&&p.indexOf('//')<0&&p.indexOf('\\\\')<0;};var p='';"
+            "try{var q=new URLSearchParams(location.search).get('back');"
+            "if(ok(q))sessionStorage.setItem('opConsoleBack',q);"
+            "p=sessionStorage.getItem('opConsoleBack')||'';}catch(e){}"
+            "if(ok(p))a.href=" + json.dumps(CONSOLE_BASE) + "+p;})();</script>")
 
 
 def _page(title, body, client_name="", client_email=""):
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{_e(title)}</title>{_STYLE}</head>"
-            f"<body>{_bar(client_name, client_email)}<div class=wrap>{body}</div></body></html>")
+            f"<body>{_bar(client_name, client_email)}{_BACK_JS}<div class=wrap>{body}</div></body></html>")
 
 
 # The Match pillar's four steps (mirrors prod static/op-nav.js — kept in sync by hand since
@@ -820,7 +833,7 @@ async function checkE4L(){
  try{var cid=val('h_client_id');
   var j=await post('/author/__TID__/e4l/refresh',{client_id:cid?Number(cid):(E4L_CLIENT_ID!=null?E4L_CLIENT_ID:null)});
   setE4L(j);var s2=document.getElementById('e4lchk');
-  if(s2)s2.textContent=j.ok?(j.newer?'\\u2191 Newer scan pulled.':'\\u2713 Up to date.'):('E4L check failed: '+((j.error||'error')+'').slice(0,120));
+  if(s2)s2.textContent=j.ok?(j.newer?'\\u2191 Newer scan pulled.':(j.download_errors?'E4L listed a scan but the download failed; try again in a minute.':'No newer scan yet. E4L may still be processing; try again in a minute.')):('E4L check failed: '+((j.error||'error')+'').slice(0,120));
  }catch(e){var s3=document.getElementById('e4lchk');if(s3)s3.textContent='E4L check failed.'}
 }
 async function addRow(){var b=rowVals('new');if(!b.head&&!b.remedy){astat('Enter a stress and a remedy.');return}
