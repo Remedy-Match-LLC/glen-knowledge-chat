@@ -2054,15 +2054,15 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             f"onclick=removeGroupFactor(this) title='Take this factor out of the item' "
             f"aria-label=\"Remove {_e(f)}\">&times;</button></span>"
             for f in item.get("factors") or [])
-        add_factor = ""
-        if free_factors:
-            add_factor = (f"<select class=clinical-factor-add data-item=\"{_e(item_name)}\" "
-                          "onchange=addGroupFactor(this) aria-label='Add a factor to this item'>"
-                          "<option value=''>Add a factor&hellip;</option>"
-                          + "".join(f"<option value=\"{_e(f)}\">{_e(f)}</option>"
-                                    for f in free_factors) + "</select>")
-        factors_html = (f"<div class=clinical-factors>Factors: {factor_bits}{add_factor}</div>"
-                        if factor_bits or add_factor else "")
+        # Search the intake's free factors, or type a new one (Glen, 2026-10-16).
+        add_factor = (f"<span class=clinical-factor-new><input class=clinical-factor-add "
+                      f"list=groupFactorOptions data-item=\"{_e(item_name)}\" "
+                      "placeholder='Add a factor&hellip;' autocomplete=off "
+                      "aria-label='Search or type a factor to add to this item' "
+                      "onkeydown=\"if(event.key==='Enter'){event.preventDefault();"
+                      "addGroupFactor(this)}\"><button type=button class='btn ghost' "
+                      "onclick=addGroupFactor(this.previousElementSibling)>+ Factor</button></span>")
+        factors_html = f"<div class=clinical-factors>Factors: {factor_bits}{add_factor}</div>"
         common = "".join(
             f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
             f"{' checked' if name.strip().lower() in chosen else ''}"
@@ -2229,8 +2229,9 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "border:1px solid var(--line);border-radius:10px;color:var(--text)}"
             ".clinical-factor-x{border:0;background:transparent;color:var(--muted);font-size:14px;"
             "line-height:1;padding:0 2px;cursor:pointer}.clinical-factor-x:hover{color:#ef8d8d}"
-            ".clinical-factor-add{max-width:260px;min-width:0;margin:0;padding:3px 6px;font-size:12px;"
-            "text-overflow:ellipsis}"
+            ".clinical-factor-new{display:inline-flex;gap:4px;align-items:center}"
+            ".clinical-factor-add{width:220px;max-width:100%;min-width:0;margin:0;padding:3px 6px;"
+            "font-size:12px}.clinical-factor-new .btn{font-size:11px;padding:3px 8px}"
             ".clinical-label{font-weight:650;line-height:1.25}.clinical-remedy,.clinical-open{font-size:11px;margin-top:2px}"
             ".clinical-remedy{color:var(--ok)}.clinical-open{color:var(--muted)}"
             ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(160px,1fr) minmax(260px,1.25fr) auto;gap:8px;margin-top:9px;align-items:end}"
@@ -2273,6 +2274,10 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "<span id=clinicalOrderStat style='margin-left:8px'></span></div></div>"
             f"{warn_html}"
             f"<div class=clinical-grid>{rows}</div>"
+            # One list for every row's factor search box.
+            + "<datalist id=groupFactorOptions>"
+            + "".join(f"<option value=\"{_e(f)}\"></option>" for f in free_factors or [])
+            + "</datalist>"
             f"{intake_strip}"
             "<div class=clinical-add><input id=clinicalNew list=clinicalCatalog autocomplete=off placeholder='Search or add symptom or condition…' "
             "onkeydown=\"if(event.key==='Enter'){event.preventDefault();addClinicalItem()}\">"
@@ -2335,10 +2340,14 @@ function card(g,pool,onApprove,onDismiss){
   cb.checked=on;cb._factor=f;lab.appendChild(cb);lab.appendChild(document.createTextNode(' '+f));
   list.appendChild(lab)}
  (g.factors||[]).forEach(function(f){addBox(f.factor,true)});
- var pick=el('select');pick.appendChild(el('option',null,'Add a factor…')).value='';
- pool.forEach(function(f){var o=el('option',null,f);o.value=f;pick.appendChild(o)});
- pick.onchange=function(){if(pick.value){addBox(pick.value,true);pick.value=''}};
- if(pool.length)left.appendChild(pick);
+ // Search the free factors, or type a new one (Glen, 2026-10-16).
+ var adder=el('span','group-adder'),pick=el('input'),plus=el('button','btn ghost','+ Factor');
+ pick.setAttribute('list','groupCardOptions');pick.placeholder='Add a factor…';
+ pick.setAttribute('autocomplete','off');pick.setAttribute('aria-label','Search or type a factor');
+ function take(){var v=(pick.value||'').trim();if(v){addBox(v,true);pick.value=''}}
+ pick.onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();take()}};
+ plus.type='button';plus.onclick=take;adder.appendChild(pick);adder.appendChild(plus);
+ left.appendChild(adder);
  var ok=el('button','btn',g.id?'Approve':'Add item');var no=g.id?el('button','btn ghost','Dismiss'):null;
  ok.onclick=async function(){var picked=[].slice.call(list.querySelectorAll('input'))
    .filter(function(c){return c.checked}).map(function(c){return c._factor});
@@ -2365,12 +2374,15 @@ async function load(){
  // Any open proposal's factor can be moved into another group, as can a free one.
  var inOpen=[];proposed.forEach(function(g){g.factors.forEach(function(f){inOpen.push(f.factor)})});
  var pool=free.concat(inOpen);
+ var opts=document.getElementById('groupCardOptions');
+ if(!opts){opts=el('datalist');opts.id='groupCardOptions';document.body.appendChild(opts)}
+ opts.textContent='';pool.forEach(function(f){var o=el('option');o.value=f;opts.appendChild(o)});
  proposed.forEach(function(g){box.appendChild(card(g,pool,
-  async function(name,picked){var r=await send('/approve',{group_id:g.id,name:name,factors:picked});
+  async function(name,picked){var r=await send('/approve',{group_id:g.id,name:name,factors:picked,typed:true});
    if(r.ok)location.reload();return r},
   async function(){var r=await send('/'+g.id+'/dismiss');if(r.ok)load();return r}))});
- if(pool.length){box.appendChild(card({name:'',factors:[]},pool,
-  async function(name,picked){var r=await send('/approve',{name:name,factors:picked});
+ {box.appendChild(card({name:'',factors:[]},pool,
+  async function(name,picked){var r=await send('/approve',{name:name,factors:picked,typed:true});
    if(r.ok)location.reload();return r},null))}
 }
 // The Clinical Summary rows render after this box, so their controls read their own
@@ -2378,9 +2390,10 @@ async function load(){
 window.removeGroupFactor=async function(btn){btn.disabled=true;var r=await send('/remove-factor',
  {name:btn.getAttribute('data-item'),factor:btn.getAttribute('data-factor')});
  if(r.ok)location.reload();else{btn.disabled=false;alert(r.error||'Not removed.')}};
-window.addGroupFactor=async function(sel){if(!sel.value)return;sel.disabled=true;
- var r=await send('/approve',{name:sel.getAttribute('data-item'),factors:[sel.value]});
- if(r.ok)location.reload();else{sel.disabled=false;alert(r.error||'Not added.')}};
+window.addGroupFactor=async function(inp){var v=(inp.value||'').trim();if(!v)return;
+ inp.disabled=true;
+ var r=await send('/approve',{name:inp.getAttribute('data-item'),factors:[v],typed:true});
+ if(r.ok)location.reload();else{inp.disabled=false;alert(r.error||'Not added.')}};
 load()})()</script>"""
 
 def render_clinical_proposals():

@@ -3096,8 +3096,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             factors, _ = _group_factors(cx, test_id)
             if factors is None:
                 return {"ok": False, "error": "That intake does not exist."}, 404
+            email = _test_email(cx, test_id)
             done = _cg.approve(cx, test_id, factors, body.get("name"),
-                               [str(w) for w in wanted], group_id=gid)
+                               [str(w) for w in wanted], group_id=gid,
+                               typed_ok=body.get("typed") is True,
+                               blocked=_cg.record_keys(cx, email) if email else ())
         if done is None:
             return {"ok": False, "error": "Give the item a name and at least one factor "
                                           "from this intake."}, 400

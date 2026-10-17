@@ -216,15 +216,32 @@ def _drop_proposed(cx, test_id):
         cx.execute("DELETE FROM biofield_clinical_groups WHERE id=?", (gid,))
 
 
-def _known(factors, wanted):
-    """The wanted factor texts that are this intake's factors, as factor dicts."""
+# Glen, 2026-10-16: "I need to be able to add a factor to a stress pattern by search
+# and also by typing." A typed factor lives on the item only; it is not a stress.
+TYPED_MAX = 120
+
+
+def _known(factors, wanted, typed_ok=False, blocked=()):
+    """The wanted factor texts as factor dicts: this intake's own, and, when typed_ok,
+    anything else he typed, kept as kind 'typed'. A typed text whose key is in
+    `blocked` (the client's record findings) is refused, so a finding hidden on a
+    shared address cannot come back as 'typed' (review round 1)."""
     by_key = {item_key(f["factor"]): f for f in factors}
     out, seen = [], set()
     for w in wanted or []:
         key = item_key(w)
-        if key in by_key and key not in seen:
-            seen.add(key)
-            out.append(by_key[key])
+        if key in by_key:
+            if key not in seen:
+                seen.add(key)
+                out.append(by_key[key])
+        elif typed_ok:
+            # Capped first, then matched, so a long entry cannot pass as another factor
+            # or appear twice (review round 2).
+            text = _clean(w, TYPED_MAX)
+            tkey = item_key(text)
+            if tkey and tkey not in seen and (tkey in by_key or tkey not in blocked):
+                seen.add(tkey)
+                out.append(by_key.get(tkey) or {"factor": text, "kind": "typed"})
     return out
 
 
@@ -283,7 +300,8 @@ def _label_for_key(cx, test_id, key):
     return None
 
 
-def approve(cx, test_id, factors, name, wanted, group_id=None):
+def approve(cx, test_id, factors, name, wanted, group_id=None, typed_ok=False,
+            blocked=()):
     """Make `name` a Clinical Summary item holding the wanted factors.
 
     Glen's edits arrive here: the name as he left it, and the factors he kept ticked or
@@ -292,7 +310,9 @@ def approve(cx, test_id, factors, name, wanted, group_id=None):
     """
     ensure_schema(cx)
     name = _clean(canonical_name(cx, test_id, " ".join(str(name or "").split())), NAME_MAX)
-    picked = _known(factors, wanted)
+    if blocked is None:            # the findings could not be read
+        typed_ok, blocked = False, ()
+    picked = _known(factors, wanted, typed_ok, set(blocked))
     if not item_key(name) or not picked:
         return None
     # A write, not a read, so this claims the database's lock before checking: a
@@ -325,7 +345,7 @@ def approve(cx, test_id, factors, name, wanted, group_id=None):
     if (decisions(cx, test_id).get(item_key(name)) or {}).get("status") != "accepted":
         # Stress wording only. A record finding's text stays in the grouping store,
         # where it is hidden if the address becomes shared (review round 3).
-        said = [f["factor"] for f in picked if f["kind"] == "stress"]
+        said = [f["factor"] for f in picked if f["kind"] != "record"]
         n_rec = len(picked) - len(said)
         decide(cx, test_id, name, "accepted", "Grouped: " + ", ".join(
             said + ([f"{n_rec} record finding(s)"] if n_rec else [])))
@@ -378,3 +398,23 @@ def on_hidden_items(cx, test_id, records_ok=True):
     return [f for g in groups(cx, test_id, records_ok) if g["status"] == "approved"
             and item_key(canonical_name(cx, test_id, g["name"])) in hidden
             for f in g["factors"]]
+
+
+def record_keys(cx, email):
+    """The keys of every record finding stored for this address, in any status, both
+    whole and cut to a typed factor's length, since a typed entry is cut before it is
+    matched (review round 3). None when they could not be read: typing is then
+    refused rather than left unguarded."""
+    if not cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                      "AND name='client_record_findings'").fetchone():
+        return set()
+    try:
+        rows = cx.execute("SELECT text FROM client_record_findings WHERE client_email=?",
+                          (email,)).fetchall()
+    except Exception:
+        return None
+    out = set()
+    for (text,) in rows:
+        out.add(item_key(text))
+        out.add(item_key(_clean(text, TYPED_MAX)))
+    return out - {""}
