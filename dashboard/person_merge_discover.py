@@ -28,6 +28,8 @@ HISTORY_TABLES = frozenset({
     "sms_consent_events",             # a text consent log keyed by phone; never rewritten
     # Found in production on 2026-09-27 (prod-queries/merge-unclassified-tables.py):
     "fmp_clients",                    # a FileMaker mirror; the next FileMaker sync rewrites it
+    "client_email_fills",             # the email found for a FileMaker row (2026-10-16); a
+    #                                   merge must not move it, its unique email would collide
     "escalation_queue", "identity_consolidation_audit", "membership_reconcile_alerts",
     "query_log", "remedy_match_email_sent", "review_link_tokens",
     "email_identity_aliases",         # an older alias table (people pillar); left as it is
