@@ -1555,6 +1555,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                   if item_key(item.get("label")) not in hidden]
             clinical_checklist = apply_order(cx, test_id, clinical_checklist)
             clinical_checklist = apply_selection(cx, test_id, clinical_checklist)
+            # Each item's grouped factors, kept as their own list (Glen, 2026-10-16:
+            # "separate"), and the factors still free to add to one.
+            clinical_free_factors = None
+            try:
+                from dashboard import biofield_clinical_groups as _cg
+                _gfactors, _records_ok = _group_factors(cx, test_id)
+                _fmap = _cg.item_factors(cx, test_id, _records_ok)
+                for _item in clinical_checklist:
+                    # Keyed on the row's canonical label, which approve() maps every
+                    # typed name to, as every other row action does.
+                    _item["factors"] = _fmap.get(item_key(_item.get("label"))) or []
+                # A factor whose item is hidden from this checklist would show nowhere,
+                # so it is offered again (review round 3).
+                _shown = {item_key(_i.get("label")) for _i in clinical_checklist}
+                clinical_free_factors = [
+                    f["factor"] for f in
+                    _cg.ungrouped(cx, test_id, _gfactors or [])] + [
+                    f for k, fs in _fmap.items() if k not in _shown for f in fs]
+            except Exception as _ge:
+                print(f"[clinical-groups] {test_id}: skipped: {_ge!r}", flush=True)
         with sqlite3.connect(db_path) as cx:
             fstate = biofield_fee.build_fee_state(c_email, fee_get, get_no_charge(cx, test_id))
         # What this client has been dispensed before, ranked. Best-effort: a
@@ -1632,6 +1652,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                            narrative=narrative, fee_state=fstate,
                                            narrative_warnings=_narr_warnings,
                                            clinical_checklist=clinical_checklist,
+                                           clinical_free_factors=clinical_free_factors,
                                            dispensed=dispensed,
                                            dispensed_error=dispensed_error,
                                            intake_priorities=(profile or {}).get(
@@ -3001,6 +3022,97 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if held is None or held > 1:
                 return {"ok": False, "error": "This address is shared."}, 400
             ok = _br.decide(cx, email, finding_id, body.get("decision"), body.get("text"))
+        return ({"ok": True}, 200) if ok else ({"ok": False, "error": "Not changed"}, 400)
+
+    def _group_factors(cx, test_id):
+        """(factors, records_ok) for this intake, or (None, False) when it does not
+        exist. Pending record findings join only for an address that is not shared,
+        and records_ok says whether stored record factors may be shown."""
+        from dashboard import biofield_clinical_groups as _cg
+        from dashboard import biofield_records as _br
+        from dashboard.biofield_gmail import people_on_address
+        from dashboard.biofield_authoring import init_auth_tables
+        if not re.fullmatch(r"a[1-9][0-9]*", str(test_id)):
+            return None, False
+        init_auth_tables(cx)
+        if not cx.execute("SELECT 1 FROM biofield_auth_tests WHERE id=?",
+                          (int(str(test_id)[1:]),)).fetchone():
+            return None, False
+        records = None
+        email = _test_email(cx, test_id)
+        if email:
+            try:
+                held = people_on_address(e4l_db, email)
+                if held is not None and held <= 1:
+                    records = _br.findings(cx, email)["pending"]
+            except Exception:
+                records = None
+        return _cg.factors_for(cx, test_id, records), records is not None
+
+    @app.route("/author/<test_id>/clinical-groups")
+    def author_clinical_groups(test_id):
+        """Open proposals and the factors not yet in any group."""
+        from dashboard import biofield_clinical_groups as _cg
+        with sqlite3.connect(db_path) as cx:
+            factors, records_ok = _group_factors(cx, test_id)
+            if factors is None:
+                return {"ok": False, "error": "That intake does not exist."}, 404
+            return {"ok": True,
+                    "proposed": [g for g in _cg.groups(cx, test_id, records_ok)
+                                 if g["status"] == "proposed" and g["factors"]],
+                    "ungrouped": _cg.ungrouped(cx, test_id, factors)
+                    + _cg.on_hidden_items(cx, test_id, records_ok)}
+
+    @app.route("/author/<test_id>/clinical-groups/propose", methods=["POST"])
+    def author_propose_clinical_groups(test_id):
+        """Ask the model to group the ungrouped factors. Nothing is approved here."""
+        from dashboard import biofield_clinical_groups as _cg
+        with sqlite3.connect(db_path) as cx:
+            factors, _ = _group_factors(cx, test_id)
+            if factors is None:
+                return {"ok": False, "error": "That intake does not exist."}, 404
+            try:
+                out = _cg.propose(cx, test_id, factors, interpret_complete)
+            except Exception as e:
+                cx.rollback()
+                return {"ok": False,
+                        "error": f"Groupings could not be proposed ({type(e).__name__})."}
+        return {"ok": True, **out}
+
+    @app.route("/author/<test_id>/clinical-groups/approve", methods=["POST"])
+    def author_approve_clinical_group(test_id):
+        """Approve a proposal as edited, or add factors to a named item."""
+        from dashboard import biofield_clinical_groups as _cg
+        body = request.get_json(silent=True) or {}
+        wanted = body.get("factors") if isinstance(body.get("factors"), list) else []
+        gid = body.get("group_id")
+        if gid is not None and (isinstance(gid, bool) or not isinstance(gid, int)
+                                or not 0 < gid < 2 ** 63):
+            return {"ok": False, "error": "Unknown group"}, 400
+        with sqlite3.connect(db_path) as cx:
+            factors, _ = _group_factors(cx, test_id)
+            if factors is None:
+                return {"ok": False, "error": "That intake does not exist."}, 404
+            done = _cg.approve(cx, test_id, factors, body.get("name"),
+                               [str(w) for w in wanted], group_id=gid)
+        if done is None:
+            return {"ok": False, "error": "Give the item a name and at least one factor "
+                                          "from this intake."}, 400
+        return {"ok": True, "group_id": done}
+
+    @app.route("/author/<test_id>/clinical-groups/<int:group_id>/dismiss", methods=["POST"])
+    def author_dismiss_clinical_group(test_id, group_id):
+        from dashboard import biofield_clinical_groups as _cg
+        with sqlite3.connect(db_path) as cx:
+            ok = _cg.dismiss(cx, test_id, group_id)
+        return ({"ok": True}, 200) if ok else ({"ok": False, "error": "Not changed"}, 400)
+
+    @app.route("/author/<test_id>/clinical-groups/remove-factor", methods=["POST"])
+    def author_remove_group_factor(test_id):
+        from dashboard import biofield_clinical_groups as _cg
+        body = request.get_json(silent=True) or {}
+        with sqlite3.connect(db_path) as cx:
+            ok = _cg.remove_factor(cx, test_id, body.get("name"), body.get("factor"))
         return ({"ok": True}, 200) if ok else ({"ok": False, "error": "Not changed"}, 400)
 
     @app.route("/author/<test_id>/clinical-items", methods=["POST"])

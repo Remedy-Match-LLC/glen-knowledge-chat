@@ -1997,7 +1997,7 @@ def _summary_bottles_chip(name, bottles_by_remedy, unavailable=False):
 def render_clinical_checklist(items, layers=None, intake_priorities=None,
                              profile_unavailable=False, alias_map=None,
                              display_map=None, bottles_by_remedy=None,
-                             bottles_unavailable=False):
+                             bottles_unavailable=False, free_factors=None):
     """Scannable editable checklist; completion follows the current remedy program."""
     items = items or []
     layer_groups = group_layers(layers or [])
@@ -2045,6 +2045,24 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
         remedy = (f"<span class=clinical-remedy>Layer {_e(str(item.get('layer') or '?'))} · {_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
+        # The factors grouped into this item, kept as their own list (Glen, 2026-10-16:
+        # "separate"). The item's own name is what the grouping store keys on.
+        item_name = label
+        factor_bits = "".join(
+            f"<span class=clinical-factor>{_e(f)}<button type=button class=clinical-factor-x "
+            f"data-item=\"{_e(item_name)}\" data-factor=\"{_e(f)}\" "
+            f"onclick=removeGroupFactor(this) title='Take this factor out of the item' "
+            f"aria-label=\"Remove {_e(f)}\">&times;</button></span>"
+            for f in item.get("factors") or [])
+        add_factor = ""
+        if free_factors:
+            add_factor = (f"<select class=clinical-factor-add data-item=\"{_e(item_name)}\" "
+                          "onchange=addGroupFactor(this) aria-label='Add a factor to this item'>"
+                          "<option value=''>Add a factor&hellip;</option>"
+                          + "".join(f"<option value=\"{_e(f)}\">{_e(f)}</option>"
+                                    for f in free_factors) + "</select>")
+        factors_html = (f"<div class=clinical-factors>Factors: {factor_bits}{add_factor}</div>"
+                        if factor_bits or add_factor else "")
         common = "".join(
             f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
             f"{' checked' if name.strip().lower() in chosen else ''}"
@@ -2071,6 +2089,7 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
                  # data-label above stays CANONICAL: every action on this row keys off
                  # it, so showing a different name must not change what is stored.
                  f"<span class=clinical-label>{_e(item.get('display_label') or label)}</span>{remedy}"
+                 f"{factors_html}"
                  f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
                  f"<div class=clinical-stress-row><label class=clinical-stress-label>Stress pattern (head &amp; tail)"
                  f"{'<span class=clinical-stress-hint>suggested</span>' if item.get('pattern_is_suggested') else ''}"
@@ -2284,6 +2303,76 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "<div id=progresult class=food style='margin-top:6px'></div></section>")
 
 
+
+# Proposed groupings of the client's factors, each one a Clinical Summary item. Glen,
+# 2026-10-16: "Propose those groupings and names for approval or editing." Built with
+# DOM calls, never innerHTML, so a factor's wording is only ever text.
+_GROUPS_HTML = """<div id=groupProposals></div><script>(function(){
+var m=location.pathname.match(/^\\/author\\/(a[0-9]+)/);if(!m)return;
+var base='/author/'+m[1]+'/clinical-groups',box=document.getElementById('groupProposals');
+function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;
+ if(text!=null)e.textContent=text;return e}
+async function send(path,body){var r=await fetch(base+path,{method:'POST',
+ headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+ try{return await r.json()}catch(e){return {ok:false,error:'The server returned an error.'}}}
+function card(g,pool,onApprove,onDismiss){
+ var row=el('div','proposal-row group-row'),left=el('div'),acts=el('div','proposal-actions');
+ var name=el('input');name.value=g.name||'';name.placeholder='Name for this Clinical Summary item';
+ name.setAttribute('aria-label','Item name');left.appendChild(name);
+ if(g.why)left.appendChild(el('div','proposal-evidence',g.why));
+ var list=el('div','group-factors');left.appendChild(list);
+ function addBox(f,on){var lab=el('label','group-factor'),cb=el('input');cb.type='checkbox';
+  cb.checked=on;cb._factor=f;lab.appendChild(cb);lab.appendChild(document.createTextNode(' '+f));
+  list.appendChild(lab)}
+ (g.factors||[]).forEach(function(f){addBox(f.factor,true)});
+ var pick=el('select');pick.appendChild(el('option',null,'Add a factor…')).value='';
+ pool.forEach(function(f){var o=el('option',null,f);o.value=f;pick.appendChild(o)});
+ pick.onchange=function(){if(pick.value){addBox(pick.value,true);pick.value=''}};
+ if(pool.length)left.appendChild(pick);
+ var ok=el('button','btn',g.id?'Approve':'Add item');var no=g.id?el('button','btn ghost','Dismiss'):null;
+ ok.onclick=async function(){var picked=[].slice.call(list.querySelectorAll('input'))
+   .filter(function(c){return c.checked}).map(function(c){return c._factor});
+  ok.disabled=true;var j=await onApprove(name.value.trim(),picked);
+  if(!j.ok){ok.disabled=false;alert(j.error||'Not approved.')}};
+ acts.appendChild(ok);
+ if(no){no.onclick=async function(){no.disabled=true;var j=await onDismiss();
+  if(!j.ok){no.disabled=false;alert(j.error||'Not dismissed.')}};acts.appendChild(no)}
+ row.appendChild(left);row.appendChild(acts);return row}
+async function load(){
+ var j;try{j=await (await fetch(base)).json()}catch(e){box.textContent='';return}
+ if(!j.ok){box.textContent='';return}
+ box.textContent='';var head=el('div','proposal-head');head.appendChild(el('b',null,'Proposed groupings'));
+ var free=(j.ungrouped||[]).map(function(f){return f.factor});
+ var proposed=j.proposed||[];
+ head.appendChild(el('span',null,free.length+' factor'+(free.length==1?'':'s')+
+  ' not in any group. Each approved group becomes one Clinical Summary item.'));
+ var go=el('button','btn ghost',proposed.length?'Propose again':'Propose groupings');
+ var stat=el('span');head.appendChild(go);head.appendChild(stat);box.appendChild(head);
+ go.onclick=async function(){go.disabled=true;stat.textContent=' Asking…';
+  var r=await send('/propose');go.disabled=false;
+  if(!r.ok){stat.textContent=' '+(r.error||'Could not propose.');return}
+  load()};
+ // Any open proposal's factor can be moved into another group, as can a free one.
+ var inOpen=[];proposed.forEach(function(g){g.factors.forEach(function(f){inOpen.push(f.factor)})});
+ var pool=free.concat(inOpen);
+ proposed.forEach(function(g){box.appendChild(card(g,pool,
+  async function(name,picked){var r=await send('/approve',{group_id:g.id,name:name,factors:picked});
+   if(r.ok)location.reload();return r},
+  async function(){var r=await send('/'+g.id+'/dismiss');if(r.ok)load();return r}))});
+ if(pool.length){box.appendChild(card({name:'',factors:[]},pool,
+  async function(name,picked){var r=await send('/approve',{name:name,factors:picked});
+   if(r.ok)location.reload();return r},null))}
+}
+// The Clinical Summary rows render after this box, so their controls read their own
+// data attributes when used.
+window.removeGroupFactor=async function(btn){btn.disabled=true;var r=await send('/remove-factor',
+ {name:btn.getAttribute('data-item'),factor:btn.getAttribute('data-factor')});
+ if(r.ok)location.reload();else{btn.disabled=false;alert(r.error||'Not removed.')}};
+window.addGroupFactor=async function(sel){if(!sel.value)return;sel.disabled=true;
+ var r=await send('/approve',{name:sel.getAttribute('data-item'),factors:[sel.value]});
+ if(r.ok)location.reload();else{sel.disabled=false;alert(r.error||'Not added.')}};
+load()})()</script>"""
+
 def render_clinical_proposals():
     return ("<style>.clinical-proposals{margin:18px 0 8px}.proposal-head{display:flex;gap:10px;"
             "align-items:baseline;padding:10px 12px;border:1px solid #a56a25;border-radius:9px 9px 0 0;"
@@ -2294,9 +2383,15 @@ def render_clinical_proposals():
             "font-size:11px;line-height:1.35;color:var(--muted)}.proposal-actions{display:flex;gap:6px}"
             "@media(max-width:700px){.proposal-head{display:block}.proposal-row{grid-template-columns:1fr}}"
             ".proposal-row input{width:100%;margin:4px 0 0;padding:5px}"
+            ".group-factors{display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0;font-size:12px}"
+            ".proposal-row .group-factor input{width:auto;margin:0;padding:0}"
+            ".clinical-factors{margin:4px 0 2px 26px;font-size:12px;color:var(--muted)}"
+            ".clinical-factor{display:inline-block;margin:0 10px 2px 0;color:var(--ink,inherit)}"
+            ".clinical-factor-x{border:0;background:none;color:var(--muted);cursor:pointer}"
             # One review place (Glen, 2026-10-16: "one box"): communications and records.
             "</style><section class=clinical-proposals aria-live=polite>"
-            "<div id=clinicalProposals></div><div id=recordProposals></div></section>")
+            "<div id=clinicalProposals></div><div id=recordProposals></div>"
+            + _GROUPS_HTML + "</section>")
 
 
 def _render_fold_notice(groups):
@@ -2338,7 +2433,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                        clinical_checklist=None, dispensed=None, dispensed_error=None,
                        intake_priorities=None,
                        profile_unavailable=False, alias_map=None, display_map=None,
-                       narrative_warnings=None, history_links_html=""):
+                       narrative_warnings=None, history_links_html="",
+                       clinical_free_factors=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -2477,7 +2573,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                                             profile_unavailable=profile_unavailable,
                                             alias_map=alias_map, display_map=display_map,
                                             bottles_by_remedy=_bottles_by_remedy(dispensed),
-                                            bottles_unavailable=bool(dispensed_error))
+                                            bottles_unavailable=bool(dispensed_error),
+                                            free_factors=clinical_free_factors)
                  + history_links_html
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
