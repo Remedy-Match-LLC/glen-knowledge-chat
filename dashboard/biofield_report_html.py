@@ -1387,7 +1387,12 @@ function toggleClinicalItem(box){
   return;
  }
  row.classList.toggle('selected',box.checked);
- if(box.checked){var select=row.querySelector('.clinical-layer');if(select)select.focus()}
+ if(box.checked){var select=row.querySelector('.clinical-layer');if(select)select.focus();return}
+ // Glen, 2026-10-16: "I can't manually uncheck the category either." Unticking the row
+ // unticks its remedies and saves that; the saved ticks re-ticked it on every reload.
+ [].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
+  .forEach(function(x){x.checked=false});
+ selectClinicalRemedy(box)
 }
 async function selectClinicalRemedy(box){
  var row=box.closest('.clinical-item');if(!row)return;
@@ -2015,7 +2020,11 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
     checked = sum(1 for item in items if item.get("checked"))
     rows = ""
     for item in items:
-        done = bool(item.get("checked"))
+        # "Done" means a remedy on the causal chain covers it. A saved tick sets
+        # `checked` too (apply_selection), and reading that as done drew a ticked row as
+        # layer-covered, so unticking every remedy could not untick the row (Glen,
+        # 2026-10-16). Ticks alone make the row selected, which unticks freely.
+        done = bool(item.get("checked")) and bool((item.get("covered_by") or "").strip())
         # A saved tick set wins over the derived coverage, so the practitioner's own
         # ticks survive the location.reload() every other action on this page fires.
         if item.get("selection_saved"):
