@@ -286,3 +286,16 @@ def test_page_has_paste_box_and_posts_to_route():
 def test_paste_source_is_in_the_mind_stage():
     from dashboard.biofield_program import MIND_SOURCES
     assert "paste" in MIND_SOURCES
+
+
+def test_a_family_history_label_gets_18_more_characters(tmp_path):
+    """Review round 3: the 80-character cap that keeps copied text out also cut off
+    'family history of ...' labels. The prefix gets its own 18 characters, no more."""
+    fits = "family history of " + "x" * 80          # 98 characters
+    too_long = "family history of " + "x" * 81      # 99
+    plain = "y" * 81                                # the old cap still holds elsewhere
+    client = _app(str(tmp_path / "c.db"), stresses=[fits, too_long, plain]).test_client()
+    tid = _new(client)
+    j = client.post(f"/author/{tid}/mine-paste", json={"text": "notes"}).get_json()
+    assert j["added"] == 1 and j["skipped"] == 2
+    assert [s["label"] for s in _stresses(client, tid)] == [fits]

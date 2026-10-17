@@ -144,6 +144,13 @@ _STRESS_SYSTEM = (
     "- 'the stress is X', 'I'm seeing X', 'also X', 'there's X here' -> X is a stress.\n"
     "- If a remedy is named (e.g. 'balanced by Neuro Magnesium'), do NOT include the remedy; you MAY "
     "include the stress it balances if that stress is named.\n"
+    # Glen, 2026-10-16: "Family history is a relevant category ... relevant for
+    # prevention as a risk factor." A bare "diabetes" lost that it was the mother's.
+    "- A condition the text says runs in the family, or that a relative has (parent, "
+    "grandparent, sibling, child, aunt, uncle), is family history: name it "
+    "'family history of X' (e.g. 'family history of diabetes'). Keep every one named, "
+    "whichever relative has it; each is a risk factor. If the person has it too, list both: 'X' and 'family history of X'. When "
+    "someone writes on the person's behalf, the person's own conditions stay their own.\n"
     "- Deduplicate. If nothing is parseable, return an empty list."
 )
 

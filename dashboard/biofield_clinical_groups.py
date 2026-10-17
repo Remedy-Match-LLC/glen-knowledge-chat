@@ -62,8 +62,11 @@ def factors_for(cx, test_id, record_findings=None):
     init_stress_tables(cx)
     out, seen = [], set()
     marks = ",".join("?" for _ in MIND_SOURCES)
+    # Family history spoken during testing is stored as a voice stress. It belongs in
+    # the Family history item all the same (review round 1). Scan rows never do.
     rows = cx.execute(
-        f"SELECT label FROM biofield_auth_stress WHERE test_id=? AND source IN ({marks}) "
+        f"SELECT label FROM biofield_auth_stress WHERE test_id=? AND (source IN ({marks}) "
+        "OR (source<>'scan' AND lower(trim(label)) LIKE 'family history of %')) "
         "ORDER BY id", (_num(test_id), *MIND_SOURCES)).fetchall()
     for (label,) in rows:
         text, key = _clean(label, FACTOR_MAX), item_key(label)
@@ -126,6 +129,9 @@ def build_prompt(factors):
         "or one body system. Name each group in plain words, under 40 characters, "
         "such as 'Cataract and vision' or 'Liver and gallbladder'. A lab result or a "
         "medication joins the group it informs. A group may hold a single factor. "
+        # Glen, 2026-10-16: family history is its own Clinical Summary item.
+        "Every factor that begins 'family history of' goes in one group named "
+        "'Family history'. "
         "Use each factor number at most once, and leave out a factor that fits no group. "
         'Reply with JSON only: {"groups": [{"name": "...", "factors": [1, 2], '
         '"why": "one short sentence"}]}')
