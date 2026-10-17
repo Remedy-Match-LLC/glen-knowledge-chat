@@ -705,6 +705,20 @@ function orderToken(kind){
 function rowVals(p){return {layer:val(p+'_layer'),head:val(p+'_head'),most_affected:val(p+'_most'),
  remedy:val(p+'_remedy'),dosage:val(p+'_dosage'),frequency:val(p+'_frequency'),timing:val(p+'_timing')}}
 function setE4L(j){if(j&&j.html!==undefined)document.getElementById('e4lpanel').innerHTML=j.html}
+async function prlAct(el,action,value){
+ var area=el.closest('.prl-area');if(!area)return;
+ if(action==='rating'){var v=(value||'').trim().toUpperCase();
+  if(!/^[1-9X]{3}$/.test(v)){el.classList.add('bad');el.title='Three of 1-9 or X, such as X74';return}
+  value=v}
+ var j=await post('/author/__TID__/prl',{focus_area_id:area.dataset.fa,action:action,
+  name:el.dataset.name||null,value:value===undefined?null:value});
+ if(!(j&&j.ok)){el.title=(j&&j.error)||'Could not save'}
+ // Redraw: a tick can change the group box, the All box and the empty flag.
+ loadE4L()}
+async function prlApprove(btn){
+ var area=btn.closest('.prl-area');if(!area)return;btn.disabled=true;
+ var j=await post('/author/__TID__/prl/approve',{focus_area_id:area.dataset.fa,name:btn.dataset.name});
+ if(!(j&&j.ok))btn.disabled=false;loadE4L()}
 async function loadE4L(){try{setE4L(await (await fetch('/author/__TID__/e4l')).json())}catch(e){}}
 // Previously dispensed: a reference list, so it loads lazily and stays closed
 // until asked for. Conditions come from the same curated catalogue the clinical
@@ -1578,7 +1592,123 @@ def _row_inputs(p, l):
         + f'<td><input id="{p}_timing" value="{g("timing")}"></td>')
 
 
-def render_e4l_panel(ctx):
+_PRL_CHOICES = (
+    ("bare", "List it bare"),
+    ("foods", "Add dietary suggestions"),
+    ("nutrients", "Add nutrients"),
+    ("omit", "Leave it out"),
+)
+
+
+def _prl_preview(entry, choice):
+    if choice == "foods":
+        bits = [f"Emphasize: {_e(i['name'])} <span class=food>({_e(i['condition'])})</span>"
+                for i in entry["foods"]["emphasize"]]
+        bits += [f"Avoid: {_e(i['name'])} <span class=food>({_e(i['condition'])})</span>"
+                 for i in entry["foods"]["avoid"]]
+    else:
+        bits = [f"{_e(i['name'])}" + (f", {_e(i['dose'])}" if i.get("dose") else "")
+                + f" <span class=food>({_e(i['condition'])})</span>" for i in entry["nutrients"]]
+    return "".join(f"<li>{b}</li>" for b in bits)
+
+
+def render_prl_section(view):
+    """PRL products by the scan's focus areas (Glen, 2026-10-17). Each area has a
+    group box, an All box and one box per product; ratings sort each area."""
+    view = view or {}
+    areas = view.get("areas") or []
+    title = "<div class=food style='font-weight:600'>PRL supplements</div>"
+    if not areas:
+        return (f"<div class=prl-section style='margin-top:8px'>{title}"
+                "<div class=food>This scan hits none of the PRL focus areas.</div></div>")
+    out = []
+    for a in areas:
+        fa = _e(str(a["focus_area_id"]))
+        items = ""
+        for i in a["items"]:
+            name = _e(i["name"])
+            why = " · ".join(x for x in (i.get("reason"), i.get("source")) if x)
+            flags = ""
+            if i.get("lowers_bp"):
+                flags += "<span class=clinical-section-flag>lowers BP</span>"
+            if i.get("botanical"):
+                flags += "<span class=clinical-section-flag>botanical</span>"
+            if i.get("rated") and not i.get("reviewed"):
+                flags += ("<span class='clinical-section-flag unreviewed'>not reviewed</span>"
+                          f"<button type=button class='btn ghost prl-approve' data-name=\"{name}\" "
+                          "onclick=prlApprove(this)>Approve</button>")
+            ff = i.get("ff")
+            ff_html = (f"<span class=food>FF: {_e(ff['name'])} ({_e(ff['relation'])})</span>"
+                       if ff else "")
+            link = (f"<a href=\"{_e(i['url'])}\" target=_blank rel=noopener>{name}</a>"
+                    if i.get("url") else name)
+            note = f"<span class=clinical-section-note>{_e(i['note'])}</span>" if i.get("note") else ""
+            items += (f"<div class=prl-item title=\"{_e(why)}\">"
+                      f"<input class=prl-rating value=\"{_e(i.get('rating') or '')}\" maxlength=3 "
+                      f"size=3 placeholder='---' data-name=\"{name}\" "
+                      "title='Overall, research, uniqueness. 10 is X.' "
+                      f"aria-label=\"Rating for {name}\" onchange=\"prlAct(this,'rating',this.value)\">"
+                      f"<label><input type=checkbox class=prl-choice data-name=\"{name}\""
+                      f"{' checked' if i.get('checked') else ''} "
+                      "onchange=\"prlAct(this,this.checked?'item_on':'item_off')\"> "
+                      f"{link}</label>{ff_html}{flags}{note}</div>")
+        if a.get("botanical_hidden"):
+            n = a["botanical_hidden"]
+            items += (f"<div class=food>{n} botanical product{'s' if n != 1 else ''} "
+                      "hidden for this client</div>")
+        flag = ""
+        if a.get("empty"):
+            linked = a.get("linked") or []
+            choice = a.get("empty_choice") or ""
+            radios = ""
+            for key, label in _PRL_CHOICES:
+                needs = key in ("foods", "nutrients")
+                has = bool(a["foods"]["emphasize"] or a["foods"]["avoid"]) if key == "foods" \
+                    else bool(a["nutrients"]) if key == "nutrients" else True
+                off = needs and not has
+                radios += (f"<label><input type=radio name=prlempty{fa} value={key}"
+                           f"{' checked' if choice == key else ''}{' disabled' if off else ''} "
+                           f"onchange=\"prlAct(this,'empty_choice','{key}')\"> {label}</label>")
+            if not linked:
+                why = ("This focus area matches none of her Clinical Summary conditions, "
+                       "so there are no foods or nutrients to add.")
+            elif not (a["foods"]["emphasize"] or a["foods"]["avoid"] or a["nutrients"]):
+                why = (f"Matched {_e(', '.join(linked))}, but nothing is listed there yet.")
+            else:
+                why = f"Suggestions come from {_e(', '.join(linked))}."
+            preview = ""
+            if choice in ("foods", "nutrients"):
+                preview = f"<ul class=prl-preview>{_prl_preview(a, choice)}</ul>"
+            flag = ("<div class=prl-empty><b>Ticked with no product.</b> "
+                    "Confirm how it shows in her report.<div class=prl-choices>"
+                    f"{radios}</div><div class=food>{why}</div>{preview}</div>")
+        out.append(
+            f"<div class=prl-area data-fa=\"{fa}\"><div class=prl-head>"
+            f"<label><input type=checkbox class=prl-group{' checked' if a.get('checked') else ''} "
+            "onchange=\"prlAct(this,this.checked?'group_on':'group_off')\"> "
+            f"<b>{_e(a['name'])}</b></label>"
+            f"<label class=prl-all><input type=checkbox class=prl-allbox"
+            f"{' checked' if a.get('all_on') else ''} "
+            "onchange=\"prlAct(this,this.checked?'all_on':'all_off')\"> All</label>"
+            f"<span class=food>{_e(str(a.get('hits')))} scan item{'s' if a.get('hits') != 1 else ''}"
+            f"</span></div>{items}{flag}</div>")
+    style = ("<style>.prl-area{margin:6px 0;padding:6px 8px;border:1px solid var(--line);border-radius:7px}"
+             ".prl-head,.prl-item,.prl-choices{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}"
+             ".prl-item{margin:2px 0 2px 18px;font-size:12px}.prl-item input,.prl-head input,.prl-choices input{width:auto;margin:0 3px 0 0}"
+             ".prl-item input.prl-rating{width:3.6em;padding:1px 4px;font-size:11px;font-family:monospace;text-align:center;"
+             "color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:4px}"
+             ".prl-item input.prl-rating.bad{outline:2px solid #c0392b}"
+             ".prl-empty{margin:4px 0 2px 18px;padding:6px 8px;border:1px solid #a56a25;border-radius:7px;"
+             "background:rgba(196,125,39,.12);font-size:12px}.prl-preview{margin:4px 0 0;padding-left:18px}"
+             ".clinical-section-flag{border:1px solid var(--muted);border-radius:8px;padding:0 5px;font-size:10px}"
+             ".clinical-section-flag.unreviewed{border-color:#a56a25;color:#d9a05b}"
+             ".prl-approve{font-size:10px;padding:1px 6px}.clinical-section-note{font-style:italic}</style>")
+    return (f"{style}<div class=prl-section style='margin-top:8px'>{title}"
+            f"<div class=food>Checked products go in her report with the PRL sign-up link "
+            f"{_e(view.get('prl_link') or '')}.</div>{''.join(out)}</div>")
+
+
+def render_e4l_panel(ctx, prl_html=""):
     """Reference panel for the most recent E4L voice scan (fresh / stale / none).
     Always shows the scan's age + ranked findings when one exists; read-only —
     Glen's spoken testing still fills the causal chain. All scan free-text escaped."""
@@ -1616,6 +1746,7 @@ def render_e4l_panel(ctx):
         info = [f for f in allf if f.get("group") != "stress"]
         stress = [f for f in allf if f.get("group") == "stress"]
     body = (_section("Infoceuticals", "", info)
+            + (prl_html or "")
             + _section("Stresses", "information only, no balancing vial", stress))
     note = ("<div class=food style='margin-top:6px'>Reference only &mdash; your spoken "
             "testing fills the chain.</div>") if ctx.get("found") else ""
