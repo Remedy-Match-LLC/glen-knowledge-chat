@@ -49776,7 +49776,9 @@ def _is_owner_scope(scope) -> bool:
     if not scope or scope == "admin":
         return scope == "admin"
     owner = _owner_from_scope(scope)
-    return bool(owner) and _bos_rbac.role_for_owner(owner) == _bos_rbac.OWNER
+    # Exactly a named owner: not "owner", not a case or spacing variant (round 1).
+    return (owner in ("glen", "rae")
+            and _bos_rbac.role_for_owner(owner) == _bos_rbac.OWNER)
 
 
 def _owner_from_scope(scope: str):
@@ -50093,7 +50095,10 @@ def todo_messages_post(todo_id):
         return jsonify({"error":"Empty content"}), 400
 
     # Role-spoofing guard: scoped users may only post as themselves.
-    if ctx.get("scope") != "admin" and role != ctx.get("user_name"):
+    # A sign-in-link session's user_name is "console-owner-<hash>", so its scope's owner
+    # counts as itself too; Rae and Glen were refused every message (review round 1).
+    if (ctx.get("scope") != "admin" and role != ctx.get("user_name")
+            and role != _owner_from_scope(ctx.get("scope", ""))):
         return jsonify({"error":"Forbidden — cannot post as another user"}), 403
 
     with _db_lock, db.connect(LOG_DB) as cx:

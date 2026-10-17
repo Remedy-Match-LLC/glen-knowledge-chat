@@ -70,3 +70,15 @@ def test_rae_passes_a_route_scoped_to_another_workspace(app, monkeypatch):
     with app.app.test_request_context(headers={"X-Console-Key": "tok-sh"}):
         ok, ctx, code = app._auth("workspace:glen")
     assert (ok, code) == (False, 403)
+
+
+def test_only_a_named_owner_scope_counts(app):
+    for s in ("workspace:owner", "workspace:Rae", "workspace:rae ", "workspace:glen "):
+        assert not app._is_owner_scope(s), s
+
+
+def test_the_calendar_owners_check_asks_rbac(app):
+    """Source check only: the calendar route needs a calendar database to run."""
+    src = open(app.__file__).read()
+    start = src.index("# Owners by scope: an owner (admin, or Rae's workspace:rae)")
+    assert "if _is_owner_scope(ctx.get(\"scope\")):" in src[start:start + 300]
