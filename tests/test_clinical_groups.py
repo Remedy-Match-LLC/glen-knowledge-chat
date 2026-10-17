@@ -500,3 +500,13 @@ def test_a_hidden_rows_factors_are_offered_again(tmp_path):
     assert 'data-label="Lens"' not in page
     free = c.get(f"/author/{tid}/clinical-groups").get_json()["ungrouped"]
     assert {"factor": "cataract", "kind": "stress"} in free
+
+
+def test_the_factor_row_sits_in_the_content_column():
+    """Glen, 2026-10-16: items overlapped. With no column the factor row fell into the
+    22px tick-box column and ran over the controls below it."""
+    from dashboard.biofield_report_html import render_clinical_checklist
+    html = render_clinical_checklist([{"label": "Blood", "factors": ["anemia"]}],
+                                     free_factors=["a very long record finding " * 5])
+    assert ".clinical-factors{grid-column:3;" in html
+    assert ".clinical-factor-add{max-width:260px;" in html
