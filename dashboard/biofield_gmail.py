@@ -129,6 +129,8 @@ def _html_to_text(html):
 
 def _readable(mime, filename):
     mime, name = (mime or "").lower(), (filename or "").lower()
+    if "rtf" in mime or name.endswith(".rtf"):
+        return False      # raw RTF is markup, not words (found on a live mailbox)
     return (mime == "application/pdf" or name.endswith((".pdf", ".txt", ".csv"))
             or mime.startswith("text/"))
 
@@ -138,6 +140,8 @@ def attachment_text(mime, filename, data):
     (images, Word files). The file itself is never kept."""
     mime = (mime or "").lower()
     name = (filename or "").lower()
+    if not _readable(mime, filename):
+        return ""
     try:
         if mime == "application/pdf" or name.endswith(".pdf"):
             from pypdf import PdfReader

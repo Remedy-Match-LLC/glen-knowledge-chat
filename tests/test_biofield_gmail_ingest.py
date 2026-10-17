@@ -163,6 +163,7 @@ def test_html_only_mail_is_read_as_text(tmp_path, e4l):
 
 def test_an_image_is_named_but_not_read():
     assert bg.attachment_text("image/jpeg", "eye.jpg", b"\xff\xd8") == ""
+    assert bg.attachment_text("text/rtf", "notes.rtf", b"{\\rtf1\\ansi Hi}") == ""
     assert bg.attachment_text("application/pdf", "bad.pdf", b"not a pdf") is None
 
 
