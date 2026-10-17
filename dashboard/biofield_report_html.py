@@ -2221,6 +2221,16 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".intake-combine{display:inline-flex;gap:5px;margin-left:8px;vertical-align:middle}"
             ".intake-combine select{font-size:11px;padding:1px 3px;max-width:190px}"
             ".intake-combine .btn{font-size:11px;padding:2px 7px}"
+            # Glen, 2026-10-16: the factor list overlapped the controls. It had no column,
+            # so the grid put it in the 22px tick-box column and it ran over the rows below.
+            ".clinical-factors{grid-column:3;display:flex;flex-wrap:wrap;align-items:center;"
+            "gap:4px 6px;margin-top:6px;font-size:12px;color:var(--muted)}"
+            ".clinical-factor{display:inline-flex;align-items:center;gap:2px;padding:1px 4px 1px 8px;"
+            "border:1px solid var(--line);border-radius:10px;color:var(--text)}"
+            ".clinical-factor-x{border:0;background:transparent;color:var(--muted);font-size:14px;"
+            "line-height:1;padding:0 2px;cursor:pointer}.clinical-factor-x:hover{color:#ef8d8d}"
+            ".clinical-factor-add{max-width:260px;min-width:0;margin:0;padding:3px 6px;font-size:12px;"
+            "text-overflow:ellipsis}"
             ".clinical-label{font-weight:650;line-height:1.25}.clinical-remedy,.clinical-open{font-size:11px;margin-top:2px}"
             ".clinical-remedy{color:var(--ok)}.clinical-open{color:var(--muted)}"
             ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(160px,1fr) minmax(260px,1.25fr) auto;gap:8px;margin-top:9px;align-items:end}"
@@ -2385,9 +2395,9 @@ def render_clinical_proposals():
             ".proposal-row input{width:100%;margin:4px 0 0;padding:5px}"
             ".group-factors{display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0;font-size:12px}"
             ".proposal-row .group-factor input{width:auto;margin:0;padding:0}"
-            ".clinical-factors{margin:4px 0 2px 26px;font-size:12px;color:var(--muted)}"
-            ".clinical-factor{display:inline-block;margin:0 10px 2px 0;color:var(--ink,inherit)}"
-            ".clinical-factor-x{border:0;background:none;color:var(--muted);cursor:pointer}"
+            ".group-row select{max-width:100%;text-overflow:ellipsis}"
+            ".group-row .proposal-actions{align-self:start}"
+
             # One review place (Glen, 2026-10-16: "one box"): communications and records.
             "</style><section class=clinical-proposals aria-live=polite>"
             "<div id=clinicalProposals></div><div id=recordProposals></div>"
