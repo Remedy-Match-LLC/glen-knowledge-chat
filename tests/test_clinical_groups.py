@@ -230,8 +230,11 @@ def test_propose_approve_and_the_item_shows_its_factors(tmp_path):
     row = row[:row.index("clinical-remove")]
     assert "Factors: <span class=clinical-factor>cataract" in row
     assert "cloudy vision" in row
-    # The free factor is offered, escaped.
-    assert "&lt;img src=x onerror=alert(1)&gt;" in row
+    # Each row has a search box; the free factor is offered in the shared list, escaped.
+    assert "list=groupFactorOptions" in row
+    opts = page[page.index("<datalist id=groupFactorOptions>"):]
+    opts = opts[:opts.index("</datalist>")]
+    assert '<option value="&lt;img src=x onerror=alert(1)&gt;">' in opts
     assert "<img src=x" not in page
 
 
@@ -283,7 +286,8 @@ function html(n){if(n.tag==='#text')return esc(n._text);
  return '<'+n.tag+(n.className?' class='+n.className:'')+'>'+esc(n._text)
   +n.children.map(html).join('')+'</'+n.tag+'>'}
 var box=new Node('div'),sent=[];
-global.document={getElementById:function(){return box},
+global.document={getElementById:function(id){return id==='groupProposals'?box:null},
+ body:new Node('body'),
  createElement:function(t){return new Node(t)},
  createTextNode:function(t){var n=new Node('#text');n._text=t;return n},
  querySelectorAll:function(){return []}};
@@ -323,7 +327,7 @@ def test_the_box_renders_hostile_factors_as_text_and_sends_them_raw():
     assert name == bad                       # the name field holds the text, unparsed
     sent = json.loads(sent)
     assert sent[0] == ["/author/a1/clinical-groups/approve",
-                       {"group_id": 4, "name": bad, "factors": [bad]}]
+                       {"group_id": 4, "name": bad, "factors": [bad], "typed": True}]
     assert sent[1] == "reload"
 
 
@@ -509,4 +513,129 @@ def test_the_factor_row_sits_in_the_content_column():
     html = render_clinical_checklist([{"label": "Blood", "factors": ["anemia"]}],
                                      free_factors=["a very long record finding " * 5])
     assert ".clinical-factors{grid-column:3;" in html
-    assert ".clinical-factor-add{max-width:260px;" in html
+    assert ".clinical-factor-add{width:220px;max-width:100%;" in html
+
+
+
+def test_a_typed_factor_joins_the_item_only_when_asked(cx):
+    """Glen, 2026-10-16: "I need to be able to add a factor to a stress pattern by
+    search and also by typing." A typed factor is kept on the item, not as a stress."""
+    _stress(cx, "anemia")
+    factors = cg.factors_for(cx, T)
+    assert cg.approve(cx, T, factors, "Blood", ["cold hands"]) is None
+    assert cg.approve(cx, T, factors, "Blood", ["anemia", "  cold   hands ", "Cold hands"],
+                      typed_ok=True)
+    assert cg.item_factors(cx, T) == {"blood": ["anemia", "cold hands"]}
+    [g] = cg.groups(cx, T)
+    assert [f["kind"] for f in g["factors"]] == ["stress", "typed"]
+    assert cx.execute("SELECT COUNT(*) FROM biofield_auth_stress").fetchone()[0] == 1
+    cg.approve(cx, T, factors, "Blood", ["x" * 500], typed_ok=True)
+    assert len(cg.item_factors(cx, T)["blood"][-1]) == cg.TYPED_MAX
+
+
+def test_the_route_takes_a_typed_factor(tmp_path):
+    c, tid = _app(tmp_path)
+    j = c.post(f"/author/{tid}/clinical-groups/approve",
+               json={"name": "Lens", "factors": ["halos at night"], "typed": True}).get_json()
+    assert j["ok"]
+    r = c.post(f"/author/{tid}/clinical-groups/approve",
+               json={"name": "Lens", "factors": ["glare"], "typed": "yes"})
+    assert r.status_code == 400
+    page = c.get(f"/author/{tid}").get_data(as_text=True)
+    row = page[page.index('data-label="Lens"'):]
+    assert "halos at night" in row[:row.index("clinical-remove")]
+
+
+def test_a_factor_typed_into_a_card_is_added_on_enter():
+    import os
+    import shutil
+    import subprocess
+    from dashboard.biofield_report_html import _GROUPS_HTML
+    if not shutil.which("node"):
+        if os.environ.get("CI"):
+            pytest.fail("node is needed in CI for this test")
+        pytest.skip("needs node")
+    js = _GROUPS_HTML.split("<script>")[1].split("</script>")[0]
+    reply = {"ok": True, "proposed": [{"id": 4, "name": "Eyes", "why": "", "status": "proposed",
+                                       "factors": [{"factor": "cataract", "kind": "stress"}]}],
+             "ungrouped": [{"factor": "anemia", "kind": "stress"}]}
+    harness = (_FAKE_DOM +
+               "global.fetch=async function(p,o){if(o)sent.push([p,JSON.parse(o.body)]);"
+               "return {json:async function(){return o?{ok:true}:" + json.dumps(reply)
+               + "}}};" + js +
+               ";setTimeout(async function(){var ins=box.all().filter(function(n){"
+               "return n.tag==='input'&&n.attrs.list==='groupCardOptions'});"
+               "ins[0].value='halos at night';ins[0].onkeydown({key:'Enter',preventDefault:function(){}});"
+               "var b=box.all().filter(function(n){return n.tag==='button'&&n._text==='Approve'})[0];"
+               "await b.onclick();var dl=document.body.children[0];"
+               "process.stdout.write(JSON.stringify({sent:sent,opts:dl.children.map(function(o){return o.value})}))},50);")
+    out = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=20)
+    got = json.loads(out.stdout)
+    assert got["opts"] == ["anemia", "cataract"]
+    assert got["sent"][0] == ["/author/a1/clinical-groups/approve",
+                              {"group_id": 4, "name": "Eyes",
+                               "factors": ["cataract", "halos at night"], "typed": True}]
+
+
+
+def test_a_long_typed_entry_is_matched_after_it_is_capped(cx):
+    """Review round 2: two entries sharing their first 120 characters, or one whose
+    first 120 are a real factor, must not make two rows or a 'typed' copy."""
+    real = "r" * cg.TYPED_MAX
+    _stress(cx, real)
+    factors = cg.factors_for(cx, T)
+    cg.approve(cx, T, factors, "Blood", [real + "aaa", real + "bbb", "s" * 130, "s" * 140],
+               typed_ok=True)
+    [g] = cg.groups(cx, T)
+    assert [(f["factor"], f["kind"]) for f in g["factors"]] == [
+        (real, "stress"), ("s" * cg.TYPED_MAX, "typed")]
+
+
+
+def test_a_typed_factor_is_not_counted_as_a_record_finding(cx):
+    from dashboard.biofield_clinical_proposals import decisions
+    _stress(cx, "anemia")
+    cg.approve(cx, T, cg.factors_for(cx, T), "Blood", ["anemia", "cold hands"], typed_ok=True)
+    assert decisions(cx, T)["blood"]["evidence"] == "Grouped: anemia, cold hands"
+
+
+def test_a_record_finding_cannot_come_back_as_typed(cx):
+    """Review round 1: on a shared address the findings are not offered, and typing
+    one, or approving a card opened earlier, must not store it as 'typed'."""
+    _stress(cx, "anemia")
+    hidden = cg.factors_for(cx, T, None)          # the address is shared now
+    got = cg.approve(cx, T, hidden, "Blood", ["anemia", "Ferritin 447 High"],
+                     typed_ok=True, blocked={cg.item_key("Ferritin 447 High")})
+    assert got is not None
+    assert cg.item_factors(cx, T) == {"blood": ["anemia"]}
+
+
+
+def test_the_route_refuses_a_typed_record_finding_on_a_shared_address(tmp_path):
+    """Review round 3: the block must hold through the route, for a long finding too."""
+    c, tid = _app(tmp_path)
+    long_finding = "Ultrasound shows a hypoechoic nodule in the left lobe " + "x" * 120
+    with sqlite3.connect(str(tmp_path / "e4l.db")) as e:
+        e.execute("INSERT INTO e4l_clients VALUES(1,'Pat','pat.test@example.com')")
+        e.execute("INSERT INTO e4l_clients VALUES(2,'Rex','pat.test@example.com')")
+    with sqlite3.connect(str(tmp_path / "chat.db")) as x:
+        from dashboard import biofield_records as br
+        br.ensure_tables(x)
+        for text in ("Ferritin 447 High", long_finding):
+            x.execute("INSERT INTO client_record_findings(client_email,message_id,part,"
+                      "filename,page,kind,text,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                      ("pat.test@example.com", "m1", 0, "labs.pdf", 1, "result", text,
+                       "pending", "now"))
+    for typed in ("Ferritin 447 High", long_finding, long_finding[:cg.TYPED_MAX]):
+        r = c.post(f"/author/{tid}/clinical-groups/approve",
+                   json={"name": "Blood", "factors": [typed], "typed": True})
+        assert r.status_code == 400, typed[:30]
+
+
+def test_unreadable_findings_refuse_typing(cx):
+    _stress(cx, "anemia")
+    factors = cg.factors_for(cx, T)
+    assert cg.approve(cx, T, factors, "Blood", ["cold hands"], typed_ok=True,
+                      blocked=None) is None
+    assert cg.approve(cx, T, factors, "Blood", ["anemia"], typed_ok=True,
+                      blocked=None) is not None

@@ -330,11 +330,13 @@ def test_read_then_approve_a_diagnosis_puts_it_in_the_summary(tmp_path, e4l):
     j = c.get(f"/author/{tid}/records").get_json()
     assert j["ok"] and len(j["pending"]) == 1 and j["unread"] == 0
     page = c.get(f"/author/{tid}").get_data(as_text=True)
-    assert "Hashimoto thyroiditis" not in page and "recordFindings" in page
+    # Pending, so not a Clinical Summary row yet. It may be offered as a factor to
+    # add (the factor search box, Glen 2026-10-16), which is not the same thing.
+    assert 'data-label="Hashimoto thyroiditis"' not in page and "recordFindings" in page
     fid = j["pending"][0]["id"]
     assert c.post(f"/author/{tid}/records/{fid}", json={"decision": "approve"}).status_code == 200
     page = c.get(f"/author/{tid}").get_data(as_text=True)
-    assert "Hashimoto thyroiditis" in page
+    assert 'data-label="Hashimoto thyroiditis"' in page
     assert c.get(f"/author/{tid}/records").get_json()["approved"][0]["text"] == \
         "Hashimoto thyroiditis"
 
