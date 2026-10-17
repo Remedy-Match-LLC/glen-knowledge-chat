@@ -29,6 +29,7 @@ HISTORY_TABLES = frozenset({
     # Found in production on 2026-09-27 (prod-queries/merge-unclassified-tables.py):
     "fmp_clients",                    # a FileMaker mirror; the next FileMaker sync rewrites it
     "client_gmail_messages",          # a local cache of a client's own mail, keyed by sender
+    "client_record_findings", "client_record_reads",   # read from that mail; same key
     "client_email_fills",             # the email found for a FileMaker row (2026-10-16); a
     #                                   merge must not move it, its unique email would collide
     "escalation_queue", "identity_consolidation_audit", "membership_reconcile_alerts",

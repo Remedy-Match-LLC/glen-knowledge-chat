@@ -715,7 +715,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                caregiver_billing=None,
                ingredients_db=None,
                portal_link_fetch=None, auto_publish=None, fetch_fmp_history=None,
-               client_gmail=None):
+               client_gmail=None, records_reader=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -800,6 +800,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     return _bg.client_email_text(gcx, email, e4l_db)
                 finally:
                     gcx.close()
+    # Clinical records in the client's kept mail (Glen, 2026-10-16: "review first").
+    if (records_reader is None and not os.environ.get("CI")
+            and not os.environ.get("PYTEST_CURRENT_TEST") and "pytest" not in sys.modules):
+        from dashboard import biofield_gmail as _bg2
+        if os.path.exists(_bg2.TOKEN):
+            def records_reader(cx, email):
+                from dashboard.biofield_records import read_records
+                return read_records(cx, email, _bg2.default_service(), interpret_complete)
     photo_refresh_at = {}
 
     def _refresh_client_photo(email, client_id=None):
@@ -1469,6 +1477,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_clinical_proposals import accepted_labels
         profile = profile or {}
         accepted = accepted_labels(cx, test_id)
+        # A diagnosis Glen approved from the client's records joins as a row too.
+        # Not for an address that is shared now, or cannot be checked (review round 2).
+        try:
+            from dashboard.biofield_records import approved_diagnoses
+            from dashboard.biofield_gmail import people_on_address
+            _email = _test_email(cx, test_id)
+            _n = people_on_address(e4l_db, _email) if _email else None
+            if _email and _n is not None and _n <= 1:
+                accepted = accepted + approved_diagnoses(cx, _email)
+        except Exception:
+            pass
         if not accepted:
             return profile
         profile = dict(profile)
@@ -2911,6 +2930,78 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             ok = decide(cx, test_id, body.get("label"), status, body.get("evidence"))
         return {"ok": ok}
+
+    def _test_email(cx, test_id):
+        if not re.fullmatch(r"a[1-9][0-9]*", str(test_id)):
+            return ""
+        row = cx.execute("SELECT email FROM biofield_auth_tests WHERE id=?",
+                         (int(str(test_id)[1:]),)).fetchone()
+        from dashboard.biofield_gmail import clean_email
+        return clean_email(row[0] if row else "")
+
+    @app.route("/author/<test_id>/records")
+    def author_records(test_id):
+        """Findings from the client's records: pending for review, and approved."""
+        from dashboard import biofield_records as _br
+        from dashboard.biofield_gmail import people_on_address
+        with sqlite3.connect(db_path) as cx:
+            email = _test_email(cx, test_id)
+            if not email:
+                return {"ok": False, "error": "No client selected yet"}
+            held = people_on_address(e4l_db, email)
+            if held is None or held > 1:
+                # Findings stored before the address was shared are not shown on it.
+                return {"ok": True, "held": True, "pending": [], "approved": [],
+                        "failed": [], "notes": [], "unread": 0,
+                        "reader": bool(records_reader)}
+            out = _br.findings(cx, email)
+            out.update(ok=True, unread=len(_br.unread(cx, email)), held=False,
+                       reader=bool(records_reader))
+            return out
+
+    @app.route("/author/<test_id>/records/read", methods=["POST"])
+    def author_records_read(test_id):
+        """Read the unread records into pending findings. Nothing is approved here."""
+        from dashboard.biofield_gmail import people_on_address
+        if not records_reader:
+            return {"ok": False, "error": "Records cannot be read here (no Gmail token)."}
+        with sqlite3.connect(db_path) as cx:
+            email = _test_email(cx, test_id)
+            if not email:
+                return {"ok": False, "error": "No client selected yet"}
+            held = people_on_address(e4l_db, email)
+            if held is None or held > 1:
+                return {"ok": False, "error": "Records were not read: this address is "
+                                              "shared, or E4L could not be checked."}
+            try:
+                return {"ok": True, **records_reader(cx, email)}
+            except Exception as e:
+                return {"ok": False, "error": f"Records could not be read ({type(e).__name__})."}
+
+    @app.route("/author/<test_id>/records/retry", methods=["POST"])
+    def author_records_retry(test_id):
+        from dashboard import biofield_records as _br
+        with sqlite3.connect(db_path) as cx:
+            email = _test_email(cx, test_id)
+            if not email:
+                return {"ok": False, "error": "No client selected yet"}, 400
+            return {"ok": True, "reset": _br.retry_failed(cx, email)}
+
+    @app.route("/author/<test_id>/records/<int:finding_id>", methods=["POST"])
+    def author_records_decide(test_id, finding_id):
+        """Glen approves (optionally rewording) or rejects one finding."""
+        from dashboard import biofield_records as _br
+        from dashboard.biofield_gmail import people_on_address
+        body = request.get_json(silent=True) or {}
+        with sqlite3.connect(db_path) as cx:
+            email = _test_email(cx, test_id)
+            if not email:
+                return {"ok": False, "error": "No client selected yet"}, 400
+            held = people_on_address(e4l_db, email)
+            if held is None or held > 1:
+                return {"ok": False, "error": "This address is shared."}, 400
+            ok = _br.decide(cx, email, finding_id, body.get("decision"), body.get("text"))
+        return ({"ok": True}, 200) if ok else ({"ok": False, "error": "Not changed"}, 400)
 
     @app.route("/author/<test_id>/clinical-items", methods=["POST"])
     def author_edit_clinical_items(test_id):
