@@ -20,6 +20,7 @@ import argparse
 import datetime
 import logging
 import os
+import sys
 import re
 import sqlite3
 import time
@@ -713,7 +714,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                invoice_paid_check=None, invoice_latest=None, client_orders=None,
                caregiver_billing=None,
                ingredients_db=None,
-               portal_link_fetch=None, auto_publish=None, fetch_fmp_history=None):
+               portal_link_fetch=None, auto_publish=None, fetch_fmp_history=None,
+               client_gmail=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -783,6 +785,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     if (fetch_fmp_history is None and not os.environ.get("CI")
             and not os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("CONSOLE_SECRET")):
         fetch_fmp_history = _default_fetch_fmp_history
+    # The client's own emails, read from the drglen mailbox (Glen, 2026-10-16). Never
+    # under tests, and not without the local Gmail token.
+    # "pytest" in sys.modules also covers app creation at collection (review round 2).
+    if (client_gmail is None and not os.environ.get("CI")
+            and not os.environ.get("PYTEST_CURRENT_TEST") and "pytest" not in sys.modules):
+        from dashboard import biofield_gmail as _bg
+        if os.path.exists(_bg.TOKEN):
+            def client_gmail(_cx, email):
+                # Its own connection: the header's open transaction must not wait on
+                # Gmail, nor Gmail's writes on it (review round 3).
+                gcx = sqlite3.connect(db_path, timeout=10)
+                try:
+                    return _bg.client_email_text(gcx, email, e4l_db)
+                finally:
+                    gcx.close()
     photo_refresh_at = {}
 
     def _refresh_client_photo(email, client_id=None):
@@ -1002,13 +1019,38 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         email = ((rep.get("client") or {}).get("email") or "").strip()
         if not email:
             return {"added": 0, "error": "No client selected yet"}
+        console_error = None
         try:
             ctx = fetch_recent_comms(email)
-            if not isinstance(ctx, dict):   # None, or a reply that is not a payload
-                # A failed fetch, not an empty inbox (2026-10-16).
-                return {"added": 0, "error": "Could not reach the console for this "
-                                             "client's recent comms. Nothing was mined."}
-            text = comms_to_text(ctx)
+        except Exception as e:
+            ctx, console_error = None, str(e)[:200]
+        if not isinstance(ctx, dict):   # None, or a reply that is not a payload
+            # A failed fetch, not an empty inbox (2026-10-16).
+            ctx = None
+            console_error = console_error or ("Could not reach the console for this "
+                                              "client's recent comms.")
+        # The client's own emails and attachments (Glen, 2026-10-16: "no review").
+        mail = {}
+        if client_gmail:
+            try:
+                mail = client_gmail(cx, email) or {}
+            except Exception as e:
+                mail = {"error": f"Gmail could not be read ({type(e).__name__})."}
+        mail_text = mail.get("text") or ""
+        notes = []
+        if mail.get("held"):
+            notes.append(f"Email was not read: E4L shows {mail['held']} people on this "
+                         "address. Paste the right messages instead.")
+        if mail.get("error"):
+            notes.append(mail["error"])
+        if ctx is None and not mail_text:
+            return {"added": 0, "error": " ".join(
+                [console_error.rstrip(".") + ". Nothing was mined."] + notes)}
+        if ctx is None:
+            notes.insert(0, console_error.rstrip(".") + ". Only email was mined.")
+        try:
+            text = "\n".join(t for t in ((comms_to_text(ctx) if ctx else ""), mail_text)
+                             if t.strip())
             labels = interpret_stresses(text, interpret_complete) if text.strip() else []
         except Exception as e:
             return {"added": 0, "error": str(e)[:200]}
@@ -1019,10 +1061,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     added += 1
         except Exception as e:
             return {"added": added, "error": str(e)[:200]}
-        missed = [s for s in (ctx.get("unavailable") or []) if isinstance(s, str)]
+        missed = [s for s in ((ctx or {}).get("unavailable") or []) if isinstance(s, str)]
         if missed:
-            return {"added": added, "error": "Some recent comms could not be read ("
-                                             + ", ".join(missed) + ")."}
+            notes.insert(0, "Some recent comms could not be read (" + ", ".join(missed) + ").")
+        if notes:
+            return {"added": added, "error": " ".join(notes)}
         return {"added": added}
 
     PASTE_MAX_CHARS = 50_000
