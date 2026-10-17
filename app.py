@@ -591,6 +591,10 @@ def _console_owner_scope(email):
     owner = _CONSOLE_OWNER_SCOPES.get(e)
     if not owner:
         owner = re.sub(r"[^a-z0-9]+", "", e.split("@", 1)[0]) or "scoped"
+        if owner in ("glen", "rae"):
+            # Owner reach comes only from the map above, never from a local part
+            # such as "rae@newdomain.com" (review round 3).
+            owner = "scoped"
     return "workspace:" + owner, owner.capitalize()
 
 

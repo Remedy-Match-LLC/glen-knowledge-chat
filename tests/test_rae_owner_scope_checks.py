@@ -82,3 +82,26 @@ def test_the_calendar_owners_check_asks_rbac(app):
     src = open(app.__file__).read()
     start = src.index("# Owners by scope: an owner (admin, or Rae's workspace:rae)")
     assert "if _is_owner_scope(ctx.get(\"scope\")):" in src[start:start + 300]
+
+
+def test_an_unmapped_email_never_derives_an_owner(app):
+    # "rae@newdomain.com" added to the allowlist without a map entry stays a VA scope.
+    for e in ("rae@newdomain.com", "glen@example.org", "R.a.e@x.com"):
+        scope, _name = app._console_owner_scope(e)
+        assert not app._is_owner_scope(scope), (e, scope)
+    assert app._is_owner_scope(app._console_owner_scope("suerae1111@gmail.com")[0])
+
+
+def _post_as(app, monkeypatch, ctx, role):
+    monkeypatch.setattr(app, "_auth", lambda *a, **k: (True, ctx, 200))
+    with app.app.test_request_context(json={"role": role, "content": "hi"}):
+        r = app.todo_messages_post(999999)
+    return r[1] if isinstance(r, tuple) else 200
+
+
+def test_the_message_guard_lets_each_person_post_only_as_themselves(app, monkeypatch):
+    link_rae = {"scope": "workspace:rae", "user_name": "Rae"}   # sign-in-link session
+    assert _post_as(app, monkeypatch, link_rae, "glen") == 403
+    assert _post_as(app, monkeypatch, SHAIRA, "rae") == 403
+    assert _post_as(app, monkeypatch, SHAIRA, "glen") == 403
+    assert _post_as(app, monkeypatch, link_rae, "rae") != 403
