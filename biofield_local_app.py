@@ -1109,7 +1109,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         try:
             for label in interpret_stresses(text, interpret_complete):
                 label = label if isinstance(label, str) else ""
-                if len(label) > PASTE_LABEL_MAX or "\n" in label or "\r" in label:
+                # "family history of " takes 18 characters of the cap (review round 1).
+                cap = PASTE_LABEL_MAX + (18 if label.lower().startswith("family history of ")
+                                         else 0)
+                if len(label) > cap or "\n" in label or "\r" in label:
                     skipped += 1
                     continue
                 if _st.add_stress(cx, test_id, label, source="paste"):

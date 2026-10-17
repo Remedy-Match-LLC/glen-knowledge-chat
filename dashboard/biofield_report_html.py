@@ -1205,7 +1205,7 @@ async function loadClinicalProposals(){
  try{var j=await (await fetch('/author/__TID__/clinical-proposals')).json(),items=j.items||[];
   if(!items.length){box.innerHTML='';return}
   box.innerHTML='<div class=proposal-head><b>Proposed from communications</b>'+
-   '<span>Confirm these describe the client—not a family member.</span></div>'+
+   '<span>Confirm each describes the client, or is marked as family history.</span></div>'+
    items.map(function(x,i){return '<div class=proposal-row><div><b>'+_esc(x.label)+'</b>'+
     '<div class=proposal-evidence>'+_esc(x.evidence)+(x.when?' · '+_esc(x.when):'')+'</div></div>'+
     '<div class=proposal-actions><button class=btn data-i="'+i+'" data-status=accepted>Add</button>'+

@@ -515,3 +515,13 @@ def test_applying_clinical_layers_skips_a_remedy_already_on_the_chain(tmp_path, 
                        "AND lower(remedy)='adrenal syntropy'",
                        (int(str(tid).lstrip("a") or 0),)).fetchone()[0]
     assert n == 1, "Adrenal Syntropy was added a second time"
+
+
+def test_family_history_is_quoted_by_its_condition():
+    """Review round 3: 'family' and 'history' matched unrelated lines."""
+    from dashboard.biofield_clinical_proposals import proposals
+    context = {"recent_feedback": [
+        {"summary": "My family history form is attached.", "received_at": "2026-10-01"},
+        {"summary": "Diabetes runs on both sides.", "received_at": "2026-10-02"}]}
+    [p] = proposals(context, ["family history of diabetes"])
+    assert p["evidence"] == "Diabetes runs on both sides."
