@@ -1478,9 +1478,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         profile = profile or {}
         accepted = accepted_labels(cx, test_id)
         # A diagnosis Glen approved from the client's records joins as a row too.
+        # Not for an address that is shared now, or cannot be checked (review round 2).
         try:
             from dashboard.biofield_records import approved_diagnoses
-            accepted = accepted + approved_diagnoses(cx, _test_email(cx, test_id))
+            from dashboard.biofield_gmail import people_on_address
+            _email = _test_email(cx, test_id)
+            _n = people_on_address(e4l_db, _email) if _email else None
+            if _email and _n is not None and _n <= 1:
+                accepted = accepted + approved_diagnoses(cx, _email)
         except Exception:
             pass
         if not accepted:
@@ -2944,9 +2949,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if not email:
                 return {"ok": False, "error": "No client selected yet"}
             held = people_on_address(e4l_db, email)
+            if held is None or held > 1:
+                # Findings stored before the address was shared are not shown on it.
+                return {"ok": True, "held": True, "pending": [], "approved": [],
+                        "failed": [], "notes": [], "unread": 0,
+                        "reader": bool(records_reader)}
             out = _br.findings(cx, email)
-            out.update(ok=True, unread=len(_br.unread(cx, email)),
-                       held=bool(held and held > 1), reader=bool(records_reader))
+            out.update(ok=True, unread=len(_br.unread(cx, email)), held=False,
+                       reader=bool(records_reader))
             return out
 
     @app.route("/author/<test_id>/records/read", methods=["POST"])
@@ -2972,11 +2982,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_records_decide(test_id, finding_id):
         """Glen approves (optionally rewording) or rejects one finding."""
         from dashboard import biofield_records as _br
+        from dashboard.biofield_gmail import people_on_address
         body = request.get_json(silent=True) or {}
         with sqlite3.connect(db_path) as cx:
             email = _test_email(cx, test_id)
             if not email:
                 return {"ok": False, "error": "No client selected yet"}, 400
+            held = people_on_address(e4l_db, email)
+            if held is None or held > 1:
+                return {"ok": False, "error": "This address is shared."}, 400
             ok = _br.decide(cx, email, finding_id, body.get("decision"), body.get("text"))
         return ({"ok": True}, 200) if ok else ({"ok": False, "error": "Not changed"}, 400)
 

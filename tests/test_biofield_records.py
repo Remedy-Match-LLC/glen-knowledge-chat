@@ -84,7 +84,7 @@ def _model(findings, seen=None):
     return complete
 
 
-def _fake_extract(mime, name, data):
+def _fake_extract(mime, name, data, **_k):
     return [data.decode()]
 
 
@@ -147,11 +147,14 @@ def test_the_model_reply_is_validated():
            {"kind": "result", "text": "TSH 4.9 mIU/L high", "page": 9, "date": "March"},
            "junk"]
     out = br.ask(_model(raw), ["page one", "page two"], "labs.pdf")
+    # A page the model was not shown is no citation: that finding is dropped.
     assert out == [{"kind": "diagnosis", "text": "Hashimoto thyroiditis", "page": 1,
-                    "date": "2026-03-04"},
-                   {"kind": "result", "text": "TSH 4.9 mIU/L high", "page": None, "date": ""}]
-    with pytest.raises(ValueError):
-        br.ask(lambda s, u: "not json", ["text"], "x.pdf")
+                    "date": "2026-03-04"}]
+    for bad in ("not json", "{}", '{"findings": "x"}', '[]',
+                json.dumps({"findings": [{"kind": "advice", "text": "rest", "page": 1}]})):
+        with pytest.raises(br.ModelReplyError):
+            br.ask(lambda s, u, b=bad: b, ["text"], "x.pdf")
+    assert br.ask(_model([]), ["text"], "x.pdf") == []
     assert br.ask(_model(raw), ["", "  "], "blank.pdf") == []
 
 
@@ -161,7 +164,8 @@ def test_records_are_read_once_into_pending_findings(tmp_path):
     svc, seen = FakeGmail(files), []
     got = br.read_records(cx, EMAIL, svc, _model(
         [{"kind": "result", "text": "TSH 4.9 high", "page": 1}], seen), extract=_fake_extract)
-    assert got == {"read": 1, "failed": 0, "added": 1, "remaining": 0}
+    assert got == {"read": 1, "failed": 0, "not_fetched": 0, "added": 1, "busy": False,
+                   "remaining": 0}
     assert "[page 1]\nTSH 4.9 high" in seen[0]
     f = br.findings(cx, EMAIL)
     assert [x["text"] for x in f["pending"]] == ["TSH 4.9 high"] and f["approved"] == []
@@ -177,17 +181,21 @@ def test_gmail_failing_leaves_the_record_for_next_time(tmp_path):
     cx = _cx(tmp_path, files)
     got = br.read_records(cx, EMAIL, FakeGmail(files, fail=True), _model([]),
                           extract=_fake_extract)
-    assert got["failed"] == 1 and got["remaining"] == 1
+    assert got["not_fetched"] == 1 and got["remaining"] == 1
 
 
 def test_an_unreadable_record_is_named_and_not_read_again(tmp_path):
     files = {"m1": {"broken.pdf": ("application/pdf", b"x")}}
     cx = _cx(tmp_path, files)
 
-    def boom(*a):
+    def boom(*a, **k):
         raise ValueError("corrupt")
-    got = br.read_records(cx, EMAIL, FakeGmail(files), _model([]), extract=boom)
-    assert got["failed"] == 1 and got["remaining"] == 0
+    # Tried ATTEMPTS times, then named and left alone.
+    for n in range(br.ATTEMPTS):
+        assert br.findings(cx, EMAIL)["failed"] == []
+        got = br.read_records(cx, EMAIL, FakeGmail(files), _model([]), extract=boom)
+        assert got["failed"] == 1
+    assert got["remaining"] == 0
     assert br.findings(cx, EMAIL)["failed"] == ["broken.pdf"]
 
 
@@ -208,6 +216,7 @@ def test_approve_with_rewording_reject_and_the_diagnosis_list(tmp_path):
         {"kind": "medication", "text": "Levothyroxine 50 mcg", "page": 1}]),
         extract=_fake_extract)
     ids = {x["text"]: x["id"] for x in br.findings(cx, EMAIL)["pending"]}
+    assert not br.decide(cx, EMAIL, ids["Hashimotos"], "withdraw")   # not approved yet
     assert br.decide(cx, EMAIL, ids["Hashimotos"], "approve", "Hashimoto thyroiditis")
     assert br.decide(cx, EMAIL, ids["Levothyroxine 50 mcg"], "reject")
     assert not br.decide(cx, EMAIL, ids["Hashimotos"], "delete")
@@ -321,3 +330,143 @@ def test_mail_from_another_sender_is_never_read_as_a_record(tmp_path):
     cx.execute("UPDATE client_gmail_messages SET kept=0")
     cx.commit()
     assert br.unread(cx, EMAIL) == []
+
+
+
+def test_two_files_with_one_name_are_two_records(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "chat.db"))
+    bg.ensure_table(cx)
+    cx.execute("INSERT INTO client_gmail_messages(message_id, client_email, sent_at, subject, "
+               "body, attachments, kept, fetched_at) VALUES('m1',?,?,?,'',?,1,'now')",
+               (EMAIL, "2026-10-01", "two", json.dumps(
+                   [{"filename": "report.pdf", "mime": "application/pdf", "text": ""}] * 2)))
+    cx.commit()
+
+    class Two(FakeGmail):
+        def get(self, userId, id, format=None, messageId=None):
+            if messageId is not None:
+                return _Exec({"data": _b(b"first" if id == "a0" else b"second")})
+            parts = [{"mimeType": "application/pdf", "filename": "report.pdf",
+                      "body": {"attachmentId": f"a{i}", "size": 5}} for i in range(2)]
+            return _Exec({"id": id, "payload": {"mimeType": "multipart/mixed", "parts": parts}})
+    seen = []
+    br.read_records(cx, EMAIL, Two({}), _model([], seen), extract=_fake_extract)
+    assert [u.split("[page 1]\n")[1].strip() for u in seen] == ["first", "second"]
+
+
+def test_a_missing_attachment_is_recorded_once(tmp_path):
+    files = {"m1": {"gone.pdf": ("application/pdf", b"x")}}
+    cx = _cx(tmp_path, files)
+    svc = FakeGmail({"m1": {}})
+    got = br.read_records(cx, EMAIL, svc, _model([]), extract=_fake_extract)
+    assert got["failed"] == 1 and got["remaining"] == 0
+
+
+def test_a_long_record_is_read_in_full_across_calls(tmp_path, monkeypatch):
+    monkeypatch.setattr(br, "ASK_MAX", 50)
+    seen = []
+    br.ask(_model([], seen), ["a" * 40, "b" * 40, "c" * 200], "long.pdf")
+    assert len(seen) == 3 and "[page 3]" in seen[2] and len(seen[2]) < 200
+
+
+def test_a_blank_scan_is_a_failure_not_nothing_found():
+    with pytest.raises(br.NoText):
+        br.extract_pages("image/png", "x.png", b"img", ocr=lambda d: "  ")
+
+
+def test_a_scan_under_a_typed_header_is_still_read(monkeypatch):
+    pytest.importorskip("pypdf")
+    import pypdf
+    class Page:
+        images = [object()]
+        def extract_text(self):
+            return "Hilo Clinic letterhead, 123 Main Street, phone 555"
+    class Reader:
+        def __init__(self, _b):
+            self.pages = [Page()]
+    monkeypatch.setattr(pypdf, "PdfReader", Reader)
+    pages = br.extract_pages("application/pdf", "s.pdf", b"x", ocr=lambda d: "TSH 4.9 high",
+                             rasterise=lambda d, p: b"png")
+    assert "letterhead" in pages[0] and "TSH 4.9 high" in pages[0]
+
+
+def test_a_long_scan_stops_at_its_deadline_and_says_so(monkeypatch):
+    pytest.importorskip("pypdf")
+    import pypdf
+    class Page:
+        images = []
+        def extract_text(self):
+            return ""
+    class Reader:
+        def __init__(self, _b):
+            self.pages = [Page() for _ in range(10)]
+    monkeypatch.setattr(pypdf, "PdfReader", Reader)
+    ticks = iter(range(0, 1000, 10))
+    pages = br.extract_pages("application/pdf", "s.pdf", b"x", ocr=lambda d: "words",
+                             rasterise=lambda d, p: b"png", deadline=25,
+                             clock=lambda: next(ticks))
+    assert len(pages) == 3 and pages.total == 10
+
+
+def test_a_second_read_while_one_runs_is_refused(tmp_path):
+    files = {"m1": {"labs.pdf": ("application/pdf", b"x")}}
+    cx = _cx(tmp_path, files)
+    lock = br._lock_for(EMAIL)
+    lock.acquire()
+    try:
+        assert br.read_records(cx, EMAIL, FakeGmail(files), _model([]),
+                               extract=_fake_extract)["busy"] is True
+    finally:
+        lock.release()
+
+
+def test_a_withdrawn_diagnosis_leaves_the_summary(tmp_path):
+    files = {"m1": {"labs.pdf": ("application/pdf", b"x")}}
+    cx = _cx(tmp_path, files)
+    br.read_records(cx, EMAIL, FakeGmail(files), _model(
+        [{"kind": "diagnosis", "text": "Anaemia", "page": 1}]), extract=_fake_extract)
+    fid = br.findings(cx, EMAIL)["pending"][0]["id"]
+    br.decide(cx, EMAIL, fid, "approve")
+    assert br.approved_diagnoses(cx, EMAIL) == ["Anaemia"]
+    assert br.decide(cx, EMAIL, fid, "withdraw")
+    assert br.approved_diagnoses(cx, EMAIL) == [] and br.findings(cx, EMAIL)["approved"] == []
+
+
+def test_a_photo_finding_cites_no_page(tmp_path):
+    files = {"m1": {"scan.jpg": ("image/jpeg", b"x")}}
+    cx = _cx(tmp_path, files)
+    br.read_records(cx, EMAIL, FakeGmail(files), _model(
+        [{"kind": "result", "text": "A1c 6.1", "page": 1}]), extract=_fake_extract)
+    assert br.findings(cx, EMAIL)["pending"][0]["page"] is None
+
+
+def test_the_page_escapes_quotes_in_model_text():
+    import subprocess
+    from dashboard.biofield_report_html import _RECORDS_HTML
+    if not shutil.which("node"):
+        pytest.skip("needs node")
+    js = _RECORDS_HTML.split("<script>")[1].split("</script>")[0]
+    fn = js[js.index("function esc("):js.index("function src(")]
+    hostile = 'x" autofocus onfocus="alert(1)\' <b>'
+    out = subprocess.run(["node", "-e", fn + "process.stdout.write(esc(process.argv[1]))",
+                          hostile], capture_output=True, text=True).stdout
+    assert '"' not in out and "'" not in out and "<" not in out and "&quot;" in out
+
+
+def test_findings_on_an_address_that_is_shared_now_are_hidden(tmp_path, e4l):
+    def reader(cx, email):
+        return {}
+    c, db = _app(tmp_path, e4l, reader)
+    tid = _new(c)
+    cx = sqlite3.connect(db)
+    br.ensure_tables(cx)
+    cx.execute("INSERT INTO client_record_findings(client_email, message_id, part, filename, "
+               "page, kind, text, status, created_at) VALUES(?,'m',0,'f.pdf',1,'diagnosis',"
+               "'Gout','approved','now')", (EMAIL,))
+    cx.commit()
+    assert "Gout" in c.get(f"/author/{tid}").get_data(as_text=True)
+    s2 = sqlite3.connect(e4l)
+    s2.execute("INSERT INTO e4l_clients VALUES(9,'Someone Else',?)", (EMAIL,)); s2.commit()
+    assert "Gout" not in c.get(f"/author/{tid}").get_data(as_text=True)
+    j = c.get(f"/author/{tid}/records").get_json()
+    assert j["held"] is True and j["approved"] == []
