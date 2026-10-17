@@ -45658,9 +45658,9 @@ def get_calendar():
     range_name = request.args.get("range")
     anchor = request.args.get("date")
 
-    # Owners by scope: admin (Glen/Rae) sees all three (or an `owners=` subset);
-    # a scoped user (e.g. workspace:shaira) is forced to her own lane.
-    if ctx.get("scope") == "admin":
+    # Owners by scope: an owner (admin, or Rae's workspace:rae) sees all three (or an
+    # `owners=` subset); a scoped VA (workspace:shaira) is forced to her own lane.
+    if _is_owner_scope(ctx.get("scope")):
         req = request.args.get("owners") or request.args.get("owner")
         if req:
             owners = [o.strip().lower() for o in req.split(",")
@@ -49760,9 +49760,20 @@ def _auth(required_scope=None):
     except Exception:
         pass
 
-    if required_scope is None or scope == required_scope or scope == "admin":
+    if required_scope is None or scope == required_scope or _is_owner_scope(scope):
         return True, ctx, 200
     return False, ctx, 403
+
+
+def _is_owner_scope(scope) -> bool:
+    """True for the admin key and for any scope whose owner rbac makes an OWNER (Rae).
+    Glen, 2026-10-16: "Give Rae access to all pages in the console." These checks
+    compared the scope to "admin" and never asked rbac, so Rae, an owner there, was
+    treated as a scoped VA. A VA scope (Shaira) stays narrowed."""
+    if not scope or scope == "admin":
+        return scope == "admin"
+    owner = _owner_from_scope(scope)
+    return bool(owner) and _bos_rbac.role_for_owner(owner) == _bos_rbac.OWNER
 
 
 def _owner_from_scope(scope: str):
@@ -49776,7 +49787,7 @@ def _can_access_owner(ctx, owner: str) -> bool:
     """True if ctx (from _auth) is admin or its scope matches `owner`."""
     if not ctx:
         return False
-    if ctx.get("scope") == "admin":
+    if _is_owner_scope(ctx.get("scope")):
         return True
     return _owner_from_scope(ctx.get("scope", "")) == owner
 
@@ -49787,6 +49798,9 @@ def _scoped_owner(ctx, requested_owner: str) -> str:
     their own owner (matches the 'enumerated by token' principle)."""
     if not ctx or ctx.get("scope") == "admin":
         return (requested_owner or "glen").lower()
+    if _is_owner_scope(ctx.get("scope")):
+        # An owner (Rae) may ask for anyone's; with no owner asked, her own.
+        return (requested_owner or _owner_from_scope(ctx["scope"]) or "").lower()
     return _owner_from_scope(ctx["scope"]) or (requested_owner or "").lower()
 
 
