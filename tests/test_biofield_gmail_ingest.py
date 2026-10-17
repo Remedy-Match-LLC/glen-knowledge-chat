@@ -376,3 +376,74 @@ def test_a_console_fetch_that_raises_still_mines_email(tmp_path):
     tid = _new(c)
     j = c.post(f"/author/{tid}/mine-comms", json={}).get_json()
     assert "Only email was mined." in j["error"]
+
+
+def test_a_forwarded_message_is_named_never_mined(tmp_path, e4l):
+    fwd = {"mimeType": "message/rfc822", "filename": "", "body": {}, "parts": [
+        {"mimeType": "text/plain", "body": {"data": _b("Her sister: I have migraines")}},
+        {"mimeType": "application/pdf", "filename": "sis.pdf", "body": {"attachmentId": "s"}}]}
+    svc = FakeGmail([_msg("f1", "fwd", "My own note", parts=[fwd])], attachments={"s": b"x"})
+    cx = _cx(tmp_path)
+    out = bg.client_email_text(cx, "pat.test@example.com", e4l, lambda: svc)
+    assert "My own note" in out["text"] and "migraines" not in out["text"]
+    atts = json.loads(cx.execute("SELECT attachments FROM client_gmail_messages").fetchone()[0])
+    assert [a["filename"] for a in atts] == ["forwarded message"]
+    assert [c for c in svc.calls if c[0] == "attachment"] == []
+    inline = "See below\n---------- Forwarded message ---------\nFrom: Sis\nDate: x\nMigraines"
+    assert bg.strip_quoted(inline) == "See below"
+    assert bg.strip_quoted("Mine\n" + "_" * 32 + "\nTheirs") == "Mine"
+
+
+def test_one_message_found_for_two_clients_is_kept_for_its_sender(tmp_path, e4l):
+    m = _msg("shared", "hi", "Al's own words")
+    m["payload"]["headers"] = [{"name": "From", "value": "al.pat.test@example.com"}]
+    cx = _cx(tmp_path)
+    bg.client_email_text(cx, "pat.test@example.com", e4l, lambda: FakeGmail([m]))
+    out = bg.client_email_text(cx, "al.pat.test@example.com", e4l, lambda: FakeGmail([m]))
+    assert "Al's own words" in out["text"]
+
+
+def test_a_failed_message_is_fetched_again_next_time(tmp_path, e4l):
+    cx = _cx(tmp_path)
+    bad = FakeGmail([_msg("r1", "x", "Second try works")])
+    real = bad.get
+    bad.get = lambda userId, id, format=None, messageId=None: (_ for _ in ()).throw(OSError())
+    bg.client_email_text(cx, "pat.test@example.com", e4l, lambda: bad)
+    good = FakeGmail([_msg("r1", "x", "Second try works")])
+    assert "Second try works" in bg.client_email_text(cx, "pat.test@example.com", e4l,
+                                                      lambda: good)["text"]
+
+
+def test_a_missing_pdf_reader_leaves_the_message_for_a_retry(tmp_path, e4l, monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+    def no_pypdf(name, *a, **k):
+        if name == "pypdf":
+            raise ImportError("no pypdf")
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", no_pypdf)
+    svc = FakeGmail([_msg("p1", "labs", "see", parts=[
+        {"mimeType": "application/pdf", "filename": "l.pdf", "body": {"attachmentId": "a"}}])],
+        attachments={"a": b"%PDF"})
+    cx = _cx(tmp_path)
+    out = bg.client_email_text(cx, "pat.test@example.com", e4l, lambda: svc)
+    assert "could not be read; they are retried" in out["error"]
+    assert cx.execute("SELECT count(*) FROM client_gmail_messages").fetchone()[0] == 0
+
+
+def test_the_fetch_stops_at_its_time_budget(tmp_path, e4l):
+    ticks = iter(range(0, 1000, 20))
+    svc = FakeGmail([_msg(f"t{i}", "s", f"msg {i}") for i in range(5)])
+    got = bg.ingest(_cx(tmp_path), "pat.test@example.com", svc, budget=30,
+                    clock=lambda: next(ticks))
+    assert got["new"] < 5 and got["failed"] == 5 - got["new"]
+
+
+def test_an_older_table_shape_is_rebuilt(tmp_path):
+    cx = _cx(tmp_path)
+    cx.execute("CREATE TABLE client_gmail_messages (message_id TEXT PRIMARY KEY, "
+               "client_email TEXT, sent_at TEXT, subject TEXT, body TEXT, attachments TEXT, "
+               "fetched_at TEXT)")
+    bg.ensure_table(cx)
+    cols = {r[1] for r in cx.execute("PRAGMA table_info(client_gmail_messages)")}
+    assert "kept" in cols

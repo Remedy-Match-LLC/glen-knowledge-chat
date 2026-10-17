@@ -792,7 +792,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             and not os.environ.get("PYTEST_CURRENT_TEST") and "pytest" not in sys.modules):
         from dashboard import biofield_gmail as _bg
         if os.path.exists(_bg.TOKEN):
-            client_gmail = lambda cx, email: _bg.client_email_text(cx, email, e4l_db)
+            def client_gmail(_cx, email):
+                # Its own connection: the header's open transaction must not wait on
+                # Gmail, nor Gmail's writes on it (review round 3).
+                gcx = sqlite3.connect(db_path, timeout=10)
+                try:
+                    return _bg.client_email_text(gcx, email, e4l_db)
+                finally:
+                    gcx.close()
     photo_refresh_at = {}
 
     def _refresh_client_photo(email, client_id=None):

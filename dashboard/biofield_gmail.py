@@ -27,6 +27,7 @@ LIMIT = 25          # newest messages per client
 TEXT_MAX = 20_000   # characters kept per message body or attachment
 FETCH_MAX = 10_000_000   # bytes: a larger attachment is named, never downloaded
 TIMEOUT = 20        # seconds per Gmail call: header save waits on mining
+BUDGET = 30         # seconds for one client's fetch; the rest waits for the next run
 MINE_MAX = 40_000   # characters handed to mining for one client
 
 TOKEN = os.path.expanduser("~/.config/google/token.json")
@@ -35,16 +36,26 @@ MAILBOX = "drglenswartwout@gmail.com"   # Glen's choice; support@ forwards into 
 _EMAIL = re.compile(r"[a-z0-9._%+'-]+@[a-z0-9.-]+\.[a-z]{2,}")
 
 
+_COLUMNS = {"message_id", "client_email", "sent_at", "subject", "body", "attachments",
+            "kept", "fetched_at"}
+
+
 def ensure_table(cx):
+    # A cache of Gmail, so a table of an older shape is rebuilt, never patched
+    # (review round 3): the mail is simply read again.
+    cols = {r[1] for r in cx.execute("PRAGMA table_info(client_gmail_messages)")}
+    if cols and cols != _COLUMNS:
+        cx.execute("DROP TABLE client_gmail_messages")
     cx.execute("""CREATE TABLE IF NOT EXISTS client_gmail_messages (
-        message_id   TEXT PRIMARY KEY,
+        message_id   TEXT NOT NULL,
         client_email TEXT NOT NULL,
         sent_at      TEXT,
         subject      TEXT,
         body         TEXT,
         attachments  TEXT,
         kept         INTEGER NOT NULL DEFAULT 1,
-        fetched_at   TEXT NOT NULL)""")
+        fetched_at   TEXT NOT NULL,
+        PRIMARY KEY (client_email, message_id))""")
     cx.execute("CREATE INDEX IF NOT EXISTS ix_client_gmail_messages_email "
                "ON client_gmail_messages(client_email)")
 
@@ -76,6 +87,9 @@ def people_on_address(e4l_db, email):
     return len({k for k in keys if k})
 
 
+_FORWARD = re.compile(r"^(-{5,}\s*Forwarded message\s*-{5,}|Begin forwarded message:|_{10,})$")
+
+
 def strip_quoted(text):
     """The client's own words. Quoted ">" lines and the "On ... wrote:" line go, but text
     after it stays: a client may answer inline (review round 1). An Outlook-style reply
@@ -84,8 +98,8 @@ def strip_quoted(text):
     out = []
     for i, line in enumerate(lines):
         s = line.strip()
-        if s.startswith("-----Original Message"):
-            break
+        if s.startswith("-----Original Message") or _FORWARD.match(s):
+            break     # what follows is someone else's message (review round 3)
         if (re.match(r"^From:\s", s)
                 and any(re.match(r"^(Sent|Date):\s", x.strip()) for x in lines[i + 1:i + 3])):
             break
@@ -135,6 +149,8 @@ def attachment_text(mime, filename, data):
                 text = _html_to_text(text)
         else:
             return ""
+    except ImportError:
+        raise             # pypdf missing: the message is retried once it is installed
     except Exception:
         return None       # it should have been readable: the caller says so
     return text.strip()[:TEXT_MAX]
@@ -142,6 +158,8 @@ def attachment_text(mime, filename, data):
 
 def _walk(part):
     yield part
+    if (part.get("mimeType") or "").lower().startswith("message/"):
+        return            # a forwarded message is someone else's words (review round 3)
     for p in part.get("parts") or []:
         yield from _walk(p)
 
@@ -162,6 +180,10 @@ def parse_message(msg, get_attachment):
         mime = (p.get("mimeType") or "").lower()
         body = p.get("body") or {}
         fname = p.get("filename") or ""
+        if mime.startswith("message/"):
+            atts.append({"filename": (fname or "forwarded message")[:200], "mime": mime,
+                         "text": "", "unreadable": False})
+            continue
         if fname:
             # A photo, video or logo is named, never downloaded (review round 1).
             if not _readable(mime, fname) or int(body.get("size") or 0) > FETCH_MAX:
@@ -193,7 +215,8 @@ def default_service():
     from googleapiclient.discovery import build
     creds = Credentials.from_authorized_user_file(TOKEN)
     if not creds.valid:
-        creds.refresh(Request())
+        req = Request()
+        creds.refresh(lambda *a, **k: req(*a, **{**k, "timeout": TIMEOUT}))
     import google_auth_httplib2
     import httplib2
     http = google_auth_httplib2.AuthorizedHttp(creds, http=httplib2.Http(timeout=TIMEOUT))
@@ -205,7 +228,7 @@ def default_service():
     return svc
 
 
-def ingest(cx, email, service, *, days=DAYS, limit=LIMIT):
+def ingest(cx, email, service, *, days=DAYS, limit=LIMIT, budget=BUDGET, clock=None):
     """Store this client's newest messages that are not stored yet. Returns how many
     were listed, how many are new, and how many could not be read this time (they are
     tried again next run). Raises when the search itself fails."""
@@ -216,10 +239,16 @@ def ingest(cx, email, service, *, days=DAYS, limit=LIMIT):
     have = {r[0] for r in cx.execute(
         "SELECT message_id FROM client_gmail_messages WHERE client_email=?", (email,))}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    import time
+    clock = clock or time.monotonic
+    deadline = clock() + budget
     new = failed = 0
     for m in listed:
         mid = m.get("id")
         if not mid or mid in have:
+            continue
+        if clock() > deadline:
+            failed += 1   # left for the next run
             continue
 
         def _att(aid, _mid=mid):
@@ -235,13 +264,13 @@ def ingest(cx, email, service, *, days=DAYS, limit=LIMIT):
         # Gmail's from: is looser than one address; keep only an exact sender. Any
         # other is remembered as not kept, so it is not fetched again.
         kept = int(sender == email)
-        cx.execute("INSERT OR IGNORE INTO client_gmail_messages(message_id, client_email, "
-                   "sent_at, subject, body, attachments, kept, fetched_at) "
-                   "VALUES(?,?,?,?,?,?,?,?)",
-                   (mid, email, sent, subject if kept else "", body if kept else "",
-                    json.dumps(atts) if kept else "[]", kept, now))
-        new += kept
-    cx.commit()
+        cur = cx.execute("INSERT OR IGNORE INTO client_gmail_messages(message_id, "
+                         "client_email, sent_at, subject, body, attachments, kept, fetched_at) "
+                         "VALUES(?,?,?,?,?,?,?,?)",
+                         (mid, email, sent, subject if kept else "", body if kept else "",
+                          json.dumps(atts) if kept else "[]", kept, now))
+        cx.commit()       # one message at a time: never hold the write lock (round 3)
+        new += kept * max(0, cur.rowcount or 0)
     return {"listed": len(listed), "new": new, "failed": failed}
 
 
