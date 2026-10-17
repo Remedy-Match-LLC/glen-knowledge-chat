@@ -2978,6 +2978,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             except Exception as e:
                 return {"ok": False, "error": f"Records could not be read ({type(e).__name__})."}
 
+    @app.route("/author/<test_id>/records/retry", methods=["POST"])
+    def author_records_retry(test_id):
+        from dashboard import biofield_records as _br
+        with sqlite3.connect(db_path) as cx:
+            email = _test_email(cx, test_id)
+            if not email:
+                return {"ok": False, "error": "No client selected yet"}, 400
+            return {"ok": True, "reset": _br.retry_failed(cx, email)}
+
     @app.route("/author/<test_id>/records/<int:finding_id>", methods=["POST"])
     def author_records_decide(test_id, finding_id):
         """Glen approves (optionally rewording) or rejects one finding."""

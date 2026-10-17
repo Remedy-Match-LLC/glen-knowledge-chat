@@ -176,12 +176,51 @@ def test_records_are_read_once_into_pending_findings(tmp_path):
     assert svc.calls == []
 
 
-def test_gmail_failing_leaves_the_record_for_next_time(tmp_path):
+def test_gmail_failing_is_retried_later_then_named(tmp_path, monkeypatch):
     files = {"m1": {"labs.pdf": ("application/pdf", b"x")}}
     cx = _cx(tmp_path, files)
     got = br.read_records(cx, EMAIL, FakeGmail(files, fail=True), _model([]),
                           extract=_fake_extract)
-    assert got["not_fetched"] == 1 and got["remaining"] == 1
+    # Not again within RETRY_AFTER: one outage must not spend every attempt.
+    assert got["not_fetched"] == 1 and got["remaining"] == 0
+    monkeypatch.setattr(br, "RETRY_AFTER", -5)
+    for _ in range(br.ATTEMPTS - 1):
+        br.read_records(cx, EMAIL, FakeGmail(files, fail=True), _model([]),
+                        extract=_fake_extract)
+    assert br.findings(cx, EMAIL)["failed"] == ["labs.pdf"] and br.unread(cx, EMAIL) == []
+
+
+def test_a_deleted_email_is_named_at_once(tmp_path):
+    files = {"m1": {"labs.pdf": ("application/pdf", b"x")}}
+    cx = _cx(tmp_path, files)
+
+    class Gone(FakeGmail):
+        def get(self, userId, id, format=None, messageId=None):
+            import types
+            e = Exception("Not Found")
+            e.resp = types.SimpleNamespace(status=404)
+            raise e
+    got = br.read_records(cx, EMAIL, Gone(files), _model([]), extract=_fake_extract)
+    assert got["failed"] == 1 and br.findings(cx, EMAIL)["failed"] == ["labs.pdf"]
+
+
+def test_empty_files_of_every_kind_are_not_nothing_found():
+    for mime, name, data in (("text/plain", "a.txt", b"  "),):
+        with pytest.raises(br.NoText):
+            br.extract_pages(mime, name, data)
+
+
+def test_retry_reads_failed_records_again(tmp_path, e4l):
+    c, db = _app(tmp_path, e4l, lambda cx, e: {})
+    tid = _new(c)
+    cx = sqlite3.connect(db)
+    br.ensure_tables(cx)
+    cx.execute("INSERT INTO client_record_reads VALUES(?, 'm', 0, 'x.pdf', 'now', 0, 'E', 3, NULL)",
+               (EMAIL,))
+    cx.commit()
+    assert c.get(f"/author/{tid}/records").get_json()["failed"] == ["x.pdf"]
+    assert c.post(f"/author/{tid}/records/retry").get_json()["reset"] == 1
+    assert c.get(f"/author/{tid}/records").get_json()["failed"] == []
 
 
 def test_an_unreadable_record_is_named_and_not_read_again(tmp_path):
@@ -191,10 +230,12 @@ def test_an_unreadable_record_is_named_and_not_read_again(tmp_path):
     def boom(*a, **k):
         raise ValueError("corrupt")
     # Tried ATTEMPTS times, then named and left alone.
+    br.RETRY_AFTER, _keep = -5, br.RETRY_AFTER
     for n in range(br.ATTEMPTS):
         assert br.findings(cx, EMAIL)["failed"] == []
         got = br.read_records(cx, EMAIL, FakeGmail(files), _model([]), extract=boom)
         assert got["failed"] == 1
+    br.RETRY_AFTER = _keep
     assert got["remaining"] == 0
     assert br.findings(cx, EMAIL)["failed"] == ["broken.pdf"]
 
@@ -443,7 +484,10 @@ def test_a_photo_finding_cites_no_page(tmp_path):
 def test_the_page_escapes_quotes_in_model_text():
     import subprocess
     from dashboard.biofield_report_html import _RECORDS_HTML
+    import os
     if not shutil.which("node"):
+        if os.environ.get("CI"):
+            pytest.fail("node is needed in CI for this test")
         pytest.skip("needs node")
     js = _RECORDS_HTML.split("<script>")[1].split("</script>")[0]
     fn = js[js.index("function esc("):js.index("function src(")]
@@ -470,3 +514,36 @@ def test_findings_on_an_address_that_is_shared_now_are_hidden(tmp_path, e4l):
     assert "Gout" not in c.get(f"/author/{tid}").get_data(as_text=True)
     j = c.get(f"/author/{tid}/records").get_json()
     assert j["held"] is True and j["approved"] == []
+
+
+
+def test_the_panel_renders_hostile_record_text_inert():
+    """Runs the panel's own script in node against a hostile reply."""
+    import os
+    import subprocess
+    from dashboard.biofield_report_html import _RECORDS_HTML
+    if not shutil.which("node"):
+        if os.environ.get("CI"):
+            pytest.fail("node is needed in CI for this test")
+        pytest.skip("needs node")
+    js = _RECORDS_HTML.split("<script>")[1].split("</script>")[0]
+    bad = '"><img src=x onerror=alert(1)>\' onfocus=\'alert(2)'
+    reply = {"ok": True, "held": False, "unread": 0, "reader": False, "read_count": 1,
+             "failed": [bad], "notes": [bad],
+             "pending": [{"id": 1, "kind": "result", "kind_label": bad, "text": bad,
+                          "date": bad, "filename": bad, "page": 2, "email_date": bad,
+                          "subject": bad}],
+             "approved": [{"id": 2, "kind": "diagnosis", "kind_label": "Diagnosis",
+                           "text": bad, "date": "", "filename": bad, "page": None,
+                           "email_date": bad, "subject": bad}]}
+    harness = ("var box={innerHTML:'',addEventListener:function(){}};"
+               "global.document={getElementById:function(){return box}};"
+               "global.location={pathname:'/author/a1'};"
+               "global.fetch=async function(){return {json:async function(){return "
+               + json.dumps(reply) + "}}};" + js +
+               ";setTimeout(function(){process.stdout.write(box.innerHTML)},50);")
+    html = subprocess.run(["node", "-e", harness], capture_output=True, text=True,
+                          timeout=20).stdout
+    assert "Findings from records to review" in html and "From records" in html
+    assert bad not in html and "<img" not in html and "' onfocus='" not in html
+    assert html.count("&lt;img src=x") >= 8      # each field shown, escaped

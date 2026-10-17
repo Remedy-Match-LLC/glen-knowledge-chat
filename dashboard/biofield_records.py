@@ -25,7 +25,9 @@ OCR_MIN_CHARS = 40      # a PDF page with less text than this is treated as a sc
 ASK_MAX = 30_000        # characters per model call; a longer record takes several
 ATTEMPTS = 3            # a model or OCR failure is tried this many times in all
 OCR_TIMEOUT = 30        # seconds per page
-BUDGET = 240            # seconds per read request; the rest is read on the next one
+BUDGET = 240            # seconds per request: no new record starts after this
+RECORD_BUDGET = 300     # seconds for one record's pages, wherever it starts (round 3)
+RETRY_AFTER = 600       # seconds before a failed record is tried again
 FILE_MAX = 10_000_000   # bytes
 
 _IMAGE = ("image/jpeg", "image/png", "image/tiff", "image/gif", "image/bmp", "image/webp")
@@ -130,7 +132,7 @@ def extract_pages(mime, filename, data, *, ocr=ocr_image, rasterise=pdf_page_png
                 scanned = ocr(rasterise(data, i)).strip()
                 text = scanned if len(text) < OCR_MIN_CHARS else (text + "\n" + scanned)
             pages.append(text)
-        if not any(p.strip() for p in pages) and pages:
+        if not any(p.strip() for p in pages):
             raise NoText("no words on any page")
         return pages
     if kind == "image":
@@ -141,10 +143,16 @@ def extract_pages(mime, filename, data, *, ocr=ocr_image, rasterise=pdf_page_png
     if kind == "textutil":
         ext = next((v for k, v in _TEXTUTIL.items() if (filename or "").lower().endswith(k)),
                    "rtf")
-        return [_run(["textutil", "-convert", "txt", "-stdin", "-stdout", "-format", ext],
-                     data).decode("utf-8", "replace").strip()]
-    if kind == "text":
-        return [data.decode("utf-8", "replace").strip()]
+        text = _run(["textutil", "-convert", "txt", "-stdin", "-stdout", "-format", ext],
+                    data).decode("utf-8", "replace").strip()
+    elif kind == "text":
+        text = data.decode("utf-8", "replace").strip()
+    else:
+        text = None
+    if text is not None:
+        if not text:
+            raise NoText("no words in the file")
+        return [text]
     raise ValueError("not a record this can read")
 
 
@@ -228,9 +236,13 @@ def unread(cx, email):
     times. Each is addressed by its place among the message's attachments, so two
     files with one name are two records (review round 2)."""
     ensure_tables(cx)
+    from datetime import timedelta
+    wait = (datetime.now(timezone.utc) - timedelta(seconds=RETRY_AFTER)).isoformat(
+        timespec="seconds")
+    # Done, failed for good, or failed too recently to try again (review round 3).
     done = {(r[0], r[1]) for r in cx.execute(
         "SELECT message_id, part FROM client_record_reads WHERE client_email=? AND "
-        "(error IS NULL OR attempts >= ?)", (email, ATTEMPTS))}
+        "(error IS NULL OR attempts >= ? OR read_at > ?)", (email, ATTEMPTS, wait))}
     try:
         rows = cx.execute("SELECT message_id, attachments FROM client_gmail_messages "
                           "WHERE client_email=? AND kept=1 ORDER BY sent_at DESC",
@@ -309,19 +321,23 @@ def read_records(cx, email, service, complete, *, budget=BUDGET, clock=None,
             if clock() > deadline:
                 break
             mid, part, name = rec["message_id"], rec["part"], rec["filename"]
-            note, final = None, False
+            note, final, unreached = None, False, False
             try:
                 data = _attachment_bytes(service, mid, part, name)
             except RecordGone as e:
                 data, error, final = None, str(e), True
-            except Exception:
-                not_fetched += 1          # Gmail, not the record: tried again next time
-                continue
+            except Exception as e:
+                status = getattr(getattr(e, "resp", None), "status", None)
+                if str(status) == "404":
+                    data, error, final = None, "the email is no longer in Gmail", True
+                else:   # counted, so a lasting fault is named after ATTEMPTS tries
+                    data, error, unreached = None, "Gmail could not be reached", True
+                    not_fetched += 1
             pages, found = [], []
             if data is not None:
                 try:
-                    pages = extract(rec["mime"], name, data, deadline=deadline + 120,
-                                    clock=clock)
+                    pages = extract(rec["mime"], name, data,
+                                    deadline=clock() + RECORD_BUDGET, clock=clock)
                     if getattr(pages, "total", None) and pages.total > len(pages):
                         note = f"pages 1 to {len(pages)} of {pages.total} were read"
                     found = ask(complete, pages, name)
@@ -330,7 +346,7 @@ def read_records(cx, email, service, complete, *, budget=BUDGET, clock=None,
                     pages, found, error, final = [], [], "no words could be read", True
                 except Exception as e:      # OCR, a broken file, or the model
                     pages, found, error = [], [], type(e).__name__
-            if error:
+            if error and not unreached:
                 failed += 1
             now = _now()
             for f in found:
@@ -409,6 +425,15 @@ def decide(cx, email, finding_id, decision, text=None):
         return False
     cx.commit()
     return cur.rowcount == 1
+
+
+def retry_failed(cx, email):
+    """Glen's Retry: failed records are read again on the next pass."""
+    ensure_tables(cx)
+    cur = cx.execute("DELETE FROM client_record_reads WHERE client_email=? AND "
+                     "error IS NOT NULL", (email,))
+    cx.commit()
+    return cur.rowcount
 
 
 def approved_diagnoses(cx, email):
