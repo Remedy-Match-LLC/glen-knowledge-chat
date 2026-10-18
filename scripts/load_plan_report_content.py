@@ -1,7 +1,8 @@
-"""Load clinical's Plan report wording: the merge map and the score-heading lines.
+"""Load clinical's Plan report wording: the merge map, the score-heading lines, the
+report-level lines and the ingredient caution table.
 
-Content: ~/AI-Training/clinical/biofield-sections/plan-report/merge-map.json and
-score-lines.json, written by clinical. Only entries marked "approved": true are kept,
+Content: ~/AI-Training/clinical/biofield-sections/plan-report/merge-map.json,
+score-lines.json and frame-lines.json, written by clinical. Only entries marked "approved": true are kept,
 because Glen approves each merge and each line once (2026-10-18). The stored set is
 replaced, so withdrawing an approval in the file withdraws it here.
 
