@@ -75,7 +75,7 @@ def test_no_scan_means_no_marks_and_an_unread_pdf_is_not_none_purple(cx):
     marks = {"recommended": set(), "purple": None, "purple_error": "no PDF"}
     info = _by_key(cs.sections_for(cx, "a49", "Blood", [ED5], [], marks=marks))["infoceuticals"]
     assert info["items"][0]["purple"] is None
-    assert info["marks_errors"] == [("Purple could not be read from the scan PDF", "no PDF")]
+    assert info["marks_errors"] == [("Colours could not be read from the scan PDF", "no PDF")]
 
 
 def _page(cx, marks):
@@ -87,10 +87,14 @@ def _page(cx, marks):
 
 
 def test_page_shows_the_section_tags_and_ticks_as_remedies(cx):
-    html = _page(cx, {"recommended": {"EI10"}, "purple": {"ED5"}, "purple_error": ""})
+    html = _page(cx, {"recommended": {"EI10"}, "purple": {"ED5"}, "purple_error": "",
+                      "colours": {"ED5": ["purple"], "EI10": ["grey"]}})
     assert "<div class=clinical-section-title>Infoceuticals</div>" in html
     info = html[html.index('data-section="infoceuticals"'):]
-    assert info.count(">recommended</span>") == 1 and info.count(">purple</span>") == 1
+    assert info.count(">recommended</span>") == 1
+    # Glen, 2026-10-18: an icon with the bar's colour replaces the purple tag.
+    assert info.count("class='scan-dot purple'") == 1 and ">purple</span>" not in info
+    assert info.count("class='scan-dot grey'") == 1
     assert (f'class=clinical-remedy-choice type=checkbox value="{ED5}" checked '
             'onchange=selectClinicalRemedy(this)') in html
     assert "could not be read" not in html
@@ -98,7 +102,7 @@ def test_page_shows_the_section_tags_and_ticks_as_remedies(cx):
 
 def test_page_says_when_purple_could_not_be_read(cx):
     html = _page(cx, {"recommended": {"EI10"}, "purple": None, "purple_error": "gone"})
-    assert "Purple could not be read from the scan PDF" in html
+    assert "Colours could not be read from the scan PDF" in html
     assert ">purple</span>" not in html
 
 
@@ -172,7 +176,9 @@ def test_marks_come_from_the_scan_and_the_pdf_is_read_once(cx, tmp_path, monkeyp
     again = marks_mod.infoceutical_marks(cx, e4l, 7)
     assert first == again == {"scan_id": "7", "recommended": {"ED12", "EI10"},
                               "recommended_error": "",
-                              "purple": {"ED12", "ES12"}, "purple_error": ""}
+                              "purple": {"ED12", "ES12"}, "purple_error": "",
+                              "colours": {"ED12": ["purple"], "ED1": ["green"],
+                                          "ES12": ["green", "purple"]}}
     assert reads == ["/scans/x.pdf"]
 
 
@@ -198,7 +204,9 @@ JOSIE = os.path.expanduser("~/e4l-scans/client_16136_scan_1066168_2026-10-11.pdf
 @pytest.mark.skipif(not os.path.exists(JOSIE), reason="Josie's scan PDF is only on Glen's Mac")
 def test_real_scan_purple_matches_what_glen_sees():
     # Checked by eye on pages 1, 7, 10, 13, 19 and 26 of her 11 October scan.
-    purple = {c for c, cols in marks_mod.bar_colours(JOSIE).items() if "purple" in cols}
+    found = marks_mod.bar_colours(JOSIE)
+    purple = {c for c, cols in found.items()
+              if "purple" in cols and marks_mod._CODE.fullmatch(c)}
     assert purple == {"ED12", "ED14", "EI10", "ES12", "ET7", "ET11", "ET16", "MB8",
                       "MR3", "MR10"}
 
@@ -262,7 +270,7 @@ def test_an_unreadable_scan_database_says_so(cx, tmp_path):
         "selected_remedies": [],
         "sections": cs.sections_for(cx, "a49", "Blood", [ED5], [], marks=got)}])
     assert "Recommended could not be read from the scan" in html
-    assert "Purple could not be read from the scan PDF" in html
+    assert "Colours could not be read from the scan PDF" in html
     assert ">recommended</span>" not in html
 
 
@@ -327,3 +335,35 @@ def test_an_mr_filed_as_an_infoceutical_stays_out(cx):
     secs = _by_key(cs.sections_for(cx, "a49", "Blood"))
     assert secs["infoceuticals"]["items"] == []
     assert [i["name"] for i in secs["functional_formulations"]["items"]] == ["MR3 Restore Matrix"]
+
+
+@pytest.mark.skipif(not os.path.exists(JOSIE), reason="Josie's scan PDF is only on Glen's Mac")
+def test_real_scan_reads_grey_and_nutrient_fields():
+    # Checked by eye on pages 19 and 30 of her 11 October scan.
+    found = marks_mod.bar_colours(JOSIE)
+    assert found["ET14"] == {"grey"} and found["ET11"] == {"purple"}
+    assert found["ET1"] == {"orange"} and found["ET3"] == {"yellow"}
+    assert (found["Magnesium"], found["Vitamin B10"], found["Omega 3 - DHA"],
+            found["Iron"], found["Vitamin D"]) == (
+        {"grey"}, {"purple"}, {"yellow"}, {"orange"}, {"green"})
+    assert found["Taurine"] == {"orange"} and found["Glycine"] == {"orange"}
+
+
+def test_a_compound_shows_a_dot_for_each_part(cx):
+    """Glen, 2026-10-18: "For a compound like Mg Taurate show colors for both Mg and
+    Tau." An item with no scan field gets none."""
+    from dashboard.biofield_report_html import render_clinical_checklist
+    cs.upsert_item(cx, "Blood", cs.NUTRIENTS, _item("Magnesium Taurate", 7, 5, 5))
+    cs.upsert_item(cx, "Blood", cs.NUTRIENTS, _item("Lutein with zeaxanthin", 6, 5, 5))
+    cs.upsert_item(cx, "Blood", cs.BOTANICALS, _item("Bladderwrack (iodine-rich)", 6, 5, 5))
+    marks = {"recommended": set(), "purple": set(), "purple_error": "",
+             "colours": {"Magnesium": ["grey"], "Taurine": ["orange"], "Iodine": ["purple"]}}
+    secs = {s["key"]: s for s in cs.sections_for(cx, "a49", "Blood", marks=marks)}
+    by_name = {e["name"]: e for e in secs[cs.NUTRIENTS]["items"]}
+    assert by_name["Magnesium Taurate"]["scan_colours"] == [
+        ("Magnesium", ["grey"]), ("Taurine", ["orange"])]
+    assert by_name["Lutein with zeaxanthin"]["scan_colours"] == []
+    assert secs[cs.BOTANICALS]["items"][0]["scan_colours"] == [("Iodine", ["purple"])]
+    html = render_clinical_checklist([{"label": "Blood", "sections": list(secs.values())}])
+    assert 'title="Taurine: orange on this scan"' in html
+    assert 'title="Magnesium: grey (empty) on this scan"' in html

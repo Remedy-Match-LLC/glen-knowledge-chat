@@ -2209,7 +2209,7 @@ def _clinical_sections_html(sections, remedy_choice):
     three digits (10 as X) that Glen can retype for this client; nutrients carry an
     editable dose; Fullscript items link to the store front door only."""
     from dashboard.biofield_clinical_sections import (
-        FULLSCRIPT, NUTRIENTS, REMEDY_SECTIONS, fullscript_store_url)
+        DOSED_SECTIONS, FULLSCRIPT, REMEDY_SECTIONS, fullscript_store_url)
     out = []
     for section in sections:
         key, title = section.get("key"), section.get("title") or ""
@@ -2243,9 +2243,19 @@ def _clinical_sections_html(sections, remedy_choice):
             if entry.get("recommended"):
                 flags += ("<span class='clinical-section-flag recommended' title='Among "
                           "the 5 infoceuticals this scan recommends'>recommended</span>")
-            if entry.get("purple"):
-                flags += ("<span class='clinical-section-flag purple' title='Purple on "
-                          "this scan'>purple</span>")
+            # Glen, 2026-10-18: "Just show an icon with the color." One per scan bar:
+            # the infoceutical's own, or each field a nutrient names.
+            if entry.get("colours") is not None:
+                bars = [(entry.get("code") or "", entry["colours"])] if entry["colours"] else []
+            else:
+                bars = entry.get("scan_colours") or []
+            for field, found in bars:
+                for colour in found:
+                    shown_colour = "grey (empty)" if colour == "grey" else colour
+                    flags += (f"<span class='scan-dot {_e(colour)}' role=img "
+                              f"title=\"{_e(field)}: {_e(shown_colour)} on this scan\" "
+                              f"aria-label=\"{_e(field)}: {_e(shown_colour)} on this scan\">"
+                              "</span>")
             if "recommended" in entry and entry.get("code") == "":
                 # No E4L code in the name, so the scan cannot answer for it.
                 flags += ("<span class='clinical-section-flag' title='No E4L code in "
@@ -2263,7 +2273,7 @@ def _clinical_sections_html(sections, remedy_choice):
                 shown = (f"<a href=\"{_e(fullscript_store_url())}\" target=_blank "
                          f"rel=noopener>{_e(name)}</a>{brand}")
             dose = ""
-            if key == NUTRIENTS:
+            if key in DOSED_SECTIONS:
                 dose = (f"<input class=clinical-section-dose value=\"{_e(entry.get('dose') or '')}\" "
                         f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
                         f"placeholder='Dose' aria-label=\"Dose of {_e(name)}\" "
@@ -2572,7 +2582,11 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-section-head{display:flex;gap:10px;align-items:center}"
             ".clinical-section-all{font-size:11px;color:var(--muted)}"
             ".clinical-section-flag.recommended{border-color:#3f8fc9;color:#6fb3e6}"
-            ".clinical-section-flag.purple{border-color:#9581b4;color:#b9a6d8}"
+            ".scan-dot{display:inline-block;width:11px;height:11px;border-radius:50%;"
+            "margin-left:5px;vertical-align:middle;border:1px solid rgba(0,0,0,.35)}"
+            ".scan-dot.purple{background:#9581b4}.scan-dot.green{background:#75b772}"
+            ".scan-dot.yellow{background:#f2f21a}.scan-dot.orange{background:#ffbf3f}"
+            ".scan-dot.grey{background:#dee0e2}"
             ".clinical-section-item{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:1px 0}"
             ".clinical-common .clinical-section-item input.clinical-section-rating,"
             ".clinical-common .clinical-section-item input.clinical-section-dose{padding:1px 4px;margin:0;"

@@ -57,7 +57,7 @@ def test_new_items_start_unchecked(cx):
     sections = cs.sections_for(cx, "a49", "Gut")
     assert [s["title"] for s in sections] == [
         "Functional Formulations", "Infoceuticals", "Foods to emphasize",
-        "Foods to avoid", "Nutrients", "Fullscript supplements"]
+        "Foods to avoid", "Nutrients", "Botanicals", "Fullscript supplements"]
     items = [i for s in sections for i in s["items"]]
     assert items and not any(i["checked"] for i in items)
 
@@ -517,6 +517,35 @@ def test_all_box_reads_off_when_an_item_arrives_after_it_was_ticked(cx):
     cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, ["Kale", "Beets", "Garlic"])
     cs.upsert_item(cx, "Gut", "foods_emphasize", _item("Leeks", 8, 5, 5))
     assert _ticked(cx) == ({"Kale", "Beets", "Garlic"}, False)
+
+
+def test_loader_moves_an_item_clinical_moved_and_keeps_one_glen_touched(tmp_path):
+    """Clinical moved curcumin from Nutrients to Botanicals (2026-10-18). A reload
+    must not leave it in both. One Glen ticked or rated stays, and is listed."""
+    from scripts.load_clinical_sections import load
+    con = sqlite3.connect(str(tmp_path / "chat_log.db"))
+    folder = tmp_path / "content"
+    folder.mkdir()
+    def write(nutrients, botanicals):
+        (folder / "gut.json").write_text(json.dumps({
+            "condition_key": "gut", "label": "Gut", "sections": {
+                "nutrients": nutrients, "botanicals": botanicals}}))
+    write([_item("Curcumin", 7, 5, 5), _item("Zinc", 6, 5, 5), _item("Taurine", 6, 5, 5)],
+          [])
+    load(con, str(folder), "a49")
+    cs.save_pick(con, "a49", "Gut", "nutrients", "Zinc", checked=True)
+    cs.save_pick(con, "a49", "Gut", "nutrients", "Taurine", rating="777")
+    write([], [_item("Curcumin", 7, 5, 5, dose="500 mg"), _item("Ginger", 6, 4, 4)])
+    report = load(con, str(folder), "a49")
+    assert report["removed"] == ["Gut: nutrients: Curcumin"]
+    assert sorted(report["kept_not_listed"]) == ["Gut: nutrients: Taurine",
+                                                 "Gut: nutrients: Zinc"]
+    assert report["added"] == {"botanicals": 2}
+    secs = {s["key"]: s for s in cs.sections_for(con, "a49", "Gut")}
+    assert sorted(e["name"] for e in secs["nutrients"]["items"]) == ["Taurine", "Zinc"]
+    assert sorted(e["name"] for e in secs["botanicals"]["items"]) == ["Curcumin", "Ginger"]
+    assert [e["dose"] for e in secs["botanicals"]["items"] if e["name"] == "Curcumin"] \
+        == ["500 mg"]
 
 
 def test_all_route_returns_the_ticks_left_so_the_page_need_not_reload(tmp_path, monkeypatch):

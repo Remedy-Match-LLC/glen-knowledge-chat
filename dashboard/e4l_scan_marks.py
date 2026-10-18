@@ -1,4 +1,4 @@
-"""Which infoceuticals a client's E4L scan recommends, and which are purple on it.
+"""Which infoceuticals a client's E4L scan recommends, and each bar's colour on it.
 
 Glen, 2026-10-17: "Indicate which infoceuticals are among the 5 recommended, and
 also which are purple." The 5 recommended are the scan's rows under
@@ -8,6 +8,10 @@ itself. The PDF draws each bar as a vector path with an exact fill colour; this
 reads the fill and ties it to the code label printed just above the bar. Checked
 by eye against Josie Gagnon's scan of 2026-10-11 (pages 1, 7, 10 and 19).
 
+Glen, 2026-10-18: "Just show an icon with the color", and "Since nutrients are
+included in e4l scans, show their color as well." So every bar is read, grey
+(empty) included, under its code or, on the Nutrition Fields pages, its name.
+
 A PDF is read once per scan and the colours are kept in chat_log.db, so a page
 load never re-reads it. A scan whose PDF cannot be read says so; it never reads
 as "nothing is purple".
@@ -16,14 +20,18 @@ import re
 import sqlite3
 import subprocess
 
-# Fill colours on E4L scan PDFs. Grey (0.871, 0.878, 0.886) is an empty bar.
+# Fill colours on E4L scan PDFs. Grey is an empty bar, and also the unfilled part
+# of a coloured one, so a bar is grey only when nothing else is on it.
 COLOURS = {(0.584, 0.506, 0.706): "purple", (0.459, 0.718, 0.447): "green",
-           (0.949, 0.949, 0.102): "yellow", (1.0, 0.749, 0.247): "orange"}
-_WORDS = re.compile(r'<page width="([\d.]+)" height="([\d.]+)"|'
-                    r'xMin="([\d.]+)" yMin="[\d.]+" xMax="[\d.]+" yMax="([\d.]+)">'
-                    r'([A-Z]{2,3}\d+|BFA)<')
+           (0.949, 0.949, 0.102): "yellow", (1.0, 0.749, 0.247): "orange",
+           (0.871, 0.878, 0.886): "grey"}
+_PAGE = re.compile(r'<page width="[\d.]+" height="([\d.]+)"')
+_LINE = re.compile(r'<line xMin="([\d.]+)" yMin="[\d.]+" xMax="[\d.]+" yMax="([\d.]+)">'
+                   r'(.*?)</line>', re.S)
+_WORD = re.compile(r'>([^<]+)</word>')
+_CODE = re.compile(r"^([A-Z]{2,3}\d+|BFA)\b")
 # Bump when COLOURS or the matching changes: scans read by an older reader re-read.
-READER_VERSION = 1
+READER_VERSION = 2
 
 
 def ensure_schema(cx):
@@ -68,10 +76,18 @@ def _segments(reader, stream, resources, ctm, out):
                           _mul(matrix, ctm), out)
 
 
+def _label(text):
+    """A bar's label: its code ("ET1 - Immune 1" is ET1), else the whole line
+    ("Vitamin B12", "Omega 3 - EPA")."""
+    found = _CODE.match(text)
+    return found.group(1) if found else text
+
+
 def bar_colours(path):
-    """{code: {colour, ...}} for every code with a coloured bar in the PDF. A code
-    can carry more than one colour when it appears on several pages. Markers on the
-    body diagrams are skipped: their labels sit beside them, not above."""
+    """{label: {colour, ...}} for every bar in the PDF, by code or by nutrient field
+    name. A label can carry more than one colour when it appears on several pages;
+    "grey" means every bar it has is empty. Markers on the body diagrams are
+    skipped: their labels sit beside them, not above."""
     from pypdf import PdfReader
     reader = PdfReader(path)
     out = {}
@@ -81,21 +97,19 @@ def bar_colours(path):
                   segments)
         if not segments:
             continue
-        text = subprocess.run(["pdftotext", "-f", str(n), "-l", str(n), "-bbox", path, "-"],
+        text = subprocess.run(["pdftotext", "-f", str(n), "-l", str(n), "-bbox-layout",
+                               path, "-"],
                               capture_output=True, text=True, check=True, timeout=20).stdout
-        height, labels = None, []
-        for m in _WORDS.finditer(text):
-            if m.group(2):
-                height = float(m.group(2))
-            else:
-                labels.append((m.group(5), float(m.group(3)), float(m.group(4))))
+        height = float(_PAGE.search(text).group(1))
+        labels = [(_label(" ".join(_WORD.findall(m.group(3))).strip()),
+                   float(m.group(1)), float(m.group(2))) for m in _LINE.finditer(text)]
         for colour, x, y in segments:
             top = height - y
             # The label sits just above its bar, starting at the bar's left edge.
             near = [lab for lab in labels if 0 <= top - lab[2] < 12 and abs(lab[1] - x) < 2]
             if len(near) == 1:
                 out.setdefault(near[0][0], set()).add(colour)
-    return out
+    return {label: (found - {"grey"}) or {"grey"} for label, found in out.items()}
 
 
 def _read_once(cx, scan_id, pdf_path):
@@ -107,7 +121,7 @@ def _read_once(cx, scan_id, pdf_path):
         if not pdf_path:
             raise ValueError("no scan PDF is recorded for this scan")
         colours = bar_colours(pdf_path)
-        if not colours:
+        if not colours or all(found == {"grey"} for found in colours.values()):
             # Every scan has coloured bars. None found means the reader missed them,
             # which must not read as "nothing is purple".
             raise ValueError("no coloured bars were found in the scan PDF")
@@ -127,14 +141,15 @@ def _read_once(cx, scan_id, pdf_path):
 
 def infoceutical_marks(cx, e4l_db, scan_id):
     """{"scan_id", "recommended": {code} or None, "recommended_error",
-    "purple": {code} or None, "purple_error"}. A set is None when it could not be
-    read, with the reason beside it. The whole result is None when there is no scan."""
+    "purple": {code} or None, "colours": {label: [colour]} or None, "purple_error"}.
+    `colours` holds every bar by code or nutrient field name. A value is None when it
+    could not be read, with the reason beside it. The result is None with no scan."""
     if not scan_id or not e4l_db:
         return None
     scan_id = str(scan_id)
     # e4l.db keeps scan ids as numbers; '7' never equals 7 in a column without affinity.
     key = int(scan_id) if scan_id.isdigit() else scan_id
-    unread = {"scan_id": scan_id, "recommended": None, "purple": None,
+    unread = {"scan_id": scan_id, "recommended": None, "purple": None, "colours": None,
               "recommended_error": "the scan database could not be read",
               "purple_error": "the scan database could not be read"}
     try:
@@ -158,11 +173,11 @@ def infoceutical_marks(cx, e4l_db, scan_id):
         recommended, recommended_error = None, "the scan's recommended list is not stored"
     ensure_schema(cx)
     ok, error = _read_once(cx, scan_id, row[0] if row else "")
-    purple = None
+    purple = colours = None
     if ok:
-        purple = {r[0] for r in cx.execute(
-            "SELECT code FROM biofield_scan_bar_colour WHERE scan_id=? AND "
-            "(',' || colours || ',') LIKE '%,purple,%'", (scan_id,))}
+        colours = {r[0]: r[1].split(",") for r in cx.execute(
+            "SELECT code,colours FROM biofield_scan_bar_colour WHERE scan_id=?", (scan_id,))}
+        purple = {code for code, found in colours.items() if "purple" in found}
     return {"scan_id": scan_id, "recommended": recommended,
             "recommended_error": recommended_error, "purple": purple,
-            "purple_error": error}
+            "colours": colours, "purple_error": error}
