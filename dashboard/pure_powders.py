@@ -5,7 +5,7 @@ store powders and the food powders ("food powders too"). All of them stay sellab
 The second batch (48 slugs) came from production the same day.
 
 Matched by SLUG, or by the product's exact NAME. Never by a word inside a name, so a
-formula that contains MSM or quercetin is unaffected. Pure logic, no I/O.
+formula that contains MSM, quercetin or silymarin is unaffected. Pure logic, no I/O.
 """
 import re
 
@@ -38,6 +38,8 @@ PURE_POWDER_SLUGS = frozenset({
     "hydrolized-pea-protein-aminos--pure--predigested", "hydrolyzed-whey",
     # Production 2026-10-18, Glen approved: FileMaker types it "Pure Powder"
     "melissa-20-1-extract-powder",
+    # Production 2026-10-18, Glen approved: a single ingredient, missed from the October batch
+    "silymarin",
 })
 
 # The catalog names of the slugs above, lowercased, whitespace collapsed.
@@ -64,6 +66,7 @@ PURE_POWDER_NAMES = frozenset({
     "centrophenoxine", "coluracetam", "vinpocetine", "licorice omnipotent",
     "pea protein aminos", "hydrolyzed whey",
     "melissa 20:1 extract powder",
+    "silymarin",
 })
 
 
