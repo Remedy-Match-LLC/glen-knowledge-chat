@@ -2241,6 +2241,10 @@ _CUE_NAMES = frozenset({
     "brain-cleanse", "sleep-bundle", "brain-program",
     # "how do i take soothe powder?" (store spec 2026-10-18-soothe-powder-scoop).
     "soothe-powder",
+    # "how many iron out capsules can I take a day?" (store spec
+    # 2026-10-18-iron-out-directions). A cue word is still needed, so "iron out the
+    # details" gets no block.
+    "iron-out",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
