@@ -1,5 +1,6 @@
 """The Foods, Remedies and Healing Tools Plan: what Glen ticked in a client's
-Clinical Summary, as lists and as paragraphs.
+Clinical Summary, as one list per heading, each line
+followed by its approved explanation.
 
 Glen, 2026-10-18: "It will provide the checked information in the Clinical Summary
 in both list and paragraph form with explanations in the paragraphs. It is it's own
@@ -9,8 +10,9 @@ the same time as an addition to the same pdf file."
 Headings (Glen, same day): Foods; Remedies, which holds Infoceuticals and PRL too;
 Healing Tools. An item ticked under several conditions is listed once, with every
 condition named (clinical's frame note 1). Only the overall rating digit shows.
-Each item's paragraph is the explanation stored with it, printed only once Glen has
-approved it; an item without one stays in the list and gets no paragraph.
+Under each line sits the explanation stored with the item (Glen, 2026-10-18:
+"Integrate the reasoning below each item's line"), printed only once Glen has
+approved it; an item without one prints its line alone.
 """
 import html
 import json
@@ -166,30 +168,27 @@ def render_plan_html(plan_groups, client_name="", date=""):
     e = html.escape
     parts = []
     for heading, groups in HEADINGS:
-        lists, paras = [], []
+        lists = []
         for key, title in groups:
             items = plan_groups.get(key) or []
             if not items:
                 continue
+            # Glen, 2026-10-18: "Integrate the reasoning below each item's line". The
+            # approved explanation only, never the internal reason.
             rows = "".join(
                 f"<li><span class=plan-name>{e(i['name'])}</span>"
                 + (f" <span class=plan-dose>{e(i['dose'])}</span>" if i["dose"] else "")
                 + (f" <span class=plan-rating title='Overall rating'>{_digit(i['overall'])}</span>"
                    if i["overall"] is not None else "")
-                + f" <span class=plan-for>for {e(', '.join(i['conditions']))}</span></li>"
+                + f" <span class=plan-for>for {e(', '.join(i['conditions']))}</span>"
+                + (f"<p class=plan-why>{e(i['explanation'])}</p>" if i["approved"] else "")
+                + "</li>"
                 for i in items)
             lists.append(f"<h3>{e(title)}</h3><ul class=plan-list>{rows}</ul>")
-            written = "".join(f"<p><b>{e(i['name'])}.</b> {e(i['explanation'])}</p>"
-                              for i in items if i["approved"])
-            if written:
-                paras.append(f"<h3>{e(title)}</h3>{written}")
         if not lists:
             continue
         parts.append(f"<section class=plan-heading><h2>{e(heading)}</h2>"
-                     f"<div class=plan-lists>{''.join(lists)}</div>"
-                     + (f"<div class=plan-paras><h2 class=plan-sub>{e(heading)}: why each "
-                        f"is here</h2>{''.join(paras)}</div>" if paras else "")
-                     + "</section>")
+                     f"{''.join(lists)}</section>")
     title = "Foods, Remedies and Healing Tools Plan"
     who = f"<p class=plan-who>{e(client_name)}{' · ' + e(date) if date else ''}</p>" \
         if client_name else ""
@@ -204,12 +203,11 @@ PLAN_CSS = (
     ".plan{max-width:760px;margin:0 auto;padding:28px 18px}"
     ".plan h1{font-size:26px;margin:0 0 4px}.plan-who{color:#56656f;margin:0 0 18px}"
     ".plan h2{font-size:20px;border-bottom:1px solid #c9d3d9;padding-bottom:4px;margin:26px 0 8px}"
-    ".plan h2.plan-sub{font-size:17px;border:0;margin-top:18px}"
     ".plan h3{font-size:15px;margin:14px 0 4px;color:#2f5d73}"
     ".plan-list{margin:0;padding-left:20px}.plan-list li{margin:2px 0}"
     ".plan-dose{color:#3d4b55}.plan-for{color:#6b7a84;font-size:13px}"
     ".plan-rating{display:inline-block;min-width:16px;padding:0 4px;border:1px solid #9fb3bf;"
     "border-radius:3px;font:12px/16px system-ui,sans-serif;text-align:center;color:#2f5d73}"
-    ".plan-paras p{margin:6px 0}"
+    ".plan-list li{margin:0 0 8px}.plan-why{margin:2px 0 0;color:#2b3a44}"
     "@media print{.plan{padding:0}.plan-heading{break-inside:auto}h2,h3{break-after:avoid}}"
 )
