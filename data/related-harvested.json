@@ -117,7 +117,7 @@
     "fiber-cleanse",
     "microbiome",
     "terrain-restore",
-    "soothe"
+    "soothe-powder"
   ],
   "bioavailability-blend": [
     "blood-cleanse",
@@ -242,7 +242,7 @@
     "fiber-cleanse",
     "microbiome",
     "terrain-restore",
-    "soothe"
+    "soothe-powder"
   ],
   "coluracetam": [
     "lipid-cleanse"
@@ -714,7 +714,7 @@
     "digestzymes",
     "microbiome",
     "terrain-restore",
-    "soothe"
+    "soothe-powder"
   ],
   "fibrolysis-factors": [
     "clear-the-way",
@@ -821,7 +821,7 @@
     "immune-modulation",
     "liver-support",
     "seaamino-syntropy",
-    "soothe",
+    "soothe-powder",
     "vagus-nerve-support",
     "appestat"
   ],
@@ -1657,7 +1657,7 @@
     "immune-intelligence",
     "fiber-cleanse",
     "microbiome",
-    "soothe",
+    "soothe-powder",
     "sinus-terrain-nasal-spray"
   ],
   "tetrahydrocurcumin": [
@@ -1793,7 +1793,7 @@
     "fiber-cleanse",
     "microbiome",
     "vitamin-c-syntropy",
-    "soothe",
+    "soothe-powder",
     "wholomega-120-capsules",
     "ocuheal-eye-drops",
     "denas-scenar"

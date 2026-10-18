@@ -1706,7 +1706,9 @@
    "ingredients_source": "t33",
    "description": "Soothe . Price: $70.",
    "bottle_type": "30 g",
-   "fmp_id": "433"
+   "fmp_id": "433",
+   "inactive": true,
+   "superseded_by": "soothe-powder"
   },
   "fungifuge": {
    "name": "Fungifuge",
@@ -14772,7 +14774,11 @@
    "ingredients_source": "fmp-bom-2026-05-23",
    "no_groovekart": true,
    "regular_cents": 8000,
-   "description": "1 capsule 2 times a day in drinks",
+   "description": "1 scoop (500 mg) 2 times a day in drinks.",
+   "directions": "1 scoop (500 mg) 2 times a day in drinks.",
+   "copy_pinned": [
+    "directions"
+   ],
    "bottle_type": "30 g",
    "ingredients": [
     {
