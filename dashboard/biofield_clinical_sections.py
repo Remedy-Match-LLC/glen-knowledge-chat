@@ -412,6 +412,14 @@ def select_all(cx, test_id, label, section, on, names, remedies=()):
     return None
 
 
+def checked_names(cx, test_id, label, section, names):
+    """Which of `names` are ticked in a non-remedy section, so the page can redraw
+    the All box's effect in place instead of reloading and losing its place."""
+    picks = _picks(cx, str(test_id), _norm(label))
+    return [n for n in names or []
+            if (picks.get((section, _norm(str(n or "")))) or {}).get("checked")]
+
+
 def remedies_changed(cx, test_id, label, before, after):
     """The row's remedies were saved by hand. A remedy unticked by hand is no longer
     one the All box added, and the box itself unticks, as it does in the other
