@@ -1579,12 +1579,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             try:
                 from dashboard import biofield_clinical_sections as _cs
                 clinical_botanical = _cs.botanical_setting(cx, test_id)
+                # Which infoceuticals the client's latest scan recommends and which
+                # are purple on it (Glen, 2026-10-17). No scan, no marks.
+                scan_marks = None
+                try:
+                    from dashboard.e4l_scan_marks import infoceutical_marks
+                    _sctx = scan_lookup(c_email) if c_email else {}
+                    if (_sctx or {}).get("found"):
+                        scan_marks = infoceutical_marks(cx, e4l_db, _sctx.get("scan_id"))
+                except Exception as _me:
+                    print(f"[scan-marks] {test_id}: skipped: {_me!r}", flush=True)
                 for _item in clinical_checklist:
                     _item["sections"] = _cs.sections_for(
                         cx, test_id, _item.get("label"),
                         remedies=_item.get("common_remedies") or [],
                         chosen_remedies=_item.get("selected_remedies") or [],
-                        botanical=clinical_botanical)
+                        botanical=clinical_botanical, marks=scan_marks)
                 # A row counts as checked when it is ticked or any remedy on it is.
                 # The scan panel loads separately; it reads these labels to link a
                 # PRL focus area to this client's own conditions.

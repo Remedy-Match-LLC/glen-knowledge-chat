@@ -1,9 +1,9 @@
-"""Five rated sections under each Clinical Summary condition.
+"""Six rated sections under each Clinical Summary condition.
 
 Spec: vault clinical/specs/2026-10-17-clinical-summary-five-sections.md (Glen, 17 Oct).
 
-Every condition row carries Functional Formulations, Foods to emphasize, Foods to
-avoid, Nutrients and Fullscript supplements. The shared content lives in
+Every condition row carries Functional Formulations, Infoceuticals, Foods to
+emphasize, Foods to avoid, Nutrients and Fullscript supplements. The shared content lives in
 biofield_clinical_section_item, one row per (condition, section, item). What one
 client has ticked, and any score or dose Glen edits for that client, lives in
 biofield_clinical_section_pick.
@@ -26,15 +26,18 @@ added. Unchecking doesn't remove checks from those checked manually." The same r
 as the PRL All box, so each tick remembers how it was made (`via`).
 """
 import os
+import re
 
 from dashboard.biofield_clinical_checklist import _norm, forgotten_remedies
 
 
 FORMULATIONS = "functional_formulations"
+INFOCEUTICALS = "infoceuticals"
 FULLSCRIPT = "fullscript"
 NUTRIENTS = "nutrients"
 SECTIONS = (
     (FORMULATIONS, "Functional Formulations"),
+    (INFOCEUTICALS, "Infoceuticals"),
     ("foods_emphasize", "Foods to emphasize"),
     ("foods_avoid", "Foods to avoid"),
     (NUTRIENTS, "Nutrients"),
@@ -42,6 +45,28 @@ SECTIONS = (
 )
 SECTION_KEYS = tuple(key for key, _ in SECTIONS)
 SCORES = ("overall", "research", "uniqueness")
+# Both are the row's remedy list: their ticks live in biofield_clinical_selection.
+REMEDY_SECTIONS = (FORMULATIONS, INFOCEUTICALS)
+
+# Glen, 2026-10-17: Infoceuticals get a section of their own, apart from Functional
+# Formulations. MRs are not infoceuticals (Glen, same day), and neither are ERs.
+_INFOCEUTICAL_CODE = re.compile(r"^(ED|EI|ES|ET|MB)\d+\b", re.I)
+_NOT_INFOCEUTICAL = re.compile(r"^(MR|ER)\d+\b", re.I)
+_CODE = re.compile(r"^([A-Z]{2,3}\d{0,3})\b")
+
+
+def is_infoceutical(name):
+    name = str(name or "").strip()
+    if _NOT_INFOCEUTICAL.match(name):
+        return False
+    return bool(_INFOCEUTICAL_CODE.match(name)) or \
+        bool(re.search(r"\binfoceutical\b", name, re.I))
+
+
+def infoceutical_code(name):
+    """"EI10 Circulation/... Infoceutical" -> "EI10"; "ESR Emotional ..." -> "ESR"."""
+    m = _CODE.match(str(name or "").strip().upper())
+    return m.group(1) if m else ""
 
 
 def fullscript_store_url():
@@ -256,8 +281,9 @@ def save_pick(cx, test_id, label, section, name, checked=None, rating=None,
     ensure_schema(cx)
     if section not in SECTION_KEYS:
         raise ValueError(f"unknown section {section!r}")
-    if section == FORMULATIONS and checked is not None:
-        raise ValueError("Functional Formulations ticks are saved as the row's remedies")
+    if section in REMEDY_SECTIONS and checked is not None:
+        raise ValueError("Functional Formulations and Infoceuticals ticks are saved as "
+                         "the row's remedies")
     item_key, name_key = _norm(label), _norm(name)
     if not item_key or not name_key:
         raise ValueError("a condition and an item name are required")
@@ -330,9 +356,9 @@ def select_all(cx, test_id, label, section, on, names, remedies=()):
     On: every shown item not yet ticked is ticked and marked as added by the box.
     Off: only the items the box added are unticked; ticks made by hand stay.
 
-    For Functional Formulations, `remedies` is the row's current tick set and the
-    result is the new set, which the caller saves as the row's remedies. For the
-    other sections the result is None."""
+    For Functional Formulations and Infoceuticals, `remedies` is the row's current
+    tick set and the result is the new set, which the caller saves as the row's
+    remedies. For the other sections the result is None."""
     ensure_schema(cx)
     if section not in SECTION_KEYS:
         raise ValueError(f"unknown section {section!r}")
@@ -345,7 +371,7 @@ def select_all(cx, test_id, label, section, on, names, remedies=()):
         name = str(raw or "").strip()[:160]
         if name and _norm(name) not in {_norm(n) for n in shown}:
             shown.append(name)
-    if section == FORMULATIONS:
+    if section in REMEDY_SECTIONS:
         chosen = [str(r or "").strip() for r in remedies or [] if str(r or "").strip()]
         chosen_keys = {_norm(r) for r in chosen}
         if on:
@@ -387,11 +413,21 @@ def remedies_changed(cx, test_id, label, before, after):
     ensure_schema(cx)
     item_key = _norm(label)
     after_keys = {_norm(r) for r in after or []}
-    removed = {_norm(r) for r in before or []} - after_keys
-    for key in _added_by_all(cx, test_id, item_key, FORMULATIONS) - after_keys:
-        _set_via(cx, test_id, item_key, FORMULATIONS, key, "")
-    if removed:
-        _set_all(cx, test_id, item_key, FORMULATIONS, False)
+    removed = [r for r in before or [] if _norm(r) not in after_keys]
+    for section in REMEDY_SECTIONS:
+        for key in _added_by_all(cx, test_id, item_key, section) - after_keys:
+            _set_via(cx, test_id, item_key, section, key, "")
+    infoceutical_keys = _infoceutical_keys(cx, item_key)
+    for name in removed:
+        section = INFOCEUTICALS if (is_infoceutical(name) or _norm(name)
+                                    in infoceutical_keys) else FORMULATIONS
+        _set_all(cx, test_id, item_key, section, False)
+
+
+def _infoceutical_keys(cx, item_key):
+    return {r[0] for r in cx.execute(
+        "SELECT name_key FROM biofield_clinical_section_item WHERE item_key=? "
+        "AND section=?", (item_key, INFOCEUTICALS))}
 
 
 def _catalog(cx, item_key):
@@ -437,13 +473,18 @@ def _apply_pick(entry, pick):
     return entry
 
 
-def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=None):
-    """The five sections for one condition row, each sorted highest rating first.
+def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=None,
+                 marks=None):
+    """The six sections for one condition row, each sorted highest rating first.
 
     `remedies` is the row's existing remedy list. Formulations the content adds
     follow it, unless Glen deleted them from this condition. `chosen_remedies` is
     the row's saved tick set. Nothing is ticked that the practitioner did not tick.
     Each section reports how many botanical items the client's switch hid.
+
+    The row's remedies split in two: an infoceutical shows under Infoceuticals, the
+    rest under Functional Formulations. `marks` (e4l_scan_marks.infoceutical_marks)
+    marks each infoceutical the client's scan recommends, and each that is purple.
     """
     ensure_schema(cx)
     item_key = _norm(label)
@@ -455,10 +496,12 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
     picks = _picks(cx, test_id, item_key)
     all_on = _all_on(cx, test_id, item_key)
     by_section = {key: [] for key in SECTION_KEYS}
-    rated = {}
+    rated, rated_info = {}, {}
     for entry in catalog:
         if entry["section"] == FORMULATIONS:
             rated[entry["name_key"]] = entry
+        elif entry["section"] == INFOCEUTICALS:
+            rated_info[entry["name_key"]] = entry
         elif entry["section"] in by_section:
             pick = picks.get((entry["section"], entry["name_key"]))
             by_section[entry["section"]].append(_apply_pick(entry, pick))
@@ -469,24 +512,37 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
             seen.add(_norm(name))
             names.append(name)
     deleted = forgotten_remedies(cx, label)
-    for key, entry in rated.items():
+    for key, entry in list(rated.items()) + list(rated_info.items()):
         if key not in seen and key not in deleted:
             seen.add(key)
             names.append(entry["name"])
     for name in names:
         key = _norm(name)
+        section = INFOCEUTICALS if (key in rated_info or is_infoceutical(name)) \
+            else FORMULATIONS
         # A remedy already on the row but never rated counts as reviewed: it was in
         # the catalog before this content, so it carries no "not reviewed" mark.
-        base = rated.get(key) or {"section": FORMULATIONS, "name_key": key, "brand": "",
+        # Infoceuticals loaded under formulations before their own section existed
+        # keep that rating.
+        base = rated_info.get(key) or rated.get(key) or {
+                                  "section": section, "name_key": key, "brand": "",
                                   "dose": "", "overall": None, "research": None,
                                   "uniqueness": None, "reason": "", "source": "",
                                   "botanical": 0, "lowers_bp": None, "reviewed": 1,
                                   "origin_test": ""}
-        entry = _apply_pick(dict(base, name=name), picks.get((FORMULATIONS, key)))
+        entry = _apply_pick(dict(base, name=name),
+                            picks.get((section, key)) or picks.get((FORMULATIONS, key)))
         # The row's remedy name, as the existing list spells it, is what the tick
         # store and the bottles chip key on.
         entry["checked"] = str(name).strip().lower() in chosen
-        by_section[FORMULATIONS].append(entry)
+        if section == INFOCEUTICALS:
+            code = infoceutical_code(name)
+            entry["code"] = code
+            if marks:
+                entry["recommended"] = code in marks["recommended"]
+                purple = marks.get("purple")
+                entry["purple"] = None if purple is None else code in purple
+        by_section[section].append(entry)
     out = []
     for key, title in SECTIONS:
         items, hidden = by_section[key], 0
@@ -504,6 +560,8 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
         # reads as ticked: it would claim every item is in when one is not.
         out.append({"key": key, "title": title, "items": sort_items(items),
                     "botanical_hidden": hidden,
+                    "purple_error": ((marks or {}).get("purple_error") or "")
+                    if key == INFOCEUTICALS else "",
                     "all_on": key in all_on and all(e["checked"] for e in items)})
     return out
 
