@@ -52,6 +52,18 @@
   #chatlog .u { color:var(--brand); } #chatlog .a { color:#1c1830; margin-bottom:8px; }
   .sugg button { margin:4px 4px 0 0; }
   .row-add { display:flex; gap:8px; margin-top:10px; }
+  .row-add select, .row-add input { min-width:0; }
+  /* On a phone the name, packaging, stepper, price and remove did not fit one row:
+     the stepper was cut off and remove sat off-screen (Linda Maher, 2026-10-13).
+     The name takes its own row and the controls wrap beneath it. */
+  @media (max-width: 560px) {
+    .line { flex-wrap:wrap; row-gap:6px; }
+    .line .nm { flex:1 1 100%; }
+    .line .pr { margin-left:auto; min-width:0; }
+    .line select { max-width:100%; }
+    .row-add { flex-wrap:wrap; }
+    .row-add input, .row-add select { flex:1 1 100%; width:100%; }
+  }
   .muted { color:var(--muted); font-size:12px; }
 
   /* ── Print / Save-as-PDF: render ONLY #print-root (no chat, no pay buttons). ── */
@@ -90,6 +102,7 @@
   #print-root .pd-note-k{ display:block; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#8a8a8a; margin-bottom:3px; }
   #print-root .pd-foot{ margin-top:20px; padding-top:10px; border-top:1px solid #e2e2e2; font-style:italic; color:#555; font-size:12px; }
 </style>
+<script src="/static/js/order-notes.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -134,7 +147,9 @@
       <label><input type="radio" name="m" value="zelle">Zelle</label>
       <label><input type="radio" name="m" value="wise">Wise</label>
     </div>
+    <p class="muted fee-free-note" hidden style="margin:6px 0 10px">Pay by Zelle or Wise and 3.5% of your payment comes back to you as loyalty points, for use toward services. The points are added when your payment arrives.</p>
     <div id="pay-instr" class="notice" style="display:none"></div>
+    <div id="order-notes" class="notice order-notes" hidden></div>
     <button class="primary" id="pay-btn" onclick="pay()">Pay now</button>
     <button class="ghost" id="claim-btn" style="display:none" onclick="claim()">I’ve sent payment</button>
     <div id="pay-msg" class="muted" style="margin-top:8px"></div>
@@ -214,66 +229,31 @@ async function load() {
   // Console "Print invoice" deep-links here with ?print=1 to auto-open the dialog.
   if (new URLSearchParams(location.search).get('print')) setTimeout(printInvoice, 250);
 
-  // Read-receipt: collapse invoice detail behind a New/date header; expand = tracked open.
-  if (ORDER.opened !== undefined) {
-    const isNew = !ORDER.opened;
-    const invoiceDateStr = ORDER.created_at || '';
-    const invoiceDate = invoiceDateStr
-      ? new Date(invoiceDateStr).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
-      : '—';
-
-    // Guarded so re-clicking an already-expanded header doesn't re-POST the
-    // open event (mirrors client-portal.html's rr-header dataset.opened flag).
-    let _invoiceOpened = false;
-    window.__openInvoice = async () => {
-      if (_invoiceOpened) return;
-      _invoiceOpened = true;
-      try { await fetch('/api/invoice/' + encodeURIComponent(TOKEN) + '/open', {method:'POST'}); } catch(e) {}
-      const det = document.getElementById('inv-detail'); if (det) det.style.display = '';
-      const b = document.getElementById('inv-new'); if (b) b.remove();
-    };
-
-    const headerHtml = `<div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="window.__openInvoice()">
-      <strong>Invoice — ${esc(invoiceDate)}</strong>
-      ${isNew ? `<span id="inv-new" style="background:#d4a843;color:#000;font-size:12px;font-weight:700;padding:1px 7px;border-radius:10px">New</span>` : ``}
-      <span style="flex:1"></span><span style="color:var(--muted)">▾</span>
-    </div>`;
-
-    // Find items and summary cards
-    const cards = document.querySelectorAll('.card');
-    let itemsCardIdx = -1, summaryCardIdx = -1;
-    for (let i = 0; i < cards.length; i++) {
-      const h2 = cards[i].querySelector('h2');
-      if (h2) {
-        if (h2.textContent === 'Items') itemsCardIdx = i;
-        else if (h2.textContent === 'Summary') summaryCardIdx = i;
-      }
-    }
-
-    if (itemsCardIdx >= 0) {
-      const itemsCard = cards[itemsCardIdx];
-      const summaryCard = summaryCardIdx >= 0 ? cards[summaryCardIdx] : null;
-
-      // Create wrapper for invoice detail
-      const wrapper = document.createElement('div');
-      wrapper.id = 'inv-detail';
-      wrapper.style.display = isNew ? 'none' : '';
-
-      // Insert wrapper before items card
-      itemsCard.parentNode.insertBefore(wrapper, itemsCard);
-
-      // Move items and summary cards into wrapper
-      wrapper.appendChild(itemsCard);
-      if (summaryCard) wrapper.appendChild(summaryCard);
-
-      // Insert header before wrapper
-      wrapper.insertAdjacentHTML('beforebegin', headerHtml);
-    }
-  }
+  // Read-receipt. The lines used to sit collapsed behind a "New" header until it was
+  // clicked, so the client saw only the payment card (Glen, 2026-10-13: "opens payment
+  // without line items"). Now everything shows at once, and the open is recorded on the
+  // client's first tap, click or key. Recording it on load would count email link
+  // scanners as opens.
+  if (ORDER.opened !== undefined && !ORDER.opened) recordOpenOnFirstUse(TOKEN);
 
   try { const cr = await fetch(API+'/products'); CATALOG = (await cr.json()).products||[]; fillAdd();
     if($('add-search')) $('add-search').addEventListener('input', fillAdd);
   } catch(e){}
+}
+
+function recordOpenOnFirstUse(token){
+  // wheel: a desktop reader may only scroll, which fires none of the others.
+  const kinds = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
+  let done = false;
+  const fire = () => {
+    if (done) return;
+    done = true;
+    kinds.forEach(k => removeEventListener(k, fire, true));
+    // keepalive: the first tap may also leave the page, which would cancel a plain fetch.
+    fetch('/api/invoice/' + encodeURIComponent(token) + '/open',
+          {method:'POST', keepalive:true}).catch(() => {});
+  };
+  kinds.forEach(k => addEventListener(k, fire, {capture:true, passive:true}));
 }
 
 // ── Print / Save-as-PDF: a self-contained invoice (logo header + line items +
@@ -390,13 +370,22 @@ function renderLines() {
 }
 function renderTotals() {
   const t = ORDER;
+  // Fee-free points apply to client orders only, not practitioner sales.
+  document.querySelectorAll('.fee-free-note').forEach(el => { el.hidden = t.fee_free_points !== true; });
   let pointsRow = t.points_redeemed_cents ? row('Points','-'+money(t.points_redeemed_cents),true) : '';
   // When the invoice is still editable and the customer has a balance, let them apply points.
+  // Own-purchase points redeem on services only; referral and other points also on
+  // products (Glen, 2026-10-10/11). points_room_cents is the most this invoice can take.
   const bal = Number(t.points_balance_cents||0);
-  if (t.editable && bal>0){
-    pointsRow = '<div class="row"><span>Points (avail '+money(bal)+')</span><span>'
+  const usable = Math.floor(Math.min(bal, Number(t.points_room_cents||0))/100)*100;
+  if (t.editable && usable>0){
+    pointsRow = '<div class="row"><span>Points (up to '+money(usable)+' on this invoice)</span><span>'
       + '<input id="pts-in" type="number" min="0" step="1" style="width:80px" value="'+Math.floor((t.points_redeemed_cents||0)/100)+'">'
       + ' <button onclick="applyPoints()">Apply</button></span></div>';
+  } else if (t.editable && bal>0 && !t.points_redeemed_cents){
+    pointsRow = '<div class="row muted"><span>You have '+money(bal)+' in loyalty points. '
+      + 'Points earned from your own purchases can be used toward services. '
+      + 'Points from referrals apply toward both products and services.</span></div>';
   }
   $('totals').innerHTML =
     row('Subtotal', t.subtotal_cents) + (t.discount_cents?row('Discount','-'+money(t.discount_cents),true):'')
@@ -482,6 +471,17 @@ function renderMembershipOffer(){
   el.style.display='block';
   const head='<div class="card" style="border:1px solid #2f7d4f;background:#f4fbf6">';
   const msg='<div id="mem-msg" class="muted" style="margin-top:6px"></div></div>';
+  if(o.included){
+    // A Biofield Analysis includes the month: no button, just what it saves (Glen, 2026-10-13).
+    el.innerHTML=head
+      +'<div style="font-weight:600;color:#22623c">A month of membership is included</div>'
+      +'<div style="margin:6px 0 0">Your Biofield Analysis fee includes one month of membership.'
+      +(o.savings_cents>0 ? ' Member pricing saves you '+money(o.savings_cents)+' on this order.' : '')
+      +'</div>'
+      +(o.has_line ? '<button class="ghost" style="margin-top:10px" onclick="toggleInvoiceMembership(\'remove\')">Remove the separate membership charge</button>' : '')
+      +msg;
+    return;
+  }
   if(hasLine){
     const line1=(o.net_add_cents>0)
       ? 'Your products are now at the member price, saving '+money(o.savings_cents)+' on this order. The '
@@ -560,7 +560,7 @@ function setupPay(){
   $('pay-due').style.display = '';
   $('pay-btn').textContent = 'Pay '+money(ORDER.total_cents);
   if (!ORDER.paylink_enabled){ $('pay-notice').innerHTML='<div class="notice">Online payment isn’t enabled yet — we’ll be in touch.</div>'; $('pay-btn').disabled=true; return; }
-  document.querySelectorAll('input[name=m]').forEach(el=>el.onchange=()=>{curMethod=el.value; $('claim-btn').style.display='none'; $('pay-instr').style.display='none';});
+  document.querySelectorAll('input[name=m]').forEach(el=>el.onchange=()=>{curMethod=el.value; $('claim-btn').style.display='none'; $('pay-instr').style.display='none'; $('order-notes').hidden=true;});
 }
 async function pay(){
   $('pay-msg').textContent='…';
@@ -569,6 +569,7 @@ async function pay(){
   $('pay-msg').textContent='';
   if (j.method==='card' && j.url){ location.href=j.url; return; }
   if (j.instructions){ $('pay-instr').textContent=j.instructions; $('pay-instr').style.display='block'; $('claim-btn').style.display='inline-block'; }
+  if (window.renderOrderNotes) renderOrderNotes($('order-notes'), j.order_notes);   // Glen, 2026-10-13
 }
 async function claim(){
   const r = await fetch(API+'/claim-paid', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({method:curMethod})});

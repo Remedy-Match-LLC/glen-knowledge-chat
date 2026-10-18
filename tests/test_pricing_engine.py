@@ -144,8 +144,9 @@ def _fake_tax(subtotal_cents, *, channel, ship_to_state, resale_ok=False):
 
 def test_compute_one_line_subscriber_tier_and_points():
     s = pricing.load_settings({})
-    items = [{"slug": "neuro-mag", "name": "Neuro Mag", "qty": 1,
-              "product": {"slug": "neuro-mag", "price_cents": 7000},
+    # Points redeem on services only (Glen 2026-10-10), so the line is a service slug.
+    items = [{"slug": "evox-session", "name": "EVOX", "qty": 1,
+              "product": {"slug": "evox-session", "price_cents": 7000},
               "unit_cents": 7000, "months": 1, "volume_eligible": True}]
     r = pricing.compute(items, settings=s, subscriber_tier_pct=15,
                         points_to_redeem_cents=1000, channel="retail",
@@ -237,8 +238,9 @@ def test_compute_open_total_enabled_beats_no_membership():
 def test_compute_pure_powder_excluded_from_volume_floored_at_30():
     s = pricing.load_settings({})
     # Pure Powder: NOT volume_eligible (months ignored), per-SKU floor 75% of 4000 = 3000
-    items = [{"slug": "pp", "name": "Pure Powder", "qty": 1,
-              "product": {"slug": "pp", "price_cents": 4000,
+    # A service slug, so points apply (services only); the floor override is what is tested.
+    items = [{"slug": "evox-session", "name": "Pure Powder", "qty": 1,
+              "product": {"slug": "evox-session", "price_cents": 4000,
                           "sku_discount_floor_pct": 0.75, "sku_points_floor_pct": 0.75},
               "unit_cents": 4000, "months": 12, "volume_eligible": False}]
     r = pricing.compute(items, settings=s, subscriber_tier_pct=15,
@@ -276,11 +278,11 @@ def test_compute_points_exceed_all_floor_headroom():
     # We request way more than that (20000) → should clamp. Points redeem in whole
     # dollars only (Glen, 2026-10-01), so each line uses 3900 of its 3990 → 7800.
     items = [
-        {"slug": "a", "name": "A", "qty": 1,
-         "product": {"slug": "a", "price_cents": 7000},
+        {"slug": "evox-session", "name": "A", "qty": 1,
+         "product": {"slug": "evox-session", "price_cents": 7000},
          "unit_cents": 7000, "months": 1, "volume_eligible": False},
-        {"slug": "b", "name": "B", "qty": 1,
-         "product": {"slug": "b", "price_cents": 7000},
+        {"slug": "biofield-analysis", "name": "B", "qty": 1,
+         "product": {"slug": "biofield-analysis", "price_cents": 7000},
          "unit_cents": 7000, "months": 1, "volume_eligible": False},
     ]
     r = pricing.compute(items, settings=s, points_to_redeem_cents=20000,

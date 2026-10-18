@@ -1,6 +1,7 @@
 """Pure parser for the trailing CTA directive a brief answer emits.
 Grammar: a final line  ⟦CTA⟧ <type> | <target> | <label>
 type ∈ page|email|action|inline. Flask-free; unit-testable in isolation."""
+import re
 
 SENTINEL = "⟦CTA⟧"
 CHIPS_SENTINEL = "⟦CHIPS⟧"
@@ -46,6 +47,76 @@ def stream_visible(tokens, sentinel=SENTINEL):
     # stream ended with no sentinel: flush whatever remains (it was a real tail)
     if len(acc) > emitted:
         yield acc[emitted:]
+
+# A first line that is only a bracketed label, e.g. "[ESTRO-CLEAR PRODUCT ANSWER]"
+# or "**[EXECUTIVE SUMMARY]**". The model sometimes opens with one; it is never
+# part of the answer. A markdown link "[name](url)" does not match.
+_LABEL_LINE = re.compile(
+    r"^(#{1,6}[ \t]*)?(\*\*|__|\*|_)?\[[^\[\]\n]{1,100}\](\*\*|__|\*|_)?:?$")
+_LABEL_HOLD = 120   # a first line longer than this is never treated as a label
+
+
+def _is_label_line(line):
+    # Length is measured after leading whitespace, the same way the stream counts it.
+    return len(line.lstrip()) <= _LABEL_HOLD and bool(_LABEL_LINE.match(line.strip()))
+
+
+def _split_label(text):
+    """If `text` opens (after blank lines) with a complete label line, return what
+    follows it with its leading blank lines dropped. Otherwise None."""
+    rest = text
+    while True:
+        line, nl, after = rest.partition("\n")
+        if not nl:
+            return "" if _is_label_line(line) else None
+        if line.strip():
+            break
+        rest = after
+    if not _is_label_line(line):
+        return None
+    while True:                         # drop blank lines, keep the body's indentation
+        line, nl, rest = after.partition("\n")
+        if line.strip():
+            return after
+        if not nl:
+            return ""
+        after = rest
+
+
+def strip_leading_label_text(answer):
+    """Drop a leading label line (and blank lines around it) from a whole answer."""
+    text = answer or ""
+    out = _split_label(text)
+    return text if out is None else out
+
+
+def strip_leading_label(tokens):
+    """Stream form of strip_leading_label_text. Holds back only the opening lines,
+    and only while they could still be a label. Drains the input like stream_visible."""
+    it = iter(tokens)
+    acc = ""
+    for tok in it:
+        acc += (tok or "")
+        body = acc.lstrip()
+        if body and body[0] not in "[#*_":
+            break                       # cannot be a label: pass through
+        if "\n" in body:
+            # first line complete. A label: hold on through the blank lines after it.
+            out = _split_label(acc)
+            if out is None or out.strip():
+                break
+        elif len(body) > _LABEL_HOLD:
+            break                       # first line too long to be a label
+    else:
+        out = strip_leading_label_text(acc)
+        if out:
+            yield out
+        return
+    out = strip_leading_label_text(acc)
+    if out:
+        yield out
+    yield from it
+
 
 def parse_cta(answer: str):
     text = answer or ""

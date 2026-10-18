@@ -1,0 +1,75 @@
+"""Melissa 20:1 Extract Powder, listed as a Pure Powder at $40.
+
+Glen, 2026-10-18, production tab: "yes" to $40, then "send" for the whole spec
+(production/05 Formulations/_store-updates/2026-10-18-melissa-extract-powder.md).
+"""
+import json
+import pathlib
+
+from dashboard.pure_powders import PURE_POWDER_NAMES
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+KEY = "melissa-20-1-extract-powder"
+NAME = "Melissa 20:1 Extract Powder"
+
+
+def _product():
+    catalog = json.loads((REPO / "data" / "products.json").read_text(encoding="utf-8"))
+    return dict(catalog["products"][KEY], slug=KEY)
+
+
+def test_the_key_is_what_the_store_makes_from_the_name():
+    import app as a
+    assert a._slugify_product(NAME) == KEY
+
+
+def test_the_entry_carries_the_approved_fields_and_no_prose():
+    p = _product()
+    assert (p["name"], p["price_cents"], p["fmp_id"], p["bottle_type"]) == (
+        NAME, 4000, "1194", "30 g")
+    assert p["ingredients"] == [{"name": "Melissa (Melissa officinalis) 20:1 extract",
+                                 "dose": "500 mg"}]
+    assert p["directions"] == "Take 1 scoop 2 times daily in a drink, or as guided."
+    assert p["copy_pinned"] == ["ingredients", "intro", "description", "research",
+                                "directions", "benefits"]
+    for left_out in ("description", "intro", "how_it_works", "regular_cents", "qbo_item_id"):
+        assert left_out not in p, left_out
+
+
+def test_the_matcher_never_recommends_it():
+    import app as a
+    assert a._ff_auto_excluded(NAME) and a._ff_auto_excluded(NAME.lower())
+
+
+def test_the_matcher_exclusion_rests_on_the_name_list(monkeypatch):
+    import app as a
+    from dashboard import pure_powders
+    monkeypatch.setattr(pure_powders, "PURE_POWDER_NAMES",
+                        PURE_POWDER_NAMES - {"melissa 20:1 extract powder"})
+    monkeypatch.setattr(pure_powders, "PURE_POWDER_SLUGS",
+                        pure_powders.PURE_POWDER_SLUGS - {KEY})
+    assert not a._ff_auto_excluded(NAME)
+
+
+def test_checkout_gives_no_volume_curve_and_the_pure_powder_floor():
+    import app as a
+    item = a._engine_item(_product(), 3)
+    assert item["volume_eligible"] is False
+    assert item["product"]["sku_discount_floor_pct"] == 0.75
+    assert item["product"]["sku_points_floor_pct"] == 0.75
+    bare = {k: v for k, v in _product().items()
+            if k not in ("volume_eligible", "sku_discount_floor_pct", "sku_points_floor_pct")}
+    without = a._engine_item(bare, 3)
+    # Without the keys the name is not read as a pure powder: the formula curve applies.
+    assert without["volume_eligible"] is True
+    assert "sku_discount_floor_pct" not in without["product"]
+
+
+def test_the_chat_can_link_it_but_is_told_not_to_volunteer_it():
+    aliases = json.loads((REPO / "data" / "product-aliases.json").read_text(encoding="utf-8"))
+    assert aliases["aliases"][NAME]["url"] == \
+        "https://myhealingoasis.com/begin/product/melissa-20-1-extract-powder"
+    src = (REPO / "app.py").read_text(encoding="utf-8")
+    sentence = src[src.index("The pure powders ("):]
+    sentence = sentence[:sentence.index("do not volunteer or recommend them")]
+    assert NAME in sentence

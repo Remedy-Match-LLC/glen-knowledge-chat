@@ -128,3 +128,25 @@ def spend(cx, email, *, value_cents, reason, order_ref, scope="rm"):
         return 0
     _add(cx, email, -amt, reason, order_ref, scope=scope)
     return amt
+
+
+# Own-purchase points: the 5% earned on full-price product orders. They redeem on services
+# only (Glen, 2026-10-10). Every other credit (referral tiers 1 and 2, reviews, image picks,
+# healing milestones, deposit credit) also redeems on products, within the points floor
+# (Glen, 2026-10-11: "referral rule for those too").
+# Fee-free credit: 3.5% of what a client paid by Zelle or Wise (Glen, 2026-10-10:
+# "points"). It redeems like own-purchase points, on services only.
+FEE_FREE_REASON = "fee_free"
+FEE_FREE_PCT = 0.035
+SERVICES_ONLY_REASONS = frozenset({"earn", FEE_FREE_REASON})
+
+
+def product_usable_credits(cx, email, *, scope="rm"):
+    """Total credited cents that may be spent on products (all credits except own-purchase)."""
+    marks = ",".join("?" * len(SERVICES_ONLY_REASONS))
+    row = cx.execute(
+        f"SELECT COALESCE(SUM(delta_cents),0) FROM points_ledger WHERE lower(email)=? "
+        f"AND scope=? AND delta_cents > 0 AND COALESCE(reason,'') NOT IN ({marks})",
+        ((email or "").strip().lower(), scope, *sorted(SERVICES_ONLY_REASONS))).fetchone()
+    return max(0, int((row[0] if row else 0) or 0))
+

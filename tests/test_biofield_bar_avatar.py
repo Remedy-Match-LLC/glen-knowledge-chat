@@ -24,9 +24,11 @@ def test_the_photo_sits_after_the_name_not_before_it(mod):
     )
 
 
-def test_the_photo_points_at_the_console_and_hides_itself_when_missing(mod):
+def test_the_photo_asks_the_intake_app_for_this_person_and_hides_itself_when_missing(mod):
+    # 2026-10-09: the local route resolves the person from email AND name, so a family
+    # sharing one email never shows another member's photo. The console route cannot.
     bar = mod._bar("Ashu Paul", "ashu@example.com")
-    assert f"{mod.CONSOLE_BASE}/client-photo/ashu%40example.com" in bar
+    assert "src='/client-photo/ashu%40example.com?name=Ashu%20Paul'" in bar
     assert "onerror='this.remove()'" in bar, "a 404 must leave no broken image in the bar"
 
 

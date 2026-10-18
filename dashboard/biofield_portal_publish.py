@@ -335,9 +335,12 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
                         it["qty"] = max(it["qty"], line_bottles(L))
                 continue
             seen.add(slug)
-            reorder.append({"slug": slug,
-                            "qty": line_bottles(L),
-                            "price_cents": int(special_price_cents)})
+            item = {"slug": slug, "qty": line_bottles(L)}
+            # No courtesy price means store prices: the item carries no price at all.
+            # A stored 0 was read as a $0 price (found on a client report, 2026-10-09).
+            if special_price_cents and int(special_price_cents) > 0:
+                item["price_cents"] = int(special_price_cents)
+            reorder.append(item)
         if len(dosings) > 1:
             dosing = "; ".join(f"{n}: {d}" if d else n for n, d in dosings)
         else:

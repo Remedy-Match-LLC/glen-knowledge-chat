@@ -287,7 +287,10 @@ def proposals(context, extracted_labels, existing_labels=(), prior_decisions=Non
         if not item_key or item_key in seen or item_key in existing or item_key in prior:
             continue
         seen.add(item_key)
-        words = [word for word in item_key.split() if len(word) > 3]
+        # "family history of diabetes" is quoted by its condition, not by "family" or
+        # "history", which match unrelated lines (review round 3).
+        words = [word for word in item_key.split()
+                 if len(word) > 3 and word not in ("family", "history")]
         match = next(((text, when) for text, when in evidence
                       if any(word in _key(text) for word in words)), None)
         text, when = match or ((evidence[0] if evidence else ("Recent communication", "")))

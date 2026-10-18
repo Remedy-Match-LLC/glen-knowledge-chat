@@ -14,7 +14,8 @@ def _setup(monkeypatch, tmp_path):
     points.earn(cx, "a@x.com", full_price_cents=40000, earn_pct=0.05, order_ref="s"); cx.commit()  # 2000
     monkeypatch.setattr(appmod, "_reorder_email_from_cookie", lambda: "a@x.com")
     monkeypatch.setattr(appmod, "_get_product",
-        lambda s: {"slug": s, "name": "Brain Boost", "price_cents": 7000, "qty_pricing": True, "qbo_item_id": "27"} if s == "brain-boost" else None)
+        lambda s: {"slug": s, "name": "Brain Boost", "price_cents": 7000, "qty_pricing": True, "qbo_item_id": "27"} if s == "brain-boost"
+        else {"slug": s, "name": "EVOX", "price_cents": 15000, "service": True, "qbo_item_id": "28"} if s == "evox-session" else None)
     monkeypatch.setattr(appmod._shipping, "quote", lambda b: {"shipping_cents": 0})
     monkeypatch.setattr(appmod.qb, "find_or_create_customer", lambda *a, **k: {"Id": "C1"})
     cap = {}
@@ -26,14 +27,23 @@ def _setup(monkeypatch, tmp_path):
     return cap
 
 
-def test_reorder_redeems_points(monkeypatch, tmp_path):
+def test_reorder_redeems_points_on_a_service(monkeypatch, tmp_path):
+    cap = _setup(monkeypatch, tmp_path)
+    c = appmod.app.test_client()
+    r = c.post("/reorder/checkout", json={"items": [{"slug": "evox-session", "qty": 1}],
+               "address": {"state": "CA", "country": "US", "name": "A"}, "points_to_redeem_cents": 200})
+    assert r.status_code == 200
+    assert cap["order"]["points_redeemed_cents"] == 200
+
+
+def test_reorder_redeems_no_points_on_a_product(monkeypatch, tmp_path):
+    # Points redeem on services only (Glen 2026-10-10).
     cap = _setup(monkeypatch, tmp_path)
     c = appmod.app.test_client()
     r = c.post("/reorder/checkout", json={"items": [{"slug": "brain-boost", "qty": 1}],
                "address": {"state": "CA", "country": "US", "name": "A"}, "points_to_redeem_cents": 200})
     assert r.status_code == 200
-    # 1 bottle $70 full price, 200 pts -> line 6800; order records 200 redeemed
-    assert cap["order"]["points_redeemed_cents"] == 200
+    assert int(cap["order"].get("points_redeemed_cents") or 0) == 0
 
 
 def test_reorder_caps_redemption_to_balance(monkeypatch, tmp_path):

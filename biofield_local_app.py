@@ -20,6 +20,7 @@ import argparse
 import datetime
 import logging
 import os
+import sys
 import re
 import sqlite3
 import time
@@ -180,9 +181,42 @@ def _default_fetch_profile(email):
         return None
 
 
+def _default_fetch_fmp_history(email):
+    """The client's FileMaker order history from prod, which matches emails found later
+    for rows that had none. A list (maybe empty) on success, None on any failure so the
+    caller can fall back to the local copy and say so. The key goes in the header only."""
+    import json as _json
+    import urllib.parse
+    import urllib.request
+    email = (email or "").strip().lower()
+    if not email:
+        return []
+    try:
+        key = os.environ["CONSOLE_SECRET"]
+        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+        _u = urllib.parse.urlsplit(base)
+        if not (_u.scheme == "https" or (_u.scheme == "http" and _u.hostname == "127.0.0.1")):
+            return None     # the key never travels in clear text
+        url = base + "/api/console/fmp-orders?email=" + urllib.parse.quote(email)
+        req = urllib.request.Request(url, headers={"X-Console-Key": key})
+
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            # A redirect would carry the key header to wherever it points (review round 2).
+            def redirect_request(self, *a, **k):
+                return None
+        data = _json.load(urllib.request.build_opener(_NoRedirect).open(req, timeout=15))
+        if not data.get("ok") or not isinstance(data.get("results"), list):
+            return None
+        return data["results"]
+    except Exception:
+        return None
+
+
 def _default_fetch_recent_comms(email):
     """Best-effort: pull a client's windowed recent comms from the prod endpoint.
-    Returns {} on any failure (incl. missing CONSOLE_SECRET -> no network call)."""
+    Returns None on any failure (incl. missing CONSOLE_SECRET -> no network call), so
+    "Mine recent comms" can say it could not reach them. {} used to mean both "could not
+    reach" and "nothing there" (Glen, Josie Gagnon, 2026-10-16). Callers still `or {}`."""
     import json as _json
     import urllib.parse
     import urllib.request
@@ -199,11 +233,12 @@ def _default_fetch_recent_comms(email):
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         return _json.load(urllib.request.urlopen(req, timeout=20)) or {}
     except Exception:
-        return {}
+        return None
 
 
-def _default_fetch_client_photo(email):
-    """Pull the portal's current client photo + nondestructive framing."""
+def _default_fetch_client_photo(email, client_id=None):
+    """Pull the portal's current client photo + nondestructive framing. With client_id,
+    that person's own photo (client_identity_photos), never the email-keyed one."""
     import base64 as _b64
     import json as _json
     import urllib.parse
@@ -214,8 +249,10 @@ def _default_fetch_client_photo(email):
     try:
         key = os.environ["CONSOLE_SECRET"]
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
-        url = (base + "/api/console/client-photo?email=" + urllib.parse.quote(email)
-               + "&key=" + urllib.parse.quote(key))
+        # The key goes in the header only: a credential in a URL lands in server logs.
+        url = base + "/api/console/client-photo?email=" + urllib.parse.quote(email)
+        if client_id:
+            url += "&client_id=" + urllib.parse.quote(str(client_id))
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         data = _json.load(urllib.request.urlopen(req, timeout=20))
         if not data.get("ok") or not data.get("image"):
@@ -247,6 +284,46 @@ def _fetch_life_stress_curation(email):
         return data.get("curation")
     except Exception:
         return None
+
+def _fetch_intake_answers(email):
+    """Best-effort: a client's intake answers from the prod console endpoint, for the
+    diet guidance's fallback phase when the report has no tested phase (Glen,
+    2026-10-16). None on any failure, so it never blocks the report. The key goes in
+    a header only, never in the URL."""
+    import json as _json
+    import urllib.parse
+    import urllib.request
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    try:
+        key = os.environ["CONSOLE_SECRET"]
+        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+        req = urllib.request.Request(
+            f"{base}/api/console/intake/" + urllib.parse.quote(email),
+            headers={"X-Console-Key": key})
+
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            # A redirect would carry the key header to wherever it points (review round 2).
+            def redirect_request(self, *a, **k):
+                return None
+        opener = urllib.request.build_opener(_NoRedirect)
+        data = _json.load(opener.open(req, timeout=5))
+        from dashboard.diet_guidance import report_fallback_answers
+        return report_fallback_answers(data)
+    except Exception:
+        return None
+
+
+def _add_intake_fallback(rep):
+    """Put the intake answers on a report that has no tested phase, so the diet guidance
+    can fall back to them. A report with a tested phase makes no request."""
+    from dashboard.terrain_phase import phase_num
+    if not phase_num(rep.get("phase")):
+        rep["intake_answers"] = _fetch_intake_answers(
+            ((rep.get("client") or {}).get("email") or ""))
+    return rep
+
 
 DEFAULT_DB = os.environ.get(
     "BIOFIELD_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_log.db"))
@@ -637,7 +714,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                invoice_paid_check=None, invoice_latest=None, client_orders=None,
                caregiver_billing=None,
                ingredients_db=None,
-               portal_link_fetch=None, auto_publish=None):
+               portal_link_fetch=None, auto_publish=None, fetch_fmp_history=None,
+               client_gmail=None, records_reader=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -702,31 +780,129 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     fetch_recent_comms = fetch_recent_comms or _default_fetch_recent_comms
     using_default_fetch_client_photo = fetch_client_photo is None
     fetch_client_photo = fetch_client_photo or _default_fetch_client_photo
+    # Tests never reach prod: under CI (or with no console key) the local copy is read
+    # as before, with no "unavailable" note.
+    if (fetch_fmp_history is None and not os.environ.get("CI")
+            and not os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("CONSOLE_SECRET")):
+        fetch_fmp_history = _default_fetch_fmp_history
+    # The client's own emails, read from the drglen mailbox (Glen, 2026-10-16). Never
+    # under tests, and not without the local Gmail token.
+    # "pytest" in sys.modules also covers app creation at collection (review round 2).
+    if (client_gmail is None and not os.environ.get("CI")
+            and not os.environ.get("PYTEST_CURRENT_TEST") and "pytest" not in sys.modules):
+        from dashboard import biofield_gmail as _bg
+        if os.path.exists(_bg.TOKEN):
+            def client_gmail(_cx, email):
+                # Its own connection: the header's open transaction must not wait on
+                # Gmail, nor Gmail's writes on it (review round 3).
+                gcx = sqlite3.connect(db_path, timeout=10)
+                try:
+                    return _bg.client_email_text(gcx, email, e4l_db)
+                finally:
+                    gcx.close()
+    # Clinical records in the client's kept mail (Glen, 2026-10-16: "review first").
+    if (records_reader is None and not os.environ.get("CI")
+            and not os.environ.get("PYTEST_CURRENT_TEST") and "pytest" not in sys.modules):
+        from dashboard import biofield_gmail as _bg2
+        if os.path.exists(_bg2.TOKEN):
+            def records_reader(cx, email):
+                from dashboard.biofield_records import read_records
+                return read_records(cx, email, _bg2.default_service(), interpret_complete)
     photo_refresh_at = {}
 
-    def _refresh_client_photo(email):
-        """Best-effort portal -> local sync, throttled across the paired image/framing reads."""
+    def _refresh_client_photo(email, client_id=None):
+        """Best-effort portal -> local sync, throttled across the paired image/framing
+        reads. With client_id it syncs that person's own row, not the email's."""
         import time
         from dashboard import client_photos as _cph
         email = (email or "").strip().lower()
         if not email or (using_default_fetch_client_photo and os.environ.get("CI")):
             return False
+        key = (email, str(client_id or ""))
         now = time.monotonic()
-        if now - photo_refresh_at.get(email, 0) < 30:
+        if now - photo_refresh_at.get(key, 0) < 30:
             return False
-        photo_refresh_at[email] = now
+        photo_refresh_at[key] = now
         try:
-            rec = fetch_client_photo(email) or {}
+            if client_id:
+                try:
+                    rec = fetch_client_photo(email, client_id=client_id) or {}
+                except TypeError:          # an injected fetcher without per-person support
+                    return False
+            else:
+                rec = fetch_client_photo(email) or {}
             if not rec.get("blob"):
                 return False
             with sqlite3.connect(db_path) as cx:
-                written = _cph.put(cx, email, rec["blob"], rec.get("content_type"),
-                                   source=rec.get("source") or "portal-self", force=False)
-                if written:
-                    _cph.set_framing(cx, email, rec.get("focus_x", 50),
-                                     rec.get("focus_y", 42), rec.get("zoom", 1))
+                if client_id:
+                    mine = _cph.get_for_client(cx, client_id)
+                    if mine and (mine.get("updated_at") or "") >= (rec.get("updated_at") or ""):
+                        return False      # a newer local pick must not be undone (round 2)
+                    written = _cph.put_for_client(cx, client_id, email, rec["blob"],
+                                                  rec.get("content_type"),
+                                                  source=rec.get("source") or "portal-self",
+                                                  force=False)
+                    if written:
+                        _cph.set_framing_for_client(cx, client_id, rec.get("focus_x", 50),
+                                                    rec.get("focus_y", 42), rec.get("zoom", 1))
+                else:
+                    written = _cph.put(cx, email, rec["blob"], rec.get("content_type"),
+                                       source=rec.get("source") or "portal-self", force=False)
+                    if written:
+                        _cph.set_framing(cx, email, rec.get("focus_x", 50),
+                                         rec.get("focus_y", 42), rec.get("zoom", 1))
             return bool(written)
         except Exception:
+            return False
+
+    def _operator_photo(email, name):
+        """The photo Biofield Intake shows for this intake's person, or None.
+
+        The person's own row when the email and name resolve to one FileMaker record.
+        The email-keyed row only when that is the whole story: no FileMaker record on
+        the email, or exactly one and the name is theirs. On an email several records
+        share, or a name FileMaker does not have, nothing: the operator picks from the
+        candidates instead (Glen, 2026-10-09)."""
+        from dashboard import client_photos as _cph
+        with sqlite3.connect(db_path) as cx:
+            people = _cph.fmp_people_for_email(cx, email)
+            pid = _cph.fmp_person_for(cx, email, name)
+        if pid:
+            _refresh_client_photo(email, pid)
+            with sqlite3.connect(db_path) as cx:
+                rec = _cph.get_for_client(cx, pid)
+            if rec:
+                return rec, pid
+        if people is None or len(people) > 1 or (people and not pid):
+            return None, pid
+        _refresh_client_photo(email)
+        with sqlite3.connect(db_path) as cx:
+            return _cph.get(cx, email), pid
+
+    def _test_person(cx, test_id):
+        rep = (authored_report(cx, test_id) if str(test_id).startswith("a")
+               else causal_chain_report(cx, test_id))
+        c = rep.get("client") or {}
+        return (c.get("email") or "").strip().lower(), (c.get("name") or "").strip()
+
+    def _push_photo(email, client_id, blob, ctype, source):
+        """Best-effort push of an operator photo to prod; per person when client_id."""
+        base = os.environ.get("PORTAL_PUBLISH_BASE_URL", "")
+        key = os.environ.get("CONSOLE_SECRET", "")
+        if not base:
+            return False
+        try:
+            import base64 as _b64, json as _json, urllib.request as _u
+            payload = {"email": email, "content_type": ctype, "source": source,
+                       "image": _b64.b64encode(blob).decode()}
+            if client_id:
+                payload["client_id"] = str(client_id)
+            r = _u.Request(base.rstrip("/") + "/api/console/client-photo",
+                           data=_json.dumps(payload).encode(), method="POST",
+                           headers={"X-Console-Key": key, "Content-Type": "application/json"})
+            return bool(_json.load(_u.urlopen(r, timeout=30)).get("ok"))
+        except Exception as e:
+            print(f"[client-photo] prod push failed: {e}", flush=True)
             return False
     fee_get = fee_get or biofield_fee.default_fee_get
     fee_set = fee_set or biofield_fee.default_fee_set
@@ -812,6 +988,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         ctx = scan_lookup((rep.get("client") or {}).get("email") or "")
         return ctx, rep
 
+    def _e4l_panel(test_id, ctx):
+        """The scan panel, with the PRL section under Infoceuticals (Glen,
+        2026-10-17). A PRL failure leaves the rest of the panel as it was."""
+        prl = ""
+        if (ctx or {}).get("found"):
+            try:
+                from dashboard import biofield_prl_section as _ps
+                from dashboard.biofield_report_html import render_prl_section
+                codes = _ps.scan_item_codes(e4l_db, ctx.get("scan_id"))
+                with sqlite3.connect(db_path) as pcx:
+                    prl = render_prl_section(_ps.view(pcx, test_id, codes))
+            except Exception as _pe:
+                print(f"[prl-section] {test_id}: skipped: {_pe!r}", flush=True)
+        return render_e4l_panel(ctx, prl_html=prl)
+
     def _mine_profile(cx, test_id):
         """Mine the client's consolidated People-hub profile into tag stresses.
         Best-effort: returns {"added": n} on success, {"added": 0, "error": ...} on
@@ -824,13 +1015,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not email:
             return {"added": 0, "error": "No client selected yet"}
         try:
-            profile = fetch_profile(email) or {}
+            profile = fetch_profile(email)
+            if profile is None:
+                # A failed fetch, not an empty profile (2026-10-16).
+                return {"added": 0, "error": "Could not reach the console for this "
+                                             "client's profile. Nothing was mined."}
             labels = mine_profile_stresses(
                 profile, lambda t: interpret_stresses(t, interpret_complete))
-            added = sum(1 for label in labels
-                        if _st.add_stress(cx, test_id, label, source="tag"))
         except Exception as e:
             return {"added": 0, "error": str(e)[:200]}
+        added = 0
+        try:
+            for label in labels:   # counted one by one: a later failure keeps the count
+                if _st.add_stress(cx, test_id, label, source="tag"):
+                    added += 1
+        except Exception as e:
+            return {"added": added, "error": str(e)[:200]}
         return {"added": added}
 
     def _mine_comms(cx, test_id):
@@ -842,13 +1042,53 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         email = ((rep.get("client") or {}).get("email") or "").strip()
         if not email:
             return {"added": 0, "error": "No client selected yet"}
+        console_error = None
         try:
-            ctx = fetch_recent_comms(email) or {}
-            text = comms_to_text(ctx)
+            ctx = fetch_recent_comms(email)
+        except Exception as e:
+            ctx, console_error = None, str(e)[:200]
+        if not isinstance(ctx, dict):   # None, or a reply that is not a payload
+            # A failed fetch, not an empty inbox (2026-10-16).
+            ctx = None
+            console_error = console_error or ("Could not reach the console for this "
+                                              "client's recent comms.")
+        # The client's own emails and attachments (Glen, 2026-10-16: "no review").
+        mail = {}
+        if client_gmail:
+            try:
+                mail = client_gmail(cx, email) or {}
+            except Exception as e:
+                mail = {"error": f"Gmail could not be read ({type(e).__name__})."}
+        mail_text = mail.get("text") or ""
+        notes = []
+        if mail.get("held"):
+            notes.append(f"Email was not read: E4L shows {mail['held']} people on this "
+                         "address. Paste the right messages instead.")
+        if mail.get("error"):
+            notes.append(mail["error"])
+        if ctx is None and not mail_text:
+            return {"added": 0, "error": " ".join(
+                [console_error.rstrip(".") + ". Nothing was mined."] + notes)}
+        if ctx is None:
+            notes.insert(0, console_error.rstrip(".") + ". Only email was mined.")
+        try:
+            text = "\n".join(t for t in ((comms_to_text(ctx) if ctx else ""), mail_text)
+                             if t.strip())
             labels = interpret_stresses(text, interpret_complete) if text.strip() else []
-            added = sum(1 for label in labels if _st.add_stress(cx, test_id, label, source="comm"))
         except Exception as e:
             return {"added": 0, "error": str(e)[:200]}
+        added = 0
+        try:
+            for label in labels:   # counted one by one: a later failure keeps the count
+                if _st.add_stress(cx, test_id, label, source="comm"):
+                    added += 1
+        except Exception as e:
+            return {"added": added, "error": str(e)[:200]}
+        missed = [s for s in ((ctx or {}).get("unavailable") or []) if isinstance(s, str)]
+        if missed:
+            notes.insert(0, "Some recent comms could not be read (" + ", ".join(missed) + ").")
+        if notes:
+            return {"added": added, "error": " ".join(notes)}
         return {"added": added}
 
     PASTE_MAX_CHARS = 50_000
@@ -884,7 +1124,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         try:
             for label in interpret_stresses(text, interpret_complete):
                 label = label if isinstance(label, str) else ""
-                if len(label) > PASTE_LABEL_MAX or "\n" in label or "\r" in label:
+                # "family history of " takes 18 characters of the cap (review round 1).
+                cap = PASTE_LABEL_MAX + (18 if label.lower().startswith("family history of ")
+                                         else 0)
+                if len(label) > cap or "\n" in label or "\r" in label:
                     skipped += 1
                     continue
                 if _st.add_stress(cx, test_id, label, source="paste"):
@@ -1061,18 +1304,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 stresses = _st.list_stresses(cx, test_id, chain_rows)
             except Exception:
                 stresses = None
+        try:
+            prev = _published_special(test_id)
+        except Exception:
+            prev = "unknown"   # the box says so; never block the page
         return Response(render_report_html(rep, notes, narrative, vscript, stresses=stresses,
-                                           notes_updated=notes_updated),
+                                           notes_updated=notes_updated, courtesy_cents=prev),
                         mimetype="text/html")
 
     @app.route("/client-photo/<path:email>")
     def client_photo(email):
         """Serve a client's photo (local store). Gated by the console cookie like the
         rest of the intake app. 404 when absent so <img onerror> hides cleanly."""
-        from dashboard import client_photos as _cph
-        _refresh_client_photo(email)
-        with sqlite3.connect(db_path) as cx:
-            rec = _cph.get(cx, email)
+        rec, _pid = _operator_photo(email, request.args.get("name", ""))
         if not rec:
             return Response("", status=404)
         resp = Response(rec["blob"], mimetype=rec["content_type"])
@@ -1082,10 +1326,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     @app.route("/client-photo-framing/<path:email>")
     def client_photo_framing(email):
         """Return the same nondestructive face focal point used by portal avatars."""
-        from dashboard import client_photos as _cph
-        _refresh_client_photo(email)
-        with sqlite3.connect(db_path) as cx:
-            rec = _cph.get(cx, email)
+        rec, _pid = _operator_photo(email, request.args.get("name", ""))
         if not rec:
             return jsonify({"ok": False, "error": "not found"}), 404
         return jsonify({"ok": True, "focus_x": rec.get("focus_x", 50),
@@ -1104,28 +1345,104 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return jsonify({"ok": False, "error": "no image uploaded"}), 400
         ctype = (getattr(f, "mimetype", "") or "image/jpeg")
         with sqlite3.connect(db_path) as cx:
-            rep = (authored_report(cx, test_id) if str(test_id).startswith("a")
-                   else causal_chain_report(cx, test_id))
-            email = ((rep.get("client") or {}).get("email") or "").strip().lower()
+            email, name = _test_person(cx, test_id)
             if not email:
                 return jsonify({"ok": False, "error": "this test has no client email"}), 400
-            _cph.put(cx, email, blob, ctype, source="fmp-intake-upload")
-        prod_pushed = False
-        base = os.environ.get("PORTAL_PUBLISH_BASE_URL", "")
-        key = os.environ.get("CONSOLE_SECRET", "")
-        if base:
-            try:
-                import base64 as _b64, json as _json, urllib.request as _u
-                body = _json.dumps({"email": email, "content_type": ctype,
-                                    "source": "fmp-intake-upload",
-                                    "image": _b64.b64encode(blob).decode()}).encode()
-                r = _u.Request(base.rstrip("/") + "/api/console/client-photo", data=body,
-                               method="POST", headers={"X-Console-Key": key,
-                               "Content-Type": "application/json"})
-                prod_pushed = bool(_json.load(_u.urlopen(r, timeout=30)).get("ok"))
-            except Exception as e:
-                print(f"[client-photo] prod push failed: {e}", flush=True)
+            people = _cph.fmp_people_for_email(cx, email)
+            pid = _cph.fmp_person_for(cx, email, name)
+            if people is None:
+                return jsonify({"ok": False, "error": "FileMaker clients could not be read; try again"}), 503
+            if pid:
+                _cph.put_for_client(cx, pid, email, blob, ctype, source="fmp-intake-upload")
+            elif people:
+                return jsonify({"ok": False, "error": (
+                    f"The intake name matches none of the {len(people)} FileMaker "
+                    "client(s) on this email. Fix the intake name first.")}), 409
+            else:
+                _cph.put(cx, email, blob, ctype, source="fmp-intake-upload")
+        prod_pushed = _push_photo(email, pid, blob, ctype, "fmp-intake-upload")
         return jsonify({"ok": True, "email": email, "prod_pushed": prod_pushed})
+
+    @app.route("/client-photo-candidates/<path:email>")
+    def client_photo_candidates(email):
+        """On an email several FileMaker clients share, every photo on file for any of
+        them, so the operator can pick this person's (Glen, 2026-10-09). Operator only:
+        no client surface calls this."""
+        import urllib.parse
+        from dashboard import client_photos as _cph
+        name = request.args.get("name", "")
+        with sqlite3.connect(db_path) as cx:
+            people = _cph.fmp_people_for_email(cx, email)
+            pid = _cph.fmp_person_for(cx, email, name)
+        if people is None:
+            return jsonify({"ok": False, "error": "FileMaker clients could not be read"}), 503
+        out = {"ok": True, "shared": len(people) > 1, "count": len(people),
+               "person": pid, "candidates": []}
+        if len(people) < 2:
+            return jsonify(out)
+        with sqlite3.connect(db_path) as cx:
+            people = [(cid, full) for cid, full in people if not _cph.id_is_reused(cx, cid)]
+        for cid, full in people:
+            _refresh_client_photo(email, cid)
+        _refresh_client_photo(email)
+        q = urllib.parse.quote(email.strip().lower(), safe="")
+        with sqlite3.connect(db_path) as cx:
+            for cid, full in people:
+                if _cph.get_for_client(cx, cid):
+                    out["candidates"].append({"key": cid, "label": f"{full}'s photo",
+                                              "url": f"/client-photo-candidate/{q}/{cid}"})
+            if _cph.get(cx, email):
+                out["candidates"].append({"key": "email", "label": "Household photo (not assigned)",
+                                          "url": f"/client-photo-candidate/{q}/email"})
+        return jsonify(out)
+
+    @app.route("/client-photo-candidate/<path:email>/<key>")
+    def client_photo_candidate(email, key):
+        from dashboard import client_photos as _cph
+        with sqlite3.connect(db_path) as cx:
+            ids = {cid for cid, _ in (_cph.fmp_people_for_email(cx, email) or [])
+                   if not _cph.id_is_reused(cx, cid)}
+            if len(ids) < 2 and key != "email":
+                return Response("", status=404)
+            if key == "email" and len(_cph.fmp_people_for_email(cx, email) or []) < 2:
+                return Response("", status=404)
+            rec = (_cph.get(cx, email) if key == "email"
+                   else _cph.get_for_client(cx, key) if key in ids else None)
+        if not rec:
+            return Response("", status=404)
+        resp = Response(rec["blob"], mimetype=rec["content_type"])
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    @app.route("/test/<test_id>/photo-pick", methods=["POST"])
+    def pick_client_photo(test_id):
+        """Save a candidate photo as THIS intake's person's own photo, locally and on
+        prod, keyed by their FileMaker id. Never writes the shared email row."""
+        from dashboard import client_photos as _cph
+        body = request.get_json(silent=True) or {}
+        key = str(body.get("key") or "").strip()
+        with sqlite3.connect(db_path) as cx:
+            email, name = _test_person(cx, test_id)
+            # The page names the person it showed the choice for. If the saved intake now
+            # names someone else, the pick would land on the wrong person (round 2).
+            if _cph._name_key(body.get("name") or "") != _cph._name_key(name):
+                return jsonify({"ok": False, "error": (
+                    "The intake name changed. Save the header, then pick again.")}), 409
+            ids = {cid for cid, _ in (_cph.fmp_people_for_email(cx, email) or [])
+                   if not _cph.id_is_reused(cx, cid)}
+            pid = _cph.fmp_person_for(cx, email, name)
+            if not pid:
+                return jsonify({"ok": False, "error": (
+                    "The intake name matches none of the FileMaker clients on this email "
+                    "exactly. Fix the intake name first.")}), 409
+            rec = (_cph.get(cx, email) if key == "email"
+                   else _cph.get_for_client(cx, key) if key in ids else None)
+            if not rec:
+                return jsonify({"ok": False, "error": "that photo is not on file"}), 404
+            _cph.put_for_client(cx, pid, email, rec["blob"], rec["content_type"],
+                                source="console")
+        prod_pushed = _push_photo(email, pid, rec["blob"], rec["content_type"], "console")
+        return jsonify({"ok": True, "person": pid, "prod_pushed": prod_pushed})
 
     @app.route("/test/<test_id>/report")
     def report_present(test_id):
@@ -1134,6 +1451,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             narrative = get_narrative(cx, test_id)
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
+        _add_intake_fallback(rep)
         return Response(render_present(rep, narrative), mimetype="text/html")
 
     @app.route("/test/<test_id>/report.pdf")
@@ -1144,6 +1462,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             narrative = get_narrative(cx, test_id)
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
+        _add_intake_fallback(rep)
         html = render_present(rep, narrative)
         reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
                                      os.path.join(os.path.expanduser("~"), "biofield-reports"))
@@ -1176,6 +1495,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_clinical_proposals import accepted_labels
         profile = profile or {}
         accepted = accepted_labels(cx, test_id)
+        # A diagnosis Glen approved from the client's records joins as a row too.
+        # Not for an address that is shared now, or cannot be checked (review round 2).
+        try:
+            from dashboard.biofield_records import approved_diagnoses
+            from dashboard.biofield_gmail import people_on_address
+            _email = _test_email(cx, test_id)
+            _n = people_on_address(e4l_db, _email) if _email else None
+            if _email and _n is not None and _n <= 1:
+                accepted = accepted + approved_diagnoses(cx, _email)
+        except Exception:
+            pass
         if not accepted:
             return profile
         profile = dict(profile)
@@ -1243,6 +1573,63 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                   if item_key(item.get("label")) not in hidden]
             clinical_checklist = apply_order(cx, test_id, clinical_checklist)
             clinical_checklist = apply_selection(cx, test_id, clinical_checklist)
+            # Five rated sections under every row (Glen, 2026-10-17). The remedy list
+            # becomes the first one; a failure here leaves the plain list showing.
+            clinical_botanical = None
+            try:
+                from dashboard import biofield_clinical_sections as _cs
+                clinical_botanical = _cs.botanical_setting(cx, test_id)
+                # Which infoceuticals the client's latest scan recommends and which
+                # are purple on it (Glen, 2026-10-17). No scan, no marks.
+                scan_marks = None
+                try:
+                    from dashboard.e4l_scan_marks import infoceutical_marks
+                    _sctx = scan_lookup(c_email) if c_email else {}
+                    if (_sctx or {}).get("found"):
+                        scan_marks = infoceutical_marks(cx, e4l_db, _sctx.get("scan_id"))
+                except Exception as _me:
+                    print(f"[scan-marks] {test_id}: skipped: {_me!r}", flush=True)
+                    # Say so on the page rather than look like a client with no scan.
+                    scan_marks = {"recommended": None, "purple": None,
+                                  "recommended_error": repr(_me)[:200],
+                                  "purple_error": repr(_me)[:200]}
+                for _item in clinical_checklist:
+                    _item["sections"] = _cs.sections_for(
+                        cx, test_id, _item.get("label"),
+                        remedies=_item.get("common_remedies") or [],
+                        chosen_remedies=_item.get("selected_remedies") or [],
+                        botanical=clinical_botanical, marks=scan_marks)
+                # A row counts as checked when it is ticked or any remedy on it is.
+                # The scan panel loads separately; it reads these labels to link a
+                # PRL focus area to this client's own conditions.
+                from dashboard.biofield_prl_section import remember_rows
+                remember_rows(cx, test_id, [_i.get("label") for _i in clinical_checklist])
+                _cs.flag_food_conflicts([
+                    (_item.get("display_label") or _item.get("label"),
+                     bool(_item.get("checked") or _item.get("selected_remedies")),
+                     _item["sections"]) for _item in clinical_checklist])
+            except Exception as _se:
+                print(f"[clinical-sections] {test_id}: skipped: {_se!r}", flush=True)
+            # Each item's grouped factors, kept as their own list (Glen, 2026-10-16:
+            # "separate"), and the factors still free to add to one.
+            clinical_free_factors = None
+            try:
+                from dashboard import biofield_clinical_groups as _cg
+                _gfactors, _records_ok = _group_factors(cx, test_id)
+                _fmap = _cg.item_factors(cx, test_id, _records_ok)
+                for _item in clinical_checklist:
+                    # Keyed on the row's canonical label, which approve() maps every
+                    # typed name to, as every other row action does.
+                    _item["factors"] = _fmap.get(item_key(_item.get("label"))) or []
+                # A factor whose item is hidden from this checklist would show nowhere,
+                # so it is offered again (review round 3).
+                _shown = {item_key(_i.get("label")) for _i in clinical_checklist}
+                clinical_free_factors = [
+                    f["factor"] for f in
+                    _cg.ungrouped(cx, test_id, _gfactors or [])] + [
+                    f for k, fs in _fmap.items() if k not in _shown for f in fs]
+            except Exception as _ge:
+                print(f"[clinical-groups] {test_id}: skipped: {_ge!r}", flush=True)
         with sqlite3.connect(db_path) as cx:
             fstate = biofield_fee.build_fee_state(c_email, fee_get, get_no_charge(cx, test_id))
         # What this client has been dispensed before, ranked. Best-effort: a
@@ -1254,12 +1641,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # Most of a long-standing client's history predates this system:
             # Debra Herndon had 2 orders here and 8 in FileMaker. Matched on NAME
             # as well as email, because one household email can be five people.
-            _hist = []
-            try:
-                with sqlite3.connect(db_path) as _fcx:
-                    _hist = _fmpo.client_order_history(_fcx, email=c_email) or []
-            except Exception as _fe:
-                print(f"[dispensed] fmp history skipped: {_fe!r}", flush=True)
+            # Prod holds the full legacy history and the emails found for rows that had
+            # none; the local copy held 424 invoices of about 15,700
+            # (2026-10-16). The local copy is the fallback, and the panel says so.
+            _hist = fetch_fmp_history(c_email) if fetch_fmp_history else None
+            if _hist is None and fetch_fmp_history:
+                print(f"[dispensed] {datetime.datetime.now().isoformat(timespec='seconds')} "
+                      f"test {test_id}: prod FileMaker history unavailable; "
+                      f"using the local copy", flush=True)
+                dispensed_error = dispensed_error or "FileMaker history from prod unavailable"
+            if _hist is None:
+                _hist = []
+                try:
+                    with sqlite3.connect(db_path) as _fcx:
+                        _hist = _fmpo.client_order_history(_fcx, email=c_email) or []
+                except Exception as _fe:
+                    print(f"[dispensed] fmp history skipped: {_fe!r}", flush=True)
             _older = _disp.fmp_orders_for(_hist, (rep.get("client") or {}).get("name"), c_email)
             # Call the INJECTED seam, not the concrete function: client_orders is a
             # create_app dependency and the author route's tests assert it is used.
@@ -1267,8 +1664,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # may be empty, so a failed lookup can be told from an empty history without
             # changing the seam's contract.
             _client_orders = client_orders(c_email)
-            dispensed_error = getattr(_client_orders, "error", None)
+            dispensed_error = getattr(_client_orders, "error", None) or dispensed_error
             dispensed = _disp.frequency(list(_client_orders) + _older, c_email)
+            if dispensed_error:
+                # Which test, and when. The lookup's own line carries neither, so on
+                # 2026-10-12 25 failures could be traced only to between 4 and 13 clients.
+                print(f"[dispensed] {datetime.datetime.now().isoformat(timespec='seconds')} "
+                      f"test {test_id}: store orders unavailable ({dispensed_error}); "
+                      f"showing {len(_older)} FileMaker orders", flush=True)
             # The conditions each remedy is already used for, so the row can offer
             # them as one-click pairings.
             from dashboard.biofield_clinical_checklist import conditions_for_remedy
@@ -1304,6 +1707,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                            narrative=narrative, fee_state=fstate,
                                            narrative_warnings=_narr_warnings,
                                            clinical_checklist=clinical_checklist,
+                                           clinical_free_factors=clinical_free_factors,
+                                           clinical_botanical=clinical_botanical,
                                            dispensed=dispensed,
                                            dispensed_error=dispensed_error,
                                            intake_priorities=(profile or {}).get(
@@ -1374,7 +1779,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         [{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}],
                         invoice_note=biofield_invoice.DEFAULT_INVOICE_NOTE,
                         idempotency_key=(d.get("idempotency_key") or ""))
-        return {"ok": True, "e4l": ctx, "html": render_e4l_panel(ctx),
+        return {"ok": True, "e4l": ctx, "html": _e4l_panel(test_id, ctx),
                 "invoice": invoice}
 
     @app.route("/author/<test_id>/fee", methods=["POST"])
@@ -1514,6 +1919,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 "external_ref": created.get("external_ref"),
                 "added": added_count,
                 "skipped": built["skipped"],
+                "not_ready": built.get("not_ready") or [],
                 "warning": warning,
                 "total_dollars": biofield_fee.cents_to_dollars(total) if total is not None else ""}
 
@@ -1613,7 +2019,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             resolved_remedies = []
             for item in content.get("reorder_items") or []:
                 slug = (item.get("slug") or "").strip()
-                if not slug:
+                if not slug or biofield_invoice.is_not_ready(slug, catalog):
                     continue
                 name_key = (item.get("name") or "").strip().lower()
                 resolved_remedies.append({
@@ -1625,7 +2031,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 built["lines"] = ([{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}]
                                   if include_fee else []) + resolved_remedies
                 built["skipped"] = []
-            elif remedies and include_fee:
+            elif remedies and include_fee and not built.get("not_ready"):
                 invoice = {
                     "ok": False,
                     "error": ("The Biofield products could not be matched to the catalog; "
@@ -1657,6 +2063,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                "no_charge": no_charge,
                                "lines": len(built["lines"]),
                                "skipped": built.get("skipped") or [],
+                               "not_ready": built.get("not_ready") or [],
                                "replaced": len(created.get("cancelled") or []),
                                "total_dollars": biofield_fee.cents_to_dollars(total) if total is not None else ""}
                 else:
@@ -1670,7 +2077,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_e4l(test_id):
         with sqlite3.connect(db_path) as cx:
             ctx, _ = _e4l(cx, test_id)
-        return {"e4l": ctx, "html": render_e4l_panel(ctx)}
+        return {"e4l": ctx, "html": _e4l_panel(test_id, ctx)}
 
     @app.route("/api/e4l/clients")
     def api_e4l_clients():
@@ -1697,8 +2104,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         newer = bool(after.get("found") and (
             not before.get("found")
             or (after.get("scan_date") or "") > (before.get("scan_date") or "")))
+        # One line per refresh, so "it needed two clicks" can be read back later.
+        print(f"[e4l-refresh] {datetime.datetime.now().isoformat(timespec='seconds')} "
+              f"test {test_id}: ok={bool(res.get('ok'))} newer={newer} "
+              f"new_scans={res.get('new_scans', '?')} "
+              f"download_errors={res.get('download_errors', '?')} "
+              f"latest={after.get('scan_date') or '-'}"
+              + (f" error={str(res.get('error'))[:120]!r}" if res.get("error") else ""),
+              flush=True)
         return {"ok": bool(res.get("ok")), "error": res.get("error"),
-                "newer": newer, "e4l": after, "html": render_e4l_panel(after)}
+                "newer": newer, "download_errors": res.get("download_errors", 0),
+                "e4l": after, "html": _e4l_panel(test_id, after)}
 
     @app.route("/author/<test_id>/species", methods=["POST"])
     def author_species_answer(test_id):
@@ -1785,6 +2201,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             chain_rows = _chain_rows_for(rep)
             data = _st.list_stresses(cx, test_id, chain_rows)
         return {"data": data, "html": render_stress_panel(data)}
+
+    @app.route("/author/<test_id>/stresses/sort", methods=["POST"])
+    def author_sort_stresses(test_id):
+        """Sort this intake's unsorted Mind stresses into Symptoms, Labs and Conditions.
+        The page calls it once when the list says some are unsorted."""
+        from dashboard import biofield_stress as _st
+        from dashboard import stress_kinds as _sk
+        with sqlite3.connect(db_path) as cx:
+            rep = _report_for(cx, test_id)
+            data = _st.list_stresses(cx, test_id, _chain_rows_for(rep))
+            items = {i["id"]: i for i in data["active"] + data["balanced"]}
+            labels = _sk.unsorted_labels(cx, list(items.values()))
+            if not labels:
+                return {"ok": True, "sorted": 0}
+            try:
+                n = _sk.classify(cx, labels, interpret_complete)
+            except Exception as e:
+                cx.rollback()
+                return {"ok": False, "error": f"Could not sort ({type(e).__name__})."}
+        return {"ok": True, "sorted": n}
 
     def _do_stress_assign(test_id, stress_ids):
         """LLM-assign unassigned stress(es) each to their best-fit layer, then
@@ -2592,6 +3028,172 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             ok = decide(cx, test_id, body.get("label"), status, body.get("evidence"))
         return {"ok": ok}
 
+    def _test_email(cx, test_id):
+        if not re.fullmatch(r"a[1-9][0-9]*", str(test_id)):
+            return ""
+        row = cx.execute("SELECT email FROM biofield_auth_tests WHERE id=?",
+                         (int(str(test_id)[1:]),)).fetchone()
+        from dashboard.biofield_gmail import clean_email
+        return clean_email(row[0] if row else "")
+
+    @app.route("/author/<test_id>/records")
+    def author_records(test_id):
+        """Findings from the client's records: pending for review, and approved."""
+        from dashboard import biofield_records as _br
+        from dashboard.biofield_gmail import people_on_address
+        with sqlite3.connect(db_path) as cx:
+            email = _test_email(cx, test_id)
+            if not email:
+                return {"ok": False, "error": "No client selected yet"}
+            held = people_on_address(e4l_db, email)
+            if held is None or held > 1:
+                # Findings stored before the address was shared are not shown on it.
+                return {"ok": True, "held": True, "pending": [], "approved": [],
+                        "failed": [], "notes": [], "unread": 0,
+                        "reader": bool(records_reader)}
+            out = _br.findings(cx, email)
+            out.update(ok=True, unread=len(_br.unread(cx, email)), held=False,
+                       reader=bool(records_reader))
+            return out
+
+    @app.route("/author/<test_id>/records/read", methods=["POST"])
+    def author_records_read(test_id):
+        """Read the unread records into pending findings. Nothing is approved here."""
+        from dashboard.biofield_gmail import people_on_address
+        if not records_reader:
+            return {"ok": False, "error": "Records cannot be read here (no Gmail token)."}
+        with sqlite3.connect(db_path) as cx:
+            email = _test_email(cx, test_id)
+            if not email:
+                return {"ok": False, "error": "No client selected yet"}
+            held = people_on_address(e4l_db, email)
+            if held is None or held > 1:
+                return {"ok": False, "error": "Records were not read: this address is "
+                                              "shared, or E4L could not be checked."}
+            try:
+                return {"ok": True, **records_reader(cx, email)}
+            except Exception as e:
+                return {"ok": False, "error": f"Records could not be read ({type(e).__name__})."}
+
+    @app.route("/author/<test_id>/records/retry", methods=["POST"])
+    def author_records_retry(test_id):
+        from dashboard import biofield_records as _br
+        with sqlite3.connect(db_path) as cx:
+            email = _test_email(cx, test_id)
+            if not email:
+                return {"ok": False, "error": "No client selected yet"}, 400
+            return {"ok": True, "reset": _br.retry_failed(cx, email)}
+
+    @app.route("/author/<test_id>/records/<int:finding_id>", methods=["POST"])
+    def author_records_decide(test_id, finding_id):
+        """Glen approves (optionally rewording) or rejects one finding."""
+        from dashboard import biofield_records as _br
+        from dashboard.biofield_gmail import people_on_address
+        body = request.get_json(silent=True) or {}
+        with sqlite3.connect(db_path) as cx:
+            email = _test_email(cx, test_id)
+            if not email:
+                return {"ok": False, "error": "No client selected yet"}, 400
+            held = people_on_address(e4l_db, email)
+            if held is None or held > 1:
+                return {"ok": False, "error": "This address is shared."}, 400
+            ok = _br.decide(cx, email, finding_id, body.get("decision"), body.get("text"))
+        return ({"ok": True}, 200) if ok else ({"ok": False, "error": "Not changed"}, 400)
+
+    def _group_factors(cx, test_id):
+        """(factors, records_ok) for this intake, or (None, False) when it does not
+        exist. Pending record findings join only for an address that is not shared,
+        and records_ok says whether stored record factors may be shown."""
+        from dashboard import biofield_clinical_groups as _cg
+        from dashboard import biofield_records as _br
+        from dashboard.biofield_gmail import people_on_address
+        from dashboard.biofield_authoring import init_auth_tables
+        if not re.fullmatch(r"a[1-9][0-9]*", str(test_id)):
+            return None, False
+        init_auth_tables(cx)
+        if not cx.execute("SELECT 1 FROM biofield_auth_tests WHERE id=?",
+                          (int(str(test_id)[1:]),)).fetchone():
+            return None, False
+        records = None
+        email = _test_email(cx, test_id)
+        if email:
+            try:
+                held = people_on_address(e4l_db, email)
+                if held is not None and held <= 1:
+                    records = _br.findings(cx, email)["pending"]
+            except Exception:
+                records = None
+        return _cg.factors_for(cx, test_id, records), records is not None
+
+    @app.route("/author/<test_id>/clinical-groups")
+    def author_clinical_groups(test_id):
+        """Open proposals and the factors not yet in any group."""
+        from dashboard import biofield_clinical_groups as _cg
+        with sqlite3.connect(db_path) as cx:
+            factors, records_ok = _group_factors(cx, test_id)
+            if factors is None:
+                return {"ok": False, "error": "That intake does not exist."}, 404
+            return {"ok": True,
+                    "proposed": [g for g in _cg.groups(cx, test_id, records_ok)
+                                 if g["status"] == "proposed" and g["factors"]],
+                    "ungrouped": _cg.ungrouped(cx, test_id, factors)
+                    + _cg.on_hidden_items(cx, test_id, records_ok)}
+
+    @app.route("/author/<test_id>/clinical-groups/propose", methods=["POST"])
+    def author_propose_clinical_groups(test_id):
+        """Ask the model to group the ungrouped factors. Nothing is approved here."""
+        from dashboard import biofield_clinical_groups as _cg
+        with sqlite3.connect(db_path) as cx:
+            factors, _ = _group_factors(cx, test_id)
+            if factors is None:
+                return {"ok": False, "error": "That intake does not exist."}, 404
+            try:
+                out = _cg.propose(cx, test_id, factors, interpret_complete)
+            except Exception as e:
+                cx.rollback()
+                return {"ok": False,
+                        "error": f"Groupings could not be proposed ({type(e).__name__})."}
+        return {"ok": True, **out}
+
+    @app.route("/author/<test_id>/clinical-groups/approve", methods=["POST"])
+    def author_approve_clinical_group(test_id):
+        """Approve a proposal as edited, or add factors to a named item."""
+        from dashboard import biofield_clinical_groups as _cg
+        body = request.get_json(silent=True) or {}
+        wanted = body.get("factors") if isinstance(body.get("factors"), list) else []
+        gid = body.get("group_id")
+        if gid is not None and (isinstance(gid, bool) or not isinstance(gid, int)
+                                or not 0 < gid < 2 ** 63):
+            return {"ok": False, "error": "Unknown group"}, 400
+        with sqlite3.connect(db_path) as cx:
+            factors, _ = _group_factors(cx, test_id)
+            if factors is None:
+                return {"ok": False, "error": "That intake does not exist."}, 404
+            email = _test_email(cx, test_id)
+            done = _cg.approve(cx, test_id, factors, body.get("name"),
+                               [str(w) for w in wanted], group_id=gid,
+                               typed_ok=body.get("typed") is True,
+                               blocked=_cg.record_keys(cx, email) if email else ())
+        if done is None:
+            return {"ok": False, "error": "Give the item a name and at least one factor "
+                                          "from this intake."}, 400
+        return {"ok": True, "group_id": done}
+
+    @app.route("/author/<test_id>/clinical-groups/<int:group_id>/dismiss", methods=["POST"])
+    def author_dismiss_clinical_group(test_id, group_id):
+        from dashboard import biofield_clinical_groups as _cg
+        with sqlite3.connect(db_path) as cx:
+            ok = _cg.dismiss(cx, test_id, group_id)
+        return ({"ok": True}, 200) if ok else ({"ok": False, "error": "Not changed"}, 400)
+
+    @app.route("/author/<test_id>/clinical-groups/remove-factor", methods=["POST"])
+    def author_remove_group_factor(test_id):
+        from dashboard import biofield_clinical_groups as _cg
+        body = request.get_json(silent=True) or {}
+        with sqlite3.connect(db_path) as cx:
+            ok = _cg.remove_factor(cx, test_id, body.get("name"), body.get("factor"))
+        return ({"ok": True}, 200) if ok else ({"ok": False, "error": "Not changed"}, 400)
+
     @app.route("/author/<test_id>/clinical-items", methods=["POST"])
     def author_edit_clinical_items(test_id):
         """Local checklist override: add an item or hide it for this Biofield test."""
@@ -2926,9 +3528,136 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         remedies = body.get("remedies")
         if not label or not isinstance(remedies, list):
             return {"ok": False, "error": "Item label and a remedies list are required"}, 400
+        from dashboard.biofield_clinical_proposals import _key, selections
+        from dashboard.biofield_clinical_sections import remedies_changed
         with sqlite3.connect(db_path) as cx:
+            before = selections(cx, test_id).get(_key(label), [])
             count = save_selection(cx, test_id, label, remedies)
+            remedies_changed(cx, test_id, label, before, remedies)
         return {"ok": True, "count": count}
+
+    @app.route("/author/<test_id>/clinical-sections/unhide", methods=["POST"])
+    def author_clinical_section_unhide(test_id):
+        """Unhide one greyed botanical for this client, or hide it again (Glen,
+        2026-10-18: "per client and reversible")."""
+        from dashboard.biofield_clinical_sections import set_unhidden
+        body = request.get_json(silent=True) or {}
+        on = body.get("on")
+        if not isinstance(on, bool):
+            return {"ok": False, "error": "on is required"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                set_unhidden(cx, test_id, str(body.get("label") or "").strip(),
+                             str(body.get("section") or "").strip(),
+                             str(body.get("name") or "").strip(), on)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        return {"ok": True}
+
+    @app.route("/author/<test_id>/clinical-sections/all", methods=["POST"])
+    def author_clinical_section_all(test_id):
+        """A section's All box (Glen, 2026-10-17). `names` are the items shown in that
+        section; for Functional Formulations `remedies` is the row's current ticks."""
+        from dashboard.biofield_clinical_proposals import save_selection
+        from dashboard.biofield_clinical_sections import (REMEDY_SECTIONS, checked_names,
+                                                          select_all)
+        body = request.get_json(silent=True) or {}
+        label = str(body.get("label") or "").strip()
+        section = str(body.get("section") or "").strip()
+        on, names = body.get("on"), body.get("names")
+        remedies = body.get("remedies") or []
+        if not isinstance(on, bool) or not isinstance(names, list) \
+                or not isinstance(remedies, list):
+            return {"ok": False, "error": "on, names and remedies are required"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                chosen = select_all(cx, test_id, label, section, on, names, remedies)
+                if section in REMEDY_SECTIONS:
+                    save_selection(cx, test_id, label, chosen)
+                else:
+                    chosen = checked_names(cx, test_id, label, section, names)
+                cx.commit()
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        # The page sets its ticks from `checked` rather than reloading (Glen,
+        # 2026-10-18: a reload jumped the page to another scroll position).
+        return {"ok": True, "checked": chosen}
+
+    @app.route("/author/<test_id>/clinical-sections/pick", methods=["POST"])
+    def author_clinical_section_pick(test_id):
+        """One tick, rating or dose on a section item, for this client only."""
+        from dashboard.biofield_clinical_sections import save_pick
+        body = request.get_json(silent=True) or {}
+        label = str(body.get("label") or "").strip()
+        section = str(body.get("section") or "").strip()
+        name = str(body.get("name") or "").strip()
+        checked = body.get("checked")
+        if checked is not None and not isinstance(checked, bool):
+            return {"ok": False, "error": "checked must be true or false"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                save_pick(cx, test_id, label, section, name, checked=checked,
+                          rating=body.get("rating"), dose=body.get("dose"))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        return {"ok": True}
+
+    @app.route("/author/<test_id>/clinical-sections/approve", methods=["POST"])
+    def author_clinical_section_approve(test_id):
+        """Glen approves an item into the shared catalog: every client sees it."""
+        from dashboard.biofield_clinical_sections import approve_item
+        body = request.get_json(silent=True) or {}
+        label = str(body.get("label") or "").strip()
+        section = str(body.get("section") or "").strip()
+        name = str(body.get("name") or "").strip()
+        with sqlite3.connect(db_path) as cx:
+            ok = approve_item(cx, label, section, name)
+        if not ok:
+            return {"ok": False, "error": "No such item in the catalog"}, 404
+        return {"ok": True}
+
+    @app.route("/author/<test_id>/clinical-sections/botanical", methods=["POST"])
+    def author_clinical_section_botanical(test_id):
+        from dashboard.biofield_clinical_sections import save_botanical_setting
+        body = request.get_json(silent=True) or {}
+        avoid = body.get("avoid")
+        if avoid is not None and not isinstance(avoid, bool):
+            return {"ok": False, "error": "avoid must be true or false"}, 400
+        with sqlite3.connect(db_path) as cx:
+            save_botanical_setting(cx, test_id, avoid=avoid,
+                                   exceptions=body.get("exceptions"))
+        return {"ok": True}
+
+    @app.route("/author/<test_id>/prl", methods=["POST"])
+    def author_prl(test_id):
+        """One PRL checkbox, rating or empty-group choice, for this client only."""
+        from dashboard.biofield_prl_section import act
+        body = request.get_json(silent=True) or {}
+        try:
+            fa = int(body.get("focus_area_id"))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "focus_area_id is required"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                act(cx, test_id, fa, str(body.get("action") or ""),
+                    name=body.get("name"), value=body.get("value"))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        return {"ok": True}
+
+    @app.route("/author/<test_id>/prl/approve", methods=["POST"])
+    def author_prl_approve(test_id):
+        from dashboard.biofield_prl_section import approve_rating
+        body = request.get_json(silent=True) or {}
+        try:
+            fa = int(body.get("focus_area_id"))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "focus_area_id is required"}, 400
+        with sqlite3.connect(db_path) as cx:
+            ok = approve_rating(cx, fa, body.get("name"))
+        if not ok:
+            return {"ok": False, "error": "No rating for that product"}, 404
+        return {"ok": True}
 
     @app.route("/author/<test_id>/clinical-items/stress", methods=["POST"])
     def author_clinical_item_stress(test_id):
@@ -3020,9 +3749,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"added": 0, "error": str(e)}
             except Exception as e:
                 return {"error": str(e)[:200]}
+            # The transcript numbers its layers from 1. Writing those numbers as they
+            # stood filed Linda Maher's live-session layer as layer 1, among her 8
+            # clinical and scan layers (Glen, 2026-10-12). Continue after the last
+            # stored layer, as the scan import and the program buttons already do.
+            after = _last_layer_no(_report_for(cx, test_id))
             added = 0
             for l in layers:
-                add_chain_row(cx, test_id, l["layer"], l["head"], l["most_affected"],
+                n = l["layer"]
+                add_chain_row(cx, test_id, (int(n) + after) if n is not None else None,
+                              l["head"], l["most_affected"],
                               l["remedy"], l["dosage"], l["frequency"], l["timing"],
                               confirmed=0)  # voice -> unconfirmed
                 added += 1
@@ -3309,14 +4045,54 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                            "WHERE test_id=?", (test_id,)).fetchone()
         return r[0] if r else None
 
-    def _do_publish(test_id, special, send, send_if_new=False):
+    def _own_init(cx):
+        cx.execute("CREATE TABLE IF NOT EXISTS biofield_own_remedies("
+                   "test_id TEXT NOT NULL, remedy TEXT NOT NULL, confirmed_at TEXT, "
+                   "PRIMARY KEY(test_id, remedy))")
+
+    def _own_remedies(test_id):
+        """Remedies Glen confirmed for this report as the client's own. The store does
+        not sell them, so they show on the portal with no buy button (Glen,
+        2026-10-13, Linda Maher's Passion Flower Capsule)."""
+        with sqlite3.connect(db_path) as cx:
+            _own_init(cx)
+            return {r[0] for r in cx.execute(
+                "SELECT remedy FROM biofield_own_remedies WHERE test_id=?", (test_id,))}
+
+    def _remember_own(test_id, names):
+        if not names:
+            return
+        now = datetime.datetime.utcnow().isoformat()
+        with sqlite3.connect(db_path) as cx:
+            _own_init(cx)
+            cx.executemany("INSERT OR IGNORE INTO biofield_own_remedies VALUES(?,?,?)",
+                           [(test_id, n, now) for n in names])
+            cx.commit()
+
+    def _do_publish(test_id, special, send, send_if_new=False, own_remedies=()):
         """Build + upload PDF/audio assets + upsert the portal for a test. Returns the
-        upsert response dict (or {"unresolved": [...]}); raises on hard errors."""
+        upsert response dict (or {"unresolved": [...]}); raises on hard errors.
+
+        A remedy the store does not sell blocks the publish, because it is usually a
+        misspelling. Glen may confirm it as the client's own remedy (own_remedies,
+        remembered per report). It then shows on its layer with no buy button and
+        no cart line."""
+        # Only an authored report can be published. A bare "48" built Steve
+        # Herzfeld's FMP report as the PDF and Linda Maher's authored a48 as the
+        # portal content, because authored_report strips the "a" (2026-10-13).
+        if not re.fullmatch(r"a+\d+", str(test_id)):
+            raise ValueError(f"only an authored report (a<number>) can be published, not {test_id!r}")
         from dashboard import biofield_portal_publish as _bpp
         with sqlite3.connect(db_path) as cx:
             pre = _bpp.build_portal_content(cx, test_id, special_price_cents=special)
-            if pre["unresolved"]:
-                return {"unresolved": pre["unresolved"]}
+        confirmed = _own_remedies(test_id) | {str(n).strip() for n in (own_remedies or ())}
+        missing = [u for u in pre["unresolved"] if u not in confirmed]
+        if missing:
+            return {"unresolved": missing}
+        # Remember before the remote publish: a failed local write after it would
+        # report a failure for a publish that already emailed the client.
+        _remember_own(test_id, pre["unresolved"])
+        with sqlite3.connect(db_path) as cx:
             rep = _report_for(cx, test_id)
             narrative = get_narrative(cx, test_id)
         base = os.environ.get("PORTAL_PUBLISH_BASE_URL", "")
@@ -3325,6 +4101,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             raise RuntimeError("PORTAL_PUBLISH_BASE_URL not set")
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
+        _add_intake_fallback(rep)
         pdf_bytes = report_pdf_bytes(render_present(rep, narrative))
         pdf_url = _bpp.upload_asset(pdf_bytes, _bpp._asset_name("pdf"), base_url=base, console_key=key)
         audio_url = None
@@ -3336,8 +4113,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             payload = _bpp.build_portal_content(cx, test_id, special_price_cents=special,
                                                 audio_url=audio_url, report_pdf_url=pdf_url)
-        return _bpp.publish_to_portal(payload, base_url=base, console_key=key, send=send,
-                                      send_if_new=send_if_new)
+        # The report can change while the PDF renders. Check what actually goes out.
+        late = [u for u in payload["unresolved"] if u not in confirmed]
+        if late:
+            return {"unresolved": late}
+        res = _bpp.publish_to_portal(payload, base_url=base, console_key=key, send=send,
+                                     send_if_new=send_if_new)
+        if isinstance(res, dict):
+            res = {**res, "own_remedies": list(payload["unresolved"])}
+        return res
 
     def _auto_publish(test_id):
         """Put this test's report on the client portal because it was just printed or
@@ -3374,8 +4158,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             special = int(body.get("special_price_cents") or 0)
         except (TypeError, ValueError):
             return {"ok": False, "error": "special_price_cents must be an integer"}, 400
+        own = body.get("own_remedies") or []
+        if not isinstance(own, list) or not all(isinstance(n, str) for n in own):
+            return {"ok": False, "error": "own_remedies must be a list of names"}, 400
+        if not re.fullmatch(r"a+\d+", test_id):
+            return {"ok": False, "error": "Only an authored report can be published."}, 400
         try:
-            res = _do_publish(test_id, special, send=True)
+            res = _do_publish(test_id, special, send=True, own_remedies=own)
         except Exception as e:
             return {"ok": False, "error": str(e)[:300]}, 502
         if res.get("unresolved"):
@@ -3383,7 +4172,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         _mark_published(test_id, special)   # remember for auto-attach on later audio
         return {"ok": True, "url": res.get("url", ""),
                 "updated": bool(res.get("updated")), "note": res.get("note", ""),
-                "emailed": bool(res.get("emailed")), "unresolved": []}
+                "emailed": bool(res.get("emailed")), "unresolved": [],
+                "own_remedies": res.get("own_remedies") or []}
 
     # --- Task 5: Practice Better intake paste / parse / review / import ---
     @app.route("/intake-import/parse", methods=["POST"])

@@ -206,10 +206,12 @@ def _research_sources(name, k=8, ingredients=None):
         return []
     product_norms = []
     for it in (ingredients or []):
-        nm = it.get("name") if isinstance(it, dict) else it
-        n = _norm_ing(nm)
-        if n:
-            product_norms.append(n)
+        # A renamed label line also matches studies filed under its old page name.
+        names = [it.get("name"), it.get("page_name")] if isinstance(it, dict) else [it]
+        for nm in names:
+            n = _norm_ing(nm)
+            if n:
+                product_norms.append(n)
     out, seen = [], set()
     for m in matches:
         md = m.metadata or {}

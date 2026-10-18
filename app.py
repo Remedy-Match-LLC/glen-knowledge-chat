@@ -13,6 +13,7 @@ except ImportError:
 
 import os
 import sys
+import html
 import re
 import json
 import uuid
@@ -150,6 +151,18 @@ def _start_request_timing():
 
 
 @app.after_request
+def _private_json_by_default(response):
+    """A JSON answer that sets no caching rule is private and never stored. Many carry
+    per-viewer data (wishlist, membership, orders, autoship), so a shared cache must not
+    hand one viewer's answer to another (2026-10-15). A route that sets its own
+    Cache-Control keeps it, and static files are left alone."""
+    if (response.mimetype == "application/json" and "Cache-Control" not in response.headers
+            and not request.path.startswith("/static/")):
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@app.after_request
 def _finish_request_timing(response):
     if not getattr(g, "_timed_request", False):
         return response
@@ -261,6 +274,7 @@ from dashboard import auth_limits as _auth_limits
 from dashboard import client_address as _client_address
 from dashboard import response_timing as _response_timing
 from dashboard import db
+from dashboard import browser_languages as _browser_languages
 from dashboard import dbwrite
 from dashboard.chat_limits import (client_ip, VelocityLimiter, LIMITS,
                                     tier_for, monthly_full_words, is_flagged)
@@ -577,6 +591,10 @@ def _console_owner_scope(email):
     owner = _CONSOLE_OWNER_SCOPES.get(e)
     if not owner:
         owner = re.sub(r"[^a-z0-9]+", "", e.split("@", 1)[0]) or "scoped"
+        if owner in ("glen", "rae"):
+            # Owner reach comes only from the map above, never from a local part
+            # such as "rae@newdomain.com" (review round 3).
+            owner = "scoped"
     return "workspace:" + owner, owner.capitalize()
 
 
@@ -723,7 +741,7 @@ def send_magic_link_email(to_email: str, name: str, magic_url: str) -> tuple:
     """Send a magic-link email. Tries (in order):
       1. GHL workflow trigger (if GHL_MAGIC_LINK_WORKFLOW_ID env var is set)
       2. SMTP (if SMTP_HOST/USER/PASS env vars are set)
-      3. Console log (development fallback — link visible in Render logs)
+      3. Neither: logs that it was not sent. The link itself is never logged.
 
     Returns (sent_via, error_or_none).
     """
@@ -793,7 +811,8 @@ def send_magic_link_email(to_email: str, name: str, magic_url: str) -> tuple:
             print(f"[auth] SMTP magic-link send failed: {e}", flush=True)
 
     # Path 3: console fallback (development / pre-config)
-    print(f"\n[auth] MAGIC LINK for {to_email}: {magic_url}\n", flush=True)
+    # Never the link itself: anyone who can read the logs could sign in with it.
+    print(f"[auth] magic link NOT sent to {to_email}: no email path worked", flush=True)
     return "console-log", "no email send mechanism configured"
 
 
@@ -1819,8 +1838,11 @@ def _catalog_page_url(slug: str) -> str:
     Every catalog slug renders a real sales page at this path (see the
     /begin/product/<slug> route), so this is always a valid buy destination —
     unlike the `url` field, which only 304 of ~1,013 products carry.
+
+    On the client host (portal_base, myhealingoasis.com in prod). Glen, 2026-10-12:
+    the chat's product link table and prompt product URLs use myhealingoasis.com.
     """
-    return f"{PUBLIC_BASE_URL}/begin/product/{slug}"
+    return f"{portal_base()}/begin/product/{slug}"
 
 
 # Only pure connectives are dropped. Sizes and package words ("120",
@@ -2135,8 +2157,565 @@ def _product_guidance_hint(slug: str) -> str:
     purpose = (product.get("intro") or product.get("description") or "").strip()
     purpose = re.sub(r"\s+", " ", purpose)
     if len(purpose) > 220:
-        purpose = purpose[:217].rsplit(" ", 1)[0] + "..."
+        # End at the last whole sentence that fits, so a dose is never cut mid-way
+        # ("Take 1..."), Sleep Bundle copy spec 2026-10-15. A first sentence longer
+        # than the limit still falls back to a word cut.
+        # Sentence ends are found in the whole text, so a decimal at the limit ("1.5")
+        # is never one, and only where the next word starts a sentence, so "20 mg. only
+        # if ..." and "e.g. hops" are not (review round 2).
+        ends = [m.end() for m in re.finditer(r"[.!?](?=\s+[A-Z0-9\"\u201c(]|\s*$)", purpose)
+                if m.end() <= 216
+                and not re.search(r"\b(?:e\.g|i\.e|etc|vs|approx|Dr|St|No|mg|mcg|g|kg|ml|l|IU|oz|lb|tsp|tbsp|"
+                                  r"caps?|tabs?|min|hrs?|wks?|mos?|nm|mm|cm)\.$",
+                                  purpose[:m.end()], re.IGNORECASE)]
+        # A sentence cut that keeps under 60% of the limit is a stub ("Vitality ." from
+        # scraped text), so the word cut is used instead. Either way "..." marks that
+        # more follows (review round 3).
+        purpose = (purpose[:ends[-1]] + " ..." if ends and ends[-1] >= 132
+                   else purpose[:217].rsplit(" ", 1)[0] + "...")
     return f" | class: {kind}" + (f" | purpose: {purpose}" if purpose else "")
+
+
+_NAMED_FACTS_MAX_PRODUCTS = 3
+
+
+def _named_facts_survivor(slug, products):
+    """`slug`, or the live record a retired one names in `superseded_by`. None when the
+    chain ends at a product that is absent, retired, info-only or never recommended."""
+    seen = set()
+    while slug and slug not in seen and slug in products:
+        seen.add(slug)
+        p = products[slug] or {}
+        if p.get("inactive"):
+            slug = p.get("superseded_by")
+            continue
+        if p.get("info_only") or slug in _DO_NOT_RECOMMEND_FACTS:
+            return None
+        return slug
+    return None
+# Glen, 2026-10-09 ("yess"): a non-member who names a product gets its label text. On a
+# gated turn the chat had dropped this block, then gave a dose anyway from snippets about
+# a different product (AngiogenX for Angiostasis), which was worse than the label.
+_GATED_FACTS_NOTE = (
+    "This user has not yet agreed to the Terms. The consent rule still holds: do not tailor "
+    "anything to their body or condition, and do not recommend this product for a condition. "
+    "You may read back this text: what the product is, and "
+    "\"The label directions are ...\" and \"The caution on the product page is ...\", in "
+    "this text's words. "
+    "This overrides the rule above about naming a condition from the user's question: even "
+    "if they name their own condition, do not say this product is for, helps or suits it, "
+    "and do not say the dose suits them. Then invite them to agree to the Terms for guidance "
+    "on their own situation, before the Sources and CTA lines. Name no other product and no "
+    "pairing, even one this text names. Link the Page only as the product page, never as a "
+    "next step for their condition.\n")
+_NAMED_FACTS_MAX_CHARS = 1600
+# Pinned products whose name is an everyday word, so a sentence can start with it.
+_COMMON_WORD_NAMES = frozenset({"moisturize"})
+# A facts block tells the model the product exists and to give its dose, which would
+# recommend a product Glen ruled must never be recommended.
+from dashboard.related_products import DO_NOT_RECOMMEND as _DO_NOT_RECOMMEND_FACTS  # noqa: E402
+_PRICE_SENTENCE = re.compile(r"\s*Price:\s*\$[\d,.]+\.?")
+
+
+# Pinned products whose name is a coined word nobody uses in ordinary speech, so it
+# matches in any case. Angiostasis, Apoptogenesis and Appestat are NOT here: each is also
+# a biology term ("angiostasis in tumours"), so in lowercase they need a cue (review 2026-10-09).
+_CASE_FREE_NAMES = frozenset({
+    "angiogenx", "migrafree", "energessence",
+    "ocuheal-eye-drops", "ocuheal-plus-eye-drops", "lens-zyme", "curcu-guard",
+    "iron-syntropy", "zinc-syntropy", "vitamin-a-syntropy", "vitamin-c-syntropy",
+    "adrenal-syntropy", "sanctuary-c60", "phytolacca-americana-oil-roll-on",
+    "fibrosolve", "estro-clear",
+    # Caution-only (chat_caution), Sleep Syntropy spec 2026-10-15.
+    "sleep-syntropy",
+})
+# Pinned products whose name a client may type in lowercase, beside a product cue. Every
+# other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
+# whey") and matches only in catalog casing.
+_CUE_NAMES = frozenset({
+    "angiostasis", "apoptogenesis", "appestat", "clear-the-way", "reverse-age",
+    "stamina-plus", "off-syrup", "acetaldehyde-detox", "sinus-terrain-nasal-spray",
+    "fibrolysis-factors", "estrogen-fibrin-balance-program",
+    # Caution-only products (chat_caution): "brain cleanse" in lowercase still brings
+    # the caution (formulation spec 2026-10-15-brain-cleanse-caution, review round 3).
+    "brain-cleanse", "sleep-bundle", "brain-program",
+})
+# Pinned products whose name is an everyday biology word in any casing ("What does the
+# Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
+# not (review round 1, 2026-10-13).
+_ALWAYS_CUE_NAMES = frozenset({"microbiome"})
+_PRODUCT_CUE_BEFORE = re.compile(
+    r"\b(?:what\s+is|what's|whats|what\u2019s|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
+    r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of|"
+    # "what is in fibrolysis factors" asks what the product holds (formulation-32,
+    # 2026-10-16: lowercase phrasings got no facts block and the model invented one).
+    r"(?P<holds>(?:what\s+is|what's|whats|what\u2019s)\s+in|ingredients\s+(?:in|of)))"
+    r"(?P<the>(?:\s+of)?(?:\s+the))?\s*$", re.IGNORECASE)
+_PRODUCT_CUE_AFTER = re.compile(
+    r"^\s*(?:dose|dosage|capsules?|caps|bottles?|product|supplement|formula|safe|interact)\b",
+    re.IGNORECASE)
+# What may follow a lowercase name: the end of a clause or a word that cannot extend the
+# name into a longer noun phrase ("reverse age discrimination").
+_AFTER_NAME_OK = re.compile(
+    r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
+    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
+
+
+def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> bool:
+    """True when the words beside a lowercase product name read as asking about the
+    product: "how much clear the way should I take", "clear the way dose", "is clear the
+    way safe". "Can I clear the way for my lymph" and "about reverse age discrimination"
+    have no cue, or run the name into a longer phrase."""
+    # strict (_ALWAYS_CUE_NAMES): "how much microbiome per day" counts, while "what is
+    # microbiome?" asks about biology and does not (review round 3, 2026-10-13). Kept to
+    # those names, so "reverse age per year" stays an ordinary phrase.
+    after = text[end:end + 20]
+    if not (_AFTER_NAME_OK.search(after) or (strict and re.match(r"^\s*per\b", after, re.I))):
+        return False
+    before = _PRODUCT_CUE_BEFORE.search(text[max(0, start - 24):start])
+    if strict and before and re.match(r"\s*(?:what|ingredients)", before.group(0), re.I):
+        before = None
+    # "what is in X" and "ingredients of X" hold only when the name ends the clause:
+    # "what is in brain cleanse and liver flush protocols" names no product (review round
+    # 1, 2026-10-16). Before a name of two or more words they take "the" too: "what is in
+    # the fibrolysis factors?" asks about the product, unlike "the appestat".
+    if before and before.group("holds"):
+        if not re.match(r"^\s*(?:$|[?.!,;:)])", after):
+            before = None
+        elif before.group("the") and len(text[start:end].split()) >= 2:
+            return True
+    # "how much of the Estrogen and Fibrin Balance Program" takes "of the"; a single
+    # word does not: "what is the appestat?" asks about the body's appetite set point
+    # (review round 3, 2026-10-09).
+    # "taking the sleep bundle" reads the same way (formulation read-back, 2026-10-15).
+    if before and before.group("the") and not text[start:end].lower().endswith(("program", "bundle")):
+        before = None
+    return bool(before or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
+
+
+def _named_product_spans(query_text: str, products: dict) -> dict:
+    """{slug: (start, end)} for each pinned, active product named in the question.
+
+    Only a product's own catalog name counts, never an alias: an alias can name an old
+    or consolidated product, and the block tells the model the name is real. The whole
+    name must stand as words, cased as in the catalog: "clear the way for my lymph" and
+    "reverse age naturally" are not product names (review round 3). A product whose name
+    is an everyday word (Moisturize) never qualifies, and neither does one Glen has
+    ruled must never be recommended. Only products with
+    `copy_pinned` qualify: their store text is Glen-approved, and older descriptions
+    carry claims and price lines (review round 1, 2026-10-09).
+    """
+    query_text = html.unescape(query_text).replace("\u2122", "")
+    spans = {}
+    for slug, p in products.items():
+        # A waiting-list product qualifies unpinned: its block carries only the
+        # availability sentence checkout gives, never its unapproved description.
+        # A chat_caution product qualifies unpinned too: its block carries only its
+        # caution, which Glen approved word for word (Brain Cleanse, 2026-10-15). So does a
+        # bundle that lists caution_components: its block carries only those cautions.
+        if (not (p.get("copy_pinned") or p.get("waitlist_only") or p.get("chat_caution")
+                 or _bundle_bot_cautions(p, products))
+                or p.get("inactive")
+                or p.get("info_only")
+                or slug in _DO_NOT_RECOMMEND_FACTS or slug in _COMMON_WORD_NAMES):
+            continue
+        name = html.unescape(p.get("name") or "").replace("\u2122", "").strip()
+        if not name:
+            continue
+        words = name.split()
+        pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
+        m = None if slug in _ALWAYS_CUE_NAMES else re.search(pattern, query_text)
+        if slug in _ALWAYS_CUE_NAMES:
+            m = next((mi for mi in re.finditer(pattern, query_text, re.IGNORECASE)
+                      if _has_product_cue(query_text, *mi.span(), strict=True)), None)
+        elif not m:
+            # Any case: a coined name cannot occur in ordinary speech. A name that is also
+            # an everyday phrase ("clear the way", "reverse age") needs a product cue
+            # beside it (formulation-9d and Glen, 2026-10-09: clients type lowercase).
+            for mi in re.finditer(pattern, query_text, re.IGNORECASE):
+                if slug in _CASE_FREE_NAMES or (slug in _CUE_NAMES
+                                                 and _has_product_cue(query_text, *mi.span())):
+                    m = mi
+                    break
+        if m:
+            spans[slug] = m.span()
+    # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."
+    return {s: sp for s, sp in spans.items()
+            if not any(o != s and o_sp[0] <= sp[0] and sp[1] <= o_sp[1] and o_sp != sp
+                       for o, o_sp in spans.items())}
+
+
+from collections import namedtuple as _namedtuple  # noqa: E402
+# One caution held until the product cap is applied: `key` is the product whose caution
+# it is, `ref` names it when a repeat only points back.
+_CautionLine = _namedtuple("_CautionLine", "key text ref")
+_SEVERAL_CAUTIONS_RULE = (
+    "There is more than one caution below. Copy each one word for word, as its own "
+    "paragraph starting \"Caution for <product name>:\", every sentence of it, even where "
+    "two cautions share sentences. Do not shorten, reword, merge or summarise them, and do "
+    "not fold them into the rest of the answer.")
+_ONE_CAUTION_RULE = (
+    "Copy the caution below word for word, as its own paragraph starting \"Caution for "
+    "<product name>:\", every sentence of it. Do not shorten, reword, merge or summarise "
+    "it, and do not fold it into the rest of the answer.")
+# For a pinned product whose cautions reach the chat (Brain Cleanse, Sleep Syntropy, the
+# Sleep Bundle). Live read-back on 087e718f, 2026-10-15: "try two or more capsules during
+# that first week" came from old knowledge-base advice, and a long answer merged the two
+# cautions into one "Safety:" summary.
+_PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The snippets may "
+                     "hold older advice to take more than these Directions give{example}. "
+                     "That advice is withdrawn: never give it, "
+                     "even when the user asks about taking more. Answer such a question with "
+                     "these directions, and say to ask Dr. Glen about anything beyond them. "
+                     "Do not mention the older advice to the user. This rule never "
+                     "shortens a caution: copy every caution in full.")
+# The example names the withdrawn advice only where it was found (Sleep read-back,
+# 2026-10-15). Elsewhere it could forbid a dose the label allows: Scar Silk takes up to 3
+# a day, so two at one time may be right there.
+_WITHDRAWN_DOSE_EXAMPLE = {
+    slug: ", such as two capsules at one time or extra capsules in the first week"
+    for slug in ("brain-cleanse", "sleep-syntropy", "sleep-bundle")}
+_NO_DESCRIPTION = ("No description of {name} is approved here. If asked what it is, describe "
+                   "it briefly from the snippets about {name} itself, adding no claim they do "
+                   "not make. Its dose and caution come only from this text.")
+_NO_DESCRIPTION_GATED = ("No description of {name} is approved here. If asked what it is, "
+                         "give its name and its Page, and describe it no further.")
+_CAUTION_COPY_REMINDER = ("Copy each caution below word for word, as its own paragraph. "
+                          "Do not merge them into one safety summary.")
+_CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
+                      "For anything else, answer from the snippets as usual.")
+
+
+def _caution_component_slugs(bundle, products):
+    """The live components whose cautions a bundle shows, in its listed order. Only the
+    bundle's own `caution_components` allowlist counts, so a warning added later to
+    another component never appears without Glen's yes. A retired component resolves to
+    its survivor; one with none is dropped, and so is a second naming the same survivor."""
+    out = []
+    for c in (bundle or {}).get("caution_components") or []:
+        cslug = _named_facts_survivor(c, products)
+        if cslug and cslug not in out:
+            out.append(cslug)
+    return out
+
+
+def _bundle_bot_cautions(bundle, products):
+    """The listed components whose caution the bot may carry: each needs its own
+    chat_caution and a warning. A bundle with none is not admitted, so it never outranks
+    another name or breaks a follow-up with an empty block (review round 1)."""
+    return [c for c in _caution_component_slugs(bundle, products)
+            if products[c].get("chat_caution") and (products[c].get("warning") or "").strip()]
+
+
+def _named_product_facts(query_text: str, gated: bool = False) -> str:
+    """Approved store text for the catalog products the user names in the question.
+
+    The chat does not search `specific-formulations`, so a product whose facts live
+    only there reaches the model as a table row with a link and an intro. Asked
+    "How much Angiostasis should I take?" (2026-10-08), the model had no dose or
+    caution, filled the gap from wet-AMD answers about AngiogenX, and told the
+    client they meant AngiogenX. This block carries the product's own description,
+    directions and caution, so the answer comes from the approved text.
+    """
+    if not query_text:
+        return ""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    if not products:
+        return ""
+    spans = _named_product_spans(query_text, products)
+    blocks = []
+    all_caution_only = True
+    any_caution_only = False
+    any_copy_rule = False
+    for slug in sorted(spans, key=lambda s: spans[s][0]):
+        product = products[slug]
+        name = html.unescape(product.get("name") or slug).strip()
+        desc = _PRICE_SENTENCE.sub("", html.unescape(product.get("description") or ""))
+        # Only an approved description. Any other pin used to let a scraped one through,
+        # with claims Glen never approved (Glen "yes", 2026-10-15).
+        desc = (re.sub(r"[ \t]+", " ", desc).strip()
+                if "description" in _pinned_copy(product) else "")
+        if len(desc) > _NAMED_FACTS_MAX_CHARS:
+            desc = desc[:_NAMED_FACTS_MAX_CHARS].rsplit(" ", 1)[0] + "..."
+        parts = [f"### {name}", f"Page: {_catalog_page_url(slug)}"]
+        if desc:
+            parts.append(desc)
+        # A bundle has no directions or warning of its own: its approved intro carries
+        # every component's dose and the cautions (Estrogen and Fibrin Balance Program,
+        # 2026-10-09). Carried whole, only when Glen pinned it.
+        intro = (product.get("intro") or "").strip()
+        if product.get("bundle") and intro and "intro" in _pinned_copy(product):
+            # A bundle whose cautions come from its components keeps them out of the
+            # intro, so its intro is directions only (Sleep Bundle copy spec, 2026-10-15).
+            label = ("Directions" if product.get("caution_components")
+                     else "Program directions and cautions")
+            parts.append(f"{label}:\n{intro}")
+        # Each component's own page. Without it the model linked all three products to
+        # the program's page (knowledge-5a, 2026-10-09). A retired component record is
+        # followed to its survivor, so no link goes to an inactive slug.
+        pinned = bool(product.get("copy_pinned"))
+        comps = []
+        for c in (product.get("bundle_component_slugs") or []) if product.get("bundle") and pinned else []:
+            cslug = _named_facts_survivor(c.get("slug") if isinstance(c, dict) else c, products)
+            if cslug:
+                cname = html.unescape(products[cslug].get("name") or cslug).strip()
+                comps.append(f"- {cname}: {_catalog_page_url(cslug)}")
+        if comps:
+            parts.append("Products in this program, each with its own page:\n" + "\n".join(comps))
+        # The approved panel, verbatim, so "what is in it" is answered from the label.
+        # The store page's own filter: no 0 mg note rows, no capsule shell (Glen, 2026-10-03).
+        if "ingredients" in _pinned_copy(product):
+            from dashboard.products import shown_ingredients as _shown_ings
+            # Research-checked roles, keyed by label name and pinned separately, so a
+            # renamed line drops its role rather than pairing it with a neighbour
+            # (Estro-Clear, spec 2026-10-10-estro-clear-roles). Without the pin, the
+            # block is unchanged.
+            roles = product.get("ingredient_roles") if "roles" in _pinned_copy(product) else None
+            roles = roles if isinstance(roles, dict) else {}
+            ings = []
+            for i in (_shown_ings(product.get("ingredients") or []) or []):
+                if not (isinstance(i, dict) and (i.get("name") or "").strip()):
+                    continue
+                line = f"- {i['name']}" + (f": {i['dose']}" if i.get("dose") else "")
+                role = (roles.get(i["name"]) or "").strip() if isinstance(roles.get(i["name"]), str) else ""
+                ings.append(line + (f". Role: {role}" if role else ""))
+            if ings:
+                parts.append("Ingredients from the label:\n" + "\n".join(ings))
+                if roles:
+                    parts.append(
+                        f"Ingredient roles for {name}: when you say what an ingredient in "
+                        f"{name} does, give only the Role written beside it, in its words. "
+                        "An ingredient with no Role gets no role: list it without one. Add "
+                        "no organ, pathway, phase or cofactor that the Role does not state.")
+        # Directions only from a product whose copy Glen pinned. Eleven unpinned products
+        # carry directions that are not approved for the bot.
+        val = (product.get("directions") or "").strip() if pinned else ""
+        if val and val not in desc:
+            parts.append(f"Directions: {val}")
+        bundle_cautions = bool(product.get("bundle") and _bundle_bot_cautions(product, products))
+        copy_block = pinned and bool(product.get("chat_caution") or bundle_cautions)
+        if copy_block and ((val and val not in desc and "directions" in _pinned_copy(product))
+                           or (product.get("bundle") and intro and "intro" in _pinned_copy(product)
+                               and not val)):
+            parts.append(_PINNED_DOSE_RULE.format(
+                name=name, example=_WITHDRAWN_DOSE_EXAMPLE.get(slug, "")))
+        # The caution also from a chat_caution product: an opt-in for the warning alone,
+        # so its scraped description, directions and components stay out (Brain Cleanse,
+        # 2026-10-15). A caution is held as an entry and written after the product cap,
+        # so each one reaches the bot once per answer (Sleep Syntropy spec, 2026-10-15).
+        cautions = []
+        val = ((product.get("warning") or "").strip()
+               if pinned or product.get("chat_caution") else "")
+        if val and val not in desc:
+            cautions.append(_CautionLine(slug, f"Caution: {val}", f"the {name} caution"))
+        elif val:
+            # Already inside the approved description: counted as given, written nothing,
+            # so a bundle later in the answer only points back to it (review round 2).
+            cautions.append(_CautionLine(slug, "", f"the {name} caution"))
+        # A bundle shows only the component cautions Glen listed for it, each read from
+        # the component's own record and only where that component opted in.
+        for cslug in _bundle_bot_cautions(product, products):
+            comp = products[cslug]
+            cval = (comp.get("warning") or "").strip()
+            if cval:
+                cname = html.unescape(comp.get("name") or cslug).strip()
+                cautions.append(_CautionLine(cslug, f"Caution for {cname}: {cval}",
+                                             f"the {cname} caution"))
+        # A waiting-list product keeps its own "give no dose" line instead (formulation,
+        # 2026-10-15); its caution is still repeated in full.
+        caution_only = any(c.text for c in cautions) and not pinned
+        if caution_only and not _waitlist_refusal(slug):
+            parts.append(_CAUTION_ONLY_NOTE)
+        if copy_block and any(c.text for c in cautions):
+            parts.append(_CAUTION_COPY_REMINDER)
+        parts.extend(cautions)
+        # A waiting-list product: the same sentence checkout gives. Unpinned, it has no
+        # approved dose, so the block says so rather than ask for one it lacks.
+        refusal = _waitlist_refusal(slug)
+        if refusal:
+            parts.append(f"Availability: {refusal}")
+            if not pinned:
+                parts.append("No dose or ingredient text is approved for it yet. Give none, "
+                             "and do not take one from the snippets.")
+        if len(parts) > 2:
+            if not desc and product.get("copy_pinned") and not product.get("bundle"):
+                # The header says to describe it only by this text, which holds no
+                # description now that only a pinned one reaches the bot (review round 3).
+                parts.insert(2, (_NO_DESCRIPTION_GATED if gated else _NO_DESCRIPTION)
+                             .format(name=name))
+            blocks.append(parts)
+            all_caution_only = all_caution_only and caution_only
+            any_caution_only = any_caution_only or caution_only
+            # A pinned product that opted its caution into the chat gets the copy rule
+            # too: its caution was paraphrased before the rule existed (Brain Cleanse and
+            # Sleep Syntropy copy spec, 2026-10-15). Pinned products without the opt-in,
+            # such as Estro-Clear, keep the header they had.
+            any_copy_rule = any_copy_rule or caution_only or bool(
+                pinned and product.get("chat_caution") and any(c.key == slug for c in cautions))
+            # A pinned bundle that shows its components' cautions keeps the copy rule too
+            # (Sleep Bundle copy spec, 2026-10-15).
+            any_copy_rule = any_copy_rule or bool(
+                product.get("bundle") and any(c.text and c.key != slug for c in cautions))
+        if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
+            break
+    if not blocks:
+        return ""
+    # Once per answer, counted only over the blocks kept, so a block cut by the cap never
+    # takes a caution with it. A repeat points back to the text already given.
+    given = set()
+    written = 0
+    held = 0
+    for i, parts in enumerate(blocks):
+        lines = []
+        for part in parts:
+            if isinstance(part, _CautionLine):
+                if part.key in given:
+                    part = f"Caution: {part.ref} is given in full above and applies here too."
+                else:
+                    given.add(part.key)
+                    part = part.text
+                    written += 1 if part else 0
+                    held += 0 if part else 1
+            if part:
+                lines.append(part)
+        # The copy reminder stays only above a caution given in full here. Above a
+        # pointer line alone it could make the bot print the pointer (review round 1).
+        if _CAUTION_COPY_REMINDER in lines and not any(
+                l.startswith("Caution") and "is given in full above" not in l for l in lines):
+            lines.remove(_CAUTION_COPY_REMINDER)
+        blocks[i] = "\n".join(lines)
+    # Two cautions in one answer were merged into one paraphrase, losing lines (Sleep
+    # Bundle read-back, 2026-10-15). Said only when there are two, so an answer with one
+    # caution keeps its header unchanged.
+    # A lone caution from a caution-only product was paraphrased too, losing most lines
+    # (read-back on 17ba8a1e). An answer about pinned products alone keeps its header.
+    # A caution held inside a pinned description is shown too, so it counts here, but
+    # only beside a caution-only product: answers about pinned products alone keep the
+    # header they had (review round 3).
+    shown = written + held if any_copy_rule else written
+    several = ((_SEVERAL_CAUTIONS_RULE + "\n") if shown > 1
+               else (_ONE_CAUTION_RULE + "\n") if shown == 1 and any_copy_rule
+               else "")
+    if gated and any_copy_rule:
+        # The gated note asks for "The caution on the product page is ..."; one page, not
+        # two. Labels carry no cautions since Glen's ruling of 2026-10-15, so the caution
+        # is the product page's (Glen "yes", 2026-10-15).
+        several = several.replace('"Caution for <product name>:"',
+                                  '"The caution on the product page for <product name> is:"')
+    if all_caution_only:
+        # Only cautions are approved for these products, so the header asks for no dose and
+        # no description from this text: those come from the snippets, as they did before
+        # these products had a block (formulation and review round 3, 2026-10-15).
+        return (
+            "PRODUCT FACTS FOR THE PRODUCT(S) THE USER NAMED. This is the approved store "
+            "text for each product's caution and it outranks every snippet about that "
+            "caution. Each product here exists under the name the user used, so never tell "
+            "them they meant a different product. Repeat its full caution, every sentence of "
+            "it, in its own words. Do not attach to it any condition, mechanism, pairing or "
+            "dose that the snippets give for a different product, even one with a similar "
+            "name.\n"
+            + several
+            + (_GATED_FACTS_NOTE if gated else "") + "\n"
+            + "\n\n".join(blocks)
+        )
+    return (
+        "PRODUCT FACTS FOR THE PRODUCT(S) THE USER NAMED. This is the approved store "
+        "text and it outranks every snippet about this product. Each product here exists "
+        "under the name the user used, so never tell them they meant a different product. "
+        "Describe it only by what this text says. Add no mechanism, origin story or action "
+        "verb (dissolve, break down, remove, reduce, shrink) that this text does not use. "
+        "Give its dose from this text and repeat "
+        "its full caution, every sentence of it, in its own words. Do not attach to it any condition, mechanism, pairing or dose "
+        "that the snippets give for a different product, even one with a similar name. "
+        "Name no disease or condition it is for unless this text or the user's question "
+        "names it. Pair or compare it only with products this text names. In such an "
+        "answer, name no other product at all unless this text or the user names it.\n"
+        "When the question asks what the product is, what is in it, how to take it or "
+        "whether it is safe, skip any consensus or mainstream-view structure. Answer "
+        "directly from this text, briefly, then the Sources line and the CTA line. Do not "
+        "describe what mainstream medicine says about related conditions, and do not list "
+        "diseases or conditions as examples of where it helps, even in passing. The Sources "
+        "line names this product text only, and a page CTA links this product's Page.\n"
+        + several
+        + (_GATED_FACTS_NOTE if gated else "") + "\n"
+        + "\n\n".join(blocks)
+    )
+
+
+# A follow-up carries the earlier product only when the whole message asks about the dose
+# or safety of "it/this" and brings no subject of its own. "What can I take for sleep?",
+# "Does metformin have side effects?" and "Is it safe to drive after the scan?" carry
+# nothing (review rounds 1 to 3, 2026-10-09). Each form is anchored to the start.
+_FOLLOW_UP_LEAD = r"^\s*(?:(?:and|so|but|also|ok|okay|thanks)[,.!]?\s+)?"
+_FOLLOW_UP_DOSE = re.compile(
+    _FOLLOW_UP_LEAD + r"(?:how\s+(?:much|often)\s+(?:of\s+(?:it|this|them)\s+)?"
+    r"(?:should|do|can|could|would|will|must)\s+i\b|how\s+much\s+to\s+take\b"
+    r"|how\s+many(?:\s+(?:capsules?|caps|drops|scoops?))?\s+(?:should|do|can|a\s+day|per\s+day|daily)\b"
+    r"|(?:what(?:'s|\s+is)\s+the\s+|what\s+)?(?:recommended\s+|usual\s+|daily\s+)?(?:dose|dosage)\s*[?.!]?\s*$"
+    r"|(?:when|how)\s+(?:do|should)\s+i\s+take\s+(?:it|this|them)\b)", re.IGNORECASE)
+_FOLLOW_UP_SAFETY = re.compile(
+    _FOLLOW_UP_LEAD + r"(?:(?:is|are)\s+(?:it|this|they|that)\s+(?:safe|ok|okay)"
+    r"(?=\s*(?:$|[?.!,]|with\b|while\b|during\b|if\b|when\b|for\b|to\s+take\b|in\s+pregnancy\b))"
+    r"|(?:can|should|could)\s+i\s+take\s+(?:it|this|them)\b"
+    r"|(?:does\s+(?:it|this)\s+have\s+|are\s+there\s+|what\s+are\s+the\s+)?(?:any\s+)?"
+    r"(?:side\s+effects?|cautions?|interactions?|warnings?|contraindications?)\b"
+    r"(?!\s+(?:of|from|on|in)\s+(?!it\b|this\b|them\b)))", re.IGNORECASE)
+# A dose question that names its own subject: "for sleep", "for my joints".
+_OWN_SUBJECT = re.compile(r"\bfor\s+(?!it\b|this\b|them\b|me\b|a\s+day\b|how\s+long\b)\w+",
+                          re.IGNORECASE)
+_FOLLOW_UP_LOOKBACK = 3
+
+
+def _is_follow_up(text) -> bool:
+    """True when the whole message asks about the dose or safety of "it/this"."""
+    if not isinstance(text, str) or len(text.split()) > 15:
+        return False
+    if _FOLLOW_UP_SAFETY.search(text):
+        return True
+    return bool(_FOLLOW_UP_DOSE.search(text)) and not _OWN_SUBJECT.search(text)
+
+
+def _carried_query(query_text: str, prior_user_turns) -> str:
+    """The query, or the earlier user turn whose product this follow-up is about
+    ("How much should I take?" after "What is Angiostasis?").
+
+    Carried only when this message names no product and is a follow-up (_is_follow_up).
+    Walks back over up to three earlier user turns, each of which must itself be a
+    follow-up, to the turn that named the product; that turn must name exactly one. Any
+    other turn in between ("What about vitamin D?") ends the walk and carries nothing."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    if not query_text or not prior_user_turns or _named_product_spans(query_text, products):
+        return query_text
+    if not _is_follow_up(query_text):
+        return query_text
+    turns = [t for t in prior_user_turns if isinstance(t, str) and t.strip()]
+    for turn in reversed(turns[-_FOLLOW_UP_LOOKBACK:]):
+        named = _named_product_spans(turn, products)
+        if named:
+            return turn if len(named) == 1 else query_text
+        if not _is_follow_up(turn):
+            return query_text
+    return query_text
+
+
+def named_product_facts_block(query_text: str, gated: bool = False,
+                              prior_user_turns=None) -> str:
+    """The facts block, or "". It goes LAST in the user message, after the synthesis
+    instruction. Read-back 2026-10-08: placed before the snippets, 8 of 16 answers
+    failed; placed after them but before the instruction, 2 of 16 failed.
+    On a gated turn chat() swaps in the gated variant, which frames the dose and caution
+    as label information (Glen, 2026-10-09). `prior_user_turns` lets a short follow-up
+    with no product name carry the product the previous question named."""
+    carried = _carried_query(query_text, prior_user_turns)
+    facts = _named_product_facts(carried, gated)
+    if facts and carried != query_text:
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        slug = next(iter(_named_product_spans(carried, products)))
+        name = html.unescape(products[slug].get("name") or slug).strip()
+        facts = (f"FOLLOW-UP: the user's message is about {name}, which they named in their "
+                 f"previous question. Answer it about {name} from the text below, in the "
+                 f"format the text below sets for a dose or safety question.\n" + facts)
+    return f"\n\n{facts}" if facts else ""
 
 
 def build_product_directive(snippets_text: str = "", query_text: str = ""):
@@ -2654,7 +3233,7 @@ Logged-in users get the long-form structured to actually shift belief, not just 
 2. **Justify the false belief** (2-4 sentences): name the limiting belief the reader almost certainly holds — and steelman it. Acknowledge the reasons it feels true (mainstream medicine reinforces it, every authority says it, etc.). They should nod, not feel attacked.
 3. **Break** (2-4 sentences): show why the belief is incomplete or wrong — one decisive piece of evidence or mechanism that cracks it open. This is the moment of break.
 4. **Rebuild** (4-8 sentences): install the new pattern — Glen's clinical paradigm on this question. Mechanism (for a named product, only as a retrieved source states it), what to do differently, what changes. Include named formulations + product links exactly as in the executive-summary rules.
-5. **Journey** (2-4 sentences): how Glen (or a representative client) discovered or lived this shift — concrete, dated, named. Anchor it in lived experience, not theory alone.
+5. **Journey** (2-4 sentences): how Glen (or a representative client) discovered or lived this shift — concrete, dated, named, with names and dates only from the snippets. Anchor it in lived experience, not theory alone.
 6. **The one thing + next step** (1-2 sentences): the single take-home + action link (E4L scan or product).
 
 Voice: Glen's, not Brunson's. Practitioner-clinical, not hype. The Break & Rebuild architecture goes in; the gameshow energy stays out. Speckhart boundary: a credential is *authority*, never a treatment claim for a named disease — never let a credential or formulation imply diagnosis or cure of a named condition.
@@ -2680,6 +3259,7 @@ RULES:
 - Do NOT pad with caveats, headers, or repeated context. Brevity is the deliverable.
 - NEVER print a "Hook" label (no "Hook:", no "## Hook", no bolded "**Hook**"). The hook IS the opening line — state it directly. This is a hard rule. (Other section labels like "Top action", "Why this works", "Next step", "Sources" are fine.)
 - AUTHORITATIVE OVERRIDES: Snippets tagged [AUTHORITATIVE — Glen's verified clinical position] OR with metadata type="clinical-qa" / priority="authoritative" override anything else. Apply directly; do not soften or hedge.
+- APPROVED WORDING: A snippet carrying an [APPROVED WORDING: ...] block holds a passage Glen approved word for word. If your answer mentions any of its facts, quote that passage exactly, in quotation marks, and never give those facts in your own words instead. Never paraphrase it, shorten it, merge its figures or add to it. When such a block is present, state nothing about a person named in it (where they practise, whom they trained with, for how long, what they documented) that no snippet states.
 - CO-AUTHORSHIP: Snippets with [AUTHORSHIP NOTE: ...] reflect a co-author's view. Cite the co-author, then state Glen's current position from clinical-qa entries. Never present a co-authored section as Glen's view without the flag.
 - E4L SCAN OFFER: When the user mentions a specific condition or asks for personalized guidance, the action link should be the free Bioenergetic Wellness Scan: https://Truly.VIP/E4L — "10 seconds, count out loud from 1 to 10, matches you to formulations your bioenergetic patterns are asking for."
 - SUPPLEMENT REVIEW PAGE: When someone asks where or how to have a supplement, vitamin, product, or label analyzed/reviewed, send them directly to https://illtowell.com/product-review. Describe it as the free supplement-review page. Do not send them to a product sales page, storefront search, portal, contact form, or Practice Better. If they ask for the page or link, give this exact clickable URL in the same reply.
@@ -2696,7 +3276,7 @@ RULES:
   - Do not volunteer deprecated platform names. If a client asks, state briefly that access has moved: individual client services live at MyHealingOasis.com and classroom/community learning lives at MentorshipU.com.
 - FORMULATION-FIRST ORDERING (symptoms & conditions): When answering about a symptom or condition, lead the recommendations with Glen's Functional Formulations — the Advanced Botanical Formulations and Advanced Nutritional Formulations — as the FIRST category, before any list of individual natural ingredients or single nutrients. The formulations are pre-combined for the terrain pattern, so they simplify implementation versus assembling separate ingredients. If you group recommendations under headings, an "Advanced Botanical Formulations" and/or "Advanced Nutritional Formulations" heading comes first; present individual ingredients only afterward, as an optional layer or as the mechanism behind the formulations (for a named product, only as a retrieved source states it). Within a formulation category, list the most condition-specific formulation first.
 - ACTIVE DISCOUNT CODE: When the request includes an ACTIVE DISCOUNT block, include today's code naturally — once per response, only when at least one product is recommended.
-- SELLABLE BUT NOT RECOMMENDED (distinct from discontinued): "Aller-Free HomeoEnergetic Drops" (also spelled "AllerFree") is still sold and can still be bought. Do NOT volunteer it — when recommending for allergy or immune terrain, recommend "Immune Modulation" instead. But NEVER tell anyone AllerFree is retired, discontinued, or unavailable, because it is none of those. If a client asks for AllerFree by name or asks where to buy it, give them its product page link from the injection table so they can complete the purchase, and you may add that Immune Modulation is Glen's current preference. "Not recommended" is about what you proactively suggest; it never means refusing a client the ability to buy something Glen still sells. "Food Tolerance" (also spelled "Food-Tolerance", including Food Tolerance HomeoEnergetic Drops) is in the same position as AllerFree: still sold, never volunteered; recommend "Immune Modulation" in its place, and give its product page link if a client asks for it by name. Do not recommend HMC (hesperidin methyl chalcone) on its own either; recommend "Immune Modulation" instead. A formula that contains HMC, such as Vitreous Vitality, is unaffected. The pure powders (single-ingredient powders such as N-Acetyl Cysteine, TMG, L-Carnosine, Fulvic Acid, Humic Acid, Magnesium Taurate, MSM Powder and Quercetin Dihydrate, and the food powders such as Bone Broth, Chlorella, Cilantro Juice, Bitter Melon Tea, Hydrolyzed Collagen, Pea Protein, Whey Protein and SeaAmino Powder) are still sold: do not volunteer or recommend them, but give the product page link if a client asks for one by name. A formula that contains MSM or quercetin is unaffected. "Electrolyte Mineral Manna" is in the same position: it is still sold and can be bought, but do NOT volunteer or recommend it for any need, and NEVER call it retired, discontinued, or unavailable. If a client asks for Electrolyte Mineral Manna by name or asks where to buy it, give them its product page link from the injection table.
+- SELLABLE BUT NOT RECOMMENDED (distinct from discontinued): "Aller-Free HomeoEnergetic Drops" (also spelled "AllerFree") is still sold and can still be bought. Do NOT volunteer it — when recommending for allergy or immune terrain, recommend "Immune Modulation" instead. But NEVER tell anyone AllerFree is retired, discontinued, or unavailable, because it is none of those. If a client asks for AllerFree by name or asks where to buy it, give them its product page link from the injection table so they can complete the purchase, and you may add that Immune Modulation is Glen's current preference. "Not recommended" is about what you proactively suggest; it never means refusing a client the ability to buy something Glen still sells. "Food Tolerance" (also spelled "Food-Tolerance", including Food Tolerance HomeoEnergetic Drops) is in the same position as AllerFree: still sold, never volunteered; recommend "Immune Modulation" in its place, and give its product page link if a client asks for it by name. Do not recommend HMC (hesperidin methyl chalcone) on its own either; recommend "Immune Modulation" instead. A formula that contains HMC, such as Vitreous Vitality, is unaffected. The pure powders (single-ingredient powders such as N-Acetyl Cysteine, TMG, L-Carnosine, Fulvic Acid, Humic Acid, Magnesium Taurate, MSM Powder, Quercetin Dihydrate and Melissa 20:1 Extract Powder, and the food powders such as Bone Broth, Chlorella, Cilantro Juice, Bitter Melon Tea, Hydrolyzed Collagen, Pea Protein, Whey Protein and SeaAmino Powder) are still sold: do not volunteer or recommend them, but give the product page link if a client asks for one by name. A formula that contains MSM or quercetin is unaffected. "Electrolyte Mineral Manna" is in the same position: it is still sold and can be bought, but do NOT volunteer or recommend it for any need, and NEVER call it retired, discontinued, or unavailable. If a client asks for Electrolyte Mineral Manna by name or asks where to buy it, give them its product page link from the injection table.
 - DEPRECATED PRODUCTS: The "Living Water Bottle" (prill-bead system) is DISCONTINUED as of 2026-04-27 and must NOT be recommended as a purchasable product. The Living Water concept (alkaline ionized water + molecular hydrogen) remains Glen's clinical recommendation. Route clients to a Water Ionizer — the ionizers PRODUCE molecular-hydrogen water, so they deliver both halves of the concept and are the primary recommendation — or, for a portable option, to the [Molecular Hydrogen bottle](https://illtowell.com/begin/product/molecular-hydrogen-bottle). "Molecular Hydrogen Tablets" are DISCONTINUED as of 2026-07-20 and must NOT be recommended or linked; recommend an ionizer or the portable bottle instead. The "Dental Regen Powder" is DISCONTINUED and must NOT be recommended as a purchasable product; do not name it in any recommendation. The "Endocrine Restore" and plain "Comfort" products are CONSOLIDATED into their canonical versions — recommend "Endocrine Restore Sublingual Powder" and "Comfort Synovial Syntropy" instead, and do not name the old "Endocrine Restore" or plain "Comfort". (For "AllerFree", see the separate NOT-RECOMMENDED rule below — it is NOT discontinued.) Only recommend "Fungifuge" as a follow-on to a Candida Cleanse, never as a standalone recommendation. "Bioavailability Blend" (and "Bioavailability Blend Powder") IS sellable, but ONLY as an adjunct — a small-dose enhancer taken together with other remedies (ours or others') to improve their bioavailability and delivery. Do NOT recommend it as a stand-alone remedy, and never suggest it on a Biofield reveal program. If a snippet has metadata `deprecated=true`, treat its product references as historical only — do not present discontinued products as available."""
 
 _LEVEL_INSTRUCTIONS = {
@@ -2991,6 +3571,14 @@ def _r2():
 
 @app.route("/clip/<path:key>")
 def serve_clip(key):
+    # This route is public. Packing photos share the bucket and are served only through
+    # the signed-in order routes, so their folder is never reachable here.
+    # Normalised first, so "./packing-photos/..." or an encoded dot cannot slip past.
+    import posixpath as _pp
+    from urllib.parse import unquote as _unq
+    _norm = _pp.normpath("/" + _unq(key)).lstrip("/")
+    if _norm.startswith("packing-photos") or ".." in key or ".." in _unq(key):
+        return "not found", 404
     rng = request.headers.get("Range")
     kw = {"Bucket": os.environ.get("R2_BUCKET", "rm-clips"), "Key": key}
     if rng:
@@ -3118,7 +3706,9 @@ def build_context(matches):
         seen.add(m.id)
         meta = m.metadata or {}
         text = _redact_transcript_prices(meta.get("text", "").strip(), meta)
-        if not text or total + len(text) > MAX_CONTEXT_CHARS:
+        is_authoritative = meta.get("type") == "clinical-qa" or meta.get("priority") == "authoritative"
+        approved = _approved_wording(m.id, meta, text) if is_authoritative and text else ""
+        if not text or total + len(text) + len(approved) > MAX_CONTEXT_CHARS:
             continue
         name  = meta.get("name") or meta.get("book") or meta.get("source") or "Unknown"
         field = meta.get("field") or meta.get("source_type") or ""
@@ -3129,7 +3719,6 @@ def build_context(matches):
                              "score": score, "chunks": []}
         sources[name]["chunks"].append(meta.get("chunk_index", 0))
         sources[name]["score"] = max(sources[name]["score"], score)
-        is_authoritative = meta.get("type") == "clinical-qa" or meta.get("priority") == "authoritative"
         tag = "[AUTHORITATIVE — Glen's verified clinical position] " if is_authoritative else ""
         authorship = meta.get("authorship_note") or ""
         # clinical-references holds OTHER AUTHORS' published books. They carry `author`
@@ -3152,9 +3741,78 @@ def build_context(matches):
         if str(meta.get("deprecated", "")).lower() == "true":
             depr_note = meta.get("deprecation_note", "Product or guidance is deprecated.")
             deprecated_flag = f"\n[DEPRECATED — {depr_note}]"
-        parts.append(f"{tag}[SOURCE: {name} | {field} | score {score}]{authorship}{deprecated_flag}\n{text}")
+        total += len(approved)
+        parts.append(f"{tag}[SOURCE: {name} | {field} | score {score}]{authorship}{deprecated_flag}\n{text}{approved}")
         total += len(text)
     return "\n\n---\n\n".join(parts), sorted(sources.values(), key=lambda x: -x["score"])
+
+
+# Clinical-qa notes holding wording Glen approved word for word. Found 2026-10-16: the
+# Wylie cataract note reached all 6 live answers, and the model rewrote it every time,
+# merging "three months" into one figure and adding "reverse". Authoritative alone did
+# not stop it. The approved text is held here, by note id, and is used only while the
+# note still contains it word for word, so an edited note fails closed. A note can opt in
+# instead with metadata approved_wording "true" plus approved_text (a string or a list).
+# Quote marks are never read: a note's own instructions quote forbidden phrases too.
+_APPROVED_WORDING_NOTES = {
+    "qa-wylie-cataract-results-2026-10": [
+        "He puts his cataract patients on a six-month program, with a first checkup at "
+        "three months. About half of them show improvement, often by that first checkup. "
+        "Most of the rest are more stable than they were before."],
+}
+_APPROVED_WORDING_RULE = (
+    "[APPROVED WORDING: Glen approved the passage below word for word. If your answer "
+    "mentions any of its facts, it must quote the passage exactly, inside quotation "
+    "marks, as one piece, and say whose words they are. Never give these facts in your "
+    "own words instead. Never restate, summarise or extend it anywhere else in the "
+    "answer, before or after the quote: do not repeat its figures or timings in your own "
+    "words, and never present one person's results as results for people in general. Say "
+    "nothing about the people or results in it that this note does not say, and follow "
+    "this note's own instructions about these facts.]")
+
+
+def _approved_passages(match_id, meta, text):
+    """The approved passages for a note, or [] when it has none or has drifted from them.
+    Listed notes use the text held above; flagged notes their approved_text field. Every
+    passage must appear word for word in the note, or the note gets nothing."""
+    given = _APPROVED_WORDING_NOTES.get(match_id)
+    if given is None and str(meta.get("approved_wording") or "").strip().lower() in (
+            "true", "1", "yes"):
+        given = meta.get("approved_text")
+    if isinstance(given, str):
+        given = [given]
+    if not isinstance(given, list):
+        return []
+    passages = [g.strip() for g in given if isinstance(g, str) and g.strip()]
+    if not passages or any(p not in (text or "") for p in passages):
+        return []
+    return passages
+
+
+def _approved_wording(match_id, meta, text):
+    """The approved-wording block for a listed or flagged authoritative note, or "".
+    build_context calls this only for authoritative snippets, so a flagged note that is
+    not authoritative gets no block."""
+    quotes = _approved_passages(match_id, meta, text)
+    if not quotes:
+        return ""
+    return "\n" + _APPROVED_WORDING_RULE + "\n" + "\n".join(f'"{q}"' for q in quotes)
+
+
+def _approved_wording_reminder(context_str):
+    """A closing reminder when a retrieved note carries approved wording, so the rule is
+    the last thing the model reads (the brief format otherwise invites restating it).
+    It keys on the whole rule text, which only build_context writes, so a snippet that
+    merely mentions the marker does not trigger it."""
+    if _APPROVED_WORDING_RULE not in (context_str or ""):
+        return ""
+    return ("\n\nAPPROVED WORDING REMINDER: a snippet above holds a passage Glen approved "
+            "word for word. Leave it out only if the question has nothing to do with it. If "
+            "your answer mentions any of its facts, quote the passage exactly, once, and say "
+            "whose words they are: never give those facts in your own words instead. Do not restate its figures or "
+            "timings anywhere else in your answer, add no describing words it does not use "
+            "(such as documented, measurable or consistent), and add no claim about the "
+            "people or results in it that the note does not make or that it forbids.")
 
 
 def sse(payload: dict) -> str:
@@ -3916,9 +4574,50 @@ def _confirm_post_page(action_url, *, title, heading, blurb, button,
     ), status, {"Content-Type": "text/html; charset=utf-8"}
 
 
+# The emailed sign-in links (reorder, cert, biofield) leave the visitor's email in a
+# cookie. It was stored plain, so anyone could set another customer's address and read
+# their orders or cancel their autoship (verified locally 2026-10-15, Glen "yes" to fix).
+# The value is now signed with a key derived from CONSOLE_SECRET and expires with the
+# cookie. With no secret, nothing is signed and nothing is accepted.
+_EMAIL_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
+# The coaching member cookie lives a year; round 1 found it plain too, trusted for
+# scan analysis, intake in the chat and coaching (2026-10-15).
+_MEMBER_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+
+
+def _email_cookie_serializer(name):
+    # Read from the environment each time, the way CONSOLE_SECRET itself is resolved.
+    secret = os.environ.get("CONSOLE_SECRET", os.environ.get("WEBHOOK_SECRET", ""))
+    if not secret:
+        return None
+    from itsdangerous import URLSafeTimedSerializer
+    key = hmac.new(secret.encode("utf-8"), b"email-cookie-v1", hashlib.sha256).hexdigest()
+    return URLSafeTimedSerializer(key, salt=f"email-cookie:{name}")
+
+
+def _sign_email_cookie(name, email):
+    s = _email_cookie_serializer(name)
+    return s.dumps((email or "").strip().lower()) if s else ""
+
+
+def _email_from_cookie(name):
+    """The verified email in a signed sign-in cookie, or "" for a missing, forged,
+    expired or old plain-text value."""
+    raw = request.cookies.get(name, "") or ""
+    s = _email_cookie_serializer(name)
+    if not raw or s is None:
+        return ""
+    try:
+        val = s.loads(raw, max_age=(_MEMBER_COOKIE_MAX_AGE if name == "rm_member_email"
+                                    else _EMAIL_COOKIE_MAX_AGE))
+    except Exception:
+        return ""
+    return val.strip().lower() if isinstance(val, str) else ""
+
+
 def _magic_link_login_view(token, *, purpose, cookie, dest, invalid_html,
                            heading, blurb, button, title="Sign in",
-                           cookie_max_age=60 * 60 * 24 * 30):
+                           cookie_max_age=_EMAIL_COOKIE_MAX_AGE):
     """Shared body for the emailed sign-in links (reorder / cert / biofield /
     coaching). GET validates and renders the confirm page; POST consumes the
     token and sets the cookie. See _confirm_post_page for why."""
@@ -3938,6 +4637,11 @@ def _magic_link_login_view(token, *, purpose, cookie, dest, invalid_html,
                 email = None
         if not email:
             return invalid_html, 400
+        if request.method == "POST" and _email_cookie_serializer(cookie) is None:
+            # No signing key: the cookie could not be set, so keep the link usable
+            # rather than burn it and leave the visitor signed out (review round 2).
+            return ("Sign-in is unavailable right now. Please try this link again "
+                    "shortly."), 503
         if request.method == "POST":
             # consumed_at IS NULL makes the burn atomic: a double submit loses
             # the race and falls through to the invalid page rather than
@@ -3972,8 +4676,8 @@ def _magic_link_login_view(token, *, purpose, cookie, dest, invalid_html,
         return _confirm_post_page(request.path, title=title, heading=heading,
                                   blurb=blurb, button=button)
     resp = _redirect(dest, code=302)
-    resp.set_cookie(cookie, email, max_age=cookie_max_age, httponly=True,
-                    samesite="Lax", secure=request.is_secure)
+    resp.set_cookie(cookie, _sign_email_cookie(cookie, email), max_age=cookie_max_age,
+                    httponly=True, samesite="Lax", secure=request.is_secure)
     return resp
 
 
@@ -4611,6 +5315,11 @@ def begin_biofield_order_preview(token):
         if not items:
             return jsonify({"ok": True, "lines": [], "subtotal_cents": 0,
                             "shipping_cents": 0, "savings_cents": 0, "total_cents": 0})
+        # Matched-set lines not ready to order are skipped and named back (2026-10-09).
+        items, not_ready = _split_not_ready(items)
+        if not items:
+            return jsonify({"ok": True, "lines": [], "subtotal_cents": 0, "shipping_cents": 0,
+                            "savings_cents": 0, "total_cents": 0, "not_ready": not_ready})
         ship = _resolve_ship_address(email, {})
         # Gate Type-2 order-total pricing on membership so the preview matches what the
         # buyer is actually charged at checkout (begin_biofield_order_checkout does the same).
@@ -4626,7 +5335,7 @@ def begin_biofield_order_preview(token):
         return jsonify({"ok": True, "lines": lines, "subtotal_cents": subtotal,
                         "shipping_cents": shipping,
                         "savings_cents": int(priced.get("discount_cents") or 0),
-                        "total_cents": subtotal + shipping})
+                        "total_cents": subtotal + shipping, "not_ready": not_ready})
     except Exception as e:
         print(f"[biofield-cart] preview failed: {e!r}", flush=True)
         return jsonify({"ok": False}), 200
@@ -4666,11 +5375,17 @@ def begin_biofield_order_checkout(token):
                                 "error": "These matches aren't unlocked yet — "
                                          "unlock your full analysis to order them."}), 400
             return jsonify({"ok": False, "error": "Your cart is empty."}), 400
+        # Matched-set lines not ready to order are skipped, never block the rest
+        # (review round 1, 2026-10-09).
+        items, not_ready = _split_not_ready(items)
+        if not items:
+            return jsonify({"ok": False, "not_ready": not_ready,
+                            "error": "None of these remedies is ready to order yet."}), 400
         ship = _resolve_ship_address(email, body.get("address") or {})
         try:
             res = _checkout_cart(email, items, ship=ship)
         except CheckoutError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         out, stripe_url = res["out"], res["stripe_url"]
         try:
             from dashboard import recommendation_events as _re
@@ -4681,7 +5396,8 @@ def begin_biofield_order_checkout(token):
         except Exception:
             pass
         _pe = {"payment_error": _CARD_UNAVAILABLE} if (_STRIPE_ACTIVE and not stripe_url) else {}
-        return jsonify({"ok": True, "stripe_url": stripe_url, **out, **_pe})
+        return jsonify({"ok": True, "stripe_url": stripe_url, **out, **_pe,
+                        "not_ready": not_ready})
     except Exception as e:
         app.logger.exception("biofield order checkout failed")
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -5580,6 +6296,14 @@ def privacy_page():
     return resp
 
 
+@app.route("/shipping/international")
+def shipping_international_page():
+    # Approved by Glen 2026-10-10 (marketing/04 Copy/international-shipping-page-2026-10-10).
+    resp = send_from_directory(STATIC, "shipping-international.html")
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
 @app.route("/widget.js")
 def widget_js():
     resp = send_from_directory(STATIC, "widget.js")
@@ -5854,7 +6578,7 @@ def chat():
         # If the visitor is an active member, prepend a MEMBER CONTEXT block to
         # context_str.  Free-tier path (no cookie / no active membership) is
         # byte-identical to pre-Slice-4 behavior.
-        _member_email = request.cookies.get("rm_member_email", "").strip().lower()
+        _member_email = _email_from_cookie("rm_member_email").strip().lower()
         _member_active = _active_membership_for_email(_member_email) if _member_email else None
         if _member_active:
             try:
@@ -5922,12 +6646,15 @@ def chat():
         )
         product_block = f"{product_directive}\n\n" if product_directive else ""
 
+        _prior_user = [m["content"] for m in messages if m.get("role") == "user"]
         messages.append({"role": "user", "content":
             f"USER QUESTION: {query}\n\n"
             f"{attachment_context}"
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             f"{product_block}"
             f"{synth_instr}"
+            f"{named_product_facts_block(query, prior_user_turns=_prior_user)}"
+            f"{_approved_wording_reminder(context_str)}"
         })
 
         # ── Consent gate (Tier-0 Visitor → Tier-1 Member) ────────────────────
@@ -5942,6 +6669,14 @@ def chat():
             _system = _ally_ov + "\n\n" + _system
         if not is_member(session_id, email) and _is_gated_question(query):
             _system = _system + _EDUCATE_ONLY_POLICY
+            # A non-member who names a product gets its label text, framed as label
+            # information (Glen, 2026-10-09). Dropping it made the model answer from
+            # snippets about a different product.
+            _facts = named_product_facts_block(query, prior_user_turns=_prior_user)
+            if _facts:
+                messages[-1]["content"] = messages[-1]["content"].replace(
+                    _facts, named_product_facts_block(query, gated=True,
+                                                      prior_user_turns=_prior_user))
             yield sse({"gate": True})
         # ──────────────────────────────────────────────────────────────────────
 
@@ -5950,7 +6685,8 @@ def chat():
 
         full_answer = []
         try:
-            from dashboard.chat_cta import parse_cta, stream_visible
+            from dashboard.chat_cta import (parse_cta, stream_visible, strip_leading_label,
+                                            strip_leading_label_text)
 
             def _toks():
                 with _cl.messages.stream(
@@ -5963,7 +6699,7 @@ def chat():
                         full_answer.append(token)
                         yield token
 
-            for delta in _store_links_stream(stream_visible(_toks())):
+            for delta in _store_links_stream(stream_visible(strip_leading_label(_toks()))):
                 yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"})
@@ -5975,7 +6711,7 @@ def chat():
             yield sse({"token": "\n\n_You've reached this month's full-report limit — here's the summary. Members get unlimited full reports._"})
 
         try:
-            _clean, _cta = parse_cta("".join(full_answer))
+            _clean, _cta = parse_cta(strip_leading_label_text("".join(full_answer)))
         except Exception:
             _clean, _cta = "".join(full_answer), None
         _clean = _store_links_text(_clean)  # log and downstream use what the client saw
@@ -6565,7 +7301,8 @@ def begin_match_chat():
             f"{tools_block}{attach_block}"
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             "Continue the Socratic match. If you can now name the ONE best remedy, name it and "
-            "invite them to open its page; otherwise ask the single best next question."})
+            "invite them to open its page; otherwise ask the single best next question."
+            f"{_approved_wording_reminder(context_str)}"})
 
         # ── Consent gate ── the matcher follows the SAME education-vs-recommendation
         # rule as the main chat. A non-member gets educate-only on a gated turn,
@@ -6583,19 +7320,20 @@ def begin_match_chat():
 
         full = []
         try:
-            from dashboard.chat_cta import stream_visible, parse_chips, CHIPS_SENTINEL
+            from dashboard.chat_cta import (stream_visible, parse_chips, CHIPS_SENTINEL,
+                                            strip_leading_label, strip_leading_label_text)
             with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=900,
                                      system=_match_system, messages=messages) as stream:
                 def _toks():
                     for tok in stream.text_stream:
                         t = _strip_dash(tok); full.append(t); yield t
                 for delta in _store_links_stream(
-                        stream_visible(_toks(), sentinel=CHIPS_SENTINEL)):
+                        stream_visible(strip_leading_label(_toks()), sentinel=CHIPS_SENTINEL)):
                     yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"}); return
         try:
-            _clean, _chips = parse_chips("".join(full))
+            _clean, _chips = parse_chips(strip_leading_label_text("".join(full)))
         except Exception:
             _clean, _chips = "".join(full), []
         _clean = _store_links_text(_clean)
@@ -7222,18 +7960,176 @@ def _plan_ship_credit(email, chargeable_cents):
     order whose payable total is chargeable_cents. Returns cents (0 when the flag is
     off, no email, or no balance). The caller folds this into the order's discount +
     records it in ship_credit_applied_cents; the ledger is debited centrally at payment
-    settle (_settle_order_points). Best-effort — never raises into a checkout."""
+    settle (_settle_order_points). Best-effort — never raises into a checkout.
+    Credit already planned on this customer's unpaid orders is on hold and not offered
+    again (Glen, 2026-10-10)."""
     if not _ship_credit_enabled():
         return 0
     try:
         from dashboard import ship_credit as _ship_credit
         with db.connect(LOG_DB) as _scx:
             _points_init_ship(_scx)
+            _bos_orders.init_orders_table(_scx)
+            # Holds are read BEFORE the balance: a payment settling in between then makes
+            # this offer too small, never the same credit twice (review round 2).
+            held, _ = _bos_orders.held_credit_cents(_scx, email)
             bal = _ship_credit.balance(_scx, email)
-        return _ship_credit.plan_application(bal, chargeable_cents)
+        return _ship_credit.plan_application(max(0, bal - held), chargeable_cents)
     except Exception as e:  # noqa: BLE001
         print(f"[ship_credit] plan skipped: {e!r}", flush=True)
         return 0
+
+
+def _available_points_cents(email):
+    """Points this customer can apply to a NEW order: the balance less points already
+    applied to their unpaid, uncancelled orders, which are debited only at payment.
+    Glen, 2026-10-10: credit is on hold while payment is pending. Holds are read before
+    the balance, so a payment settling in between under-offers (review round 2). Used by
+    the store cart, the reorder checkout and the /begin buy route."""
+    from dashboard import points as _pts
+    with db.connect(LOG_DB) as cx:
+        _pts.init_points_table(cx)
+        _bos_orders.init_orders_table(cx)
+        held = _bos_orders.held_credit_cents(cx, email)[1]
+        return max(0, _pts.balance(cx, email) - held)
+
+
+def _invoice_points_room_cents(items, email=None, exclude_order_id=None):
+    """Most points an invoice's stored lines can take: the service lines, plus the
+    product lines up to the buyer's product allowance (referral and other non-purchase
+    points; dashboard.pricing.points_room_cents). With no email, services only."""
+    from dashboard import pricing as _pricing
+    allowance = (_product_usable_points_cents(email, exclude_order_id=exclude_order_id)
+                 if email else 0)
+    return _pricing.points_room_cents(items, _pricing.load_settings(_pricing_settings()),
+                                      lambda s: _get_product(s) or {}, allowance)
+
+
+def _stamp_points_split(items, redeemed_cents, product_cents):
+    """Record on an order's lines how many of its points went on products, and for which
+    points total. A later points change without a re-stamp leaves the record stale, and
+    _order_product_points_cents then ignores it (review round 2)."""
+    first = True
+    for it in items or []:
+        if not isinstance(it, dict) or it.get("gift"):
+            continue
+        it["points_product_cents"] = int(product_cents) if first else 0
+        it["points_split_of_cents"] = int(redeemed_cents)
+        first = False
+    return items
+
+
+def _stamp_order_points_split(items, redeemed_cents):
+    """Stamp an invoice's split at the moment its points are set: service lines take
+    points first, the rest is on products. Freezing it here keeps a later catalog price
+    change from rewriting history (review round 2)."""
+    from dashboard import pricing as _pricing
+    redeemed = int(redeemed_cents or 0)
+    room = (_pricing.service_room_cents([i for i in items if isinstance(i, dict)],
+                                        _pricing.load_settings(_pricing_settings()),
+                                        lambda s: _get_product(s) or {})
+            if redeemed > 0 else 0)
+    return _stamp_points_split(items, redeemed, max(0, redeemed - room))
+
+
+def _order_product_points_cents(order):
+    """Points an order put on product lines. The lines record it (points_product_cents)
+    when the order was priced, valid while points_split_of_cents equals the order's
+    points. Otherwise service lines take points first, as every invoice path applies
+    them, so the rest landed on products."""
+    from dashboard import pricing as _pricing
+    items = order.get("items") or []
+    redeemed = int(order.get("points_redeemed_cents") or 0)
+    if redeemed <= 0:
+        return 0
+    marked = [i for i in items if isinstance(i, dict) and "points_product_cents" in i]
+    if marked and all(int(i.get("points_split_of_cents", -1)) == redeemed for i in marked):
+        return min(redeemed, sum(int(i.get("points_product_cents") or 0) for i in marked))
+    room = _pricing.service_room_cents(items, _pricing.load_settings(_pricing_settings()),
+                                       lambda s: _get_product(s) or {})
+    return max(0, redeemed - room)
+
+
+def _product_usable_points_cents(email, exclude_order_id=None):
+    """Points this buyer may spend on products: referral and other non-purchase credits,
+    less what their orders (paid, or unpaid and not cancelled) already put on products,
+    and never more than their unheld balance. Own-purchase points are services only
+    (Glen, 2026-10-10 and 2026-10-11)."""
+    from dashboard import points as _pts
+    email = (email or "").strip().lower()
+    if not email:
+        return 0
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = _sqlite3.Row
+        _pts.init_points_table(cx)
+        _bos_orders.init_orders_table(cx)
+        if _pts.product_usable_credits(cx, email) <= 0:
+            return 0
+        # Walk the ledger in order, keeping own-purchase points and all other points
+        # apart. A debit's product part comes from the other points. Its service part
+        # comes from own-purchase points first, and only then from the other points,
+        # judged at the time of the debit (review rounds 1 and 2). Any other negative
+        # row, or a debit whose order is not found, comes from the other points first.
+        own = other = 0
+        rows = cx.execute(
+            "SELECT delta_cents, reason, order_ref FROM points_ledger "
+            "WHERE lower(email)=? AND scope='rm' ORDER BY id", (email,)).fetchall()
+        for r in rows:
+            delta, reason, ref = int(r[0] or 0), (r[1] or ""), (r[2] or "")
+            if delta > 0:
+                if reason in _pts.SERVICES_ONLY_REASONS:
+                    own += delta
+                else:
+                    other += delta
+                continue
+            out = -delta
+            o = (_bos_orders.find_order_by_external_ref(cx, ref)
+                 if reason == "redeem" and ref else None)
+            if o:
+                product = min(out, _order_product_points_cents(dict(o)))
+                service = out - product
+                from_own = min(max(0, own), service)
+                own -= from_own
+                # Before 2026-10-11 any points could go on products, so a product spend
+                # larger than the other points came from own-purchase points (round 3).
+                from_other = min(max(0, other), product + (service - from_own))
+                other -= from_other
+                own -= product + (service - from_own) - from_other
+            else:
+                from_other = min(max(0, other), out)
+                other -= from_other
+                own -= out - from_other
+        # Points already planned on unpaid orders leave the ledger only at payment.
+        sql = ("SELECT id FROM orders WHERE lower(email)=? AND COALESCE(points_redeemed_cents,0) > 0 "
+               "AND COALESCE(pay_status,'') != 'paid' AND COALESCE(status,'') != 'cancelled'")
+        for (oid,) in [(int(x[0]),) for x in cx.execute(sql, (email,)).fetchall()]:
+            if exclude_order_id is not None and oid == int(exclude_order_id):
+                continue
+            o = _bos_orders.get_order(cx, oid)
+            if not o:
+                continue
+            o = dict(o)
+            redeemed = int(o.get("points_redeemed_cents") or 0)
+            product = min(redeemed, _order_product_points_cents(o))
+            service = redeemed - product
+            from_own = min(max(0, own), service)
+            own -= from_own
+            other -= product + (service - from_own)
+    return min(max(0, other), _unheld_points_cents(email, exclude_order_id=exclude_order_id))
+
+
+def _unheld_points_cents(email, exclude_order_id=None):
+    """Balance less points held on this customer's OTHER unpaid, uncancelled orders
+    (Glen, 2026-10-10: credit is on hold while payment is pending)."""
+    from dashboard import points as _pts
+    email = (email or "").strip().lower()
+    if not email:
+        return 0
+    with db.connect(LOG_DB) as cx:
+        _pts.init_points_table(cx)
+        _bos_orders.init_orders_table(cx)
+        held = _bos_orders.held_credit_cents(cx, email, exclude_order_id=exclude_order_id)[1]
+        return max(0, _pts.balance(cx, email) - held)
 
 
 def _points_init_ship(cx):
@@ -7423,6 +8319,15 @@ _ALT_PAY = {
               "to": os.environ.get("WISE_PAY_TO", "(set WISE_PAY_TO)"),
               "note": "Send the invoice total via Wise, using the invoice number as the reference. "
                       "You earn extra loyalty points for choosing a fee-free method."},
+}
+
+# The single-product buy page shows its own memo ("Order <id>"), so its note points at
+# that memo; the shared notes above speak of an invoice number the page does not have.
+_BUY_PAGE_ALT_PAY_NOTE = {
+    "zelle": "Send the total via Zelle, with the memo above. "
+             "You earn extra loyalty points for choosing a fee-free method.",
+    "wise": "Send the total via Wise, with the memo above as the reference. "
+            "You earn extra loyalty points for choosing a fee-free method.",
 }
 
 
@@ -7999,6 +8904,85 @@ def _get_product(slug):
     return out
 
 
+def _waitlist_block(slug):
+    """The waitlist_only product (itself or a bundle component) that stops `slug` being
+    ordered, or None. The one predicate is practitioner_portal.is_orderable; this hands
+    it app's in-memory catalog. Scar Soft Drink, 2026-10-09."""
+    from dashboard import practitioner_portal as _ppw
+    return _ppw.waitlist_block((slug or "").strip(), _PRODUCTS.get("products") or {})
+
+
+def _is_orderable(slug, p=None):
+    """practitioner_portal.is_orderable against app's catalog, for this exact slug. A
+    caller holding a product (from _get_product) passes it as `p`, and the predicate
+    reads that record for this slug; a catalog listing passes each raw slug, so a retired
+    duplicate stays excluded."""
+    from dashboard import practitioner_portal as _ppw
+    cat = _PRODUCTS.get("products") or {}
+    slug = (slug or "").strip()
+    if p is not None:
+        cat = {**cat, slug: p}
+    return _ppw.is_orderable(slug, cat)
+
+
+def _waitlist_refusal(slug):
+    """The buyer-facing refusal for a waitlist_only slug, or None when it is orderable
+    as far as the waiting list goes."""
+    from dashboard import practitioner_portal as _ppw
+    b = _waitlist_block(slug)
+    return _ppw.waitlist_refusal(b) if b else None
+
+
+def _split_not_ready(items):
+    """(orderable items, not-ready list) for lines that came from a curated list or a
+    recommendation. A waitlist_only line is skipped, never invoiced and never allowed to
+    block the rest; it is returned as {name, url} so the page can show its name with a
+    link to its page (spec, "Programs and recommendations"; review round 1, 2026-10-09).
+    A line the client added themselves is refused instead, by the callers' own checks."""
+    keep, not_ready = [], []
+    for it in (items or []):
+        slug = (it.get("slug") if isinstance(it, dict) else it) or ""
+        b = _waitlist_block(slug)
+        if b:
+            nr = {"name": b["name"], "url": f"/begin/product/{b['slug']}"}
+            if b.get("out_of_stock"):   # its own line, not "not ready" (2026-10-16)
+                nr["line"] = str(_waitlist_refusal(slug))
+            not_ready.append(nr)
+        else:
+            keep.append(it)
+    return keep, not_ready
+
+
+def _wl_fields(msg):
+    """{"url": the product page} when `msg` is a waitlist refusal, else {}. JSON callers
+    send the spec's sentence as `error` and the page link as its own field."""
+    url = getattr(msg, "url", "") or ""
+    if not url and isinstance(msg, BaseException) and msg.args:
+        url = getattr(msg.args[0], "url", "") or ""
+    return {"url": url} if url else {}
+
+
+def _cart_waitlist_refusal(lines, skip_zero_qty=True):
+    """The refusal for the first waitlist_only line in a cart or order, or None. Lines
+    are dicts carrying "slug". A cart holding one is refused whole (spec 2026-10-09).
+    skip_zero_qty=False for _price_cart, which prices a qty-0 line as one."""
+    for c in (lines or []):
+        if isinstance(c, dict):
+            try:
+                if (skip_zero_qty and c.get("qty") is not None
+                        and int(c.get("qty")) <= 0):
+                    continue  # a zero-qty reference line orders nothing
+            except (TypeError, ValueError):
+                pass
+            slug = c.get("slug")
+        else:
+            slug = c
+        msg = _waitlist_refusal(slug)
+        if msg:
+            return msg
+    return None
+
+
 def _superseded(slug):
     """Follow a deprecated product's `superseded_by` pointer to its live twin.
 
@@ -8169,7 +9153,8 @@ def _cart_has_noautoship_bundle(cart):
 def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                 subscriber_order_count=None, subscriber_active=True,
                 points_to_redeem_cents=0, channel="retail", program_member=False,
-                email=None, allow_unknown_packaging=False, strict_packaging=False):
+                email=None, allow_unknown_packaging=False, strict_packaging=False,
+                allow_waitlist=False, product_points_cents=0):
     """Price a reorder/checkout cart through the pricing engine + shipping.
     Returns {priced, qbo_lines, discount_cents, points_redeemed_cents, shipping_cents,
     items_rec, subtotal_list_cents}. Raises CheckoutError for non-US ship-to.
@@ -8178,8 +9163,16 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     active paid member (_is_paid_member), resolves that member's repertoire SKU set
     and forwards it to the pricing engine so repertoire reorders price at the flat
     member rate. Gated on CURRENT membership at read time — no stored per-SKU expiry.
-    Flag off (or no/non-member email) -> repertoire_slugs stays None, pricing unchanged."""
+    Flag off (or no/non-member email) -> repertoire_slugs stays None, pricing unchanged.
+
+    A cart holding a waitlist_only product, or a bundle with one, raises CheckoutError
+    naming it before anything is priced (Scar Soft Drink, 2026-10-09). allow_waitlist
+    is only for re-quoting shipping on orders already placed."""
     from dashboard import pricing as _pricing, tax as _tax
+    if not allow_waitlist:
+        _wl = _cart_waitlist_refusal(cart, skip_zero_qty=False)
+        if _wl:
+            raise CheckoutError(_wl)
     rep_slugs = None
     if REPERTOIRE_ENABLED and email and _is_paid_member(email):
         try:
@@ -8284,11 +9277,15 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                         )
                     bt = _shipping.FALLBACK_BOTTLE_TYPE
                     packaging_review.append(p.get("name") or p.get("slug"))
-                box_counts[bt] = box_counts.get(bt, 0) + qty
+                # One item can be several identical bottles: the CDS pair is two 50 mL
+                # droppers (FileMaker 887, 2026-10-13). Packing only; price is per item.
+                from dashboard.orders import bottles_per_unit as _bpu
+                _per = _bpu(p)
+                box_counts[bt] = box_counts.get(bt, 0) + qty * _per
                 if bt == _shipping.CELLO_BOTTLE_TYPE:
-                    total_cello += qty
+                    total_cello += qty * _per
                 else:
-                    total_bottles += qty
+                    total_bottles += qty * _per
     # US-only shipping — but only a cart with something to ship has an opinion
     # about the address. An overseas client buying a service prices fine.
     if (box_counts or flat_ship_cents) and country not in ("US", "USA", ""):
@@ -8302,7 +9299,14 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                               ship_to_state=ship.get("state", ""),
                               tax_fn=_tax.compute_get_cents,
                               program_member=bool(program_member),
-                              repertoire_slugs=rep_slugs)
+                              repertoire_slugs=rep_slugs,
+                              product_points_cents=int(product_points_cents or 0))
+    # Record per line what points landed on a product, so later orders can see how much
+    # of the buyer's product allowance is spent (_order_product_points_cents).
+    from dashboard.pricing import points_redeemable as _redeemable
+    for _rec, _ln in zip(items_rec, priced["lines"]):
+        _rec["points_product_cents"] = 0 if _redeemable(_ln["slug"]) else int(_ln["points_cents"])
+        _rec["points_split_of_cents"] = int(priced["points_redeemed_cents"])
     shipping_cents = flat_ship_cents + _shipping_for_cart(box_counts, total_bottles + total_cello)
     return {
         "priced": priced, "qbo_lines": qbo_lines, "items_rec": items_rec,
@@ -8336,6 +9340,57 @@ _WHOLESALE_SOURCES = {"dropship", "dispensary"}
 def _is_wholesale_order(order) -> bool:
     """True for a practitioner drop-ship / dispensary sale, which earns no points."""
     return (str((order or {}).get("source") or "").strip().lower() in _WHOLESALE_SOURCES)
+
+
+def _order_has_line_below_store_price(order) -> bool:
+    """True when any line sold below its full store price, so the order earns no points.
+
+    Glen, 2026-10-10: "No points on courtesy prices; close the gap." Then rule (a): an
+    order earns only when every line is at full store price, and volume and member rates
+    earn nothing, as in the store cart. The store records each line at its price and puts
+    volume rates in discount_cents, which already stops earn. An in-house invoice instead
+    puts a courtesy, client-special, volume or typed price into the line's unit_cents, so
+    discount_cents stays 0 and those orders earned 5% (Debra Herndon, orders 63 and 165).
+
+    Full store price is the catalog price this client pays at the store, so a full
+    member's Biofield Analysis at its member price still earns, as it does there. A line
+    with no catalog product or no recorded unit price is not judged. A line stored under a
+    retired slug is judged against its live product (round 1: emf is $0, its twin $40). A
+    catalog line with no unit or line price refuses earn (round 2).
+
+    The 10-02 rounding moved every .97 price up to the next dollar (Glen, 2026-10-02), so a
+    line at the old .97 price is still full price: an invoice issued at $69.97 and paid
+    after the change must not lose its points (round 1)."""
+    email = ((order or {}).get("email") or "").strip().lower()
+    catalog = _PRODUCTS.get("products") or {}
+    for it in (order or {}).get("items") or []:
+        p = catalog.get(_superseded((it.get("slug") or "").strip()))
+        if not p:
+            continue
+        qty = int(it.get("qty") if it.get("qty") not in (None, "") else 1)
+        if qty <= 0:
+            continue
+        # A catalog line with no recorded price cannot be shown to be at full price, so it
+        # refuses earn rather than passing unjudged (round 2).
+        unit = it.get("unit_cents")
+        if unit in (None, ""):
+            lc = it.get("line_cents")
+            if lc in (None, ""):
+                return True
+            unit = int(lc) // qty
+        unit = int(unit)
+        p = dict(p)
+        p.setdefault("price_cents", _PRODUCTS.get("default_price_cents", 7000))
+        store = _member_list_cents(p, email)
+        if store and unit < store and not _is_pre_rounding_price(unit, store):
+            return True
+    return False
+
+
+def _is_pre_rounding_price(unit_cents, store_cents):
+    """True when unit_cents is the old .97 price that the 10-02 rounding lifted to
+    store_cents, the next whole dollar (e.g. 6997 against 7000)."""
+    return unit_cents % 100 == 97 and store_cents % 100 == 0 and store_cents - unit_cents == 3
 
 
 def _rewards_enabled() -> bool:
@@ -8610,10 +9665,19 @@ def _settle_order_points(order, *, order_ref):
         if applied > 0:
             from dashboard import ship_credit as _ship_credit
             _ship_credit.consume(cx, email, applied, applied_ref=order_ref)
-        # Earn only on a full-price order (no discount AND no points used) -- the "full-price only" rule.
+        # Earn only on a full-price order (no discount, no points used, and no line below its
+        # store price) -- the "full-price only" rule.
         # Additional suppression: skip buyer earn on an affiliate-acquired FIRST order.
+        try:
+            below_store = _order_has_line_below_store_price(order)
+        except Exception as _bse:
+            # A malformed line must not skip the credits below; it only refuses earn.
+            print(f"[points] below-store-price check failed ref={order_ref}: {_bse!r}",
+                  flush=True)
+            below_store = True
         if discount == 0 and redeemed == 0 and product_cents > 0 \
                 and not _is_wholesale_order(order) \
+                and not below_store \
                 and not _points.has_entry(cx, order_ref=order_ref, reason="earn"):
             # Suppression gate: if rewards are enabled AND this is buyer's first order
             # AND there is an attributed referrer, don't give the buyer earn points.
@@ -9052,7 +10116,7 @@ def begin_section_pref():
 
 def _wishlist_ids(request):
     au = get_authenticated_user(request) or {}
-    email = (au.get("email") or request.cookies.get("rm_reorder_email", "") or "").strip().lower()
+    email = (au.get("email") or _email_from_cookie("rm_reorder_email") or "").strip().lower()
     session_id = request.cookies.get("amg_session", "")
     return email, session_id
 
@@ -9143,6 +10207,14 @@ def _resolve_buy_slug(name):
     for slug, p in products.items():
         if (p.get("name") or "").strip().lower() == nl:
             return slug
+    # Then a live record's pinecone_title or alias, exactly. Renaming "Clear Lens
+    # Eyedrops" to "Clear Lens Eye Drops" (2026-10-13) left the old name matching
+    # nothing, and order history and Pinecone still carry it. Two words or more: a
+    # single word such as "Sleep" or "SeaAmino" is an alias of a DIFFERENT product
+    # than the one its substring has always found (review round 3).
+    hit = _RESOLVE_NAME_INDEX.get(nl) if " " in nl else None
+    if hit:
+        return hit
     for slug, p in products.items():
         pn = (p.get("name") or "").lower()
         if pn and len(nl) > 4 and (nl in pn or pn in nl):
@@ -9161,8 +10233,12 @@ def _sales_page_url(name):
 
 @app.route("/begin/buy/<slug>")
 def begin_buy_page(slug):
-    if not _get_product(slug):
+    p = _get_product(slug)
+    if not p:
         return ("", 404)
+    if _waitlist_block(p.get("slug") or slug):
+        # Not ready to order (Scar Soft Drink, 2026-10-09): its page takes the waiting list.
+        return redirect(f"/begin/product/{p['slug']}")
     resp = send_from_directory(STATIC, "begin-buy.html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     if not request.cookies.get("amg_session"):
@@ -9186,6 +10262,15 @@ def shop_page():
 def begin_product_page(slug):
     product = _get_product(slug)
     if not product:
+        # A retired record with no replacement can still send its old PAGE address on,
+        # without its slug buying anything: CDS Activator is retired so an old cart
+        # holding both halves buys one pair, but links to its page reach the pair
+        # (2026-10-13). Only the page follows `page_redirect`, never a cart or order.
+        raw = (_PRODUCTS.get("products") or {}).get(slug) or {}
+        to = raw.get("page_redirect") if raw.get("inactive") else None
+        if to and to != slug and _get_product(to):
+            qs = request.query_string.decode("latin-1")
+            return redirect(f"/begin/product/{to}" + (f"?{qs}" if qs else ""), code=302)
         return ("", 404)
     if product["slug"] != slug:
         # A superseded slug (`superseded_by`) is served as its survivor by a redirect,
@@ -9443,6 +10528,10 @@ def begin_product_data(slug):
     from dashboard.products import shown_ingredients as _shown_ings
     ingredients = _shown_ings((p.get("ingredients") or []) if "ingredients" in _pin else (
         p.get("ingredients") or card.get("ingredients", [])))
+    # page_slug and page_name route a renamed line to its old page; they are not for
+    # the buyer (review, 2026-10-10).
+    ingredients = [{k: v for k, v in i.items() if k not in ("page_slug", "page_name")}
+                   if isinstance(i, dict) else i for i in (ingredients or [])]
     qty_tiers, formats = None, None
     if _qty_eligible(p):
         from dashboard import pricing as _pricing
@@ -9491,7 +10580,7 @@ def begin_product_data(slug):
             (get_authenticated_user(request) or {}).get("email", "")),
     }
     _viewer_email = (((get_authenticated_user(request) or {}).get("email", "")
-                      or request.cookies.get("rm_reorder_email", "")).strip().lower())
+                      or _email_from_cookie("rm_reorder_email")).strip().lower())
     # Autoship eligibility: a bundle must carry autoship_eligible (device bundles are
     # false); a single SKU must be a Functional Formulation (_qty_eligible = qty_pricing
     # and not info_only), which excludes devices (ionizers/nightlights) and services.
@@ -9520,7 +10609,48 @@ def begin_product_data(slug):
             data["founding_video_url"] = _launch.get("video_url", "")
     except Exception as _fe:
         print(f"[founding] product-data enrich failed: {_fe!r}", flush=True)
+    _apply_waitlist_page_data(data, p.get("slug") or slug, p)
     return jsonify(data)
+
+
+def _apply_waitlist_page_data(data, slug, p):
+    """Shape a product page's data for a waiting list (2026-10-09).
+
+    Any product with an open list gets `waitlist` {slug, texts}. A `waitlist_only`
+    product also loses everything that sells it: price, compare-at, quantity tiers,
+    formats, autoship, the CTA section and its buy link. Its page shows the
+    waiting-list form in their place."""
+    from dashboard import product_waitlist as _pwl
+    if slug in _pwl.LISTS and _waitlist_open(slug):
+        t = _pwl.TEXTS[slug]
+        data["waitlist"] = {"slug": slug, "intro": t["intro"], "consent": t["consent"],
+                            "reserve_line": t["reserve_line"], "success": t["success"]}
+    elif slug in _pwl.LISTS:
+        # The list has closed, but a late click on a confirmation link still lands here
+        # and must read this list's own success note (review round 2).
+        data["waitlist_closed"] = {"success": _pwl.TEXTS[slug]["success"]}
+    # Out of stock (Glen, 2026-10-16): the page stays, nothing on it sells. A bundle
+    # holding an out-of-stock product shows that product's line (review round 2).
+    _oos = None if p.get("waitlist_only") else _waitlist_block(slug)
+    if _oos and _oos.get("out_of_stock"):
+        from dashboard import practitioner_portal as _ppw
+        data["out_of_stock_line"] = _ppw.out_of_stock_line(_oos["name"], _oos["out_of_stock"])
+    elif not p.get("waitlist_only"):
+        return data
+    else:
+        data["waitlist_only"] = True
+    data["price"] = ""
+    data["price_cents"] = None
+    data["regular"] = ""
+    data["competitor"] = None
+    for k in ("qty_pricing", "formats", "autoship", "cta_url", "founding",
+              "founding_video_url"):
+        data.pop(k, None)
+    data["autoship_eligible"] = False
+    if isinstance(data.get("sections"), list):
+        data["sections"] = [sec for sec in data["sections"]
+                            if not (isinstance(sec, dict) and sec.get("id") == "cta")]
+    return data
 
 
 def _related_semantic(slug, k=12):
@@ -9587,6 +10717,22 @@ def _related_semantic(slug, k=12):
     return slugs
 
 
+def _bundle_caution_sections(p):
+    """One section per component caution a bundle lists, read from the component's own
+    record. Each has its own id, because the page keys open state by id, and a string
+    body shown as stored, with no "Caution: " added (Sleep Syntropy spec, 2026-10-15)."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    sections = []
+    for cslug in _caution_component_slugs(p, products):
+        comp = products[cslug]
+        warning = (comp.get("warning") or "").strip()
+        if warning:
+            name = html.unescape(comp.get("name") or cslug).strip()
+            sections.append({"id": f"caution-{cslug}", "title": f"Caution for {name}",
+                             "default_open": False, "body": warning})
+    return sections
+
+
 @app.route("/begin/product-page-data/<slug>")
 def begin_product_page_data(slug):
     p = _get_product(slug)
@@ -9606,7 +10752,11 @@ def begin_product_page_data(slug):
     for _ing in _raw_ingredients:
         if isinstance(_ing, dict):
             _ing = dict(_ing)
-            _ing["slug"] = _slugify(_ing.get("name") or "")
+            # A renamed label line keeps the page it already had (`page_slug`): Glen
+            # approved Fibrolysis Factors' label names on 2026-10-10, and three of its
+            # ingredient pages were built under the old names.
+            _ing["slug"] = _ing.pop("page_slug", None) or _slugify(_ing.get("name") or "")
+            _ing.pop("page_name", None)
         else:
             _ing = {"name": str(_ing), "dose": "", "slug": _slugify(str(_ing))}
         ingredients.append(_ing)
@@ -9641,7 +10791,11 @@ def begin_product_page_data(slug):
     sections = [
         {"id": "intro",       "title": "What this does",  "default_open": True,  "body": intro},
         {"id": "description", "title": "Overview",        "default_open": False,
-         "body": p.get("description") or card.get("description", "")},
+         "body": p.get("description") or card.get("description", ""),
+         # An approved description keeps its paragraph breaks, as an approved intro does
+         # (Glen, 2026-10-15). Unapproved ones carry scraped breaks and stay as they were,
+         # and so does the fallback when a pinned product has no description (round 2).
+         **({"keep_breaks": True} if "description" in _pin and p.get("description") else {})},
         {"id": "video",       "title": "Watch",           "default_open": False, "body": {"videos": _vids}},
         # Label lines, served with the formula rather than inside the prose sections.
         # `directions` and `warning` are deterministic on purpose: the cached AI draft
@@ -9669,7 +10823,23 @@ def begin_product_page_data(slug):
     _is_service = bool(p.get("service"))
     sections = _filter_sections(sections, has_ingredients=_has_ings,
                                 has_own_video=bool(_own_vids), is_service=_is_service,
-                                in_miron=_miron)
+                                in_miron=_miron,
+                                # Only a bundle that PINS an empty research text loses the
+                                # section. `how` is read before the AI step, so testing it
+                                # would strip "The research" from every bundle whose draft
+                                # failed to generate (review round 1, 2026-10-09).
+                                is_bundle=bool(p.get("bundle")) and "research" in _pin,
+                                has_research_text=bool((p.get("how_it_works") or "").strip()))
+    # A bundle has no ingredients, so "What's inside", where a caution renders, is gone.
+    # Each component caution the bundle lists gets its own section before Order, titled
+    # for its component (Brain Cleanse and Sleep Syntropy, formulation 2026-10-15).
+    _ci = next((i for i, s in enumerate(sections) if s["id"] == "cta"), len(sections))
+    sections[_ci:_ci] = _bundle_caution_sections(p)
+    # A product with AI images off has no Images section: its photos are in the top gallery,
+    # and an empty section would open to nothing.
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if _ai_images_off(p.get("slug") or slug):
+        sections = [s for s in sections if s["id"] != "images"]
     # A service gets no "Dr. Glen recommends" box: on the EVOX page it recommended ED10
     # Skin Driver. A related-services list would be new copy, so none is shown yet.
     # Nor does a never-recommend product: a box headed "Dr. Glen recommends" on the
@@ -9783,7 +10953,9 @@ def begin_product_page_data(slug):
         from dashboard import sales_images as _si2
         try:
             _img_sec = next((s for s in sections if s["id"] == "images"), None)
-            if _img_sec is not None:
+            # An opted-out product keeps the plain gallery body with no `state`: any state
+            # other than "ready" makes the page show "Generating" and post to image-gen.
+            if _img_sec is not None and not _si2.ai_images_off(slug):
                 with db.connect(LOG_DB) as _cx2:
                     if _SALES_IMAGE_VARIATIONS_ENABLED:
                         _grouped = _si2.display_images_grouped(_cx2, slug)
@@ -9811,7 +10983,8 @@ def begin_product_page_data(slug):
                             _img_sec["body"] = {"images": [], "state": "none"}
         except Exception as _e:
             print(f"[sales-img] page-data marker skipped: {_e}", flush=True)
-    if _SALES_IMAGE_PICK_ENABLED and not _SALES_IMAGE_VARIATIONS_ENABLED:
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if _SALES_IMAGE_PICK_ENABLED and not _SALES_IMAGE_VARIATIONS_ENABLED and not _ai_images_off(slug):
         import sqlite3 as _sq3
         from dashboard import sales_images as _si3, sales_votes as _sv3, sales_image_prompts as _sip3
         try:
@@ -9893,10 +11066,10 @@ def begin_product_page_data(slug):
             _page_data["founding_video_url"] = _launch2.get("video_url", "")
     except Exception as _fe2:
         print(f"[founding] product-page-data enrich failed: {_fe2!r}", flush=True)
-    # A free waiting list, where one exists for this product (Retina Renew, 2026-09-28).
-    from dashboard import product_waitlist as _pwl
-    if slug in _pwl.LISTS and _waitlist_open(slug):
-        _page_data["waitlist"] = {"slug": slug}
+    # A free waiting list, where one exists for this product (Retina Renew, 2026-09-28;
+    # Scar Soft Drink, 2026-10-09). Its texts travel with it, so the page names only
+    # this list's product.
+    _apply_waitlist_page_data(_page_data, slug, p)
     if _WISHLIST_ENABLED:
         try:
             import sqlite3 as _wsq
@@ -9982,7 +11155,7 @@ def begin_product_page_gen(slug, section):
 
 def _ingredient_viewer_email():
     au = get_authenticated_user(request) or {}
-    return (au.get("email") or request.cookies.get("rm_reorder_email", "") or "").strip().lower()
+    return (au.get("email") or _email_from_cookie("rm_reorder_email") or "").strip().lower()
 
 
 def _ingredient_paid_ok(email):
@@ -10677,7 +11850,8 @@ def begin_ingredient_page_gen(slug, section):
 
 @app.route("/begin/product-image/<slug>/<filename>")
 def begin_product_image(slug, filename):
-    if not re.match(r'^[\w\-]+\.png$', filename):
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if not re.match(r'^[\w\-]+\.png$', filename) or _ai_images_off(slug):
         return ("", 404)
     d = _SALES_IMG_DIR / slug
     if not (d / filename).exists():
@@ -10896,6 +12070,45 @@ def _send_review_invite(email: str, name: str, slug: str) -> bool:
         return True
     except Exception as _e:
         print(f"[reviews] _send_review_invite failed for {email}/{slug}: {_e!r}", flush=True)
+        return False
+
+
+def _send_review_invites(email: str, name: str, slugs) -> bool:
+    """One review invite listing several products, each with its own link (Glen,
+    2026-10-13: Sharon Connour got 7 separate emails one morning). Same contract as
+    _send_review_invite: True only when send_email was reached without raising."""
+    try:
+        from dashboard import inbox as _inbox
+        lines, seen = [], set()
+        for slug in slugs:
+            p = _get_product(slug) or {}
+            pname, live = p.get("name"), p.get("slug") or slug
+            if not pname or live in seen:
+                continue   # unknown product: its link would 404; a retired twin: listed once
+            seen.add(live)
+            tok = _review_token_mint(email, slug)
+            lines.append(f"{pname}: {PUBLIC_BASE_URL}/review/{tok}")
+        if not lines:
+            # Nothing resolves: maybe a catalog that failed to load. Retry tomorrow;
+            # the max-age window ends it (review round 1).
+            print(f"[reviews] no reviewable product for {email}; left for the next run",
+                  flush=True)
+            return False
+        subject = "How are your remedies? Share a quick review"
+        body = (
+            f"Aloha {name or ''},\n\n"
+            "If you have a moment, I would love your honest review of each of these. "
+            "It helps others and earns you store credit:\n\n"
+            + "\n\n".join(lines) +
+            "\n\nIn wellness,\nDr. Glen & Rae"
+        )
+        _inbox.send_email(
+            email, subject, _strip_dash(body), from_name="Dr. Glen Swartwout"
+        )
+        return True
+    except Exception as _e:
+        print(f"[reviews] _send_review_invites failed for {email}/{len(list(slugs))}: {_e!r}",
+              flush=True)
         return False
 
 
@@ -11304,7 +12517,8 @@ def _gather_comms_text(cx, email, days=14):
             parts.append("Inquiry: " + str(inq.get("main_challenge") or "")
                          + " / " + str(inq.get("main_goal") or ""))
         for fb in (rc.get("recent_feedback") or []):
-            parts.append("Email feedback: " + str(fb.get("ai_summary") or ""))
+            # recent_comms names it `summary` (review, 2026-10-16: never reached here).
+            parts.append("Email feedback: " + str(fb.get("summary") or fb.get("ai_summary") or ""))
     except Exception as e:  # noqa: BLE001
         print(f"[testimonial-invites] gather failed for {email!r}: {e!r}", flush=True)
     return "\n".join(p for p in parts if p.strip())
@@ -11569,9 +12783,11 @@ def api_console_backfill_dispensary_referrals():
 
 @app.route("/begin/product-image-gen/<slug>", methods=["POST"])
 def begin_product_image_gen(slug):
-    if not _SALES_AI_IMAGES_ENABLED or not _get_product(slug):
-        return ("", 404)
     from dashboard import sales_images as _si
+    _p = _get_product(slug)
+    if not _SALES_AI_IMAGES_ENABLED or not _p or _si.ai_images_off(slug) \
+            or _si.ai_images_off(_p.get("slug") or slug):
+        return ("", 404)
     with db.connect(LOG_DB) as cx:
         if _SALES_IMAGE_VARIATIONS_ENABLED:
             if not _si.needs_topup(cx, slug):
@@ -11589,7 +12805,8 @@ def begin_product_image_gen(slug):
 @app.route("/begin/product-image-pick/<slug>", methods=["POST"])
 def begin_product_image_pick(slug):
     from dashboard import sales_image_prompts as _sip
-    if not _SALES_IMAGE_PICK_ENABLED or not _get_product(slug):
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if not _SALES_IMAGE_PICK_ENABLED or not _get_product(slug) or _ai_images_off(slug):
         return ("", 404)
     data = request.get_json(silent=True) or {}
     kind = (data.get("kind") or "").strip()
@@ -11619,7 +12836,8 @@ def begin_product_image_pick(slug):
 @app.route("/begin/product-image-vote/<slug>", methods=["POST"])
 def begin_product_image_vote(slug):
     from dashboard import sales_image_prompts as _sip
-    if not _SALES_IMAGE_VOTE_ENABLED or not _get_product(slug):
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if not _SALES_IMAGE_VOTE_ENABLED or not _get_product(slug) or _ai_images_off(slug):
         return ("", 404)
     data = request.get_json(silent=True) or {}
     kind = (data.get("kind") or "").strip()
@@ -11881,7 +13099,9 @@ def _price_biofield(points_to_redeem_cents=0, tier=PROGRAM_PREMIUM_TIER):
     qbo_lines = [{"name": _name,
                   "amount": round(_price / 100.0, 2), "qty": 1,
                   "description": _name}]
-    items_rec = [{"name": _name, "qty": 1, "desc": _name}]
+    # A service line: none of its points are on a product (_order_product_points_cents).
+    items_rec = [{"name": _name, "qty": 1, "desc": _name, "points_product_cents": 0,
+                  "points_split_of_cents": int(priced["points_redeemed_cents"])}]
     return {"priced": priced, "qbo_lines": qbo_lines, "items_rec": items_rec,
             "discount_cents": priced["discount_cents"],
             "points_redeemed_cents": priced["points_redeemed_cents"],
@@ -11994,6 +13214,8 @@ def biofield_checkout():
         with db.connect(LOG_DB) as _bcx:
             _points.init_points_table(_bcx)
             redeem = min(redeem, _points.balance(_bcx, email))
+        # Never offer points already held on the buyer's other unpaid orders.
+        redeem = min(redeem, _unheld_points_cents(email))
     elif PROGRAM_CARE_TASTER_ENABLED:
         # No explicit redeem requested: auto-apply the $1 deposit credit (if any) so
         # it actually lands as $1 off the program at checkout.
@@ -12051,6 +13273,9 @@ def begin_checkout(slug):
         return jsonify({"ok": False, "error": "unknown product"}), 404
     if p.get("info_only"):
         return jsonify({"ok": True, "info_only": True, "affiliate_url": p.get("affiliate_url", "")})
+    _wl = _waitlist_refusal(p.get("slug") or slug)
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, "waitlist": True, **_wl_fields(_wl)}), 400
     data   = request.get_json(silent=True) or {}
     email  = (data.get("email") or "").strip().lower()
     name   = (data.get("name") or "").strip()
@@ -12080,10 +13305,7 @@ def begin_checkout(slug):
     except (TypeError, ValueError):
         redeem = 0
     if redeem > 0:
-        from dashboard import points as _points
-        with db.connect(LOG_DB) as _bcx:
-            _points.init_points_table(_bcx)
-            redeem = min(redeem, _points.balance(_bcx, email))
+        redeem = max(0, min(redeem, _available_points_cents(email)))
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(data.get("referral_code"), email)
     _coupon_code = (data.get("coupon_code") or "").strip() or _best_active_self_coupon_code(email, slug)
     _self_pct, _self_coupon = _resolve_self_coupon_pct(_coupon_code, slug)
@@ -12096,6 +13318,7 @@ def begin_checkout(slug):
         pc = _price_cart([{"slug": slug, "qty": qty, "format": fmt}], ship=ship,
                          coupon_pct=_eff_pct,
                          points_to_redeem_cents=redeem,
+                         product_points_cents=min(redeem, _product_usable_points_cents(email)),
                          program_member=_mix_match_member(email), email=email)
     except CheckoutError as ce:
         return jsonify({"ok": False, "error": str(ce)}), 400
@@ -12114,61 +13337,97 @@ def begin_checkout(slug):
         "lines": pc["qbo_lines"] + _shipping_line(pc["shipping_cents"]),
         "discount_cents": pc["discount_cents"] + pc["points_redeemed_cents"] + _sc_apply,
         "tax_cents": 0}
-    _gift_won = bool(_gift_coupon and _gift_pct >= max(_ref_pct or 0, _self_pct or 0))
-    if not _gift_won:
-        _record_referral_if_any(_ref_ctx, email, checkout_ref)
-    if _self_coupon and _self_pct >= (_ref_pct or 0) and _self_pct > (_gift_pct or 0):
-        try:
-            from dashboard import coupons as _coupons
-            with _db_lock, db.connect(LOG_DB) as _ccx:
-                _coupons.mark_redeemed(_ccx, _self_coupon["code"], order_ref=checkout_ref)
-        except Exception as e:  # noqa: BLE001
-            print(f"[coupons] redeem-mark failed: {e!r}", flush=True)
-    if _gift_won:
-        try:
-            from dashboard import coupons as _coupons
-            from dashboard import referrals as _rf
-            with _db_lock, db.connect(LOG_DB) as _gcx:
-                _coupons.mark_redeemed(_gcx, _gift_coupon["code"], order_ref=checkout_ref)
-                _rf.record_redemption(_gcx, _gift_coupon["code"], _gift_coupon["email"], email, checkout_ref)
-        except Exception as e:  # noqa: BLE001
-            print(f"[coupons] gift redeem/attrib failed: {e!r}", flush=True)
     out = {"ok": True, "invoice_id": checkout_ref, "doc_number": "",
            "total": round(_charged / 100.0, 2),
            "method": method, "customer_id": ""}
-    try:
-        with _db_lock, db.connect(LOG_DB) as cx:
-            # record_unlock, not a bare INSERT: this wrote the audit row and stopped,
-            # so the `purchase` GATE was never set on journey_state. compute_rung
-            # therefore topped out at choose_path and the top two rungs of the ladder
-            # -- ascend and advocate -- were unreachable by any client. record_unlock
-            # sets the gate AND writes the same timestamped event, so there is no
-            # double-logging.
-            begin_funnel.record_unlock(
-                cx, session_id=session_id, trigger="purchase", email=email,
-                detail=f"buy-{slug}-{method}")
-    except Exception:
-        pass
-    def persist_funnel_order():
-        _ingest_order(source="funnel", external_ref=checkout_ref, email=email, name=name,
+    def record_checkout_effects():
+        # Referral, coupon and journey records. They name checkout_ref, so on the
+        # Zelle / Wise path they run only once the order is saved (review round 1).
+        _gift_won = bool(_gift_coupon and _gift_pct >= max(_ref_pct or 0, _self_pct or 0))
+        if not _gift_won:
+            _record_referral_if_any(_ref_ctx, email, checkout_ref)
+        if _self_coupon and _self_pct >= (_ref_pct or 0) and _self_pct > (_gift_pct or 0):
+            try:
+                from dashboard import coupons as _coupons
+                with _db_lock, db.connect(LOG_DB) as _ccx:
+                    _coupons.mark_redeemed(_ccx, _self_coupon["code"], order_ref=checkout_ref)
+            except Exception as e:  # noqa: BLE001
+                print(f"[coupons] redeem-mark failed: {e!r}", flush=True)
+        if _gift_won:
+            try:
+                from dashboard import coupons as _coupons
+                from dashboard import referrals as _rf
+                with _db_lock, db.connect(LOG_DB) as _gcx:
+                    _coupons.mark_redeemed(_gcx, _gift_coupon["code"], order_ref=checkout_ref)
+                    _rf.record_redemption(_gcx, _gift_coupon["code"], _gift_coupon["email"], email, checkout_ref)
+            except Exception as e:  # noqa: BLE001
+                print(f"[coupons] gift redeem/attrib failed: {e!r}", flush=True)
+        try:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                # record_unlock, not a bare INSERT: this wrote the audit row and stopped,
+                # so the `purchase` GATE was never set on journey_state. compute_rung
+                # therefore topped out at choose_path and the top two rungs of the ladder
+                # -- ascend and advocate -- were unreachable by any client. record_unlock
+                # sets the gate AND writes the same timestamped event, so there is no
+                # double-logging.
+                begin_funnel.record_unlock(
+                    cx, session_id=session_id, trigger="purchase", email=email,
+                    detail=f"buy-{slug}-{method}")
+        except Exception:
+            pass
+    def persist_funnel_order(pay_method=None, paid_cents=None):
+        _oid = _ingest_order(source="funnel", external_ref=checkout_ref, email=email, name=name,
                       items=pc["items_rec"], total_cents=_charged,
                       address=ship, channel="retail", get_cents=pc["priced"]["get_cents"],
                       discount_cents=pc["discount_cents"],
                       points_redeemed_cents=pc["points_redeemed_cents"],
                       shipping_cents=pc["shipping_cents"],
-                      ship_credit_applied_cents=_sc_apply)
+                      ship_credit_applied_cents=_sc_apply,
+                      pay_method=pay_method, paid_cents=paid_cents)
         try:
             with db.connect(LOG_DB) as _lcx:
                 _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
         except Exception as _e:
             print(f"[funnel] persist qbo_lines failed: {_e!r}", flush=True)
+        return _oid
 
     order_persisted = False
-    if method in ("zelle", "wise"):
-        persist_funnel_order()
+    if method in ("zelle", "wise") and _charged == 0:
+        # Nothing to send: record it as settled, as the cart does, so it neither waits
+        # for a $0 bank payment nor shows payment instructions.
+        order_id = persist_funnel_order(paid_cents=0)
+        if not order_id:
+            return jsonify({"ok": False, "error": "We could not save your order. "
+                            "Please try again in a moment."}), 503
+        # Marking it paid releases the hold on the points and ship credit that cover it,
+        # so spend them now, as any paid order does (review round 3). Idempotent per ref.
+        try:
+            with db.connect(LOG_DB) as _scx:
+                _scx.row_factory = sqlite3.Row
+                _settle_points_on_altpay(_bos_orders.get_order(_scx, order_id))
+        except Exception as _se:  # noqa: BLE001
+            print(f"[funnel] $0 settle failed ref={checkout_ref}: {_se!r}", flush=True)
+        record_checkout_effects()
         order_persisted = True
-        out["pay_instructions"] = _ALT_PAY.get(method, {})
-    elif method == "card" and _STRIPE_ACTIVE:
+        out["order_id"] = order_id
+        out["no_payment_required"] = True
+    elif method in ("zelle", "wise"):
+        # pay_method keeps an unpaid Zelle or Wise order out of the 24-hour
+        # abandoned-checkout expiry: the customer pays from their bank afterwards, and
+        # a cancelled order can no longer be matched by the Zelle import.
+        order_id = persist_funnel_order(pay_method=method)
+        if not order_id:
+            # Never hand out payment instructions for an order that was not recorded.
+            return jsonify({"ok": False, "error": "We could not save your order. "
+                            "Please try again in a moment."}), 503
+        record_checkout_effects()
+        order_persisted = True
+        out["order_id"] = order_id
+        out["pay_instructions"] = {**_ALT_PAY.get(method, {}), "memo": f"Order {order_id}",
+                                   "note": _BUY_PAGE_ALT_PAY_NOTE.get(method, "")}
+    else:
+        record_checkout_effects()
+    if method == "card" and _STRIPE_ACTIVE:
         # Group-bundle opt-in: when the flag is on AND the buyer opted in AND the buyer
         # is a PAID Biofield Analysis client (designed-program gate; the free E4L scan
         # does not qualify) AND the cart carries >=1 program month, grant 1 free
@@ -12198,6 +13457,9 @@ def begin_checkout(slug):
             _record_dispensary_sale(disp, email, qty, checkout_ref)
     except Exception as e:
         print(f"[dispensary] hook: {e!r}", flush=True)
+    # Glen, 2026-10-13: a product's order note, on every reply. A $0 order settled by
+    # points shows no Zelle box and goes to no receipt, so it needs it too (review).
+    out["order_notes"] = _order_notes_for(pc["items_rec"])
     return jsonify(out)
 
 
@@ -13387,6 +14649,19 @@ def _course_plan_charge(invoice):
         if sub_md.get("kind") != "course_plan":
             return "skip"
         until = float(sub.get("current_period_end") or 0) or None
+        # A signed-out buyer's subscription metadata carries no email. Their Stripe
+        # customer record does, so read it now (outside the db lock) as the last
+        # fallback, but only when checkout.session.completed never stored a row.
+        cust_email = ""
+        if not (sub_md.get("email") or "").strip() and sub.get("customer"):
+            with _db_lock, db.connect(LOG_DB) as cx0:
+                known = _ce.email_for_stripe_ref(cx0, sub_id)
+            if not known:
+                try:
+                    cust_email = stripe_pay.get_customer_email(sub.get("customer"))
+                except Exception as e:
+                    print(f"[course] plan customer email lookup failed sub={sub_id}: {e!r}",
+                          flush=True)
         with _db_lock, db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
             _ce.init_course_entitlements_table(cx)
@@ -13395,27 +14670,57 @@ def _course_plan_charge(invoice):
             # arrives before checkout.session.completed has stored the buyer's email
             # (anonymous plan checkout). Access itself is granted by the completed
             # event; under-counting here would permanently stall the conversion.
+            _ce.init_course_plan_charges_table(cx)
+            replay = cx.execute("SELECT 1 FROM course_plan_charges WHERE invoice_id=?",
+                                (invoice_id,)).fetchone() is not None
             count = _ce.record_plan_charge(cx, sub_id, invoice_id)
             email = (sub_md.get("email") or "").strip().lower()
             if not email:
                 email = (_ce.email_for_stripe_ref(cx, sub_id) or "").strip().lower()
             if not email:
-                cx.commit()
-                return "ok"  # charge counted; grant deferred until the email resolves
-            _credit_course_referral(cx, sub_md.get("ref"), email,
-                                    int((invoice or {}).get("amount_paid") or 0), invoice_id)
-            if count >= 12:
-                _ce.grant_cert(cx, email, source="stripe", stripe_ref=sub_id,
-                               customer=sub.get("customer"))
-            else:
-                _ce.grant_plan(cx, email, until_epoch=until, source="stripe",
-                               stripe_ref=sub_id, customer=sub.get("customer"))
+                email = (cust_email or "").strip().lower()
+            if email:
+                _credit_course_referral(cx, sub_md.get("ref"), email,
+                                        int((invoice or {}).get("amount_paid") or 0), invoice_id)
+                if count >= 12:
+                    _ce.grant_cert(cx, email, source="stripe", stripe_ref=sub_id,
+                                   customer=sub.get("customer"))
+                else:
+                    _ce.grant_plan(cx, email, until_epoch=until, source="stripe",
+                                   stripe_ref=sub_id, customer=sub.get("customer"))
             cx.commit()
-        if count >= 12:  # stop billing after conversion; cert already granted above
+        # A redelivered invoice.paid was already handled: cancelling or alerting again
+        # would only send a false "cancel FAILED" for an already-cancelled plan.
+        if replay:
+            return "ok"
+        # The cancel and the alerts below run whether or not a buyer email resolved:
+        # billing must stop at 12 even when nobody can be granted the cert.
+        if count >= 12:  # stop billing after conversion
             try:
                 stripe_pay.cancel_subscription(sub_id)
             except Exception as e:
                 print(f"[course] plan cancel-at-12 failed sub={sub_id}: {e!r}", flush=True)
+                try:
+                    _send_token_alert(
+                        "MentorshipU cert plan cancel FAILED at 12",
+                        f"A $297x12 course plan reached its 12th payment but the Stripe "
+                        f"cancel failed, so a 13th charge may follow. Cancel the "
+                        f"subscription in Stripe by hand.\n"
+                        f"subscription={sub_id}\ninvoice={invoice_id}\nerror={e!r}")
+                except Exception as e2:
+                    print(f"[course] plan cancel-failed alert failed sub={sub_id}: {e2!r}",
+                          flush=True)
+        if count >= 12 and not email:
+            try:
+                _send_token_alert(
+                    "MentorshipU cert plan finished with no buyer email",
+                    f"A $297x12 course plan reached its 12th payment, but no buyer email "
+                    f"could be found, so the lifetime certification was NOT granted. Find "
+                    f"the buyer from the Stripe customer and grant it by hand.\n"
+                    f"subscription={sub_id}\ninvoice={invoice_id}\n"
+                    f"customer={sub.get('customer')}\ncharge_count={count}")
+            except Exception as e:
+                print(f"[course] plan no-email alert failed sub={sub_id}: {e!r}", flush=True)
         if count > 12:  # a charge slipped past the 12-payment conversion — a refund is owed
             try:
                 _send_token_alert(
@@ -13666,7 +14971,8 @@ def begin_checkout_return():
             if _kind == "biofield_trial":
                 _fulfill_biofield_trial(sid)
 
-            # ── Founding reserve: vault card, create pending reservation, comp membership ──
+            # ── Founding reserve: vault card, create pending reservation ──
+            # No membership here: it starts when the bottle ships (Glen, 2026-10-14).
             # Setup-mode ($0) session: payment_status == "no_payment_required" (NOT "paid"),
             # so this block lives OUTSIDE the payment_status == "paid" gate.
             if md.get("kind") == "founding_reserve" and sess.get("setup_intent") and \
@@ -13711,7 +15017,6 @@ def begin_checkout_return():
                                 _fcx, email=f_email, stripe_customer_id=stripe_cus,
                                 stripe_payment_method_id=stripe_pm, items=items_list,
                                 ship_address=ship_dict, founding_slug=f_slug)
-                            _grant_membership(_fcx, f_email, 30, "founding")
                             _fcx.commit()
                         _ingest_order(source="founding", external_ref=seti or "",
                                       email=f_email, items=items_list, total_cents=0,
@@ -13775,6 +15080,21 @@ def order_confirmation():
     email = ((sess.get("customer_details") or {}).get("email")
              or sess.get("customer_email") or (order or {}).get("email") or "")
     items = (order or {}).get("items") or []
+    # A product's approved order note under its line (Microbiome, Glen 2026-10-13):
+    # store and portal-basket buyers get no product email, so this page is where they
+    # see it. A zero-quantity line was not bought and gets none.
+    shown = []
+    for it in items:
+        it = dict(it) if isinstance(it, dict) else {}
+        q = it.get("qty")
+        try:
+            bought = q is None or int(q) > 0
+        except (TypeError, ValueError):
+            bought = False
+        note = _order_note_for_slug(it.get("slug")) if bought else ""
+        it["note_paras"] = [x.strip() for x in re.split(r"\n\s*\n", note) if x.strip()]
+        shown.append(it)
+    items = shown
     return_to = (md.get("return_to") or "").strip()
     if not (return_to.startswith("/portal/") or return_to == "/portal/me"
             or return_to.startswith(portal_base().rstrip("/") + "/portal/")
@@ -13802,8 +15122,8 @@ _ORDER_CONFIRMATION_ERROR = """<!doctype html><html><head><meta name="viewport" 
 _ORDER_CONFIRMATION_HTML = """<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Order {{ order_number }} confirmed</title>
-<style>body{margin:0;background:#f4f7f3;color:#21362c;font:16px/1.5 system-ui,-apple-system,sans-serif}.card{max-width:640px;margin:48px auto;background:#fff;border-radius:18px;padding:34px;box-shadow:0 8px 32px #19322618}.check{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:#267a56;color:#fff;font-size:30px}h1{margin:18px 0 4px;font-size:30px}.muted{color:#66756d}.summary{margin:26px 0;padding:18px;background:#f3f7f4;border-radius:12px}.row{display:flex;justify-content:space-between;gap:20px;padding:7px 0}.total{font-size:20px;font-weight:700;border-top:1px solid #dce5df;margin-top:8px;padding-top:14px}.button{display:block;text-align:center;background:#267a56;color:#fff;text-decoration:none;padding:14px 18px;border-radius:10px;font-weight:700}@media(max-width:700px){.card{margin:0;min-height:100vh;border-radius:0;padding:28px 20px}}</style></head>
-<body><main class="card"><div class="check">&#10003;</div><h1>Payment received</h1><p class="muted">Your order is confirmed. A receipt will also be sent to {{ email or 'the email used at checkout' }}.</p><section class="summary"><div class="row"><span>Order number</span><strong>#{{ order_number }}</strong></div>{% for item in items %}<div class="row"><span>{{ item.get('name') or item.get('slug') or 'Product' }}{% if (item.get('qty') or 1)|int > 1 %} &times; {{ item.get('qty') }}{% endif %}</span></div>{% endfor %}<div class="row total"><span>Total paid</span><span>{{ amount }}</span></div></section><p class="muted">Please keep this order number for your records.</p><a class="button" href="{{ return_to }}">{{ return_label }}</a></main></body></html>"""
+<style>body{margin:0;background:#f4f7f3;color:#21362c;font:16px/1.5 system-ui,-apple-system,sans-serif}.card{max-width:640px;margin:48px auto;background:#fff;border-radius:18px;padding:34px;box-shadow:0 8px 32px #19322618}.check{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:#267a56;color:#fff;font-size:30px}h1{margin:18px 0 4px;font-size:30px}.muted{color:#66756d}.summary{margin:26px 0;padding:18px;background:#f3f7f4;border-radius:12px}.row{display:flex;justify-content:space-between;gap:20px;padding:7px 0}.total{font-size:20px;font-weight:700;border-top:1px solid #dce5df;margin-top:8px;padding-top:14px}.button{display:block;text-align:center;background:#267a56;color:#fff;text-decoration:none;padding:14px 18px;border-radius:10px;font-weight:700}@media(max-width:700px){.card{margin:0;min-height:100vh;border-radius:0;padding:28px 20px}}.summary .note{margin:2px 0 12px;font-size:14px;line-height:1.5;color:#3f5a4c}</style></head>
+<body><main class="card"><div class="check">&#10003;</div><h1>Payment received</h1><p class="muted">Your order is confirmed. A receipt will also be sent to {{ email or 'the email used at checkout' }}.</p><section class="summary"><div class="row"><span>Order number</span><strong>#{{ order_number }}</strong></div>{% for item in items %}<div class="row"><span>{{ item.get('name') or item.get('slug') or 'Product' }}{% if (item.get('qty') or 1)|int > 1 %} &times; {{ item.get('qty') }}{% endif %}</span></div>{% for para in item.get('note_paras') or [] %}<p class="note">{{ para }}</p>{% endfor %}{% endfor %}<div class="row total"><span>Total paid</span><span>{{ amount }}</span></div></section><p class="muted">Please keep this order number for your records.</p><a class="button" href="{{ return_to }}">{{ return_label }}</a></main></body></html>"""
 
 
 # ── Post-buy concierge (consultative upsell) ─────────────────────────────────
@@ -13993,7 +15313,8 @@ def begin_concierge_chat():
             f"RETRIEVED SNIPPETS (for rationale/benefits):\n{context_str}\n\n"
             f"MEMBER MESSAGE: {query}\n\n"
             "Continue as the concierge: affirm, ask the single best next question, or suggest ONE "
-            "complement with a short why. Keep it warm and brief."})
+            "complement with a short why. Keep it warm and brief."
+            f"{_approved_wording_reminder(context_str)}"})
         full = []
         try:
             with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=700,
@@ -14053,7 +15374,10 @@ def begin_concierge_add():
         return jsonify({"ok": False, "need_optin": True,
                         "error": "Please agree to our Terms to continue."}), 403
     p = _get_product(slug)
-    if not p or p.get("info_only"):
+    _wl = _waitlist_refusal(slug) if p else None
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
+    if not p or not _is_orderable(p.get("slug") or slug, p):
         return jsonify({"ok": False, "error": "not an addable catalog product"}), 400
     if not invoice_id:
         return jsonify({"ok": False, "error": "invoice_id required"}), 400
@@ -14216,6 +15540,8 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
         f"{product_block}"
         f"{synth_instr}"
+        f"{named_product_facts_block(query)}"
+        f"{_approved_wording_reminder(context_str)}"
     )
 
     answer = ""
@@ -14291,7 +15617,8 @@ def _send_full_report_email(to_email: str, name: str,
     try:
         from dashboard import ghl_email as _ghl
         if _ghl.is_configured():
-            _html = "<p>" + body.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+            _esc = _ihtml.escape(body, quote=False)   # a stored name must not become markup
+            _html = "<p>" + _esc.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
             _ghl.send_via_ghl(to_email, subject, html=_html, text=body)
             return ("ghl", None)
     except Exception as e:
@@ -14389,6 +15716,8 @@ def _full_report_stream(log_id, query, level, session_id,
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             f"{product_block}"
             f"{synth_instr}"
+            f"{named_product_facts_block(query)}"
+            f"{_approved_wording_reminder(context_str)}"
         )
 
         try:
@@ -14449,7 +15778,7 @@ def auth_magic_link_request():
         "expires_in_minutes": AUTH_TOKEN_TTL_MIN,
         "note":     ("Check your email for the sign-in link."
                      if sent_via in ("ghl-workflow", "smtp")
-                     else "Email sending not yet configured. Check Render logs for the magic link.")
+                     else "We could not send the sign-in email. Please try again shortly.")
     })
 
 
@@ -14468,7 +15797,11 @@ def auth_magic_link_verify():
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         row = cx.execute(
-            "SELECT email, expires_at, consumed_at FROM auth_tokens WHERE token_hash = ?",
+            # Only a sign-in token signs in. Without the purpose, any emailed token
+            # (a staff view pass bound to a client's email among them) made a 30-day
+            # session (2026-10-15).
+            "SELECT email, expires_at, consumed_at FROM auth_tokens "
+            "WHERE token_hash = ? AND purpose = 'magic_link'",
             (th,)
         ).fetchone()
         if not row:
@@ -17221,6 +18554,9 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
     single = len(members) == 1
     opened, results = 0, []
     for m in members:
+        _delivered_order = _bos_orders.get_order(cx, m["id"])
+        # Before the email check: the founder's email comes from the ship record.
+        _extend_founding_membership_on_delivery(cx, _delivered_order, delivered_at)
         email = m["email"] or ((resolved_email or "").strip().lower() if single else "") or None
         if not email:
             results.append({"order_id": m["id"], "ok": False, "reason": "no_email"})
@@ -17233,7 +18569,7 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
         # delivery path gets it -- carrier status, and both manual "mark
         # delivered" routes all funnel through this function. Best-effort by
         # contract: it never raises, so a grant failure cannot block delivery.
-        _extend_biofield_month_on_delivery(cx, email, _bos_orders.get_order(cx, m["id"]))
+        _extend_biofield_month_on_delivery(cx, email, _delivered_order)
         if res.get("ok"):
             opened += 1
     if opened:
@@ -17297,6 +18633,7 @@ def _activate_coaching_by_order(cx, order_id):
         sh = cx.execute("SELECT * FROM shipments WHERE id=?", (order["shipment_id"],)).fetchone()
         if sh:
             return _activate_coaching_for_shipment(cx, sh, delivered_at=now_iso)
+    _extend_founding_membership_on_delivery(cx, _bos_orders.get_order(cx, order["id"]), now_iso)
     email = (order["email"] or "").strip().lower()
     if not email:
         return {"ok": False, "reason": "unresolved"}
@@ -17409,26 +18746,31 @@ def _member_context_for_email(email, *, query_log_n=5):
         print(f"[member-context] inquiries fetch failed: {e!r}", flush=True)
 
     # Recent queries. Production table uses 'query' column; test table uses
-    # 'question'.  Try 'question' first; fall back to 'query' on OperationalError.
+    # 'question'. Try 'query' first: on Postgres a failed SELECT aborts the
+    # transaction, so trying 'question' first made the fallback fail too and
+    # recent_queries was always empty in prod (found 2026-10-16).
     try:
         with db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
             try:
-                rows = cx.execute(
-                    "SELECT question, ts FROM query_log WHERE email=? "
-                    "ORDER BY id DESC LIMIT ?",
-                    (email, int(query_log_n))
-                ).fetchall()
-                out["recent_queries"] = [{"question": r["question"], "ts": r["ts"]}
-                                         for r in rows]
-            except Exception:
-                # Production table uses 'query' column; normalise to 'question' key
                 rows = cx.execute(
                     "SELECT query, ts FROM query_log WHERE email=? "
                     "ORDER BY id DESC LIMIT ?",
                     (email, int(query_log_n))
                 ).fetchall()
                 out["recent_queries"] = [{"question": r["query"], "ts": r["ts"]}
+                                         for r in rows]
+            except Exception:
+                try:
+                    cx.rollback()
+                except Exception:
+                    pass
+                rows = cx.execute(
+                    "SELECT question, ts FROM query_log WHERE email=? "
+                    "ORDER BY id DESC LIMIT ?",
+                    (email, int(query_log_n))
+                ).fetchall()
+                out["recent_queries"] = [{"question": r["question"], "ts": r["ts"]}
                                          for r in rows]
     except Exception as e:
         print(f"[member-context] query_log fetch failed: {e!r}", flush=True)
@@ -17701,7 +19043,8 @@ def _send_affiliate_magic_link(to_email: str, name: str, magic_url: str) -> tupl
         except Exception as e:
             print(f"[affiliate-magic] SMTP send failed: from={smtp_from} to={to_email} err={e!r}", flush=True)
             return "smtp-failed", str(e)
-    print(f"\n[affiliate-magic] MAGIC LINK for {to_email}: {magic_url}\n", flush=True)
+    # Never the link itself: anyone who can read the logs could sign in with it.
+    print(f"[affiliate-magic] magic link NOT sent to {to_email}: no SMTP configured", flush=True)
     return "console-log", "no SMTP configured"
 
 
@@ -18768,8 +20111,10 @@ def api_practitioner_cart():
         qty = 0
     if qty > 0 and not _pp.is_orderable(slug):
         return jsonify({"ok": False,
-                        "error": "That item is ordered separately (e.g. on the Centropix store), "
-                                 "not through wholesale."}), 400
+                        "error": _waitlist_refusal(slug)
+                        or "That item is ordered separately (e.g. on the Centropix store), "
+                           "not through wholesale.",
+                        **_wl_fields(_waitlist_refusal(slug))}), 400
     _pp.cart_set(pid, slug, qty)
     return jsonify({"ok": True, **(_pp.portal_data(pid) or {})})
 
@@ -18860,6 +20205,8 @@ def api_practitioner_checkout():
                     _bos_orders.set_order_qbo_lines(_lcx, out.get("invoice_id"), out["qbo_payload"])
             except Exception as e:
                 print(f"[practitioner-checkout] persist qbo_lines failed: {e!r}", flush=True)
+        # Glen, 2026-10-13: a product's order note shows after checkout, by any method.
+        out["order_notes"] = _order_notes_for(items)
         if method in ("zelle", "wise"):
             out["pay_instructions"] = _ALT_PAY.get(method, {})
         elif method == "card":
@@ -18958,6 +20305,8 @@ def api_practitioner_personal_checkout():
             except Exception as e:
                 print(f"[practitioner-personal-checkout] earn credit failed: {e!r}",
                       flush=True)
+        # Glen, 2026-10-13: a product's order note shows after checkout, by any method.
+        out["order_notes"] = _order_notes_for(items)
         if method in ("zelle", "wise"):
             out["pay_instructions"] = _ALT_PAY.get(method, {})
         elif method == "card":
@@ -19026,7 +20375,7 @@ def api_practitioner_dropship_checkout():
             items, prac, patient_ship=ship, method=method,
             shipping_cents=shipping_cents)
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     except Exception as e:
         print(f"[dropship-checkout] failed: {e!r}", flush=True)
         return jsonify({"ok": False, "error": "Checkout failed. Please try again."}), 500
@@ -19059,6 +20408,8 @@ def api_practitioner_dropship_checkout():
                     _bos_orders.set_order_qbo_lines(_lcx, out.get("invoice_id"), out["qbo_payload"])
             except Exception as e:
                 print(f"[dropship-checkout] persist qbo_lines failed: {e!r}", flush=True)
+        # Glen, 2026-10-13: a product's order note shows after checkout, by any method.
+        out["order_notes"] = _order_notes_for(items)
         if method in ("zelle", "wise"):
             out["pay_instructions"] = _ALT_PAY.get(method, {})
         elif method == "card":
@@ -19117,7 +20468,7 @@ def _assist_orderable_catalog_text():
     """Compact, deterministic allowlist injected into every assistant turn."""
     rows = []
     for slug, product in sorted((_PRODUCTS.get("products") or {}).items()):
-        if not product or product.get("inactive") or product.get("info_only"):
+        if not product or not _is_orderable(slug, product):
             continue
         rows.append(f"- {slug}: {product.get('name') or slug}")
     return "\n".join(rows)
@@ -19215,7 +20566,8 @@ def api_practitioner_assist():
             f"{_assist_orderable_catalog_text()}\n\n"
             "Continue the clinical formulation match. If you can name the best primary Functional "
             "Formulation (and any adjuncts), name them with brief clinical rationale; otherwise ask "
-            "the single best clinical question."})
+            "the single best clinical question."
+            f"{_approved_wording_reminder(context_str)}"})
         full = []
         try:
             with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=900,
@@ -20535,13 +21887,14 @@ def console_biofield_intake():
                                "with your sign-in."),
                 }), 409
             return jsonify({"error": "Unauthorized"}), 401
-    from dashboard.console_launcher import local_tool_url
+    from dashboard.console_launcher import local_tool_url, console_back_path
     # Hand over the key THIS SERVER holds, not the one the browser sent. op-nav.js
     # builds its ?key= from localStorage, so after the 2026-09-16 rotation every
     # browser was forwarding a dead key and the local app refused the only link its
     # own error message tells you to use.
     return redirect(local_tool_url("BIOFIELD_LOCAL_URL", "http://127.0.0.1:8011",
-                                   _dashboard.CONSOLE_SECRET))
+                                   _dashboard.CONSOLE_SECRET,
+                                   back=console_back_path(request.referrer, request.host)))
 
 
 @app.route("/console/clinical-tags")
@@ -22710,7 +24063,7 @@ def api_client_catalog(code):
 
     items = []
     for slug, p in (_PRODUCTS.get("products") or {}).items():
-        if not p or p.get("inactive") or p.get("info_only"):
+        if not p or not _is_orderable(slug, p):
             continue
         if _is_pure_powder(p):
             continue
@@ -22746,6 +24099,9 @@ def api_client_checkout(code):
 
     if not email:
         return jsonify({"ok": False, "error": "email required"}), 400
+    _wl = _cart_waitlist_refusal(items if isinstance(items, list) else [])
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
 
     # 2. Consent gate — mirrors begin_checkout exactly: session cookie + email.
     _sid = request.cookies.get("amg_session", "")
@@ -22840,6 +24196,9 @@ def api_client_checkout(code):
     # 7. Payment method: alt-pay or Stripe.
     # Stripe metadata carries kind/practitioner_id/margin_cents/invoice_id so the
     # checkout-return handler (Task 3) can credit the margin to the wallet.
+    # Glen, 2026-10-13: a product's order note, on every reply. A $0 card order skips
+    # Stripe and lands on this page's own confirmation (review).
+    out["order_notes"] = _order_notes_for(items)
     if method in ("zelle", "wise"):
         out["pay_instructions"] = _ALT_PAY.get(method, {})
     elif method == "card" and _STRIPE_ACTIVE:
@@ -22903,7 +24262,7 @@ def _build_ff_catalog():
     Excludes Pure Powders and info_only items — mirrors /api/client/<code>/catalog."""
     catalog = []
     for slug, p in (_PRODUCTS.get("products") or {}).items():
-        if not p or p.get("inactive") or p.get("info_only"):
+        if not p or not _is_orderable(slug, p):
             continue
         if _is_pure_powder(p):
             continue
@@ -23370,7 +24729,7 @@ def _stripe_checkout_url_for_reorder(out, email):
 
 
 def _reorder_email_from_cookie():
-    return (request.cookies.get("rm_reorder_email", "") or "").strip().lower()
+    return (_email_from_cookie("rm_reorder_email") or "").strip().lower()
 
 
 _CART_COOKIE = "rm_cart"
@@ -23459,7 +24818,8 @@ def _cart_payload(cx, token):
             # refuses info_only lines with "no longer available" (see
             # api_cart_checkout's unavailable scan), so a badge that calls them
             # available contradicts the error the customer is about to get.
-            "available": bool(p) and not p.get("inactive") and not p.get("info_only"),
+            # And not waitlist_only (2026-10-09): checkout refuses it, so the badge must too.
+            "available": bool(p) and _is_orderable(p.get("slug") or it["slug"], p),
         })
         # Counts EVERY line, including unavailable ones, so this number always
         # matches the tile badge from dashboard/cart_block.py. An unavailable row
@@ -23528,8 +24888,10 @@ def api_cart_add():
     data = request.get_json(silent=True) or {}
     slug = (data.get("slug") or "").strip().lower()
     p = _get_product(slug)
-    if not p or p.get("info_only") or p.get("inactive"):
-        return jsonify({"ok": False, "error": "That product is not available."}), 400
+    if not p or not _is_orderable(p.get("slug") or slug, p):
+        return jsonify({"ok": False, "error": _waitlist_refusal(slug)
+                        or "That product is not available.",
+                        **_wl_fields(_waitlist_refusal(slug))}), 400
     fmt = _clean_format(p, data.get("format"))
     try:
         qty = max(1, min(int(data.get("qty", 1) or 1), 99))
@@ -23565,6 +24927,13 @@ def api_cart_set_qty():
     data = request.get_json(silent=True) or {}
     slug = (data.get("slug") or "").strip().lower()
     fmt = (data.get("format") or "").strip().lower()
+    try:
+        _raising = int(data.get("qty", 0) or 0) > 0
+    except (TypeError, ValueError):
+        _raising = False
+    _wl = _waitlist_refusal(slug) if _raising else None
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     with db.connect(LOG_DB) as cx:
         _cart_store.init_cart_tables(cx)
         token = _cart_open_token(cx)
@@ -23705,6 +25074,20 @@ def api_cart_checkout():
     if not _PORTAL_CART_ENABLED:
         return jsonify({"ok": False, "error": "not found"}), 404
     data = request.get_json(silent=True) or {}
+    method = (data.get("method") or "card").strip().lower()
+    if method not in ("card", "zelle"):
+        return jsonify({"ok": False, "error": "Unsupported payment method."}), 400
+    # A Zelle order's key comes from the page, so a page whose reply was lost can still
+    # look the order up (/api/cart/zelle-orders). 32 hex characters, like our own refs.
+    request_ref = ""
+    if method == "zelle":
+        request_ref = (data.get("checkout_request_id") or "").strip().lower()
+        if not _CHECKOUT_REF_RE.fullmatch(request_ref):
+            return jsonify({"ok": False, "error": "Invalid checkout request."}), 400
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            if _bos_orders.find_order_by_external_ref(cx, request_ref):
+                return jsonify({"ok": False, "error": "This order is already placed."}), 409
     email = _cart_email()
     _sid = (request.cookies.get("amg_session") or "").strip()
     if not is_member(_sid, email):
@@ -23768,10 +25151,13 @@ def api_cart_checkout():
         if not cart:
             return jsonify({"ok": False, "error": "Your cart is empty."}), 400
 
+        _wl = _cart_waitlist_refusal(cart)
+        if _wl:
+            return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
         unavailable = []
         for c in cart:
             p = _get_product(c["slug"])
-            if not p or p.get("inactive") or p.get("info_only"):
+            if not p or not _is_orderable(p.get("slug") or c["slug"], p):
                 unavailable.append(c["slug"])
         if unavailable:
             return jsonify({"ok": False, "unavailable": unavailable,
@@ -23804,14 +25190,31 @@ def api_cart_checkout():
                                           "format": c["format"]} for c in cart],
                                  ship=ship, points_to_redeem_cents=redeem,
                                  referral_code=(data.get("referral_code") or "").strip(),
-                                 cancel_to_cart=True)
+                                 cancel_to_cart=True, method=method,
+                                 checkout_ref=(request_ref or None))
         except CheckoutError as e:
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
 
         out = res.get("out") or {}
         stripe_url = res.get("stripe_url") or ""
+        if res.get("zelle"):
+            # The order exists unpaid; the cart is done. Same instructions as the portal's
+            # Zelle branch, with the order number as the memo. _ingest_order never raises
+            # and returns None when it could not record the order: then there is nothing
+            # to pay for, so the cart is released and the customer is told to retry.
+            if not res.get("order_id"):
+                with db.connect(LOG_DB) as cx:
+                    _cart_store.release_claim(cx, token)
+                return jsonify({"ok": False, "error": "Your order did not save. "
+                                "Please try again, or contact us."}), 503
+            _mark_ordered_resilient(token, out.get("invoice_id", ""))
+            # The cart's own lines carry the notes, so no second read can lose them.
+            return jsonify({"ok": True, "method": "zelle", **_zelle_instructions({
+                "id": res["order_id"], "external_ref": out.get("invoice_id", ""),
+                "total_cents": res.get("charge_cents"),
+                "shipping_cents": res.get("shipping_cents"), "items": cart})})
         if not stripe_url and not res.get("no_payment_required"):
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
@@ -23834,6 +25237,52 @@ def api_cart_checkout():
 
 
 _CHECKOUT_REF_RE = re.compile(r"[0-9a-f]{32}")
+
+
+def _zelle_instructions(order):
+    """The Zelle payment instructions for one unpaid store-cart order, as the cart page
+    shows them. The memo is the order number."""
+    zelle = _ALT_PAY["zelle"]
+    return {"order_id": order["id"], "order_ref": order.get("external_ref") or "",
+            "order_notes": _order_notes_for(order.get("items")),
+            "total_cents": int(order.get("total_cents") or 0),
+            "shipping_cents": int(order.get("shipping_cents") or 0),
+            "pay_instructions": {"label": zelle["label"], "to": zelle["to"],
+                                 "memo": f"Order {order['id']}", "pay_link": zelle["pay_link"],
+                                 "bank_url": zelle["bank_url"], "note": zelle["note"]}}
+
+
+@app.route("/api/cart/zelle-orders", methods=["POST"])
+def api_cart_zelle_orders():
+    """The cart page's own unpaid Zelle orders, so their instructions survive a reload or
+    a lost reply (review round 1). The page sends the order keys it minted; an order is
+    returned only when it is that key, belongs to this visitor's email, is a store-cart
+    Zelle order, and is neither paid nor cancelled. "closed" lists this visitor's keys
+    whose order is paid or cancelled, so the page may forget them. Any other key, such as
+    another shopper's or one whose order is still being written, is absent from both and
+    the page keeps it (review round 2)."""
+    if not _PORTAL_CART_ENABLED:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    email = _cart_email()
+    refs = (request.get_json(silent=True) or {}).get("refs") or []
+    if not isinstance(refs, list):
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    refs = [r.strip().lower() for r in refs[:10] if isinstance(r, str)]
+    refs = [r for r in refs if _CHECKOUT_REF_RE.fullmatch(r)]
+    out, closed = [], []
+    if email and refs:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            for r in refs:
+                o = _bos_orders.find_order_by_external_ref(cx, r)
+                if not (o and (o.get("email") or "").strip().lower() == email
+                        and o.get("source") == "reorder" and o.get("pay_method") == "zelle"):
+                    continue
+                if o.get("pay_status") == "paid" or o.get("status") == "cancelled":
+                    closed.append(r)
+                else:
+                    out.append(_zelle_instructions(o))
+    return jsonify({"ok": True, "orders": out, "closed": closed})
 
 
 @app.route("/begin/cart/cancelled")
@@ -24824,6 +26273,18 @@ def _enabled_offer_keys() -> set:
     return keys
 
 
+def _curated_unit_cents(item):
+    """The practitioner's courtesy price on a curated reorder item, or None. Absent, blank,
+    zero or negative is None, so the store price applies. A publish with the price box
+    left blank once stored 0 on every item, and the portal priced them at $0 (30 portals,
+    found 2026-10-09). The publish button never accepted 0, so no stored 0 was intended."""
+    try:
+        v = int((item or {}).get("price_cents"))
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
+
+
 def _portal_priced_lines(items, email=None):
     """Build QBO invoice lines from a portal's reorder items, honoring the client's
     current saved per-SKU/FF-flat price first, then an older per-item ``price_cents``
@@ -24879,7 +26340,7 @@ def _portal_priced_lines(items, email=None):
                 p, None, total_ff_qty, settings, repertoire_slugs=rep_slugs,
                 program_member=program_member, line_qty=qty))
         else:
-            unit_cents = _inhouse_line_unit_cents(p, it.get("price_cents"), total_ff_qty, settings,
+            unit_cents = _inhouse_line_unit_cents(p, _curated_unit_cents(it), total_ff_qty, settings,
                                                   repertoire_slugs=rep_slugs,
                                                   program_member=program_member, line_qty=qty)
         subtotal_cents += unit_cents * qty
@@ -26244,7 +27705,7 @@ def api_client_portal(token):
         slug = (it.get("slug") or "").strip()
         p = _get_product(slug) if slug else None
         regular = (p or {}).get("price_cents")
-        override = it.get("price_cents")
+        override = _curated_unit_cents(it)
         # A current saved special outranks an older baked price, but only ever lowers
         # the regular price (Glen, 2026-10-04).
         _saved = _client_special_for(slug, p, _cp_by_slug, _cp_ff_flat)
@@ -26253,6 +27714,18 @@ def api_client_portal(token):
                 _saved, _member_list_cents(p, email_for_reports) if p else regular)
         else:
             special = int(override) if override is not None else regular
+        _nr = _waitlist_block(slug) if p else None
+        if _nr:
+            # Not ready to order (2026-10-09): name and page link only, no price, and the
+            # page renders no order row for it, so it is never posted.
+            display.append({"slug": slug, "qty": int(it.get("qty", 1) or 1),
+                            "name": p.get("name", slug), "price_cents": None,
+                            "regular_price_cents": None, "is_special": False,
+                            "refill_eligible": False, "available": False,
+                            "not_ready": {"url": f"/begin/product/{p.get('slug') or slug}",
+                                          **({"line": str(_waitlist_refusal(slug))}
+                                             if _nr.get("out_of_stock") else {})}})
+            continue
         display.append({
             "slug": slug, "qty": int(it.get("qty", 1) or 1),
             "name": (p or {}).get("name", slug), "price_cents": special,
@@ -26542,6 +28015,24 @@ def api_client_portal(token):
                     print(f"[life-stress/selected] {_e!r}", flush=True)
         except Exception as _e:
             print(f"[life-stress/payload] {_e!r}", flush=True)
+    # Diet guidance for the client's terrain phase (Glen approved the text 2026-10-16,
+    # rnd-1b): the report's tested phase, else the intake answer's scored phase. Only that
+    # phase's section, always with the intro cautions. Best-effort, like the cards above.
+    payload["diet_guidance"] = None
+    try:
+        from dashboard import diet_guidance as _dg
+        _intake_answers = None
+        if not _dg.report_phase(payload.get("phase")):
+            from dashboard import intake as _intake_dg
+            with db.connect(LOG_DB) as _cx_dg:
+                _cx_dg.row_factory = sqlite3.Row
+                _intake_dg.init_intake_table(_cx_dg)
+                _intake_answers = _dg.report_fallback_answers(
+                    _intake_dg.get_response(_cx_dg, email_for_reports))
+        payload["diet_guidance"] = _dg.guidance(
+            _dg.report_phase(payload.get("phase"), _intake_answers))
+    except Exception as _e:
+        print(f"[diet-guidance/payload] {_e!r}", flush=True)
     # PRL Supplement flag (always present, mirrors ff_matches_enabled) + card
     # (flag-gated, best-effort). email_for_reports is member-re-pointed.
     payload["prl_supplement_enabled"] = _prl_supplement_enabled()
@@ -26808,6 +28299,17 @@ def api_portal_library(token):
         _ce.init_course_entitlements_table(cx)
         course_qualified = bool(email and (
             _ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)))
+        # Last, and rolled back on failure: on Postgres a failed query aborts the
+        # transaction, and any query after it would fail too (review round 3).
+        try:
+            links = _lib.links_for_email(cx, email) if email else []
+        except Exception as _e:  # noqa: BLE001 - a link list must never break the Library
+            print(f"[library] links skipped: {_e!r}", flush=True)
+            links = []
+            try:
+                cx.rollback()
+            except Exception:  # noqa: BLE001
+                pass
     course_qualified = (_map.override_for(email) is not False and
                         (course_qualified or _is_certification_student(email)))
     items = []
@@ -26820,6 +28322,9 @@ def api_portal_library(token):
             "pdf_url": f"/api/portal/{token}/library/{g['slug']}/pdf",
             "audio_url": f"/api/portal/{token}/library/{g['slug']}/audio",
         })
+    for ln in links:   # protocol pages Glen added for this client (2026-10-13)
+        items.append({"kind": "link", "title": ln["title"], "url": ln["url"],
+                      "granted_at": ln["added_at"]})
     if course_qualified:
         items.append({
             "kind": "course", "slug": _ASH_CERT_COURSE,
@@ -26879,6 +28384,41 @@ def api_portal_courses_link(token):
             _ce.grant_cert(cx, email, source="certification_roster")
         course_token = _ct.mint_course_token(cx, email, portal.get("name") or "")
     return redirect(f"{mentorship_base()}/learn?token={course_token}", code=302)
+
+
+@app.route("/api/console/portal-library-links", methods=["GET", "POST"])
+def api_console_portal_library_links():
+    """Staff: list (GET ?email=), add or remove (POST {email, url, title, action}) the
+    links in one client's portal Library. Glen, 2026-10-13: Linda Maher's protocols."""
+    if not _portal_console_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import portal_library as _lib
+    if request.method == "GET":
+        email = (request.args.get("email") or "").strip().lower()
+        with db.connect(LOG_DB) as cx:
+            return jsonify({"ok": True, "links": _lib.links_for_email(cx, email)})
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not all(
+            isinstance(body.get(k, ""), str) for k in ("email", "url", "title", "action")):
+        return jsonify({"ok": False, "error": "send email, url, title and action as text"}), 400
+    email = (body.get("email") or "").strip().lower()
+    action = (body.get("action") or "add").strip()
+    try:
+        with db.connect(LOG_DB) as cx:
+            if action == "remove":
+                changed = _lib.remove_link(cx, email, body.get("url"))
+            elif action == "add":
+                actor = _bos_actor()
+                changed = _lib.add_link(cx, email, body.get("url"), body.get("title"),
+                                        added_by=(getattr(actor, "name", "") or getattr(actor, "role", ""))
+                                        if actor else "")
+            else:
+                return jsonify({"ok": False, "error": "action must be add or remove"}), 400
+            cx.commit()
+            links = _lib.links_for_email(cx, email)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "changed": changed, "links": links})
 
 
 @app.route("/api/portal/<token>/library/<slug>/<asset>", methods=["GET"])
@@ -27149,7 +28689,7 @@ def api_portal_onboarding(token):
             return jsonify({"error": "not found"}), 404
         email = (portal.get("email") or "").strip().lower()
         with _request_timing_step("onboarding"):
-            status = _ob.build_status(cx, email)
+            status = _ob.build_status(cx, email, _portal_photo_identity(portal))
     for ph in status.get("phases", []):
         for st in ph.get("steps", []):
             h = st.get("href") or ""
@@ -27182,7 +28722,7 @@ def api_portal_onboarding_accelerator(token):
             return jsonify({"error": "not found"}), 404
         email = (portal.get("email") or "").strip().lower()
         _cf.set_fact(cx, email, fact_key, bool(body.get("value")))
-        status = _ob.build_status(cx, email)
+        status = _ob.build_status(cx, email, _portal_photo_identity(portal))
     return jsonify({"ok": True, "status": status})
 
 
@@ -27678,14 +29218,14 @@ def api_portal_photo_framing(token):
         portal = _portal_record_for(cx, token)
         email = (portal.get("email") or "").strip().lower() if portal else ""
         client_id = _portal_photo_identity(portal)
-        rec = (_cph.get_for_client(cx, client_id) if client_id else
-               (_cph.get(cx, email) if email else None))
+        rec = _cph.for_client_surface(cx, email, client_id)
         if not rec:
             return jsonify({"ok": False, "error": "not found"}), 404
+        own_row = bool(client_id and _cph.get_for_client(cx, client_id))
         if request.method == "POST":
             data = request.get_json(silent=True) or {}
             try:
-                if client_id:
+                if own_row:
                     _cph.set_framing_for_client(cx, client_id, data.get("focus_x", 50),
                                                 data.get("focus_y", 42), data.get("zoom", 1))
                 else:
@@ -27693,7 +29233,7 @@ def api_portal_photo_framing(token):
                                      data.get("focus_y", 42), data.get("zoom", 1))
             except (TypeError, ValueError):
                 return jsonify({"ok": False, "error": "invalid framing"}), 400
-            rec = (_cph.get_for_client(cx, client_id) if client_id else _cph.get(cx, email))
+            rec = _cph.for_client_surface(cx, email, client_id)
     return jsonify({"ok": True, "focus_x": rec["focus_x"],
                     "focus_y": rec["focus_y"], "zoom": rec["zoom"]})
 
@@ -27709,9 +29249,7 @@ def api_portal_photo_serve(token):
             _cp.init_client_portal_table(cx)
             portal = _portal_record_for(cx, token)
             email = (portal.get("email") or "").strip().lower() if portal else ""
-            client_id = _portal_photo_identity(portal)
-            rec = (_cph.get_for_client(cx, client_id) if client_id else
-                   (_cph.get(cx, email) if email else None))
+            rec = _cph.for_client_surface(cx, email, _portal_photo_identity(portal))
     if not rec:
         return Response("", status=404)
     resp = Response(rec["blob"], mimetype=rec["content_type"])
@@ -27788,7 +29326,9 @@ def api_portal_bodymap_photo_serve(token):
         email = (portal.get("email") or "").strip().lower() if portal else ""
         rec = _bmp.get(cx, email, system, side) if email else None
         if not rec and system == "face" and email:
-            rec = _cph.get(cx, email)   # {blob, content_type} identity-portrait fallback
+            # Identity-portrait fallback: this person's own photo only, never an
+            # email-keyed one a family member may have supplied (2026-10-09).
+            rec = _cph.for_client_surface(cx, email, _portal_photo_identity(portal))
     if not rec:
         return Response("", status=404)
     return _serve_bodymap_photo(rec)
@@ -28637,8 +30177,9 @@ def _portal_bodymap_data(cx, email, content, system="face"):
         rec = _bmp.get(cx, email, system, slot_side)   # photo bytes present?
         if rec:
             out["has_photo"] = True
-        elif system == "face" and _cph.has(cx, email):
-            out["has_photo"] = True            # client_photos portrait fallback
+        elif system == "face" and _cph.for_client_surface(
+                cx, email, str((content or {}).get("client_id") or "").strip()):
+            out["has_photo"] = True            # this person's own portrait (fallback)
     except Exception:
         pass
     findings_out, lit, seen = [], [], set()
@@ -28994,7 +30535,7 @@ def api_portal_order_catalog(token):
     for product in _catalog_products():
         slug = (product.get("slug") or "").strip().lower()
         name = (product.get("name") or slug).strip()
-        if (not slug or product.get("inactive") or product.get("info_only")
+        if (not slug or not _is_orderable(slug, product)
                 or query not in f"{name} {slug}".lower()):
             continue
         _lines, items_rec, _subtotal = _portal_priced_lines(
@@ -29035,8 +30576,8 @@ def _portal_open_cart(cx, portal, *, seed=True):
         pass
     for item in curated:
         slug = (item.get("slug") or "").strip().lower() if isinstance(item, dict) else ""
-        if not slug or not _get_product(slug):
-            continue
+        if not slug or not _get_product(slug) or _waitlist_block(slug):
+            continue  # a not-ready recommendation is never seeded into the cart (2026-10-09)
         already = cx.execute(
             "SELECT 1 FROM portal_cart_seeded WHERE email=? AND slug=?", (email, slug)
         ).fetchone()
@@ -29085,8 +30626,8 @@ def _portal_cart_payload(cx, cart_token, portal):
     for item in raw_items:
         priced_item = dict(item)
         curated = curated_by_slug.get(item["slug"]) or {}
-        if curated.get("price_cents") is not None:
-            priced_item["price_cents"] = curated["price_cents"]
+        if _curated_unit_cents(curated) is not None:
+            priced_item["price_cents"] = _curated_unit_cents(curated)
         price_input.append(priced_item)
     _lines, priced, _subtotal = _portal_priced_lines(price_input, email=email)
     priced_by_slug = {item["slug"]: item for item in priced}
@@ -29191,8 +30732,9 @@ def api_portal_cart_set_format(token):
     if to_fmt not in {"bottle", "refill"}:
         return jsonify({"error": "Choose bottle or cellophane refill pack."}), 400
     product = _get_product(slug)
-    if not product or product.get("inactive") or product.get("info_only"):
-        return jsonify({"error": "Product is not available."}), 400
+    if not product or not _is_orderable(product.get("slug") or slug, product):
+        return jsonify({"error": _waitlist_refusal(slug) or "Product is not available.",
+                        **_wl_fields(_waitlist_refusal(slug))}), 400
     if to_fmt == "refill" and not _capsule_formats_ok(product):
         return jsonify({"error": "This product is available in a bottle only."}), 400
     with db.connect(LOG_DB) as cx:
@@ -29212,8 +30754,9 @@ def api_portal_cart_set_format_quantities(token):
     data = request.get_json(silent=True) or {}
     slug = (data.get("slug") or "").strip().lower()
     product = _get_product(slug)
-    if not product or product.get("inactive") or product.get("info_only"):
-        return jsonify({"error": "Product is not available."}), 400
+    if not product or not _is_orderable(product.get("slug") or slug, product):
+        return jsonify({"error": _waitlist_refusal(slug) or "Product is not available.",
+                        **_wl_fields(_waitlist_refusal(slug))}), 400
     if not _capsule_formats_ok(product):
         return jsonify({"error": "This product is available in a bottle only."}), 400
     try:
@@ -29257,8 +30800,10 @@ def api_portal_order_add(token):
         return jsonify({"error": "not found"}), 404
     email = (portal.get("email") or "").strip().lower()
     product = _get_product(slug)
-    if not product or product.get("inactive") or product.get("info_only"):
-        return jsonify({"error": "That remedy is not available."}), 400
+    if not product or not _is_orderable(product.get("slug") or slug, product):
+        return jsonify({"error": _waitlist_refusal(slug)
+                        or "That remedy is not available.",
+                        **_wl_fields(_waitlist_refusal(slug))}), 400
     explicit_format = "format" in body and body.get("format") not in (None, "")
     fmt = (body.get("format") or "").strip().lower()
     if not explicit_format and cello_default and _capsule_formats_ok(product):
@@ -29657,10 +31202,14 @@ def api_portal_ff_add_to_invoice(token):
         _cp_init.init_table(cx)
         items = []
         for it in draft["items"]:
+            if _waitlist_block(it.get("slug") or ""):
+                continue  # not ready to order: listed on the page, never invoiced (2026-10-09)
             unit = _ff_line_cents(cx, email, it.get("slug") or "")
             items.append({"slug": it.get("slug") or "", "name": it.get("name") or "",
                           "qty": 1, "unit_cents": unit, "line_cents": unit,
                           "source": "scan"})
+        if not items:
+            return jsonify({"error": "nothing ready to order yet"}), 409
         total = sum(i["line_cents"] for i in items)
         _bos_orders.upsert_order(
             cx, source="in-house", external_ref=ext, status="proposed",
@@ -30548,10 +32097,14 @@ def api_portal_support_program_add_to_invoice(token):
         items = []
         for it in raw_items:  # PRIMARY items only -- alts are either/or, not auto-added
             slug = (it.get("slug") or "").strip()
+            if _waitlist_block(slug):
+                continue  # not ready to order: listed on the page, never invoiced (2026-10-09)
             unit = _ff_line_cents(cx, email, slug)
             items.append({"slug": slug, "name": it.get("name") or slug,
                           "qty": 1, "unit_cents": unit, "line_cents": unit,
                           "source": "intake"})
+        if not items:
+            return jsonify({"error": "nothing ready to order yet"}), 409
         total = sum(i["line_cents"] for i in items)
         _bos_orders.upsert_order(
             cx, source="in-house", external_ref=ext, status="proposed",
@@ -31051,7 +32604,7 @@ def api_portal_chat(token):
             from dashboard.chat_cart import explicit_cart_items as _chat_cart_items
             chat_catalog = []
             for product_slug, product in (_PRODUCTS.get("products") or {}).items():
-                if product.get("info_only") or product.get("inactive"):
+                if not _is_orderable(product_slug, product):
                     continue
                 chat_catalog.append({
                     "slug": product_slug,
@@ -31123,7 +32676,8 @@ def api_portal_chat(token):
             continue  # Anthropic rejects empty content strings
         r = "user" if m.get("role") == "user" else "assistant"
         messages.append({"role": r, "content": c[:2000]})
-    user_block = (f"CONTEXT:\n{context_str}\n\n" if context_str else "") + query
+    user_block = ((f"CONTEXT:\n{context_str}\n\n" if context_str else "") + query
+                  + _approved_wording_reminder(context_str))
     messages.append({"role": "user", "content": user_block})
 
     def generate():
@@ -31725,7 +33279,7 @@ def api_client_portal_product_search(token):
         if raw.get("inactive") or raw.get("info_only"):
             continue
         p = _get_product(slug)
-        if not p or p.get("inactive") or p.get("info_only"):
+        if not p or not _is_orderable(p.get("slug") or slug, p):
             continue
         name = (p.get("name") or slug).strip()
         ingredients = p.get("ingredients") or []
@@ -31816,6 +33370,10 @@ def api_client_portal_checkout(token):
     posted = body.get("items")
     if posted is None and (body.get("slug") or "").strip():
         posted = [{"slug": body.get("slug"), "qty": body.get("qty", 1)}]
+    # Lines not ready to order that came from this client's curated list or an accepted
+    # recommendation are skipped and named back, never blocking the order (review
+    # rounds 1 and 3, 2026-10-09). The portal's own button posts those rows.
+    not_ready = []
     if posted:
         if not isinstance(posted, list) or not posted:
             return jsonify({"error": "Invalid items."}), 400
@@ -31825,9 +33383,11 @@ def api_client_portal_checkout(token):
         # slugs into the entitled set so a never-before-purchased recommended remedy
         # (e.g. its own per-row "Reorder" button) is purchasable. Only accepted-rec
         # slugs are added; general entitlement is NOT broadened.
+        _rec_slugs = set()
         try:
             with db.connect(LOG_DB) as _rcx:
-                entitled = entitled | _accepted_recommendation_slugs(_rcx, email)
+                _rec_slugs = set(_accepted_recommendation_slugs(_rcx, email))
+                entitled = entitled | _rec_slugs
         except Exception:
             pass  # entitlement-union failure must never break checkout
         # The practitioner-curated list displayed in this portal is also an
@@ -31840,6 +33400,7 @@ def api_client_portal_checkout(token):
         }
         entitled |= {(it.get("slug") or "").strip().lower()
                      for it in curated if isinstance(it, dict) and it.get("slug")}
+        _from_lists = set(curated_by_slug) | {(x or "").strip().lower() for x in _rec_slugs}
         # The customer's own saved-and-chosen wishlist item is authorization to
         # buy it, same as an accepted recommendation. This read is unconditional:
         # the order-review add control uses the same private store even when the
@@ -31858,8 +33419,14 @@ def api_client_portal_checkout(token):
             slug = (it.get("slug") or "").strip().lower()
             product = _get_product(slug) if slug else None
             item_name = ((product or {}).get("name") or slug or "That item").strip()
-            if (not slug or not product or product.get("inactive")
-                    or product.get("info_only")):
+            if slug and product and _waitlist_refusal(slug):
+                if slug in _from_lists:
+                    _keep, _nr = _split_not_ready([{"slug": slug}])
+                    not_ready += [n for n in _nr if n not in not_ready]
+                    continue
+                return jsonify({"error": _waitlist_refusal(slug),
+                                **_wl_fields(_waitlist_refusal(slug))}), 400
+            if not slug or not product or not _is_orderable(product.get("slug") or slug, product):
                 return jsonify({"error": f"{item_name} isn't available to order."}), 400
             if not catalog_order and slug not in entitled:
                 return jsonify({"error": f"{item_name} isn't available to order."}), 400
@@ -31872,8 +33439,8 @@ def api_client_portal_checkout(token):
             # price all the way into Stripe Checkout.
             priced_item = {"slug": slug, "qty": qty}
             curated_item = curated_by_slug.get(slug) or {}
-            if curated_item.get("price_cents") is not None:
-                priced_item["price_cents"] = curated_item["price_cents"]
+            if _curated_unit_cents(curated_item) is not None:
+                priced_item["price_cents"] = _curated_unit_cents(curated_item)
             items.append(priced_item)
     else:
         # No body = the "Order my remedies" button. Charge the SAME merged set the
@@ -31886,9 +33453,15 @@ def api_client_portal_checkout(token):
                 items = _merge_accepted_recommendation_items(_rcx, email, base_items)
         except Exception:
             items = base_items  # merge failure must never break checkout
+    # Curated and recommended lines that are not ready to order are skipped, never
+    # block the rest, and are named back with their page (review round 1, 2026-10-09).
+    # A posted line the client chose themselves was refused above.
+    if posted is None:
+        items, not_ready = _split_not_ready(items)
     lines, items_rec, subtotal_cents = _portal_priced_lines(items, email=email)
     if not lines:
-        return jsonify({"error": "Your remedies are no longer available — please reach out and we'll help."}), 400
+        return jsonify({"error": "Your remedies are no longer available — please reach out and we'll help.",
+                        "not_ready": not_ready}), 400
     if method == "card" and not _STRIPE_ACTIVE:
         return jsonify({"error": "Card checkout is temporarily unavailable. Please reach out and we'll help."}), 503
     try:
@@ -31925,12 +33498,14 @@ def api_client_portal_checkout(token):
                "cancel_url": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
                "return_to": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
                "stripe_line_items": stripe_line_items}
-        def persist_portal_order():
+        def persist_portal_order(pay_method=None):
+            # pay_method="zelle" keeps an unpaid Zelle order out of the 24-hour
+            # abandoned-checkout expiry: the customer pays from their bank later.
             oid = _ingest_order(
                 source="portal-reorder", external_ref=checkout_ref, email=email,
                 name=ship.get("name", ""), items=items_rec,
                 total_cents=order_total_cents, shipping_cents=shipping_cents,
-                address=ship, channel="retail")
+                address=ship, channel="retail", pay_method=pay_method)
             try:
                 with db.connect(LOG_DB) as _lcx:
                     _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
@@ -31938,10 +33513,11 @@ def api_client_portal_checkout(token):
                 print(f"[portal-reorder] persist qbo_lines failed: {_e!r}", flush=True)
             return oid
         if method == "zelle":
-            order_id = persist_portal_order()
+            order_id = persist_portal_order(pay_method="zelle")
             zelle = _ALT_PAY["zelle"]
             return jsonify({"ok": True, "method": "zelle", "order_ref": checkout_ref,
-                            "order_id": order_id,
+                            "order_id": order_id, "not_ready": not_ready,
+                            "order_notes": _order_notes_for(items_rec),
                             "total_cents": order_total_cents,
                             "shipping_cents": shipping_cents, "pay_instructions": {
                                 "label": zelle["label"], "to": zelle["to"],
@@ -31951,8 +33527,10 @@ def api_client_portal_checkout(token):
         stripe_url = _stripe_checkout_url_for_reorder(out, email)
         if not stripe_url:
             return jsonify({"error": _CARD_UNAVAILABLE}), 502
-        order_id = persist_portal_order()
-        return jsonify({"ok": True, "stripe_url": stripe_url,
+        # "" clears a 'zelle' mark left by an earlier Zelle try under the same
+        # request id, so an abandoned card checkout still expires.
+        order_id = persist_portal_order(pay_method="")
+        return jsonify({"ok": True, "stripe_url": stripe_url, "not_ready": not_ready,
                         "order_id": order_id, "order_ref": checkout_ref})
     except Exception as e:
         app.logger.exception("portal checkout failed")
@@ -34463,7 +36041,8 @@ def intake_form():
         _intake.seed_suggestions(cx, supplements=remedy_names)
         cx.commit()
         suggestions = _intake.list_suggestions(cx)
-    return jsonify({**_intake.INTAKE_FORM, "suggestions": suggestions})
+    from dashboard.diet_guidance import form_with_guidance
+    return jsonify({**form_with_guidance(_intake.INTAKE_FORM), "suggestions": suggestions})
 
 
 @app.route("/api/intake/state")
@@ -34674,7 +36253,9 @@ def intake_public_form():
             if not submitted:
                 row = _intake.get_response(cx, email)
                 answers = (row["answers"] if row else {}) or {}
-    return jsonify({"form": _intake.INTAKE_FORM, "answers": answers, "submitted": submitted})
+    from dashboard.diet_guidance import form_with_guidance
+    return jsonify({"form": form_with_guidance(_intake.INTAKE_FORM), "answers": answers,
+                    "submitted": submitted})
 
 
 @app.route("/api/intake/public/save-draft", methods=["POST"])
@@ -35107,7 +36688,8 @@ def api_console_client_photo():
         if client_id:
             _cph.put_for_client(cx, client_id, email, blob,
                                 (body.get("content_type") or "image/jpeg"),
-                                source=(body.get("source") or "console"))
+                                source=(body.get("source") or "console"),
+                                force=bool(body.get("force", True)))
         else:
             _cph.put(cx, email, blob, (body.get("content_type") or "image/jpeg"),
                      source=(body.get("source") or "console"),
@@ -35528,7 +37110,9 @@ def api_console_biofield_catalog():
     items = []
     for p in _bos_products.catalog(with_ingredients_only=False):
         items.append({"slug": p.get("slug"), "name": p.get("name"),
-                      "price_cents": p.get("price_cents")})
+                      "price_cents": p.get("price_cents"),
+                      # The Intake app leaves a not-ready product off its invoice.
+                      "waitlist_only": _waitlist_block(p.get("slug")) is not None})
     return jsonify({"products": items})
 
 
@@ -38208,7 +39792,7 @@ def _cert_data_dir():
 
 
 def _cert_email_from_cookie():
-    return (request.cookies.get("rm_cert_email", "") or "").strip().lower()
+    return (_email_from_cookie("rm_cert_email") or "").strip().lower()
 
 
 @app.route("/cert")
@@ -38545,7 +40129,7 @@ def _biofield_data_dir():
 def _biofield_email():
     """Resolve the gate's email from the biofield magic-link cookie, falling
     back to an authenticated member session if one exists."""
-    em = (request.cookies.get("rm_biofield_email", "") or "").strip().lower()
+    em = (_email_from_cookie("rm_biofield_email") or "").strip().lower()
     if em:
         return em
     user = get_authenticated_user(request)
@@ -38836,7 +40420,7 @@ def member_scan_analysis_page():
     upsell. Viewer email comes from the rm_member_email cookie (coaching magic-link).
     Withheld sections are emptied server-side (never serialized) — no client bypass."""
     from dashboard import scan_analysis as _sa, scan_analysis_view as _sav
-    email = (request.cookies.get("rm_member_email", "") or "").strip().lower()
+    email = (_email_from_cookie("rm_member_email") or "").strip().lower()
     is_paid = bool(_active_membership_for_email(email)) if email else False
     has_tos = is_member(email=email) if email else False
     tier = _sav.resolve_tier(is_paid=is_paid, has_tos=has_tos)
@@ -38886,7 +40470,7 @@ def member_scan_analysis_chat():
     if not q:
         return jsonify({"error": "query required"}), 400
 
-    email = (request.cookies.get("rm_member_email", "") or "").strip().lower()
+    email = (_email_from_cookie("rm_member_email") or "").strip().lower()
     is_paid = bool(_active_membership_for_email(email)) if email else False
     has_tos = is_member(email=email) if email else False
     tier = _sav.resolve_tier(is_paid=is_paid, has_tos=has_tos)
@@ -39767,6 +41351,15 @@ def api_console_dropship_reissue():
         return jsonify({"error": "practitioner_id and order_ids are required"}), 400
 
     from dashboard import stripe_pay as _sp
+    # Refuse the whole reissue, before any order is touched, if one holds a product
+    # that is not ready to order (waitlist_only, 2026-10-09).
+    for oid in order_ids:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = _sqlite3.Row
+            _pre = _bos_orders.get_order(cx, oid) or {}
+        _wl = _cart_waitlist_refusal(_pre.get("items") or [])
+        if _wl:
+            return jsonify({"error": f"order #{oid}: {_wl}", **_wl_fields(_wl)}), 400
     replacements = []
     for oid in order_ids:
         with db.connect(LOG_DB) as cx:
@@ -39863,6 +41456,9 @@ def api_console_dropship_create():
             return jsonify({"ok": False, "error": f"invalid quantity for {slug}"}), 400
         if not slug or not _get_product(slug):
             return jsonify({"ok": False, "error": f"unknown product: {slug}"}), 400
+        _wl = _waitlist_refusal(slug)
+        if _wl:
+            return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
         items.append({"slug": slug, "qty": qty})
     if not items:
         return jsonify({"ok": False, "error": "items are required"}), 400
@@ -39872,7 +41468,7 @@ def api_console_dropship_create():
             items, practitioner, patient_ship=ship, method="card",
             shipping_cents=shipping_cents)
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     if not out.get("ok"):
         return jsonify(out), 422
     stripe_url = _stripe_checkout_url_for_order(out, practitioner["email"], "")
@@ -40289,7 +41885,10 @@ def api_points_balance():
     with db.connect(LOG_DB) as cx:
         _points.init_points_table(cx)
         bal = _points.balance(cx, email)
-    return jsonify({"balance_cents": bal, "balance_dollars": f"{bal/100:.2f}"})
+    # product_cents: what may go on products (referral and other non-purchase points,
+    # less holds); own-purchase points are for services only (Glen, 2026-10-10/11).
+    return jsonify({"balance_cents": bal, "balance_dollars": f"{bal/100:.2f}",
+                    "product_cents": _product_usable_points_cents(email)})
 
 
 def _resolve_ship_address(email, body_address):
@@ -40327,21 +41926,27 @@ def _resolve_ship_address(email, body_address):
 
 
 def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code=None,
-                   cancel_to_cart=False):
+                   cancel_to_cart=False, method="card", checkout_ref=None):
     """Price a cart through the engine, ingest the order (paid-only: no QBO invoice/customer
     at checkout time), and mint the Stripe URL (metadata kind=reorder -> recorded by
     /begin/checkout-return, which books the line-faithful QBO Sales Receipt on payment).
     Returns {out, stripe_url}. Raises CheckoutError for a pricing problem or an empty
-    priced cart."""
+    priced cart.
+
+    method="zelle" (the /begin store cart, Glen 2026-10-10: "fix the /begin store cart to
+    accept Zelle") mints no Stripe session. It records the order unpaid with
+    pay_method='zelle', which keeps it out of the 24-hour abandoned-checkout expiry, and
+    returns zelle=True with the order id. Payment is matched later by the Zelle import or
+    by hand, and the order settles then. A cart that owes nothing takes the card path.
+    checkout_ref, when given, is the caller's own order key (the cart page's request id,
+    so it can find a Zelle order whose reply never arrived)."""
     requested_redeem = int(points_to_redeem_cents or 0)
     if requested_redeem > 0:
-        from dashboard import points as _pts_co
-        with db.connect(LOG_DB) as _cx_pts:
-            _pts_co.init_points_table(_cx_pts)
-            _bal = _pts_co.balance(_cx_pts, email)
-        requested_redeem = min(requested_redeem, _bal)
+        requested_redeem = max(0, min(requested_redeem, _available_points_cents(email)))
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(referral_code, email)
     pc = _price_cart(cart, ship=ship, coupon_pct=_ref_pct, points_to_redeem_cents=requested_redeem,
+                     product_points_cents=(min(requested_redeem, _product_usable_points_cents(email))
+                                           if requested_redeem > 0 else 0),
                      program_member=_mix_match_member(email), email=email)
     if not pc["qbo_lines"]:
         raise CheckoutError("Your cart is empty or those items are no longer available.")
@@ -40349,7 +41954,7 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
     # customer's ship_credit balance (bounded by net product + shipping) into the
     # invoice discount; the ledger is debited at payment settle.
     _sc_apply = _plan_ship_credit(email, int(pc["priced"]["subtotal_cents"]) + int(pc["shipping_cents"]))
-    checkout_ref = _uuid.uuid4().hex   # stable order/correlation key (no QBO invoice yet)
+    checkout_ref = checkout_ref or _uuid.uuid4().hex   # stable order key (no QBO invoice yet)
     qbo_payload = {
         "lines": pc["qbo_lines"] + _shipping_line(pc["shipping_cents"]),
         "discount_cents": pc["discount_cents"] + pc["points_redeemed_cents"] + _sc_apply,
@@ -40368,15 +41973,17 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
         # The storefront cart's own cancel return, so a buyer who backs out at Stripe
         # gets their cart back instead of a sign-in page (see begin_cart_cancelled).
         out["cancel_url"] = f"{PUBLIC_BASE_URL}/begin/cart/cancelled?ref={checkout_ref}"
-    stripe_url = _stripe_checkout_url_for_reorder(out, email) if _STRIPE_ACTIVE else ""
     no_payment_required = (_charge_cents == 0)
-    if not stripe_url and not no_payment_required:
+    zelle = (method == "zelle" and not no_payment_required)
+    stripe_url = (_stripe_checkout_url_for_reorder(out, email)
+                  if _STRIPE_ACTIVE and not zelle else "")
+    if not stripe_url and not no_payment_required and not zelle:
         return {"out": out, "stripe_url": ""}
 
     # Persistence intentionally follows successful Stripe-session creation.  A
     # transient Stripe failure therefore leaves neither an unpaid order nor a
     # consumed referral behind.
-    _ingest_order(source="reorder", external_ref=checkout_ref, email=email,
+    order_id = _ingest_order(source="reorder", external_ref=checkout_ref, email=email,
                   name=ship.get("name", ""), items=pc["items_rec"],
                   total_cents=_charge_cents,
                   address=ship, channel="retail",
@@ -40385,7 +41992,15 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
                   points_redeemed_cents=pc["points_redeemed_cents"],
                   shipping_cents=pc["shipping_cents"],
                   ship_credit_applied_cents=_sc_apply,
-                  paid_cents=(0 if no_payment_required else None))
+                  paid_cents=(0 if no_payment_required else None),
+                  pay_method=("zelle" if zelle else None),
+                  settle_credits_on_paid=no_payment_required)
+    if zelle and not order_id:
+        # Nothing was recorded, so nothing else is: no QBO lines, no referral redemption
+        # held by an order that does not exist (review round 1).
+        return {"out": out, "stripe_url": "", "no_payment_required": False,
+                "zelle": True, "order_id": None, "charge_cents": _charge_cents,
+                "shipping_cents": int(pc["shipping_cents"])}
     try:
         with db.connect(LOG_DB) as _lcx:
             _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
@@ -40393,7 +42008,9 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
         print(f"[reorder] persist qbo_lines failed: {_e!r}", flush=True)
     _record_referral_if_any(_ref_ctx, email, checkout_ref)
     return {"out": out, "stripe_url": stripe_url,
-            "no_payment_required": no_payment_required}
+            "no_payment_required": no_payment_required,
+            "zelle": zelle, "order_id": order_id, "charge_cents": _charge_cents,
+            "shipping_cents": int(pc["shipping_cents"])}
 
 
 @app.route("/reorder/checkout", methods=["POST"])
@@ -40423,7 +42040,7 @@ def reorder_checkout():
                                  points_to_redeem_cents=requested_redeem,
                                  referral_code=referral_code)
         except CheckoutError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         out, stripe_url = res["out"], res["stripe_url"]
         if not stripe_url and not res.get("no_payment_required"):
             return jsonify({"ok": False, "error": _CARD_UNAVAILABLE}), 503
@@ -40444,7 +42061,14 @@ _WAITLIST_EMAIL = re.compile(r"[a-z0-9.!#$%&*+/=?^_`{|}~'-]+@[a-z0-9-]+(\.[a-z0-
 
 
 def _waitlist_open(slug):
-    """A waiting list shows only while that product's founding presale runs (round 1)."""
+    """A waiting list is open while that product's founding presale runs (round 1), or
+    while the product is waitlist_only (Scar Soft Drink, 2026-10-09). The second does not
+    depend on the founding flag."""
+    from dashboard import product_waitlist as _pwo
+    if slug not in _pwo.LISTS:
+        return False
+    if ((_PRODUCTS.get("products") or {}).get(slug) or {}).get("waitlist_only"):
+        return True
     try:
         from dashboard import founding as _fd
         return _founding_enabled() and bool(_fd.get_launch(slug))
@@ -40454,8 +42078,8 @@ def _waitlist_open(slug):
 
 @app.route("/api/waitlist/<slug>", methods=["POST"])
 def product_waitlist_sign_up(slug):
-    """A free waiting-list sign-up (Retina Renew, 2026-09-28): email and an optional first
-    name, no card. Kept in house first, then mirrored to GoHighLevel (product_waitlist).
+    """A free waiting-list sign-up (Retina Renew 2026-09-28, Scar Soft Drink 2026-10-09):
+    email and an optional first name, no card. Kept in house first, then mirrored to GoHighLevel (product_waitlist).
     A filled hidden field is a bot and is dropped quietly; each visitor is rate limited.
     The answer never says whether an email was already on the list."""
     from dashboard import product_waitlist as _pw
@@ -40483,32 +42107,42 @@ def product_waitlist_sign_up(slug):
     if token:
         # To the address typed, which is what the click proves (Glen, 2026-09-29).
         try:
-            _inbox.send_email(email, "Confirm your Retina Renew launch email",
-                              _waitlist_confirm_body(first, token))
+            _inbox.send_email(email, _pw.TEXTS[slug]["subject"],
+                              _waitlist_confirm_body(first, token, slug))
         except Exception as e:  # noqa: BLE001 - the sign-up stands; they can sign up again
             print(f"[waitlist] confirmation send failed: {type(e).__name__}", flush=True)
     return jsonify({"ok": True})
 
 
-def _waitlist_confirm_body(first_name, token):
-    """Glen's approved confirmation email, 2026-09-29."""
+def _waitlist_confirm_body(first_name, token, slug="neuro-magnesium"):
+    """Glen's approved confirmation email, 2026-09-29: each list's own lead line, then the
+    link, then Retina Renew's closing lines unchanged (2026-10-09)."""
+    from dashboard import product_waitlist as _pwb
     link = f"{PUBLIC_BASE_URL.rstrip('/')}/begin/waitlist/confirm/{token}"
     greet = f"Hi {first_name}," if first_name else "Hi,"
-    return (f"{greet}\n\nPlease confirm you'd like an email when Retina Renew launches:\n{link}\n\n"
+    return (f"{greet}\n\n{_pwb.TEXTS[slug]['body_lead']}\n{link}\n\n"
             "If you didn't ask for this, ignore this email and nothing more will be sent.\n\n"
             "Dr. Glen Swartwout\n")
 
 
-_WAITLIST_CONFIRM_PAGE = """<!DOCTYPE html>
+_WAITLIST_PAGE_HEAD = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow"><title>Confirm your Retina Renew launch email</title>
+<meta name="robots" content="noindex, nofollow"><title>{title}</title>
 <style>body{{font-family:system-ui,-apple-system,sans-serif;display:flex;min-height:100vh;align-items:center;
 justify-content:center;margin:0;padding:16px;background:#f7f7f5;color:#1d2b22}}main{{text-align:center;max-width:28rem}}
 h1{{font-size:1.4rem;margin:0 0 1.2rem}}button{{font:inherit;font-weight:600;padding:12px 28px;border:0;
 border-radius:10px;background:#1f5c3d;color:#fff;cursor:pointer}}</style></head>
-<body><main><h1>Confirm your Retina Renew launch email</h1>
-<form method="post" action="/begin/waitlist/confirm/{token}"><button type="submit">Confirm</button></form>
+<body><main><h1>{title}</h1>
+{action}
 </main></body></html>"""
+# The confirmation page names the token's own list (2026-10-09).
+_WAITLIST_CONFIRM_PAGE = _WAITLIST_PAGE_HEAD.replace("{action}", (
+    '<form method="post" action="/begin/waitlist/confirm/{token}">'
+    '<button type="submit">Confirm</button></form>'))
+# An unknown or expired token names no product and points to the store home.
+_WAITLIST_EXPIRED_PAGE = _WAITLIST_PAGE_HEAD.format(
+    title="That link has expired or is not valid",
+    action='<p><a href="/">Go to the store</a></p>')
 
 
 @app.route("/begin/waitlist/confirm/<token>", methods=["GET", "HEAD", "POST"])
@@ -40518,17 +42152,29 @@ def product_waitlist_confirm(token):
     POSTs: that confirms the sign-up (tag in house, one GHL tag_add) and returns to the
     product page, which says so."""
     from dashboard import product_waitlist as _pw
-    if request.method != "POST":
-        safe = "".join(ch for ch in (token or "") if ch.isalnum() or ch in "-_")[:64]
-        resp = Response(_WAITLIST_CONFIRM_PAGE.format(token=safe),
-                        mimetype="text/html")
+
+    def _page(html):
+        resp = Response(html, mimetype="text/html")
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["Referrer-Policy"] = "no-referrer"
         return resp
+
+    if request.method != "POST":
+        safe = "".join(ch for ch in (token or "") if ch.isalnum() or ch in "-_")[:64]
+        with db.connect(LOG_DB) as cx:
+            slug, state = _pw.token_status(cx, safe)
+        if not slug:
+            return _page(_WAITLIST_EXPIRED_PAGE)
+        if state == "confirmed":
+            return redirect(f"/begin/product/{slug}?waitlist=confirmed", 303)
+        return _page(_WAITLIST_CONFIRM_PAGE.format(
+            token=safe, title=html.escape(_pw.TEXTS[slug]["page_title"])))
     with _db_lock, db.connect(LOG_DB) as cx:
         slug = _pw.confirm(cx, token)
-    target = slug or next(iter(_pw.LISTS))
-    return redirect(f"/begin/product/{target}?waitlist={'confirmed' if slug else 'expired'}", 303)
+    if not slug:
+        # No longer sent to the first list's page (2026-10-09): name no product.
+        return _page(_WAITLIST_EXPIRED_PAGE)
+    return redirect(f"/begin/product/{slug}?waitlist=confirmed", 303)
 
 
 @app.route("/begin/founding/reserve", methods=["POST"])
@@ -40608,8 +42254,9 @@ def _ship_founding_reservation(cx, sub):
     from dashboard import qbo_sale as _qsale
     items = sub.get("items") or []
     ship = sub.get("ship_address") or {}
+    # A founder is priced as a member: the membership starts with this shipment.
     pc = _price_cart(items, ship=ship, subscriber_tier_pct=None,
-                     program_member=_is_paid_member(sub["email"]),
+                     program_member=True,
                      email=sub["email"])
     # Charge basis (2026-07-16 design spec): GET is absorbed/recorded, never
     # charged; shipping IS charged. pc["priced"]["total_cents"] = subtotal + GET,
@@ -40628,6 +42275,9 @@ def _ship_founding_reservation(cx, sub):
     today = _now_utc().strftime("%Y-%m-%d")
     _subs.mark_founding_active(cx, sub["id"], next_charge_date=_subs.add_months(today, 1))
     external_ref = res.get("id") or ""
+    # Before the order row: coaching on delivery checks that a membership covered
+    # the order's creation time, so the grant must already exist.
+    _start_founding_membership_on_ship(cx, sub, external_ref)
     try:
         _ingest_order(
             source="reorder",  # "reorder" is in coaching.QUALIFYING_SOURCES → delivery opens coaching window
@@ -40658,6 +42308,105 @@ def _ship_founding_reservation(cx, sub):
     except Exception as e:
         print(f"[founding-ship] qbo sale booking failed sub={sub['id']}: {e!r}")
     return {"charged": True, "sub_id": sub["id"], "amount_cents": charge_cents}
+
+
+def _start_founding_membership_on_ship(cx, sub, order_ref):
+    """Open the founder's membership when the bottle ships (Glen, 2026-10-14).
+
+    It runs 30 days from today for now. Delivery moves the end to 30 days after
+    delivery, through _extend_founding_membership_on_delivery. If no delivery is
+    ever recorded, it ends 30 days after shipment.
+
+    Best-effort. The card has already been charged, so nothing here may raise.
+    Each step commits on its own, so one failure cannot take another with it,
+    and a failed statement on Postgres is rolled back before the next step:
+      1. Commit what the ship path wrote. The charge happened, so it must stand.
+      2. Record the order. Delivery uses it to set the end, even if 3 fails.
+         An order already recorded means this ran before, so nothing is granted.
+      3. Grant 30 days."""
+    from dashboard import founding as _founding
+    from dashboard import customers as _customers
+    email = (sub.get("email") or "").strip().lower()
+
+    def _step(label, fn):
+        try:
+            out = fn()
+            cx.commit()
+            return out
+        except Exception as e:
+            print(f"[founding-ship] {label} failed sub={sub.get('id')}: {e!r}", flush=True)
+            try:
+                cx.rollback()
+            except Exception:
+                pass
+            return None
+
+    _step("commit", lambda: None)
+    if order_ref:
+        recorded = _step("record order", lambda: _founding.record_ship(
+            cx, order_ref=order_ref, sub_id=sub["id"], email=email,
+            shipped_at=datetime.utcnow().isoformat() + "Z"))
+        if recorded is False:
+            return
+    _step("people upsert", lambda: _customers.find_or_create_by_email(cx, email=email))
+    _step("membership grant", lambda: _grant_membership(
+        cx, email, _founding.MEMBERSHIP_DAYS_AFTER_DELIVERY, "founding",
+        skip_customer_upsert=True))
+
+
+def _founding_delivery_time(delivered_at):
+    """A delivery time as naive UTC, or now when it cannot be read."""
+    try:
+        t = datetime.fromisoformat(str(delivered_at).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.utcnow()
+    if t.tzinfo is not None:
+        t = t.astimezone(timezone.utc).replace(tzinfo=None)
+    return t
+
+
+def _extend_founding_membership_on_delivery(cx, delivered_order, delivered_at):
+    """End a founder's membership 30 days after the bottle is delivered.
+
+    Only the order the founding ship charge recorded qualifies, and only its first
+    delivery signal counts. It extends and never shortens, so autoship or any
+    other membership keeps whatever reaches further. The time stored is the one
+    used, read as UTC, so the record always matches the end date.
+
+    Best-effort inside a savepoint: a failure here must not block marking a
+    shipment delivered, nor undo the delivery work already done on this connection."""
+    from dashboard import founding as _founding
+    ref = (delivered_order or {}).get("external_ref") or ""
+    if not ref:
+        return "none"
+    start = _founding_delivery_time(delivered_at)
+    try:
+        cx.execute("SAVEPOINT founding_delivery")
+    except Exception as e:
+        print(f"[founding-delivery] savepoint failed ref={ref!r}: {e!r}", flush=True)
+        return "error"
+    try:
+        email = _founding.claim_delivery(cx, ref, start.isoformat() + "Z")
+        if not email and (delivered_order or {}).get("source") == "founding":
+            # The $0 card made at reservation, if fulfilment shipped against it.
+            email = _founding.claim_delivery_by_email(
+                cx, delivered_order.get("email"), start.isoformat() + "Z")
+        if not email:
+            cx.execute("RELEASE SAVEPOINT founding_delivery")
+            return "none"
+        until = (start + timedelta(days=_founding.MEMBERSHIP_DAYS_AFTER_DELIVERY)).isoformat() + "Z"
+        _extend_membership_grant(cx, email, until, "founding")
+        cx.execute("RELEASE SAVEPOINT founding_delivery")
+    except Exception as e:
+        print(f"[founding-delivery] extend failed ref={ref!r}: {e!r}", flush=True)
+        try:
+            cx.execute("ROLLBACK TO SAVEPOINT founding_delivery")
+            cx.execute("RELEASE SAVEPOINT founding_delivery")
+        except Exception:
+            pass
+        return "error"
+    cx.commit()
+    return "extended"
 
 
 @app.route("/api/founding/ship", methods=["POST"])
@@ -40739,7 +42488,7 @@ def reorder_subscribe():
             pc = _price_cart(cart, ship=ship, subscriber_order_count=0, subscriber_active=True,
                              program_member=_mix_match_member(email), email=email)
         except CheckoutError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         if not pc["qbo_lines"]:
             return jsonify({"ok": False,
                             "error": "Your cart is empty or those items are no longer available."}), 400
@@ -42837,6 +44586,59 @@ def _send_kloud_order_instructions(email, first_name, product_names, order_ref):
         print(f"[gk-webhook] Kloud instructions send failed: {e!r}", flush=True)
 
 
+def _order_notes_for(items):
+    """[{name, paras}] for each bought line whose product has an order note, once per
+    product, in order. Shown in its own card under the Zelle instructions, which list
+    no items (Glen, 2026-10-13: "yes. probably in a separate card")."""
+    out, seen = [], set()
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        slug = str(it.get("slug") or "").strip()
+        q = it.get("qty")
+        try:
+            bought = q is None or int(q) > 0
+        except (TypeError, ValueError):
+            bought = False
+        if not slug or slug in seen or not bought:
+            continue
+        note = _order_note_for_slug(slug)
+        if not note:
+            continue
+        seen.add(slug)
+        p = ((_PRODUCTS or {}).get("products", {}) or {}).get(slug) or {}
+        out.append({"name": html.unescape(p.get("name") or it.get("name") or slug).strip(),
+                    "paras": [x.strip() for x in re.split(r"\n\s*\n", note) if x.strip()]})
+    return out
+
+
+def _order_note_for_slug(slug):
+    """A product's approved `order_note` by its catalog slug; "" for a retired record."""
+    p = ((_PRODUCTS or {}).get("products", {}) or {}).get(str(slug or "").strip()) or {}
+    if not p or p.get("inactive"):
+        return ""
+    return str(p.get("order_note") or "").strip()
+
+
+def _order_note_for_name(name):
+    """A product's approved `order_note` for a buyer's order email, found by its exact
+    name or an exact alias of two words or more, never by containment: a loose match
+    would put one product's instruction under another. A one-word alias such as "Sleep"
+    belongs to a different product than its name suggests, as in _resolve_buy_slug. A retired record carries no note. Glen, 2026-10-13:
+    Microbiome's open-capsule note, built per product so the next one needs no code."""
+    nl = html.unescape(str(name or "")).replace("\u2122", "").strip().lower()
+    if not nl:
+        return ""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    slug = next((sl for sl, p in products.items()
+                 if html.unescape(p.get("name") or "").replace("\u2122", "").strip().lower() == nl),
+                None) or (_RESOLVE_NAME_INDEX.get(nl) if " " in nl else None)
+    p = products.get(slug) or {}
+    if not slug or p.get("inactive"):
+        return ""
+    return str(p.get("order_note") or "").strip()
+
+
 def _notify_store_order(payload):
     """Email Glen and Rae that a store order arrived. Never raises.
 
@@ -42859,7 +44661,7 @@ def _notify_store_order(payload):
         try:
             buyer = _gkn.buyer_address(payload)
             if buyer:
-                b_subject, b_body = _gkn.buyer_email(payload)
+                b_subject, b_body = _gkn.buyer_email(payload, note_for=_order_note_for_name)
                 _inbox.send_email(buyer, b_subject, b_body)
             else:
                 print("[gk-notify] no buyer email on this order, none sent", flush=True)
@@ -43871,9 +45673,9 @@ def get_calendar():
     range_name = request.args.get("range")
     anchor = request.args.get("date")
 
-    # Owners by scope: admin (Glen/Rae) sees all three (or an `owners=` subset);
-    # a scoped user (e.g. workspace:shaira) is forced to her own lane.
-    if ctx.get("scope") == "admin":
+    # Owners by scope: an owner (admin, or Rae's workspace:rae) sees all three (or an
+    # `owners=` subset); a scoped VA (workspace:shaira) is forced to her own lane.
+    if _is_owner_scope(ctx.get("scope")):
         req = request.args.get("owners") or request.args.get("owner")
         if req:
             owners = [o.strip().lower() for o in req.split(",")
@@ -47975,7 +49777,23 @@ def _auth(required_scope=None):
 
     if required_scope is None or scope == required_scope or scope == "admin":
         return True, ctx, 200
+    # An owner (Rae) passes any workspace scope, never the literal admin one (round 2).
+    if required_scope != "admin" and _is_owner_scope(scope):
+        return True, ctx, 200
     return False, ctx, 403
+
+
+def _is_owner_scope(scope) -> bool:
+    """True for the admin key and for any scope whose owner rbac makes an OWNER (Rae).
+    Glen, 2026-10-16: "Give Rae access to all pages in the console." These checks
+    compared the scope to "admin" and never asked rbac, so Rae, an owner there, was
+    treated as a scoped VA. A VA scope (Shaira) stays narrowed."""
+    if not scope or scope == "admin":
+        return scope == "admin"
+    owner = _owner_from_scope(scope)
+    # Exactly a named owner: not "owner", not a case or spacing variant (round 1).
+    return (owner in ("glen", "rae")
+            and _bos_rbac.role_for_owner(owner) == _bos_rbac.OWNER)
 
 
 def _owner_from_scope(scope: str):
@@ -47989,7 +49807,7 @@ def _can_access_owner(ctx, owner: str) -> bool:
     """True if ctx (from _auth) is admin or its scope matches `owner`."""
     if not ctx:
         return False
-    if ctx.get("scope") == "admin":
+    if _is_owner_scope(ctx.get("scope")):
         return True
     return _owner_from_scope(ctx.get("scope", "")) == owner
 
@@ -48000,6 +49818,9 @@ def _scoped_owner(ctx, requested_owner: str) -> str:
     their own owner (matches the 'enumerated by token' principle)."""
     if not ctx or ctx.get("scope") == "admin":
         return (requested_owner or "glen").lower()
+    if _is_owner_scope(ctx.get("scope")):
+        # An owner (Rae) may ask for anyone's; with no owner asked, her own.
+        return (requested_owner or _owner_from_scope(ctx["scope"]) or "").lower()
     return _owner_from_scope(ctx["scope"]) or (requested_owner or "").lower()
 
 
@@ -48289,7 +50110,10 @@ def todo_messages_post(todo_id):
         return jsonify({"error":"Empty content"}), 400
 
     # Role-spoofing guard: scoped users may only post as themselves.
-    if ctx.get("scope") != "admin" and role != ctx.get("user_name"):
+    # A sign-in-link session's user_name is "console-owner-<hash>", so its scope's owner
+    # counts as itself too; Rae and Glen were refused every message (review round 1).
+    if (ctx.get("scope") != "admin" and role != ctx.get("user_name")
+            and role != _owner_from_scope(ctx.get("scope", ""))):
         return jsonify({"error":"Forbidden — cannot post as another user"}), 403
 
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -49067,7 +50891,7 @@ def _run_image_tournament():
     now = _dt.datetime.now(_dt.timezone.utc).isoformat()
     for slug in slugs:
         p = _get_product(slug)
-        if not p:
+        if not p or _si.ai_images_off(slug):
             continue
         for kind in _sip.IMAGE_KINDS:
             try:
@@ -53211,7 +55035,7 @@ def admin_escalations_list():
 @app.route("/coaching/escalate", methods=["POST"])
 def coaching_escalate():
     import json as _json, uuid
-    email = request.cookies.get("rm_member_email", "").strip().lower()
+    email = _email_from_cookie("rm_member_email").strip().lower()
     membership = _active_membership_for_email(email) if email else None
     if not membership:
         return jsonify({"error": "membership required"}), 403
@@ -53337,6 +55161,11 @@ def coaching_auth_token(token):
             heading="Welcome back",
             blurb="Continue to open your coaching dashboard.",
             button="Continue")
+    if _email_cookie_serializer("rm_member_email") is None:
+        # No signing key: keep the link usable rather than burn it (see
+        # _magic_link_login_view).
+        return ("Sign-in is unavailable right now. Please try this link again "
+                "shortly."), 503
     # Consume the token
     th = _hash_token(token)
     now_iso = datetime.utcnow().isoformat() + "Z"
@@ -53358,8 +55187,8 @@ def coaching_auth_token(token):
         resp.set_cookie("amg_session", session_id,
                         max_age=60 * 60 * 24 * 365, httponly=True,
                         samesite="Lax", secure=request.is_secure)
-    resp.set_cookie("rm_member_email", email,
-                    max_age=60 * 60 * 24 * 365, httponly=True,
+    resp.set_cookie("rm_member_email", _sign_email_cookie("rm_member_email", email),
+                    max_age=_MEMBER_COOKIE_MAX_AGE, httponly=True,
                     samesite="Lax", secure=request.is_secure)
     return resp
 
@@ -53680,19 +55509,46 @@ def cron_review_invites():
     with db.connect(LOG_DB) as cx:
         rows = _ri.pending(cx, days=REVIEW_INVITE_DELAY_DAYS,
                            max_age_days=REVIEW_INVITE_MAX_AGE_DAYS,
-                           limit=REVIEW_INVITE_MAX_PER_RUN)
-    invited, failed = 0, 0
+                           limit=10 ** 9)
+    # One email per buyer listing every product, never one per product (Glen,
+    # 2026-10-13). The run cap counts rows but never splits a buyer: the buyer that
+    # reaches it is sent whole, and the rest wait for the next run.
+    groups = {}
     for row in rows:
+        groups.setdefault((row["email"] or "").strip().lower(), []).append(row)
+    picked, n = [], 0
+    for g in groups.values():
+        if n >= REVIEW_INVITE_MAX_PER_RUN:
+            break
+        # A buyer of several products none of which resolves sends nothing and is
+        # retried; it must not take room under the cap from buyers who can be sent
+        # (review round 3).
+        if len(g) > 1 and not any(_get_product(r["slug"]) for r in g):
+            continue
+        picked.append(g)
+        n += len(g)
+    invited, failed, emails = 0, 0, 0
+    for g in picked:
         if dry_run:
             continue
-        if not _send_review_invite(row["email"], row["name"], row["slug"]):
-            failed += 1
-            continue   # leave it unmarked so the next run retries it
-        with _db_lock, db.connect(LOG_DB) as cx:
-            _ri.mark_invited(cx, row["email"], row["slug"], row["order_id"])
-        invited += 1
-    return jsonify({"invited": invited, "failed": failed,
-                    "candidates": len(rows), "dry_run": dry_run}), 200
+        email, name = g[0]["email"], g[0]["name"]
+        ok = (_send_review_invite(email, name, g[0]["slug"]) if len(g) == 1 else
+              _send_review_invites(email, name, [r["slug"] for r in g]))
+        if not ok:
+            failed += len(g)
+            continue   # leave the whole buyer unmarked so the next run retries it
+        # The email went out: mark every row, and never let one row's error leave the
+        # rest unmarked to be listed again tomorrow or stop the run (review round 1).
+        for r in g:
+            try:
+                with _db_lock, db.connect(LOG_DB) as cx:
+                    _ri.mark_invited(cx, r["email"], r["slug"], r["order_id"])
+            except Exception as _e:
+                print(f"[reviews] mark_invited failed for {r['slug']}: {_e!r}", flush=True)
+        invited += len(g)
+        emails += 1
+    return jsonify({"invited": invited, "failed": failed, "emails": emails,
+                    "candidates": n, "dry_run": dry_run}), 200
 
 
 @app.route("/coaching/login-request", methods=["POST"])
@@ -53730,7 +55586,7 @@ def coaching_login_request():
 def coaching_start():
     """Self-serve 'Start my coaching month' from the portal. Requires an active
     member; opens a window for their most-recent qualifying, unactivated order."""
-    email = (request.cookies.get("rm_member_email", "") or "").strip().lower()
+    email = (_email_from_cookie("rm_member_email") or "").strip().lower()
     if not email or not _active_membership_for_email(email):
         return jsonify({"ok": False, "reason": "not_member", "offer_99": True}), 200
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -53748,7 +55604,7 @@ def coaching_start():
 
 @app.route("/coaching", methods=["GET"])
 def coaching_dashboard():
-    email = request.cookies.get("rm_member_email", "").strip().lower()
+    email = _email_from_cookie("rm_member_email").strip().lower()
     membership = _active_membership_for_email(email) if email else None
     if not membership:
         html = _render_static_template("coaching.html", status="lapsed")
@@ -54396,6 +56252,7 @@ def _settle_referrals_on_altpay(order):
 
 
 _bos_orders.set_referral_settle_hook(lambda _cx, _o: _settle_referrals_on_altpay(_o))
+_bos_orders.set_below_store_price_check(_order_has_line_below_store_price)
 
 
 def _settle_points_on_altpay(order):
@@ -54530,13 +56387,17 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
                   items=None, total_cents=0, address=None, channel="retail",
                   get_cents=0, discount_cents=0, points_redeemed_cents=0, shipping_cents=0,
                   status="new", paid_cents=None, pay_method=None, practitioner_id=None,
-                  margin_cents=None, ship_credit_applied_cents=None, recipient_email=None):
+                  margin_cents=None, ship_credit_applied_cents=None, recipient_email=None,
+                  settle_credits_on_paid=False):
     """Best-effort: record an order into the BOS orders table. Never raises into
     a checkout path. get_cents = absorbed Hawai'i GET owed (recorded, not charged).
     status defaults to 'new' (enters fulfillment); pass 'done' for digital charges
     with nothing to ship (e.g. the $1 biofield trial membership unlock).
     paid_cents (when not None) records the order as paid for that captured amount
-    WITHOUT moving it off `status` — for already-captured charges like the trial."""
+    WITHOUT moving it off `status` — for already-captured charges like the trial.
+    settle_credits_on_paid: with paid_cents, spend the order's points and ship credit
+    just BEFORE marking it paid. Being paid releases their hold, so the debit must land
+    while the hold still stands (a $0 cart order, review of #1981)."""
     try:
         cx = db.connect(LOG_DB)
         try:
@@ -54552,6 +56413,17 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
                 ship_credit_applied_cents=ship_credit_applied_cents,
                 recipient_email=recipient_email)
             if paid_cents is not None and _oid:
+                if settle_credits_on_paid:
+                    # Spend first, while the order is still unpaid and so still holds
+                    # its credit; mark it paid after. A concurrent checkout then sees
+                    # the credit held or spent, never free. upsert_order has committed.
+                    try:
+                        with db.connect(LOG_DB) as _scx:
+                            _scx.row_factory = sqlite3.Row
+                            _settle_points_on_altpay(_bos_orders.get_order(_scx, _oid))
+                    except Exception as _se:  # noqa: BLE001
+                        print(f"[orders] CREDIT SETTLE FAILED {source}/{external_ref}: "
+                              f"{_se!r}", flush=True)
                 _bos_orders.mark_order_paid_keep_status(
                     cx, _oid, method="card", amount_cents=int(paid_cents))
             # Hold hook runs AFTER the mark-paid block above so a pre-paid ingested
@@ -54841,7 +56713,7 @@ def console_order_publish_to_portal(oid):
             purl = portal_link(ptok)
             _send_full_report_email(
                 cli_email, cli_name, "Your invoice is ready 🌺",
-                f"Aloha {cli_name or ''},\n\nYour invoice is ready. You can view it and "
+                f"Aloha {_greeting_name(cli_name)},\n\nYour invoice is ready. You can view it and "
                 f"pay right on your healing home page:\n\n{purl}\n\nWith aloha,\n"
                 f"Dr. Glen & Rae")
             emailed = True
@@ -54849,6 +56721,15 @@ def console_order_publish_to_portal(oid):
             print(f"[order-publish] invoice email failed: {e!r}", flush=True)
     return jsonify({"ok": True, "emailed": emailed,
                     "link": f"{PUBLIC_BASE_URL.rstrip('/')}/invoice/{tok}"})
+
+
+def _greeting_name(stored):
+    """A stored name for "Aloha {name}," in a client email: Glen's name rules
+    (all-lowercase or all-capitals capitalised, mixed case kept), or "there"
+    (2026-10-13: "Aloha linda maher," and, with no name, "Aloha ,")."""
+    from dashboard.name_case import normalize_name
+    raw = stored.strip() if isinstance(stored, str) else ""
+    return normalize_name(_ihtml.unescape(raw)) or "there"
 
 
 def _biofield_paid_order(cx, email):
@@ -55590,7 +57471,10 @@ def _recompute_combined_shipping(cx, sid):
         if not cart:
             return 0
         try:
-            return int((_price_cart(cart, ship=ship_addr, channel="retail") or {}).get("shipping_cents") or 0)
+            # Orders already placed: re-quote their shipping even if a line has since
+            # become waitlist_only, or a failure here would bill $0 shipping.
+            return int((_price_cart(cart, ship=ship_addr, channel="retail", allow_waitlist=True)
+                        or {}).get("shipping_cents") or 0)
         except Exception as e:
             print(f"[combined-ship] price failed: {e!r}", flush=True)
             return 0
@@ -56205,16 +58089,12 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     total_cents = max(0, subtotal_list - discount_cents + adjustment_cents) + shipping_cents
     points_redeemed_cents = 0
     if points_redeem_cents_in not in (None, ""):
-        from dashboard import points as _points
-        _pemail = (email or "").strip().lower()
-        _pcx = db.connect(LOG_DB)
-        try:
-            _points.init_points_table(_pcx)
-            _pbal = _points.balance(_pcx, _pemail) if _pemail else 0
-        finally:
-            _pcx.close()
+        # Services only, held balance excluded (a new order has no row of its own yet).
+        _pbal = _unheld_points_cents(email)
+        _room = _invoice_points_room_cents(items_rec, email=email)
         # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
-        points_redeemed_cents = max(0, min(int(points_redeem_cents_in), total_cents, _pbal)) // 100 * 100
+        points_redeemed_cents = max(0, min(int(points_redeem_cents_in), total_cents, _pbal,
+                                           _room)) // 100 * 100
         total_cents -= points_redeemed_cents
     return {"items_rec": items_rec, "cart": cart, "subtotal_cents": subtotal_list,
             "shipping_cents": shipping_cents, "get_cents": get_cents,
@@ -56300,6 +58180,7 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     if priced is None:
         return None, None
     existing_points = int(order.get("points_redeemed_cents") or 0)
+    settled = False
     if points_redeem_cents_in not in (None, ""):
         # Setting points on an existing invoice. Safe ONLY before payment: points leave
         # the ledger in _settle_order_points when the order is paid, keyed on its
@@ -56307,6 +58188,23 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         # Glen, 2026-09-19: "apply her points to 194".
         existing_points = _points_to_set_on_unpaid_order(
             order, priced, int(points_redeem_cents_in))
+    elif existing_points > 0:
+        # Carried points must still fit the edited lines (review round 1: a service line
+        # swapped for a product kept its own-purchase points). They come down only when
+        # they no longer fit (round 3: a legacy $13.47 must not round to $13 on a save).
+        # A paid order, or one whose points already left the ledger, keeps them unchanged.
+        try:
+            limit = _points_to_set_on_unpaid_order(order, priced, existing_points + 99)
+            if existing_points > limit:
+                existing_points = limit
+        except CheckoutError:
+            settled = True
+    if settled:
+        # Settled points: keep the split the order was settled with (round 3).
+        _stamp_points_split(priced["items_rec"], existing_points,
+                            _order_product_points_cents(order))
+    else:
+        _stamp_order_points_split(priced["items_rec"], existing_points)
     priced["points_redeemed_cents"] = existing_points
     priced["total_cents"] = max(0, priced["total_cents"] - existing_points)
     # Same for a shipping credit already auto-applied to this order: carry it
@@ -56396,10 +58294,11 @@ def _points_to_set_on_unpaid_order(order, priced, want_cents):
     """How many points (cents) may be set on this unpaid invoice.
 
     Refuses (CheckoutError) a paid order, or one whose points already left the ledger.
-    Otherwise clamps to the smallest of: what was asked, the buyer's balance, the
-    order's pre-points total, and the per-item points floor (dashboard.pricing: points
-    never take an item below points_floor_pct of its list price)."""
-    from dashboard import points as _points, pricing as _pricing
+    Otherwise clamps to the smallest of: what was asked, the buyer's balance less points
+    held on their other unpaid orders, the order's pre-points total, and the room on its
+    service lines (points redeem on services only, above each points floor, within any
+    per-order cap: dashboard.pricing.points_room_cents)."""
+    from dashboard import points as _points
     if order.get("pay_status") == "paid":
         raise CheckoutError("points can only be set on an unpaid order")
     ref = (order.get("external_ref") or "").strip()
@@ -56409,18 +58308,11 @@ def _points_to_set_on_unpaid_order(order, priced, want_cents):
         _points.init_points_table(_pcx)
         if ref and _points.has_entry(_pcx, order_ref=ref, reason="redeem"):
             raise CheckoutError("this order's points were already redeemed")
-        balance = _points.balance(_pcx, email) if email else 0
     finally:
         _pcx.close()
-    settings = _pricing.load_settings(_pricing_settings())
-    room = 0
-    for it in priced.get("items_rec") or []:
-        if it.get("gift") or it.get("kind") == "membership":
-            continue
-        p = _get_product(it.get("slug") or "") or {}
-        list_cents = int(p.get("price_cents") or it.get("unit_cents") or 0)
-        floor = _pricing.unit_floor_cents(p, list_cents, settings, "points")
-        room += max(0, int(it.get("unit_cents") or 0) - floor) * int(it.get("qty") or 1)
+    balance = _unheld_points_cents(email, exclude_order_id=order.get("id"))
+    room = _invoice_points_room_cents(priced.get("items_rec") or [], email=email,
+                                      exclude_order_id=order.get("id"))
     # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
     return max(0, min(int(want_cents), balance, room, int(priced.get("total_cents") or 0))) // 100 * 100
 
@@ -56501,6 +58393,9 @@ def api_orders_edit(oid):
     lines_in = body.get("lines") or []
     if not lines_in:
         return jsonify({"ok": False, "error": "no line items"}), 400
+    _wl = _cart_waitlist_refusal(lines_in if isinstance(lines_in, list) else [])
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     pickup = bool(body.get("pickup"))
     cx = db.connect(LOG_DB)
     cx.row_factory = _sqlite3.Row
@@ -56522,7 +58417,7 @@ def api_orders_edit(oid):
                 strict_packaging=True,
                 points_redeem_cents_in=body.get("points_redeem_cents"))
         except CheckoutError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         if priced is None:
             return jsonify({"ok": False, "error": "no valid products"}), 400
     finally:
@@ -56807,6 +58702,97 @@ def api_orders_supersede(oid):
                     "superseded_by_order_id": replacement_id})
 
 
+# ── Packing photos on the order card (Glen, 2026-09-25; storage approved 2026-10-13) ──
+def _packing_photo_actor(*roles):
+    actor = _bos_actor()
+    if actor is None or actor.role not in roles:
+        return None
+    return actor
+
+
+def _r2_bucket():
+    return os.environ.get("R2_BUCKET", "rm-clips")
+
+
+@app.route("/api/orders/<int:oid>/packing-photos", methods=["GET", "POST"])
+def api_order_packing_photos(oid):
+    """GET: the order's photos. POST (multipart, field `photos`): add one or more."""
+    actor = _packing_photo_actor(_bos_rbac.OWNER, _bos_rbac.OPS, _bos_rbac.VA)
+    if actor is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import packing_photos as _pkp
+    cx = db.connect(LOG_DB)
+    cx.row_factory = _sqlite3.Row
+    try:
+        if not _bos_orders.get_order(cx, oid):
+            return jsonify({"ok": False, "error": "order not found"}), 404
+        if request.method == "GET":
+            return jsonify({"ok": True, "photos": _pkp.photos_for(cx, oid)})
+        files = request.files.getlist("photos")
+        if not files:
+            return jsonify({"ok": False, "error": "no photo attached"}), 400
+
+        def _put(key, data):
+            _r2().put_object(Bucket=_r2_bucket(), Key=key, Body=data,
+                             ContentType="image/jpeg")
+
+        def _remove(key):
+            _r2().delete_object(Bucket=_r2_bucket(), Key=key)
+
+        added, errors = [], []
+        for f in files:
+            raw = f.read(_pkp.MAX_UPLOAD_BYTES + 1)
+            try:
+                added.append(_pkp.add(cx, oid, raw, put=_put, remove=_remove,
+                                      uploaded_by=getattr(actor, "role", "")))
+            except _pkp.PhotoError as e:
+                errors.append({"file": (f.filename or "")[:80], "error": str(e)})
+            except Exception as e:  # noqa: BLE001 - storage failure: report, keep the rest
+                print(f"[packing-photos] upload failed for order {oid}: {e!r}", flush=True)
+                errors.append({"file": (f.filename or "")[:80],
+                               "error": "The photo could not be saved. Try again."})
+        status = 200 if added else 400
+        return jsonify({"ok": bool(added), "added": added, "errors": errors,
+                        "photos": _pkp.photos_for(cx, oid)}), status
+    finally:
+        cx.close()
+
+
+@app.route("/api/orders/<int:oid>/packing-photos/<int:pid>", methods=["GET", "DELETE"])
+def api_order_packing_photo(oid, pid):
+    """GET ?size=thumb|full: the image. DELETE: remove it (Glen and Rae only)."""
+    from dashboard import packing_photos as _pkp
+    if request.method == "DELETE":
+        if _packing_photo_actor(_bos_rbac.OWNER, _bos_rbac.OPS) is None:
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
+        cx = db.connect(LOG_DB)
+        try:
+            gone = _pkp.delete(cx, oid, pid, remove=lambda k: _r2().delete_object(
+                Bucket=_r2_bucket(), Key=k))
+        finally:
+            cx.close()
+        return (jsonify({"ok": True}), 200) if gone else (
+            jsonify({"ok": False, "error": "photo not found"}), 404)
+    if _packing_photo_actor(_bos_rbac.OWNER, _bos_rbac.OPS, _bos_rbac.VA) is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    size = "thumb" if request.args.get("size") == "thumb" else "full"
+    cx = db.connect(LOG_DB)
+    try:
+        key = _pkp.key_for(cx, oid, pid, size)
+    finally:
+        cx.close()
+    if not key:
+        return jsonify({"ok": False, "error": "photo not found"}), 404
+    try:
+        obj = _r2().get_object(Bucket=_r2_bucket(), Key=key)
+    except Exception:
+        return jsonify({"ok": False, "error": "photo not found"}), 404
+    resp = Response(obj["Body"].read(), mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "no-store"   # a deleted photo must not linger in a cache
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
 @app.route("/api/orders/<int:oid>/review-hold", methods=["GET", "POST"])
 @app.route("/api/orders/<int:oid>/review-hold/release", methods=["POST"],
            endpoint="api_orders_review_hold_release")
@@ -56898,7 +58884,7 @@ def api_orders_grant_member_access(oid):
                 cx, order, lines_in, pickup=pickup,   # invoice_note=None -> note preserved
                 strict_packaging=True)
         except CheckoutError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         if priced is None:
             return jsonify({"ok": False, "error": "no valid products on this order"}), 400
     finally:
@@ -57064,6 +59050,9 @@ def api_orders_manual():
     lines_in = body.get("lines") or []
     if not lines_in:
         return jsonify({"ok": False, "error": "no line items"}), 400
+    _wl = _cart_waitlist_refusal(lines_in if isinstance(lines_in, list) else [])
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     # Bill with caregiver: a member whose invoices are remembered to go to a caregiver
     # has these lines placed on the caregiver's invoice instead of an order of their own.
     if body.get("_caregiver_route", True) is not False and (customer.get("email") or "").strip():
@@ -57124,7 +59113,7 @@ def api_orders_manual():
                     pickup=(order.get("channel") == "pickup"),
                     invoice_note=body.get("invoice_note"))
             except CheckoutError as e:
-                return jsonify({"ok": False, "error": str(e)}), 400
+                return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
             if priced is None:
                 return jsonify({"ok": False, "error": "no valid products"}), 400
         finally:
@@ -57236,7 +59225,7 @@ def api_orders_manual():
             points_redeem_cents_in=body.get("points_redeem_cents"),
             strict_packaging=True)
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     if priced is None:
         return jsonify({"ok": False, "error": "no valid products"}), 400
     items_rec = priced["items_rec"]
@@ -57468,7 +59457,7 @@ def api_orders_shipping_preview():
         shipping_cents = _bos_orders.effective_shipping_cents(False, pc.get("shipping_cents"))
         get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     return jsonify({"ok": True, "shipping_cents": shipping_cents,
                     "get_cents": get_cents, "pickup": False})
 
@@ -57568,8 +59557,13 @@ def api_order_payments_list(oid):
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
         _op.ensure_table(cx)
+        # The order's own status too: a payment that clears the balance moves a proposed
+        # invoice into fulfillment, and the order editor's card must show that (2026-10-16).
+        _o = _bos_orders.get_order(cx, oid) or {}
         return jsonify({"ok": True, "rows": _op.list_payments(cx, oid),
-                        "balance": _op.balance(cx, oid)})
+                        "balance": _op.balance(cx, oid),
+                        "order": {"status": _o.get("status"),
+                                  "pay_status": _o.get("pay_status")}})
     finally:
         cx.close()
 
@@ -57646,9 +59640,12 @@ def api_console_order_settle_points(oid):
     _settle_order_points(order, order_ref=ref)
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
+        # Also the Zelle/Wise fee-free points, so a credit that failed at payment can be
+        # run again (review round 2). Idempotent per order.
+        fee_free = _bos_orders.credit_fee_free_on_payment(cx, order)
         after = _points.balance(cx, email)
         earned = _points.has_entry(cx, order_ref=ref, reason="earn")
-    return jsonify({**out, "applied": True, "earned": earned,
+    return jsonify({**out, "applied": True, "earned": earned, "fee_free_cents": fee_free,
                     "credited_cents": after - before, "balance_after_cents": after})
 
 
@@ -58222,17 +60219,9 @@ def _invoice_order_for_token(token):
 
 
 def _invoice_points_balance(order):
-    """Customer's redeemable points balance (email-keyed, lowercased to match the ledger)."""
-    from dashboard import points as _points
-    email = (order.get("email") or "").strip().lower()
-    if not email:
-        return 0
-    cx = db.connect(LOG_DB)
-    try:
-        _points.init_points_table(cx)
-        return _points.balance(cx, email)
-    finally:
-        cx.close()
+    """Points the customer can apply to this invoice: the balance less points held on
+    their other unpaid orders (email-keyed, lowercased to match the ledger)."""
+    return _unheld_points_cents(order.get("email"), exclude_order_id=order.get("id"))
 
 
 def _invoice_line_view(l):
@@ -58354,6 +60343,12 @@ def _invoice_summary(order):
     return {
         "member_credit_cents": member_credit_cents,
         "points_balance_cents": _invoice_points_balance(order),
+        # Zelle/Wise fee-free points: client orders only (dashboard.orders).
+        "fee_free_points": _bos_orders.earns_fee_free_points(order),
+        # Points redeem on services only: the most this invoice's lines can take.
+        "points_room_cents": _invoice_points_room_cents(order.get("items") or [],
+                                                        email=order.get("email"),
+                                                        exclude_order_id=order.get("id")),
         "external_ref": order.get("external_ref"),
         "created_at": order.get("created_at"),
         "name": _invoice_display_name(order),
@@ -58492,6 +60487,13 @@ def _invoice_membership_offer(order):
             with db.connect(LOG_DB) as _mc:
                 if _mp.owns_group(_mc, email):
                     return None
+        # A Biofield Analysis includes a month of membership, and its remedies are
+        # already quoted at member pricing. Nothing to add: say what it saves instead
+        # (Glen, 2026-10-13).
+        # With a membership line too, the card still says it is included, and offers
+        # to remove the paid line, which would otherwise be charged twice over.
+        if _order_has_biofield(order):
+            return _included_membership_offer(order, has_line=_has_line)
         tiers = _mp.invoice_offer_tiers()
         if not tiers:
             return None
@@ -58517,6 +60519,59 @@ def _invoice_membership_offer(order):
         return None
 
 
+def _order_has_biofield(order):
+    """True when the order charges a Biofield Analysis. A zero-quantity line is a reorder
+    reference, not a purchase, so it includes nothing. A missing qty counts as 1, as
+    the invoice's own line reader does."""
+    for it in (order.get("items") or []):
+        if (it.get("slug") or "").strip() != "biofield-analysis":
+            continue
+        q = it.get("qty")
+        try:
+            if q is None or int(q) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _included_membership_offer(order, has_line=False):
+    """The card for an invoice carrying a Biofield Analysis: membership is included,
+    with what member pricing saves on these products. savings_cents is the product
+    subtotal priced without the Biofield line minus the subtotal priced with it, by the
+    same pricer the invoice uses. Never raises."""
+    try:
+        email = (order.get("email") or "").strip().lower()
+        products = []
+        for it in (order.get("items") or []):
+            slug = (it.get("slug") or "").strip()
+            if not slug or slug == "biofield-analysis" or slug.startswith("membership:"):
+                continue
+            q = it.get("qty")
+            ln = {"slug": slug, "qty": 1 if q is None else int(q or 0)}
+            if it.get("override"):
+                ln["unit_cents"] = it.get("unit_cents")
+            products.append(ln)
+
+        def _sub(lines):
+            priced = _price_inhouse_invoice(lines, email=email, pickup=True, ship=None)
+            if not priced:
+                return None          # unpriced is unknown, never a $0 subtotal
+            return sum(int(it.get("line_cents") or 0) for it in priced["items_rec"]
+                       if (it.get("slug") or "") in {p["slug"] for p in products})
+
+        savings = 0
+        if products:
+            plain = _sub(list(products))
+            member = _sub(list(products) + [{"slug": "biofield-analysis", "qty": 1}])
+            if plain is not None and member is not None:
+                savings = max(0, plain - member)
+        return {"included": True, "savings_cents": savings, "has_line": bool(has_line)}
+    except Exception as _e:  # noqa: BLE001 - the card is cosmetic; never break the invoice
+        print(f"[invoice] included membership card skipped: {_e!r}", flush=True)
+        return {"included": True, "savings_cents": 0, "has_line": bool(has_line)}
+
+
 @app.route("/api/invoice/<token>/membership", methods=["POST"])
 def api_invoice_membership(token):
     """Customer-facing: add or remove the membership line on their own (unpaid) invoice
@@ -58540,6 +60595,9 @@ def api_invoice_membership(token):
         tier_key = (body.get("tier") or "month").strip()
         if tier_key not in _mp.invoice_offer_tiers():
             return jsonify({"ok": False, "error": "tier not offered"}), 400
+        if _order_has_biofield(order):
+            return jsonify({"ok": False, "error":
+                            "A month of membership is already included with your Biofield Analysis."}), 409
         with db.connect(LOG_DB) as _mc:
             if _mp.owns_group(_mc, (order.get("email") or "").strip().lower()):
                 return jsonify({"ok": False, "error": "already a member"}), 409
@@ -58547,7 +60605,9 @@ def api_invoice_membership(token):
     elif action != "remove":
         return jsonify({"ok": False, "error": "action must be add or remove"}), 400
     # Rebuild the reprice payload: slug + qty, carrying an owner override forward.
-    payload = [{"slug": l["slug"], "qty": int(l.get("qty") or 1),
+    # A zero-quantity line is a reorder reference and must stay zero; `or 1` turned
+    # each one into a charge (review round 3, 2026-10-13). Only a missing qty is 1.
+    payload = [{"slug": l["slug"], "qty": 1 if l.get("qty") is None else int(l.get("qty") or 0),
                 **({"unit_cents": l["unit_cents"]} if l.get("override") else {})}
                for l in lines]
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
@@ -58555,7 +60615,7 @@ def api_invoice_membership(token):
         priced, _was_paid = _reprice_and_persist_invoice(
             cx, order, payload, pickup=(order.get("channel") == "pickup"))
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     finally:
         cx.close()
     if priced is None:
@@ -58650,6 +60710,17 @@ def api_invoice_apply_plan(token):
         adj = int(order.get("adjustment_cents") or 0)
         ship = int(order.get("shipping_cents") or 0)
         pts = int(order.get("points_redeemed_cents") or 0)
+        if pts > 0:
+            # Lower prices can leave less room above the points floor (review round 2).
+            try:
+                limit = _points_to_set_on_unpaid_order(
+                    order, {"items_rec": new_items,
+                            "total_cents": max(0, new_sub - disc + adj) + ship}, pts + 99)
+                pts = min(pts, limit)
+                _stamp_order_points_split(new_items, pts)
+            except CheckoutError:
+                # Settled points: keep the split the order was settled with (round 3).
+                _stamp_points_split(new_items, pts, _order_product_points_cents(order))
         new_total = max(0, max(0, new_sub - disc + adj) + ship - pts)
         _bos_orders.upsert_order(
             cx, source=order["source"], external_ref=order["external_ref"],
@@ -58680,9 +60751,13 @@ def api_invoice_update(token):
     existing = {(it.get("slug") or "").strip(): it
                 for it in (order.get("items") or []) if (it.get("slug") or "").strip()}
     from dashboard import client_invoice_lines as _cil
-    lines_in = _cil.rebuild(body.get("lines"), existing,
-                            known=lambda _s: _get_product(_s) is not None,
-                            refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}))
+    try:
+        lines_in = _cil.rebuild(body.get("lines"), existing,
+                                known=lambda _s: _get_product(_s) is not None,
+                                refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}),
+                                refusal=_waitlist_refusal)
+    except _cil.NotOrderable as e:
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
@@ -58699,7 +60774,7 @@ def api_invoice_update(token):
             return jsonify({"ok": False, "error": "no valid items"}), 400
         updated = _bos_orders.get_order(cx, order["id"])
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     finally:
         cx.close()
     try:
@@ -58763,15 +60838,22 @@ def api_invoice_apply_points(token):
     # Work from the pre-points (gross) total so re-applying is idempotent.
     gross_total = int(order.get("total_cents") or 0) + int(order.get("points_redeemed_cents") or 0)
     # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
-    new_points = max(0, min(requested, gross_total, _invoice_points_balance(order))) // 100 * 100
+    # Services only, and never points already held on the customer's other unpaid orders.
+    new_points = max(0, min(requested, gross_total,
+                            _unheld_points_cents(order.get("email"), exclude_order_id=order.get("id")),
+                            _invoice_points_room_cents(order.get("items") or [],
+                                                       email=order.get("email"),
+                                                       exclude_order_id=order.get("id")))) // 100 * 100
     new_total = gross_total - new_points
+    items = _stamp_order_points_split([dict(i) if isinstance(i, dict) else i
+                                       for i in (order.get("items") or [])], new_points)
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
         _bos_orders.upsert_order(
             cx, source=order["source"], external_ref=order["external_ref"],
             email=order.get("email") or "", name=order.get("name") or "",
             phone=order.get("phone") or "", person_id=order.get("person_id"),
-            items=order.get("items"), total_cents=new_total, address=order.get("address") or {},
+            items=items, total_cents=new_total, address=order.get("address") or {},
             channel="retail", get_cents=int(order.get("get_cents") or 0),
             discount_cents=int(order.get("discount_cents") or 0),
             points_redeemed_cents=new_points, shipping_cents=int(order.get("shipping_cents") or 0))
@@ -58826,7 +60908,8 @@ def api_invoice_pay(token):
             link = os.environ.get("WISE_PAY_LINK", "")
             instr = (f"Pay {amt} via Wise" + (f": {link}" if link else " — we’ll email you Wise details")
                      + ", then tap “I’ve sent payment”.")
-        return jsonify({"ok": True, "method": method, "instructions": instr})
+        return jsonify({"ok": True, "method": method, "instructions": instr,
+                        "order_notes": _order_notes_for(order.get("items"))})
     return jsonify({"ok": False, "error": "unknown payment method"}), 400
 
 
@@ -59212,9 +61295,79 @@ def api_console_fmp_orders():
     name = (request.args.get("name") or "").strip() or None
     if not (client_id or email or (name and len(name) >= 2)):
         return jsonify({"ok": True, "results": []})
+    from dashboard import client_email_fills as _cef
     with db.connect(LOG_DB) as cx:
-        results = _fo.client_order_history(cx, client_id=client_id, email=email, name=name)
+        try:
+            _cef.ensure_table(cx)
+            cx.commit()
+            fills = True
+        except Exception:   # a first-ever race on CREATE: look up without fills
+            cx.rollback()
+            fills = False
+        results = _fo.client_order_history(cx, client_id=client_id, email=email, name=name,
+                                           fills=fills)
     return jsonify({"ok": True, "results": results})
+
+
+@app.route("/api/console/client-email-fills", methods=["POST"])
+def api_console_client_email_fills():
+    """Fill missing FileMaker client emails (Glen, 2026-10-16: "Add other clients' emails
+    always when missing and when possible"). Owner only. The caller may post E4L or Gmail
+    candidates as {"candidates": [{"source", "name", "email"}]}; the people table is read
+    here. Dry run unless ?commit=1. Only unambiguous fills are made; see
+    dashboard/client_email_fills.py for the rule."""
+    actor = _bos_actor()
+    if actor is None or actor.role != "owner":
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import client_email_fills as _cef
+    body = request.get_json(silent=True) or {}
+    posted = body.get("candidates") if isinstance(body.get("candidates"), list) else []
+    cands = []
+    for c in posted:
+        if not isinstance(c, dict) or c.get("source") not in ("e4l", "gmail"):
+            continue
+        k = _cef.full_name_key(str(c.get("name") or ""))
+        if k:
+            cands.append({"source": c["source"], "key": k, "email": c.get("email")})
+    commit = request.args.get("commit", "0") == "1"
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cef.ensure_table(cx)
+        cands += _cef.people_candidates(cx)
+        clients = cx.execute(
+            "SELECT id_pk, name_first, name_last, email FROM fmp_clients").fetchall()
+        result = _cef.plan([tuple(r) for r in clients], cands, _cef.filled_map(cx))
+        written = _cef.apply(cx, result["fills"]) if commit else 0
+        # Only the counts and ids go back; the addresses stay on the server.
+        result["fills"] = [{k: v for k, v in f.items() if k != "email"}
+                           for f in result["fills"]]
+    return jsonify({"ok": True, "committed": commit, "written": written, **result})
+
+
+@app.route("/api/console/fmp-product-buyers", methods=["POST"])
+def api_console_fmp_product_buyers():
+    """Count FMP buyers of named products across all clients, legacy included.
+    Read-only, numbers only: no email, name or id leaves this route. POST only
+    because the optional compare lists are too long for a URL. Console-gated."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import fmp_orders as _fo
+    body = request.get_json(silent=True) or {}
+    products, groups, compare = body.get("products"), body.get("groups") or {}, body.get("compare") or {}
+    ok = (isinstance(products, dict) and 0 < len(products) <= 50
+          and all(isinstance(ts, list) and 0 < len(ts) <= 20
+                  and all(isinstance(t, str) and 2 <= len(t.strip()) <= 60 for t in ts)
+                  for ts in products.values())
+          and isinstance(groups, dict) and len(groups) <= 20
+          and all(isinstance(v, list) for v in groups.values())
+          and isinstance(compare, dict)
+          and all(isinstance(v, dict) and all(isinstance(es, list) and len(es) <= 20000
+                                              for es in v.values()) for v in compare.values()))
+    if not ok:
+        return jsonify({"ok": False, "error": "products {label: [2-60 char terms]} required"}), 400
+    products = {k: [t.strip() for t in ts] for k, ts in products.items()}
+    with db.connect(LOG_DB) as cx:
+        result = _fo.product_buyer_counts(cx, products, groups, compare)
+    return jsonify({"ok": True, **result})
 
 
 @app.route("/api/console/fmp-history-rebuild", methods=["POST"])
@@ -59649,6 +61802,19 @@ def bos_orders_create():
                 rows = _bos_orders.list_orders(cx, include_cancelled=False)
             for o in rows:
                 o["source_label"] = _order_board_source_label(o.get("source"))
+            # Packing photos: a count per order, for the card and its drop-ship reminder.
+            try:
+                from dashboard import packing_photos as _pkp
+                _pcx = db.connect(LOG_DB)
+                try:
+                    _pcounts = _pkp.counts(_pcx)
+                    _pcx.commit()
+                finally:
+                    _pcx.close()
+                for o in rows:
+                    o["packing_photo_count"] = _pcounts.get(int(o.get("id")), 0)
+            except Exception as _e:
+                print(f"[orders] packing-photo count skipped: {_e!r}", flush=True)
             # Bill with caregiver: which caregivers may take each order's lines. One query,
             # on its own connection so a failure cannot abort the board's transaction.
             try:
@@ -59806,6 +61972,9 @@ def bos_orders_create():
         return resp
     # --- existing POST body unchanged below ---
     b = request.get_json(silent=True) or {}
+    _wl = _cart_waitlist_refusal(b.get("items") if isinstance(b.get("items"), list) else [])
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     ref = str(b.get("external_ref") or f"manual-{_bos_orders._now()}")
     cx = db.connect(LOG_DB)
     cx.row_factory = _sqlite3.Row
@@ -59963,8 +62132,8 @@ def admin_sales_images_backfill():
                                      else [arg] if arg else [])
         enq = []
         for s in targets:
-            if _si.needs_topup(cx, s):
-                _si.enqueue(cx, s); enq.append(s)
+            if _si.needs_topup(cx, s) and _si.enqueue(cx, s):
+                enq.append(s)
     return jsonify({"ok": True, "enqueued": enq, "count": len(enq)})
 
 
@@ -60094,6 +62263,33 @@ def console_top_products_page():
     resp = send_from_directory(STATIC, "console-top-products.html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
+
+
+def _record_browser_language(lang):
+    try:
+        # A short wait: a burst of page loads must not hold pool slots real requests need.
+        with db.connect(LOG_DB, timeout=0.5) as _lcx:
+            _browser_languages.record(_lcx, lang)
+    except Exception as e:  # a count must never cost a page
+        print(f"[browser-language] count skipped: {e!r}", flush=True)
+
+
+@app.after_request
+def _count_browser_language(response):
+    """Translate step 0 (Glen, 2026-10-12): count the language each home or begin page
+    load asks for. Counts only. Written off the request so a page never waits on it."""
+    try:
+        if (request.method == "GET" and response.status_code == 200
+                and (response.mimetype or "") == "text/html"
+                and _browser_languages.counted_path(request.path)
+                # Browsers always send a language. Render's health check on / does not.
+                and request.headers.get("Accept-Language")
+                and not _browser_languages.is_bot(request.headers.get("User-Agent"))):
+            lang = _browser_languages.primary_language(request.headers.get("Accept-Language"))
+            threading.Thread(target=_record_browser_language, args=(lang,), daemon=True).start()
+    except Exception as e:  # noqa: BLE001
+        print(f"[browser-language] skipped: {e!r}", flush=True)
+    return response
 
 
 @app.after_request

@@ -198,3 +198,31 @@ def test_lines_keep_refill_eligible_so_the_picker_can_show():
       console.log(JSON.stringify(linesFromOrder()));
     """ % js)
     assert [o["refill_eligible"] for o in out] == [True, False]
+
+
+def test_the_open_is_recorded_on_first_use_not_on_load():
+    """Glen, 2026-10-13: the link "opens payment without line items". The lines were
+    collapsed until a header was clicked. They now show at once, and the read receipt
+    fires on the client's first tap, click or key, once."""
+    out = _run("""
+      const handlers = {}, posts = [];
+      const addEventListener = (k, f) => { (handlers[k] = handlers[k] || []).push(f); };
+      const removeEventListener = (k, f) => { handlers[k] = (handlers[k] || []).filter(g => g !== f); };
+      const fetch = (u, o) => { posts.push([u, o.method, !!o.keepalive]); return Promise.resolve({}); };
+      %s
+      recordOpenOnFirstUse('tok/1');
+      const before = posts.length;
+      const kinds = Object.keys(handlers).sort();
+      (handlers.pointerdown || []).slice().forEach(f => f());
+      (handlers.keydown || []).slice().forEach(f => f());
+      console.log(JSON.stringify({before, posts, kinds, left: Object.values(handlers).flat().length}));
+    """ % _fn("recordOpenOnFirstUse"))
+    assert out == {"before": 0, "posts": [["/api/invoice/tok%2F1/open", "POST", True]],
+                   "kinds": ["keydown", "pointerdown", "touchstart", "wheel"], "left": 0}
+
+
+def test_no_line_is_hidden_behind_a_header():
+    src = PAGE.read_text()
+    load = _fn("load") if "function load(" in src else src
+    assert "inv-detail" not in src and "style.display = isNew" not in load
+    assert "recordOpenOnFirstUse(TOKEN)" in load

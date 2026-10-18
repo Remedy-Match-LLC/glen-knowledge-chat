@@ -46,6 +46,7 @@ def test_a_blank_email_makes_no_call(captured):
     assert "url" not in captured
 
 
-def test_a_failure_returns_empty_not_none(monkeypatch):
+def test_a_failure_returns_none_so_it_is_not_read_as_an_empty_inbox(monkeypatch):
+    """2026-10-16: {} on failure looked the same as a client with no comms."""
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
-    assert bla._default_fetch_recent_comms("client@example.com") == {}
+    assert bla._default_fetch_recent_comms("client@example.com") is None

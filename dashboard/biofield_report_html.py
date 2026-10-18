@@ -4,6 +4,7 @@ Pure string builders so they're unit-testable without Flask. ALL dynamic values
 (remedy names, timing, client names) come from FileMaker free-text fields and are
 HTML-escaped.
 """
+import json
 import os
 from html import escape as _e
 from urllib.parse import quote as _q
@@ -189,19 +190,84 @@ def _bar(client_name="", client_email=""):
     # than none, and the bar already reads as a page header rather than a client one.
     if who and mail:
         who_html += (f"<img class=opavatar alt='' loading=lazy "
-                     f"src='{CONSOLE_BASE}/client-photo/{_q(mail, safe='')}' "
+                     f"src='/client-photo/{_q(mail, safe='')}?name={_q(who, safe='')}' "
                      f"onerror='this.remove()'>")
     return ("<nav class=opbar><span class=opbrand>GLEN <b>&middot;</b> OPS</span>"
             "<span class=opsub>Biofield Intake</span>" + who_html + "<span class=opspacer></span>"
             "<a class=optab href='/'>All tests</a>"
-            f"<a class=optab href='{CONSOLE_BASE}/console'>&larr; Console</a></nav>")
+            f"<a class=optab id=opconsole href='{CONSOLE_BASE}/console'>&larr; Console</a></nav>")
 
+
+# "← Console" returns to the console page the launcher was opened from. The launcher
+# passes it as ?back=<path>; it is kept for the tab and only ever a /console path on
+# CONSOLE_BASE, so the button cannot be pointed at another site.
+_BACK_JS = ("<script>(function(){var a=document.getElementById('opconsole');if(!a)return;"
+            "var ok=function(p){return typeof p==='string'&&/^\\/console(\\/|\\?|$)/.test(p)"
+            "&&p.indexOf('//')<0&&p.indexOf('\\\\')<0;};var p='';"
+            "try{var q=new URLSearchParams(location.search).get('back');"
+            "if(ok(q))sessionStorage.setItem('opConsoleBack',q);"
+            "p=sessionStorage.getItem('opConsoleBack')||'';}catch(e){}"
+            "if(ok(p))a.href=" + json.dumps(CONSOLE_BASE) + "+p;})();</script>")
+
+
+# The client's records: findings to review, then the approved ones with their source.
+# Filled by the page itself, so the summary renders even when Gmail is slow.
+_RECORDS_HTML = ("<style>.records{margin-top:14px;padding:10px 12px;border:1px dashed var(--line);"
+    "border-radius:9px}.records h4{margin:0 0 6px;font-size:13px}.records .rf{display:grid;"
+    "grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:6px 0;border-top:1px solid var(--line)}"
+    ".records .rf:first-of-type{border-top:0}.records .src{font-size:11px;color:var(--muted)}"
+    ".records .kind{font-size:11px;font-weight:700;color:var(--muted);margin-right:6px}"
+    ".records .rf input{width:100%;margin:3px 0 0;padding:5px}.records .acts{display:flex;gap:5px;align-items:start}"
+    ".records .btn{font-size:11px;padding:3px 8px}</style>"
+    "<div id=recordFindings class=records><div class=food>Checking the client's records…</div></div>"
+    "<script>(function(){"
+    "var m=location.pathname.match(/^\\/author\\/(a[0-9]+)/);if(!m)return;var base='/author/'+m[1]+'/records';"
+    "var box=document.getElementById('recordFindings');var reading=false;"
+    # Escapes quotes too: the wording sits inside value="..." (review round 2).
+    "function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;')"
+    ".replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;')}"
+    "function src(f){return esc(f.filename)+(f.page?', page '+f.page:'')+' &middot; email '+esc(f.email_date)"
+    "+(f.subject?' &ldquo;'+esc(f.subject)+'&rdquo;':'')+(f.date?' &middot; dated '+esc(f.date):'')}"
+    "function render(j,note){if(!j.ok){box.innerHTML='<div class=food>'+esc(j.error||'Records unavailable')+'</div>';return}"
+    "var h='';if(j.held)h+='<div class=food>Records were not read: E4L shows more than one person on this address.</div>';"
+    "var p='';if(j.pending.length){p+='<div class=proposal-head><b>Proposed from records</b>'"
+    "+'<span>Check each against the record. Edit the wording before you add it.</span></div>';"
+    "j.pending.forEach(function(f){p+='<div class=\"proposal-row rf\" data-id='+f.id+'><div><span class=kind>'+esc(f.kind_label)+'</span>'"
+    "+'<input value=\"'+esc(f.text)+'\" aria-label=\"Finding wording\"><div class=proposal-evidence>'+src(f)+'</div></div>'"
+    "+'<div class=proposal-actions><button class=btn data-d=approve>Add</button><button class=\"btn ghost\" data-d=reject>Not relevant</button></div></div>'})}"
+    "var pbox=document.getElementById('recordProposals');if(pbox){pbox.innerHTML=p}else{h+=p}"
+    "if(j.approved.length){h+='<h4>From records</h4>';j.approved.forEach(function(f){h+='<div class=rf><div><span class=kind>'"
+    "+esc(f.kind_label)+'</span>'+esc(f.text)+'<div class=src>'+src(f)+'</div></div>'"
+    "+'<div class=acts><button class=\"btn ghost\" data-d=withdraw data-id='+f.id+'>Withdraw</button></div></div>'})}"
+    "if(j.unread)h+='<div class=food>'+(reading?'Reading '+j.unread+' record(s)… OCR can take a minute.':j.unread+' record(s) not read yet.')+'</div>';"
+    "if(j.failed&&j.failed.length)h+='<div class=food>Could not be read: '+j.failed.map(esc).join(', ')"
+    "+' <button class=\"btn ghost\" data-retry=1>Retry</button></div>';"
+    "if(j.notes&&j.notes.length)h+='<div class=food>'+j.notes.map(esc).join('<br>')+'</div>';"
+    "if(note)h+='<div class=food>'+esc(note)+'</div>';"
+    "if(!h)h='<div class=food>'+(j.read_count?j.read_count+' record(s) read; no findings in them.':'No clinical records in this client&rsquo;s email.')+'</div>';box.innerHTML=h}"
+    "async function load(note){try{var j=await (await fetch(base,{cache:'no-store'})).json();render(j,note);return j}"
+    "catch(e){render({ok:false,error:'Records unavailable'});return null}}"
+    "async function readAll(){var j=await load();var rounds=0;"
+    "while(j&&j.ok&&j.unread&&j.reader&&!j.held&&rounds<5){reading=true;render(j);rounds++;"
+    "var r=await call(base+'/read');reading=false;"
+    "var n=!r.ok?r.error:r.busy?'Already being read in another tab.':r.not_fetched?r.not_fetched+' record(s) could not be fetched from Gmail; they are tried again next time.':'';"
+    "j=await load(n);if(!r.ok||!r.read)break}}"
+    "async function call(url,body){try{return await (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},"
+    "body:JSON.stringify(body||{})})).json()}catch(e){return {ok:false,error:'The server did not answer. Nothing was changed.'}}}"
+    "async function onClick(ev){"
+    "if(ev.target.closest('button[data-retry]')){await call(base+'/retry');readAll();return}"
+    "var b=ev.target.closest('button[data-d]');if(!b)return;"
+    "var row=b.closest('.rf'),d=b.dataset.d,id=b.dataset.id||row.dataset.id,inp=row.querySelector('input');b.disabled=true;"
+    "var r=await call(base+'/'+id,{decision:d,text:inp?inp.value:''});b.disabled=false;"
+    "if(r.ok&&d!=='reject'&&/Diagnosis/.test(row.textContent)){location.reload();return}load(r.ok?'':r.error)}"
+    "box.addEventListener('click',onClick);var pb=document.getElementById('recordProposals');if(pb)pb.addEventListener('click',onClick);"
+    "readAll()})();</script>")
 
 def _page(title, body, client_name="", client_email=""):
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{_e(title)}</title>{_STYLE}</head>"
-            f"<body>{_bar(client_name, client_email)}<div class=wrap>{body}</div></body></html>")
+            f"<body>{_bar(client_name, client_email)}{_BACK_JS}<div class=wrap>{body}</div></body></html>")
 
 
 # The Match pillar's four steps (mirrors prod static/op-nav.js — kept in sync by hand since
@@ -347,8 +413,46 @@ def render_invoice_page(report, fee_state):
     return _page(f"Invoice — {c.get('name') or ''}", body)
 
 
+# Glen, 2026-10-09: when several FileMaker clients share one email, show their photos
+# here to choose from, never on a client surface. The pick is saved for this person.
+_PHOTO_PICK_JS = """<script>
+async function loadPhotoPicks(tid, email, name, boxId, imgId){
+  var box=document.getElementById(boxId); if(!box) return; box.textContent='';
+  if(!email) return;
+  var j; try{ j=await (await fetch('/client-photo-candidates/'+encodeURIComponent(email)
+    +'?name='+encodeURIComponent(name||''))).json(); }catch(e){ return; }
+  if(!j||!j.shared) return;
+  var head=document.createElement('div'); head.className='food';
+  head.textContent = j.count+' FileMaker clients share this email. ' + (!j.person
+    ? 'The intake name matches none of them exactly, so no photo shows. Fix the name to pick one.'
+    : (j.candidates.length ? 'Pick this client\u2019s photo:' : 'No photo is on file for any of them.'));
+  box.appendChild(head);
+  if(!j.person) return;
+  j.candidates.forEach(function(c){
+    var w=document.createElement('div'); w.style.cssText='display:inline-block;margin:6px 8px 0 0;text-align:center;vertical-align:top';
+    var im=document.createElement('img'); im.src=c.url; im.alt='';
+    im.style.cssText='width:72px;height:72px;object-fit:cover;border-radius:8px;display:block;margin:0 auto 4px';
+    var b=document.createElement('button'); b.className='btn ghost'; b.textContent='Use '+c.label;
+    b.onclick=async function(){
+      b.disabled=true;
+      var r; try{ r=await (await fetch('/test/'+tid+'/photo-pick',{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({key:c.key,name:name||''})})).json(); }
+      catch(e){ r={ok:false,error:String(e)}; }
+      b.disabled=false;
+      if(!r.ok){ head.textContent='Error: '+(r.error||'failed'); return; }
+      var img=document.getElementById(imgId);
+      if(img){ img.src='/client-photo/'+encodeURIComponent(email)+'?name='+encodeURIComponent(name||'')
+        +'&t='+Date.now(); img.style.display='block'; }
+      head.textContent = r.prod_pushed ? 'Saved for this client.' : 'Saved locally (prod push pending).';
+    };
+    w.appendChild(im); w.appendChild(b); box.appendChild(w);
+  });
+}
+</script>"""
+
+
 _PHOTO_JS = """<script>
-async function uploadPhoto(tid, eq){
+async function uploadPhoto(tid, eq, nq){
   var f=document.getElementById('photofile');
   if(!f||!f.files||!f.files[0])return;
   var stat=document.getElementById('photostat'); stat.textContent='Uploading\\u2026';
@@ -358,7 +462,7 @@ async function uploadPhoto(tid, eq){
     var j=await r.json();
     if(j.ok){
       var img=document.getElementById('clientphoto');
-      img.src='/client-photo/'+eq+'?t='+Date.now(); img.style.display='block';
+      img.src='/client-photo/'+eq+'?name='+nq+'&t='+Date.now(); img.style.display='block';
       stat.textContent = j.prod_pushed ? 'Saved.' : 'Saved locally (prod push pending).';
     } else { stat.textContent='Error: '+(j.error||'failed'); }
   }catch(e){ stat.textContent='Error: '+e; }
@@ -367,7 +471,7 @@ async function uploadPhoto(tid, eq){
 
 
 def render_report_html(report, notes="", narrative="", video_script="", stresses=None,
-                       notes_updated=""):
+                       notes_updated="", courtesy_cents=None):
     c = report.get("client") or {}
     name = _e(c.get("name") or "(unknown)")
     email = _e(c.get("email") or "")
@@ -381,18 +485,22 @@ def render_report_html(report, notes="", narrative="", video_script="", stresses
     _email_raw = (c.get("email") or "").strip()
     if _email_raw:
         _eq = _up.quote(_email_raw, safe="")
+        _nq = _up.quote((c.get("name") or "").strip(), safe="")
         _tidp = _e(report.get("test_id") or "")
         head += (
             "<div class=photobox style='display:flex;gap:14px;align-items:flex-start;margin:4px 0 16px'>"
             "<img id=clientphoto alt='' "
             "style='width:180px;height:180px;object-fit:cover;border-radius:10px;"
             "border:1px solid var(--line);background:#0c0e12;display:block' "
-            f"src='/client-photo/{_eq}' onerror=\"this.style.display='none'\">"
+            f"src='/client-photo/{_eq}?name={_nq}' onerror=\"this.style.display='none'\">"
             "<div><label class=btn style='cursor:pointer;display:inline-block'>Upload photo"
             f"<input id=photofile type=file accept='image/*' style='display:none' "
-            f"onchange=\"uploadPhoto('{_tidp}','{_eq}')\"></label>"
-            "<div id=photostat class=food style='margin-top:6px'></div></div></div>"
-            + _PHOTO_JS)
+            f"onchange=\"uploadPhoto('{_tidp}','{_eq}','{_nq}')\"></label>"
+            "<div id=photostat class=food style='margin-top:6px'></div>"
+            "<div id=photopicks></div></div></div>"
+            + _PHOTO_JS + _PHOTO_PICK_JS
+            + f"<script>loadPhotoPicks('{_tidp}',decodeURIComponent('{_eq}'),"
+              f"decodeURIComponent('{_nq}'),'photopicks','clientphoto')</script>")
     tid_link = _e(report.get("test_id") or "")
     head += (f'<p class=sub><a href="/test/{tid_link}/report" target="_blank">Open clean report</a>'
              f' &nbsp;·&nbsp; <a href="/test/{tid_link}/report.pdf" target="_blank">Print/Download PDF</a></p>')
@@ -496,25 +604,70 @@ async function schedDrop(e){e.preventDefault();var zone=e.currentTarget;zone.cla
         "<div class=btnrow>"
         "<button class=btn onclick=publishPortal()>Publish to portal</button>"
         "<span id=portal-url></span></div>"
-        "<script>\nasync function publishPortal(){\n"
-        "  var cents=parseInt(prompt('Courtesy price per bottle, in cents (e.g. 5000 = $50)',''),10);\n"
-        "  if(!cents)return;\n"
-        "  var r=await fetch('/test/__TID__/publish-portal',{method:'POST',"
-        "headers:{'Content-Type':'application/json'},body:JSON.stringify({special_price_cents:cents})});\n"
-        "  var d=await r.json();\n"
+        # Blank publishes at store prices (Glen, 2026-10-09: "It should publish to portal
+        # when I leave the special pricing blank"). The box once asked for cents and
+        # stopped silently on a blank or unreadable entry, so a report never published.
+        # The whole entry is checked before anything is stripped: "1,50" and "5$0" once
+        # read as $150 and $50 (review round 2). Commas only as thousands separators.
+        # lastPrice follows each successful publish, so a second click on the same page
+        # opens with the price just used (review, 2026-10-09).
+        "<script>\nvar lastPrice='__PREV__';\n"
+        "function courtesyCents(raw){\n"
+        "  var t=String(raw).trim();\n"
+        "  if(t==='')return 0;\n"
+        "  if(!/^\\$?\\s*(\\d{1,3}(,\\d{3})+|\\d+)(\\.\\d{1,2})?$/.test(t))return null;\n"
+        "  return Math.round(parseFloat(t.replace(/[$,\\s]/g,''))*100);\n"
+        "}\n"
+        "async function publishPortal(){\n"
         "  var el=document.getElementById('portal-url');\n"
-        "  if(d.ok){if(d.url){el.innerHTML='<a href=\"'+d.url+'\" target=\"_blank\">'+d.url+'</a> (copy into her email)';}else{el.textContent=d.note||'Portal updated — previously shared link still works.';}}\n"
-        "  else if(d.unresolved){el.textContent='Unresolved remedies (fix names): '+d.unresolved.join(', ');}\n"
+        # The box opens with the price this report was last published at, so a blank
+        # entry is a choice to clear it, never an accident (review round 1).
+        "  var raw=prompt('__WARN__Courtesy price per bottle, in dollars (for example 50). "
+        "Leave blank for store prices.',lastPrice);\n"
+        "  if(raw===null){el.textContent='Publish cancelled.';return;}\n"
+        "  var cents=courtesyCents(raw);\n"
+        "  if(cents===null){el.textContent='Could not read \"'+raw+'\" as a price. "
+        "Type dollars, like 50 or 50.00, or leave it blank. Nothing was published.';return;}\n"
+        "  if(cents===0&&String(raw).trim()!==''){el.textContent='A $0 price is not supported here. "
+        "Leave the box blank for store prices. Nothing was published.';return;}\n"
+        "  if(cents>50000){el.textContent='$'+(cents/100).toFixed(2)+' per bottle looks like cents. "
+        "Type dollars, like 50. Nothing was published.';return;}\n"
+        "  var own=[];\n"
+        # A remedy the store does not sell refuses the publish, since it is usually a
+        # misspelling. Glen may confirm it as the client's own remedy, once per report:
+        # it then shows on its layer with no buy button (Glen, 2026-10-13).
+        "  for(var attempt=0;attempt<2;attempt++){\n"
+        "  el.textContent='Publishing...';\n"
+        "  var d;\n"
+        "  try{var r=await fetch('/test/__TID__/publish-portal',{method:'POST',"
+        "headers:{'Content-Type':'application/json'},body:JSON.stringify({special_price_cents:cents,own_remedies:own})});\n"
+        "  d=await r.json();}catch(e){el.textContent='The result is unknown ('+e+'). "
+        "Reload this page and check the client portal before publishing again.';return;}\n"
+        "  if(d.unresolved&&d.unresolved.length&&attempt===0&&confirm("
+        "'No product on sale in the store matches: '+d.unresolved.join(', ')+'.\\n\\n"
+        "If one is misspelled or a retired product, press Cancel and fix it. "
+        "Press OK if these are the client\\'s own remedies. "
+        "They will show on the report with no buy button.')){own=d.unresolved;continue;}\n"
+        "  break;}\n"
+        "  if(d.ok){lastPrice=String(raw).trim();var ownNote=(d.own_remedies&&d.own_remedies.length)?' Shown with no buy button: '+d.own_remedies.join(', ')+'.':'';"
+        "if(d.url){el.innerHTML='<a href=\"'+d.url+'\" target=\"_blank\">'+d.url+'</a> (copy into her email)';if(ownNote)el.appendChild(document.createTextNode(ownNote));}else{el.textContent=(d.note||'Portal updated — previously shared link still works.')+ownNote;}}\n"
+        "  else if(d.unresolved){el.textContent='Not published. No product on sale in the store matches: '+d.unresolved.join(', ')+'. Fix the name, or publish again and confirm it as the client\\'s own remedy.';}\n"
         "  else{el.textContent='Error: '+(d.error||'publish failed');}\n"
         "}\n</script>"
-    ).replace("__TID__", tid)
+    ).replace("__TID__", tid).replace(
+        "__PREV__", f"{int(courtesy_cents) / 100:.2f}"
+        if isinstance(courtesy_cents, int) and courtesy_cents > 0 else ""
+    ).replace(
+        # The last price could not be read: say so, so a blank is never taken for "none".
+        "__WARN__", "The last published price could not be read. "
+        if courtesy_cents == "unknown" else "")
 
     stresses_section = ""
     if stresses is not None:
         bal = stresses.get("balanced") or []
         if bal:
             items = "".join(
-                f"<li><b>{_e(s.get('code') or '')}</b> {_e(s.get('label') or '')} "
+                f"<li>{_code_html(s)}{_e(s.get('label') or '')} "
                 f"<span class=food>&mdash; {_e(s.get('balanced_by') or '')}</span></li>"
                 for s in bal)
             stresses_section = ("<h2>Stresses balanced</h2>"
@@ -552,6 +705,20 @@ function orderToken(kind){
 function rowVals(p){return {layer:val(p+'_layer'),head:val(p+'_head'),most_affected:val(p+'_most'),
  remedy:val(p+'_remedy'),dosage:val(p+'_dosage'),frequency:val(p+'_frequency'),timing:val(p+'_timing')}}
 function setE4L(j){if(j&&j.html!==undefined)document.getElementById('e4lpanel').innerHTML=j.html}
+async function prlAct(el,action,value){
+ var area=el.closest('.prl-area');if(!area)return;
+ if(action==='rating'){var v=(value||'').trim().toUpperCase();
+  if(!/^[1-9X]{3}$/.test(v)){el.classList.add('bad');el.title='Three of 1-9 or X, such as X74';return}
+  value=v}
+ var j=await post('/author/__TID__/prl',{focus_area_id:area.dataset.fa,action:action,
+  name:el.dataset.name||null,value:value===undefined?null:value});
+ if(!(j&&j.ok)){el.title=(j&&j.error)||'Could not save'}
+ // Redraw: a tick can change the group box, the All box and the empty flag.
+ loadE4L()}
+async function prlApprove(btn){
+ var area=btn.closest('.prl-area');if(!area)return;btn.disabled=true;
+ var j=await post('/author/__TID__/prl/approve',{focus_area_id:area.dataset.fa,name:btn.dataset.name});
+ if(!(j&&j.ok))btn.disabled=false;loadE4L()}
 async function loadE4L(){try{setE4L(await (await fetch('/author/__TID__/e4l')).json())}catch(e){}}
 // Previously dispensed: a reference list, so it loads lazily and stays closed
 // until asked for. Conditions come from the same curated catalogue the clinical
@@ -610,7 +777,13 @@ async function pickCondition(el){
  attachRemedyTo(el, answer);
 }
 function setStress(j){if(j&&j.html!==undefined)document.getElementById('stresspanel').innerHTML=j.html}
-async function loadStress(){try{setStress(await (await fetch('/author/__TID__/stresses')).json())}catch(e){}}
+async function loadStress(){try{var j=await (await fetch('/author/__TID__/stresses')).json();setStress(j);
+ // Sort new Mind stresses into Symptoms, Labs and Conditions, once per page load.
+ // Asked again only when the unsorted count changes, as after new stresses are mined.
+ if(j&&j.data&&j.data.unsorted>0&&window.__stressUnsorted!==j.data.unsorted){
+  window.__stressUnsorted=j.data.unsorted;
+  // A failed sort may still have kept earlier batches, so the list is refreshed then too.
+  var r=await post('/author/__TID__/stresses/sort',{});if(r&&(!r.ok||r.sorted>0))loadStress()}}catch(e){}}
 async function balanceStress(sid,val){await post('/author/__TID__/stress/'+sid+'/balance',{value:val});loadStress()}
 async function balanceToLayer(sid,sel){var rids=(sel.value||'').split(',').filter(Boolean);
  if(!rids.length){astat('Select a layer first.');return}
@@ -645,14 +818,18 @@ async function saveHeader(){const j=await post('/author/__TID__/header',
  {name:val('h_name'),email:val('h_email'),date:val('h_date'),
   idempotency_key:orderToken('header')});astat('Header saved.');setE4L(j)}
 async function refreshHeaderPhoto(){
- var img=document.getElementById('authorclientphoto'),email=val('h_email').trim();
+ var img=document.getElementById('authorclientphoto'),email=val('h_email').trim(),
+     pname=val('h_name').trim();
+ if(window.loadPhotoPicks)loadPhotoPicks('__TID__',email,pname,'authorphotopicks','authorclientphoto');
  if(!img)return;
  if(!email){img.removeAttribute('src');img.style.display='none';return}
  try{
-  var j=await (await fetch('/client-photo-framing/'+encodeURIComponent(email))).json();
+  var j=await (await fetch('/client-photo-framing/'+encodeURIComponent(email)
+   +'?name='+encodeURIComponent(pname))).json();
   if(j.ok)img.style.objectPosition=j.focus_x+'% '+j.focus_y+'%';
  }catch(e){img.style.objectPosition='50% 42%'}
- img.style.display='none';img.src='/client-photo/'+encodeURIComponent(email)+'?t='+Date.now();
+ img.style.display='none';img.src='/client-photo/'+encodeURIComponent(email)
+   +'?name='+encodeURIComponent(pname)+'&t='+Date.now();
 }
 // --- E4L client picker: name autocomplete -> email (dropdown if duplicates) -> date
 var E4L_CLIENT_ID=null;
@@ -729,7 +906,7 @@ async function checkE4L(){
  try{var cid=val('h_client_id');
   var j=await post('/author/__TID__/e4l/refresh',{client_id:cid?Number(cid):(E4L_CLIENT_ID!=null?E4L_CLIENT_ID:null)});
   setE4L(j);var s2=document.getElementById('e4lchk');
-  if(s2)s2.textContent=j.ok?(j.newer?'\\u2191 Newer scan pulled.':'\\u2713 Up to date.'):('E4L check failed: '+((j.error||'error')+'').slice(0,120));
+  if(s2)s2.textContent=j.ok?(j.newer?'\\u2191 Newer scan pulled.':(j.download_errors?'E4L listed a scan but the download failed; try again in a minute.':'No newer scan yet. E4L may still be processing; try again in a minute.')):('E4L check failed: '+((j.error||'error')+'').slice(0,120));
  }catch(e){var s3=document.getElementById('e4lchk');if(s3)s3.textContent='E4L check failed.'}
 }
 async function addRow(){var b=rowVals('new');if(!b.head&&!b.remedy){astat('Enter a stress and a remedy.');return}
@@ -1024,12 +1201,12 @@ function mstat(t){var e=document.getElementById('minestat');if(e)e.textContent=t
 async function mineProfile(){mstat('Mining the profile for stresses…');
  try{var j=await post('/author/__TID__/mine-profile',{})}
  catch(e){mstat('Mine profile failed: the server returned an error ('+e.message+').');return}
- if(j.error){mstat('Mine profile: '+j.error);return}
+ if(j.error){mstat('Mine profile: '+j.error+(j.added>0?' Added '+j.added+' before that.':''));if(j.added>0)loadStress();return}
  mstat(j.added?'Added '+j.added+' stress(es) from the profile.':'No new stresses found in the profile.');loadStress()}
 async function mineComms(){mstat('Mining recent comms for stresses…');
  try{var j=await post('/author/__TID__/mine-comms',{})}
  catch(e){mstat('Mine comms failed: the server returned an error ('+e.message+').');return}
- if(j.error){mstat('Mine comms: '+j.error);return}
+ if(j.error){mstat('Mine comms: '+j.error+(j.added>0?' Added '+j.added+' before that.':''));if(j.added>0)loadStress();return}
  mstat(j.added?'Added '+j.added+' stress(es) from recent comms.':'No new stresses found in recent comms.');loadStress()}
 function pstat(t){var e=document.getElementById('pastestat');if(e)e.textContent=t}
 async function minePaste(btn){var box=document.getElementById('pasteNotes'),text=box?box.value:'';
@@ -1048,7 +1225,7 @@ async function loadClinicalProposals(){
  try{var j=await (await fetch('/author/__TID__/clinical-proposals')).json(),items=j.items||[];
   if(!items.length){box.innerHTML='';return}
   box.innerHTML='<div class=proposal-head><b>Proposed from communications</b>'+
-   '<span>Confirm these describe the client—not a family member.</span></div>'+
+   '<span>Confirm each describes the client, or is marked as family history.</span></div>'+
    items.map(function(x,i){return '<div class=proposal-row><div><b>'+_esc(x.label)+'</b>'+
     '<div class=proposal-evidence>'+_esc(x.evidence)+(x.when?' · '+_esc(x.when):'')+'</div></div>'+
     '<div class=proposal-actions><button class=btn data-i="'+i+'" data-status=accepted>Add</button>'+
@@ -1230,7 +1407,12 @@ function toggleClinicalItem(box){
   return;
  }
  row.classList.toggle('selected',box.checked);
- if(box.checked){var select=row.querySelector('.clinical-layer');if(select)select.focus()}
+ if(box.checked){var select=row.querySelector('.clinical-layer');if(select)select.focus();return}
+ // Glen, 2026-10-16: "I can't manually uncheck the category either." Unticking the row
+ // unticks its remedies and saves that; the saved ticks re-ticked it on every reload.
+ [].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
+  .forEach(function(x){x.checked=false});
+ selectClinicalRemedy(box)
 }
 async function selectClinicalRemedy(box){
  var row=box.closest('.clinical-item');if(!row)return;
@@ -1240,10 +1422,97 @@ async function selectClinicalRemedy(box){
  if(check&&!row.classList.contains('done')){check.checked=remedies.length>0}
  row.classList.toggle('selected',!row.classList.contains('done')&&remedies.length>0);
  var stat=document.getElementById('clinicalOrderStat');
+ // Unticking an item by hand unticks the section's All box (the server does the same).
+ if(!box.checked)clinicalAllOff(box);
  if(stat)stat.textContent='Saving remedies\u2026';
  var j=await post('/author/__TID__/clinical-items/selection',
   {label:row.dataset.label,remedies:remedies});
  if(stat)stat.textContent=(j&&j.ok)?'Remedies saved':'Could not save remedy selection'}
+async function approveClinicalSectionItem(btn){
+ var row=btn.closest('.clinical-item');if(!row)return;btn.disabled=true;
+ var j=await post('/author/__TID__/clinical-sections/approve',
+  {label:row.dataset.label,section:btn.dataset.section,name:btn.dataset.name});
+ if(j&&j.ok){location.reload();return}
+ btn.disabled=false;var stat=document.getElementById('clinicalOrderStat');
+ if(stat)stat.textContent=(j&&j.error)||'Could not approve'}
+function clinicalAllOff(el){
+ var sec=el.closest('.clinical-section');
+ if(sec){var all=sec.querySelector('.clinical-section-allbox');if(all)all.checked=false;return}
+ // The row's own tick sits outside the sections; unticking it clears every remedy,
+ // so both remedy sections' All boxes go off.
+ [].slice.call((el.closest('.clinical-item')||document).querySelectorAll(
+  '.clinical-section[data-section=functional_formulations] .clinical-section-allbox,'+
+  '.clinical-section[data-section=infoceuticals] .clinical-section-allbox'))
+  .forEach(function(x){x.checked=false})}
+async function clinicalSectionAll(box){
+ var row=box.closest('.clinical-item'),sec=box.closest('.clinical-section');if(!row||!sec)return;
+ var key=sec.dataset.section,ff=key==='functional_formulations'||key==='infoceuticals';
+ // Only the items on the page: a botanical the client's switch hides is not ticked.
+ // A greyed (disabled) botanical is not ticked by All until it is unhidden.
+ var names=[].slice.call(sec.querySelectorAll(ff?'.clinical-remedy-choice:not(:disabled)':'.clinical-section-choice:not(:disabled)'))
+  .map(function(x){return ff?x.value:x.dataset.name});
+ var remedies=ff?[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
+  .map(function(x){return x.value}):[];
+ var stat=document.getElementById('clinicalOrderStat');
+ if(stat)stat.textContent='Saving…';box.disabled=true;
+ var j=null;
+ try{j=await post('/author/__TID__/clinical-sections/all',
+  {label:row.dataset.label,section:key,on:box.checked,names:names,remedies:remedies})}
+ catch(e){j=null}
+ box.disabled=false;
+ if(!(j&&j.ok&&Array.isArray(j.checked))){box.checked=!box.checked;
+  if(stat)stat.textContent=(j&&j.error)||'Could not save';return}
+ // Set the ticks in place: a reload lost Glen's scroll position.
+ var on={};j.checked.forEach(function(n){on[n]=true});
+ if(ff){[].slice.call(row.querySelectorAll('.clinical-remedy-choice'))
+   .forEach(function(x){x.checked=!!on[x.value]});
+  var check=row.querySelector('.clinical-check');
+  if(check&&!row.classList.contains('done'))check.checked=j.checked.length>0;
+  row.classList.toggle('selected',!row.classList.contains('done')&&j.checked.length>0)}
+ else{[].slice.call(sec.querySelectorAll('.clinical-section-choice'))
+   .forEach(function(x){x.checked=!!on[x.dataset.name]})}
+ if(stat)stat.textContent='Saved'}
+async function clinicalUnhide(btn){
+ var row=btn.closest('.clinical-item'),item=btn.closest('.clinical-section-item');if(!row||!item)return;
+ var on=item.classList.contains('greyed'),box=item.querySelector('input[type=checkbox]');
+ var stat=document.getElementById('clinicalOrderStat');btn.disabled=true;
+ var j=null;
+ try{j=await post('/author/__TID__/clinical-sections/unhide',
+  {label:row.dataset.label,section:btn.dataset.section,name:btn.dataset.name,on:on})}
+ catch(e){j=null}
+ btn.disabled=false;
+ if(!(j&&j.ok)){if(stat)stat.textContent=(j&&j.error)||'Could not save';return}
+ // In place, so the page keeps its scroll position.
+ item.classList.toggle('greyed',!on);btn.textContent=on?'Hide':'Unhide';
+ if(box){box.disabled=!on;
+  if(!on&&box.checked){box.checked=false;
+   if(box.classList.contains('clinical-remedy-choice'))await selectClinicalRemedy(box)}}
+ // An unhidden item arrives unticked, so the section's All box no longer holds.
+ if(on)clinicalAllOff(btn);
+ if(stat)stat.textContent=on?'Unhidden for this client':'Hidden again'}
+async function saveClinicalBotanical(){
+ var stat=document.getElementById('clinicalOrderStat');
+ if(stat)stat.textContent='Saving…';
+ var j=await post('/author/__TID__/clinical-sections/botanical',
+  {avoid:document.getElementById('clinicalAvoidBotanicals').checked,
+   exceptions:document.getElementById('clinicalBotanicalExceptions').value});
+ if(j&&j.ok){location.reload();return}
+ if(stat)stat.textContent=(j&&j.error)||'Could not save'}
+async function saveClinicalSectionItem(el,field){
+ var row=el.closest('.clinical-item');if(!row)return;
+ var body={label:row.dataset.label,section:el.dataset.section,name:el.dataset.name};
+ if(field==='checked'){body.checked=el.checked;if(!el.checked)clinicalAllOff(el)}
+ else if(field==='dose')body.dose=el.value;
+ else{var v=(el.value||'').trim().toUpperCase();
+  if(!/^[1-9X]{3}$/.test(v)){el.classList.add('bad');
+   el.title='Three of 1-9 or X, such as X74';return}
+  el.classList.remove('bad');body.rating=v}
+ var stat=document.getElementById('clinicalOrderStat');
+ if(stat)stat.textContent='Saving…';
+ var j=await post('/author/__TID__/clinical-sections/pick',body);
+ if(stat)stat.textContent=(j&&j.ok)?'Saved':((j&&j.error)||'Could not save');
+ // A new rating moves the item, so the section is redrawn in its new order.
+ if(j&&j.ok&&field==='rating')location.reload()}
 function clinicalStressTyped(input){
  var btn=input.closest('.clinical-item').querySelector('.clinical-stress-save');if(!btn)return;
  var now=(input.value||'').trim().toLowerCase(),was=(input.dataset.remembered||'').trim().toLowerCase();
@@ -1380,7 +1649,123 @@ def _row_inputs(p, l):
         + f'<td><input id="{p}_timing" value="{g("timing")}"></td>')
 
 
-def render_e4l_panel(ctx):
+_PRL_CHOICES = (
+    ("bare", "List it bare"),
+    ("foods", "Add dietary suggestions"),
+    ("nutrients", "Add nutrients"),
+    ("omit", "Leave it out"),
+)
+
+
+def _prl_preview(entry, choice):
+    if choice == "foods":
+        bits = [f"Emphasize: {_e(i['name'])} <span class=food>({_e(i['condition'])})</span>"
+                for i in entry["foods"]["emphasize"]]
+        bits += [f"Avoid: {_e(i['name'])} <span class=food>({_e(i['condition'])})</span>"
+                 for i in entry["foods"]["avoid"]]
+    else:
+        bits = [f"{_e(i['name'])}" + (f", {_e(i['dose'])}" if i.get("dose") else "")
+                + f" <span class=food>({_e(i['condition'])})</span>" for i in entry["nutrients"]]
+    return "".join(f"<li>{b}</li>" for b in bits)
+
+
+def render_prl_section(view):
+    """PRL products by the scan's focus areas (Glen, 2026-10-17). Each area has a
+    group box, an All box and one box per product; ratings sort each area."""
+    view = view or {}
+    areas = view.get("areas") or []
+    title = "<div class=food style='font-weight:600'>PRL supplements</div>"
+    if not areas:
+        return (f"<div class=prl-section style='margin-top:8px'>{title}"
+                "<div class=food>This scan hits none of the PRL focus areas.</div></div>")
+    out = []
+    for a in areas:
+        fa = _e(str(a["focus_area_id"]))
+        items = ""
+        for i in a["items"]:
+            name = _e(i["name"])
+            why = " · ".join(x for x in (i.get("reason"), i.get("source")) if x)
+            flags = ""
+            if i.get("lowers_bp"):
+                flags += "<span class=clinical-section-flag>lowers BP</span>"
+            if i.get("botanical"):
+                flags += "<span class=clinical-section-flag>botanical</span>"
+            if i.get("rated") and not i.get("reviewed"):
+                flags += ("<span class='clinical-section-flag unreviewed'>not reviewed</span>"
+                          f"<button type=button class='btn ghost prl-approve' data-name=\"{name}\" "
+                          "onclick=prlApprove(this)>Approve</button>")
+            ff = i.get("ff")
+            ff_html = (f"<span class=food>FF: {_e(ff['name'])} ({_e(ff['relation'])})</span>"
+                       if ff else "")
+            link = (f"<a href=\"{_e(i['url'])}\" target=_blank rel=noopener>{name}</a>"
+                    if i.get("url") else name)
+            note = f"<span class=clinical-section-note>{_e(i['note'])}</span>" if i.get("note") else ""
+            items += (f"<div class=prl-item title=\"{_e(why)}\">"
+                      f"<input class=prl-rating value=\"{_e(i.get('rating') or '')}\" maxlength=3 "
+                      f"size=3 placeholder='---' data-name=\"{name}\" "
+                      "title='Overall, research, uniqueness. 10 is X.' "
+                      f"aria-label=\"Rating for {name}\" onchange=\"prlAct(this,'rating',this.value)\">"
+                      f"<label><input type=checkbox class=prl-choice data-name=\"{name}\""
+                      f"{' checked' if i.get('checked') else ''} "
+                      "onchange=\"prlAct(this,this.checked?'item_on':'item_off')\"> "
+                      f"{link}</label>{ff_html}{flags}{note}</div>")
+        if a.get("botanical_hidden"):
+            n = a["botanical_hidden"]
+            items += (f"<div class=food>{n} botanical product{'s' if n != 1 else ''} "
+                      "hidden for this client</div>")
+        flag = ""
+        if a.get("empty"):
+            linked = a.get("linked") or []
+            choice = a.get("empty_choice") or ""
+            radios = ""
+            for key, label in _PRL_CHOICES:
+                needs = key in ("foods", "nutrients")
+                has = bool(a["foods"]["emphasize"] or a["foods"]["avoid"]) if key == "foods" \
+                    else bool(a["nutrients"]) if key == "nutrients" else True
+                off = needs and not has
+                radios += (f"<label><input type=radio name=prlempty{fa} value={key}"
+                           f"{' checked' if choice == key else ''}{' disabled' if off else ''} "
+                           f"onchange=\"prlAct(this,'empty_choice','{key}')\"> {label}</label>")
+            if not linked:
+                why = ("This focus area matches none of her Clinical Summary conditions, "
+                       "so there are no foods or nutrients to add.")
+            elif not (a["foods"]["emphasize"] or a["foods"]["avoid"] or a["nutrients"]):
+                why = (f"Matched {_e(', '.join(linked))}, but nothing is listed there yet.")
+            else:
+                why = f"Suggestions come from {_e(', '.join(linked))}."
+            preview = ""
+            if choice in ("foods", "nutrients"):
+                preview = f"<ul class=prl-preview>{_prl_preview(a, choice)}</ul>"
+            flag = ("<div class=prl-empty><b>Ticked with no product.</b> "
+                    "Confirm how it shows in her report.<div class=prl-choices>"
+                    f"{radios}</div><div class=food>{why}</div>{preview}</div>")
+        out.append(
+            f"<div class=prl-area data-fa=\"{fa}\"><div class=prl-head>"
+            f"<label><input type=checkbox class=prl-group{' checked' if a.get('checked') else ''} "
+            "onchange=\"prlAct(this,this.checked?'group_on':'group_off')\"> "
+            f"<b>{_e(a['name'])}</b></label>"
+            f"<label class=prl-all><input type=checkbox class=prl-allbox"
+            f"{' checked' if a.get('all_on') else ''} "
+            "onchange=\"prlAct(this,this.checked?'all_on':'all_off')\"> All</label>"
+            f"<span class=food>{_e(str(a.get('hits')))} scan item{'s' if a.get('hits') != 1 else ''}"
+            f"</span></div>{items}{flag}</div>")
+    style = ("<style>.prl-area{margin:6px 0;padding:6px 8px;border:1px solid var(--line);border-radius:7px}"
+             ".prl-head,.prl-item,.prl-choices{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}"
+             ".prl-item{margin:2px 0 2px 18px;font-size:12px}.prl-item input,.prl-head input,.prl-choices input{width:auto;margin:0 3px 0 0}"
+             ".prl-item input.prl-rating{width:3.6em;padding:1px 4px;font-size:11px;font-family:monospace;text-align:center;"
+             "color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:4px}"
+             ".prl-item input.prl-rating.bad{outline:2px solid #c0392b}"
+             ".prl-empty{margin:4px 0 2px 18px;padding:6px 8px;border:1px solid #a56a25;border-radius:7px;"
+             "background:rgba(196,125,39,.12);font-size:12px}.prl-preview{margin:4px 0 0;padding-left:18px}"
+             ".clinical-section-flag{border:1px solid var(--muted);border-radius:8px;padding:0 5px;font-size:10px}"
+             ".clinical-section-flag.unreviewed{border-color:#a56a25;color:#d9a05b}"
+             ".prl-approve{font-size:10px;padding:1px 6px}.clinical-section-note{font-style:italic}</style>")
+    return (f"{style}<div class=prl-section style='margin-top:8px'>{title}"
+            f"<div class=food>Checked products go in her report with the PRL sign-up link "
+            f"{_e(view.get('prl_link') or '')}.</div>{''.join(out)}</div>")
+
+
+def render_e4l_panel(ctx, prl_html=""):
     """Reference panel for the most recent E4L voice scan (fresh / stale / none).
     Always shows the scan's age + ranked findings when one exists; read-only —
     Glen's spoken testing still fills the causal chain. All scan free-text escaped."""
@@ -1418,6 +1803,7 @@ def render_e4l_panel(ctx):
         info = [f for f in allf if f.get("group") != "stress"]
         stress = [f for f in allf if f.get("group") == "stress"]
     body = (_section("Infoceuticals", "", info)
+            + (prl_html or "")
             + _section("Stresses", "information only, no balancing vial", stress))
     note = ("<div class=food style='margin-top:6px'>Reference only &mdash; your spoken "
             "testing fills the chain.</div>") if ctx.get("found") else ""
@@ -1837,10 +2223,138 @@ def _summary_bottles_chip(name, bottles_by_remedy, unavailable=False):
             f"{n} bottle{'' if n == 1 else 's'}</span>")
 
 
+def _clinical_sections_html(sections, remedy_choice):
+    """The five sections of one Clinical Summary row. Each item shows its rating as
+    three digits (10 as X) that Glen can retype for this client; nutrients carry an
+    editable dose; Fullscript items link to the store front door only."""
+    from dashboard.biofield_clinical_sections import (
+        DOSED_SECTIONS, FULLSCRIPT, HEALING_TOOLS, REMEDY_SECTIONS, fullscript_store_url)
+    out = []
+    for section in sections:
+        key, title = section.get("key"), section.get("title") or ""
+        bits = []
+        for entry in section.get("items") or []:
+            name = entry.get("name") or ""
+            rating = entry.get("rating") or ""
+            why = " · ".join(x for x in (entry.get("reason"), entry.get("source")) if x)
+            rating_box = (f"<input class=clinical-section-rating value=\"{_e(rating)}\" "
+                          "maxlength=3 size=3 placeholder='---' "
+                          f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
+                          "title='Overall, research, uniqueness. 10 is X.' "
+                          f"aria-label=\"Rating for {_e(name)}\" "
+                          "onchange=saveClinicalSectionItem(this,'rating')>")
+            flags = ""
+            if entry.get("lowers_bp"):
+                flags += "<span class=clinical-section-flag>lowers BP</span>"
+            if entry.get("botanical"):
+                flags += "<span class=clinical-section-flag>botanical</span>"
+            for other in entry.get("conflicts") or []:
+                flags += (f"<span class='clinical-section-flag conflict'>"
+                          f"conflicts with {_e(other)}</span>")
+            if not entry.get("reviewed", True):
+                flags += ("<span class='clinical-section-flag unreviewed'>not reviewed</span>"
+                          f"<button type=button class='btn ghost clinical-section-approve' "
+                          f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
+                          "title='Add to the shared catalog for every client' "
+                          "onclick=approveClinicalSectionItem(this)>Approve</button>")
+            # Glen, 2026-10-17: "Indicate which infoceuticals are among the 5
+            # recommended, and also which are purple."
+            if entry.get("recommended"):
+                flags += ("<span class='clinical-section-flag recommended' title='Among "
+                          "the 5 infoceuticals this scan recommends'>recommended</span>")
+            # Glen, 2026-10-18: "Just show an icon with the color." One per scan bar:
+            # the infoceutical's own, or each field a nutrient names.
+            if entry.get("colours") is not None:
+                bars = [(entry.get("code") or "", entry["colours"])] if entry["colours"] else []
+            else:
+                bars = entry.get("scan_colours") or []
+            for field, found in bars:
+                for colour in found:
+                    shown_colour = "grey (empty)" if colour == "grey" else colour
+                    flags += (f"<span class='scan-dot {_e(colour)}' role=img "
+                              f"title=\"{_e(field)}: {_e(shown_colour)} on this scan\" "
+                              f"aria-label=\"{_e(field)}: {_e(shown_colour)} on this scan\">"
+                              "</span>")
+            if "recommended" in entry and entry.get("code") == "":
+                # No E4L code in the name, so the scan cannot answer for it.
+                flags += ("<span class='clinical-section-flag' title='No E4L code in "
+                          "this name, so the scan cannot say'>scan marks unknown</span>")
+            note = (f"<span class=clinical-section-note>{_e(entry['note'])}</span>"
+                    if entry.get("note") else "")
+            # Glen, 2026-10-18: a botanical the switch hides shows greyed out, with a
+            # button to unhide it for this client; an unhidden one can be hidden again.
+            greyed = bool(entry.get("hidden"))
+            item_cls = "clinical-section-item greyed" if greyed else "clinical-section-item"
+            disabled = " disabled" if greyed else ""
+            if greyed or entry.get("unhidden"):
+                flags += (f"<button type=button class='btn ghost clinical-unhide' "
+                          f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
+                          f"onclick=clinicalUnhide(this)>{'Unhide' if greyed else 'Hide'}"
+                          "</button>")
+            if key in REMEDY_SECTIONS:
+                choice = remedy_choice(name)
+                if greyed:
+                    choice = choice.replace("type=checkbox value=", "type=checkbox disabled value=", 1)
+                bits.append(f"<div class='{item_cls}' title=\"{_e(why)}\">"
+                            f"{rating_box}{choice}{flags}{note}</div>")
+                continue
+            shown = _e(name)
+            if key == FULLSCRIPT:
+                brand = f" <span class=clinical-section-brand>{_e(entry.get('brand'))}</span>" \
+                    if entry.get("brand") else ""
+                shown = (f"<a href=\"{_e(fullscript_store_url())}\" target=_blank "
+                         f"rel=noopener>{_e(name)}</a>{brand}")
+            dose = ""
+            if key in DOSED_SECTIONS:
+                dose = (f"<input class=clinical-section-dose value=\"{_e(entry.get('dose') or '')}\" "
+                        f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
+                        f"placeholder='{'Usage' if key == HEALING_TOOLS else 'Dose'}' "
+                        f"aria-label=\"{'Usage' if key == HEALING_TOOLS else 'Dose'} of {_e(name)}\" "
+                        "onchange=saveClinicalSectionItem(this,'dose')>")
+            bits.append(
+                f"<div class='{item_cls}' title=\"{_e(why)}\">{rating_box}"
+                f"<label><input class=clinical-section-choice type=checkbox "
+                f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\""
+                f"{' checked' if entry.get('checked') else ''}{disabled} "
+                f"onchange=saveClinicalSectionItem(this,'checked')> {shown}</label>"
+                f"{dose}{flags}{note}</div>")
+        empty = ("No common remedies recorded yet" if key in REMEDY_SECTIONS
+                 else "Nothing listed yet")
+        body = "".join(bits) or f"<span class=clinical-open>{empty}</span>"
+        if bits:
+            # Not reading a mark must not look like "not recommended" or "not purple".
+            for what, why in section.get("marks_errors") or []:
+                body += (f"<span class=clinical-open title=\"{_e(why)}\">{_e(what)}</span>")
+        # One box ticks every item shown in the section (Glen, 2026-10-17). Unticking it
+        # unticks only what it ticked; items ticked by hand stay.
+        all_box = ""
+        if bits:
+            all_box = (f"<label class=clinical-section-all><input type=checkbox "
+                       f"class=clinical-section-allbox data-section=\"{_e(key)}\""
+                       f"{' checked' if section.get('all_on') else ''} "
+                       "onchange=clinicalSectionAll(this)> All</label>")
+        out.append(f"<div class=clinical-section data-section=\"{_e(key)}\">"
+                   f"<div class=clinical-section-head><div class=clinical-section-title>"
+                   f"{_e(title)}</div>{all_box}</div>{body}</div>")
+    return "".join(out)
+
+
+def _botanical_switch_html(setting):
+    """Per client (Glen, 2026-10-17): hide botanical items, except named ones."""
+    setting = setting or {}
+    return ("<div class=clinical-botanical><label><input type=checkbox "
+            f"id=clinicalAvoidBotanicals{' checked' if setting.get('avoid') else ''} "
+            "onchange=saveClinicalBotanical()> Avoids botanicals</label>"
+            "<label>Except <input id=clinicalBotanicalExceptions "
+            f"value=\"{_e(setting.get('exceptions') or '')}\" placeholder='ginger, milk thistle' "
+            "onchange=saveClinicalBotanical()></label></div>")
+
+
 def render_clinical_checklist(items, layers=None, intake_priorities=None,
                              profile_unavailable=False, alias_map=None,
                              display_map=None, bottles_by_remedy=None,
-                             bottles_unavailable=False):
+                             bottles_unavailable=False, free_factors=None,
+                             botanical=None):
     """Scannable editable checklist; completion follows the current remedy program."""
     items = items or []
     layer_groups = group_layers(layers or [])
@@ -1858,7 +2372,11 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
     checked = sum(1 for item in items if item.get("checked"))
     rows = ""
     for item in items:
-        done = bool(item.get("checked"))
+        # "Done" means a remedy on the causal chain covers it. A saved tick sets
+        # `checked` too (apply_selection), and reading that as done drew a ticked row as
+        # layer-covered, so unticking every remedy could not untick the row (Glen,
+        # 2026-10-16). Ticks alone make the row selected, which unticks freely.
+        done = bool(item.get("checked")) and bool((item.get("covered_by") or "").strip())
         # A saved tick set wins over the derived coverage, so the practitioner's own
         # ticks survive the location.reload() every other action on this page fires.
         if item.get("selection_saved"):
@@ -1888,15 +2406,41 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
         remedy = (f"<span class=clinical-remedy>Layer {_e(str(item.get('layer') or '?'))} · {_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
-        common = "".join(
-            f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
-            f"{' checked' if name.strip().lower() in chosen else ''}"
-            f" onchange=selectClinicalRemedy(this)> {_e(name)}"
-            f"{_summary_bottles_chip(name, bottles_by_remedy, bottles_unavailable)} "
-            f"<button type=button class=clinical-remedy-delete data-remedy=\"{_e(name)}\" "
-            f"onclick=deleteClinicalRemedy(this) title='Delete remembered remedy'>&times;</button></label>"
-            for name in item.get("common_remedies") or []
-        ) or "<span class=clinical-open>No common remedies recorded yet</span>"
+        # The factors grouped into this item, kept as their own list (Glen, 2026-10-16:
+        # "separate"). The item's own name is what the grouping store keys on.
+        item_name = label
+        factor_bits = "".join(
+            f"<span class=clinical-factor>{_e(f)}<button type=button class=clinical-factor-x "
+            f"data-item=\"{_e(item_name)}\" data-factor=\"{_e(f)}\" "
+            f"onclick=removeGroupFactor(this) title='Take this factor out of the item' "
+            f"aria-label=\"Remove {_e(f)}\">&times;</button></span>"
+            for f in item.get("factors") or [])
+        # Search the intake's free factors, or type a new one (Glen, 2026-10-16).
+        add_factor = (f"<span class=clinical-factor-new><input class=clinical-factor-add "
+                      f"list=groupFactorOptions data-item=\"{_e(item_name)}\" "
+                      "placeholder='Add a factor&hellip;' autocomplete=off "
+                      "aria-label='Search or type a factor to add to this item' "
+                      "onkeydown=\"if(event.key==='Enter'){event.preventDefault();"
+                      "addGroupFactor(this)}\"><button type=button class='btn ghost' "
+                      "onclick=addGroupFactor(this.previousElementSibling)>+ Factor</button></span>")
+        factors_html = f"<div class=clinical-factors>Factors: {factor_bits}{add_factor}</div>"
+        def remedy_choice(name, extra=""):
+            return (f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
+                    f"{' checked' if name.strip().lower() in chosen else ''}"
+                    f" onchange=selectClinicalRemedy(this)> {_e(name)}"
+                    f"{_summary_bottles_chip(name, bottles_by_remedy, bottles_unavailable)} "
+                    f"{extra}"
+                    f"<button type=button class=clinical-remedy-delete data-remedy=\"{_e(name)}\" "
+                    f"onclick=deleteClinicalRemedy(this) title='Delete remembered remedy'>&times;</button></label>")
+        if item.get("sections"):
+            # Five titled sections (Glen, 2026-10-17). The first is the remedy list
+            # above under a new title, sorted by rating; its ticks still save as the
+            # row's remedies, so the chain and the program read them unchanged.
+            common = _clinical_sections_html(item["sections"], remedy_choice)
+        else:
+            common = "".join(
+                remedy_choice(name) for name in item.get("common_remedies") or []
+            ) or "<span class=clinical-open>No common remedies recorded yet</span>"
         selected_layer = item.get("layer")
         options = "<option value=''>Choose layer…</option>" + "".join(
             f"<option value='{number}'{' selected' if str(selected_layer or '') == str(number) else ''}>"
@@ -1914,6 +2458,7 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
                  # data-label above stays CANONICAL: every action on this row keys off
                  # it, so showing a different name must not change what is stored.
                  f"<span class=clinical-label>{_e(item.get('display_label') or label)}</span>{remedy}"
+                 f"{factors_html}"
                  f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
                  f"<div class=clinical-stress-row><label class=clinical-stress-label>Stress pattern (head &amp; tail)"
                  f"{'<span class=clinical-stress-hint>suggested</span>' if item.get('pattern_is_suggested') else ''}"
@@ -2045,11 +2590,49 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".intake-combine{display:inline-flex;gap:5px;margin-left:8px;vertical-align:middle}"
             ".intake-combine select{font-size:11px;padding:1px 3px;max-width:190px}"
             ".intake-combine .btn{font-size:11px;padding:2px 7px}"
+            # Glen, 2026-10-16: the factor list overlapped the controls. It had no column,
+            # so the grid put it in the 22px tick-box column and it ran over the rows below.
+            ".clinical-factors{grid-column:3;display:flex;flex-wrap:wrap;align-items:center;"
+            "gap:4px 6px;margin-top:6px;font-size:12px;color:var(--muted)}"
+            ".clinical-factor{display:inline-flex;align-items:center;gap:2px;padding:1px 4px 1px 8px;"
+            "border:1px solid var(--line);border-radius:10px;color:var(--text)}"
+            ".clinical-factor-x{border:0;background:transparent;color:var(--muted);font-size:14px;"
+            "line-height:1;padding:0 2px;cursor:pointer}.clinical-factor-x:hover{color:#ef8d8d}"
+            ".clinical-factor-new{display:inline-flex;gap:4px;align-items:center}"
+            ".clinical-factor-add{width:220px;max-width:100%;min-width:0;margin:0;padding:3px 6px;"
+            "font-size:12px}.clinical-factor-new .btn{font-size:11px;padding:3px 8px}"
             ".clinical-label{font-weight:650;line-height:1.25}.clinical-remedy,.clinical-open{font-size:11px;margin-top:2px}"
             ".clinical-remedy{color:var(--ok)}.clinical-open{color:var(--muted)}"
             ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(160px,1fr) minmax(260px,1.25fr) auto;gap:8px;margin-top:9px;align-items:end}"
             ".clinical-common{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11px;color:var(--muted)}"
             ".clinical-common label{white-space:nowrap}.clinical-common input{width:auto;margin:0 3px 0 0}"
+            ".clinical-section{flex-basis:100%;margin:4px 0 2px}"
+            ".clinical-section-title{font-weight:600;color:var(--text,inherit);margin:2px 0}"
+            ".clinical-section-head{display:flex;gap:10px;align-items:center}"
+            ".clinical-section-all{font-size:11px;color:var(--muted)}"
+            ".clinical-section-flag.recommended{border-color:#3f8fc9;color:#6fb3e6}"
+            ".clinical-section-item.greyed>:not(.clinical-unhide){opacity:.45}"
+            ".scan-dot{display:inline-block;width:11px;height:11px;border-radius:50%;"
+            "margin-left:5px;vertical-align:middle;border:1px solid rgba(0,0,0,.35)}"
+            ".scan-dot.purple{background:#9581b4}.scan-dot.green{background:#75b772}"
+            ".scan-dot.yellow{background:#f2f21a}.scan-dot.orange{background:#ffbf3f}"
+            ".scan-dot.grey{background:#dee0e2}"
+            ".clinical-section-item{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:1px 0}"
+            ".clinical-common .clinical-section-item input.clinical-section-rating,"
+            ".clinical-common .clinical-section-item input.clinical-section-dose{padding:1px 4px;margin:0;"
+            "font-size:11px;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:4px}"
+            ".clinical-common .clinical-section-item input.clinical-section-rating{width:3.6em;font-family:monospace;text-align:center}"
+            ".clinical-section-item>label{flex:0 1 auto}"
+            ".clinical-common .clinical-section-note{white-space:normal;flex:1 1 220px;min-width:0}"
+            ".clinical-section-item input.clinical-section-rating.bad{outline:2px solid #c0392b}"
+            ".clinical-common .clinical-section-item input.clinical-section-dose{width:18em;max-width:100%}"
+            ".clinical-section-flag{border:1px solid var(--muted);border-radius:8px;padding:0 5px;font-size:10px}"
+            ".clinical-section-note{font-style:italic}"
+            ".clinical-section-flag.conflict{border-color:#c0392b;color:#e07a6f}"
+            ".clinical-section-flag.unreviewed{border-color:#a56a25;color:#d9a05b}"
+            ".clinical-balance .btn.clinical-section-approve{font-size:10px;padding:1px 6px}"
+            ".clinical-botanical{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin:0 0 8px;font-size:12px}"
+            ".clinical-botanical input{width:auto;margin:0 4px 0 0}.clinical-botanical #clinicalBotanicalExceptions{width:16em}"
             # Glen, 2026-09-18: "Combine another row..." covered most of the stress field. The
             # picker sized itself to its longest condition label and squeezed the field
             # to 69px. The row now wraps, the field keeps 260px, the picker is capped.
@@ -2086,12 +2669,20 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             f"<div class=clinical-count>{checked} of {len(items)} covered"
             "<span id=clinicalOrderStat style='margin-left:8px'></span></div></div>"
             f"{warn_html}"
+            f"{_botanical_switch_html(botanical) if any(i.get('sections') for i in items) else ''}"
             f"<div class=clinical-grid>{rows}</div>"
+            # One list for every row's factor search box.
+            + "<datalist id=groupFactorOptions>"
+            + "".join(f"<option value=\"{_e(f)}\"></option>" for f in free_factors or [])
+            + "</datalist>"
             f"{intake_strip}"
             "<div class=clinical-add><input id=clinicalNew list=clinicalCatalog autocomplete=off placeholder='Search or add symptom or condition…' "
             "onkeydown=\"if(event.key==='Enter'){event.preventDefault();addClinicalItem()}\">"
             "<datalist id=clinicalCatalog></datalist>"
             "<button class='btn ghost' onclick=addClinicalItem()>+ Add item</button></div>"
+            # Glen, 2026-10-16: findings read from the client's own records, "review
+            # first". Nothing joins the summary until he approves it.
+            + _RECORDS_HTML +
             # Glen, 2026-09-16: the checked items' stress patterns join the Stresses
             # list, so clinical and energetic findings are balanced as one set rather
             # than in two places that never meet.
@@ -2124,6 +2715,84 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "<div id=progresult class=food style='margin-top:6px'></div></section>")
 
 
+
+# Proposed groupings of the client's factors, each one a Clinical Summary item. Glen,
+# 2026-10-16: "Propose those groupings and names for approval or editing." Built with
+# DOM calls, never innerHTML, so a factor's wording is only ever text.
+_GROUPS_HTML = """<div id=groupProposals></div><script>(function(){
+var m=location.pathname.match(/^\\/author\\/(a[0-9]+)/);if(!m)return;
+var base='/author/'+m[1]+'/clinical-groups',box=document.getElementById('groupProposals');
+function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;
+ if(text!=null)e.textContent=text;return e}
+async function send(path,body){var r=await fetch(base+path,{method:'POST',
+ headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+ try{return await r.json()}catch(e){return {ok:false,error:'The server returned an error.'}}}
+function card(g,pool,onApprove,onDismiss){
+ var row=el('div','proposal-row group-row'),left=el('div'),acts=el('div','proposal-actions');
+ var name=el('input');name.value=g.name||'';name.placeholder='Name for this Clinical Summary item';
+ name.setAttribute('aria-label','Item name');left.appendChild(name);
+ if(g.why)left.appendChild(el('div','proposal-evidence',g.why));
+ var list=el('div','group-factors');left.appendChild(list);
+ function addBox(f,on){var lab=el('label','group-factor'),cb=el('input');cb.type='checkbox';
+  cb.checked=on;cb._factor=f;lab.appendChild(cb);lab.appendChild(document.createTextNode(' '+f));
+  list.appendChild(lab)}
+ (g.factors||[]).forEach(function(f){addBox(f.factor,true)});
+ // Search the free factors, or type a new one (Glen, 2026-10-16).
+ var adder=el('span','group-adder'),pick=el('input'),plus=el('button','btn ghost','+ Factor');
+ pick.setAttribute('list','groupCardOptions');pick.placeholder='Add a factor…';
+ pick.setAttribute('autocomplete','off');pick.setAttribute('aria-label','Search or type a factor');
+ function take(){var v=(pick.value||'').trim();if(v){addBox(v,true);pick.value=''}}
+ pick.onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();take()}};
+ plus.type='button';plus.onclick=take;adder.appendChild(pick);adder.appendChild(plus);
+ left.appendChild(adder);
+ var ok=el('button','btn',g.id?'Approve':'Add item');var no=g.id?el('button','btn ghost','Dismiss'):null;
+ ok.onclick=async function(){var picked=[].slice.call(list.querySelectorAll('input'))
+   .filter(function(c){return c.checked}).map(function(c){return c._factor});
+  ok.disabled=true;var j=await onApprove(name.value.trim(),picked);
+  if(!j.ok){ok.disabled=false;alert(j.error||'Not approved.')}};
+ acts.appendChild(ok);
+ if(no){no.onclick=async function(){no.disabled=true;var j=await onDismiss();
+  if(!j.ok){no.disabled=false;alert(j.error||'Not dismissed.')}};acts.appendChild(no)}
+ row.appendChild(left);row.appendChild(acts);return row}
+async function load(){
+ var j;try{j=await (await fetch(base)).json()}catch(e){box.textContent='';return}
+ if(!j.ok){box.textContent='';return}
+ box.textContent='';var head=el('div','proposal-head');head.appendChild(el('b',null,'Proposed groupings'));
+ var free=(j.ungrouped||[]).map(function(f){return f.factor});
+ var proposed=j.proposed||[];
+ head.appendChild(el('span',null,free.length+' factor'+(free.length==1?'':'s')+
+  ' not in any group. Each approved group becomes one Clinical Summary item.'));
+ var go=el('button','btn ghost',proposed.length?'Propose again':'Propose groupings');
+ var stat=el('span');head.appendChild(go);head.appendChild(stat);box.appendChild(head);
+ go.onclick=async function(){go.disabled=true;stat.textContent=' Asking…';
+  var r=await send('/propose');go.disabled=false;
+  if(!r.ok){stat.textContent=' '+(r.error||'Could not propose.');return}
+  load()};
+ // Any open proposal's factor can be moved into another group, as can a free one.
+ var inOpen=[];proposed.forEach(function(g){g.factors.forEach(function(f){inOpen.push(f.factor)})});
+ var pool=free.concat(inOpen);
+ var opts=document.getElementById('groupCardOptions');
+ if(!opts){opts=el('datalist');opts.id='groupCardOptions';document.body.appendChild(opts)}
+ opts.textContent='';pool.forEach(function(f){var o=el('option');o.value=f;opts.appendChild(o)});
+ proposed.forEach(function(g){box.appendChild(card(g,pool,
+  async function(name,picked){var r=await send('/approve',{group_id:g.id,name:name,factors:picked,typed:true});
+   if(r.ok)location.reload();return r},
+  async function(){var r=await send('/'+g.id+'/dismiss');if(r.ok)load();return r}))});
+ {box.appendChild(card({name:'',factors:[]},pool,
+  async function(name,picked){var r=await send('/approve',{name:name,factors:picked,typed:true});
+   if(r.ok)location.reload();return r},null))}
+}
+// The Clinical Summary rows render after this box, so their controls read their own
+// data attributes when used.
+window.removeGroupFactor=async function(btn){btn.disabled=true;var r=await send('/remove-factor',
+ {name:btn.getAttribute('data-item'),factor:btn.getAttribute('data-factor')});
+ if(r.ok)location.reload();else{btn.disabled=false;alert(r.error||'Not removed.')}};
+window.addGroupFactor=async function(inp){var v=(inp.value||'').trim();if(!v)return;
+ inp.disabled=true;
+ var r=await send('/approve',{name:inp.getAttribute('data-item'),factors:[v],typed:true});
+ if(r.ok)location.reload();else{inp.disabled=false;alert(r.error||'Not added.')}};
+load()})()</script>"""
+
 def render_clinical_proposals():
     return ("<style>.clinical-proposals{margin:18px 0 8px}.proposal-head{display:flex;gap:10px;"
             "align-items:baseline;padding:10px 12px;border:1px solid #a56a25;border-radius:9px 9px 0 0;"
@@ -2133,7 +2802,16 @@ def render_clinical_proposals():
             ".proposal-row:last-child{border-radius:0 0 9px 9px}.proposal-evidence{max-width:760px;margin-top:3px;"
             "font-size:11px;line-height:1.35;color:var(--muted)}.proposal-actions{display:flex;gap:6px}"
             "@media(max-width:700px){.proposal-head{display:block}.proposal-row{grid-template-columns:1fr}}"
-            "</style><section id=clinicalProposals class=clinical-proposals aria-live=polite></section>")
+            ".proposal-row input{width:100%;margin:4px 0 0;padding:5px}"
+            ".group-factors{display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0;font-size:12px}"
+            ".proposal-row .group-factor input{width:auto;margin:0;padding:0}"
+            ".group-row select{max-width:100%;text-overflow:ellipsis}"
+            ".group-row .proposal-actions{align-self:start}"
+
+            # One review place (Glen, 2026-10-16: "one box"): communications and records.
+            "</style><section class=clinical-proposals aria-live=polite>"
+            "<div id=clinicalProposals></div><div id=recordProposals></div>"
+            + _GROUPS_HTML + "</section>")
 
 
 def _render_fold_notice(groups):
@@ -2175,12 +2853,15 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                        clinical_checklist=None, dispensed=None, dispensed_error=None,
                        intake_priorities=None,
                        profile_unavailable=False, alias_map=None, display_map=None,
-                       narrative_warnings=None, history_links_html=""):
+                       narrative_warnings=None, history_links_html="",
+                       clinical_free_factors=None, clinical_botanical=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
     photo_email = (c.get("email") or "").strip()
-    photo_src = (f"/client-photo/{_up.quote(photo_email, safe='')}" if photo_email else "")
+    photo_name = (c.get("name") or "").strip()
+    photo_src = (f"/client-photo/{_up.quote(photo_email, safe='')}"
+                 f"?name={_up.quote(photo_name, safe='')}" if photo_email else "")
     head = (_workflow_nav("intake", c.get("email") or "")
             + _client_tabs("edit", tid, c.get("email") or "")
             + f"<p><a href='/'>&larr; All tests</a> &nbsp;&middot;&nbsp; "
@@ -2221,7 +2902,10 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<img id=authorclientphoto class=authorheadphoto alt='Selected client headshot' "
         f"style='display:{'block' if photo_src else 'none'}' src='{_e(photo_src)}' "
         "onload=\"this.style.display='block'\" onerror=\"this.style.display='none'\">"
-        "</div>")
+        "</div><div id=authorphotopicks></div>" + _PHOTO_PICK_JS
+        + f"<script>loadPhotoPicks('{tid}',decodeURIComponent('{_up.quote(photo_email, safe='')}'),"
+          f"decodeURIComponent('{_up.quote(photo_name, safe='')}'),'authorphotopicks',"
+          "'authorclientphoto')</script>")
     groups = group_layers(report.get("layers") or [])
     chain = ("<h2>Causal chain "
              "<button class='btn ghost' id=depthbtn onclick=toggleDepth() "
@@ -2309,7 +2993,9 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                                             profile_unavailable=profile_unavailable,
                                             alias_map=alias_map, display_map=display_map,
                                             bottles_by_remedy=_bottles_by_remedy(dispensed),
-                                            bottles_unavailable=bool(dispensed_error))
+                                            bottles_unavailable=bool(dispensed_error),
+                                            free_factors=clinical_free_factors,
+                                            botanical=clinical_botanical)
                  + history_links_html
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
@@ -2389,7 +3075,15 @@ def render_dispensed_panel(rows, open_=False, error=None):
     n = rows[0]["orders_considered"] if rows else 0
     head = ("<button class='btn ghost' onclick=toggleDispensed() id=dispbtn>"
             + ("Hide" if open_ else "Show") + " previously dispensed</button>")
-    if error:
+    # Store orders that could not be read, above FileMaker rows that could. The error
+    # used to replace the rows: a timed-out store lookup hid all 8 of Linda Maher's
+    # FileMaker invoices (2026-10-12).
+    partial = ""
+    if error and rows:
+        partial = ("<div class=food style='margin-top:8px'>"
+                   "<b>Store orders unavailable:</b> " + _e(str(error)) +
+                   ". The list below is from FileMaker only.</div>")
+    if error and not rows:
         # An empty panel used to say "no order history" whether the client had none or
         # the lookup had failed. Those are opposite facts and it stated the reassuring
         # one. Say which it is, and say what to do about it.
@@ -2424,7 +3118,7 @@ def render_dispensed_panel(rows, open_=False, error=None):
                 f"onclick=\"pickCondition(this)\" title='Add this remedy to a condition'>{nm}</button>"
                 f"<span style='flex:1.2;display:flex;flex-wrap:wrap;gap:4px'>{chips}</span>"
                 "<span class=food data-msg></span></div>")
-        body = (f"<div class=food style='margin:6px 0'>Across this client's last {n} "
+        body = (partial + f"<div class=food style='margin:6px 0'>Across this client's last {n} "
                 f"order{'' if n == 1 else 's'}.</div>"
                 + items)
     style = "" if open_ else "display:none"
@@ -2526,6 +3220,37 @@ def render_layer_candidates_panel(layer_candidates):
             f"letter-spacing:.04em'>Layer alternatives</div>{blocks}</div>")
 
 
+# Glen, 2026-10-16: "The list needs to be categorized: 1. Body Energetics (e4l
+# findings) 2. Mind Observations (symptoms, conditions), and 3. Spirit (Biofield
+# findings: Terrain phase)". Which source is which is his 2026-09-18 ruling, kept in
+# biofield_program, so this list and the program can never disagree.
+STRESS_GROUPS = (("body", "Body Energetics", "E4L findings"),
+                 ("mind", "Mind Observations", "symptoms, conditions"),
+                 ("spirit", "Spirit", "Biofield findings"))
+
+
+def _code_html(s):
+    """The stress's code in bold, only where it says something the label does not.
+    A mined stress's code is its own label normalised, so it read "anemia anemia"
+    (Glen, 2026-10-16). Only an E4L scan code is a separate fact."""
+    from dashboard.biofield_stress import _norm
+    code = (s.get("code") or "").strip()
+    if not code or s.get("source") not in (None, "", "scan") or _norm(code) == _norm(s.get("label")):
+        return ""
+    return f"<b>{_e(code)}</b> "
+
+
+def stress_group(source):
+    from dashboard.biofield_program import BODY_SOURCES, SPIRIT_SOURCES
+    source = (source or "").strip()
+    if source in BODY_SOURCES:
+        return "body"
+    # 'chain' rows came off the causal chain the Biofield test built.
+    if source in SPIRIT_SOURCES or source == "chain":
+        return "spirit"
+    return "mind"      # the Clinical summary, tags, comms, pasted notes, records
+
+
 def render_stress_panel(data):
     data = data or {}
     layer_options = "<option value=''>Select layer…</option>"
@@ -2570,13 +3295,38 @@ def render_stress_panel(data):
         drag_attr = (f" class=sdrag draggable=true ondragstart=\"stressDragStart(event,{sid})\" "
                      "ondragend=stressDragEnd(event) title='Drag onto a layer to cover it'"
                      if drag else "")
-        return (f"<li{drag_attr}><b>{_e(s.get('code') or '')}</b> {_e(s.get('label') or '')} "
+        return (f"<li{drag_attr}>{_code_html(s)}{_e(s.get('label') or '')} "
                 f"<span class=pill>{tag}</span>{bytxt} {btn}{assign_btn}{delete_btn}</li>")
     if "by_layer" in data:
         # Per-layer grouping: every AI-created stress under each causal-chain layer
         # (covered-by-remedy or head match), a stress may appear under several layers.
         def _list(stresses, drag=False):
-            return "".join(_row(s, not s.get("balanced"), drag) for s in stresses or [])
+            groups = {}
+            for s in stresses or []:
+                groups.setdefault(stress_group(s.get("source")), []).append(s)
+            out = ""
+            for key, title, what in STRESS_GROUPS:
+                members = groups.get(key, [])
+                if not members:
+                    continue
+                out += (f"<li class=stress-group data-group={key} style='list-style:none;"
+                        "margin:6px 0 2px -18px;font-size:11px;font-weight:700;"
+                        f"color:var(--muted)'>{title} <span style='font-weight:400'>"
+                        f"&middot; {what}</span></li>")
+                if key != "mind":
+                    out += "".join(_row(s, not s.get("balanced"), drag) for s in members)
+                    continue
+                # Glen, 2026-10-16: "categorize within Mind: Symptoms, Labs, Conditions".
+                # Unsorted, or not sorted yet, goes under Symptoms (his ruling).
+                from dashboard.stress_kinds import SUBGROUPS
+                for kind, name in SUBGROUPS:
+                    rows = "".join(_row(s, not s.get("balanced"), drag) for s in members
+                                   if (s.get("kind") or "symptom") == kind)
+                    if rows:
+                        out += (f"<li class=stress-subgroup data-kind={kind} "
+                                "style='list-style:none;margin:3px 0 1px -8px;font-size:11px;"
+                                f"font-style:italic;color:var(--muted)'>{name}</li>{rows}")
+            return out
         parts = []
         for L in data.get("by_layer") or []:
             sub = " &middot; ".join(x for x in [_e(L.get("head") or ""),

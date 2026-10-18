@@ -197,7 +197,7 @@ def parse_cns_confirmation(html: str) -> Dict[str, object]:
 
 # ── Draft email (Glen's "tracking number" email, replicated) ─────────────────
 
-def build_tracking_email(tracking: str, recipient_name: Optional[str] = None,
+def build_tracking_email(tracking, recipient_name: Optional[str] = None,
                          resolved_email: Optional[str] = None) -> dict:
     """Build the draft Glen reviews + sends. Mirrors his manual email exactly:
     an "Aloha <first name>" greeting (when we know the name), the tracking number
@@ -209,7 +209,16 @@ def build_tracking_email(tracking: str, recipient_name: Optional[str] = None,
     GHL match). When it's missing AND we have a last name, a REVIEWER note carrying
     the recipient's FULL name is prepended so Glen can look up the address, fill
     To:, and delete the note before sending. The customer greeting stays first-name.
+
+    tracking may be one number or a list. Glen, 2026-10-14: "Please consolidate tracking
+    number emails when going to the same address the same day." Labels bought in one
+    Click-N-Ship checkout for one address come as a list and go out as ONE email. One
+    number reads exactly as it always has.
     """
+    numbers = [tracking] if isinstance(tracking, str) else list(tracking)
+    if len(numbers) > 1:
+        return _build_multi(numbers, recipient_name, resolved_email)
+    tracking = numbers[0]
     url = tracking_url(tracking)
     greeting_html = (
         f"<p>Aloha {escape(recipient_name.split()[0])},</p>" if recipient_name else ""
@@ -242,6 +251,27 @@ def build_tracking_email(tracking: str, recipient_name: Optional[str] = None,
         f"{SIGNATURE_TEXT}"
     )
     return {"subject": EMAIL_SUBJECT, "html": html, "text": text}
+
+
+def _build_multi(numbers, recipient_name, resolved_email):
+    """One email for several boxes to one address: the same email, with every number."""
+    one = build_tracking_email(numbers[0], recipient_name, resolved_email)
+    single_html = f'<p>Your order is on its way. Here is your USPS tracking number:</p>' \
+                  f'<h3><a href="{tracking_url(numbers[0])}">{numbers[0]}</a></h3>'
+    single_text = (f"Your order is on its way. Here is your USPS tracking number:\n\n"
+                   f"{numbers[0]}\n{tracking_url(numbers[0])}")
+    multi_html = ("<p>Your order is on its way. Here are your USPS tracking numbers, "
+                  "one for each box:</p>"
+                  + "".join(f'<h3>Box {i}: <a href="{tracking_url(n)}">{n}</a></h3>'
+                            for i, n in enumerate(numbers, 1)))
+    multi_text = ("Your order is on its way. Here are your USPS tracking numbers, "
+                  "one for each box:\n\n"
+                  + "\n\n".join(f"Box {i}: {n}\n{tracking_url(n)}"
+                                for i, n in enumerate(numbers, 1)))
+    if one["html"].count(single_html) != 1 or one["text"].count(single_text) != 1:
+        raise ValueError("the single tracking email changed shape; update _build_multi")
+    return {"subject": one["subject"], "html": one["html"].replace(single_html, multi_html),
+            "text": one["text"].replace(single_text, multi_text)}
 
 
 # ── Persistence: shipments table (idempotency + audit) ───────────────────────

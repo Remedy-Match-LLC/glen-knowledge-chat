@@ -1,3 +1,4 @@
+import pytest
 # tests/test_bodymap_photo_routes.py
 import importlib, io, sqlite3, sys
 from pathlib import Path
@@ -56,10 +57,23 @@ def test_face_falls_back_to_client_photos(tmp_path, monkeypatch):
     tok = _token(appmod, "c@x.com")
     from dashboard import client_photos as cph
     cx = sqlite3.connect(appmod.LOG_DB)
-    cph.put(cx, "c@x.com", b"PORTRAIT", "image/jpeg", source="fmp"); cx.commit(); cx.close()
-    # no body_map_photos face row -> face serves the client_photos portrait
+    cph.put(cx, "c@x.com", b"PORTRAIT", "image/jpeg", source="portal-self"); cx.commit(); cx.close()
+    # no body_map_photos face row -> face serves the client's own uploaded portrait
     r = appmod.app.test_client().get(f"/api/portal/{tok}/bodymap-photo?system=face")
     assert r.status_code == 200 and r.data == b"PORTRAIT"
+
+
+@pytest.mark.parametrize("source", ["fmp", "intake-survey", "console", "fmp-intake-upload"])
+def test_face_never_falls_back_to_an_email_photo_someone_else_supplied(tmp_path, monkeypatch, source):
+    # 2026-10-09: a mother's Body Map showed her daughter's photo, an email-keyed
+    # row from an intake-survey import on the family's shared email.
+    appmod = _app(tmp_path, monkeypatch)
+    tok = _token(appmod, "c@x.com")
+    from dashboard import client_photos as cph
+    cx = sqlite3.connect(appmod.LOG_DB)
+    cph.put(cx, "c@x.com", b"FAMILY", "image/jpeg", source=source); cx.commit(); cx.close()
+    r = appmod.app.test_client().get(f"/api/portal/{tok}/bodymap-photo?system=face")
+    assert r.status_code == 404
 
 
 def test_face_slot_wins_over_client_photos(tmp_path, monkeypatch):

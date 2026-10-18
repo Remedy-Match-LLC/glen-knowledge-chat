@@ -153,3 +153,10 @@ def test_round3_false_reds_now_pass(line):
 
 def test_aluminum_lakes_still_fail():
     assert _label("Aluminum lake")["color"] == "red"
+
+
+def test_glen_ruled_an_enteric_shellac_coating_fails():
+    # Glen 2026-10-08, primary tab: "fail". Shellac alone is not flagged.
+    assert _label("Enteric coating (shellac)")["color"] == "red"
+    assert _label("Enteric-coated (shellac)")["color"] == "red"
+    assert _label("Shellac")["color"] == "green"

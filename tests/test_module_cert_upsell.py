@@ -123,3 +123,26 @@ def test_no_upsell_when_price_unset(client, monkeypatch):
     body = r.get_data(as_text=True)
     assert "Certify this module" not in body
     assert "muCertify" not in body
+
+
+def test_upsell_hidden_after_a_reset(client, monkeypatch, tmp_path):
+    import os
+    c, appmod = client
+    monkeypatch.setenv("STRIPE_MODULE_CERT_PRICE_ID", "price_modcert")
+    email = "r@example.com"
+    tok = _mint_token(appmod, email)
+    _complete_module(appmod, email)
+    from dashboard import course_progress as cp
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cp.module_completed(cx, email, _COURSE, _MODULE, _LESSON_SLUGS) is True
+        cx.execute("UPDATE course_module_completed SET completed_at='2001-01-01T00:00:00Z'")
+    base = os.path.join(str(tmp_path), "courses", _COURSE)
+    with open(os.path.join(base, _MODULE, "03-extra.md"), "w") as f:
+        f.write("---\ntitle: Extra\naccess: member\ndownloads: []\n---\n<p>New.</p>\n")
+    y = open(os.path.join(base, "course.yaml")).read().replace(
+        "      - 02-welcome\n", "      - 02-welcome\n      - 03-extra\n")
+    open(os.path.join(base, "course.yaml"), "w").write(y)
+    assert "Certify this module" in c.get(_lesson_url(tok), base_url=_MHOST).get_data(as_text=True)
+    y = y.replace("    title: Introduction\n", "    title: Introduction\n    completion_reset: '2001-01-01'\n")
+    open(os.path.join(base, "course.yaml"), "w").write(y)
+    assert "Certify this module" not in c.get(_lesson_url(tok), base_url=_MHOST).get_data(as_text=True)

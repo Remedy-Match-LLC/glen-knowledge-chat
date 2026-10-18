@@ -735,7 +735,9 @@ def unstar_thread(thread_id: str) -> dict:
 
 
 def mark_read(thread_id: str) -> dict:
-    return _modify_thread(thread_id, remove=["UNREAD"])
+    """Refuses. Nothing marks mail read: unread is the reply queue (Glen, 2026-09-07 and
+    2026-10-11). Kept so an old caller fails loudly instead of reaching Gmail."""
+    raise RuntimeError("marking mail read is not allowed: unread is the reply queue")
 
 
 def mark_unread(thread_id: str) -> dict:

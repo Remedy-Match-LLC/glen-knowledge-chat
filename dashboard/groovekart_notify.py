@@ -129,8 +129,12 @@ def order_email(payload):
     return subject, "\n".join(body)
 
 
-def buyer_email(payload):
+def buyer_email(payload, note_for=None):
     """(subject, body) confirming the order to the person who placed it.
+
+    `note_for(product_name)` returns a product's approved order note, or "". The note
+    goes under that product's line, one paragraph per blank-line block (Microbiome's
+    open-capsule note, Glen 2026-10-13). A failing lookup costs the note, never the email.
 
     Never raises, like everything else here: this runs inside the webhook, and
     an exception would return 500 and start a GrooveKart retry storm.
@@ -151,7 +155,21 @@ def buyer_email(payload):
     # _lines() carries the SKU, which is there so Rae can pack the right jar.
     # A customer has no use for "[CLED-5ML]" and it makes the email read like a
     # warehouse slip, so strip it for them.
-    body += [_re.sub(r"\s*\[[^\]]+\]\s*$", "", ln) for ln in _lines(p)]
+    items = [it for it in (p.get("products") if isinstance(p.get("products"), list) else [])
+             if isinstance(it, dict)]
+    for ln, it in zip(_lines(p), items or [None]):
+        body.append(_re.sub(r"\s*\[[^\]]+\]\s*$", "", ln))
+        note = ""
+        if note_for and it is not None:
+            try:
+                note = note_for(_text(it.get("product_name")) or _text(it.get("name"))) or ""
+            except Exception:  # noqa: BLE001 - the confirmation matters more than the note
+                note = ""
+        for para in [x.strip() for x in _re.split(r"\n\s*\n", str(note))]:
+            if para:
+                body += ["", "    " + para]
+        if note:
+            body.append("")
 
     d = p.get("delivery") if isinstance(p.get("delivery"), dict) else {}
     if d:

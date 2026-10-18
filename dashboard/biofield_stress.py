@@ -259,9 +259,22 @@ def list_stresses(cx, tid, chain_rows):
                 "balanced": is_bal, "balanced_by": by}
         (balanced if is_bal else active).append(item)
         items.append(item)
+    # Symptoms, Labs or Conditions for each Mind stress (Glen, 2026-10-16).
+    unsorted = 0
+    try:
+        from dashboard import stress_kinds as _sk
+        from dashboard.biofield_program import BODY_SOURCES, SPIRIT_SOURCES
+        mind = [i for i in items if i["source"] not in BODY_SOURCES
+                and i["source"] not in SPIRIT_SOURCES and i["source"] != "chain"]
+        known = _sk.known_kinds(cx, [i["label"] for i in mind])
+        for i in mind:
+            i["kind"] = _sk.kind_of(i["source"], i["label"], known)
+        unsorted = len(_sk.unsorted_labels(cx, mind))
+    except Exception:
+        pass        # the list still renders; every Mind stress shows under Symptoms
     by_layer, unassigned = _group_by_layer(cx, tid, chain_rows, items)
     return {"active": active, "balanced": balanced,
-            "by_layer": by_layer, "unassigned": unassigned}
+            "by_layer": by_layer, "unassigned": unassigned, "unsorted": unsorted}
 
 
 def _group_by_layer(cx, tid, chain_rows, items):

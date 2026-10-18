@@ -309,7 +309,8 @@ def expire_abandoned_checkouts(cx, *, now=None, ttl_hours=ABANDONED_CHECKOUT_TTL
 
     The rows are retained for audit/search history.  Only an unpaid ``new`` row
     from a customer checkout source is eligible; proposals, confirmed invoices,
-    manual orders, and practitioner flows are never aged out here.
+    manual orders, and practitioner flows are never aged out here.  A Zelle or Wise order
+    is not abandoned when unpaid: the customer pays from their bank afterwards.
     """
     now = now or datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=int(ttl_hours))).isoformat()
@@ -317,6 +318,7 @@ def expire_abandoned_checkouts(cx, *, now=None, ttl_hours=ABANDONED_CHECKOUT_TTL
     cur = cx.execute(
         f"UPDATE orders SET status='cancelled', updated_at=? "
         f"WHERE status='new' AND COALESCE(pay_status,'unpaid')='unpaid' "
+        f"AND COALESCE(pay_method,'') NOT IN ('zelle', 'wise') "
         # ISO-8601 timestamps sort chronologically as text. Keep this comparison
         # portable across SQLite and PostgreSQL (Postgres has no datetime(text)).
         f"AND source IN ({placeholders}) AND created_at < ?",
@@ -360,18 +362,29 @@ def search_client_orders(cx, q, limit=500):
 
     Glen, 2026-09-28: the Orders board's search shows ALL of a client's orders. Text matches
     an order's name, email or external ref, or a name in People (the board shows that name
-    when an order has none). A number matches an order number or external ref exactly, never
-    inside another number (review). A phone matches on 7+ digits, ignoring a leading country
-    code 1. Every order sharing a matched email then comes with it, so older orders beyond the
-    board's own limit and cancelled ones are included. Replaced (superseded) order numbers stay
-    hidden, as on the board. Fewer than 2 characters matches nothing, unless it is a number."""
+    when an order has none). A phone matches on 7+ digits, ignoring a leading country code 1.
+    Every order sharing a matched email then comes with it, so older orders beyond the board's
+    own limit and cancelled ones are included. Replaced (superseded) order numbers stay
+    hidden, as on the board. Fewer than 2 characters matches nothing, unless it is a number.
+
+    Glen, 2026-10-13: an order number (digits, optional leading #) shows that one order, not
+    the client's history; see _orders_by_number. Digits that match no order fall through to
+    the phone search, unless they start with #.
+
+    Glen, 2026-10-13: text also matches the ship-to name in the order's address. An order
+    found only that way comes back on its own, marked search_match="ship_to", without the
+    buyer's history: a drop-ship's recipient is not the buyer."""
     import re
     q = (q or "").strip().lower()
     if len(q) < 2 and not q.isdigit():
         return []
     base = "superseded_by_order_id IS NULL"
     num = q.lstrip("#").strip()
-    hits, emails = set(), set()
+    if num.isdigit():
+        found = _orders_by_number(cx, num)
+        if found or q.startswith("#"):
+            return found[:int(limit)]
+    hits, emails, ship_to = set(), set(), set()
 
     def take(rows):
         for oid, email in rows:
@@ -379,10 +392,13 @@ def search_client_orders(cx, q, limit=500):
             if (email or "").strip():
                 emails.add(email.strip().lower())
 
-    if num.isdigit():
-        take(cx.execute(f"SELECT id, email FROM orders WHERE {base} AND (id=? OR external_ref=?)",
-                        (int(num), num)).fetchall())
-    else:
+    if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", q):
+        # A whole address names one client: match it exactly, so "ann@x.com" never brings
+        # in "joann@x.com", and "_" is not a wildcard (review, 2026-10-13).
+        take(cx.execute(f"SELECT id, email FROM orders WHERE {base} AND lower(trim(email))=?",
+                        (q,)).fetchall())
+        emails.add(q)
+    elif not num.isdigit():
         like = f"%{q}%"
         take(cx.execute(
             f"SELECT id, email FROM orders WHERE {base} AND (lower(coalesce(name,'')) LIKE ? "
@@ -400,6 +416,7 @@ def search_client_orders(cx, q, limit=500):
                 cx.rollback()
             except Exception:  # noqa: BLE001
                 pass
+        ship_to.update(_orders_by_ship_to_name(cx, q, base))
 
     def _phone(d):
         return d[1:] if len(d) == 11 and d.startswith("1") else d
@@ -409,18 +426,90 @@ def search_client_orders(cx, q, limit=500):
                 f"SELECT id, email, phone FROM orders WHERE {base} AND coalesce(phone,'')<>''").fetchall():
             if digits in _phone(re.sub(r"\D", "", phone or "")):
                 take([(oid, email)])
-    if not hits and not emails:
+    ship_to -= hits
+    if not hits and not emails and not ship_to:
         return []
     conds, args = [], []
     if emails:
         conds.append(f"lower(trim(email)) IN ({','.join('?' * len(emails))})")
         args += sorted(emails)
-    if hits:
-        conds.append(f"id IN ({','.join('?' * len(hits))})")
-        args += sorted(hits)
+    if hits | ship_to:
+        conds.append(f"id IN ({','.join('?' * len(hits | ship_to))})")
+        args += sorted(hits | ship_to)
     cur = cx.execute(f"SELECT * FROM orders WHERE {base} AND ({' OR '.join(conds)}) "
                      "ORDER BY id DESC LIMIT ?", args + [int(limit)])
-    return [_row_to_dict(r) for r in cur.fetchall()]
+    out = [_row_to_dict(r) for r in cur.fetchall()]
+    for d in out:
+        if int(d["id"]) in ship_to and (d.get("email") or "").strip().lower() not in emails:
+            d["search_match"] = "ship_to"
+    return out
+
+
+def _orders_by_ship_to_name(cx, q, base):
+    """Ids of visible orders whose ship-to name contains q, ignoring case.
+
+    The address is JSON text, so the name is read in Python. A plain-ASCII query narrows
+    the rows in SQL first; any other query reads every address, because json.dumps writes
+    accented letters as escapes the SQL match would miss."""
+    sql = f"SELECT id, address_json FROM orders WHERE {base} AND coalesce(address_json,'') <> ''"
+    args = ()
+    if q.isascii():
+        sql += " AND lower(address_json) LIKE ?"
+        args = (f"%{q}%",)
+    import unicodedata
+    nq = unicodedata.normalize("NFC", q)
+    found = set()
+    for oid, raw in cx.execute(sql, args).fetchall():
+        try:
+            addr = raw if isinstance(raw, dict) else json.loads(raw or "{}")
+            name = (addr or {}).get("name") or ""
+        except (TypeError, ValueError, AttributeError):
+            continue
+        # NFC on both sides: a name stored as e plus a combining accent still matches a
+        # query typed as one letter (review).
+        if isinstance(name, str) and nq in unicodedata.normalize("NFC", name).lower():
+            found.add(int(oid))
+    return found
+
+
+def _orders_by_number(cx, num):
+    """The order(s) an order number or external ref names exactly, newest first.
+
+    A replaced (superseded) number resolves to the order that replaced it, and that row
+    carries search_replaced, the numbers it stands in for. Every row found carries
+    search_match="number", so the board can offer the client's whole history."""
+    rows = cx.execute("SELECT id, superseded_by_order_id FROM orders WHERE id=? OR external_ref=?",
+                      (int(num), num)).fetchall()
+    found = {}
+    for oid, nxt in rows:
+        cur, seen = int(oid), {int(oid)}
+        while nxt is not None:
+            if int(nxt) in seen:
+                cur = None
+                break
+            cur = int(nxt)
+            seen.add(cur)
+            r = cx.execute("SELECT superseded_by_order_id FROM orders WHERE id=?", (cur,)).fetchone()
+            if r is None:
+                cur = None
+                break
+            nxt = r[0]
+        if cur is None:
+            continue
+        rep = found.setdefault(cur, [])
+        if cur != int(oid):
+            rep.append(int(oid))
+    if not found:
+        return []
+    cur = cx.execute(f"SELECT * FROM orders WHERE id IN ({','.join('?' * len(found))}) "
+                     "ORDER BY id DESC", sorted(found))
+    out = []
+    for r in cur.fetchall():
+        d = _row_to_dict(r)
+        d["search_match"] = "number"
+        d["search_replaced"] = sorted(found[int(d["id"])])
+        out.append(d)
+    return out
 
 
 def list_orders_by_email(cx, email, limit=200):
@@ -828,8 +917,17 @@ def physical_units(items, catalog):
                 n = sum(int(c.get("qty") or 1) for c in comps) if comps else 1
                 total += n * qty
         else:
-            total += qty
+            total += qty * bottles_per_unit(p)
     return total
+
+
+def bottles_per_unit(p):
+    """Identical bottles in one item: the CDS pair is two 50 mL droppers (FileMaker
+    887, 2026-10-13). Packing and pack counts only, never price or credit."""
+    try:
+        return max(1, int((p or {}).get("bottles_per_unit") or 1))
+    except (TypeError, ValueError):
+        return 1
 
 
 def pack_breakdown(items, catalog):
@@ -879,7 +977,7 @@ def pack_breakdown(items, catalog):
                 n = (sum(int(c.get("qty") or 1) for c in comps) if comps else 1) * qty
                 sizes = None
         else:
-            n = qty
+            n = qty * bottles_per_unit(p)
             sizes = None
         if (it.get("format") or "").strip().lower() in _sh.CELLO_FORMATS:
             cello += n
@@ -1069,13 +1167,60 @@ def mark_invoice_sent(cx, order_id):
     return cur.rowcount > 0
 
 
+def held_credit_cents(cx, email, exclude_order_id=None):
+    """Ship credit and points already promised to this customer's unpaid orders, as
+    (ship_credit_cents, points_cents). Both are debited only when an order is paid, so
+    until then a new order must not plan the same balance again. Glen, 2026-10-10: "put
+    the credit on hold while payment is pending so it can't be used again." A cancelled
+    order releases its hold; the 24-hour abandoned-checkout expiry cancels card ones."""
+    # exclude_order_id: an invoice re-setting its own points must not count its own hold.
+    sql = ("SELECT COALESCE(SUM(ship_credit_applied_cents),0), COALESCE(SUM(points_redeemed_cents),0) "
+           "FROM orders WHERE lower(email)=? AND COALESCE(pay_status,'') != 'paid' "
+           "AND COALESCE(status,'') != 'cancelled'")
+    args = [(email or "").strip().lower()]
+    if exclude_order_id is not None:
+        sql += " AND id != ?"
+        args.append(int(exclude_order_id))
+    row = cx.execute(sql, tuple(args)).fetchone()
+    return (max(0, int(row[0] or 0)), max(0, int(row[1] or 0))) if row else (0, 0)
+
+
+# App-layer test for a line sold below its store price (app._order_has_line_below_store_price),
+# injected so this module keeps no app import. Glen, 2026-10-10: an order earns points only
+# when every line is at full store price. Signature: fn(order) -> bool.
+_below_store_price_check = None
+
+
+def set_below_store_price_check(fn):
+    """Register the app-side below-store-price test (fn(order) -> bool)."""
+    global _below_store_price_check
+    _below_store_price_check = fn
+
+
+def _has_line_below_store_price(order):
+    """True when the registered check finds a line below store price. A check that raises,
+    or no check registered at all (a process that never imported app), counts as True, so
+    a failure never pays points the rule would refuse (round 2)."""
+    if not _below_store_price_check:
+        print(f"[orders] no below-store-price check registered; #{order.get('id')} earns "
+              "nothing", flush=True)
+        return True
+    try:
+        return bool(_below_store_price_check(order))
+    except Exception as e:
+        print(f"[orders] below-store-price check failed for #{order.get('id')}: {e!r}",
+              flush=True)
+        return True
+
+
 def settle_order_points(cx, order, *, scope="rm", earn_pct=0.05):
     """On a PAID in-house order: redeem the points the customer applied and earn
     on full-price product spend. Idempotent per external_ref (guarded by
     points.has_entry), best-effort — never raises into the payment path. Email is
     lowercased to match the ledger (the funnel settler lowercases on write).
 
-    Earn mirrors the funnel rule (full-price only: no discount AND no points used)
+    Earn mirrors the funnel rule (full-price only: no discount, no points used, and no
+    line below its store price)
     but omits the affiliate-first-order suppression — in-house manual orders are
     not affiliate-acquired, so that gate is a no-op for them."""
     from dashboard import points as _points
@@ -1097,6 +1242,7 @@ def settle_order_points(cx, order, *, scope="rm", earn_pct=0.05):
             except ValueError:
                 pass  # balance already spent elsewhere; don't block the payment
         if discount == 0 and redeemed == 0 and product_cents > 0 \
+                and not _has_line_below_store_price(order) \
                 and not _points.has_entry(cx, order_ref=ref, reason="earn", scope=scope):
             _points.earn(cx, email, full_price_cents=product_cents, earn_pct=earn_pct,
                          order_ref=ref, scope=scope)
@@ -1146,7 +1292,14 @@ def _send_invoice_exec(params, ctx):
         cx.commit()
     except Exception:
         pass
-    name = order.get("name") or "there"
+    # The stored name can be all lowercase ("Hi linda maher," to Linda Maher, 2026-10-13).
+    # Glen's name rules capitalise it; mixed case is left as typed. Escaped for the HTML.
+    import html as _html
+    from dashboard.name_case import normalize_name
+    raw_name = order.get("name")
+    raw_name = raw_name.strip() if isinstance(raw_name, str) else ""   # never stop the send
+    name = normalize_name(_html.unescape(raw_name)) or "there"
+    name_html = _html.escape(name)
     ref = order.get("external_ref") or f"#{oid}"
     total = f"${(int(order.get('total_cents') or 0))/100:,.2f}"
     # Paid orders get a receipt; everything else (incl. claimed) gets the
@@ -1168,7 +1321,7 @@ def _send_invoice_exec(params, ctx):
                      f"adjust quantities, ask questions, and pay securely here:")
         btn_color, btn_label = "#7c5cbf", "View &amp; pay your invoice"
     plain = f"Hi {name},\n\n{lead_plain}\n{link}\n\nMahalo,\nDr. Glen Swartwout"
-    html = (f"<p>Hi {name},</p><p>{lead_html}</p>"
+    html = (f"<p>Hi {name_html},</p><p>{lead_html}</p>"
             f"<p><a href='{link}' style='background:{btn_color};color:#fff;padding:10px 18px;"
             f"border-radius:6px;text-decoration:none'>{btn_label}</a></p>"
             f"<p>Mahalo,<br>Dr. Glen Swartwout</p>")
@@ -1287,13 +1440,101 @@ def set_points_settle_hook(fn):
 def settle_points_on_payment(cx, order):
     """Run the registered points settlement for an order that has just become paid.
     Best-effort: a points hiccup never fails the payment record."""
-    if not _points_settle_hook or not order:
+    if not order:
+        return
+    credit_fee_free_on_payment(cx, order)
+    if not _points_settle_hook:
         return
     try:
         _points_settle_hook(cx, order)
     except Exception as e:
         print(f"[orders] points settle on payment skipped for #{order.get('id')}: {e!r}",
               flush=True)
+
+
+# Practitioner sales: their own wallet already carries a fee-free credit (dashboard/wallet.py).
+_FEE_FREE_EXCLUDED_SOURCES = {"dropship", "dispensary", "personal", "wholesale"}
+
+
+def _is_fee_free_method(method):
+    """Zelle and Wise only. A mailed check does not earn it (Glen, 2026-09-10)."""
+    m = str(method or "").strip().lower()
+    return "zelle" in m or m == "wise" or m.startswith("wise ")
+
+
+def earns_fee_free_points(order):
+    """True when a Zelle or Wise payment on this order earns the client fee-free points."""
+    source = str((order or {}).get("source") or "").strip().lower()
+    return source not in _FEE_FREE_EXCLUDED_SOURCES
+
+
+def fee_free_paid_cents(cx, order, *, action_method=None, action_cents=None):
+    """What the client paid on this order by Zelle or Wise, never more than its total.
+
+    The payment ledger holds most payments, and when it has any rows it is the whole
+    record: the order row's pay_method and paid_cents are then copied from it, so adding
+    them would count the same money twice (review round 3). An order with no ledger rows
+    falls back to its pay_method and paid_cents. The Record payment action writes no
+    ledger row, so it passes its own method and amount; its part is at most what the
+    ledger left unpaid (its confirm button sends the order total)."""
+    oid = order.get("id")
+    rows = cx.execute(
+        "SELECT method, amount_cents FROM order_payments WHERE order_id=? "
+        "AND kind='payment' AND status='active'", (oid,)).fetchall()
+    total = int(order.get("total_cents") or 0)
+    ledger_all = sum(int(r[1] or 0) for r in rows)
+    paid = sum(int(r[1] or 0) for r in rows if _is_fee_free_method(r[0]))
+    if action_method is not None:
+        if _is_fee_free_method(action_method):
+            paid += min(int(action_cents or total), max(0, total - ledger_all))
+    elif not rows and _is_fee_free_method(order.get("pay_method")):
+        paid = int(order.get("paid_cents") or 0) or total
+    return max(0, min(paid, total))
+
+
+def credit_fee_free_on_payment(cx, order, *, action_method=None, action_cents=None):
+    """Credit the client 3.5% of what they paid by Zelle or Wise, as loyalty points, when
+    the order becomes paid (Glen, 2026-10-10). Shipping is part of what they paid. A
+    courtesy price still earns it (Glen, 2026-10-11): it rewards how they paid. Idempotent
+    per order (points.credit keys on order_ref and reason). Best-effort."""
+    try:
+        from . import points as _points
+        email = (order.get("email") or "").strip().lower()
+        ref = (order.get("external_ref") or "").strip()
+        if not email or not ref or not earns_fee_free_points(order):
+            return 0
+        try:
+            paid = fee_free_paid_cents(cx, order, action_method=action_method,
+                                       action_cents=action_cents)
+        except Exception as e:
+            # An order with no payments table yet (some local setups) lands here too.
+            # Logged, so a missed credit can be found and re-run (review round 3).
+            _safe_rollback(cx)
+            print(f"[orders] fee-free read failed for #{order.get('id')}: {e!r}", flush=True)
+            paid = 0
+        cents = int(round(paid * _points.FEE_FREE_PCT))
+        if cents <= 0:
+            return 0
+        _points.init_points_table(cx)
+        if _points.has_entry(cx, order_ref=ref, reason=_points.FEE_FREE_REASON):
+            return 0
+        _points.credit(cx, email, value_cents=cents, reason=_points.FEE_FREE_REASON,
+                       order_ref=ref)
+        cx.commit()
+        return cents
+    except Exception as e:
+        # Postgres leaves a failed transaction aborted: roll it back so the caller's next
+        # statement still runs (review rounds 1 and 2). The payment itself is committed.
+        _safe_rollback(cx)
+        print(f"[orders] fee-free credit skipped for #{order.get('id')}: {e!r}", flush=True)
+        return 0
+
+
+def _safe_rollback(cx):
+    try:
+        cx.rollback()
+    except Exception:
+        pass
 
 
 def _record_payment_exec(params, ctx):
@@ -1317,6 +1558,8 @@ def _record_payment_exec(params, ctx):
     set_order_payment(cx, oid, method=method, amount_cents=amount_cents)
     # Settle points now that it's paid: redeem applied points + earn (idempotent).
     settle_order_points(cx, get_order(cx, oid))
+    credit_fee_free_on_payment(cx, get_order(cx, oid), action_method=method,
+                               action_cents=amount_cents)
     _o = get_order(cx, oid)
     if _o and (_o.get("source") or "") == "dispensary":
         try:

@@ -107,7 +107,9 @@ def scan(write=False, days=14, db_path=None, imap=None, client=None, max_message
         imap.login(user, pw)
     staged = scanned = 0
     try:
-        imap.select("INBOX")
+        # Read-only, and every fetch a PEEK: opening a message must never mark it read,
+        # because unread is Glen's reply queue (Glen, 2026-09-07 and 2026-10-11).
+        imap.select("INBOX", readonly=True)
         import datetime
         since = (datetime.date.today() - datetime.timedelta(days=days)).strftime("%d-%b-%Y")
         typ, data = imap.search(None, "SINCE", since)
@@ -122,7 +124,7 @@ def scan(write=False, days=14, db_path=None, imap=None, client=None, max_message
             sc.init_sourcing_schema(cx)
             existing = {r["gmail_msg_id"] for r in cx.execute("SELECT gmail_msg_id FROM supplier_quotes WHERE gmail_msg_id IS NOT NULL")}
             for num in ids:
-                typ, md = imap.fetch(num, "(RFC822)")
+                typ, md = imap.fetch(num, "(BODY.PEEK[])")
                 m = email.message_from_bytes(md[0][1])
                 msg_id = m.get("Message-ID") or num.decode()
                 if msg_id in existing:

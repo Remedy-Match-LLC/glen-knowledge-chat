@@ -39,10 +39,23 @@ def test_payload_face_photo_via_client_photos_fallback(tmp_path, monkeypatch):
     appmod = _app(tmp_path, monkeypatch)
     from dashboard import client_photos as cph
     cx = sqlite3.connect(appmod.LOG_DB)
-    cph.put(cx, "c@x.com", b"PORTRAIT", "image/jpeg", source="fmp"); cx.commit()
+    cph.put(cx, "c@x.com", b"PORTRAIT", "image/jpeg", source="portal-self"); cx.commit()
     out = appmod._portal_bodymap_data(cx, "c@x.com", {}, system="face")
     assert out["has_photo"] is True          # fallback still counts as a photo
     assert out["slot_transform"] is None      # no saved transform for the portrait
+
+
+def test_payload_face_photo_via_the_persons_own_row(tmp_path, monkeypatch):
+    appmod = _app(tmp_path, monkeypatch)
+    from dashboard import client_photos as cph
+    cx = sqlite3.connect(appmod.LOG_DB)
+    cph.put(cx, "c@x.com", b"FAMILY", "image/jpeg", source="intake-survey")
+    assert appmod._portal_bodymap_data(cx, "c@x.com", {}, system="face")["has_photo"] is False
+    assert appmod._portal_bodymap_data(cx, "c@x.com", {"client_id": "7"},
+                                       system="face")["has_photo"] is False
+    cph.put_for_client(cx, "7", "c@x.com", b"OWN", "image/jpeg", source="fmp")
+    assert appmod._portal_bodymap_data(cx, "c@x.com", {"client_id": "7"},
+                                       system="face")["has_photo"] is True
 
 
 def test_payload_no_photo_no_slot(tmp_path, monkeypatch):
@@ -78,7 +91,7 @@ def test_payload_fallback_face_reports_transform_only_row(tmp_path, monkeypatch)
     from dashboard import client_photos as cph
     from dashboard import body_map_photos as bmp
     cx = sqlite3.connect(appmod.LOG_DB)
-    cph.put(cx, "c@x.com", b"PORTRAIT", "image/jpeg", source="fmp")
+    cph.put(cx, "c@x.com", b"PORTRAIT", "image/jpeg", source="portal-self")
     bmp.set_transform(cx, "c@x.com", "face", "", {"mx": 1.3, "my": 1.1, "tx": 12, "ty": -4})
     cx.commit()
     out = appmod._portal_bodymap_data(cx, "c@x.com", {}, system="face")

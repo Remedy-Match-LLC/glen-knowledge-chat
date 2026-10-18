@@ -14,6 +14,7 @@ contained it; counting units would rank a bulk buy as the thing they take most.
 Total by construction: this feeds a reference panel, and a panel that raises is
 worse than a panel that is empty.
 """
+import re
 
 # Not dispensed products: the analysis fee rides on half of all orders and would
 # sit permanently at the top of a list of things to hand someone.
@@ -137,8 +138,31 @@ def _fmp_product(description):
     return text
 
 
+def _norm_name(s):
+    return " ".join(str(s or "").lower().split())
+
+
+def _name_variants(a):
+    """A FileMaker name can carry alternative first names on their own lines or after a
+    slash: "Josephine\nJosie Doe" is both Josephine Doe and Josie Doe (2026-10-16).
+    Each variant is still a whole first-and-last name."""
+    raw = str(a or "")
+    out = {_norm_name(raw)}
+    lines = [ln for ln in re.split(r"[\n/]+", raw) if ln.strip()]
+    if len(lines) > 1:
+        last_words = lines[-1].split()
+        surname = last_words[-1] if len(last_words) > 1 else ""
+        # Only one-word lines are alternative first names: "Ann Lee\nBob Smith" is two
+        # people and builds no "Ann Smith" (review round 2).
+        if surname and all(len(ln.split()) == 1 for ln in lines[:-1]):
+            out.add(_norm_name(lines[-1]))
+            for ln in lines[:-1]:
+                out.add(_norm_name(ln + " " + surname))
+    return out
+
+
 def _same_person(a, b):
-    return " ".join(str(a or "").lower().split()) == " ".join(str(b or "").lower().split())
+    return bool(_norm_name(b)) and _norm_name(b) in _name_variants(a)
 
 
 def fmp_orders_for(history, name, email):

@@ -19,13 +19,18 @@ FORMULATION_ONLY = ("ingredients", "comparison")
 SERVICE_NEVER = ("research",)
 
 
-def filter_sections(sections, *, has_ingredients, has_own_video, is_service=False, in_miron=True):
+def filter_sections(sections, *, has_ingredients, has_own_video, is_service=False, in_miron=True,
+                    is_bundle=False, has_research_text=True):
     """Return `sections` minus the formulation-only ones when the product has no
     ingredient list. `has_own_video` keeps the Watch section for a device that
     carries its own product video (only the Miron educational clip is withheld).
     A service also loses SERVICE_NEVER. in_miron=False (a product resold in its maker's
     packaging, e.g. the MSM lotions in plastic squeeze bottles) drops the comparison,
-    which claims Miron violet glass and no excipients."""
+    which claims Miron violet glass and no excipients.
+
+    A bundle with no research text of its own loses "The research": it has no
+    ingredients, so the section could only tease "Studies behind the key ingredients"
+    over nothing (Estrogen and Fibrin Balance Program, 2026-10-09)."""
     drop = set()
     if not in_miron:
         drop.add("comparison")
@@ -37,4 +42,6 @@ def filter_sections(sections, *, has_ingredients, has_own_video, is_service=Fals
             drop.add("video")
     if is_service:
         drop |= set(SERVICE_NEVER)
+    if is_bundle and not has_research_text:
+        drop.add("research")
     return [s for s in sections if s.get("id") not in drop]

@@ -97,3 +97,34 @@ def test_a_short_all_capitals_word_with_no_vowel_stays_in_capitals(typed, expect
 ])
 def test_only_vowel_less_capitals_count_as_initials(typed, expected):
     assert normalize_name(typed) == expected
+
+
+@pytest.mark.parametrize("typed,expected", [
+    ("john smith iii", "John Smith III"),
+    ("JOHN SMITH III", "John Smith III"),
+    ("henry ford ii", "Henry Ford II"),
+    ("james brown iv", "James Brown IV"),
+    ("john smith iii, md", "John Smith III, MD"),
+    ("john smith, iii", "John Smith, III"),
+    ("smith iii", "Smith III"),
+    ("john smith iii , md", "John Smith III , MD"),
+    ("john smith iii md", "John Smith III MD"),
+    ("JOHN SMITH III MD", "John Smith III MD"),
+    ("john smith iii jr", "John Smith III Jr"),
+    ("john smith iii, phd", "John Smith III, PhD"),
+    ("john smith iii md, phd", "John Smith III MD, PhD"),
+    ("john smith iii, esq", "John Smith III, esq"),
+    ("john smith iii phd", "John Smith III PhD"),
+])
+def test_a_generational_suffix_goes_to_capitals_without_a_comma(typed, expected):
+    assert normalize_name(typed) == expected
+
+
+@pytest.mark.parametrize("typed,expected", [
+    ("iv smith", "Iv Smith"),
+    ("ii", "Ii"),
+    ("john iii smith", "John Iii Smith"),
+    ("john iii smith md", "John Iii Smith MD"),
+])
+def test_a_suffix_word_elsewhere_in_the_name_is_capitalised_as_a_word(typed, expected):
+    assert normalize_name(typed) == expected

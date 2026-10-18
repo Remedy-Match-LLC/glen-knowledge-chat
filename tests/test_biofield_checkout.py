@@ -183,3 +183,25 @@ def test_biofield_checkout_defaults_premium_unchanged(monkeypatch, tmp_path):
     assert body["ok"] is True
     assert cap["stripe_amount"] == 30000
     assert cap["stripe_metadata"].get("tier", "premium") == "premium"
+
+
+def test_biofield_points_skip_points_held_on_an_unpaid_order(monkeypatch, tmp_path):
+    # Review round 1: the Biofield checkout read the raw balance and offered held points.
+    from dashboard import orders as _orders
+    cap, db = _setup(monkeypatch, tmp_path)
+    monkeypatch.setenv("BIOFIELD_CHECKOUT_ENABLED", "1")
+    cx = sqlite3.connect(db); cx.row_factory = sqlite3.Row
+    points.init_points_table(cx)
+    points.credit(cx, "buyer@x.com", value_cents=5000, reason="earn", order_ref="seed")
+    _orders.init_orders_table(cx)
+    _orders.upsert_order(cx, source="in-house", external_ref="INH-HOLD", status="proposed",
+                         email="buyer@x.com", name="B", channel="pickup",
+                         items=[{"slug": "evox-session", "qty": 1, "unit_cents": 9000}],
+                         total_cents=6000, points_redeemed_cents=3000)
+    cx.commit(); cx.close()
+
+    c = appmod.app.test_client()
+    r = c.post("/biofield/checkout",
+               json={"email": "buyer@x.com", "name": "B", "points_to_redeem_cents": 5000})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert int(cap["stripe_metadata"]["points_redeemed_cents"]) == 2000

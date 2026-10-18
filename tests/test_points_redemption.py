@@ -36,7 +36,10 @@ def test_settle_redeems_applied_points_once():
     assert points.balance(cx, "a@x.com") == 800
 
 
-def test_settle_earns_on_full_price_order():
+def test_settle_earns_on_full_price_order(monkeypatch):
+    # This file tests orders.py without importing app, so it stands in for the app's
+    # below-store-price check, which an unregistered module refuses on (fail closed).
+    monkeypatch.setattr(O, "_below_store_price_check", lambda order: False)
     cx = _cx()
     order = _order(cx, total_cents=7265, shipping_cents=1265, ref="INH-E1")
     O.settle_order_points(cx, order)

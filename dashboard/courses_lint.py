@@ -35,6 +35,11 @@ def lint_courses(root: str | None = None) -> list:
         for m in spec.get("modules", []) or []:
             mslug = m.get("slug", "")
             mdir = os.path.join(cdir, mslug)
+            reset = m.get("completion_reset")
+            if reset is not None:
+                from dashboard.courses_content import _reset_date
+                if not _reset_date(reset):
+                    errors.append(f"[{name}/{mslug}] completion_reset must be YYYY-MM-DD: {reset!r}")
             if not os.path.isdir(mdir):
                 errors.append(f"[{name}] module dir missing: {mslug}")
                 continue

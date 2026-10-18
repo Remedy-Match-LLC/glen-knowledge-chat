@@ -51,6 +51,8 @@
   .sec{margin:0 0 .4rem} .field{margin:0 0 1rem}
   .help{color:var(--muted);font-size:.82rem;margin:.1rem 0 .35rem}
   .scale{display:flex;flex-direction:column;gap:.2rem}
+  .diet-guidance{margin:.9rem 0 .3rem;padding:.7rem .9rem;border:1px solid #e2e2e2;border-radius:10px;font-size:.92rem}
+  .diet-guidance p{margin:0 0 .45rem} .diet-guidance h4,.diet-guidance h5{margin:.3rem 0 .5rem}
   .scale-opt{display:flex;gap:9px;align-items:flex-start;font-weight:400;font-size:.94rem}
   .scale-opt input{width:auto;margin-top:.28rem}
   .tbl{border:1px solid var(--line);border-radius:12px;padding:11px;background:var(--card2)}
@@ -305,7 +307,23 @@ function field(f,val){
     });
     wrap.appendChild(g); wrap._scale=g;
     S.getters[f.id]=()=>{const c=g.querySelector("input:checked");return c?Number(c.value):null;};
-    S.setters[f.id]=v=>{const r=g.querySelector('input[value="'+v+'"]');if(r)r.checked=true;};
+    // Terrain: once answered, the diet guidance for that phase, with the intro cautions.
+    // Only that phase, never another (Glen approved the text 2026-10-16).
+    let showGuidance=()=>{};
+    if(f.diet_guidance){
+      const dg=document.createElement("div"); dg.className="diet-guidance";
+      showGuidance=()=>{
+        while(dg.firstChild) dg.removeChild(dg.firstChild);
+        const gd=f.diet_guidance[String(S.getters[f.id]())];
+        dg.hidden=!gd; if(!gd) return;
+        const add=(tag,text)=>{const el=document.createElement(tag); el.textContent=text; dg.appendChild(el);};
+        add("h4",gd.title); gd.intro.forEach(t=>add("p",t));
+        add("h5",gd.heading); gd.paragraphs.forEach(t=>add("p",t));
+      };
+      g.querySelectorAll("input").forEach(rd=>rd.addEventListener("change",showGuidance));
+      wrap.appendChild(dg); showGuidance();
+    }
+    S.setters[f.id]=v=>{const r=g.querySelector('input[value="'+v+'"]');if(r)r.checked=true;showGuidance();};
     S.fieldEls[f.id]=g; return wrap;
   }
 

@@ -184,7 +184,7 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
     {"name","qty"} dict (qty = bottles needed). Unresolvable names go to 'skipped',
     never mispriced."""
     lines = [{"slug": BIOFIELD_SLUG, "qty": 1}] if include_fee else []
-    skipped = []
+    skipped, not_ready = [], []
     for r in remedies or []:
         if isinstance(r, dict):
             name, qty = (r.get("name") or "").strip(), r.get("qty")
@@ -202,6 +202,12 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
             continue
         if slug in RECOMMEND_ONLY_SLUGS:
             continue
+        # A not-ready product (waitlist_only, or a bundle holding one) stays on the
+        # report as a name with its page link. It adds nothing to the invoice.
+        if is_not_ready(slug, catalog):
+            if name not in not_ready:
+                not_ready.append(name)
+            continue
         # One remedy can serve several layers — Steve Fox's 15 September report put
         # Neuroprotect on three. That is still one product taken once, so it gets one
         # line carrying the LARGEST bottle count, never one line per layer and never
@@ -215,7 +221,12 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
         # analysis, so preserve that provenance through order creation and
         # into Edit Invoice instead of falling back to source='self'.
         lines.append({"slug": slug, "qty": qty, "source": "biofield"})
-    return {"lines": lines, "skipped": skipped}
+    return {"lines": lines, "skipped": skipped, "not_ready": not_ready}
+
+
+def is_not_ready(slug, catalog):
+    """True when the console catalog marks this slug waitlist_only."""
+    return any(it.get("slug") == slug and it.get("waitlist_only") for it in catalog or [])
 
 
 def merge_manual_invoice_lines(new_lines, existing_items):
@@ -407,7 +418,12 @@ def client_orders_with_status(email, limit=300):
     if not (email or "").strip():
         return [], None                       # genuinely nothing to ask about
     try:
-        url = f"{base}/api/orders?limit={int(limit)}&key=" + urllib.parse.quote(key)
+        # Ask for THIS client's orders, the board's own client search. The newest N
+        # orders shop-wide (the old read) drops an older client's store history once the
+        # shop passes N.
+        # The key goes in the header only: a key in the URL lands in server logs.
+        url = (f"{base}/api/orders?limit={int(limit)}&q="
+               + urllib.parse.quote(email.strip().lower()))
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         with urllib.request.urlopen(req, timeout=10) as r:
             return _json.loads(r.read().decode() or "{}").get("data") or [], None
@@ -417,7 +433,7 @@ def client_orders_with_status(email, limit=300):
         if code == 401:
             # Name the actual remedy. A stale key is the failure this panel has actually
             # had, and "unauthorized" alone sends the reader to the wrong place.
-            why = ("the console key this app started with is no longer valid — "
+            why = ("the console key this app started with is no longer valid: "
                    "restart the local server to pick up the current one")
         elif code == 502:
             why = "the server was restarting (502); try again in a moment"
@@ -435,7 +451,9 @@ def default_latest_invoice(email):
     if not base or not (email or "").strip():
         return {"ok": False, "error": "invoice unavailable"}
     try:
-        url = f"{base}/api/orders?limit=300&key=" + urllib.parse.quote(key)
+        # This client's orders, newest first, key in the header only. See
+        # client_orders_with_status.
+        url = f"{base}/api/orders?limit=300&q=" + urllib.parse.quote(email.strip().lower())
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         with urllib.request.urlopen(req, timeout=10) as r:
             rows = (_json.loads(r.read().decode() or "{}").get("data") or [])

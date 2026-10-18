@@ -53,6 +53,15 @@
   .acts { margin-top:9px; display:flex; flex-wrap:wrap; gap:6px; }
   .card-body > .acts:first-child { margin-top:0; margin-bottom:9px; }
   #past-orders { margin-top:22px; }
+  .pk { margin-top:8px; padding:8px 10px; border:1px solid var(--border); border-radius:7px; background:rgba(0,0,0,.12); }
+  .pk .detail-title { color:var(--gold); font-size:12px; font-weight:700; margin-bottom:4px; }
+  .pk-remind { color:var(--gold); margin:4px 0; }
+  .pk-thumbs { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0; }
+  .pk-cell { display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .pk-thumb { width:96px; height:96px; object-fit:cover; border-radius:6px; cursor:zoom-in; border:1px solid var(--border); }
+  .pk-del { font-size:11px; padding:1px 6px; }
+  .pk-add .btnlike { display:inline-block; padding:4px 10px; border:1px solid var(--border); border-radius:6px; cursor:pointer; color:var(--cream); font-size:12px; }
+  .pk-add .btnlike:hover { border-color:var(--gold); color:var(--gold); }
   #past-orders > h2 { font-family:"Raleway",sans-serif; font-size:15px; color:var(--cream);
                       margin-bottom:9px; }
   #past-orders > .past-note { color:var(--muted); font-size:12px; margin-bottom:10px; }
@@ -225,6 +234,28 @@
   var _loadSeq = 0;
   function beginSearch(){ return ++_loadSeq; }
   function isCurrent(ticket){ return ticket === _loadSeq; }
+  // Glen, 2026-10-13: an order number shows that one order. Its card names any number it
+  // replaced and links to the client's whole history, which is the email search.
+  function numberHitHtml(o){
+    // Also an order found only by its ship-to name (Glen, 2026-10-13).
+    if (!o || (o.search_match !== 'number' && o.search_match !== 'ship_to')) return '';
+    var rep = (o.search_replaced || []).map(function(n){ return '#' + Number(n); }).join(', ');
+    var who = String(o.email || '').trim();
+    var link = who ? '<a href="#" class="client-orders" data-q="' + esc(who) + '"'
+      + ' onclick="event.preventDefault(); event.stopPropagation(); window.searchFor && searchFor(this.dataset.q)">'
+      + 'All of this client\'s orders</a>' : '';
+    if (!rep && !link) return '';
+    return '<div class="meta number-hit">' + (rep ? 'Replaced ' + rep : '')
+      + (rep && link ? ' &middot; ' : '') + link + '</div>';
+  }
+  function searchNote(q, orders){
+    var byNumber = orders.length && orders.every(function(o){ return o.search_match === 'number'; });
+    if (byNumber) return 'Order "<b>' + esc(q) + '</b>"';
+    var byShipTo = orders.length && orders.every(function(o){ return o.search_match === 'ship_to'; });
+    if (byShipTo) return 'Order' + (orders.length===1?'':'s') + ' shipped to "<b>' + esc(q) + '</b>"';
+    return 'All ' + orders.length + ' order' + (orders.length===1?'':'s')
+      + ' for "<b>' + esc(q) + '</b>", cancelled and completed included';
+  }
   // END order search
   var SEARCH = (new URLSearchParams(location.search).get('q') || '').trim();
   function key(){ return localStorage.getItem('console_key') || ''; }
@@ -331,6 +362,7 @@
       ? '<span class="hh-badge">shipment #'+Number(o.group_shipment_id)+'</span>' : '';
     var head = '<div class="card-head" onclick="toggleCard(this)">'
       + '<div class="who">'+sel+esc(displayName)+gb+badge+'<span class="chev">&#9656;</span></div>'
+      + numberHitHtml(o)
       + '<div class="meta"><span class="onum">#'+Number(o.id)+'</span>'
         + (o.external_ref?' &middot; '+esc(o.external_ref):'')
         + ' &middot; '+esc(dateStr(o.created_at))+' &middot; <span class="src">'+esc(whereLabel(o))+'</span>'
@@ -355,8 +387,95 @@
       + (o.tracking_number?'<div class="meta">tracking '+esc(o.tracking_number)+'</div>':'')
       + (o.biofield_pdf_url?'<div class="meta"><a href="'+esc(o.biofield_pdf_url)+'" target="_blank" rel="noopener">&#128424; Biofield report (PDF)</a></div>':'')
       + fulfillHtml(o)
+      + packingPhotosHtml(o)
       + '</div>';
     return '<div class="card" data-oid="'+o.id+'">'+head+body+'</div>';
+  }
+  // ── Packing photos (Glen, 2026-09-25) ───────────────────────────────────────
+  // Photos load only when asked, through the signed-in routes, as blob URLs: an <img>
+  // cannot send the console key. A drop-ship order with none shows a reminder that
+  // never blocks packing.
+  function packingPhotosHtml(o){
+    var id = Number(o.id), n = Number(o.packing_photo_count||0);
+    // Rendered for every drop-ship order still being packed, and shown only while it has
+    // no photo, so deleting the last photo brings the reminder back (review round 2).
+    var remind = (o.source==='dropship' && (o.status==='new' || o.status==='packed'))
+      ? '<div class="meta pk-remind"'+(n>0?' style="display:none"':'')+'>&#128247; Drop ship: photograph the packed box before sealing it. This does not block packing.</div>' : '';
+    return '<div class="pk" id="pk-'+id+'">'
+      + '<div class="detail-title">Packing photos (<span class="pk-n">'+n+'</span>)</div>'
+      + remind
+      + '<div class="pk-thumbs"></div>'
+      + (n>0 ? '<button onclick="loadPackingPhotos('+id+')">Show photos</button> ' : '')
+      + '<label class="pk-add"><input type="file" accept="image/*,.heic,.heif" multiple style="display:none" '
+      +   'onchange="uploadPackingPhotos('+id+', this)"><span class="btnlike">Add photos</span></label>'
+      + ' <span class="meta pk-status"></span>'
+      + '</div>';
+  }
+  async function _pkBlobUrl(oid, pid, size){
+    var r = await fetch('/api/orders/'+Number(oid)+'/packing-photos/'+Number(pid)+'?size='+size,
+                        {headers:{'X-Console-Key': key()}});
+    if (!r.ok) throw new Error('photo '+pid+': '+r.status);
+    return URL.createObjectURL(await r.blob());
+  }
+  async function loadPackingPhotos(oid){
+    var box = document.getElementById('pk-'+Number(oid)); if (!box) return;
+    var wrap = box.querySelector('.pk-thumbs'), st = box.querySelector('.pk-status');
+    if (box._pkLoading) return;             // a second click while loading would duplicate
+    box._pkLoading = true;
+    (box._pkUrls||[]).forEach(function(u){ URL.revokeObjectURL(u); });
+    box._pkUrls = [];
+    st.textContent = 'Loading...';
+    try {
+      var r = await fetch('/api/orders/'+Number(oid)+'/packing-photos', {headers:hdr()});
+      var j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.status);
+      wrap.innerHTML = '';
+      box.querySelector('.pk-n').textContent = j.photos.length;
+      var rm = box.querySelector('.pk-remind'); if (rm) rm.style.display = j.photos.length ? 'none' : '';
+      for (var i=0; i<j.photos.length; i++) {
+        var p = j.photos[i];
+        var cell = document.createElement('span'); cell.className = 'pk-cell';
+        var img = document.createElement('img'); img.className = 'pk-thumb'; img.alt = 'Packing photo';
+        img.title = 'Open full size';
+        try { img.src = await _pkBlobUrl(oid, p.id, 'thumb'); box._pkUrls.push(img.src); }
+        catch(e) { img.alt = 'Photo could not load'; }
+        img.onclick = (function(pid){ return async function(){
+          var w = window.open('', '_blank');
+          try { var u = await _pkBlobUrl(oid, pid, 'full'); if (w) w.location.href = u; }
+          catch(e) { if (w) w.close(); st.textContent = 'Could not open that photo.'; } }; })(p.id);
+        var del = document.createElement('button'); del.className = 'pk-del'; del.textContent = 'Delete';
+        del.onclick = (function(pid){ return function(){ deletePackingPhoto(oid, pid); }; })(p.id);
+        cell.appendChild(img); cell.appendChild(del); wrap.appendChild(cell);
+      }
+      st.textContent = '';
+    } catch(e) { st.textContent = 'Could not load photos: '+e.message; }
+    finally { box._pkLoading = false; }
+  }
+  async function uploadPackingPhotos(oid, input){
+    var box = document.getElementById('pk-'+Number(oid)); if (!box || !input.files.length) return;
+    var st = box.querySelector('.pk-status');
+    var fd = new FormData();
+    for (var i=0; i<input.files.length; i++) fd.append('photos', input.files[i]);
+    st.textContent = 'Uploading '+input.files.length+' photo(s)...';
+    try {
+      var r = await fetch('/api/orders/'+Number(oid)+'/packing-photos',
+                          {method:'POST', headers:{'X-Console-Key': key()}, body:fd});
+      var j; try { j = await r.json(); } catch(_) { throw new Error(r.status === 413 ? 'the photos are too large together' : 'status '+r.status); }
+      if (r.status === 401) throw new Error('you are signed out. Reload the page.');
+      var errs = (j.errors||[]).map(function(e){ return e.file+': '+e.error; }).join('; ');
+      input.value = '';
+      await loadPackingPhotos(oid);
+      st.textContent = (j.added||[]).length+' added'+(errs ? '. Not added: '+errs : '');
+    } catch(e) { st.textContent = 'Upload failed: '+e.message; }
+  }
+  async function deletePackingPhoto(oid, pid){
+    if (!confirm('Delete this packing photo?')) return;
+    var r = await fetch('/api/orders/'+Number(oid)+'/packing-photos/'+Number(pid),
+                        {method:'DELETE', headers:hdr()});
+    var box = document.getElementById('pk-'+Number(oid));
+    if (!r.ok) { if (box) box.querySelector('.pk-status').textContent = r.status === 401
+      ? 'Only Glen or Rae can delete a photo.' : 'The photo was not deleted (status '+r.status+').'; return; }
+    loadPackingPhotos(oid);
   }
   // Click the header to expand/collapse a card. Bound to .card-head (not the buttons),
   // so action clicks in the body don't toggle it.
@@ -636,8 +755,7 @@
     if (q) {
       var note = document.createElement('div');
       note.style.cssText = 'padding:6px 12px;margin-bottom:8px;color:#9aa0b4;font-size:13px';
-      note.innerHTML = 'All ' + orders.length + ' order' + (orders.length===1?'':'s')
-        + ' for "<b>' + esc(q) + '</b>", cancelled and completed included'
+      note.innerHTML = searchNote(q, orders)
         + ' · <a href="#" id="order-search-clear" style="color:#7c9cff">clear</a>';
       board.appendChild(note);
     }
@@ -964,6 +1082,7 @@
       load();
     }
     box.addEventListener('input', function(){ clearTimeout(t); t = setTimeout(run, 300); });
+    window.searchFor = function(v){ clearTimeout(t); box.value = v || ''; run(); };
     document.addEventListener('click', function(e){
       if (e.target && e.target.id === 'order-search-clear'){ e.preventDefault(); box.value = ''; run(); }
     });

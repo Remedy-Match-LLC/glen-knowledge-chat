@@ -84,7 +84,10 @@ def has_photo(cx, email):
     e = _norm(email)
     if not e:
         return False
-    return bool(_readiness(cx, e).get("photo_on_file")) or bool(_guard(cx, lambda: client_photos.has(cx, e), False))
+    # Per-person uploads count too (2026-10-09). This gate is email-scoped like the
+    # intake and scan checks beside it, so a family sharing one email shares it.
+    return bool(_readiness(cx, e).get("photo_on_file")) or bool(
+        _guard(cx, lambda: client_photos.has_any_for_email(cx, e), False))
 
 
 def has_intake(cx, email):

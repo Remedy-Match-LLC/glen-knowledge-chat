@@ -20,7 +20,10 @@ from dashboard import subscriptions as subs
 
 ROOT = Path(__file__).resolve().parent.parent
 SLUG, TAG = "neuro-magnesium", "retina-renew-waitlist"
-CONSENT = "We will email you when Retina Renew launches, and nothing else unless you ask."
+# Glen, 2026-10-09 ("fix Retina Renew also"): the consent no longer promises "nothing else
+# unless you ask", which was untrue for people already on the mailing list.
+CONSENT = ("We will email you when Retina Renew launches. Joining this list does not add you "
+           "to any other mailing list.")
 
 
 def _people(cx):
@@ -59,7 +62,7 @@ def _queued(cx):
 
 def test_the_consent_line_is_glens_approved_wording():
     assert pw.CONSENT_TEXT == CONSENT
-    assert pw.LISTS == {SLUG: TAG}
+    assert pw.LISTS[SLUG] == TAG
 
 
 def test_nothing_is_tagged_or_mirrored_until_the_link_is_clicked(cx):
@@ -170,16 +173,20 @@ def test_the_route_limits_one_visitor(client):
 
 def test_the_page_data_offers_the_list_only_on_its_product(client):
     c, app = client
-    assert c.get(f"/begin/product-page-data/{SLUG}").get_json().get("waitlist") == {"slug": SLUG}
+    assert c.get(f"/begin/product-page-data/{SLUG}").get_json().get("waitlist") == {
+        "slug": SLUG, "intro": WORDS[1], "consent": CONSENT, "reserve_line": WORDS[0],
+        "success": WORDS[4]}
     assert "waitlist" not in c.get("/begin/product-page-data/vitality").get_json()
 
 
 # ── The page ──────────────────────────────────────────────────────────────────
+# Retina Renew's words, unchanged except the consent (2026-10-09). The reserve line, intro,
+# consent and success note now travel in page-data per list; the rest stay in the page.
 WORDS = [
     "Not ready to reserve? Join the waiting list.",
     "Leave your email and we will send you one email when Retina Renew launches. No card, no charge.",
     "Join the waiting list",
-    "We will email you when Retina Renew launches, and nothing else unless you ask.",
+    CONSENT,
     "You're on the list. We'll email you when Retina Renew is ready.",
     "Almost done. We've sent you an email. Click the link in it to confirm.",
 ]
@@ -187,10 +194,14 @@ WORDS = [
 
 def test_the_page_carries_the_approved_words_and_a_hidden_trap():
     page = (ROOT / "static" / "begin-product.html").read_text()
-    for w in WORDS:
+    t = pw.TEXTS[SLUG]
+    assert [t["reserve_line"], t["intro"], t["consent"], t["success"]] == [
+        WORDS[0], WORDS[1], WORDS[3], WORDS[4]]
+    for w in (WORDS[2], WORDS[5]):
         assert w in page, w
+    assert "Retina Renew" not in page                 # the page names no list's product itself
     assert "once, when" not in page
-    a, b = page.find('id="retina-waitlist"'), page.find('id="sp-sections"')
+    a, b = page.find('id="product-waitlist"'), page.find('id="sp-sections"')
     assert -1 < page.find('id="founding-soldout"') < a < b       # below the reservation
     assert 'name="company"' in page[a:b]
 
@@ -289,13 +300,13 @@ def test_the_rate_limit_keys_on_the_trusted_address(client, monkeypatch):
 
 def test_the_sold_out_box_points_at_the_form():
     page = (ROOT / "static" / "begin-product.html").read_text()
-    assert 'id="founding-waitlist-link" href="#retina-waitlist"' in page
+    assert 'id="founding-waitlist-link" href="#product-waitlist"' in page
 
 
 HIDE_JS = r"""
 const assert = require('assert');
 const f = {style: {display: 'block'}, onsubmit: () => 'old'};
-global.document = {getElementById: id => id === 'retina-waitlist' ? f : null};
+global.document = {getElementById: id => id === 'product-waitlist' ? f : null};
 global.location = {search: ''};
 FN
 renderWaitlist({});
@@ -365,8 +376,9 @@ def test_the_confirmation_email_carries_the_approved_words(client, monkeypatch):
     assert r.headers["Location"].endswith(f"/begin/product/{SLUG}?waitlist=confirmed")
     with sqlite3.connect(app.LOG_DB) as cx:
         assert TAG in json.loads(cx.execute("SELECT tags FROM people WHERE email='m@x.com'").fetchone()[0])
-    assert c.post("/begin/waitlist/confirm/bad").headers["Location"].endswith(
-        f"/begin/product/{SLUG}?waitlist=expired")
+    # An unknown token is no longer sent to the first list's page (2026-10-09).
+    bad = c.post("/begin/waitlist/confirm/bad")
+    assert bad.status_code == 200 and "That link has expired or is not valid" in bad.get_data(as_text=True)
 
 
 def test_a_blank_first_name_greets_with_hi(client, monkeypatch):
@@ -424,7 +436,7 @@ def test_a_late_click_still_shows_its_message():
     page = (ROOT / "static" / "begin-product.html").read_text()
     a = page.find("function renderWaitlist(")
     body = page[a:page.find("\n    }\n", a)]
-    assert body.find("get('waitlist')") < body.find("if (!data.waitlist")
+    assert -1 < body.find("get('waitlist')") < body.find("if (!w || !w.slug)")
 
 
 
@@ -461,14 +473,15 @@ CONFIRMED_JS = r"""
 const assert = require('assert');
 function el(tag, id){ return {tagName: tag, id: id || '', style: {display: ''}, disabled: false, textContent: ''}; }
 const parts = [el('P'), el('P'), el('INPUT'), el('INPUT'), el('INPUT'), el('BUTTON'), el('P')];
-const note = el('P', 'retina-waitlist-msg');
+const note = el('P', 'product-waitlist-msg');
 const f = {style: {display: 'none'}, onsubmit: null, email: parts[3], first_name: parts[2],
   querySelector: () => parts[5],
   querySelectorAll: () => parts};
-global.document = {getElementById: id => id === 'retina-waitlist' ? f : (id === 'retina-waitlist-msg' ? note : null)};
+global.document = {getElementById: id => id === 'product-waitlist' ? f : (id === 'product-waitlist-msg' ? note : null)};
 global.location = {search: '?waitlist=confirmed'};
 FN
-renderWaitlist({waitlist: {slug: 'neuro-magnesium'}});
+renderWaitlist({waitlist: {slug: 'neuro-magnesium',
+  success: "You're on the list. We'll email you when Retina Renew is ready."}});
 assert.strictEqual(f.style.display, 'block');
 assert.strictEqual(note.textContent, "You're on the list. We'll email you when Retina Renew is ready.");
 assert(parts.every(p => p.style.display === 'none'), 'every other part of the form is hidden');

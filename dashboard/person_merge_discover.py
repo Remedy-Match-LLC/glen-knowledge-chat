@@ -28,6 +28,10 @@ HISTORY_TABLES = frozenset({
     "sms_consent_events",             # a text consent log keyed by phone; never rewritten
     # Found in production on 2026-09-27 (prod-queries/merge-unclassified-tables.py):
     "fmp_clients",                    # a FileMaker mirror; the next FileMaker sync rewrites it
+    "client_gmail_messages",          # a local cache of a client's own mail, keyed by sender
+    "client_record_findings", "client_record_reads",   # read from that mail; same key
+    "client_email_fills",             # the email found for a FileMaker row (2026-10-16); a
+    #                                   merge must not move it, its unique email would collide
     "escalation_queue", "identity_consolidation_audit", "membership_reconcile_alerts",
     "query_log", "remedy_match_email_sent", "review_link_tokens",
     "email_identity_aliases",         # an older alias table (people pillar); left as it is
@@ -48,7 +52,7 @@ MOVE_TABLES = frozenset({
     "client_species", "species_answers", "coach_requests", "coach_subscriptions", "coach_threads", "coach_volunteers",
     "coaching_windows", "cohort_members", "community_embeddings", "community_reactions",
     "condition_triage", "consult_eligibility", "coupons", "course_entitlements",
-    "course_lesson_watched", "course_module_homework", "course_module_unlocks", "course_tokens",
+    "course_lesson_watched", "course_module_completed", "course_module_homework", "course_module_unlocks", "course_tokens",
     "course_unlock_pref", "dispensary_orders", "e4l_accounts", "ebook_grants", "evox_bookings",
     "evox_readiness", "evox_session_credits", "eye_vision_review_requests",
     "eye_vision_suggestion_reviews", "family_subscriptions", "ff_match_drafts", "fireside_sessions",
@@ -79,6 +83,7 @@ MOVE_TABLES = frozenset({
     "family_sub_charges", "family_sub_grants", "healing_oasis_requests", "journey_state",
     "member_interest", "membership_product_grants", "memberships", "order_membership_grants",
     "order_payments", "peer_interest", "peer_matches", "portal_library", "prepay_term_grants",
+    "portal_library_links",   # a client's Library links, keyed by address (2026-10-13)
     "quiz_responses", "studio_credit_intents", "voice_signals",
 })
 _PERSON_COLUMNS = ("person_id", "people_id")

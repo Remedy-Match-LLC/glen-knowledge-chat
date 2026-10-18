@@ -10,6 +10,12 @@ from dashboard import scan_freshness as sf
 
 TEST_EMAIL = "p@x.com"
 
+def _signed(name, email):
+    # The sign-in email cookies are signed since 2026-10-15; a plain value is refused.
+    import app
+    return app._sign_email_cookie(name, email)
+
+
 
 def _db(monkeypatch, tmp_path):
     """Point LOG_DB + DATA_DIR at tmp_path and enable the biofield gate."""
@@ -35,7 +41,7 @@ def _cron_secret():
 
 def _auth_client(email=TEST_EMAIL):
     c = appmod.app.test_client()
-    c.set_cookie("rm_biofield_email", email, domain="localhost")
+    c.set_cookie("rm_biofield_email", _signed("rm_biofield_email", email), domain="localhost")
     return c
 
 

@@ -4,7 +4,8 @@ import app as appmod
 from dashboard import subscriptions as subs
 
 
-def test_founding_return_creates_reservation_and_comp_membership(monkeypatch, tmp_path):
+def test_founding_return_creates_reservation_without_membership(monkeypatch, tmp_path):
+    """The membership starts when the bottle ships, not at reservation (Glen, 2026-10-14)."""
     db = str(tmp_path / "chat_log.db")
     monkeypatch.setattr(appmod, "LOG_DB", db)
     # Seed schema
@@ -31,6 +32,6 @@ def test_founding_return_creates_reservation_and_comp_membership(monkeypatch, tm
     cx = sqlite3.connect(db); cx.row_factory = sqlite3.Row
     sub = cx.execute("SELECT * FROM subscriptions WHERE email='f@x.com'").fetchone()
     assert sub is not None and sub["founding"] == 1 and sub["founding_state"] == "pending"
-    mem = cx.execute("SELECT * FROM memberships WHERE email='f@x.com' AND source='founding'").fetchone()
-    assert mem is not None
+    mem = cx.execute("SELECT * FROM memberships WHERE email='f@x.com'").fetchone()
+    assert mem is None
     cx.close()

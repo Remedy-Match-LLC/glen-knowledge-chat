@@ -615,6 +615,7 @@
   #print-root .pd-terrain .pd-k{ display:block; font-size:10px; margin-bottom:2px; }
   #print-root .pd-sec{ margin:14px 0; }
   #print-root .pd-sec h3{ font-size:14px; color:#3a5a40; border-bottom:1px solid #e2e2e2; padding-bottom:3px; margin:0 0 8px; }
+  #print-root .diet-guidance{ border:0; padding:0; } #print-root .diet-guidance p{ margin:0 0 5px; } #print-root .diet-guidance h4{ font-size:13px; margin:10px 0 5px; }
   #print-root .pd-muted{ color:#777; font-size:11px; margin:0 0 8px; }
   #print-root .pd-layer{ margin:0 0 11px; break-inside:avoid; }
   #print-root .pd-layer-h{ display:flex; align-items:baseline; gap:8px; }
@@ -656,6 +657,9 @@
   textarea.intake-input{resize:vertical}
   .intake-scale{display:flex;flex-direction:column;gap:.15rem}
   .intake-scale-opt{display:flex;align-items:flex-start;gap:8px;font-weight:400;font-size:.9rem;margin:.15rem 0}
+  .intake-diet-guidance,.diet-guidance{margin:.9rem 0 .4rem;padding:.7rem .9rem;border:1px solid var(--border,#e2e2e2);border-radius:10px;font-size:.92rem}
+  .intake-diet-guidance p,.diet-guidance p{margin:0 0 .45rem}
+  .intake-diet-guidance h4,.intake-diet-guidance h5,.diet-guidance h3,.diet-guidance h4{margin:.3rem 0 .5rem}
   .intake-scale-opt input{margin-top:.25rem}
   .intake-table-wrap{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--card2)}
   .intake-row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;padding:8px 0;border-bottom:1px dashed var(--line)}
@@ -1407,6 +1411,19 @@ const money = (c)=> (c==null? "" : "$"+(c/100).toFixed(2));
 // Mirrors dashboard/terrain_phase.py. Empty when there is no valid phase 1-5.
 const TERRAIN_PHASE_NAMES = {1:"Terrain Revive",2:"Terrain Repair",3:"Terrain Renew",4:"Terrain Refresh",5:"Terrain Relief"};
 function terrainPhaseName(p){ return TERRAIN_PHASE_NAMES[parseInt(p,10)] || ""; }
+// Diet guidance for the client's terrain phase (Glen approved the text 2026-10-16). The
+// server sends one phase's section with the intro cautions, or null. Every sentence is
+// its own paragraph, as in the approved source. kind "print" uses the print classes.
+function dietGuidanceHtml(g, kind){
+  if(!g || !g.heading || !Array.isArray(g.intro) || !Array.isArray(g.paragraphs)) return "";
+  const p = (t)=>`<p>${esc(t)}</p>`;
+  const cls = kind === "print" ? "pd-sec diet-guidance" : "diet-guidance";
+  return `<div class="${cls}"><h3>${esc(g.title||"Eating for your terrain")}</h3>`
+    + g.intro.map(p).join("")
+    + `<h4>${esc(g.heading)}</h4>`
+    + g.paragraphs.map(p).join("") + `</div>`;
+}
+
 // Terrain banner for the report (screen or print). `kind` picks the class set.
 // "" when no phase was read, so reveal/FMP reports simply omit it.
 function terrainBanner(d, kind){
@@ -2743,7 +2760,10 @@ function saveOrdersBasket(){
 function renderOrdersBasket(){
   const host = document.getElementById("orders-basket");
   if(!host) return;
-  if(!ordersBasket.length){ host.innerHTML = `<p class="muted small">Your basket is empty.</p>`; return; }
+  // Zelle instructions for an order already placed live outside the basket, so
+  // editing a new basket never hides them or re-opens the placed order.
+  const zelleDone = ordersZelleDone().join("");
+  if(!ordersBasket.length){ host.innerHTML = zelleDone + `<p class="muted small">Your basket is empty.</p>`; return; }
   const rows = ordersBasket.map(it => {
     const bottleQty = it.refillEligible ? Number(it.bottleQty ?? (it.format === 'refill' ? 0 : it.qty)) || 0 : Number(it.qty) || 1;
     const refillQty = it.refillEligible ? Number(it.refillQty ?? (it.format === 'refill' ? it.qty : 0)) || 0 : 0;
@@ -2758,9 +2778,57 @@ function renderOrdersBasket(){
       <button type="button" class="linkbtn" data-orders-remove="${esc(it.slug)}">Remove</button>
     </span></div>`;
   }).join("");
-  host.innerHTML = `<h3 style="margin:.3rem 0">Your basket</h3>${rows}
+  const method = ordersPayMethod();
+  host.innerHTML = zelleDone + `<h3 style="margin:.3rem 0">Your basket</h3>${rows}
+    <fieldset id="ordersPaymentMethods" style="border:1px solid var(--line);border-radius:10px;padding:.8rem;margin:.8rem 0">
+      <legend class="small"><strong>Payment method</strong></legend>
+      <label style="display:block;margin:.25rem 0"><input type="radio" name="ordersPayMethod" value="card"${method === "zelle" ? "" : " checked"}> Credit or debit card</label>
+      <label style="display:block;margin:.45rem 0 .25rem"><input type="radio" name="ordersPayMethod" value="zelle"${method === "zelle" ? " checked" : ""}> Zelle (US)</label>
+      <p class="muted small fee-free-note" style="margin:.2rem 0 0">Pay by Zelle and 3.5% of your payment comes back to you as loyalty points, for use toward services. The points are added when your payment arrives.</p>
+    </fieldset>
     <button type="button" class="btn full" id="orders-place-order">Place order</button>
     <p id="orders-order-message" class="small" hidden></p>`;
+}
+
+// Zelle instructions for orders placed from this portal in this tab. Keyed by the
+// portal token, so staff opening another client's portal never see these.
+function ordersZelleKey(){ return "rm_orders_zelle:" + token; }
+function ordersZelleDone(){
+  try { return JSON.parse(sessionStorage.getItem(ordersZelleKey()) || "[]"); } catch(e) { return []; }
+}
+function setOrdersZelleDone(list){
+  try {
+    if(list.length) sessionStorage.setItem(ordersZelleKey(), JSON.stringify(list));
+    else sessionStorage.removeItem(ordersZelleKey());
+  } catch(e) {}
+}
+
+// The Orders basket used to go straight to Stripe. The checkout endpoint already
+// supports Zelle, so this basket offers the same choice as the reorder card.
+function ordersPayMethod(){
+  return (document.querySelector('input[name="ordersPayMethod"]:checked') || {}).value || "card";
+}
+
+function zelleInstructionsHtml(cj){
+  const z = cj.pay_instructions || {};
+  const link = z.pay_link || z.bank_url || "";
+  return `<div class="note" style="margin-top:1rem"><strong>Your Zelle payment instructions</strong>
+    ${cj.order_id ? `<div class="kv"><span>Order</span><strong>#${esc(cj.order_id)}</strong></div>` : ""}
+    <div class="kv"><span>Amount</span><strong>${esc(money(cj.total_cents || 0))}</strong></div>
+    <div class="kv"><span>Shipping included</span><strong>${esc(money(cj.shipping_cents || 0))}</strong></div>
+    <div class="kv"><span>Send to</span><strong>${esc(z.to || "")}</strong></div>
+    <div class="kv"><span>Memo / order reference</span><strong>${esc(z.memo || "")}</strong></div>
+    <p class="small">In your bank’s Zelle screen, enter the recipient, exact amount, and memo above. Confirm the recipient name in your bank before sending.</p>
+    ${z.qr_image_url ? `<div style="margin:.75rem 0"><img src="${esc(z.qr_image_url)}" alt="Scan to pay Remedy Match with Zelle" style="display:block;width:220px;max-width:100%;background:#fff;padding:8px;border-radius:8px"></div><strong class="small">Scan this code with Zelle in your banking app.</strong>` : ""}
+    ${link ? `<p><a class="btn" href="${esc(link)}" rel="noopener">${z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle"}</a></p>` : ""}
+    <p class="small muted">${esc(z.note || "")}</p></div>${orderNotesHtml(cj.order_notes)}`;
+}
+// A product's approved note, in its own card under the Zelle box: the box lists no
+// items (Glen, 2026-10-13: "yes. probably in a separate card").
+function orderNotesHtml(notes){
+  if(!notes || !notes.length) return "";
+  return `<div class="note order-notes" style="margin-top:1rem">${notes.map(n =>
+    `<p><strong>${esc(n.name || "")}</strong></p>${(n.paras || []).map(t => `<p>${esc(t)}</p>`).join("")}`).join("")}</div>`;
 }
 
 document.addEventListener("submit", async function(ev){
@@ -2819,6 +2887,7 @@ document.addEventListener("click", async function(ev){
     }
     const payload = JSON.stringify({
       checkout_request_id:place.dataset.checkoutRequestId,
+      method:ordersPayMethod(),
       catalog_order:true,
       items:ordersBasket.flatMap(it => it.refillEligible ? [
         {slug:it.slug, qty:Number(it.bottleQty ?? (it.format === 'refill' ? 0 : it.qty)) || 0, format:"bottle"},
@@ -2839,7 +2908,14 @@ document.addEventListener("click", async function(ev){
         if(attempt) throw fetchErr;
       }
     }
-    if(j.stripe_url){ location.href = j.stripe_url; return; }
+    if(j.stripe_url){ setOrdersZelleDone([]); location.href = j.stripe_url; return; }
+    if(j.method === "zelle" && j.pay_instructions){
+      // The order exists now. Empty the basket so a later tap cannot place it
+      // again under a new request id, and keep the instructions on screen.
+      setOrdersZelleDone([zelleInstructionsHtml(j)].concat(ordersZelleDone()).slice(0, 5));
+      ordersBasket = []; saveOrdersBasket(); renderOrdersBasket();
+      return;
+    }
     throw new Error(j.error || "Checkout is temporarily unavailable.");
   } catch(e) {
     if(msg){ msg.textContent = e.message || "Checkout is temporarily unavailable."; msg.className="small err"; msg.hidden=false; }
@@ -3070,6 +3146,7 @@ function buildReportPrintHtml(d){
     ${d.greeting?`<div class="pd-greeting">${escGreeting(d.greeting)}</div>`:""}
     ${path?`<div class="pd-sec"><h3>Your healing path</h3><p class="pd-muted">From the surface layer down to the deepest root, supported in order, so the whole chain unwinds.</p>${path}</div>`:""}
     ${finds}
+    ${dietGuidanceHtml(d.diet_guidance, "print")}
     <div class="pd-foot">It is an honor to be on your wellness team. Aloha, Dr. Glen &amp; Rae</div>
   </div>`;
 }
@@ -4953,6 +5030,7 @@ function render(d, v){
         <div class="path">${path}</div>
         ${status === "confirmed" ? scheduleHtml(d.schedule) : ""}
         ${extra}
+        ${dietGuidanceHtml(d.diet_guidance, "screen")}
         ${status === "confirmed" ? `<div style="margin-top:1.1rem"><button class="btn" onclick="printReport()">🖨 Save Report as PDF</button></div>` : ""}
         ${status !== "confirmed" ? disclose : ""}`;
       // Read-receipt: collapse the report behind a New/date header; expand = tracked open.
@@ -5165,6 +5243,12 @@ function render(d, v){
   if(Array.isArray(d.reorder_items)){
     let rows = "";
     d.reorder_items.forEach(it=>{
+      if (it.not_ready) {
+        // Not ready to order (2026-10-09): its name and page, never an order row.
+        rows += `<div class="reitem not-ready-item"><span class="nm"><a href="${esc(it.not_ready.url)}">${esc(it.name||it.slug)}</a></span>
+          <span class="small muted">${esc(it.not_ready.line || "Not ready to order yet")}</span></div>`;
+        return;
+      }
       const price = (it.is_special && it.regular_price_cents)
         ? `<span class="reg">${esc(money(it.regular_price_cents))}</span><span class="sp">${esc(money(it.price_cents))}</span>`
         : `${esc(money(it.price_cents))}`;
@@ -5207,6 +5291,7 @@ function render(d, v){
         <legend class="small"><strong>Payment method</strong></legend>
         <label style="display:block;margin:.25rem 0"><input type="radio" name="portalPayMethod" value="card" checked> Credit or debit card</label>
         <label style="display:block;margin:.45rem 0 .25rem"><input type="radio" name="portalPayMethod" value="zelle"> Zelle (US)</label>
+        <p class="muted small fee-free-note" style="margin:.2rem 0 0">Pay by Zelle and 3.5% of your payment comes back to you as loyalty points, for use toward services. The points are added when your payment arrives.</p>
         <div id="portalZellePreview" class="note small" hidden style="margin-top:.6rem">Loading Zelle instructions…</div>
       </fieldset>
       <button type="button" class="btn ghost full portal-continue-shopping" style="margin-bottom:.5rem">Continue Shopping</button>
@@ -7254,6 +7339,26 @@ function renderIntakeField(f, val, getters, fieldEls, onChange, suggestions, sav
       getters[f.selection_field] = ()=> Array.from(group.querySelectorAll("input:checked"))
         .map(input => Number(input.value)).sort((a, b)=>a-b);
     }
+    // Terrain: once answered, show the diet guidance for the phase the answer scores (the
+    // lowest number ticked), with the intro cautions. Only that phase, never another.
+    if(f.diet_guidance){
+      const dg = document.createElement("div");
+      dg.className = "intake-diet-guidance";
+      const showGuidance = ()=>{
+        while(dg.firstChild) dg.removeChild(dg.firstChild);
+        const g = f.diet_guidance[String(getters[f.id]())];
+        dg.hidden = !g;
+        if(!g) return;
+        const add = (tag, text)=>{ const el = document.createElement(tag); el.textContent = text; dg.appendChild(el); };
+        add("h4", g.title);
+        g.intro.forEach(t => add("p", t));
+        add("h5", g.heading);
+        g.paragraphs.forEach(t => add("p", t));
+      };
+      group.querySelectorAll("input").forEach(input => input.addEventListener("change", showGuidance));
+      showGuidance();
+      wrap.appendChild(dg);
+    }
     fieldEls[f.id] = group;
     return wrap;
   }
@@ -8559,7 +8664,7 @@ async function reorder(){
         <p class="small">In your bank’s Zelle screen, enter the recipient, exact amount, and memo above. Confirm the recipient name in your bank before sending.</p>
         ${z.qr_image_url ? `<div style="margin:.75rem 0"><img src="${esc(z.qr_image_url)}" alt="Scan to pay Remedy Match with Zelle" style="display:block;width:220px;max-width:100%;background:#fff;padding:8px;border-radius:8px"></div><strong class="small">Scan this code with Zelle in your banking app.</strong>` : ""}
         ${link ? `<p><a class="btn" href="${esc(link)}" rel="noopener">${z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle"}</a></p>` : ""}
-        <p class="small muted">${esc(z.note || "")}</p></div>`;
+        <p class="small muted">${esc(z.note || "")}</p></div>${orderNotesHtml(cj.order_notes)}`;
       review.hidden = false;
       btn.disabled = false;
       btn.textContent = "Zelle instructions ready";

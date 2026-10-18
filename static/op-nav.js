@@ -68,7 +68,8 @@
   }
   var NAV_PROFILES = {
     glen:   { pillars: buildPillars("").map(function(p){return p.id;}), hideRest:false },
-    rae:    { pillars: ["home","marketing","sales","fulfillment","people","communication","finance"], hideRest:false },
+    // Glen, 2026-10-16: "Show all parts of the console to Rae." Her bar matches his.
+    rae:    { pillars: buildPillars("").map(function(p){return p.id;}), hideRest:false },
     shaira: { pillars: ["home","marketing","communication","people"], hideRest:true }
   };
   function navPillarsFor(name){ return (NAV_PROFILES[name] || NAV_PROFILES.glen).pillars.slice(); }

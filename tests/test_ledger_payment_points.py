@@ -40,7 +40,7 @@ def cx(tmp_path, monkeypatch):
     return c
 
 
-def _order(cx, *, email="buyer@x.com", ref="INH-PTS1", total=6000, source="in-house",
+def _order(cx, *, email="buyer@x.com", ref="INH-PTS1", total=7000, source="in-house",
            status="proposed"):
     oid = orders.upsert_order(cx, source=source, external_ref=ref, email=email,
                               total_cents=total,
@@ -78,31 +78,31 @@ def test_points_hook_is_registered_when_app_imports():
 
 def test_a_ledger_payment_earns_the_buyer_points(cx):
     oid = _order(cx)
-    op.add_payment(cx, oid, 6000, "Zelle")
+    op.add_payment(cx, oid, 7000, "Zelle")
     assert orders.get_order(cx, oid)["pay_status"] == "paid"
-    assert _expected(6000) > 0
+    assert _expected(7000) > 0
     assert [(r["email"], r["delta_cents"]) for r in _earn_rows(cx, "INH-PTS1")] == \
-        [("buyer@x.com", _expected(6000))]
+        [("buyer@x.com", _expected(7000))]
 
 
 def test_a_partial_payment_earns_nothing_until_fully_paid(cx):
     oid = _order(cx, ref="INH-PTS2")
     op.add_payment(cx, oid, 2000, "Zelle")
     assert _earn_rows(cx, "INH-PTS2") == []
-    op.add_payment(cx, oid, 4000, "Check")
+    op.add_payment(cx, oid, 5000, "Check")
     assert len(_earn_rows(cx, "INH-PTS2")) == 1
 
 
 def test_a_store_order_recorded_by_hand_earns_points(cx):
     oid = _order(cx, ref="1099", source="groovekart", status="new")
-    op.add_payment(cx, oid, 6000, "card")
-    assert points.balance(cx, "buyer@x.com") == _expected(6000)
+    op.add_payment(cx, oid, 7000, "card")
+    assert points.balance(cx, "buyer@x.com") == _expected(7000)
 
 
 def test_a_wholesale_order_earns_no_points(cx, monkeypatch):
     oid = _order(cx, ref="DS-PTS3", source="dropship")
     seen = _spy(monkeypatch)
-    op.add_payment(cx, oid, 6000, "Zelle")
+    op.add_payment(cx, oid, 7000, "Zelle")
     assert seen == [oid]            # the settler ran and declined
     assert _earn_rows(cx, "DS-PTS3") == []
 
@@ -111,7 +111,7 @@ def test_points_already_earned_by_the_record_payment_action_are_not_doubled(cx):
     oid = _order(cx, ref="INH-PTS4")
     orders.settle_order_points(cx, orders.get_order(cx, oid))   # the action path's settler
     assert len(_earn_rows(cx, "INH-PTS4")) == 1
-    op.add_payment(cx, oid, 6000, "Zelle")
+    op.add_payment(cx, oid, 7000, "Zelle")
     assert len(_earn_rows(cx, "INH-PTS4")) == 1
 
 
@@ -121,7 +121,7 @@ def _post(path):
 
 def _paid_without_points(cx, ref="INH-OLD1", source="in-house"):
     oid = _order(cx, ref=ref, source=source, status="done")
-    cx.execute("UPDATE orders SET pay_status='paid', paid_cents=6000 WHERE id=?", (oid,))
+    cx.execute("UPDATE orders SET pay_status='paid', paid_cents=7000 WHERE id=?", (oid,))
     cx.commit()
     return oid
 
@@ -138,7 +138,7 @@ def test_backfill_preview_writes_nothing(cx):
 def test_backfill_apply_credits_once(cx):
     oid = _paid_without_points(cx)
     first = _post(f"/api/console/orders/{oid}/settle-points?apply=1").get_json()
-    assert first["applied"] is True and first["credited_cents"] == _expected(6000)
+    assert first["applied"] is True and first["credited_cents"] == _expected(7000)
     second = _post(f"/api/console/orders/{oid}/settle-points?apply=1").get_json()
     assert second["already_earned"] is True and second["credited_cents"] == 0
     assert len(_earn_rows(cx, "INH-OLD1")) == 1

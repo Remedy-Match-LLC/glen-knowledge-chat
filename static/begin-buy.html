@@ -140,8 +140,12 @@
     text-transform:uppercase; color:var(--green); margin-bottom:10px; }
   .confirm-card .cc-head{ font-family:var(--heading); font-weight:700; font-size:18px; color:var(--cream); line-height:1.3; }
   .pay-detail{ margin-top:16px; }
+  .order-notes{ margin-top:16px; padding:12px 14px; border:1px solid rgba(201,168,76,.4); border-radius:8px; }
+  .order-notes p{ margin:0 0 8px; } .order-notes p:last-child{ margin-bottom:0; }
   .pay-detail .pd-label{ font-size:13px; color:var(--muted); }
   .pay-detail .pd-to{ font-size:17px; color:var(--gold); font-weight:600; font-family:var(--heading); margin-top:3px; word-break:break-word; }
+  .pay-detail .pd-memo{ font-size:14px; color:var(--cream); margin-top:8px; }
+  .pay-detail .pd-memo strong{ color:var(--gold); }
   .pay-detail .pd-note{ font-size:13.5px; color:var(--cream); opacity:0.92; margin-top:10px; line-height:1.6; }
   .pay-link{ display:inline-block; margin-top:18px; background:var(--gold); color:#0a150d; font-family:var(--heading);
     font-weight:700; font-size:14.5px; border-radius:999px; padding:12px 26px; transition:opacity .15s; }
@@ -211,6 +215,7 @@
   <script src="/static/theme-mode.js"></script>
   <script src="/static/text-size.js"></script>
   <script src="/static/theme-toggle.js"></script>
+<script src="/static/js/order-notes.js"></script>
 </head>
 <body>
   <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode" style="position:fixed;top:14px;right:14px;z-index:9999;"></span>
@@ -297,7 +302,7 @@
         </div>
 
         <div class="field">
-          <label for="email">Email <span class="hint">(required, your invoice goes here)</span></label>
+          <label for="email">Email <span class="hint">(required)</span></label>
           <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required />
         </div>
 
@@ -340,10 +345,11 @@
               </span>
             </label>
           </div>
+          <p class="fee-free-note" style="margin:.5rem 0 0;font-size:.9em;opacity:.8">Pay by Zelle or Wise and 3.5% of your payment comes back to you as loyalty points, for use toward services. The points are added when your payment arrives.</p>
           <p class="card-soon hidden" id="card-soon">Card payment is coming soon. For now, Zelle or Wise both work today and earn you extra loyalty points.</p>
         </div>
 
-        <p class="reassure">A simple one-time purchase. Your invoice and payment are recorded in QuickBooks, and a copy is emailed to you. Zelle and Wise are fee-free and earn extra loyalty points.</p>
+        <p class="reassure">A simple one-time purchase. Zelle and Wise are fee-free and earn extra loyalty points.</p>
 
         <label class="method-opt hidden" id="group-bundle-opt" style="cursor:pointer;">
           <input type="checkbox" id="group-bundle-check" />
@@ -389,10 +395,12 @@
         <div class="pay-detail hidden" id="pay-detail">
           <div class="pd-label" id="pd-label"></div>
           <div class="pd-to" id="pd-to"></div>
+          <div class="pd-memo hidden" id="pd-memo">Memo / order reference: <strong id="pd-memo-value"></strong></div>
           <div class="pd-note" id="pd-note"></div>
         </div>
         <a class="pay-link hidden" id="pay-link" href="#" target="_blank" rel="noopener">Pay securely &#8599;</a>
         <div class="cc-email-note" id="cc-email-note"></div>
+        <div class="order-notes hidden" id="order-notes"></div>
         <div class="cc-referral hidden" id="cc-referral"></div>
       </div>
 
@@ -733,7 +741,7 @@
       if (ordering) return;
 
       if (!emailValid()) {
-        setInlineMsg('Please add a valid email so we can send your invoice.');
+        setInlineMsg('Please add a valid email address.');
         document.getElementById('email').focus();
         return;
       }
@@ -919,6 +927,9 @@
       var head = document.getElementById('cc-head');
       var total = (data.total != null) ? data.total : '';
       head.textContent = 'Order received — $' + total + '.';
+      // Glen, 2026-10-13: a product's order note, whatever the method. A card order the
+      // buyer's points cover in full skips Stripe and reaches no receipt (review round 3).
+      if (window.renderOrderNotes) renderOrderNotes(document.getElementById('order-notes'), data.order_notes);
 
       if (data.method === 'card') {
         if (data.stripe_url) { window.location.href = data.stripe_url; return; }
@@ -931,11 +942,16 @@
         if (pi.label || pi.to || pi.note) {
           if (pi.label) document.getElementById('pd-label').textContent = pi.label;
           if (pi.to) document.getElementById('pd-to').textContent = pi.to;
+          if (pi.memo) {
+            document.getElementById('pd-memo-value').textContent = pi.memo;
+            show('pd-memo');
+          }
           if (pi.note) document.getElementById('pd-note').textContent = pi.note;
           show('pay-detail');
         }
-        document.getElementById('cc-email-note').textContent =
-          'You’ll receive this invoice by email too, so you have the payment details handy.';
+        document.getElementById('cc-email-note').textContent = data.no_payment_required
+          ? 'Your points and credits cover this order, so there is nothing to pay.'
+          : 'Please save these payment details. They are not sent by email.';
       }
 
       show('confirm');
@@ -951,6 +967,7 @@
     var cg = { invoiceId:'', total:0, method:'', payInstr:null, history:[], items:[], busy:false, started:false };
 
     function initConcierge(data){
+      if (data.no_payment_required) return;   // a settled $0 order takes no add-ons
       cg.invoiceId = data.invoice_id || '';
       cg.total = parseFloat(data.total) || 0;
       cg.method = data.method || '';
@@ -1084,9 +1101,9 @@
         html += '<div class="f-note">Use the secure payment link above to complete your order.</div>';
       } else if (cg.payInstr && (cg.payInstr.to || cg.payInstr.label)){
         html += '<div class="f-note">Please send <strong>$' + cg.total.toFixed(2) + '</strong> via ' + escHtml(cg.payInstr.label||'') +
-                ' to <strong>' + escHtml(cg.payInstr.to||'') + '</strong>, using your invoice number as the memo. A copy is in your email too.</div>';
+                ' to <strong>' + escHtml(cg.payInstr.to||'') + '</strong>, with the memo <strong>' + escHtml(cg.payInstr.memo||'') + '</strong>.</div>';
       } else {
-        html += '<div class="f-note">Your invoice is in your email with the payment details.</div>';
+        html += '<div class="f-note">Please use the payment details shown above.</div>';
       }
       box.innerHTML = html; show('cg-final');
       box.scrollIntoView({ behavior:'smooth', block:'center' });

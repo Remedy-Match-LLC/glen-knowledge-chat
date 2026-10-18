@@ -15,23 +15,39 @@ DEFAULT_E4L_DB = os.path.join(VAULT, "e4l.db")
 DEFAULT_CATALOG = os.path.expanduser("~/deploy-chat/data/products.json")
 
 # Glen, 2026-10-01: "For Rejuvenator layers, add the Harmony Laser as a 1st order remedy".
-# ER2 (Large Intestine) and ER33 (Thyroid) alone get no laser; mixed with other ERs the laser
-# carries his caution, approved 2026-10-01 ("perfect"). The store name, because the FileMaker
-# name ("Harmony Soft Laser 172 Hz/5 Hz ...") does not resolve to a product on publish.
+# The store name, because the FileMaker name ("Harmony Soft Laser 172 Hz/5 Hz ...") does not
+# resolve to a product on publish.
+#
+# Glen, 2026-10-12: no laser on any layer that touches the thyroid or the abdomen, mixed
+# layers included. This replaces the 2026-10-01 rule, where ER2 or ER33 alone got no laser
+# and a mixed layer got it with a caution (and ER11 Parathyroid kept it). The pelvic codes,
+# the other neck codes, the diaphragm and the oesophagus are left on, by his choice.
 HARMONY_LASER = "Harmony Laser"
-CAUTION_ERS = frozenset({"ER2", "ER33"})
-HARMONY_CAUTION = ("Take care using infrared directly over the thyroid or the colon. "
-                   "Cleansing reactions are more likely there, so start with the smallest dose "
-                   "and increase only as you tolerate it.")
+LASER_BLOCKED_ERS = frozenset({
+    "ER33", "ER11",                                    # thyroid, parathyroid
+    "ER2", "ER10", "ER12", "ER17", "ER20", "ER25", "ER29", "ER34",
+    "ER42", "ER43", "ER58", "ER60", "ER62",            # abdomen
+})
+# Glen approved this wording 2026-10-12 (via clinical). It goes on every laser row: the
+# thyroid and colon layers that carried the 2026-10-01 caution no longer get the laser.
+HARMONY_CAUTION = ("Start with the smallest dose and increase only as you tolerate it. "
+                   "During pregnancy, do not use it over the abdomen or pelvis. "
+                   "Never use it over the testes.")
 
 
 def harmony_laser_for(codes):
     """The Harmony Laser row for a layer's codes, or None. Humans and animals alike."""
     import re as _re
-    ers = {c for c in (str(x).strip() for x in (codes or [])) if _re.fullmatch(r"ER\d+", c)}
-    if not ers or not (ers - CAUTION_ERS):
+    # Read "ER 33", "ER033" and "ER33 Thyroid" as ER33: the codes come from the AI's
+    # layer synthesis, and a missed blocked code would put the laser back (review).
+    ers = set()
+    for x in (codes or []):
+        m = _re.match(r"ER\s*0*(\d+)(?!\d)", str(x).strip().upper())
+        if m:
+            ers.add("ER" + m.group(1))
+    if not ers or ers & LASER_BLOCKED_ERS:
         return None
-    return {"name": HARMONY_LASER, "caution": HARMONY_CAUTION if ers & CAUTION_ERS else ""}
+    return {"name": HARMONY_LASER, "caution": HARMONY_CAUTION}
 
 
 def _days_ago(scan_date, today):

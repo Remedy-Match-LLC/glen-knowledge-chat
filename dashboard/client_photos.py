@@ -115,11 +115,32 @@ def has(cx, email):
     return get(cx, email) is not None
 
 
-def put_for_client(cx, client_id, email, blob, content_type, source="upload"):
+def has_any_for_email(cx, email):
+    """True when any photo is filed under this email, email-keyed or per person. A
+    portal with a client id saves its upload per person only, so has() misses it."""
+    if has(cx, email):
+        return True
+    e = _norm(email)
+    if not e:
+        return False
+    init_table(cx)
+    return cx.execute("SELECT 1 FROM client_identity_photos WHERE email=? "
+                      "AND image_blob IS NOT NULL LIMIT 1", (e,)).fetchone() is not None
+
+
+def put_for_client(cx, client_id, email, blob, content_type, source="upload", force=True):
+    """Upsert one person's photo, keyed by FileMaker client id. force=False skips when
+    the existing photo's source outranks `source`, so a bulk FileMaker load never
+    replaces a photo the client uploaded through their own portal."""
     cid = str(client_id or "").strip()
     if not cid or not blob:
         return None
     init_table(cx)
+    if not force:
+        row = cx.execute("SELECT source FROM client_identity_photos WHERE client_id=?",
+                         (cid,)).fetchone()
+        if row and _rank(source) < _rank(row[0]):
+            return None
     cx.execute(
         "INSERT INTO client_identity_photos("
         "client_id,email,image_blob,content_type,source,updated_at) VALUES(?,?,?,?,?,?) "
@@ -161,3 +182,76 @@ def set_framing_for_client(cx, client_id, focus_x, focus_y, zoom):
         "WHERE client_id=?", (focus_x, focus_y, zoom, _now(), cid))
     cx.commit()
     return cur.rowcount > 0
+
+
+def for_client_surface(cx, email, client_id=None):
+    """The photo a CLIENT-facing page (portal, Body Map) may show, or None.
+
+    The person's own row by FileMaker client id; otherwise only a photo the client
+    uploaded themselves through a portal that has no client id. An email-keyed photo
+    from any other source, or under a portal that does name a person, may belong to a
+    family member who shares the address: a mother's portal showed her daughter's
+    photo on 2026-10-09. Glen: show nothing, never a guess."""
+    if client_id:
+        return get_for_client(cx, client_id)
+    rec = get(cx, email) if email else None
+    if rec and (rec.get("source") or "").strip().lower() == "portal-self":
+        return rec
+    return None
+
+
+def _name_key(name):
+    return " ".join("".join(ch for ch in (name or "").lower() if ch.isalnum() or ch == " ").split())
+
+
+def fmp_people_for_email(cx, email):
+    """[(id_pk, full name)] of the FileMaker client records on an email (local snapshot).
+    [] when the snapshot table is absent, as on the prod web service. None when the
+    table is there but cannot be read: an identity lookup that failed must not look
+    like one that found nobody (review round 2), so callers show and save nothing."""
+    e = _norm(email)
+    if not e:
+        return []
+    try:
+        if not cx.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                          "AND name='fmp_snap_clients'").fetchone():
+            return []
+    except Exception:
+        pass                                   # not SQLite: try the query itself
+    try:
+        rows = cx.execute(
+            "SELECT id_pk, name_first, name_last FROM fmp_snap_clients "
+            "WHERE lower(trim(email))=?", (e,)).fetchall()
+    except Exception:
+        return None
+    return [(str(r[0]), f"{r[1] or ''} {r[2] or ''}".strip()) for r in rows if r[0] is not None]
+
+
+def fmp_person_for(cx, email, name):
+    """The one FileMaker id_pk this email and name name, or None (fail closed).
+
+    The record on the email whose full name matches exactly, ignoring case and
+    punctuation. No short forms: "Ann" must not resolve to "Anna" (review round 2).
+    This holds for a one-record email too: a family member with no FileMaker record of
+    their own, on a parent's email, must not resolve to the parent (round 1). Anything
+    other than exactly one match is None, and so is an id FileMaker uses on more than
+    one record (33 ids are reused, 2026-10-09)."""
+    people = fmp_people_for_email(cx, email)
+    want = _name_key(name)
+    if not people or not want:
+        return None
+    hits = [p for p in people if _name_key(p[1]) == want]
+    if len(hits) != 1:
+        return None
+    pk = hits[0][0]
+    return None if id_is_reused(cx, pk) else pk
+
+
+def id_is_reused(cx, pk):
+    """True when FileMaker uses this id_pk on more than one client record, or when that
+    cannot be checked. Such an id names no one person."""
+    try:
+        return cx.execute("SELECT COUNT(*) FROM fmp_snap_clients WHERE id_pk=?",
+                          (str(pk),)).fetchone()[0] != 1
+    except Exception:
+        return True

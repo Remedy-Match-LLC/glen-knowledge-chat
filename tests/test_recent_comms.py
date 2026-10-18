@@ -57,7 +57,9 @@ def test_question_column_fallback(tmp_path):
 def test_empty_email_and_missing_tables(tmp_path):
     cx = sqlite3.connect(str(tmp_path / "c.db"))   # no tables at all
     assert recent_comms(cx, "") == {"intake_summary": "", "recent_inquiries": [], "recent_queries": [], "recent_feedback": []}
-    assert recent_comms(cx, "j@x.com") == {"intake_summary": "", "recent_inquiries": [], "recent_queries": [], "recent_feedback": []}
+    # Every section is missing, so each is named as unread, never passed off as empty.
+    assert recent_comms(cx, "j@x.com") == {"intake_summary": "", "recent_inquiries": [], "recent_queries": [], "recent_feedback": [],
+                                           "unavailable": ["intake", "inquiries", "queries", "feedback"]}
 
 
 import json as _json
@@ -123,3 +125,79 @@ def test_recent_feedback_bad_json_and_missing_table(tmp_path):
 def test_empty_email_includes_feedback_key(tmp_path):
     cx = _fb_db(tmp_path)
     assert recent_comms(cx, "")["recent_feedback"] == []
+
+
+class _PgLike:
+    """sqlite underneath, Postgres's rule on top: after a failed statement every statement
+    fails until ROLLBACK TO SAVEPOINT. That rule emptied recent_queries and recent_feedback
+    in prod for every client: query_log has no `question` column (2026-10-16)."""
+
+    def __init__(self, cx):
+        self.cx, self.aborted, self.sql = cx, False, []
+
+    @property
+    def row_factory(self):
+        return self.cx.row_factory
+
+    @row_factory.setter
+    def row_factory(self, v):
+        self.cx.row_factory = v
+
+    def execute(self, sql, args=()):
+        self.sql.append(sql)
+        if sql.startswith("ROLLBACK TO SAVEPOINT"):
+            self.aborted = False
+            return None
+        if sql.startswith(("SAVEPOINT", "RELEASE SAVEPOINT")):
+            return None
+        if self.aborted:
+            raise RuntimeError("current transaction is aborted")
+        try:
+            return self.cx.execute(sql, args)
+        except Exception:
+            self.aborted = True
+            raise
+
+
+def _prod_shaped_db(tmp_path):
+    cx = _fb_db(tmp_path)
+    cx.executescript("""
+        CREATE TABLE query_log(id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, query TEXT, email TEXT);
+        CREATE TABLE inquiries(client_email TEXT, main_challenge TEXT, main_goal TEXT, created_at TEXT);
+        CREATE TABLE inbound_leads(id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, first_name TEXT,
+            raw_json TEXT, source TEXT);
+    """)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    cx.execute("INSERT INTO query_log(ts,query,email) VALUES(?,?,?)", (now, "my eyes ache", "j@x.com"))
+    cx.execute("INSERT INTO personal_email_feedback(received_at,user_id,ai_summary,extracted_topics,"
+               "extracted_conditions) VALUES(?,?,?,?,?)", (now, 1, "cataract worse", "[]", '["cataract"]'))
+    cx.commit()
+    return cx
+
+
+def test_on_a_postgres_shaped_connection_queries_and_feedback_survive(tmp_path):
+    pg = _PgLike(_prod_shaped_db(tmp_path))
+    out = recent_comms(pg, "j@x.com")
+    assert [q["question"] for q in out["recent_queries"]] == ["my eyes ache"]
+    assert [f["summary"] for f in out["recent_feedback"]] == ["cataract worse"]
+    assert "unavailable" not in out
+    # The real column is asked for first, so no failed statement is needed at all.
+    assert not any("SELECT question" in s for s in pg.sql)
+
+
+def test_a_failed_section_is_named_and_does_not_empty_the_rest(tmp_path):
+    cx = _prod_shaped_db(tmp_path)
+    cx.execute("DROP TABLE inquiries")
+    pg = _PgLike(cx)
+    out = recent_comms(pg, "j@x.com")
+    assert out["unavailable"] == ["inquiries"]
+    assert out["recent_queries"] and out["recent_feedback"]
+
+
+def test_testimonial_scan_text_carries_the_email_feedback_summary(tmp_path, monkeypatch):
+    """recent_comms returns `summary`; the scan read `ai_summary` and always got ""."""
+    import app
+    monkeypatch.setattr("dashboard.recent_comms.recent_comms", lambda cx, e, **k: {
+        "intake_summary": "", "recent_inquiries": [], "recent_queries": [],
+        "recent_feedback": [{"summary": "my vision is clearer", "topics": [], "conditions": []}]})
+    assert app._gather_comms_text(None, "j@x.com") == "Email feedback: my vision is clearer"

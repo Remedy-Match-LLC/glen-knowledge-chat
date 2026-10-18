@@ -13,6 +13,11 @@ Removing a line is therefore its own act -- omit it from the posted list.
 _FORMATS = ("bottle", "refill")
 
 
+class NotOrderable(ValueError):
+    """A posted line names a product that cannot be ordered yet (waitlist_only). The
+    message is the buyer-facing refusal; the whole edit is refused."""
+
+
 def _qty(value):
     """0..99. A MISSING qty means one; only an explicit 0 means zero.
 
@@ -28,18 +33,25 @@ def _qty(value):
         return 1
 
 
-def rebuild(posted, existing, *, known, refill_ok=None):
+def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
     """Server-trusted lines from `posted`, using `existing` {slug: stored line}.
 
     `known(slug)` decides whether a slug is a real, sellable product.
     `refill_ok(slug)` decides whether refill packs apply (30-capsule products only,
     2026-09-25); without it every product may take a refill, as before.
+    `refusal(slug)` returns a buyer-facing refusal for a product that cannot be ordered
+    yet (waitlist_only, 2026-10-09), or None. A posted line for one, at any quantity
+    above zero, raises NotOrderable: the edit is refused whole, never silently dropped.
     """
     out = []
     for line in (posted or []):
         if not isinstance(line, dict):
             continue
         slug = (line.get("slug") or "").strip()
+        if slug and refusal is not None and _qty(line.get("qty")) > 0:
+            msg = refusal(slug)
+            if msg:
+                raise NotOrderable(msg)
         if not slug or not known(slug):
             continue
         old = existing.get(slug) or {}

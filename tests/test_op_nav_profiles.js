@@ -12,10 +12,11 @@ assert.strictEqual(nav.PILLARS.find(p=>p.id==="finance").label, "Money");
 assert.strictEqual(nav.PILLARS.filter(p=>p.zone==="back").map(p=>p.id).join(","),
   "rnd,production,finance,admin", "back-office zone");
 
-// Shaira sees exactly her four; glen sees all; rae is a subset
+// Shaira sees exactly her four; glen and rae see all (Glen, 2026-10-16)
 assert.deepStrictEqual(nav.navPillarsFor("shaira"),
   ["home","marketing","communication","people"], "shaira scope");
 assert.deepStrictEqual(nav.navPillarsFor("glen"), ids, "glen full");
+assert.deepStrictEqual(nav.navPillarsFor("rae"), ids, "rae full, nothing under More");
 assert.ok(nav.navPillarsFor("shaira").indexOf("finance") === -1, "shaira cannot see finance");
 
 // sub-pages: Orders hub + Social + rnd stub present

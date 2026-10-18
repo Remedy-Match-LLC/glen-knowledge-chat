@@ -86,8 +86,9 @@ def _ingredient_lines(product):
     single-ingredient products, where the product name IS the ingredient, so the name
     alone is enough to build a real scene. Devices and essences still fall back.
     """
+    from dashboard.products import shown_ingredients
     out = []
-    for ing in (product or {}).get("ingredients") or []:
+    for ing in shown_ingredients((product or {}).get("ingredients") or []) or []:
         name = ing.get("name") if isinstance(ing, dict) else ing
         name = (name or "").strip()
         if name:

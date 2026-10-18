@@ -42,6 +42,68 @@ def _clean_desc(text):
     return t
 
 
+def apply_corrections(products, corr):
+    """Replay Glen's manual corrections onto `products` in place; return the slugs
+    corrected. main() calls this, and tests call it too, so a test proves the real
+    replay restores an approved text rather than a copy of its logic.
+
+    Glen's manual corrections override the LLM output and the HOLD list."""
+    corrected = []
+    for slug, c in corr.items():
+        if slug.startswith("_") or slug not in products:
+            continue
+        p = products[slug]
+        if c.get("ingredients"):
+            p["ingredients"] = c["ingredients"]
+        p["ingredients_source"] = c.get("ingredients_source", "manual")
+        # description/bottle_type are corrected here too, or the GK-scraped
+        # description above wins on the next run and silently reverts the fix.
+        # fibrolysis-factors reverted to the "Fibrolysis Factors . Price: $69.97."
+        # placeholder exactly this way.
+        if c.get("description"):
+            p["description"] = c["description"]
+        # A bundle's approved text is its pinned intro (Estrogen and Fibrin Balance
+        # Program, 2026-10-09).
+        if c.get("intro"):
+            p["intro"] = c["intro"]
+        # Pinned page texts and chat roles (Estro-Clear, spec 2026-10-10-estro-clear-roles).
+        # Restored here so a writer that rebuilds the record cannot drop them silently.
+        for _pinned_field in ("how_it_works", "learn_markdown", "benefits", "ingredient_roles",
+                              "copy_pinned", "order_note"):
+            if c.get(_pinned_field):
+                p[_pinned_field] = c[_pinned_field]
+        # The chatbot's caution opt-in is a switch, so an explicit false is replayed too:
+        # withdrawing it must take the caution back out of the bot (review round 2,
+        # Brain Cleanse, 2026-10-15).
+        if "chat_caution" in c:
+            p["chat_caution"] = bool(c["chat_caution"])
+        # A bundle's allowlist of component cautions, replayed by key presence too, so an
+        # emptied list also withdraws them (Sleep Syntropy spec, 2026-10-15).
+        if "caution_components" in c:
+            p["caution_components"] = list(c["caution_components"] or [])
+        if c.get("bottle_type"):
+            p["bottle_type"] = c["bottle_type"]
+        for _label_field in ("directions", "warning"):
+            if c.get(_label_field):
+                p[_label_field] = c[_label_field]
+        if c.get("panel_note"):
+            p["panel_note"] = c["panel_note"]
+            if c.get("panel_note_link"):
+                p["panel_note_link"] = c["panel_note_link"]
+        if c.get("note"):
+            p["enrichment_note"] = c["note"]
+        # a Glen-verified formula is authoritative here -> not a stale-GK item.
+        # Only a MANUAL correction clears the flag: a record that pins one label name but
+        # keeps its original source (the nine garlic products, 2026-09-14) must not
+        # silently mark its GrooveKart page as current.
+        if p["ingredients_source"] == "manual":
+            p.pop("gk_stale", None)
+            p.pop("gk_stale_reason", None)
+        corrected.append(slug)
+
+    return corrected
+
+
 def main():
     clean = json.load(open(CLEAN))
     doc = json.load(open(PRODUCTS))
@@ -73,39 +135,7 @@ def main():
     # Glen's manual corrections override the LLM output and the HOLD list.
     corrected = []
     if os.path.exists(CORRECTIONS):
-        corr = json.load(open(CORRECTIONS))
-        for slug, c in corr.items():
-            if slug.startswith("_") or slug not in products:
-                continue
-            p = products[slug]
-            if c.get("ingredients"):
-                p["ingredients"] = c["ingredients"]
-            p["ingredients_source"] = c.get("ingredients_source", "manual")
-            # description/bottle_type are corrected here too, or the GK-scraped
-            # description above wins on the next run and silently reverts the fix.
-            # fibrolysis-factors reverted to the "Fibrolysis Factors . Price: $69.97."
-            # placeholder exactly this way.
-            if c.get("description"):
-                p["description"] = c["description"]
-            if c.get("bottle_type"):
-                p["bottle_type"] = c["bottle_type"]
-            for _label_field in ("directions", "warning"):
-                if c.get(_label_field):
-                    p[_label_field] = c[_label_field]
-            if c.get("panel_note"):
-                p["panel_note"] = c["panel_note"]
-                if c.get("panel_note_link"):
-                    p["panel_note_link"] = c["panel_note_link"]
-            if c.get("note"):
-                p["enrichment_note"] = c["note"]
-            # a Glen-verified formula is authoritative here -> not a stale-GK item.
-            # Only a MANUAL correction clears the flag: a record that pins one label name but
-            # keeps its original source (the nine garlic products, 2026-09-14) must not
-            # silently mark its GrooveKart page as current.
-            if p["ingredients_source"] == "manual":
-                p.pop("gk_stale", None)
-                p.pop("gk_stale_reason", None)
-            corrected.append(slug)
+        corrected = apply_corrections(products, json.load(open(CORRECTIONS)))
 
     doc["_enriched"] = "ingredients (FMP/Formulations/GK) + descriptions applied 2026-06-05; see products-stale-gk-clean.md"
     json.dump(doc, open(PRODUCTS, "w"), indent=2, ensure_ascii=False)

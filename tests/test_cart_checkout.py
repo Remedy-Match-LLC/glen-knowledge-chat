@@ -45,10 +45,10 @@ def _stub_checkout(monkeypatch, seen):
     money math (shipping/tax, redeemed-points discount, referral commission) and a
     wiring bug in any of them would be invisible if the stub didn't capture it."""
     def fake(email, cart, *, ship, points_to_redeem_cents=0, referral_code=None,
-             cancel_to_cart=False):
+             cancel_to_cart=False, method="card", checkout_ref=None):
         seen.append({"email": email, "cart": cart, "ship": ship,
                      "points_to_redeem_cents": points_to_redeem_cents,
-                     "referral_code": referral_code})
+                     "referral_code": referral_code, "method": method})
         return {"out": {"invoice_id": "ref123", "total": 69.97},
                 "stripe_url": "https://stripe.test/session"}
     monkeypatch.setattr(app, "_checkout_cart", fake)

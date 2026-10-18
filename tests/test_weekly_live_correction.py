@@ -34,7 +34,9 @@ def world(monkeypatch, tmp_path):
     monkeypatch.setattr(weekly, "_authoritative_access_sets", lambda: ({"paid@x.com"}, set()))
     monkeypatch.setattr(weekly.client_portal, "ensure_token", lambda cx, email, name: "tok-" + email)
     suppressed = set()
-    monkeypatch.setattr(weekly.email_suppression, "is_suppressed", lambda cx, e: e in suppressed)
+    reasons = {}
+    monkeypatch.setattr(weekly.email_suppression, "suppression_reason",
+                        lambda cx, e: reasons.get(e) or ("hard" if e in suppressed else None))
     # never@x.com IS on the consent list: only the reached filter can keep it out.
     consent = {"a@x.com", "b@x.com", "paid@x.com", "dnd@x.com", "sup@x.com", "never@x.com"}
     monkeypatch.setattr(weekly.allowlist, "decode", lambda s: set(consent))
@@ -57,7 +59,8 @@ def world(monkeypatch, tmp_path):
 
     kw = dict(portal_check=lambda: True, find_contact=lambda e: contacts.get(e),
               send=send, sleep=lambda s: None)
-    return SimpleNamespace(db=dbfile, sent=sent, kw=kw, suppressed=suppressed, contacts=contacts)
+    return SimpleNamespace(db=dbfile, sent=sent, kw=kw, suppressed=suppressed, contacts=contacts,
+                           reasons=reasons)
 
 
 def _args(**over):
@@ -330,3 +333,15 @@ def test_the_correction_flag_reaches_run_correction(monkeypatch):
     with pytest.raises(SystemExit):
         weekly.main()
     assert seen == ["correction", "invitation"]
+
+
+def test_a_paying_member_with_only_the_hub_unsubscribe_still_gets_it(world, capsys):
+    """Glen, 2026-09-13: still invited to sessions they pay for. Table rows still block."""
+    world.reasons.update({"paid@x.com": "consent:unsubscribed",
+                          "a@x.com": "consent:unsubscribed",       # not paying: stays blocked
+                          "b@x.com": "optout"})
+    weekly.run_correction(_args(dry_run=True, send=False), **world.kw)
+    assert '"suppressed_now": 2' in capsys.readouterr().out
+    weekly.run_correction(_args(), **world.kw)
+    assert sorted(m["to"] for m in world.sent) == ["paid@x.com", "sup@x.com"]   # sup is unblocked here
+    assert _status(world, "a@x.com") == "suppressed" and _status(world, "b@x.com") == "suppressed"

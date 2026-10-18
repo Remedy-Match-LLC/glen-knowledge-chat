@@ -55,10 +55,15 @@ class _FakeIMAP:
     def __init__(self, n):
         self._ids = [str(i).encode() for i in range(1, n + 1)]
         self.fetched = []
-    def select(self, _): return ("OK", [b"1"])
+        self.readonly = None
+        self.specs = set()
+    def select(self, _box, readonly=False):
+        self.readonly = readonly
+        return ("OK", [b"1"])
     def search(self, *a): return ("OK", [b" ".join(self._ids)])
-    def fetch(self, num, _spec):
+    def fetch(self, num, spec):
         self.fetched.append(num)
+        self.specs.add(spec)
         raw = (b"Subject: hello\r\nMessage-ID: <" + num + b"@x>\r\n"
                b"From: a@b.com\r\nDate: Wed, 25 Jun 2026 09:36:00 -1000\r\n\r\njust chatting")
         return ("OK", [(b"x", raw)])
@@ -75,3 +80,17 @@ def test_scan_caps_messages(tmp_path):
     r = scan(write=False, db_path=db, imap=imap, max_messages=10)
     # only the most-recent 10 of 50 get the expensive full fetch
     assert len(imap.fetched) == 10 and r["scanned"] == 10 and r["staged"] == 0
+
+
+def test_scan_never_marks_mail_read(tmp_path):
+    # Glen, 2026-10-11: "stop marking read". A plain RFC822 fetch on a read-write mailbox
+    # sets \\Seen on every message the daily scan opens.
+    from scripts.scan_supplier_quotes import scan
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        from dashboard.ingredient_catalog import init_ingredients_schema
+        init_ingredients_schema(cx); sc.init_sourcing_schema(cx); cx.commit()
+    imap = _FakeIMAP(3)
+    scan(write=False, db_path=db, imap=imap)
+    assert imap.readonly is True
+    assert imap.specs == {"(BODY.PEEK[])"}

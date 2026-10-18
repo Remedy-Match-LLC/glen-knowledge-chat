@@ -21,6 +21,12 @@ ART = {
                              "color": "green", "is_functional": True}],
 }
 
+def _signed(name, email):
+    # The sign-in email cookies are signed since 2026-10-15; a plain value is refused.
+    import app
+    return app._sign_email_cookie(name, email)
+
+
 
 def _seed(paid: bool):
     cx = sqlite3.connect(appmod.LOG_DB)
@@ -47,7 +53,7 @@ def test_paid_member_sees_full_analysis(monkeypatch):
     _seed(paid=True)
     try:
         c = appmod.app.test_client()
-        c.set_cookie("rm_member_email", EMAIL)
+        c.set_cookie("rm_member_email", _signed("rm_member_email", EMAIL))
         r = c.get("/member/scan-analysis")
         assert r.status_code == 200
         assert r.headers.get("Cache-Control", "").startswith("no-cache")
@@ -55,6 +61,24 @@ def test_paid_member_sees_full_analysis(monkeypatch):
         assert '"access": "full"' in body
         assert "Nervous System" in body          # cluster reached the payload
         assert "Calm Mind pattern recurs" in body  # narrative present
+    finally:
+        _cleanup()
+
+
+def test_a_forged_member_cookie_sees_none_of_the_analysis(monkeypatch):
+    # 2026-10-15: the member cookie was a plain email, so anyone could read a paid
+    # member's scan analysis by setting it. A plain value now reads as nobody.
+    monkeypatch.delenv("SCAN_ANALYSIS_FREE", raising=False)
+    _seed(paid=True)
+    try:
+        c = appmod.app.test_client()
+        c.set_cookie("rm_member_email", EMAIL)
+        r = c.get("/member/scan-analysis")
+        body = r.get_data(as_text=True)
+        # The same locked page a visitor with no cookie gets (review round 2).
+        assert r.status_code == 200 and '"access": "locked"' in body
+        assert '"access": "full"' not in body
+        assert "Nervous System" not in body and "Calm Mind pattern recurs" not in body
     finally:
         _cleanup()
 
@@ -83,7 +107,7 @@ def test_chat_grounded_for_paid_member(monkeypatch):
     _seed(paid=True)
     try:
         c = appmod.app.test_client()
-        c.set_cookie("rm_member_email", EMAIL)
+        c.set_cookie("rm_member_email", _signed("rm_member_email", EMAIL))
         r = c.post("/member/scan-analysis/chat", json={"query": "What stands out over time?"})
         assert r.status_code == 200
         body = r.get_json()
@@ -132,7 +156,7 @@ def test_free_flag_promotes_anonymous_nothing_but_paid_still_full(monkeypatch):
     _seed(paid=True)
     try:
         c = appmod.app.test_client()
-        c.set_cookie("rm_member_email", EMAIL)
+        c.set_cookie("rm_member_email", _signed("rm_member_email", EMAIL))
         assert '"access": "full"' in c.get("/member/scan-analysis").get_data(as_text=True)
         c2 = appmod.app.test_client()
         assert '"access": "locked"' in c2.get("/member/scan-analysis").get_data(as_text=True)
