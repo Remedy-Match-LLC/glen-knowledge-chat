@@ -70,6 +70,7 @@ QUESTIONS = [
     ("dep",   "do you sell molecular hydrogen tablets"),
     ("claim", "What is AngioGenX and how does it help the eyes?"),
     ("claim", "How much AngioGenX should I take and why?"),
+    ("claim", "What form of vitamin K is in Vein Support?"),
 ]
 
 # 2026-10-08: the live bot answered the AngioGenX questions above with a mechanism,
@@ -78,6 +79,14 @@ QUESTIONS = [
 INVENTED_CLAIM_PHRASES = (
     "neovascular", "vascular remodeling", "hemostasis", "maximizes bioavailability",
     "clinically active", "adaptogen",
+)
+
+# 2026-10-18: the live bot said Vein Support's K2 "may also include K1 or MK-4". Its
+# product data lists MK-7 only, and none of its 307 vectors names another form. No
+# claim question names a product with these forms; change this list if one ever does.
+INVENTED_FORM_PATTERNS = (
+    re.compile(r"\bk1\b"), re.compile(r"\bmk-?4\b"), re.compile(r"phylloquinone"),
+    re.compile(r"menaquinone-4"), re.compile(r"menadione"),
 )
 
 MONEY = re.compile(r"\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)")
@@ -130,6 +139,12 @@ def audit(answer, products, group=None):
             if phrase in low:
                 out.append(f"CLAIM: says '{phrase}', a phrase the bot has invented "
                            f"before; check whether a retrieved source states this")
+        for pattern in INVENTED_FORM_PATTERNS:
+            found = pattern.search(low)
+            if found:
+                out.append(f"CLAIM: names the ingredient form '{found.group(0)}', which "
+                           f"the bot has invented before; check whether a retrieved "
+                           f"source states this")
 
     # 4. retired destinations
     for pat, what in ((r"practicebetter\.io", "Practice Better URL"),

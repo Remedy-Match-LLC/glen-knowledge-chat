@@ -106,3 +106,21 @@ def test_a_sourced_angiogenx_answer_passes(products):
     assert aa.audit("AngioGenX supports healthy circulation in the eyes. Take one "
                     "capsule daily. Stop two weeks before surgery.",
                     products, "claim") == []
+
+
+_VEIN_SUPPORT_LIVE = ("Vein Support's vitamin K2 is MK-7, and it may also include K1 or "
+                      "MK-4 for broader coverage.")
+
+
+def test_vein_support_form_question_is_in_the_question_set():
+    claim = [q for g, q in aa.QUESTIONS if g == "claim"]
+    assert "What form of vitamin K is in Vein Support?" in claim
+
+
+def test_catches_an_invented_ingredient_form(products):
+    """2026-10-18: Vein Support lists MK-7 only; the live bot added K1 and MK-4."""
+    f = aa.audit(_VEIN_SUPPORT_LIVE, products, "claim")
+    assert any("'k1'" in x for x in f) and any("'mk-4'" in x for x in f), f
+    assert aa.audit("Vein Support's vitamin K2 is MK-7.", products, "claim") == []
+    # Only claim answers are checked.
+    assert not [x for x in aa.audit(_VEIN_SUPPORT_LIVE, products, "price") if "CLAIM" in x]
