@@ -161,3 +161,49 @@ def test_the_plan_page_and_its_note_for_glen(client):
     assert "Foods, Remedies and Healing Tools Plan" in page and "Broth." in page
     assert "1 ticked entry has no approved explanation" in page and "Gluten (Gut)" in page
     assert ".plan-glen{display:none}" in page   # the note never prints
+
+
+def test_an_extra_explanation_covers_a_shared_list_remedy_once_approved(cx):
+    """Clinical's `extra_explanations`: a ticked remedy with no item in the file."""
+    from dashboard.biofield_clinical_proposals import save_selection
+    save_selection(cx, "a49", "Blood sugar", ["Soothe Powder"])
+    extras = {"Soothe Powder": {"section": cs.FORMULATIONS, "explanation": "Soothes.",
+                                "explanation_approved": False}}
+    assert cs.set_extra_explanations(cx, "Blood sugar", extras) == (0, 1)
+    line = pr.plan(cx, "a49")[cs.FORMULATIONS][0]
+    assert line["entries"][0]["explanation"] == ""
+    extras["Soothe Powder"]["explanation_approved"] = True
+    assert cs.set_extra_explanations(cx, "Blood sugar", extras) == (1, 0)
+    line = pr.plan(cx, "a49")[cs.FORMULATIONS][0]
+    assert line["entries"][0]["explanation"] == "Soothes."
+    # Another condition's extra never reaches this one.
+    save_selection(cx, "a49", "Gut", ["Soothe Powder"])
+    entries = {en["condition"]: en["explanation"]
+               for en in pr.plan(cx, "a49")[cs.FORMULATIONS][0]["entries"]}
+    assert entries["Gut"] == ""
+    # A withdrawn approval is withdrawn on reload.
+    extras["Soothe Powder"]["explanation_approved"] = "yes"
+    assert cs.set_extra_explanations(cx, "Blood sugar", extras) == (0, 1)
+    assert pr.plan(cx, "a49")[cs.FORMULATIONS][0]["entries"][0]["explanation"] == ""
+
+
+def test_the_condition_loader_reads_extra_explanations(cx, tmp_path):
+    import importlib.util, os
+    spec = importlib.util.spec_from_file_location(
+        "lcs", os.path.join(os.path.dirname(__file__), "..", "scripts",
+                            "load_clinical_sections.py"))
+    lcs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lcs)
+    folder = tmp_path / "sections"
+    folder.mkdir()
+    (folder / "gut.json").write_text(json.dumps({
+        "condition_key": "gut", "label": "Gut", "sections": {},
+        "extra_explanations": {
+            "WholOmega 120 gelcaps": {"section": cs.FORMULATIONS, "explanation": "DHA.",
+                                      "explanation_approved": True},
+            "Soothe Powder": {"section": cs.FORMULATIONS, "explanation": "Draft.",
+                              "explanation_approved": False}}}))
+    report = lcs.load(cx, str(folder), "a49")
+    assert (report["extra_explanations_applied"], report["extra_explanations_waiting"]) == (1, 1)
+    assert cx.execute("SELECT name FROM biofield_clinical_extra_explanation").fetchall() == [
+        ("WholOmega 120 gelcaps",)]

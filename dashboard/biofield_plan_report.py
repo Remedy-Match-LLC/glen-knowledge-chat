@@ -70,6 +70,9 @@ def gather(cx, test_id):
     test_id = str(test_id)
     labels = _labels(cx, test_id)
     out, cache = [], {}
+    # Shared-list remedies ticked with no item in the condition's file.
+    extra = {(r[0], r[1], r[2]): r[3] for r in cx.execute(
+        "SELECT item_key,section,name_key,explanation FROM biofield_clinical_extra_explanation")}
 
     def rows(item_key):
         if item_key not in cache:
@@ -82,9 +85,14 @@ def gather(cx, test_id):
             section = _remedy_section(name)
             row = rows(item_key).get((section, _norm(name))) \
                 or rows(item_key).get((cs.FORMULATIONS, _norm(name))) or {}
+            explanation, approved = row.get("explanation") or "", bool(row.get("approved"))
+            if not approved:
+                text = extra.get((item_key, section, _norm(name))) \
+                    or extra.get((item_key, cs.FORMULATIONS, _norm(name)))
+                if text:
+                    explanation, approved = text, True
             out.append((section, labels.get(item_key, item_key.capitalize()), name,
-                        row.get("dose") or "", row.get("overall"),
-                        row.get("explanation") or "", bool(row.get("approved"))))
+                        row.get("dose") or "", row.get("overall"), explanation, approved))
     # Every other section: the ticks kept per item.
     for item_key, section, name_key, dose, overall in cx.execute(
             "SELECT item_key,section,name_key,dose,overall FROM "

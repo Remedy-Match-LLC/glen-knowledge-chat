@@ -120,6 +120,13 @@ def ensure_schema(cx):
         name_key TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (test_id, item_key, section, name_key)
     )""")
+    # An explanation for a ticked shared-list remedy that is not an item in the
+    # condition's file (clinical's `extra_explanations`, by name). Approved only.
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_extra_explanation (
+        item_key TEXT NOT NULL, section TEXT NOT NULL, name_key TEXT NOT NULL,
+        name TEXT NOT NULL, explanation TEXT NOT NULL,
+        PRIMARY KEY (item_key, section, name_key)
+    )""")
     # Whether a section's All box is ticked, per client and condition.
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_section_all (
         test_id TEXT NOT NULL, item_key TEXT NOT NULL, section TEXT NOT NULL,
@@ -256,6 +263,30 @@ def _food_keys(value):
         if key and key not in out:
             out.append(key)
     return out
+
+
+def set_extra_explanations(cx, label, extras):
+    """Replace one condition's stored extra explanations with the approved entries of
+    `extras` ({name: {section, explanation, explanation_approved}}). Returns
+    (applied, waiting). The caller commits."""
+    ensure_schema(cx)
+    item_key = _norm(label)
+    cx.execute("DELETE FROM biofield_clinical_extra_explanation WHERE item_key=?",
+               (item_key,))
+    applied = waiting = 0
+    for name, entry in (extras or {}).items():
+        entry = entry if isinstance(entry, dict) else {}
+        text = str(entry.get("explanation") or "").strip()
+        section = entry.get("section") or FORMULATIONS
+        if entry.get("explanation_approved") is not True or not text \
+                or section not in SECTION_KEYS:
+            waiting += 1
+            continue
+        cx.execute("INSERT OR REPLACE INTO biofield_clinical_extra_explanation "
+                   "VALUES (?,?,?,?,?)",
+                   (item_key, section, _norm(name), str(name).strip(), text[:1200]))
+        applied += 1
+    return applied, waiting
 
 
 def approve_item(cx, label, section, name):
