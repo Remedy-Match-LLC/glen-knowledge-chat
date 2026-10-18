@@ -367,3 +367,90 @@ def test_a_compound_shows_a_dot_for_each_part(cx):
     html = render_clinical_checklist([{"label": "Blood", "sections": list(secs.values())}])
     assert 'title="Taurine: orange on this scan"' in html
     assert 'title="Magnesium: grey (empty) on this scan"' in html
+
+
+# --- the purple watch: the second column (Glen, 2026-10-18) ------------------
+
+def test_the_watch_is_shared_by_every_client_in_that_condition_only(cx):
+    """Glen: "every client for that combination of Clinical factor and infoceutical"."""
+    cs.set_watched(cx, "Blood", ED5, True, test_id="a49")
+    def ed5(test, label="Blood"):
+        info = _by_key(cs.sections_for(cx, test, label, [ED5], []))["infoceuticals"]
+        return info["items"][0]
+    assert ed5("a49")["watched"] and ed5("a50")["watched"]
+    assert not ed5("a49", "Gut")["watched"]
+    # Independent of column one: watched, yet not selected.
+    assert not ed5("a50")["checked"]
+    cs.set_watched(cx, "Blood", ED5, False)
+    assert not ed5("a49")["watched"]
+
+
+def test_the_watch_matches_by_code_when_the_name_is_spelled_differently(cx):
+    cs.set_watched(cx, "Blood", "ED5 Circulation", True)
+    info = _by_key(cs.sections_for(cx, "a50", "Blood", [ED5], []))["infoceuticals"]
+    assert info["items"][0]["watched"]
+    cs.set_watched(cx, "Blood", ED5, False)
+    info = _by_key(cs.sections_for(cx, "a50", "Blood", [ED5], []))["infoceuticals"]
+    assert not info["items"][0]["watched"]
+
+
+def test_a_watched_purple_item_is_flagged_and_counted(cx):
+    cs.set_watched(cx, "Blood", ED5, True)
+    cs.set_watched(cx, "Blood", EI10, True)
+    marks = {"recommended": set(), "purple": {"ED5"}, "purple_error": "",
+             "colours": {"ED5": ["purple"], "EI10": ["green"]}}
+    info = _by_key(cs.sections_for(cx, "a50", "Blood", [ED5, EI10], [], marks=marks))
+    info = info["infoceuticals"]
+    assert {i["code"]: i["watch_hit"] for i in info["items"]} == {"ED5": True, "EI10": False}
+    assert info["watch_hits"] == 1
+    # Unread colours never count as a hit.
+    marks = {"recommended": set(), "purple": None, "purple_error": "gone"}
+    info = _by_key(cs.sections_for(cx, "a50", "Blood", [ED5], [], marks=marks))
+    assert info["infoceuticals"]["watch_hits"] == 0
+
+
+def test_page_shows_two_labelled_boxes_and_the_hit(cx):
+    cs.set_watched(cx, "Blood", ED5, True)
+    html = _page(cx, {"recommended": set(), "purple": {"ED5"}, "purple_error": "",
+                      "colours": {"ED5": ["purple"], "EI10": ["grey"]}})
+    info = html[html.index('<div class=clinical-section data-section="infoceuticals"'):]
+    assert info.count("class=clinical-watch type=checkbox") == 2
+    assert f'class=clinical-watch type=checkbox data-name="{ED5}" checked' in info
+    assert f'class=clinical-watch type=checkbox data-name="{EI10}" title' in info
+    assert "First box: this Biofield. Second box: recommend whenever purple" in info
+    assert "1 watched shows purple on this scan." in info
+    assert info.count(">watched, purple: recommend</span>") == 1
+    # The selection box comes first, the watch box second.
+    choice = info.index(f'class=clinical-remedy-choice type=checkbox value="{ED5}"')
+    assert choice < info.index(f'class=clinical-watch type=checkbox data-name="{ED5}"')
+    # Functional Formulations gets no watch column.
+    ff = html[html.index('data-section="functional_formulations"'):
+              html.index('<div class=clinical-section data-section="infoceuticals"')]
+    assert "clinical-watch" not in ff
+
+
+def test_the_all_box_leaves_the_watch_column_alone(cx):
+    cs.set_watched(cx, "Blood", EI10, True)
+    cs.select_all(cx, "a49", "Blood", cs.INFOCEUTICALS, False, [ED5, EI10], [])
+    info = _by_key(cs.sections_for(cx, "a49", "Blood", [ED5, EI10], []))["infoceuticals"]
+    assert [i["code"] for i in info["items"] if i["watched"]] == ["EI10"]
+
+
+def test_watch_route(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d
+    monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    from biofield_local_app import create_app
+    db = str(tmp_path / "chat_log.db")
+    client = create_app(db).test_client()
+    url = "/author/a49/clinical-sections/watch"
+    body = {"label": "Blood", "name": ED5}
+    assert client.post(url, json=dict(body, on=True)).get_json() == {"ok": True}
+    with sqlite3.connect(db) as con:
+        assert con.execute("SELECT item_key,code,set_on_test FROM "
+                           "biofield_clinical_purple_watch").fetchall() == [("blood", "ED5", "a49")]
+    assert client.post(url, json=dict(body, on="yes")).status_code == 400
+    assert client.post(url, json={"label": "", "name": ED5, "on": True}).status_code == 400
+    client.post(url, json=dict(body, on=False))
+    with sqlite3.connect(db) as con:
+        assert con.execute("SELECT COUNT(*) FROM biofield_clinical_purple_watch").fetchone() == (0,)

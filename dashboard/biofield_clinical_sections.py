@@ -115,6 +115,15 @@ def ensure_schema(cx):
         name_key TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (test_id, item_key, section, name_key)
     )""")
+    # The second tick column on Infoceuticals (Glen, 2026-10-18): recommend this
+    # infoceutical whenever it shows purple on a scan. Shared by every client, for that
+    # condition and infoceutical. code is the E4L code, so a respelled name still matches.
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_purple_watch (
+        item_key TEXT NOT NULL, name_key TEXT NOT NULL, code TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL DEFAULT '', set_on_test TEXT NOT NULL DEFAULT '',
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (item_key, name_key)
+    )""")
     # Whether a section's All box is ticked, per client and condition.
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_section_all (
         test_id TEXT NOT NULL, item_key TEXT NOT NULL, section TEXT NOT NULL,
@@ -316,6 +325,32 @@ def set_unhidden(cx, test_id, label, section, name, on):
             cx.execute("UPDATE biofield_clinical_section_pick SET checked=0,via='' "
                        "WHERE test_id=? AND item_key=? AND section=? AND name_key=?", args)
     cx.commit()
+
+
+def set_watched(cx, label, name, on, test_id=""):
+    """Tick (on) or untick one infoceutical's purple watch in one condition, for every
+    client. test_id only records which page it was set from."""
+    ensure_schema(cx)
+    item_key, name_key = _norm(label), _norm(name)
+    if not item_key or not name_key:
+        raise ValueError("a condition and an item name are required")
+    if on:
+        cx.execute("INSERT OR REPLACE INTO biofield_clinical_purple_watch "
+                   "(item_key,name_key,code,name,set_on_test) VALUES (?,?,?,?,?)",
+                   (item_key, name_key, infoceutical_code(name) or "", str(name).strip(),
+                    str(test_id)))
+    else:
+        code = infoceutical_code(name) or ""
+        cx.execute("DELETE FROM biofield_clinical_purple_watch WHERE item_key=? "
+                   "AND (name_key=? OR (code<>'' AND code=?))", (item_key, name_key, code))
+    cx.commit()
+
+
+def _watched(cx, item_key):
+    """The watched infoceuticals of one condition, as (name keys, codes)."""
+    rows = cx.execute("SELECT name_key,code FROM biofield_clinical_purple_watch "
+                      "WHERE item_key=?", (item_key,)).fetchall()
+    return {r[0] for r in rows}, {r[1].upper() for r in rows if r[1]}
 
 
 def _unhidden(cx, test_id, item_key):
@@ -556,6 +591,7 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
     picks = _picks(cx, test_id, item_key)
     all_on = _all_on(cx, test_id, item_key)
     unhidden = _unhidden(cx, test_id, item_key)
+    watched_keys, watched_codes = _watched(cx, item_key)
     by_section = {key: [] for key in SECTION_KEYS}
     rated, rated_info = {}, {}
     for entry in catalog:
@@ -604,12 +640,16 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
         if section == INFOCEUTICALS:
             code = infoceutical_code(name)
             entry["code"] = code
+            entry["watched"] = key in watched_keys or bool(
+                code and code.upper() in watched_codes)
             if marks:
                 # No code, no answer: unknown, never "not recommended".
                 recommended = marks.get("recommended") if code else None
                 entry["recommended"] = None if recommended is None else code in recommended
                 purple = marks.get("purple") if code else None
                 entry["purple"] = None if purple is None else code in purple
+                # Watched and purple: recommend it on this scan.
+                entry["watch_hit"] = bool(entry["watched"] and entry["purple"])
                 # The bar's own colour (Glen, 2026-10-18: "Just show an icon with
                 # the color"). None is unknown; [] means the code is not on the scan.
                 colours = marks.get("colours") if code else None
@@ -642,6 +682,7 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
         # reads as ticked: it would claim every item is in when one is not.
         out.append({"key": key, "title": title, "items": sort_items(items),
                     "botanical_hidden": hidden,
+                    "watch_hits": sum(1 for e in items if e.get("watch_hit")),
                     "marks_errors": _marks_errors(marks, key),
                     "all_on": key in all_on and all(e["checked"] for e in items
                                                     if not e.get("hidden"))})
