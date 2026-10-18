@@ -1436,14 +1436,17 @@ async function approveClinicalSectionItem(btn){
  btn.disabled=false;var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent=(j&&j.error)||'Could not approve'}
 function clinicalAllOff(el){
- // The row's own tick sits outside the sections; unticking it clears the remedies.
- var sec=el.closest('.clinical-section')||(el.closest('.clinical-item')||document)
-  .querySelector('.clinical-section[data-section=functional_formulations]');
- var all=sec&&sec.querySelector('.clinical-section-allbox');
- if(all)all.checked=false}
+ var sec=el.closest('.clinical-section');
+ if(sec){var all=sec.querySelector('.clinical-section-allbox');if(all)all.checked=false;return}
+ // The row's own tick sits outside the sections; unticking it clears every remedy,
+ // so both remedy sections' All boxes go off.
+ [].slice.call((el.closest('.clinical-item')||document).querySelectorAll(
+  '.clinical-section[data-section=functional_formulations] .clinical-section-allbox,'+
+  '.clinical-section[data-section=infoceuticals] .clinical-section-allbox'))
+  .forEach(function(x){x.checked=false})}
 async function clinicalSectionAll(box){
  var row=box.closest('.clinical-item'),sec=box.closest('.clinical-section');if(!row||!sec)return;
- var key=sec.dataset.section,ff=key==='functional_formulations';
+ var key=sec.dataset.section,ff=key==='functional_formulations'||key==='infoceuticals';
  // Only the items on the page: a botanical the client's switch hides is not ticked.
  var names=[].slice.call(sec.querySelectorAll(ff?'.clinical-remedy-choice':'.clinical-section-choice'))
   .map(function(x){return ff?x.value:x.dataset.name});
@@ -2196,7 +2199,7 @@ def _clinical_sections_html(sections, remedy_choice):
     three digits (10 as X) that Glen can retype for this client; nutrients carry an
     editable dose; Fullscript items link to the store front door only."""
     from dashboard.biofield_clinical_sections import (
-        FORMULATIONS, FULLSCRIPT, NUTRIENTS, fullscript_store_url)
+        FULLSCRIPT, NUTRIENTS, REMEDY_SECTIONS, fullscript_store_url)
     out = []
     for section in sections:
         key, title = section.get("key"), section.get("title") or ""
@@ -2225,9 +2228,21 @@ def _clinical_sections_html(sections, remedy_choice):
                           f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
                           "title='Add to the shared catalog for every client' "
                           "onclick=approveClinicalSectionItem(this)>Approve</button>")
+            # Glen, 2026-10-17: "Indicate which infoceuticals are among the 5
+            # recommended, and also which are purple."
+            if entry.get("recommended"):
+                flags += ("<span class='clinical-section-flag recommended' title='Among "
+                          "the 5 infoceuticals this scan recommends'>recommended</span>")
+            if entry.get("purple"):
+                flags += ("<span class='clinical-section-flag purple' title='Purple on "
+                          "this scan'>purple</span>")
+            if "recommended" in entry and entry.get("code") == "":
+                # No E4L code in the name, so the scan cannot answer for it.
+                flags += ("<span class='clinical-section-flag' title='No E4L code in "
+                          "this name, so the scan cannot say'>scan marks unknown</span>")
             note = (f"<span class=clinical-section-note>{_e(entry['note'])}</span>"
                     if entry.get("note") else "")
-            if key == FORMULATIONS:
+            if key in REMEDY_SECTIONS:
                 bits.append(f"<div class=clinical-section-item title=\"{_e(why)}\">"
                             f"{rating_box}{remedy_choice(name)}{flags}{note}</div>")
                 continue
@@ -2250,13 +2265,17 @@ def _clinical_sections_html(sections, remedy_choice):
                 f"{' checked' if entry.get('checked') else ''} "
                 f"onchange=saveClinicalSectionItem(this,'checked')> {shown}</label>"
                 f"{dose}{flags}{note}</div>")
-        empty = ("No common remedies recorded yet" if key == FORMULATIONS
+        empty = ("No common remedies recorded yet" if key in REMEDY_SECTIONS
                  else "Nothing listed yet")
         body = "".join(bits) or f"<span class=clinical-open>{empty}</span>"
         if section.get("botanical_hidden"):
             n = section["botanical_hidden"]
             body += (f"<span class=clinical-open>{n} botanical item{'s' if n != 1 else ''} "
                      "hidden for this client</span>")
+        if bits:
+            # Not reading a mark must not look like "not recommended" or "not purple".
+            for what, why in section.get("marks_errors") or []:
+                body += (f"<span class=clinical-open title=\"{_e(why)}\">{_e(what)}</span>")
         # One box ticks every item shown in the section (Glen, 2026-10-17). Unticking it
         # unticks only what it ticked; items ticked by hand stay.
         all_box = ""
@@ -2542,6 +2561,8 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-section-title{font-weight:600;color:var(--text,inherit);margin:2px 0}"
             ".clinical-section-head{display:flex;gap:10px;align-items:center}"
             ".clinical-section-all{font-size:11px;color:var(--muted)}"
+            ".clinical-section-flag.recommended{border-color:#3f8fc9;color:#6fb3e6}"
+            ".clinical-section-flag.purple{border-color:#9581b4;color:#b9a6d8}"
             ".clinical-section-item{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:1px 0}"
             ".clinical-common .clinical-section-item input.clinical-section-rating,"
             ".clinical-common .clinical-section-item input.clinical-section-dose{padding:1px 4px;margin:0;"

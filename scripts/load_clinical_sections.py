@@ -12,7 +12,7 @@ counts, and rolls back. --commit keeps it, and runs only on Glen's word.
     python3 scripts/load_clinical_sections.py <dir> --client-test a49 --commit
 
 What it writes:
-- biofield_clinical_section_item: every food, nutrient and formulation, with its
+- biofield_clinical_section_item: every food, nutrient, formulation and infoceutical, with its
   scores, reason, source and dose, marked not reviewed and added for the
   --client-test client. Only that client sees an item until Glen approves it on
   the page. Nothing is ticked for anyone.
@@ -38,7 +38,8 @@ from dashboard.biofield_clinical_checklist import (  # noqa: E402
     _norm, ensure_catalog_schema, forgotten_remedies, remedies_for)
 from dashboard import biofield_clinical_sections as cs  # noqa: E402
 
-LOADED = (cs.FORMULATIONS, "foods_emphasize", "foods_avoid", cs.NUTRIENTS)
+LOADED = (cs.FORMULATIONS, cs.INFOCEUTICALS, "foods_emphasize", "foods_avoid",
+          cs.NUTRIENTS)
 
 
 def load(cx, folder, client_test):
@@ -76,7 +77,7 @@ def load(cx, folder, client_test):
                 outcome = cs.upsert_item(cx, label, section, item, origin_test=client_test)
                 report[outcome][section] = report[outcome].get(section, 0) + 1
                 name_key = _norm(item.get("name"))
-                if section == cs.FORMULATIONS:
+                if section in cs.REMEDY_SECTIONS:
                     if name_key in deleted:
                         report["remedies_kept_deleted"].append(f"{label}: {item['name']}")
                     elif name_key not in offered:

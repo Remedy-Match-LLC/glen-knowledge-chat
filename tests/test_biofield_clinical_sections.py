@@ -56,8 +56,8 @@ def test_new_items_start_unchecked(cx):
     cs.upsert_item(cx, "Gut", "nutrients", _item("L-glutamine", 9, 7, 8, dose="5 g daily"))
     sections = cs.sections_for(cx, "a49", "Gut")
     assert [s["title"] for s in sections] == [
-        "Functional Formulations", "Foods to emphasize", "Foods to avoid",
-        "Nutrients", "Fullscript supplements"]
+        "Functional Formulations", "Infoceuticals", "Foods to emphasize",
+        "Foods to avoid", "Nutrients", "Fullscript supplements"]
     items = [i for s in sections for i in s["items"]]
     assert items and not any(i["checked"] for i in items)
 
@@ -67,8 +67,8 @@ def test_a_tick_and_an_edited_score_belong_to_one_client_only(cx):
     cs.upsert_item(cx, "Gut", "nutrients", _item("L-glutamine", 8, 7, 8, dose="5 g"))
     cs.save_pick(cx, "a49", "Gut", "nutrients", "Zinc carnosine",
                  checked=True, rating="X95", dose="37.5 mg")
-    mine = cs.sections_for(cx, "a49", "Gut")[3]["items"]
-    theirs = cs.sections_for(cx, "a50", "Gut")[3]["items"]
+    mine = cs.sections_for(cx, "a49", "Gut")[4]["items"]
+    theirs = cs.sections_for(cx, "a50", "Gut")[4]["items"]
     assert [(i["name"], i["rating"], i["dose"], i["checked"]) for i in mine] == [
         ("Zinc carnosine", "X95", "37.5 mg", True), ("L-glutamine", "878", "5 g", False)]
     assert [(i["name"], i["rating"], i["checked"]) for i in theirs] == [
@@ -79,7 +79,7 @@ def test_saving_one_field_keeps_the_others(cx):
     cs.upsert_item(cx, "Gut", "nutrients", _item("Zinc carnosine", 7, 6, 5, dose="75 mg"))
     cs.save_pick(cx, "a49", "Gut", "nutrients", "Zinc carnosine", checked=True)
     cs.save_pick(cx, "a49", "Gut", "nutrients", "Zinc carnosine", dose="50 mg")
-    item = cs.sections_for(cx, "a49", "Gut")[3]["items"][0]
+    item = cs.sections_for(cx, "a49", "Gut")[4]["items"][0]
     assert item["checked"] and item["dose"] == "50 mg" and item["rating"] == "765"
 
 
@@ -137,7 +137,7 @@ def _rendered(cx, **pick):
 
 def test_page_shows_five_titles_ratings_dose_and_flags(cx):
     html = _rendered(cx)
-    for title in ("Functional Formulations", "Foods to emphasize", "Foods to avoid",
+    for title in ("Functional Formulations", "Infoceuticals", "Foods to emphasize", "Foods to avoid",
                   "Nutrients", "Fullscript supplements"):
         assert f"<div class=clinical-section-title>{title}</div>" in html
     assert 'value="X78"' in html and 'value="937"' in html
@@ -197,7 +197,7 @@ def test_pick_route_saves_and_refuses_bad_input(tmp_path, monkeypatch):
     assert client.post(url, json={"label": "Gut", "section": "nutrients", "name": "Zinc",
                                   "checked": "yes"}).status_code == 400
     with sqlite3.connect(db) as con:
-        item = cs.sections_for(con, "a49", "Gut")[3]["items"][0]
+        item = cs.sections_for(con, "a49", "Gut")[4]["items"][0]
     assert item["checked"] and item["rating"] == "X11"
 
 
@@ -270,11 +270,11 @@ def test_loader_is_idempotent(tmp_path):
 
 def test_an_unreviewed_item_shows_only_on_its_own_client_until_approved(cx):
     cs.upsert_item(cx, "Gut", "foods_avoid", _item("Gluten", 9, 6, 5), origin_test="a49")
-    mine = cs.sections_for(cx, "a49", "Gut")[2]["items"]
+    mine = cs.sections_for(cx, "a49", "Gut")[3]["items"]
     assert [(i["name"], i["reviewed"]) for i in mine] == [("Gluten", False)]
-    assert cs.sections_for(cx, "a50", "Gut")[2]["items"] == []
+    assert cs.sections_for(cx, "a50", "Gut")[3]["items"] == []
     assert cs.approve_item(cx, "Gut", "foods_avoid", "Gluten")
-    assert [(i["name"], i["reviewed"]) for i in cs.sections_for(cx, "a50", "Gut")[2]["items"]] \
+    assert [(i["name"], i["reviewed"]) for i in cs.sections_for(cx, "a50", "Gut")[3]["items"]] \
         == [("Gluten", True)]
 
 
@@ -282,7 +282,7 @@ def test_reloading_content_never_unapproves_or_moves_an_item(cx):
     cs.upsert_item(cx, "Gut", "foods_avoid", _item("Gluten", 9, 6, 5), origin_test="a49")
     cs.approve_item(cx, "Gut", "foods_avoid", "Gluten")
     cs.upsert_item(cx, "Gut", "foods_avoid", _item("Gluten", 8, 6, 5), origin_test="a77")
-    item = cs.sections_for(cx, "a50", "Gut")[2]["items"][0]
+    item = cs.sections_for(cx, "a50", "Gut")[3]["items"][0]
     assert item["reviewed"] and item["rating"] == "865"
 
 
@@ -337,15 +337,15 @@ def test_the_switch_hides_botanicals_except_named_ones_and_ticked_ones(cx):
     cs.save_pick(cx, "a49", "Gut", "nutrients", "Berberine", checked=True)
     cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="ginger, milk thistle")
     sec = cs.sections_for(cx, "a49", "Gut")
-    assert sorted(i["name"] for i in sec[1]["items"]) == ["Carrots", "Ginger root", "Milk thistle seed"]
-    assert sec[1]["botanical_hidden"] == 1
-    assert [i["name"] for i in sec[3]["items"]] == ["Berberine"]
+    assert sorted(i["name"] for i in sec[2]["items"]) == ["Carrots", "Ginger root", "Milk thistle seed"]
+    assert sec[2]["botanical_hidden"] == 1
+    assert [i["name"] for i in sec[4]["items"]] == ["Berberine"]
 
 
 def test_the_switch_belongs_to_one_client_and_is_off_by_default(cx):
     _botanicals(cx)
     cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="")
-    assert len(cs.sections_for(cx, "a50", "Gut")[1]["items"]) == 4
+    assert len(cs.sections_for(cx, "a50", "Gut")[2]["items"]) == 4
     assert cs.botanical_setting(cx, "a50") == {"avoid": False, "exceptions": ""}
     cs.save_botanical_setting(cx, "a49", exceptions="ginger")
     assert cs.botanical_setting(cx, "a49") == {"avoid": True, "exceptions": "ginger"}
@@ -374,9 +374,9 @@ def test_a_food_one_checked_row_emphasizes_and_another_avoids_is_flagged_on_both
     count = cs.flag_food_conflicts([("Gut", True, gut), ("Infections", True, inf),
                                     ("Vertigo", False, ver)])
     assert count == 1
-    assert gut[1]["items"][0]["conflicts"] == ["Infections"]
-    assert inf[2]["items"][0]["conflicts"] == ["Gut"]
-    assert ver[2]["items"][0]["conflicts"] == []
+    assert gut[2]["items"][0]["conflicts"] == ["Infections"]
+    assert inf[3]["items"][0]["conflicts"] == ["Gut"]
+    assert ver[3]["items"][0]["conflicts"] == []
     html = render_clinical_checklist([{"label": "Gut", "common_remedies": [], "sections": gut}])
     assert "conflicts with Infections" in html
 
@@ -396,7 +396,7 @@ def test_conflicts_match_on_food_keys_when_names_are_phrases(cx):
                          food_keys=["caffeine", "coffee", "Black tea", "cola"]))
     blood, ver = cs.sections_for(cx, "a49", "Blood"), cs.sections_for(cx, "a49", "Vertigo")
     assert cs.flag_food_conflicts([("Blood", True, blood), ("Vertigo", True, ver)]) == 1
-    assert blood[1]["items"][0]["conflicts"] == ["Vertigo"]
+    assert blood[2]["items"][0]["conflicts"] == ["Vertigo"]
 
 
 # --- the All box ----------------------------------------------------------
