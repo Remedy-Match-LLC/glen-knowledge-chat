@@ -39,7 +39,39 @@ from dashboard.biofield_clinical_checklist import (  # noqa: E402
 from dashboard import biofield_clinical_sections as cs  # noqa: E402
 
 LOADED = (cs.FORMULATIONS, cs.INFOCEUTICALS, "foods_emphasize", "foods_avoid",
-          cs.NUTRIENTS)
+          cs.NUTRIENTS, cs.BOTANICALS)
+
+
+def _prune(cx, label, sections, client_test, chosen, report):
+    """Remove what this content added earlier and no longer lists, so an item clinical
+    moved (curcumin from Nutrients to Botanicals, 2026-10-18) is not in both.
+    Only items still unreviewed and added for this client go. One Glen approved,
+    ticked or rated for the client stays, and is listed instead."""
+    key = _norm(label)
+    for section in LOADED:
+        listed = {_norm(item.get("name")) for item in sections.get(section) or []}
+        rows = cx.execute(
+            "SELECT name_key,name FROM biofield_clinical_section_item WHERE item_key=? "
+            "AND section=? AND reviewed=0 AND origin_test=?",
+            (key, section, client_test)).fetchall()
+        for name_key, name in rows:
+            if name_key in listed:
+                continue
+            pick = cx.execute(
+                "SELECT checked,overall FROM biofield_clinical_section_pick WHERE "
+                "test_id=? AND item_key=? AND section=? AND name_key=?",
+                (client_test, key, section, name_key)).fetchone()
+            ticked = name_key in chosen if section in cs.REMEDY_SECTIONS \
+                else bool(pick and pick[0])
+            if ticked or (pick and pick[1] is not None):
+                report["kept_not_listed"].append(f"{label}: {section}: {name}")
+                continue
+            cx.execute("DELETE FROM biofield_clinical_section_item WHERE item_key=? "
+                       "AND section=? AND name_key=?", (key, section, name_key))
+            cx.execute("DELETE FROM biofield_clinical_section_pick WHERE test_id=? "
+                       "AND item_key=? AND section=? AND name_key=?",
+                       (client_test, key, section, name_key))
+            report["removed"].append(f"{label}: {section}: {name}")
 
 
 def load(cx, folder, client_test):
@@ -47,7 +79,10 @@ def load(cx, folder, client_test):
     ensure_catalog_schema(cx)
     report = {"files": 0, "skipped_files": [], "added": {}, "updated": {},
               "formulations_new_to_condition": [], "remedies_kept_deleted": [], "notes": 0,
-              "fullscript_types_not_loaded": 0, "new_conditions": []}
+              "fullscript_types_not_loaded": 0, "new_conditions": [],
+              "removed": [], "kept_not_listed": []}
+    from dashboard.biofield_clinical_proposals import selections
+    chosen_by_row = selections(cx, client_test)
     known = {row[0] for row in cx.execute(
         "SELECT DISTINCT item_key FROM biofield_clinical_catalog")}
     for path in sorted(glob.glob(os.path.join(folder, "*.json"))):
@@ -72,6 +107,8 @@ def load(cx, folder, client_test):
         offered = {_norm(row["remedy"]) for row in remedies_for(
             cx, label, historical=stress_suggestions(cx, label))}
         deleted = forgotten_remedies(cx, label)
+        chosen = {_norm(r) for r in chosen_by_row.get(key) or []}
+        _prune(cx, label, sections, client_test, chosen, report)
         for section in LOADED:
             for item in sections.get(section) or []:
                 outcome = cs.upsert_item(cx, label, section, item, origin_test=client_test)

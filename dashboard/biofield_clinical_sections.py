@@ -35,18 +35,24 @@ FORMULATIONS = "functional_formulations"
 INFOCEUTICALS = "infoceuticals"
 FULLSCRIPT = "fullscript"
 NUTRIENTS = "nutrients"
+BOTANICALS = "botanicals"
 SECTIONS = (
     (FORMULATIONS, "Functional Formulations"),
     (INFOCEUTICALS, "Infoceuticals"),
     ("foods_emphasize", "Foods to emphasize"),
     ("foods_avoid", "Foods to avoid"),
     (NUTRIENTS, "Nutrients"),
+    # Glen, 2026-10-18: "yes, a Botanicals section beside Nutrients". Nutrients hold
+    # vitamins, minerals, fats and amino acids; botanical ingredients go here.
+    (BOTANICALS, "Botanicals"),
     (FULLSCRIPT, "Fullscript supplements"),
 )
 SECTION_KEYS = tuple(key for key, _ in SECTIONS)
 SCORES = ("overall", "research", "uniqueness")
 # Both are the row's remedy list: their ticks live in biofield_clinical_selection.
 REMEDY_SECTIONS = (FORMULATIONS, INFOCEUTICALS)
+# Sections whose items carry an editable dose.
+DOSED_SECTIONS = (NUTRIENTS, BOTANICALS)
 
 # Glen, 2026-10-17: Infoceuticals get a section of their own, apart from Functional
 # Formulations. MRs are not infoceuticals (Glen, same day), and neither are ERs.
@@ -205,7 +211,7 @@ def upsert_item(cx, label, section, item, origin_test=""):
           updated_at=CURRENT_TIMESTAMP""",
                (item_key, section, name_key, name,
                 str(item.get("brand") or "").strip()[:160],
-                str(item.get("dose") or "").strip()[:200] if section == NUTRIENTS else "",
+                str(item.get("dose") or "").strip()[:200] if section in DOSED_SECTIONS else "",
                 _score(item.get("overall")), _score(item.get("research")),
                 _score(item.get("uniqueness")),
                 str(item.get("reason") or "").strip()[:400],
@@ -482,7 +488,7 @@ def _apply_pick(entry, pick):
 
 def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=None,
                  marks=None):
-    """The six sections for one condition row, each sorted highest rating first.
+    """The seven sections for one condition row, each sorted highest rating first.
 
     `remedies` is the row's existing remedy list. Formulations the content adds
     follow it, unless Glen deleted them from this condition. `chosen_remedies` is
@@ -563,8 +569,9 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
         by_section[section].append(entry)
     if marks and marks.get("colours") is not None:
         # Nutrients carry the colour of each scan field they name (Glen, 2026-10-18).
+        # A botanical shows one only when the scan has a field it names.
         from dashboard.e4l_nutrient_fields import fields_for
-        for entry in by_section[NUTRIENTS]:
+        for entry in by_section[NUTRIENTS] + by_section[BOTANICALS]:
             entry["scan_colours"] = [(field, marks["colours"][field])
                                      for field in fields_for(entry["name"])
                                      if field in marks["colours"]]
@@ -594,7 +601,7 @@ def _marks_errors(marks, key=INFOCEUTICALS):
     """What could not be read, as lines for the page, so an unread mark never
     looks like a clean "no"."""
     out = []
-    if key == NUTRIENTS:
+    if key in DOSED_SECTIONS:
         if marks and marks.get("colours") is None:
             out.append(("Colours could not be read from the scan PDF",
                         marks.get("purple_error") or ""))
