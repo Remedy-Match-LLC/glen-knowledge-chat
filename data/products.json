@@ -11185,25 +11185,13 @@
    "pinecone_title": "Silymarin",
    "url": "https://myhealingoasis.com/begin/product/silymarin",
    "legacy_store_url": "https://remedymatch.com/remedies/527-silymarin",
-   "ingredients": [
-    {
-     "name": "Silymarin",
-     "dose": "100 mg"
-    },
-    {
-     "name": "Magnesium Ascorbate",
-     "dose": "458 mg"
-    },
-    {
-     "name": "Luteolin",
-     "dose": "50 mg"
-    },
-    {
-     "name": "Biotin",
-     "dose": "1 mg"
-    }
+   "copy_pinned": [
+    "ingredients"
    ],
-   "ingredients_source": "t33",
+   "content_since": "2026-10-18T18:56:38Z",
+   "volume_eligible": false,
+   "sku_discount_floor_pct": 0.75,
+   "sku_points_floor_pct": 0.75,
    "description": "Silymarin . Silymarin Silymarin Silymarin Background Silymarin is a polyphenolic flavonoid complex extracted from the dried fruits and seeds of Silybum marianum (milk thistle) plant . First discovered in 1959, silybin was identified as the first member of a new family of natural compounds called flavonolignans . The standardized extract contains approximately 65% to 80% flavonolignans, including silybin A and B, isosilybin A and B, silychristin, and silydianin . Approximately 60-70% of the mixture is silybin, which is primarily responsible for the antioxidant function of silymarin . Silymarin..."
   },
   "terrain-restore": {

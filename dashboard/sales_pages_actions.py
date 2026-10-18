@@ -26,7 +26,10 @@ def regenerate_copy(slug):
     if not p:
         return None
     prod = dict(p)
-    if not prod.get("ingredients") and product_card is not None:
+    pinned = p.get("copy_pinned")
+    # A pinned empty list stays empty: the card may hold a stale panel.
+    if (not prod.get("ingredients") and product_card is not None
+            and not (isinstance(pinned, (list, tuple)) and "ingredients" in pinned)):
         prod["ingredients"] = (product_card(p) or {}).get("ingredients", [])
     out = {}
     for section in _sc.NARRATIVE_SECTIONS:
