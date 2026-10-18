@@ -39,7 +39,7 @@ from dashboard.biofield_clinical_checklist import (  # noqa: E402
 from dashboard import biofield_clinical_sections as cs  # noqa: E402
 
 LOADED = (cs.FORMULATIONS, cs.INFOCEUTICALS, "foods_emphasize", "foods_avoid",
-          cs.NUTRIENTS, cs.BOTANICALS)
+          cs.NUTRIENTS, cs.BOTANICALS, cs.HEALING_TOOLS)
 
 
 def _prune(cx, label, sections, client_test, chosen, report):

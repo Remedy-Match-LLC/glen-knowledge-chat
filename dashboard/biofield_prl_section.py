@@ -316,6 +316,8 @@ def _top(cx, test_id, labels, section, botanical):
         for sec in cs.sections_for(cx, test_id, label, botanical=botanical):
             if sec["key"] == section:
                 for item in sec["items"]:
+                    if item.get("hidden"):
+                        continue   # greyed by the botanicals switch, not offered
                     if _norm(item["name"]) not in seen:
                         seen.add(_norm(item["name"]))
                         out.append(dict(item, condition=label))

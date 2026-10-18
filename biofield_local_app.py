@@ -3536,6 +3536,24 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             remedies_changed(cx, test_id, label, before, remedies)
         return {"ok": True, "count": count}
 
+    @app.route("/author/<test_id>/clinical-sections/unhide", methods=["POST"])
+    def author_clinical_section_unhide(test_id):
+        """Unhide one greyed botanical for this client, or hide it again (Glen,
+        2026-10-18: "per client and reversible")."""
+        from dashboard.biofield_clinical_sections import set_unhidden
+        body = request.get_json(silent=True) or {}
+        on = body.get("on")
+        if not isinstance(on, bool):
+            return {"ok": False, "error": "on is required"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                set_unhidden(cx, test_id, str(body.get("label") or "").strip(),
+                             str(body.get("section") or "").strip(),
+                             str(body.get("name") or "").strip(), on)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        return {"ok": True}
+
     @app.route("/author/<test_id>/clinical-sections/all", methods=["POST"])
     def author_clinical_section_all(test_id):
         """A section's All box (Glen, 2026-10-17). `names` are the items shown in that

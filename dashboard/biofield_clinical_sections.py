@@ -36,6 +36,7 @@ INFOCEUTICALS = "infoceuticals"
 FULLSCRIPT = "fullscript"
 NUTRIENTS = "nutrients"
 BOTANICALS = "botanicals"
+HEALING_TOOLS = "healing_tools"
 SECTIONS = (
     (FORMULATIONS, "Functional Formulations"),
     (INFOCEUTICALS, "Infoceuticals"),
@@ -45,14 +46,17 @@ SECTIONS = (
     # Glen, 2026-10-18: "yes, a Botanicals section beside Nutrients". Nutrients hold
     # vitamins, minerals, fats and amino acids; botanical ingredients go here.
     (BOTANICALS, "Botanicals"),
+    # Glen, 2026-10-18: devices and therapies such as Kloud, Molecular Hydrogen,
+    # Microwater, Photobiomodulation and Microcurrent. Not botanicals.
+    (HEALING_TOOLS, "Healing Tools"),
     (FULLSCRIPT, "Fullscript supplements"),
 )
 SECTION_KEYS = tuple(key for key, _ in SECTIONS)
 SCORES = ("overall", "research", "uniqueness")
 # Both are the row's remedy list: their ticks live in biofield_clinical_selection.
 REMEDY_SECTIONS = (FORMULATIONS, INFOCEUTICALS)
-# Sections whose items carry an editable dose.
-DOSED_SECTIONS = (NUTRIENTS, BOTANICALS)
+# Sections whose items carry an editable dose; a healing tool's is its usage line.
+DOSED_SECTIONS = (NUTRIENTS, BOTANICALS, HEALING_TOOLS)
 
 # Glen, 2026-10-17: Infoceuticals get a section of their own, apart from Functional
 # Formulations. MRs are not infoceuticals (Glen, same day), and neither are ERs.
@@ -104,6 +108,13 @@ def ensure_schema(cx):
         if col not in cols:
             cx.execute(f"ALTER TABLE biofield_clinical_section_item "
                        f"ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    # A botanical the switch greys out, unhidden by hand for this client only, in one
+    # condition's section (Glen, 2026-10-18: "per client and reversible").
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_unhide (
+        test_id TEXT NOT NULL, item_key TEXT NOT NULL, section TEXT NOT NULL,
+        name_key TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (test_id, item_key, section, name_key)
+    )""")
     # Whether a section's All box is ticked, per client and condition.
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_section_all (
         test_id TEXT NOT NULL, item_key TEXT NOT NULL, section TEXT NOT NULL,
@@ -283,6 +294,34 @@ def _allowed_botanical(name, exception_keys):
     # "Milk thistle seed". Matched on the item's name, the only thing on the row.
     key = _norm(name)
     return any(e in key for e in exception_keys)
+
+
+def set_unhidden(cx, test_id, label, section, name, on):
+    """Unhide (on) or hide again one greyed botanical for this client, in one
+    condition's section. Hiding it again also unticks it, as the switch would."""
+    ensure_schema(cx)
+    if section not in SECTION_KEYS:
+        raise ValueError(f"unknown section {section!r}")
+    item_key, name_key = _norm(label), _norm(name)
+    if not item_key or not name_key:
+        raise ValueError("a condition and an item name are required")
+    args = (str(test_id), item_key, section, name_key)
+    if on:
+        cx.execute("INSERT OR IGNORE INTO biofield_clinical_unhide "
+                   "(test_id,item_key,section,name_key) VALUES (?,?,?,?)", args)
+    else:
+        cx.execute("DELETE FROM biofield_clinical_unhide WHERE test_id=? AND item_key=? "
+                   "AND section=? AND name_key=?", args)
+        if section not in REMEDY_SECTIONS:
+            cx.execute("UPDATE biofield_clinical_section_pick SET checked=0,via='' "
+                       "WHERE test_id=? AND item_key=? AND section=? AND name_key=?", args)
+    cx.commit()
+
+
+def _unhidden(cx, test_id, item_key):
+    return {(r[0], r[1]) for r in cx.execute(
+        "SELECT section,name_key FROM biofield_clinical_unhide WHERE test_id=? AND item_key=?",
+        (str(test_id), item_key))}
 
 
 def save_pick(cx, test_id, label, section, name, checked=None, rating=None,
@@ -496,7 +535,7 @@ def _apply_pick(entry, pick):
 
 def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=None,
                  marks=None):
-    """The seven sections for one condition row, each sorted highest rating first.
+    """The eight sections for one condition row, each sorted highest rating first.
 
     `remedies` is the row's existing remedy list. Formulations the content adds
     follow it, unless Glen deleted them from this condition. `chosen_remedies` is
@@ -516,6 +555,7 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
                if e["reviewed"] or e["origin_test"] in ("", test_id)]
     picks = _picks(cx, test_id, item_key)
     all_on = _all_on(cx, test_id, item_key)
+    unhidden = _unhidden(cx, test_id, item_key)
     by_section = {key: [] for key in SECTION_KEYS}
     rated, rated_info = {}, {}
     for entry in catalog:
@@ -587,21 +627,24 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
     for key, title in SECTIONS:
         items, hidden = by_section[key], 0
         if setting.get("avoid"):
-            kept = []
             for entry in items:
                 # A ticked item stays: hiding it would hide a choice already made.
                 if entry["botanical"] and not entry["checked"] \
                         and not _allowed_botanical(entry["name"], exceptions):
-                    hidden += 1
-                else:
-                    kept.append(entry)
-            items = kept
+                    if (key, _norm(entry["name"])) in unhidden:
+                        entry["unhidden"] = True
+                    else:
+                        # Glen, 2026-10-18: "Show the 'hidden' items as greyed out",
+                        # each with a button to unhide it. Greyed, it cannot be ticked.
+                        entry["hidden"] = True
+                        hidden += 1
         # An item added after All was ticked is not ticked, so the box no longer
         # reads as ticked: it would claim every item is in when one is not.
         out.append({"key": key, "title": title, "items": sort_items(items),
                     "botanical_hidden": hidden,
                     "marks_errors": _marks_errors(marks, key),
-                    "all_on": key in all_on and all(e["checked"] for e in items)})
+                    "all_on": key in all_on and all(e["checked"] for e in items
+                                                    if not e.get("hidden"))})
     return out
 
 
@@ -609,7 +652,7 @@ def _marks_errors(marks, key=INFOCEUTICALS):
     """What could not be read, as lines for the page, so an unread mark never
     looks like a clean "no"."""
     out = []
-    if key in DOSED_SECTIONS:
+    if key in (NUTRIENTS, BOTANICALS):
         if marks and marks.get("colours") is None:
             out.append(("Colours could not be read from the scan PDF",
                         marks.get("purple_error") or ""))

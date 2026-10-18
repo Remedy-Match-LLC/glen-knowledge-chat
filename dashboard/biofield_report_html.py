@@ -1448,7 +1448,8 @@ async function clinicalSectionAll(box){
  var row=box.closest('.clinical-item'),sec=box.closest('.clinical-section');if(!row||!sec)return;
  var key=sec.dataset.section,ff=key==='functional_formulations'||key==='infoceuticals';
  // Only the items on the page: a botanical the client's switch hides is not ticked.
- var names=[].slice.call(sec.querySelectorAll(ff?'.clinical-remedy-choice':'.clinical-section-choice'))
+ // A greyed (disabled) botanical is not ticked by All until it is unhidden.
+ var names=[].slice.call(sec.querySelectorAll(ff?'.clinical-remedy-choice:not(:disabled)':'.clinical-section-choice:not(:disabled)'))
   .map(function(x){return ff?x.value:x.dataset.name});
  var remedies=ff?[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
   .map(function(x){return x.value}):[];
@@ -1471,6 +1472,24 @@ async function clinicalSectionAll(box){
  else{[].slice.call(sec.querySelectorAll('.clinical-section-choice'))
    .forEach(function(x){x.checked=!!on[x.dataset.name]})}
  if(stat)stat.textContent='Saved'}
+async function clinicalUnhide(btn){
+ var row=btn.closest('.clinical-item'),item=btn.closest('.clinical-section-item');if(!row||!item)return;
+ var on=item.classList.contains('greyed'),box=item.querySelector('input[type=checkbox]');
+ var stat=document.getElementById('clinicalOrderStat');btn.disabled=true;
+ var j=null;
+ try{j=await post('/author/__TID__/clinical-sections/unhide',
+  {label:row.dataset.label,section:btn.dataset.section,name:btn.dataset.name,on:on})}
+ catch(e){j=null}
+ btn.disabled=false;
+ if(!(j&&j.ok)){if(stat)stat.textContent=(j&&j.error)||'Could not save';return}
+ // In place, so the page keeps its scroll position.
+ item.classList.toggle('greyed',!on);btn.textContent=on?'Hide':'Unhide';
+ if(box){box.disabled=!on;
+  if(!on&&box.checked){box.checked=false;
+   if(box.classList.contains('clinical-remedy-choice'))await selectClinicalRemedy(box)}}
+ // An unhidden item arrives unticked, so the section's All box no longer holds.
+ if(on)clinicalAllOff(btn);
+ if(stat)stat.textContent=on?'Unhidden for this client':'Hidden again'}
 async function saveClinicalBotanical(){
  var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent='Saving…';
@@ -2209,7 +2228,7 @@ def _clinical_sections_html(sections, remedy_choice):
     three digits (10 as X) that Glen can retype for this client; nutrients carry an
     editable dose; Fullscript items link to the store front door only."""
     from dashboard.biofield_clinical_sections import (
-        DOSED_SECTIONS, FULLSCRIPT, REMEDY_SECTIONS, fullscript_store_url)
+        DOSED_SECTIONS, FULLSCRIPT, HEALING_TOOLS, REMEDY_SECTIONS, fullscript_store_url)
     out = []
     for section in sections:
         key, title = section.get("key"), section.get("title") or ""
@@ -2262,9 +2281,22 @@ def _clinical_sections_html(sections, remedy_choice):
                           "this name, so the scan cannot say'>scan marks unknown</span>")
             note = (f"<span class=clinical-section-note>{_e(entry['note'])}</span>"
                     if entry.get("note") else "")
+            # Glen, 2026-10-18: a botanical the switch hides shows greyed out, with a
+            # button to unhide it for this client; an unhidden one can be hidden again.
+            greyed = bool(entry.get("hidden"))
+            item_cls = "clinical-section-item greyed" if greyed else "clinical-section-item"
+            disabled = " disabled" if greyed else ""
+            if greyed or entry.get("unhidden"):
+                flags += (f"<button type=button class='btn ghost clinical-unhide' "
+                          f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
+                          f"onclick=clinicalUnhide(this)>{'Unhide' if greyed else 'Hide'}"
+                          "</button>")
             if key in REMEDY_SECTIONS:
-                bits.append(f"<div class=clinical-section-item title=\"{_e(why)}\">"
-                            f"{rating_box}{remedy_choice(name)}{flags}{note}</div>")
+                choice = remedy_choice(name)
+                if greyed:
+                    choice = choice.replace("type=checkbox value=", "type=checkbox disabled value=", 1)
+                bits.append(f"<div class='{item_cls}' title=\"{_e(why)}\">"
+                            f"{rating_box}{choice}{flags}{note}</div>")
                 continue
             shown = _e(name)
             if key == FULLSCRIPT:
@@ -2276,22 +2308,19 @@ def _clinical_sections_html(sections, remedy_choice):
             if key in DOSED_SECTIONS:
                 dose = (f"<input class=clinical-section-dose value=\"{_e(entry.get('dose') or '')}\" "
                         f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
-                        f"placeholder='Dose' aria-label=\"Dose of {_e(name)}\" "
+                        f"placeholder='{'Usage' if key == HEALING_TOOLS else 'Dose'}' "
+                        f"aria-label=\"{'Usage' if key == HEALING_TOOLS else 'Dose'} of {_e(name)}\" "
                         "onchange=saveClinicalSectionItem(this,'dose')>")
             bits.append(
-                f"<div class=clinical-section-item title=\"{_e(why)}\">{rating_box}"
+                f"<div class='{item_cls}' title=\"{_e(why)}\">{rating_box}"
                 f"<label><input class=clinical-section-choice type=checkbox "
                 f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\""
-                f"{' checked' if entry.get('checked') else ''} "
+                f"{' checked' if entry.get('checked') else ''}{disabled} "
                 f"onchange=saveClinicalSectionItem(this,'checked')> {shown}</label>"
                 f"{dose}{flags}{note}</div>")
         empty = ("No common remedies recorded yet" if key in REMEDY_SECTIONS
                  else "Nothing listed yet")
         body = "".join(bits) or f"<span class=clinical-open>{empty}</span>"
-        if section.get("botanical_hidden"):
-            n = section["botanical_hidden"]
-            body += (f"<span class=clinical-open>{n} botanical item{'s' if n != 1 else ''} "
-                     "hidden for this client</span>")
         if bits:
             # Not reading a mark must not look like "not recommended" or "not purple".
             for what, why in section.get("marks_errors") or []:
@@ -2582,6 +2611,7 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-section-head{display:flex;gap:10px;align-items:center}"
             ".clinical-section-all{font-size:11px;color:var(--muted)}"
             ".clinical-section-flag.recommended{border-color:#3f8fc9;color:#6fb3e6}"
+            ".clinical-section-item.greyed>:not(.clinical-unhide){opacity:.45}"
             ".scan-dot{display:inline-block;width:11px;height:11px;border-radius:50%;"
             "margin-left:5px;vertical-align:middle;border:1px solid rgba(0,0,0,.35)}"
             ".scan-dot.purple{background:#9581b4}.scan-dot.green{background:#75b772}"
