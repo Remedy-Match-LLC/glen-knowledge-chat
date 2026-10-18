@@ -1468,6 +1468,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                      os.path.join(os.path.expanduser("~"), "biofield-reports"))
         date = (rep.get("date") or "").replace("/", "-") or "undated"
         out = os.path.join(reports_dir, f"report_{test_id}_{date}.pdf")
+        # Glen, 2026-10-18: the Plan "can be selected to print at the same time as an
+        # addition to the same pdf file".
+        if request.args.get("plan") == "1":
+            from dashboard.biofield_plan_report import append_to_report, build
+            with sqlite3.connect(db_path) as cx:
+                section, _ = build(cx, test_id, (rep.get("client") or {}).get("name") or "",
+                                   rep.get("date") or "")
+            html = append_to_report(html, section)
+            out = os.path.join(reports_dir, f"report_{test_id}_{date}_with_plan.pdf")
         try:
             save_report_pdf(html, out)          # keep a local copy to print/ship
             data = open(out, "rb").read()
@@ -1476,6 +1485,51 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         _auto_publish(test_id)   # printing a report also puts it on the client portal
         return Response(data, mimetype="application/pdf", headers={
             "Content-Disposition": f'inline; filename="biofield-{test_id}.pdf"'})
+
+    def _plan_for(test_id):
+        from dashboard.biofield_plan_report import build
+        with sqlite3.connect(db_path) as cx:
+            rep = _report_for(cx, test_id)
+            section, lacking = build(cx, test_id, (rep.get("client") or {}).get("name") or "",
+                                     rep.get("date") or "")
+        return rep, section, lacking
+
+    @app.route("/test/<test_id>/plan")
+    def plan_report(test_id):
+        """The Foods, Remedies and Healing Tools Plan on its own (Glen, 2026-10-18).
+        A box for Glen, never printed, names the ticked items with no approved
+        explanation yet."""
+        from html import escape
+        from dashboard.biofield_plan_report import plan_page
+        rep, section, lacking = _plan_for(test_id)
+        note = ""
+        if lacking:
+            rows = "".join(f"<li>{escape(name)} ({escape(cond)})</li>"
+                           for _, name, cond in lacking)
+            note = (f"<details class=plan-glen><summary>{len(lacking)} ticked "
+                    f"entr{'y has' if len(lacking) == 1 else 'ies have'} no approved "
+                    "explanation, so each prints its line alone. Not printed.</summary>"
+                    f"<ul>{rows}</ul></details>")
+        return Response(plan_page(f"<div class=plan>{note}</div>{section}" if note
+                                  else section), mimetype="text/html")
+
+    @app.route("/test/<test_id>/plan.pdf")
+    def plan_report_pdf(test_id):
+        import os
+        from dashboard.biofield_plan_report import plan_page
+        rep, section, _ = _plan_for(test_id)
+        html = plan_page(section)
+        reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
+                                     os.path.join(os.path.expanduser("~"), "biofield-reports"))
+        date = (rep.get("date") or "").replace("/", "-") or "undated"
+        out = os.path.join(reports_dir, f"plan_{test_id}_{date}.pdf")
+        try:
+            save_report_pdf(html, out)
+            data = open(out, "rb").read()
+        except Exception as e:
+            return Response(f"PDF generation failed: {e}", status=500)
+        return Response(data, mimetype="application/pdf", headers={
+            "Content-Disposition": f'inline; filename="plan-{test_id}.pdf"'})
 
     # --- Authoring (Increment 4a) ---
     @app.route("/author/new", methods=["POST"])

@@ -116,3 +116,48 @@ def test_the_loader_stores_explanation_and_its_approval(cx):
                            "biofield_clinical_section_item").fetchall())
     # Only a real true approves: a stray string never prints client wording.
     assert rows == {"Zinc": 1, "Iron": 0}
+
+
+def test_the_plan_follows_the_report_on_a_new_page_of_the_same_document():
+    joined = pr.append_to_report("<html><body><h1>Report</h1></body></html>",
+                                 "<main class=plan>PLAN</main>")
+    assert joined.index("Report") < joined.index("break-before:page") < joined.index("PLAN")
+    assert joined.endswith("</body></html>")
+
+
+def test_plan_styles_never_reach_the_report_they_join(cx):
+    section, _ = pr.build(cx, "a49")
+    css = section[section.index("<style>") + 7:section.index("</style>")]
+    for rule in css.replace("@media print{", "").split("}"):
+        selector = rule.split("{")[0].strip()
+        if selector:
+            assert all(part.strip().startswith(".plan") for part in selector.split(",")), selector
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d
+    monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    import biofield_local_app as bla
+    written = []
+    monkeypatch.setattr(bla, "save_report_pdf",
+                        lambda html, out: written.append(html) or out)
+    db = str(tmp_path / "chat_log.db")
+    c = bla.create_app(db).test_client()
+    c.db, c.written = db, written
+    return c
+
+
+def test_the_plan_page_and_its_note_for_glen(client):
+    tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
+    with sqlite3.connect(client.db) as con:
+        cs.upsert_item(con, "Gut", "foods_emphasize", _item("Bone broth", 8, "Broth.", True),
+                       origin_test=tid)
+        cs.save_pick(con, tid, "Gut", "foods_emphasize", "Bone broth", checked=True)
+        cs.upsert_item(con, "Gut", "foods_avoid", _item("Gluten", 6), origin_test=tid)
+        cs.save_pick(con, tid, "Gut", "foods_avoid", "Gluten", checked=True)
+    page = client.get(f"/test/{tid}/plan").get_data(as_text=True)
+    assert "Foods, Remedies and Healing Tools Plan" in page and "Broth." in page
+    assert "1 ticked entry has no approved explanation" in page and "Gluten (Gut)" in page
+    assert ".plan-glen{display:none}" in page   # the note never prints

@@ -160,6 +160,18 @@ def load_content(cx, folder):
             report["score_lines_applied"] += 1
         else:
             report["score_lines_waiting"] += 1
+    # Caution lines, if clinical has written the file: approved ones only.
+    report["cautions_applied"] = report["cautions_waiting"] = 0
+    path = os.path.join(folder, "cautions.json")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for n, entry in enumerate(json.load(f).get("lines") or []):
+                if entry.get("approved") is True and entry.get("text"):
+                    cx.execute("INSERT INTO biofield_plan_wording VALUES ('caution',?,?)",
+                               (f"{n:03d}", entry["text"]))
+                    report["cautions_applied"] += 1
+                else:
+                    report["cautions_waiting"] += 1
     intro = lines.get("intro") or {}
     if intro.get("approved") is True:
         for n, text in enumerate(intro.get("lines") or []):
@@ -269,9 +281,11 @@ def e_(text):
     return html.escape(str(text))
 
 
-def render_plan_html(plan_groups, client_name="", date="", score_meanings=None, intro=()):
-    """The plan as a printable page. Nothing unapproved is printed. Under Remedies,
-    sections mix within each score, so each line names its kind."""
+def render_plan_section(plan_groups, client_name="", date="", score_meanings=None,
+                        intro=(), cautions=()):
+    """The plan as one block with its own scoped styles, so it can follow the
+    Biofield Analysis in the same PDF or stand alone. Nothing unapproved is printed.
+    Under Remedies, sections mix within each score, so each line names its kind."""
     e = html.escape
     parts = []
     for heading, groups in HEADINGS:
@@ -282,6 +296,7 @@ def render_plan_html(plan_groups, client_name="", date="", score_meanings=None, 
             if lines:
                 blocks.append(_by_score(lines, True, score_meanings))
         else:
+            # Foods to emphasize and Foods to avoid stay apart (Glen, 2026-10-18).
             for key, title in groups:
                 lines = plan_groups.get(key) or []
                 if lines:
@@ -293,17 +308,54 @@ def render_plan_html(plan_groups, client_name="", date="", score_meanings=None, 
     title = "Foods, Remedies and Healing Tools Plan"
     who = f"<p class=plan-who>{e(client_name)}{' · ' + e(date) if date else ''}</p>" \
         if client_name else ""
+    # Caution lines are client wording: only the ones Glen approved are stored.
+    caution = ("<div class=plan-cautions>"
+               + "".join(f"<p>{e(line)}</p>" for line in cautions) + "</div>"
+               if cautions else "")
+    return (f"<style>{PLAN_CSS}</style><main class=plan><h1>{title}</h1>{who}"
+            + "".join(f"<p class=plan-intro>{e(line)}</p>" for line in intro or ())
+            + caution + "".join(parts) + "</main>")
+
+
+def plan_page(body):
+    """A page of its own around a plan section."""
     return ("<!doctype html><html lang=en><head><meta charset=utf-8>"
             "<meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>{title}</title><style>{PLAN_CSS}</style></head><body>"
-            f"<main class=plan><h1>{title}</h1>{who}"
-            + "".join(f"<p class=plan-intro>{e(line)}</p>" for line in intro or ())
-            + f"{''.join(parts)}</main></body></html>")
+            "<title>Foods, Remedies and Healing Tools Plan</title>"
+            "<style>body{margin:0;background:#fff}</style></head><body>"
+            + body + "</body></html>")
+
+
+def render_plan_html(plan_groups, client_name="", date="", score_meanings=None, intro=(),
+                     cautions=()):
+    """The plan as a page of its own."""
+    return plan_page(render_plan_section(plan_groups, client_name, date, score_meanings,
+                                         intro, cautions))
+
+
+def append_to_report(report_html, plan_section):
+    """The Biofield Analysis with the plan after it, on a new page of the same PDF."""
+    block = f"<div class=plan-appended style='break-before:page'>{plan_section}</div>"
+    at = report_html.rfind("</body>")
+    return report_html[:at] + block + report_html[at:] if at >= 0 else report_html + block
+
+
+def build(cx, test_id, client_name="", date=""):
+    """(plan section html, entries lacking an approved explanation) from what is
+    stored: the ticks, the approved merge map, score lines, intro and cautions."""
+    merge_map, meanings, intro = stored_wording(cx)
+    cautions = [r[0] for r in cx.execute(
+        "SELECT text FROM biofield_plan_wording WHERE kind='caution' ORDER BY key")]
+    groups = plan(cx, test_id, merge_map)
+    return (render_plan_section(groups, client_name, date, meanings, intro, cautions),
+            missing(groups))
 
 
 PLAN_CSS = (
-    "body{margin:0;background:#fff;color:#1d2a33;font:15px/1.5 Georgia,serif}"
-    ".plan{max-width:760px;margin:0 auto;padding:28px 18px}"
+    ".plan{max-width:760px;margin:0 auto;padding:28px 18px;background:#fff;color:#1d2a33;"
+    "font:15px/1.5 Georgia,serif}"
+    ".plan-cautions{border:1px solid #d9c7a3;background:#fbf6ec;border-radius:6px;"
+    "padding:8px 12px;margin:12px 0}.plan-cautions p{margin:4px 0}"
     ".plan h1{font-size:26px;margin:0 0 4px}.plan-who{color:#56656f;margin:0 0 18px}"
     ".plan h2{font-size:20px;border-bottom:1px solid #c9d3d9;padding-bottom:4px;margin:26px 0 8px}"
     ".plan h3{font-size:15px;margin:14px 0 4px;color:#2f5d73}"
@@ -315,5 +367,8 @@ PLAN_CSS = (
     ".plan-score-means{margin:0 0 4px;color:#56656f;font-size:13px}"
     ".plan-conds{list-style:none;padding-left:12px;margin:2px 0 0}"
     ".plan-list li{margin:0 0 8px}.plan-why{margin:2px 0 0;color:#2b3a44}"
-    "@media print{.plan{padding:0}.plan-heading{break-inside:auto}h2,h3{break-after:avoid}}"
+    ".plan-glen{border:1px dashed #b9a6d8;padding:8px 12px;margin:0 0 14px;font:13px system-ui,"
+    "sans-serif}"
+    "@media print{.plan{padding:0}.plan h2,.plan h3,.plan h4{break-after:avoid}"
+    ".plan-glen{display:none}}"
 )
