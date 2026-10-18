@@ -75,13 +75,6 @@ SECTION_A = {
                  "Factors + Magnesium/Dandelion/Cynarin/Curcumin/Silymarin). "
                  "Source: Glen's Products-Worklist.md."),
     },
-    "vitamin-d-syntropy": {
-        "add": ["Fulvic Acid", "Humic Acid", "Spirit Minerals"],
-        "remove": [],
-        "note": ("Section A: appended Bioavailability-Factors extras per Glen "
-                 "(Fulvic Acid, Humic Acid, Spirit Minerals). "
-                 "Source: Glen's Products-Worklist.md."),
-    },
 }
 
 # ---------------------------------------------------------------------------

@@ -21,9 +21,10 @@ def init_tables(cx):
 # two approved photos (spec 2026-10-08-clear-the-way). Checked here, inside
 # enqueue and list_pending, so every caller is covered: page view, variations, backfill, scheduler.
 # Estro-Clear's mechanism image drew a liver, which its research report rejects (spec
-# 2026-10-10-estro-clear-roles).
+# 2026-10-10-estro-clear-roles). Vitamin D Syntropy carries three approved photos, one of
+# them the label's (spec 2026-10-16-vitamin-d-syntropy).
 NO_AI_IMAGES = frozenset({"angiostasis", "clear-the-way", "estrogen-fibrin-balance-program",
-                          "estro-clear"})
+                          "estro-clear", "vitamin-d-syntropy"})
 
 def ai_images_off(slug):
     return slug in NO_AI_IMAGES

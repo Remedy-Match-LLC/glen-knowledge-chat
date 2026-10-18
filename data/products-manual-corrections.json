@@ -3208,5 +3208,64 @@
       "directions"
     ],
     "note": "Scar Silk caution moved from the label to the store page, Glen 2026-10-09 and 2026-10-15 (production spec 2026-10-15-scar-silk-caution)."
+  },
+  "vitamin-d-syntropy": {
+    "ingredients": [
+      {
+        "name": "Vitamin A (as Retinyl Acetate)",
+        "dose": "750 mcg RAE"
+      },
+      {
+        "name": "Vitamin C (as Boron Ascorbate)",
+        "dose": "69 mg"
+      },
+      {
+        "name": "Vitamin D3 (as Cholecalciferol)",
+        "dose": "125 mcg (5000 IU)"
+      },
+      {
+        "name": "Vitamin E (as mixed Tocopherols)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Vitamin K2 (as all-trans MK-7)",
+        "dose": "180 mcg"
+      },
+      {
+        "name": "Boron (as Boron Ascorbate)",
+        "dose": "6 mg"
+      },
+      {
+        "name": "Iodine (as Potassium Iodide)",
+        "dose": "150 mcg"
+      },
+      {
+        "name": "Magnesium (as Magnesium L-Threonate)",
+        "dose": "10.5 mg"
+      },
+      {
+        "name": "Selenium (as Methylselenocysteine)",
+        "dose": "70 mcg"
+      },
+      {
+        "name": "Treasurer of the Gods 20:1 (Butea frondosa)",
+        "dose": "90 mg"
+      },
+      {
+        "name": "Chlorogenic Acid 20% (Eucommia ulmoides)",
+        "dose": "90 mg"
+      },
+      {
+        "name": "Xanthohumol 10% (Humulus lupulus)",
+        "dose": "18 mg"
+      }
+    ],
+    "ingredients_source": "label-2026-10-16",
+    "intro": "Vitamin D Syntropy supplies 5000 IU of vitamin D3 with the cofactors that help the body use it. Vitamin K2 as MK-7 helps direct calcium into bone. Magnesium and vitamin A support vitamin D's activation and its receptor. Boron, iodine, selenium and three botanicals complete the formula: Butea, Eucommia and hops. Take 1 capsule daily with a meal, or as guided.",
+    "description": "Vitamin D is formed in the skin when sunlight transforms cholesterol made by enzymatic activity in the liver. Vitamin D is not only the vitamin of light, it is also a hormone, like the other hormones the body makes from cholesterol as a precursor. Vitamin D is crucial for many functions including calcium metabolism, immunity and nerve function. Individuals who take more than 2,000 IU per day of vitamin D should have their vitamin D levels monitored.\n\nEach capsule pairs 5000 IU of D3 with 180 mcg of vitamin K2 as MK-7, vitamin A, vitamin C, vitamin E, boron, iodine, magnesium as L-threonate and selenium. Three botanicals round it out: Butea, Eucommia and xanthohumol from hops. The capsule is Certified Organic Pullulan, with no fillers or excipients.\n\nTake 1 capsule daily with a meal, or as guided.\n\nCaution: If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it. Consult your physician before use if you are pregnant or have a thyroid condition.",
+    "directions": "Take 1 capsule daily with a meal, or as guided.",
+    "warning": "If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it. Consult your physician before use if you are pregnant or have a thyroid condition.",
+    "bottle_type": "30 Caps",
+    "note": "New formula, back in stock 2026-10-19, one capsule a day with a meal; FileMaker 395 (Glen approved the copy 2026-10-17, via formulation). Spec: production/05 Formulations/_store-updates/2026-10-16-vitamin-d-syntropy.md."
   }
 }
