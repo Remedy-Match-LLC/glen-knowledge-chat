@@ -54,11 +54,18 @@ def test_the_chat_block_holds_the_directions_the_caution_and_the_rule(question):
     assert app._NO_DESCRIPTION.format(name="Iron Out") in section
 
 
-def test_no_higher_count_reaches_the_block():
-    section = app.named_product_facts_block(QUESTIONS[0])
-    section = section[section.index("### Iron Out"):]
-    for n in ("6", "8", "15"):
-        assert f" {n} " not in f" {section} ".replace(".", " ").replace(",", " "), n
+@pytest.mark.parametrize("question", QUESTIONS)
+def test_the_section_is_exactly_the_approved_lines(question):
+    """Line for line, so no other dose text can sit beside the approved ones."""
+    block = app.named_product_facts_block(question)
+    section = block[block.index("### Iron Out"):].split("\n### ")[0].rstrip("\n")
+    assert section == "\n".join([
+        "### Iron Out", f"Page: {app._catalog_page_url('iron-out')}",
+        app._NO_DESCRIPTION.format(name="Iron Out"),
+        f"Directions: {DIRECTIONS}",
+        app._PINNED_DOSE_RULE.format(name="Iron Out", example=""),
+        app._CAUTION_COPY_REMINDER,
+        f"Caution: {CAUTION}"])
 
 
 def test_the_everyday_phrase_gets_no_block():
@@ -68,10 +75,23 @@ def test_the_everyday_phrase_gets_no_block():
 
 @pytest.mark.parametrize("question", ["can I take more iron out?",
                                       "How many Iron-Out capsules can I take?",
-                                      "iron-out dose?"])
+                                      "iron-out dose?",
+                                      "how much iron out per day",
+                                      "ironout dose",
+                                      "what dose of ironout",
+                                      "iron out for hemochromatosis"])
 def test_known_gaps_get_no_block(question):
     """Listed in the PR, not widened here (spec). A change that closes one fails this."""
     assert "### Iron Out" not in app.named_product_facts_block(question)
+
+
+def test_a_rebuild_keeps_the_old_provenance_note():
+    import copy
+    from scripts.apply_enrichment import apply_corrections
+    products = copy.deepcopy(_repo("data/products.json")["products"])
+    before = products["iron-out"]["enrichment_note"]
+    apply_corrections(products, copy.deepcopy(_repo("data/products-manual-corrections.json")))
+    assert products["iron-out"]["enrichment_note"].startswith(before)
 
 
 def test_a_rebuild_keeps_the_four_fields():
