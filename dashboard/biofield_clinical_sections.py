@@ -104,10 +104,15 @@ def ensure_schema(cx):
     )""")
     cols = {row[1] for row in
             cx.execute("PRAGMA table_info(biofield_clinical_section_item)").fetchall()}
-    for col in ("origin_test", "food_keys"):
+    for col in ("origin_test", "food_keys", "explanation"):
         if col not in cols:
             cx.execute(f"ALTER TABLE biofield_clinical_section_item "
                        f"ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    # The Plan report's paragraph for the item, written once by clinical and approved
+    # once by Glen for every client (Glen, 2026-10-18). Unapproved, it never prints.
+    if "explanation_approved" not in cols:
+        cx.execute("ALTER TABLE biofield_clinical_section_item "
+                   "ADD COLUMN explanation_approved INTEGER NOT NULL DEFAULT 0")
     # A botanical the switch greys out, unhidden by hand for this client only, in one
     # condition's section (Glen, 2026-10-18: "per client and reversible").
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_unhide (
@@ -211,14 +216,17 @@ def upsert_item(cx, label, section, item, origin_test=""):
     lowers_bp = item.get("lowers_bp")
     cx.execute("""INSERT INTO biofield_clinical_section_item
         (item_key,section,name_key,name,brand,dose,overall,research,uniqueness,
-         reason,source,botanical,lowers_bp,reviewed,origin_test,food_keys,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+         reason,source,botanical,lowers_bp,reviewed,origin_test,food_keys,explanation,
+         explanation_approved,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
         ON CONFLICT(item_key,section,name_key) DO UPDATE SET
           name=excluded.name,brand=excluded.brand,dose=excluded.dose,
           overall=excluded.overall,research=excluded.research,
           uniqueness=excluded.uniqueness,reason=excluded.reason,
           source=excluded.source,botanical=excluded.botanical,
           lowers_bp=excluded.lowers_bp,food_keys=excluded.food_keys,
+          explanation=excluded.explanation,
+          explanation_approved=excluded.explanation_approved,
           updated_at=CURRENT_TIMESTAMP""",
                (item_key, section, name_key, name,
                 str(item.get("brand") or "").strip()[:160],
@@ -230,7 +238,9 @@ def upsert_item(cx, label, section, item, origin_test=""):
                 1 if item.get("botanical") else 0,
                 None if lowers_bp is None else (1 if lowers_bp else 0),
                 1 if item.get("reviewed") else 0, str(origin_test or ""),
-                ",".join(_food_keys(item.get("food_keys")))))
+                ",".join(_food_keys(item.get("food_keys"))),
+                str(item.get("explanation") or "").strip()[:1200],
+                1 if item.get("explanation_approved") is True else 0))
     return "updated" if exists else "added"
 
 
