@@ -80,7 +80,8 @@ def load(cx, folder, client_test):
     report = {"files": 0, "skipped_files": [], "added": {}, "updated": {},
               "formulations_new_to_condition": [], "remedies_kept_deleted": [], "notes": 0,
               "fullscript_types_not_loaded": 0, "new_conditions": [],
-              "removed": [], "kept_not_listed": []}
+              "removed": [], "kept_not_listed": [],
+              "extra_explanations_applied": 0, "extra_explanations_waiting": 0}
     from dashboard.biofield_clinical_proposals import selections
     chosen_by_row = selections(cx, client_test)
     known = {row[0] for row in cx.execute(
@@ -109,6 +110,9 @@ def load(cx, folder, client_test):
         deleted = forgotten_remedies(cx, label)
         chosen = {_norm(r) for r in chosen_by_row.get(key) or []}
         _prune(cx, label, sections, client_test, chosen, report)
+        applied, waiting = cs.set_extra_explanations(cx, label, data.get("extra_explanations"))
+        report["extra_explanations_applied"] += applied
+        report["extra_explanations_waiting"] += waiting
         for section in LOADED:
             for item in sections.get(section) or []:
                 outcome = cs.upsert_item(cx, label, section, item, origin_test=client_test)

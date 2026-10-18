@@ -83,3 +83,4 @@ def fields_for(name):
     """The scan fields `name` shows colours for, in map order, without repeats."""
     text = str(name or "")
     return [field for pattern, field in _COMPILED if pattern.search(text)]
+

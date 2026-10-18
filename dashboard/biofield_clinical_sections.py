@@ -104,16 +104,28 @@ def ensure_schema(cx):
     )""")
     cols = {row[1] for row in
             cx.execute("PRAGMA table_info(biofield_clinical_section_item)").fetchall()}
-    for col in ("origin_test", "food_keys"):
+    for col in ("origin_test", "food_keys", "explanation"):
         if col not in cols:
             cx.execute(f"ALTER TABLE biofield_clinical_section_item "
                        f"ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    # The Plan report's paragraph for the item, written once by clinical and approved
+    # once by Glen for every client (Glen, 2026-10-18). Unapproved, it never prints.
+    if "explanation_approved" not in cols:
+        cx.execute("ALTER TABLE biofield_clinical_section_item "
+                   "ADD COLUMN explanation_approved INTEGER NOT NULL DEFAULT 0")
     # A botanical the switch greys out, unhidden by hand for this client only, in one
     # condition's section (Glen, 2026-10-18: "per client and reversible").
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_unhide (
         test_id TEXT NOT NULL, item_key TEXT NOT NULL, section TEXT NOT NULL,
         name_key TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (test_id, item_key, section, name_key)
+    )""")
+    # An explanation for a ticked shared-list remedy that is not an item in the
+    # condition's file (clinical's `extra_explanations`, by name). Approved only.
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_extra_explanation (
+        item_key TEXT NOT NULL, section TEXT NOT NULL, name_key TEXT NOT NULL,
+        name TEXT NOT NULL, explanation TEXT NOT NULL,
+        PRIMARY KEY (item_key, section, name_key)
     )""")
     # The second tick column on Infoceuticals (Glen, 2026-10-18): recommend this
     # infoceutical whenever it shows purple on a scan. Shared by every client, for that
@@ -218,16 +230,29 @@ def upsert_item(cx, label, section, item, origin_test=""):
         "WHERE item_key=? AND section=? AND name_key=?",
         (item_key, section, name_key)).fetchone()
     lowers_bp = item.get("lowers_bp")
+    if exists and ("explanation" not in item or "explanation_approved" not in item):
+        # A field the file leaves out (an older or partial file) keeps what is stored;
+        # a field it carries changes it, so a file can withdraw an approval alone.
+        text, approved = cx.execute(
+            "SELECT explanation,explanation_approved FROM biofield_clinical_section_item "
+            "WHERE item_key=? AND section=? AND name_key=?",
+            (item_key, section, name_key)).fetchone()
+        item = dict(item)
+        item.setdefault("explanation", text)
+        item.setdefault("explanation_approved", approved == 1)
     cx.execute("""INSERT INTO biofield_clinical_section_item
         (item_key,section,name_key,name,brand,dose,overall,research,uniqueness,
-         reason,source,botanical,lowers_bp,reviewed,origin_test,food_keys,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+         reason,source,botanical,lowers_bp,reviewed,origin_test,food_keys,explanation,
+         explanation_approved,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
         ON CONFLICT(item_key,section,name_key) DO UPDATE SET
           name=excluded.name,brand=excluded.brand,dose=excluded.dose,
           overall=excluded.overall,research=excluded.research,
           uniqueness=excluded.uniqueness,reason=excluded.reason,
           source=excluded.source,botanical=excluded.botanical,
           lowers_bp=excluded.lowers_bp,food_keys=excluded.food_keys,
+          explanation=excluded.explanation,
+          explanation_approved=excluded.explanation_approved,
           updated_at=CURRENT_TIMESTAMP""",
                (item_key, section, name_key, name,
                 str(item.get("brand") or "").strip()[:160],
@@ -239,7 +264,9 @@ def upsert_item(cx, label, section, item, origin_test=""):
                 1 if item.get("botanical") else 0,
                 None if lowers_bp is None else (1 if lowers_bp else 0),
                 1 if item.get("reviewed") else 0, str(origin_test or ""),
-                ",".join(_food_keys(item.get("food_keys")))))
+                ",".join(_food_keys(item.get("food_keys"))),
+                str(item.get("explanation") or "").strip()[:1200],
+                1 if item.get("explanation_approved") is True else 0))
     return "updated" if exists else "added"
 
 
@@ -255,6 +282,32 @@ def _food_keys(value):
         if key and key not in out:
             out.append(key)
     return out
+
+
+def set_extra_explanations(cx, label, extras):
+    """Replace one condition's stored extra explanations with the approved entries of
+    `extras` ({name: {section, explanation, explanation_approved}}). Returns
+    (applied, waiting). The caller commits."""
+    ensure_schema(cx)
+    if extras is None:
+        return 0, 0   # a file without the key leaves what is stored
+    item_key = _norm(label)
+    cx.execute("DELETE FROM biofield_clinical_extra_explanation WHERE item_key=?",
+               (item_key,))
+    applied = waiting = 0
+    for name, entry in (extras or {}).items():
+        entry = entry if isinstance(entry, dict) else {}
+        text = str(entry.get("explanation") or "").strip()
+        section = entry.get("section") or FORMULATIONS
+        if entry.get("explanation_approved") is not True or not text \
+                or section not in SECTION_KEYS:
+            waiting += 1
+            continue
+        cx.execute("INSERT OR REPLACE INTO biofield_clinical_extra_explanation "
+                   "VALUES (?,?,?,?,?)",
+                   (item_key, section, _norm(name), str(name).strip(), text[:1200]))
+        applied += 1
+    return applied, waiting
 
 
 def approve_item(cx, label, section, name):

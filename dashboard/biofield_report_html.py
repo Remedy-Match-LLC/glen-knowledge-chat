@@ -470,6 +470,18 @@ async function uploadPhoto(tid, eq, nq){
 </script>"""
 
 
+def _plan_print_choice(tid):
+    """Glen, 2026-10-18: the Plan prints on its own, or "can be selected to print at
+    the same time as an addition to the same pdf file". The box adds ?plan=1 to the
+    print links on the page."""
+    return (" &nbsp;·&nbsp; <label title='Add the Foods, Remedies and Healing Tools Plan "
+            "after the report, in the same PDF'><input type=checkbox class=add-plan "
+            "onchange=\"document.querySelectorAll('a.print-report').forEach(function(a){"
+            "a.href=a.href.split('?')[0]+(this.checked?'?plan=1':'')},this)\"> Add the Plan</label>"
+            f" &nbsp;·&nbsp; <a href='/test/{tid}/plan' target='_blank'>Plan</a>"
+            f" (<a href='/test/{tid}/plan.pdf' target='_blank'>PDF</a>)")
+
+
 def render_report_html(report, notes="", narrative="", video_script="", stresses=None,
                        notes_updated="", courtesy_cents=None):
     c = report.get("client") or {}
@@ -503,7 +515,8 @@ def render_report_html(report, notes="", narrative="", video_script="", stresses
               f"decodeURIComponent('{_nq}'),'photopicks','clientphoto')</script>")
     tid_link = _e(report.get("test_id") or "")
     head += (f'<p class=sub><a href="/test/{tid_link}/report" target="_blank">Open clean report</a>'
-             f' &nbsp;·&nbsp; <a href="/test/{tid_link}/report.pdf" target="_blank">Print/Download PDF</a></p>')
+             f' &nbsp;·&nbsp; <a class=print-report href="/test/{tid_link}/report.pdf" target="_blank">Print/Download PDF</a>'
+             + _plan_print_choice(tid_link) + '</p>')
 
     # Causal chain table (grouped by layer, matching the editor's cards)
     chain = ("<h2>Causal Chain Report</h2>"
@@ -2903,8 +2916,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
             + _client_tabs("edit", tid, c.get("email") or "")
             + f"<p><a href='/'>&larr; All tests</a> &nbsp;&middot;&nbsp; "
             f"<a href='/test/{tid}'>View report &rarr;</a> &nbsp;&middot;&nbsp; "
-            f"<a href='/test/{tid}/report.pdf' target='_blank'>&#128424; Print report (PDF) &rarr;</a>"
-            "</p>")
+            f"<a class=print-report href='/test/{tid}/report.pdf' target='_blank'>&#128424; Print report (PDF) &rarr;</a>"
+            + _plan_print_choice(_e(tid)) + "</p>")
     hdr = (
         "<style>.dd{position:absolute;top:100%;left:0;display:none;background:var(--card);"
         "border:1px solid var(--line);border-radius:6px;margin-top:2px;min-width:320px;"
