@@ -1483,8 +1483,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception as e:
             return Response(f"PDF generation failed: {e}", status=500)
         _auto_publish(test_id)   # printing a report also puts it on the client portal
+        suffix = "-with-plan" if request.args.get("plan") == "1" else ""
         return Response(data, mimetype="application/pdf", headers={
-            "Content-Disposition": f'inline; filename="biofield-{test_id}.pdf"'})
+            "Content-Disposition": f'inline; filename="biofield-{test_id}{suffix}.pdf"'})
 
     def _plan_for(test_id):
         from dashboard.biofield_plan_report import build

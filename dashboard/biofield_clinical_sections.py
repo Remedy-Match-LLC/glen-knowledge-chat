@@ -221,14 +221,16 @@ def upsert_item(cx, label, section, item, origin_test=""):
         "WHERE item_key=? AND section=? AND name_key=?",
         (item_key, section, name_key)).fetchone()
     lowers_bp = item.get("lowers_bp")
-    if "explanation" not in item and exists:
-        # A file without the field (an older or partial one) keeps what is stored;
-        # only a file that carries it can change or withdraw an approval.
-        item = dict(item, **dict(zip(("explanation", "explanation_approved"), cx.execute(
-            "SELECT explanation,explanation_approved=1 FROM biofield_clinical_section_item "
+    if exists and ("explanation" not in item or "explanation_approved" not in item):
+        # A field the file leaves out (an older or partial file) keeps what is stored;
+        # a field it carries changes it, so a file can withdraw an approval alone.
+        text, approved = cx.execute(
+            "SELECT explanation,explanation_approved FROM biofield_clinical_section_item "
             "WHERE item_key=? AND section=? AND name_key=?",
-            (item_key, section, name_key)).fetchone())))
-        item["explanation_approved"] = item["explanation_approved"] == 1
+            (item_key, section, name_key)).fetchone()
+        item = dict(item)
+        item.setdefault("explanation", text)
+        item.setdefault("explanation_approved", approved == 1)
     cx.execute("""INSERT INTO biofield_clinical_section_item
         (item_key,section,name_key,name,brand,dose,overall,research,uniqueness,
          reason,source,botanical,lowers_bp,reviewed,origin_test,food_keys,explanation,

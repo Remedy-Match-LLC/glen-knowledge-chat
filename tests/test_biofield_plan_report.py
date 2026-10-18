@@ -81,17 +81,18 @@ def _wording(tmp_path, approved):
     return str(folder)
 
 
-@pytest.mark.parametrize("approved", [True, False])
+# "yes" is not approval: only a literal true is.
+@pytest.mark.parametrize("approved", [True, False, "yes"])
 def test_similar_names_merge_and_score_lines_print_only_once_approved(cx, tmp_path, approved):
     _tick(cx, "Gut", "foods_emphasize", _item("Bone broth", 8, "Broth A.", True))
     _tick(cx, "Liver", "foods_emphasize", _item("Bone broth and vegetable soups", 7,
                                                 "Broth B.", True))
     report = pr.load_content(cx, _wording(tmp_path, approved))
-    assert report["merges_applied"] == (1 if approved else 0)
+    assert report["merges_applied"] == (1 if approved is True else 0)
     _, meanings, intro = pr.stored_wording(cx)
     lines = pr.plan(cx, "a49")["foods_emphasize"]
     page = pr.render_plan_html(pr.plan(cx, "a49"), score_meanings=meanings, intro=intro)
-    if approved:
+    if approved is True:
         assert [line["name"] for line in lines] == ["Bone broth and soups"]
         assert "These scored high." in page and "Your plan, by score." in page
         assert "Broth A." in page and "Broth B." in page
@@ -340,3 +341,71 @@ def test_an_unrated_prl_tick_is_named_not_dropped(cx):
     cx.execute("INSERT INTO biofield_prl_pick (test_id,focus_area_id,name_key,checked) "
                "VALUES ('a49',1,'detox drops',1)")
     assert pr.lost_ticks(cx, "a49") == [("prl", "PRL", "detox drops", "it has no rating row")]
+
+
+
+def test_a_plus_in_a_rows_label_keeps_every_rule(cx):
+    """Round 3: the selection key drops "+", the other stores spell it "plus"."""
+    from dashboard.biofield_clinical_proposals import decide, save_selection
+    cs.upsert_item(cx, "Thyroid + Adrenal", cs.FORMULATIONS, _item("GI Repair", 9, "Why.", True))
+    save_selection(cx, "a49", "Thyroid + Adrenal", ["GI Repair"])
+    entry = pr.plan(cx, "a49")[cs.FORMULATIONS][0]["entries"][0]
+    assert (entry["overall"], entry["explanation"]) == (9, "Why.")
+    decide(cx, "a49", "Thyroid + Adrenal", "dismissed")
+    assert pr.plan(cx, "a49") == {}
+    assert [why for *_, why in pr.lost_ticks(cx, "a49")] == ["its row was dismissed"]
+
+
+def test_a_dose_the_client_cleared_stays_clear(cx):
+    # Formulations hold no catalog dose, so only a dosed section can show this.
+    _tick(cx, "Gut", cs.NUTRIENTS, _item("Zinc", 7, dose="15 mg"))
+    cs.save_pick(cx, "a49", "Gut", cs.NUTRIENTS, "Zinc", dose="")
+    assert pr.plan(cx, "a49")[cs.NUTRIENTS][0]["entries"][0]["dose"] == ""
+
+
+def test_a_section_picks_own_score_and_dose_win_and_unticked_never_prints(cx):
+    _tick(cx, "Gut", cs.NUTRIENTS, _item("Zinc", 7, dose="15 mg"))
+    cs.save_pick(cx, "a49", "Gut", cs.NUTRIENTS, "Zinc", rating="455", dose="30 mg")
+    entry = pr.plan(cx, "a49")[cs.NUTRIENTS][0]["entries"][0]
+    assert (entry["overall"], entry["dose"]) == (4, "30 mg")
+    cs.save_pick(cx, "a49", "Gut", cs.NUTRIENTS, "Zinc", checked=False)
+    assert pr.plan(cx, "a49") == {}
+
+
+def test_approval_alone_can_be_withdrawn(cx):
+    cs.upsert_item(cx, "Gut", cs.NUTRIENTS, _item("Iron", 6, "Iron text.", True))
+    older = _item("Iron", 6)
+    del older["explanation"]
+    older["explanation_approved"] = False
+    cs.upsert_item(cx, "Gut", cs.NUTRIENTS, older)
+    assert cx.execute("SELECT explanation,explanation_approved FROM "
+                      "biofield_clinical_section_item").fetchone() == ("Iron text.", 0)
+
+
+def test_every_client_visible_string_is_escaped(cx, tmp_path):
+    bad = "<b>x</b>"
+    _tick(cx, "Gut " + bad, cs.NUTRIENTS, _item("Zinc " + bad, 8, "Why " + bad, True,
+                                               dose="1 " + bad))
+    page = pr.render_plan_html(pr.plan(cx, "a49"), "Name " + bad, "Date " + bad,
+                               score_meanings={"8": "Means " + bad}, intro=["Intro " + bad])
+    assert "<b>" not in page and page.count("&lt;b&gt;") >= 6
+
+
+def test_glens_note_escapes_its_rows(client):
+    from dashboard.biofield_clinical_proposals import decide, save_selection
+    tid = _new_test(client)
+    with sqlite3.connect(client.db) as con:
+        save_selection(con, tid, "Vertigo", ["<i>GI</i>"])
+        decide(con, tid, "Vertigo", "dismissed")
+        cs.upsert_item(con, "Gut", "foods_avoid", _item("<i>Gluten</i>", 6), origin_test=tid)
+        cs.save_pick(con, tid, "Gut", "foods_avoid", "<i>Gluten</i>", checked=True)
+        con.commit()
+    page = client.get(f"/test/{tid}/plan").get_data(as_text=True)
+    assert "<i>" not in page and "&lt;i&gt;GI&lt;/i&gt;" in page
+
+
+def test_the_plan_download_is_named_apart_from_the_plain_report(client):
+    tid = _new_test(client)
+    with_plan = client.get(f"/test/{tid}/report.pdf?plan=1").headers["Content-Disposition"]
+    plain = client.get(f"/test/{tid}/report.pdf").headers["Content-Disposition"]
+    assert f"biofield-{tid}-with-plan.pdf" in with_plan and f"biofield-{tid}.pdf" in plain

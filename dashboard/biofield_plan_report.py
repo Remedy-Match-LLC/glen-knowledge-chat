@@ -106,7 +106,17 @@ def gather(cx, test_id, lost=None):
         return False
 
     # Functional Formulations and Infoceuticals: the row's ticked remedies.
-    for item_key, names in selections(cx, test_id).items():
+    selections(cx, test_id)   # creates the table on a fresh database
+    for label, raw in cx.execute(
+            "SELECT label,remedies FROM biofield_clinical_selection "
+            "WHERE test_id=? AND remedies IS NOT NULL", (test_id,)).fetchall():
+        # The selection key drops "+"; every other store spells it "plus", so key
+        # from the row's own label.
+        item_key = _norm(label)
+        try:
+            names = [str(n) for n in json.loads(raw or "[]") if str(n or "").strip()]
+        except ValueError:
+            names = []
         for name in names:
             key = _norm(name)
             # Catalogued under Infoceuticals counts, as on the Summary.
@@ -128,8 +138,9 @@ def gather(cx, test_id, lost=None):
                 or picks(item_key).get((cs.FORMULATIONS, key)) or {}
             overall = pick.get("overall") if pick.get("overall") is not None \
                 else row.get("overall")
-            out.append((section, label_for(item_key), name,
-                        pick.get("dose") or row.get("dose") or "", overall,
+            # A dose the client cleared stays clear, as on the Summary.
+            dose = pick.get("dose") if pick.get("dose") is not None else row.get("dose")
+            out.append((section, label_for(item_key), name, dose or "", overall,
                         explanation, approved))
     # Every other section: the ticks kept per item.
     for item_key, section, name_key, dose, overall in cx.execute(
@@ -144,7 +155,8 @@ def gather(cx, test_id, lost=None):
                          "the item left the catalog"))
             continue
         out.append((section, label_for(item_key), row["name"],
-                    dose or row["dose"], overall if overall is not None else row["overall"],
+                    dose if dose is not None else row["dose"],
+                    overall if overall is not None else row["overall"],
                     row["explanation"], row["approved"]))
     # PRL products ticked in a focus area.
     try:
