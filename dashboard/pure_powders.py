@@ -36,6 +36,8 @@ PURE_POWDER_SLUGS = frozenset({
     "proteoglycans", "phosphatides", "coq10", "rlipoate", "c15-pentadecanoic-acid",
     "centrophenoxine", "coluracetam", "vinpocetine", "licorice-omnipotent",
     "hydrolized-pea-protein-aminos--pure--predigested", "hydrolyzed-whey",
+    # Production 2026-10-18, Glen approved: FileMaker types it "Pure Powder"
+    "melissa-20-1-extract-powder",
 })
 
 # The catalog names of the slugs above, lowercased, whitespace collapsed.
@@ -61,6 +63,7 @@ PURE_POWDER_NAMES = frozenset({
     "proteoglycans", "phosphatides", "coq10", "r-lipoate", "c15: pentadecanoic acid",
     "centrophenoxine", "coluracetam", "vinpocetine", "licorice omnipotent",
     "pea protein aminos", "hydrolyzed whey",
+    "melissa 20:1 extract powder",
 })
 
 
