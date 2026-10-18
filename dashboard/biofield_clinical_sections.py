@@ -50,7 +50,7 @@ REMEDY_SECTIONS = (FORMULATIONS, INFOCEUTICALS)
 
 # Glen, 2026-10-17: Infoceuticals get a section of their own, apart from Functional
 # Formulations. MRs are not infoceuticals (Glen, same day), and neither are ERs.
-_INFOCEUTICAL_CODE = re.compile(r"^(ED|EI|ES|ET|MB)\d+\b", re.I)
+_INFOCEUTICAL_CODE = re.compile(r"^((ED|EI|ES|ET|MB)\d+|BFA)\b", re.I)
 _NOT_INFOCEUTICAL = re.compile(r"^(MR|ER)\d+\b", re.I)
 _CODE = re.compile(r"^([A-Z]{2,3}\d{0,3})\b")
 
@@ -60,7 +60,7 @@ def is_infoceutical(name):
     if _NOT_INFOCEUTICAL.match(name):
         return False
     return bool(_INFOCEUTICAL_CODE.match(name)) or \
-        bool(re.search(r"\binfoceutical\b", name, re.I))
+        bool(re.search(r"\binfoceuticals?\b", name, re.I))
 
 
 def infoceutical_code(name):
@@ -236,6 +236,11 @@ def approve_item(cx, label, section, name):
     cur = cx.execute("UPDATE biofield_clinical_section_item SET reviewed=1,"
                      "updated_at=CURRENT_TIMESTAMP WHERE item_key=? AND section=? "
                      "AND name_key=?", (_norm(label), section, _norm(name)))
+    if not cur.rowcount and section == INFOCEUTICALS:
+        # Loaded under Functional Formulations before Infoceuticals had a section.
+        cur = cx.execute("UPDATE biofield_clinical_section_item SET reviewed=1,"
+                         "updated_at=CURRENT_TIMESTAMP WHERE item_key=? AND section=? "
+                         "AND name_key=?", (_norm(label), FORMULATIONS, _norm(name)))
     cx.commit()
     return bool(cur.rowcount)
 
@@ -530,8 +535,13 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
                                   "uniqueness": None, "reason": "", "source": "",
                                   "botanical": 0, "lowers_bp": None, "reviewed": 1,
                                   "origin_test": ""}
-        entry = _apply_pick(dict(base, name=name),
-                            picks.get((section, key)) or picks.get((FORMULATIONS, key)))
+        pick = picks.get((section, key))
+        if section == INFOCEUTICALS and (FORMULATIONS, key) in picks:
+            # A rating or note saved while it sat under Functional Formulations still
+            # shows; anything saved under Infoceuticals since wins, field by field.
+            pick = dict(picks[(FORMULATIONS, key)], **{
+                k: v for k, v in (pick or {}).items() if v is not None})
+        entry = _apply_pick(dict(base, name=name), pick)
         # The row's remedy name, as the existing list spells it, is what the tick
         # store and the bottles chip key on.
         entry["checked"] = str(name).strip().lower() in chosen
@@ -539,7 +549,8 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
             code = infoceutical_code(name)
             entry["code"] = code
             if marks:
-                entry["recommended"] = code in marks["recommended"]
+                recommended = marks.get("recommended")
+                entry["recommended"] = None if recommended is None else code in recommended
                 purple = marks.get("purple")
                 entry["purple"] = None if purple is None else code in purple
         by_section[section].append(entry)

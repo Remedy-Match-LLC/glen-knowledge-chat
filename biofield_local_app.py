@@ -3537,7 +3537,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         """A section's All box (Glen, 2026-10-17). `names` are the items shown in that
         section; for Functional Formulations `remedies` is the row's current ticks."""
         from dashboard.biofield_clinical_proposals import save_selection
-        from dashboard.biofield_clinical_sections import FORMULATIONS, select_all
+        from dashboard.biofield_clinical_sections import REMEDY_SECTIONS, select_all
         body = request.get_json(silent=True) or {}
         label = str(body.get("label") or "").strip()
         section = str(body.get("section") or "").strip()
@@ -3549,7 +3549,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         try:
             with sqlite3.connect(db_path) as cx:
                 chosen = select_all(cx, test_id, label, section, on, names, remedies)
-                if section == FORMULATIONS:
+                if section in REMEDY_SECTIONS:
                     save_selection(cx, test_id, label, chosen)
                 cx.commit()
         except ValueError as exc:

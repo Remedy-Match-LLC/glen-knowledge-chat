@@ -199,3 +199,77 @@ def test_real_scan_purple_matches_what_glen_sees():
     purple = {c for c, cols in marks_mod.bar_colours(JOSIE).items() if "purple" in cols}
     assert purple == {"ED12", "ED14", "EI10", "ES12", "ET7", "ET11", "ET16", "MB8",
                       "MR3", "MR10"}
+
+
+# --- found in review --------------------------------------------------------
+
+def test_all_route_saves_infoceutical_ticks_as_row_remedies(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d
+    monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    from biofield_local_app import create_app
+    from dashboard.biofield_clinical_proposals import selections
+    db = str(tmp_path / "chat_log.db")
+    client = create_app(db).test_client()
+    ok = client.post("/author/a49/clinical-sections/all", json={
+        "label": "Blood", "section": cs.INFOCEUTICALS, "on": True,
+        "names": [ED5, EI10], "remedies": ["Fibrosolve"]})
+    assert ok.status_code == 200
+    with sqlite3.connect(db) as con:
+        assert selections(con, "a49")["blood"] == ["Fibrosolve", ED5, EI10]
+
+
+def test_an_old_note_survives_a_new_infoceutical_pick_row(cx):
+    cs.upsert_item(cx, "Blood", cs.FORMULATIONS, _item(ED5, 7, 1, 6))
+    cs.save_pick(cx, "a49", "Blood", cs.FORMULATIONS, ED5, note="josie says", rating="X74")
+    cs.select_all(cx, "a49", "Blood", cs.INFOCEUTICALS, True, [ED5], [])
+    entry = _by_key(cs.sections_for(cx, "a49", "Blood", [], [ED5]))["infoceuticals"]["items"][0]
+    assert (entry["note"], entry["rating"]) == ("josie says", "X74")
+    cs.save_pick(cx, "a49", "Blood", cs.INFOCEUTICALS, ED5, rating="555")
+    entry = _by_key(cs.sections_for(cx, "a49", "Blood", [], [ED5]))["infoceuticals"]["items"][0]
+    assert (entry["note"], entry["rating"]) == ("josie says", "555")
+
+
+def test_approve_reaches_an_infoceutical_loaded_under_formulations(cx):
+    cs.upsert_item(cx, "Blood", cs.FORMULATIONS, _item(ED5), origin_test="a49")
+    assert cs.approve_item(cx, "Blood", cs.INFOCEUTICALS, ED5)
+    info = _by_key(cs.sections_for(cx, "a50", "Blood"))["infoceuticals"]["items"]
+    assert [i["name"] for i in info] == [ED5]
+
+
+def test_a_read_that_finds_no_bars_is_an_error_not_nothing_purple(cx, tmp_path, monkeypatch):
+    monkeypatch.setattr(marks_mod, "bar_colours", lambda p: {})
+    got = marks_mod.infoceutical_marks(cx, _e4l(tmp_path, "/scans/x.pdf"), 7)
+    assert got["purple"] is None and "no coloured bars" in got["purple_error"]
+
+
+def test_a_newer_reader_re_reads_a_scan(cx, tmp_path, monkeypatch):
+    e4l = _e4l(tmp_path, "/scans/x.pdf")
+    monkeypatch.setattr(marks_mod, "bar_colours", lambda p: {"ED12": {"green"}})
+    assert marks_mod.infoceutical_marks(cx, e4l, 7)["purple"] == set()
+    monkeypatch.setattr(marks_mod, "READER_VERSION", marks_mod.READER_VERSION + 1)
+    monkeypatch.setattr(marks_mod, "bar_colours", lambda p: {"ED12": {"purple"}})
+    assert marks_mod.infoceutical_marks(cx, e4l, 7)["purple"] == {"ED12"}
+
+
+def test_an_unreadable_scan_database_says_so(cx, tmp_path):
+    got = marks_mod.infoceutical_marks(cx, str(tmp_path / "missing.db"), 7)
+    assert got["recommended"] is None and got["purple"] is None
+    html = render_clinical_checklist([{
+        "label": "Blood", "common_remedies": [ED5], "selection_saved": True,
+        "selected_remedies": [],
+        "sections": cs.sections_for(cx, "a49", "Blood", [ED5], [], marks=got)}])
+    assert "Recommended and purple could not be read from the scan" in html
+    assert ">recommended</span>" not in html
+
+
+def test_bfa_and_the_plural_are_infoceuticals():
+    assert cs.is_infoceutical("BFA Big Field Activator")
+    assert cs.is_infoceutical("Five Infoceuticals kit")
+
+
+def test_a_scan_database_without_its_tables_says_so(cx, tmp_path):
+    broken = str(tmp_path / "broken.db")
+    sqlite3.connect(broken).close()
+    got = marks_mod.infoceutical_marks(cx, broken, 7)
+    assert got["recommended"] is None and "could not be read" in got["purple_error"]
