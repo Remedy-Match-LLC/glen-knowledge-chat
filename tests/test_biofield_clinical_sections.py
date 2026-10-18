@@ -338,7 +338,10 @@ def test_the_switch_hides_botanicals_except_named_ones_and_ticked_ones(cx):
     cs.save_pick(cx, "a49", "Gut", "nutrients", "Berberine", checked=True)
     cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="ginger, milk thistle")
     sec = cs.sections_for(cx, "a49", "Gut")
-    assert sorted(i["name"] for i in sec[2]["items"]) == ["Carrots", "Ginger root", "Milk thistle seed"]
+    # Glen, 2026-10-18: hidden items show greyed out instead of being removed.
+    assert sorted(i["name"] for i in sec[2]["items"] if not i.get("hidden")) == [
+        "Carrots", "Ginger root", "Milk thistle seed"]
+    assert [i["name"] for i in sec[2]["items"] if i.get("hidden")] == ["Turmeric"]
     assert sec[2]["botanical_hidden"] == 1
     assert [i["name"] for i in sec[4]["items"]] == ["Berberine"]
 
@@ -362,7 +365,59 @@ def test_switch_renders_and_hidden_count_shows(cx):
         botanical=setting)
     assert "id=clinicalAvoidBotanicals checked" in html
     assert 'id=clinicalBotanicalExceptions value="ginger"' in html
-    assert "2 botanical items hidden for this client" in html
+    assert html.count("class='clinical-section-item greyed'") == 2
+    assert html.count(">Unhide</button>") == 2
+    assert ('data-name="Turmeric" disabled onchange=saveClinicalSectionItem') in html
+
+
+def test_unhide_is_per_client_and_condition_and_can_be_undone(cx):
+    """Glen, 2026-10-18: "For each greyed out item, give it a button to unhide that
+    specific item", "per client and reversible"."""
+    _botanicals(cx)
+    cs.upsert_item(cx, "Liver", "foods_emphasize", _item("Turmeric", 8, 5, 5, botanical=True))
+    for test in ("a49", "a50"):
+        cs.save_botanical_setting(cx, test, avoid=True, exceptions="")
+    def turmeric(test, label="Gut"):
+        items = cs.sections_for(cx, test, label)[2]["items"]
+        return [i for i in items if i["name"] == "Turmeric"][0]
+    cs.set_unhidden(cx, "a49", "Gut", "foods_emphasize", "Turmeric", True)
+    assert not turmeric("a49").get("hidden") and turmeric("a49")["unhidden"]
+    assert turmeric("a50")["hidden"] and turmeric("a49", "Liver")["hidden"]
+    # Unhidden, All can tick it; hidden again, it is unticked.
+    names = [i["name"] for i in cs.sections_for(cx, "a49", "Gut")[2]["items"]
+             if not i.get("hidden")]
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, names)
+    assert turmeric("a49")["checked"]
+    cs.set_unhidden(cx, "a49", "Gut", "foods_emphasize", "Turmeric", False)
+    assert turmeric("a49")["hidden"] and not turmeric("a49")["checked"]
+
+
+def test_a_greyed_item_does_not_stop_the_all_box_reading_as_ticked(cx):
+    _botanicals(cx)
+    cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="ginger, milk thistle")
+    names = [i["name"] for i in cs.sections_for(cx, "a49", "Gut")[2]["items"]
+             if not i.get("hidden")]
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, names)
+    assert cs.sections_for(cx, "a49", "Gut")[2]["all_on"] is True
+
+
+def test_unhide_route(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d
+    monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    from biofield_local_app import create_app
+    db = str(tmp_path / "chat_log.db")
+    client = create_app(db).test_client()
+    url = "/author/a49/clinical-sections/unhide"
+    body = {"label": "Gut", "section": "foods_emphasize", "name": "Turmeric"}
+    assert client.post(url, json=dict(body, on=True)).get_json() == {"ok": True}
+    with sqlite3.connect(db) as con:
+        assert con.execute("SELECT COUNT(*) FROM biofield_clinical_unhide").fetchone() == (1,)
+    assert client.post(url, json=dict(body, on="yes")).status_code == 400
+    assert client.post(url, json=dict(body, section="bogus", on=True)).status_code == 400
+    client.post(url, json=dict(body, on=False))
+    with sqlite3.connect(db) as con:
+        assert con.execute("SELECT COUNT(*) FROM biofield_clinical_unhide").fetchone() == (0,)
 
 
 # --- food conflicts --------------------------------------------------------
