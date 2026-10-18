@@ -143,3 +143,23 @@ def test_sales_copy_prompts_never_ask_for_an_unsourced_mechanism():
         assert "mechanisms of the listed ingredients" not in low, section
         assert ("give a mechanism, a design rationale, or a reason for a dose or caution "
                 "only where the details given below state it; never invent one") in low, section
+
+
+def test_the_scoped_client_and_invoice_chat_carries_the_rule(monkeypatch):
+    """Review of #1944, 2026-10-18: /api/client/<code>/chat and /api/invoice/<token>/chat
+    reach patients through practitioner_chat.scoped_reply. Read the system prompt as the
+    call receives it."""
+    from dashboard import practitioner_chat as pc
+    seen = {}
+    monkeypatch.setattr(pc, "_llm_json",
+                        lambda system, messages: seen.setdefault("system", system) and
+                        {"reply": "ok", "suggested_slugs": []})
+    pc.scoped_reply("how does it work?", [], [{"slug": "a", "name": "A", "description": "d"}])
+    _assert_rule(seen["system"], "practitioner_chat.scoped_reply")
+
+
+def test_the_health_care_level_asks_for_mechanism_only_from_sources():
+    prompt = app.get_system_prompt("health-care")
+    _assert_rule(prompt, "health-care")
+    assert ("mechanism-of-action language (for a named product, only as a retrieved "
+            "source states it)") in prompt

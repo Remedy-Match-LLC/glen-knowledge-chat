@@ -124,3 +124,17 @@ def test_catches_an_invented_ingredient_form(products):
     assert aa.audit("Vein Support's vitamin K2 is MK-7.", products, "claim") == []
     # Only claim answers are checked.
     assert not [x for x in aa.audit(_VEIN_SUPPORT_LIVE, products, "price") if "CLAIM" in x]
+
+
+def test_spelling_variants_of_an_invented_form_are_caught(products):
+    for text in ("It may also contain MK 4.", "It may also contain MK‑4.",
+                 "It may include K-1.", "It holds menaquinone 4.", "It holds menatetrenone."):
+        assert any("ingredient form" in x for x in aa.audit(text, products, "claim")), text
+
+
+def test_an_empty_answer_is_flagged_not_passed(products):
+    """Review of #1944: an error-only stream returned "" and audited clean."""
+    for group in ("claim", "price"):
+        assert aa.audit("", products, group) == [
+            "EMPTY: the bot returned no answer text; nothing was checked"]
+        assert aa.audit("  \n", products, group)

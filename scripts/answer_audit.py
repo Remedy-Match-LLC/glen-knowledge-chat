@@ -85,8 +85,9 @@ INVENTED_CLAIM_PHRASES = (
 # product data lists MK-7 only, and none of its 307 vectors names another form. No
 # claim question names a product with these forms; change this list if one ever does.
 INVENTED_FORM_PATTERNS = (
-    re.compile(r"\bk1\b"), re.compile(r"\bmk-?4\b"), re.compile(r"phylloquinone"),
-    re.compile(r"menaquinone-4"), re.compile(r"menadione"),
+    re.compile(r"\bk[\s\-\u2010-\u2015]?1\b"), re.compile(r"\bmk[\s\-\u2010-\u2015]?4\b"),
+    re.compile(r"phylloquinone"), re.compile(r"menaquinone[\s\-\u2010-\u2015]?4"),
+    re.compile(r"menatetrenone"), re.compile(r"menadione"),
 )
 
 MONEY = re.compile(r"\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)")
@@ -130,6 +131,9 @@ def audit(answer, products, group=None):
     """Return a list of finding strings for one answer. `group` is the question's
     group from QUESTIONS; "claim" answers are also checked for invented mechanism."""
     out = []
+    # An empty answer (an error or gate event only) must not read as a clean one.
+    if not (answer or "").strip():
+        return ["EMPTY: the bot returned no answer text; nothing was checked"]
     links = MDLINK.findall(answer)
 
     # 5. invented mechanism, caution reason or label (claim questions only)

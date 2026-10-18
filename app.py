@@ -3286,7 +3286,7 @@ Write in warm, empowering, accessible language. Avoid clinical jargon — use ev
 
     "health-care": """
 LANGUAGE LEVEL: Health Care (practitioner)
-Write at a clinical practitioner level — naturopathic, integrative, or functional medicine context. Use anatomical and physiological terminology, meridian names, clinical protocols, dosage ranges, and mechanism-of-action language. Assume the reader can interpret lab values, treatment timelines, and nutrient biochemistry. Be precise and protocol-oriented.""",
+Write at a clinical practitioner level — naturopathic, integrative, or functional medicine context. Use anatomical and physiological terminology, meridian names, clinical protocols, dosage ranges, and mechanism-of-action language (for a named product, only as a retrieved source states it). Assume the reader can interpret lab values, treatment timelines, and nutrient biochemistry. Be precise and protocol-oriented.""",
 
     "science": """
 LANGUAGE LEVEL: Science (researcher / academic)
