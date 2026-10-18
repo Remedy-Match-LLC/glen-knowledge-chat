@@ -298,3 +298,16 @@ def test_an_extra_explanation_remedy_is_known_and_matches(cx, tmp_path):
     report = pr.load_content(cx, _folder(tmp_path, cautions=cautions))
     assert report["caution_items_not_in_catalog"] == []
     assert "Space them." in _page(cx)
+
+
+def test_a_reordered_reload_keeps_each_item_under_its_own_caution(cx, tmp_path):
+    first = {"Berberine": _caution("Berberine text.", [{"section": cs.FORMULATIONS,
+                                                       "name": "Glucose Tolerance"}]),
+             "Iodine": _caution("Iodine text.", [{"section": cs.NUTRIENTS, "name": "Kelp"}])}
+    folder = _folder(tmp_path, cautions=first)
+    pr.load_content(cx, folder)
+    _folder(tmp_path, cautions={"Iodine": first["Iodine"], "Berberine": first["Berberine"]})
+    pr.load_content(cx, folder)
+    _remedy(cx, "Blood sugar", cs.FORMULATIONS, "Glucose Tolerance")
+    assert pr.cautions_for(pr.plan(cx, "a49"), pr.stored_frame(cx)[1]) == [
+        ("Berberine", "Berberine text.", ["Glucose Tolerance"])]
