@@ -25,6 +25,13 @@ For each question, against the answer the live bot actually returns:
   3. PRICES ARE REAL         — every dollar figure equals a price or shipping
                                figure of a product named in that answer
   4. NO RETIRED DESTINATIONS — no practicebetter.io, no GrooveKart storefront
+  5. NO INVENTED MECHANISM   — for the "claim" questions only, none of the
+                               phrases the bot invented about AngioGenX on
+                               2026-10-08 (how it works, why a caution exists)
+
+The claim check is a canary for known invented phrases, not proof of source
+fidelity: a clean claim answer can still say something no source supports, and
+a flagged phrase may turn out to be sourced.
 
 Findings are reported, never auto-fixed: a false positive here is cheap, a
 wrong "all clear" is not.
@@ -61,7 +68,38 @@ QUESTIONS = [
     ("route", "where do I access the free ASH MasterClass course"),
     ("dep",   "can I still get Dental Regen Powder"),
     ("dep",   "do you sell molecular hydrogen tablets"),
+    ("claim", "What is AngioGenX and how does it help the eyes?"),
+    ("claim", "How much AngioGenX should I take and why?"),
+    ("claim", "What form of vitamin K is in Vein Support?"),
 ]
+
+# 2026-10-08: the live bot answered the AngioGenX questions above with a mechanism,
+# a reason for a caution, a dose rationale and labels that no retrieved source gave.
+# Checked only on "claim" answers, where none of these belongs.
+INVENTED_CLAIM_PHRASES = (
+    "neovascular", "vascular remodeling", "hemostasis", "maximizes bioavailability",
+    "clinically active", "adaptogen",
+)
+
+# 2026-10-18: the live bot said Vein Support's K2 "may also include K1 or MK-4". Its
+# product data lists MK-7 only, and none of its 307 vectors names another form. No
+# claim question names a product with these forms; change this list if one ever does.
+INVENTED_FORM_PATTERNS = (
+    re.compile(r"\bk[\s\-\u2010-\u2015]?1\b"), re.compile(r"\bmk[\s\-\u2010-\u2015]?4\b"),
+    re.compile(r"phylloquinone"), re.compile(r"menaquinone[\s\-\u2010-\u2015]?4"),
+    re.compile(r"menatetrenone"), re.compile(r"menadione"),
+)
+
+# A form the answer rules out ("MK-7 only, no K1") is the right answer, not an
+# invention, so a negation in the same clause skips it.
+_RULED_OUT = re.compile(r"\b(no|not|nor|without|neither|exclud\w*)\b|n't")
+
+def _clause(text, match):
+    """The clause holding `match`: bounded by . ; , ! ? or a line break."""
+    start = max(text.rfind(c, 0, match.start()) for c in ".;,!?\n") + 1
+    ends = [i for i in (text.find(c, match.end()) for c in ".;,!?\n") if i >= 0]
+    return text[start:min(ends) if ends else len(text)]
+
 
 MONEY = re.compile(r"\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)")
 MDLINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
@@ -100,10 +138,29 @@ def money_cents(s):
     return int(round(float(s.replace(",", "")) * 100))
 
 
-def audit(answer, products):
-    """Return a list of finding strings for one answer."""
+def audit(answer, products, group=None):
+    """Return a list of finding strings for one answer. `group` is the question's
+    group from QUESTIONS; "claim" answers are also checked for invented mechanism."""
     out = []
+    # An empty answer (an error or gate event only) must not read as a clean one.
+    if not (answer or "").strip():
+        return ["EMPTY: the bot returned no answer text; nothing was checked"]
     links = MDLINK.findall(answer)
+
+    # 5. invented mechanism, caution reason or label (claim questions only)
+    if group == "claim":
+        low = answer.lower()
+        for phrase in INVENTED_CLAIM_PHRASES:
+            if phrase in low:
+                out.append(f"CLAIM: says '{phrase}', a phrase the bot has invented "
+                           f"before; check whether a retrieved source states this")
+        for pattern in INVENTED_FORM_PATTERNS:
+            found = next((m for m in pattern.finditer(low)
+                          if not _RULED_OUT.search(_clause(low, m))), None)
+            if found:
+                out.append(f"CLAIM: names the ingredient form '{found.group(0)}', which "
+                           f"the bot has invented before; check whether a retrieved "
+                           f"source states this")
 
     # 4. retired destinations
     for pat, what in ((r"practicebetter\.io", "Practice Better URL"),
@@ -176,7 +233,7 @@ def main():
             total += 1
             continue
         asked += 1
-        findings = audit(answer, products)
+        findings = audit(answer, products, group)
         flag = "FLAGGED" if findings else "ok"
         print(f"[{group}] {q}\n  {flag}")
         for f in findings:
@@ -188,8 +245,9 @@ def main():
 
     print(f"\n{asked}/{len(qs)} answered · {total} finding(s)")
     if total:
-        print("\nFindings are reported, not fixed. Each one is a claim the bot made "
-              "that the catalog does not support — check before changing anything.")
+        print("\nFindings are reported, not fixed. Each is a price or link the catalog "
+              "does not support, or a product claim to check against the sources. "
+              "Check before changing anything.")
     return 1 if total else 0
 
 

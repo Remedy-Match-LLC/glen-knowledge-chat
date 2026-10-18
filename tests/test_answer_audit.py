@@ -64,3 +64,89 @@ def test_does_not_flag_a_correct_cheap_product(products):
     assert aa.audit(
         "[Terrain Restore](https://illtowell.com/begin/product/terrain-restore) "
         "is $70 list price.", products) == []
+
+
+# 2026-10-08: the live bot's AngioGenX answer, trimmed to the invented clauses.
+_ANGIOGENX_LIVE = (
+    "These five clinically active compounds, including notoginseng (a traditional "
+    "adaptogen), strengthen vascular endothelial function and reduce the drivers of "
+    "abnormal vessel growth (neovascularization). Stop before surgery (it supports "
+    "vascular remodeling, which can interfere with hemostasis during recovery). "
+    "Single daily capsule maximizes bioavailability and tissue uptake."
+)
+
+
+def test_claim_questions_are_in_the_question_set():
+    claim = [q for g, q in aa.QUESTIONS if g == "claim"]
+    assert "What is AngioGenX and how does it help the eyes?" in claim
+    assert "How much AngioGenX should I take and why?" in claim
+
+
+def test_catches_every_invented_mechanism_phrase(products):
+    f = aa.audit(_ANGIOGENX_LIVE, products, "claim")
+    for phrase in ("neovascular", "vascular remodeling", "hemostasis",
+                   "maximizes bioavailability", "clinically active", "adaptogen"):
+        assert any(f"'{phrase}'" in x for x in f), (phrase, f)
+    # The finding asks for a check; it does not assert the phrase is unsourced.
+    assert all("check whether a retrieved source states this" in x for x in f), f
+
+
+def test_endothelial_is_not_flagged(products):
+    """Review 2026-10-08: the likeliest phrase to be sourced, so it was dropped."""
+    assert aa.audit("AngioGenX supports endothelial health.", products, "claim") == []
+
+
+def test_claim_check_runs_only_on_claim_questions(products):
+    """The phrases can be legitimate elsewhere; only claim answers are checked."""
+    assert aa.audit(_ANGIOGENX_LIVE, products) == []
+    assert aa.audit(_ANGIOGENX_LIVE, products, "price") == []
+
+
+def test_a_sourced_angiogenx_answer_passes(products):
+    assert aa.audit("AngioGenX supports healthy circulation in the eyes. Take one "
+                    "capsule daily. Stop two weeks before surgery.",
+                    products, "claim") == []
+
+
+_VEIN_SUPPORT_LIVE = ("Vein Support's vitamin K2 is MK-7, and it may also include K1 or "
+                      "MK-4 for broader coverage.")
+
+
+def test_vein_support_form_question_is_in_the_question_set():
+    claim = [q for g, q in aa.QUESTIONS if g == "claim"]
+    assert "What form of vitamin K is in Vein Support?" in claim
+
+
+def test_catches_an_invented_ingredient_form(products):
+    """2026-10-18: Vein Support lists MK-7 only; the live bot added K1 and MK-4."""
+    f = aa.audit(_VEIN_SUPPORT_LIVE, products, "claim")
+    assert any("'k1'" in x for x in f) and any("'mk-4'" in x for x in f), f
+    assert aa.audit("Vein Support's vitamin K2 is MK-7.", products, "claim") == []
+    # Only claim answers are checked.
+    assert not [x for x in aa.audit(_VEIN_SUPPORT_LIVE, products, "price") if "CLAIM" in x]
+
+
+def test_spelling_variants_of_an_invented_form_are_caught(products):
+    for text in ("It may also contain MK 4.", "It may also contain MK‑4.",
+                 "It may include K-1.", "It holds menaquinone 4.", "It holds menatetrenone.",
+                 "It also has phylloquinone.", "It also has menadione."):
+        assert any("ingredient form" in x for x in aa.audit(text, products, "claim")), text
+
+
+def test_an_empty_answer_is_flagged_not_passed(products):
+    """Review of #1944: an error-only stream returned "" and audited clean."""
+    for group in ("claim", "price"):
+        assert aa.audit("", products, group) == [
+            "EMPTY: the bot returned no answer text; nothing was checked"]
+        assert aa.audit("  \n", products, group)
+
+
+
+def test_a_form_the_answer_rules_out_is_not_flagged(products):
+    """Round 3 of #1944: the honest answer names the forms it excludes."""
+    for text in ("Vein Support's K2 is MK-7 only, with no K1 or MK-4.",
+                 "It does not contain menadione.", "Vitamin K1 isn't included."):
+        assert not [x for x in aa.audit(text, products, "claim") if "ingredient form" in x], text
+    # A ruled-out mention elsewhere does not hide a real claim.
+    f = aa.audit("It has no K1. It may also include MK-4.", products, "claim")
+    assert any("'mk-4'" in x for x in f), f

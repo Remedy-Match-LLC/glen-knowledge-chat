@@ -2,6 +2,8 @@
 Recommends ONLY from the supplied catalog; never emits external/RM links or prices."""
 import json, re
 
+from dashboard.portal_concierge import SOURCED_PRODUCT_CLAIMS
+
 _SYSTEM = (
     "You are a product-selection assistant for a natural-health practitioner's own "
     "dispensary. You may ONLY discuss and recommend products from the CATALOG provided "
@@ -9,7 +11,10 @@ _SYSTEM = (
     "Never invent products not in the catalog. In the reply, write every product "
     "as [[its-catalog-slug]]; never type a product name yourself. The server replaces "
     "valid markers with current catalog names and blocks invalid markers. Keep replies "
-    "short and supportive. "
+    "short and supportive.\n"
+    # The client and invoice chats use this prompt too, so it carries the shared rule
+    # (review of #1944, 2026-10-18). The CATALOG below is the product data.
+    + SOURCED_PRODUCT_CLAIMS +
     "Return JSON: {\"reply\": str, \"suggested_slugs\": [slugs from the catalog]}.\n\nCATALOG:\n"
 )
 _URL_RE = re.compile(r"https?://\S+", re.I)
