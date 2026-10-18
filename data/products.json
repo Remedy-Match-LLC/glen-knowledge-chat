@@ -13212,6 +13212,30 @@
    "legacy_store_url": "https://remedymatch.com/remedies/521-honokiol",
    "bottle_type": "30 g"
   },
+  "melissa-20-1-extract-powder": {
+   "name": "Melissa 20:1 Extract Powder",
+   "price_cents": 4000,
+   "fmp_id": "1194",
+   "bottle_type": "30 g",
+   "ingredients": [
+    {
+     "name": "Melissa (Melissa officinalis) 20:1 extract",
+     "dose": "500 mg"
+    }
+   ],
+   "directions": "Take 1 scoop 2 times daily in a drink, or as guided.",
+   "volume_eligible": false,
+   "sku_discount_floor_pct": 0.75,
+   "sku_points_floor_pct": 0.75,
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "directions",
+    "benefits"
+   ]
+  },
   "ed7-lung-driver": {
    "name": "ED7 Lung Energetic Driver Infoceutical",
    "price_cents": 4000,
