@@ -3541,7 +3541,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         """A section's All box (Glen, 2026-10-17). `names` are the items shown in that
         section; for Functional Formulations `remedies` is the row's current ticks."""
         from dashboard.biofield_clinical_proposals import save_selection
-        from dashboard.biofield_clinical_sections import REMEDY_SECTIONS, select_all
+        from dashboard.biofield_clinical_sections import (REMEDY_SECTIONS, checked_names,
+                                                          select_all)
         body = request.get_json(silent=True) or {}
         label = str(body.get("label") or "").strip()
         section = str(body.get("section") or "").strip()
@@ -3555,10 +3556,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 chosen = select_all(cx, test_id, label, section, on, names, remedies)
                 if section in REMEDY_SECTIONS:
                     save_selection(cx, test_id, label, chosen)
+                else:
+                    chosen = checked_names(cx, test_id, label, section, names)
                 cx.commit()
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}, 400
-        return {"ok": True}
+        # The page sets its ticks from `checked` rather than reloading (Glen,
+        # 2026-10-18: a reload jumped the page to another scroll position).
+        return {"ok": True, "checked": chosen}
 
     @app.route("/author/<test_id>/clinical-sections/pick", methods=["POST"])
     def author_clinical_section_pick(test_id):

@@ -1458,9 +1458,19 @@ async function clinicalSectionAll(box){
  try{j=await post('/author/__TID__/clinical-sections/all',
   {label:row.dataset.label,section:key,on:box.checked,names:names,remedies:remedies})}
  catch(e){j=null}
- if(j&&j.ok){location.reload();return}
- box.disabled=false;box.checked=!box.checked;
- if(stat)stat.textContent=(j&&j.error)||'Could not save'}
+ box.disabled=false;
+ if(!(j&&j.ok&&Array.isArray(j.checked))){box.checked=!box.checked;
+  if(stat)stat.textContent=(j&&j.error)||'Could not save';return}
+ // Set the ticks in place: a reload lost Glen's scroll position.
+ var on={};j.checked.forEach(function(n){on[n]=true});
+ if(ff){[].slice.call(row.querySelectorAll('.clinical-remedy-choice'))
+   .forEach(function(x){x.checked=!!on[x.value]});
+  var check=row.querySelector('.clinical-check');
+  if(check&&!row.classList.contains('done'))check.checked=j.checked.length>0;
+  row.classList.toggle('selected',!row.classList.contains('done')&&j.checked.length>0)}
+ else{[].slice.call(sec.querySelectorAll('.clinical-section-choice'))
+   .forEach(function(x){x.checked=!!on[x.dataset.name]})}
+ if(stat)stat.textContent='Saved'}
 async function saveClinicalBotanical(){
  var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent='Saving…';

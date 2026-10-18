@@ -494,9 +494,11 @@ def test_all_route_saves_formulations_as_the_row_remedies(tmp_path, monkeypatch)
     ok = client.post(url, json={"label": "Gut", "section": cs.FORMULATIONS, "on": True,
                                 "names": ["GI Repair", "Liver Lift"], "remedies": []})
     assert ok.status_code == 200 and ok.get_json()["ok"]
-    assert client.post(url, json={"label": "Gut", "section": "foods_emphasize",
-                                  "on": True, "names": ["Kale", "Beets", "Garlic"]}
-                       ).status_code == 200
+    assert ok.get_json()["checked"] == ["GI Repair", "Liver Lift"]
+    foods = client.post(url, json={"label": "Gut", "section": "foods_emphasize",
+                                   "on": True, "names": ["Kale", "Beets", "Garlic"]})
+    assert foods.status_code == 200
+    assert foods.get_json()["checked"] == ["Kale", "Beets", "Garlic"]
     assert client.post(url, json={"label": "Gut", "section": "bogus", "on": True,
                                   "names": []}).status_code == 400
     assert client.post(url, json={"label": "Gut", "section": "foods_emphasize",
@@ -544,3 +546,32 @@ def test_loader_moves_an_item_clinical_moved_and_keeps_one_glen_touched(tmp_path
     assert sorted(e["name"] for e in secs["botanicals"]["items"]) == ["Curcumin", "Ginger"]
     assert [e["dose"] for e in secs["botanicals"]["items"] if e["name"] == "Curcumin"] \
         == ["500 mg"]
+
+
+def test_all_route_returns_the_ticks_left_so_the_page_need_not_reload(tmp_path, monkeypatch):
+    """Glen, 2026-10-18: a reload after the All box jumped the page to another place."""
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d
+    monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    from biofield_local_app import create_app
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as con:
+        _foods(con)
+        cs.save_pick(con, "a49", "Gut", "foods_emphasize", "Kale", checked=True)
+    client = create_app(db).test_client()
+    url = "/author/a49/clinical-sections/all"
+    names = ["Kale", "Beets", "Garlic"]
+    client.post(url, json={"label": "Gut", "section": "foods_emphasize", "on": True,
+                           "names": names})
+    off = client.post(url, json={"label": "Gut", "section": "foods_emphasize",
+                                 "on": False, "names": names})
+    assert off.get_json() == {"ok": True, "checked": ["Kale"]}
+
+
+def test_all_box_script_sets_ticks_in_place_without_a_reload():
+    import dashboard.biofield_report_html as page
+    src = open(page.__file__).read()
+    body = src.split("async function clinicalSectionAll(box){", 1)[1]
+    body = body.split("\nasync function ", 1)[0]
+    assert "location.reload" not in body
+    assert "j.checked" in body
