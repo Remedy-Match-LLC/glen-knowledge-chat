@@ -1422,6 +1422,8 @@ async function selectClinicalRemedy(box){
  if(check&&!row.classList.contains('done')){check.checked=remedies.length>0}
  row.classList.toggle('selected',!row.classList.contains('done')&&remedies.length>0);
  var stat=document.getElementById('clinicalOrderStat');
+ // Unticking an item by hand unticks the section's All box (the server does the same).
+ if(!box.checked)clinicalAllOff(box);
  if(stat)stat.textContent='Saving remedies\u2026';
  var j=await post('/author/__TID__/clinical-items/selection',
   {label:row.dataset.label,remedies:remedies});
@@ -1433,6 +1435,12 @@ async function approveClinicalSectionItem(btn){
  if(j&&j.ok){location.reload();return}
  btn.disabled=false;var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent=(j&&j.error)||'Could not approve'}
+function clinicalAllOff(el){
+ // The row's own tick sits outside the sections; unticking it clears the remedies.
+ var sec=el.closest('.clinical-section')||(el.closest('.clinical-item')||document)
+  .querySelector('.clinical-section[data-section=functional_formulations]');
+ var all=sec&&sec.querySelector('.clinical-section-allbox');
+ if(all)all.checked=false}
 async function clinicalSectionAll(box){
  var row=box.closest('.clinical-item'),sec=box.closest('.clinical-section');if(!row||!sec)return;
  var key=sec.dataset.section,ff=key==='functional_formulations';
@@ -1443,8 +1451,10 @@ async function clinicalSectionAll(box){
   .map(function(x){return x.value}):[];
  var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent='Saving…';box.disabled=true;
- var j=await post('/author/__TID__/clinical-sections/all',
-  {label:row.dataset.label,section:key,on:box.checked,names:names,remedies:remedies});
+ var j=null;
+ try{j=await post('/author/__TID__/clinical-sections/all',
+  {label:row.dataset.label,section:key,on:box.checked,names:names,remedies:remedies})}
+ catch(e){j=null}
  if(j&&j.ok){location.reload();return}
  box.disabled=false;box.checked=!box.checked;
  if(stat)stat.textContent=(j&&j.error)||'Could not save'}
@@ -1459,7 +1469,7 @@ async function saveClinicalBotanical(){
 async function saveClinicalSectionItem(el,field){
  var row=el.closest('.clinical-item');if(!row)return;
  var body={label:row.dataset.label,section:el.dataset.section,name:el.dataset.name};
- if(field==='checked')body.checked=el.checked;
+ if(field==='checked'){body.checked=el.checked;if(!el.checked)clinicalAllOff(el)}
  else if(field==='dose')body.dose=el.value;
  else{var v=(el.value||'').trim().toUpperCase();
   if(!/^[1-9X]{3}$/.test(v)){el.classList.add('bad');

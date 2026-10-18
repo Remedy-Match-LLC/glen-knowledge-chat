@@ -500,8 +500,11 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
                 else:
                     kept.append(entry)
             items = kept
+        # An item added after All was ticked is not ticked, so the box no longer
+        # reads as ticked: it would claim every item is in when one is not.
         out.append({"key": key, "title": title, "items": sort_items(items),
-                    "botanical_hidden": hidden, "all_on": key in all_on})
+                    "botanical_hidden": hidden,
+                    "all_on": key in all_on and all(e["checked"] for e in items)})
     return out
 
 

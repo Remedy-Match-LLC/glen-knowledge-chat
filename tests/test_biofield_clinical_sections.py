@@ -441,7 +441,7 @@ def test_an_item_reticked_by_hand_after_all_survives_all_off(cx):
 def test_all_ticks_only_the_names_shown_and_only_catalog_items(cx):
     _foods(cx)
     cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, ["Kale", "Not listed"])
-    assert _ticked(cx) == ({"Kale"}, True)
+    assert _ticked(cx)[0] == {"Kale"}
 
 
 def test_all_belongs_to_one_section_and_one_client(cx):
@@ -495,7 +495,8 @@ def test_all_route_saves_formulations_as_the_row_remedies(tmp_path, monkeypatch)
                                 "names": ["GI Repair", "Liver Lift"], "remedies": []})
     assert ok.status_code == 200 and ok.get_json()["ok"]
     assert client.post(url, json={"label": "Gut", "section": "foods_emphasize",
-                                  "on": True, "names": ["Kale"]}).status_code == 200
+                                  "on": True, "names": ["Kale", "Beets", "Garlic"]}
+                       ).status_code == 200
     assert client.post(url, json={"label": "Gut", "section": "bogus", "on": True,
                                   "names": []}).status_code == 400
     assert client.post(url, json={"label": "Gut", "section": "foods_emphasize",
@@ -506,4 +507,11 @@ def test_all_route_saves_formulations_as_the_row_remedies(tmp_path, monkeypatch)
     with sqlite3.connect(db) as con:
         assert selections(con, "a49")["gut"] == ["GI Repair"]
         assert cs.sections_for(con, "a49", "Gut")[0]["all_on"] is False
-        assert _ticked(con) == ({"Kale"}, True)
+        assert _ticked(con) == ({"Kale", "Beets", "Garlic"}, True)
+
+
+def test_all_box_reads_off_when_an_item_arrives_after_it_was_ticked(cx):
+    _foods(cx)
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, ["Kale", "Beets", "Garlic"])
+    cs.upsert_item(cx, "Gut", "foods_emphasize", _item("Leeks", 8, 5, 5))
+    assert _ticked(cx) == ({"Kale", "Beets", "Garlic"}, False)
