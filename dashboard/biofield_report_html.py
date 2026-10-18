@@ -1436,11 +1436,14 @@ async function approveClinicalSectionItem(btn){
  btn.disabled=false;var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent=(j&&j.error)||'Could not approve'}
 function clinicalAllOff(el){
- // The row's own tick sits outside the sections; unticking it clears the remedies.
- var sec=el.closest('.clinical-section')||(el.closest('.clinical-item')||document)
-  .querySelector('.clinical-section[data-section=functional_formulations]');
- var all=sec&&sec.querySelector('.clinical-section-allbox');
- if(all)all.checked=false}
+ var sec=el.closest('.clinical-section');
+ if(sec){var all=sec.querySelector('.clinical-section-allbox');if(all)all.checked=false;return}
+ // The row's own tick sits outside the sections; unticking it clears every remedy,
+ // so both remedy sections' All boxes go off.
+ [].slice.call((el.closest('.clinical-item')||document).querySelectorAll(
+  '.clinical-section[data-section=functional_formulations] .clinical-section-allbox,'+
+  '.clinical-section[data-section=infoceuticals] .clinical-section-allbox'))
+  .forEach(function(x){x.checked=false})}
 async function clinicalSectionAll(box){
  var row=box.closest('.clinical-item'),sec=box.closest('.clinical-section');if(!row||!sec)return;
  var key=sec.dataset.section,ff=key==='functional_formulations'||key==='infoceuticals';
@@ -2233,6 +2236,10 @@ def _clinical_sections_html(sections, remedy_choice):
             if entry.get("purple"):
                 flags += ("<span class='clinical-section-flag purple' title='Purple on "
                           "this scan'>purple</span>")
+            if "recommended" in entry and entry.get("code") == "":
+                # No E4L code in the name, so the scan cannot answer for it.
+                flags += ("<span class='clinical-section-flag' title='No E4L code in "
+                          "this name, so the scan cannot say'>scan marks unknown</span>")
             note = (f"<span class=clinical-section-note>{_e(entry['note'])}</span>"
                     if entry.get("note") else "")
             if key in REMEDY_SECTIONS:

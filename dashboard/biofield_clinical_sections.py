@@ -52,7 +52,8 @@ REMEDY_SECTIONS = (FORMULATIONS, INFOCEUTICALS)
 # Formulations. MRs are not infoceuticals (Glen, same day), and neither are ERs.
 _INFOCEUTICAL_CODE = re.compile(r"^((ED|EI|ES|ET|MB)\d+|BFA)\b", re.I)
 _NOT_INFOCEUTICAL = re.compile(r"^(MR|ER)\d+\b", re.I)
-_CODE = re.compile(r"^([A-Z]{2,3}\d{0,3})\b")
+# Only a real E4L infoceutical code: "NES Infoceutical ..." has none, not "NES".
+_CODE = re.compile(r"^((ED|EI|ES|ET|MB)\d+|BFA|ESR)\b")
 
 
 def is_infoceutical(name):
@@ -425,7 +426,8 @@ def remedies_changed(cx, test_id, label, before, after):
     infoceutical_keys = _infoceutical_keys(cx, item_key)
     for name in removed:
         section = INFOCEUTICALS if (is_infoceutical(name) or _norm(name)
-                                    in infoceutical_keys) else FORMULATIONS
+                                    in infoceutical_keys) \
+            and not _NOT_INFOCEUTICAL.match(str(name).strip()) else FORMULATIONS
         _set_all(cx, test_id, item_key, section, False)
 
 
@@ -524,7 +526,7 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
     for name in names:
         key = _norm(name)
         section = INFOCEUTICALS if (key in rated_info or is_infoceutical(name)) \
-            else FORMULATIONS
+            and not _NOT_INFOCEUTICAL.match(str(name).strip()) else FORMULATIONS
         # A remedy already on the row but never rated counts as reviewed: it was in
         # the catalog before this content, so it carries no "not reviewed" mark.
         # Infoceuticals loaded under formulations before their own section existed

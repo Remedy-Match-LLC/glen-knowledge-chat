@@ -296,3 +296,34 @@ def test_a_name_with_no_code_gets_unknown_marks(cx):
     name = "Energetic Infoceutical EI10"
     info = _by_key(cs.sections_for(cx, "a49", "Blood", [name], [], marks=marks))["infoceuticals"]
     assert (info["items"][0]["recommended"], info["items"][0]["purple"]) == (None, None)
+
+
+def test_a_word_before_infoceutical_is_not_a_code_and_shows_unknown(cx):
+    assert cs.infoceutical_code("NES Infoceutical Big Field") == ""
+    assert cs.infoceutical_code("Big Field Infoceutical") == ""
+    marks = {"recommended": {"EI10"}, "purple": {"EI10"}}
+    name = "NES Infoceutical Big Field"
+    entry = _by_key(cs.sections_for(cx, "a49", "Blood", [name], [], marks=marks)
+                    )["infoceuticals"]["items"][0]
+    assert (entry["recommended"], entry["purple"]) == (None, None)
+    html = render_clinical_checklist([{
+        "label": "Blood", "common_remedies": [name], "selection_saved": True,
+        "selected_remedies": [],
+        "sections": cs.sections_for(cx, "a49", "Blood", [name], [], marks=marks)}])
+    assert ">scan marks unknown</span>" in html
+
+
+def test_a_coded_item_never_shows_unknown(cx):
+    marks = {"recommended": {"EI10"}, "purple": set()}
+    html = render_clinical_checklist([{
+        "label": "Blood", "common_remedies": [ED5], "selection_saved": True,
+        "selected_remedies": [],
+        "sections": cs.sections_for(cx, "a49", "Blood", [ED5], [], marks=marks)}])
+    assert ">scan marks unknown</span>" not in html
+
+
+def test_an_mr_filed_as_an_infoceutical_stays_out(cx):
+    cs.upsert_item(cx, "Blood", cs.INFOCEUTICALS, _item("MR3 Restore Matrix"))
+    secs = _by_key(cs.sections_for(cx, "a49", "Blood"))
+    assert secs["infoceuticals"]["items"] == []
+    assert [i["name"] for i in secs["functional_formulations"]["items"]] == ["MR3 Restore Matrix"]
