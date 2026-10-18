@@ -64,7 +64,8 @@ def _remedy_section(name):
 
 
 def gather(cx, test_id, lost=None):
-    """[(section, condition label, name, dose, overall, explanation, approved)] for
+    """[(section, condition label, name, dose, overall, explanation, approved,
+    condition key)] for
     every ticked item, before merging repeats. A tick that cannot print is added to
     `lost` as (section, condition, name, why), for Glen's note."""
     from dashboard.biofield_clinical_checklist import aliases, display_labels
@@ -142,7 +143,7 @@ def gather(cx, test_id, lost=None):
             # A dose the client cleared stays clear, as on the Summary.
             dose = pick.get("dose") if pick.get("dose") is not None else row.get("dose")
             out.append((section, label_for(item_key), name, dose or "", overall,
-                        explanation, approved))
+                        explanation, approved, item_key))
     # Every other section: the ticks kept per item.
     for item_key, section, name_key, dose, overall in cx.execute(
             "SELECT item_key,section,name_key,dose,overall FROM "
@@ -158,7 +159,7 @@ def gather(cx, test_id, lost=None):
         out.append((section, label_for(item_key), row["name"],
                     dose if dose is not None else row["dose"],
                     overall if overall is not None else row["overall"],
-                    row["explanation"], row["approved"]))
+                    row["explanation"], row["approved"], item_key))
     # PRL products ticked in a focus area.
     try:
         prl = cx.execute(
@@ -174,7 +175,7 @@ def gather(cx, test_id, lost=None):
         if name is None:
             lost.append(("prl", area or "PRL", name_key, "it has no rating row"))
             continue
-        out.append(("prl", area or "PRL", name, "", overall, "", False))
+        out.append(("prl", area or "PRL", name, "", overall, "", False, _norm(area or "")))
     return out
 
 
@@ -227,6 +228,7 @@ def load_content(cx, folder):
         merges = json.load(f).get("merges") or []
     with open(os.path.join(folder, "score-lines.json"), encoding="utf-8") as f:
         lines = json.load(f)
+    frame, cautions, frame_report = _parse_frame(os.path.join(folder, "frame-lines.json"))
     cx.execute("DELETE FROM biofield_plan_merge")
     cx.execute("DELETE FROM biofield_plan_wording")
     cx.execute("DELETE FROM biofield_plan_caution")
@@ -247,7 +249,8 @@ def load_content(cx, folder):
             report["score_lines_applied"] += 1
         else:
             report["score_lines_waiting"] += 1
-    report.update(_load_frame(cx, os.path.join(folder, "frame-lines.json")))
+    report.update(frame_report)
+    report["caution_items_not_in_catalog"] = _write_frame(cx, frame, cautions)
     intro = lines.get("intro") or {}
     if intro.get("approved") is True:
         for n, text in enumerate(intro.get("lines") or []):
@@ -256,60 +259,82 @@ def load_content(cx, folder):
     return report
 
 
-def _load_frame(cx, path):
-    """Clinical's report-level lines and ingredient caution table, approved only. A
-    caution prints only for the items clinical lists under it, so one with no items
-    never prints and is counted."""
+def _parse_frame(path):
+    """(frame rows, caution rows, report) from clinical's frame-lines.json, approved
+    only. Everything is read and checked before anything is written, so a bad file
+    fails the load with the stored set untouched. A caution prints only for the items
+    clinical lists under it, so one with no items never prints and is counted."""
     report = {"frame_lines_applied": 0, "frame_lines_waiting": 0, "frame_lines_unknown": [],
               "cautions_applied": 0, "cautions_waiting": 0, "cautions_without_items": [],
-              "caution_items": 0, "caution_items_not_in_catalog": []}
+              "caution_items": 0}
+    frame, cautions = [], []
     if not os.path.exists(path):
-        return report
+        return frame, cautions, report
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     for key, entry in (data.get("lines") or {}).items():
         if key not in FRAME_KEYS:
             report["frame_lines_unknown"].append(key)
         elif entry.get("approved") is True and entry.get("text"):
-            cx.execute("INSERT INTO biofield_plan_wording VALUES ('frame',?,?)",
-                       (key, entry["text"]))
+            frame.append((key, str(entry["text"])))
             report["frame_lines_applied"] += 1
         else:
             report["frame_lines_waiting"] += 1
-    cs.ensure_schema(cx)
-    known = set(cx.execute("SELECT DISTINCT section,name_key FROM biofield_clinical_section_item"))
-    for pos, (name, entry) in enumerate((data.get("ingredient_cautions") or {}).items()):
+    for name, entry in (data.get("ingredient_cautions") or {}).items():
         if entry.get("approved") is not True or not entry.get("text"):
             report["cautions_waiting"] += 1
             continue
-        cx.execute("INSERT INTO biofield_plan_caution VALUES (?,?,?)", (pos, name, entry["text"]))
-        report["cautions_applied"] += 1
-        items = entry.get("items") or []
+        items = []
+        for item in entry.get("items") or []:
+            section, key = str(item.get("section") or ""), _norm(item.get("name") or "")
+            if section and key and (section, key) not in [i[:2] for i in items]:
+                items.append((section, key, item.get("name")))
         if not items:
             report["cautions_without_items"].append(name)
-        for item in items:
-            section, key = str(item.get("section") or ""), _norm(item.get("name") or "")
-            if not section or not key:
-                continue
-            cx.execute("INSERT OR IGNORE INTO biofield_plan_caution_item VALUES (?,?,?)",
+        cautions.append((name, str(entry["text"]), items))
+        report["cautions_applied"] += 1
+        report["caution_items"] += len(items)
+    return frame, cautions, report
+
+
+def _write_frame(cx, frame, cautions):
+    """Store the parsed rows; returns the listed items no condition file holds."""
+    cs.ensure_schema(cx)
+    known = {(_class(sec), key) for sec, key in cx.execute(
+        "SELECT DISTINCT section,name_key FROM biofield_clinical_section_item")}
+    known |= {(_class(sec), key) for sec, key in cx.execute(
+        "SELECT section,name_key FROM biofield_clinical_extra_explanation")}
+    try:
+        known |= {("prl", key) for (key,) in cx.execute(
+            "SELECT DISTINCT name_key FROM biofield_prl_rating")}
+    except Exception:  # PRL tables absent
+        pass
+    unknown = []
+    for key, text in frame:
+        cx.execute("INSERT INTO biofield_plan_wording VALUES ('frame',?,?)", (key, text))
+    for pos, (name, text, items) in enumerate(cautions):
+        cx.execute("INSERT INTO biofield_plan_caution VALUES (?,?,?)", (pos, name, text))
+        for section, key, raw in items:
+            cx.execute("INSERT INTO biofield_plan_caution_item VALUES (?,?,?)",
                        (pos, section, key))
-            report["caution_items"] += 1
-            if (section, key) not in known:
-                report["caution_items_not_in_catalog"].append(f"{name}: {section}: {item.get('name')}")
-    return report
+            if (_class(section), key) not in known:
+                unknown.append(f"{name}: {section}: {raw}")
+    return unknown
 
 
 def stored_frame(cx):
     """({frame key: text}, [(caution name, text, {(section, name key)})]), approved only."""
     ensure_schema(cx)
     frame = dict(cx.execute("SELECT key,text FROM biofield_plan_wording WHERE kind='frame'"))
-    items = {}
-    for pos, section, key in cx.execute(
-            "SELECT pos,section,name_key FROM biofield_plan_caution_item"):
-        items.setdefault(pos, set()).add((section, key))
-    cautions = [(name, text, items.get(pos, set())) for pos, name, text in cx.execute(
-        "SELECT pos,name,text FROM biofield_plan_caution ORDER BY pos")]
-    return frame, cautions
+    # One statement, so a caution and its items always come from the same load.
+    cautions = {}
+    for pos, name, text, section, key in cx.execute(
+            "SELECT c.pos,c.name,c.text,i.section,i.name_key FROM biofield_plan_caution c "
+            "LEFT JOIN biofield_plan_caution_item i ON i.pos=c.pos ORDER BY c.pos"):
+        items = cautions.setdefault(pos, (name, text, set()))[2]
+        if section is not None:
+            items.add((_class(section), key))
+    return frame, list(cautions.values())
 
 
 def cautions_for(plan_groups, cautions):
@@ -320,7 +345,8 @@ def cautions_for(plan_groups, cautions):
         hits = []
         for lines in plan_groups.values():
             for line in lines:
-                if any((en["section"], _norm(en["name"])) in items for en in line["entries"]) \
+                if any((_class(en["section"]), _norm(en["name"])) in items
+                       for en in line["entries"]) \
                         and line["name"] not in hits:
                     hits.append(line["name"])
         if hits:
@@ -329,8 +355,15 @@ def cautions_for(plan_groups, cautions):
 
 
 def _has_condition(plan_groups, key):
-    return any(_norm(en["condition"]) == key for lines in plan_groups.values()
+    """By the condition's key, so a row Glen renames still counts."""
+    return any(en.get("condition_key") == key for lines in plan_groups.values()
                for line in lines for en in line["entries"])
+
+
+def _class(section):
+    """A remedy ticked through a row's selection can land under Formulations or
+    Infoceuticals by its name, so a caution matches either."""
+    return cs.FORMULATIONS if section == cs.INFOCEUTICALS else section
 
 
 def stored_wording(cx):
@@ -354,7 +387,8 @@ def plan(cx, test_id, merge_map=None):
     if merge_map is None:
         merge_map = stored_wording(cx)[0]
     groups = {}
-    for section, label, name, dose, overall, explanation, approved in gather(cx, test_id):
+    for section, label, name, dose, overall, explanation, approved, item_key \
+            in gather(cx, test_id):
         own_section = section
         shared = merge_map.get((_SCOPE.get(section, ""), _norm(name)))
         # A merged nutrient and botanical share the Nutrients line.
@@ -368,7 +402,7 @@ def plan(cx, test_id, merge_map=None):
         if overall is not None and (line["overall"] is None or overall > line["overall"]):
             line["overall"] = overall
         line["entries"].append({"condition": label, "name": name, "overall": overall,
-                                "section": own_section,
+                                "section": own_section, "condition_key": item_key,
                                 "dose": dose or "",
                                 "explanation": explanation if approved else ""})
     for bucket in groups.values():

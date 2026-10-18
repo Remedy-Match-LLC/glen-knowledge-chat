@@ -136,9 +136,7 @@ def test_one_item_ticked_under_two_conditions_is_named_once(cx, tmp_path):
     _remedy(cx, "Blood sugar", cs.FORMULATIONS, "Glucose Tolerance")
     hits = pr.cautions_for(pr.plan(cx, "a49"), pr.stored_frame(cx)[1])
     assert hits == [("Berberine", "It lowers blood sugar.", ["Glucose Tolerance",
-                                                              "Berberine HCl"])] \
-        or hits == [("Berberine", "It lowers blood sugar.", ["Berberine HCl",
-                                                              "Glucose Tolerance"])]
+                                                              "Berberine HCl"])]
 
 
 def test_the_section_must_match_so_a_food_never_borrows_a_botanicals_caution(cx, tmp_path):
@@ -154,13 +152,13 @@ def test_the_section_must_match_so_a_food_never_borrows_a_botanicals_caution(cx,
 def test_a_botanical_merged_into_nutrients_keeps_its_caution(cx, tmp_path):
     merge = {"group": "nutrients_botanicals", "display_name": "Curcumin",
              "members": ["Turmeric extract", "Curcumin"], "approved": True}
-    curcumin = {"Curcumin": _caution("It may thin blood.",
+    curcumin = {"Turmeric": _caution("It may thin blood.",
                                      [{"section": cs.BOTANICALS, "name": "Turmeric extract"}])}
     pr.load_content(cx, _folder(tmp_path, cautions=curcumin, merges=[merge]))
     _tick(cx, "Gut", cs.BOTANICALS, "Turmeric extract")
-    page = _page(cx)
-    block = page[page.index("plan-cautions"):page.index("<section")]
-    assert "It may thin blood." in block and "Curcumin" in block
+    assert pr.cautions_for(pr.plan(cx, "a49"), pr.stored_frame(cx)[1]) == [
+        ("Turmeric", "It may thin blood.", ["Curcumin"])]
+    assert "<p class=plan-caution-items>Curcumin</p>" in _page(cx)
 
 
 def test_unapproved_or_itemless_cautions_never_print_and_are_counted(cx, tmp_path):
@@ -191,11 +189,13 @@ def test_every_caution_and_frame_string_is_escaped(cx, tmp_path):
     groups = {cs.INFOCEUTICALS: [{"name": "ED1 " + bad, "kind": "Infoceutical", "overall": 7,
                                   "entries": [{"condition": "Vertigo", "name": "ED1 " + bad,
                                                "section": cs.INFOCEUTICALS, "overall": 7,
+                                               "condition_key": "vertigo",
                                                "dose": "", "explanation": ""}]}]}
     frame = {k: v + " " + bad for k, v in TOP.items()}
     page = pr.render_plan_html(groups, frame=frame,
                                cautions=[("Name " + bad, "Text " + bad, ["Item " + bad])])
-    assert "<b>" not in page and page.count("&lt;b&gt;") >= 9
+    # Five frame lines, the caution's name, text and item, and the line's name.
+    assert "<b>" not in page and page.count("&lt;b&gt;") == 9
 
 
 def test_two_lines_with_one_name_are_named_once_in_a_caution(cx, tmp_path):
@@ -217,3 +217,84 @@ def test_the_table_prints_without_its_intro_until_the_intro_is_approved(cx, tmp_
     page = _page(cx)
     assert "It lowers blood sugar." in page
     assert "Some products share a caution." not in page and "plan-caution-intro" not in page
+
+
+@pytest.mark.parametrize("bad", ["{not json", json.dumps({"ingredient_cautions": {
+    "A": {"text": "A.", "approved": True, "items": []}, "B": "not an object"}})])
+def test_a_bad_file_fails_the_load_and_leaves_the_stored_set_alone(cx, tmp_path, bad):
+    folder = _folder(tmp_path, cautions=BERBERINE)
+    pr.load_content(cx, folder)
+    before = pr.stored_frame(cx), pr.stored_wording(cx)
+    (tmp_path / "plan-report" / "frame-lines.json").write_text(bad)
+    with pytest.raises(Exception):
+        pr.load_content(cx, folder)
+    assert (pr.stored_frame(cx), pr.stored_wording(cx)) == before
+
+
+def test_a_remedy_matches_whichever_remedy_section_it_lands_in(cx, tmp_path):
+    """Clinical lists an infoceutical; the row ticks it with no catalog entry, so its
+    name puts it under Formulations. And the other way round."""
+    cautions = {"A": _caution("Caution A.", [{"section": cs.INFOCEUTICALS, "name": "Calm Spray"}]),
+                "B": _caution("Caution B.", [{"section": cs.FORMULATIONS,
+                                             "name": "ED11 Liver Energetic Driver Infoceutical"}])}
+    pr.load_content(cx, _folder(tmp_path, cautions=cautions))
+    save_selection(cx, "a49", "Gut", ["Calm Spray"])
+    _remedy(cx, "Liver", cs.INFOCEUTICALS, "ED11 Liver Energetic Driver Infoceutical")
+    groups = pr.plan(cx, "a49")
+    assert [l["name"] for l in groups[cs.FORMULATIONS]] == ["Calm Spray"]
+    assert [n for n, _, _ in pr.cautions_for(groups, pr.stored_frame(cx)[1])] == ["A", "B"]
+
+
+def test_a_food_and_a_remedy_of_one_name_stay_apart(cx, tmp_path):
+    cautions = {"A": _caution("Caution A.", [{"section": cs.FORMULATIONS, "name": "Ginger"}])}
+    pr.load_content(cx, _folder(tmp_path, cautions=cautions))
+    _tick(cx, "Gut", "foods_emphasize", "Ginger")
+    assert "Caution A." not in _page(cx)
+
+
+def test_a_prl_caution_matches_and_is_not_called_missing(cx, tmp_path):
+    from dashboard import biofield_prl_section as prl
+    prl.ensure_schema(cx)
+    cx.execute("INSERT INTO biofield_prl_rating (focus_area_id,name_key,name,overall) "
+               "VALUES (1,'liver tonic','Liver Tonic',7)")
+    cx.execute("INSERT INTO biofield_prl_pick (test_id,focus_area_id,name_key,checked) "
+               "VALUES ('a49',1,'liver tonic',1)")
+    cautions = {"A": _caution("Caution A.", [{"section": "prl", "name": "Liver Tonic"}])}
+    report = pr.load_content(cx, _folder(tmp_path, cautions=cautions))
+    assert report["caution_items_not_in_catalog"] == []
+    assert "Caution A." in _page(cx)
+
+
+def test_an_approval_set_back_withdraws_the_line_and_the_caution(cx, tmp_path):
+    folder = _folder(tmp_path, cautions=BERBERINE)
+    pr.load_content(cx, folder)
+    _remedy(cx, "Blood sugar", cs.FORMULATIONS, "Glucose Tolerance")
+    lines = {k: {"text": v, "approved": k != "dose_totals"} for k, v in TOP.items()}
+    _folder(tmp_path, lines, cautions={"Berberine": dict(BERBERINE["Berberine"], approved=False)})
+    pr.load_content(cx, folder)
+    page = _page(cx)
+    assert "Count every source." not in page and "It lowers blood sugar." not in page
+    assert "Space thyroid medicine." in page
+
+
+def test_a_renamed_vertigo_row_keeps_the_line_and_a_dismissed_one_drops_it(cx, tmp_path):
+    pr.load_content(cx, _folder(tmp_path))
+    _tick(cx, "Vertigo", cs.NUTRIENTS, "Magnesium")
+    entry = pr.plan(cx, "a49")[cs.NUTRIENTS][0]["entries"][0]
+    entry["condition"] = "Vertigo and dizziness"
+    assert pr._has_condition({cs.NUTRIENTS: [{"entries": [entry]}]}, "vertigo")
+    from dashboard.biofield_clinical_proposals import decide
+    decide(cx, "a49", "Vertigo", "dismissed")
+    assert "Vertigo needs care." not in _page(cx)
+
+
+def test_an_extra_explanation_remedy_is_known_and_matches(cx, tmp_path):
+    """Soothe Powder lives only under a condition's extra_explanations."""
+    save_selection(cx, "a49", "Gut", ["Soothe Powder"])
+    cs.set_extra_explanations(cx, "Gut", {"Soothe Powder": {
+        "section": cs.FORMULATIONS, "explanation": "Soothes.", "explanation_approved": True}})
+    cautions = {"Fibres": _caution("Space them.", [{"section": cs.FORMULATIONS,
+                                                    "name": "Soothe Powder"}])}
+    report = pr.load_content(cx, _folder(tmp_path, cautions=cautions))
+    assert report["caution_items_not_in_catalog"] == []
+    assert "Space them." in _page(cx)
