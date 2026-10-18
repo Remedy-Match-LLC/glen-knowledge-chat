@@ -6392,6 +6392,12 @@
    "name": "Iron Out",
    "price_cents": 7000,
    "pinecone_title": "Iron Out",
+   "directions": "1 to 4 capsules daily with food, or as guided.",
+   "copy_pinned": [
+    "directions"
+   ],
+   "warning": "Take up to 4 capsules a day.",
+   "chat_caution": true,
    "url": "https://myhealingoasis.com/begin/product/iron-out",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/318-iron-out",
    "qty_pricing": true,

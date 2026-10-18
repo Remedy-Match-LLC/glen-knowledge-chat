@@ -3190,6 +3190,15 @@
     ],
     "note": "Sleep Syntropy caution, Glen 2026-10-15, word for word (formulation spec 2026-10-15-sleep-syntropy-caution). Approved copy and caution changes, Glen 2026-10-15 (formulation spec 2026-10-15-brain-cleanse-sleep-syntropy-copy)."
   },
+  "iron-out": {
+    "directions": "1 to 4 capsules daily with food, or as guided.",
+    "copy_pinned": [
+      "directions"
+    ],
+    "warning": "Take up to 4 capsules a day.",
+    "chat_caution": true,
+    "note": "Iron Out pinned directions and caution, up to 4 a day, Glen 2026-10-18 (production spec 2026-10-18-iron-out-directions)."
+  },
   "scar-silk": {
     "ingredients_source": "db-formulations-2026-06-25",
     "warning": "Ask your practitioner before use if you take a blood thinner or prescription medication, or before surgery.",
