@@ -1589,6 +1589,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         scan_marks = infoceutical_marks(cx, e4l_db, _sctx.get("scan_id"))
                 except Exception as _me:
                     print(f"[scan-marks] {test_id}: skipped: {_me!r}", flush=True)
+                    # Say so on the page rather than look like a client with no scan.
+                    scan_marks = {"recommended": None, "purple": None,
+                                  "recommended_error": repr(_me)[:200],
+                                  "purple_error": repr(_me)[:200]}
                 for _item in clinical_checklist:
                     _item["sections"] = _cs.sections_for(
                         cx, test_id, _item.get("label"),

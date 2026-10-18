@@ -549,9 +549,10 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
             code = infoceutical_code(name)
             entry["code"] = code
             if marks:
-                recommended = marks.get("recommended")
+                # No code, no answer: unknown, never "not recommended".
+                recommended = marks.get("recommended") if code else None
                 entry["recommended"] = None if recommended is None else code in recommended
-                purple = marks.get("purple")
+                purple = marks.get("purple") if code else None
                 entry["purple"] = None if purple is None else code in purple
         by_section[section].append(entry)
     out = []
@@ -571,9 +572,21 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
         # reads as ticked: it would claim every item is in when one is not.
         out.append({"key": key, "title": title, "items": sort_items(items),
                     "botanical_hidden": hidden,
-                    "purple_error": ((marks or {}).get("purple_error") or "")
-                    if key == INFOCEUTICALS else "",
+                    "marks_errors": _marks_errors(marks) if key == INFOCEUTICALS else [],
                     "all_on": key in all_on and all(e["checked"] for e in items)})
+    return out
+
+
+def _marks_errors(marks):
+    """What could not be read, as lines for the page, so an unread mark never
+    looks like a clean "no"."""
+    out = []
+    if marks and marks.get("recommended") is None:
+        out.append(("Recommended could not be read from the scan",
+                    marks.get("recommended_error") or ""))
+    if marks and marks.get("purple") is None:
+        out.append(("Purple could not be read from the scan PDF",
+                    marks.get("purple_error") or ""))
     return out
 
 

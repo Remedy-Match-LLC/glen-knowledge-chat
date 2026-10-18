@@ -74,7 +74,8 @@ def test_no_scan_means_no_marks_and_an_unread_pdf_is_not_none_purple(cx):
     assert "recommended" not in info["items"][0] and "purple" not in info["items"][0]
     marks = {"recommended": set(), "purple": None, "purple_error": "no PDF"}
     info = _by_key(cs.sections_for(cx, "a49", "Blood", [ED5], [], marks=marks))["infoceuticals"]
-    assert info["items"][0]["purple"] is None and info["purple_error"] == "no PDF"
+    assert info["items"][0]["purple"] is None
+    assert info["marks_errors"] == [("Purple could not be read from the scan PDF", "no PDF")]
 
 
 def _page(cx, marks):
@@ -170,6 +171,7 @@ def test_marks_come_from_the_scan_and_the_pdf_is_read_once(cx, tmp_path, monkeyp
     first = marks_mod.infoceutical_marks(cx, e4l, 7)
     again = marks_mod.infoceutical_marks(cx, e4l, 7)
     assert first == again == {"scan_id": "7", "recommended": {"ED12", "EI10"},
+                              "recommended_error": "",
                               "purple": {"ED12", "ES12"}, "purple_error": ""}
     assert reads == ["/scans/x.pdf"]
 
@@ -259,7 +261,8 @@ def test_an_unreadable_scan_database_says_so(cx, tmp_path):
         "label": "Blood", "common_remedies": [ED5], "selection_saved": True,
         "selected_remedies": [],
         "sections": cs.sections_for(cx, "a49", "Blood", [ED5], [], marks=got)}])
-    assert "Recommended and purple could not be read from the scan" in html
+    assert "Recommended could not be read from the scan" in html
+    assert "Purple could not be read from the scan PDF" in html
     assert ">recommended</span>" not in html
 
 
@@ -273,3 +276,23 @@ def test_a_scan_database_without_its_tables_says_so(cx, tmp_path):
     sqlite3.connect(broken).close()
     got = marks_mod.infoceutical_marks(cx, broken, 7)
     assert got["recommended"] is None and "could not be read" in got["purple_error"]
+
+
+def test_a_scan_with_no_recommended_rows_is_unknown_not_none(cx, tmp_path, monkeypatch):
+    # 49 of 3,373 scans in e4l.db had no Infoceuticals rows (review, 2026-10-17).
+    monkeypatch.setattr(marks_mod, "bar_colours", lambda p: {"ED5": {"purple"}})
+    e4l = _e4l(tmp_path, "/scans/x.pdf")
+    with sqlite3.connect(e4l) as e:
+        e.execute("DELETE FROM e4l_scan_results WHERE section_context='Infoceuticals'")
+    got = marks_mod.infoceutical_marks(cx, e4l, 7)
+    assert got["recommended"] is None and got["purple"] == {"ED5"}
+    info = _by_key(cs.sections_for(cx, "a49", "Blood", [ED5], [], marks=got))["infoceuticals"]
+    assert info["items"][0]["recommended"] is None and info["items"][0]["purple"] is True
+    assert [w for w, _ in info["marks_errors"]] == ["Recommended could not be read from the scan"]
+
+
+def test_a_name_with_no_code_gets_unknown_marks(cx):
+    marks = {"recommended": {"EI10"}, "purple": {"EI10"}}
+    name = "Energetic Infoceutical EI10"
+    info = _by_key(cs.sections_for(cx, "a49", "Blood", [name], [], marks=marks))["infoceuticals"]
+    assert (info["items"][0]["recommended"], info["items"][0]["purple"]) == (None, None)

@@ -126,15 +126,16 @@ def _read_once(cx, scan_id, pdf_path):
 
 
 def infoceutical_marks(cx, e4l_db, scan_id):
-    """{"scan_id", "recommended": {code} or None, "purple": {code} or None,
-    "purple_error"}. A set is None when it could not be read, with the reason in
-    purple_error. The whole result is None when there is no scan."""
+    """{"scan_id", "recommended": {code} or None, "recommended_error",
+    "purple": {code} or None, "purple_error"}. A set is None when it could not be
+    read, with the reason beside it. The whole result is None when there is no scan."""
     if not scan_id or not e4l_db:
         return None
     scan_id = str(scan_id)
     # e4l.db keeps scan ids as numbers; '7' never equals 7 in a column without affinity.
     key = int(scan_id) if scan_id.isdigit() else scan_id
     unread = {"scan_id": scan_id, "recommended": None, "purple": None,
+              "recommended_error": "the scan database could not be read",
               "purple_error": "the scan database could not be read"}
     try:
         ecx = sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)
@@ -150,6 +151,11 @@ def infoceutical_marks(cx, e4l_db, scan_id):
         return unread
     finally:
         ecx.close()
+    recommended_error = ""
+    if not recommended:
+        # Every scan recommends infoceuticals; none stored means the import missed
+        # them (49 of 3,373 scans on 2026-10-17), not that none are recommended.
+        recommended, recommended_error = None, "the scan's recommended list is not stored"
     ensure_schema(cx)
     ok, error = _read_once(cx, scan_id, row[0] if row else "")
     purple = None
@@ -157,5 +163,6 @@ def infoceutical_marks(cx, e4l_db, scan_id):
         purple = {r[0] for r in cx.execute(
             "SELECT code FROM biofield_scan_bar_colour WHERE scan_id=? AND "
             "(',' || colours || ',') LIKE '%,purple,%'", (scan_id,))}
-    return {"scan_id": scan_id, "recommended": recommended, "purple": purple,
+    return {"scan_id": scan_id, "recommended": recommended,
+            "recommended_error": recommended_error, "purple": purple,
             "purple_error": error}

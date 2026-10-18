@@ -2265,13 +2265,10 @@ def _clinical_sections_html(sections, remedy_choice):
             n = section["botanical_hidden"]
             body += (f"<span class=clinical-open>{n} botanical item{'s' if n != 1 else ''} "
                      "hidden for this client</span>")
-        if section.get("purple_error") and bits:
-            # Not reading the PDF must not look like "nothing is purple".
-            what = ("Recommended and purple could not be read from the scan"
-                    if any(e.get("recommended") is None for e in section.get("items") or [])
-                    else "Purple could not be read from the scan PDF")
-            body += ("<span class=clinical-open title=\"" + _e(section["purple_error"])
-                     + f"\">{what}</span>")
+        if bits:
+            # Not reading a mark must not look like "not recommended" or "not purple".
+            for what, why in section.get("marks_errors") or []:
+                body += (f"<span class=clinical-open title=\"{_e(why)}\">{_e(what)}</span>")
         # One box ticks every item shown in the section (Glen, 2026-10-17). Unticking it
         # unticks only what it ticked; items ticked by hand stay.
         all_box = ""
