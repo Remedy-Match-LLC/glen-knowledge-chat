@@ -116,16 +116,84 @@ KIND = {cs.FORMULATIONS: "Functional Formulation", cs.INFOCEUTICALS: "Infoceutic
         cs.FULLSCRIPT: "Fullscript supplement"}
 
 
+# A merge group in clinical's map covers one of these scopes; products never merge.
+_SCOPE = {"foods_emphasize": "foods_emphasize", "foods_avoid": "foods_avoid",
+          cs.NUTRIENTS: "nutrients_botanicals", cs.BOTANICALS: "nutrients_botanicals"}
+
+
+def ensure_schema(cx):
+    """Clinical's merge map and score-heading lines, approved entries only."""
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_plan_merge (
+        scope TEXT NOT NULL, name_key TEXT NOT NULL, display_name TEXT NOT NULL,
+        PRIMARY KEY (scope, name_key))""")
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_plan_wording (
+        kind TEXT NOT NULL, key TEXT NOT NULL, text TEXT NOT NULL,
+        PRIMARY KEY (kind, key))""")
+
+
+def load_content(cx, folder):
+    """Replace the stored map and lines with the approved entries in clinical's
+    merge-map.json and score-lines.json. Unapproved entries are counted, not kept."""
+    import os
+    ensure_schema(cx)
+    report = {"merges_applied": 0, "merges_waiting": 0, "names_merged": 0,
+              "score_lines_applied": 0, "score_lines_waiting": 0, "intro": "waiting"}
+    with open(os.path.join(folder, "merge-map.json"), encoding="utf-8") as f:
+        merges = json.load(f).get("merges") or []
+    with open(os.path.join(folder, "score-lines.json"), encoding="utf-8") as f:
+        lines = json.load(f)
+    cx.execute("DELETE FROM biofield_plan_merge")
+    cx.execute("DELETE FROM biofield_plan_wording")
+    for group in merges:
+        if group.get("approved") is not True:
+            report["merges_waiting"] += 1
+            continue
+        report["merges_applied"] += 1
+        for member in group.get("members") or []:
+            cx.execute("INSERT OR REPLACE INTO biofield_plan_merge VALUES (?,?,?)",
+                       (group["group"], _norm(member), group["display_name"]))
+            report["names_merged"] += 1
+    for digit, entry in (lines.get("lines") or {}).items():
+        if entry.get("approved") is True and entry.get("text"):
+            cx.execute("INSERT INTO biofield_plan_wording VALUES ('score',?,?)",
+                       ("X" if digit == "10" else digit, entry["text"]))
+            report["score_lines_applied"] += 1
+        else:
+            report["score_lines_waiting"] += 1
+    intro = lines.get("intro") or {}
+    if intro.get("approved") is True:
+        for n, text in enumerate(intro.get("lines") or []):
+            cx.execute("INSERT INTO biofield_plan_wording VALUES ('intro',?,?)", (str(n), text))
+        report["intro"] = "applied"
+    return report
+
+
+def stored_wording(cx):
+    """(merge map, score meanings, intro lines) as stored, approved only."""
+    ensure_schema(cx)
+    merge_map = {(r[0], r[1]): r[2] for r in cx.execute(
+        "SELECT scope,name_key,display_name FROM biofield_plan_merge")}
+    meanings = {r[0]: r[1] for r in cx.execute(
+        "SELECT key,text FROM biofield_plan_wording WHERE kind='score'")}
+    intro = [r[0] for r in cx.execute(
+        "SELECT text FROM biofield_plan_wording WHERE kind='intro' ORDER BY CAST(key AS INT)")]
+    return merge_map, meanings, intro
+
+
 def plan(cx, test_id, merge_map=None):
     """{group key: [line]}. Identical names ticked under several conditions are one
-    line. Differently named items share a line only through `merge_map` ({name key:
-    shared name}), which clinical writes and Glen approves (Glen, 2026-10-18). A line
+    line. Differently named items share a line only through `merge_map` ({(scope,
+    name key): shared name}, the stored approved map by default), which clinical writes and Glen approves (Glen, 2026-10-18). A line
     carries its highest overall score and, per condition, that condition's score, dose
     and approved explanation."""
-    merge_map = merge_map or {}
+    if merge_map is None:
+        merge_map = stored_wording(cx)[0]
     groups = {}
     for section, label, name, dose, overall, explanation, approved in gather(cx, test_id):
-        shared = merge_map.get(_norm(name))
+        shared = merge_map.get((_SCOPE.get(section, ""), _norm(name)))
+        # A merged nutrient and botanical share the Nutrients line.
+        if shared and _SCOPE.get(section) == "nutrients_botanicals":
+            section = cs.NUTRIENTS
         bucket = groups.setdefault(section, {})
         line = bucket.setdefault(_norm(shared or name), {
             "name": shared or name, "kind": KIND.get(section, ""), "overall": None,
@@ -201,7 +269,7 @@ def e_(text):
     return html.escape(str(text))
 
 
-def render_plan_html(plan_groups, client_name="", date="", score_meanings=None):
+def render_plan_html(plan_groups, client_name="", date="", score_meanings=None, intro=()):
     """The plan as a printable page. Nothing unapproved is printed. Under Remedies,
     sections mix within each score, so each line names its kind."""
     e = html.escape
@@ -228,7 +296,9 @@ def render_plan_html(plan_groups, client_name="", date="", score_meanings=None):
     return ("<!doctype html><html lang=en><head><meta charset=utf-8>"
             "<meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{title}</title><style>{PLAN_CSS}</style></head><body>"
-            f"<main class=plan><h1>{title}</h1>{who}{''.join(parts)}</main></body></html>")
+            f"<main class=plan><h1>{title}</h1>{who}"
+            + "".join(f"<p class=plan-intro>{e(line)}</p>" for line in intro or ())
+            + f"{''.join(parts)}</main></body></html>")
 
 
 PLAN_CSS = (
