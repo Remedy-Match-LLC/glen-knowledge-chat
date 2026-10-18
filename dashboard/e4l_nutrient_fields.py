@@ -84,11 +84,3 @@ def fields_for(name):
     text = str(name or "")
     return [field for pattern, field in _COMPILED if pattern.search(text)]
 
-
-def primary_field(name):
-    """The field the name leads with ("Magnesium" for "Magnesium Taurate", "Vitamin C"
-    for "Vitamin C (buffered, as magnesium ascorbate)"), or "" when it names none."""
-    text = str(name or "")
-    hits = [(m.start(), field) for pattern, field in _COMPILED
-            for m in [pattern.search(text)] if m]
-    return min(hits)[1] if hits else ""

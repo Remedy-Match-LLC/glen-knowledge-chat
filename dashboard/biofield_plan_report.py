@@ -8,11 +8,12 @@ report, but when printing a Biofield Analysis report, it can be selected to prin
 the same time as an addition to the same pdf file."
 
 Headings (Glen, same day): Foods; Remedies, which holds Infoceuticals and PRL too;
-Healing Tools. An item ticked under several conditions is listed once, with every
-condition named (clinical's frame note 1). Only the overall rating digit shows.
-Under each line sits the explanation stored with the item (Glen, 2026-10-18:
-"Integrate the reasoning below each item's line"), printed only once Glen has
-approved it; an item without one prints its line alone.
+Healing Tools. Within each, items group under "Score N" headings by their highest
+overall score, highest first; only the overall digit shows. An item ticked under
+several conditions is one line, naming each condition with its score and, beneath,
+its explanation. The explanation prints only once Glen has approved it; an item
+without one prints its line alone. Differently named items share a line only
+through a merge map clinical writes and Glen approves.
 """
 import html
 import json
@@ -109,46 +110,36 @@ def gather(cx, test_id):
     return out
 
 
-def _merge_key(section, name):
-    """One line per item; nutrients one line per nutrient, so "Selenium
-    (selenomethionine)" and "Selenium (as methylselenocysteine)" share one (Glen,
-    2026-10-18, "go ahead" on one line per nutrient)."""
-    if section == cs.NUTRIENTS:
-        from dashboard.e4l_nutrient_fields import primary_field
-        field = primary_field(name)
-        if field:
-            return "field:" + field
-    return _norm(name)
+# What each section is called beside an item under Remedies, where sections mix.
+KIND = {cs.FORMULATIONS: "Functional Formulation", cs.INFOCEUTICALS: "Infoceutical",
+        "prl": "PRL", cs.NUTRIENTS: "Nutrient", cs.BOTANICALS: "Botanical",
+        cs.FULLSCRIPT: "Fullscript supplement"}
 
 
-def plan(cx, test_id):
-    """{group key: [item]} with repeats merged. A line takes the name, dose and
-    paragraph of its highest-rated version and names every condition it was ticked
-    under. `doses` and `names` list every one seen, so Glen can see where they differ."""
-    variants = {}
-    for section, label, name, dose, overall, explanation, approved in gather(cx, test_id):
-        variants.setdefault(section, {}).setdefault(_merge_key(section, name), []).append(
-            {"name": name, "label": label, "dose": dose or "", "overall": overall,
-             "explanation": explanation, "approved": approved})
+def plan(cx, test_id, merge_map=None):
+    """{group key: [line]}. Identical names ticked under several conditions are one
+    line. Differently named items share a line only through `merge_map` ({name key:
+    shared name}), which clinical writes and Glen approves (Glen, 2026-10-18). A line
+    carries its highest overall score and, per condition, that condition's score, dose
+    and approved explanation."""
+    merge_map = merge_map or {}
     groups = {}
-    for section, by_key in variants.items():
-        lines = []
-        for found in by_key.values():
-            best = sorted(found, key=lambda v: (-(v["overall"] or 0), not v["approved"]))[0]
-            approved = best if best["approved"] else next(
-                (v for v in found if v["approved"]), None)
-            line = {"name": best["name"], "dose": best["dose"], "overall": best["overall"],
-                    "conditions": [], "doses": [], "names": [],
-                    "explanation": approved["explanation"] if approved else best["explanation"],
-                    "approved": approved is not None}
-            for v in found:
-                for key, value in (("conditions", v["label"]), ("doses", v["dose"]),
-                                   ("names", v["name"])):
-                    if value and value not in line[key]:
-                        line[key].append(value)
-            lines.append(line)
-        groups[section] = sorted(lines, key=lambda i: (-(i["overall"] or 0), i["name"].lower()))
-    return groups
+    for section, label, name, dose, overall, explanation, approved in gather(cx, test_id):
+        shared = merge_map.get(_norm(name))
+        bucket = groups.setdefault(section, {})
+        line = bucket.setdefault(_norm(shared or name), {
+            "name": shared or name, "kind": KIND.get(section, ""), "overall": None,
+            "entries": []})
+        if overall is not None and (line["overall"] is None or overall > line["overall"]):
+            line["overall"] = overall
+        line["entries"].append({"condition": label, "name": name, "overall": overall,
+                                "dose": dose or "",
+                                "explanation": explanation if approved else ""})
+    for bucket in groups.values():
+        for line in bucket.values():
+            line["entries"].sort(key=lambda en: (-(en["overall"] or 0), en["condition"]))
+    return {key: sorted(bucket.values(), key=lambda i: (-(i["overall"] or 0), i["name"].lower()))
+            for key, bucket in groups.items()}
 
 
 def _digit(overall):
@@ -158,37 +149,79 @@ def _digit(overall):
 
 
 def missing(plan_groups):
-    """The ticked items with no approved explanation, for Glen's eyes only."""
-    return [(key, item["name"]) for key, items in plan_groups.items() for item in items
-            if not item["approved"]]
+    """(section, item, condition) ticked with no approved explanation, for Glen only."""
+    return [(key, line["name"], en["condition"]) for key, lines in plan_groups.items()
+            for line in lines for en in line["entries"] if not en["explanation"]]
 
 
-def render_plan_html(plan_groups, client_name="", date=""):
-    """The plan as a printable page. Nothing unapproved is printed."""
+def _line_html(line, show_kind):
+    e = html.escape
+    doses = {en["dose"] for en in line["entries"] if en["dose"]}
+    one_dose = doses.pop() if len(doses) == 1 else ""
+    head = (f"<span class=plan-name>{e(line['name'])}</span>"
+            + (f" <span class=plan-kind>{e(line['kind'])}</span>" if show_kind and line["kind"] else "")
+            + (f" <span class=plan-dose>{e(one_dose)}</span>" if one_dose else ""))
+    subs = []
+    for en in line["entries"]:
+        bits = [e(en["condition"])]
+        if en["overall"] is not None:
+            bits.append(f"score {_digit(en['overall'])}")
+        if en["name"] != line["name"]:
+            bits.append(e(en["name"]))
+        if en["dose"] and not one_dose:
+            bits.append(e(en["dose"]))
+        subs.append(f"<li><span class=plan-for>{' · '.join(bits)}</span>"
+                    + (f"<p class=plan-why>{e(en['explanation'])}</p>" if en["explanation"] else "")
+                    + "</li>")
+    return f"<li>{head}<ul class=plan-conds>{''.join(subs)}</ul></li>"
+
+
+def _by_score(lines, show_kind, meanings):
+    """Lines grouped under "Score N" headings, highest first (Glen, 2026-10-18). A
+    heading's one-line meaning prints only once Glen has approved it."""
+    out, current = [], None
+    for line in lines:
+        digit = _digit(line["overall"]) or "unrated"
+        if digit != current:
+            if current is not None:
+                out.append("</ul>")
+            title = f"Score {digit}" if digit != "unrated" else "Not yet scored"
+            meaning = (meanings or {}).get(digit, "")
+            out.append(f"<h4 class=plan-score>{e_(title)}</h4>"
+                       + (f"<p class=plan-score-means>{e_(meaning)}</p>" if meaning else "")
+                       + "<ul class=plan-list>")
+            current = digit
+        out.append(_line_html(line, show_kind))
+    if current is not None:
+        out.append("</ul>")
+    return "".join(out)
+
+
+def e_(text):
+    return html.escape(str(text))
+
+
+def render_plan_html(plan_groups, client_name="", date="", score_meanings=None):
+    """The plan as a printable page. Nothing unapproved is printed. Under Remedies,
+    sections mix within each score, so each line names its kind."""
     e = html.escape
     parts = []
     for heading, groups in HEADINGS:
-        lists = []
-        for key, title in groups:
-            items = plan_groups.get(key) or []
-            if not items:
-                continue
-            # Glen, 2026-10-18: "Integrate the reasoning below each item's line". The
-            # approved explanation only, never the internal reason.
-            rows = "".join(
-                f"<li><span class=plan-name>{e(i['name'])}</span>"
-                + (f" <span class=plan-dose>{e(i['dose'])}</span>" if i["dose"] else "")
-                + (f" <span class=plan-rating title='Overall rating'>{_digit(i['overall'])}</span>"
-                   if i["overall"] is not None else "")
-                + f" <span class=plan-for>for {e(', '.join(i['conditions']))}</span>"
-                + (f"<p class=plan-why>{e(i['explanation'])}</p>" if i["approved"] else "")
-                + "</li>"
-                for i in items)
-            lists.append(f"<h3>{e(title)}</h3><ul class=plan-list>{rows}</ul>")
-        if not lists:
-            continue
-        parts.append(f"<section class=plan-heading><h2>{e(heading)}</h2>"
-                     f"{''.join(lists)}</section>")
+        blocks = []
+        if heading == "Remedies":
+            lines = sorted((line for key, _ in groups for line in plan_groups.get(key) or []),
+                           key=lambda i: (-(i["overall"] or 0), i["name"].lower()))
+            if lines:
+                blocks.append(_by_score(lines, True, score_meanings))
+        else:
+            for key, title in groups:
+                lines = plan_groups.get(key) or []
+                if lines:
+                    sub = f"<h3>{e(title)}</h3>" if len(groups) > 1 else ""
+                    blocks.append(sub + _by_score(lines, False, score_meanings))
+        if blocks:
+            parts.append(f"<section class=plan-heading><h2>{e(heading)}</h2>"
+                         f"{''.join(blocks)}</section>")
     title = "Foods, Remedies and Healing Tools Plan"
     who = f"<p class=plan-who>{e(client_name)}{' · ' + e(date) if date else ''}</p>" \
         if client_name else ""
@@ -205,9 +238,12 @@ PLAN_CSS = (
     ".plan h2{font-size:20px;border-bottom:1px solid #c9d3d9;padding-bottom:4px;margin:26px 0 8px}"
     ".plan h3{font-size:15px;margin:14px 0 4px;color:#2f5d73}"
     ".plan-list{margin:0;padding-left:20px}.plan-list li{margin:2px 0}"
-    ".plan-dose{color:#3d4b55}.plan-for{color:#6b7a84;font-size:13px}"
-    ".plan-rating{display:inline-block;min-width:16px;padding:0 4px;border:1px solid #9fb3bf;"
-    "border-radius:3px;font:12px/16px system-ui,sans-serif;text-align:center;color:#2f5d73}"
+    ".plan-dose{color:#3d4b55}.plan-for{color:#56656f;font-size:13px}"
+    ".plan-kind{font:11px system-ui,sans-serif;color:#56656f;border:1px solid #c9d3d9;"
+    "border-radius:3px;padding:0 4px}"
+    ".plan-score{font:600 14px system-ui,sans-serif;color:#2f5d73;margin:14px 0 2px}"
+    ".plan-score-means{margin:0 0 4px;color:#56656f;font-size:13px}"
+    ".plan-conds{list-style:none;padding-left:12px;margin:2px 0 0}"
     ".plan-list li{margin:0 0 8px}.plan-why{margin:2px 0 0;color:#2b3a44}"
     "@media print{.plan{padding:0}.plan-heading{break-inside:auto}h2,h3{break-after:avoid}}"
 )
