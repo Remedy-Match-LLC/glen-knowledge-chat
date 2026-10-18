@@ -397,3 +397,113 @@ def test_conflicts_match_on_food_keys_when_names_are_phrases(cx):
     blood, ver = cs.sections_for(cx, "a49", "Blood"), cs.sections_for(cx, "a49", "Vertigo")
     assert cs.flag_food_conflicts([("Blood", True, blood), ("Vertigo", True, ver)]) == 1
     assert blood[1]["items"][0]["conflicts"] == ["Vertigo"]
+
+
+# --- the All box ----------------------------------------------------------
+# Glen, 2026-10-17: "Check the box and all the items in that group are added.
+# Uncheck, and only the ones individually checked are added. Unchecking doesn't
+# remove checks from those checked manually."
+
+def _foods(cx):
+    for name in ("Kale", "Beets", "Garlic"):
+        cs.upsert_item(cx, "Gut", "foods_emphasize", _item(name, 8, 5, 5))
+
+
+def _ticked(cx, section="foods_emphasize", test_id="a49"):
+    sec = next(s for s in cs.sections_for(cx, test_id, "Gut") if s["key"] == section)
+    return {i["name"] for i in sec["items"] if i["checked"]}, sec["all_on"]
+
+
+def test_all_on_ticks_every_shown_item(cx):
+    _foods(cx)
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, ["Kale", "Beets", "Garlic"])
+    assert _ticked(cx) == ({"Kale", "Beets", "Garlic"}, True)
+
+
+def test_all_off_keeps_the_items_ticked_by_hand(cx):
+    _foods(cx)
+    cs.save_pick(cx, "a49", "Gut", "foods_emphasize", "Beets", checked=True)
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, ["Kale", "Beets", "Garlic"])
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", False, ["Kale", "Beets", "Garlic"])
+    assert _ticked(cx) == ({"Beets"}, False)
+
+
+def test_an_item_reticked_by_hand_after_all_survives_all_off(cx):
+    _foods(cx)
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, ["Kale", "Beets", "Garlic"])
+    cs.save_pick(cx, "a49", "Gut", "foods_emphasize", "Kale", checked=False)
+    assert _ticked(cx)[1] is False      # unticking an item unticks the All box
+    cs.save_pick(cx, "a49", "Gut", "foods_emphasize", "Kale", checked=True)
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", False, [])
+    assert _ticked(cx) == ({"Kale"}, False)
+
+
+def test_all_ticks_only_the_names_shown_and_only_catalog_items(cx):
+    _foods(cx)
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, ["Kale", "Not listed"])
+    assert _ticked(cx) == ({"Kale"}, True)
+
+
+def test_all_belongs_to_one_section_and_one_client(cx):
+    _foods(cx)
+    cs.upsert_item(cx, "Gut", "foods_avoid", _item("Sugar", 8, 5, 5))
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, ["Kale"])
+    assert _ticked(cx, "foods_avoid") == (set(), False)
+    assert _ticked(cx, test_id="a50") == (set(), False)
+
+
+def test_all_on_formulations_adds_to_the_row_remedies_and_off_takes_back_only_those(cx):
+    chosen = cs.select_all(cx, "a49", "Gut", cs.FORMULATIONS, True,
+                           ["GI Repair", "Liver Lift"], ["GI Repair"])
+    assert chosen == ["GI Repair", "Liver Lift"]
+    assert cs.select_all(cx, "a49", "Gut", cs.FORMULATIONS, False,
+                         ["GI Repair", "Liver Lift"], chosen) == ["GI Repair"]
+
+
+def test_a_formulation_unticked_then_reticked_by_hand_survives_all_off(cx):
+    chosen = cs.select_all(cx, "a49", "Gut", cs.FORMULATIONS, True,
+                           ["GI Repair", "Liver Lift"], [])
+    cs.remedies_changed(cx, "a49", "Gut", chosen, ["GI Repair"])
+    sec = cs.sections_for(cx, "a49", "Gut", ["GI Repair", "Liver Lift"], ["GI Repair"])[0]
+    assert sec["all_on"] is False
+    cs.remedies_changed(cx, "a49", "Gut", ["GI Repair"], ["GI Repair", "Liver Lift"])
+    assert cs.select_all(cx, "a49", "Gut", cs.FORMULATIONS, False, [],
+                         ["GI Repair", "Liver Lift"]) == ["Liver Lift"]
+
+
+def test_all_box_renders_with_its_state(cx):
+    html = _rendered(cx)
+    assert html.count("class=clinical-section-allbox") == 3   # three sections have items
+    cs.select_all(cx, "a49", "Gut", "nutrients", True, ["L-glutamine"])
+    html = _rendered(cx)
+    assert ('class=clinical-section-allbox data-section="nutrients" checked '
+            'onchange=clinicalSectionAll(this)') in html
+
+
+def test_all_route_saves_formulations_as_the_row_remedies(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d
+    monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    from biofield_local_app import create_app
+    from dashboard.biofield_clinical_proposals import selections
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as con:
+        _foods(con)
+    client = create_app(db).test_client()
+    url = "/author/a49/clinical-sections/all"
+    ok = client.post(url, json={"label": "Gut", "section": cs.FORMULATIONS, "on": True,
+                                "names": ["GI Repair", "Liver Lift"], "remedies": []})
+    assert ok.status_code == 200 and ok.get_json()["ok"]
+    assert client.post(url, json={"label": "Gut", "section": "foods_emphasize",
+                                  "on": True, "names": ["Kale"]}).status_code == 200
+    assert client.post(url, json={"label": "Gut", "section": "bogus", "on": True,
+                                  "names": []}).status_code == 400
+    assert client.post(url, json={"label": "Gut", "section": "foods_emphasize",
+                                  "on": "yes", "names": []}).status_code == 400
+    # A remedy unticked by hand through the existing route unticks the All box.
+    client.post("/author/a49/clinical-items/selection",
+                json={"label": "Gut", "remedies": ["GI Repair"]})
+    with sqlite3.connect(db) as con:
+        assert selections(con, "a49")["gut"] == ["GI Repair"]
+        assert cs.sections_for(con, "a49", "Gut")[0]["all_on"] is False
+        assert _ticked(con) == ({"Kale"}, True)

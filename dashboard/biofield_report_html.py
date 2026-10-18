@@ -1433,6 +1433,21 @@ async function approveClinicalSectionItem(btn){
  if(j&&j.ok){location.reload();return}
  btn.disabled=false;var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent=(j&&j.error)||'Could not approve'}
+async function clinicalSectionAll(box){
+ var row=box.closest('.clinical-item'),sec=box.closest('.clinical-section');if(!row||!sec)return;
+ var key=sec.dataset.section,ff=key==='functional_formulations';
+ // Only the items on the page: a botanical the client's switch hides is not ticked.
+ var names=[].slice.call(sec.querySelectorAll(ff?'.clinical-remedy-choice':'.clinical-section-choice'))
+  .map(function(x){return ff?x.value:x.dataset.name});
+ var remedies=ff?[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
+  .map(function(x){return x.value}):[];
+ var stat=document.getElementById('clinicalOrderStat');
+ if(stat)stat.textContent='Saving…';box.disabled=true;
+ var j=await post('/author/__TID__/clinical-sections/all',
+  {label:row.dataset.label,section:key,on:box.checked,names:names,remedies:remedies});
+ if(j&&j.ok){location.reload();return}
+ box.disabled=false;box.checked=!box.checked;
+ if(stat)stat.textContent=(j&&j.error)||'Could not save'}
 async function saveClinicalBotanical(){
  var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent='Saving…';
@@ -2232,8 +2247,17 @@ def _clinical_sections_html(sections, remedy_choice):
             n = section["botanical_hidden"]
             body += (f"<span class=clinical-open>{n} botanical item{'s' if n != 1 else ''} "
                      "hidden for this client</span>")
+        # One box ticks every item shown in the section (Glen, 2026-10-17). Unticking it
+        # unticks only what it ticked; items ticked by hand stay.
+        all_box = ""
+        if bits:
+            all_box = (f"<label class=clinical-section-all><input type=checkbox "
+                       f"class=clinical-section-allbox data-section=\"{_e(key)}\""
+                       f"{' checked' if section.get('all_on') else ''} "
+                       "onchange=clinicalSectionAll(this)> All</label>")
         out.append(f"<div class=clinical-section data-section=\"{_e(key)}\">"
-                   f"<div class=clinical-section-title>{_e(title)}</div>{body}</div>")
+                   f"<div class=clinical-section-head><div class=clinical-section-title>"
+                   f"{_e(title)}</div>{all_box}</div>{body}</div>")
     return "".join(out)
 
 
@@ -2506,6 +2530,8 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-common label{white-space:nowrap}.clinical-common input{width:auto;margin:0 3px 0 0}"
             ".clinical-section{flex-basis:100%;margin:4px 0 2px}"
             ".clinical-section-title{font-weight:600;color:var(--text,inherit);margin:2px 0}"
+            ".clinical-section-head{display:flex;gap:10px;align-items:center}"
+            ".clinical-section-all{font-size:11px;color:var(--muted)}"
             ".clinical-section-item{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:1px 0}"
             ".clinical-common .clinical-section-item input.clinical-section-rating,"
             ".clinical-common .clinical-section-item input.clinical-section-dose{padding:1px 4px;margin:0;"
