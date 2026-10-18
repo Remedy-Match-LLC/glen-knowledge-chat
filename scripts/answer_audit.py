@@ -90,6 +90,17 @@ INVENTED_FORM_PATTERNS = (
     re.compile(r"menatetrenone"), re.compile(r"menadione"),
 )
 
+# A form the answer rules out ("MK-7 only, no K1") is the right answer, not an
+# invention, so a negation in the same clause skips it.
+_RULED_OUT = re.compile(r"\b(no|not|nor|without|neither|exclud\w*)\b|n't")
+
+def _clause(text, match):
+    """The clause holding `match`: bounded by . ; , ! ? or a line break."""
+    start = max(text.rfind(c, 0, match.start()) for c in ".;,!?\n") + 1
+    ends = [i for i in (text.find(c, match.end()) for c in ".;,!?\n") if i >= 0]
+    return text[start:min(ends) if ends else len(text)]
+
+
 MONEY = re.compile(r"\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)")
 MDLINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 BARE = re.compile(r"(?<!\()https?://[^\s)\]\"<>]+")
@@ -144,7 +155,8 @@ def audit(answer, products, group=None):
                 out.append(f"CLAIM: says '{phrase}', a phrase the bot has invented "
                            f"before; check whether a retrieved source states this")
         for pattern in INVENTED_FORM_PATTERNS:
-            found = pattern.search(low)
+            found = next((m for m in pattern.finditer(low)
+                          if not _RULED_OUT.search(_clause(low, m))), None)
             if found:
                 out.append(f"CLAIM: names the ingredient form '{found.group(0)}', which "
                            f"the bot has invented before; check whether a retrieved "

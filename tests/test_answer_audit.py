@@ -128,7 +128,8 @@ def test_catches_an_invented_ingredient_form(products):
 
 def test_spelling_variants_of_an_invented_form_are_caught(products):
     for text in ("It may also contain MK 4.", "It may also contain MK‑4.",
-                 "It may include K-1.", "It holds menaquinone 4.", "It holds menatetrenone."):
+                 "It may include K-1.", "It holds menaquinone 4.", "It holds menatetrenone.",
+                 "It also has phylloquinone.", "It also has menadione."):
         assert any("ingredient form" in x for x in aa.audit(text, products, "claim")), text
 
 
@@ -138,3 +139,14 @@ def test_an_empty_answer_is_flagged_not_passed(products):
         assert aa.audit("", products, group) == [
             "EMPTY: the bot returned no answer text; nothing was checked"]
         assert aa.audit("  \n", products, group)
+
+
+
+def test_a_form_the_answer_rules_out_is_not_flagged(products):
+    """Round 3 of #1944: the honest answer names the forms it excludes."""
+    for text in ("Vein Support's K2 is MK-7 only, with no K1 or MK-4.",
+                 "It does not contain menadione.", "Vitamin K1 isn't included."):
+        assert not [x for x in aa.audit(text, products, "claim") if "ingredient form" in x], text
+    # A ruled-out mention elsewhere does not hide a real claim.
+    f = aa.audit("It has no K1. It may also include MK-4.", products, "claim")
+    assert any("'mk-4'" in x for x in f), f
