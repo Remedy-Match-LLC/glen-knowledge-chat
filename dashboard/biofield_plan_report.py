@@ -107,30 +107,46 @@ def gather(cx, test_id):
     return out
 
 
+def _merge_key(section, name):
+    """One line per item; nutrients one line per nutrient, so "Selenium
+    (selenomethionine)" and "Selenium (as methylselenocysteine)" share one (Glen,
+    2026-10-18, "go ahead" on one line per nutrient)."""
+    if section == cs.NUTRIENTS:
+        from dashboard.e4l_nutrient_fields import primary_field
+        field = primary_field(name)
+        if field:
+            return "field:" + field
+    return _norm(name)
+
+
 def plan(cx, test_id):
-    """{group key: [item]} with repeats merged. An item carries its name, dose, the
-    overall digit, every condition it was ticked under, and its paragraph if
-    approved. `doses` lists every dose seen, so Glen can see where they differ."""
-    groups = {}
+    """{group key: [item]} with repeats merged. A line takes the name, dose and
+    paragraph of its highest-rated version and names every condition it was ticked
+    under. `doses` and `names` list every one seen, so Glen can see where they differ."""
+    variants = {}
     for section, label, name, dose, overall, explanation, approved in gather(cx, test_id):
-        bucket = groups.setdefault(section, {})
-        item = bucket.setdefault(_norm(name), {
-            "name": name, "dose": "", "doses": [], "overall": None, "conditions": [],
-            "explanation": "", "approved": False})
-        if label not in item["conditions"]:
-            item["conditions"].append(label)
-        if dose and dose not in item["doses"]:
-            item["doses"].append(dose)
-        item["dose"] = item["dose"] or dose or ""
-        if overall is not None and (item["overall"] is None or overall > item["overall"]):
-            item["overall"] = overall
-        if approved and explanation and not item["approved"]:
-            item["explanation"], item["approved"] = explanation, True
-        elif explanation and not item["explanation"]:
-            item["explanation"] = explanation
-    return {key: sorted(bucket.values(),
-                        key=lambda i: (-(i["overall"] or 0), i["name"].lower()))
-            for key, bucket in groups.items()}
+        variants.setdefault(section, {}).setdefault(_merge_key(section, name), []).append(
+            {"name": name, "label": label, "dose": dose or "", "overall": overall,
+             "explanation": explanation, "approved": approved})
+    groups = {}
+    for section, by_key in variants.items():
+        lines = []
+        for found in by_key.values():
+            best = sorted(found, key=lambda v: (-(v["overall"] or 0), not v["approved"]))[0]
+            approved = best if best["approved"] else next(
+                (v for v in found if v["approved"]), None)
+            line = {"name": best["name"], "dose": best["dose"], "overall": best["overall"],
+                    "conditions": [], "doses": [], "names": [],
+                    "explanation": approved["explanation"] if approved else best["explanation"],
+                    "approved": approved is not None}
+            for v in found:
+                for key, value in (("conditions", v["label"]), ("doses", v["dose"]),
+                                   ("names", v["name"])):
+                    if value and value not in line[key]:
+                        line[key].append(value)
+            lines.append(line)
+        groups[section] = sorted(lines, key=lambda i: (-(i["overall"] or 0), i["name"].lower()))
+    return groups
 
 
 def _digit(overall):
