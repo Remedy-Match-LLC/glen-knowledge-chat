@@ -138,7 +138,7 @@ def infoceutical_marks(cx, e4l_db, scan_id):
               "recommended_error": "the scan database could not be read",
               "purple_error": "the scan database could not be read"}
     try:
-        ecx = sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)
+        ecx = sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)  # raw-sqlite-ok: e4l.db, read only
     except sqlite3.Error:
         return unread
     try:
