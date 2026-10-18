@@ -1646,7 +1646,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 clinical_botanical = _cs.botanical_setting(cx, test_id)
                 # Which infoceuticals the client's latest scan recommends and which
                 # are purple on it (Glen, 2026-10-17). No scan, no marks.
-                scan_marks = None
+                scan_marks, _sctx = None, {}
                 try:
                     from dashboard.e4l_scan_marks import infoceutical_marks
                     _sctx = scan_lookup(c_email) if c_email else {}
@@ -1664,6 +1664,30 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         remedies=_item.get("common_remedies") or [],
                         chosen_remedies=_item.get("selected_remedies") or [],
                         botanical=clinical_botanical, marks=scan_marks)
+                # Purple infoceuticals tick themselves on a scan dated from 2026-10-18
+                # (Glen). A failure leaves the page as the practitioner left it.
+                # All rows commit together or none do.
+                _auto = False
+                try:
+                    for _item in clinical_checklist:
+                        _auto = bool(_cs.auto_tick_purple(
+                            cx, test_id, _item.get("label"), _item["sections"],
+                            _cs.row_ticks(_item),
+                            (scan_marks or {}).get("scan_id"),
+                            (_sctx or {}).get("scan_date") if scan_marks else "")) or _auto
+                    cx.commit()
+                except Exception as _ae:
+                    cx.rollback()
+                    _auto = False
+                    print(f"[auto-tick] {test_id}: skipped: {_ae!r}", flush=True)
+                if _auto:
+                    clinical_checklist = apply_selection(cx, test_id, clinical_checklist)
+                    for _item in clinical_checklist:
+                        _item["sections"] = _cs.sections_for(
+                            cx, test_id, _item.get("label"),
+                            remedies=_item.get("common_remedies") or [],
+                            chosen_remedies=_item.get("selected_remedies") or [],
+                            botanical=clinical_botanical, marks=scan_marks)
                 # A row counts as checked when it is ticked or any remedy on it is.
                 # The scan panel loads separately; it reads these labels to link a
                 # PRL focus area to this client's own conditions.
@@ -3642,7 +3666,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         section; for Functional Formulations `remedies` is the row's current ticks."""
         from dashboard.biofield_clinical_proposals import save_selection
         from dashboard.biofield_clinical_sections import (REMEDY_SECTIONS, checked_names,
-                                                          select_all)
+                                                          clear_auto_marks, select_all)
         body = request.get_json(silent=True) or {}
         label = str(body.get("label") or "").strip()
         section = str(body.get("section") or "").strip()
@@ -3656,6 +3680,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 chosen = select_all(cx, test_id, label, section, on, names, remedies)
                 if section in REMEDY_SECTIONS:
                     save_selection(cx, test_id, label, chosen)
+                    clear_auto_marks(cx, test_id, label, remedies, chosen)
                 else:
                     chosen = checked_names(cx, test_id, label, section, names)
                 cx.commit()

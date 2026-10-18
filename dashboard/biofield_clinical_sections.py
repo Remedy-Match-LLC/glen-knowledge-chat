@@ -136,6 +136,21 @@ def ensure_schema(cx):
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (item_key, name_key)
     )""")
+    # Each purple infoceutical the page ticked by itself on one scan (Glen, 2026-10-18:
+    # "tick purple infoceuticals automatically on every new scan"). Recorded once, so a
+    # tick taken off by hand stays off. added is 0 when it was already ticked.
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_autotick (
+        test_id TEXT NOT NULL, scan_id TEXT NOT NULL, item_key TEXT NOT NULL,
+        name_key TEXT NOT NULL, added INTEGER NOT NULL DEFAULT 0,
+        ticked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (test_id, scan_id, item_key, name_key)
+    )""")
+    # A condition row whose saved selection an auto tick created, from nothing ticked.
+    # Emptied again by hand, the row is removed, so the Plan does not list it.
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_autotick_row (
+        test_id TEXT NOT NULL, item_key TEXT NOT NULL,
+        PRIMARY KEY (test_id, item_key)
+    )""")
     # Whether a section's All box is ticked, per client and condition.
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_section_all (
         test_id TEXT NOT NULL, item_key TEXT NOT NULL, section TEXT NOT NULL,
@@ -406,6 +421,111 @@ def _watched(cx, item_key):
     return {r[0] for r in rows}, {r[1].upper() for r in rows if r[1]}
 
 
+# Glen, 2026-10-18: "only scans dated from today". Older scans are never auto-ticked.
+AUTOTICK_FROM = "2026-10-18"
+
+
+def _autoticked(cx, test_id, scan_id, item_key):
+    """{name_key: added} for what the page handled by itself on this scan."""
+    return {r[0]: bool(r[1]) for r in cx.execute(
+        "SELECT name_key,added FROM biofield_clinical_autotick WHERE test_id=? "
+        "AND scan_id=? AND item_key=?", (str(test_id), str(scan_id), item_key))}
+
+
+def _auto_added(cx, test_id, item_key):
+    """The names the page itself ticked on any scan, and no hand save has touched
+    since. Its tag stays while that tick does, scan after scan."""
+    return {r[0] for r in cx.execute(
+        "SELECT DISTINCT name_key FROM biofield_clinical_autotick WHERE test_id=? "
+        "AND item_key=? AND added=1", (str(test_id), item_key))}
+
+
+def _autotick_date_ok(scan_date):
+    """True only for a real YYYY-MM-DD date on or after AUTOTICK_FROM."""
+    import datetime
+    try:
+        day = datetime.date.fromisoformat(str(scan_date or "").strip()[:10])
+    except ValueError:
+        return False
+    return day >= datetime.date.fromisoformat(AUTOTICK_FROM)
+
+
+def row_ticks(item):
+    """The remedies a checklist row shows ticked, as the page draws them: the saved
+    set, or else the chain remedy that covers it."""
+    if item.get("selection_saved"):
+        return list(item.get("selected_remedies") or [])
+    covered = str(item.get("covered_by") or "").strip()
+    return [covered] if covered else []
+
+
+def auto_tick_purple(cx, test_id, label, sections, chosen, scan_id, scan_date):
+    """Tick each infoceutical that is purple on this scan, in one condition row.
+
+    Only a scan dated AUTOTICK_FROM or later. Only an entry whose purple is True, so
+    unread colours tick nothing. Each is recorded once per scan: one unticked by hand
+    is never ticked again, and nothing is ever unticked here. `chosen` is the row's
+    ticks as the page derived them; a saved selection read now wins over it. Returns
+    the names added. It never commits: the caller commits the whole page at once."""
+    if not scan_id or not _autotick_date_ok(scan_date):
+        return []
+    ensure_schema(cx)
+    from dashboard.biofield_clinical_proposals import _key, save_selection, selections
+    item_key = _norm(label)
+    saved = selections(cx, test_id)
+    current = saved.get(_key(label), list(chosen or []))
+    current_keys = {_norm(n) for n in current}
+    # One infoceutical spelled two ways is still one: purple is read by its code.
+    current_codes = {(infoceutical_code(n) or "").upper() for n in current} - {""}
+    info = next((s for s in sections or [] if s.get("key") == INFOCEUTICALS), None)
+    added = []
+    for entry in (info or {}).get("items") or []:
+        key = _norm(entry.get("name"))
+        if entry.get("purple") is not True or entry.get("hidden"):
+            continue
+        code = (entry.get("code") or "").upper()
+        ticked = key in current_keys or bool(code and code in current_codes)
+        # The row claims the item for this scan. A row already there means it was
+        # handled before, by this page or another tab, so it is left as it is.
+        claimed = cx.execute(
+            "INSERT OR IGNORE INTO biofield_clinical_autotick "
+            "(test_id,scan_id,item_key,name_key,added) VALUES (?,?,?,?,?)",
+            (str(test_id), str(scan_id), item_key, key, 0 if ticked else 1)).rowcount
+        if claimed and not ticked:
+            added.append(entry["name"])
+            current_keys.add(key)
+            if code:
+                current_codes.add(code)
+    if added:
+        if _key(label) not in saved and not current:
+            cx.execute("INSERT OR IGNORE INTO biofield_clinical_autotick_row "
+                       "(test_id,item_key) VALUES (?,?)", (str(test_id), item_key))
+        save_selection(cx, test_id, label, list(current) + added)
+    return added
+
+
+def clear_auto_marks(cx, test_id, label, before, after):
+    """A hand save changed these remedies, so none of them is the page's own tick
+    any more: one ticked again by hand must not read "auto"."""
+    ensure_schema(cx)
+    before_keys = {_norm(r) for r in before or []}
+    after_keys = {_norm(r) for r in after or []}
+    for key in before_keys ^ after_keys:
+        cx.execute("UPDATE biofield_clinical_autotick SET added=0 WHERE test_id=? "
+                   "AND item_key=? AND name_key=?", (str(test_id), _norm(label), key))
+    if not after_keys and cx.execute(
+            "DELETE FROM biofield_clinical_autotick_row WHERE test_id=? AND item_key=?",
+            (str(test_id), _norm(label))).rowcount:
+        # Nothing was ticked before the auto tick made this row: emptied, it goes.
+        from dashboard.biofield_clinical_proposals import _key
+        cx.execute("DELETE FROM biofield_clinical_selection WHERE test_id=? AND item_key=?",
+                   (str(test_id), _key(label)))
+    elif after_keys:
+        # A hand save that keeps ticks makes the row the practitioner's own.
+        cx.execute("DELETE FROM biofield_clinical_autotick_row WHERE test_id=? "
+                   "AND item_key=?", (str(test_id), _norm(label)))
+
+
 def _unhidden(cx, test_id, item_key):
     return {(r[0], r[1]) for r in cx.execute(
         "SELECT section,name_key FROM biofield_clinical_unhide WHERE test_id=? AND item_key=?",
@@ -558,6 +678,7 @@ def remedies_changed(cx, test_id, label, before, after):
     one the All box added, and the box itself unticks, as it does in the other
     sections and in PRL."""
     ensure_schema(cx)
+    clear_auto_marks(cx, test_id, label, before, after)
     item_key = _norm(label)
     after_keys = {_norm(r) for r in after or []}
     removed = [r for r in before or [] if _norm(r) not in after_keys]
@@ -645,6 +766,7 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
     all_on = _all_on(cx, test_id, item_key)
     unhidden = _unhidden(cx, test_id, item_key)
     watched_keys, watched_codes = _watched(cx, item_key)
+    autoticked = _auto_added(cx, test_id, item_key)
     by_section = {key: [] for key in SECTION_KEYS}
     rated, rated_info = {}, {}
     for entry in catalog:
@@ -695,6 +817,8 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
             entry["code"] = code
             entry["watched"] = key in watched_keys or bool(
                 code and code.upper() in watched_codes)
+            # Ticked by the page because it was purple, and still ticked.
+            entry["auto_ticked"] = bool(entry["checked"] and key in autoticked)
             if marks:
                 # No code, no answer: unknown, never "not recommended".
                 recommended = marks.get("recommended") if code else None
