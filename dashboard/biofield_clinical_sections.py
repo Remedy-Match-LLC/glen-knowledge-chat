@@ -136,6 +136,15 @@ def ensure_schema(cx):
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (item_key, name_key)
     )""")
+    # Each purple infoceutical the page ticked by itself on one scan (Glen, 2026-10-18:
+    # "tick purple infoceuticals automatically on every new scan"). Recorded once, so a
+    # tick taken off by hand stays off. added is 0 when it was already ticked.
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_autotick (
+        test_id TEXT NOT NULL, scan_id TEXT NOT NULL, item_key TEXT NOT NULL,
+        name_key TEXT NOT NULL, added INTEGER NOT NULL DEFAULT 0,
+        ticked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (test_id, scan_id, item_key, name_key)
+    )""")
     # Whether a section's All box is ticked, per client and condition.
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_section_all (
         test_id TEXT NOT NULL, item_key TEXT NOT NULL, section TEXT NOT NULL,
@@ -406,6 +415,51 @@ def _watched(cx, item_key):
     return {r[0] for r in rows}, {r[1].upper() for r in rows if r[1]}
 
 
+# Glen, 2026-10-18: "only scans dated from today". Older scans are never auto-ticked.
+AUTOTICK_FROM = "2026-10-18"
+
+
+def _autoticked(cx, test_id, scan_id, item_key):
+    """{name_key: added} for what the page ticked by itself on this scan."""
+    return {r[0]: bool(r[1]) for r in cx.execute(
+        "SELECT name_key,added FROM biofield_clinical_autotick WHERE test_id=? "
+        "AND scan_id=? AND item_key=?", (str(test_id), str(scan_id), item_key))}
+
+
+def auto_tick_purple(cx, test_id, label, sections, chosen, scan_id, scan_date):
+    """Tick each infoceutical that is purple on this scan, in one condition row.
+
+    Only a scan dated AUTOTICK_FROM or later. Only an entry whose purple is True, so
+    unread colours tick nothing. Each is recorded once per scan: one unticked by hand
+    is never ticked again, and nothing is ever unticked here. Returns the names added
+    to the row's remedies, after saving and committing them."""
+    if not scan_id or str(scan_date or "")[:10] < AUTOTICK_FROM:
+        return []
+    ensure_schema(cx)
+    item_key = _norm(label)
+    done = _autoticked(cx, test_id, scan_id, item_key)
+    info = next((s for s in sections or [] if s.get("key") == INFOCEUTICALS), None)
+    added, seen = [], set()
+    for entry in (info or {}).get("items") or []:
+        key = _norm(entry.get("name"))
+        if entry.get("purple") is not True or entry.get("hidden") \
+                or key in done or key in seen:
+            continue
+        seen.add(key)
+        if not entry.get("checked"):
+            added.append(entry["name"])
+        cx.execute("INSERT OR IGNORE INTO biofield_clinical_autotick "
+                   "(test_id,scan_id,item_key,name_key,added) VALUES (?,?,?,?,?)",
+                   (str(test_id), str(scan_id), item_key, key,
+                    0 if entry.get("checked") else 1))
+    if added:
+        from dashboard.biofield_clinical_proposals import save_selection
+        save_selection(cx, test_id, label, list(chosen or []) + added)
+    if seen:
+        cx.commit()
+    return added
+
+
 def _unhidden(cx, test_id, item_key):
     return {(r[0], r[1]) for r in cx.execute(
         "SELECT section,name_key FROM biofield_clinical_unhide WHERE test_id=? AND item_key=?",
@@ -645,6 +699,7 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
     all_on = _all_on(cx, test_id, item_key)
     unhidden = _unhidden(cx, test_id, item_key)
     watched_keys, watched_codes = _watched(cx, item_key)
+    autoticked = _autoticked(cx, test_id, (marks or {}).get("scan_id") or "", item_key)
     by_section = {key: [] for key in SECTION_KEYS}
     rated, rated_info = {}, {}
     for entry in catalog:
@@ -695,6 +750,8 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
             entry["code"] = code
             entry["watched"] = key in watched_keys or bool(
                 code and code.upper() in watched_codes)
+            # Ticked by the page because it was purple, and still ticked.
+            entry["auto_ticked"] = bool(entry["checked"] and autoticked.get(key))
             if marks:
                 # No code, no answer: unknown, never "not recommended".
                 recommended = marks.get("recommended") if code else None

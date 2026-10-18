@@ -2299,6 +2299,10 @@ def _clinical_sections_html(sections, remedy_choice):
                               f"title=\"{_e(field)}: {_e(shown_colour)} on this scan\" "
                               f"aria-label=\"{_e(field)}: {_e(shown_colour)} on this scan\">"
                               "</span>")
+            if entry.get("auto_ticked"):
+                flags += ("<span class='clinical-section-flag auto-tick' title='Ticked "
+                          "automatically because it is purple on this scan. Untick it "
+                          "and it stays unticked.'>auto: purple</span>")
             if entry.get("watch_hit"):
                 flags += ("<span class='clinical-section-flag watch-hit' title='Watched: "
                           "recommend whenever it shows purple on a scan'>"

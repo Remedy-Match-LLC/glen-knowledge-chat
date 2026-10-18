@@ -1646,7 +1646,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 clinical_botanical = _cs.botanical_setting(cx, test_id)
                 # Which infoceuticals the client's latest scan recommends and which
                 # are purple on it (Glen, 2026-10-17). No scan, no marks.
-                scan_marks = None
+                scan_marks, _sctx = None, {}
                 try:
                     from dashboard.e4l_scan_marks import infoceutical_marks
                     _sctx = scan_lookup(c_email) if c_email else {}
@@ -1664,6 +1664,27 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         remedies=_item.get("common_remedies") or [],
                         chosen_remedies=_item.get("selected_remedies") or [],
                         botanical=clinical_botanical, marks=scan_marks)
+                # Purple infoceuticals tick themselves on a scan dated from 2026-10-18
+                # (Glen). A failure leaves the page as the practitioner left it.
+                _auto = False
+                for _item in clinical_checklist:
+                    try:
+                        _auto = bool(_cs.auto_tick_purple(
+                            cx, test_id, _item.get("label"), _item["sections"],
+                            _item.get("selected_remedies") or [],
+                            (scan_marks or {}).get("scan_id"),
+                            (_sctx or {}).get("scan_date") if scan_marks else "")) or _auto
+                    except Exception as _ae:
+                        cx.rollback()
+                        print(f"[auto-tick] {test_id}: skipped: {_ae!r}", flush=True)
+                if _auto:
+                    clinical_checklist = apply_selection(cx, test_id, clinical_checklist)
+                    for _item in clinical_checklist:
+                        _item["sections"] = _cs.sections_for(
+                            cx, test_id, _item.get("label"),
+                            remedies=_item.get("common_remedies") or [],
+                            chosen_remedies=_item.get("selected_remedies") or [],
+                            botanical=clinical_botanical, marks=scan_marks)
                 # A row counts as checked when it is ticked or any remedy on it is.
                 # The scan panel loads separately; it reads these labels to link a
                 # PRL focus area to this client's own conditions.
