@@ -13224,6 +13224,8 @@
     }
    ],
    "directions": "Take 1 scoop 2 times daily in a drink, or as guided.",
+   "intro": "Melissa 20:1 Extract Powder is an extract of Melissa officinalis, the herb commonly called lemon balm.",
+   "description": "Lemon balm is a member of the mint family.\n\nEach scoop holds 500 mg of Melissa 20:1 extract.",
    "volume_eligible": false,
    "sku_discount_floor_pct": 0.75,
    "sku_points_floor_pct": 0.75,
