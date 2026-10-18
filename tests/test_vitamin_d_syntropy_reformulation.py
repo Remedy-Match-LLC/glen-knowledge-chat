@@ -59,7 +59,7 @@ IMAGES = [
     ("/static/product-photos/vitamin-d-syntropy-1.webp",
      "A woman greeting the morning sun on a Hawaiian beach"),
     ("/static/product-photos/vitamin-d-syntropy-2.webp",
-     "Hop cones, flame of the forest flowers, powders and a violet glass bottle in morning sun"),
+     "Hop cones, flame of the forest flowers, golden powders and a dark amber glass bottle in morning sun"),
     ("/static/product-photos/vitamin-d-syntropy-3.webp",
      "Hop cones glowing on the vine in early sun"),
 ]
