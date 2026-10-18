@@ -285,3 +285,76 @@ def test_two_spellings_of_one_code_tick_once(cx):
     secs = cs.sections_for(cx, "a49", "Blood", [short], [short], marks=PURPLE)
     added = cs.auto_tick_purple(cx, "a49", "Blood", secs, [short], "7", "2026-10-18")
     assert added == [EI10]
+
+
+def test_the_tag_stays_on_the_next_scan_while_the_tick_stays(cx):
+    _run(cx)
+    chosen = selections(cx, "a49")["blood"]
+    assert _run(cx, chosen=chosen, scan_id="8") == []
+    info = _info(cs.sections_for(cx, "a49", "Blood", [], chosen,
+                                 marks=dict(PURPLE, scan_id="8")))
+    assert info["ED5"]["auto_ticked"] is True
+
+
+def test_an_untouched_row_emptied_by_hand_leaves_the_plan(cx, tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    from biofield_local_app import create_app
+    from dashboard.biofield_clinical_proposals import selected_items
+    _run(cx)
+    assert [i["label"] for i in selected_items(cx, "a49")] == ["Blood"]
+    client = create_app(str(tmp_path / "chat_log.db")).test_client()
+    client.post("/author/a49/clinical-items/selection",
+                json={"label": "Blood", "remedies": []})
+    assert selected_items(cx, "a49") == []
+    # The emptied row is not ticked again on this scan.
+    assert _run(cx) == []
+
+
+def test_a_row_ticked_by_hand_before_is_never_removed(cx, tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    from biofield_local_app import create_app
+    from dashboard.biofield_clinical_proposals import save_selection, selected_items
+    save_selection(cx, "a49", "Blood", ["Fibrosolve"])
+    cx.commit()
+    _run(cx, chosen=["Fibrosolve"])
+    client = create_app(str(tmp_path / "chat_log.db")).test_client()
+    client.post("/author/a49/clinical-items/selection",
+                json={"label": "Blood", "remedies": []})
+    assert [i["label"] for i in selected_items(cx, "a49")] == ["Blood"]
+
+
+def test_a_row_kept_by_hand_then_emptied_stays(cx, tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    from biofield_local_app import create_app
+    from dashboard.biofield_clinical_proposals import selected_items
+    _run(cx)
+    client = create_app(str(tmp_path / "chat_log.db")).test_client()
+    url = "/author/a49/clinical-items/selection"
+    client.post(url, json={"label": "Blood", "remedies": [ED5]})
+    client.post(url, json={"label": "Blood", "remedies": []})
+    assert [i["label"] for i in selected_items(cx, "a49")] == ["Blood"]
+
+
+def test_a_hidden_item_is_never_auto_ticked(cx, monkeypatch):
+    real = cs.sections_for
+
+    def hide(*a, **k):
+        out = real(*a, **k)
+        for sec in out:
+            for e in sec["items"]:
+                if e.get("code") == "ED5":
+                    e["hidden"] = True
+        return out
+
+    monkeypatch.setattr(cs, "sections_for", hide)
+    assert _run(cx) == [EI10]
+
+
+def test_a_date_with_a_time_counts(cx):
+    assert sorted(_run(cx, date="2026-10-18 09:00")) == sorted([ED5, EI10])
