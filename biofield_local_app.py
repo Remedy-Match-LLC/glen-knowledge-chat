@@ -1500,8 +1500,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         A box for Glen, never printed, names the ticked items with no approved
         explanation yet."""
         from html import escape
-        from dashboard.biofield_plan_report import plan_page
+        from dashboard.biofield_plan_report import lost_ticks, plan_page
         rep, section, lacking = _plan_for(test_id)
+        with sqlite3.connect(db_path) as cx:
+            lost = lost_ticks(cx, test_id)
         note = ""
         if lacking:
             rows = "".join(f"<li>{escape(name)} ({escape(cond)})</li>"
@@ -1510,6 +1512,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     f"entr{'y has' if len(lacking) == 1 else 'ies have'} no approved "
                     "explanation, so each prints its line alone. Not printed.</summary>"
                     f"<ul>{rows}</ul></details>")
+        if lost:
+            # A tick that cannot print must not vanish without a word to Glen.
+            rows = "".join(f"<li>{escape(name)} ({escape(cond)}): {escape(why)}</li>"
+                           for _, cond, name, why in lost)
+            note += (f"<details class=plan-glen open><summary>{len(lost)} ticked "
+                     f"entr{'y is' if len(lost) == 1 else 'ies are'} left out of the "
+                     "Plan. Not printed.</summary>"
+                     f"<ul>{rows}</ul></details>")
         return Response(plan_page(f"<div class=plan>{note}</div>{section}" if note
                                   else section), mimetype="text/html")
 

@@ -140,12 +140,19 @@ def client(tmp_path, monkeypatch):
     import dashboard as _d
     monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
     import biofield_local_app as bla
-    written = []
-    monkeypatch.setattr(bla, "save_report_pdf",
-                        lambda html, out: written.append(html) or out)
+    written, published = [], []
+
+    def fake_pdf(html, out):
+        written.append((html, out))
+        with open(out, "wb") as f:
+            f.write(b"%PDF fake")
+        return out
+    monkeypatch.setattr(bla, "save_report_pdf", fake_pdf)
+    monkeypatch.setenv("BIOFIELD_REPORTS_DIR", str(tmp_path))
     db = str(tmp_path / "chat_log.db")
-    c = bla.create_app(db).test_client()
-    c.db, c.written = db, written
+    # Publishing is recorded, never run: the real one can email a client.
+    c = bla.create_app(db, auto_publish=lambda *a, **k: published.append(a) or {}).test_client()
+    c.db, c.written, c.published = db, written, published
     return c
 
 
@@ -207,3 +214,129 @@ def test_the_condition_loader_reads_extra_explanations(cx, tmp_path):
     assert (report["extra_explanations_applied"], report["extra_explanations_waiting"]) == (1, 1)
     assert cx.execute("SELECT name FROM biofield_clinical_extra_explanation").fetchall() == [
         ("WholOmega 120 gelcaps",)]
+
+
+
+def _new_test(client):
+    return client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
+
+
+def test_the_pdf_routes_print_the_plan_without_glens_note(client, tmp_path):
+    tid = _new_test(client)
+    with sqlite3.connect(client.db) as con:
+        cs.upsert_item(con, "Gut", "foods_avoid", _item("Gluten", 6), origin_test=tid)
+        cs.save_pick(con, tid, "Gut", "foods_avoid", "Gluten", checked=True)
+    r = client.get(f"/test/{tid}/plan.pdf")
+    assert r.status_code == 200 and r.data == b"%PDF fake"
+    html, out = client.written[-1]
+    assert "Gluten" in html and "plan-glen" not in html.replace(".plan-glen{", "")
+    assert out.endswith(".pdf") and "/plan_" in out
+    assert client.published == []   # the Plan alone never publishes
+    r = client.get(f"/test/{tid}/report.pdf?plan=1")
+    assert r.status_code == 200
+    html, out = client.written[-1]
+    assert out.endswith("_with_plan.pdf") and "break-before:page" in html and "Gluten" in html
+    assert "no approved explanation" not in html
+    r = client.get(f"/test/{tid}/report.pdf")
+    html, out = client.written[-1]
+    assert not out.endswith("_with_plan.pdf") and "plan-appended" not in html
+
+
+def test_a_dismissed_or_folded_row_does_not_print_and_glen_is_told(client):
+    from dashboard.biofield_clinical_checklist import alias_condition
+    from dashboard.biofield_clinical_proposals import decide, save_selection
+    tid = _new_test(client)
+    with sqlite3.connect(client.db) as con:
+        con.row_factory = None
+        save_selection(con, tid, "Vertigo", ["GI Repair"])
+        save_selection(con, tid, "Low estrogen", ["Estro Balance"])
+        save_selection(con, tid, "Gut", ["Fibrosolve"])
+        decide(con, tid, "Vertigo", "dismissed")
+        alias_condition(con, "Low estrogen", "Adrenal fatigue")
+        con.commit()
+        names = [line["name"] for line in pr.plan(con, tid).get(cs.FORMULATIONS, [])]
+        assert names == ["Fibrosolve"]
+        whys = {name: why for _, _, name, why in pr.lost_ticks(con, tid)}
+    assert whys == {"GI Repair": "its row was dismissed",
+                    "Estro Balance": "its row was folded into Adrenal fatigue"}
+    page = client.get(f"/test/{tid}/plan").get_data(as_text=True)
+    assert "2 ticked entries are left out of the Plan" in page
+
+
+def test_a_lost_pick_is_named_in_the_note(cx):
+    _tick(cx, "Gut", "foods_avoid", _item("Gluten", 6))
+    cx.execute("DELETE FROM biofield_clinical_section_item")
+    assert pr.plan(cx, "a49") == {}
+    assert pr.lost_ticks(cx, "a49") == [("foods_avoid", "Gut", "gluten",
+                                         "the item left the catalog")]
+
+
+def test_the_rows_display_name_prints_not_its_key(cx):
+    from dashboard.biofield_clinical_checklist import set_display_label
+    _tick(cx, "adrenal fatigue current 2023", "foods_avoid", _item("Gluten", 6))
+    set_display_label(cx, "adrenal fatigue current 2023", "Adrenal fatigue (2023)")
+    entry = pr.plan(cx, "a49")["foods_avoid"][0]["entries"][0]
+    assert entry["condition"] == "Adrenal fatigue (2023)"
+
+
+def test_the_clients_own_score_and_dose_win_for_a_remedy(cx):
+    from dashboard.biofield_clinical_proposals import save_selection
+    cs.upsert_item(cx, "Gut", cs.FORMULATIONS, _item("GI Repair", 9, dose="1 scoop"))
+    save_selection(cx, "a49", "Gut", ["GI Repair"])
+    cs.save_pick(cx, "a49", "Gut", cs.FORMULATIONS, "GI Repair",
+                 rating="574", dose="2 scoops twice daily")
+    line = pr.plan(cx, "a49")[cs.FORMULATIONS][0]
+    assert (line["overall"], line["entries"][0]["dose"]) == (5, "2 scoops twice daily")
+
+
+def test_an_infoceutical_without_a_code_keeps_its_section_and_explanation(cx):
+    from dashboard.biofield_clinical_proposals import save_selection
+    cs.upsert_item(cx, "Gut", cs.INFOCEUTICALS, _item("Gut Calm", 7, "Calms.", True))
+    save_selection(cx, "a49", "Gut", ["Gut Calm"])
+    line = pr.plan(cx, "a49")[cs.INFOCEUTICALS][0]
+    assert line["entries"][0]["explanation"] == "Calms."
+
+
+def test_a_merged_group_never_absorbs_an_item_that_only_shares_its_name(cx):
+    _tick(cx, "Gut", cs.NUTRIENTS, _item("Magnesium glycinate", 7))
+    _tick(cx, "Gut", cs.NUTRIENTS, _item("Magnesium", 6))
+    merge_map = {("nutrients_botanicals", "magnesium glycinate"): "Magnesium"}
+    lines = pr.plan(cx, "a49", merge_map)[cs.NUTRIENTS]
+    assert len(lines) == 2
+
+
+def test_a_dose_heads_the_line_only_when_every_condition_gives_it(cx):
+    _tick(cx, "Gut", cs.NUTRIENTS, _item("Zinc", 7, dose="15 mg"))
+    _tick(cx, "Skin", cs.NUTRIENTS, _item("Zinc", 6))
+    html = pr._line_html(pr.plan(cx, "a49", {})[cs.NUTRIENTS][0], False)
+    assert "plan-dose" not in html and "Gut · score 7 · 15 mg" in html
+
+
+def test_an_extra_never_stands_in_for_a_catalog_rows_withdrawn_approval(cx):
+    from dashboard.biofield_clinical_proposals import save_selection
+    cs.upsert_item(cx, "Gut", cs.FORMULATIONS, _item("Soothe Powder", 7, "Row.", False))
+    cs.set_extra_explanations(cx, "Gut", {"Soothe Powder": {
+        "section": cs.FORMULATIONS, "explanation": "Old extra.", "explanation_approved": True}})
+    save_selection(cx, "a49", "Gut", ["Soothe Powder"])
+    assert pr.plan(cx, "a49")[cs.FORMULATIONS][0]["entries"][0]["explanation"] == ""
+
+
+def test_a_file_without_the_fields_keeps_stored_explanations(cx):
+    cs.upsert_item(cx, "Gut", cs.NUTRIENTS, _item("Zinc", 7, "Zinc text.", True))
+    older = _item("Zinc", 8)
+    del older["explanation"], older["explanation_approved"]
+    cs.upsert_item(cx, "Gut", cs.NUTRIENTS, older)
+    assert cx.execute("SELECT overall,explanation,explanation_approved FROM "
+                      "biofield_clinical_section_item").fetchone() == (8, "Zinc text.", 1)
+    cs.set_extra_explanations(cx, "Gut", {"X": {"explanation": "x",
+                                                 "explanation_approved": True}})
+    assert cs.set_extra_explanations(cx, "Gut", None) == (0, 0)
+    assert cx.execute("SELECT COUNT(*) FROM biofield_clinical_extra_explanation").fetchone() == (1,)
+
+
+def test_an_unrated_prl_tick_is_named_not_dropped(cx):
+    from dashboard import biofield_prl_section as prl
+    prl.ensure_schema(cx)
+    cx.execute("INSERT INTO biofield_prl_pick (test_id,focus_area_id,name_key,checked) "
+               "VALUES ('a49',1,'detox drops',1)")
+    assert pr.lost_ticks(cx, "a49") == [("prl", "PRL", "detox drops", "it has no rating row")]

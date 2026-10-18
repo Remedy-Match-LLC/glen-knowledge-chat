@@ -62,14 +62,22 @@ def _remedy_section(name):
     return cs.FORMULATIONS
 
 
-def gather(cx, test_id):
+def gather(cx, test_id, lost=None):
     """[(section, condition label, name, dose, overall, explanation, approved)] for
-    every ticked item, before merging repeats."""
-    from dashboard.biofield_clinical_proposals import selections
+    every ticked item, before merging repeats. A tick that cannot print is added to
+    `lost` as (section, condition, name, why), for Glen's note."""
+    from dashboard.biofield_clinical_checklist import aliases, display_labels
+    from dashboard.biofield_clinical_proposals import dismissed_labels, selections
     cs.ensure_schema(cx)
     test_id = str(test_id)
     labels = _labels(cx, test_id)
-    out, cache = [], {}
+    shown = display_labels(cx)
+    lost = [] if lost is None else lost
+    out, cache, pick_cache = [], {}, {}
+    # A dismissed row is off the Summary. A folded row's own ticks are not shown on
+    # it either, so neither prints; Glen's note names them.
+    dismissed = {_norm(label) for label in dismissed_labels(cx, test_id)}
+    folded = aliases(cx)
     # Shared-list remedies ticked with no item in the condition's file.
     extra = {(r[0], r[1], r[2]): r[3] for r in cx.execute(
         "SELECT item_key,section,name_key,explanation FROM biofield_clinical_extra_explanation")}
@@ -79,43 +87,89 @@ def gather(cx, test_id):
             cache[item_key] = _item_rows(cx, item_key)
         return cache[item_key]
 
+    def picks(item_key):
+        if item_key not in pick_cache:
+            pick_cache[item_key] = cs._picks(cx, test_id, item_key)
+        return pick_cache[item_key]
+
+    def label_for(item_key):
+        return shown.get(item_key) or labels.get(item_key) or item_key.capitalize()
+
+    def off_summary(section, item_key, name):
+        if item_key in dismissed:
+            lost.append((section, label_for(item_key), name, "its row was dismissed"))
+            return True
+        if item_key in folded:
+            lost.append((section, label_for(item_key), name,
+                         f"its row was folded into {folded[item_key]}"))
+            return True
+        return False
+
     # Functional Formulations and Infoceuticals: the row's ticked remedies.
     for item_key, names in selections(cx, test_id).items():
         for name in names:
-            section = _remedy_section(name)
-            row = rows(item_key).get((section, _norm(name))) \
-                or rows(item_key).get((cs.FORMULATIONS, _norm(name))) or {}
+            key = _norm(name)
+            # Catalogued under Infoceuticals counts, as on the Summary.
+            section = cs.INFOCEUTICALS if (cs.INFOCEUTICALS, key) in rows(item_key) \
+                else _remedy_section(name)
+            if off_summary(section, item_key, name):
+                continue
+            row = rows(item_key).get((section, key)) \
+                or rows(item_key).get((cs.FORMULATIONS, key)) or {}
             explanation, approved = row.get("explanation") or "", bool(row.get("approved"))
-            if not approved:
-                text = extra.get((item_key, section, _norm(name))) \
-                    or extra.get((item_key, cs.FORMULATIONS, _norm(name)))
+            # An extra explains only a remedy with no catalog row.
+            if not row:
+                text = extra.get((item_key, section, key)) \
+                    or extra.get((item_key, cs.FORMULATIONS, key))
                 if text:
                     explanation, approved = text, True
-            out.append((section, labels.get(item_key, item_key.capitalize()), name,
-                        row.get("dose") or "", row.get("overall"), explanation, approved))
+            # The client's own score and dose win, as on the Summary.
+            pick = picks(item_key).get((section, key)) \
+                or picks(item_key).get((cs.FORMULATIONS, key)) or {}
+            overall = pick.get("overall") if pick.get("overall") is not None \
+                else row.get("overall")
+            out.append((section, label_for(item_key), name,
+                        pick.get("dose") or row.get("dose") or "", overall,
+                        explanation, approved))
     # Every other section: the ticks kept per item.
     for item_key, section, name_key, dose, overall in cx.execute(
             "SELECT item_key,section,name_key,dose,overall FROM "
             "biofield_clinical_section_pick WHERE test_id=? AND checked=1", (test_id,)):
         row = rows(item_key).get((section, name_key))
+        name = row["name"] if row else name_key
+        if off_summary(section, item_key, name):
+            continue
         if not row:
-            continue   # the item left the catalog; nothing to name
-        out.append((section, labels.get(item_key, item_key.capitalize()), row["name"],
+            lost.append((section, label_for(item_key), name_key,
+                         "the item left the catalog"))
+            continue
+        out.append((section, label_for(item_key), row["name"],
                     dose or row["dose"], overall if overall is not None else row["overall"],
                     row["explanation"], row["approved"]))
     # PRL products ticked in a focus area.
     try:
         prl = cx.execute(
-            "SELECT r.name,COALESCE(p.overall,r.overall),COALESCE(m.display_name,'') "
-            "FROM biofield_prl_pick p JOIN biofield_prl_rating r ON "
+            "SELECT p.name_key,r.name,COALESCE(p.overall,r.overall),"
+            "COALESCE(m.display_name,'') "
+            "FROM biofield_prl_pick p LEFT JOIN biofield_prl_rating r ON "
             "r.focus_area_id=p.focus_area_id AND r.name_key=p.name_key "
             "LEFT JOIN biofield_prl_condition_map m ON m.focus_area_id=p.focus_area_id "
             "WHERE p.test_id=? AND p.checked=1", (test_id,)).fetchall()
     except Exception:  # PRL tables absent
         prl = []
-    for name, overall, area in prl:
+    for name_key, name, overall, area in prl:
+        if name is None:
+            lost.append(("prl", area or "PRL", name_key, "it has no rating row"))
+            continue
         out.append(("prl", area or "PRL", name, "", overall, "", False))
     return out
+
+
+def lost_ticks(cx, test_id):
+    """(section, condition, name, why) for each tick the Plan cannot print."""
+    lost = []
+    gather(cx, test_id, lost)
+    return lost
 
 
 # What each section is called beside an item under Remedies, where sections mix.
@@ -215,7 +269,8 @@ def plan(cx, test_id, merge_map=None):
         if shared and _SCOPE.get(section) == "nutrients_botanicals":
             section = cs.NUTRIENTS
         bucket = groups.setdefault(section, {})
-        line = bucket.setdefault(_norm(shared or name), {
+        # A merged group never shares a line with an item that merely has its name.
+        line = bucket.setdefault(("merged", _norm(shared)) if shared else ("name", _norm(name)), {
             "name": shared or name, "kind": KIND.get(section, ""), "overall": None,
             "entries": []})
         if overall is not None and (line["overall"] is None or overall > line["overall"]):
@@ -244,7 +299,8 @@ def missing(plan_groups):
 
 def _line_html(line, show_kind):
     e = html.escape
-    doses = {en["dose"] for en in line["entries"] if en["dose"]}
+    # One dose heads the line only when every condition gives that same dose.
+    doses = {en["dose"] for en in line["entries"]}
     one_dose = doses.pop() if len(doses) == 1 else ""
     head = (f"<span class=plan-name>{e(line['name'])}</span>"
             + (f" <span class=plan-kind>{e(line['kind'])}</span>" if show_kind and line["kind"] else "")
