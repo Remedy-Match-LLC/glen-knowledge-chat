@@ -2239,6 +2239,8 @@ _CUE_NAMES = frozenset({
     # Caution-only products (chat_caution): "brain cleanse" in lowercase still brings
     # the caution (formulation spec 2026-10-15-brain-cleanse-caution, review round 3).
     "brain-cleanse", "sleep-bundle", "brain-program",
+    # "how do i take soothe powder?" (store spec 2026-10-18-soothe-powder-scoop).
+    "soothe-powder",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
