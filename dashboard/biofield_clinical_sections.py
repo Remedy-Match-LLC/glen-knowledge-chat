@@ -36,6 +36,7 @@ INFOCEUTICALS = "infoceuticals"
 FULLSCRIPT = "fullscript"
 NUTRIENTS = "nutrients"
 BOTANICALS = "botanicals"
+HEALING_TOOLS = "healing_tools"
 SECTIONS = (
     (FORMULATIONS, "Functional Formulations"),
     (INFOCEUTICALS, "Infoceuticals"),
@@ -45,14 +46,17 @@ SECTIONS = (
     # Glen, 2026-10-18: "yes, a Botanicals section beside Nutrients". Nutrients hold
     # vitamins, minerals, fats and amino acids; botanical ingredients go here.
     (BOTANICALS, "Botanicals"),
+    # Glen, 2026-10-18: devices and therapies such as Kloud, Molecular Hydrogen,
+    # Microwater, Photobiomodulation and Microcurrent. Not botanicals.
+    (HEALING_TOOLS, "Healing Tools"),
     (FULLSCRIPT, "Fullscript supplements"),
 )
 SECTION_KEYS = tuple(key for key, _ in SECTIONS)
 SCORES = ("overall", "research", "uniqueness")
 # Both are the row's remedy list: their ticks live in biofield_clinical_selection.
 REMEDY_SECTIONS = (FORMULATIONS, INFOCEUTICALS)
-# Sections whose items carry an editable dose.
-DOSED_SECTIONS = (NUTRIENTS, BOTANICALS)
+# Sections whose items carry an editable dose; a healing tool's is its usage line.
+DOSED_SECTIONS = (NUTRIENTS, BOTANICALS, HEALING_TOOLS)
 
 # Glen, 2026-10-17: Infoceuticals get a section of their own, apart from Functional
 # Formulations. MRs are not infoceuticals (Glen, same day), and neither are ERs.
@@ -496,7 +500,7 @@ def _apply_pick(entry, pick):
 
 def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=None,
                  marks=None):
-    """The seven sections for one condition row, each sorted highest rating first.
+    """The eight sections for one condition row, each sorted highest rating first.
 
     `remedies` is the row's existing remedy list. Formulations the content adds
     follow it, unless Glen deleted them from this condition. `chosen_remedies` is
@@ -609,7 +613,7 @@ def _marks_errors(marks, key=INFOCEUTICALS):
     """What could not be read, as lines for the page, so an unread mark never
     looks like a clean "no"."""
     out = []
-    if key in DOSED_SECTIONS:
+    if key in (NUTRIENTS, BOTANICALS):
         if marks and marks.get("colours") is None:
             out.append(("Colours could not be read from the scan PDF",
                         marks.get("purple_error") or ""))

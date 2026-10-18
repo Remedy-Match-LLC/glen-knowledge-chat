@@ -2209,7 +2209,7 @@ def _clinical_sections_html(sections, remedy_choice):
     three digits (10 as X) that Glen can retype for this client; nutrients carry an
     editable dose; Fullscript items link to the store front door only."""
     from dashboard.biofield_clinical_sections import (
-        DOSED_SECTIONS, FULLSCRIPT, REMEDY_SECTIONS, fullscript_store_url)
+        DOSED_SECTIONS, FULLSCRIPT, HEALING_TOOLS, REMEDY_SECTIONS, fullscript_store_url)
     out = []
     for section in sections:
         key, title = section.get("key"), section.get("title") or ""
@@ -2276,7 +2276,8 @@ def _clinical_sections_html(sections, remedy_choice):
             if key in DOSED_SECTIONS:
                 dose = (f"<input class=clinical-section-dose value=\"{_e(entry.get('dose') or '')}\" "
                         f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
-                        f"placeholder='Dose' aria-label=\"Dose of {_e(name)}\" "
+                        f"placeholder='{'Usage' if key == HEALING_TOOLS else 'Dose'}' "
+                        f"aria-label=\"{'Usage' if key == HEALING_TOOLS else 'Dose'} of {_e(name)}\" "
                         "onchange=saveClinicalSectionItem(this,'dose')>")
             bits.append(
                 f"<div class=clinical-section-item title=\"{_e(why)}\">{rating_box}"
