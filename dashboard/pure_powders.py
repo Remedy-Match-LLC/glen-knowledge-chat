@@ -5,7 +5,7 @@ store powders and the food powders ("food powders too"). All of them stay sellab
 The second batch (48 slugs) came from production the same day.
 
 Matched by SLUG, or by the product's exact NAME. Never by a word inside a name, so a
-formula that contains MSM or quercetin is unaffected. Pure logic, no I/O.
+formula that contains MSM, quercetin or silymarin is unaffected. Pure logic, no I/O.
 """
 import re
 
