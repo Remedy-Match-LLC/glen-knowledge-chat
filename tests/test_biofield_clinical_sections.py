@@ -57,7 +57,8 @@ def test_new_items_start_unchecked(cx):
     sections = cs.sections_for(cx, "a49", "Gut")
     assert [s["title"] for s in sections] == [
         "Functional Formulations", "Infoceuticals", "Foods to emphasize",
-        "Foods to avoid", "Nutrients", "Botanicals", "Fullscript supplements"]
+        "Foods to avoid", "Nutrients", "Botanicals", "Healing Tools",
+        "Fullscript supplements"]
     items = [i for s in sections for i in s["items"]]
     assert items and not any(i["checked"] for i in items)
 
@@ -575,3 +576,27 @@ def test_all_box_script_sets_ticks_in_place_without_a_reload():
     body = body.split("\nasync function ", 1)[0]
     assert "location.reload" not in body
     assert "j.checked" in body
+
+
+def test_healing_tools_load_with_a_usage_line_and_the_botanical_switch_leaves_them(tmp_path):
+    """Glen, 2026-10-18: an eighth section of devices and therapies, rated, with an
+    All box and a usage line. They are not botanicals."""
+    from scripts.load_clinical_sections import load
+    from dashboard.biofield_report_html import render_clinical_checklist
+    con = sqlite3.connect(str(tmp_path / "chat_log.db"))
+    folder = tmp_path / "content"
+    folder.mkdir()
+    (folder / "gut.json").write_text(json.dumps({
+        "condition_key": "gut", "label": "Gut", "sections": {"healing_tools": [
+            _item("Microcurrent", 6, 4, 7, dose="20 minutes daily"),
+            _item("Molecular Hydrogen", 8, 6, 6)]}}))
+    assert load(con, str(folder), "a49")["added"] == {"healing_tools": 2}
+    secs = {s["key"]: s for s in cs.sections_for(
+        con, "a49", "Gut", botanical={"avoid": True, "exceptions": ""})}
+    tools = secs[cs.HEALING_TOOLS]
+    assert [e["name"] for e in tools["items"]] == ["Molecular Hydrogen", "Microcurrent"]
+    assert tools["botanical_hidden"] == 0
+    html = render_clinical_checklist([{"label": "Gut", "sections": list(secs.values())}])
+    assert ('value="20 minutes daily" data-section="healing_tools" data-name="Microcurrent" '
+            "placeholder='Usage'") in html
+    assert 'class=clinical-section-allbox data-section="healing_tools"' in html
