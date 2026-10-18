@@ -556,7 +556,18 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
                 entry["recommended"] = None if recommended is None else code in recommended
                 purple = marks.get("purple") if code else None
                 entry["purple"] = None if purple is None else code in purple
+                # The bar's own colour (Glen, 2026-10-18: "Just show an icon with
+                # the color"). None is unknown; [] means the code is not on the scan.
+                colours = marks.get("colours") if code else None
+                entry["colours"] = None if colours is None else colours.get(code, [])
         by_section[section].append(entry)
+    if marks and marks.get("colours") is not None:
+        # Nutrients carry the colour of each scan field they name (Glen, 2026-10-18).
+        from dashboard.e4l_nutrient_fields import fields_for
+        for entry in by_section[NUTRIENTS]:
+            entry["scan_colours"] = [(field, marks["colours"][field])
+                                     for field in fields_for(entry["name"])
+                                     if field in marks["colours"]]
     out = []
     for key, title in SECTIONS:
         items, hidden = by_section[key], 0
@@ -574,20 +585,27 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
         # reads as ticked: it would claim every item is in when one is not.
         out.append({"key": key, "title": title, "items": sort_items(items),
                     "botanical_hidden": hidden,
-                    "marks_errors": _marks_errors(marks) if key == INFOCEUTICALS else [],
+                    "marks_errors": _marks_errors(marks, key),
                     "all_on": key in all_on and all(e["checked"] for e in items)})
     return out
 
 
-def _marks_errors(marks):
+def _marks_errors(marks, key=INFOCEUTICALS):
     """What could not be read, as lines for the page, so an unread mark never
     looks like a clean "no"."""
     out = []
+    if key == NUTRIENTS:
+        if marks and marks.get("colours") is None:
+            out.append(("Colours could not be read from the scan PDF",
+                        marks.get("purple_error") or ""))
+        return out
+    if key != INFOCEUTICALS:
+        return out
     if marks and marks.get("recommended") is None:
         out.append(("Recommended could not be read from the scan",
                     marks.get("recommended_error") or ""))
     if marks and marks.get("purple") is None:
-        out.append(("Purple could not be read from the scan PDF",
+        out.append(("Colours could not be read from the scan PDF",
                     marks.get("purple_error") or ""))
     return out
 
