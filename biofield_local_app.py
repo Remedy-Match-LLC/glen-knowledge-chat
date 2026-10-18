@@ -3514,9 +3514,37 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         remedies = body.get("remedies")
         if not label or not isinstance(remedies, list):
             return {"ok": False, "error": "Item label and a remedies list are required"}, 400
+        from dashboard.biofield_clinical_proposals import _key, selections
+        from dashboard.biofield_clinical_sections import remedies_changed
         with sqlite3.connect(db_path) as cx:
+            before = selections(cx, test_id).get(_key(label), [])
             count = save_selection(cx, test_id, label, remedies)
+            remedies_changed(cx, test_id, label, before, remedies)
         return {"ok": True, "count": count}
+
+    @app.route("/author/<test_id>/clinical-sections/all", methods=["POST"])
+    def author_clinical_section_all(test_id):
+        """A section's All box (Glen, 2026-10-17). `names` are the items shown in that
+        section; for Functional Formulations `remedies` is the row's current ticks."""
+        from dashboard.biofield_clinical_proposals import save_selection
+        from dashboard.biofield_clinical_sections import FORMULATIONS, select_all
+        body = request.get_json(silent=True) or {}
+        label = str(body.get("label") or "").strip()
+        section = str(body.get("section") or "").strip()
+        on, names = body.get("on"), body.get("names")
+        remedies = body.get("remedies") or []
+        if not isinstance(on, bool) or not isinstance(names, list) \
+                or not isinstance(remedies, list):
+            return {"ok": False, "error": "on, names and remedies are required"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                chosen = select_all(cx, test_id, label, section, on, names, remedies)
+                if section == FORMULATIONS:
+                    save_selection(cx, test_id, label, chosen)
+                cx.commit()
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        return {"ok": True}
 
     @app.route("/author/<test_id>/clinical-sections/pick", methods=["POST"])
     def author_clinical_section_pick(test_id):

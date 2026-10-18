@@ -19,6 +19,11 @@ Three rules Glen approved the same day ("all three"):
   client's named exceptions and anything already ticked.
 - A food one checked condition emphasizes and another checked condition avoids is
   flagged on both.
+
+Each section also has an "All" box (Glen, 2026-10-17): "Check the box and all the
+items in that group are added. Uncheck, and only the ones individually checked are
+added. Unchecking doesn't remove checks from those checked manually." The same rule
+as the PRL All box, so each tick remembers how it was made (`via`).
 """
 import os
 
@@ -67,6 +72,13 @@ def ensure_schema(cx):
         if col not in cols:
             cx.execute(f"ALTER TABLE biofield_clinical_section_item "
                        f"ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    # Whether a section's All box is ticked, per client and condition.
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_section_all (
+        test_id TEXT NOT NULL, item_key TEXT NOT NULL, section TEXT NOT NULL,
+        all_on INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (test_id, item_key, section)
+    )""")
     # One row per client test: is the switch on, and which botanicals are allowed.
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_botanical (
         test_id TEXT PRIMARY KEY, avoid INTEGER NOT NULL DEFAULT 0,
@@ -83,6 +95,14 @@ def ensure_schema(cx):
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (test_id, item_key, section, name_key)
     )""")
+    # via: 'all' when the section's All box ticked it, '' otherwise. For Functional
+    # Formulations the tick itself is in biofield_clinical_selection; this row only
+    # remembers which of those remedies the All box added.
+    pick_cols = {row[1] for row in
+                 cx.execute("PRAGMA table_info(biofield_clinical_section_pick)").fetchall()}
+    if "via" not in pick_cols:
+        cx.execute("ALTER TABLE biofield_clinical_section_pick "
+                   "ADD COLUMN via TEXT NOT NULL DEFAULT ''")
 
 
 def _score(value):
@@ -253,8 +273,11 @@ def save_pick(cx, test_id, label, section, name, checked=None, rating=None,
                (str(test_id), item_key, section, name_key))
     sets, args = [], []
     if checked is not None:
-        sets.append("checked=?")
+        # A tick by hand is the practitioner's own, so the All box never takes it back.
+        sets.append("checked=?,via=''")
         args.append(1 if checked else 0)
+        if not checked:
+            _set_all(cx, test_id, item_key, section, False)
     if rating is not None:
         sets.append("overall=?,research=?,uniqueness=?")
         args.extend(scores)
@@ -271,6 +294,104 @@ def save_pick(cx, test_id, label, section, name, checked=None, rating=None,
                    args + [str(test_id), item_key, section, name_key])
     if commit:
         cx.commit()
+
+
+def _set_all(cx, test_id, item_key, section, on):
+    cx.execute("INSERT INTO biofield_clinical_section_all (test_id,item_key,section,all_on) "
+               "VALUES (?,?,?,?) ON CONFLICT(test_id,item_key,section) DO UPDATE SET "
+               "all_on=excluded.all_on,updated_at=CURRENT_TIMESTAMP",
+               (str(test_id), item_key, section, 1 if on else 0))
+
+
+def _all_on(cx, test_id, item_key):
+    return {r[0] for r in cx.execute(
+        "SELECT section FROM biofield_clinical_section_all "
+        "WHERE test_id=? AND item_key=? AND all_on=1", (str(test_id), item_key))}
+
+
+def _set_via(cx, test_id, item_key, section, name_key, via):
+    cx.execute("INSERT INTO biofield_clinical_section_pick "
+               "(test_id,item_key,section,name_key,via) VALUES (?,?,?,?,?) "
+               "ON CONFLICT(test_id,item_key,section,name_key) DO UPDATE SET "
+               "via=excluded.via,updated_at=CURRENT_TIMESTAMP",
+               (str(test_id), item_key, section, name_key, via))
+
+
+def _added_by_all(cx, test_id, item_key, section):
+    return {r[0] for r in cx.execute(
+        "SELECT name_key FROM biofield_clinical_section_pick WHERE test_id=? AND "
+        "item_key=? AND section=? AND via='all'", (str(test_id), item_key, section))}
+
+
+def select_all(cx, test_id, label, section, on, names, remedies=()):
+    """The section's All box. `names` are the items the page shows in that section,
+    so a botanical the client's switch hides is never ticked by it.
+
+    On: every shown item not yet ticked is ticked and marked as added by the box.
+    Off: only the items the box added are unticked; ticks made by hand stay.
+
+    For Functional Formulations, `remedies` is the row's current tick set and the
+    result is the new set, which the caller saves as the row's remedies. For the
+    other sections the result is None."""
+    ensure_schema(cx)
+    if section not in SECTION_KEYS:
+        raise ValueError(f"unknown section {section!r}")
+    item_key = _norm(label)
+    if not item_key:
+        raise ValueError("a condition is required")
+    test_id = str(test_id)
+    shown = []
+    for raw in names or []:
+        name = str(raw or "").strip()[:160]
+        if name and _norm(name) not in {_norm(n) for n in shown}:
+            shown.append(name)
+    if section == FORMULATIONS:
+        chosen = [str(r or "").strip() for r in remedies or [] if str(r or "").strip()]
+        chosen_keys = {_norm(r) for r in chosen}
+        if on:
+            for name in shown:
+                if _norm(name) not in chosen_keys:
+                    chosen.append(name)
+                    chosen_keys.add(_norm(name))
+                    _set_via(cx, test_id, item_key, section, _norm(name), "all")
+        else:
+            added = _added_by_all(cx, test_id, item_key, section)
+            chosen = [r for r in chosen if _norm(r) not in added]
+            for key in added:
+                _set_via(cx, test_id, item_key, section, key, "")
+        _set_all(cx, test_id, item_key, section, on)
+        return chosen
+    catalog = {e["name_key"] for e in _catalog(cx, item_key) if e["section"] == section}
+    picks = _picks(cx, test_id, item_key)
+    if on:
+        for name in shown:
+            key = _norm(name)
+            if key not in catalog:
+                continue
+            if not (picks.get((section, key)) or {}).get("checked"):
+                save_pick(cx, test_id, label, section, name, checked=True, commit=False)
+                _set_via(cx, test_id, item_key, section, key, "all")
+    else:
+        for key in _added_by_all(cx, test_id, item_key, section):
+            cx.execute("UPDATE biofield_clinical_section_pick SET checked=0,via='',"
+                       "updated_at=CURRENT_TIMESTAMP WHERE test_id=? AND item_key=? "
+                       "AND section=? AND name_key=?", (test_id, item_key, section, key))
+    _set_all(cx, test_id, item_key, section, on)
+    return None
+
+
+def remedies_changed(cx, test_id, label, before, after):
+    """The row's remedies were saved by hand. A remedy unticked by hand is no longer
+    one the All box added, and the box itself unticks, as it does in the other
+    sections and in PRL."""
+    ensure_schema(cx)
+    item_key = _norm(label)
+    after_keys = {_norm(r) for r in after or []}
+    removed = {_norm(r) for r in before or []} - after_keys
+    for key in _added_by_all(cx, test_id, item_key, FORMULATIONS) - after_keys:
+        _set_via(cx, test_id, item_key, FORMULATIONS, key, "")
+    if removed:
+        _set_all(cx, test_id, item_key, FORMULATIONS, False)
 
 
 def _catalog(cx, item_key):
@@ -332,6 +453,7 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
     catalog = [e for e in _catalog(cx, item_key)
                if e["reviewed"] or e["origin_test"] in ("", test_id)]
     picks = _picks(cx, test_id, item_key)
+    all_on = _all_on(cx, test_id, item_key)
     by_section = {key: [] for key in SECTION_KEYS}
     rated = {}
     for entry in catalog:
@@ -378,8 +500,11 @@ def sections_for(cx, test_id, label, remedies=(), chosen_remedies=(), botanical=
                 else:
                     kept.append(entry)
             items = kept
+        # An item added after All was ticked is not ticked, so the box no longer
+        # reads as ticked: it would claim every item is in when one is not.
         out.append({"key": key, "title": title, "items": sort_items(items),
-                    "botanical_hidden": hidden})
+                    "botanical_hidden": hidden,
+                    "all_on": key in all_on and all(e["checked"] for e in items)})
     return out
 
 
