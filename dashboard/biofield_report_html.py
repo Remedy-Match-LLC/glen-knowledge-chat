@@ -1472,6 +1472,16 @@ async function clinicalSectionAll(box){
  else{[].slice.call(sec.querySelectorAll('.clinical-section-choice'))
    .forEach(function(x){x.checked=!!on[x.dataset.name]})}
  if(stat)stat.textContent='Saved'}
+async function clinicalWatch(box){
+ var row=box.closest('.clinical-item');if(!row)return;
+ var stat=document.getElementById('clinicalOrderStat');box.disabled=true;
+ var j=null;
+ try{j=await post('/author/__TID__/clinical-sections/watch',
+  {label:row.dataset.label,name:box.dataset.name,on:box.checked})}
+ catch(e){j=null}
+ box.disabled=false;
+ if(!(j&&j.ok)){box.checked=!box.checked;if(stat)stat.textContent=(j&&j.error)||'Could not save';return}
+ if(stat)stat.textContent=box.checked?'Watched for purple, every client':'No longer watched'}
 async function clinicalUnhide(btn){
  var row=btn.closest('.clinical-item'),item=btn.closest('.clinical-section-item');if(!row||!item)return;
  var on=item.classList.contains('greyed'),box=item.querySelector('input[type=checkbox]');
@@ -2228,7 +2238,8 @@ def _clinical_sections_html(sections, remedy_choice):
     three digits (10 as X) that Glen can retype for this client; nutrients carry an
     editable dose; Fullscript items link to the store front door only."""
     from dashboard.biofield_clinical_sections import (
-        DOSED_SECTIONS, FULLSCRIPT, HEALING_TOOLS, REMEDY_SECTIONS, fullscript_store_url)
+        DOSED_SECTIONS, FULLSCRIPT, HEALING_TOOLS, INFOCEUTICALS, REMEDY_SECTIONS,
+        fullscript_store_url)
     out = []
     for section in sections:
         key, title = section.get("key"), section.get("title") or ""
@@ -2275,6 +2286,10 @@ def _clinical_sections_html(sections, remedy_choice):
                               f"title=\"{_e(field)}: {_e(shown_colour)} on this scan\" "
                               f"aria-label=\"{_e(field)}: {_e(shown_colour)} on this scan\">"
                               "</span>")
+            if entry.get("watch_hit"):
+                flags += ("<span class='clinical-section-flag watch-hit' title='Watched: "
+                          "recommend whenever it shows purple on a scan'>"
+                          "watched, purple: recommend</span>")
             if "recommended" in entry and entry.get("code") == "":
                 # No E4L code in the name, so the scan cannot answer for it.
                 flags += ("<span class='clinical-section-flag' title='No E4L code in "
@@ -2295,6 +2310,18 @@ def _clinical_sections_html(sections, remedy_choice):
                 choice = remedy_choice(name)
                 if greyed:
                     choice = choice.replace("type=checkbox value=", "type=checkbox disabled value=", 1)
+                if key == INFOCEUTICALS:
+                    # Glen, 2026-10-18: a second column of boxes. The first selects it
+                    # for this Biofield; the second recommends it, for every client in
+                    # this condition, whenever it shows purple on a scan.
+                    watch = (f"<input class=clinical-watch type=checkbox "
+                             f"data-name=\"{_e(name)}\"{' checked' if entry.get('watched') else ''} "
+                             "title='Recommend whenever it shows purple on a scan, for "
+                             "every client in this condition' "
+                             f"aria-label=\"Watch {_e(name)} for purple\" "
+                             "onchange=clinicalWatch(this)>")
+                    choice = choice.replace(" onchange=selectClinicalRemedy(this)>",
+                                            f" onchange=selectClinicalRemedy(this)>{watch}", 1)
                 bits.append(f"<div class='{item_cls}' title=\"{_e(why)}\">"
                             f"{rating_box}{choice}{flags}{note}</div>")
                 continue
@@ -2333,9 +2360,16 @@ def _clinical_sections_html(sections, remedy_choice):
                        f"class=clinical-section-allbox data-section=\"{_e(key)}\""
                        f"{' checked' if section.get('all_on') else ''} "
                        "onchange=clinicalSectionAll(this)> All</label>")
+        legend = ""
+        if key == INFOCEUTICALS and bits:
+            hits = section.get("watch_hits") or 0
+            legend = ("<div class=clinical-watch-legend>First box: this Biofield. "
+                      "Second box: recommend whenever purple, for every client."
+                      + (f" <b>{hits} watched {'shows' if hits == 1 else 'show'} purple "
+                         "on this scan.</b>" if hits else "") + "</div>")
         out.append(f"<div class=clinical-section data-section=\"{_e(key)}\">"
                    f"<div class=clinical-section-head><div class=clinical-section-title>"
-                   f"{_e(title)}</div>{all_box}</div>{body}</div>")
+                   f"{_e(title)}</div>{all_box}</div>{legend}{body}</div>")
     return "".join(out)
 
 
@@ -2612,6 +2646,9 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-section-all{font-size:11px;color:var(--muted)}"
             ".clinical-section-flag.recommended{border-color:#3f8fc9;color:#6fb3e6}"
             ".clinical-section-item.greyed>:not(.clinical-unhide){opacity:.45}"
+            ".clinical-common input.clinical-watch{accent-color:#9581b4;outline:1px solid #9581b4;margin-right:5px}"
+            ".clinical-watch-legend{font-size:11px;color:var(--muted);margin:0 0 3px}"
+            ".clinical-section-flag.watch-hit{border-color:#9581b4;color:#b9a6d6}"
             ".scan-dot{display:inline-block;width:11px;height:11px;border-radius:50%;"
             "margin-left:5px;vertical-align:middle;border:1px solid rgba(0,0,0,.35)}"
             ".scan-dot.purple{background:#9581b4}.scan-dot.green{background:#75b772}"

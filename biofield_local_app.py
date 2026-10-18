@@ -3554,6 +3554,23 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": str(exc)}, 400
         return {"ok": True}
 
+    @app.route("/author/<test_id>/clinical-sections/watch", methods=["POST"])
+    def author_clinical_section_watch(test_id):
+        """The second tick column on Infoceuticals (Glen, 2026-10-18): recommend it
+        whenever it shows purple, for every client in this condition."""
+        from dashboard.biofield_clinical_sections import set_watched
+        body = request.get_json(silent=True) or {}
+        on = body.get("on")
+        if not isinstance(on, bool):
+            return {"ok": False, "error": "on is required"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                set_watched(cx, str(body.get("label") or "").strip(),
+                            str(body.get("name") or "").strip(), on, test_id=test_id)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        return {"ok": True}
+
     @app.route("/author/<test_id>/clinical-sections/all", methods=["POST"])
     def author_clinical_section_all(test_id):
         """A section's All box (Glen, 2026-10-17). `names` are the items shown in that
