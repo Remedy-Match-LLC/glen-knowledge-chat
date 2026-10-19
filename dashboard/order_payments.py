@@ -474,18 +474,18 @@ def backfill_legacy_payment(cx, order_id, *, amount_cents=None, external_ref=Non
     the order's own, so the Money view's shadow-row match still hides it. Returns
     True when it wrote a row.
 
-    `amount_cents` and `external_ref` describe the payment about to be recorded. When
-    it is the order's own captured PaymentIntent, or the same amount the order
-    records as paid, it is that earlier payment arriving in the ledger, so nothing
-    is backfilled."""
+    `external_ref` is the payment about to be recorded. When it is the order's own
+    captured PaymentIntent, it is that earlier payment arriving in the ledger, so
+    nothing is backfilled. An equal amount is NOT taken as the same money: $200 paid
+    on a total raised to $400 owes exactly $200 more (review round 3, 2026-10-19).
+    `amount_cents` is accepted for callers and unused."""
     try:
         o = orders.get_order(cx, order_id) or {}
     except Exception:  # noqa: BLE001  ledger-only use runs without an orders table
         return False
     lp = int(o.get("paid_cents") or 0)
     pi = (o.get("stripe_payment_intent") or "").strip()
-    same_money = ((external_ref and pi and external_ref == pi)
-                  or (amount_cents is not None and int(amount_cents) == lp))
+    same_money = bool(external_ref and pi and external_ref == pi)
     if (lp <= 0 or same_money or o.get("pay_status") != "paid"
             or o.get("status") == "cancelled"
             or int(o.get("total_cents") or 0) <= lp or _has_active_rows(cx, order_id)):

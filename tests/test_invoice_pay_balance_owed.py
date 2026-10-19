@@ -181,9 +181,26 @@ def test_claiming_a_balance_keeps_the_order_paid(env):
 
 
 def test_the_page_asks_for_the_balance():
+    """setupPay run in node against a stub page: the button names the pay amount."""
+    import json, re, shutil, subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
     html = (repo / "static" / "invoice.html").read_text()
-    body = html[html.index("function setupPay"):html.index("async function pay(")]
-    assert "money(due)" in body and "money(ORDER.total_cents)" not in body
+    fn = html[html.index("function setupPay"):html.index("async function pay(")]
+    money = re.search(r"function money\(.*?\n}", html, re.S) or re.search(
+        r"(const|let|var) money\s*=.*?;\n", html, re.S)
+    assert money, "money() not found"
+    js = ("const els={};function $(id){return els[id]||(els[id]={style:{},textContent:'',"
+          "innerHTML:'',disabled:false});}\n"
+          "const document={querySelectorAll:()=>[]};let curMethod='card';\n"
+          + money.group(0) + "\n" + fn +
+          "\nvar ORDER={payable:true,paylink_enabled:true,total_cents:47300,"
+          "pay_amount_cents:4000,balance_due_cents:4000};setupPay();"
+          "console.log(JSON.stringify([$('pay-btn').textContent,$('pay-due').innerHTML]));")
+    out = json.loads(subprocess.run([node, "-e", js], capture_output=True, text=True,
+                                    check=True).stdout)
+    assert "40.00" in out[0] and "473" not in out[0] and "40.00" in out[1]
 
 
 def test_paying_past_the_balance_is_recorded_and_glen_told(env):
@@ -236,10 +253,47 @@ def test_the_original_payment_intent_alone_marks_the_same_money(env):
     assert [r["source"] for r in env["OP"].list_payments(env["cx"], oid)] == ["stripe"]
 
 
-def test_the_same_amount_alone_marks_the_same_money(env):
+def test_a_balance_equal_to_the_earlier_payment_is_new_money(env):
+    oid, tok = env["order"](ref="DS-EQ", total=40000, pay_status="paid", paid_cents=20000,
+                            pay_method="card", paid_at="2026-10-01T00:00:00Z",
+                            stripe_payment_intent="pi_first")
+    _return(env, oid, pi="pi_second", amount=20000)
+    assert env["OP"].balance(env["cx"], oid)["balance_cents"] == 0
+    assert env["c"].get(f"/api/invoice/{tok}").get_json()["order"]["payable"] is False
+
+
+def test_an_unpaid_shipped_order_never_takes_the_path_that_reopens_it(env):
+    oid, tok = env["order"](ref="DS-SHIP", total=9000, status="shipped", source="in-house")
+    env["c"].post(f"/api/invoice/{tok}/pay", json={"method": "card"})
+    md = env["made"][-1]["metadata"]
+    assert md["kind"] == "invoice-balance" and "invoice_id" not in md
+    _return(env, oid, pi="pi_ship", amount=9000)
+    o = env["O"].get_order(env["cx"], oid)
+    assert (o["status"], o["pay_status"]) == ("shipped", "paid")
+
+
+def test_the_webhook_ignores_other_kinds(env):
     oid, _tok = _like_230(env)
-    env["OP"].add_payment(env["cx"], oid, 43300, "card", source="manual")
-    assert [r["source"] for r in env["OP"].list_payments(env["cx"], oid)] == ["manual"]
+    env["mp"].setattr(env["stripe"], "get_session", lambda sid: {
+        "id": sid, "payment_status": "paid", "amount_total": 4000,
+        "payment_intent": "pi_other",
+        "metadata": {"kind": "caregiver-pay", "order_id": str(oid)}})
+    env["app"]._fulfill_invoice_balance("cs_test_3")
+    assert env["OP"].list_payments(env["cx"], oid) == []
+
+
+def test_a_fully_paid_legacy_order_gets_no_backfill(env):
+    oid, _tok = env["order"](ref="DS-FULL", total=43300, pay_status="paid",
+                             paid_cents=43300, pay_method="card")
+    assert env["OP"].backfill_legacy_payment(env["cx"], oid) is False
+
+
+def test_a_cancelled_or_unpaid_order_gets_no_backfill(env):
+    a, _ = env["order"](ref="DS-C", total=47300, status="cancelled", pay_status="paid",
+                        paid_cents=43300)
+    b, _ = env["order"](ref="DS-U", total=47300, pay_status="unpaid", paid_cents=43300)
+    assert env["OP"].backfill_legacy_payment(env["cx"], a) is False
+    assert env["OP"].backfill_legacy_payment(env["cx"], b) is False
 
 
 def test_the_stripe_webhook_calls_the_balance_fulfiller():
@@ -302,3 +356,10 @@ def test_the_receipt_names_the_order(env):
     _return(env, oid)
     html = env["c"].get("/order-confirmation?session_id=cs_test_1").get_data(as_text=True)
     assert f"#{oid}</strong>" in html and "$40.00" in html
+
+
+def test_pay_with_no_balance_reading_charges_nothing(env):
+    _oid, tok = _like_230(env)
+    env["mp"].setattr(env["app"], "_invoice_balance_cents", lambda o: None)
+    r = env["c"].post(f"/api/invoice/{tok}/pay", json={"method": "card"})
+    assert r.status_code == 503 and env["made"] == []
