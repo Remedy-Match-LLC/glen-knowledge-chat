@@ -76,16 +76,24 @@ def test_an_oil_moved_out_of_botanicals_leaves_one_row(tmp_path, cx):
 def test_an_unknown_section_is_reported_and_the_cli_refuses_to_commit(tmp_path, monkeypatch):
     import scripts.load_clinical_sections as loader
     db = tmp_path / "chat_log.db"
-    folder = _files(tmp_path, {"aromatherapy": [_oil()], "fullscript_wanted": []})
+    folder = _files(tmp_path, {"botanicals": [_oil("Ginger", route="")]})
+    monkeypatch.setattr("sys.argv", ["load", folder, "--db", str(db),
+                                     "--client-test", "a49", "--commit"])
+    loader.main()
+    folder = _files(tmp_path, {"aromatherapy": [_oil()], "fullscript_wanted": [],
+                               "nutrients": [_oil("Zinc", route="")]})
     con = sqlite3.connect(str(db))
     assert loader.load(con, folder, "a49")["unknown_sections"] == ["Vertigo: aromatherapy"]
     con.rollback()
     con.close()
-    monkeypatch.setattr("sys.argv", ["load", folder, "--db", str(db),
-                                     "--client-test", "a49", "--commit"])
     with pytest.raises(SystemExit) as stop:
         loader.main()
     assert "aromatherapy" in str(stop.value)
+    # Nothing from the refused load was kept: Zinc not added, Ginger not pruned.
+    con = sqlite3.connect(str(db))
+    names = [r[0] for r in con.execute("SELECT name FROM biofield_clinical_section_item")]
+    con.close()
+    assert names == ["Ginger"]
 
 
 def test_a_ticked_oil_prints_under_remedies_as_an_essential_oil(cx):
