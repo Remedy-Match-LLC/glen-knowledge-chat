@@ -31,6 +31,7 @@ HEADINGS = (
                   ("prl", "PRL"),
                   (cs.NUTRIENTS, "Nutrients"),
                   (cs.BOTANICALS, "Botanicals"),
+                  (cs.ESSENTIAL_OILS, "Essential Oils"),
                   (cs.FULLSCRIPT, "Fullscript supplements"))),
     ("Healing Tools", ((cs.HEALING_TOOLS, "Healing Tools"),)),
 )
@@ -189,7 +190,7 @@ def lost_ticks(cx, test_id):
 # What each section is called beside an item under Remedies, where sections mix.
 KIND = {cs.FORMULATIONS: "Functional Formulation", cs.INFOCEUTICALS: "Infoceutical",
         "prl": "PRL", cs.NUTRIENTS: "Nutrient", cs.BOTANICALS: "Botanical",
-        cs.FULLSCRIPT: "Fullscript supplement"}
+        cs.ESSENTIAL_OILS: "Essential oil", cs.FULLSCRIPT: "Fullscript supplement"}
 
 
 # A merge group in clinical's map covers one of these scopes; products never merge.

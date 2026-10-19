@@ -57,7 +57,7 @@ def test_new_items_start_unchecked(cx):
     sections = cs.sections_for(cx, "a49", "Gut")
     assert [s["title"] for s in sections] == [
         "Functional Formulations", "Infoceuticals", "Foods to emphasize",
-        "Foods to avoid", "Nutrients", "Botanicals", "Healing Tools",
+        "Foods to avoid", "Nutrients", "Botanicals", "Essential Oils", "Healing Tools",
         "Fullscript supplements"]
     items = [i for s in sections for i in s["items"]]
     assert items and not any(i["checked"] for i in items)

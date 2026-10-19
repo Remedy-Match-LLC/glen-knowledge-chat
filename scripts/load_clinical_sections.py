@@ -39,7 +39,9 @@ from dashboard.biofield_clinical_checklist import (  # noqa: E402
 from dashboard import biofield_clinical_sections as cs  # noqa: E402
 
 LOADED = (cs.FORMULATIONS, cs.INFOCEUTICALS, "foods_emphasize", "foods_avoid",
-          cs.NUTRIENTS, cs.BOTANICALS, cs.HEALING_TOOLS)
+          cs.NUTRIENTS, cs.BOTANICALS, cs.ESSENTIAL_OILS, cs.HEALING_TOOLS)
+# Keys a condition file may carry that hold no items to load.
+NOT_ITEMS = ("fullscript_wanted",)
 
 
 def _prune(cx, label, sections, client_test, chosen, report):
@@ -81,7 +83,8 @@ def load(cx, folder, client_test):
               "formulations_new_to_condition": [], "remedies_kept_deleted": [], "notes": 0,
               "fullscript_types_not_loaded": 0, "new_conditions": [],
               "removed": [], "kept_not_listed": [],
-              "extra_explanations_applied": 0, "extra_explanations_waiting": 0}
+              "extra_explanations_applied": 0, "extra_explanations_waiting": 0,
+              "unknown_sections": []}
     from dashboard.biofield_clinical_proposals import selections
     chosen_by_row = selections(cx, client_test)
     known = {row[0] for row in cx.execute(
@@ -104,6 +107,10 @@ def load(cx, folder, client_test):
         if key not in known:
             report["new_conditions"].append(label)
         sections = data["sections"]
+        # A section this loader does not know would be skipped without a word, and an
+        # item clinical moved into it would vanish from the Plan.
+        report["unknown_sections"] += [f"{label}: {name}" for name in sections
+                                       if name not in LOADED and name not in NOT_ITEMS]
         report["fullscript_types_not_loaded"] += len(sections.get("fullscript_wanted") or [])
         offered = {_norm(row["remedy"]) for row in remedies_for(
             cx, label, historical=stress_suggestions(cx, label))}
@@ -146,6 +153,11 @@ def main():
     cx = sqlite3.connect(args.db)
     try:
         report = load(cx, args.folder, args.client_test)
+        if args.commit and report["unknown_sections"]:
+            cx.rollback()
+            print(json.dumps(report, indent=1))
+            raise SystemExit("Not committed: unknown sections "
+                             + ", ".join(report["unknown_sections"]))
         if args.commit:
             cx.commit()
         else:
