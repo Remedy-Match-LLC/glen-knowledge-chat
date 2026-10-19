@@ -3445,6 +3445,25 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return {"ok": True, "added": added, "checked": checked,
                 "no_pattern": no_pattern}
 
+    def _clinical_items(cx, test_id, rep):
+        """The Clinical Summary checklist as the page builds it: hand-added rows in,
+        dismissed rows out, saved order and ticks applied. Rebuilt on the server
+        rather than taken from the browser, so a stale tab cannot add a tick that is
+        no longer saved."""
+        from dashboard.biofield_clinical_checklist import (
+            build as build_clinical_checklist, stress_pattern)
+        from dashboard.biofield_clinical_proposals import (
+            apply_order, apply_selection, dismissed_labels, item_key)
+        c_email = ((rep.get("client") or {}).get("email") or "").strip()
+        profile = fetch_profile(c_email) if c_email else {}
+        profile = _with_hand_added(cx, test_id, profile)
+        items = build_clinical_checklist(
+            profile, rep.get("layers") or [], None,
+            stress_lookup=lambda label: stress_pattern(cx, label), cx=cx)
+        hidden = {item_key(l) for l in dismissed_labels(cx, test_id)}
+        items = [i for i in items if item_key(i.get("label")) not in hidden]
+        return apply_selection(cx, test_id, apply_order(cx, test_id, items))
+
     @app.route("/author/<test_id>/clinical-items/layers", methods=["POST"])
     def author_clinical_items_layers(test_id):
         """Layers from the Clinical Summary alone. Glen, 2026-09-18.
@@ -3461,23 +3480,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         reason the to-stresses route gives: a stale tab would otherwise add a tick
         that is no longer saved.
         """
-        from dashboard.biofield_clinical_checklist import (
-            build as build_clinical_checklist, clinical_layers, stress_pattern)
-        from dashboard.biofield_clinical_proposals import (
-            apply_order, apply_selection, dismissed_labels, item_key)
+        from dashboard.biofield_clinical_checklist import clinical_layers
 
         body = request.get_json(silent=True) or {}
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
-            c_email = ((rep.get("client") or {}).get("email") or "").strip()
-            profile = fetch_profile(c_email) if c_email else {}
-            profile = _with_hand_added(cx, test_id, profile)
-            items = build_clinical_checklist(
-                profile, rep.get("layers") or [], None,
-                stress_lookup=lambda label: stress_pattern(cx, label), cx=cx)
-            hidden = {item_key(l) for l in dismissed_labels(cx, test_id)}
-            items = [i for i in items if item_key(i.get("label")) not in hidden]
-            items = apply_selection(cx, test_id, apply_order(cx, test_id, items))
+            items = _clinical_items(cx, test_id, rep)
             layers = clinical_layers(items)
             existing = _layer_count(rep)
             checked = sum(1 for i in items if i.get("checked"))
@@ -3514,6 +3522,30 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                   name, d.get("dosage", ""), d.get("frequency", ""),
                                   d.get("timing", ""), confirmed=0, origin="clinical")
         return {"ok": True, "applied": True, "layers_added": made}
+
+    @app.route("/author/<test_id>/clinical-items/layers/update", methods=["POST"])
+    def author_clinical_layers_update(test_id):
+        """Update Clinical layers. Glen, 2026-10-18: "I don't see how to update the
+        current layers from the clinical section." See biofield_clinical_layer_sync.
+
+        Previews by default. Writes only on {"apply": true, "digest", "chosen"}, and
+        only when the plan still has the digest the preview showed (409 otherwise)."""
+        from dashboard import biofield_clinical_layer_sync as sync
+        from dashboard.biofield_authoring import _now
+        body = request.get_json(silent=True) or {}
+        with sqlite3.connect(db_path) as cx:
+            rep = authored_report(cx, test_id)
+            items = _clinical_items(cx, test_id, rep)
+            if not body.get("apply"):
+                return {"ok": True, "proposed": True,
+                        **sync.plan(cx, test_id, items, resolve_remedy_name)}
+            chosen = [str(c) for c in body.get("chosen") or []]
+            try:
+                done = sync.apply(cx, test_id, items, str(body.get("digest") or ""), chosen,
+                                  resolve_remedy_name, remedy_dosing, _now())
+            except sync.Stale as exc:
+                return {"ok": False, "stale": True, "error": str(exc)}, 409
+        return {"ok": True, "applied": True, **done}
 
     @app.route("/author/<test_id>/fold-duplicate", methods=["POST"])
     def author_fold_duplicate(test_id):
