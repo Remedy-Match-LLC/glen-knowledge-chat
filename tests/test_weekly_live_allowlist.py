@@ -110,6 +110,7 @@ def _wire(monkeypatch, tmp_path, weekly):
         list(AUDIENCE.values()) if tag == "e4l account" else []))
     monkeypatch.setattr(weekly, "_authoritative_access_sets",
                         lambda: ({PAID_OUTSIDE_LIST}, set()))
+    monkeypatch.setattr(weekly, "_board_emails", lambda: set())
     looked_up = []
     monkeypatch.setattr(weekly, "_find_contact",
                         lambda email: looked_up.append(email) or None)
@@ -141,7 +142,9 @@ def test_send_mails_only_listed_audience_members(monkeypatch, tmp_path, capsys):
     argument, _ = allowlist.encode(
         ["listed@example.com", "LISTED.TWO@example.com", "not.in.ghl@example.com"], KEY)
 
-    assert weekly.run(_args(only_list=argument)) == 0
+    # not.in.ghl is on the list and in no audience: mailed people go out, and the
+    # run ends needs_attention (exit 2) naming the count (marketing, 2026-10-19).
+    assert weekly.run(_args(only_list=argument)) == 2
 
     assert sorted(sent) == ["listed.two@example.com", "listed@example.com"]
     # A paid member outside the list is neither looked up nor created in GHL,
@@ -365,3 +368,108 @@ def test_cli_prints_the_argument_and_no_address(monkeypatch, tmp_path, capsys):
     assert captured.out.strip().startswith("v1.2.")
     assert "unique addresses 2" in captured.err
     assert "example.com" not in captured.out + captured.err
+
+
+def test_a_board_member_with_no_tag_is_mailed(monkeypatch, tmp_path, capsys):
+    """Steven Blank, 18 October 2026: a trial member on the board, on the consent
+    list, with no audience tag and not paid. The sender dropped him."""
+    weekly = _weekly()
+    sent, looked_up = _wire(monkeypatch, tmp_path, weekly)
+    trial = "trial.untagged@example.com"
+    monkeypatch.setattr(weekly, "_board_emails", lambda: {trial})
+    monkeypatch.setattr(weekly, "_find_contact", lambda email: (
+        looked_up.append(email) or {"id": "c-trial", "email": email, "firstName": "Tri"}
+        if email == trial else None))
+    argument, _ = allowlist.encode(["listed@example.com", trial], KEY)
+
+    assert weekly.run(_args(only_list=argument)) == 0
+
+    assert sorted(sent) == ["listed@example.com", trial]
+    out = capsys.readouterr().out
+    assert '"allowlist_not_in_audience": 0' in out and '"problem": ""' in out
+
+
+def test_a_board_member_off_the_consent_list_is_not_mailed(monkeypatch, tmp_path):
+    weekly = _weekly()
+    sent, looked_up = _wire(monkeypatch, tmp_path, weekly)
+    monkeypatch.setattr(weekly, "_board_emails", lambda: {"unsubscribed.trial@example.com"})
+    argument, _ = allowlist.encode(["listed@example.com"], KEY)
+
+    assert weekly.run(_args(only_list=argument)) == 0
+
+    assert sent == ["listed@example.com"]
+    assert "unsubscribed.trial@example.com" not in looked_up
+
+
+def test_a_dry_run_with_an_unreached_listed_address_says_so(monkeypatch, tmp_path, capsys):
+    weekly = _weekly()
+    sent, _ = _wire(monkeypatch, tmp_path, weekly)
+    argument, _ = allowlist.encode(["listed@example.com", "nobody@example.com"], KEY)
+
+    assert weekly.run(_args(send=False, dry_run=True, only_list=argument)) == 0
+
+    out = capsys.readouterr().out
+    assert '"status": "DRY_RUN_NEEDS_ATTENTION"' in out
+    assert "1 address(es) on the consent list are not in the audience" in out
+    assert sent == []
+
+
+def test_an_unreadable_board_stops_the_run_before_any_mail(monkeypatch, tmp_path):
+    weekly = _weekly()
+    sent, _ = _wire(monkeypatch, tmp_path, weekly)
+
+    def broken():
+        raise RuntimeError("members board unreadable")
+    monkeypatch.setattr(weekly, "_board_emails", broken)
+    argument, _ = allowlist.encode(["listed@example.com"], KEY)
+
+    with pytest.raises(RuntimeError, match="members board"):
+        weekly.run(_args(only_list=argument))
+    assert sent == []
+
+
+def test_the_board_emails_are_the_board_routes_people(monkeypatch, tmp_path):
+    """The sender reads the same function the members board route serves."""
+    weekly = _weekly()
+    monkeypatch.setattr(weekly.appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    monkeypatch.setattr(weekly.appmod, "members_board_buckets", lambda cx, strict=False: {
+        "trial": [{"email": " Trial@Example.com "}], "full": [{"email": "full@example.com"}],
+        "paused": [{"email": "paused@example.com"}], "family": [{"email": ""}]})
+    assert weekly._board_emails() == {"trial@example.com", "full@example.com",
+                                      "paused@example.com"}
+
+
+def test_the_family_read_is_strict_for_the_sender(monkeypatch, tmp_path):
+    weekly = _weekly()
+    monkeypatch.setattr(weekly.appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    seen = []
+    monkeypatch.setattr(weekly.appmod, "members_board_buckets",
+                        lambda cx, strict=False: seen.append(strict) or {"trial": [{"email": "a@b.c"}]})
+    weekly._board_emails()
+    assert seen == [True]
+
+
+def test_an_empty_board_is_refused(monkeypatch, tmp_path):
+    """An empty board read means the read failed, never that nobody is a member."""
+    weekly = _weekly()
+    monkeypatch.setattr(weekly.appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    monkeypatch.setattr(weekly.appmod, "members_board_buckets",
+                        lambda cx, strict=False: {"trial": [], "full": []})
+    with pytest.raises(RuntimeError, match="members board is empty"):
+        weekly._board_emails()
+
+
+def test_a_dry_run_counts_a_listed_member_with_no_contact_as_to_be_created(
+        monkeypatch, tmp_path, capsys):
+    """Review round 1: the real send creates that contact and mails them."""
+    weekly = _weekly()
+    sent, _ = _wire(monkeypatch, tmp_path, weekly)
+    trial = "trial.no.contact@example.com"
+    monkeypatch.setattr(weekly, "_board_emails", lambda: {trial})
+    argument, _ = allowlist.encode(["listed@example.com", trial], KEY)
+
+    assert weekly.run(_args(send=False, dry_run=True, only_list=argument)) == 0
+
+    out = capsys.readouterr().out
+    assert '"status": "DRY_RUN"' in out and '"would_create_ghl_contact": 1' in out
+    assert sent == []

@@ -22974,6 +22974,86 @@ def _member_name_for(cx, email):
         return ""
 
 
+def members_board_buckets(cx, strict=False):
+    """{bucket: [row]} for the Trial / Full / Paused / Family membership board.
+
+    The board route and the weekly live invitation both read this, so the sender's
+    audience is the board itself (marketing, 2026-10-19). With `strict`, a family
+    plan read that fails raises instead of leaving those people out."""
+    from dashboard import subscriptions as _subs
+    buckets = {"trial": [], "full": [], "paused": [], "family": []}
+    cx.row_factory = sqlite3.Row
+    _subs.migrate_add_failed_count(cx)
+    _subs.migrate_add_membership_columns(cx)
+    _subs.migrate_add_term_cap_column(cx)
+    _subs.migrate_add_attribution_column(cx)
+    _subs.migrate_add_consent_column(cx)
+    # One row per member (list_active_memberships dedupes by email).
+    for s in _subs.list_active_memberships(cx):
+        cat = _subs.classify_sub(s)
+        email = s.get("email") or ""
+        credit = 0
+        row = _subs.member_board_row(s, name=_member_name_for(cx, email),
+                                     credit_cents=credit)
+        buckets[cat].append(row)  # cat is always trial/full/paused (pre-seeded)
+    # Subscriptions are only ONE way to hold membership. One-time month and
+    # annual-prepay purchases, manual console enrols and the biofield care-taster
+    # grant all write a `memberships` row and no subscription, so they were
+    # invisible here while the portal and the pricer treated them as members.
+    for g in _subs.list_membership_holders(cx):
+        g["name"] = _member_name_for(cx, g.get("email") or "")
+        buckets["full"].append(g)
+    # Family plans are a THIRD way to hold membership and the board could not
+    # see them at all: it read `subscriptions` and `memberships` and never
+    # `family_subscriptions` or `household_members`. On 2026-09-12 four of the
+    # eight family-plan people were absent here, including a plan holder, while
+    # every one of them priced as a member. Glen: "Family plan is a category of
+    # membership. Add it to the board."
+    #
+    # Holder and covered member are both listed, because entitlement reaches
+    # both and the board's job is to answer "who gets member pricing".
+    try:
+        from dashboard import family_plan as _fp
+        from dashboard import household as _hh
+        _fp.init_family_plan_table(cx)
+        _hh.init_household_tables(cx)
+        _seen = {r.get("email") for v in buckets.values() for r in v}
+        for plan in _fp.list_active(cx):
+            holder = plan.get("caregiver_email") or ""
+            rows = [(holder, "holder", "")]
+            for m in _hh.members_for(cx, holder):
+                rows.append(((m.get("email") or "").strip().lower(),
+                             "covered", m.get("relationship") or ""))
+            for em, role, rel in rows:
+                if not em or em in _seen:
+                    continue
+                _seen.add(em)
+                buckets["family"].append({
+                    "email": em,
+                    "name": _member_name_for(cx, em),
+                    "category": "family",
+                    "role": role,
+                    "relationship": rel,
+                    "plan_holder": holder,
+                    "plan_status": plan.get("status") or "",
+                    "plan_source": plan.get("source") or "",
+                    "plan_cents": int(plan.get("amount_cents") or 0),
+                    "cadence_months": int(plan.get("cadence_months") or 1),
+                    "started": plan.get("started_at") or "",
+                    "next_charge_date": plan.get("next_charge_at") or "",
+                    "fail_count": int(plan.get("fail_count") or 0),
+                    "tier": 0, "order_count": 0,
+                })
+    except Exception as e:      # the board degrades, it never 500s
+        if strict:
+            raise
+        print(f"[members-board] family plan read failed: {e!r}", flush=True)
+    # credit_cents is always 0 now (accrual retired); sort is a harmless no-op
+    # kept for row-shape stability.
+    buckets["trial"].sort(key=lambda r: r.get("credit_cents", 0), reverse=True)
+    return buckets
+
+
 @app.route("/api/console/members", methods=["GET"])
 def api_console_members():
     """Trial / Full / Paused membership board. The trial-credit accrual machinery
@@ -22982,76 +23062,8 @@ def api_console_members():
         _key = _present_console_key()
         if _key != CONSOLE_SECRET and not _owner_token_ok(_key):
             return jsonify({"error": "unauthorized"}), 401
-    from dashboard import subscriptions as _subs
-    buckets = {"trial": [], "full": [], "paused": [], "family": []}
     with db.connect(LOG_DB) as cx:
-        cx.row_factory = sqlite3.Row
-        _subs.migrate_add_failed_count(cx)
-        _subs.migrate_add_membership_columns(cx)
-        _subs.migrate_add_term_cap_column(cx)
-        _subs.migrate_add_attribution_column(cx)
-        _subs.migrate_add_consent_column(cx)
-        # One row per member (list_active_memberships dedupes by email).
-        for s in _subs.list_active_memberships(cx):
-            cat = _subs.classify_sub(s)
-            email = s.get("email") or ""
-            credit = 0
-            row = _subs.member_board_row(s, name=_member_name_for(cx, email),
-                                         credit_cents=credit)
-            buckets[cat].append(row)  # cat is always trial/full/paused (pre-seeded)
-        # Subscriptions are only ONE way to hold membership. One-time month and
-        # annual-prepay purchases, manual console enrols and the biofield care-taster
-        # grant all write a `memberships` row and no subscription, so they were
-        # invisible here while the portal and the pricer treated them as members.
-        for g in _subs.list_membership_holders(cx):
-            g["name"] = _member_name_for(cx, g.get("email") or "")
-            buckets["full"].append(g)
-        # Family plans are a THIRD way to hold membership and the board could not
-        # see them at all: it read `subscriptions` and `memberships` and never
-        # `family_subscriptions` or `household_members`. On 2026-09-12 four of the
-        # eight family-plan people were absent here, including a plan holder, while
-        # every one of them priced as a member. Glen: "Family plan is a category of
-        # membership. Add it to the board."
-        #
-        # Holder and covered member are both listed, because entitlement reaches
-        # both and the board's job is to answer "who gets member pricing".
-        try:
-            from dashboard import family_plan as _fp
-            from dashboard import household as _hh
-            _fp.init_family_plan_table(cx)
-            _hh.init_household_tables(cx)
-            _seen = {r.get("email") for v in buckets.values() for r in v}
-            for plan in _fp.list_active(cx):
-                holder = plan.get("caregiver_email") or ""
-                rows = [(holder, "holder", "")]
-                for m in _hh.members_for(cx, holder):
-                    rows.append(((m.get("email") or "").strip().lower(),
-                                 "covered", m.get("relationship") or ""))
-                for em, role, rel in rows:
-                    if not em or em in _seen:
-                        continue
-                    _seen.add(em)
-                    buckets["family"].append({
-                        "email": em,
-                        "name": _member_name_for(cx, em),
-                        "category": "family",
-                        "role": role,
-                        "relationship": rel,
-                        "plan_holder": holder,
-                        "plan_status": plan.get("status") or "",
-                        "plan_source": plan.get("source") or "",
-                        "plan_cents": int(plan.get("amount_cents") or 0),
-                        "cadence_months": int(plan.get("cadence_months") or 1),
-                        "started": plan.get("started_at") or "",
-                        "next_charge_date": plan.get("next_charge_at") or "",
-                        "fail_count": int(plan.get("fail_count") or 0),
-                        "tier": 0, "order_count": 0,
-                    })
-        except Exception as e:      # the board degrades, it never 500s
-            print(f"[members-board] family plan read failed: {e!r}", flush=True)
-    # credit_cents is always 0 now (accrual retired); sort is a harmless no-op
-    # kept for row-shape stability.
-    buckets["trial"].sort(key=lambda r: r.get("credit_cents", 0), reverse=True)
+        buckets = members_board_buckets(cx)
     counts = {k: len(v) for k, v in buckets.items()}
     return jsonify({"buckets": buckets, "counts": counts})
 
