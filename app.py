@@ -17857,6 +17857,92 @@ def api_console_fullscript_sync():
     return jsonify({"ok": True, **counts})
 
 
+def _fullscript_api_page(title, lines, status=200):
+    body = "".join(f"<p>{html.escape(line)}</p>" for line in lines)
+    return Response(f"<!doctype html><meta charset=utf-8><title>{html.escape(title)}</title>"
+                    f"<body style='font-family:system-ui;max-width:40em;margin:3em auto'>"
+                    f"<h1>{html.escape(title)}</h1>{body}</body>", status=status,
+                    mimetype="text/html")
+
+
+@app.route("/fullscript/oauth/start", methods=["GET"])
+def fullscript_oauth_start():
+    """Glen authorises the app once, as practitioner, in his logged-in browser
+    (Glen, 2026-10-18). Owner only: an unset console secret never opens it."""
+    if not _portal_open_is_owner():
+        return _fullscript_api_page("Not signed in", ["Sign in to the console first."], 401)
+    from dashboard import fullscript_api as _fsa
+    missing = _fsa.ready()
+    if missing:
+        return _fullscript_api_page("Fullscript is not ready", missing, 503)
+    from dashboard import portal_providers as _pp
+    with _db_lock, db.connect(LOG_DB) as cx:
+        state, _nonce, _verifier = _pp.create_transaction(cx, _fsa.PROVIDER, _fsa.REDIRECT_URI)
+    return redirect(_fsa.authorization_url(state), code=302)
+
+
+@app.route("/fullscript/oauth/callback", methods=["GET"])
+def fullscript_oauth_callback():
+    """Fullscript returns here with a one-time code. The state must be one this app
+    issued in the last 10 minutes, and the browser must be Glen's."""
+    if not _portal_open_is_owner():
+        return _fullscript_api_page("Not signed in", ["Sign in to the console first."], 401)
+    from dashboard import fullscript_api as _fsa
+    from dashboard import portal_providers as _pp
+    if request.args.get("error"):
+        return _fullscript_api_page("Fullscript was not connected",
+                                    ["Fullscript returned: " + request.args.get("error", "")[:80]],
+                                    400)
+    code = request.args.get("code", "")
+    # No _db_lock: the code exchange waits on Fullscript, and the lock would stall
+    # every other request in this worker meanwhile.
+    with db.connect(LOG_DB) as cx:
+        if not code or not _pp.consume_transaction(cx, request.args.get("state", ""),
+                                                   _fsa.PROVIDER):
+            return _fullscript_api_page("Fullscript was not connected",
+                                        ["This link has expired or was already used. "
+                                         "Start again from the console."], 400)
+        try:
+            _fsa.exchange_code(cx, code)
+        except Exception as exc:  # noqa: BLE001
+            return _fullscript_api_page("Fullscript was not connected", [str(exc)[:200]], 502)
+    return _fullscript_api_page("Fullscript is connected",
+                                ["The sandbox catalog can now be searched. "
+                                 "You can close this tab."])
+
+
+@app.route("/api/console/fullscript/api-status", methods=["GET"])
+def api_console_fullscript_api_status():
+    """Owner: what is missing, and whether a token is stored. Never shows a token."""
+    if not _portal_open_is_owner():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import fullscript_api as _fsa
+    with _db_lock, db.connect(LOG_DB) as cx:
+        connected = _fsa.connected(cx)
+    return jsonify({"environment": _fsa.environment(), "missing": _fsa.ready(),
+                    "connected": connected})
+
+
+@app.route("/api/console/fullscript/catalog-search", methods=["GET"])
+def api_console_fullscript_catalog_search():
+    """Owner: search the Fullscript catalog. Unvetted: results never reach a client
+    from here, and each says herbal is unchecked."""
+    if not _portal_open_is_owner():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import fullscript_api as _fsa
+    term = (request.args.get("q") or "").strip()[:120]
+    try:
+        # No _db_lock: a search and its refresh wait on Fullscript.
+        with db.connect(LOG_DB) as cx:
+            return jsonify(_fsa.search(cx, term))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except _fsa.NotConnected as exc:
+        return jsonify({"error": str(exc), "connect": "/fullscript/oauth/start"}), 409
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)[:200]}), 502
+
+
 @app.route("/api/console/scan-recommendations", methods=["GET"])
 def api_console_scan_recommendations_read():
     """Owner: read back what the pusher stored. Slice 1 shipped write-only, so this is
