@@ -2308,15 +2308,25 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             from dashboard import client_species as _cspec
             from dashboard.biofield_e4l import species_from_e4l as _species_from_e4l
             _is_animal = _cspec.is_animal(_species_from_e4l(e4l_db, email))
-            try:
-                # An animal's remedy is the FileMaker remedy-list name for its code (Glen,
-                # 2026-10-01), the list the picker and the dosing read.
-                from dashboard.biofield_authoring import infoceutical_names_by_code
-                res = _ri.synthesize_reveal_layers(
-                    email, today=_dt.date.today().isoformat(), is_animal=_is_animal,
-                    infoceutical_names=infoceutical_names_by_code(cx) if _is_animal else None)
-            except Exception as e:
-                return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
+            from dashboard import biofield_reveal_preview as _rp
+            token = str(_body.get("token") or "")
+            stored = _rp.load(cx, test_id, token) if force and token else None
+            if force and token and not stored:
+                return {"ok": False, "reason": "The preview has expired. "
+                                              "Click Import Reveal again."}
+            if stored:
+                res = stored["res"]   # the layers Glen previewed, not a new model run
+            else:
+                try:
+                    # An animal's remedy is the FileMaker remedy-list name for its code
+                    # (Glen, 2026-10-01), the list the picker and the dosing read.
+                    from dashboard.biofield_authoring import infoceutical_names_by_code
+                    res = _ri.synthesize_reveal_layers(
+                        email, today=_dt.date.today().isoformat(), is_animal=_is_animal,
+                        infoceutical_names=infoceutical_names_by_code(cx) if _is_animal
+                        else None)
+                except Exception as e:
+                    return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
             if not res.get("found"):
                 return {"ok": False, "reason": "No E4L scan on file"}
             stale = not res.get("fresh")
@@ -2327,16 +2337,37 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         "reason": f"Latest scan is {res.get('days_ago')} days old "
                                   "— refresh to import, or import it anyway"}
             existing = _layer_count(rep)
-            if existing and not force:
-                return {"ok": False, "needs_confirm": True, "existing": existing}
-            imported = _ri.import_layers_to_test(cx, test_id, res.get("layers") or [],
+            layers, skipped = res.get("layers") or [], []
+            if existing:
+                # Glen, 2026-10-18: add only the reveal layers no Clinical layer covers.
+                # The synthesis is a model call and differs run to run, so the layers
+                # Glen previews are stored and the import uses exactly those.
+                split = _rp.split(cx, test_id, rep, layers, res.get("scan_id"), e4l_db)
+                if not stored:
+                    token = _rp.save(cx, test_id, res, split)
+                    return {"ok": False, "needs_confirm": True, "existing": existing,
+                            "token": token, "preview": _rp.describe(split)}
+                if _rp.describe(split) != stored["preview"]:
+                    return {"ok": False, "reason": "The chain changed since the preview. "
+                                                  "Click Import Reveal again."}
+                anyway = {str(n) for n in _body.get("add_anyway") or []}
+                skipped = [s for s in split["skip"] if str(s["layer"].get("n")) not in anyway]
+                keep = {id(s["layer"]) for s in skipped}
+                # Renumbered 1..k, so a skipped layer leaves no gap after the existing ones.
+                layers = [dict(L, n=i) for i, L in
+                          enumerate((L for L in layers if id(L) not in keep), 1)]
+                _rp.forget(cx, test_id)
+            imported = _ri.import_layers_to_test(cx, test_id, layers,
                                                  after_layer=_last_layer_no(rep))
-            # Pass already-synthesized layers so the pipeline runs only once per import
-            _seed_stresses(cx, test_id, force=True, layers=res.get("layers") or [])
+            # Pass already-synthesized layers so the pipeline runs only once per import.
+            # Only the layers added: a skipped layer's remedy is not on the chain.
+            _seed_stresses(cx, test_id, force=True, layers=layers)
         # Reported back so an old scan behind a chain is never a silent fact.
         return {"ok": True, "imported": imported, "stale_override": bool(stale),
                 "days_ago": res.get("days_ago") if stale else None,
-                "no_remedy_layers": sum(1 for L in (res.get("layers") or []) if L.get("no_remedy"))}
+                "skipped": [{"title": s["layer"].get("title") or "", "rule": s["rule"],
+                             "why": s["why"]} for s in skipped],
+                "no_remedy_layers": sum(1 for L in layers if L.get("no_remedy"))}
 
     @app.route("/author/<test_id>/stresses")
     def author_stresses(test_id):
