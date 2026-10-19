@@ -1278,10 +1278,12 @@ async function combineIntakeItems(btn){
  var j=await post('/author/__TID__/clinical-items/combine',
                   {absorbed:absorbed,survivor:survivor,display:shown});
  if(j.ok)location.reload();else{btn.disabled=false;alert(j.error||'Could not combine.')}}
-async function combineClinicalItems(btn){
- var row=btn.closest('.clinical-item'),pick=row.querySelector('.clinical-combine-pick');
- var survivor=row.dataset.label, absorbed=(pick&&pick.value||'').trim();
- if(!absorbed){alert('Pick the row to fold into this one.');return}
+// `into` (Glen, 2026-10-18): this row folds into the picked one, which survives.
+async function combineClinicalItems(btn,into){
+ var row=btn.closest('.clinical-item'),pick=btn.parentNode.querySelector('select');
+ var picked=(pick&&pick.value||'').trim();
+ var survivor=into?picked:row.dataset.label, absorbed=into?row.dataset.label:picked;
+ if(!picked){alert(into?'Pick the row to fold this one into.':'Pick the row to fold into this one.');return}
  if(!confirm('Combine "'+absorbed+'" into "'+survivor+'"? They become one condition '
    +'on every client, and "'+absorbed+'" stops appearing on its own. Its remembered '
    +'remedies move across. This can be undone.'))return;
@@ -2471,7 +2473,8 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
         stress_hidden = "" if (typed_pattern and remembered_pattern and
                                typed_pattern.lower() != remembered_pattern.lower()) else " hidden"
         # Glen, 2026-09-16: fold two rows that are really one condition. The row you
-        # are on survives; the one picked here is absorbed into it.
+        # are on survives; the one picked here is absorbed into it. Glen, 2026-10-18:
+        # the second picker goes the other way, folding this row into the one picked.
         others = "".join(
             f"<option value=\"{_e(o.get('label') or '')}\">{_e(o.get('label') or '')}</option>"
             for o in items if (o.get("label") or "") != (item.get("label") or ""))
@@ -2480,7 +2483,12 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "aria-label='Condition to fold into this one'>"
             f"<option value=''>Combine another row&hellip;</option>{others}</select>"
             "<button type=button class='btn ghost' onclick=combineClinicalItems(this)>"
-            "Combine into this</button></span>") if others else ""
+            "Combine into this</button></span>"
+            "<span class=clinical-combine><select class='clinical-combine-pick clinical-combine-into' "
+            "aria-label='Condition to fold this one into'>"
+            f"<option value=''>Combine this into another row&hellip;</option>{others}</select>"
+            "<button type=button class='btn ghost' onclick=combineClinicalItems(this,true)>"
+            "Combine into that</button></span>") if others else ""
         remedy = (f"<span class=clinical-remedy>Layer {_e(str(item.get('layer') or '?'))} · {_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
