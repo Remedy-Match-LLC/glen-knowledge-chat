@@ -95,7 +95,7 @@ def test_order_230_shows_the_button_for_40_dollars(env):
     _oid, tok = _like_230(env)
     o = env["c"].get(f"/api/invoice/{tok}").get_json()["order"]
     assert o["payable"] is True
-    assert o["balance_due_cents"] == 4000
+    assert o["pay_amount_cents"] == 4000 and o["balance_due_cents"] == 4000
 
 
 def test_card_charges_the_balance_on_its_own_path(env):
@@ -186,14 +186,14 @@ def test_the_page_asks_for_the_balance():
     assert "money(due)" in body and "money(ORDER.total_cents)" not in body
 
 
-def test_paying_past_the_balance_is_recorded_and_alerted(env):
+def test_paying_past_the_balance_is_recorded_and_glen_told(env):
     oid, _tok = _like_230(env)
-    alerts = []
-    env["mp"].setattr(env["app"], "_alert_stripe", lambda ctx, err: alerts.append(ctx))
     _return(env, oid, pi="pi_tab_one")
+    assert env["sent"] == []
     _return(env, oid, pi="pi_tab_two")      # a second tab, paid too
+    _return(env, oid, pi="pi_tab_two")      # and its reload tells no one twice
     assert env["OP"].balance(env["cx"], oid)["balance_cents"] == -4000
-    assert alerts == ["invoice-balance-overpaid"]
+    assert len(env["sent"]) == 1 and "refund" in env["sent"][0][2]
 
 
 def test_the_backfill_writes_once(env):
@@ -203,8 +203,102 @@ def test_the_backfill_writes_once(env):
     assert len(env["OP"].list_payments(env["cx"], oid)) == 1
 
 
+def test_a_refund_is_never_asked_for_again(env):
+    oid, tok = env["order"](ref="DS-R", total=47300, pay_status="paid", paid_cents=47300,
+                            pay_method="card", paid_at="2026-10-01T00:00:00Z")
+    env["mp"].setattr(env["OP"].stripe_pay, "refund", lambda *a, **k: {"id": "re_1"})
+    pay = env["OP"].add_payment(env["cx"], oid, 47300, "card", source="manual")
+    env["OP"].add_refund(env["cx"], oid, 4000, "card", refunds_payment_id=pay["id"])
+    assert env["OP"].balance(env["cx"], oid)["balance_cents"] == 4000
+    o = env["c"].get(f"/api/invoice/{tok}").get_json()["order"]
+    assert o["payable"] is False
+    assert env["c"].post(f"/api/invoice/{tok}/pay", json={"method": "card"}).status_code == 409
+
+
+def test_rae_recording_the_zelle_balance_keeps_the_earlier_payment(env):
+    oid, tok = _like_230(env)
+    env["OP"].add_payment(env["cx"], oid, 4000, "Zelle", source="manual")
+    assert env["OP"].balance(env["cx"], oid)["balance_cents"] == 0
+    assert env["c"].get(f"/api/invoice/{tok}").get_json()["order"]["payable"] is False
+
+
+def test_the_original_card_payment_recorded_later_is_not_counted_twice(env):
+    oid, _tok = _like_230(env)
+    env["OP"].add_payment(env["cx"], oid, 43300, "card", source="stripe",
+                          external_ref="pi_original")
+    assert env["OP"].balance(env["cx"], oid)["balance_cents"] == 4000
+
+
+def test_the_original_payment_intent_alone_marks_the_same_money(env):
+    oid, _tok = _like_230(env)
+    env["OP"].add_payment(env["cx"], oid, 43000, "card", source="stripe",
+                          external_ref="pi_original")
+    assert [r["source"] for r in env["OP"].list_payments(env["cx"], oid)] == ["stripe"]
+
+
+def test_the_same_amount_alone_marks_the_same_money(env):
+    oid, _tok = _like_230(env)
+    env["OP"].add_payment(env["cx"], oid, 43300, "card", source="manual")
+    assert [r["source"] for r in env["OP"].list_payments(env["cx"], oid)] == ["manual"]
+
+
+def test_the_stripe_webhook_calls_the_balance_fulfiller():
+    import inspect
+    app_module = importlib.import_module("app")
+    import ast, textwrap
+    tree = ast.parse(textwrap.dedent(inspect.getsource(app_module.webhook_stripe)))
+    calls = {n.func.id for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    assert "_fulfill_invoice_balance" in calls
+
+
+def test_a_fully_paid_legacy_order_reconciled_by_hand_is_not_counted_twice(env):
+    oid, _tok = env["order"](ref="DS-F", total=43300, pay_status="paid", paid_cents=43300,
+                             pay_method="Zelle", paid_at="2026-10-01T00:00:00Z")
+    env["OP"].add_payment(env["cx"], oid, 43300, "Zelle", source="manual")
+    assert env["OP"].balance(env["cx"], oid)["balance_cents"] == 0
+
+
+def test_a_voided_row_does_not_stop_the_backfill(env):
+    oid, _tok = _like_230(env)
+    env["cx"].execute("INSERT INTO order_payments (order_id, kind, amount_cents, method, "
+                      "source, status, created_at) VALUES (?, 'payment', 100, 'Zelle', "
+                      "'manual', 'voided', '2026-10-17')", (oid,))
+    env["cx"].commit()
+    assert env["OP"].balance(env["cx"], oid)["legacy_fallback"] is True
+    _return(env, oid)
+    assert env["OP"].balance(env["cx"], oid)["balance_cents"] == 0
+
+
+def test_a_closed_tab_is_recorded_by_the_webhook(env):
+    oid, _tok = _like_230(env)
+    env["mp"].setattr(env["stripe"], "get_session", lambda sid: {
+        "id": sid, "payment_status": "paid", "amount_total": 4000,
+        "payment_intent": "pi_webhook",
+        "metadata": {"kind": "invoice-balance", "order_id": str(oid)}})
+    env["app"]._fulfill_invoice_balance("cs_test_2")
+    env["app"]._fulfill_invoice_balance("cs_test_2")
+    assert env["OP"].balance(env["cx"], oid)["balance_cents"] == 0
+    assert len(env["OP"].list_payments(env["cx"], oid)) == 2
+
+
+def test_a_balance_card_payment_shows_in_the_money_view_once(env):
+    oid, _tok = _like_230(env)
+    _return(env, oid)
+    shown = [r for r in env["OP"].ledger_rows_for_payments_view(env["cx"])
+             if r["amount_cents"] in (4000, 43300)]
+    assert [(r["amount_cents"], r["source"]) for r in shown] == [(4000, "card:balance")]
+
+
 def test_a_claim_with_no_balance_reading_sends_no_amount(env):
     _oid, tok = _like_230(env)
     env["mp"].setattr(env["app"], "_invoice_balance_cents", lambda o: None)
     r = env["c"].post(f"/api/invoice/{tok}/claim-paid", json={"method": "zelle"})
     assert r.status_code == 503 and env["sent"] == []
+
+
+def test_the_receipt_names_the_order(env):
+    oid, _tok = _like_230(env)
+    _return(env, oid)
+    html = env["c"].get("/order-confirmation?session_id=cs_test_1").get_data(as_text=True)
+    assert f"#{oid}</strong>" in html and "$40.00" in html

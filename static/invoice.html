@@ -558,7 +558,7 @@ function setupPay(){
   // Amount due, up top, so the call to action is unmistakable.
   // The balance, never the full total: a paid order that gained a line owes only
   // the difference (Glen, 2026-10-19). The server charges the same figure.
-  const due = ORDER.balance_due_cents != null ? ORDER.balance_due_cents : ORDER.total_cents;
+  const due = ORDER.pay_amount_cents != null ? ORDER.pay_amount_cents : ORDER.total_cents;
   $('pay-due').innerHTML = 'Amount due: <b>'+money(due)+'</b>';
   $('pay-due').style.display = '';
   $('pay-btn').textContent = 'Pay '+money(due);
