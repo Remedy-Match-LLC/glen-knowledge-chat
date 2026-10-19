@@ -479,7 +479,8 @@ def _plan_print_choice(tid):
             "onchange=\"document.querySelectorAll('a.print-report').forEach(function(a){"
             "a.href=a.href.split('?')[0]+(this.checked?'?plan=1':'')},this)\"> Add the Plan</label>"
             f" &nbsp;·&nbsp; <a href='/test/{tid}/plan' target='_blank'>Plan</a>"
-            f" (<a href='/test/{tid}/plan.pdf' target='_blank'>PDF</a>)")
+            f" (<a href='/test/{tid}/plan.pdf' target='_blank'>PDF</a>)"
+            f" &nbsp;·&nbsp; <a href='/test/{tid}/overview' target='_blank'>Overview</a>")
 
 
 def render_report_html(report, notes="", narrative="", video_script="", stresses=None,

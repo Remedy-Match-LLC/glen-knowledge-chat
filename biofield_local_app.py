@@ -1556,6 +1556,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return Response(plan_page(f"<div class=plan>{note}</div>{section}" if note
                                   else section), mimetype="text/html")
 
+    @app.route("/test/<test_id>/overview")
+    def intervention_overview(test_id):
+        """Glen's overview chart of ticked items against clinical patterns
+        (2026-10-18). A working view: never printed, never on the portal."""
+        from dashboard.biofield_overview import overview, render_page
+        with sqlite3.connect(db_path) as cx:
+            rep = _report_for(cx, test_id)
+            data = overview(cx, test_id, rep.get("layers") or [])
+        return Response(render_page(data, (rep.get("client") or {}).get("name") or "",
+                                    rep.get("date") or ""), mimetype="text/html")
+
     @app.route("/test/<test_id>/plan.pdf")
     def plan_report_pdf(test_id):
         import os
