@@ -54,7 +54,7 @@ def overview(cx, test_id, layers=()):
     for name, _text, hits in pr.cautions_for(groups, pr.stored_frame(cx)[1]):
         for line_name in hits:
             caution_hits.setdefault(line_name, []).append(name)
-    labels, rows, avoided = {}, [], {}
+    labels, rows, avoided, ckeys = {}, [], {}, {}
     # Foods a ticked pattern avoids, by food key, for the emphasize rows' minus.
     for line in groups.get("foods_avoid") or []:
         for en in line["entries"]:
@@ -64,43 +64,66 @@ def overview(cx, test_id, layers=()):
                 avoided.setdefault(key, []).append((_norm(en["condition"]), en["name"]))
     for section, lines in groups.items():
         for line in lines:
-            cells, keys = {}, set()
+            cells, unrated, keys = {}, [], set()
             for en in line["entries"]:
                 ck = _norm(en["condition"])
                 labels.setdefault(ck, en["condition"])
                 fk = facts.get((en.get("condition_key"), en.get("section", section),
                                 _norm(en["name"])), [])
                 keys.update(fk or [_norm(en["name"])])
+                ckeys.setdefault(en.get("condition_key") or ck, ck)
                 if en["overall"] is not None:
                     cells[ck] = max(cells.get(ck, 0), int(en["overall"]))
+                elif ck not in unrated:
+                    unrated.append(ck)
             cautions = [f"Caution: {n}" for n in caution_hits.get(line["name"], [])]
             conflicts = {}
             if section == "foods_emphasize":
-                # The minus sits in the column of the pattern that avoids the food;
-                # the food's own patterns are not a conflict with themselves.
-                own = {_norm(en["condition"]) for en in line["entries"]}
-                for key in sorted(keys):
-                    for ck, other in avoided.get(key, []):
-                        if ck not in own:
-                            conflicts.setdefault(ck, f"{labels.get(ck, ck)} avoids {other}")
+                # The minus sits in the column of the pattern that avoids the food. Each
+                # emphasizing entry is compared on its own, so a pattern that both
+                # emphasizes and avoids still flags against another that emphasizes it;
+                # a pattern is never in conflict with itself, as on the Summary.
+                for en in line["entries"]:
+                    mine = _norm(en["condition"])
+                    fk = facts.get((en.get("condition_key"), "foods_emphasize",
+                                    _norm(en["name"])), []) or [_norm(en["name"])]
+                    for key in sorted(fk):
+                        for ck, other in avoided.get(key, []):
+                            if ck != mine:
+                                conflicts.setdefault(ck, f"{labels.get(ck, ck)} avoids {other}")
             rows.append({"name": line["name"], "kind": KIND.get(section, ""),
                          "group": GROUP_OF.get(section, "Remedies"), "cells": cells,
+                         "unrated": [ck for ck in unrated if ck not in cells],
                          "cautions": cautions, "conflicts": conflicts})
-    ba, seen = [], set()
+    # A layer's head names its pattern on newer reports; older ones name a remedy or a
+    # system. A head counts only when it is a ticked pattern, by its label, its key or
+    # a folded row's alias (review round 1).
+    from dashboard.biofield_clinical_checklist import aliases
+    folded = {k: _norm(v) for k, v in aliases(cx).items()}
+    ba, seen, unmatched = [], set(), []
     for layer in layers or []:
         head = str(layer.get("head") or "").strip()
-        if head and _norm(head) not in seen:
-            seen.add(_norm(head))
-            ba.append({"key": _norm(head), "label": head})
+        h = _norm(head)
+        ck = h if h in labels else ckeys.get(h) or (folded.get(h) if folded.get(h) in labels else None)
+        if not head:
+            continue
+        if not ck:
+            if head not in unmatched:
+                unmatched.append(head)
+        elif ck not in seen:
+            seen.add(ck)
+            ba.append({"key": ck, "label": labels[ck]})
     rest = sorted((k for k in labels if k not in seen), key=lambda k: labels[k].lower())
     all_cols = ba + [{"key": k, "label": labels[k]} for k in rest]
-    return {"ba": ba, "all": all_cols, "rows": rows, "groups": list(GROUPS)}
+    return {"ba": ba, "all": all_cols, "rows": rows, "groups": list(GROUPS),
+            "unmatched_heads": unmatched}
 
 
 def render_page(data, client_name="", date=""):
     """The chart as a page of its own. Every string is escaped in the page's script."""
     e = html.escape
-    payload = json.dumps(data).replace("</", "<\\/")
+    # No "<" at all inside the script, so no name can open a comment or close it.
+    payload = json.dumps(data).replace("<", "\\u003c")
     who = " · ".join(x for x in (client_name, date) if x)
     return ("<!doctype html><html lang=en><head><meta charset=utf-8>"
             "<meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -108,11 +131,11 @@ def render_page(data, client_name="", date=""):
             f"<h1>Intervention overview</h1><p class=who>{e(who)}</p>"
             "<p>Each row is an item ticked in the Clinical Summary, and each column is a "
             "clinical pattern. A cell is the item's overall rating there; blank means it is "
-            "not listed under that pattern. Within each group, rows rank by total, then the "
+            "not listed under that pattern, and ? means listed but not yet rated. Within each group, rows rank by total, then the "
             "highest single rating, then name. A yellow minus flags a caution and never "
             "changes the total; hover it for the reason. Not printed.</p>"
             "<button id=b type=button></button><div class=wrap><table id=t></table></div>"
-            "<p id=off class=off></p></main>"
+            "<p id=off class=off></p><p id=heads class=off></p></main>"
             f"<script>const D={payload};{SCRIPT}</script></body></html>")
 
 
@@ -127,7 +150,7 @@ CSS = (
     "color:var(--fg);border-radius:6px;cursor:pointer}.wrap{overflow-x:auto;margin-top:12px}"
     "table{border-collapse:collapse;min-width:600px}th,td{border:1px solid var(--line);"
     "padding:3px 6px;text-align:center}th{background:var(--head);font-weight:600;font-size:12px;"
-    "vertical-align:bottom}td.n{text-align:left;white-space:nowrap}td.n small{color:var(--mut);"
+    "vertical-align:bottom}td.u{color:var(--mut)}td.n{text-align:left;white-space:nowrap}td.n small{color:var(--mut);"
     "margin-left:6px}td.t{font-weight:700}td.v{background:var(--hi)}tr.g td{background:var(--grp);"
     "text-align:left;font-weight:700;font-size:15px;padding:6px}.m{display:inline-block;"
     "background:var(--warn);color:var(--warn-fg);border-radius:3px;padding:0 5px;margin-left:4px;"
@@ -147,7 +170,8 @@ function draw(){
  let off=0;
  for(const g of D.groups){
   const rows=D.rows.filter(r=>r.group===g).map(r=>{const vals=cols.map(c=>r.cells[c.key]);const got=vals.filter(x=>x!=null);
-   return {r,vals,tot:got.reduce((a,b)=>a+b,0),n:got.length,mx:Math.max(0,...got)}});
+   const unr=cols.filter(c=>(r.unrated||[]).includes(c.key)).length;
+   return {r,vals,tot:got.reduce((a,b)=>a+b,0),n:got.length+unr,mx:Math.max(0,...got)}});
   const shown=rows.filter(x=>x.n>0);off+=rows.length-shown.length;
   shown.sort((a,b)=>b.tot-a.tot||b.mx-a.mx||a.r.name.localeCompare(b.r.name));
   if(!shown.length)continue;
@@ -155,10 +179,13 @@ function draw(){
   for(const x of shown){
    h+='<tr><td class=n>'+esc(x.r.name)+(x.r.kind?'<small>'+esc(x.r.kind)+'</small>':'')+(x.r.cautions.length?minus(x.r.cautions.join('; ')):'')+'</td>';
    h+=cols.map((c,i)=>{const s=x.vals[i];const cf=x.r.conflicts[c.key];
+    if(s==null&&(x.r.unrated||[]).includes(c.key))return '<td class=u title="Listed here, not yet rated">?'+(cf?minus(cf):'')+'</td>';
     if(s==null)return '<td>'+(cf?minus(cf):'')+'</td>';
     return '<td class=v>'+(s>=10?'X':s)+(cf?minus(cf):'')+'</td>'}).join('');
    h+='<td class=t>'+x.tot+'</td><td>'+x.n+'</td></tr>'}}
  document.getElementById('t').innerHTML=h;
+ const um=D.unmatched_heads||[];
+ document.getElementById('heads').textContent=um.length?'Layer headings that name no ticked pattern, so they are not columns: '+um.join('; ')+'.':'';
  document.getElementById('off').textContent=off?off+' ticked item'+(off===1?' has':'s have')+' no rating under the patterns shown, so '+(off===1?'it is':'they are')+' left off this view.':'';
 }
 document.getElementById('b').onclick=()=>{v=v==='ba'?'all':'ba';draw()};draw();

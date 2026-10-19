@@ -68,11 +68,13 @@ def test_biofield_columns_follow_the_layers_and_all_adds_the_rest(cx):
     _tick(cx, "Gut", cs.NUTRIENTS, "Zinc")
     _tick(cx, "Vertigo", cs.NUTRIENTS, "B12")
     _tick(cx, "Blood sugar", cs.NUTRIENTS, "Chromium")
-    layers = [{"head": "Gut"}, {"head": "Gut"}, {"head": "Cataract and vision"}, {"head": ""}]
+    layers = [{"head": "Vertigo"}, {"head": "gut"}, {"head": "Gut"},
+              {"head": "Peridot Gem Elixir"}, {"head": "Cataract and vision"}, {"head": ""}]
     d = ov.overview(cx, "a49", layers)
-    assert [c["label"] for c in d["ba"]] == ["Gut", "Cataract and vision"]
-    assert [c["label"] for c in d["all"]] == ["Gut", "Cataract and vision", "Blood sugar",
-                                              "Vertigo"]
+    # A head counts only as a ticked pattern; older reports head layers with remedies.
+    assert [c["label"] for c in d["ba"]] == ["Vertigo", "Gut"]
+    assert d["unmatched_heads"] == ["Peridot Gem Elixir", "Cataract and vision"]
+    assert [c["label"] for c in d["all"]] == ["Vertigo", "Gut", "Blood sugar"]
 
 
 def test_a_caution_carries_a_minus_and_a_blood_pressure_item_does_not(cx, tmp_path):
@@ -194,9 +196,10 @@ def test_every_string_is_escaped_by_the_script():
 
 
 def test_the_page_cannot_close_its_own_script(cx):
-    _tick(cx, "Gut</script><b>", cs.NUTRIENTS, "Zinc</script><img src=x>")
+    _tick(cx, "Gut</script><b>", cs.NUTRIENTS, "Zinc<!--<script></script><img src=x>")
     page = ov.render_page(ov.overview(cx, "a49"), "Pat <b>", "")
     assert page[page.index("<script>"):].count("</script>") == 1
+    assert "<!--" not in page[page.index("<script>"):]
     assert "<b>" not in page[:page.index("<script>")]
 
 
@@ -238,3 +241,51 @@ def test_a_conflict_names_the_avoiding_pattern_by_its_label(cx, avoid_first):
         _tick(cx, label, section, name, food_keys=["pepper"])
     assert _rows(ov.overview(cx, "a49"))["Sweet pepper"]["conflicts"] == {
         "connective tissue autoimmunity": "Connective tissue autoimmunity avoids Nightshades"}
+
+
+def test_a_head_matches_a_folded_row_through_its_alias(cx):
+    from dashboard.biofield_clinical_checklist import ensure_alias_schema
+    ensure_alias_schema(cx)
+    cx.execute("INSERT INTO biofield_clinical_alias (from_key,from_label,to_key,to_label) VALUES ('adrenal','Adrenal','gut','Gut')")
+    _tick(cx, "Gut", cs.NUTRIENTS, "Zinc")
+    d = ov.overview(cx, "a49", [{"head": "Adrenal"}])
+    assert [c["label"] for c in d["ba"]] == ["Gut"] and d["unmatched_heads"] == []
+
+
+def test_listed_but_unrated_shows_a_question_mark_and_counts_as_a_pattern(cx):
+    cs.upsert_item(cx, "Gut", cs.FORMULATIONS, _item("GI Repair", None), origin_test="a49")
+    save_selection(cx, "a49", "Gut", ["GI Repair"])
+    _tick(cx, "Liver", cs.NUTRIENTS, "Zinc", 6)
+    d = ov.overview(cx, "a49", [{"head": "Gut"}])
+    assert _rows(d)["GI Repair"]["unrated"] == ["gut"] and _rows(d)["Zinc"]["unrated"] == []
+    table, _, off = _run(d)
+    row = table[table.index(">GI Repair<"):]
+    assert 'title="Listed here, not yet rated">?' in row
+    assert re.findall(r"<td class=t>(\d+)</td><td>(\d+)</td>", row)[0] == ("0", "1")
+    assert off == "1 ticked item has no rating under the patterns shown, so it is left off this view."
+
+
+def test_a_merged_line_still_flags_a_pattern_that_both_emphasizes_and_avoids(cx, monkeypatch):
+    from dashboard import biofield_plan_report as pr
+    _tick(cx, "Gut", "foods_emphasize", "Sea salt", food_keys=["salt"])
+    _tick(cx, "Vertigo", "foods_emphasize", "Unrefined salt", food_keys=["salt"])
+    _tick(cx, "Vertigo", "foods_avoid", "Salty foods", food_keys=["salt"])
+    real = pr.stored_wording
+    monkeypatch.setattr(pr, "stored_wording", lambda c: (
+        {("foods_emphasize", "sea salt"): "Salt", ("foods_emphasize", "unrefined salt"): "Salt"},
+        *real(c)[1:]))
+    assert _rows(ov.overview(cx, "a49"))["Salt"]["conflicts"] == {"vertigo": "Vertigo avoids Salty foods"}
+
+
+def test_unmatched_heads_are_named_on_the_page():
+    d = _data([_row("A", "Remedies", {"gut": 4})])
+    d["unmatched_heads"] = ["Peridot Gem Elixir"]
+    import shutil, subprocess
+    if not shutil.which("node"):
+        pytest.skip("node is not installed")
+    stub = ("const el={};function g(id){return el[id]||(el[id]={innerHTML:'',textContent:'',"
+            "hidden:false,onclick:null})}const document={getElementById:g};")
+    out = subprocess.run(["node", "-e", stub + "const D=" + json.dumps(d) + ";" + ov.SCRIPT
+                          + "console.log(g('heads').textContent)"], capture_output=True, text=True)
+    assert out.stdout.strip() == ("Layer headings that name no ticked pattern, so they are not "
+                                  "columns: Peridot Gem Elixir.")
