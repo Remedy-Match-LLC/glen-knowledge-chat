@@ -145,7 +145,8 @@ def test_intake_import_records_its_source(client):
     with sqlite3.connect(appmod.LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         assert intake.get_response(cx, "imp@x.com")["answers"]["_imported"] == "clinical-record"
-    assert client.post(url, json=dict(body, source="made-up")).status_code == 400
+    for bad in ("made-up", "", None, False, 0, [], {}):
+        assert client.post(url, json=dict(body, source=bad)).status_code == 400, bad
 
 
 def test_intake_import_says_when_a_real_submission_kept_it_out(client):

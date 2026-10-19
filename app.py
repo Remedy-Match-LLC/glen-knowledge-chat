@@ -34282,7 +34282,8 @@ def console_intake_import():
         return jsonify({"error": "email required"}), 400
     if not isinstance(answers, dict):
         return jsonify({"error": "answers must be an object"}), 400
-    source = body.get("source") or "practice-better"
+    # Defaulted only when absent: an empty or wrong-typed label is refused.
+    source = body.get("source", "practice-better")
     if source not in _intake.IMPORT_SOURCES:
         return jsonify({"error": "source must be one of "
                                  + ", ".join(_intake.IMPORT_SOURCES)}), 400
