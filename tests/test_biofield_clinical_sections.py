@@ -779,3 +779,114 @@ def test_all_skips_a_greyed_remedy_rated_under_the_other_remedy_section(cx):
     chosen = cs.select_all(cx, "a49", "Gut", cs.INFOCEUTICALS, True,
                            ["ED8 Stomach Infoceutical"], remedies=[])
     assert chosen == []
+
+
+# Round 2 review, 2026-10-18: the page's tick list is never trusted for a greyed item.
+
+def _greyed_app(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d
+    monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    from biofield_local_app import create_app
+    db = str(tmp_path / "chat_log.db")
+    client = create_app(db).test_client()
+    with sqlite3.connect(db) as con:
+        cs.upsert_item(con, "Gut", cs.FORMULATIONS, _item("Herbal Blend", 8, 5, 5, botanical=True))
+        cs.upsert_item(con, "Gut", cs.FORMULATIONS, _item("Mineral Mix", 8, 5, 5))
+        _botanicals(con)
+        cs.save_botanical_setting(con, "a49", avoid=True, exceptions="")
+        con.commit()
+    return client, db
+
+
+def test_a_greyed_remedy_is_refused_until_unhidden(tmp_path, monkeypatch):
+    client, db = _greyed_app(tmp_path, monkeypatch)
+    url = "/author/a49/clinical-items/selection"
+    r = client.post(url, json={"label": "Gut", "remedies": ["Mineral Mix", "Herbal Blend"]})
+    assert r.status_code == 409
+    from dashboard.biofield_clinical_proposals import selections
+    with sqlite3.connect(db) as con:
+        assert selections(con, "a49").get("gut") in (None, [])
+    assert client.post(url, json={"label": "Gut", "remedies": ["Mineral Mix"]}).get_json()["ok"]
+    client.post("/author/a49/clinical-sections/unhide",
+                json={"label": "Gut", "section": cs.FORMULATIONS, "name": "Herbal Blend", "on": True})
+    r = client.post(url, json={"label": "Gut", "remedies": ["Mineral Mix", "Herbal Blend"]})
+    assert r.get_json()["ok"]
+
+
+def test_a_remedy_ticked_before_the_switch_may_stay(cx):
+    cs.upsert_item(cx, "Gut", cs.FORMULATIONS, _item("Herbal Blend", 8, 5, 5, botanical=True))
+    cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="")
+    assert cs.still_greyed(cx, "a49", "Gut", ["Herbal Blend"], ["Herbal Blend"]) == []
+    assert cs.still_greyed(cx, "a49", "Gut", ["Herbal Blend"], []) == ["Herbal Blend"]
+
+
+def test_all_drops_a_greyed_remedy_the_page_claims_is_ticked(tmp_path, monkeypatch):
+    client, db = _greyed_app(tmp_path, monkeypatch)
+    j = client.post("/author/a49/clinical-sections/all", json={
+        "label": "Gut", "section": cs.FORMULATIONS, "on": True,
+        "names": ["Mineral Mix"], "remedies": ["Herbal Blend"]}).get_json()
+    assert j["ok"] and j["checked"] == ["Mineral Mix"]
+
+
+def test_a_greyed_section_pick_is_refused_until_unhidden(tmp_path, monkeypatch):
+    client, db = _greyed_app(tmp_path, monkeypatch)
+    url = "/author/a49/clinical-sections/pick"
+    body = {"label": "Gut", "section": "foods_emphasize", "name": "Turmeric", "checked": True}
+    assert client.post(url, json=body).status_code == 409
+    assert client.post(url, json=dict(body, checked=False)).get_json()["ok"]
+    client.post("/author/a49/clinical-sections/unhide",
+                json={"label": "Gut", "section": "foods_emphasize", "name": "Turmeric", "on": True})
+    assert client.post(url, json=body).get_json()["ok"]
+
+
+def _rendered_fn(name):
+    """One function from the author script as the browser gets it."""
+    from dashboard import biofield_report_html as rh
+    src = rh._AUTHOR_JS
+    start = src.index(f"function {name}(")
+    start = src.rindex("\n", 0, start) + 1
+    ends = [i for i in (src.find("\nasync function", start + 10), src.find("\nfunction", start + 10))
+            if i > 0]
+    return src[start:min(ends)]
+
+
+def _run_failed_save(handler, call):
+    import json as _json
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    js = """
+var posted=[];
+function cl(){return {list:[],remove:function(c){this.list.push('-'+c)},add:function(c){this.list.push('+'+c)},
+  toggle:function(){},contains:function(){return false}}}
+var row={dataset:{label:'Gut'},classList:cl(),querySelectorAll:function(){return [box]},
+  querySelector:function(){return null}};
+var item={classList:cl()},sec={dataset:{section:'functional_formulations'},querySelector:function(){return null}};
+var box={checked:true,value:'Herbal Blend',dataset:{name:'Herbal Blend',section:'functional_formulations',greyed:'1'},
+  removeAttribute:function(){},classList:cl()};
+box.closest=function(s){return s==='.clinical-item'?row:s==='.clinical-section-item'?item:sec};
+var stat={textContent:''};var document={getElementById:function(){return stat},querySelectorAll:function(){return []}};
+async function post(url,body){posted.push([url,body]);
+  return url.indexOf('unhide')>=0?{ok:true}:{ok:false,error:'no'}}
+SCRIPT
+CALL.then(function(){console.log(JSON.stringify({posted:posted,checked:box.checked,
+  greyed:box.dataset.greyed||null,item:item.classList.list}))});
+""".replace("SCRIPT", "\n".join(_rendered_fn(n) for n in (
+        handler, "clinicalUngrey", "clinicalRegrey", "clinicalAllOff"))).replace("CALL", call)
+    out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=20)
+    assert out.returncode == 0, out.stderr
+    return _json.loads(out.stdout)
+
+
+@pytest.mark.parametrize("handler,call", [
+    ("selectClinicalRemedy", "selectClinicalRemedy(box)"),
+    ("saveClinicalSectionItem", "saveClinicalSectionItem(box,'checked')")])
+def test_a_failed_save_after_an_unhide_hides_it_again(handler, call):
+    got = _run_failed_save(handler, call)
+    unhides = [b["on"] for u, b in got["posted"] if u.endswith("/unhide")]
+    assert unhides == [True, False]
+    assert got["checked"] is False and got["greyed"] == "1"
+    assert got["item"] == ["-greyed", "+greyed"]

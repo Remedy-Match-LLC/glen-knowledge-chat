@@ -632,6 +632,25 @@ def _greyed(cx, test_id, item_key, section, ticked):
             and not _allowed_botanical(e["name"], exceptions)}
 
 
+def still_greyed(cx, test_id, label, remedies, before):
+    """The remedies in `remedies` that are greyed and were not already ticked in
+    `before`, the saved set. The page's own list is never trusted for this: a tick
+    whose unhide failed can ride along in another save."""
+    item_key = _norm(label)
+    was = {_norm(r) for r in before or []}
+    greyed = set.intersection(*[_greyed(cx, str(test_id), item_key, s, was)
+                                for s in REMEDY_SECTIONS])
+    return [r for r in remedies or [] if _norm(r) in greyed]
+
+
+def pick_greyed(cx, test_id, label, section, name):
+    """True when ticking `name` in a non-remedy section would select a greyed item."""
+    item_key = _norm(label)
+    picks = _picks(cx, str(test_id), item_key)
+    ticked = {k for (sec, k), p in picks.items() if sec == section and p.get("checked")}
+    return _norm(name) in _greyed(cx, str(test_id), item_key, section, ticked)
+
+
 def select_all(cx, test_id, label, section, on, names, remedies=()):
     """The section's All box. `names` are the items the page shows in that section,
     so a botanical the client's switch hides is never ticked by it.
@@ -656,6 +675,10 @@ def select_all(cx, test_id, label, section, on, names, remedies=()):
             shown.append(name)
     if section in REMEDY_SECTIONS:
         chosen = [str(r or "").strip() for r in remedies or [] if str(r or "").strip()]
+        from dashboard.biofield_clinical_proposals import _key, selections
+        saved = selections(cx, test_id).get(_key(label), [])
+        bad = {_norm(r) for r in still_greyed(cx, test_id, label, chosen, saved)}
+        chosen = [r for r in chosen if _norm(r) not in bad]
         chosen_keys = {_norm(r) for r in chosen}
         if on:
             greyed = _greyed(cx, test_id, item_key, section, chosen_keys)

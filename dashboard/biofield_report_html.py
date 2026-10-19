@@ -1430,6 +1430,7 @@ function toggleClinicalItem(box){
 }
 async function selectClinicalRemedy(box){
  var row=box.closest('.clinical-item');if(!row)return;
+ var ung=!!(box.checked&&box.dataset.greyed);
  if(!await clinicalUngrey(box))return;
  var remedies=[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
   .map(function(x){return x.value});
@@ -1442,6 +1443,7 @@ async function selectClinicalRemedy(box){
  if(stat)stat.textContent='Saving remedies\u2026';
  var j=await post('/author/__TID__/clinical-items/selection',
   {label:row.dataset.label,remedies:remedies});
+ if(!(j&&j.ok)&&ung)await clinicalRegrey(box);
  if(stat)stat.textContent=(j&&j.ok)?'Remedies saved':'Could not save remedy selection'}
 async function approveClinicalSectionItem(btn){
  var row=btn.closest('.clinical-item');if(!row)return;btn.disabled=true;
@@ -1512,6 +1514,15 @@ async function clinicalUngrey(box){
   return false}
  delete box.dataset.greyed;box.removeAttribute('title');item.classList.remove('greyed');
  return true}
+// The save after an unhide failed: hide it again, so an unhide never outlives the
+// tick it was made for.
+async function clinicalRegrey(box){
+ var row=box.closest('.clinical-item'),item=box.closest('.clinical-section-item');
+ var sec=box.closest('.clinical-section');box.checked=false;if(!row||!item||!sec)return;
+ try{await post('/author/__TID__/clinical-sections/unhide',
+  {label:row.dataset.label,section:sec.dataset.section,name:box.dataset.name||box.value,on:false})}
+ catch(e){}
+ box.dataset.greyed='1';item.classList.add('greyed')}
 async function saveClinicalBotanical(){
  var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent='Saving…';
@@ -1522,6 +1533,7 @@ async function saveClinicalBotanical(){
  if(stat)stat.textContent=(j&&j.error)||'Could not save'}
 async function saveClinicalSectionItem(el,field){
  var row=el.closest('.clinical-item');if(!row)return;
+ var ung=!!(field==='checked'&&el.checked&&el.dataset.greyed);
  if(field==='checked'&&!await clinicalUngrey(el))return;
  var body={label:row.dataset.label,section:el.dataset.section,name:el.dataset.name};
  if(field==='checked'){body.checked=el.checked;if(!el.checked)clinicalAllOff(el)}
@@ -1533,6 +1545,7 @@ async function saveClinicalSectionItem(el,field){
  var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent='Saving…';
  var j=await post('/author/__TID__/clinical-sections/pick',body);
+ if(!(j&&j.ok)&&ung)await clinicalRegrey(el);
  if(stat)stat.textContent=(j&&j.ok)?'Saved':((j&&j.error)||'Could not save');
  // A new rating moves the item, so the section is redrawn in its new order.
  if(j&&j.ok&&field==='rating')location.reload()}
