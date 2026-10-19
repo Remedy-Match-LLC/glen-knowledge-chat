@@ -556,9 +556,12 @@ function setupPay(){
   // editable hid this button on every unpaid order outside proposed/confirmed.
   if (!ORDER.payable){ $('pay-card').style.display='none'; return; }
   // Amount due, up top, so the call to action is unmistakable.
-  $('pay-due').innerHTML = 'Amount due: <b>'+money(ORDER.total_cents)+'</b>';
+  // The balance, never the full total: a paid order that gained a line owes only
+  // the difference (Glen, 2026-10-19). The server charges the same figure.
+  const due = ORDER.balance_due_cents != null ? ORDER.balance_due_cents : ORDER.total_cents;
+  $('pay-due').innerHTML = 'Amount due: <b>'+money(due)+'</b>';
   $('pay-due').style.display = '';
-  $('pay-btn').textContent = 'Pay '+money(ORDER.total_cents);
+  $('pay-btn').textContent = 'Pay '+money(due);
   if (!ORDER.paylink_enabled){ $('pay-notice').innerHTML='<div class="notice">Online payment isn’t enabled yet — we’ll be in touch.</div>'; $('pay-btn').disabled=true; return; }
   document.querySelectorAll('input[name=m]').forEach(el=>el.onchange=()=>{curMethod=el.value; $('claim-btn').style.display='none'; $('pay-instr').style.display='none'; $('order-notes').hidden=true;});
 }

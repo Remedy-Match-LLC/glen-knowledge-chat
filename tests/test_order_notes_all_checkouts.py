@@ -89,6 +89,8 @@ def test_the_invoice_zelle_reply_carries_the_note(monkeypatch, items, expect):
     monkeypatch.setattr(appmod, "_invoice_order_for_token", lambda t: {
         "id": 7, "status": "proposed", "pay_status": "unpaid", "total_cents": 6000,
         "items": items})
+    # The faked order has no row, so its ledger balance is given here (2026-10-19).
+    monkeypatch.setattr(appmod, "_invoice_balance_cents", lambda o: 6000)
     monkeypatch.setattr(appmod, "INVOICE_PAYLINK_ENABLED", True)
     r = appmod.app.test_client().post("/api/invoice/tok/pay", json={"method": "zelle"})
     assert r.status_code == 200

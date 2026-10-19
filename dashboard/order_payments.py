@@ -449,6 +449,32 @@ def caregiver_payers_for(cx, order_id, owner_email):
     return [r[0] for r in rows]
 
 
+def backfill_legacy_payment(cx, order_id):
+    """The one-order form of backfill_legacy_payments, run before a further payment
+    lands on a paid pre-ledger order. Without it the new row turns balance()'s
+    legacy fallback off, and the earlier payment vanishes from the balance: order
+    230 had $433 on the order row, so a $40 row would have left $433 owed.
+
+    Same row as the bulk backfill: source 'legacy', synced, no QBO push. Writes
+    nothing for an order with any ledger row, or one not projected paid. Returns
+    True when it wrote a row."""
+    o = orders.get_order(cx, order_id) or {}
+    lp = int(o.get("paid_cents") or 0)
+    if (lp <= 0 or o.get("pay_status") != "paid" or o.get("status") == "cancelled"
+            or cx.execute("SELECT 1 FROM order_payments WHERE order_id=? LIMIT 1",
+                          (order_id,)).fetchone()):
+        return False
+    ts = o.get("paid_at") or o.get("created_at") or _now()
+    cx.execute(
+        "INSERT INTO order_payments (order_id, kind, amount_cents, method, source, "
+        "status, qbo_sync, note, paid_at, created_at, updated_at, created_by) "
+        "VALUES (?, 'payment', ?, ?, 'legacy', 'active', 'synced', "
+        "'legacy pay_status backfill', ?, ?, ?, 'backfill')",
+        (order_id, lp, o.get("pay_method") or "legacy", ts, ts, ts))
+    cx.commit()
+    return True
+
+
 def backfill_legacy_payments(cx, *, dry_run=True, skip_order_ids=None):
     """Create one source='legacy' payment row per PAID pre-ledger order so it shows
     correctly in the ledger/panel/board. Candidates: orders with paid_cents>0, source
