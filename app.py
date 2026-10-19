@@ -26439,9 +26439,13 @@ def _portal_priced_lines(items, email=None):
         subtotal_cents += unit_cents * qty
         lines.append({"name": p["name"], "amount": round(unit_cents / 100.0, 2),
                       "qty": qty, "item_id": p.get("qbo_item_id"), "description": display_name})
-        items_rec.append({"name": display_name, "qty": qty, "desc": display_name,
-                          "slug": slug, "format": fmt, "unit_cents": unit_cents,
-                          "line_cents": unit_cents * qty})
+        rec = {"name": display_name, "qty": qty, "desc": display_name,
+               "slug": slug, "format": fmt, "unit_cents": unit_cents,
+               "line_cents": unit_cents * qty}
+        # A folded Terrain Restore line keeps its ingredient note (Glen, 2026-10-19).
+        if it.get("note"):
+            rec["note"] = str(it["note"])[:300]
+        items_rec.append(rec)
     return lines, items_rec, subtotal_cents
 
 
@@ -27822,6 +27826,8 @@ def api_client_portal(token):
         display.append({
             "slug": slug, "qty": int(it.get("qty", 1) or 1),
             "name": (p or {}).get("name", slug), "price_cents": special,
+            # A folded Terrain Restore line names its ingredients (Glen, 2026-10-19).
+            **({"note": str(it["note"])[:300]} if it.get("note") else {}),
             "regular_price_cents": regular,
             "is_special": bool(special is not None and regular is not None and int(special) < int(regular)),
             "refill_eligible": bool(p and _capsule_formats_ok(p)),
@@ -33532,6 +33538,9 @@ def api_client_portal_checkout(token):
             # price all the way into Stripe Checkout.
             priced_item = {"slug": slug, "qty": qty}
             curated_item = curated_by_slug.get(slug) or {}
+            # The ingredient note comes from the stored report, never the post.
+            if curated_item.get("note"):
+                priced_item["note"] = str(curated_item["note"])[:300]
             if _curated_unit_cents(curated_item) is not None:
                 priced_item["price_cents"] = _curated_unit_cents(curated_item)
             items.append(priced_item)

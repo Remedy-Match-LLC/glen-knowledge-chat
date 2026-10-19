@@ -5253,7 +5253,7 @@ function render(d, v){
         ? `<span class="reg">${esc(money(it.regular_price_cents))}</span><span class="sp">${esc(money(it.price_cents))}</span>`
         : `${esc(money(it.price_cents))}`;
       rows += `<div class="reitem curated-order-item" data-slug="${esc(it.slug||"")}" data-qty="${esc(it.qty||1)}" data-format="${esc(it.format||"")}">
-        <span class="nm">${esc(it.name||it.slug)}${it.qty>1?` ×${esc(it.qty)}`:""}</span>
+        <span class="nm">${esc(it.name||it.slug)}${it.qty>1?` ×${esc(it.qty)}`:""}${it.note?`<br><span class="small muted">${esc(it.note)}</span>`:""}</span>
         <span class="pr">${price}</span>
         <button type="button" class="wishRemBtn curated-remove" aria-label="Remove ${esc(it.name||it.slug)} from this order">×</button>
       </div>`;
