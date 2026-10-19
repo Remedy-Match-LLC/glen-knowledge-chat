@@ -3371,6 +3371,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             ok = _cg.dismiss(cx, test_id, group_id)
         return ({"ok": True}, 200) if ok else ({"ok": False, "error": "Not changed"}, 400)
 
+    @app.route("/author/<test_id>/clinical-groups/place-row", methods=["POST"])
+    def author_place_clinical_row(test_id):
+        """Move a row under other rows as a detail, for this client only (Glen,
+        2026-10-19). Writes no alias, so every other client keeps the row."""
+        from dashboard import biofield_clinical_groups as _cg
+        body = request.get_json(silent=True) or {}
+        topics = body.get("topics")
+        if not isinstance(topics, list) or not all(isinstance(t, str) for t in topics):
+            return {"ok": False, "error": "topics must be a list of row names"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                names = _cg.place_row(cx, test_id, str(body.get("row") or ""), topics)
+        except _cg.Refused as exc:
+            return {"ok": False, "error": str(exc)}, 409
+        return {"ok": True, "topics": names}
+
     @app.route("/author/<test_id>/clinical-groups/remove-factor", methods=["POST"])
     def author_remove_group_factor(test_id):
         from dashboard import biofield_clinical_groups as _cg

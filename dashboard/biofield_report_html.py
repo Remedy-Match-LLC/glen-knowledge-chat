@@ -2547,7 +2547,22 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
                       "onkeydown=\"if(event.key==='Enter'){event.preventDefault();"
                       "addGroupFactor(this)}\"><button type=button class='btn ghost' "
                       "onclick=addGroupFactor(this.previousElementSibling)>+ Factor</button></span>")
-        factors_html = f"<div class=clinical-factors>Factors: {factor_bits}{add_factor}</div>"
+        # Glen, 2026-10-19 (Action 1): put this row under one or more others as a
+        # detail, for this client only. Combine stays for names that mean the same.
+        topic_boxes = "".join(
+            f"<label><input type=checkbox class=clinical-detail-topic "
+            f"value=\"{_e(o.get('label') or '')}\"> {_e(o.get('label') or '')}</label>"
+            for o in items if (o.get("label") or "") != label)
+        detail_html = (
+            f"<details class=clinical-detail-move data-row=\"{_e(label)}\">"
+            "<summary>Make this a detail under another row&hellip; (this client only)</summary>"
+            f"<div class=clinical-detail-topics>{topic_boxes}</div>"
+            "<input class=clinical-detail-new placeholder='or a new topic&hellip;' "
+            "aria-label='A new topic to put this row under' autocomplete=off>"
+            "<button type=button class='btn ghost' onclick=placeClinicalRow(this)>"
+            "Move, for this client only</button></details>")
+        factors_html = (f"<div class=clinical-factors>Factors: {factor_bits}{add_factor}</div>"
+                        f"{detail_html}")
         def remedy_choice(name, extra=""):
             return (f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
                     f"{' checked' if name.strip().lower() in chosen else ''}"
@@ -2723,6 +2738,11 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-factor-x{border:0;background:transparent;color:var(--muted);font-size:14px;"
             "line-height:1;padding:0 2px;cursor:pointer}.clinical-factor-x:hover{color:#ef8d8d}"
             ".clinical-factor-new{display:inline-flex;gap:4px;align-items:center}"
+            ".clinical-detail-move{grid-column:3;font-size:12px;color:var(--muted)}"
+            ".clinical-detail-move summary{cursor:pointer}"
+            ".clinical-detail-topics{display:flex;flex-wrap:wrap;gap:2px 12px;margin:4px 0}"
+            ".clinical-detail-new{width:220px;max-width:100%;margin:0 6px 0 0;padding:3px 6px;"
+            "font-size:12px}"
             ".clinical-factor-add{width:220px;max-width:100%;min-width:0;margin:0;padding:3px 6px;"
             "font-size:12px}.clinical-factor-new .btn{font-size:11px;padding:3px 8px}"
             ".clinical-label{font-weight:650;line-height:1.25}.clinical-remedy,.clinical-open{font-size:11px;margin-top:2px}"
@@ -2916,6 +2936,19 @@ async function load(){
 window.removeGroupFactor=async function(btn){btn.disabled=true;var r=await send('/remove-factor',
  {name:btn.getAttribute('data-item'),factor:btn.getAttribute('data-factor')});
  if(r.ok)location.reload();else{btn.disabled=false;alert(r.error||'Not removed.')}};
+window.placeClinicalRow=async function(btn){
+ var box=btn.closest('.clinical-detail-move');var row=box.getAttribute('data-row');
+ var topics=[].slice.call(box.querySelectorAll('.clinical-detail-topic:checked'))
+  .map(function(c){return c.value});
+ var typed=(box.querySelector('.clinical-detail-new').value||'').trim();
+ if(typed)topics.push(typed);
+ if(!topics.length){alert('Pick a row, or type a new topic.');return}
+ if(!confirm('Put "'+row+'" under '+topics.map(function(t){return '"'+t+'"'}).join(' and ')
+   +' as a detail, for this client only? No other client changes. Taking it back out '
+   +'returns the row.'))return;
+ btn.disabled=true;
+ var r=await send('/place-row',{row:row,topics:topics});
+ if(r.ok)location.reload();else{btn.disabled=false;alert(r.error||'Not moved.')}};
 window.addGroupFactor=async function(inp){var v=(inp.value||'').trim();if(!v)return;
  inp.disabled=true;
  var r=await send('/approve',{name:inp.getAttribute('data-item'),factors:[v],typed:true});
