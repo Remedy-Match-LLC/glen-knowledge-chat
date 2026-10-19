@@ -460,19 +460,20 @@ def backfill_legacy_payment(cx, order_id):
     True when it wrote a row."""
     o = orders.get_order(cx, order_id) or {}
     lp = int(o.get("paid_cents") or 0)
-    if (lp <= 0 or o.get("pay_status") != "paid" or o.get("status") == "cancelled"
-            or cx.execute("SELECT 1 FROM order_payments WHERE order_id=? LIMIT 1",
-                          (order_id,)).fetchone()):
+    if lp <= 0 or o.get("pay_status") != "paid" or o.get("status") == "cancelled":
         return False
     ts = o.get("paid_at") or o.get("created_at") or _now()
-    cx.execute(
+    # One statement, so the "no ledger rows yet" test and the insert cannot be split
+    # by a second return arriving between them.
+    cur = cx.execute(
         "INSERT INTO order_payments (order_id, kind, amount_cents, method, source, "
         "status, qbo_sync, note, paid_at, created_at, updated_at, created_by) "
-        "VALUES (?, 'payment', ?, ?, 'legacy', 'active', 'synced', "
-        "'legacy pay_status backfill', ?, ?, ?, 'backfill')",
-        (order_id, lp, o.get("pay_method") or "legacy", ts, ts, ts))
+        "SELECT ?, 'payment', ?, ?, 'legacy', 'active', 'synced', "
+        "'legacy pay_status backfill', ?, ?, ?, 'backfill' "
+        "WHERE NOT EXISTS (SELECT 1 FROM order_payments WHERE order_id=?)",
+        (order_id, lp, o.get("pay_method") or "legacy", ts, ts, ts, order_id))
     cx.commit()
-    return True
+    return (cur.rowcount or 0) > 0
 
 
 def backfill_legacy_payments(cx, *, dry_run=True, skip_order_ids=None):

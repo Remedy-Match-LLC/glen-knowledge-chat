@@ -60552,8 +60552,16 @@ def _record_invoice_balance_payment(md, amount_cents, pi_id):
                 return False
             _op.ensure_table(cx)
             _op.backfill_legacy_payment(cx, oid)
+            before = int(_op.balance(cx, oid)["balance_cents"])
+            dup = cx.execute("SELECT 1 FROM order_payments WHERE order_id=? AND "
+                             "external_ref=? AND status='active'", (oid, pi_id)).fetchone()
             _op.add_payment(cx, oid, amount_cents, "Credit card (Stripe)",
                             source="stripe", external_ref=pi_id)
+            # Two checkout tabs can each be paid. The money is recorded either way;
+            # paying past the balance tells Glen, so it can be refunded.
+            if not dup and amount_cents > before:
+                _alert_stripe("invoice-balance-overpaid",
+                              f"order #{oid} paid {amount_cents} against a balance of {before}")
             return True
         finally:
             cx.close()
@@ -61168,6 +61176,9 @@ def api_invoice_claim_paid(token):
     if not order:
         return jsonify({"ok": False, "error": "invalid or expired invoice"}), 404
     owed = _invoice_balance_cents(order)
+    if owed is None:
+        return jsonify({"ok": False, "error": "Payment is temporarily unavailable. "
+                                              "Please contact us."}), 503
     if not _invoice_payability.is_payable(order.get("status"), order.get("pay_status"), owed):
         return jsonify({"ok": False, "error": "this invoice is already paid"}), 409
     method = ((request.get_json(silent=True) or {}).get("method") or "").strip().lower()
@@ -61187,7 +61198,7 @@ def api_invoice_claim_paid(token):
             "drglenswartwout@gmail.com",
             f"Payment claimed: invoice {order.get('external_ref')}",
             f"{order.get('name') or 'A customer'} reports sending "
-            f"${int(owed if owed is not None else order.get('total_cents') or 0)/100:,.2f} "
+            f"${int(owed)/100:,.2f} "
             f"via {method} for invoice "
             f"{order.get('external_ref')}. Confirm receipt, then Record payment.")
     except Exception as _e:

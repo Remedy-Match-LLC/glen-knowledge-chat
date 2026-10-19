@@ -184,3 +184,27 @@ def test_the_page_asks_for_the_balance():
     html = (repo / "static" / "invoice.html").read_text()
     body = html[html.index("function setupPay"):html.index("async function pay(")]
     assert "money(due)" in body and "money(ORDER.total_cents)" not in body
+
+
+def test_paying_past_the_balance_is_recorded_and_alerted(env):
+    oid, _tok = _like_230(env)
+    alerts = []
+    env["mp"].setattr(env["app"], "_alert_stripe", lambda ctx, err: alerts.append(ctx))
+    _return(env, oid, pi="pi_tab_one")
+    _return(env, oid, pi="pi_tab_two")      # a second tab, paid too
+    assert env["OP"].balance(env["cx"], oid)["balance_cents"] == -4000
+    assert alerts == ["invoice-balance-overpaid"]
+
+
+def test_the_backfill_writes_once(env):
+    oid, _tok = _like_230(env)
+    assert env["OP"].backfill_legacy_payment(env["cx"], oid) is True
+    assert env["OP"].backfill_legacy_payment(env["cx"], oid) is False
+    assert len(env["OP"].list_payments(env["cx"], oid)) == 1
+
+
+def test_a_claim_with_no_balance_reading_sends_no_amount(env):
+    _oid, tok = _like_230(env)
+    env["mp"].setattr(env["app"], "_invoice_balance_cents", lambda o: None)
+    r = env["c"].post(f"/api/invoice/{tok}/claim-paid", json={"method": "zelle"})
+    assert r.status_code == 503 and env["sent"] == []
