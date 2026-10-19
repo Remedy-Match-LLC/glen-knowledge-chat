@@ -47,39 +47,64 @@ def _own_row(cx, test_id):
         return None
 
 
-def earlier_phase(cx, test_id):
-    """(phase, test date) from the client's most recent earlier Biofield that has a
-    Phase, else (None, ""). The same client is the same email, client id or E4L
-    client id. Earlier is an earlier test date, or the same date and a lower id."""
+def _date(value):
+    """A test date as a date, from ISO or FileMaker's M/D/YY or M/D/YYYY; else None."""
+    from datetime import date, datetime
+    text = str(value or "").strip()
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(text[:10] if fmt == "%Y-%m-%d" else text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def earlier_phase(cx, test_id, email="", date=""):
+    """(phase, test date) from the client's most recent earlier authored Biofield that
+    has a Phase, else (None, ""). The same client is the same email, client id or E4L
+    client id. Earlier is an earlier test date, or the same date and a lower id; a test
+    whose date cannot be read is never counted, and an undated test looks at none.
+    A test with no authored row (an E4L-era test) passes its client's email and date."""
     row = _own_row(cx, test_id)
-    if not row:
+    if row:
+        tid, email, client_id, e4l_id, date = row[0], row[1], row[2], row[3], row[4]
+    else:
+        tid, client_id, e4l_id = None, None, None
+    when = _date(date)
+    if not when:
         return None, ""
-    tid, email, client_id, e4l_id, date_test = row[0], row[1], row[2], row[3], row[4] or ""
     email = str(email or "").strip().lower()
     same, args = [], []
     for column, value in (("lower(trim(email))", email), ("client_id", client_id),
                           ("e4l_client_id", e4l_id)):
         if str(value or "").strip():
             same.append(f"{column}=?")
-            args.append(str(value).strip().lower() if column.startswith("lower") else value)
+            args.append(value)
     if not same:
         return None, ""
-    rows = cx.execute(
-        "SELECT phase,COALESCE(date_test,'') FROM biofield_auth_tests WHERE id<>? AND ("
-        + " OR ".join(same) + ") AND (COALESCE(date_test,'')<? OR "
-        "(COALESCE(date_test,'')=? AND id<?)) ORDER BY COALESCE(date_test,'') DESC, id DESC",
-        [tid] + args + [date_test, date_test, tid]).fetchall()
-    for phase, date in rows:
-        if phase_num(phase):
-            return phase_num(phase), date
-    return None, ""
+    try:
+        rows = cx.execute("SELECT id,phase,date_test FROM biofield_auth_tests WHERE ("
+                          + " OR ".join(same) + ")", args).fetchall()
+    except Exception:  # table absent
+        return None, ""
+    best = None
+    for oid, phase, other in rows:
+        d = _date(other)
+        if oid == tid or not d or not phase_num(phase):
+            continue
+        if d > when or (d == when and (tid is None or oid > tid)):
+            continue
+        if best is None or (d, oid) > best[0]:
+            best = ((d, oid), phase_num(phase), str(other).strip())
+    return (best[1], best[2]) if best else (None, "")
 
 
-def resolve(cx, test_id, this_phase=None, intake_answers=None):
+def resolve(cx, test_id, this_phase=None, intake_answers=None, email="", date=""):
     """(phase, where it came from) for the Kloud program, or (None, "").
     `this_phase` is the test's own Phase when the caller has it; an authored test's
     saved Phase is read otherwise. `intake_answers` is a callable, so the Intake form
-    is fetched only when nothing earlier gives a Phase."""
+    is fetched only when nothing earlier gives a Phase. `email` and `date` identify a
+    test that has no authored row."""
     from dashboard.diet_guidance import intake_phase
     n = phase_num(this_phase)
     if not n:
@@ -87,9 +112,9 @@ def resolve(cx, test_id, this_phase=None, intake_answers=None):
         n = phase_num(row[5]) if row else None
     if n:
         return n, "this Biofield"
-    n, date = earlier_phase(cx, test_id)
+    n, when = earlier_phase(cx, test_id, email, date)
     if n:
-        return n, f"the Biofield of {date}" if date else "an earlier Biofield"
+        return n, f"the Biofield of {when}"
     n = intake_phase(intake_answers() if intake_answers else None)
     if n:
         return n, "the Intake form"

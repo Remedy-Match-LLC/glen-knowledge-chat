@@ -96,6 +96,38 @@ def test_a_test_with_no_auth_row_uses_its_own_phase_then_the_intake(cx):
     assert kp.resolve(cx, "1234", None, lambda: {"terrain": "1"}) == (1, "the Intake form")
 
 
+def test_filemaker_dates_compare_as_dates_and_unreadable_ones_never_count(cx):
+    _test(cx, 1, date="6/24/26", phase=2)
+    _test(cx, 20, date="2026-05-01", phase=4)
+    _test(cx, 30, date="2026-07-01", phase=5)     # after 6/24/26
+    _test(cx, 31, date="someday", phase=1)
+    assert kp.earlier_phase(cx, "a1") == (4, "2026-05-01")
+    _test(cx, 49, date="2026-07-02")
+    assert kp.earlier_phase(cx, "a49") == (5, "2026-07-01")
+
+
+def test_an_undated_test_looks_at_none_and_an_undated_one_is_never_used(cx):
+    _test(cx, 30, date="", phase=3)
+    _test(cx, 49, date="2026-10-16")
+    assert kp.earlier_phase(cx, "a49") == (None, "")
+    _test(cx, 50, date="", email="b@example.com")
+    _test(cx, 20, date="2026-01-01", phase=1, email="b@example.com")
+    assert kp.earlier_phase(cx, "a50") == (None, "")
+
+
+def test_the_same_client_by_e4l_id(cx):
+    _test(cx, 30, email="old@example.com", date="2026-09-01", phase=5, e4l="E9")
+    _test(cx, 49, email="new@example.com", e4l="E9")
+    assert kp.earlier_phase(cx, "a49") == (5, "2026-09-01")
+
+
+def test_a_test_with_no_authored_row_finds_its_clients_earlier_biofield(cx):
+    _test(cx, 30, date="2026-09-01", phase=4)
+    _test(cx, 60, date="2026-11-01", phase=1)
+    assert kp.resolve(cx, "1234", None, lambda: {"terrain": "1"},
+                      "Pat@example.com", "2026-10-16") == (4, "the Biofield of 2026-09-01")
+
+
 def _item(name):
     return {"name": name, "overall": 7, "research": 5, "uniqueness": 5, "reason": "r",
             "source": "s", "botanical": False, "lowers_bp": None,
@@ -169,3 +201,22 @@ def test_the_summary_says_when_there_is_no_program(tmp_path, monkeypatch):
     tid, client, _ = _app(tmp_path, monkeypatch)
     page = client.get(f"/author/{tid}").get_data(as_text=True)
     assert "No Kloud program: no Phase on this or an earlier Biofield" in page
+
+
+def test_a_plan_without_a_kloud_line_looks_nothing_up(tmp_path, monkeypatch):
+    tid, client, _ = _app(tmp_path, monkeypatch)
+    import biofield_local_app as bla
+    asked = []
+    monkeypatch.setattr(bla, "_fetch_intake_answers", lambda email: asked.append(email))
+    import sqlite3 as _s
+    with _s.connect(str(tmp_path / "chat_log.db")) as con:
+        cs.save_pick(con, tid, "Gut", cs.HEALING_TOOLS, KLOUD, checked=False)
+    page = client.get(f"/test/{tid}/plan").get_data(as_text=True)
+    assert asked == [] and "names no program" not in page
+    client.get(f"/author/{tid}")
+    assert asked == []
+    assert "No Kloud program" not in client.get(f"/author/{tid}").get_data(as_text=True)
+    with _s.connect(str(tmp_path / "chat_log.db")) as con:
+        cs.save_pick(con, tid, "Gut", cs.HEALING_TOOLS, KLOUD, checked=True)
+    client.get(f"/test/{tid}/plan")
+    assert asked
