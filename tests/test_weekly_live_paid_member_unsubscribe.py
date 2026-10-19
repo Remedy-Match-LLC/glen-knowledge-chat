@@ -116,6 +116,7 @@ def test_the_weekly_run_mails_the_paying_member_and_no_one_blocked(monkeypatch, 
         list(AUDIENCE.values()) if tag == "e4l account" else []))
     monkeypatch.setattr(weekly, "_authoritative_access_sets",
                         lambda: ({PAID_TAGGED, PAID_OPTED_OUT}, {COACH_TAGGED}))
+    monkeypatch.setattr(weekly, "_board_emails", lambda: set())
     monkeypatch.setattr(weekly, "_find_contact", lambda email: None)
     monkeypatch.setattr(weekly, "_create_contact", lambda email, name="": None)
     monkeypatch.setattr(weekly.client_portal, "ensure_token", lambda cx, email, name: "tok")

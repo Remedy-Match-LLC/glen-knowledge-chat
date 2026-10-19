@@ -204,9 +204,27 @@ def _authoritative_access_sets():
     return paid, certification
 
 
+def _board_emails():
+    """Everyone on the members board, trial and paused included: the roster
+    filter_audience.py --members-board adds (Glen, 2026-10-14). Read here from the
+    same function the board route uses. Before 2026-10-25 the sender built its
+    audience from tags and paid members only, so a trial member with no tag was on
+    the consent list and was never sent: Steven Blank on 18 October."""
+    with appmod.db.connect(appmod.LOG_DB) as cx:
+        buckets = appmod.members_board_buckets(cx, strict=True)
+    out = {_email(row.get("email")) for rows in buckets.values() for row in rows}
+    out.discard("")
+    if not out:
+        raise RuntimeError("members board is empty")
+    return out
+
+
 def _build_audience(*, create_missing_contacts=False, allowed=None):
     """``allowed``, when given, is a predicate over an email. Members outside it
-    are never looked up or created in GHL, and cannot block the run."""
+    are never looked up or created in GHL, and cannot block the run.
+
+    The audience is the union of the source tags, paid members, certification and
+    the members board. filter_audience.py's consent list stays the gate."""
     by_email, tag_sets = {}, {}
     for tag in SOURCE_TAGS:
         tag_sets[tag] = set()
@@ -217,8 +235,9 @@ def _build_audience(*, create_missing_contacts=False, allowed=None):
             tag_sets[tag].add(email)
             by_email.setdefault(email, contact)
     paid, certification = _authoritative_access_sets()
+    board = _board_emails()
     missing_ghl = []
-    for email in sorted(paid | certification):
+    for email in sorted(paid | certification | board):
         if email in by_email:
             continue
         if allowed is not None and not allowed(email):
@@ -466,15 +485,23 @@ def run(args):
         if args.send and not audience:
             raise RuntimeError("no audience member matches the list; "
                                "check the list was built with the production key")
+    # A consent-listed address the audience cannot reach is a person who will not be
+    # invited. Since the board joined the audience there should be none, so any is
+    # loud: the matched people are still mailed, and the run ends needs_attention.
+    not_reached = counts.get("allowlist_not_in_audience", 0)
+    problem = (f"{not_reached} address(es) on the consent list are not in the audience "
+               "and were not mailed" if not_reached > 0 else "")
     if args.dry_run:
         with appmod.db.connect(appmod.LOG_DB) as cx:
             client_portal.init_client_portal_table(cx)
             counts["missing_portal"] = sum(1 for email in audience if not cx.execute(
                 "SELECT 1 FROM client_portals WHERE lower(email)=?", (email,)).fetchone())
-        print(json.dumps({"status": "DRY_RUN", "campaign_id": campaign_id,
+        print(json.dumps({"status": "DRY_RUN_NEEDS_ATTENTION" if problem else "DRY_RUN",
+                          "campaign_id": campaign_id,
                           "campaign_name": campaign_name, "subject": subject,
-                          "counts": counts, "event_gate": gate}, sort_keys=True))
-        return 0
+                          "counts": counts, "event_gate": gate,
+                          "problem": problem}, sort_keys=True))
+        return 2 if problem else 0
 
     if missing_ghl:
         raise RuntimeError(f"{len(missing_ghl)} authoritative members have no GHL contact")
@@ -564,7 +591,8 @@ def run(args):
         if unknown_contact_id is not None:
             final = "stopped_unknown"
         else:
-            final = "verified_queued" if counts["failed"] == 0 else "needs_attention"
+            final = ("verified_queued" if counts["failed"] == 0 and not problem
+                     else "needs_attention")
         cx.execute("UPDATE weekly_live_invitation_runs SET status=?,counts_json=?,updated_at=? "
                    "WHERE campaign_id=?",
                    (final, json.dumps(counts, sort_keys=True), _now(), campaign_id))
@@ -574,7 +602,8 @@ def run(args):
                       "counts": counts, "event_gate": gate,
                       "sender": FROM_ADDRESS, "batch_size": 100,
                       "batch_interval_minutes": 15,
-                      "unknown_contact_id": unknown_contact_id}, sort_keys=True))
+                      "unknown_contact_id": unknown_contact_id,
+                      "problem": problem}, sort_keys=True))
     if final == "stopped_unknown":
         return 3
     return 0 if final == "verified_queued" else 2
