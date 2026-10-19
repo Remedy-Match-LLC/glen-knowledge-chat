@@ -1705,7 +1705,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     _item["sections"] = _cs.sections_for(
                         cx, test_id, _item.get("label"),
                         remedies=_item.get("common_remedies") or [],
-                        chosen_remedies=_item.get("selected_remedies") or [],
+                        chosen_remedies=_cs.row_ticks(_item),
                         botanical=clinical_botanical, marks=scan_marks)
                 # Purple infoceuticals tick themselves on a scan dated from 2026-10-18
                 # (Glen). A failure leaves the page as the practitioner left it.
@@ -1729,7 +1729,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         _item["sections"] = _cs.sections_for(
                             cx, test_id, _item.get("label"),
                             remedies=_item.get("common_remedies") or [],
-                            chosen_remedies=_item.get("selected_remedies") or [],
+                            chosen_remedies=_cs.row_ticks(_item),
                             botanical=clinical_botanical, marks=scan_marks)
                 # The scan's Phase sets the Kloud program (Glen, 2026-10-18). Only a
                 # page with a ticked Kloud item looks it up.
@@ -3714,9 +3714,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not label or not isinstance(remedies, list):
             return {"ok": False, "error": "Item label and a remedies list are required"}, 400
         from dashboard.biofield_clinical_proposals import _key, selections
-        from dashboard.biofield_clinical_sections import remedies_changed
+        from dashboard.biofield_clinical_sections import remedies_changed, still_greyed
         with sqlite3.connect(db_path) as cx:
             before = selections(cx, test_id).get(_key(label), [])
+            # A greyed remedy is saved only once unhidden, whatever the page sends.
+            if still_greyed(cx, test_id, label, remedies, before):
+                return {"ok": False, "error": "A hidden remedy must be unhidden first"}, 409
             count = save_selection(cx, test_id, label, remedies)
             remedies_changed(cx, test_id, label, before, remedies)
         return {"ok": True, "count": count}
@@ -3789,7 +3792,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     @app.route("/author/<test_id>/clinical-sections/pick", methods=["POST"])
     def author_clinical_section_pick(test_id):
         """One tick, rating or dose on a section item, for this client only."""
-        from dashboard.biofield_clinical_sections import save_pick
+        from dashboard.biofield_clinical_sections import pick_greyed, save_pick
         body = request.get_json(silent=True) or {}
         label = str(body.get("label") or "").strip()
         section = str(body.get("section") or "").strip()
@@ -3799,6 +3802,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": "checked must be true or false"}, 400
         try:
             with sqlite3.connect(db_path) as cx:
+                if checked and pick_greyed(cx, test_id, label, section, name):
+                    return {"ok": False, "error": "A hidden item must be unhidden first"}, 409
                 save_pick(cx, test_id, label, section, name, checked=checked,
                           rating=body.get("rating"), dose=body.get("dose"))
         except ValueError as exc:

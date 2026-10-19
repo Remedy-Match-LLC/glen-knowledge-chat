@@ -1468,6 +1468,8 @@ function toggleClinicalItem(box){
 }
 async function selectClinicalRemedy(box){
  var row=box.closest('.clinical-item');if(!row)return;
+ var ung=!!(box.checked&&box.dataset.greyed);
+ if(!await clinicalUngrey(box))return;
  var remedies=[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
   .map(function(x){return x.value});
  var check=row.querySelector('.clinical-check');
@@ -1479,6 +1481,7 @@ async function selectClinicalRemedy(box){
  if(stat)stat.textContent='Saving remedies\u2026';
  var j=await post('/author/__TID__/clinical-items/selection',
   {label:row.dataset.label,remedies:remedies});
+ if(!(j&&j.ok)&&ung)await clinicalRegrey(box);
  if(stat)stat.textContent=(j&&j.ok)?'Remedies saved':'Could not save remedy selection'}
 async function approveClinicalSectionItem(btn){
  var row=btn.closest('.clinical-item');if(!row)return;btn.disabled=true;
@@ -1500,8 +1503,8 @@ async function clinicalSectionAll(box){
  var row=box.closest('.clinical-item'),sec=box.closest('.clinical-section');if(!row||!sec)return;
  var key=sec.dataset.section,ff=key==='functional_formulations'||key==='infoceuticals';
  // Only the items on the page: a botanical the client's switch hides is not ticked.
- // A greyed (disabled) botanical is not ticked by All until it is unhidden.
- var names=[].slice.call(sec.querySelectorAll(ff?'.clinical-remedy-choice:not(:disabled)':'.clinical-section-choice:not(:disabled)'))
+ // A greyed botanical is never ticked by All; its own tick unhides it.
+ var names=[].slice.call(sec.querySelectorAll(ff?'.clinical-remedy-choice:not([data-greyed]):not(:disabled)':'.clinical-section-choice:not([data-greyed]):not(:disabled)'))
   .map(function(x){return ff?x.value:x.dataset.name});
  var remedies=ff?[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
   .map(function(x){return x.value}):[];
@@ -1534,24 +1537,30 @@ async function clinicalWatch(box){
  box.disabled=false;
  if(!(j&&j.ok)){box.checked=!box.checked;if(stat)stat.textContent=(j&&j.error)||'Could not save';return}
  if(stat)stat.textContent=box.checked?'Watched for purple, every client':'No longer watched'}
-async function clinicalUnhide(btn){
- var row=btn.closest('.clinical-item'),item=btn.closest('.clinical-section-item');if(!row||!item)return;
- var on=item.classList.contains('greyed'),box=item.querySelector('input[type=checkbox]');
- var stat=document.getElementById('clinicalOrderStat');btn.disabled=true;
- var j=null;
+// Ticking a greyed item unhides it for this client first, then the tick saves as
+// usual. True when the tick may go ahead. In place, so the page keeps its scroll.
+async function clinicalUngrey(box){
+ if(!box.checked||!box.dataset.greyed)return true;
+ var row=box.closest('.clinical-item'),item=box.closest('.clinical-section-item');
+ var sec=box.closest('.clinical-section');if(!row||!item||!sec)return false;
+ var stat=document.getElementById('clinicalOrderStat');
+ var name=box.dataset.name||box.value,j=null;
  try{j=await post('/author/__TID__/clinical-sections/unhide',
-  {label:row.dataset.label,section:btn.dataset.section,name:btn.dataset.name,on:on})}
+  {label:row.dataset.label,section:sec.dataset.section,name:name,on:true})}
  catch(e){j=null}
- btn.disabled=false;
- if(!(j&&j.ok)){if(stat)stat.textContent=(j&&j.error)||'Could not save';return}
- // In place, so the page keeps its scroll position.
- item.classList.toggle('greyed',!on);btn.textContent=on?'Hide':'Unhide';
- if(box){box.disabled=!on;
-  if(!on&&box.checked){box.checked=false;
-   if(box.classList.contains('clinical-remedy-choice'))await selectClinicalRemedy(box)}}
- // An unhidden item arrives unticked, so the section's All box no longer holds.
- if(on)clinicalAllOff(btn);
- if(stat)stat.textContent=on?'Unhidden for this client':'Hidden again'}
+ if(!(j&&j.ok)){box.checked=false;if(stat)stat.textContent=(j&&j.error)||'Could not unhide';
+  return false}
+ delete box.dataset.greyed;box.removeAttribute('title');item.classList.remove('greyed');
+ return true}
+// The save after an unhide failed: hide it again, so an unhide never outlives the
+// tick it was made for.
+async function clinicalRegrey(box){
+ var row=box.closest('.clinical-item'),item=box.closest('.clinical-section-item');
+ var sec=box.closest('.clinical-section');box.checked=false;if(!row||!item||!sec)return;
+ try{await post('/author/__TID__/clinical-sections/unhide',
+  {label:row.dataset.label,section:sec.dataset.section,name:box.dataset.name||box.value,on:false})}
+ catch(e){}
+ box.dataset.greyed='1';item.classList.add('greyed')}
 async function saveClinicalBotanical(){
  var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent='Saving…';
@@ -1562,6 +1571,8 @@ async function saveClinicalBotanical(){
  if(stat)stat.textContent=(j&&j.error)||'Could not save'}
 async function saveClinicalSectionItem(el,field){
  var row=el.closest('.clinical-item');if(!row)return;
+ var ung=!!(field==='checked'&&el.checked&&el.dataset.greyed);
+ if(field==='checked'&&!await clinicalUngrey(el))return;
  var body={label:row.dataset.label,section:el.dataset.section,name:el.dataset.name};
  if(field==='checked'){body.checked=el.checked;if(!el.checked)clinicalAllOff(el)}
  else if(field==='dose')body.dose=el.value;
@@ -1572,6 +1583,7 @@ async function saveClinicalSectionItem(el,field){
  var stat=document.getElementById('clinicalOrderStat');
  if(stat)stat.textContent='Saving…';
  var j=await post('/author/__TID__/clinical-sections/pick',body);
+ if(!(j&&j.ok)&&ung)await clinicalRegrey(el);
  if(stat)stat.textContent=(j&&j.ok)?'Saved':((j&&j.error)||'Could not save');
  // A new rating moves the item, so the section is redrawn in its new order.
  if(j&&j.ok&&field==='rating')location.reload()}
@@ -1762,7 +1774,9 @@ def render_prl_section(view):
             link = (f"<a href=\"{_e(i['url'])}\" target=_blank rel=noopener>{name}</a>"
                     if i.get("url") else name)
             note = f"<span class=clinical-section-note>{_e(i['note'])}</span>" if i.get("note") else ""
-            items += (f"<div class=prl-item title=\"{_e(why)}\">"
+            # Greyed: the client's avoid-botanicals switch hides it. Its tick unhides it.
+            cls = "prl-item greyed" if i.get("hidden") else "prl-item"
+            items += (f"<div class='{cls}' title=\"{_e(why)}\">"
                       f"<input class=prl-rating value=\"{_e(i.get('rating') or '')}\" maxlength=3 "
                       f"size=3 placeholder='---' data-name=\"{name}\" "
                       "title='Overall, research, uniqueness. 10 is X.' "
@@ -1774,7 +1788,8 @@ def render_prl_section(view):
         if a.get("botanical_hidden"):
             n = a["botanical_hidden"]
             items += (f"<div class=food>{n} botanical product{'s' if n != 1 else ''} "
-                      "hidden for this client</div>")
+                      "greyed for this client. All skips "
+                      f"{'them' if n != 1 else 'it'}; a tick unhides and selects one.</div>")
         flag = ""
         if a.get("empty"):
             linked = a.get("linked") or []
@@ -1813,7 +1828,8 @@ def render_prl_section(view):
             f"</span></div>{items}{flag}</div>")
     style = ("<style>.prl-area{margin:6px 0;padding:6px 8px;border:1px solid var(--line);border-radius:7px}"
              ".prl-head,.prl-item,.prl-choices{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}"
-             ".prl-item{margin:2px 0 2px 18px;font-size:12px}.prl-item input,.prl-head input,.prl-choices input{width:auto;margin:0 3px 0 0}"
+             ".prl-item{margin:2px 0 2px 18px;font-size:12px}.prl-item.greyed>*{opacity:.45}"
+             ".prl-item.greyed>label:hover{opacity:.8}.prl-item input,.prl-head input,.prl-choices input{width:auto;margin:0 3px 0 0}"
              ".prl-item input.prl-rating{width:3.6em;padding:1px 4px;font-size:11px;font-family:monospace;text-align:center;"
              "color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:4px}"
              ".prl-item input.prl-rating.bad{outline:2px solid #c0392b}"
@@ -2356,20 +2372,18 @@ def _clinical_sections_html(sections, remedy_choice):
                           "this name, so the scan cannot say'>scan marks unknown</span>")
             note = (f"<span class=clinical-section-note>{_e(entry['note'])}</span>"
                     if entry.get("note") else "")
-            # Glen, 2026-10-18: a botanical the switch hides shows greyed out, with a
-            # button to unhide it for this client; an unhidden one can be hidden again.
+            # Glen, 2026-10-18: a botanical the switch hides shows greyed out. Ticking it
+            # unhides it for this client and selects it in one step, as on PRL ("yes,
+            # make Clinical Summary match PRL"). All never ticks a greyed item.
             greyed = bool(entry.get("hidden"))
             item_cls = "clinical-section-item greyed" if greyed else "clinical-section-item"
-            disabled = " disabled" if greyed else ""
-            if greyed or entry.get("unhidden"):
-                flags += (f"<button type=button class='btn ghost clinical-unhide' "
-                          f"data-section=\"{_e(key)}\" data-name=\"{_e(name)}\" "
-                          f"onclick=clinicalUnhide(this)>{'Unhide' if greyed else 'Hide'}"
-                          "</button>")
+            disabled = (f" data-greyed=1 title=\"Hidden: this client avoids botanicals. "
+                        f"Tick to unhide and select.\"" if greyed else "")
             if key in REMEDY_SECTIONS:
                 choice = remedy_choice(name)
                 if greyed:
-                    choice = choice.replace("type=checkbox value=", "type=checkbox disabled value=", 1)
+                    choice = choice.replace("type=checkbox value=",
+                                            f"type=checkbox{disabled} value=", 1)
                 if key == INFOCEUTICALS:
                     # Glen, 2026-10-18: a second column of boxes. The first selects it
                     # for this Biofield; the second recommends it, for every client in
@@ -2713,7 +2727,7 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-section-head{display:flex;gap:10px;align-items:center}"
             ".clinical-section-all{font-size:11px;color:var(--muted)}"
             ".clinical-section-flag.recommended{border-color:#3f8fc9;color:#6fb3e6}"
-            ".clinical-section-item.greyed>:not(.clinical-unhide){opacity:.45}"
+            ".clinical-section-item.greyed>*{opacity:.45}"
             ".clinical-common input.clinical-watch{accent-color:#9581b4;outline:1px solid #9581b4;margin-right:5px}"
             ".clinical-watch-legend{font-size:11px;color:var(--muted);margin:0 0 3px}"
             ".clinical-section-flag.watch-hit{border-color:#9581b4;color:#b9a6d6}"

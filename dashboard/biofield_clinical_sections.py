@@ -615,6 +615,55 @@ def _added_by_all(cx, test_id, item_key, section):
         "item_key=? AND section=? AND via='all'", (str(test_id), item_key, section))}
 
 
+def _greyed(cx, test_id, item_key, section, ticked):
+    """Name keys the client's avoid-botanicals switch greys out in one section, so
+    All skips them whatever the page sends (Glen, 2026-10-18)."""
+    setting = botanical_setting(cx, test_id)
+    if not setting.get("avoid"):
+        return set()
+    exceptions = _exception_keys(setting.get("exceptions"))
+    unhidden = _unhidden(cx, test_id, item_key)
+    # A remedy can show under the other remedy section by its name, with its rating.
+    sections = REMEDY_SECTIONS if section in REMEDY_SECTIONS else (section,)
+    return {e["name_key"] for e in _catalog(cx, item_key)
+            if e["section"] in sections and e["botanical"]
+            and (e["reviewed"] or e["origin_test"] in ("", str(test_id)))
+            and e["name_key"] not in ticked and (section, e["name_key"]) not in unhidden
+            and not _allowed_botanical(e["name"], exceptions)}
+
+
+def chain_remedies(cx, test_id):
+    """The remedies on this test's causal chain."""
+    try:
+        tid = int(str(test_id).lstrip("a") or 0)
+        return [r[0] for r in cx.execute(
+            "SELECT remedy FROM biofield_auth_chain WHERE test_id=? AND remedy<>''",
+            (tid,)) if r[0]]
+    except Exception:  # noqa: BLE001  no chain table yet
+        return []
+
+
+def still_greyed(cx, test_id, label, remedies, before):
+    """The remedies in `remedies` that are greyed and were not already ticked in
+    `before`, the saved set. The page's own list is never trusted for this: a tick
+    whose unhide failed can ride along in another save."""
+    item_key = _norm(label)
+    # A remedy on the causal chain is drawn ticked on a row with no saved set
+    # (row_ticks), so it is a choice already made, never a greyed one.
+    was = {_norm(r) for r in list(before or []) + chain_remedies(cx, test_id)}
+    greyed = set.intersection(*[_greyed(cx, str(test_id), item_key, s, was)
+                                for s in REMEDY_SECTIONS])
+    return [r for r in remedies or [] if _norm(r) in greyed]
+
+
+def pick_greyed(cx, test_id, label, section, name):
+    """True when ticking `name` in a non-remedy section would select a greyed item."""
+    item_key = _norm(label)
+    picks = _picks(cx, str(test_id), item_key)
+    ticked = {k for (sec, k), p in picks.items() if sec == section and p.get("checked")}
+    return _norm(name) in _greyed(cx, str(test_id), item_key, section, ticked)
+
+
 def select_all(cx, test_id, label, section, on, names, remedies=()):
     """The section's All box. `names` are the items the page shows in that section,
     so a botanical the client's switch hides is never ticked by it.
@@ -639,10 +688,15 @@ def select_all(cx, test_id, label, section, on, names, remedies=()):
             shown.append(name)
     if section in REMEDY_SECTIONS:
         chosen = [str(r or "").strip() for r in remedies or [] if str(r or "").strip()]
+        from dashboard.biofield_clinical_proposals import _key, selections
+        saved = selections(cx, test_id).get(_key(label), [])
+        bad = {_norm(r) for r in still_greyed(cx, test_id, label, chosen, saved)}
+        chosen = [r for r in chosen if _norm(r) not in bad]
         chosen_keys = {_norm(r) for r in chosen}
         if on:
+            greyed = _greyed(cx, test_id, item_key, section, chosen_keys)
             for name in shown:
-                if _norm(name) not in chosen_keys:
+                if _norm(name) not in chosen_keys and _norm(name) not in greyed:
                     chosen.append(name)
                     chosen_keys.add(_norm(name))
                     _set_via(cx, test_id, item_key, section, _norm(name), "all")
@@ -656,9 +710,11 @@ def select_all(cx, test_id, label, section, on, names, remedies=()):
     catalog = {e["name_key"] for e in _catalog(cx, item_key) if e["section"] == section}
     picks = _picks(cx, test_id, item_key)
     if on:
+        ticked = {k for (sec, k), p in picks.items() if sec == section and p.get("checked")}
+        greyed = _greyed(cx, test_id, item_key, section, ticked)
         for name in shown:
             key = _norm(name)
-            if key not in catalog:
+            if key not in catalog or key in greyed:
                 continue
             if not (picks.get((section, key)) or {}).get("checked"):
                 save_pick(cx, test_id, label, section, name, checked=True, commit=False)
