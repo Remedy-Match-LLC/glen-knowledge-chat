@@ -39,12 +39,17 @@ def _own_row(cx, test_id):
     tid = _auth_id(test_id)
     if tid is None:
         return None
-    try:
-        return cx.execute(
-            "SELECT id,email,client_id,e4l_client_id,date_test,phase "
-            "FROM biofield_auth_tests WHERE id=?", (tid,)).fetchone()
-    except Exception:  # table absent
+    cols = _columns(cx)
+    if "id" not in cols:   # table absent
         return None
+    # client_id and e4l_client_id are added by later migrations, so read what exists.
+    picks = ",".join(c if c in cols else f"NULL AS {c}" for c in
+                     ("id", "email", "client_id", "e4l_client_id", "date_test", "phase"))
+    return cx.execute(f"SELECT {picks} FROM biofield_auth_tests WHERE id=?", (tid,)).fetchone()
+
+
+def _columns(cx):
+    return {r[1] for r in cx.execute("PRAGMA table_info(biofield_auth_tests)")}
 
 
 def _date(value):
@@ -75,6 +80,7 @@ def earlier_phase(cx, test_id, email="", date=""):
         return None, ""
     email = str(email or "").strip().lower()
     same, args = [], []
+    # A column the table lacks reads as NULL in _own_row, so it never joins the match.
     for column, value in (("lower(trim(email))", email), ("client_id", client_id),
                           ("e4l_client_id", e4l_id)):
         if str(value or "").strip():

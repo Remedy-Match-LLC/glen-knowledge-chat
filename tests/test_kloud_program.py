@@ -220,3 +220,53 @@ def test_a_plan_without_a_kloud_line_looks_nothing_up(tmp_path, monkeypatch):
         cs.save_pick(con, tid, "Gut", cs.HEALING_TOOLS, KLOUD, checked=True)
     client.get(f"/test/{tid}/plan")
     assert asked
+
+
+@pytest.fixture
+def real_cx(tmp_path):
+    """The schema the app builds for itself, which has no client_id column."""
+    from dashboard.biofield_authoring import init_auth_tables
+    con = sqlite3.connect(str(tmp_path / "fresh.db"))
+    init_auth_tables(con)
+    yield con
+    con.close()
+
+
+def _real(cx, tid, email, date, phase=None, e4l=None):
+    cx.execute("INSERT INTO biofield_auth_tests (id,name,email,date_test,phase,e4l_client_id) "
+               "VALUES (?,?,?,?,?,?)", (tid, "Pat", email, date, phase, e4l))
+
+
+def test_the_apps_own_schema_reads_the_saved_phase_and_matches_by_e4l_id(real_cx):
+    assert "client_id" not in {r[1] for r in real_cx.execute(
+        "PRAGMA table_info(biofield_auth_tests)")}
+    _real(real_cx, 30, "old@example.com", "2026-09-01", phase=5, e4l="E9")
+    _real(real_cx, 48, "pat@example.com", "2026-10-16", phase=1)
+    _real(real_cx, 49, "pat@example.com", "2026-10-16", e4l="E9")
+    _real(real_cx, 50, "x@example.com", "2026-10-17", phase=2)
+    assert kp.resolve(real_cx, "a50") == (2, "this Biofield")
+    assert kp.resolve(real_cx, "a49") == (1, "the Biofield of 2026-10-16")
+    real_cx.execute("DELETE FROM biofield_auth_tests WHERE id=48")
+    assert kp.resolve(real_cx, "a49") == (5, "the Biofield of 2026-09-01")
+
+
+def test_a_test_with_no_authored_row_never_counts_one_on_its_own_date(cx):
+    _test(cx, 30, date="2026-10-16", phase=4)
+    assert kp.resolve(cx, "1234", None, None, "pat@example.com", "2026-10-16") == (None, "")
+    assert kp.resolve(cx, "1234", None, None, "pat@example.com", "2026-10-17")[0] == 4
+
+
+def test_the_report_with_the_plan_names_the_program(tmp_path, monkeypatch):
+    tid, client, published = _app(tmp_path, monkeypatch, phase=3)
+    import biofield_local_app as bla
+    written = []
+
+    def fake_pdf(html, out):
+        written.append(html)
+        open(out, "wb").write(b"%PDF fake")
+        return out
+    monkeypatch.setattr(bla, "save_report_pdf", fake_pdf)
+    monkeypatch.setenv("BIOFIELD_REPORTS_DIR", str(tmp_path))
+    client.get(f"/test/{tid}/report.pdf?plan=1")
+    assert written and "<span class=plan-program>Program 5 (Transform)</span>" in written[-1]
+    assert len(published) == 1   # recorded by the stub, never run
