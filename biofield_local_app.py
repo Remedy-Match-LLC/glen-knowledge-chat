@@ -4400,13 +4400,27 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         body = request.get_json(force=True) or {}
         key = os.environ.get("CONSOLE_SECRET", "")
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
-        data = _json.dumps({"email": body.get("email"), "answers": body.get("answers")}).encode()
+        out = {"email": body.get("email"), "answers": body.get("answers")}
+        if "source" in body:
+            out["source"] = body.get("source")
+        data = _json.dumps(out).encode()
         req = urllib.request.Request(f"{base}/api/console/intake-import",
                                      data=data, method="POST",
                                      headers={"X-Console-Key": key, "Content-Type": "application/json"})
+        import urllib.error
         try:
             resp = _json.load(urllib.request.urlopen(req, timeout=30))
             return jsonify(resp)
+        except urllib.error.HTTPError as e:
+            # The server's own answer, such as a 409 for a client's own submission,
+            # reaches the page with its status rather than as a gateway fault.
+            try:
+                answer = _json.loads(e.read() or b"{}")
+            except ValueError:
+                answer = {}
+            answer.setdefault("ok", False)
+            answer.setdefault("error", f"HTTP {e.code}")
+            return jsonify(answer), e.code
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 502
 

@@ -34282,11 +34282,22 @@ def console_intake_import():
         return jsonify({"error": "email required"}), 400
     if not isinstance(answers, dict):
         return jsonify({"error": "answers must be an object"}), 400
+    # Defaulted only when absent: an empty or wrong-typed label is refused.
+    source = body.get("source", "practice-better")
+    if source not in _intake.IMPORT_SOURCES:
+        return jsonify({"error": "source must be one of "
+                                 + ", ".join(_intake.IMPORT_SOURCES)}), 400
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _intake.init_intake_table(cx)
-        _intake.import_response(cx, email, answers, _hst_now().isoformat())
-    return jsonify({"ok": True})
+        written = _intake.import_response(cx, email, answers, _hst_now().isoformat(),
+                                          source=source)
+    if not written:
+        # The client's own portal submission stands; saying ok here hid that.
+        return jsonify({"ok": False, "written": False,
+                        "error": "The client has their own portal submission or "
+                                 "has edited this one, so nothing was written"}), 409
+    return jsonify({"ok": True, "written": True})
 
 
 def _get_consult_booked(cx):

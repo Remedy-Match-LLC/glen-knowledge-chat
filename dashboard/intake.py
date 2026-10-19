@@ -409,18 +409,31 @@ def clear_intake(cx, email):
     cx.commit()
 
 
+# Where an imported intake came from: a Practice Better export, or a record the
+# clinical pillar assembled from the client's emails and charts (2026-10-18).
+IMPORT_SOURCES = ("practice-better", "clinical-record")
+
+
 def import_response(cx, email, answers, now, source="practice-better"):
     """Write a client's out-of-band intake (parsed from a PB export) as a real
     submitted record. Guard: never overwrite a genuine portal submission (one
     with no _imported / _external marker). An _external level-1 stub is
-    overwritable (it holds no real data)."""
+    overwritable (it holds no real data). True when written, False when the
+    guard kept a genuine submission."""
+    if source not in IMPORT_SOURCES:
+        raise ValueError(f"source must be one of {', '.join(IMPORT_SOURCES)}")
     existing = get_response(cx, email)
     if existing and existing["status"] == "submitted":
         a = existing["answers"] or {}
         if not a.get("_imported") and not a.get("_external"):
-            return
+            return False
+        # An imported record the client has since corrected is theirs too: a
+        # re-import would replace their edits wholesale.
+        if a.get("self_edited_at"):
+            return False
     payload = {**(answers or {}), "_imported": source}
     _upsert(cx, email, payload, "submitted", now, now)
+    return True
 
 
 def save_self_edit(cx, email, partial_answers, now=None):
