@@ -2338,7 +2338,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                   "— refresh to import, or import it anyway"}
             existing = _layer_count(rep)
             layers, skipped = res.get("layers") or [], []
-            if existing:
+            # A stored preview is checked even if the chain was emptied since, so its
+            # skips are never dropped silently.
+            if existing or stored:
                 # Glen, 2026-10-18: add only the reveal layers no Clinical layer covers.
                 # The synthesis is a model call and differs run to run, so the layers
                 # Glen previews are stored and the import uses exactly those.
@@ -2350,18 +2352,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 if _rp.describe(split) != stored["preview"]:
                     return {"ok": False, "reason": "The chain changed since the preview. "
                                                   "Click Import Reveal again."}
-                anyway = {str(n) for n in _body.get("add_anyway") or []}
-                skipped = [s for s in split["skip"] if str(s["layer"].get("n")) not in anyway]
-                keep = {id(s["layer"]) for s in skipped}
+                anyway = {str(k) for k in _body.get("add_anyway") or []}
+                skipped = [s for s in split["skip"] if str(s["layer"]["_key"]) not in anyway]
+                keep = {s["layer"]["_key"] for s in skipped}
                 # Renumbered 1..k, so a skipped layer leaves no gap after the existing ones.
                 layers = [dict(L, n=i) for i, L in
-                          enumerate((L for L in layers if id(L) not in keep), 1)]
+                          enumerate((L for k, L in enumerate(layers) if k not in keep), 1)]
                 _rp.forget(cx, test_id)
             imported = _ri.import_layers_to_test(cx, test_id, layers,
                                                  after_layer=_last_layer_no(rep))
             # Pass already-synthesized layers so the pipeline runs only once per import.
-            # Only the layers added: a skipped layer's remedy is not on the chain.
-            _seed_stresses(cx, test_id, force=True, layers=layers)
+            # All of them, skipped too: seeding rebuilds the coverage map from these, and
+            # a skipped layer's scan codes are still the scan's.
+            _seed_stresses(cx, test_id, force=True, layers=res.get("layers") or [])
         # Reported back so an old scan behind a chain is never a silent fact.
         return {"ok": True, "imported": imported, "stale_override": bool(stale),
                 "days_ago": res.get("days_ago") if stale else None,

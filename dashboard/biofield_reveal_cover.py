@@ -27,8 +27,18 @@ def _parts(text):
             if p.strip()]
 
 
+def _stem(word):
+    """Singular, so "Allergies" meets "Allergy" and "Parasites" meets "Parasite"."""
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        return word[:-1]
+    return word
+
+
 def _words(part):
-    return frozenset(w for w in re.split(r"[^a-z]+", part) if len(w) >= 3 and w not in GENERIC)
+    return frozenset(_stem(w) for w in re.split(r"[^a-z]+", part)
+                     if len(w) >= 3 and w not in GENERIC)
 
 
 def heading_match(title, conditions, vocabulary=()):
@@ -82,8 +92,11 @@ def plan(layers, existing_rows, recommended, ticked_names, resolve=None, vocabul
 
     `existing_rows` are the chain's rows ({head, most_affected, remedy}). `resolve`
     turns a reveal remedy into the name the chain stores, as the import does."""
+    # A Clinical row names its condition in most_affected; a scan row holds the
+    # scan's comma-joined labels there, which are not conditions.
     conditions = sorted({str(r.get(k) or "").strip() for r in existing_rows or []
-                         for k in ("head", "most_affected")} - {""})
+                         for k in (("head",) if r.get("origin") == "scan"
+                                   else ("head", "most_affected"))} - {""})
     remedies = {str(r.get("remedy") or "").strip().lower() for r in existing_rows or []} - {""}
     ticked = ticked_codes(list(ticked_names or []) + [r.get("remedy") for r in existing_rows or []])
     out = {"add": [], "skip": [], "recommended_unread": recommended is None}

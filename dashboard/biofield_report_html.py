@@ -1172,21 +1172,21 @@ finally{impBusy(false)}
 }
 function impEl(tag,text,cls){var e=document.createElement(tag);if(text)e.textContent=text;
  if(cls)e.className=cls;return e}
-// Resolves to {anyway:[layer n]} on Import, or null on Cancel. Built with textContent,
+// Resolves to {anyway:[layer key]} on Import, or null on Cancel. Built with textContent,
 // so a layer title can never become markup.
 function impPreview(j){return new Promise(function(done){
  var p=j.preview||{add:[],skip:[]},box=impEl('div','','imp-preview');
  var old=document.getElementById('impPreview');if(old)old.remove();box.id='impPreview';
  box.appendChild(impEl('div','This session has '+j.existing+' layer(s). '+p.add.length
   +' reveal layer(s) will be added, '+p.skip.length+' skipped as covered.','imp-head'));
- if(p.recommended_unread)box.appendChild(impEl('div','The scan\'s recommended infoceuticals '
+ if(p.recommended_unread)box.appendChild(impEl('div','The recommended infoceuticals on the scan '
   +'could not be read, so that rule skipped nothing.','food'));
  if(p.add.length){box.appendChild(impEl('div','Added','imp-sub'));
   p.add.forEach(function(L){box.appendChild(impEl('div',L.title+(L.remedy?' \u00b7 '+L.remedy:''),'imp-row'))})}
  var boxes=[];
  if(p.skip.length){box.appendChild(impEl('div','Skipped','imp-sub'));
   p.skip.forEach(function(L){var row=impEl('label','','imp-row');var c=impEl('input');
-   c.type='checkbox';c.value=String(L.n);boxes.push(c);row.appendChild(c);
+   c.type='checkbox';c.value=String(L.key);boxes.push(c);row.appendChild(c);
    row.appendChild(document.createTextNode(' '+L.title+(L.remedy?' \u00b7 '+L.remedy:'')));
    row.appendChild(impEl('span',L.rule+': '+L.why,'imp-why'));
    row.appendChild(impEl('span','add anyway','imp-why'));box.appendChild(row)})}

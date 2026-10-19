@@ -74,7 +74,7 @@ def test_import_needs_confirm_then_appends_with_force(tmp_path, monkeypatch):
     # The same layer again is covered (Glen, 2026-10-18); Glen adds it anyway.
     assert [L["rule"] for L in j["preview"]["skip"]] == ["same heading"]
     j2 = client.post(f"/author/{tid}/e4l/import-reveal",
-                     json={"force": True, "token": j["token"], "add_anyway": [1]}).get_json()
+                     json={"force": True, "token": j["token"], "add_anyway": [j["preview"]["skip"][0]["key"]]}).get_json()
     assert j2["ok"] is True and j2["imported"] == 1
     cx = sqlite3.connect(db)
     assert cx.execute("SELECT COUNT(*) FROM biofield_auth_chain").fetchone()[0] == 2

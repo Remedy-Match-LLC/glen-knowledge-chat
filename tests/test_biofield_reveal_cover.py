@@ -115,7 +115,7 @@ def _reveal(*layers):
             "fresh": True, "layers": [dict(L, most_affected="", summary="") for L in layers]}
 
 
-def _client(tmp_path, monkeypatch, result):
+def _client(tmp_path, monkeypatch, result, scan=_NONE):
     calls = []
 
     def synth(*a, **k):
@@ -123,7 +123,7 @@ def _client(tmp_path, monkeypatch, result):
         return result
     monkeypatch.setattr(RI, "synthesize_reveal_layers", synth)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e: scan).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     client.post(f"/author/{tid}/header", json={"name": "Jo", "email": "jo@x.com",
                                                "date": "2026-10-18"})
@@ -169,7 +169,7 @@ def test_add_anyway_imports_a_skipped_layer(tmp_path, monkeypatch):
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
     assert [L["rule"] for L in j["preview"]["skip"]] == ["same heading"]
     j2 = client.post(f"/author/{tid}/e4l/import-reveal",
-                     json={"force": True, "token": j["token"], "add_anyway": [1]}).get_json()
+                     json={"force": True, "token": j["token"], "add_anyway": [j["preview"]["skip"][0]["key"]]}).get_json()
     assert j2["imported"] == 1 and j2["skipped"] == [] and len(_chain(db)) == 2
 
 
@@ -190,7 +190,7 @@ def test_a_wrong_or_used_token_writes_nothing(tmp_path, monkeypatch):
                       json={"force": True, "token": "forged"}).get_json()
     assert bad["ok"] is False and "expired" in bad["reason"] and len(_chain(db)) == 1
     client.post(f"/author/{tid}/e4l/import-reveal",
-                json={"force": True, "token": j["token"], "add_anyway": [1]})
+                json={"force": True, "token": j["token"], "add_anyway": [j["preview"]["skip"][0]["key"]]})
     again = client.post(f"/author/{tid}/e4l/import-reveal",
                         json={"force": True, "token": j["token"]}).get_json()
     assert again["ok"] is False and len(_chain(db)) == 2
@@ -240,10 +240,10 @@ def _run_preview(preview, clicks):
     node = shutil.which("node")
     if not node:
         pytest.skip("node is not installed")
-    src = inspect.getsource(rh)
+    # The rendered script, as the browser gets it, not the Python source.
+    src = rh._AUTHOR_JS
     start = src.index("function impEl(tag,text,cls)")
     script = src[start:src.index("async function importReveal0(){", start)]
-    script = script.replace("\\\\'", "\\'").replace("\\\\u00b7", "\\u00b7")
     js = r"""
 function node(tag){var n={tag:tag,children:[],className:'',textContent:'',value:'',
  checked:false,appendChild:function(c){this.children.push(c);return c},remove:function(){}};
@@ -271,17 +271,18 @@ var btn=all.filter(function(n){return n.tag==='button'});
     return _json.loads(out.stdout)
 
 
-PREVIEW = {"add": [{"n": 2, "title": "Kidney", "remedy": "Kidney Kare"}],
-           "skip": [{"n": 1, "title": "<b>Liver</b>", "remedy": "", "rule": "same heading",
+PREVIEW = {"add": [{"n": 2, "key": 1, "title": "Kidney", "remedy": "Kidney Kare"}],
+           "skip": [{"n": 1, "key": 0, "title": "<b>Liver</b>", "remedy": "",
+                     "rule": "same heading",
                      "why": "Liver and gallbladder (shares \"liver\")"},
-                    {"n": 3, "title": "Mineral", "remedy": "Stone Solvent",
+                    {"n": None, "key": 2, "title": "Mineral", "remedy": "Stone Solvent",
                      "rule": "same remedy", "why": "Stone Solvent"}],
            "recommended_unread": True}
 
 
 def test_the_preview_lists_both_groups_and_returns_the_layers_ticked_to_add_anyway():
     got = _run_preview(PREVIEW, {"boxes": [1], "button": "go"})
-    assert got["r"] == {"anyway": ["3"]}
+    assert got["r"] == {"anyway": ["2"]}
     text = " | ".join(got["text"])
     assert "1 reveal layer(s) will be added, 2 skipped as covered" in text
     assert "same heading: Liver and gallbladder (shares \"liver\")" in text
@@ -291,3 +292,90 @@ def test_the_preview_lists_both_groups_and_returns_the_layers_ticked_to_add_anyw
 
 def test_cancel_returns_nothing():
     assert _run_preview(PREVIEW, {"boxes": [0], "button": "no"})["r"] is None
+
+
+def _bare(html):
+    """The script's body without its <script> tags."""
+    body = html.strip()
+    assert body.startswith("<script>") and body.endswith("</script>")
+    return body[len("<script>"):-len("</script>")]
+
+
+def test_the_whole_author_script_parses():
+    import shutil
+    import subprocess
+    from dashboard import biofield_report_html as rh
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    out = subprocess.run([node, "--check", "-"], input=_bare(rh._AUTHOR_JS), capture_output=True,
+                         text=True, timeout=20)
+    assert out.returncode == 0, out.stderr[:400]
+
+
+def test_plurals_match_their_singular():
+    assert rc.heading_match("Allergies and Sensitivities", ["Allergy"]) == ("Allergy", "allergy")
+    assert rc.heading_match("Parasites", ["Parasite cleanse"]) is None
+    assert rc.heading_match("Intestinal Parasites", ["Parasite"]) == ("Parasite", "parasite")
+
+
+def test_a_scan_rows_labels_are_not_conditions():
+    out = rc.plan([{"n": 1, "title": "Liver Support", "remedy_name": ""}],
+                  [{"head": "Kidney Health", "most_affected": "Liver, Gallbladder",
+                    "origin": "scan", "remedy": ""}], set(), [])
+    assert [L["n"] for L in out["add"]] == [1]
+    out = rc.plan([{"n": 1, "title": "Liver Support", "remedy_name": ""}],
+                  [{"head": "Detox", "most_affected": "Liver and gallbladder",
+                    "origin": "clinical", "remedy": ""}], set(), [])
+    assert out["skip"][0]["rule"] == "same heading"
+
+
+def test_a_chain_emptied_since_the_preview_is_refused(tmp_path, monkeypatch):
+    layer = _reveal({"n": 1, "title": "Gut", "remedy_name": ""},
+                    {"n": 2, "title": "Kidney", "remedy_name": ""})
+    client, tid, db, _ = _client(tmp_path, monkeypatch, layer)
+    client.post(f"/author/{tid}/e4l/import-reveal", json={})
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
+    assert len(j["preview"]["skip"]) == 2
+    cx = sqlite3.connect(db)
+    cx.execute("DELETE FROM biofield_auth_chain")
+    cx.commit()
+    cx.close()
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
+                     json={"force": True, "token": j["token"]}).get_json()
+    assert j2["ok"] is False and "changed" in j2["reason"] and _chain(db) == []
+
+
+def test_layers_without_a_number_can_each_be_added_anyway(tmp_path, monkeypatch):
+    layer = _reveal({"n": None, "title": "Gut", "remedy_name": ""},
+                    {"n": None, "title": "Gut and liver", "remedy_name": ""})
+    client, tid, db, _ = _client(tmp_path, monkeypatch, _reveal(
+        {"n": 1, "title": "Gut", "remedy_name": ""}))
+    client.post(f"/author/{tid}/e4l/import-reveal", json={})
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: layer)
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
+    keys = [L["key"] for L in j["preview"]["skip"]]
+    assert keys == [0, 1]
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
+                     json={"force": True, "token": j["token"], "add_anyway": [1]}).get_json()
+    assert j2["imported"] == 1 and [s["title"] for s in j2["skipped"]] == ["Gut"]
+    assert _chain(db)[-1][1] == "Gut and liver"
+
+
+def test_coverage_is_seeded_from_every_previewed_layer(tmp_path, monkeypatch):
+    import biofield_local_app as bla
+    seen = []
+    real = RI.build_coverage
+    monkeypatch.setattr(RI, "build_coverage", lambda layers, cx: (seen.append(
+        [L.get("title") for L in layers]), real(layers, cx))[1])
+    layer = _reveal({"n": 1, "title": "Gut", "remedy_name": ""},
+                    {"n": 2, "title": "Kidney", "remedy_name": ""})
+    client, tid, db, _ = _client(tmp_path, monkeypatch, _reveal(
+        {"n": 1, "title": "Gut", "remedy_name": ""}), scan={"found": True, "findings": []})
+    client.post(f"/author/{tid}/e4l/import-reveal", json={})
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: layer)
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
+    assert [s["title"] for s in j["preview"]["skip"]] == ["Gut"]
+    seen.clear()
+    client.post(f"/author/{tid}/e4l/import-reveal", json={"force": True, "token": j["token"]})
+    assert seen and seen[-1] == ["Gut", "Kidney"]

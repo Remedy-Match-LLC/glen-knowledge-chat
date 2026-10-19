@@ -36,6 +36,7 @@ def split(cx, test_id, rep, layers, scan_id, e4l_db):
             "SELECT DISTINCT item_key FROM biofield_clinical_catalog")]
     except Exception:  # noqa: BLE001  no catalog yet: the client's own names only
         vocabulary = []
+    layers = [dict(L, _key=i) for i, L in enumerate(layers or [])]
     return _cover.plan(layers, rep.get("layers") or [], recommended, ticked,
                        resolve=lambda name: exact_canonical_name(cx, name),
                        vocabulary=vocabulary)
@@ -43,7 +44,9 @@ def split(cx, test_id, rep, layers, scan_id, e4l_db):
 
 def describe(split_):
     """What the page shows: every layer, added or skipped with its rule."""
-    row = lambda L: {"n": L.get("n"), "title": L.get("title") or "",
+    # key is the layer's position in the stored result: a reveal layer's n can be
+    # missing or repeated, and "add anyway" must name exactly one layer.
+    row = lambda L: {"n": L.get("n"), "key": L.get("_key"), "title": L.get("title") or "",
                      "remedy": L.get("remedy_name") or ""}
     return {"add": [row(L) for L in split_["add"]],
             "skip": [dict(row(s["layer"]), rule=s["rule"], why=s["why"])
