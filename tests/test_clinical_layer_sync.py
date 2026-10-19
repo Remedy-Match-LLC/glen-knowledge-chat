@@ -561,3 +561,38 @@ def test_a_row_reaching_a_layer_by_its_second_name_keeps_its_ticks(tmp_path):
                  dict(tick, label="Gut", selected_remedies=["Keep"])]
         changes = sync.plan(cx, tid, items)["changes"]
     assert [(c["kind"], c.get("remedy")) for c in changes] == [("add", "Only B")]
+
+
+# Carried over from the retired "Clinical layers -> propose" button (2026-10-19).
+
+def test_a_hand_added_row_earns_its_layer(tmp_path, monkeypatch):
+    """Alyssa Fukushima (a40), 2026-09-22: a row added by hand lives only as an
+    accepted decision, never in the profile."""
+    from dashboard.biofield_clinical_checklist import remember_stress_pattern
+    from dashboard.biofield_clinical_proposals import decide
+
+    def setup(cx, tid):
+        decide(cx, tid, "Sleep Difficulty", "accepted", "Manually added")
+        save_selection(cx, tid, "Sleep Difficulty", ["Sleep Syntropy"])
+        remember_stress_pattern(cx, "Sleep Difficulty", "Sleep Regulation")
+    db, tid, client = _app(tmp_path, monkeypatch, [], setup)
+    assert [(c["layer"], c["remedies"]) for c in _preview(client, tid)["changes"]] == \
+        [("Sleep Regulation", ["Sleep Syntropy"])]
+
+
+def test_it_sees_no_scan_findings(tmp_path, monkeypatch):
+    """Glen, 2026-09-18: Clinical Summary patterns and remedies only."""
+    from dashboard.biofield_stress import add_stress, init_stress_tables
+
+    def setup(cx, tid):
+        init_stress_tables(cx)
+        add_stress(cx, tid, "ED12 Kidney Driver", source="scan", balance="required")
+    db, tid, client = _app(tmp_path, monkeypatch, [], setup)
+    assert _preview(client, tid)["changes"] == []
+
+
+def test_the_old_button_is_gone():
+    from dashboard import biofield_report_html as page
+    import inspect
+    src = inspect.getsource(page)
+    assert "clinicalLayers()" not in src and "Clinical layers &rarr; propose" not in src

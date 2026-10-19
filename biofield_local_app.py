@@ -3464,65 +3464,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         items = [i for i in items if item_key(i.get("label")) not in hidden]
         return apply_selection(cx, test_id, apply_order(cx, test_id, items))
 
-    @app.route("/author/<test_id>/clinical-items/layers", methods=["POST"])
-    def author_clinical_items_layers(test_id):
-        """Layers from the Clinical Summary alone. Glen, 2026-09-18.
-
-        *"Add a button to create layers from the Clinical Summary checked patterns
-        and remedies only. (Full and minimum still pull in the e4l layers as well)"*
-
-        Deliberately narrower than the program buttons: it never reads a scan finding.
-        One layer per checked item's stress PATTERN, carrying that item's chosen
-        remedies. PROPOSES by default; writes only on {"apply": true}, the rule #1717
-        set for the causal chain.
-
-        The checklist is rebuilt here rather than taken from the browser, for the
-        reason the to-stresses route gives: a stale tab would otherwise add a tick
-        that is no longer saved.
-        """
-        from dashboard.biofield_clinical_checklist import clinical_layers
-
-        body = request.get_json(silent=True) or {}
-        with sqlite3.connect(db_path) as cx:
-            rep = authored_report(cx, test_id)
-            items = _clinical_items(cx, test_id, rep)
-            layers = clinical_layers(items)
-            existing = _layer_count(rep)
-            checked = sum(1 for i in items if i.get("checked"))
-            no_pattern = [i.get("label") for i in items
-                          if i.get("checked") and not (i.get("stress_pattern") or "").strip()]
-
-            if not body.get("apply"):
-                return {"ok": True, "proposed": True, "checked": checked,
-                        "existing_layers": existing, "no_pattern": no_pattern,
-                        "layers": [{"pattern": L["pattern"], "remedies": L["remedies"],
-                                    "label": L["label"]} for L in layers]}
-            if existing and not body.get("force"):
-                return {"ok": False, "needs_confirm": True, "existing": existing,
-                        "error": f"This intake already has {existing} layer(s)."}
-
-            n, made = _last_layer_no(rep), 0
-            # A remedy already on the chain is not added again (Glen, 2026-09-23).
-            # Compared after name resolution, which is the name the chain stores.
-            on_chain = {str(r[0] or "").strip().lower() for r in cx.execute(
-                "SELECT remedy FROM biofield_auth_chain WHERE test_id=?",
-                (int(str(test_id).lstrip("a") or 0),)).fetchall()} - {""}
-            for L in layers:
-                n += 1
-                made += 1
-                remedies = []
-                for remedy in L["remedies"]:
-                    name = resolve_remedy_name(cx, remedy) or remedy
-                    if name.strip().lower() not in on_chain:
-                        on_chain.add(name.strip().lower())
-                        remedies.append(name)
-                for name in remedies or [""]:
-                    d = remedy_dosing(cx, name) if name else {}
-                    add_chain_row(cx, test_id, n, L["pattern"], L["label"] or L["pattern"],
-                                  name, d.get("dosage", ""), d.get("frequency", ""),
-                                  d.get("timing", ""), confirmed=0, origin="clinical")
-        return {"ok": True, "applied": True, "layers_added": made}
-
     @app.route("/author/<test_id>/clinical-items/layers/update", methods=["POST"])
     def author_clinical_layers_update(test_id):
         """Update Clinical layers. Glen, 2026-10-18: "I don't see how to update the
