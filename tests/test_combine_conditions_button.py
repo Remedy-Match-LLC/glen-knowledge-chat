@@ -94,3 +94,15 @@ def test_combine_into_that_keeps_the_picked_row():
     assert got["posted"] == [{"absorbed": "Cataracts", "survivor": "Dry eye", "display": ""}]
     assert got["asked"][0].startswith('Combine "Cataracts" into "Dry eye"?')
     assert "every client" in got["asked"][0] and got["asked"][1] == "Dry eye + Cataracts"
+
+
+def test_each_button_sits_with_its_own_picker_and_names_its_direction():
+    # The handler reads the select beside its button, so each pair must share a span.
+    h = render_clinical_checklist(ROWS, [])
+    block = h[h.index('data-label="Cataracts"'):h.index('data-label="Cataract"')]
+    spans = re.findall(r"<span class=clinical-combine>(.*?)</span>", block)
+    assert len(spans) == 2
+    for s in spans:
+        assert s.count("<select") == 1 and s.count("<button") == 1
+    assert "Combine another row" in spans[0] and ">Combine into this</button>" in spans[0]
+    assert "Combine this into another row" in spans[1] and ">Combine into that</button>" in spans[1]
