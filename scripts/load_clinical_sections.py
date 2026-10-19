@@ -42,6 +42,7 @@ LOADED = (cs.FORMULATIONS, cs.INFOCEUTICALS, "foods_emphasize", "foods_avoid",
           cs.NUTRIENTS, cs.BOTANICALS, cs.ESSENTIAL_OILS, cs.HEALING_TOOLS)
 # Keys a condition file may carry that hold no items to load.
 NOT_ITEMS = ("fullscript_wanted",)
+ROUTES = ("inhale and skin", "inhale only")
 
 
 def _prune(cx, label, sections, client_test, chosen, report):
@@ -84,7 +85,7 @@ def load(cx, folder, client_test):
               "fullscript_types_not_loaded": 0, "new_conditions": [],
               "removed": [], "kept_not_listed": [],
               "extra_explanations_applied": 0, "extra_explanations_waiting": 0,
-              "unknown_sections": []}
+              "unknown_sections": [], "unknown_routes": []}
     from dashboard.biofield_clinical_proposals import selections
     chosen_by_row = selections(cx, client_test)
     known = {row[0] for row in cx.execute(
@@ -123,6 +124,9 @@ def load(cx, folder, client_test):
         for section in LOADED:
             for item in sections.get(section) or []:
                 outcome = cs.upsert_item(cx, label, section, item, origin_test=client_test)
+                route = str(item.get("route") or "").strip()
+                if section == cs.ESSENTIAL_OILS and route not in ROUTES:
+                    report["unknown_routes"].append(f"{label}: {item.get('name')}: {route!r}")
                 report[outcome][section] = report[outcome].get(section, 0) + 1
                 name_key = _norm(item.get("name"))
                 if section in cs.REMEDY_SECTIONS:

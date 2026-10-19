@@ -60,8 +60,16 @@ def test_the_loader_loads_essential_oils(tmp_path, cx):
     from scripts.load_clinical_sections import load
     report = load(cx, _files(tmp_path, {"essential_oils": [_oil()]}), client_test="a49")
     assert report["added"] == {"essential_oils": 1}
-    assert report["unknown_sections"] == []
+    assert report["unknown_sections"] == [] and report["unknown_routes"] == []
     assert _section(cx)["items"][0]["route"] == "inhale only"
+
+
+def test_a_route_outside_the_two_is_reported(tmp_path, cx):
+    from scripts.load_clinical_sections import load
+    report = load(cx, _files(tmp_path, {"essential_oils": [_oil(route="inhale onyl"),
+                                                           _oil("Peppermint", route="")]}), "a49")
+    assert report["unknown_routes"] == ["Vertigo: Lavender: 'inhale onyl'",
+                                        "Vertigo: Peppermint: ''"]
 
 
 def test_an_oil_moved_out_of_botanicals_leaves_one_row(tmp_path, cx):
@@ -112,6 +120,8 @@ def test_an_oil_is_an_ingredient_on_the_overview(cx):
     cs.save_pick(cx, "a49", "Vertigo", cs.ESSENTIAL_OILS, "Lavender", checked=True)
     row = next(r for r in ov.overview(cx, "a49")["rows"] if r["name"] == "Lavender")
     assert (row["group"], row["kind"]) == ("Ingredients", "Essential oil")
+    page = ov.render_page(ov.overview(cx, "a49"), "Pat")
+    assert "Lavender" in page and "inhale only" not in page and "irritate" not in page
 
 
 def test_the_author_page_shows_the_route_with_its_reason_escaped(cx):
