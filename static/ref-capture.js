@@ -7,6 +7,10 @@
 (function captureRef() {
   try {
     var q = new URLSearchParams(location.search);
+    // A story-page link (?story=) is credited only by the server, which sets rm_ref
+    // solely for that story's own approved affiliate and keeps first touch. The
+    // browser must not set or overwrite rm_ref from any parameter on such a link.
+    if (q.has('story')) return;
     var VALID = /^[A-Za-z0-9_-]{1,64}$/;
     // utm_source is a generic campaign field, so only trust it as an affiliate
     // slug when utm_medium explicitly marks the link as a referral. This keeps

@@ -758,7 +758,11 @@
   // through to a later purchase/enrollment for attribution.
   (function captureRef() {
     try {
-      const ref = (new URLSearchParams(location.search).get('ref') || '').trim();
+      const q = new URLSearchParams(location.search);
+      // A story-page link (?story=) is credited only by the server (approved own
+      // ref, first touch). The browser must not set or overwrite rm_ref here.
+      if (q.has('story')) return;
+      const ref = (q.get('ref') || '').trim();
       if (ref && /^[A-Za-z0-9_-]{1,64}$/.test(ref)) {
         document.cookie = 'rm_ref=' + encodeURIComponent(ref) +
                           ';path=/;max-age=' + (90 * 24 * 3600) + ';SameSite=Lax';
