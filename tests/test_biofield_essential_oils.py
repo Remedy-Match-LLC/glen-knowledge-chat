@@ -139,3 +139,61 @@ def test_the_route_text_itself_is_escaped(cx):
                    origin_test="a49")
     page = _clinical_sections_html(cs.sections_for(cx, "a49", "Vertigo"), lambda n: "")
     assert ">&lt;b&gt;inhale&lt;/b&gt; &amp; skin</span>" in page and "<b>inhale" not in page
+
+
+# Glen, 2026-10-18: "Blood sugar" is relabelled "Sugar Regulation"; the key stays.
+
+def _relabelled(tmp_path, label):
+    folder = tmp_path / "content"
+    folder.mkdir(exist_ok=True)
+    (folder / "blood sugar.json").write_text(json.dumps(
+        {"condition_key": "blood sugar", "label": label,
+         "sections": {"essential_oils": [_oil()]}}))
+    return str(folder)
+
+
+def test_a_new_label_becomes_the_display_name_and_the_key_stays(tmp_path, cx):
+    from scripts.load_clinical_sections import load
+    from dashboard.biofield_clinical_checklist import display_labels
+    report = load(cx, _relabelled(tmp_path, "Sugar Regulation"), "a49")
+    assert report["relabelled"] == ["blood sugar: 'Sugar Regulation'"]
+    assert display_labels(cx) == {"blood sugar": "Sugar Regulation"}
+    assert _section(cx, "Blood sugar")["items"][0]["name"] == "Lavender"
+    assert cx.execute("SELECT DISTINCT item_key FROM biofield_clinical_section_item"
+                      ).fetchall() == [("blood sugar",)]
+    assert load(cx, _relabelled(tmp_path, "Sugar Regulation"), "a49")["relabelled"] == []
+
+
+def test_a_label_matching_its_key_leaves_any_display_name_alone(tmp_path, cx):
+    from scripts.load_clinical_sections import load
+    from dashboard.biofield_clinical_checklist import display_labels, set_display_label
+    set_display_label(cx, "blood sugar", "Blood sugar + Glycation")
+    report = load(cx, _relabelled(tmp_path, "Blood sugar"), "a49")
+    assert report["relabelled"] == []
+    assert display_labels(cx) == {"blood sugar": "Blood sugar + Glycation"}
+
+
+def test_a_relabel_rolls_back_with_a_dry_run(tmp_path):
+    import subprocess
+    import sys
+    db = str(tmp_path / "chat_log.db")
+    out = subprocess.run([sys.executable, "scripts/load_clinical_sections.py",
+                          _relabelled(tmp_path, "Sugar Regulation"), "--db", db,
+                          "--client-test", "a49"], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr[-400:]
+    assert "'Sugar Regulation'" in out.stdout and "Dry run" in out.stdout
+    con = sqlite3.connect(db)
+    try:
+        from dashboard.biofield_clinical_checklist import display_labels
+        assert display_labels(con) == {}
+    finally:
+        con.close()
+
+
+def test_the_clinical_summary_shows_the_new_name(tmp_path, cx):
+    from scripts.load_clinical_sections import load
+    from dashboard import biofield_clinical_checklist as cc
+    load(cx, _relabelled(tmp_path, "Sugar Regulation"), "a49")
+    rows = cc.build({"conditions": ["Blood sugar"]}, [], cx=cx)
+    row = next(r for r in rows if cc._norm(r["label"]) == "blood sugar")
+    assert row["display_label"] == "Sugar Regulation"
