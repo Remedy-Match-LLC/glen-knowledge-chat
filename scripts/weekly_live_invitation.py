@@ -334,6 +334,13 @@ def _copy(first_name, portal_url, eligible, target_date, email=""):
 
 EM_DASH_FORMS = ("—", "&mdash;", "&#8212;")
 
+# Destinations this invitation must never carry. Practice Better, Skool and ClientClub are
+# retired, and a raw Zoom link must never reach a client: the private join link lives in
+# the client's own portal. One tuple, used by both the invitation and the correction, so
+# the two cannot drift apart.
+BANNED_DESTINATIONS = ("practicebetter", "practice better", "skool",
+                       "clientclub", "client club", "zoom.us/")
+
 
 def _subject(target_date):
     return f"Wednesday live community sessions: {target_date.strftime('%B %-d')}"
@@ -528,7 +535,7 @@ def run(args):
                 text, body_html = _copy(first, portal_url, email in eligible,
                                         target_date, email)
                 if any(bad in (text + body_html).lower()
-                       for bad in ("practicebetter", "practice better", "skool", "zoom.us/")):
+                       for bad in BANNED_DESTINATIONS):
                     raise RuntimeError("deprecated or private destination found in invitation copy")
                 status, message_id, response = _send(
                     contact.get("id") or "", subject, text, body_html,
@@ -772,7 +779,7 @@ def run_correction(args, *, portal_check=None, find_contact=None, send=None, sle
                                                    portal_link(token), email in eligible,
                                                    target_date, email)
                 if any(bad in (text + body_html).lower()
-                       for bad in ("practicebetter", "practice better", "skool", "zoom.us/")):
+                       for bad in BANNED_DESTINATIONS):
                     raise RuntimeError("deprecated or private destination in correction copy")
                 status, message_id, response = send(contact.get("id") or "", subject, text,
                                                     body_html, email_to=email,

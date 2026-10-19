@@ -256,3 +256,30 @@ def test_the_html_body_writes_the_separator_as_an_entity():
     import datetime
     text, body = weekly._copy("Glen", weekly.portal_link("tok"), True, datetime.date(2026, 9, 30))
     assert "\u00b7" in text and "&middot;" in body and "\u00b7" not in body
+
+
+def test_banned_destinations_cover_every_retired_platform_and_raw_zoom():
+    # Glen's standing rule retires Practice Better, Skool and ClientClub, and a raw Zoom
+    # link must never reach a client. ClientClub was missing from this guard for the
+    # 2026-09-30, 10-07 and 10-14 sends; nothing shipped wrong, but it was unguarded.
+    for retired in ("practicebetter", "practice better", "skool",
+                    "clientclub", "client club", "zoom.us/"):
+        assert retired in weekly.BANNED_DESTINATIONS
+
+
+def test_the_guard_catches_a_clientclub_link_in_either_copy():
+    # The check both call sites run, applied to copy carrying each banned destination.
+    def blocked(copy):
+        return any(bad in copy.lower() for bad in weekly.BANNED_DESTINATIONS)
+
+    assert blocked("Join us at https://clientclub.net/glen")
+    assert blocked("Your Client Club login is ready")
+    assert blocked("https://zoom.us/j/93500325091")
+    assert blocked("See the Skool community")
+    assert not blocked("Open the Live Calendar in your private MyHealingOasis portal")
+
+
+def test_both_call_sites_use_the_shared_tuple_so_they_cannot_drift():
+    src = Path(weekly.__file__).read_text()
+    assert src.count("for bad in BANNED_DESTINATIONS)") == 2
+    assert 'for bad in ("practicebetter"' not in src
