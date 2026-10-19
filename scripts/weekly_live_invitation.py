@@ -489,6 +489,11 @@ def run(args):
     # invited. Since the board joined the audience there should be none, so any is
     # loud: the matched people are still mailed, and the run ends needs_attention.
     not_reached = counts.get("allowlist_not_in_audience", 0)
+    if fingerprints is not None and args.dry_run:
+        # A dry run creates no GHL contact. A listed member without one is created and
+        # mailed by the real send, so it is not unreached (review round 1).
+        counts["would_create_ghl_contact"] = len(missing_ghl)
+        not_reached -= len(missing_ghl)
     problem = (f"{not_reached} address(es) on the consent list are not in the audience "
                "and were not mailed" if not_reached > 0 else "")
     if args.dry_run:
@@ -501,7 +506,9 @@ def run(args):
                           "campaign_name": campaign_name, "subject": subject,
                           "counts": counts, "event_gate": gate,
                           "problem": problem}, sort_keys=True))
-        return 2 if problem else 0
+        # A dry run reports a problem in its status, never in its exit code: a failed
+        # dry run must not read as a blocked send and leave a week uninvited.
+        return 0
 
     if missing_ghl:
         raise RuntimeError(f"{len(missing_ghl)} authoritative members have no GHL contact")

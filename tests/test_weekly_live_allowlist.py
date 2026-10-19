@@ -406,7 +406,7 @@ def test_a_dry_run_with_an_unreached_listed_address_says_so(monkeypatch, tmp_pat
     sent, _ = _wire(monkeypatch, tmp_path, weekly)
     argument, _ = allowlist.encode(["listed@example.com", "nobody@example.com"], KEY)
 
-    assert weekly.run(_args(send=False, dry_run=True, only_list=argument)) == 2
+    assert weekly.run(_args(send=False, dry_run=True, only_list=argument)) == 0
 
     out = capsys.readouterr().out
     assert '"status": "DRY_RUN_NEEDS_ATTENTION"' in out
@@ -457,3 +457,19 @@ def test_an_empty_board_is_refused(monkeypatch, tmp_path):
                         lambda cx, strict=False: {"trial": [], "full": []})
     with pytest.raises(RuntimeError, match="members board is empty"):
         weekly._board_emails()
+
+
+def test_a_dry_run_counts_a_listed_member_with_no_contact_as_to_be_created(
+        monkeypatch, tmp_path, capsys):
+    """Review round 1: the real send creates that contact and mails them."""
+    weekly = _weekly()
+    sent, _ = _wire(monkeypatch, tmp_path, weekly)
+    trial = "trial.no.contact@example.com"
+    monkeypatch.setattr(weekly, "_board_emails", lambda: {trial})
+    argument, _ = allowlist.encode(["listed@example.com", trial], KEY)
+
+    assert weekly.run(_args(send=False, dry_run=True, only_list=argument)) == 0
+
+    out = capsys.readouterr().out
+    assert '"status": "DRY_RUN"' in out and '"would_create_ghl_contact": 1' in out
+    assert sent == []
