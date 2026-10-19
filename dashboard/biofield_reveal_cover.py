@@ -27,9 +27,18 @@ def _parts(text):
             if p.strip()]
 
 
+# Singulars that end in s, so "Lens" meets "Lenses" and stays "lens".
+KEEP_S = frozenset({"lens", "gas", "pancreas", "diabetes", "herpes", "measles", "mumps",
+                    "shingles", "rabies", "scabies", "rickets", "series", "species"})
+
+
 def _stem(word):
     """Singular, so "Allergies" meets "Allergy", "Parasites" meets "Parasite" and
     "Viruses" meets "Virus". A final e is dropped after the s, on both sides alike."""
+    if word in KEEP_S:
+        return word
+    if len(word) > 4 and word.endswith("ses") and word[:-2] in KEEP_S:
+        return word[:-2]
     if len(word) > 4 and word.endswith("ies"):
         return word[:-3] + "y"
     if len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
@@ -50,6 +59,11 @@ def heading_match(title, conditions, vocabulary=()):
     """(condition, matching words) for the reveal heading `title`, or None.
     `vocabulary` is every known condition name, so a longer phrase the client does
     not have still outranks a shorter one the client does."""
+    # A heading of generic words only ("Stress", "Energy") matches itself whole.
+    whole = " ".join(re.split(r"[^a-z]+", str(title or "").lower())).strip()
+    for c in conditions:
+        if whole and " ".join(re.split(r"[^a-z]+", str(c).lower())).strip() == whole:
+            return c, whole
     units = [(c, _words(p), " ".join(sorted(_shown(p))))
              for c in conditions for p in _parts(c) if _words(p)]
     known = [_words(p) for c in vocabulary for p in _parts(c) if _words(p)]

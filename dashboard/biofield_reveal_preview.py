@@ -6,6 +6,7 @@ preview per test; it expires after an hour and is removed once imported.
 """
 import hashlib
 import json
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -27,6 +28,20 @@ def chain_digest(rows):
                           .encode()).hexdigest()
 
 
+SEED = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "data", "condition_programs_seed.json")
+
+
+def program_conditions():
+    """The condition program labels, as more vocabulary for the heading rule."""
+    try:
+        with open(SEED) as f:
+            programs = json.load(f).get("condition_programs") or {}
+        return [str(p.get("label") or "") for p in programs.values() if p.get("label")]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
 def split(cx, test_id, rep, layers, scan_id, e4l_db):
     """The cover plan for `layers` against the chain as it stands now."""
     from dashboard.biofield_authoring import exact_canonical_name
@@ -45,6 +60,8 @@ def split(cx, test_id, rep, layers, scan_id, e4l_db):
             "SELECT DISTINCT item_key FROM biofield_clinical_catalog")]
     except Exception:  # noqa: BLE001  said on the preview, never silent
         vocabulary, catalog_unread = [], True
+    # More names can only stop a shorter match: a wider vocabulary never adds a skip.
+    vocabulary += program_conditions()
     layers = [dict(L, _key=i) for i, L in enumerate(layers or [])]
     out = _cover.plan(layers, rep.get("layers") or [], recommended, ticked,
                       resolve=lambda name: exact_canonical_name(cx, name),

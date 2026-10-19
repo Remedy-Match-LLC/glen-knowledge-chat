@@ -461,3 +461,92 @@ def test_a_preview_taken_by_a_concurrent_click_imports_nothing(tmp_path, monkeyp
                      json={"force": True, "token": j["token"]}).get_json()
     assert j2["ok"] is False and "already imported" in j2["reason"]
     assert [r[1] for r in _chain(db)] == ["Gut"]
+
+
+# Round 3 review, 2026-10-18.
+
+def test_a_heading_of_generic_words_matches_itself():
+    assert rc.heading_match("Stress", ["Stress"]) == ("Stress", "stress")
+    assert rc.heading_match("Health and Stress", ["Health and stress"]) is not None
+    assert rc.heading_match("Energy", ["Stress"]) is None
+
+
+def test_a_singular_ending_in_s_meets_its_plural():
+    assert rc.heading_match("Lens Clarity", ["Lenses"]) is not None
+    assert rc.heading_match("Lenses", ["Lens"]) is not None
+
+
+def test_a_comma_lists_conditions_like_and():
+    assert rc.heading_match("Liver Support", ["Liver, Gallbladder"]) == (
+        "Liver, Gallbladder", "liver")
+
+
+def _blood_chain(tmp_path, monkeypatch, catalog):
+    layer = _reveal({"n": 1, "title": "Blood Sugar Regulation", "remedy_name": ""})
+    client, tid, db, _ = _client(tmp_path, monkeypatch, _reveal(
+        {"n": 1, "title": "Blood and circulation", "remedy_name": ""}))
+    client.post(f"/author/{tid}/e4l/import-reveal", json={})
+    if catalog:
+        cx = sqlite3.connect(db)
+        cx.execute("CREATE TABLE IF NOT EXISTS biofield_clinical_catalog (item_key TEXT)")
+        cx.execute("INSERT INTO biofield_clinical_catalog (item_key) VALUES ('blood sugar')")
+        cx.commit()
+        cx.close()
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: layer)
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
+    return client, tid, db, j
+
+
+def test_the_route_reads_the_catalog_vocabulary(tmp_path, monkeypatch):
+    # Glen: "'blood' alone doesn't functionally match Blood Sugar Regulation."
+    _, _, _, j = _blood_chain(tmp_path, monkeypatch, catalog=True)
+    assert [L["title"] for L in j["preview"]["add"]] == ["Blood Sugar Regulation"]
+    assert j["preview"]["skip"] == []
+
+
+def test_a_coverage_change_since_the_preview_is_refused(tmp_path, monkeypatch):
+    client, tid, db, j = _blood_chain(tmp_path, monkeypatch, catalog=False)
+    if j["preview"]["skip"]:
+        cx = sqlite3.connect(db)
+        cx.execute("CREATE TABLE IF NOT EXISTS biofield_clinical_catalog (item_key TEXT)")
+        cx.execute("INSERT INTO biofield_clinical_catalog (item_key) VALUES ('blood sugar')")
+        cx.commit()
+        cx.close()
+    else:
+        pytest.skip("the catalog already holds blood sugar here")
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
+                     json={"force": True, "token": j["token"]}).get_json()
+    assert j2["ok"] is False and "changed" in j2["reason"]
+
+
+def _fn(src, name):
+    start = src.index(f"async function {name}(")
+    end = min(i for i in (src.find("\nasync function", start + 10),
+                          src.find("\nfunction", start + 10)) if i > 0)
+    return src[start:end]
+
+
+def test_the_import_click_sends_the_token_and_the_add_anyway_ticks():
+    import json as _json
+    import shutil
+    import subprocess
+    from dashboard import biofield_report_html as rh
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    js = """
+var posted=[],stat=[];var location={reload:function(){}};
+function impStat(t){stat.push(t)}
+function confirm(){return true}
+async function impPreview(j){return {anyway:['2']}}
+async function post(url,body){posted.push(JSON.parse(JSON.stringify(body)));
+  return posted.length===1?{needs_confirm:true,token:'tok',existing:1,preview:{add:[],skip:[]}}
+                         :{ok:true,imported:1}}
+SCRIPT
+importReveal0().then(function(){console.log(JSON.stringify({posted:posted,stat:stat}))});
+""".replace("SCRIPT", _fn(_bare(rh._AUTHOR_JS), "importReveal0"))
+    out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=20)
+    assert out.returncode == 0, out.stderr
+    got = _json.loads(out.stdout)
+    assert got["posted"][0] == {}
+    assert got["posted"][1] == {"force": True, "token": "tok", "add_anyway": ["2"]}
