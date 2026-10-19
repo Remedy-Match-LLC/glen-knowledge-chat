@@ -4355,7 +4355,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         body = request.get_json(force=True) or {}
         key = os.environ.get("CONSOLE_SECRET", "")
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
-        data = _json.dumps({"email": body.get("email"), "answers": body.get("answers")}).encode()
+        out = {"email": body.get("email"), "answers": body.get("answers")}
+        if body.get("source"):
+            out["source"] = body.get("source")
+        data = _json.dumps(out).encode()
         req = urllib.request.Request(f"{base}/api/console/intake-import",
                                      data=data, method="POST",
                                      headers={"X-Console-Key": key, "Content-Type": "application/json"})

@@ -130,3 +130,41 @@ def test_intake_import_writes_and_gates(client):
         intake.init_intake_table(cx)
         assert intake.is_submitted(cx, "imp@x.com") is True
         assert intake.get_response(cx, "imp@x.com")["answers"]["_imported"] == "practice-better"
+
+
+# 2026-10-18: a record assembled from a client's emails and charts is not a PB export,
+# and a skipped write must not answer ok.
+
+def test_intake_import_records_its_source(client):
+    import app as appmod
+    from dashboard import intake
+    url = "/api/console/intake-import?key=K"
+    body = {"email": "imp@x.com", "answers": {"first_name": "Ann"}}
+    assert client.post(url, json=dict(body, source="clinical-record")).get_json() == {
+        "ok": True, "written": True}
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        assert intake.get_response(cx, "imp@x.com")["answers"]["_imported"] == "clinical-record"
+    assert client.post(url, json=dict(body, source="made-up")).status_code == 400
+
+
+def test_intake_import_says_when_a_real_submission_kept_it_out(client):
+    import app as appmod
+    from dashboard import intake
+    r = client.post("/api/console/intake-import?key=K",
+                    json={"email": "seed@x.com", "answers": {"first_name": "Other"}})
+    assert r.status_code == 409 and r.get_json()["ok"] is False
+    assert r.get_json()["written"] is False
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        assert intake.get_response(cx, "seed@x.com")["answers"] == {"first_name": "Seed"}
+
+
+def test_import_response_refuses_an_unknown_source():
+    from dashboard import intake
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    intake.init_intake_table(cx)
+    with pytest.raises(ValueError):
+        intake.import_response(cx, "a@x.com", {}, "2026-10-18T00:00:00", source="pb")
+    assert intake.import_response(cx, "a@x.com", {}, "2026-10-18T00:00:00") is True
