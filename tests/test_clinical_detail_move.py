@@ -215,3 +215,72 @@ window.placeClinicalRow(btn).then(function(){console.log(JSON.stringify({sent:se
     assert got["sent"][0] == ["/place-row", {"row": "Dry eye", "topics": [
         "Sugar Regulation", "Crystalline Lens", "Adrenals"]}]
     assert "for this client only" in got["asked"][0] and got["sent"][1] == "reload"
+
+
+# Review round 2, 2026-10-19.
+
+def test_restoring_leaves_a_factor_another_topic_already_had(cx):
+    _topic(cx, "Hypothyroid", "synthroid")
+    _topic(cx, "Medications", "synthroid")
+    assert "synthroid" not in _factors(cx).get("hypothyroid", [])   # one item each
+    cg.place_row(cx, T, "Medications", ["Thyroid"])
+    cg.remove_factor(cx, T, "Thyroid", "Medications")
+    assert _factors(cx)["medications"] == ["synthroid"]
+
+
+def test_restoring_never_touches_an_unrelated_topic(cx):
+    _topic(cx, "Hypothyroid", "synthroid")
+    cg.place_row(cx, T, "Hypothyroid", ["Hashimoto's"])
+    gid = cg._approved_by_name(cx, T, "Unrelated")
+    gid = cg._insert(cx, T, "Unrelated", "approved", "", [{"factor": "synthroid",
+                                                             "kind": "typed"}])
+    cg.remove_factor(cx, T, "Hashimoto's", "Hypothyroid")
+    assert _factors(cx)["unrelated"] == ["synthroid"]
+    assert _factors(cx)["hypothyroid"] == ["synthroid"]
+
+
+def test_a_second_placement_carries_the_rows_own_details(cx):
+    _topic(cx, "Hypothyroid", "synthroid")
+    cg.place_row(cx, T, "Hypothyroid", ["Hashimoto's"])
+    cg.place_row(cx, T, "Hypothyroid", ["Thyroid"])
+    assert _factors(cx)["thyroid"] == ["Hypothyroid", "synthroid"]
+    cg.remove_factor(cx, T, "Hashimoto's", "Hypothyroid")
+    cg.remove_factor(cx, T, "Thyroid", "Hypothyroid")
+    f = _factors(cx)
+    assert f["hypothyroid"] == ["synthroid"] and f["thyroid"] == [] and f["hashimoto s"] == []
+
+
+def test_a_row_cannot_go_under_a_row_that_is_a_detail(cx):
+    cg.place_row(cx, T, "Dry eyes", ["Sjogren's"])
+    with pytest.raises(cg.Refused) as exc:
+        cg.place_row(cx, T, "Sjogren's", ["Dry eyes"])
+    assert "Take it back out first" in str(exc.value)
+
+
+def test_the_move_takes_the_write_lock_before_checking_ticks(tmp_path):
+    db = str(tmp_path / "x.db")
+    a = sqlite3.connect(db, timeout=0)
+    init_stress_tables(a)
+    cg.ensure_schema(a)
+    a.commit()
+    seen = []
+    real = cg.row_ticks
+
+    def check(cx, test_id, label):
+        b = sqlite3.connect(db, timeout=0)
+        try:
+            b.execute("CREATE TABLE IF NOT EXISTS t (x)")
+            seen.append("other writer got in")
+        except sqlite3.OperationalError:
+            seen.append("locked")
+        finally:
+            b.close()
+        return real(cx, test_id, label)
+    cg.row_ticks = check
+    try:
+        cg.place_row(a, T, "Dry eyes", ["Sjogren's"])
+    finally:
+        cg.row_ticks = real
+        a.rollback()
+        a.close()
+    assert seen == ["locked"]

@@ -52,6 +52,7 @@ def ensure_schema(cx):
         prev_status TEXT,
         prev_evidence TEXT NOT NULL DEFAULT '',
         own_factors TEXT NOT NULL DEFAULT '[]',
+        added TEXT NOT NULL DEFAULT '[]',
         moved_at TEXT DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (test_id, row_key))""")
 
@@ -422,6 +423,10 @@ def place_row(cx, test_id, row_label, topics):
     Returns the topic names used."""
     from dashboard.biofield_clinical_proposals import decisions
     ensure_schema(cx)
+    # Claim the write lock before the tick check, so a tick saved meanwhile cannot land
+    # between the check and the move (review round 2).
+    if not cx.in_transaction:
+        cx.execute("BEGIN IMMEDIATE")
     row = _clean(canonical_name(cx, test_id, " ".join(str(row_label or "").split())), NAME_MAX)
     rkey = item_key(row)
     names, seen = [], {rkey}
@@ -432,19 +437,37 @@ def place_row(cx, test_id, row_label, topics):
             names.append(name)
     if not rkey or not names:
         raise Refused("Pick at least one other row to put this one under.")
+    # A row that is itself a detail now cannot hold one: that makes a loop.
+    moved = {r[0] for r in cx.execute("SELECT row_key FROM biofield_clinical_detail_moves "
+                                      "WHERE test_id=?", (str(test_id),))}
+    inside = [n for n in names if item_key(n) in moved]
+    if inside:
+        raise Refused(", ".join(inside) + " is a detail under another row now. "
+                      "Take it back out first.")
     ticks = row_ticks(cx, test_id, row)
     if ticks:
         raise Refused("This row has ticks, so it was not moved: " + "; ".join(ticks)
                       + ". Move or untick them first.")
-    own = [f for g in groups(cx, test_id) if g["status"] == "approved"
-           and item_key(canonical_name(cx, test_id, g["name"])) == rkey for f in g["factors"]]
+    prior = cx.execute("SELECT own_factors, added FROM biofield_clinical_detail_moves "
+                       "WHERE test_id=? AND row_key=?", (str(test_id), rkey)).fetchone()
+    # Moved before: its own factors are the ones recorded then (review round 2).
+    own = json.loads(prior[0]) if prior else [
+        f for g in groups(cx, test_id) if g["status"] == "approved"
+        and item_key(canonical_name(cx, test_id, g["name"])) == rkey for f in g["factors"]]
+    added = json.loads(prior[1]) if prior else []
     carried = [{"factor": row, "kind": DETAIL_KIND}] + own
     for name in names:
         gid = _approved_by_name(cx, test_id, name)
         if gid is None:
-            gid = _insert(cx, test_id, name, "approved", "", carried)
-        else:
-            _put_factors(cx, gid, carried)
+            gid = _insert(cx, test_id, name, "approved", "", [])
+        # Only what this move put there is taken back on restore: a topic that already
+        # held one of the factors keeps it (review round 2).
+        for f in carried:
+            key = item_key(f["factor"])
+            if key and cx.execute("INSERT OR IGNORE INTO biofield_clinical_group_factors"
+                                  "(group_id,factor_key,factor,kind) VALUES (?,?,?,?)",
+                                  (gid, key, f["factor"], f["kind"])).rowcount:
+                added.append([item_key(name), key])
         if (decisions(cx, test_id).get(item_key(name)) or {}).get("status") != "accepted":
             decide(cx, test_id, name, "accepted", "A detail placed under it: " + row)
     # The row's own item is emptied: its factors now sit under the topics.
@@ -453,12 +476,14 @@ def place_row(cx, test_id, row_label, topics):
             cx.execute("DELETE FROM biofield_clinical_group_factors WHERE group_id=?", (g["id"],))
             cx.execute("DELETE FROM biofield_clinical_groups WHERE id=?", (g["id"],))
     before = decisions(cx, test_id).get(rkey) or {}
-    if not cx.execute("SELECT 1 FROM biofield_clinical_detail_moves WHERE test_id=? AND "
-                      "row_key=?", (str(test_id), rkey)).fetchone():
+    if prior:
+        cx.execute("UPDATE biofield_clinical_detail_moves SET added=? WHERE test_id=? AND "
+                   "row_key=?", (json.dumps(added), str(test_id), rkey))
+    else:
         cx.execute("INSERT INTO biofield_clinical_detail_moves (test_id,row_key,row_label,"
-                   "prev_status,prev_evidence,own_factors) VALUES (?,?,?,?,?,?)",
+                   "prev_status,prev_evidence,own_factors,added) VALUES (?,?,?,?,?,?,?)",
                    (str(test_id), rkey, row, before.get("status"), before.get("evidence") or "",
-                    json.dumps(own)))
+                    json.dumps(own), json.dumps(added)))
     decide(cx, test_id, row, "dismissed", "A detail under: " + ", ".join(names))
     return names
 
@@ -468,7 +493,7 @@ def _restore_if_free(cx, test_id, factor):
     factors taken back from the topics."""
     from dashboard.biofield_clinical_proposals import _key
     key = item_key(factor)
-    move = cx.execute("SELECT row_label, prev_status, prev_evidence, own_factors FROM "
+    move = cx.execute("SELECT row_label, prev_status, prev_evidence, own_factors, added FROM "
                       "biofield_clinical_detail_moves WHERE test_id=? AND row_key=?",
                       (str(test_id), key)).fetchone()
     if not move:
@@ -479,12 +504,15 @@ def _restore_if_free(cx, test_id, factor):
                        (str(test_id), key, DETAIL_KIND)).fetchone()
     if still:
         return
-    label, prev, evidence, own = move
+    label, prev, evidence, own, added = move
     own = json.loads(own or "[]")
-    for f in own:
-        cx.execute("DELETE FROM biofield_clinical_group_factors WHERE factor_key=? AND "
-                   "group_id IN (SELECT id FROM biofield_clinical_groups WHERE test_id=? "
-                   "AND status='approved')", (item_key(f["factor"]), str(test_id)))
+    for topic, fkey in json.loads(added or "[]"):
+        if fkey == key:
+            continue
+        gid = _approved_by_name(cx, test_id, topic)
+        if gid is not None:
+            cx.execute("DELETE FROM biofield_clinical_group_factors WHERE group_id=? AND "
+                       "factor_key=?", (gid, fkey))
     if own:
         _insert(cx, test_id, label, "approved", "", own)
     if prev:
