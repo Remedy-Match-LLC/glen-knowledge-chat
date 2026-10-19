@@ -315,6 +315,31 @@ def _fetch_intake_answers(email):
         return None
 
 
+def _kloud_program(cx, test_id, rep=None, email=""):
+    """(label, where the Phase came from) for the Kloud mat (Glen, 2026-10-18), or
+    ("", "") with no Phase anywhere. The Intake form is fetched only as the last step."""
+    from dashboard.kloud_program import program_label, resolve
+    rep = rep or {}
+    email = email or (rep.get("client") or {}).get("email") or ""
+
+    def intake():
+        if "intake_answers" in rep:
+            return rep["intake_answers"]
+        return _fetch_intake_answers(email)
+    phase, source = resolve(cx, test_id, rep.get("phase"), intake, email,
+                            rep.get("date") or "")
+    return program_label(phase), source
+
+
+def _kloud_program_if_ticked(cx, test_id, rep):
+    """The program only when the plan has a Kloud line, so a plan without one never
+    looks anything up (review round 1)."""
+    from dashboard.biofield_plan_report import kloud_lines, plan
+    if not kloud_lines(plan(cx, test_id)):
+        return ""
+    return _kloud_program(cx, test_id, rep)[0]
+
+
 def _add_intake_fallback(rep):
     """Put the intake answers on a report that has no tested phase, so the diet guidance
     can fall back to them. A report with a tested phase makes no request."""
@@ -1474,7 +1499,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             from dashboard.biofield_plan_report import append_to_report, build
             with sqlite3.connect(db_path) as cx:
                 section, _ = build(cx, test_id, (rep.get("client") or {}).get("name") or "",
-                                   rep.get("date") or "")
+                                   rep.get("date") or "", _kloud_program_if_ticked(cx, test_id, rep))
             html = append_to_report(html, section)
             out = os.path.join(reports_dir, f"report_{test_id}_{date}_with_plan.pdf")
         try:
@@ -1491,8 +1516,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_plan_report import build
         with sqlite3.connect(db_path) as cx:
             rep = _report_for(cx, test_id)
+            program = _kloud_program_if_ticked(cx, test_id, rep)
             section, lacking = build(cx, test_id, (rep.get("client") or {}).get("name") or "",
-                                     rep.get("date") or "")
+                                     rep.get("date") or "", program)
+        rep["_kloud_program"] = program
         return rep, section, lacking
 
     @app.route("/test/<test_id>/plan")
@@ -1501,10 +1528,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         A box for Glen, never printed, names the ticked items with no approved
         explanation yet."""
         from html import escape
-        from dashboard.biofield_plan_report import lost_ticks, plan_page
+        from dashboard.biofield_plan_report import kloud_lines, lost_ticks, plan, plan_page
         rep, section, lacking = _plan_for(test_id)
         with sqlite3.connect(db_path) as cx:
             lost = lost_ticks(cx, test_id)
+            kloud_ticked = bool(kloud_lines(plan(cx, test_id)))
         note = ""
         if lacking:
             rows = "".join(f"<li>{escape(name)} ({escape(cond)})</li>"
@@ -1521,6 +1549,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                      f"entr{'y is' if len(lost) == 1 else 'ies are'} left out of the "
                      "Plan. Not printed.</summary>"
                      f"<ul>{rows}</ul></details>")
+        if kloud_ticked and not rep.get("_kloud_program"):
+            note += ("<details class=plan-glen open><summary>The Kloud line names no program. "
+                     "No Phase is saved on this Biofield or an earlier one, and no Intake "
+                     "terrain answer was found. Not printed.</summary></details>")
         return Response(plan_page(f"<div class=plan>{note}</div>{section}" if note
                                   else section), mimetype="text/html")
 
@@ -1688,6 +1720,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                             remedies=_item.get("common_remedies") or [],
                             chosen_remedies=_item.get("selected_remedies") or [],
                             botanical=clinical_botanical, marks=scan_marks)
+                # The scan's Phase sets the Kloud program (Glen, 2026-10-18). Only a
+                # page with a ticked Kloud item looks it up.
+                _kl = [en for _item in clinical_checklist for sec in _item["sections"]
+                       for en in sec.get("items") or []
+                       if en.get("checked") and "kloud" in str(en.get("name") or "").lower()]
+                if _kl:
+                    try:
+                        _prog, _src = _kloud_program(cx, test_id, rep, c_email)
+                    except Exception as _ke:
+                        print(f"[kloud] {test_id}: skipped: {_ke!r}", flush=True)
+                        _prog, _src = "", ""
+                    for en in _kl:
+                        en["kloud_program"], en["kloud_source"] = _prog, _src
                 # A row counts as checked when it is ticked or any remedy on it is.
                 # The scan panel loads separately; it reads these labels to link a
                 # PRL focus area to this client's own conditions.
