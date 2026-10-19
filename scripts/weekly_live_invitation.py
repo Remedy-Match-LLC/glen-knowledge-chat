@@ -207,7 +207,7 @@ def _authoritative_access_sets():
 def _board_emails():
     """Everyone on the members board, trial and paused included: the roster
     filter_audience.py --members-board adds (Glen, 2026-10-14). Read here from the
-    same function the board route uses. Before 2026-10-25 the sender built its
+    same function the board route uses. Until this fix (October 2026) the sender built its
     audience from tags and paid members only, so a trial member with no tag was on
     the consent list and was never sent: Steven Blank on 18 October."""
     with appmod.db.connect(appmod.LOG_DB) as cx:
