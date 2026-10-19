@@ -17,6 +17,7 @@ through a merge map clinical writes and Glen approves.
 """
 import html
 import json
+import os
 
 from dashboard import biofield_clinical_sections as cs
 from dashboard.biofield_clinical_checklist import _norm
@@ -63,7 +64,8 @@ def _remedy_section(name):
 
 
 def gather(cx, test_id, lost=None):
-    """[(section, condition label, name, dose, overall, explanation, approved)] for
+    """[(section, condition label, name, dose, overall, explanation, approved,
+    condition key)] for
     every ticked item, before merging repeats. A tick that cannot print is added to
     `lost` as (section, condition, name, why), for Glen's note."""
     from dashboard.biofield_clinical_checklist import aliases, display_labels
@@ -141,7 +143,7 @@ def gather(cx, test_id, lost=None):
             # A dose the client cleared stays clear, as on the Summary.
             dose = pick.get("dose") if pick.get("dose") is not None else row.get("dose")
             out.append((section, label_for(item_key), name, dose or "", overall,
-                        explanation, approved))
+                        explanation, approved, item_key))
     # Every other section: the ticks kept per item.
     for item_key, section, name_key, dose, overall in cx.execute(
             "SELECT item_key,section,name_key,dose,overall FROM "
@@ -157,7 +159,7 @@ def gather(cx, test_id, lost=None):
         out.append((section, label_for(item_key), row["name"],
                     dose if dose is not None else row["dose"],
                     overall if overall is not None else row["overall"],
-                    row["explanation"], row["approved"]))
+                    row["explanation"], row["approved"], item_key))
     # PRL products ticked in a focus area.
     try:
         prl = cx.execute(
@@ -173,7 +175,7 @@ def gather(cx, test_id, lost=None):
         if name is None:
             lost.append(("prl", area or "PRL", name_key, "it has no rating row"))
             continue
-        out.append(("prl", area or "PRL", name, "", overall, "", False))
+        out.append(("prl", area or "PRL", name, "", overall, "", False, _norm(area or "")))
     return out
 
 
@@ -203,12 +205,22 @@ def ensure_schema(cx):
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_plan_wording (
         kind TEXT NOT NULL, key TEXT NOT NULL, text TEXT NOT NULL,
         PRIMARY KEY (kind, key))""")
+    # Clinical's ingredient caution table, and the plan items each caution covers.
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_plan_caution (
+        pos INTEGER PRIMARY KEY, name TEXT NOT NULL, text TEXT NOT NULL)""")
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_plan_caution_item (
+        pos INTEGER NOT NULL, section TEXT NOT NULL, name_key TEXT NOT NULL,
+        PRIMARY KEY (pos, section, name_key))""")
+
+
+# Report-level lines in frame-lines.json, each printed once (Glen, 2026-10-18).
+FRAME_KEYS = ("vertigo_safety", "dose_totals", "thyroid_spacing", "infoceutical_header",
+              "ingredient_caution_intro")
 
 
 def load_content(cx, folder):
     """Replace the stored map and lines with the approved entries in clinical's
     merge-map.json and score-lines.json. Unapproved entries are counted, not kept."""
-    import os
     ensure_schema(cx)
     report = {"merges_applied": 0, "merges_waiting": 0, "names_merged": 0,
               "score_lines_applied": 0, "score_lines_waiting": 0, "intro": "waiting"}
@@ -216,8 +228,11 @@ def load_content(cx, folder):
         merges = json.load(f).get("merges") or []
     with open(os.path.join(folder, "score-lines.json"), encoding="utf-8") as f:
         lines = json.load(f)
+    frame, cautions, frame_report = _parse_frame(os.path.join(folder, "frame-lines.json"))
     cx.execute("DELETE FROM biofield_plan_merge")
     cx.execute("DELETE FROM biofield_plan_wording")
+    cx.execute("DELETE FROM biofield_plan_caution")
+    cx.execute("DELETE FROM biofield_plan_caution_item")
     for group in merges:
         if group.get("approved") is not True:
             report["merges_waiting"] += 1
@@ -234,24 +249,121 @@ def load_content(cx, folder):
             report["score_lines_applied"] += 1
         else:
             report["score_lines_waiting"] += 1
-    # Caution lines, if clinical has written the file: approved ones only.
-    report["cautions_applied"] = report["cautions_waiting"] = 0
-    path = os.path.join(folder, "cautions.json")
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            for n, entry in enumerate(json.load(f).get("lines") or []):
-                if entry.get("approved") is True and entry.get("text"):
-                    cx.execute("INSERT INTO biofield_plan_wording VALUES ('caution',?,?)",
-                               (f"{n:03d}", entry["text"]))
-                    report["cautions_applied"] += 1
-                else:
-                    report["cautions_waiting"] += 1
+    report.update(frame_report)
+    report["caution_items_not_in_catalog"] = _write_frame(cx, frame, cautions)
     intro = lines.get("intro") or {}
     if intro.get("approved") is True:
         for n, text in enumerate(intro.get("lines") or []):
             cx.execute("INSERT INTO biofield_plan_wording VALUES ('intro',?,?)", (str(n), text))
         report["intro"] = "applied"
     return report
+
+
+def _parse_frame(path):
+    """(frame rows, caution rows, report) from clinical's frame-lines.json, approved
+    only. Everything is read and checked before anything is written, so a bad file
+    fails the load with the stored set untouched. A caution prints only for the items
+    clinical lists under it, so one with no items never prints and is counted."""
+    report = {"frame_lines_applied": 0, "frame_lines_waiting": 0, "frame_lines_unknown": [],
+              "cautions_applied": 0, "cautions_waiting": 0, "cautions_without_items": [],
+              "caution_items": 0}
+    frame, cautions = [], []
+    if not os.path.exists(path):
+        return frame, cautions, report
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    for key, entry in (data.get("lines") or {}).items():
+        if key not in FRAME_KEYS:
+            report["frame_lines_unknown"].append(key)
+        elif entry.get("approved") is True and entry.get("text"):
+            frame.append((key, str(entry["text"])))
+            report["frame_lines_applied"] += 1
+        else:
+            report["frame_lines_waiting"] += 1
+    for name, entry in (data.get("ingredient_cautions") or {}).items():
+        if entry.get("approved") is not True or not entry.get("text"):
+            report["cautions_waiting"] += 1
+            continue
+        items = []
+        for item in entry.get("items") or []:
+            section, key = str(item.get("section") or ""), _norm(item.get("name") or "")
+            if section and key and (section, key) not in [i[:2] for i in items]:
+                items.append((section, key, item.get("name")))
+        if not items:
+            report["cautions_without_items"].append(name)
+        cautions.append((name, str(entry["text"]), items))
+        report["cautions_applied"] += 1
+        report["caution_items"] += len(items)
+    return frame, cautions, report
+
+
+def _write_frame(cx, frame, cautions):
+    """Store the parsed rows; returns the listed items no condition file holds."""
+    cs.ensure_schema(cx)
+    known = {(_class(sec), key) for sec, key in cx.execute(
+        "SELECT DISTINCT section,name_key FROM biofield_clinical_section_item")}
+    known |= {(_class(sec), key) for sec, key in cx.execute(
+        "SELECT section,name_key FROM biofield_clinical_extra_explanation")}
+    try:
+        known |= {("prl", key) for (key,) in cx.execute(
+            "SELECT DISTINCT name_key FROM biofield_prl_rating")}
+    except Exception:  # PRL tables absent
+        pass
+    unknown = []
+    for key, text in frame:
+        cx.execute("INSERT INTO biofield_plan_wording VALUES ('frame',?,?)", (key, text))
+    for pos, (name, text, items) in enumerate(cautions):
+        cx.execute("INSERT INTO biofield_plan_caution VALUES (?,?,?)", (pos, name, text))
+        for section, key, raw in items:
+            cx.execute("INSERT INTO biofield_plan_caution_item VALUES (?,?,?)",
+                       (pos, section, key))
+            if (_class(section), key) not in known:
+                unknown.append(f"{name}: {section}: {raw}")
+    return unknown
+
+
+def stored_frame(cx):
+    """({frame key: text}, [(caution name, text, {(section, name key)})]), approved only."""
+    ensure_schema(cx)
+    frame = dict(cx.execute("SELECT key,text FROM biofield_plan_wording WHERE kind='frame'"))
+    # One statement, so a caution and its items always come from the same load.
+    cautions = {}
+    for pos, name, text, section, key in cx.execute(
+            "SELECT c.pos,c.name,c.text,i.section,i.name_key FROM biofield_plan_caution c "
+            "LEFT JOIN biofield_plan_caution_item i ON i.pos=c.pos ORDER BY c.pos"):
+        items = cautions.setdefault(pos, (name, text, set()))[2]
+        if section is not None:
+            items.add((_class(section), key))
+    return frame, list(cautions.values())
+
+
+def cautions_for(plan_groups, cautions):
+    """[(caution name, text, [plan line names])] for each caution with a ticked item,
+    in clinical's order. A line is named by what prints, once per caution."""
+    out = []
+    for name, text, items in cautions:
+        hits = []
+        for lines in plan_groups.values():
+            for line in lines:
+                if any((_class(en["section"]), _norm(en["name"])) in items
+                       for en in line["entries"]) \
+                        and line["name"] not in hits:
+                    hits.append(line["name"])
+        if hits:
+            out.append((name, text, hits))
+    return out
+
+
+def _has_condition(plan_groups, key):
+    """By the condition's key, so a row Glen renames still counts."""
+    return any(en.get("condition_key") == key for lines in plan_groups.values()
+               for line in lines for en in line["entries"])
+
+
+def _class(section):
+    """A remedy ticked through a row's selection can land under Formulations or
+    Infoceuticals by its name, so a caution matches either."""
+    return cs.FORMULATIONS if section == cs.INFOCEUTICALS else section
 
 
 def stored_wording(cx):
@@ -275,7 +387,9 @@ def plan(cx, test_id, merge_map=None):
     if merge_map is None:
         merge_map = stored_wording(cx)[0]
     groups = {}
-    for section, label, name, dose, overall, explanation, approved in gather(cx, test_id):
+    for section, label, name, dose, overall, explanation, approved, item_key \
+            in gather(cx, test_id):
+        own_section = section
         shared = merge_map.get((_SCOPE.get(section, ""), _norm(name)))
         # A merged nutrient and botanical share the Nutrients line.
         if shared and _SCOPE.get(section) == "nutrients_botanicals":
@@ -288,6 +402,7 @@ def plan(cx, test_id, merge_map=None):
         if overall is not None and (line["overall"] is None or overall > line["overall"]):
             line["overall"] = overall
         line["entries"].append({"condition": label, "name": name, "overall": overall,
+                                "section": own_section, "condition_key": item_key,
                                 "dose": dose or "",
                                 "explanation": explanation if approved else ""})
     for bucket in groups.values():
@@ -358,11 +473,14 @@ def e_(text):
 
 
 def render_plan_section(plan_groups, client_name="", date="", score_meanings=None,
-                        intro=(), cautions=()):
+                        intro=(), cautions=(), frame=None):
     """The plan as one block with its own scoped styles, so it can follow the
     Biofield Analysis in the same PDF or stand alone. Nothing unapproved is printed.
-    Under Remedies, sections mix within each score, so each line names its kind."""
+    Under Remedies, sections mix within each score, so each line names its kind.
+    `cautions` is [(name, text, [line names])] from cautions_for; `frame` holds the
+    approved report-level lines by key."""
     e = html.escape
+    frame = frame or {}
     parts = []
     for heading, groups in HEADINGS:
         blocks = []
@@ -378,18 +496,32 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
                 if lines:
                     sub = f"<h3>{e(title)}</h3>" if len(groups) > 1 else ""
                     blocks.append(sub + _by_score(lines, False, score_meanings))
+        # The infoceutical header heads Remedies, where infoceuticals mix by score.
+        if heading == "Remedies" and plan_groups.get(cs.INFOCEUTICALS) \
+                and frame.get("infoceutical_header"):
+            blocks.insert(0, f"<p class=plan-frame>{e(frame['infoceutical_header'])}</p>")
         if blocks:
             parts.append(f"<section class=plan-heading><h2>{e(heading)}</h2>"
                          f"{''.join(blocks)}</section>")
     title = "Foods, Remedies and Healing Tools Plan"
     who = f"<p class=plan-who>{e(client_name)}{' · ' + e(date) if date else ''}</p>" \
         if client_name else ""
-    # Caution lines are client wording: only the ones Glen approved are stored.
-    caution = ("<div class=plan-cautions>"
-               + "".join(f"<p>{e(line)}</p>" for line in cautions) + "</div>"
-               if cautions else "")
+    # Report-level lines print once at the top; the vertigo line only with a Vertigo tick.
+    top = [frame[k] for k in ("vertigo_safety", "dose_totals", "thyroid_spacing")
+           if frame.get(k) and (k != "vertigo_safety" or _has_condition(plan_groups, "vertigo"))]
+    # Each caution once, naming the client's items that hold its ingredient.
+    caution = ""
+    if cautions:
+        caution = ("<div class=plan-cautions>"
+                   + (f"<p class=plan-caution-intro>{e(frame['ingredient_caution_intro'])}</p>"
+                      if frame.get("ingredient_caution_intro") else "")
+                   + "".join(f"<div class=plan-caution><p><span class=plan-caution-name>"
+                             f"{e(name)}</span> {e(text)}</p><p class=plan-caution-items>"
+                             f"{' · '.join(e(n) for n in hits)}</p></div>"
+                             for name, text, hits in cautions) + "</div>")
     return (f"<style>{PLAN_CSS}</style><main class=plan><h1>{title}</h1>{who}"
             + "".join(f"<p class=plan-intro>{e(line)}</p>" for line in intro or ())
+            + "".join(f"<p class=plan-frame>{e(line)}</p>" for line in top)
             + caution + "".join(parts) + "</main>")
 
 
@@ -403,10 +535,10 @@ def plan_page(body):
 
 
 def render_plan_html(plan_groups, client_name="", date="", score_meanings=None, intro=(),
-                     cautions=()):
+                     cautions=(), frame=None):
     """The plan as a page of its own."""
     return plan_page(render_plan_section(plan_groups, client_name, date, score_meanings,
-                                         intro, cautions))
+                                         intro, cautions, frame))
 
 
 def append_to_report(report_html, plan_section):
@@ -420,10 +552,10 @@ def build(cx, test_id, client_name="", date=""):
     """(plan section html, entries lacking an approved explanation) from what is
     stored: the ticks, the approved merge map, score lines, intro and cautions."""
     merge_map, meanings, intro = stored_wording(cx)
-    cautions = [r[0] for r in cx.execute(
-        "SELECT text FROM biofield_plan_wording WHERE kind='caution' ORDER BY key")]
+    frame, cautions = stored_frame(cx)
     groups = plan(cx, test_id, merge_map)
-    return (render_plan_section(groups, client_name, date, meanings, intro, cautions),
+    return (render_plan_section(groups, client_name, date, meanings, intro,
+                                cautions_for(groups, cautions), frame),
             missing(groups))
 
 
@@ -432,6 +564,8 @@ PLAN_CSS = (
     "font:15px/1.5 Georgia,serif}"
     ".plan-cautions{border:1px solid #d9c7a3;background:#fbf6ec;border-radius:6px;"
     "padding:8px 12px;margin:12px 0}.plan-cautions p{margin:4px 0}"
+    ".plan-caution{margin:8px 0}.plan-caution-name{font-weight:600}"
+    ".plan-caution-items{color:#555;font-size:.92em}.plan-frame{margin:8px 0}"
     ".plan h1{font-size:26px;margin:0 0 4px}.plan-who{color:#56656f;margin:0 0 18px}"
     ".plan h2{font-size:20px;border-bottom:1px solid #c9d3d9;padding-bottom:4px;margin:26px 0 8px}"
     ".plan h3{font-size:15px;margin:14px 0 4px;color:#2f5d73}"
