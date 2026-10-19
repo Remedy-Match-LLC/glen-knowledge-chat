@@ -431,6 +431,7 @@ def _line_html(line, show_kind):
     one_dose = doses.pop() if len(doses) == 1 else ""
     head = (f"<span class=plan-name>{e(line['name'])}</span>"
             + (f" <span class=plan-kind>{e(line['kind'])}</span>" if show_kind and line["kind"] else "")
+            + (f" <span class=plan-program>{e(line['program'])}</span>" if line.get("program") else "")
             + (f" <span class=plan-dose>{e(one_dose)}</span>" if one_dose else ""))
     subs = []
     for en in line["entries"]:
@@ -548,12 +549,21 @@ def append_to_report(report_html, plan_section):
     return report_html[:at] + block + report_html[at:] if at >= 0 else report_html + block
 
 
-def build(cx, test_id, client_name="", date=""):
+def kloud_lines(plan_groups):
+    """The plan's Kloud mat lines."""
+    from dashboard.kloud_program import is_kloud
+    return [line for lines in plan_groups.values() for line in lines if is_kloud(line["name"])]
+
+
+def build(cx, test_id, client_name="", date="", kloud_program=""):
     """(plan section html, entries lacking an approved explanation) from what is
-    stored: the ticks, the approved merge map, score lines, intro and cautions."""
+    stored: the ticks, the approved merge map, score lines, intro and cautions. A
+    Kloud line names `kloud_program`, which the scan's Phase sets (Glen, 2026-10-18)."""
     merge_map, meanings, intro = stored_wording(cx)
     frame, cautions = stored_frame(cx)
     groups = plan(cx, test_id, merge_map)
+    for line in kloud_lines(groups):
+        line["program"] = kloud_program
     return (render_plan_section(groups, client_name, date, meanings, intro,
                                 cautions_for(groups, cautions), frame),
             missing(groups))
@@ -566,6 +576,7 @@ PLAN_CSS = (
     "padding:8px 12px;margin:12px 0}.plan-cautions p{margin:4px 0}"
     ".plan-caution{margin:8px 0}.plan-caution-name{font-weight:600}"
     ".plan-caution-items{color:#555;font-size:.92em}.plan-frame{margin:8px 0}"
+    ".plan-program{font-weight:600}"
     ".plan h1{font-size:26px;margin:0 0 4px}.plan-who{color:#56656f;margin:0 0 18px}"
     ".plan h2{font-size:20px;border-bottom:1px solid #c9d3d9;padding-bottom:4px;margin:26px 0 8px}"
     ".plan h3{font-size:15px;margin:14px 0 4px;color:#2f5d73}"

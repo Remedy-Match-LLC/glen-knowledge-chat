@@ -2355,6 +2355,14 @@ def _clinical_sections_html(sections, remedy_choice):
                         f"placeholder='{'Usage' if key == HEALING_TOOLS else 'Dose'}' "
                         f"aria-label=\"{'Usage' if key == HEALING_TOOLS else 'Dose'} of {_e(name)}\" "
                         "onchange=saveClinicalSectionItem(this,'dose')>")
+            if "kloud_program" in entry:
+                # The scan's Phase sets the program (Glen, 2026-10-18); Glen sees where from.
+                dose += (f" <span class=clinical-section-program>{_e(entry['kloud_program'])}"
+                         f" <span class=clinical-section-program-src>from "
+                         f"{_e(entry.get('kloud_source'))}</span></span>"
+                         if entry["kloud_program"] else
+                         " <span class=clinical-section-program>No Kloud program: no Phase on "
+                         "this or an earlier Biofield, or on the Intake form</span>")
             bits.append(
                 f"<div class='{item_cls}' title=\"{_e(why)}\">{rating_box}"
                 f"<label><input class=clinical-section-choice type=checkbox "
@@ -2680,6 +2688,8 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-common .clinical-section-note{white-space:normal;flex:1 1 220px;min-width:0}"
             ".clinical-section-item input.clinical-section-rating.bad{outline:2px solid #c0392b}"
             ".clinical-common .clinical-section-item input.clinical-section-dose{width:18em;max-width:100%}"
+            ".clinical-common .clinical-section-program{font-weight:600;margin-left:6px}"
+            ".clinical-common .clinical-section-program-src{font-weight:400;color:#6b7780}"
             ".clinical-section-flag{border:1px solid var(--muted);border-radius:8px;padding:0 5px;font-size:10px}"
             ".clinical-section-note{font-style:italic}"
             ".clinical-section-flag.conflict{border-color:#c0392b;color:#e07a6f}"
