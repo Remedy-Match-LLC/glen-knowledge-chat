@@ -131,3 +131,11 @@ def test_the_author_page_shows_the_route_with_its_reason_escaped(cx):
     assert ">inhale only</span>" in page
     assert 'title="Can irritate skin &lt;in some&gt;"' in page
     assert "placeholder='Dose'" in page
+
+
+def test_the_route_text_itself_is_escaped(cx):
+    from dashboard.biofield_report_html import _clinical_sections_html
+    cs.upsert_item(cx, "Vertigo", cs.ESSENTIAL_OILS, _oil(route="<b>inhale</b> & skin"),
+                   origin_test="a49")
+    page = _clinical_sections_html(cs.sections_for(cx, "a49", "Vertigo"), lambda n: "")
+    assert ">&lt;b&gt;inhale&lt;/b&gt; &amp; skin</span>" in page and "<b>inhale" not in page
