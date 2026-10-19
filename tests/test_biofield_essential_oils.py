@@ -188,3 +188,12 @@ def test_a_relabel_rolls_back_with_a_dry_run(tmp_path):
         assert display_labels(con) == {}
     finally:
         con.close()
+
+
+def test_the_clinical_summary_shows_the_new_name(tmp_path, cx):
+    from scripts.load_clinical_sections import load
+    from dashboard import biofield_clinical_checklist as cc
+    load(cx, _relabelled(tmp_path, "Sugar Regulation"), "a49")
+    rows = cc.build({"conditions": ["Blood sugar"]}, [], cx=cx)
+    row = next(r for r in rows if cc._norm(r["label"]) == "blood sugar")
+    assert row["display_label"] == "Sugar Regulation"
