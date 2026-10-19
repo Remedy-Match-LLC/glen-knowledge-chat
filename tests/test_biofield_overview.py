@@ -289,3 +289,63 @@ def test_unmatched_heads_are_named_on_the_page():
                           + "console.log(g('heads').textContent)"], capture_output=True, text=True)
     assert out.stdout.strip() == ("Layer headings that name no ticked pattern, so they are not "
                                   "columns: Peridot Gem Elixir.")
+
+
+def _cross_file(tmp_path, cells, existing=None, name="Zinc"):
+    p = tmp_path / "cross.json"
+    p.write_text(json.dumps({name: {"existing": existing or {}, "cells": cells}}))
+    return str(p)
+
+
+def _cell(overall, risk=None, approved=True):
+    return {"overall": overall, "risk": risk, "reason": "r", "source": "s", "approved": approved}
+
+
+def test_a_cross_rating_fills_an_unlisted_ticked_pattern_in_italics_and_counts(cx, tmp_path):
+    _tick(cx, "Gut", cs.NUTRIENTS, "Zinc", 7)
+    _tick(cx, "Vertigo", cs.NUTRIENTS, "B12", 5)
+    _tick(cx, "Liver", cs.NUTRIENTS, "Milk thistle", 5)
+    report = ov.load_cross_ratings(cx, _cross_file(tmp_path, {
+        "vertigo": _cell(4), "liver": _cell(None, "May interact with statins."),
+        "gut": _cell(9), "hypothyroid": _cell(6), "blood sugar": _cell(3, approved="yes")},
+        existing={"gut": {"section": "nutrients", "overall": 7}}))
+    assert report == {"rows": 1, "rated": 2, "no_benefit": 1, "risks": 1, "waiting": 1,
+                      "already_listed": 1}
+    d = ov.overview(cx, "a49")
+    z = _rows(d)["Zinc"]
+    # The listing wins under Gut; an unticked pattern (hypothyroid) never becomes a cell.
+    assert z["cells"] == {"gut": 7, "vertigo": 4} and z["cross"] == ["vertigo"]
+    assert z["risks"] == {"liver": "May interact with statins."}
+    table, _, _ = _run(d, clicks=1)
+    row = table[table.index(">Zinc<"):]
+    row = row[:row.index("</tr>")]
+    assert '<td class="v x" title="Cross-rated by clinical">4</td>' in row
+    assert 'title="May interact with statins."' in row
+    assert re.findall(r"<td class=t>(\d+)</td><td>(\d+)</td>", row) == [("11", "2")]
+
+
+def test_a_cross_rating_matches_a_merged_rows_member_name(cx, tmp_path, monkeypatch):
+    from dashboard import biofield_plan_report as pr
+    _tick(cx, "Gut", cs.NUTRIENTS, "Magnesium glycinate", 6)
+    _tick(cx, "Vertigo", cs.NUTRIENTS, "B12", 5)
+    real = pr.stored_wording
+    monkeypatch.setattr(pr, "stored_wording", lambda c: (
+        {("nutrients_botanicals", "magnesium glycinate"): "Magnesium"}, *real(c)[1:]))
+    ov.load_cross_ratings(cx, _cross_file(tmp_path, {"vertigo": _cell(5)},
+                                          name="Magnesium glycinate"))
+    assert _rows(ov.overview(cx, "a49"))["Magnesium"]["cells"] == {"gut": 6, "vertigo": 5}
+
+
+def test_a_reload_replaces_the_cross_ratings(cx, tmp_path):
+    _tick(cx, "Gut", cs.NUTRIENTS, "Zinc", 7)
+    _tick(cx, "Vertigo", cs.NUTRIENTS, "B12", 5)
+    ov.load_cross_ratings(cx, _cross_file(tmp_path, {"vertigo": _cell(4)}))
+    ov.load_cross_ratings(cx, _cross_file(tmp_path, {"vertigo": _cell(4, approved=False)}))
+    assert _rows(ov.overview(cx, "a49"))["Zinc"]["cells"] == {"gut": 7}
+
+
+def test_a_listing_added_after_the_cross_rating_still_wins(cx, tmp_path):
+    ov.load_cross_ratings(cx, _cross_file(tmp_path, {"gut": _cell(2)}))
+    _tick(cx, "Gut", cs.NUTRIENTS, "Zinc", 7)
+    z = _rows(ov.overview(cx, "a49"))["Zinc"]
+    assert z["cells"] == {"gut": 7} and z["cross"] == []

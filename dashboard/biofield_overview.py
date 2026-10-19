@@ -17,6 +17,9 @@ the biofield vs show all".
   and a food one ticked pattern emphasizes and another avoids. An item that lowers
   blood pressure is not flagged: no client's low pressure is recorded yet (Glen "no"
   to flagging it for everyone).
+- Clinical's cross-ratings (Glen approved, 2026-10-18) fill cells where an item is not
+  listed under a pattern: shown in italics, counted like any rating; a risk note is a
+  yellow minus; "no benefit" stays blank. A listing in the condition files always wins.
 - Never printed for a client.
 """
 import html
@@ -35,6 +38,52 @@ KIND = {cs.FORMULATIONS: "Functional Formulation", cs.INFOCEUTICALS: "Infoceutic
         "prl": "PRL", cs.FULLSCRIPT: "Fullscript", cs.HEALING_TOOLS: "",
         "foods_emphasize": "Emphasize", "foods_avoid": "Avoid",
         cs.NUTRIENTS: "Nutrient", cs.BOTANICALS: "Botanical"}
+
+
+def ensure_cross_schema(cx):
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_cross_rating (
+        row_key TEXT NOT NULL, condition_key TEXT NOT NULL, overall INTEGER, risk TEXT,
+        PRIMARY KEY (row_key, condition_key))""")
+
+
+def load_cross_ratings(cx, path):
+    """Replace the stored cross-ratings with the approved cells in clinical's file
+    ({row name: {"cells": {condition key: {overall, risk, approved}}, "existing": {...}}}).
+    A cell the condition files already rate is skipped: they stay the source."""
+    ensure_cross_schema(cx)
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    rows = []
+    report = {"rows": 0, "rated": 0, "no_benefit": 0, "risks": 0, "waiting": 0,
+              "already_listed": 0}
+    for name, entry in (data or {}).items():
+        report["rows"] += 1
+        existing = set((entry.get("existing") or {}))
+        for condition, cell in (entry.get("cells") or {}).items():
+            if cell.get("approved") is not True:
+                report["waiting"] += 1
+                continue
+            if condition in existing:
+                report["already_listed"] += 1
+                continue
+            overall = cell.get("overall")
+            overall = int(overall) if overall is not None else None
+            risk = str(cell.get("risk") or "").strip() or None
+            rows.append((_norm(name), _norm(condition), overall, risk))
+            report["rated" if overall is not None else "no_benefit"] += 1
+            report["risks"] += bool(risk)
+    cx.execute("DELETE FROM biofield_clinical_cross_rating")
+    cx.executemany("INSERT OR REPLACE INTO biofield_clinical_cross_rating VALUES (?,?,?,?)", rows)
+    return report
+
+
+def _cross(cx):
+    ensure_cross_schema(cx)
+    out = {}
+    for row_key, condition_key, overall, risk in cx.execute(
+            "SELECT row_key,condition_key,overall,risk FROM biofield_clinical_cross_rating"):
+        out.setdefault(row_key, {})[condition_key] = (overall, risk)
+    return out
 
 
 def _food_keys_by_item(cx):
@@ -91,10 +140,26 @@ def overview(cx, test_id, layers=()):
                         for ck, other in avoided.get(key, []):
                             if ck != mine:
                                 conflicts.setdefault(ck, f"{labels.get(ck, ck)} avoids {other}")
-            rows.append({"name": line["name"], "kind": KIND.get(section, ""),
+            rows.append({"_keys": {_norm(line["name"])} | {_norm(en["name"]) for en in line["entries"]},
+                         "name": line["name"], "kind": KIND.get(section, ""), "cross": [],
+                         "risks": {},
                          "group": GROUP_OF.get(section, "Remedies"), "cells": cells,
                          "unrated": [ck for ck in unrated if ck not in cells],
                          "cautions": cautions, "conflicts": conflicts})
+    # Cross-ratings fill a ticked pattern the item is not listed under.
+    cross = _cross(cx)
+    for row in rows:
+        keys = row.pop("_keys")
+        for key in sorted(keys):
+            for condition, (overall, risk) in (cross.get(key) or {}).items():
+                ck = ckeys.get(condition)
+                if not ck or ck in row["cells"] or ck in row["unrated"] or ck in row["cross"]:
+                    continue
+                if overall is not None:
+                    row["cells"][ck] = overall
+                    row["cross"].append(ck)
+                if risk and ck not in row["risks"]:
+                    row["risks"][ck] = risk
     # A layer's head names its pattern on newer reports; older ones name a remedy or a
     # system. A head counts only when it is a ticked pattern, by its label, its key or
     # a folded row's alias (review round 1).
@@ -131,7 +196,8 @@ def render_page(data, client_name="", date=""):
             f"<h1>Intervention overview</h1><p class=who>{e(who)}</p>"
             "<p>Each row is an item ticked in the Clinical Summary, and each column is a "
             "clinical pattern. A cell is the item's overall rating there; blank means it is "
-            "not listed under that pattern, and ? means listed but not yet rated. Within each group, rows rank by total, then the "
+            "not listed under that pattern, and ? means listed but not yet rated. An italic "
+            "rating is clinical's cross-rating. Within each group, rows rank by total, then the "
             "highest single rating, then name. A yellow minus flags a caution and never "
             "changes the total; hover it for the reason. Not printed.</p>"
             "<button id=b type=button></button><div class=wrap><table id=t></table></div>"
@@ -150,7 +216,7 @@ CSS = (
     "color:var(--fg);border-radius:6px;cursor:pointer}.wrap{overflow-x:auto;margin-top:12px}"
     "table{border-collapse:collapse;min-width:600px}th,td{border:1px solid var(--line);"
     "padding:3px 6px;text-align:center}th{background:var(--head);font-weight:600;font-size:12px;"
-    "vertical-align:bottom}td.u{color:var(--mut)}td.n{text-align:left;white-space:nowrap}td.n small{color:var(--mut);"
+    "vertical-align:bottom}td.u{color:var(--mut)}td.x{font-style:italic}td.n{text-align:left;white-space:nowrap}td.n small{color:var(--mut);"
     "margin-left:6px}td.t{font-weight:700}td.v{background:var(--hi)}tr.g td{background:var(--grp);"
     "text-align:left;font-weight:700;font-size:15px;padding:6px}.m{display:inline-block;"
     "background:var(--warn);color:var(--warn-fg);border-radius:3px;padding:0 5px;margin-left:4px;"
@@ -178,10 +244,11 @@ function draw(){
   h+='<tr class=g><td colspan='+(cols.length+3)+'>'+esc(g)+' ('+shown.length+')</td></tr>';
   for(const x of shown){
    h+='<tr><td class=n>'+esc(x.r.name)+(x.r.kind?'<small>'+esc(x.r.kind)+'</small>':'')+(x.r.cautions.length?minus(x.r.cautions.join('; ')):'')+'</td>';
-   h+=cols.map((c,i)=>{const s=x.vals[i];const cf=x.r.conflicts[c.key];
+   h+=cols.map((c,i)=>{const s=x.vals[i];const cf=[x.r.conflicts[c.key],(x.r.risks||{})[c.key]].filter(Boolean).join('; ');
     if(s==null&&(x.r.unrated||[]).includes(c.key))return '<td class=u title="Listed here, not yet rated">?'+(cf?minus(cf):'')+'</td>';
     if(s==null)return '<td>'+(cf?minus(cf):'')+'</td>';
-    return '<td class=v>'+(s>=10?'X':s)+(cf?minus(cf):'')+'</td>'}).join('');
+    const xr=(x.r.cross||[]).includes(c.key);
+    return '<td class="v'+(xr?' x':'')+'"'+(xr?' title="Cross-rated by clinical"':'')+'>'+(s>=10?'X':s)+(cf?minus(cf):'')+'</td>'}).join('');
    h+='<td class=t>'+x.tot+'</td><td>'+x.n+'</td></tr>'}}
  document.getElementById('t').innerHTML=h;
  const um=D.unmatched_heads||[];
