@@ -1181,6 +1181,8 @@ function impPreview(j){return new Promise(function(done){
   +' reveal layer(s) will be added, '+p.skip.length+' skipped as covered.','imp-head'));
  if(p.recommended_unread)box.appendChild(impEl('div','The recommended infoceuticals on the scan '
   +'could not be read, so that rule skipped nothing.','food'));
+ if(p.catalog_unread)box.appendChild(impEl('div','The condition catalog could not be read, '
+  +'so a heading was matched against this client\u2019s layers only.','food'));
  if(p.add.length){box.appendChild(impEl('div','Added','imp-sub'));
   p.add.forEach(function(L){box.appendChild(impEl('div',L.title+(L.remedy?' \u00b7 '+L.remedy:''),'imp-row'))})}
  var boxes=[];

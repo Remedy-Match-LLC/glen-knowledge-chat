@@ -28,36 +28,41 @@ def _parts(text):
 
 
 def _stem(word):
-    """Singular, so "Allergies" meets "Allergy" and "Parasites" meets "Parasite"."""
+    """Singular, so "Allergies" meets "Allergy", "Parasites" meets "Parasite" and
+    "Viruses" meets "Virus". A final e is dropped after the s, on both sides alike."""
     if len(word) > 4 and word.endswith("ies"):
         return word[:-3] + "y"
     if len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
-        return word[:-1]
-    return word
+        word = word[:-1]
+    return word[:-1] if len(word) > 3 and word.endswith("e") else word
+
+
+def _shown(part):
+    """The part's own words that count, as the preview names them."""
+    return [w for w in re.split(r"[^a-z]+", part) if len(w) >= 3 and w not in GENERIC]
 
 
 def _words(part):
-    return frozenset(_stem(w) for w in re.split(r"[^a-z]+", part)
-                     if len(w) >= 3 and w not in GENERIC)
+    return frozenset(_stem(w) for w in _shown(part))
 
 
 def heading_match(title, conditions, vocabulary=()):
     """(condition, matching words) for the reveal heading `title`, or None.
     `vocabulary` is every known condition name, so a longer phrase the client does
     not have still outranks a shorter one the client does."""
-    units = [(c, _words(p)) for c in conditions for p in _parts(c) if _words(p)]
+    units = [(c, _words(p), " ".join(sorted(_shown(p))))
+             for c in conditions for p in _parts(c) if _words(p)]
     known = [_words(p) for c in vocabulary for p in _parts(c) if _words(p)]
     found = []
     for part in _parts(title):
         have = _words(part)
-        fits = [(c, u) for c, u in units if u <= have]
+        fits = [(c, u, shown) for c, u, shown in units if u <= have]
         if fits:
-            longest = max(len(u) for u in [u for _, u in fits] + [k for k in known if k <= have])
-            found += [(c, u) for c, u in fits if len(u) == longest]
+            longest = max(len(u) for u in [u for _, u, _ in fits] + [k for k in known if k <= have])
+            found += [(c, shown) for c, u, shown in fits if len(u) == longest]
     if not found:
         return None
-    condition, unit = found[0]
-    return condition, " ".join(sorted(unit))
+    return found[0]
 
 
 def ticked_codes(remedy_names):

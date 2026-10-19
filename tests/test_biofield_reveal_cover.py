@@ -200,7 +200,8 @@ def test_an_expired_preview_is_refused(tmp_path):
     from datetime import datetime, timedelta, timezone
     from dashboard import biofield_reveal_preview as rp
     cx = sqlite3.connect(str(tmp_path / "x.db"))
-    token = rp.save(cx, "a1", {"layers": []}, {"add": [], "skip": [], "recommended_unread": False})
+    token = rp.save(cx, "a1", {"layers": []}, {"add": [], "skip": [], "recommended_unread": False},
+                    "jo@x.com", rp.chain_digest([]))
     assert rp.load(cx, "a1", token)
     later = datetime.now(timezone.utc) + rp.TTL + timedelta(seconds=1)
     assert rp.load(cx, "a1", token, now=later) is None
@@ -379,3 +380,84 @@ def test_coverage_is_seeded_from_every_previewed_layer(tmp_path, monkeypatch):
     seen.clear()
     client.post(f"/author/{tid}/e4l/import-reveal", json={"force": True, "token": j["token"]})
     assert seen and seen[-1] == ["Gut", "Kidney"]
+
+
+# Round 2 review, 2026-10-18.
+
+def test_a_preview_is_consumed_once(tmp_path):
+    from dashboard import biofield_reveal_preview as rp
+    cx = sqlite3.connect(str(tmp_path / "x.db"))
+    token = rp.save(cx, "a1", {"layers": []}, {"add": [], "skip": [], "recommended_unread": False},
+                    "jo@x.com", rp.chain_digest([]))
+    assert rp.consume(cx, "a1", "wrong") is False
+    assert rp.consume(cx, "a1", token) is True
+    assert rp.consume(cx, "a1", token) is False
+
+
+def _previewed(tmp_path, monkeypatch):
+    layer = _reveal({"n": 1, "title": "Gut", "remedy_name": ""},
+                    {"n": 2, "title": "Kidney Health", "remedy_name": "Kidney Kare"})
+    client, tid, db, _ = _client(tmp_path, monkeypatch,
+                                 _reveal({"n": 1, "title": "Gut", "remedy_name": ""}))
+    client.post(f"/author/{tid}/e4l/import-reveal", json={})
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: layer)
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
+    assert j["needs_confirm"] and [L["title"] for L in j["preview"]["add"]] == ["Kidney Health"]
+    return client, tid, db, j
+
+
+def test_a_preview_for_another_client_is_refused(tmp_path, monkeypatch):
+    client, tid, db, j = _previewed(tmp_path, monkeypatch)
+    client.post(f"/author/{tid}/header", json={"name": "Bo", "email": "bo@x.com",
+                                               "date": "2026-10-18"})
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
+                     json={"force": True, "token": j["token"]}).get_json()
+    assert j2["ok"] is False and "client changed" in j2["reason"]
+    assert [r[1] for r in _chain(db)] == ["Gut"]
+
+
+def test_any_chain_change_since_the_preview_is_refused(tmp_path, monkeypatch):
+    client, tid, db, j = _previewed(tmp_path, monkeypatch)
+    cx = sqlite3.connect(db)
+    cx.execute("UPDATE biofield_auth_chain SET remedy='Unrelated Remedy'")
+    cx.commit()
+    cx.close()
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
+                     json={"force": True, "token": j["token"]}).get_json()
+    assert j2["ok"] is False and "changed" in j2["reason"]
+    assert [r[1] for r in _chain(db)] == ["Gut"]
+
+
+def test_an_unchanged_chain_imports(tmp_path, monkeypatch):
+    client, tid, db, j = _previewed(tmp_path, monkeypatch)
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
+                     json={"force": True, "token": j["token"]}).get_json()
+    assert j2["ok"] and j2["imported"] == 1
+    assert [r[1] for r in _chain(db)] == ["Gut", "Kidney Health"]
+
+
+def test_an_unread_catalog_is_said_on_the_preview(tmp_path):
+    from dashboard import biofield_reveal_preview as rp
+    cx = sqlite3.connect(str(tmp_path / "x.db"))
+    split = rp.split(cx, "a1", {"layers": []}, [{"n": 1, "title": "Gut"}], None, None)
+    assert rp.describe(split)["catalog_unread"] is True
+    cx.execute("CREATE TABLE biofield_clinical_catalog (item_key TEXT)")
+    split = rp.split(cx, "a1", {"layers": []}, [{"n": 1, "title": "Gut"}], None, None)
+    assert rp.describe(split)["catalog_unread"] is False
+
+
+def test_es_plurals_match_their_singular():
+    assert rc.heading_match("Viruses", ["Virus"]) == ("Virus", "virus")
+    assert rc.heading_match("Skin Rashes", ["Rash"]) == ("Rash", "rash")
+    assert rc.heading_match("Eye Diseases", ["Eye disease"]) is not None
+
+
+def test_a_preview_taken_by_a_concurrent_click_imports_nothing(tmp_path, monkeypatch):
+    # Both clicks passed the token check; the other one deleted the preview first.
+    from dashboard import biofield_reveal_preview as rp
+    client, tid, db, j = _previewed(tmp_path, monkeypatch)
+    monkeypatch.setattr(rp, "consume", lambda cx, test_id, token: False)
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
+                     json={"force": True, "token": j["token"]}).get_json()
+    assert j2["ok"] is False and "already imported" in j2["reason"]
+    assert [r[1] for r in _chain(db)] == ["Gut"]

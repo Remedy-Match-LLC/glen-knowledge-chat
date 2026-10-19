@@ -2314,6 +2314,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if force and token and not stored:
                 return {"ok": False, "reason": "The preview has expired. "
                                               "Click Import Reveal again."}
+            if stored and stored["email"] != email.lower():
+                return {"ok": False, "reason": "The client changed since the preview. "
+                                              "Click Import Reveal again."}
             if stored:
                 res = stored["res"]   # the layers Glen previewed, not a new model run
             else:
@@ -2345,11 +2348,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # The synthesis is a model call and differs run to run, so the layers
                 # Glen previews are stored and the import uses exactly those.
                 split = _rp.split(cx, test_id, rep, layers, res.get("scan_id"), e4l_db)
+                chain = _rp.chain_digest(rep.get("layers"))
                 if not stored:
-                    token = _rp.save(cx, test_id, res, split)
+                    token = _rp.save(cx, test_id, res, split, email, chain)
                     return {"ok": False, "needs_confirm": True, "existing": existing,
                             "token": token, "preview": _rp.describe(split)}
-                if _rp.describe(split) != stored["preview"]:
+                if chain != stored["chain"] or _rp.describe(split) != stored["preview"]:
                     return {"ok": False, "reason": "The chain changed since the preview. "
                                                   "Click Import Reveal again."}
                 anyway = {str(k) for k in _body.get("add_anyway") or []}
@@ -2358,7 +2362,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # Renumbered 1..k, so a skipped layer leaves no gap after the existing ones.
                 layers = [dict(L, n=i) for i, L in
                           enumerate((L for k, L in enumerate(layers) if k not in keep), 1)]
-                _rp.forget(cx, test_id)
+                # Only one Import click may use a preview.
+                if not _rp.consume(cx, test_id, token):
+                    return {"ok": False, "reason": "That preview was already imported."}
             imported = _ri.import_layers_to_test(cx, test_id, layers,
                                                  after_layer=_last_layer_no(rep))
             # Pass already-synthesized layers so the pipeline runs only once per import.
