@@ -153,15 +153,24 @@ def plan(cx, test_id, items, resolve=None):
     order = {g["key"]: i for i, g in enumerate(layers)}
     paired = [(next((g for g in layers if g["key"] in t["keys"]), None), t) for t in wanted]
     paired.sort(key=lambda p: order[p[0]["key"]] if p[0] is not None else len(order))
-    paired_layers = set()
+    # Rows that reach one layer by different names are one target for it, so its
+    # changes are offered once and no row's ticks are dropped.
+    merged, by_layer = [], {}
     for layer, t in paired:
+        if layer is None:
+            merged.append((layer, t))
+        elif layer["key"] in by_layer:
+            first = by_layer[layer["key"]]
+            first["checked"] = first["checked"] or t["checked"]
+            first["labels"] += [l for l in t["labels"] if l not in first["labels"]]
+            first["remedies"] += [r for r in t["remedies"] if r not in first["remedies"]]
+        else:
+            t = dict(t, labels=list(t["labels"]), remedies=list(t["remedies"]))
+            by_layer[layer["key"]] = t
+            merged.append((layer, t))
+    for layer, t in merged:
         if layer is not None and layer["fixed"]:
             continue
-        # One layer pairs with one target: a second would offer its changes twice.
-        if layer is not None:
-            if layer["key"] in paired_layers:
-                continue
-            paired_layers.add(layer["key"])
         if layer is not None:
             matched.add(layer["key"])
         if not t["checked"]:
@@ -185,7 +194,10 @@ def plan(cx, test_id, items, resolve=None):
                             "layer": t["name"], "label": t["labels"][0] if t["labels"] else "",
                             "remedies": add, "preticked": True})
             continue
-        have = {_remedy_key(cx, r["remedy"], resolve): r for r in layer["rows"] if r["remedy"]}
+        have = {}
+        for r in layer["rows"]:
+            if r["remedy"]:
+                have.setdefault(_remedy_key(cx, r["remedy"], resolve), []).append(r)
         for k, name in ticked.items():
             if k in have:
                 continue
@@ -200,8 +212,10 @@ def plan(cx, test_id, items, resolve=None):
                             "layer": layer["head"], "remedy": name,
                             "confirmed_layer": layer["confirmed"],
                             "preticked": not layer["confirmed"]})
-        for k, r in have.items():
-            if k not in ticked:
+        for k, rows in have.items():
+            if k in ticked:
+                continue
+            for r in rows:
                 changes.append({"id": "remove:" + str(r["id"]), "kind": "remove",
                                 "layer": layer["head"], "remedy": r["remedy"], "rid": r["id"],
                                 "confirmed_layer": layer["confirmed"], "preticked": False})

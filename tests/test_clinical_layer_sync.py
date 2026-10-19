@@ -439,3 +439,125 @@ def test_one_layer_paired_with_two_rows_offers_each_change_once(tmp_path):
         assert sum("gut" in w["keys"] for w in wanted) == 2
         ids = [c["id"] for c in sync.plan(cx, tid, items)["changes"]]
     assert ids == ["remove:1"]
+
+
+# Review round 3: guards no test caught, and two defects.
+
+def test_removing_the_only_remedy_keeps_the_layer(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        _topic(cx, "Gut")
+        add_chain_row(cx, tid, 1, "Gut", "", "Only")
+        save_selection(cx, tid, "Gut", ["Other"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut"], setup)
+    j = _preview(client, tid)
+    rm = [c["id"] for c in j["changes"] if c["kind"] == "remove"]
+    assert _apply(client, tid, j, rm).status_code == 200
+    assert [(r[1], r[3]) for r in _chain(db, tid)] == [("Gut", "")]
+
+
+def test_a_dose_edited_after_the_preview_refuses_the_apply(tmp_path, monkeypatch):
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut"], _gut_by_hand)
+    j = _preview(client, tid)
+    with sqlite3.connect(db) as cx:
+        cx.execute("UPDATE biofield_auth_chain SET dosage='2 drops' WHERE remedy='Old Remedy'")
+    assert _apply(client, tid, j).status_code == 409
+
+
+def test_a_saved_order_after_the_preview_refuses_the_apply(tmp_path, monkeypatch):
+    from dashboard.biofield_clinical_proposals import save_order
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut"], _gut_by_hand)
+    j = _preview(client, tid)
+    with sqlite3.connect(db) as cx:
+        save_order(cx, tid, ["Gut", "Elsewhere"])
+        cx.commit()
+    assert _apply(client, tid, j).status_code == 409
+
+
+def test_a_program_layer_is_never_changed(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        _topic(cx, "Gut")
+        add_chain_row(cx, tid, 1, "Gut", "Gut", "Program Remedy", origin="program")
+        save_selection(cx, tid, "Gut", ["Microbiome"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut"], setup)
+    j = _preview(client, tid)
+    assert j["changes"] == [] and j["stale"] == []
+
+
+def test_a_failure_part_way_writes_nothing(tmp_path, monkeypatch):
+    from dashboard import biofield_clinical_layer_sync as sync
+    def setup(cx, tid):
+        _gut_by_hand(cx, tid, confirmed=0)
+        _topic(cx, "Vertigo")
+        save_selection(cx, tid, "Vertigo", ["B12"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut", "Vertigo"], setup)
+    j = _preview(client, tid)
+    before = _chain(db, tid)
+    real, calls = sync._insert, []
+    def failing(*a, **k):
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError("disk")
+        return real(*a, **k)
+    monkeypatch.setattr(sync, "_insert", failing)
+    try:
+        _apply(client, tid, j, [c["id"] for c in j["changes"]])
+    except RuntimeError:
+        pass
+    assert len(calls) == 2 and _chain(db, tid) == before
+
+
+def test_the_plan_order_wins_over_the_request_order(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        _gut_by_hand(cx, tid)
+        save_selection(cx, tid, "Gut", ["Microbiome", "Old Remedy", "X"])
+        _topic(cx, "Vertigo")
+        add_chain_row(cx, tid, 2, "Vertigo", "Vertigo", "B12")
+        save_selection(cx, tid, "Vertigo", ["B12", "X"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut", "Vertigo"], setup)
+    j = _preview(client, tid)
+    ids = [c["id"] for c in j["changes"]]
+    assert _apply(client, tid, j, list(reversed(ids))).status_code == 200
+    with sqlite3.connect(db) as cx:
+        heads = [r[0] for r in cx.execute("SELECT head FROM biofield_auth_chain "
+                                          "WHERE remedy='X' ORDER BY id")]
+    assert heads == ["Gut"]
+
+
+def test_a_hand_layer_no_row_names_is_not_flagged_stale(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        add_chain_row(cx, tid, 1, "Emotional Stress", "Emotional Stress", "Stress Release")
+    db, tid, client = _app(tmp_path, monkeypatch, [], setup)
+    assert _preview(client, tid)["stale"] == []
+
+
+def test_a_remedy_on_two_rows_of_a_layer_is_offered_for_removal_on_both(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        _topic(cx, "Gut")
+        add_chain_row(cx, tid, 1, "Gut", "Gut", "Keep")
+        add_chain_row(cx, tid, 1, "Gut", "", "Twice")
+        add_chain_row(cx, tid, 1, "Gut", "", "Twice")
+        save_selection(cx, tid, "Gut", ["Keep"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut"], setup)
+    j = _preview(client, tid)
+    assert [c.get("remedy") for c in j["changes"]] == ["Twice", "Twice"]
+    assert _apply(client, tid, j, [c["id"] for c in j["changes"]]).status_code == 200
+    assert "Twice" not in {r[3] for r in _chain(db, tid)}
+
+
+def test_a_row_reaching_a_layer_by_its_second_name_keeps_its_ticks(tmp_path):
+    """Round 3, defect B: t1 holds key a, t2 key b, and an item with both merges
+    into t1. Both reach layer b; t2's ticks must still be offered."""
+    from dashboard import biofield_clinical_layer_sync as sync
+    with sqlite3.connect(str(tmp_path / "c.db")) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "J", "j@example.com", "2026-10-19")
+        _topic(cx, "Gut")
+        set_display_label(cx, "Gut", "Digestive Function")
+        add_chain_row(cx, tid, 1, "Gut", "Gut", "Keep")
+        tick = {"checked": True, "selection_saved": True}
+        items = [dict(tick, label="A", stress_pattern="Digestive Function",
+                      selected_remedies=["Keep"]),
+                 dict(tick, label="B", stress_pattern="Gut", selected_remedies=["Only B"]),
+                 dict(tick, label="Gut", selected_remedies=["Keep"])]
+        changes = sync.plan(cx, tid, items)["changes"]
+    assert [(c["kind"], c.get("remedy")) for c in changes] == [("add", "Only B")]
