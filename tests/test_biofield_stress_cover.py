@@ -184,7 +184,7 @@ def test_consolidation_confirmation_uses_visible_numbers_after_reorder():
     # The API still receives stored ids (3 -> 1), while the confirmation uses
     # the visible card labels (1 -> 2).
     assert "consolidateBalances(3,1" in html
-    assert "value='1'>Layer 2</option>" in html
+    assert "value='1'>Layer 2: H2</option>" in html
     assert "sel.options[sel.selectedIndex].text" in html
     assert "Consolidation failed." in html
 

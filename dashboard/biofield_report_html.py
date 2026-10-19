@@ -2077,6 +2077,21 @@ def _covered_html(stresses, layer=None):
     return f"<div class=covered><span class=food>balances:</span> {shown}{add}</div>"
 
 
+MOVE_LABEL_MAX = 40
+
+
+def _move_target_label(group):
+    """"Layer 3: Liver and gallbladder" for the Move balances list. A long heading is
+    cut at a word with an ellipsis; a layer with no heading shows its number alone."""
+    head = " ".join(str(group.get("head") or "").split())
+    label = f"Layer {group['layer']}"
+    if not head:
+        return label
+    if len(head) > MOVE_LABEL_MAX:
+        head = head[:MOVE_LABEL_MAX].rsplit(" ", 1)[0].rstrip(" ,;:-") + "…"
+    return f"{label}: {head}"
+
+
 def _render_chain_cards(report, depth_values, covered_by_layer=None,
                         bottles_by_remedy=None):
     covered_by_layer = covered_by_layer or {}
@@ -2095,9 +2110,10 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None,
         head_in = _xwrap(f'<input id={gid}_head list=vocab value="{he}" title="{he}" oninput="dirtyLayer(this)">')
         tail_in = _xwrap(f'<input id={gid}_most list=vocab value="{me}" title="{me}" oninput="dirtyLayer(this)">')
         source_layer = int(g.get("stored_layer") or n)
+        # Glen, 2026-10-19: "show the name of the layer in addition to the number."
         targets = "".join(
             f"<option value='{int(other.get('stored_layer') or other['layer'])}'>"
-            f"Layer {other['layer']}</option>"
+            f"{_e(_move_target_label(other))}</option>"
             for other in groups if other["layer"] != n)
         consolidate = (
             f"<span class=consolidate><select id={gid}_consolidate>"
