@@ -35,7 +35,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dashboard.biofield_authoring import stress_suggestions  # noqa: E402
 from dashboard.biofield_clinical_checklist import (  # noqa: E402
-    _norm, ensure_catalog_schema, forgotten_remedies, remedies_for)
+    _norm, display_labels, ensure_catalog_schema, ensure_display_schema, forgotten_remedies,
+    remedies_for)
 from dashboard import biofield_clinical_sections as cs  # noqa: E402
 
 LOADED = (cs.FORMULATIONS, cs.INFOCEUTICALS, "foods_emphasize", "foods_avoid",
@@ -85,7 +86,7 @@ def load(cx, folder, client_test):
               "fullscript_types_not_loaded": 0, "new_conditions": [],
               "removed": [], "kept_not_listed": [],
               "extra_explanations_applied": 0, "extra_explanations_waiting": 0,
-              "unknown_sections": [], "unknown_routes": []}
+              "unknown_sections": [], "unknown_routes": [], "relabelled": []}
     from dashboard.biofield_clinical_proposals import selections
     chosen_by_row = selections(cx, client_test)
     known = {row[0] for row in cx.execute(
@@ -104,7 +105,19 @@ def load(cx, folder, client_test):
         label = data.get("label") or data["condition_key"]
         key = _norm(label)
         if key != _norm(data["condition_key"]):
-            raise SystemExit(f"{path}: label {label!r} does not match its condition_key")
+            # A new name for the same condition (Glen, 2026-10-18: "Blood sugar" is
+            # "Sugar Regulation"). Everything stays keyed by condition_key; the name is
+            # the display override the Clinical Summary and the Plan already read.
+            shown, label = label, data["condition_key"]
+            key = _norm(label)
+            ensure_display_schema(cx)
+            before = display_labels(cx).get(key)
+            if before != shown:
+                cx.execute("INSERT INTO biofield_clinical_display (key,label,updated_at) "
+                           "VALUES (?,?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET "
+                           "label=excluded.label,updated_at=CURRENT_TIMESTAMP", (key, shown))
+                report["relabelled"].append(
+                    f"{key}: {before!r} -> {shown!r}" if before else f"{key}: {shown!r}")
         if key not in known:
             report["new_conditions"].append(label)
         sections = data["sections"]
