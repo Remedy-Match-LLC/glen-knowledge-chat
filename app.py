@@ -26973,6 +26973,15 @@ def _merge_accepted_recommendation_items(cx, email, reorder_items):
                 qty = 1
             base.append(_reorder_item_from_slug(slug, qty))
             have.add(slug)
+        # A recommended "in Terrain Restore" ingredient joins the client's bottle,
+        # never a second $70 line beside it (2026-10-19).
+        if any(isinstance(it, dict) and it.get("held") for it in base):
+            from dashboard import biofield_invoice as _bfi
+            base = _bfi.fold_reorder_items(
+                base, name_of=lambda sl: (_get_product(sl) or {}).get("name"),
+                base_ok=bool(_get_product(_bfi.TERRAIN_RESTORE_SLUG))
+                        and not _waitlist_block(_bfi.TERRAIN_RESTORE_SLUG),
+                ready=lambda sl: bool(_get_product(sl)) and not _waitlist_block(sl))
         return base
     except Exception:
         return base

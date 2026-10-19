@@ -628,3 +628,47 @@ def test_edit_invoice_puts_the_note_on_an_existing_line_too():
     branch = html[html.index("const existing=LINES.find(x=>x.slug===rec.slug);"):]
     branch = branch[:branch.index("}else{")]
     assert "if(rec.note) existing.note=String(rec.note);" in branch
+
+
+# ── Round 4 ───────────────────────────────────────────────────────────────────
+def test_raes_bottle_count_survives_a_republish():
+    folded = dict(FOLDED, held=_with_qty(HELD_BOTH, 1, 2))
+    for set_to in (1, 4):
+        out = inv.fold_reorder_items([dict(folded, qty=set_to)], _name_of, True)
+        assert out[0]["qty"] == set_to
+    # A new ingredient with a larger count still raises it.
+    out = inv.fold_reorder_items(
+        [dict(folded, qty=1), {"slug": "oak-flower-essence-in-terrain-restore", "qty": 3}],
+        _name_of, True)
+    assert out[0]["qty"] == 3
+
+
+def test_unfolding_leaves_no_internal_keys_and_never_sums_a_repeat():
+    held = [{"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 1},
+            {"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 3}]
+    out = inv.fold_reorder_items([dict(FOLDED, held=held, price_cents=6000)],
+                                 _name_of, base_ok=False)
+    assert out == [{"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 3}]
+    refolded = inv.fold_terrain_restore(
+        [{"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE, "qty": 1},
+         {"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE, "qty": 3}], True)
+    assert refolded[0]["held"] == [{"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore",
+                                    "qty": 3}]
+
+
+def test_a_recommended_ingredient_joins_the_bottle(monkeypatch):
+    import app as appmod
+    from dashboard import practitioner_recommendations as pr
+    monkeypatch.setattr(pr, "init_table", lambda cx: None)
+    monkeypatch.setattr(pr, "active_for_patient", lambda cx, e: {
+        "status": "accepted", "items": [{"slug": "oak-flower-essence-in-terrain-restore", "qty": 1}]})
+    monkeypatch.setattr(appmod, "_reorder_item_from_slug", lambda s, q: {"slug": s, "qty": q})
+    monkeypatch.setattr(appmod, "_get_product",
+                        lambda s: {"slug": s, "name": _NAMES[s]} if s in _NAMES else None)
+    monkeypatch.setattr(appmod, "_waitlist_block", lambda s: None)
+    folded = {"slug": "terrain-restore", "qty": 1, "note": "With Pyrite Gem Elixir",
+              "held": [{"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 1}]}
+    out = appmod._merge_accepted_recommendation_items(
+        sqlite3.connect(":memory:"), "j@example.com", [folded])
+    assert [(i["slug"], i.get("note")) for i in out] == [
+        ("terrain-restore", "With Pyrite Gem Elixir and Oak Flower Essence")]

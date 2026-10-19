@@ -278,6 +278,18 @@ def fold_terrain_restore(items, base_ok, name_of=None, ready=None):
     return out
 
 
+def _settle_bottle(items, bottles):
+    """Put back the bottle count a folded line carried before, so a count Rae set
+    survives a republish. An ingredient that joined since still raises it; the ones
+    it already held do not. `bottles` is (that count, the (slug, name) it held)."""
+    for it in items:
+        if isinstance(it, dict) and it.get("slug") == TERRAIN_RESTORE_SLUG and bottles:
+            joined = [_qty(h.get("qty")) for h in it.get("held") or []
+                      if isinstance(h, dict) and (h.get("slug"), h.get("name")) not in bottles[1]]
+            it["qty"] = max([bottles[0]] + joined)
+    return items
+
+
 def held_names(item):
     """The remedy names a folded Terrain Restore line holds, or [its own name]."""
     held = [h.get("name") for h in (item.get("held") or []) if isinstance(h, dict)]
@@ -299,7 +311,7 @@ def fold_reorder_items(items, name_of, base_ok, ready=None):
     Terrain Restore stops selling gives the old per-ingredient lines back, and an
     ingredient that stopped being ready comes out of the bottle. The result holds
     each slug once at its largest count."""
-    cands = []
+    cands, bottles = [], None
     for it in items or []:
         if not isinstance(it, dict) or not it.get("slug"):
             cands.append(it)
@@ -313,6 +325,10 @@ def fold_reorder_items(items, name_of, base_ok, ready=None):
                     for n in note_ingredients(it.get("note"))]
         if held:
             price = base.pop("price_cents", None)
+            if bottles is None:
+                bottles = (_qty(it.get("qty")), set())
+            bottles = (max(bottles[0], _qty(it.get("qty"))),
+                       bottles[1] | {(h["slug"], h["name"]) for h in held})
             for h in held:
                 c = dict(base, slug=h["slug"], name=h["name"])
                 if h.get("qty") is not None:
@@ -323,7 +339,8 @@ def fold_reorder_items(items, name_of, base_ok, ready=None):
         else:
             cands.append(dict(base, name=name_of(it["slug"]) or ""))
     out, by_slug = [], {}
-    for it in fold_terrain_restore(cands, base_ok, name_of=name_of, ready=ready):
+    folded = fold_terrain_restore(cands, base_ok, name_of=name_of, ready=ready)
+    for it in _settle_bottle(folded, bottles):
         if not isinstance(it, dict) or not it.get("slug"):
             out.append(it)
             continue
