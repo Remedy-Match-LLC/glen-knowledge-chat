@@ -101,7 +101,8 @@ def test_taking_it_out_of_its_only_topic_returns_the_row_as_it_was(cx):
     cg.place_row(cx, T, "Hypothyroid", ["Hashimoto's thyroid disease"])
     assert cg.remove_factor(cx, T, "Hashimoto's thyroid disease", "Hypothyroid")
     f = _factors(cx)
-    assert f["hypothyroid"] == ["synthroid"] and f.get("hashimoto s thyroid disease") == []
+    # The topic the move made is gone again, being empty.
+    assert f["hypothyroid"] == ["synthroid"] and "hashimoto s thyroid disease" not in f
     assert decisions(cx, T)["hypothyroid"] == {"label": "Hypothyroid", "status": "accepted",
                                                "evidence": "by hand"}
 
@@ -247,7 +248,7 @@ def test_a_second_placement_carries_the_rows_own_details(cx):
     cg.remove_factor(cx, T, "Hashimoto's", "Hypothyroid")
     cg.remove_factor(cx, T, "Thyroid", "Hypothyroid")
     f = _factors(cx)
-    assert f["hypothyroid"] == ["synthroid"] and f["thyroid"] == [] and f["hashimoto s"] == []
+    assert f["hypothyroid"] == ["synthroid"] and "thyroid" not in f and "hashimoto s" not in f
 
 
 def test_a_row_cannot_go_under_a_row_that_is_a_detail(cx):
@@ -284,3 +285,67 @@ def test_the_move_takes_the_write_lock_before_checking_ticks(tmp_path):
         a.rollback()
         a.close()
     assert seen == ["locked"]
+
+
+# Review round 3, 2026-10-19.
+
+def test_a_hidden_row_is_not_brought_back_as_a_topic(cx):
+    decide(cx, T, "Migraine", "dismissed")
+    with pytest.raises(cg.Refused) as exc:
+        cg.place_row(cx, T, "Dry eye", ["Migraine"])
+    assert "Unhide it first" in str(exc.value)
+    assert decisions(cx, T)["migraine"]["status"] == "dismissed"
+
+
+def test_an_existing_topic_keeps_its_evidence(cx):
+    decide(cx, T, "Vertigo", "accepted", "by hand")
+    cg.place_row(cx, T, "Vertigo attacks", ["Vertigo"])
+    cg.remove_factor(cx, T, "Vertigo", "Vertigo attacks")
+    assert decisions(cx, T)["vertigo"] == {"label": "Vertigo", "status": "accepted",
+                                           "evidence": "by hand"}
+
+
+def test_a_topic_the_move_made_goes_when_emptied(cx):
+    cg.place_row(cx, T, "Epinephrine", ["Adrenals"])
+    cg.remove_factor(cx, T, "Adrenals", "Epinephrine")
+    assert "adrenals" not in decisions(cx, T) and "adrenals" not in _factors(cx)
+
+
+def test_a_topic_the_move_made_stays_while_it_holds_something_else(cx):
+    cg.place_row(cx, T, "Epinephrine", ["Adrenals"])
+    cg.approve(cx, T, [], "Adrenals", ["Low sex hormones"], typed_ok=True)
+    cg.remove_factor(cx, T, "Adrenals", "Epinephrine")
+    assert decisions(cx, T)["adrenals"]["status"] == "accepted"
+    assert _factors(cx)["adrenals"] == ["Low sex hormones"]
+
+
+def test_typing_a_moved_rows_name_elsewhere_keeps_it_under_its_topics(cx):
+    cg.place_row(cx, T, "Caffeine", ["Sugar Regulation"])
+    cg.approve(cx, T, [], "Crystalline Lens", ["Caffeine"], typed_ok=True)
+    assert "Caffeine" in _factors(cx)["sugar regulation"]
+    assert decisions(cx, T)["caffeine"]["status"] == "dismissed"
+
+
+def test_a_row_holding_details_is_not_nested(cx):
+    cg.place_row(cx, T, "Dry eyes", ["Sjogren's"])
+    with pytest.raises(cg.Refused) as exc:
+        cg.place_row(cx, T, "Sjogren's", ["Connective tissue autoimmunity"])
+    assert "Take them out first" in str(exc.value)
+
+
+def test_restoring_keeps_a_factor_the_topic_already_had(cx):
+    _topic(cx, "Hypothyroid", "synthroid")
+    gid = cg._insert(cx, T, "Thyroid", "approved", "", [])
+    cx.execute("INSERT INTO biofield_clinical_group_factors (group_id,factor_key,factor,kind) "
+               "VALUES (?,?,?,?)", (gid, "synthroid", "synthroid", "typed"))
+    cg.place_row(cx, T, "Hypothyroid", ["Thyroid"])
+    cg.remove_factor(cx, T, "Thyroid", "Hypothyroid")
+    assert _factors(cx)["thyroid"] == ["synthroid"]
+
+
+def test_another_clients_copy_of_the_row_does_not_hold_this_one_hidden(cx):
+    cg.place_row(cx, "a8", "Dry eyes", ["Sjogren's"])
+    cg.place_row(cx, T, "Dry eyes", ["Sjogren's"])
+    cg.remove_factor(cx, T, "Sjogren's", "Dry eyes")
+    assert "dry eyes" not in decisions(cx, T)
+    assert decisions(cx, "a8")["dry eyes"]["status"] == "dismissed"

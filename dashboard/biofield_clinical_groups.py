@@ -53,6 +53,7 @@ def ensure_schema(cx):
         prev_evidence TEXT NOT NULL DEFAULT '',
         own_factors TEXT NOT NULL DEFAULT '[]',
         added TEXT NOT NULL DEFAULT '[]',
+        created TEXT NOT NULL DEFAULT '[]',
         moved_at TEXT DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (test_id, row_key))""")
 
@@ -338,9 +339,10 @@ def approve(cx, test_id, factors, name, wanted, group_id=None, typed_ok=False,
     # approved item on this intake. A dismissed proposal keeps it, so that dismissal
     # is still remembered if the factor is later taken back out (review round 3).
     for key in keys:
+        # A row moved here as a detail stays under its topics: it may sit under two.
         cx.execute("DELETE FROM biofield_clinical_group_factors WHERE factor_key=? AND "
-                   "group_id IN (SELECT id FROM biofield_clinical_groups WHERE test_id=? "
-                   "AND status='approved')", (key, str(test_id)))
+                   "kind<>? AND group_id IN (SELECT id FROM biofield_clinical_groups "
+                   "WHERE test_id=? AND status='approved')", (key, DETAIL_KIND, str(test_id)))
     _take_from_open(cx, test_id, keys)
     # The proposal is used up. A factor he unticked in it goes back to ungrouped.
     if group_id is not None:
@@ -444,17 +446,27 @@ def place_row(cx, test_id, row_label, topics):
     if inside:
         raise Refused(", ".join(inside) + " is a detail under another row now. "
                       "Take it back out first.")
+    # A row Glen hid stays hidden: typing its name is not a way to bring it back.
+    told = decisions(cx, test_id)
+    hidden = [n for n in names if (told.get(item_key(n)) or {}).get("status") == "dismissed"]
+    if hidden:
+        raise Refused(", ".join(hidden) + " is hidden on this intake. Unhide it first.")
     ticks = row_ticks(cx, test_id, row)
     if ticks:
         raise Refused("This row has ticks, so it was not moved: " + "; ".join(ticks)
                       + ". Move or untick them first.")
-    prior = cx.execute("SELECT own_factors, added FROM biofield_clinical_detail_moves "
+    prior = cx.execute("SELECT own_factors, added, created FROM biofield_clinical_detail_moves "
                        "WHERE test_id=? AND row_key=?", (str(test_id), rkey)).fetchone()
     # Moved before: its own factors are the ones recorded then (review round 2).
     own = json.loads(prior[0]) if prior else [
         f for g in groups(cx, test_id) if g["status"] == "approved"
         and item_key(canonical_name(cx, test_id, g["name"])) == rkey for f in g["factors"]]
     added = json.loads(prior[1]) if prior else []
+    created = json.loads(prior[2]) if prior else []
+    # A row holding details of its own is not nested under another: its restore could
+    # not be exact (review round 3).
+    if any(f["kind"] == DETAIL_KIND for f in own):
+        raise Refused("This row holds details moved under it. Take them out first.")
     carried = [{"factor": row, "kind": DETAIL_KIND}] + own
     for name in names:
         gid = _approved_by_name(cx, test_id, name)
@@ -468,8 +480,9 @@ def place_row(cx, test_id, row_label, topics):
                                   "(group_id,factor_key,factor,kind) VALUES (?,?,?,?)",
                                   (gid, key, f["factor"], f["kind"])).rowcount:
                 added.append([item_key(name), key])
-        if (decisions(cx, test_id).get(item_key(name)) or {}).get("status") != "accepted":
+        if item_key(name) not in decisions(cx, test_id):
             decide(cx, test_id, name, "accepted", "A detail placed under it: " + row)
+            created.append(item_key(name))
     # The row's own item is emptied: its factors now sit under the topics.
     for g in groups(cx, test_id):
         if g["status"] == "approved" and item_key(canonical_name(cx, test_id, g["name"])) == rkey:
@@ -477,13 +490,15 @@ def place_row(cx, test_id, row_label, topics):
             cx.execute("DELETE FROM biofield_clinical_groups WHERE id=?", (g["id"],))
     before = decisions(cx, test_id).get(rkey) or {}
     if prior:
-        cx.execute("UPDATE biofield_clinical_detail_moves SET added=? WHERE test_id=? AND "
-                   "row_key=?", (json.dumps(added), str(test_id), rkey))
+        cx.execute("UPDATE biofield_clinical_detail_moves SET added=?, created=? WHERE "
+                   "test_id=? AND row_key=?",
+                   (json.dumps(added), json.dumps(created), str(test_id), rkey))
     else:
         cx.execute("INSERT INTO biofield_clinical_detail_moves (test_id,row_key,row_label,"
-                   "prev_status,prev_evidence,own_factors,added) VALUES (?,?,?,?,?,?,?)",
+                   "prev_status,prev_evidence,own_factors,added,created) "
+                   "VALUES (?,?,?,?,?,?,?,?)",
                    (str(test_id), rkey, row, before.get("status"), before.get("evidence") or "",
-                    json.dumps(own), json.dumps(added)))
+                    json.dumps(own), json.dumps(added), json.dumps(created)))
     decide(cx, test_id, row, "dismissed", "A detail under: " + ", ".join(names))
     return names
 
@@ -493,7 +508,8 @@ def _restore_if_free(cx, test_id, factor):
     factors taken back from the topics."""
     from dashboard.biofield_clinical_proposals import _key
     key = item_key(factor)
-    move = cx.execute("SELECT row_label, prev_status, prev_evidence, own_factors, added FROM "
+    move = cx.execute("SELECT row_label, prev_status, prev_evidence, own_factors, added, "
+                      "created FROM "
                       "biofield_clinical_detail_moves WHERE test_id=? AND row_key=?",
                       (str(test_id), key)).fetchone()
     if not move:
@@ -504,7 +520,7 @@ def _restore_if_free(cx, test_id, factor):
                        (str(test_id), key, DETAIL_KIND)).fetchone()
     if still:
         return
-    label, prev, evidence, own, added = move
+    label, prev, evidence, own, added, created = move
     own = json.loads(own or "[]")
     for topic, fkey in json.loads(added or "[]"):
         if fkey == key:
@@ -515,6 +531,15 @@ def _restore_if_free(cx, test_id, factor):
                        "factor_key=?", (gid, fkey))
     if own:
         _insert(cx, test_id, label, "approved", "", own)
+    # A topic the move made, and left empty now, goes again (review round 3).
+    for topic in json.loads(created or "[]"):
+        gid = _approved_by_name(cx, test_id, topic)
+        if gid is None or not cx.execute("SELECT 1 FROM biofield_clinical_group_factors "
+                                         "WHERE group_id=?", (gid,)).fetchone():
+            if gid is not None:
+                cx.execute("DELETE FROM biofield_clinical_groups WHERE id=?", (gid,))
+            cx.execute("DELETE FROM biofield_clinical_proposals WHERE test_id=? AND "
+                       "item_key=?", (str(test_id), topic))
     if prev:
         decide(cx, test_id, label, prev, evidence)
     else:
