@@ -311,3 +311,28 @@ def test_a_reordered_reload_keeps_each_item_under_its_own_caution(cx, tmp_path):
     _remedy(cx, "Blood sugar", cs.FORMULATIONS, "Glucose Tolerance")
     assert pr.cautions_for(pr.plan(cx, "a49"), pr.stored_frame(cx)[1]) == [
         ("Berberine", "Berberine text.", ["Glucose Tolerance"])]
+
+
+def test_the_oils_header_heads_remedies_once_only_with_an_oil_after_the_infoceutical_one(
+        cx, tmp_path):
+    lines = {k: {"text": v, "approved": True} for k, v in TOP.items()}
+    lines["essential_oils_header"] = {"text": "Oils <need> care.", "approved": True}
+    pr.load_content(cx, _folder(tmp_path, lines=lines))
+    _remedy(cx, "Gut", cs.FORMULATIONS, "Digestzymes")
+    assert "need" not in _page(cx)
+    _tick(cx, "Vertigo", cs.ESSENTIAL_OILS, "Lavender")
+    page = _page(cx)
+    assert page.count("Oils &lt;need&gt; care.") == 1
+    assert page.index("<h2>Remedies</h2>") < page.index("Oils &lt;need&gt;") \
+        < page.index("Lavender")
+    _remedy(cx, "Liver", cs.INFOCEUTICALS, "ED11 Liver Energetic Driver Infoceutical")
+    page = _page(cx)
+    assert page.index("Infoceuticals are E4L") < page.index("Oils &lt;need&gt;") \
+        < page.index("Lavender")
+
+
+def test_an_unapproved_oils_header_never_prints(cx, tmp_path):
+    lines = {"essential_oils_header": {"text": "Oils need care.", "approved": False}}
+    pr.load_content(cx, _folder(tmp_path, lines=lines))
+    _tick(cx, "Vertigo", cs.ESSENTIAL_OILS, "Lavender")
+    assert "Oils need care." not in _page(cx)
