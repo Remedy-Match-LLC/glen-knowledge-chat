@@ -64,10 +64,11 @@ def chain_layers(cx, test_id):
     """The chain grouped as the editor groups it: rows sharing a head are one layer.
     [{head, key, layer, rows: [{id, remedy, confirmed, origin}], confirmed, fixed}]."""
     rows = cx.execute(
-        "SELECT id,layer,head,most_affected,remedy,confirmed,origin FROM biofield_auth_chain "
+        "SELECT id,layer,head,most_affected,remedy,confirmed,origin,dosage,frequency,timing "
+        "FROM biofield_auth_chain "
         "WHERE test_id=? ORDER BY layer,sort_seq,id", (_tid(test_id),)).fetchall()
     out, by_key = [], {}
-    for rid, layer, head, _most, remedy, confirmed, origin in rows:
+    for rid, layer, head, _most, remedy, confirmed, origin, *dose in rows:
         head = (head or "").strip()
         if not head:
             continue
@@ -76,8 +77,10 @@ def chain_layers(cx, test_id):
         if g is None:
             g = by_key[key] = {"head": head, "key": key, "layer": layer, "rows": []}
             out.append(g)
-        g["rows"].append({"id": rid, "remedy": (remedy or "").strip(),
-                          "confirmed": bool(confirmed), "origin": origin or ""})
+        g["rows"].append({"id": rid, "remedy": (remedy or "").strip(), "layer": layer,
+                          "most_affected": (_most or "").strip(),
+                          "confirmed": bool(confirmed), "origin": origin or "",
+                          "dose": [d or "" for d in dose]})
     for g in out:
         g["confirmed"] = any(r["confirmed"] for r in g["rows"])
         g["fixed"] = any(r["origin"] in FIXED_ORIGINS for r in g["rows"])
@@ -106,7 +109,7 @@ def targets(cx, items):
             if item.get("checked"):
                 no_pattern.append(label)
             continue
-        t = next((by_key[k] for k in keys if k in by_key), None)
+        t = next((by_key[k] for k in sorted(keys) if k in by_key), None)
         if t is None:
             t = {"name": name, "keys": set(), "labels": [], "remedies": [], "checked": False}
             out.append(t)
@@ -138,15 +141,27 @@ def plan(cx, test_id, items, resolve=None):
             k = _remedy_key(cx, r["remedy"], resolve)
             if k:
                 on_chain.setdefault(k, g["head"])
+    # A blank-head row is a layer of its own on the page: its remedy is on the chain.
+    blank = _blank_rows(cx, test_id)
+    for r in blank:
+        k = _remedy_key(cx, r[1], resolve)
+        if k:
+            on_chain.setdefault(k, "an unnamed layer")
     changes, stale, matched, elsewhere = [], [], set(), []
     # Existing layers first, in chain order, then new ones in checklist order: a
     # remedy ticked on two rows lands on the earlier layer, and a new layer is last.
     order = {g["key"]: i for i, g in enumerate(layers)}
     paired = [(next((g for g in layers if g["key"] in t["keys"]), None), t) for t in wanted]
     paired.sort(key=lambda p: order[p[0]["key"]] if p[0] is not None else len(order))
+    paired_layers = set()
     for layer, t in paired:
         if layer is not None and layer["fixed"]:
             continue
+        # One layer pairs with one target: a second would offer its changes twice.
+        if layer is not None:
+            if layer["key"] in paired_layers:
+                continue
+            paired_layers.add(layer["key"])
         if layer is not None:
             matched.add(layer["key"])
         if not t["checked"]:
@@ -177,7 +192,10 @@ def plan(cx, test_id, items, resolve=None):
             if k in on_chain:
                 elsewhere.append({"remedy": name, "layer": on_chain[k], "for": layer["head"]})
                 continue
-            on_chain[k] = layer["head"]
+            # An add left unticked on a confirmed layer must not keep the remedy off a
+            # later layer; apply() still lands each remedy once whichever are ticked.
+            if not layer["confirmed"]:
+                on_chain[k] = layer["head"]
             changes.append({"id": "add:" + layer["key"] + ":" + k, "kind": "add",
                             "layer": layer["head"], "remedy": name,
                             "confirmed_layer": layer["confirmed"],
@@ -194,13 +212,34 @@ def plan(cx, test_id, items, resolve=None):
             stale.append({"layer": g["head"],
                           "remedies": [r["remedy"] for r in g["rows"] if r["remedy"]]})
     return {"changes": changes, "stale": stale, "no_pattern": no_pattern,
-            "elsewhere": elsewhere, "digest": _digest(layers, changes)}
+            "elsewhere": elsewhere,
+            "digest": _digest(layers, changes, [_ticks(cx, test_id), blank])}
 
 
-def _digest(layers, changes):
-    body = json.dumps([[(g["head"], [(r["id"], r["remedy"], r["confirmed"], r["origin"])
-                                     for r in g["rows"]]) for g in layers], changes],
-                      sort_keys=True)
+def _blank_rows(cx, test_id):
+    return [list(r) for r in cx.execute(
+        "SELECT id,remedy,layer,most_affected,dosage,frequency,timing,confirmed,origin "
+        "FROM biofield_auth_chain WHERE test_id=? AND TRIM(COALESCE(head,''))='' "
+        "ORDER BY id", (_tid(test_id),))]
+
+
+def _ticks(cx, test_id):
+    """The stored ticks, order and decisions, read inside the caller's transaction, so
+    a tick saved between the preview and the apply changes the digest."""
+    out = []
+    for table in ("biofield_clinical_selection", "biofield_clinical_proposals",
+                  "biofield_clinical_order"):
+        try:
+            out.append(sorted(map(list, cx.execute(
+                f"SELECT * FROM {table} WHERE test_id=?", (str(test_id),)))))
+        except Exception:  # table absent on a fresh database
+            out.append(None)
+    return out
+
+
+def _digest(layers, changes, ticks=None):
+    body = json.dumps([[(g["head"], g["rows"]) for g in layers], changes, ticks],
+                      sort_keys=True, default=str)
     return hashlib.sha256(body.encode()).hexdigest()[:16]
 
 
@@ -221,12 +260,21 @@ def apply(cx, test_id, items, digest, chosen, resolve=None, dosing=None, now="")
             raise Stale("The chain or the Clinical Summary changed. Preview again.")
         tid = _tid(test_id)
         layers = {g["key"]: g for g in chain_layers(cx, test_id)}
+        landed = {_remedy_key(cx, r[0], resolve or (lambda cx, n: n)) for r in cx.execute(
+            "SELECT remedy FROM biofield_auth_chain WHERE test_id=?", (tid,))} - {""}
+        # In plan order, once each: an earlier layer takes a remedy first.
+        picked = set(chosen or [])
+        chosen = [c["id"] for c in p["changes"] if c["id"] in picked]
         last = cx.execute("SELECT COALESCE(MAX(layer),0) FROM biofield_auth_chain "
                           "WHERE test_id=?", (tid,)).fetchone()[0] or 0
         done = {"added": 0, "removed": 0, "layers_added": 0}
         for cid in chosen or []:
             c = ids[cid]
             if c["kind"] == "add":
+                k = _norm(c["remedy"])
+                if k in landed:
+                    continue
+                landed.add(k)
                 g = layers[_norm(c["layer"])]
                 _insert(cx, tid, g["layer"], g["head"], "", c["remedy"],
                         dosing(cx, c["remedy"]), confirmed=0, origin="clinical", now=now)
@@ -236,7 +284,9 @@ def apply(cx, test_id, items, digest, chosen, resolve=None, dosing=None, now="")
                 done["removed"] += 1
             elif c["kind"] == "new":
                 last += 1
-                for name in c["remedies"] or [""]:
+                names = [n for n in c["remedies"] if _norm(n) not in landed]
+                landed |= {_norm(n) for n in names}
+                for name in names or [""]:
                     _insert(cx, tid, last, c["layer"], c["label"] or c["layer"], name,
                             dosing(cx, name) if name else {}, confirmed=0,
                             origin="clinical", now=now)
@@ -267,10 +317,11 @@ def _remove(cx, tid, rid, now):
     same = "test_id=? AND id<>? AND LOWER(TRIM(COALESCE(head,'')))=LOWER(TRIM(?))"
     siblings = cx.execute(f"SELECT COUNT(*) FROM biofield_auth_chain WHERE {same}",
                           (tid, rid, row[0] or "")).fetchone()[0]
-    # The row carrying the layer's tail keeps it unless a sibling carries one too.
+    # The row carrying a tail keeps it unless a sibling carries the same tail.
     tail_kept = not (row[1] or "").strip() or cx.execute(
         f"SELECT COUNT(*) FROM biofield_auth_chain WHERE {same} AND "
-        "TRIM(COALESCE(most_affected,''))<>''", (tid, rid, row[0] or "")).fetchone()[0]
+        "LOWER(TRIM(COALESCE(most_affected,'')))=LOWER(TRIM(?))",
+        (tid, rid, row[0] or "", row[1])).fetchone()[0]
     if siblings and tail_kept:
         cx.execute("DELETE FROM biofield_auth_chain WHERE id=?", (rid,))
     else:

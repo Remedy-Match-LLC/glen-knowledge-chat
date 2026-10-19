@@ -3536,7 +3536,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
             items = _clinical_items(cx, test_id, rep)
-            if not body.get("apply"):
+            if body.get("apply") is not True:
                 return {"ok": True, "proposed": True,
                         **sync.plan(cx, test_id, items, resolve_remedy_name)}
             chosen = [str(c) for c in body.get("chosen") or []]

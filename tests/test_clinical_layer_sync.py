@@ -273,6 +273,169 @@ def test_a_remedy_ticked_twice_lands_on_the_existing_layer_not_the_new_one(tmp_p
     db, tid, client = _app(tmp_path, monkeypatch,
                            ["Blood and circulation", "Cataract and vision"], setup)
     j = _preview(client, tid)
+    # Layer 1 is confirmed, so its add is offered unticked and reserves nothing.
     assert [(c["kind"], c["layer"], c.get("remedy") or c.get("remedies"))
             for c in j["changes"]] == [("add", "Cataract and vision", "Fibrosolve"),
-                                       ("new", "Blood and circulation", ["B12"])]
+                                       ("new", "Blood and circulation", ["Fibrosolve", "B12"])]
+    assert _apply(client, tid, j, [c["id"] for c in j["changes"]]).status_code == 200
+    assert [r[1] for r in _chain(db, tid) if r[3] == "Fibrosolve"] == ["Cataract and vision"]
+
+
+def test_a_draft_layer_reserves_its_remedy(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        _topic(cx, "Blood and circulation")
+        _topic(cx, "Cataract and vision")
+        add_chain_row(cx, tid, 1, "Cataract and vision", "Cataract and vision", "Clear Lens",
+                      confirmed=0)
+        save_selection(cx, tid, "Blood and circulation", ["Fibrosolve", "B12"])
+        save_selection(cx, tid, "Cataract and vision", ["Clear Lens", "Fibrosolve"])
+    db, tid, client = _app(tmp_path, monkeypatch,
+                           ["Blood and circulation", "Cataract and vision"], setup)
+    j = _preview(client, tid)
+    assert [c.get("remedies") for c in j["changes"] if c["kind"] == "new"] == [["B12"]]
+
+
+def test_a_repeated_change_id_writes_once(tmp_path, monkeypatch):
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut"], _gut_by_hand)
+    j = _preview(client, tid)
+    add = next(c["id"] for c in j["changes"] if c["kind"] == "add")
+    assert _apply(client, tid, j, [add, add]).status_code == 200
+    assert [r[3] for r in _chain(db, tid)].count("Transform") == 1
+
+
+def test_apply_must_be_true_exactly(tmp_path, monkeypatch):
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut"], _gut_by_hand)
+    j = _preview(client, tid)
+    before = _chain(db, tid)
+    r = client.post(URL.format(tid), json={"apply": "false", "digest": j["digest"],
+                                           "chosen": [c["id"] for c in j["changes"]]})
+    assert r.get_json()["proposed"] and _chain(db, tid) == before
+
+
+def test_a_tick_saved_after_the_checklist_was_read_refuses_the_apply(tmp_path, monkeypatch):
+    """Review round 2: the checklist is read before the write lock. A tick saved in
+    between must still change the digest, which is read under the lock."""
+    from dashboard import biofield_clinical_layer_sync as sync
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut"], _gut_by_hand)
+    j = _preview(client, tid)
+    items = [{"label": "Gut", "checked": True, "selection_saved": True,
+              "selected_remedies": ["Microbiome", "Transform"]}]
+    with sqlite3.connect(db) as cx:
+        assert sync.plan(cx, tid, items)["digest"] == j["digest"]
+        save_selection(cx, tid, "Gut", ["Microbiome"])
+        cx.commit()
+        try:
+            sync.apply(cx, tid, items, j["digest"], [c["id"] for c in j["changes"]])
+            raise AssertionError("applied over a tick saved after the preview")
+        except sync.Stale:
+            pass
+    assert "Transform" not in {r[3] for r in _chain(db, tid)}
+
+
+def test_an_unticked_add_on_a_confirmed_layer_does_not_starve_a_new_layer(tmp_path, monkeypatch):
+    """Review round 2: X offered unticked on confirmed Gut must still reach the new
+    Vertigo layer, which is pre-ticked. Ticking both lands X once, on Gut."""
+    def setup(cx, tid):
+        _gut_by_hand(cx, tid)
+        save_selection(cx, tid, "Gut", ["Microbiome", "Old Remedy", "X"])
+        _topic(cx, "Vertigo")
+        save_selection(cx, tid, "Vertigo", ["X"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut", "Vertigo"], setup)
+    j = _preview(client, tid)
+    new = next(c for c in j["changes"] if c["kind"] == "new")
+    assert new["remedies"] == ["X"]
+    assert _apply(client, tid, j).status_code == 200
+    assert [(r[1], r[3]) for r in _chain(db, tid) if r[3] == "X"] == [("Vertigo", "X")]
+
+
+def test_ticking_both_lands_the_remedy_once_on_the_earlier_layer(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        _gut_by_hand(cx, tid)
+        save_selection(cx, tid, "Gut", ["Microbiome", "Old Remedy", "X"])
+        _topic(cx, "Vertigo")
+        save_selection(cx, tid, "Vertigo", ["X"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut", "Vertigo"], setup)
+    j = _preview(client, tid)
+    assert _apply(client, tid, j, [c["id"] for c in j["changes"]]).status_code == 200
+    assert [(r[1], r[3]) for r in _chain(db, tid) if r[3] == "X"] == [("Gut", "X")]
+
+
+def test_removing_a_row_keeps_a_tail_no_sibling_shares(tmp_path, monkeypatch):
+    """Review round 2: two rows on one pattern carry different tails."""
+    def setup(cx, tid):
+        add_chain_row(cx, tid, 1, "Adrenal Support", "Fatigue", "Old", origin="clinical")
+        add_chain_row(cx, tid, 1, "Adrenal Support", "Stress", "Keep", origin="clinical")
+        save_selection(cx, tid, "Fatigue", ["Keep"])
+        save_pattern(cx, tid, "Fatigue", "Adrenal Support")
+    db, tid, client = _app(tmp_path, monkeypatch, ["Fatigue"], setup)
+    j = _preview(client, tid)
+    assert [c["kind"] for c in j["changes"]] == ["remove"]
+    assert _apply(client, tid, j, [j["changes"][0]["id"]]).status_code == 200
+    assert {r[2] for r in _chain(db, tid)} == {"Fatigue", "Stress"}
+
+
+def test_a_new_layer_chosen_twice_is_made_once(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        _topic(cx, "Vertigo")
+        save_selection(cx, tid, "Vertigo", ["B12"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["Vertigo"], setup)
+    j = _preview(client, tid)
+    new = j["changes"][0]["id"]
+    assert _apply(client, tid, j, [new, new]).status_code == 200
+    assert len(_chain(db, tid)) == 1
+
+
+def test_one_remedy_offered_on_two_confirmed_layers_lands_once(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        _gut_by_hand(cx, tid)
+        save_selection(cx, tid, "Gut", ["Microbiome", "Old Remedy", "X"])
+        _topic(cx, "Vertigo")
+        add_chain_row(cx, tid, 2, "Vertigo", "Vertigo", "B12")
+        save_selection(cx, tid, "Vertigo", ["B12", "X"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut", "Vertigo"], setup)
+    j = _preview(client, tid)
+    assert len([c for c in j["changes"] if c.get("remedy") == "X"]) == 2
+    r = _apply(client, tid, j, [c["id"] for c in j["changes"]])
+    # Counted at the write: the page folds a repeat away when it next reads the chain.
+    assert r.status_code == 200 and r.get_json()["added"] == 1
+    assert [(r[1], r[3]) for r in _chain(db, tid) if r[3] == "X"] == [("Gut", "X")]
+
+
+def test_a_remedy_on_a_blank_head_row_is_not_added_again(tmp_path, monkeypatch):
+    """Review round 1: the editor keeps a blank-head row as a layer of its own."""
+    def setup(cx, tid):
+        add_chain_row(cx, tid, 1, "", "", "B12")
+        _topic(cx, "Vertigo")
+        save_selection(cx, tid, "Vertigo", ["B12", "Ginkgo"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["Vertigo"], setup)
+    j = _preview(client, tid)
+    assert [c["remedies"] for c in j["changes"]] == [["Ginkgo"]]
+
+
+def test_a_blank_head_row_added_after_the_preview_refuses_the_apply(tmp_path, monkeypatch):
+    db, tid, client = _app(tmp_path, monkeypatch, ["Gut"], _gut_by_hand)
+    j = _preview(client, tid)
+    with sqlite3.connect(db) as cx:
+        add_chain_row(cx, tid, 5, "", "", "Zeolite")
+    assert _apply(client, tid, j).status_code == 409
+
+
+def test_one_layer_paired_with_two_rows_offers_each_change_once(tmp_path):
+    """Review round 1: a topic whose key and display name hit two pattern rows, so
+    two targets both hold the layer's key."""
+    from dashboard import biofield_clinical_layer_sync as sync
+    with sqlite3.connect(str(tmp_path / "c.db")) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "J", "j@example.com", "2026-10-19")
+        _topic(cx, "Gut")
+        set_display_label(cx, "Gut", "Digestive Function")
+        add_chain_row(cx, tid, 1, "Gut", "Gut", "Old")
+        add_chain_row(cx, tid, 1, "Gut", "", "Keep")
+        tick = {"checked": True, "selection_saved": True, "selected_remedies": ["Keep"]}
+        items = [dict(tick, label="A", stress_pattern="Gut"),
+                 dict(tick, label="B", stress_pattern="Digestive Function"),
+                 dict(tick, label="Gut")]
+        wanted, _ = sync.targets(cx, items)
+        assert sum("gut" in w["keys"] for w in wanted) == 2
+        ids = [c["id"] for c in sync.plan(cx, tid, items)["changes"]]
+    assert ids == ["remove:1"]
