@@ -17894,7 +17894,9 @@ def fullscript_oauth_callback():
                                     ["Fullscript returned: " + request.args.get("error", "")[:80]],
                                     400)
     code = request.args.get("code", "")
-    with _db_lock, db.connect(LOG_DB) as cx:
+    # No _db_lock: the code exchange waits on Fullscript, and the lock would stall
+    # every other request in this worker meanwhile.
+    with db.connect(LOG_DB) as cx:
         if not code or not _pp.consume_transaction(cx, request.args.get("state", ""),
                                                    _fsa.PROVIDER):
             return _fullscript_api_page("Fullscript was not connected",
@@ -17930,7 +17932,8 @@ def api_console_fullscript_catalog_search():
     from dashboard import fullscript_api as _fsa
     term = (request.args.get("q") or "").strip()[:120]
     try:
-        with _db_lock, db.connect(LOG_DB) as cx:
+        # No _db_lock: a search and its refresh wait on Fullscript.
+        with db.connect(LOG_DB) as cx:
             return jsonify(_fsa.search(cx, term))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

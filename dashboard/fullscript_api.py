@@ -179,7 +179,10 @@ def access_token(cx, post=None, now=None):
     cx.commit()
     if cur.rowcount != 1:
         # Another worker saved first. Its token is the one Fullscript keeps.
-        return _unseal(_stored(cx))["access_token"]
+        sealed = _stored(cx)
+        if not sealed:
+            raise NotConnected("Fullscript was disconnected during a refresh")
+        return _unseal(sealed)["access_token"]
     return fresh["access_token"]
 
 
@@ -206,10 +209,11 @@ def _slug(name):
 
 
 def blocked(name):
-    """True for a product on the never-recommend list, matched by its name."""
+    """True for a product on the never-recommend list, matched as whole words anywhere
+    in its name, so a brand or qualifier in front does not hide it."""
     from dashboard.related_products import DO_NOT_RECOMMEND
-    slug = _slug(name)
-    return any(slug == s or slug.startswith(s + "-") for s in DO_NOT_RECOMMEND)
+    slug = f"-{_slug(name)}-"
+    return any(f"-{s}-" in slug for s in DO_NOT_RECOMMEND)
 
 
 def search(cx, term, get=None, post=None):

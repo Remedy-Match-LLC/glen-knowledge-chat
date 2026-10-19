@@ -183,6 +183,41 @@ def test_a_never_recommend_product_is_dropped_even_when_relevant(cx):
                                                   "no search word in its name"]
 
 
+def test_a_never_recommend_name_is_caught_behind_a_brand_and_only_as_whole_words():
+    assert fsa.blocked("Digestive Food Tolerance")
+    assert fsa.blocked("Fungifuge")
+    assert not fsa.blocked("Food Tolerances Guide")
+    assert not fsa.blocked("Magnesium Glycinate")
+
+
+def test_a_disconnect_during_a_refresh_is_not_connected_rather_than_a_crash(cx):
+    fsa.exchange_code(cx, "C", post=_poster([], "A1", "R1", created=1_000_000))
+
+    def racing_post(url, json=None, timeout=None):
+        fsa.disconnect(cx)
+        return _Resp(200, {"access_token": "A2", "refresh_token": "R2", "expires_in": 7200})
+    with pytest.raises(fsa.NotConnected):
+        fsa.access_token(cx, post=racing_post, now=2_000_000)
+
+
+def test_the_route_tests_import_the_app_in_ci():
+    # A skipped route test would let CI pass with the routes unchecked.
+    import os
+    if os.environ.get("CI"):
+        assert _app_importable(), "app did not import, so the route tests were skipped"
+
+
+def _app_importable():
+    root = Path(__file__).resolve().parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    try:
+        importlib.import_module("app")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def test_a_search_with_no_word_of_four_letters_is_refused(cx):
     with pytest.raises(ValueError):
         fsa.search(cx, "B12 D3", get=_getter([], []))
