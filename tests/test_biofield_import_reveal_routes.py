@@ -70,8 +70,11 @@ def test_import_needs_confirm_then_appends_with_force(tmp_path, monkeypatch):
     tid = _new_test_with_email(client, "jane@x.com")
     client.post(f"/author/{tid}/e4l/import-reveal", json={})          # first import (1 row)
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
-    assert j == {"ok": False, "needs_confirm": True, "existing": 1}
-    j2 = client.post(f"/author/{tid}/e4l/import-reveal", json={"force": True}).get_json()
+    assert j["needs_confirm"] is True and j["existing"] == 1 and j["token"]
+    # The same layer again is covered (Glen, 2026-10-18); Glen adds it anyway.
+    assert [L["rule"] for L in j["preview"]["skip"]] == ["same heading"]
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
+                     json={"force": True, "token": j["token"], "add_anyway": [j["preview"]["skip"][0]["key"]]}).get_json()
     assert j2["ok"] is True and j2["imported"] == 1
     cx = sqlite3.connect(db)
     assert cx.execute("SELECT COUNT(*) FROM biofield_auth_chain").fetchone()[0] == 2
@@ -143,7 +146,7 @@ def test_allowing_a_stale_scan_does_not_also_bypass_the_existing_rows_confirm(
     assert j["ok"] is False and j["needs_confirm"] is True and j["existing"] == 1
 
     j = client.post(f"/author/{tid}/e4l/import-reveal",
-                    json={"allow_stale": True, "force": True}).get_json()
+                    json={"allow_stale": True, "force": True, "token": j["token"]}).get_json()
     assert j["ok"] is True
 
 

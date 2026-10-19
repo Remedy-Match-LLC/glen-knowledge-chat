@@ -36,6 +36,8 @@ HISTORY_TABLES = frozenset({
     "query_log", "remedy_match_email_sent", "review_link_tokens",
     "email_identity_aliases",         # an older alias table (people pillar); left as it is
     "inquiry_practitioners", "practitioner_inquiry_opt_outs", "practitioner_suggestions",
+    "biofield_reveal_preview",        # an hour-long Import Reveal preview (2026-10-18); its
+    #                                   email is a guard that the client has not changed
 })
 MERGE_OWN_TABLES = frozenset({
     "person_merges", "email_aliases", "portal_token_aliases", "person_merge_changes",

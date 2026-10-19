@@ -71,6 +71,11 @@ _STYLE = """
  .btn{background:var(--accent);color:#0c0e12;border:0;border-radius:8px;padding:7px 13px;
    font:inherit;font-weight:600;cursor:pointer}
  .btnrow{margin:6px 0 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+ .imp-preview{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+ .imp-head{font-weight:600}.imp-sub{margin-top:6px;font-weight:600;color:var(--muted)}
+ .imp-preview label.imp-row{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin:2px 0;color:inherit}
+ .imp-preview label.imp-row input{width:auto;margin:0}
+ .imp-why{color:var(--muted);font-size:12px}.imp-bar{display:flex;gap:8px;margin-top:8px}
  .chip{background:#0c0e12;border:1px solid var(--line);color:var(--accent);border-radius:999px;
    padding:2px 9px;font:inherit;font-size:12px;cursor:pointer}
  .ghost{background:#13161c;color:var(--fg);border:1px solid var(--line)}
@@ -1165,6 +1170,36 @@ impBusy(true);impStat('Importing\u2026');
 try{await importReveal0()}catch(e){impStat('Import failed.')}
 finally{impBusy(false)}
 }
+function impEl(tag,text,cls){var e=document.createElement(tag);if(text)e.textContent=text;
+ if(cls)e.className=cls;return e}
+// Resolves to {anyway:[layer key]} on Import, or null on Cancel. Built with textContent,
+// so a layer title can never become markup.
+function impPreview(j){return new Promise(function(done){
+ var p=j.preview||{add:[],skip:[]},box=impEl('div','','imp-preview');
+ var old=document.getElementById('impPreview');if(old)old.remove();box.id='impPreview';
+ box.appendChild(impEl('div','This session has '+j.existing+' layer(s). '+p.add.length
+  +' reveal layer(s) will be added, '+p.skip.length+' skipped as covered.','imp-head'));
+ if(p.recommended_unread)box.appendChild(impEl('div','The recommended infoceuticals on the scan '
+  +'could not be read, so that rule skipped nothing.','food'));
+ if(p.catalog_unread)box.appendChild(impEl('div','The condition catalog could not be read, '
+  +'so a heading was matched against this client\u2019s layers only.','food'));
+ if(p.add.length){box.appendChild(impEl('div','Added','imp-sub'));
+  p.add.forEach(function(L){box.appendChild(impEl('div',L.title+(L.remedy?' \u00b7 '+L.remedy:''),'imp-row'))})}
+ var boxes=[];
+ if(p.skip.length){box.appendChild(impEl('div','Skipped','imp-sub'));
+  p.skip.forEach(function(L){var row=impEl('label','','imp-row');var c=impEl('input');
+   c.type='checkbox';c.value=String(L.key);boxes.push(c);row.appendChild(c);
+   row.appendChild(document.createTextNode(' '+L.title+(L.remedy?' \u00b7 '+L.remedy:'')));
+   row.appendChild(impEl('span',L.rule+': '+L.why,'imp-why'));
+   row.appendChild(impEl('span','add anyway','imp-why'));box.appendChild(row)})}
+ var go=impEl('button','Import','btn'),no=impEl('button','Cancel','btn ghost');
+ go.type=no.type='button';
+ go.onclick=function(){box.remove();done({anyway:boxes.filter(function(c){return c.checked})
+  .map(function(c){return c.value})})};
+ no.onclick=function(){box.remove();done(null)};
+ var bar=impEl('div','','imp-bar');bar.appendChild(go);bar.appendChild(no);box.appendChild(bar);
+ var at=document.getElementById('impStat')||document.getElementById('impBtn');
+ at.parentNode.insertBefore(box,at.nextSibling);impStat('Review the reveal layers below.')})}
 async function importReveal0(){
   var body={};
   var j=await post('/author/__TID__/e4l/import-reveal',body);
@@ -1176,8 +1211,11 @@ async function importReveal0(){
     j=await post('/author/__TID__/e4l/import-reveal',body);
   }
   if(j && j.needs_confirm){
-    if(!confirm('This session already has '+j.existing+' layer(s). Add the reveal layers anyway?')){ impStat('Cancelled.'); return; }
-    body.force=true;
+    // Glen, 2026-10-18: only the reveal layers no Clinical layer covers are added.
+    // The preview names each skipped layer and why, with a box to add it anyway.
+    var pick=await impPreview(j);
+    if(!pick){ impStat('Cancelled.'); return; }
+    body.force=true;body.token=j.token;body.add_anyway=pick.anyway;
     j=await post('/author/__TID__/e4l/import-reveal',body);
   }
   if(j && j.ok){
