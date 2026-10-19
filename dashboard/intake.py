@@ -427,6 +427,10 @@ def import_response(cx, email, answers, now, source="practice-better"):
         a = existing["answers"] or {}
         if not a.get("_imported") and not a.get("_external"):
             return False
+        # An imported record the client has since corrected is theirs too: a
+        # re-import would replace their edits wholesale.
+        if a.get("self_edited_at"):
+            return False
     payload = {**(answers or {}), "_imported": source}
     _upsert(cx, email, payload, "submitted", now, now)
     return True

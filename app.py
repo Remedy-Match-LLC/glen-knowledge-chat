@@ -34295,8 +34295,8 @@ def console_intake_import():
     if not written:
         # The client's own portal submission stands; saying ok here hid that.
         return jsonify({"ok": False, "written": False,
-                        "error": "The client has their own portal submission, "
-                                 "so nothing was written"}), 409
+                        "error": "The client has their own portal submission or "
+                                 "has edited this one, so nothing was written"}), 409
     return jsonify({"ok": True, "written": True})
 
 

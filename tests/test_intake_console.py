@@ -169,3 +169,64 @@ def test_import_response_refuses_an_unknown_source():
     with pytest.raises(ValueError):
         intake.import_response(cx, "a@x.com", {}, "2026-10-18T00:00:00", source="pb")
     assert intake.import_response(cx, "a@x.com", {}, "2026-10-18T00:00:00") is True
+
+
+def test_a_reimport_relabels_an_earlier_import(client):
+    import app as appmod
+    from dashboard import intake
+    url = "/api/console/intake-import?key=K"
+    body = {"email": "rel@x.com", "answers": {"first_name": "Ann"}}
+    assert client.post(url, json=body).get_json()["written"] is True
+    assert client.post(url, json=dict(body, source="clinical-record")).get_json()["written"]
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        assert intake.get_response(cx, "rel@x.com")["answers"]["_imported"] == "clinical-record"
+
+
+def test_a_reimport_never_replaces_a_clients_own_edits():
+    from dashboard import intake
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    intake.init_intake_table(cx)
+    assert intake.import_response(cx, "e@x.com", {"first_name": "Ann"}, "2026-10-18T00:00:00")
+    a = dict(intake.get_response(cx, "e@x.com")["answers"], self_edited_at="2026-10-18T01:00:00")
+    intake._upsert(cx, "e@x.com", a, "submitted", "2026-10-18T01:00:00", "2026-10-18T00:00:00")
+    assert intake.import_response(cx, "e@x.com", {"first_name": "Other"},
+                                  "2026-10-18T02:00:00", source="clinical-record") is False
+    assert intake.get_response(cx, "e@x.com")["answers"]["first_name"] == "Ann"
+
+
+def _proxy(tmp_path, monkeypatch, answer):
+    import io
+    import json
+    import urllib.error
+    import urllib.request
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d
+    monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    sent = []
+
+    def fake(req, timeout=None):
+        sent.append(json.loads(req.data))
+        if isinstance(answer, int):
+            raise urllib.error.HTTPError(req.full_url, answer, "x", {}, io.BytesIO(
+                json.dumps({"ok": False, "written": False, "error": "own submission"}).encode()))
+        return io.BytesIO(json.dumps(answer).encode())
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    from biofield_local_app import create_app
+    return create_app(str(tmp_path / "chat_log.db")).test_client(), sent
+
+
+def test_the_local_proxy_forwards_source_only_when_given(tmp_path, monkeypatch):
+    client, sent = _proxy(tmp_path, monkeypatch, {"ok": True, "written": True})
+    client.post("/intake-import/submit", json={"email": "a@x.com", "answers": {}})
+    client.post("/intake-import/submit", json={"email": "a@x.com", "answers": {},
+                                               "source": "clinical-record"})
+    assert "source" not in sent[0] and sent[1]["source"] == "clinical-record"
+
+
+def test_the_local_proxy_passes_the_servers_refusal_through(tmp_path, monkeypatch):
+    client, _ = _proxy(tmp_path, monkeypatch, 409)
+    r = client.post("/intake-import/submit", json={"email": "a@x.com", "answers": {}})
+    assert r.status_code == 409
+    assert r.get_json() == {"ok": False, "written": False, "error": "own submission"}
