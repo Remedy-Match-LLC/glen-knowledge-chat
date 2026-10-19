@@ -1402,31 +1402,35 @@ async function programApply(mode){
  if(!confirm('Add this '+mode+' program to the causal chain?'))return;
  var j=await post('/author/__TID__/program',{mode:mode,apply:true,force:true});
  if(j.ok){location.reload()}else{alert(j.error||'Could not add it.')}}
-async function clinicalLayers(){
- var st=document.getElementById('cllstat'),out=document.getElementById('cllresult');
- st.textContent=' building…';out.innerHTML='';
- var j=await post('/author/__TID__/clinical-items/layers',{});
- if(!j.ok){st.textContent=j.error||'Could not build them.';return}
- st.textContent=' '+j.layers.length+' layer(s) from '+j.checked+' checked';
- var h='';
- j.layers.forEach(function(L,i){
-  h+='<div style="margin-top:6px"><b>Layer '+(i+1)+'</b> &mdash; '+_esc(L.pattern)+'<br>';
-  h+='&nbsp;&nbsp;'+_esc(L.label)+'<br>';
-  h+='&nbsp;&nbsp;'+(L.remedies.length?_esc(L.remedies.join(', ')):'<span class=food>no remedy chosen yet</span>');
-  h+='</div>'});
- if(j.no_pattern&&j.no_pattern.length)h+='<div style="margin-top:8px" class=food>'+
-   j.no_pattern.length+' checked with no stress pattern, so skipped: '+
-   _esc(j.no_pattern.join(', '))+'</div>';
- if(j.existing_layers)h+='<div style="margin-top:8px">This intake already has '+
-   j.existing_layers+' layer(s); these would be added after them.</div>';
- if(j.layers.length)h+='<div class=btnrow style="margin-top:8px">'+
-   '<button class="btn" onclick="clinicalLayersApply()">Add these '+j.layers.length+
-   ' layer(s)</button></div>';
+var _cluDigest='';
+async function clinicalLayersUpdate(){
+ var st=document.getElementById('clustat'),out=document.getElementById('cluresult');
+ st.textContent=' comparing…';out.innerHTML='';
+ var j=await post('/author/__TID__/clinical-items/layers/update',{});
+ if(!j.ok){st.textContent=j.error||'Could not compare them.';return}
+ _cluDigest=j.digest;
+ st.textContent=' '+j.changes.length+' change(s) proposed';
+ var h='',verb={add:'Add',remove:'Remove',new:'New layer'};
+ j.changes.forEach(function(c){
+  var what=c.kind=='new'?_esc(c.layer)+': '+(c.remedies.length?_esc(c.remedies.join(', ')):'no remedy ticked yet')
+   :_esc(c.remedy)+(c.kind=='add'?' to ':' from ')+_esc(c.layer)+(c.confirmed_layer?' (confirmed layer)':'');
+  h+='<label style="display:block;margin-top:4px"><input type=checkbox class=clu-pick value="'+
+   _esc(c.id)+'"'+(c.preticked?' checked':'')+'> '+verb[c.kind]+': '+what+'</label>'});
+ (j.elsewhere||[]).forEach(function(e){h+='<div style="margin-top:4px">'+_esc(e.remedy)+
+  ' is ticked for '+_esc(e['for'])+' but is already on '+_esc(e.layer)+', so not added again.</div>'});
+ (j.stale||[]).forEach(function(s){h+='<div style="margin-top:4px">'+_esc(s.layer)+
+  ': its rows are no longer ticked. Left as it is.</div>'});
+ if(j.no_pattern&&j.no_pattern.length)h+='<div style="margin-top:8px">'+j.no_pattern.length+
+  ' ticked with no stress pattern and no topic, so skipped: '+_esc(j.no_pattern.join(', '))+'</div>';
+ if(j.changes.length)h+='<div class=btnrow style="margin-top:8px"><button class=btn '+
+  'onclick="clinicalLayersUpdateApply()">Apply the ticked changes</button></div>';
+ else h+='<div style="margin-top:6px">The Clinical layers already match the Clinical Summary.</div>';
  out.innerHTML=h}
-async function clinicalLayersApply(){
- if(!confirm('Add these layers to the causal chain?'))return;
- var j=await post('/author/__TID__/clinical-items/layers',{apply:true,force:true});
- if(j.ok){location.reload()}else{alert(j.error||'Could not add them.')}}
+async function clinicalLayersUpdateApply(){
+ var chosen=[].map.call(document.querySelectorAll('.clu-pick:checked'),function(b){return b.value});
+ if(!chosen.length){alert('Nothing is ticked.');return}
+ var j=await post('/author/__TID__/clinical-items/layers/update',{apply:true,digest:_cluDigest,chosen:chosen});
+ if(j.ok){location.reload()}else{alert(j.error||'Could not apply them.')}}
 async function addClinicalItem(){
  var input=document.getElementById('clinicalNew'),label=(input&&input.value||'').trim();
  if(!label)return;
@@ -2839,13 +2843,15 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "<button class=btn onclick=clinicalToStresses()>"
             "Add checked patterns &rarr; Stresses</button>"
             "<span id=clin2stat class=food></span></div>"
-            # Glen, 2026-09-18: layers from the Clinical Summary ALONE -- its checked
-            # patterns and their chosen remedies, no scan findings. Full and Minimum
-            # are the buttons that pull the E4L layers in as well.
+            # Glen, 2026-10-18: bring the existing layers up to date with the
+            # Clinical Summary, rather than append them again. Previews first. On
+            # 2026-10-19 it replaced "Clinical layers -> propose" (Glen: "yes"),
+            # which only appended, so a second run duplicated every layer. Like that
+            # button it reads the Clinical Summary alone, never a scan finding.
             "<div class=btnrow style='margin-top:10px'>"
-            "<button class=btn onclick=clinicalLayers()>Clinical layers &rarr; propose</button>"
-            "<span id=cllstat class=food></span></div>"
-            "<div id=cllresult class=food style='margin-top:6px'></div>"
+            "<button class=btn onclick=clinicalLayersUpdate()>Update Clinical layers</button>"
+            "<span id=clustat class=food></span></div>"
+            "<div id=cluresult class=food style='margin-top:6px'></div>"
             # Glen, 2026-09-16: one sequence balancing the clinical and the scan
             # factors together, grouped by what each tissue does rather than where it
             # sits. It PROPOSES; nothing is written until he reads it and confirms.

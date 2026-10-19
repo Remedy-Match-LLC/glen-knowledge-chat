@@ -406,12 +406,6 @@ def test_a_remedy_repeated_across_two_items_appears_once():
     assert got[0]["remedies"] == ["One"]
 
 
-def _chain_count(db, tid):
-    with sqlite3.connect(db) as cx:
-        return cx.execute("SELECT COUNT(*) FROM biofield_auth_chain WHERE test_id=?",
-                          (int(str(tid).lstrip("a") or 0),)).fetchone()[0]
-
-
 def _clinical_layers_app(tmp_path, monkeypatch):
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
     import dashboard
@@ -427,39 +421,6 @@ def _clinical_layers_app(tmp_path, monkeypatch):
     return db, tid, app.test_client()
 
 
-def test_the_clinical_layers_button_proposes_without_writing(tmp_path, monkeypatch):
-    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
-    j = client.post(f"/author/{tid}/clinical-items/layers", json={}).get_json()
-    assert j["ok"] and j["proposed"] is True
-    assert [L["pattern"] for L in j["layers"]] == ["Adrenal Support"]
-    assert j["layers"][0]["remedies"] == ["Adrenal Syntropy"]
-    assert _chain_count(db, tid) == 0, "the proposal wrote to the causal chain"
-
-
-def test_the_clinical_layers_button_writes_on_apply(tmp_path, monkeypatch):
-    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
-    j = client.post(f"/author/{tid}/clinical-items/layers",
-                    json={"apply": True, "force": True}).get_json()
-    assert j["ok"] and j["applied"] is True and j["layers_added"] == 1
-    assert _chain_count(db, tid) == 1
-    with sqlite3.connect(db) as cx:
-        row = cx.execute("SELECT head, remedy, origin FROM biofield_auth_chain "
-                         "WHERE test_id=?", (int(str(tid).lstrip("a") or 0),)).fetchone()
-    assert row[0] == "Adrenal Support" and row[1] == "Adrenal Syntropy"
-
-
-def test_the_clinical_layers_button_sees_no_scan_findings(tmp_path, monkeypatch):
-    """Glen: this one is patterns and remedies from the Clinical Summary ONLY.
-    Full and Minimum are the buttons that pull the E4L layers in as well."""
-    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
-    from dashboard.biofield_stress import add_stress, init_stress_tables
-    with sqlite3.connect(db) as cx:
-        init_stress_tables(cx)
-        add_stress(cx, tid, "ED12 Kidney Driver", source="scan", balance="required")
-    j = client.post(f"/author/{tid}/clinical-items/layers", json={}).get_json()
-    assert [L["pattern"] for L in j["layers"]] == ["Adrenal Support"]
-
-
 def _hand_added_sleep(db, tid):
     """Alyssa Fukushima, test a40, 2026-09-22: Sleep Difficulty was ADDED by hand on
     the page, so it lives only as an accepted decision, never in the profile."""
@@ -468,17 +429,6 @@ def _hand_added_sleep(db, tid):
                "Manually added to clinical checklist")
         save_selection(cx, tid, "Sleep Difficulty", ["Sleep Syntropy"])
         remember_stress_pattern(cx, "Sleep Difficulty", "Sleep Regulation")
-
-
-def test_the_clinical_layers_button_sees_a_hand_added_item(tmp_path, monkeypatch):
-    """Glen, 2026-09-22: two checked items, one layer proposed. The page folds
-    hand-added items into the checklist; the button rebuilt it without them."""
-    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
-    _hand_added_sleep(db, tid)
-    j = client.post(f"/author/{tid}/clinical-items/layers", json={}).get_json()
-    assert j["checked"] == 2
-    assert [L["pattern"] for L in j["layers"]] == ["Adrenal Support", "Sleep Regulation"]
-    assert j["layers"][1]["remedies"] == ["Sleep Syntropy"]
 
 
 def test_add_checked_patterns_sees_a_hand_added_item(tmp_path, monkeypatch):
@@ -500,21 +450,6 @@ def test_a_remedy_shared_by_two_layers_lands_once_on_the_first():
          "selected_remedies": ["Sleep Syntropy", "stress release"]}])
     assert [L["remedies"] for L in got] == [
         ["Stress Release", "Nous Energy"], ["Sleep Syntropy"]]
-
-
-def test_applying_clinical_layers_skips_a_remedy_already_on_the_chain(tmp_path, monkeypatch):
-    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
-    with sqlite3.connect(db) as cx:
-        add_chain_row(cx, tid, 1, "Adrenal", "Adrenal", "Adrenal Syntropy",
-                      confirmed=1, origin="live")
-    j = client.post(f"/author/{tid}/clinical-items/layers",
-                    json={"apply": True, "force": True}).get_json()
-    assert j["ok"] and j["applied"] is True
-    with sqlite3.connect(db) as cx:
-        n = cx.execute("SELECT COUNT(*) FROM biofield_auth_chain WHERE test_id=? "
-                       "AND lower(remedy)='adrenal syntropy'",
-                       (int(str(tid).lstrip("a") or 0),)).fetchone()[0]
-    assert n == 1, "Adrenal Syntropy was added a second time"
 
 
 def test_family_history_is_quoted_by_its_condition():
