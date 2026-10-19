@@ -275,8 +275,10 @@ def act(cx, test_id, fa, action, name=None, value=None):
         raise ValueError("that product is not in this focus area")
     if action == "item_on":
         # Ticking a greyed product unhides it and selects it in one step (Glen,
-        # 2026-10-18). It stays unhidden if it is later unticked.
-        _set_pick(cx, test_id, fa, name, checked=1, via="item", unhidden=1)
+        # 2026-10-18). It stays unhidden if it is later unticked. Only a greyed one:
+        # an ordinary tick must not exempt it from a switch turned on later.
+        greyed = _norm(name) in _hidden(cx, test_id, fa, names)
+        _set_pick(cx, test_id, fa, name, checked=1, via="item", **({"unhidden": 1} if greyed else {}))
         _set_group(cx, test_id, fa, checked=1)
     elif action == "item_off":
         _set_pick(cx, test_id, fa, name, checked=0, via="")

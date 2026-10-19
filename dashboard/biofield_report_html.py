@@ -2326,8 +2326,8 @@ def _clinical_sections_html(sections, remedy_choice):
             # make Clinical Summary match PRL"). All never ticks a greyed item.
             greyed = bool(entry.get("hidden"))
             item_cls = "clinical-section-item greyed" if greyed else "clinical-section-item"
-            disabled = (f" data-greyed=1 title=\"Hidden: she avoids botanicals. Tick to "
-                        f"unhide and select.\"" if greyed else "")
+            disabled = (f" data-greyed=1 title=\"Hidden: this client avoids botanicals. "
+                        f"Tick to unhide and select.\"" if greyed else "")
             if key in REMEDY_SECTIONS:
                 choice = remedy_choice(name)
                 if greyed:

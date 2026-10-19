@@ -317,3 +317,15 @@ def test_loader_refuses_a_name_not_in_the_seed_and_rolls_back(tmp_path):
     assert report["areas_mapped"] == 1 and report["areas_unmapped"] == ["Memory"]
     con.rollback()
     assert con.execute("SELECT COUNT(*) FROM biofield_prl_rating").fetchone() == (0,)
+
+
+def test_a_tick_before_the_switch_does_not_exempt_a_product_from_it(cx):
+    a = _names()[0]
+    ps.upsert_rating(cx, PANCREAS, {"name": a, "overall": 7, "research": 5, "uniqueness": 8,
+                                    "botanical": True}, origin_test="a49")
+    ps.act(cx, "a49", PANCREAS, "item_on", a)
+    ps.act(cx, "a49", PANCREAS, "item_off", a)
+    cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="")
+    assert [i["name"] for i in _area(cx)["items"] if i.get("hidden")] == [a]
+    ps.act(cx, "a49", PANCREAS, "all_on")
+    assert a not in _ticked(_area(cx))

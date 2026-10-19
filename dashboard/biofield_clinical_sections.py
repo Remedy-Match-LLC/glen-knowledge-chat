@@ -623,8 +623,10 @@ def _greyed(cx, test_id, item_key, section, ticked):
         return set()
     exceptions = _exception_keys(setting.get("exceptions"))
     unhidden = _unhidden(cx, test_id, item_key)
+    # A remedy can show under the other remedy section by its name, with its rating.
+    sections = REMEDY_SECTIONS if section in REMEDY_SECTIONS else (section,)
     return {e["name_key"] for e in _catalog(cx, item_key)
-            if e["section"] == section and e["botanical"]
+            if e["section"] in sections and e["botanical"]
             and (e["reviewed"] or e["origin_test"] in ("", str(test_id)))
             and e["name_key"] not in ticked and (section, e["name_key"]) not in unhidden
             and not _allowed_botanical(e["name"], exceptions)}

@@ -369,7 +369,7 @@ def test_switch_renders_and_hidden_count_shows(cx):
     # Glen, 2026-10-18: "yes, make Clinical Summary match PRL". No Unhide button: the
     # greyed item's own tick unhides and selects it.
     assert "Unhide</button>" not in html and "clinicalUnhide" not in html
-    assert ('data-name="Turmeric" data-greyed=1 title="Hidden: she avoids botanicals. '
+    assert ('data-name="Turmeric" data-greyed=1 title="Hidden: this client avoids botanicals. '
             'Tick to unhide and select." onchange=saveClinicalSectionItem') in html
 
 
@@ -757,3 +757,25 @@ def test_both_tick_handlers_and_the_all_box_respect_the_greyed_mark():
         assert "await clinicalUngrey(" in body, fn
     assert ".clinical-section-choice:not([data-greyed])" in src
     assert ".clinical-remedy-choice:not([data-greyed])" in src
+
+
+def test_a_greyed_remedy_row_renders_its_box_marked_and_enabled(cx):
+    cs.upsert_item(cx, "Gut", cs.FORMULATIONS, _item("Herbal Blend", 8, 5, 5, botanical=True))
+    cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="")
+    setting = cs.botanical_setting(cx, "a49")
+    html = render_clinical_checklist(
+        [{"label": "Gut", "common_remedies": ["Herbal Blend"],
+          "sections": cs.sections_for(cx, "a49", "Gut", remedies=["Herbal Blend"],
+                                      botanical=setting)}], botanical=setting)
+    box = html[html.index('class=clinical-remedy-choice type=checkbox data-greyed=1'):]
+    box = box[:box.index(">")]
+    assert 'value="Herbal Blend"' in box and "disabled" not in box
+
+
+def test_all_skips_a_greyed_remedy_rated_under_the_other_remedy_section(cx):
+    cs.upsert_item(cx, "Gut", cs.FORMULATIONS, _item("ED8 Stomach Infoceutical", 8, 5, 5,
+                                                     botanical=True))
+    cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="")
+    chosen = cs.select_all(cx, "a49", "Gut", cs.INFOCEUTICALS, True,
+                           ["ED8 Stomach Infoceutical"], remedies=[])
+    assert chosen == []
