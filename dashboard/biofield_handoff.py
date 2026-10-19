@@ -6,7 +6,8 @@ Bobbi. Pushed to prod as a portal ai_draft; Rae publishes it from the console.
 """
 
 
-def build_portal_seed(cx, test_id, resolve_slug, name=None):
+def build_portal_seed(cx, test_id, resolve_slug, name=None, terrain_restore_ok=None,
+                      name_of=None, ready=None):
     """Return a portal-seed content dict {greeting, layers, reorder_items} from the
     authored chain. Layers are FLAT ({title, meaning, remedy (name string), dosing});
     reorder_items resolve each remedy to a catalog slug via resolve_slug(name)->slug|None.
@@ -37,9 +38,25 @@ def build_portal_seed(cx, test_id, resolve_slug, name=None):
         from dashboard.biofield_invoice import RECOMMEND_ONLY_SLUGS
         if slug in RECOMMEND_ONLY_SLUGS:
             slug = None              # on the report, never carted or invoiced (Glen 2026-10-01)
-        if slug and slug not in seen:
-            seen.add(slug)
+        if slug:
             reorder.append({"slug": slug, "name": remedy})
+    # All "in Terrain Restore" items are one bottle of Terrain Restore (Glen,
+    # 2026-10-19); then each product once.
+    from dashboard.biofield_invoice import TERRAIN_RESTORE_SLUG, fold_terrain_restore
+    # The caller that holds the catalog says whether plain Terrain Restore can be
+    # sold; without it, it must at least resolve.
+    base_ok = terrain_restore_ok
+    if base_ok is None:
+        try:
+            base_ok = resolve_slug("Terrain Restore") == TERRAIN_RESTORE_SLUG
+        except Exception:
+            base_ok = False
+    folded = []
+    for item in fold_terrain_restore(reorder, base_ok, name_of=name_of, ready=ready):
+        if item["slug"] not in seen:
+            seen.add(item["slug"])
+            folded.append(item)
+    reorder = folded
     first = ((name or "").split() or ["there"])[0]
     return {
         "greeting": ("Aloha " + first + " \U0001F33A\n\nHere is your Biofield Analysis — the "

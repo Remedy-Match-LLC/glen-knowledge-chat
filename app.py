@@ -26451,9 +26451,13 @@ def _portal_priced_lines(items, email=None):
         subtotal_cents += unit_cents * qty
         lines.append({"name": p["name"], "amount": round(unit_cents / 100.0, 2),
                       "qty": qty, "item_id": p.get("qbo_item_id"), "description": display_name})
-        items_rec.append({"name": display_name, "qty": qty, "desc": display_name,
-                          "slug": slug, "format": fmt, "unit_cents": unit_cents,
-                          "line_cents": unit_cents * qty})
+        rec = {"name": display_name, "qty": qty, "desc": display_name,
+               "slug": slug, "format": fmt, "unit_cents": unit_cents,
+               "line_cents": unit_cents * qty}
+        # A folded Terrain Restore line keeps its ingredient note (Glen, 2026-10-19).
+        if it.get("note"):
+            rec["note"] = str(it["note"])[:1000]
+        items_rec.append(rec)
     return lines, items_rec, subtotal_cents
 
 
@@ -26965,6 +26969,12 @@ def _merge_accepted_recommendation_items(cx, email, reorder_items):
         if not rec or rec.get("status") != "accepted":
             return base
         have = {(it.get("slug") or "").strip().lower() for it in base}
+        # An ingredient already inside a folded Terrain Restore bottle is not added
+        # again as its own line (2026-10-19).
+        from dashboard.biofield_invoice import held_slugs as _held_slugs
+        for it in base:
+            if isinstance(it, dict):
+                have |= _held_slugs(it)
         for it in (rec.get("items") or []):
             slug = (it.get("slug") or "").strip().lower()
             if not slug or slug in have:
@@ -26975,6 +26985,15 @@ def _merge_accepted_recommendation_items(cx, email, reorder_items):
                 qty = 1
             base.append(_reorder_item_from_slug(slug, qty))
             have.add(slug)
+        # A recommended "in Terrain Restore" ingredient joins the client's bottle,
+        # never a second $70 line beside it (2026-10-19).
+        if any(isinstance(it, dict) and it.get("held") for it in base):
+            from dashboard import biofield_invoice as _bfi
+            base = _bfi.fold_reorder_items(
+                base, name_of=lambda sl: (_get_product(sl) or {}).get("name"),
+                base_ok=bool(_get_product(_bfi.TERRAIN_RESTORE_SLUG))
+                        and not _waitlist_block(_bfi.TERRAIN_RESTORE_SLUG),
+                ready=lambda sl: bool(_get_product(sl)) and not _waitlist_block(sl))
         return base
     except Exception:
         return base
@@ -27834,6 +27853,8 @@ def api_client_portal(token):
         display.append({
             "slug": slug, "qty": int(it.get("qty", 1) or 1),
             "name": (p or {}).get("name", slug), "price_cents": special,
+            # A folded Terrain Restore line names its ingredients (Glen, 2026-10-19).
+            **({"note": str(it["note"])[:1000]} if it.get("note") else {}),
             "regular_price_cents": regular,
             "is_special": bool(special is not None and regular is not None and int(special) < int(regular)),
             "refill_eligible": bool(p and _capsule_formats_ok(p)),
@@ -30679,6 +30700,18 @@ def _portal_open_cart(cx, portal, *, seed=True):
         curated = _merge_accepted_recommendation_items(cx, email, curated)
     except Exception:
         pass
+    # A folded Terrain Restore line replaces the ingredient rows an earlier seed put
+    # in the cart, or checkout would bill the bottle and each ingredient (2026-10-19).
+    # Only rows this seeding added go; a row the client added stays.
+    from dashboard.biofield_invoice import TERRAIN_RESTORE_SLUG as _TR, held_slugs as _held_slugs
+    _tr_sellable = bool(_get_product(_TR)) and not _waitlist_block(_TR)
+    for item in curated:
+        if (_tr_sellable and isinstance(item, dict)
+                and (item.get("slug") or "").strip().lower() == _TR):
+            for _gone in _held_slugs(item) - {_TR}:
+                cx.execute("DELETE FROM cart_items WHERE token=? AND slug=? "
+                           "AND source='portal-curated'", (token, _gone))
+            cx.commit()
     for item in curated:
         slug = (item.get("slug") or "").strip().lower() if isinstance(item, dict) else ""
         if not slug or not _get_product(slug) or _waitlist_block(slug):
@@ -30733,11 +30766,17 @@ def _portal_cart_payload(cx, cart_token, portal):
         curated = curated_by_slug.get(item["slug"]) or {}
         if _curated_unit_cents(curated) is not None:
             priced_item["price_cents"] = _curated_unit_cents(curated)
+        # The ingredient note of a folded Terrain Restore line, from the report only.
+        priced_item.pop("note", None)
+        if curated.get("note"):
+            priced_item["note"] = str(curated["note"])[:1000]
         price_input.append(priced_item)
     _lines, priced, _subtotal = _portal_priced_lines(price_input, email=email)
     priced_by_slug = {item["slug"]: item for item in priced}
     for item in raw_items:
         detail = priced_by_slug.get(item["slug"]) or {}
+        if detail.get("note"):
+            item["note"] = detail["note"]
         product = _get_product(item["slug"]) or {}
         item["price_cents"] = detail.get("unit_cents")
         item["regular_price_cents"] = product.get("price_cents")
@@ -33544,6 +33583,9 @@ def api_client_portal_checkout(token):
             # price all the way into Stripe Checkout.
             priced_item = {"slug": slug, "qty": qty}
             curated_item = curated_by_slug.get(slug) or {}
+            # The ingredient note comes from the stored report, never the post.
+            if curated_item.get("note"):
+                priced_item["note"] = str(curated_item["note"])[:1000]
             if _curated_unit_cents(curated_item) is not None:
                 priced_item["price_cents"] = _curated_unit_cents(curated_item)
             items.append(priced_item)
@@ -33877,6 +33919,17 @@ def api_console_biofield_publish():
     content, has = _biofield_content_clean(body.get("content") or {})
     if not has:
         return jsonify({"error": "Add some content — at least one layer, a video, or a greeting."}), 400
+    # Every "in Terrain Restore" item is one Terrain Restore line (Glen, 2026-10-19),
+    # whichever editor built the list: "Sync order list from layers" rebuilds one
+    # slug per ingredient, and checkout would bill each of them.
+    if isinstance(content.get("reorder_items"), list):
+        from dashboard import biofield_invoice as _bfi
+        content["reorder_items"] = _bfi.fold_reorder_items(
+            content["reorder_items"],
+            name_of=lambda sl: (_get_product(sl) or {}).get("name"),
+            base_ok=bool(_get_product(_bfi.TERRAIN_RESTORE_SLUG))
+                    and not _waitlist_block(_bfi.TERRAIN_RESTORE_SLUG),
+            ready=lambda sl: bool(_get_product(sl)) and not _waitlist_block(sl))
     from dashboard import client_portal as _cp
     # Publishing a report makes it the client's CURRENT one (wins over any older
     # reveal report regardless of date), and keeps the pointer the hand-off set —
@@ -56987,7 +57040,10 @@ def console_client_recommended_products():
             qty = max(1, int(item.get("qty") or 1))
         except (TypeError, ValueError):
             qty = 1
-        products.append({"slug": slug, "qty": qty, "source": "biofield"})
+        rec = {"slug": slug, "qty": qty, "source": "biofield"}
+        if item.get("note"):          # a folded Terrain Restore line (2026-10-19)
+            rec["note"] = str(item["note"])[:1000]
+        products.append(rec)
     return jsonify({"ok": True, "products": products,
                     "scan_date": (report or {}).get("scan_date") or ""})
 

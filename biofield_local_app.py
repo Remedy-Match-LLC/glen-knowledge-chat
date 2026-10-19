@@ -2120,7 +2120,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             catalog = invoice_fetch_catalog()
             content = biofield_handoff.build_portal_seed(
                 cx, test_id, lambda nm: biofield_invoice.resolve_line_slug(nm, catalog),
-                name=client.get("name"))
+                name=client.get("name"),
+                terrain_restore_ok=biofield_invoice.terrain_restore_sellable(catalog),
+                name_of=lambda sl: next((c.get("name") for c in catalog or []
+                                         if c.get("slug") == sl), None),
+                ready=lambda sl: not biofield_invoice.is_not_ready(sl, catalog))
             # The scan date keys the portal's per-scan report AND marks this hand-off's
             # report CURRENT, so the manual Biofield wins over a stale reveal. Fall back
             # to today when the test carries no date.
@@ -2166,12 +2170,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 slug = (item.get("slug") or "").strip()
                 if not slug or biofield_invoice.is_not_ready(slug, catalog):
                     continue
-                name_key = (item.get("name") or "").strip().lower()
-                resolved_remedies.append({
+                # A folded Terrain Restore line holds several remedies: its count is
+                # the largest of theirs.
+                names = biofield_invoice.held_names(item)
+                line = {
                     "slug": slug,
-                    "qty": qty_by_name.get(name_key, 1),
+                    "qty": max(qty_by_name.get((n or "").strip().lower(), 1) for n in names),
                     "source": "biofield",
-                })
+                }
+                if item.get("note"):
+                    line["note"] = item["note"]
+                resolved_remedies.append(line)
             if resolved_remedies:
                 built["lines"] = ([{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}]
                                   if include_fee else []) + resolved_remedies
