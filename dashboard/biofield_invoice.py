@@ -207,67 +207,111 @@ def terrain_restore_note(ingredients):
     return "With " + ", ".join(names[:-1]) + " and " + names[-1]
 
 
+def _qty(value):
+    try:
+        return max(1, int(value or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 def fold_terrain_restore(items, base_ok, name_of=None, ready=None):
     """Every "in Terrain Restore" item (and plain Terrain Restore) as ONE Terrain
     Restore item, at the place of the first, in the given (layer) order.
 
     `items` are dicts carrying the remedy "name" and a resolved "slug"; any "qty" is
-    the largest among them. The folded item keeps the first one's other keys (source,
-    price_cents), names its ingredients in "note", each once, and lists the remedy
-    names it holds in "names". When the plain Terrain Restore product cannot be
-    sold (`base_ok` False) nothing is folded, so nothing is billed as a product that
-    is not there.
+    the largest among them. The folded item names its ingredients in "note", each
+    once, and lists what it holds in "held" as {name, slug}: the authored name, so a
+    count looked up by name is found, and the ingredient's own product, so the line
+    can be unfolded again. When the plain Terrain Restore product cannot be sold
+    (`base_ok` False) nothing is folded, so nothing is billed as a product that is
+    not there.
 
     `name_of(slug)` gives the catalog name, so a remedy written without the suffix
     that still resolves to an "in Terrain Restore" product folds too. An item whose
     slug `ready(slug)` refuses stays its own item, so the caller's not-ready check
-    still sees it and a bottle is never billed for an ingredient that cannot be had."""
-    if not base_ok:
-        return list(items or [])
-    out, folded, ingredients = [], None, []
+    still sees it and a bottle is never billed for an ingredient that cannot be had.
+
+    A price override counts only when it was set on Terrain Restore itself (an item
+    whose slug is terrain-restore, or "_tr_price" from a line folded before). An
+    ingredient's own override never prices the bottle."""
+    out, folded, ingredients, price = [], None, [], None
     for it in items or []:
+        if not isinstance(it, dict):
+            out.append(it)
+            continue
         name = it.get("name")
         if terrain_restore_ingredient(name) is None and name_of and it.get("slug"):
             name = name_of(it["slug"]) or name
         ingredient = terrain_restore_ingredient(name)
-        if ingredient is None or not it.get("slug") or (ready and not ready(it["slug"])):
-            out.append(it)
+        if (not base_ok or ingredient is None or not it.get("slug")
+                or (ready and not ready(it["slug"]))):
+            out.append({k: v for k, v in it.items() if k != "_tr_price"})
             continue
         if folded is None:
-            folded = dict(it, slug=TERRAIN_RESTORE_SLUG, name="Terrain Restore", names=[])
+            folded = {k: v for k, v in it.items() if k not in ("price_cents", "_tr_price", "note")}
+            folded.update(slug=TERRAIN_RESTORE_SLUG, name="Terrain Restore", held=[])
             out.append(folded)
         elif "qty" in it:
-            folded["qty"] = max(int(folded.get("qty") or 1), int(it.get("qty") or 1))
-        folded["names"].append(name)
+            folded["qty"] = max(_qty(folded.get("qty")), _qty(it.get("qty")))
+        if price is None:
+            if it.get("_tr_price") is not None:
+                price = it["_tr_price"]
+            elif it["slug"] == TERRAIN_RESTORE_SLUG and it.get("price_cents") is not None:
+                price = it["price_cents"]
+        held = {"name": it.get("name") or name, "slug": it["slug"]}
+        if held not in folded["held"]:
+            folded["held"].append(held)
         if ingredient and ingredient.lower() not in {i.lower() for i in ingredients}:
             ingredients.append(ingredient)
     if folded is not None:
         note = terrain_restore_note(ingredients)
         if note:
             folded["note"] = note
-        else:
-            folded.pop("note", None)
+        if price is not None:
+            folded["price_cents"] = price
     return out
+
+
+def held_names(item):
+    """The remedy names a folded Terrain Restore line holds, or [its own name]."""
+    held = [h.get("name") for h in (item.get("held") or []) if isinstance(h, dict)]
+    return [n for n in held if n] or [item.get("name") or ""]
+
+
+def held_slugs(item):
+    """The ingredient products a folded Terrain Restore line holds."""
+    return {(h.get("slug") or "").strip().lower() for h in (item.get("held") or [])
+            if isinstance(h, dict) and h.get("slug")}
 
 
 def fold_reorder_items(items, name_of, base_ok, ready=None):
     """A reorder list ({slug, qty, ...}) folded as the Biofield builders fold it, for
     a list that arrives already resolved: an editor's, a paste, or a sync from layers.
 
-    A Terrain Restore item that was folded before keeps what it holds: its "names",
-    or failing those its note read back. The result holds each slug once at its
-    largest count."""
+    A Terrain Restore line folded before is opened back into the ingredients it
+    holds, each with its own product, then folded again. So a republish after
+    Terrain Restore stops selling gives the old per-ingredient lines back, and an
+    ingredient that stopped being ready comes out of the bottle. The result holds
+    each slug once at its largest count."""
     cands = []
     for it in items or []:
         if not isinstance(it, dict) or not it.get("slug"):
             cands.append(it)
             continue
-        names = [n for n in (it.get("names") or []) if isinstance(n, str) and n.strip()]
-        if not names and it["slug"] == TERRAIN_RESTORE_SLUG:
-            names = ["%s in Terrain Restore" % n for n in note_ingredients(it.get("note"))]
-        base = {k: v for k, v in it.items() if k not in ("names", "note", "name")}
-        if names:
-            cands.extend(dict(base, name=n) for n in names)
+        base = {k: v for k, v in it.items() if k not in ("held", "names", "note", "name")}
+        held = [h for h in (it.get("held") or [])
+                if isinstance(h, dict) and h.get("slug") and h.get("name")]
+        if not held and it["slug"] == TERRAIN_RESTORE_SLUG and it.get("note"):
+            # A line folded by an older build: only its note says what it holds.
+            held = [{"name": "%s in Terrain Restore" % n, "slug": TERRAIN_RESTORE_SLUG}
+                    for n in note_ingredients(it.get("note"))]
+        if held:
+            price = base.pop("price_cents", None)
+            for h in held:
+                c = dict(base, slug=h["slug"], name=h["name"])
+                if price is not None:
+                    c["_tr_price"] = price
+                cands.append(c)
         else:
             cands.append(dict(base, name=name_of(it["slug"]) or ""))
     out, by_slug = [], {}
@@ -275,21 +319,19 @@ def fold_reorder_items(items, name_of, base_ok, ready=None):
         if not isinstance(it, dict) or not it.get("slug"):
             out.append(it)
             continue
+        it = {k: v for k, v in it.items() if k != "name"}
         if it["slug"] in by_slug:
             seen = by_slug[it["slug"]]
-            seen["qty"] = max(int(seen.get("qty") or 1), int(it.get("qty") or 1))
+            seen["qty"] = max(_qty(seen.get("qty")), _qty(it.get("qty")))
             continue
-        if it["slug"] != TERRAIN_RESTORE_SLUG or "names" not in it:
-            it = {k: v for k, v in it.items() if k != "name"}
-        else:
-            it.pop("name", None)
         by_slug[it["slug"]] = it
         out.append(it)
     return out
 
 
 def note_ingredients(note):
-    """The ingredients a terrain_restore_note names, in order."""
+    """The ingredients a terrain_restore_note names, in order. Display text read
+    back, so it is used only for a line that carries no "held" list."""
     text = str(note or "").strip()
     if not text.startswith("With "):
         return []

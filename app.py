@@ -26957,6 +26957,12 @@ def _merge_accepted_recommendation_items(cx, email, reorder_items):
         if not rec or rec.get("status") != "accepted":
             return base
         have = {(it.get("slug") or "").strip().lower() for it in base}
+        # An ingredient already inside a folded Terrain Restore bottle is not added
+        # again as its own line (2026-10-19).
+        from dashboard.biofield_invoice import held_slugs as _held_slugs
+        for it in base:
+            if isinstance(it, dict):
+                have |= _held_slugs(it)
         for it in (rec.get("items") or []):
             slug = (it.get("slug") or "").strip().lower()
             if not slug or slug in have:
@@ -30673,6 +30679,16 @@ def _portal_open_cart(cx, portal, *, seed=True):
         curated = _merge_accepted_recommendation_items(cx, email, curated)
     except Exception:
         pass
+    # A folded Terrain Restore line replaces the ingredient rows an earlier seed put
+    # in the cart, or checkout would bill the bottle and each ingredient (2026-10-19).
+    # Only rows this seeding added go; a row the client added stays.
+    from dashboard.biofield_invoice import TERRAIN_RESTORE_SLUG as _TR, held_slugs as _held_slugs
+    for item in curated:
+        if isinstance(item, dict) and (item.get("slug") or "").strip().lower() == _TR:
+            for _gone in _held_slugs(item) - {_TR}:
+                cx.execute("DELETE FROM cart_items WHERE token=? AND slug=? "
+                           "AND source='portal-curated'", (token, _gone))
+            cx.commit()
     for item in curated:
         slug = (item.get("slug") or "").strip().lower() if isinstance(item, dict) else ""
         if not slug or not _get_product(slug) or _waitlist_block(slug):

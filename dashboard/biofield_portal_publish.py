@@ -363,6 +363,8 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
         item = {"slug": slug, "qty": cand["qty"]}
         if cand.get("note"):
             item["note"] = cand["note"]
+        if cand.get("held"):
+            item["held"] = cand["held"]       # so a later edit can unfold it
         # No courtesy price means store prices: the item carries no price at all.
         # A stored 0 was read as a $0 price (found on a client report, 2026-10-09).
         if special_price_cents and int(special_price_cents) > 0:

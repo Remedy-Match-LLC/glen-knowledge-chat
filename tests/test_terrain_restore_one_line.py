@@ -13,6 +13,10 @@ CATALOG = [
     {"slug": "microbiome", "name": "Microbiome"},
 ]
 PYRITE = "Pyrite Gem Elixir in Terrain Restore"
+HELD_BOTH = [
+    {"name": "Pyrite Gem Elixir in Terrain Restore", "slug": "pyrite-gem-elixir-in-terrain-restore"},
+    {"name": "Quinton Hypertonic Electrolytes in Terrain Restore",
+     "slug": "quinton-in-terrain-restore"}]
 QUINTON = "Quinton Hypertonic Electrolytes in Terrain Restore"
 
 
@@ -88,7 +92,9 @@ def test_the_handoff_seed_folds_in_layer_order(tmp_path):
     items = seed["reorder_items"]
     assert [i["slug"] for i in items] == ["terrain-restore", "microbiome"]
     assert items[0]["note"] == "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"
-    assert items[0]["names"] == [PYRITE, QUINTON]
+    assert items[0]["held"] == [
+        {"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore"},
+        {"name": QUINTON, "slug": "quinton-in-terrain-restore"}]
     # The report keeps each ingredient under its own layer.
     assert [L["remedy"] for L in seed["layers"]] == [PYRITE, "Microbiome", QUINTON]
 
@@ -146,7 +152,7 @@ def test_the_portal_report_folds_at_the_largest_count_and_only_when_sellable():
     cx.execute("UPDATE biofield_auth_chain SET bottles='2' WHERE remedy=?", (QUINTON,))
     catalog = {c["slug"]: {"name": c["name"]} for c in CATALOG}
     items = _publish(cx, tid, catalog)["content"]["reorder_items"]
-    assert items == [{"slug": "terrain-restore", "qty": 2,
+    assert items == [{"slug": "terrain-restore", "qty": 2, "held": HELD_BOTH,
                       "note": "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"}]
     for flag in ("inactive", "waitlist_only"):
         catalog["terrain-restore"] = {"name": "Terrain Restore", flag: True}
@@ -175,15 +181,16 @@ def test_a_list_synced_from_layers_folds_on_publish():
          {"slug": "microbiome", "qty": 1},
          {"slug": "quinton-in-terrain-restore", "qty": 2, "price_cents": 5000}],
         _name_of, base_ok=True)
+    # Quinton's own 5000 override never prices the bottle (review round 3).
     assert out == [
-        {"slug": "terrain-restore", "qty": 2, "names": [PYRITE, QUINTON],
+        {"slug": "terrain-restore", "qty": 2, "held": HELD_BOTH,
          "note": "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"},
         {"slug": "microbiome", "qty": 1}]
 
 
 def test_a_folded_line_keeps_what_it_holds_when_another_joins():
-    by_names = {"slug": "terrain-restore", "qty": 1, "names": [PYRITE],
-                "note": "With Pyrite Gem Elixir"}
+    by_names = {"slug": "terrain-restore", "qty": 1, "note": "With Pyrite Gem Elixir",
+                "held": [{"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore"}]}
     by_note = {"slug": "terrain-restore", "qty": 1, "note": "With Pyrite Gem Elixir"}
     for folded in (by_names, by_note):
         out = inv.fold_reorder_items(
@@ -288,9 +295,9 @@ def test_the_console_editor_keeps_the_note_and_names():
     src = pathlib.Path("static/console-biofield-portal.html").read_text()
     add = src[src.index("function addItem("):src.index("function collectItems(")]
     collect = src[src.index("function collectItems("):src.index("function syncOrderFromLayers(")]
-    assert "el.dataset.note = it.note" in add and "el.dataset.names" in add
+    assert "el.dataset.note = it.note" in add and "el.dataset.held" in add
     assert "esc(it.note)" in add
-    assert "o.note = el.dataset.note" in collect and "o.names = JSON.parse" in collect
+    assert "o.note = el.dataset.note" in collect and "o.held = JSON.parse" in collect
 
 
 def test_the_portal_report_leaves_a_not_ready_ingredient_out_of_the_bottle():
@@ -351,3 +358,186 @@ def test_edit_invoice_seeds_the_note_from_the_report(monkeypatch, tmp_path):
     assert [p.get("note") for p in j["products"]] == ["With Pyrite Gem Elixir", None]
     html = pathlib.Path("static/order-new.html").read_text()
     assert "note:String(rec.note||'')" in html
+
+
+# ── Review round 3 ────────────────────────────────────────────────────────────
+FOLDED = {"slug": "terrain-restore", "qty": 2, "held": HELD_BOTH,
+          "note": "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"}
+
+
+def test_a_republish_after_terrain_restore_stops_selling_gives_the_lines_back():
+    out = inv.fold_reorder_items([dict(FOLDED), {"slug": "microbiome", "qty": 1}],
+                                 _name_of, base_ok=False)
+    assert out == [{"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 2},
+                   {"slug": "quinton-in-terrain-restore", "qty": 2},
+                   {"slug": "microbiome", "qty": 1}]
+
+
+def test_an_ingredient_that_stops_being_ready_comes_out_of_the_bottle():
+    out = inv.fold_reorder_items([dict(FOLDED)], _name_of, True,
+                                 ready=lambda sl: sl != "quinton-in-terrain-restore")
+    assert [(i["slug"], i.get("note")) for i in out] == [
+        ("terrain-restore", "With Pyrite Gem Elixir"), ("quinton-in-terrain-restore", None)]
+
+
+def test_only_an_override_set_on_terrain_restore_prices_the_bottle():
+    # An ingredient's override, first or later, never prices the bottle.
+    for order in ((0, 1), (1, 0)):
+        items = [{"slug": "oak-flower-essence-in-terrain-restore", "qty": 1, "price_cents": 9500},
+                 {"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 1}]
+        out = inv.fold_reorder_items([items[i] for i in order], _name_of, True)
+        assert "price_cents" not in out[0]
+    # Rae's override on the folded line itself survives a republish and a new ingredient.
+    priced = dict(FOLDED, price_cents=6000)
+    out = inv.fold_reorder_items([priced], _name_of, True)
+    assert out[0]["price_cents"] == 6000
+    out = inv.fold_reorder_items(out + [{"slug": "oak-flower-essence-in-terrain-restore"}],
+                                 _name_of, True)
+    assert len(out) == 1 and out[0]["price_cents"] == 6000
+    # Unfolded again, the bottle's override does not land on each ingredient.
+    out = inv.fold_reorder_items([priced], _name_of, base_ok=False)
+    assert all("price_cents" not in i for i in out)
+
+
+def test_the_same_product_twice_keeps_the_largest_count_never_the_sum():
+    out = inv.fold_reorder_items([{"slug": "microbiome", "qty": 1},
+                                  {"slug": "microbiome", "qty": 3}], _name_of, True)
+    assert out == [{"slug": "microbiome", "qty": 3}]
+
+
+def test_an_ingredient_named_twice_in_different_case_is_listed_once():
+    out = inv.fold_terrain_restore(
+        [{"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE},
+         {"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE.lower()}], True)
+    assert out[0]["note"] == "With Pyrite Gem Elixir"
+
+
+def test_a_remedy_without_the_suffix_keeps_its_authored_name_for_the_count():
+    out = inv.fold_terrain_restore(
+        [{"slug": "pyrite-gem-elixir-in-terrain-restore", "name": "Pyrite Gem Elixir"}],
+        True, name_of=_name_of)
+    assert inv.held_names(out[0]) == ["Pyrite Gem Elixir"]
+
+
+def test_a_malformed_item_does_not_break_a_publish():
+    out = inv.fold_reorder_items(
+        ["junk", {"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": "abc"},
+         {"slug": "quinton-in-terrain-restore", "qty": None}], _name_of, True)
+    assert out[0] == "junk" and out[1]["slug"] == "terrain-restore"
+
+
+def test_the_seed_does_not_fold_when_terrain_restore_does_not_resolve(tmp_path):
+    from dashboard.biofield_authoring import add_chain_row, create_test, init_auth_tables
+    from dashboard.biofield_handoff import build_portal_seed
+    with sqlite3.connect(str(tmp_path / "c.db")) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "J", "j@example.com", "2026-10-19")
+        add_chain_row(cx, tid, 1, "Lens", "Lens", PYRITE)
+        seed = build_portal_seed(cx, tid, lambda nm: inv.resolve_line_slug(nm, CATALOG[1:]))
+    assert [i["slug"] for i in seed["reorder_items"]] == ["pyrite-gem-elixir-in-terrain-restore"]
+
+
+def test_the_publish_route_never_folds_into_or_hides_what_cannot_be_had(monkeypatch, tmp_path):
+    import app as appmod
+    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    appmod._init_auth_tables()
+    monkeypatch.setattr(appmod, "CONSOLE_SECRET", "test-secret")
+    c = appmod.app.test_client()
+    real_block = appmod._waitlist_block
+    sent = [{"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 1},
+            {"slug": "quinton-hypertonic-electrolytes-in-terrain-restore", "qty": 1}]
+    for blocked, want in (
+            ("terrain-restore", ["pyrite-gem-elixir-in-terrain-restore",
+                                 "quinton-hypertonic-electrolytes-in-terrain-restore"]),
+            ("quinton-hypertonic-electrolytes-in-terrain-restore",
+             ["terrain-restore", "quinton-hypertonic-electrolytes-in-terrain-restore"])):
+        monkeypatch.setattr(appmod, "_waitlist_block",
+                            lambda sl, b=blocked: {"name": "x", "slug": sl} if sl == b
+                            else real_block(sl))
+        r = c.post("/api/console/biofield-portal?key=test-secret", json={
+            "email": "j@example.com", "name": "Josie", "content": {
+                "greeting": "Aloha", "layers": [{"n": 1, "title": "Lens", "remedy": PYRITE}],
+                "reorder_items": sent}})
+        assert r.status_code == 200, r.data[:300]
+        from dashboard import client_portal as cp
+        with sqlite3.connect(appmod.LOG_DB) as cx:
+            stored = cp.get_portal_content_by_email(cx, "j@example.com")["content"]["reorder_items"]
+        assert [i["slug"] for i in stored] == want, blocked
+
+
+def _cart_portal(monkeypatch, tmp_path, reorder):
+    import app as appmod
+    from dashboard import cart_store
+    db = str(tmp_path / "cart.db")
+    monkeypatch.setattr(appmod, "LOG_DB", db)
+    prices = {"terrain-restore": 7000, "pyrite-gem-elixir-in-terrain-restore": 7000,
+              "microbiome": 5000}
+    monkeypatch.setattr(appmod, "_get_product",
+                        lambda s: {"slug": s, "name": s, "price_cents": prices[s]}
+                        if s in prices else None)
+    monkeypatch.setattr(appmod, "_waitlist_block", lambda s: None)
+    cx = sqlite3.connect(db)
+    cart_store.init_cart_tables(cx)
+    portal = {"email": "j@example.com", "content": {"reorder_items": reorder}}
+    return appmod, cart_store, cx, portal
+
+
+def test_a_cart_seeded_before_the_fold_loses_the_ingredient_rows(monkeypatch, tmp_path):
+    old = [{"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 1},
+           {"slug": "microbiome", "qty": 1}]
+    appmod, cart_store, cx, portal = _cart_portal(monkeypatch, tmp_path, old)
+    with appmod.app.test_request_context("/"):
+        token = appmod._portal_open_cart(cx, portal)
+        assert {i["slug"] for i in cart_store.items(cx, token)} == {
+            "pyrite-gem-elixir-in-terrain-restore", "microbiome"}
+        portal["content"]["reorder_items"] = [
+            {"slug": "terrain-restore", "qty": 1, "note": "With Pyrite Gem Elixir",
+             "held": [{"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore"}]},
+            {"slug": "microbiome", "qty": 1}]
+        token = appmod._portal_open_cart(cx, portal)
+        assert sorted(i["slug"] for i in cart_store.items(cx, token)) == [
+            "microbiome", "terrain-restore"]
+        shown = appmod._portal_cart_payload(cx, token, portal)["items"]
+        assert {i["slug"]: i.get("note") for i in shown} == {
+            "microbiome": None, "terrain-restore": "With Pyrite Gem Elixir"}
+
+
+def test_a_row_the_client_added_stays_in_the_cart(monkeypatch, tmp_path):
+    folded = [{"slug": "terrain-restore", "qty": 1, "note": "With Pyrite Gem Elixir",
+               "held": [{"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore"}]}]
+    appmod, cart_store, cx, portal = _cart_portal(monkeypatch, tmp_path, folded)
+    with appmod.app.test_request_context("/"):
+        token = appmod._portal_open_cart(cx, portal, seed=False)
+        cart_store.add_item(cx, token, "pyrite-gem-elixir-in-terrain-restore", source="self")
+        token = appmod._portal_open_cart(cx, portal)
+        assert sorted(i["slug"] for i in cart_store.items(cx, token)) == [
+            "pyrite-gem-elixir-in-terrain-restore", "terrain-restore"]
+
+
+def test_an_accepted_recommendation_does_not_add_an_ingredient_already_in_the_bottle(monkeypatch):
+    import app as appmod
+    from dashboard import practitioner_recommendations as pr
+    monkeypatch.setattr(pr, "init_table", lambda cx: None)
+    monkeypatch.setattr(pr, "active_for_patient", lambda cx, e: {
+        "status": "accepted", "items": [
+            {"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 1},
+            {"slug": "microbiome", "qty": 1}]})
+    monkeypatch.setattr(appmod, "_reorder_item_from_slug", lambda s, q: {"slug": s, "qty": q})
+    folded = {"slug": "terrain-restore", "qty": 1, "note": "With Pyrite Gem Elixir",
+              "held": [{"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore"}]}
+    out = appmod._merge_accepted_recommendation_items(
+        sqlite3.connect(":memory:"), "j@example.com", [folded])
+    assert [i["slug"] for i in out] == ["terrain-restore", "microbiome"]
+
+
+def test_the_portal_page_escapes_the_note():
+    import pathlib
+    src = pathlib.Path("static/client-portal.html").read_text()
+    assert "${it.note?`<br><span class=\"small muted\">${esc(it.note)}</span>`:\"\"}" in src
+
+
+def test_sync_from_layers_keeps_the_folded_line():
+    import pathlib
+    src = pathlib.Path("static/console-biofield-portal.html").read_text()
+    sync = src[src.index("function syncOrderFromLayers("):src.index("function fillFromPaste(")]
+    assert "heldBy[h.slug] = 'terrain-restore'" in sync and "slug = heldBy[slug]" in sync

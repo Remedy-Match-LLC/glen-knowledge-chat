@@ -487,7 +487,7 @@ function addItem(it, specialCents){
     </div>${it.note?`<div class="small muted rn">${esc(it.note)}</div>`:''}`;
   // A folded Terrain Restore line keeps what it holds through an edit (2026-10-19).
   if(it.note) el.dataset.note = it.note;
-  if(Array.isArray(it.names)) el.dataset.names = JSON.stringify(it.names);
+  if(Array.isArray(it.held)) el.dataset.held = JSON.stringify(it.held);
   $('reitems').appendChild(el);
 }
 function collectItems(){
@@ -499,7 +499,7 @@ function collectItems(){
     if(p!=='') o.price_cents = parseInt(p);
     if(slug==='terrain-restore'){
       if(el.dataset.note) o.note = el.dataset.note;
-      try{ if(el.dataset.names) o.names = JSON.parse(el.dataset.names); }catch(e){}
+      try{ if(el.dataset.held) o.held = JSON.parse(el.dataset.held); }catch(e){}
     }
     return o;
   }).filter(Boolean);
@@ -507,11 +507,16 @@ function collectItems(){
 function syncOrderFromLayers(){
   const layers = collectLayers();
   const existing = {}; collectItems().forEach(it => existing[it.slug] = it);  // keep qty/price
+  // An ingredient held by the folded Terrain Restore line maps back to that line, so
+  // its count, price and note survive a sync (2026-10-19). Publishing folds the rest.
+  const heldBy = {};
+  ((existing['terrain-restore']||{}).held||[]).forEach(h => { if(h && h.slug) heldBy[h.slug] = 'terrain-restore'; });
   const slugs = [];
   // Several remedies in one layer are joined with a SPACED plus (" + "). A bare
   // "+" is part of names such as "Neuro+ Eye Drops", so it must not split them.
   layers.forEach(L => (L.remedy||'').split(' + ').forEach(part => {
-    const slug = CAT_BY_NAME[part.trim().toLowerCase()];
+    let slug = CAT_BY_NAME[part.trim().toLowerCase()];
+    if(slug && heldBy[slug]) slug = heldBy[slug];
     if(slug && !slugs.includes(slug)) slugs.push(slug);
   }));
   $('reitems').innerHTML = '';

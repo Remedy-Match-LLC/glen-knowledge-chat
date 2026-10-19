@@ -2172,7 +2172,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     continue
                 # A folded Terrain Restore line holds several remedies: its count is
                 # the largest of theirs.
-                names = item.get("names") or [item.get("name") or ""]
+                names = biofield_invoice.held_names(item)
                 line = {
                     "slug": slug,
                     "qty": max(qty_by_name.get((n or "").strip().lower(), 1) for n in names),
