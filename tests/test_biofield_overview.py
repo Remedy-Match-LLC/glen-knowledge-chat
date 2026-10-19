@@ -75,7 +75,7 @@ def test_biofield_columns_follow_the_layers_and_all_adds_the_rest(cx):
                                               "Vertigo"]
 
 
-def test_a_caution_and_a_blood_pressure_item_carry_a_minus(cx, tmp_path):
+def test_a_caution_carries_a_minus_and_a_blood_pressure_item_does_not(cx, tmp_path):
     from dashboard import biofield_plan_report as pr
     folder = tmp_path / "plan-report"
     folder.mkdir()
@@ -90,7 +90,8 @@ def test_a_caution_and_a_blood_pressure_item_carry_a_minus(cx, tmp_path):
     _tick(cx, "Gut", cs.NUTRIENTS, "Zinc")
     rows = _rows(ov.overview(cx, "a49"))
     assert rows["Berberine HCl"]["cautions"] == ["Caution: Berberine"]
-    assert rows["Beets"]["cautions"] == ["Lowers blood pressure"]
+    # Not flagged until a client's low pressure is recorded (Glen, 2026-10-18).
+    assert rows["Beets"]["cautions"] == []
     assert rows["Zinc"]["cautions"] == []
 
 
@@ -160,14 +161,14 @@ def test_rows_rank_by_total_then_top_rating_then_name_within_their_group():
 
 
 def test_a_minus_flags_and_never_changes_the_total_or_the_count():
-    rows = [_row("A", "Foods", {"gut": 6}, cautions=["Lowers blood pressure"],
+    rows = [_row("A", "Foods", {"gut": 6}, cautions=["Caution: Berberine"],
                  conflicts={"gut": "Gut avoids X", "liver": "Liver avoids Y"}),
             _row("B", "Foods", {"gut": 6})]
     table, _, _ = _run(_data(rows), clicks=1)
     a = table[table.index(">A<"):table.index(">B<")]
     assert a.count("class=m") == 3
     assert re.findall(r"<td class=t>(\d+)</td><td>(\d+)</td>", a) == [("6", "1")]
-    assert 'title="Lowers blood pressure"' in a and 'title="Liver avoids Y"' in a
+    assert 'title="Caution: Berberine"' in a and 'title="Liver avoids Y"' in a
 
 
 def test_a_row_with_nothing_in_the_shown_patterns_is_counted_not_hidden_silently():

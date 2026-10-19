@@ -14,8 +14,9 @@ the biofield vs show all".
   rating, then name.
 - A yellow minus flags a caution and never changes the total (Glen: "flag only, never
   subtract"; "yellow rather than red"). Sources: the approved ingredient caution table,
-  a food one ticked pattern emphasizes and another avoids, and an item that lowers
-  blood pressure.
+  and a food one ticked pattern emphasizes and another avoids. An item that lowers
+  blood pressure is not flagged: no client's low pressure is recorded yet (Glen "no"
+  to flagging it for everyone).
 - Never printed for a client.
 """
 import html
@@ -36,14 +37,11 @@ KIND = {cs.FORMULATIONS: "Functional Formulation", cs.INFOCEUTICALS: "Infoceutic
         cs.NUTRIENTS: "Nutrient", cs.BOTANICALS: "Botanical"}
 
 
-def _item_facts(cx):
-    """{(condition key, section, name key): (lowers_bp, food keys)} from the catalog."""
-    out = {}
-    for item_key, section, name_key, lowers_bp, food_keys in cx.execute(
-            "SELECT item_key,section,name_key,lowers_bp,food_keys "
-            "FROM biofield_clinical_section_item"):
-        out[(item_key, section, name_key)] = (bool(lowers_bp), cs._food_keys(food_keys))
-    return out
+def _food_keys_by_item(cx):
+    """{(condition key, section, name key): food keys} from the catalog."""
+    return {(item_key, section, name_key): cs._food_keys(food_keys)
+            for item_key, section, name_key, food_keys in cx.execute(
+                "SELECT item_key,section,name_key,food_keys FROM biofield_clinical_section_item")}
 
 
 def overview(cx, test_id, layers=()):
@@ -51,7 +49,7 @@ def overview(cx, test_id, layers=()):
     {"key", "label"}; a row is {"name", "kind", "group", "cells": {column key: rating},
     "cautions": [why], "conflicts": {column key: why}}."""
     groups = pr.plan(cx, test_id)
-    facts = _item_facts(cx)
+    facts = _food_keys_by_item(cx)
     caution_hits = {}
     for name, _text, hits in pr.cautions_for(groups, pr.stored_frame(cx)[1]):
         for line_name in hits:
@@ -60,26 +58,22 @@ def overview(cx, test_id, layers=()):
     # Foods a ticked pattern avoids, by food key, for the emphasize rows' minus.
     for line in groups.get("foods_avoid") or []:
         for en in line["entries"]:
-            _bp, keys = facts.get((en.get("condition_key"), "foods_avoid", _norm(en["name"])),
-                                  (False, []))
+            keys = facts.get((en.get("condition_key"), "foods_avoid", _norm(en["name"])), [])
             labels.setdefault(_norm(en["condition"]), en["condition"])
             for key in keys or [_norm(en["name"])]:
                 avoided.setdefault(key, []).append((_norm(en["condition"]), en["name"]))
     for section, lines in groups.items():
         for line in lines:
-            cells, lowers_bp, keys = {}, False, set()
+            cells, keys = {}, set()
             for en in line["entries"]:
                 ck = _norm(en["condition"])
                 labels.setdefault(ck, en["condition"])
-                bp, fk = facts.get((en.get("condition_key"), en.get("section", section),
-                                    _norm(en["name"])), (False, []))
-                lowers_bp = lowers_bp or bp
+                fk = facts.get((en.get("condition_key"), en.get("section", section),
+                                _norm(en["name"])), [])
                 keys.update(fk or [_norm(en["name"])])
                 if en["overall"] is not None:
                     cells[ck] = max(cells.get(ck, 0), int(en["overall"]))
             cautions = [f"Caution: {n}" for n in caution_hits.get(line["name"], [])]
-            if lowers_bp:
-                cautions.append("Lowers blood pressure")
             conflicts = {}
             if section == "foods_emphasize":
                 # The minus sits in the column of the pattern that avoids the food;
