@@ -33,11 +33,13 @@ GROUPS = ("Remedies", "Healing Tools", "Foods", "Ingredients")
 GROUP_OF = {cs.FORMULATIONS: "Remedies", cs.INFOCEUTICALS: "Remedies", "prl": "Remedies",
             cs.FULLSCRIPT: "Remedies", cs.HEALING_TOOLS: "Healing Tools",
             "foods_emphasize": "Foods", "foods_avoid": "Foods",
-            cs.NUTRIENTS: "Ingredients", cs.BOTANICALS: "Ingredients"}
+            cs.NUTRIENTS: "Ingredients", cs.BOTANICALS: "Ingredients",
+            cs.ESSENTIAL_OILS: "Ingredients"}
 KIND = {cs.FORMULATIONS: "Functional Formulation", cs.INFOCEUTICALS: "Infoceutical",
         "prl": "PRL", cs.FULLSCRIPT: "Fullscript", cs.HEALING_TOOLS: "",
         "foods_emphasize": "Emphasize", "foods_avoid": "Avoid",
-        cs.NUTRIENTS: "Nutrient", cs.BOTANICALS: "Botanical"}
+        cs.NUTRIENTS: "Nutrient", cs.BOTANICALS: "Botanical",
+        cs.ESSENTIAL_OILS: "Essential oil"}
 
 
 def ensure_cross_schema(cx):

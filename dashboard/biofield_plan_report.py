@@ -31,6 +31,7 @@ HEADINGS = (
                   ("prl", "PRL"),
                   (cs.NUTRIENTS, "Nutrients"),
                   (cs.BOTANICALS, "Botanicals"),
+                  (cs.ESSENTIAL_OILS, "Essential Oils"),
                   (cs.FULLSCRIPT, "Fullscript supplements"))),
     ("Healing Tools", ((cs.HEALING_TOOLS, "Healing Tools"),)),
 )
@@ -189,7 +190,7 @@ def lost_ticks(cx, test_id):
 # What each section is called beside an item under Remedies, where sections mix.
 KIND = {cs.FORMULATIONS: "Functional Formulation", cs.INFOCEUTICALS: "Infoceutical",
         "prl": "PRL", cs.NUTRIENTS: "Nutrient", cs.BOTANICALS: "Botanical",
-        cs.FULLSCRIPT: "Fullscript supplement"}
+        cs.ESSENTIAL_OILS: "Essential oil", cs.FULLSCRIPT: "Fullscript supplement"}
 
 
 # A merge group in clinical's map covers one of these scopes; products never merge.
@@ -215,7 +216,7 @@ def ensure_schema(cx):
 
 # Report-level lines in frame-lines.json, each printed once (Glen, 2026-10-18).
 FRAME_KEYS = ("vertigo_safety", "dose_totals", "thyroid_spacing", "infoceutical_header",
-              "ingredient_caution_intro")
+              "ingredient_caution_intro", "essential_oils_header")
 
 
 def load_content(cx, folder):
@@ -501,6 +502,11 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
         if heading == "Remedies" and plan_groups.get(cs.INFOCEUTICALS) \
                 and frame.get("infoceutical_header"):
             blocks.insert(0, f"<p class=plan-frame>{e(frame['infoceutical_header'])}</p>")
+        # The oils' safety line heads Remedies too, once, only with an oil ticked.
+        if heading == "Remedies" and plan_groups.get(cs.ESSENTIAL_OILS) \
+                and frame.get("essential_oils_header"):
+            at = 1 if blocks and blocks[0].startswith("<p class=plan-frame>") else 0
+            blocks.insert(at, f"<p class=plan-frame>{e(frame['essential_oils_header'])}</p>")
         if blocks:
             parts.append(f"<section class=plan-heading><h2>{e(heading)}</h2>"
                          f"{''.join(blocks)}</section>")

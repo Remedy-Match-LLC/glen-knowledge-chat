@@ -2273,6 +2273,10 @@ def _clinical_sections_html(sections, remedy_choice):
                 flags += "<span class=clinical-section-flag>lowers BP</span>"
             if entry.get("botanical"):
                 flags += "<span class=clinical-section-flag>botanical</span>"
+            if entry.get("route"):
+                # An essential oil's route, for Glen only; the client reads it in the dose.
+                flags += (f"<span class=clinical-section-flag title=\"{_e(entry.get('route_reason'))}\">"
+                          f"{_e(entry['route'])}</span>")
             for other in entry.get("conflicts") or []:
                 flags += (f"<span class='clinical-section-flag conflict'>"
                           f"conflicts with {_e(other)}</span>")

@@ -37,6 +37,7 @@ FULLSCRIPT = "fullscript"
 NUTRIENTS = "nutrients"
 BOTANICALS = "botanicals"
 HEALING_TOOLS = "healing_tools"
+ESSENTIAL_OILS = "essential_oils"
 SECTIONS = (
     (FORMULATIONS, "Functional Formulations"),
     (INFOCEUTICALS, "Infoceuticals"),
@@ -46,6 +47,9 @@ SECTIONS = (
     # Glen, 2026-10-18: "yes, a Botanicals section beside Nutrients". Nutrients hold
     # vitamins, minerals, fats and amino acids; botanical ingredients go here.
     (BOTANICALS, "Botanicals"),
+    # Glen, 2026-10-18: an Essential Oils section, printed under Remedies after
+    # Botanicals. Each oil carries its route, "inhale and skin" or "inhale only".
+    (ESSENTIAL_OILS, "Essential Oils"),
     # Glen, 2026-10-18: devices and therapies such as Kloud, Molecular Hydrogen,
     # Microwater, Photobiomodulation and Microcurrent. Not botanicals.
     (HEALING_TOOLS, "Healing Tools"),
@@ -56,7 +60,7 @@ SCORES = ("overall", "research", "uniqueness")
 # Both are the row's remedy list: their ticks live in biofield_clinical_selection.
 REMEDY_SECTIONS = (FORMULATIONS, INFOCEUTICALS)
 # Sections whose items carry an editable dose; a healing tool's is its usage line.
-DOSED_SECTIONS = (NUTRIENTS, BOTANICALS, HEALING_TOOLS)
+DOSED_SECTIONS = (NUTRIENTS, BOTANICALS, ESSENTIAL_OILS, HEALING_TOOLS)
 
 # Glen, 2026-10-17: Infoceuticals get a section of their own, apart from Functional
 # Formulations. MRs are not infoceuticals (Glen, same day), and neither are ERs.
@@ -104,7 +108,7 @@ def ensure_schema(cx):
     )""")
     cols = {row[1] for row in
             cx.execute("PRAGMA table_info(biofield_clinical_section_item)").fetchall()}
-    for col in ("origin_test", "food_keys", "explanation"):
+    for col in ("origin_test", "food_keys", "explanation", "route", "route_reason"):
         if col not in cols:
             cx.execute(f"ALTER TABLE biofield_clinical_section_item "
                        f"ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
@@ -258,8 +262,8 @@ def upsert_item(cx, label, section, item, origin_test=""):
     cx.execute("""INSERT INTO biofield_clinical_section_item
         (item_key,section,name_key,name,brand,dose,overall,research,uniqueness,
          reason,source,botanical,lowers_bp,reviewed,origin_test,food_keys,explanation,
-         explanation_approved,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+         explanation_approved,route,route_reason,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
         ON CONFLICT(item_key,section,name_key) DO UPDATE SET
           name=excluded.name,brand=excluded.brand,dose=excluded.dose,
           overall=excluded.overall,research=excluded.research,
@@ -268,6 +272,7 @@ def upsert_item(cx, label, section, item, origin_test=""):
           lowers_bp=excluded.lowers_bp,food_keys=excluded.food_keys,
           explanation=excluded.explanation,
           explanation_approved=excluded.explanation_approved,
+          route=excluded.route,route_reason=excluded.route_reason,
           updated_at=CURRENT_TIMESTAMP""",
                (item_key, section, name_key, name,
                 str(item.get("brand") or "").strip()[:160],
@@ -281,7 +286,9 @@ def upsert_item(cx, label, section, item, origin_test=""):
                 1 if item.get("reviewed") else 0, str(origin_test or ""),
                 ",".join(_food_keys(item.get("food_keys"))),
                 str(item.get("explanation") or "").strip()[:1200],
-                1 if item.get("explanation_approved") is True else 0))
+                1 if item.get("explanation_approved") is True else 0,
+                str(item.get("route") or "").strip()[:40],
+                str(item.get("route_reason") or "").strip()[:400]))
     return "updated" if exists else "added"
 
 
@@ -702,11 +709,12 @@ def _infoceutical_keys(cx, item_key):
 def _catalog(cx, item_key):
     rows = cx.execute(
         "SELECT section,name_key,name,brand,dose,overall,research,uniqueness,"
-        "reason,source,botanical,lowers_bp,reviewed,origin_test,food_keys "
-        "FROM biofield_clinical_section_item WHERE item_key=?", (item_key,)).fetchall()
+        "reason,source,botanical,lowers_bp,reviewed,origin_test,food_keys,route,"
+        "route_reason FROM biofield_clinical_section_item WHERE item_key=?",
+        (item_key,)).fetchall()
     cols = ("section", "name_key", "name", "brand", "dose", "overall", "research",
             "uniqueness", "reason", "source", "botanical", "lowers_bp", "reviewed",
-            "origin_test", "food_keys")
+            "origin_test", "food_keys", "route", "route_reason")
     return [dict(zip(cols, row)) for row in rows]
 
 
