@@ -632,12 +632,25 @@ def _greyed(cx, test_id, item_key, section, ticked):
             and not _allowed_botanical(e["name"], exceptions)}
 
 
+def chain_remedies(cx, test_id):
+    """The remedies on this test's causal chain."""
+    try:
+        tid = int(str(test_id).lstrip("a") or 0)
+        return [r[0] for r in cx.execute(
+            "SELECT remedy FROM biofield_auth_chain WHERE test_id=? AND remedy<>''",
+            (tid,)) if r[0]]
+    except Exception:  # noqa: BLE001  no chain table yet
+        return []
+
+
 def still_greyed(cx, test_id, label, remedies, before):
     """The remedies in `remedies` that are greyed and were not already ticked in
     `before`, the saved set. The page's own list is never trusted for this: a tick
     whose unhide failed can ride along in another save."""
     item_key = _norm(label)
-    was = {_norm(r) for r in before or []}
+    # A remedy on the causal chain is drawn ticked on a row with no saved set
+    # (row_ticks), so it is a choice already made, never a greyed one.
+    was = {_norm(r) for r in list(before or []) + chain_remedies(cx, test_id)}
     greyed = set.intersection(*[_greyed(cx, str(test_id), item_key, s, was)
                                 for s in REMEDY_SECTIONS])
     return [r for r in remedies or [] if _norm(r) in greyed]

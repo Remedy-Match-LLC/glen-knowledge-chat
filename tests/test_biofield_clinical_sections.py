@@ -890,3 +890,43 @@ def test_a_failed_save_after_an_unhide_hides_it_again(handler, call):
     assert unhides == [True, False]
     assert got["checked"] is False and got["greyed"] == "1"
     assert got["item"] == ["-greyed", "+greyed"]
+
+
+# Round 3 review, 2026-10-18: a chain remedy is drawn ticked on a row with no saved
+# set. It is a choice already made, so it is never greyed and never blocks a save.
+
+def test_a_chain_remedy_is_not_greyed(tmp_path, monkeypatch):
+    client, db = _greyed_app(tmp_path, monkeypatch)
+    with sqlite3.connect(db) as con:
+        from dashboard.biofield_authoring import init_auth_tables
+        init_auth_tables(con)
+        con.execute("INSERT INTO biofield_auth_chain (test_id,layer,head,remedy) "
+                    "VALUES (49,1,'Gut','Herbal Blend')")
+        con.commit()
+        assert cs.still_greyed(con, "a49", "Gut", ["Herbal Blend", "Mineral Mix"], []) == []
+        cs.save_botanical_setting(con, "a50", avoid=True, exceptions="")
+        assert cs.still_greyed(con, "a50", "Gut", ["Herbal Blend"], []) == ["Herbal Blend"]
+    r = client.post("/author/a49/clinical-items/selection",
+                    json={"label": "Gut", "remedies": ["Herbal Blend", "Mineral Mix"]})
+    assert r.get_json()["ok"]
+    j = client.post("/author/a49/clinical-sections/all", json={
+        "label": "Gut", "section": cs.FORMULATIONS, "on": True,
+        "names": ["Mineral Mix"], "remedies": ["Herbal Blend"]}).get_json()
+    assert sorted(j["checked"]) == ["Herbal Blend", "Mineral Mix"]
+
+
+def test_the_page_greys_by_the_ticks_it_draws():
+    import inspect
+    import biofield_local_app as bla
+    src = inspect.getsource(bla)
+    assert src.count("chosen_remedies=_cs.row_ticks(_item)") == 2
+    assert "chosen_remedies=_item.get(\"selected_remedies\")" not in src
+
+
+def test_sections_for_never_greys_a_ticked_remedy(cx):
+    cs.upsert_item(cx, "Gut", cs.FORMULATIONS, _item("Herbal Blend", 8, 5, 5, botanical=True))
+    cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="")
+    ff = cs.sections_for(cx, "a49", "Gut", chosen_remedies=cs.row_ticks(
+        {"covered_by": "Herbal Blend"}))[0]["items"]
+    entry = [e for e in ff if e["name"] == "Herbal Blend"][0]
+    assert entry["checked"] and not entry.get("hidden")

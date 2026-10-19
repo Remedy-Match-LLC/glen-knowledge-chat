@@ -1705,7 +1705,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     _item["sections"] = _cs.sections_for(
                         cx, test_id, _item.get("label"),
                         remedies=_item.get("common_remedies") or [],
-                        chosen_remedies=_item.get("selected_remedies") or [],
+                        chosen_remedies=_cs.row_ticks(_item),
                         botanical=clinical_botanical, marks=scan_marks)
                 # Purple infoceuticals tick themselves on a scan dated from 2026-10-18
                 # (Glen). A failure leaves the page as the practitioner left it.
@@ -1729,7 +1729,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         _item["sections"] = _cs.sections_for(
                             cx, test_id, _item.get("label"),
                             remedies=_item.get("common_remedies") or [],
-                            chosen_remedies=_item.get("selected_remedies") or [],
+                            chosen_remedies=_cs.row_ticks(_item),
                             botanical=clinical_botanical, marks=scan_marks)
                 # The scan's Phase sets the Kloud program (Glen, 2026-10-18). Only a
                 # page with a ticked Kloud item looks it up.
