@@ -344,9 +344,15 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
     # invoice (Glen, 2026-10-19). Then one remedy on several layers is one product
     # with the largest count, as the invoice does (build_invoice_lines).
     from dashboard.biofield_invoice import TERRAIN_RESTORE_SLUG, fold_terrain_restore
-    base = (cat or {}).get(TERRAIN_RESTORE_SLUG) if isinstance(cat, dict) else None
-    for cand in fold_terrain_restore(candidates, bool(base) and not base.get("inactive")
-                                     and not base.get("waitlist_only")):
+    cat_d = cat if isinstance(cat, dict) else {}
+
+    def _ready(slug):
+        p = cat_d.get(slug)
+        return bool(p) and not p.get("inactive") and not p.get("waitlist_only")
+
+    for cand in fold_terrain_restore(candidates, _ready(TERRAIN_RESTORE_SLUG),
+                                     name_of=lambda sl: (cat_d.get(sl) or {}).get("name"),
+                                     ready=_ready):
         slug = cand["slug"]
         if slug in seen:
             for it in reorder:

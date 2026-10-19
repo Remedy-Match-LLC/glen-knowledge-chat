@@ -207,7 +207,7 @@ def terrain_restore_note(ingredients):
     return "With " + ", ".join(names[:-1]) + " and " + names[-1]
 
 
-def fold_terrain_restore(items, base_ok):
+def fold_terrain_restore(items, base_ok, name_of=None, ready=None):
     """Every "in Terrain Restore" item (and plain Terrain Restore) as ONE Terrain
     Restore item, at the place of the first, in the given (layer) order.
 
@@ -216,13 +216,21 @@ def fold_terrain_restore(items, base_ok):
     price_cents), names its ingredients in "note", each once, and lists the remedy
     names it holds in "names". When the plain Terrain Restore product cannot be
     sold (`base_ok` False) nothing is folded, so nothing is billed as a product that
-    is not there."""
+    is not there.
+
+    `name_of(slug)` gives the catalog name, so a remedy written without the suffix
+    that still resolves to an "in Terrain Restore" product folds too. An item whose
+    slug `ready(slug)` refuses stays its own item, so the caller's not-ready check
+    still sees it and a bottle is never billed for an ingredient that cannot be had."""
     if not base_ok:
         return list(items or [])
     out, folded, ingredients = [], None, []
     for it in items or []:
-        ingredient = terrain_restore_ingredient(it.get("name"))
-        if ingredient is None or not it.get("slug"):
+        name = it.get("name")
+        if terrain_restore_ingredient(name) is None and name_of and it.get("slug"):
+            name = name_of(it["slug"]) or name
+        ingredient = terrain_restore_ingredient(name)
+        if ingredient is None or not it.get("slug") or (ready and not ready(it["slug"])):
             out.append(it)
             continue
         if folded is None:
@@ -230,7 +238,7 @@ def fold_terrain_restore(items, base_ok):
             out.append(folded)
         elif "qty" in it:
             folded["qty"] = max(int(folded.get("qty") or 1), int(it.get("qty") or 1))
-        folded["names"].append(it.get("name"))
+        folded["names"].append(name)
         if ingredient and ingredient.lower() not in {i.lower() for i in ingredients}:
             ingredients.append(ingredient)
     if folded is not None:
@@ -240,6 +248,55 @@ def fold_terrain_restore(items, base_ok):
         else:
             folded.pop("note", None)
     return out
+
+
+def fold_reorder_items(items, name_of, base_ok, ready=None):
+    """A reorder list ({slug, qty, ...}) folded as the Biofield builders fold it, for
+    a list that arrives already resolved: an editor's, a paste, or a sync from layers.
+
+    A Terrain Restore item that was folded before keeps what it holds: its "names",
+    or failing those its note read back. The result holds each slug once at its
+    largest count."""
+    cands = []
+    for it in items or []:
+        if not isinstance(it, dict) or not it.get("slug"):
+            cands.append(it)
+            continue
+        names = [n for n in (it.get("names") or []) if isinstance(n, str) and n.strip()]
+        if not names and it["slug"] == TERRAIN_RESTORE_SLUG:
+            names = ["%s in Terrain Restore" % n for n in note_ingredients(it.get("note"))]
+        base = {k: v for k, v in it.items() if k not in ("names", "note", "name")}
+        if names:
+            cands.extend(dict(base, name=n) for n in names)
+        else:
+            cands.append(dict(base, name=name_of(it["slug"]) or ""))
+    out, by_slug = [], {}
+    for it in fold_terrain_restore(cands, base_ok, name_of=name_of, ready=ready):
+        if not isinstance(it, dict) or not it.get("slug"):
+            out.append(it)
+            continue
+        if it["slug"] in by_slug:
+            seen = by_slug[it["slug"]]
+            seen["qty"] = max(int(seen.get("qty") or 1), int(it.get("qty") or 1))
+            continue
+        if it["slug"] != TERRAIN_RESTORE_SLUG or "names" not in it:
+            it = {k: v for k, v in it.items() if k != "name"}
+        else:
+            it.pop("name", None)
+        by_slug[it["slug"]] = it
+        out.append(it)
+    return out
+
+
+def note_ingredients(note):
+    """The ingredients a terrain_restore_note names, in order."""
+    text = str(note or "").strip()
+    if not text.startswith("With "):
+        return []
+    text = text[5:]
+    head, sep, last = text.rpartition(" and ")
+    parts = (head.split(", ") + [last]) if sep else [text]
+    return [p.strip() for p in parts if p.strip()]
 
 
 def terrain_restore_sellable(catalog):

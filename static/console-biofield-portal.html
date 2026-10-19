@@ -484,7 +484,10 @@ function addItem(it, specialCents){
       <input class="rq" type="number" min="1" value="${it.qty||1}" style="width:64px" title="qty">
       <input class="rp" type="number" min="1" placeholder="¢ override" value="${priceVal!==''?priceVal:''}" style="width:110px" title="price override (cents) — blank or 0 uses the store or FF special price">
       <button class="x" onclick="this.closest('.reitem').remove()">delete</button>
-    </div>`;
+    </div>${it.note?`<div class="small muted rn">${esc(it.note)}</div>`:''}`;
+  // A folded Terrain Restore line keeps what it holds through an edit (2026-10-19).
+  if(it.note) el.dataset.note = it.note;
+  if(Array.isArray(it.names)) el.dataset.names = JSON.stringify(it.names);
   $('reitems').appendChild(el);
 }
 function collectItems(){
@@ -494,6 +497,10 @@ function collectItems(){
     const o = {slug, qty: parseInt(el.querySelector('.rq').value)||1};
     const p = el.querySelector('.rp').value.trim();
     if(p!=='') o.price_cents = parseInt(p);
+    if(slug==='terrain-restore'){
+      if(el.dataset.note) o.note = el.dataset.note;
+      try{ if(el.dataset.names) o.names = JSON.parse(el.dataset.names); }catch(e){}
+    }
     return o;
   }).filter(Boolean);
 }

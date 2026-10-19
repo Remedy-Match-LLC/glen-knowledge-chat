@@ -6,7 +6,8 @@ Bobbi. Pushed to prod as a portal ai_draft; Rae publishes it from the console.
 """
 
 
-def build_portal_seed(cx, test_id, resolve_slug, name=None, terrain_restore_ok=None):
+def build_portal_seed(cx, test_id, resolve_slug, name=None, terrain_restore_ok=None,
+                      name_of=None, ready=None):
     """Return a portal-seed content dict {greeting, layers, reorder_items} from the
     authored chain. Layers are FLAT ({title, meaning, remedy (name string), dosing});
     reorder_items resolve each remedy to a catalog slug via resolve_slug(name)->slug|None.
@@ -51,7 +52,7 @@ def build_portal_seed(cx, test_id, resolve_slug, name=None, terrain_restore_ok=N
         except Exception:
             base_ok = False
     folded = []
-    for item in fold_terrain_restore(reorder, base_ok):
+    for item in fold_terrain_restore(reorder, base_ok, name_of=name_of, ready=ready):
         if item["slug"] not in seen:
             seen.add(item["slug"])
             folded.append(item)

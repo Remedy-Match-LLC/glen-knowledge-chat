@@ -2121,7 +2121,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             content = biofield_handoff.build_portal_seed(
                 cx, test_id, lambda nm: biofield_invoice.resolve_line_slug(nm, catalog),
                 name=client.get("name"),
-                terrain_restore_ok=biofield_invoice.terrain_restore_sellable(catalog))
+                terrain_restore_ok=biofield_invoice.terrain_restore_sellable(catalog),
+                name_of=lambda sl: next((c.get("name") for c in catalog or []
+                                         if c.get("slug") == sl), None),
+                ready=lambda sl: not biofield_invoice.is_not_ready(sl, catalog))
             # The scan date keys the portal's per-scan report AND marks this hand-off's
             # report CURRENT, so the manual Biofield wins over a stale reveal. Fall back
             # to today when the test carries no date.
