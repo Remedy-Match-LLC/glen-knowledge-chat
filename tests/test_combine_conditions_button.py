@@ -38,3 +38,71 @@ def test_the_handler_is_on_the_page():
     h = render_author_html(rep, [], "", clinical_checklist=ROWS)
     assert "function combineClinicalItems" in h
     assert "/author/a7/clinical-items/combine" in h
+
+
+# Glen, 2026-10-18: "Clinical issues need another option: Combine this into another row."
+
+def test_each_row_also_offers_to_fold_itself_into_another():
+    h = render_clinical_checklist(ROWS, [])
+    block = h[h.index('data-label="Cataracts"'):h.index('data-label="Cataract"')]
+    into = block[block.index("clinical-combine-into"):]
+    opts = re.findall(r"<option value=\"([^\"]+)\">", into[:into.index("</select>")])
+    assert opts == ["Cataract", "Dry eye"]
+    assert "Combine this into another row" in into and "combineClinicalItems(this,true)" in into
+
+
+def test_a_lone_row_offers_neither_direction():
+    assert "Combine this into another row" not in render_clinical_checklist([_row("Cataracts")], [])
+
+
+def _combine(into):
+    import json
+    import shutil
+    import subprocess
+    import pytest
+    from dashboard import biofield_report_html as rh
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    src = rh._AUTHOR_JS
+    start = src.index("async function combineClinicalItems(")
+    fn = src[start:src.index("\nasync function", start + 10)]
+    js = """
+var posted=[],asked=[];var location={reload:function(){}};
+function confirm(t){asked.push(t);return true}
+function prompt(t,d){asked.push(d);return null}
+function alert(t){asked.push(t)}
+async function post(url,body){posted.push(body);return {ok:true}}
+var pick={value:'Dry eye'},row={dataset:{label:'Cataracts'}};
+var btn={closest:function(){return row},parentNode:{querySelector:function(){return pick}}};
+FN
+combineClinicalItems(btn,INTO).then(function(){console.log(JSON.stringify({posted:posted,asked:asked}))});
+""".replace("FN", fn).replace("INTO", json.dumps(into))
+    out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=20)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+def test_combine_into_this_keeps_this_row():
+    got = _combine(False)
+    assert got["posted"] == [{"absorbed": "Dry eye", "survivor": "Cataracts", "display": ""}]
+    assert got["asked"][0].startswith('Combine "Dry eye" into "Cataracts"?')
+
+
+def test_combine_into_that_keeps_the_picked_row():
+    got = _combine(True)
+    assert got["posted"] == [{"absorbed": "Cataracts", "survivor": "Dry eye", "display": ""}]
+    assert got["asked"][0].startswith('Combine "Cataracts" into "Dry eye"?')
+    assert "every client" in got["asked"][0] and got["asked"][1] == "Dry eye + Cataracts"
+
+
+def test_each_button_sits_with_its_own_picker_and_names_its_direction():
+    # The handler reads the select beside its button, so each pair must share a span.
+    h = render_clinical_checklist(ROWS, [])
+    block = h[h.index('data-label="Cataracts"'):h.index('data-label="Cataract"')]
+    spans = re.findall(r"<span class=clinical-combine>(.*?)</span>", block)
+    assert len(spans) == 2
+    for s in spans:
+        assert s.count("<select") == 1 and s.count("<button") == 1
+    assert "Combine another row" in spans[0] and ">Combine into this</button>" in spans[0]
+    assert "Combine this into another row" in spans[1] and ">Combine into that</button>" in spans[1]
