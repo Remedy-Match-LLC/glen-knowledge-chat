@@ -2,6 +2,8 @@
 (Glen, 2026-10-19), named by a note under it."""
 import sqlite3
 
+import pytest
+
 from dashboard import biofield_invoice as inv
 
 CATALOG = [
@@ -13,6 +15,10 @@ CATALOG = [
     {"slug": "microbiome", "name": "Microbiome"},
 ]
 PYRITE = "Pyrite Gem Elixir in Terrain Restore"
+def _with_qty(held, *counts):
+    return [dict(h, qty=q) for h, q in zip(held, counts)]
+
+
 HELD_BOTH = [
     {"name": "Pyrite Gem Elixir in Terrain Restore", "slug": "pyrite-gem-elixir-in-terrain-restore"},
     {"name": "Quinton Hypertonic Electrolytes in Terrain Restore",
@@ -152,7 +158,7 @@ def test_the_portal_report_folds_at_the_largest_count_and_only_when_sellable():
     cx.execute("UPDATE biofield_auth_chain SET bottles='2' WHERE remedy=?", (QUINTON,))
     catalog = {c["slug"]: {"name": c["name"]} for c in CATALOG}
     items = _publish(cx, tid, catalog)["content"]["reorder_items"]
-    assert items == [{"slug": "terrain-restore", "qty": 2, "held": HELD_BOTH,
+    assert items == [{"slug": "terrain-restore", "qty": 2, "held": _with_qty(HELD_BOTH, 1, 2),
                       "note": "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"}]
     for flag in ("inactive", "waitlist_only"):
         catalog["terrain-restore"] = {"name": "Terrain Restore", flag: True}
@@ -183,7 +189,7 @@ def test_a_list_synced_from_layers_folds_on_publish():
         _name_of, base_ok=True)
     # Quinton's own 5000 override never prices the bottle (review round 3).
     assert out == [
-        {"slug": "terrain-restore", "qty": 2, "held": HELD_BOTH,
+        {"slug": "terrain-restore", "qty": 2, "held": _with_qty(HELD_BOTH, 1, 2),
          "note": "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"},
         {"slug": "microbiome", "qty": 1}]
 
@@ -536,8 +542,89 @@ def test_the_portal_page_escapes_the_note():
     assert "${it.note?`<br><span class=\"small muted\">${esc(it.note)}</span>`:\"\"}" in src
 
 
-def test_sync_from_layers_keeps_the_folded_line():
-    import pathlib
+def _run_sync(layers, items, cat_by_name):
+    """Run the console page's own syncOrderFromLayers in node, with the DOM stubbed."""
+    import json, pathlib, shutil, subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
     src = pathlib.Path("static/console-biofield-portal.html").read_text()
-    sync = src[src.index("function syncOrderFromLayers("):src.index("function fillFromPaste(")]
-    assert "heldBy[h.slug] = 'terrain-restore'" in sync and "slug = heldBy[slug]" in sync
+    fn = src[src.index("function syncOrderFromLayers("):src.index("// ── Paste import")]
+    js = """
+let LAYERS = %s, ITEMS = %s, OUT = [];
+const CAT_BY_NAME = %s;
+function collectLayers(){ return LAYERS; }
+function collectItems(){ return ITEMS; }
+function addItem(it){ OUT.push(it); }
+function setStatus(){}
+const _el = {innerHTML: ''}; function $(){ return _el; }
+%s
+syncOrderFromLayers();
+console.log(JSON.stringify(OUT));
+""" % (json.dumps(layers), json.dumps(items), json.dumps(cat_by_name), fn)
+    out = subprocess.run([node, "-e", js], capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+
+
+def test_sync_from_layers_keeps_the_folded_line_and_only_what_the_layers_name():
+    cat = {PYRITE.lower(): "pyrite-gem-elixir-in-terrain-restore",
+           QUINTON.lower(): "quinton-in-terrain-restore", "microbiome": "microbiome"}
+    folded = dict(FOLDED, qty=3, price_cents=6000)
+    # Both still named: one line, its count and price kept, held in layer order.
+    out = _run_sync([{"remedy": QUINTON}, {"remedy": PYRITE + " + Microbiome"}],
+                    [folded], cat)
+    assert [i["slug"] for i in out] == ["terrain-restore", "microbiome"]
+    assert out[0]["qty"] == 3 and out[0]["price_cents"] == 6000
+    assert [h["slug"] for h in out[0]["held"]] == [
+        "quinton-in-terrain-restore", "pyrite-gem-elixir-in-terrain-restore"]
+    assert "note" not in out[0]                    # rebuilt from held on publish
+    # Quinton removed from the layers: the line no longer holds it.
+    out = _run_sync([{"remedy": PYRITE}], [folded], cat)
+    assert [h["slug"] for h in out[0]["held"]] == ["pyrite-gem-elixir-in-terrain-restore"]
+    published = inv.fold_reorder_items(out, _name_of, True)
+    assert published[0]["note"] == "With Pyrite Gem Elixir"
+
+
+# ── Outside review on the final diff ──────────────────────────────────────────
+def test_unfolding_gives_each_ingredient_its_own_count():
+    folded = inv.fold_terrain_restore(
+        [{"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE, "qty": 1},
+         {"slug": "quinton-in-terrain-restore", "name": QUINTON, "qty": 3}], True)
+    assert folded[0]["qty"] == 3
+    out = inv.fold_reorder_items(folded, _name_of, base_ok=False)
+    assert [(i["slug"], i["qty"]) for i in out] == [
+        ("pyrite-gem-elixir-in-terrain-restore", 1), ("quinton-in-terrain-restore", 3)]
+    # Refolded, the bottle is still the largest count.
+    assert inv.fold_reorder_items(folded, _name_of, True)[0]["qty"] == 3
+
+
+def test_the_invoice_folds_a_remedy_written_without_the_suffix(monkeypatch):
+    monkeypatch.setattr(inv, "resolve_line_slug",
+                        lambda nm, cat: "pyrite-gem-elixir-in-terrain-restore"
+                        if nm == "Pyrite Gem Elixir" else None)
+    built = inv.build_invoice_lines({}, ["Pyrite Gem Elixir"], CATALOG, include_fee=False)
+    assert [(l["slug"], l.get("note")) for l in built["lines"]] == [
+        ("terrain-restore", "With Pyrite Gem Elixir")]
+
+
+def test_the_cart_keeps_the_ingredients_when_the_bottle_cannot_be_sold(monkeypatch, tmp_path):
+    old = [{"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 1}]
+    appmod, cart_store, cx, portal = _cart_portal(monkeypatch, tmp_path, old)
+    with appmod.app.test_request_context("/"):
+        token = appmod._portal_open_cart(cx, portal)
+        portal["content"]["reorder_items"] = [
+            {"slug": "terrain-restore", "qty": 1, "note": "With Pyrite Gem Elixir",
+             "held": [{"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore"}]}]
+        monkeypatch.setattr(appmod, "_waitlist_block",
+                            lambda s: {"name": "x", "slug": s} if s == "terrain-restore" else None)
+        token = appmod._portal_open_cart(cx, portal)
+        assert [i["slug"] for i in cart_store.items(cx, token)] == [
+            "pyrite-gem-elixir-in-terrain-restore"]
+
+
+def test_edit_invoice_puts_the_note_on_an_existing_line_too():
+    import pathlib
+    html = pathlib.Path("static/order-new.html").read_text()
+    branch = html[html.index("const existing=LINES.find(x=>x.slug===rec.slug);"):]
+    branch = branch[:branch.index("}else{")]
+    assert "if(rec.note) existing.note=String(rec.note);" in branch

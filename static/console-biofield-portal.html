@@ -509,16 +509,26 @@ function syncOrderFromLayers(){
   const existing = {}; collectItems().forEach(it => existing[it.slug] = it);  // keep qty/price
   // An ingredient held by the folded Terrain Restore line maps back to that line, so
   // its count, price and note survive a sync (2026-10-19). Publishing folds the rest.
-  const heldBy = {};
-  ((existing['terrain-restore']||{}).held||[]).forEach(h => { if(h && h.slug) heldBy[h.slug] = 'terrain-restore'; });
+  const heldBy = {}, heldNow = [];
+  ((existing['terrain-restore']||{}).held||[]).forEach(h => { if(h && h.slug) heldBy[h.slug] = h; });
   const slugs = [];
   // Several remedies in one layer are joined with a SPACED plus (" + "). A bare
   // "+" is part of names such as "Neuro+ Eye Drops", so it must not split them.
   layers.forEach(L => (L.remedy||'').split(' + ').forEach(part => {
     let slug = CAT_BY_NAME[part.trim().toLowerCase()];
-    if(slug && heldBy[slug]) slug = heldBy[slug];
+    if(slug && heldBy[slug]){
+      if(!heldNow.includes(heldBy[slug])) heldNow.push(heldBy[slug]);
+      slug = 'terrain-restore';
+    }
     if(slug && !slugs.includes(slug)) slugs.push(slug);
   }));
+  // The folded line holds only what the layers still name, in layer order; the
+  // note is rebuilt from that on publish.
+  if(heldNow.length){
+    const tr = Object.assign({}, existing['terrain-restore'], {held: heldNow});
+    delete tr.note;
+    existing['terrain-restore'] = tr;
+  }
   $('reitems').innerHTML = '';
   slugs.forEach(slug => addItem(existing[slug] || {slug, qty: 1}));
   setStatus(`Order list synced from layers — ${slugs.length} item(s).`, true);

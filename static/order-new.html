@@ -368,6 +368,7 @@ async function addRecommendedProducts(){
       if(existing){
         const want=Math.max(1,Number(rec.qty||1));
         if(Number(existing.qty||1)<want){ existing.qty=want; increased++; }
+        if(rec.note) existing.note=String(rec.note);  // the report's Terrain Restore ingredients
       }else{
         LINES.push({slug:p.slug,name:p.name,qty:Math.max(1,Number(rec.qty||1)),unit_cents:p.price_cents||0,edited:false,note:String(rec.note||''),format:'bottle',source:'biofield'});
         added++;

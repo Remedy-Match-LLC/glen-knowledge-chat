@@ -143,7 +143,7 @@ def test_build_uses_exact_individualized_sku_and_calculates_bottles():
         # Every "in Terrain Restore" item is one Terrain Restore line (Glen 2026-10-19).
         {"slug": "terrain-restore", "qty": 1, "note": "With Living With Soul Flower Essence",
          "held": [{"name": "Living With Soul Flower Essence in Terrain Restore",
-                   "slug": "living-with-soul-flower-essence-in-terrain-restore"}]},
+                   "slug": "living-with-soul-flower-essence-in-terrain-restore", "qty": 1}]},
     ]
 
 def test_build_meaning_from_narrative_segments(tmp_path):

@@ -259,8 +259,14 @@ def fold_terrain_restore(items, base_ok, name_of=None, ready=None):
             elif it["slug"] == TERRAIN_RESTORE_SLUG and it.get("price_cents") is not None:
                 price = it["price_cents"]
         held = {"name": it.get("name") or name, "slug": it["slug"]}
-        if held not in folded["held"]:
+        same = next((h for h in folded["held"]
+                     if h["name"] == held["name"] and h["slug"] == held["slug"]), None)
+        if same is None:
+            if "qty" in it:
+                held["qty"] = _qty(it.get("qty"))
             folded["held"].append(held)
+        elif "qty" in it:
+            same["qty"] = max(_qty(same.get("qty")), _qty(it.get("qty")))
         if ingredient and ingredient.lower() not in {i.lower() for i in ingredients}:
             ingredients.append(ingredient)
     if folded is not None:
@@ -309,6 +315,8 @@ def fold_reorder_items(items, name_of, base_ok, ready=None):
             price = base.pop("price_cents", None)
             for h in held:
                 c = dict(base, slug=h["slug"], name=h["name"])
+                if h.get("qty") is not None:
+                    c["qty"] = _qty(h["qty"])     # its own count, never the bottle's
                 if price is not None:
                     c["_tr_price"] = price
                 cands.append(c)
@@ -385,7 +393,9 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
         # a second raise duplicated it again.
         resolved.append({"slug": slug, "qty": qty, "name": name})
     # All "in Terrain Restore" items are one bottle of Terrain Restore (Glen, 2026-10-19).
-    for item in fold_terrain_restore(resolved, terrain_restore_sellable(catalog)):
+    names = {c.get("slug"): c.get("name") for c in catalog or [] if isinstance(c, dict)}
+    for item in fold_terrain_restore(resolved, terrain_restore_sellable(catalog),
+                                     name_of=names.get):
         slug, qty = item["slug"], item["qty"]
         seen = next((l for l in lines if l["slug"] == slug), None)
         if seen is not None:

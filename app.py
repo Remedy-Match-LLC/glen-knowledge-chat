@@ -30683,8 +30683,10 @@ def _portal_open_cart(cx, portal, *, seed=True):
     # in the cart, or checkout would bill the bottle and each ingredient (2026-10-19).
     # Only rows this seeding added go; a row the client added stays.
     from dashboard.biofield_invoice import TERRAIN_RESTORE_SLUG as _TR, held_slugs as _held_slugs
+    _tr_sellable = bool(_get_product(_TR)) and not _waitlist_block(_TR)
     for item in curated:
-        if isinstance(item, dict) and (item.get("slug") or "").strip().lower() == _TR:
+        if (_tr_sellable and isinstance(item, dict)
+                and (item.get("slug") or "").strip().lower() == _TR):
             for _gone in _held_slugs(item) - {_TR}:
                 cx.execute("DELETE FROM cart_items WHERE token=? AND slug=? "
                            "AND source='portal-curated'", (token, _gone))
