@@ -366,8 +366,11 @@ def test_switch_renders_and_hidden_count_shows(cx):
     assert "id=clinicalAvoidBotanicals checked" in html
     assert 'id=clinicalBotanicalExceptions value="ginger"' in html
     assert html.count("class='clinical-section-item greyed'") == 2
-    assert html.count(">Unhide</button>") == 2
-    assert ('data-name="Turmeric" disabled onchange=saveClinicalSectionItem') in html
+    # Glen, 2026-10-18: "yes, make Clinical Summary match PRL". No Unhide button: the
+    # greyed item's own tick unhides and selects it.
+    assert "Unhide</button>" not in html and "clinicalUnhide" not in html
+    assert ('data-name="Turmeric" data-greyed=1 title="Hidden: she avoids botanicals. '
+            'Tick to unhide and select." onchange=saveClinicalSectionItem') in html
 
 
 def test_unhide_is_per_client_and_condition_and_can_be_undone(cx):
@@ -655,3 +658,102 @@ def test_healing_tools_load_with_a_usage_line_and_the_botanical_switch_leaves_th
     assert ('value="20 minutes daily" data-section="healing_tools" data-name="Microcurrent" '
             "placeholder='Usage'") in html
     assert 'class=clinical-section-allbox data-section="healing_tools"' in html
+
+
+# Glen, 2026-10-18: "yes, make Clinical Summary match PRL". A greyed item's own tick
+# unhides and selects it; All never ticks a greyed item, whatever the page sends.
+
+def test_all_skips_a_greyed_item_even_when_the_page_sends_it(cx):
+    _botanicals(cx)
+    cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="ginger, milk thistle")
+    every = [i["name"] for i in cs.sections_for(cx, "a49", "Gut")[2]["items"]]
+    assert "Turmeric" in every
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, every)
+    items = {i["name"]: i for i in cs.sections_for(cx, "a49", "Gut")[2]["items"]}
+    assert not items["Turmeric"]["checked"] and items["Turmeric"]["hidden"]
+    assert items["Carrots"]["checked"] and items["Ginger root"]["checked"]
+
+
+def test_all_skips_a_greyed_remedy_even_when_the_page_sends_it(cx):
+    cs.upsert_item(cx, "Gut", cs.FORMULATIONS, _item("Herbal Blend", 8, 5, 5, botanical=True))
+    cs.upsert_item(cx, "Gut", cs.FORMULATIONS, _item("Mineral Mix", 8, 5, 5))
+    cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="")
+    chosen = cs.select_all(cx, "a49", "Gut", cs.FORMULATIONS, True,
+                           ["Herbal Blend", "Mineral Mix"], remedies=[])
+    assert chosen == ["Mineral Mix"]
+
+
+def test_once_unhidden_all_may_tick_it(cx):
+    _botanicals(cx)
+    cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="")
+    cs.set_unhidden(cx, "a49", "Gut", "foods_emphasize", "Turmeric", True)
+    names = [i["name"] for i in cs.sections_for(cx, "a49", "Gut")[2]["items"]]
+    cs.select_all(cx, "a49", "Gut", "foods_emphasize", True, names)
+    items = {i["name"]: i for i in cs.sections_for(cx, "a49", "Gut")[2]["items"]}
+    assert items["Turmeric"]["checked"]
+
+
+def _author_script():
+    from dashboard import biofield_report_html as rh
+    import inspect
+    src = inspect.getsource(rh)
+    start = src.index("async function clinicalUngrey(box){")
+    return src[start:src.index("\nasync function", start + 10)].replace("\\'", "'")
+
+
+def _run_ungrey(checked, greyed, ok):
+    import json as _json
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    js = """
+var posted=[];
+function el(){return {dataset:{},classList:{removed:[],remove:function(c){this.removed.push(c)}},
+  attrs:{title:'x'},removeAttribute:function(a){delete this.attrs[a]}}}
+var row={dataset:{label:'Gut'}},item=el(),sec={dataset:{section:'foods_emphasize'}};
+var box=el();box.checked=CHECKED;box.dataset.name='Turmeric';if(GREYED)box.dataset.greyed='1';
+box.closest=function(s){return s==='.clinical-item'?row:s==='.clinical-section-item'?item:sec};
+var stat={textContent:''};var document={getElementById:function(){return stat}};
+async function post(url,body){posted.push([url,body]);return OK?{ok:true}:{ok:false,error:'no'}}
+SCRIPT
+clinicalUngrey(box).then(function(r){console.log(JSON.stringify({r:r,posted:posted,
+  checked:box.checked,greyed:'greyed' in box.dataset,removed:item.classList.removed}))});
+""".replace("SCRIPT", _author_script()).replace("CHECKED", _json.dumps(checked)) \
+        .replace("GREYED", _json.dumps(greyed)).replace("OK", _json.dumps(ok))
+    out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=20)
+    assert out.returncode == 0, out.stderr
+    return _json.loads(out.stdout)
+
+
+def test_ticking_a_greyed_box_unhides_it_then_lets_the_tick_save():
+    got = _run_ungrey(checked=True, greyed=True, ok=True)
+    assert got["r"] is True and got["checked"] is True and got["greyed"] is False
+    assert got["removed"] == ["greyed"]
+    assert got["posted"] == [["/author/__TID__/clinical-sections/unhide",
+                              {"label": "Gut", "section": "foods_emphasize",
+                               "name": "Turmeric", "on": True}]]
+
+
+def test_a_failed_unhide_unticks_the_box_and_stops_the_save():
+    got = _run_ungrey(checked=True, greyed=True, ok=False)
+    assert got["r"] is False and got["checked"] is False and got["greyed"] is True
+
+
+def test_an_ordinary_tick_makes_no_unhide_call():
+    assert _run_ungrey(checked=True, greyed=False, ok=True) == {
+        "r": True, "posted": [], "checked": True, "greyed": False, "removed": []}
+    assert _run_ungrey(checked=False, greyed=True, ok=True)["posted"] == []
+
+
+def test_both_tick_handlers_and_the_all_box_respect_the_greyed_mark():
+    from dashboard import biofield_report_html as rh
+    import inspect
+    src = inspect.getsource(rh)
+    for fn in ("async function selectClinicalRemedy(box){",
+               "async function saveClinicalSectionItem(el,field){"):
+        body = src[src.index(fn):src.index("\nasync function", src.index(fn) + 10)]
+        assert "await clinicalUngrey(" in body, fn
+    assert ".clinical-section-choice:not([data-greyed])" in src
+    assert ".clinical-remedy-choice:not([data-greyed])" in src

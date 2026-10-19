@@ -156,7 +156,65 @@ def test_the_botanical_switch_hides_botanical_products(cx):
                                     "botanical": True})
     cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="ginger")
     area = _area(cx)
-    assert a not in [i["name"] for i in area["items"]] and area["botanical_hidden"] == 1
+    # Glen, 2026-10-18: "show the hidden products grayed out".
+    assert [i["name"] for i in area["items"] if i.get("hidden")] == [a]
+    assert area["botanical_hidden"] == 1
+
+
+def _greyed_first(cx):
+    a = _names()[0]
+    ps.upsert_rating(cx, PANCREAS, {"name": a, "overall": 7, "research": 5, "uniqueness": 8,
+                                    "botanical": True}, origin_test="a49")
+    cs.save_botanical_setting(cx, "a49", avoid=True, exceptions="")
+    return a
+
+
+def test_all_never_ticks_a_greyed_product(cx):
+    a = _greyed_first(cx)
+    ps.act(cx, "a49", PANCREAS, "all_on")
+    area = _area(cx)
+    assert a not in _ticked(area)
+    assert sorted(_ticked(area)) == sorted(n for n in _names() if n != a)
+    assert [i["name"] for i in area["items"] if i.get("hidden")] == [a]
+
+
+def test_ticking_a_greyed_product_unhides_and_selects_it_and_it_stays_unhidden(cx):
+    a = _greyed_first(cx)
+    ps.act(cx, "a49", PANCREAS, "item_on", a)
+    item = next(i for i in _area(cx)["items"] if i["name"] == a)
+    assert item["checked"] and not item.get("hidden")
+    # Unticked by hand, it stays unhidden, and All may tick it from then on.
+    ps.act(cx, "a49", PANCREAS, "item_off", a)
+    item = next(i for i in _area(cx)["items"] if i["name"] == a)
+    assert not item["checked"] and not item.get("hidden")
+    ps.act(cx, "a49", PANCREAS, "all_on")
+    assert a in _ticked(_area(cx))
+
+
+def test_a_product_ticked_by_hand_stays_when_all_is_unticked(cx):
+    a = _greyed_first(cx)
+    ps.act(cx, "a49", PANCREAS, "item_on", a)
+    ps.act(cx, "a49", PANCREAS, "all_on")
+    ps.act(cx, "a49", PANCREAS, "all_off")
+    assert list(_ticked(_area(cx))) == [a]
+
+
+def test_unhiding_is_for_one_client_only(cx):
+    a = _greyed_first(cx)
+    cs.save_botanical_setting(cx, "a50", avoid=True, exceptions="")
+    ps.approve_rating(cx, PANCREAS, a)
+    ps.act(cx, "a49", PANCREAS, "item_on", a)
+    assert [i["name"] for i in _area(cx, "a50")["items"] if i.get("hidden")] == [a]
+
+
+def test_a_greyed_product_renders_greyed_with_a_working_box(cx):
+    from dashboard.biofield_report_html import render_prl_section
+    a = _greyed_first(cx)
+    html = render_prl_section(ps.view(cx, "a49", CODES))
+    assert html.count("class='prl-item greyed'") == 1
+    assert "a tick unhides and selects one" in html
+    start = html.index("class='prl-item greyed'")
+    assert "disabled" not in html[start:html.index("</div>", start)]
 
 
 # --- the empty-group flag ----------------------------------------------------

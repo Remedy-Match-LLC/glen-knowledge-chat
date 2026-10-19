@@ -138,6 +138,11 @@ def ensure_schema(cx):
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
     # The condition rows the author page last showed for a test, so the scan panel
     # (fetched separately) knows the client's conditions without a second profile call.
+    # unhidden: Glen ticked a product the avoid-botanicals switch greys out, which
+    # cancels its hidden status for this client (Glen, 2026-10-18).
+    cols = {r[1] for r in cx.execute("PRAGMA table_info(biofield_prl_pick)")}
+    if "unhidden" not in cols:
+        cx.execute("ALTER TABLE biofield_prl_pick ADD COLUMN unhidden INTEGER NOT NULL DEFAULT 0")
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_rows (
         test_id TEXT PRIMARY KEY, labels TEXT NOT NULL DEFAULT '[]',
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
@@ -237,6 +242,23 @@ def _ticked(cx, test_id, fa):
         "AND checked=1", (str(test_id), int(fa)))}
 
 
+def _hidden(cx, test_id, fa, names):
+    """Name keys the avoid-botanicals switch greys out in one focus area: botanical,
+    not ticked, not one of the client's exceptions and not unhidden by a tick."""
+    botanical = cs.botanical_setting(cx, str(test_id))
+    if not botanical.get("avoid"):
+        return set()
+    exceptions = cs._exception_keys(botanical.get("exceptions"))
+    rated = {r[0] for r in cx.execute(
+        "SELECT name_key FROM biofield_prl_rating WHERE focus_area_id=? AND botanical=1 "
+        "AND (reviewed=1 OR origin_test IN ('',?))", (int(fa), str(test_id)))}
+    kept = {r[0] for r in cx.execute(
+        "SELECT name_key FROM biofield_prl_pick WHERE test_id=? AND focus_area_id=? "
+        "AND (checked=1 OR unhidden=1)", (str(test_id), int(fa)))}
+    return {_norm(n) for n in names if _norm(n) in rated and _norm(n) not in kept
+            and not cs._allowed_botanical(n, exceptions)}
+
+
 def products_for(fa):
     return prl_supplement.products_for_focus_area(_seed_cx(), int(fa))
 
@@ -252,7 +274,9 @@ def act(cx, test_id, fa, action, name=None, value=None):
     if action in ("item_on", "item_off", "rating") and _norm(name) not in {_norm(n) for n in names}:
         raise ValueError("that product is not in this focus area")
     if action == "item_on":
-        _set_pick(cx, test_id, fa, name, checked=1, via="item")
+        # Ticking a greyed product unhides it and selects it in one step (Glen,
+        # 2026-10-18). It stays unhidden if it is later unticked.
+        _set_pick(cx, test_id, fa, name, checked=1, via="item", unhidden=1)
         _set_group(cx, test_id, fa, checked=1)
     elif action == "item_off":
         _set_pick(cx, test_id, fa, name, checked=0, via="")
@@ -268,9 +292,10 @@ def act(cx, test_id, fa, action, name=None, value=None):
             _set_pick(cx, test_id, fa, n, checked=0, via="")
         _set_group(cx, test_id, fa, checked=0, direct=0, all_on=0)
     elif action == "all_on":
-        ticked = _ticked(cx, test_id, fa)
+        # All never ticks a greyed product (Glen, 2026-10-18).
+        ticked, greyed = _ticked(cx, test_id, fa), _hidden(cx, test_id, fa, names)
         for n in names:
-            if _norm(n) not in ticked:
+            if _norm(n) not in ticked and _norm(n) not in greyed:
                 _set_pick(cx, test_id, fa, n, checked=1, via="all")
         _set_group(cx, test_id, fa, checked=1, all_on=1)
     elif action == "all_off":
@@ -343,7 +368,7 @@ def view(cx, test_id, item_codes):
             "SELECT name_key,overall,research,uniqueness,reason,source,botanical,lowers_bp,"
             "reviewed,origin_test FROM biofield_prl_rating WHERE focus_area_id=?", (fa,))}
         picks = {r[0]: r for r in cx.execute(
-            "SELECT name_key,checked,via,overall,research,uniqueness,note "
+            "SELECT name_key,checked,via,overall,research,uniqueness,note,unhidden "
             "FROM biofield_prl_pick WHERE test_id=? AND focus_area_id=?", (test_id, fa))}
         group = _group(cx, test_id, fa)
         items, hidden = [], 0
@@ -365,10 +390,12 @@ def view(cx, test_id, item_codes):
                     "reviewed": bool(r[8]) if r else True, "rated": bool(r),
                     "checked": bool(pick and pick[1]), "via": (pick[2] if pick else "") or "",
                     "note": (pick[6] if pick else "") or ""}
+            # Glen, 2026-10-18: "show the hidden products grayed out".
             if botanical.get("avoid") and item["botanical"] and not item["checked"] \
+                    and not (pick and pick[7]) \
                     and not cs._allowed_botanical(item["name"], exceptions):
+                item["hidden"] = True
                 hidden += 1
-                continue
             items.append(item)
         shown = cx.execute("SELECT display_name FROM biofield_prl_condition_map "
                            "WHERE focus_area_id=?", (fa,)).fetchone()
