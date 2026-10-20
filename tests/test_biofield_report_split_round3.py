@@ -351,7 +351,8 @@ def test_the_leads_are_the_approved_wording():
 
 def test_the_amazon_line_is_the_approved_wording():
     """Kills I02: ruling 7's words, written out, not read from the constant."""
-    assert rs.AMAZON_DISCLOSURE == ("As an Amazon Associate, Healing Oasis earns from "
+    assert rs.AMAZON_DISCLOSURE == ("Some recommendations include affiliate links. "
+                                    "As an Amazon Associate, Healing Oasis earns from "
                                     "qualifying purchases.")
 
 
