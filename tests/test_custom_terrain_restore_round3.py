@@ -152,3 +152,15 @@ def test_a_typed_price_on_the_custom_bottle_still_bills_at_checkout():
     _lines, recs, _sub = app_mod._portal_priced_lines(
         [{"slug": CUSTOM, "qty": 1, "price_cents": 6500, "note": "With Oak Flower Essence"}])
     assert recs[0]["unit_cents"] == 6500
+
+
+def test_an_all_formula_flat_rate_never_lowers_a_terrain_restore_with_ingredients():
+    """Glen, 2026-10-19, asked whether a client's all-Formula flat rate should apply to
+    a Terrain Restore with added ingredients: "n". It still applies to plain."""
+    for slug in (CUSTOM, OAK, JASPER):
+        assert app_mod._client_special_for(slug, app_mod._get_product(slug), {}, 4000) is None
+    plain = app_mod._get_product("terrain-restore")
+    assert app_mod._client_special_for("terrain-restore", plain, {}, 4000) == 4000
+    # A per-SKU special saved on the bottle itself still lowers it (Glen: "yes").
+    assert app_mod._client_special_for(CUSTOM, app_mod._get_product(CUSTOM),
+                                       {CUSTOM: 5000}, None) == 5000
