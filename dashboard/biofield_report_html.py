@@ -476,15 +476,10 @@ async function uploadPhoto(tid, eq, nq){
 
 
 def _plan_print_choice(tid):
-    """Glen, 2026-10-18: the Plan prints on its own, or "can be selected to print at
-    the same time as an addition to the same pdf file". The box adds ?plan=1 to the
-    print links on the page."""
-    return (" &nbsp;·&nbsp; <label title='Add the Foods, Remedies and Healing Tools Plan "
-            "after the report, in the same PDF'><input type=checkbox class=add-plan "
-            "onchange=\"document.querySelectorAll('a.print-report').forEach(function(a){"
-            "a.href=a.href.split('?')[0]+(this.checked?'?plan=1':'')},this)\"> Add the Plan</label>"
-            f" &nbsp;·&nbsp; <a href='/test/{tid}/plan' target='_blank'>Plan</a>"
-            f" (<a href='/test/{tid}/plan.pdf' target='_blank'>PDF</a>)"
+    """Glen, 2026-10-19: the Plan splits into four stand-alone reports, Diet, Healing
+    Tools, Ingredients and Remedy Sources. Their section buttons, print ticks and the
+    Singly / Grouped switch are on the Reports page."""
+    return (f" &nbsp;·&nbsp; <a href='/test/{tid}/reports' target='_blank'>Reports</a>"
             f" &nbsp;·&nbsp; <a href='/test/{tid}/overview' target='_blank'>Overview</a>")
 
 

@@ -1477,7 +1477,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        return Response(render_present(rep, narrative), mimetype="text/html")
+        return Response(_with_primary_added(test_id, rep, render_present(rep, narrative)),
+                        mimetype="text/html")
 
     @app.route("/test/<test_id>/report.pdf")
     def report_present_pdf(test_id):
@@ -1488,7 +1489,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        html = render_present(rep, narrative)
+        html = _with_primary_added(test_id, rep, render_present(rep, narrative))
         reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
                                      os.path.join(os.path.expanduser("~"), "biofield-reports"))
         date = (rep.get("date") or "").replace("/", "-") or "undated"
@@ -1511,6 +1512,124 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         suffix = "-with-plan" if request.args.get("plan") == "1" else ""
         return Response(data, mimetype="application/pdf", headers={
             "Content-Disposition": f'inline; filename="biofield-{test_id}{suffix}.pdf"'})
+
+    # --- The five reports and their section buttons (Glen, 2026-10-19) ---
+    def _primary_invoice(test_id, remedies):
+        """(remedies to bill, layer remedies left off, sections on) for the invoice,
+        from the Biofield Analysis's buttons. At the defaults it bills what it did."""
+        from dashboard import biofield_report_split as rsplit
+        with sqlite3.connect(db_path) as cx:
+            on = rsplit.settings(cx, test_id)[rsplit.PRIMARY]
+            powders = []
+            if rsplit.PURE_POWDERS in on:
+                from dashboard.biofield_plan_report import plan
+                powders = rsplit.pure_powder_names(plan(cx, test_id))
+        billed = rsplit.invoice_remedies(remedies, on, powders)
+        left_off = rsplit.left_off(remedies, on)
+        return billed, left_off, on
+
+    def _split_ctx(test_id, rep=None):
+        """(report data, Glen-only note html) for the five reports."""
+        from html import escape
+        from dashboard import biofield_report_split as rsplit
+        note = []
+        with sqlite3.connect(db_path) as cx:
+            if rep is None:
+                rep = _report_for(cx, test_id)
+            client = rep.get("client") or {}
+            email = (client.get("email") or "").strip()
+            marks, order, names = None, [], None
+            try:
+                from dashboard.e4l_scan_marks import infoceutical_marks
+                from dashboard.biofield_authoring import infoceutical_names_by_code
+                sctx = scan_lookup(email) if email else {}
+                if (sctx or {}).get("found"):
+                    marks = infoceutical_marks(cx, e4l_db, sctx.get("scan_id"))
+                    order = rsplit.recommended_order(e4l_db, sctx.get("scan_id"))
+                names = infoceutical_names_by_code(cx) or {}
+            except Exception as exc:  # said to Glen, never silent
+                note.append(f"The scan could not be read: {exc!r}"[:300])
+            for key in ("recommended_error", "purple_error"):
+                if (marks or {}).get(key):
+                    note.append(f"Scan: {marks[key]}")
+            ctx = rsplit.load(cx, test_id, client.get("name") or "", rep.get("date") or "",
+                              _kloud_program_if_ticked(cx, test_id, rep), marks, order, names)
+            on = rsplit.settings(cx, test_id)
+        glen = "".join(f"<details class=plan-glen open><summary>{escape(n)}. Not printed."
+                       "</summary></details>" for n in note)
+        return ctx, on, glen
+
+    def _with_primary_added(test_id, rep, report_html):
+        """The Biofield Analysis with any other section Glen switched on in it added
+        after the narrative. With none on, the report is unchanged."""
+        from dashboard import biofield_report_split as rsplit
+        from dashboard.biofield_plan_report import append_to_report
+        with sqlite3.connect(db_path) as cx:
+            on = rsplit.settings(cx, test_id)[rsplit.PRIMARY]
+        if not any(k not in rsplit.LAYER_SECTIONS for k in on):
+            return report_html
+        ctx, _, _ = _split_ctx(test_id, rep)
+        added = rsplit.primary_added(ctx, on)
+        return append_to_report(report_html, added) if added else report_html
+
+    @app.route("/test/<test_id>/reports")
+    def split_reports(test_id):
+        """Glen's page for the five reports: each one's section buttons, the print
+        ticks and the Singly / Grouped switch."""
+        from dashboard import biofield_report_split as rsplit
+        ctx, on, glen = _split_ctx(test_id)
+        return Response(rsplit.render_page(ctx, test_id, on, glen), mimetype="text/html")
+
+    @app.route("/test/<test_id>/report-sections", methods=["POST"])
+    def split_report_sections(test_id):
+        """Save one section button for this client (Glen: "yes, save per client")."""
+        from dashboard import biofield_report_split as rsplit
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body.get("on"), bool):
+            return jsonify({"ok": False, "error": "on must be true or false"}), 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                rsplit.set_section(cx, test_id, str(body.get("report") or ""),
+                                   str(body.get("section") or ""), body["on"])
+                on = rsplit.settings(cx, test_id)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "on": {r: sorted(v) for r, v in on.items()}})
+
+    @app.route("/test/<test_id>/reports.pdf")
+    def split_reports_pdf(test_id):
+        """One PDF of the stand-alone reports named in r=. Grouped makes one file of
+        them all in report order. Singly makes one file per report, so the page asks
+        for each separately and this refuses more than one."""
+        import os
+        import urllib.parse as _up
+        from dashboard import biofield_report_split as rsplit
+        mode = request.args.get("mode") or "singly"
+        if mode not in ("singly", "grouped"):
+            return Response("mode must be singly or grouped", status=400)
+        ctx, on, _ = _split_ctx(test_id)
+        jobs = rsplit.print_jobs(request.args.getlist("r"), mode, ctx["client_name"])
+        if len(jobs) != 1:
+            return Response("Ask for one file: tick a report, and one report at a time "
+                            "when printing singly.", status=400)
+        name, reports = jobs[0]
+        html = rsplit.grouped_html(ctx, reports, on)
+        reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
+                                     os.path.join(os.path.expanduser("~"), "biofield-reports"))
+        date = (ctx["date"] or "").replace("/", "-") or "undated"
+        folder = os.path.join(reports_dir, f"reports_{test_id}_{date}")
+        os.makedirs(folder, exist_ok=True)
+        out = os.path.join(folder, name)
+        try:
+            save_report_pdf(html, out)
+            data = open(out, "rb").read()
+        except Exception as e:
+            return Response(f"PDF generation failed: {e}", status=500)
+        how = "attachment" if request.args.get("download") == "1" else "inline"
+        ascii_name = name.encode("ascii", "replace").decode().replace("?", "_")
+        return Response(data, mimetype="application/pdf", headers={
+            "Content-Disposition": f'{how}; filename="{ascii_name}"; '
+                                   f"filename*=UTF-8''{_up.quote(name)}"})
 
     def _plan_for(test_id):
         from dashboard.biofield_plan_report import build
@@ -1998,6 +2117,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if not nm:
                 continue
             remedies.append({"name": nm, "qty": biofield_invoice.line_bottles(l)})
+        # The invoice follows the Biofield Analysis's section buttons (Glen, 2026-10-19).
+        remedies, left_off, _ = _primary_invoice(test_id, remedies)
         catalog = invoice_fetch_catalog()
         # Never re-charge a Biofield Analysis the client already paid for: drop the fee
         # line when a paid analysis order exists, invoicing remedies only. If that leaves
@@ -2017,7 +2138,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": True, "already_paid": not no_charge, "no_charge": no_charge,
                     "order_id": None if no_charge else paid.get("order_id"),
                     "added": 0, "skipped": built["skipped"], "warning": "", "note": note,
-                    "print_url": "", "orders_url": "", "external_ref": "", "total_dollars": ""}
+                    "print_url": "", "orders_url": "", "external_ref": "", "total_dollars": "",
+                    "left_off": left_off}
         # A repeated raise refreshes Biofield-sourced remedies from the schedule,
         # while keeping lines added manually in Edit Invoice on the current draft.
         previous = invoice_latest(email) or {}
@@ -2066,6 +2188,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 "skipped": built["skipped"],
                 "not_ready": built.get("not_ready") or [],
                 "warning": warning,
+                "left_off": left_off,
                 "total_dollars": biofield_fee.cents_to_dollars(total) if total is not None else ""}
 
     @app.route("/author/<test_id>/invoice/status")
@@ -2144,6 +2267,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         try:
             remedies = biofield_handoff.report_remedies_for_invoice(
                 db_path, rep, biofield_invoice.bottles_needed)
+            # The invoice follows the Biofield Analysis's section buttons (Glen, 2026-10-19).
+            from dashboard import biofield_report_split as _rsplit
+            n_layer = len(remedies)
+            remedies, _left_off, primary_on = _primary_invoice(test_id, remedies)
+            # The kept layer remedies come first; anything after them is a Pure Powder.
+            powders_added = remedies[n_layer - len(_left_off):]
             # Skip re-charging a paid Biofield Analysis: drop the fee line when already
             # paid (invoice remedies only), and skip the raise entirely if that empties
             # the invoice (pre-paid analysis with no remedies, e.g. Steve Fox).
@@ -2173,6 +2302,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # A folded Terrain Restore line holds several remedies: its count is
                 # the largest of theirs.
                 names = biofield_invoice.held_names(item)
+                if not any(_rsplit.layer_section(n) in primary_on for n in names):
+                    continue
                 line = {
                     "slug": slug,
                     "qty": max(qty_by_name.get((n or "").strip().lower(), 1) for n in names),
@@ -2181,6 +2312,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 if item.get("note"):
                     line["note"] = item["note"]
                 resolved_remedies.append(line)
+            # Pure Powders on in the Biofield Analysis: one bottle each (Glen, 2026-10-19).
+            for r in powders_added:
+                slug = biofield_invoice.resolve_line_slug(r.get("name") or "", catalog)
+                if (not slug or slug in biofield_invoice.RECOMMEND_ONLY_SLUGS
+                        or biofield_invoice.is_not_ready(slug, catalog)
+                        or any(l["slug"] == slug for l in resolved_remedies)):
+                    continue
+                resolved_remedies.append({"slug": slug, "qty": 1, "source": "biofield"})
             if resolved_remedies:
                 built["lines"] = ([{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}]
                                   if include_fee else []) + resolved_remedies

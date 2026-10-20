@@ -190,7 +190,9 @@ def lost_ticks(cx, test_id):
 # What each section is called beside an item under Remedies, where sections mix.
 KIND = {cs.FORMULATIONS: "Functional Formulation", cs.INFOCEUTICALS: "Infoceutical",
         "prl": "PRL", cs.NUTRIENTS: "Nutrient", cs.BOTANICALS: "Botanical",
-        cs.ESSENTIAL_OILS: "Essential oil", cs.FULLSCRIPT: "Fullscript supplement"}
+        cs.ESSENTIAL_OILS: "Essential oil", cs.FULLSCRIPT: "Fullscript supplement",
+        # No data yet (2026-10-19); the condition files will use these keys.
+        "pure_powders": "Pure Powders", "amazon": "Amazon"}
 
 
 # A merge group in clinical's map covers one of these scopes; products never merge.
@@ -433,7 +435,9 @@ def _line_html(line, show_kind):
     head = (f"<span class=plan-name>{e(line['name'])}</span>"
             + (f" <span class=plan-kind>{e(line['kind'])}</span>" if show_kind and line["kind"] else "")
             + (f" <span class=plan-program>{e(line['program'])}</span>" if line.get("program") else "")
-            + (f" <span class=plan-dose>{e(one_dose)}</span>" if one_dose else ""))
+            + (f" <span class=plan-dose>{e(one_dose)}</span>" if one_dose else "")
+            + (f" <span class=plan-note>{e(line['note'])}</span>" if line.get("note") else "")
+            + (f"<p class=plan-source>{e(line['source'])}</p>" if line.get("source") else ""))
     subs = []
     for en in line["entries"]:
         bits = [e(en["condition"])]
@@ -446,7 +450,7 @@ def _line_html(line, show_kind):
         subs.append(f"<li><span class=plan-for>{' · '.join(bits)}</span>"
                     + (f"<p class=plan-why>{e(en['explanation'])}</p>" if en["explanation"] else "")
                     + "</li>")
-    return f"<li>{head}<ul class=plan-conds>{''.join(subs)}</ul></li>"
+    return f"<li>{head}" + (f"<ul class=plan-conds>{''.join(subs)}</ul>" if subs else "") + "</li>"
 
 
 def _by_score(lines, show_kind, meanings):
@@ -474,45 +478,58 @@ def e_(text):
     return html.escape(str(text))
 
 
+PLAN_TITLE = "Foods, Remedies and Healing Tools Plan"
+
+
 def render_plan_section(plan_groups, client_name="", date="", score_meanings=None,
-                        intro=(), cautions=(), frame=None):
+                        intro=(), cautions=(), frame=None, headings=None, title=PLAN_TITLE,
+                        extra=""):
     """The plan as one block with its own scoped styles, so it can follow the
     Biofield Analysis in the same PDF or stand alone. Nothing unapproved is printed.
     Under Remedies, sections mix within each score, so each line names its kind.
     `cautions` is [(name, text, [line names])] from cautions_for; `frame` holds the
-    approved report-level lines by key."""
+    approved report-level lines by key.
+
+    `headings` replaces HEADINGS for one report (Glen, 2026-10-19: the Plan splits
+    into stand-alone reports). Each is (heading, groups) or (heading, groups, mixed,
+    show heading); by default only "Remedies" mixes. `title` heads the block, and
+    none prints when it is empty. `extra` is html placed after the headings."""
     e = html.escape
     frame = frame or {}
     parts = []
-    for heading, groups in HEADINGS:
+    for entry in (HEADINGS if headings is None else headings):
+        heading, groups = entry[0], entry[1]
+        mixed = entry[2] if len(entry) > 2 else heading == "Remedies"
+        show_heading = entry[3] if len(entry) > 3 else True
+        keys = {key for key, _ in groups}
         blocks = []
-        if heading == "Remedies":
+        if mixed:
             lines = sorted((line for key, _ in groups for line in plan_groups.get(key) or []),
                            key=lambda i: (-(i["overall"] or 0), i["name"].lower()))
             if lines:
                 blocks.append(_by_score(lines, True, score_meanings))
         else:
             # Foods to emphasize and Foods to avoid stay apart (Glen, 2026-10-18).
-            for key, title in groups:
+            for key, group_title in groups:
                 lines = plan_groups.get(key) or []
                 if lines:
-                    sub = f"<h3>{e(title)}</h3>" if len(groups) > 1 else ""
+                    sub = f"<h3>{e(group_title)}</h3>" if len(groups) > 1 else ""
                     blocks.append(sub + _by_score(lines, False, score_meanings))
         # The infoceutical header heads Remedies, where infoceuticals mix by score.
-        if heading == "Remedies" and plan_groups.get(cs.INFOCEUTICALS) \
+        if mixed and cs.INFOCEUTICALS in keys and plan_groups.get(cs.INFOCEUTICALS) \
                 and frame.get("infoceutical_header"):
             blocks.insert(0, f"<p class=plan-frame>{e(frame['infoceutical_header'])}</p>")
         # The oils' safety line heads Remedies too, once, only with an oil ticked.
-        if heading == "Remedies" and plan_groups.get(cs.ESSENTIAL_OILS) \
+        if mixed and cs.ESSENTIAL_OILS in keys and plan_groups.get(cs.ESSENTIAL_OILS) \
                 and frame.get("essential_oils_header"):
             at = 1 if blocks and blocks[0].startswith("<p class=plan-frame>") else 0
             blocks.insert(at, f"<p class=plan-frame>{e(frame['essential_oils_header'])}</p>")
         if blocks:
-            parts.append(f"<section class=plan-heading><h2>{e(heading)}</h2>"
-                         f"{''.join(blocks)}</section>")
-    title = "Foods, Remedies and Healing Tools Plan"
+            parts.append("<section class=plan-heading>"
+                         + (f"<h2>{e(heading)}</h2>" if show_heading else "")
+                         + f"{''.join(blocks)}</section>")
     who = f"<p class=plan-who>{e(client_name)}{' · ' + e(date) if date else ''}</p>" \
-        if client_name else ""
+        if client_name and title else ""
     # Report-level lines print once at the top; the vertigo line only with a Vertigo tick.
     top = [frame[k] for k in ("vertigo_safety", "dose_totals", "thyroid_spacing")
            if frame.get(k) and (k != "vertigo_safety" or _has_condition(plan_groups, "vertigo"))]
@@ -526,10 +543,11 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
                              f"{e(name)}</span> {e(text)}</p><p class=plan-caution-items>"
                              f"{' · '.join(e(n) for n in hits)}</p></div>"
                              for name, text, hits in cautions) + "</div>")
-    return (f"<style>{PLAN_CSS}</style><main class=plan><h1>{title}</h1>{who}"
+    return (f"<style>{PLAN_CSS}</style><main class=plan>"
+            + (f"<h1>{e(title)}</h1>" if title else "") + who
             + "".join(f"<p class=plan-intro>{e(line)}</p>" for line in intro or ())
             + "".join(f"<p class=plan-frame>{e(line)}</p>" for line in top)
-            + caution + "".join(parts) + "</main>")
+            + caution + "".join(parts) + extra + "</main>")
 
 
 def plan_page(body):
@@ -583,6 +601,10 @@ PLAN_CSS = (
     ".plan-caution{margin:8px 0}.plan-caution-name{font-weight:600}"
     ".plan-caution-items{color:#555;font-size:.92em}.plan-frame{margin:8px 0}"
     ".plan-program{font-weight:600}"
+    ".plan-note{font:12px system-ui,sans-serif;color:#2d6a4f;background:#e8f3ec;"
+    "border-radius:4px;padding:1px 6px;margin-left:4px}"
+    ".plan-source{margin:2px 0 0;color:#56656f;font-size:13px}"
+    ".plan-amazon{margin:18px 0 0;color:#56656f;font-size:13px}"
     ".plan h1{font-size:26px;margin:0 0 4px}.plan-who{color:#56656f;margin:0 0 18px}"
     ".plan h2{font-size:20px;border-bottom:1px solid #c9d3d9;padding-bottom:4px;margin:26px 0 8px}"
     ".plan h3{font-size:15px;margin:14px 0 4px;color:#2f5d73}"
