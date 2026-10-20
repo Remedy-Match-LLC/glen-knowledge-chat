@@ -43,8 +43,8 @@ const code = [
 ].join('\n');
 const renderFn = (0, eval)(code); // eslint-disable-line no-eval
 
-function render(d) {
-  return renderFn(d, {}, false, false, false, 'SEG', 'TOK', null, '', 'Gita', [], [], null,
+function render(d, v) {
+  return renderFn(d, v || {}, false, false, false, 'SEG', 'TOK', null, '', 'Gita', [], [], null,
     { origin: 'https://example.test', href: 'https://example.test/portal/SEG', search: '' },
     { PortalConditions: require('../static/js/portal-conditions.js') });
 }
@@ -86,6 +86,18 @@ function hasNotice(html) {
   const html = render(report(undefined, 'ai_draft'));
   assert.ok(html.indexOf(BF_LINE) !== -1);
   assert.ok(!hasNotice(html));
+}
+
+// --- The card follows the report it shows ---
+{
+  // Off a member tab the card renders the view block (v.biofield), which can be a
+  // different report from the payload's. Its kind must win.
+  const v = { biofield: { visible: true, status: 'ai_draft', report_kind: 'remedy_match',
+                          layers: LAYERS, scan_date: '2026-10-14', scan_dates: ['2026-10-14'] } };
+  const html = render(report('biofield', 'ai_draft'), v);
+  assert.ok(html.indexOf(RM_LINE) !== -1, 'the view block\'s kind decides the words');
+  const v2 = { biofield: Object.assign({}, v.biofield, { report_kind: 'biofield' }) };
+  assert.ok(render(report('remedy_match', 'ai_draft'), v2).indexOf(BF_LINE) !== -1);
 }
 
 // --- The interested state carries the notice in the report body ---

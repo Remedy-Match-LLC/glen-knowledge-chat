@@ -200,6 +200,24 @@ def test_backfill_commit_writes_only_null_rows(tmp_path):
     assert pbr.backfill_report_kinds(cx, dry_run=False)["written"] == 0
 
 
+def test_backfill_never_overwrites_a_kind_set_mid_run(tmp_path, monkeypatch):
+    # A writer sets a kind between the backfill's read and its write. The write is
+    # compare-and-set on NULL, so the writer's value stands and the row counts as raced.
+    cx = _db(tmp_path)
+    _seed_unclassified(cx)
+    real = pbr.infer_kind
+
+    def _racing(content, scan_id=None):
+        cx.execute("UPDATE portal_biofield_reports SET report_kind='biofield' "
+                   "WHERE email='rm@x.com'")
+        return real(content, scan_id)
+
+    monkeypatch.setattr(pbr, "infer_kind", _racing)
+    out = pbr.backfill_report_kinds(cx, dry_run=False)
+    assert out["raced"] == 1 and out["written"] == 1
+    assert _stored(cx, "rm@x.com", "2026-10-14") == "biofield"
+
+
 # ── The app: routes and emails ────────────────────────────────────────────────
 
 @pytest.fixture
