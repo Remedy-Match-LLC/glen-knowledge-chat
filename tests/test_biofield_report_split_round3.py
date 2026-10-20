@@ -347,6 +347,9 @@ def test_the_leads_are_the_approved_wording():
     assert _digest(leads) == APPROVED_DIGEST
     # Glen, 2026-10-19: "Use each remedy as guided." not 'take'.
     assert leads["biofield"][7] == "Use each remedy as guided."
+    # Glen, 2026-10-20, "approve" on the deferral sweep: no prescriber deferral.
+    assert leads["biofield"][9] == "If you take any medicine, let me know so I can plan around it."
+    assert "prescriber" not in json.dumps(leads)
 
 
 def test_the_amazon_line_is_the_approved_wording():
@@ -356,7 +359,7 @@ def test_the_amazon_line_is_the_approved_wording():
                                     "qualifying purchases.")
 
 
-APPROVED_DIGEST = "6740036ce596393cfbbf58727649e891080a07af66bc037e9391d787ba314ec3"
+APPROVED_DIGEST = "8f18f492fd6490c801cabc5fe5f65e8fdd0b3a9504107c397d11ec8e164d0695"
 
 
 def test_a_list_item_never_splits_across_pages(cx):
