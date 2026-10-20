@@ -176,6 +176,9 @@ WARNING_SIGNS = (
 _SIGN_LABELS = dict(WARNING_SIGNS)
 
 _DIZZY = r"(?:dizz\w*|vertigo|light[- ]?headed\w*|(?:room|world|everything)\s+(?:is\s+|was\s+|keeps\s+)?spinning)"
+_BABY = (r"\b(?:bab(?:y|y's|ies)|infant\w*|newborn\w*|toddler\w*|little one\w*|"
+         r"(?:\d{1,2}|one|two|three|six|nine|eleven|eighteen)[- ](?:week|month)s?[- ]old|"
+         r"(?:1|one|2|two)[- ]years?[- ]old)\b")
 _SIGN_PATTERNS = {
     "dizziness": [
         re.compile(r"\b(?:sudden\w*|severe\w*|extreme\w*|very|really|so|terribl\w*|horribl\w*|"
@@ -209,11 +212,19 @@ _SIGN_PATTERNS = {
         re.compile(r"\b(?:lips?|tongue|throat)\b[^.!?\n]{0,30}\b(?:swell\w*|swollen|puff\w*)\b", re.I),
         re.compile(r"\bthroat\b[^.!?\n]{0,20}\b(?:closing|tightening|closing up)\b", re.I),
     ],
-    "hives-breathing": [
+    "hives": [
         re.compile(r"\b(?:hives|welts|urticaria)\b", re.I),
+    ],
+    "breathing": [
         re.compile(r"\b(?:trouble|difficulty|hard|struggling|struggle|can'?t|cannot|unable)\s+"
                    r"(?:to\s+)?(?:breath\w*|catch my breath)\b", re.I),
         re.compile(r"\bshort(?:ness)?\s+of\s+breath\b|\bwheez\w*|\bgasping\b", re.I),
+    ],
+    # Any fever in a baby or a child under about 2 (coordinator for Glen, 20 Oct
+    # 2026; his approved report line: "A fever in a baby needs prompt attention").
+    "fever-baby": [
+        re.compile(_BABY + r"[^.!?\n]{0,50}\b(?:fever\w*|temp\w*)\b", re.I),
+        re.compile(r"\b(?:fever\w*|temp\w*)\b[^.!?\n]{0,40}" + _BABY, re.I),
     ],
     "jaundice": [
         re.compile(r"\bjaundic\w*\b", re.I),
@@ -262,7 +273,8 @@ def _sentences(text):
 
 # Negation inside the matched words ("my lips are not swollen"). Not used for
 # fever, whose own patterns read "won't go down" / "will not break" as a sign.
-_NEGATION_INSIDE = re.compile(r"\b(?:not|isn'?t|aren'?t|wasn'?t|weren'?t|no longer|never)\b", re.I)
+_NEGATION_INSIDE = re.compile(r"\b(?:not|isn'?t|aren'?t|wasn'?t|weren'?t|no longer|never|"
+                              r"doesn'?t|don'?t|didn'?t|hasn'?t|haven'?t)\b", re.I)
 
 
 def _negated(sentence, m, key):
@@ -272,23 +284,34 @@ def _negated(sentence, m, key):
     return key != "fever" and bool(_NEGATION_INSIDE.search(m.group(0)))
 
 
+# Internal pattern groups that report as one public sign key.
+_REPORTS_AS = {"hives": "hives-breathing", "breathing": "hives-breathing",
+               "fever-baby": "fever"}
+# These trip with no first-person or time word: "Swollen lips and tongue!" must
+# flag. A false alarm costs Glen one email; a miss costs far more. The negation
+# and hypothetical rules still apply.
+_NO_MARKER_NEEDED = {"swelling", "breathing"}
+
+
 def warning_signs(message):
     """The warning-sign keys the client's message reports, in WARNING_SIGNS order.
     Empty when none. Pure and deterministic: no model call."""
     found = set()
     for sentence in _sentences(message):
-        if not _REPORT_MARKER.search(sentence):
-            continue
         if (_HYPOTHETICAL.search(sentence)
                 and not _PRESENT_REPORT.search(_IF_CLAUSE.sub(" ", sentence))):
             continue
+        has_marker = bool(_REPORT_MARKER.search(sentence))
         for key, patterns in _SIGN_PATTERNS.items():
-            if key in found:
+            out = _REPORTS_AS.get(key, key)
+            if out in found:
+                continue
+            if not has_marker and key not in _NO_MARKER_NEEDED:
                 continue
             for pat in patterns:
                 m = pat.search(sentence)
                 if m and not _negated(sentence, m, key):
-                    found.add(key)
+                    found.add(out)
                     break
     return [k for k, _ in WARNING_SIGNS if k in found]
 

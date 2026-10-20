@@ -67,6 +67,30 @@ TRIPS = {
 }
 
 
+# Any fever in a baby or a child under about 2, no "high" or "lasting" needed.
+TRIPS["fever"] += [
+    "My baby has a fever.",
+    "My infant feels warm and has a temperature tonight.",
+    "Our newborn has a slight fever.",
+    "My toddler woke up with a fever.",
+    "My little one has a fever.",
+    "My 18-month-old has a low fever.",
+    "My one-year-old is running a temp.",
+    "Fever in my 6 month old since lunch.",
+]
+# Swelling and breathing need no first-person or time word.
+TRIPS["swelling"] += [
+    "Swollen lips and tongue!",
+    "Throat closing up.",
+    "Lips swelling, help",
+]
+TRIPS["hives-breathing"] += [
+    "Trouble breathing after the drops.",
+    "Can't breathe properly.",
+    "Short of breath and wheezing.",
+]
+
+
 @pytest.mark.parametrize("key,phrase", [(k, p) for k, ps in TRIPS.items() for p in ps])
 def test_each_warning_sign_trips_the_backstop(key, phrase):
     assert key in pt.warning_signs(phrase), phrase
@@ -104,6 +128,19 @@ ROUTINE = [
     "I haven't had a healing crisis this time.",
     "My eyes aren't yellow now.",
     "I'm not short of breath since the change.",
+    # Baby fever: negation and hypothetical rules still apply.
+    "My baby doesn't have a fever anymore.",
+    "If my baby gets a fever, what should I do?",
+    "What if my toddler gets a fever?",
+    "Can a baby have a fever from teething?",
+    "My baby is teething and fussy.",
+    # Swelling/breathing without a marker: negation and hypothetical rules apply.
+    "Can this cause swollen lips?",
+    "What if my throat swells?",
+    "No trouble breathing today.",
+    "Lips not swollen anymore.",
+    "Could this cause trouble breathing?",
+    "Hives can come from histamine.",
 ]
 
 
