@@ -8446,12 +8446,22 @@ def _line_qty(ln):
         return 1
 
 
+_CUSTOM_TR_SLUG = "terrain-restore-custom"   # dashboard.biofield_invoice.CUSTOM_TERRAIN_RESTORE_SLUG
+
+
+def _counts_toward_volume(p):
+    """A product whose bottles count toward the order's volume rate: every Functional
+    Formulation, and a product flagged counts_toward_volume that is never discounted
+    itself (the custom Terrain Restore, Glen 2026-10-19: "yes")."""
+    return bool(p) and (_qty_eligible(p) or bool(p.get("counts_toward_volume")))
+
+
 def _inhouse_total_ff_qty(lines_in):
     """Sum of qty across $70 functional-formulation lines in the cart."""
     tot = 0
     for ln in lines_in:
         p = _get_product((ln.get("slug") or "").strip())
-        if p and _qty_eligible(p):
+        if p and _counts_toward_volume(p):
             # A zero-qty reference line must not count toward the order-wide volume
             # tier -- it would quietly cheapen every other bottle on the invoice.
             tot += _line_qty(ln)
@@ -26424,6 +26434,9 @@ def _portal_priced_lines(items, email=None):
             print(f"[portal-checkout] client-price lookup failed for {email!r}: {e!r}", flush=True)
             client_by_slug, client_ff_flat = {}, None
     lines, items_rec, subtotal_cents = [], [], 0
+    if _get_product(_CUSTOM_TR_SLUG):
+        from dashboard.biofield_invoice import upgrade_old_folded as _upgrade
+        items = _upgrade(items)
     for it in (items or []):
         slug = (it.get("slug") or "").strip()
         p = _get_product(slug) if slug else None
@@ -26450,7 +26463,11 @@ def _portal_priced_lines(items, email=None):
                 p, None, total_ff_qty, settings, repertoire_slugs=rep_slugs,
                 program_member=program_member, line_qty=qty))
         else:
-            unit_cents = _inhouse_line_unit_cents(p, _curated_unit_cents(it), total_ff_qty, settings,
+            # A single "X in Terrain Restore" is always $70; a price stored on a report
+            # line for one came from an old courtesy price (review round 3, 2026-10-19).
+            _baked = (None if p.get("fixed_price") and slug != _CUSTOM_TR_SLUG
+                      else _curated_unit_cents(it))
+            unit_cents = _inhouse_line_unit_cents(p, _baked, total_ff_qty, settings,
                                                   repertoire_slugs=rep_slugs,
                                                   program_member=program_member, line_qty=qty)
         subtotal_cents += unit_cents * qty
@@ -26965,41 +26982,65 @@ def _merge_accepted_recommendation_items(cx, email, reorder_items):
     failure must never break a portal render or a checkout."""
     base = list(reorder_items or [])
     try:
-        if not email:
-            return base
-        from dashboard import practitioner_recommendations as _pr
-        cx.row_factory = sqlite3.Row
-        _pr.init_table(cx)
-        rec = _pr.active_for_patient(cx, email)
-        if not rec or rec.get("status") != "accepted":
-            return base
-        have = {(it.get("slug") or "").strip().lower() for it in base}
-        # An ingredient already inside a folded Terrain Restore bottle is not added
-        # again as its own line (2026-10-19).
-        from dashboard.biofield_invoice import held_slugs as _held_slugs
-        for it in base:
-            if isinstance(it, dict):
-                have |= _held_slugs(it)
-        for it in (rec.get("items") or []):
-            slug = (it.get("slug") or "").strip().lower()
-            if not slug or slug in have:
-                continue
-            try:
-                qty = max(1, min(int(it.get("qty", 1) or 1), 99))
-            except Exception:
-                qty = 1
-            base.append(_reorder_item_from_slug(slug, qty))
-            have.add(slug)
-        # A recommended "in Terrain Restore" ingredient joins the client's bottle,
-        # never a second $70 line beside it (2026-10-19).
-        if any(isinstance(it, dict) and it.get("held") for it in base):
-            from dashboard import biofield_invoice as _bfi
-            base = _bfi.fold_reorder_items(
-                base, name_of=lambda sl: (_get_product(sl) or {}).get("name"),
-                base_ok=bool(_get_product(_bfi.TERRAIN_RESTORE_SLUG))
-                        and not _waitlist_block(_bfi.TERRAIN_RESTORE_SLUG),
-                ready=lambda sl: bool(_get_product(sl)) and not _waitlist_block(sl))
+        from dashboard.biofield_invoice import upgrade_old_folded as _upgrade
+        if _get_product(_CUSTOM_TR_SLUG):
+            base = _upgrade(base)
+    except Exception:
+        pass
+    try:
+        if email:
+            base = _merge_accepted_rec_into(cx, email, base)
+    except Exception:
+        pass
+    return _fold_terrain_restore_items(base)
+
+
+def _merge_accepted_rec_into(cx, email, base):
+    """The accepted recommendation's items added to ``base``, each slug once."""
+    from dashboard import practitioner_recommendations as _pr
+    cx.row_factory = sqlite3.Row
+    _pr.init_table(cx)
+    rec = _pr.active_for_patient(cx, email)
+    if not rec or rec.get("status") != "accepted":
         return base
+    base = list(base)
+    have = {(it.get("slug") or "").strip().lower() for it in base}
+    # An ingredient already inside a folded Terrain Restore bottle is not added
+    # again as its own line (2026-10-19).
+    from dashboard.biofield_invoice import held_slugs as _held_slugs
+    for it in base:
+        if isinstance(it, dict):
+            have |= _held_slugs(it)
+    for it in (rec.get("items") or []):
+        slug = (it.get("slug") or "").strip().lower()
+        if not slug or slug in have:
+            continue
+        try:
+            qty = max(1, min(int(it.get("qty", 1) or 1), 99))
+        except Exception:
+            qty = 1
+        base.append(_reorder_item_from_slug(slug, qty))
+        have.add(slug)
+    return base
+
+
+def _fold_terrain_restore_items(base):
+    """Every "in Terrain Restore" ingredient on the list as one $70 bottle (Glen,
+    2026-10-19: "one or more added ingredient"). A recommended ingredient joins the
+    client's bottle, never a second line beside it. It runs on every read, so a
+    report published before the rule, with a single "X in Terrain Restore" at an old
+    courtesy price, bills $70 too (review round 3). Unchanged on any failure."""
+    try:
+        from dashboard import biofield_invoice as _bfi
+        if not any(isinstance(it, dict) and (it.get("held") or _bfi.terrain_restore_ingredient(
+                (_get_product((it.get("slug") or "").strip()) or {}).get("name")))
+                   for it in base):
+            return base
+        return _bfi.fold_reorder_items(
+            base, name_of=lambda sl: (_get_product(sl) or {}).get("name"),
+            base_ok=bool(_get_product(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG))
+                    and not _waitlist_block(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG),
+            ready=lambda sl: bool(_get_product(sl)) and not _waitlist_block(sl))
     except Exception:
         return base
 
@@ -30708,12 +30749,18 @@ def _portal_open_cart(cx, portal, *, seed=True):
     # A folded Terrain Restore line replaces the ingredient rows an earlier seed put
     # in the cart, or checkout would bill the bottle and each ingredient (2026-10-19).
     # Only rows this seeding added go; a row the client added stays.
-    from dashboard.biofield_invoice import TERRAIN_RESTORE_SLUG as _TR, held_slugs as _held_slugs
-    _tr_sellable = bool(_get_product(_TR)) and not _waitlist_block(_TR)
+    from dashboard.biofield_invoice import FOLDED_SLUGS as _FOLDED, held_slugs as _held_slugs
+    from dashboard.biofield_invoice import (CUSTOM_TERRAIN_RESTORE_SLUG as _bfi_custom_slug,
+                                            TERRAIN_RESTORE_SLUG as _bfi_plain_slug)
     for item in curated:
-        if (_tr_sellable and isinstance(item, dict)
-                and (item.get("slug") or "").strip().lower() == _TR):
-            for _gone in _held_slugs(item) - {_TR}:
+        _fslug = (item.get("slug") or "").strip().lower() if isinstance(item, dict) else ""
+        if (_fslug in _FOLDED and _get_product(_fslug) and not _waitlist_block(_fslug)):
+            _stale = _held_slugs(item) - {_fslug}
+            if _fslug == _bfi_custom_slug:
+                # An older build seeded the folded bottle as plain Terrain Restore; the
+                # custom bottle replaces it (review round 2, 2026-10-19).
+                _stale |= {_bfi_plain_slug}
+            for _gone in _stale:
                 cx.execute("DELETE FROM cart_items WHERE token=? AND slug=? "
                            "AND source='portal-curated'", (token, _gone))
             cx.commit()
@@ -33932,8 +33979,8 @@ def api_console_biofield_publish():
         content["reorder_items"] = _bfi.fold_reorder_items(
             content["reorder_items"],
             name_of=lambda sl: (_get_product(sl) or {}).get("name"),
-            base_ok=bool(_get_product(_bfi.TERRAIN_RESTORE_SLUG))
-                    and not _waitlist_block(_bfi.TERRAIN_RESTORE_SLUG),
+            base_ok=bool(_get_product(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG))
+                    and not _waitlist_block(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG),
             ready=lambda sl: bool(_get_product(sl)) and not _waitlist_block(sl))
     from dashboard import client_portal as _cp
     # Publishing a report makes it the client's CURRENT one (wins over any older
@@ -57581,6 +57628,18 @@ def _hold_new_order_and_invite(cx, order_id):
     return res
 
 
+def _pooled_volume_qty(members):
+    """Bottles across a household's orders that count toward the pooled volume rate.
+    The custom Terrain Restore counts, though it is never discounted itself."""
+    pooled_qty = 0
+    for m in members:
+        for item in (m.get("items") or []):
+            product = _get_product((item.get("slug") or "").strip())
+            if product and _counts_toward_volume(product):
+                pooled_qty += max(1, int(item.get("qty") or 1))
+    return pooled_qty
+
+
 def _recompute_combined_shipping(cx, sid):
     """Recompute a combined shipment's ONE-parcel shipping (the geometric packer on
     the union of all members' bottles, via the same _price_cart the invoices use)
@@ -57602,12 +57661,7 @@ def _recompute_combined_shipping(cx, sid):
             _fp.init_family_plan_table(cx)
             holder = _fp.shared_active_plan_holder(cx, [m.get("email") for m in members])
             if holder:
-                pooled_qty = 0
-                for m in members:
-                    for item in (m.get("items") or []):
-                        product = _get_product((item.get("slug") or "").strip())
-                        if product and _qty_eligible(product):
-                            pooled_qty += max(1, int(item.get("qty") or 1))
+                pooled_qty = _pooled_volume_qty(members)
                 changed = []
                 # _pricing_settings() contains only persisted overrides. Merge the
                 # engine defaults so a sparse/absent file still has volume_anchors,

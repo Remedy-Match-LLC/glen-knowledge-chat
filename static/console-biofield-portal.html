@@ -490,6 +490,9 @@ function addItem(it, specialCents){
   if(Array.isArray(it.held)) el.dataset.held = JSON.stringify(it.held);
   $('reitems').appendChild(el);
 }
+// A folded line: the custom Terrain Restore, or plain Terrain Restore folded by an
+// older build. Either one carries its note and what it holds (2026-10-19).
+const FOLDED_TR = ['terrain-restore-custom', 'terrain-restore'];
 function collectItems(){
   return [...$('reitems').children].map(el=>{
     const slug = el.querySelector('.rs').value.trim();
@@ -497,7 +500,7 @@ function collectItems(){
     const o = {slug, qty: parseInt(el.querySelector('.rq').value)||1};
     const p = el.querySelector('.rp').value.trim();
     if(p!=='') o.price_cents = parseInt(p);
-    if(slug==='terrain-restore'){
+    if(FOLDED_TR.includes(slug)){
       if(el.dataset.note) o.note = el.dataset.note;
       try{ if(el.dataset.held) o.held = JSON.parse(el.dataset.held); }catch(e){}
     }
@@ -510,7 +513,8 @@ function syncOrderFromLayers(){
   // An ingredient held by the folded Terrain Restore line maps back to that line, so
   // its count, price and note survive a sync (2026-10-19). Publishing folds the rest.
   const heldBy = {}, heldNow = [];
-  ((existing['terrain-restore']||{}).held||[]).forEach(h => { if(h && h.slug) heldBy[h.slug] = h; });
+  const trSlug = FOLDED_TR.find(s => ((existing[s]||{}).held||[]).length) || FOLDED_TR[0];
+  ((existing[trSlug]||{}).held||[]).forEach(h => { if(h && h.slug) heldBy[h.slug] = h; });
   const slugs = [];
   // Several remedies in one layer are joined with a SPACED plus (" + "). A bare
   // "+" is part of names such as "Neuro+ Eye Drops", so it must not split them.
@@ -518,16 +522,16 @@ function syncOrderFromLayers(){
     let slug = CAT_BY_NAME[part.trim().toLowerCase()];
     if(slug && heldBy[slug]){
       if(!heldNow.includes(heldBy[slug])) heldNow.push(heldBy[slug]);
-      slug = 'terrain-restore';
+      slug = trSlug;
     }
     if(slug && !slugs.includes(slug)) slugs.push(slug);
   }));
   // The folded line holds only what the layers still name, in layer order; the
   // note is rebuilt from that on publish.
   if(heldNow.length){
-    const tr = Object.assign({}, existing['terrain-restore'], {held: heldNow});
+    const tr = Object.assign({}, existing[trSlug], {held: heldNow});
     delete tr.note;
-    existing['terrain-restore'] = tr;
+    existing[trSlug] = tr;
   }
   $('reitems').innerHTML = '';
   slugs.forEach(slug => addItem(existing[slug] || {slug, qty: 1}));

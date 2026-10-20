@@ -42,13 +42,14 @@ def build_portal_seed(cx, test_id, resolve_slug, name=None, terrain_restore_ok=N
             reorder.append({"slug": slug, "name": remedy})
     # All "in Terrain Restore" items are one bottle of Terrain Restore (Glen,
     # 2026-10-19); then each product once.
-    from dashboard.biofield_invoice import TERRAIN_RESTORE_SLUG, fold_terrain_restore
+    from dashboard.biofield_invoice import (CUSTOM_TERRAIN_RESTORE_NAME,
+                                            CUSTOM_TERRAIN_RESTORE_SLUG, fold_terrain_restore)
     # The caller that holds the catalog says whether plain Terrain Restore can be
     # sold; without it, it must at least resolve.
     base_ok = terrain_restore_ok
     if base_ok is None:
         try:
-            base_ok = resolve_slug("Terrain Restore") == TERRAIN_RESTORE_SLUG
+            base_ok = resolve_slug(CUSTOM_TERRAIN_RESTORE_NAME) == CUSTOM_TERRAIN_RESTORE_SLUG
         except Exception:
             base_ok = False
     folded = []

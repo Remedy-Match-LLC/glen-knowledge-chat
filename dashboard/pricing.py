@@ -264,7 +264,11 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
         v = subscriber_tier_pct(it) if callable(subscriber_tier_pct) else subscriber_tier_pct
         return v
 
-    total_months = sum(int(it.get("months") or 0) for it in items if it.get("volume_eligible"))
+    # A fixed-price product (the custom Terrain Restore, Glen 2026-10-19) still counts
+    # toward the order's volume months when flagged counts_toward_volume.
+    total_months = sum(int(it.get("months") or 0) for it in items
+                       if it.get("volume_eligible")
+                       or (it.get("product") or {}).get("counts_toward_volume"))
     open_pct = open_total_pct(total_months, settings)
     prog_pct = program_total_pct(total_months, settings, program_member)
     points_left = whole_dollars(points_to_redeem_cents or 0)
@@ -289,6 +293,8 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
             # line_pct/apply_discount work in 0-100 percent, so convert here.
             rep_pct = float(settings.get("repertoire_reorder_pct") or 0.0) * 100.0
         line_pct = max(t1, order_pct, base_pct, rep_pct)             # non-additive: best single offer
+        if p.get("fixed_price"):
+            line_pct = 0.0          # never discounted: "yes, always $70" (Glen, 2026-10-19)
         disc_floor = unit_floor_cents(p, unit_list, settings, "discount")
         pts_floor = unit_floor_cents(p, unit_list, settings, "points") * qty
         # Per unit, then times qty, so every bottle is a whole dollar (see apply_discount).
