@@ -344,6 +344,11 @@ def fold_reorder_items(items, name_of, base_ok, ready=None):
                     for n in note_ingredients(it.get("note"))]
         if held:
             price = base.pop("price_cents", None)
+            if it["slug"] == TERRAIN_RESTORE_SLUG:
+                # A plain Terrain Restore folded by an older build was priced under the
+                # old rule (volume or courtesy), so the custom bottle it becomes starts
+                # at $70 (review round 2, 2026-10-19). Rae can type a price again.
+                price = None
             if bottles is None:
                 bottles = (_qty(it.get("qty")), set())
             bottles = (max(bottles[0], _qty(it.get("qty"))),

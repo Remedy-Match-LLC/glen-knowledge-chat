@@ -30711,10 +30711,17 @@ def _portal_open_cart(cx, portal, *, seed=True):
     # in the cart, or checkout would bill the bottle and each ingredient (2026-10-19).
     # Only rows this seeding added go; a row the client added stays.
     from dashboard.biofield_invoice import FOLDED_SLUGS as _FOLDED, held_slugs as _held_slugs
+    from dashboard.biofield_invoice import (CUSTOM_TERRAIN_RESTORE_SLUG as _bfi_custom_slug,
+                                            TERRAIN_RESTORE_SLUG as _bfi_plain_slug)
     for item in curated:
         _fslug = (item.get("slug") or "").strip().lower() if isinstance(item, dict) else ""
         if (_fslug in _FOLDED and _get_product(_fslug) and not _waitlist_block(_fslug)):
-            for _gone in _held_slugs(item) - {_fslug}:
+            _stale = _held_slugs(item) - {_fslug}
+            if _fslug == _bfi_custom_slug:
+                # An older build seeded the folded bottle as plain Terrain Restore; the
+                # custom bottle replaces it (review round 2, 2026-10-19).
+                _stale |= {_bfi_plain_slug}
+            for _gone in _stale:
                 cx.execute("DELETE FROM cart_items WHERE token=? AND slug=? "
                            "AND source='portal-curated'", (token, _gone))
             cx.commit()

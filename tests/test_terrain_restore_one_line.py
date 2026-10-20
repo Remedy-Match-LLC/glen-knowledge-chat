@@ -556,6 +556,22 @@ def test_a_cart_seeded_before_the_fold_loses_the_ingredient_rows(monkeypatch, tm
             "microbiome": None, CUSTOM: NOTE_BOTH}
 
 
+def test_a_cart_seeded_with_the_old_folded_plain_bottle_loses_it(monkeypatch, tmp_path):
+    """An older build seeded the folded bottle as plain Terrain Restore. The custom
+    bottle replaces it, or checkout bills two bottles (review round 2)."""
+    old = [{"slug": "terrain-restore", "qty": 1, "note": NOTE_BOTH, "held": HELD_BOTH},
+           {"slug": "microbiome", "qty": 1}]
+    appmod, cart_store, cx, portal = _cart_portal(monkeypatch, tmp_path, old)
+    with appmod.app.test_request_context("/"):
+        token = appmod._portal_open_cart(cx, portal)
+        assert "terrain-restore" in {i["slug"] for i in cart_store.items(cx, token)}
+        portal["content"]["reorder_items"] = [
+            {"slug": CUSTOM, "qty": 1, "note": NOTE_BOTH, "held": HELD_BOTH},
+            {"slug": "microbiome", "qty": 1}]
+        token = appmod._portal_open_cart(cx, portal)
+        assert sorted(i["slug"] for i in cart_store.items(cx, token)) == ["microbiome", CUSTOM]
+
+
 def test_a_row_the_client_added_stays_in_the_cart(monkeypatch, tmp_path):
     folded = [{"slug": CUSTOM, "qty": 1, "note": NOTE_BOTH, "held": HELD_BOTH}]
     appmod, cart_store, cx, portal = _cart_portal(monkeypatch, tmp_path, folded)
@@ -647,6 +663,18 @@ def test_sync_from_layers_keeps_the_folded_line_and_only_what_the_layers_name():
     assert [h["slug"] for h in out[0]["held"]] == [
         "quinton-in-terrain-restore", "pyrite-gem-elixir-in-terrain-restore"]
     assert inv.fold_reorder_items(out, _name_of, True)[0]["slug"] == CUSTOM
+
+
+def test_an_old_folded_plain_bottle_drops_its_price_when_it_becomes_custom():
+    """An older build priced the folded plain bottle by volume or courtesy. Refolded
+    as the custom bottle it bills $70, not the stale price (review round 2)."""
+    old = dict(FOLDED, slug="terrain-restore", qty=1, price_cents=5000)
+    out = inv.fold_reorder_items([old], _name_of, True)
+    assert [i["slug"] for i in out] == [CUSTOM]
+    assert "price_cents" not in out[0] and "_tr_price" not in out[0]
+    # A price on a line that is already the custom bottle is Rae's, and it stays.
+    out = inv.fold_reorder_items([dict(old, slug=CUSTOM)], _name_of, True)
+    assert out[0]["price_cents"] == 5000
 
 
 # ── Outside review on the final diff ──────────────────────────────────────────
