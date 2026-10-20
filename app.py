@@ -38918,15 +38918,17 @@ def client_google_start():
         return ("Not found", 404)
     from flask import make_response as _mkresp, redirect as _redir
     from dashboard import portal_providers as _providers
+    from dashboard import portal_return as _ret
     redirect_uri = _portal_provider_redirect_uri("google")
     with _db_lock, db.connect(LOG_DB) as cx:
-        state, nonce, verifier = _providers.create_transaction(cx, "google", redirect_uri)
+        state, nonce, verifier = _providers.create_transaction(
+            cx, "google", redirect_uri, _ret.clean_next(request.args.get("next")))
     url = _providers.google_authorization_url(
         os.environ["PORTAL_GOOGLE_CLIENT_ID"], redirect_uri, state, nonce, verifier)
     resp = _mkresp(_redir(url))
     resp.set_cookie(_provider_state_cookie("google"), state, max_age=600,
                     httponly=True, secure=True, samesite="None")
-    _set_portal_next_cookie(resp)
+    _clear_old_next_cookie(resp)
     return resp
 
 
@@ -38936,31 +38938,42 @@ def client_apple_start():
         return ("Not found", 404)
     from flask import make_response as _mkresp, redirect as _redir
     from dashboard import portal_providers as _providers
+    from dashboard import portal_return as _ret
     redirect_uri = _portal_provider_redirect_uri("apple")
     with _db_lock, db.connect(LOG_DB) as cx:
-        state, nonce, _ = _providers.create_transaction(cx, "apple", redirect_uri)
+        state, nonce, _ = _providers.create_transaction(
+            cx, "apple", redirect_uri, _ret.clean_next(request.args.get("next")))
     url = _providers.apple_authorization_url(
         os.environ["PORTAL_APPLE_SERVICES_ID"], redirect_uri, state, nonce)
     resp = _mkresp(_redir(url))
     resp.set_cookie(_provider_state_cookie("apple"), state, max_age=600,
                     httponly=True, secure=True, samesite="None")
-    _set_portal_next_cookie(resp)
+    _clear_old_next_cookie(resp)
     return resp
 
 
-_PORTAL_NEXT_COOKIE = "rm_portal_next"
+# The route key (#chat) now travels inside the provider transaction, bound to its
+# state, so a Google and an Apple sign-in running at once each keep their own (review
+# round 2, 2026-10-20). One browser-wide cookie carried it for a short while before
+# that; any copy still held is deleted, never read.
+_OLD_NEXT_COOKIE = "rm_portal_next"
 
 
-def _set_portal_next_cookie(resp):
-    """Keep ?next= (a portal route key, see dashboard/portal_return) across the
-    provider round trip, as the state cookie is kept. An unknown value is not kept."""
+def _clear_old_next_cookie(resp):
+    if request.cookies.get(_OLD_NEXT_COOKIE) is None:
+        return resp
+    from flask import make_response as _mkresp
+    resp = _mkresp(resp)
+    resp.delete_cookie(_OLD_NEXT_COOKIE, secure=True, samesite="None")
+    return resp
+
+
+def _login_error(kind, next_key=""):
+    """Back to sign in after a failure, keeping the route the client set out for.
+    Only a known route key survives (dashboard/portal_return)."""
+    from flask import redirect as _redir
     from dashboard import portal_return as _ret
-    key = _ret.clean_next(request.args.get("next"))
-    if key:
-        resp.set_cookie(_PORTAL_NEXT_COOKIE, key, max_age=600,
-                        httponly=True, secure=True, samesite="None")
-    else:
-        resp.delete_cookie(_PORTAL_NEXT_COOKIE, secure=True, samesite="None")
+    return _redir(f"/portal/login?error={kind}{_ret.query(next_key)}")
 
 
 def _finish_external_provider(profile, next_key=""):
@@ -38982,7 +38995,7 @@ def _finish_external_provider(profile, next_key=""):
         email = profile.get("email", "")
         pid = _pa.person_by_verified_email(cx, email) if email else None
         if not pid:
-            return _redir("/portal/login?error=provider")
+            return _login_error("provider", next_key)
         token = _pa.create_provider_link_confirmation(
             cx, pid, provider, subject, email, profile.get("name", ""))
         row = cx.execute("SELECT name FROM people WHERE id=?", (pid,)).fetchone()
@@ -39006,20 +39019,23 @@ def client_google_callback():
     from flask import redirect as _redir
     from dashboard import portal_providers as _providers
     state = (request.args.get("state") or "").strip()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        next_key = _providers.transaction_next(cx, state, "google")
     if not state or state != request.cookies.get(_provider_state_cookie("google"), ""):
-        return _redir("/portal/login?error=provider")
+        return _login_error("provider", next_key)
     with _db_lock, db.connect(LOG_DB) as cx:
         transaction = _providers.consume_transaction(cx, state, "google")
     if not transaction:
-        return _redir("/portal/login?error=provider")
+        return _login_error("provider", next_key)
     try:
         profile = _providers.exchange_google(
             request.args.get("code", ""), os.environ["PORTAL_GOOGLE_CLIENT_ID"],
             os.environ["PORTAL_GOOGLE_CLIENT_SECRET"], transaction)
     except Exception as exc:
         app.logger.warning("Google portal login failed: %r", exc)
-        return _redir("/portal/login?error=provider")
-    return _finish_external_provider(profile, request.cookies.get(_PORTAL_NEXT_COOKIE, ""))
+        return _login_error("provider", next_key)
+    return _clear_old_next_cookie(
+        _finish_external_provider(profile, transaction.get("next", "")))
 
 
 @app.route("/portal/auth/apple/callback", methods=["POST"])
@@ -39029,12 +39045,14 @@ def client_apple_callback():
     from flask import redirect as _redir
     from dashboard import portal_providers as _providers
     state = (request.form.get("state") or "").strip()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        next_key = _providers.transaction_next(cx, state, "apple")
     if not state or state != request.cookies.get(_provider_state_cookie("apple"), ""):
-        return _redir("/portal/login?error=provider")
+        return _login_error("provider", next_key)
     with _db_lock, db.connect(LOG_DB) as cx:
         transaction = _providers.consume_transaction(cx, state, "apple")
     if not transaction:
-        return _redir("/portal/login?error=provider")
+        return _login_error("provider", next_key)
     try:
         profile = _providers.exchange_apple(
             request.form.get("code", ""), request.form.get("id_token", ""),
@@ -39044,8 +39062,9 @@ def client_apple_callback():
             request.form.get("user"))
     except Exception as exc:
         app.logger.warning("Apple portal login failed: %r", exc)
-        return _redir("/portal/login?error=provider")
-    return _finish_external_provider(profile, request.cookies.get(_PORTAL_NEXT_COOKIE, ""))
+        return _login_error("provider", next_key)
+    return _clear_old_next_cookie(
+        _finish_external_provider(profile, transaction.get("next", "")))
 
 
 @app.route("/portal/auth/link-confirm", methods=["GET", "POST"])
@@ -39059,7 +39078,7 @@ def client_provider_link_confirm():
         with _db_lock, db.connect(LOG_DB) as cx:
             pending = _pa.validate_provider_link_confirmation(cx, token)
         if not pending:
-            return _redir("/portal/login?error=provider")
+            return _login_error("provider", next_key)
         return _confirm_post_page(
             "/portal/auth/link-confirm", title="Confirm sign in", heading="Connect your account",
             blurb=f"Use {pending['provider'].title()} to sign in to your Healing Oasis.",
@@ -39068,7 +39087,7 @@ def client_provider_link_confirm():
     with _db_lock, db.connect(LOG_DB) as cx:
         pid = _pa.consume_provider_link_confirmation(cx, token)
         if not pid:
-            return _redir("/portal/login?error=provider")
+            return _login_error("provider", next_key)
         sess = _pi.create_client_session(cx, pid, "")
     resp = _mkresp(_redir(_ret.portal_me(next_key)))
     resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
@@ -39256,8 +39275,11 @@ def client_password_reset_request():
     if not _portal_password_login_enabled():
         return jsonify({"error": "not found"}), 404
     from dashboard import portal_auth as _pa
+    from dashboard import portal_return as _ret
     _t0 = time.monotonic()   # see _equalise_response_time below
-    email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    next_q = _ret.query(body.get("next"))   # the route the client set out for, a key only
     limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
     if limited is not None:
         return limited
@@ -39271,7 +39293,7 @@ def client_password_reset_request():
                     _send_full_report_email(
                         email, row[1] or "", "Set your Healing Oasis password",
                         "Aloha,\n\nSet or reset your password here:\n"
-                        f"{portal_base()}/portal/password-reset?token={token}\n\n"
+                        f"{portal_base()}/portal/password-reset?token={token}{next_q}\n\n"
                         f"This link expires in {_format_ttl(_pa.RESET_TTL_MIN)}. If you did not request it, ignore this email.")
                 except Exception as e:
                     print(f"[client-password-reset] email failed: {e!r}", flush=True)
@@ -39288,11 +39310,14 @@ def client_password_reset():
         return ("Not found", 404)
     from flask import make_response as _mkresp, redirect as _redir
     from dashboard import portal_auth as _pa, portal_identity as _pi
+    from dashboard import portal_return as _ret
     token = (request.args.get("token") or (request.get_json(silent=True) or {}).get("token") or "").strip()
+    next_key = _ret.clean_next(request.args.get("next")
+                               or (request.get_json(silent=True) or {}).get("next"))
     if request.method == "GET":
         with _db_lock, db.connect(LOG_DB) as cx:
             if not _pa.validate_password_reset(cx, token):
-                return _redir("/portal/login?error=reset")
+                return _login_error("reset", next_key)
         resp = _mkresp(send_from_directory(STATIC, "client-password-reset.html"))
         resp.headers["Cache-Control"] = "no-store"
         return resp
@@ -39319,7 +39344,7 @@ def client_password_reset():
         if not pid:
             return jsonify({"ok": False, "message": "This password link is invalid or has expired."}), 400
         sess = _pi.create_client_session(cx, pid, "")
-    resp = _mkresp(jsonify({"ok": True, "redirect": "/portal/me"}))
+    resp = _mkresp(jsonify({"ok": True, "redirect": _ret.portal_me(next_key)}))
     resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
                     httponly=True, samesite="Lax", secure=request.is_secure)
     return resp
@@ -39367,7 +39392,7 @@ def client_login_verify():
                 ident = _pi.identity_from_session(cx, sess_cookie) if sess_cookie else None
                 if ident:
                     return _redir(home)
-                return _redir("/portal/login?error=link")
+                return _login_error("link", next_key)
         resp = _mkresp(_confirm_post_page(
             "/portal/login-verify", title="Sign in",
             heading="Welcome back",
@@ -39386,7 +39411,7 @@ def client_login_verify():
             ident = _pi.identity_from_session(cx, sess_cookie) if sess_cookie else None
             if ident:
                 return _redir(home)
-            return _redir("/portal/login?error=link")
+            return _login_error("link", next_key)
         sess = _pi.create_client_session(cx, pid, "")
     resp = _mkresp(_redir(home))
     resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,

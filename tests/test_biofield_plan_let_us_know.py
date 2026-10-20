@@ -67,7 +67,8 @@ def _explained(cx, label, section, name, explanation):
     cs.save_pick(cx, "a49", label, section, name, checked=True)
 
 
-ROUTES_HTML = (f"{CHAT_A}Let us know</a> about anything below in your "
+# cautions_routes names its own two links; its "Let us know" stays plain.
+ROUTES_HTML = ("Let us know about anything below in your "
                f'<a href="{CHAT}">portal chat</a> or directly in your '
                f'<a href="{INTAKE}">Intake form</a>. Use the '
                f'<a href="{CHAT}">portal chat</a> for anything you need to tell us right away.')
@@ -129,7 +130,8 @@ def test_symptoms_print_once_before_the_first_item_outside_the_cautions(cx, tmp_
     box = page.index(BOX)
     box_end = page.index("</div>", box)
     assert not (box < at < box_end), "symptom_changes must sit outside the cautions area"
-    assert page.index("Count every source.") < at
+    # It heads the block: before the other top lines too.
+    assert at < page.index("Count every source.")
     assert (SYMPTOMS_P + f"Please report any change in your symptoms in your "
             f"{CHAT_A}portal chat</a>. That includes") in page
 
@@ -230,9 +232,11 @@ def test_let_us_know_links_in_caution_and_item_sentences_and_nowhere_else(cx, tm
     assert "<span class=plan-name>Let Us Know Herb</span>" in page
     assert "Let us know clinic" in page and f"{CHAT_A}Let us know</a> clinic" not in page
     assert f"{CHAT_A}Let Us Know</a> Herb" not in page
+    # cautions_routes keeps its "Let us know" plain.
+    assert ROUTES_P + "Let us know about" in page
     # Every chat link is one of the sentences above: 2 item, 1 caution, 2 in the lead,
-    # 1 oils header, 3 in the routes line and 1 in symptom_changes.
-    assert page.count(CHAT_A) == 10
+    # 1 oils header, 2 in the routes line and 1 in symptom_changes.
+    assert page.count(CHAT_A) == 9
 
 
 def test_an_intro_line_is_not_linked():
@@ -263,7 +267,8 @@ def test_a_hostile_sentence_stays_escaped(cx, tmp_path):
     assert hrefs == {CHAT, INTAKE}
     assert f"&lt;i&gt;<a href=\"{INTAKE}\">Intake form</a>&lt;/i&gt;" in page
     # A phrase holding markup is matched only in its escaped form, and stays text.
-    assert f'{CHAT_A}&lt;b&gt;</a>{CHAT_A}portal chat</a>&lt;/b&gt;' in page
+    # Here "<b>" touches a word character, so it is not a whole phrase and stays plain.
+    assert f'&lt;b&gt;{CHAT_A}portal chat</a>&lt;/b&gt;' in page
 
 
 def test_no_link_carries_a_client_token(cx, tmp_path):
@@ -285,19 +290,149 @@ def test_the_pdf_html_keeps_the_anchors(cx, tmp_path, monkeypatch):
     """/test/<id>/plan.pdf hands plan_page(section) to save_report_pdf: the anchors
     must be in that html, absolute, so a PDF reader can open them."""
     html = _pdf_page(cx, tmp_path)
-    # 1 symptoms, 2 lead, 3 routes, 1 item.
-    assert html.count(CHAT_A) == 7 and html.count(f'<a href="{INTAKE}">') == 1
+    # 1 symptoms, 2 lead, 2 routes, 1 item.
+    assert html.count(CHAT_A) == 6 and html.count(f'<a href="{INTAKE}">') == 1
     with_plan = pr.append_to_report("<html><body>R</body></html>", _page(cx))
-    assert with_plan.count(CHAT_A) == 7
+    assert with_plan.count(CHAT_A) == 6
+
+
+def _chromium_available():
+    """True only when Playwright AND its Chromium binary are installed. Checked
+    explicitly, so any other failure in making the PDF fails the test."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+    import os
+    with sync_playwright() as p:
+        path = p.chromium.executable_path
+    return bool(path) and os.path.exists(path)
 
 
 def test_the_rendered_pdf_has_clickable_links(cx, tmp_path):
-    """Chromium writes each anchor as a link annotation. Runs where Playwright is."""
-    pytest.importorskip("playwright.sync_api")
+    """Chromium writes each anchor as a link annotation."""
+    if not _chromium_available():
+        pytest.skip("Playwright's Chromium is not installed here")
     from dashboard.biofield_report_pdf import report_pdf_bytes
-    try:
-        data = report_pdf_bytes(_pdf_page(cx, tmp_path))
-    except Exception as exc:  # no browser installed for Playwright here
-        pytest.skip(f"no Chromium: {exc!r}")
+    data = report_pdf_bytes(_pdf_page(cx, tmp_path))
     assert b"/URI (https://illtowell.com/portal/me#chat)" in data
     assert b"/URI (https://illtowell.com/portal/me#intake)" in data
+
+
+# ── Review rounds 1 and 2 (2026-10-20) ──────────────────────────────────────
+
+def test_a_phrase_links_only_as_a_whole_word():
+    links = {"portal chat": CHAT}
+    out = pr.sentence_html("portal chatroom, xportal chat, portal chat.", links,
+                           {"let us know": CHAT})
+    assert out == f"portal chatroom, xportal chat, {CHAT_A}portal chat</a>."
+    out = pr.sentence_html("let us knowledge, let us know_x, let us know!", None,
+                           {"let us know": CHAT})
+    assert out == f"let us knowledge, let us know_x, {CHAT_A}let us know</a>!"
+
+
+def test_two_lines_giving_one_phrase_two_addresses_is_a_conflict(cx, tmp_path):
+    lines = _lines(essential_oils_header="Oils; let us know.")
+    lines["essential_oils_header"]["links"] = {
+        "let us know (every caution and item sentence)": "https://x.example/other",
+        "portal chat": "https://x.example/chat2"}
+    lines["essential_oils_header"]["text"] = "Oils; let us know in your portal chat."
+    report = pr.load_content(cx, _folder(tmp_path, lines))
+    assert sorted(report["frame_links_conflict"]) == sorted([
+        f"let us know: cautions_routes {CHAT} / essential_oils_header https://x.example/other",
+        f"portal chat: symptom_changes {CHAT} / essential_oils_header https://x.example/chat2"])
+    # The first sentence-wide address stands: nothing was overwritten.
+    assert pr.stored_frame(cx)[0][pr.LINKS_KEY]["sentences"] == {"let us know": CHAT}
+
+
+def test_a_bracketed_key_other_than_clinicals_form_is_refused(cx, tmp_path):
+    lines = _lines()
+    lines["cautions_routes"]["links"] = dict(ROUTES_LINKS, **{"portal chat (anywhere)": CHAT})
+    report = pr.load_content(cx, _folder(tmp_path, lines))
+    assert report["frame_links_refused"] == [f"cautions_routes: portal chat (anywhere): {CHAT}"]
+    assert pr.stored_frame(cx)[0][pr.LINKS_KEY]["sentences"] == {"let us know": CHAT}
+
+
+ONCE_P = (SYMPTOMS_P, "<p class=plan-caution-lead>", ROUTES_P)
+
+
+def _ctx(frame, groups=None):
+    return {"groups": groups or {}, "client_name": "J", "date": "", "meanings": {},
+            "intro": (), "cautions": [], "frame": frame, "chain": [], "program_chain": [],
+            "remedy_source_infoceuticals": [], "report_leads": {}, "report_personal": {}}
+
+
+FRAME = {"cautions_lead": LEAD, "cautions_routes": ROUTES, "symptom_changes": SYMPTOMS,
+         pr.LINKS_KEY: {"lines": {"symptom_changes": {"portal chat": CHAT}}, "sentences": {}}}
+
+
+def test_a_grouped_pdf_prints_each_once_line_once_in_the_first_report():
+    from dashboard import biofield_report_split as rsplit
+    reports = list(rsplit.STAND_ALONE)
+    doc = rsplit.grouped_html(_ctx(FRAME), reports, {r: set() for r in reports})
+    for p in ONCE_P:
+        assert doc.count(p) == 1, p
+    first_end = doc.index("<div class=rs-report", doc.index("<div class=rs-report") + 1)
+    for p in ONCE_P:
+        assert doc.index(p) < first_end, p
+
+
+def test_a_single_report_prints_each_once_line_once():
+    from dashboard import biofield_report_split as rsplit
+    for report in rsplit.STAND_ALONE:
+        for one in (rsplit.grouped_html(_ctx(FRAME), [report], {report: set()}),
+                    rsplit.render_report(_ctx(FRAME), report, set())):
+            for p in ONCE_P:
+                assert one.count(p) == 1, (report, p)
+
+
+def test_the_block_added_to_the_biofield_analysis_starts_with_symptoms(cx, tmp_path):
+    from dashboard import biofield_report_split as rsplit
+    pr.load_content(cx, _folder(tmp_path, _lines(dose_totals="Count every source.")))
+    _tick(cx, "Gut", cs.NUTRIENTS, "Zinc")
+    frame, cautions = pr.stored_frame(cx)
+    ctx = _ctx(frame, pr.plan(cx, "a49"))
+    ctx["cautions"] = cautions
+    once = set()
+    block = rsplit.primary_added(ctx, {cs.NUTRIENTS}, once)
+    assert block.count(SYMPTOMS_P) == 1
+    main = block.index("<main class=plan>") + len("<main class=plan>")
+    assert block[main:].startswith(SYMPTOMS_P), "symptom_changes heads the added block"
+    assert block.index(SYMPTOMS_P) < block.index("<span class=plan-name>")
+    # A Plan appended to the same PDF does not print them again.
+    plan = pr.build(cx, "a49", "J", "", printed=once)[0]
+    for p in ONCE_P:
+        assert p not in plan, p
+    # On its own, the Plan prints each once.
+    alone = pr.build(cx, "a49", "J", "")[0]
+    for p in ONCE_P:
+        assert alone.count(p) == 1, p
+
+
+from tests.test_biofield_plan_report import client  # noqa: E402,F401  (the local app)
+
+
+def test_the_report_pdf_with_its_plan_prints_each_once_line_once(client, tmp_path):
+    """/test/<id>/report.pdf?plan=1 is one PDF: the block added to the Biofield
+    Analysis and the Plan after it share the once-only lines."""
+    from dashboard import biofield_report_split as rsplit
+    tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
+    with sqlite3.connect(client.db) as con:
+        pr.load_content(con, _folder(tmp_path, _lines()))
+        cs.upsert_item(con, "Gut", cs.NUTRIENTS, _item("Zinc"), origin_test=tid)
+        cs.save_pick(con, tid, "Gut", cs.NUTRIENTS, "Zinc", checked=True)
+        rsplit.set_section(con, tid, rsplit.PRIMARY, cs.NUTRIENTS, True)
+        con.commit()
+    assert client.get(f"/test/{tid}/report.pdf?plan=1").status_code == 200
+    html = client.written[-1][0]
+    assert html.count("plan-appended") == 2, "the added block and the Plan are both there"
+    for p in ONCE_P:
+        assert html.count(p) == 1, p
+    # In the first block, which is the one added to the Biofield Analysis.
+    second = html.index("plan-appended", html.index("plan-appended") + 1)
+    assert html.index(SYMPTOMS_P) < second
+    # Without the Plan, the added block prints them itself.
+    client.get(f"/test/{tid}/report.pdf")
+    alone = client.written[-1][0]
+    for p in ONCE_P:
+        assert alone.count(p) == 1, p

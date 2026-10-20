@@ -1721,6 +1721,17 @@ function applyPortalHash(userAction){
       if(box) box.focus({preventScroll:true});
     }
   }, 0);
+  // Followed once, a hash has done its job: clear it, keeping path and query, so a
+  // later render, reload or poll cannot pull the client back to this card (review,
+  // 2026-10-20). render() re-applies the hash after most actions, and #chat is where
+  // a client stays longest. Safe for every route: nothing reads the hash afterwards
+  // except the Terms gate, which returns above and keeps it until "I agree".
+  if(followed){
+    try{
+      history.replaceState(null, "", location.pathname + location.search);
+      window._portalHashOpened = null;
+    }catch(e){}
+  }
   return true;
 }
 

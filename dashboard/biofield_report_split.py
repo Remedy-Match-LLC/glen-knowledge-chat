@@ -499,7 +499,7 @@ def report_intro(ctx, report):
     return _lines("report_leads") + _lines("report_personal")
 
 
-def render_report(ctx, report, on, intro=True):
+def render_report(ctx, report, on, intro=True, once=None):
     """One stand-alone report as a plan block, sections limited to `on`. `intro`
     False leaves out the intro lines, for every report after the first in a Grouped
     file."""
@@ -525,13 +525,14 @@ def render_report(ctx, report, on, intro=True):
         headings=_headings(on, skip, REPORT_TITLES[report], printed,
                            name_remedies=report == "remedy_sources"),
         title=REPORT_TITLES[report], extra=extra, top_keys=top_keys(printed),
-        intro_links=approved_leads()[1].get(report))
+        intro_links=approved_leads()[1].get(report), printed=once)
 
 
-def primary_added(ctx, on):
+def primary_added(ctx, on, once=None):
     """The sections switched on in the Biofield Analysis beyond its layer remedies,
     as a block to follow the layer narrative. Empty when there are none to print,
-    so the default report is exactly what it was."""
+    so the default report is exactly what it was. `once`: see render_plan_section's
+    `printed`, shared with a Plan appended to the same PDF."""
     groups = ctx["groups"]
     extra_on = {k for k in on if k not in LAYER_SECTIONS}
     if not any(groups.get(k) for k in extra_on):
@@ -540,7 +541,7 @@ def primary_added(ctx, on):
     return pr.render_plan_section(
         printed, "", "", ctx["meanings"], (), pr.cautions_for(printed, ctx["cautions"]),
         ctx["frame"], headings=_headings(extra_on), title="",
-        extra=_amazon_line(groups, extra_on), top_keys=top_keys(printed))
+        extra=_amazon_line(groups, extra_on), top_keys=top_keys(printed), printed=once)
 
 
 def counts(ctx, report):
@@ -600,9 +601,10 @@ def grouped_html(ctx, reports, settings_):
     """One file of the given reports. Each report starts a new printed page; the
     sections inside one flow on, and no heading is left alone at a page foot (Glen,
     2026-10-19: "each report")."""
+    once = set()     # one document: the once-only lines print in the first report
     body = "".join(
         f"<div class=rs-report style='{'break-before:page' if i else ''}'>"
-        f"{render_report(ctx, r, settings_[r], intro=not i)}</div>"
+        f"{render_report(ctx, r, settings_[r], intro=not i, once=once)}</div>"
         for i, r in enumerate(reports))
     title = html.escape(", ".join(REPORT_TITLES[r] for r in reports))
     return ("<!doctype html><html lang=en><head><meta charset=utf-8>"

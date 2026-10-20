@@ -37,14 +37,17 @@ def _claim_true(value):
     return value is True or (isinstance(value, str) and value.lower() == "true")
 
 
-def create_transaction(cx, provider, redirect_uri):
+def create_transaction(cx, provider, redirect_uri, next_key=""):
+    """`next_key` is the portal route the client set out for (#chat), already checked
+    by dashboard/portal_return. Stored with this flow's state, so two sign-ins running
+    at once each land on their own section."""
     _ensure_auth_tokens(cx)
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
     now = datetime.now(timezone.utc)
     extra = {"provider": provider, "nonce": nonce, "verifier": verifier,
-             "redirect_uri": redirect_uri}
+             "redirect_uri": redirect_uri, "next": next_key or ""}
     cx.execute(
         "INSERT INTO auth_tokens (token_hash,email,purpose,extra,created_at,expires_at) VALUES (?,?,?,?,?,?)",
         (_hash(state), "", OAUTH_PURPOSE, json.dumps(extra), now.isoformat(),
@@ -52,6 +55,21 @@ def create_transaction(cx, provider, redirect_uri):
     )
     cx.commit()
     return state, nonce, verifier
+
+
+def transaction_next(cx, state, provider):
+    """The route key stored with a flow, without consuming it, so a failed sign-in can
+    send the client back to try again with the same destination. "" when unknown."""
+    if not state:
+        return ""
+    _ensure_auth_tokens(cx)
+    row = cx.execute("SELECT extra FROM auth_tokens WHERE token_hash=? AND purpose=?",
+                     (_hash(state), OAUTH_PURPOSE)).fetchone()
+    try:
+        extra = json.loads((row or [None])[0] or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return ""
+    return str(extra.get("next") or "") if extra.get("provider") == provider else ""
 
 
 def consume_transaction(cx, state, provider):

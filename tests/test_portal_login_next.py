@@ -235,3 +235,142 @@ def test_the_login_page_sends_next_with_every_sign_in():
     assert "body:JSON.stringify({email,password:secret,next:portalNext})" in LOGIN
     assert '"?next=" + encodeURIComponent(portalNext)' in LOGIN
     assert "/^[a-z-]{1,40}$/.test(v)" in LOGIN
+
+
+# ── Review rounds 1 and 2 (2026-10-20) ──────────────────────────────────────
+
+def _link_sub(appmod, email, provider, subject):
+    from dashboard import portal_auth as pa
+    _seed_person(appmod, email)
+    cx = sqlite3.connect(appmod.LOG_DB)
+    pid = cx.execute("SELECT id FROM people WHERE email=?", (email,)).fetchone()[0]
+    pa.link_external_identity(cx, pid, provider, subject, email)
+    cx.close()
+
+
+def _providers_on(appmod, monkeypatch):
+    monkeypatch.setattr(appmod, "_portal_google_login_enabled", lambda: True)
+    monkeypatch.setattr(appmod, "_portal_apple_login_enabled", lambda: True)
+    for k, v in {"PORTAL_GOOGLE_CLIENT_ID": "g", "PORTAL_GOOGLE_CLIENT_SECRET": "gs",
+                 "PORTAL_APPLE_SERVICES_ID": "a", "PORTAL_APPLE_TEAM_ID": "t",
+                 "PORTAL_APPLE_KEY_ID": "k", "PORTAL_APPLE_PRIVATE_KEY": "p"}.items():
+        monkeypatch.setenv(k, v)
+    from dashboard import portal_providers as providers
+    monkeypatch.setattr(providers, "exchange_google", lambda *a, **k: {
+        "provider": "google", "subject": "both-g", "email": "both@example.com", "name": ""})
+    monkeypatch.setattr(providers, "exchange_apple", lambda *a, **k: {
+        "provider": "apple", "subject": "both-a", "email": "both@example.com", "name": ""})
+
+
+def _state(resp):
+    return parse_qs(urlparse(resp.headers["Location"]).query)["state"][0]
+
+
+def test_concurrent_google_and_apple_each_land_on_their_own_section(client, monkeypatch):
+    c, appmod = client
+    _providers_on(appmod, monkeypatch)
+    _link_sub(appmod, "both@example.com", "google", "both-g")
+    _link_sub(appmod, "both@example.com", "apple", "both-a")
+    g = _state(c.get("/portal/auth/google/start?next=chat"))
+    a = _state(c.get("/portal/auth/apple/start?next=intake"))
+    a_done = c.post("/portal/auth/apple/callback", data={"state": a, "code": "x"})
+    g_done = c.get(f"/portal/auth/google/callback?state={g}&code=x")
+    assert g_done.headers["Location"] == "/portal/me#chat"
+    assert a_done.headers["Location"] == "/portal/me#intake"
+
+
+def test_a_second_start_without_a_route_does_not_erase_the_first(client, monkeypatch):
+    c, appmod = client
+    _providers_on(appmod, monkeypatch)
+    _link_sub(appmod, "both@example.com", "google", "both-g")
+    _link_sub(appmod, "both@example.com", "apple", "both-a")
+    g = _state(c.get("/portal/auth/google/start?next=chat"))
+    c.get("/portal/auth/apple/start")
+    assert c.get(f"/portal/auth/google/callback?state={g}&code=x").headers["Location"] \
+        == "/portal/me#chat"
+
+
+def test_an_old_next_cookie_is_deleted_and_never_read(client, monkeypatch):
+    c, appmod = client
+    _providers_on(appmod, monkeypatch)
+    _link_sub(appmod, "both@example.com", "google", "both-g")
+    c.set_cookie("rm_portal_next", "intake")
+    start = c.get("/portal/auth/google/start")
+    assert "rm_portal_next=;" in " ".join(start.headers.getlist("Set-Cookie"))
+    c.set_cookie("rm_portal_next", "intake")      # still held, say from another tab
+    done = c.get(f"/portal/auth/google/callback?state={_state(start)}&code=x")
+    assert done.headers["Location"] == "/portal/me"
+    assert "rm_portal_next=;" in " ".join(done.headers.getlist("Set-Cookie"))
+
+
+@pytest.mark.parametrize("nxt,tail", [("chat", "&next=chat"), ("https://evil.example", ""),
+                                      ("", "")])
+def test_a_provider_error_returns_to_sign_in_with_the_route(client, monkeypatch, nxt, tail):
+    c, appmod = client
+    _providers_on(appmod, monkeypatch)
+    from dashboard import portal_providers as providers
+    def boom(*a, **k):
+        raise RuntimeError("provider said no")
+    monkeypatch.setattr(providers, "exchange_google", boom)
+    g = _state(c.get(f"/portal/auth/google/start?next={nxt}"))
+    done = c.get(f"/portal/auth/google/callback?state={g}&code=x")
+    assert done.headers["Location"] == "/portal/login?error=provider" + tail
+    # A replayed state (already consumed) still knows where the client was going.
+    again = c.get(f"/portal/auth/google/callback?state={g}&code=x")
+    assert again.headers["Location"] == "/portal/login?error=provider" + tail
+
+
+def test_a_state_cookie_mismatch_keeps_the_route(client, monkeypatch):
+    c, appmod = client
+    _providers_on(appmod, monkeypatch)
+    g = _state(c.get("/portal/auth/google/start?next=chat"))
+    c.set_cookie("rm_portal_google_state", "other")
+    done = c.get(f"/portal/auth/google/callback?state={g}&code=x")
+    assert done.headers["Location"] == "/portal/login?error=provider&next=chat"
+
+
+@pytest.mark.parametrize("nxt,tail", [("chat", "&next=chat"), ("//evil.example", "")])
+def test_a_dead_magic_link_returns_to_sign_in_with_the_route(client, monkeypatch, nxt, tail):
+    c, _appmod = client
+    get = c.get(f"/portal/login-verify?token=dead&next={nxt}")
+    assert get.headers["Location"] == "/portal/login?error=link" + tail
+    post = c.post("/portal/login-verify", data={"token": "dead", "next": nxt})
+    assert post.headers["Location"] == "/portal/login?error=link" + tail
+
+
+def test_a_dead_link_confirm_returns_to_sign_in_with_the_route(client):
+    c, _appmod = client
+    assert c.get("/portal/auth/link-confirm?token=dead&next=chat").headers["Location"] \
+        == "/portal/login?error=provider&next=chat"
+    assert c.post("/portal/auth/link-confirm", data={"token": "dead", "next": "chat"}) \
+        .headers["Location"] == "/portal/login?error=provider&next=chat"
+
+
+def test_the_password_reset_email_carries_the_route(client, monkeypatch):
+    pytest.importorskip("argon2")
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_portal_password_login_enabled", lambda: True)
+    _seed_person(appmod, "reset-next@example.com")
+    sent = {}
+    monkeypatch.setattr(appmod, "_send_full_report_email",
+                        lambda to, name, subject, body, *a, **kw: sent.update(body=body) or ("t", None))
+    c.post("/portal/password-reset-request",
+           json={"email": "reset-next@example.com", "next": "chat"})
+    link = re.search(r"(\S*/portal/password-reset\?\S+)", sent["body"]).group(1)
+    assert link.endswith("&next=chat")
+    token = parse_qs(urlparse(link).query)["token"][0]
+    done = c.post("/portal/password-reset",
+                  json={"token": token, "password": "correct horse battery staple 9",
+                        "next": "chat"})
+    assert done.get_json()["redirect"] == "/portal/me#chat"
+    assert c.get("/portal/password-reset?token=dead&next=chat").headers["Location"] \
+        == "/portal/login?error=reset&next=chat"
+    c.post("/portal/password-reset-request",
+           json={"email": "reset-next@example.com", "next": "https://evil.example"})
+    assert "next=" not in re.search(r"(\S*/portal/password-reset\?\S+)", sent["body"]).group(1)
+
+
+def test_the_reset_pages_pass_next_on():
+    reset = (ROOT / "static" / "client-password-reset.html").read_text()
+    assert "body:JSON.stringify({token,password,next})" in reset
+    assert "body:JSON.stringify({email,next:portalNext})" in LOGIN

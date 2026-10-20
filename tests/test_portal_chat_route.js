@@ -45,14 +45,23 @@ function run(hash, panels, ids, opts) {
       return m && panels.indexOf(m[1]) !== -1 ? { panel: m[1] } : null;
     }
   };
-  const calls = { showTab: [], opened: [] };
+  const calls = { showTab: [], opened: [], replaced: [] };
   const win = {
     __portalView: opts.shell ? { shell_enabled: true } : {},
     PortalShell: opts.shell ? {} : undefined,
     setTimeout(fn) { fn(); }
   };
+  const location = { hash: hash, pathname: '/portal/me', search: '?member=m%40x.com',
+                     href: 'https://x/portal/me?member=m%40x.com' + hash };
+  const history = {
+    replaceState(st, title, url) {
+      calls.replaced.push(url);
+      const at = url.indexOf('#');
+      location.hash = at === -1 ? '' : url.slice(at);
+    }
+  };
   const ctx = {
-    document: doc, window: win, location: { hash: hash, href: 'https://x/portal/me' + hash },
+    document: doc, window: win, location: location, history: history,
     showTab(p) { calls.showTab.push(p); },
     _foldOpenCard(id) { calls.opened.push(id); },
     URL: URL, decodeURIComponent: decodeURIComponent, encodeURIComponent: encodeURIComponent
@@ -67,7 +76,7 @@ function run(hash, panels, ids, opts) {
   const openedBefore = calls.opened.length;
   doc.active = null;
   if (opts.rerender) ctx.applyPortalHash();
-  return { ok: first, calls: calls, reg: reg, focused: focusedFirst, win: win,
+  return { ok: first, calls: calls, reg: reg, focused: focusedFirst, win: win, location: location,
            openedOnRerender: calls.opened.length - openedBefore,
            focusedOnRerender: doc.active && doc.active.id, ctx: ctx };
 }
@@ -83,7 +92,11 @@ function run(hash, panels, ids, opts) {
 {
   const r = run('#chat', ['hub', 'current', 'ask'], ['chatCard', 'chatInput'], { rerender: true });
   assert.strictEqual(r.ok, true);
-  assert.deepStrictEqual(r.calls.showTab, ['ask', 'ask'], 'hub: #chat must open the ask panel');
+  assert.deepStrictEqual(r.calls.showTab, ['ask'],
+    'hub: #chat opens the ask panel once; a later render must not send the client back');
+  assert.deepStrictEqual(r.calls.replaced, ['/portal/me?member=m%40x.com'],
+    'a followed hash is cleared, keeping path and query');
+  assert.strictEqual(r.location.hash, '');
   assert.deepStrictEqual(r.calls.opened, ['chatCard'], 'hub: the chat card must be opened once');
   assert.strictEqual(r.win._foldDeepLinkOpen, 'chatCard',
     'the fold state that loads later must open the chat card too');
@@ -115,9 +128,27 @@ function run(hash, panels, ids, opts) {
   assert.deepStrictEqual(r.calls.opened, ['chatCard']);
 }
 
-// Terms gate: no panels, only the Terms card. #chat leads to it, as #intake does.
+// Every route clears its hash once followed, so none can pull the client back.
+Object.keys(run('', [], []).ctx.ROUTES).filter(k => k !== 'biofield-latest').forEach(function (k) {
+  const r = run('#' + k, ['hub', 'current', 'ask', 'intake'], [], { rerender: true });
+  assert.strictEqual(r.location.hash, '', '#' + k + ' must be cleared once followed');
+  assert.ok(r.calls.showTab.length <= 1, '#' + k + ': a re-render must not show its panel again');
+});
+
+// A link followed again later (a click after the hash was cleared) opens the card again.
+{
+  const r = run('#chat', ['hub', 'ask'], ['chatCard', 'chatInput']);
+  r.location.hash = '#chat';
+  r.ctx.applyPortalHash();
+  assert.deepStrictEqual(r.calls.opened, ['chatCard', 'chatCard'], 'a second follow re-opens');
+}
+
+// Terms gate: no panels, only the Terms card. #chat leads to it, as #intake does, and
+// the hash stays until "I agree", when the page renders again and follows it.
 ['#chat', '#intake'].forEach(function (h) {
   const r = run(h, [], ['portal-tos-card']);
+  assert.strictEqual(r.location.hash, h, h + ': the gate keeps the hash');
+  assert.deepStrictEqual(r.calls.replaced, []);
   assert.strictEqual(r.ok, true, h + ' under the Terms gate must be handled');
   assert.deepStrictEqual(r.calls.showTab, [], h + ': the gate shows no panel');
   assert.strictEqual(r.focused, 'portal-tos-card', h + ': the Terms card takes the focus');
@@ -146,7 +177,8 @@ function run(hash, panels, ids, opts) {
                  ['#%2F%2Fevil.example', ''], ['#%E0%A4%A', ''], ['#constructor', ''],
                  ['#__proto__', '']];
   cases.forEach(function (c) {
-    const r = run(c[0], [], []);
+    const r = run('', [], []);   // signed out: render, so applyPortalHash, never runs
+    r.location.hash = c[0];
     assert.strictEqual(r.ctx.portalLoginNext(), c[1], 'portalLoginNext for ' + JSON.stringify(c[0]));
   });
 }

@@ -153,7 +153,7 @@ document.getElementById('resetGo').addEventListener('click', async ()=>{
   if(!email){msg.textContent='Enter your email first.';return;}
   msg.textContent='Sending…';
   try{
-    const r=await fetch('/portal/password-reset-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    const r=await fetch('/portal/password-reset-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,next:portalNext})});
     const j=await r.json(); msg.textContent=j.message||'Check your email.';
   }catch(e){msg.textContent='Something went wrong. Please try again.';}
 });
