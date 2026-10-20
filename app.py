@@ -33366,6 +33366,8 @@ def _resend_unsent_triage_emails():
                 if not _pt.claim_resend(cx, row["id"], row.get("email_last_try")):
                     continue
             res = {k: row.get(k) for k in ("category", "urgency", "summary", "recommendation")}
+            # The same "Warning signs reported:" line as the first send.
+            res["warning_signs"] = [k for k in (row.get("warning_signs") or "").split(",") if k]
             if _send_triage_item_email(row["id"], row.get("email") or "", row.get("name") or "",
                                        res, row.get("message") or "", row.get("answer") or ""):
                 sent += 1

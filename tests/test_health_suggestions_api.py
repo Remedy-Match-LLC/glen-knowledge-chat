@@ -259,7 +259,7 @@ def test_old_shape_clinician_string_confirms_as_a_row(client):
     r = c.post(f"/api/portal/{token}/health-suggestions/{sid}/resolve", json={"action": "confirm"})
     assert r.status_code == 200, r.get_json()
     assert _answers(appmod, "a@b.com")["diagnoses"] == [
-        {"diagnosis": "MS"}, {"diagnosis": "asthma"}, {"diagnosis": "Hypothyroidism"}]
+        {"diagnosis": "MS, asthma"}, {"diagnosis": "Hypothyroidism"}]
 
 
 def test_edit_table_with_nothing_usable_is_refused_and_keeps_the_table(client):

@@ -229,12 +229,24 @@ def test_whole_list_clinician_suggestion_appends_each_row():
     assert merged == [{"medication": "A"}, {"medication": "B"}]
 
 
-@pytest.mark.parametrize("current", ["MS, asthma", ["MS", "asthma"], "MS\nasthma"])
-def test_table_stored_as_text_is_never_emptied(current):
+# Round 3 L4: text held in a table field is kept whole as one first-column row,
+# never split at commas or lines; a list keeps one row per item.
+@pytest.mark.parametrize("current,kept", [
+    ("MS, asthma", [{"diagnosis": "MS, asthma"}]),
+    ("MS\nasthma", [{"diagnosis": "MS\nasthma"}]),
+    (["MS", "asthma"], [{"diagnosis": "MS"}, {"diagnosis": "asthma"}]),
+])
+def test_table_stored_as_text_is_never_emptied(current, kept):
     merged = hs.apply_suggestion("diagnoses", current, {"diagnosis": "Pregnancy",
                                                         "current": "Current"})
-    assert merged == [{"diagnosis": "MS"}, {"diagnosis": "asthma"},
-                      {"diagnosis": "Pregnancy", "current": "Current"}]
+    assert merged == kept + [{"diagnosis": "Pregnancy", "current": "Current"}]
+
+
+def test_text_table_with_a_comma_in_the_reason_stays_one_row():
+    merged = hs.apply_suggestion("medications", "Warfarin 5 mg, for atrial fibrillation",
+                                 {"medication": "Metformin"})
+    assert merged[0] == {"medication": "Warfarin 5 mg, for atrial fibrillation"}
+    assert len(merged) == 2
 
 
 def test_mixed_list_keeps_rows_and_strings():

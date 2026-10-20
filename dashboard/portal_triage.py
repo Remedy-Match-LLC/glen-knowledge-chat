@@ -29,15 +29,43 @@ def init_table(cx):
         urgency TEXT, summary TEXT, recommendation TEXT, message TEXT, answer TEXT,
         created_at TEXT, resolved INTEGER NOT NULL DEFAULT 0)""")
     cx.execute("CREATE INDEX IF NOT EXISTS idx_triage_open ON portal_triage(resolved, id)")
-    # Delivery tracking for the immediate email, and the retry key for warning signs.
-    # Additive and nullable, so old rows read as "never tracked" and are left alone.
-    from dashboard import db as _db
-    for col in ("email_status", "emailed_at", "email_last_try", "message_key"):
-        if not _db.column_exists(cx, "portal_triage", col):
-            cx.execute(f"ALTER TABLE portal_triage ADD COLUMN {col} TEXT")
-    if not _db.column_exists(cx, "portal_triage", "email_attempts"):
-        cx.execute("ALTER TABLE portal_triage ADD COLUMN email_attempts INTEGER")
     cx.commit()
+    # Delivery tracking for the immediate email, the retry key for warning signs, the
+    # signs themselves (so a resend carries them) and a double-submit key.
+    # Additive and nullable, so old rows read as "never tracked" and are left alone.
+    for col, typ in _TRACKING_COLUMNS:
+        _add_column(cx, col, typ)
+    # NULLs never collide, so old rows and non-warning items are unaffected. Two
+    # workers creating it at once can make one fail on Postgres; that one rolls back
+    # and carries on (the other made the index; the retry check still runs).
+    try:
+        cx.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_triage_dedupe "
+                   "ON portal_triage(dedupe_key)")
+        cx.commit()
+    except Exception as e:
+        cx.rollback()
+        print(f"[triage] dedupe index not created here: {type(e).__name__}", flush=True)
+
+
+_TRACKING_COLUMNS = (("email_status", "TEXT"), ("emailed_at", "TEXT"),
+                     ("email_last_try", "TEXT"), ("message_key", "TEXT"),
+                     ("email_attempts", "INTEGER"), ("warning_signs", "TEXT"),
+                     ("dedupe_key", "TEXT"))
+
+
+def _add_column(cx, col, typ):
+    """Add one column if missing. Race-safe: two workers booting together can both
+    see it missing; the loser's ALTER fails, so roll back, re-check and carry on."""
+    from dashboard import db as _db
+    if _db.column_exists(cx, "portal_triage", col):
+        return
+    try:
+        cx.execute(f"ALTER TABLE portal_triage ADD COLUMN {col} {typ}")
+        cx.commit()
+    except Exception:
+        cx.rollback()
+        if not _db.column_exists(cx, "portal_triage", col):
+            raise
 
 
 def add_item(cx, email, name, category, urgency, summary, recommendation, message, answer=""):
@@ -58,11 +86,19 @@ def message_key(text):
     return t.strip(" .!?,;:")
 
 
+def dedupe_key(email, key, now_dt, window_minutes=10):
+    """The double-submit key: client, message and a `window_minutes` time bucket."""
+    bucket = int(now_dt.timestamp() // (int(window_minutes) * 60))
+    return f"{email}|{bucket}|{key}"
+
+
 def add_warning_item(cx, email, name, keys, message, answer="", window_minutes=10, now=None,
                      flag=None):
     """Store a warning-sign item, once. A retry of the same message by the same client
     within `window_minutes` returns the earlier item instead of a second one.
-    Returns (item_id, created)."""
+    Two workers racing on a double submit are stopped by the unique dedupe_key: the
+    loser's insert fails and it returns the winner's item. Returns (item_id, created)."""
+    from dashboard import db as _db
     init_table(cx)
     e = (email or "").strip().lower()
     key = message_key(message)
@@ -74,13 +110,22 @@ def add_warning_item(cx, email, name, keys, message, answer="", window_minutes=1
     if row:
         return row[0], False
     res = flag or warning_flag(keys)
-    new_id = dbwrite.insert_returning_id(
-        cx,
-        "INSERT INTO portal_triage(email,name,category,urgency,summary,recommendation,"
-        "message,answer,created_at,resolved,message_key,email_status) "
-        "VALUES(?,?,?,?,?,?,?,?,?,0,?,'pending')",
-        (e, (name or "").strip(), res["category"], res["urgency"], res["summary"],
-         res["recommendation"], message, answer, now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"), key))
+    dkey = dedupe_key(e, key, now_dt, window_minutes)
+    try:
+        new_id = dbwrite.insert_returning_id(
+            cx,
+            "INSERT INTO portal_triage(email,name,category,urgency,summary,recommendation,"
+            "message,answer,created_at,resolved,message_key,email_status,warning_signs,"
+            "dedupe_key) VALUES(?,?,?,?,?,?,?,?,?,0,?,'pending',?,?)",
+            (e, (name or "").strip(), res["category"], res["urgency"], res["summary"],
+             res["recommendation"], message, answer, now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+             key, ",".join(res.get("warning_signs") or []) or None, dkey))
+    except _db.IntegrityError:
+        cx.rollback()
+        row = cx.execute("SELECT id FROM portal_triage WHERE dedupe_key=?", (dkey,)).fetchone()
+        if not row:
+            raise
+        return row[0], False
     cx.commit()
     return new_id, True
 
@@ -349,6 +394,11 @@ _SIGN_PATTERNS = {
                    r"(?:breath\w*|breth\w*|catch (?:my|his|her|their|our) breath)", re.I),
         re.compile(r"\bbreathing (?:is|feels)\s+(?:\w+\s+)?(?:hard|difficult|labou?red|tight|shallow)\b", re.I),
         re.compile(r"\bshort(?:ness)?\s+of\s+breath\b|\bwheez\w*|\bgasping\b", re.I),
+        re.compile(r"\b(?:(?:haven'?t|hasn'?t|have not|has not|not|never)\s+(?:been\s+)?able to|"
+                   r"unable to|can'?t|cannot|couldn'?t|could not)\s+"
+                   r"(?:breathe\w*|get (?:a |any )?(?:full|deep|good|proper|enough) (?:breath|air)|"
+                   r"get (?:enough )?air|catch (?:my|his|her|their|our) breath)|"
+                   r"\bnot getting (?:enough|any) air\b|\bgasping for air\b", re.I),
     ],
     # Any fever in a baby or a child under about 2 (coordinator for Glen, 20 Oct
     # 2026; his approved report line: "A fever in a baby needs prompt attention").
@@ -401,12 +451,14 @@ _PRESENT_TIME = re.compile(
     r"yesterday)\b", re.I)
 _HYPO_CUE = re.compile(
     r"\b(?:if|what if|in case|unless|could (?:i|it|this|that)|will (?:i|it|this)|"
-    r"would (?:i|it|this)|is it possible|can (?:this|it|that|the \w+) cause|should i expect|"
+    r"would (?:i|it|this)|is it possible|"
+    r"(?:can|could|do|does|will|would|might) (?:this|it|that|these|those|they|the)(?: \w+)? cause|"
+    r"should i expect|"
     r"can (?:a|an|someone|people|kids|babies)\b)", re.I)
 _EDU_CUE = re.compile(
     r"\b(?:what causes?|what can cause|why do(?:es)?|what (?:is|are)|what does|explain|"
     r"tell me (?:about|more|how)|how (?:do|does) \w+ work|can come from|"
-    r"(?:is|are) caused by|how long (?:does|do|will|can|should|is|are)\b(?! (?:my|mine|i|this|it)\b))\b", re.I)
+    r"(?:is|are) caused by|watch (?:out )?for|look out for|worry about|how long (?:does|do|will|can|should|is|are)\b(?! (?:my|mine|i|this|it)\b))\b", re.I)
 # Reading or asking about a topic: education even with "I'm" in the clause.
 _TOPIC_CUE = re.compile(
     r"\b(?:read(?:ing)? (?:about|up on)|article|"
@@ -430,19 +482,37 @@ _NEGATION = re.compile(
 # fever patterns, which read "won't go down" / "will not break" as a sign.
 _NEGATION_INSIDE = re.compile(r"\b(?:not|isn'?t|aren'?t|wasn'?t|weren'?t|no longer|never|"
                               r"doesn'?t|don'?t|didn'?t|hasn'?t|haven'?t)\b", re.I)
-_EXCLUDE = re.compile(
-    # product or ordering
-    r"\b(?:drops? for|formula|remedy for|order(?:ing|ed)?|reorder\w*|"
-    r"how (?:do|should|much|often|many) (?:i|we|you)|capsules?|tablets?|dose|dosage|buy|"
-    r"purchase|in stock|price|use (?:this|it|these) for|"
-    r"(?:fever|hives?|allergy|wheeze|cough|headache|migraine|rash|skin) (?:drops|remedy|tincture|spray)|"
+# Round 3 (H1): a product word never suppresses a reported sign. Only shopping,
+# ordering and how-to-take questions, and a product named by its sign ("the wheeze
+# formula"), are excluded, and not even those when the
+# sentence ties the sign to a product ("after the first dose", "from the formula").
+_PRODUCT_ASK = re.compile(
+    r"\b(?:drops? for|remedy for|remedies for|formula for|"
+    r"do you (?:have|sell|carry|make)|(?:anything|something) (?:for|to help|that helps)|"
+    r"order (?:more|another|again|some)|place an order|re-?order\w*|ordering|"
+    r"how (?:do|should|much|often|many) (?:i|we|you)|buy|purchase|in stock|price|"
+    r"use (?:this|it|these) for|almost out of|run(?:ning)? out of|"
+    r"(?:fever|hives?|allergy|wheeze|cough|headache|migraine|rash|skin) "
+    r"(?:drops|remedy|tincture|spray|formula|capsules?|blend)|"
     r"can (?:she|he|i|we|they|my \w+) (?:take|use|have) (?:the|this|it|these)|"
     r"(?:does|do|can|will|would|could|might) (?:this|it|these|those|that|they|the|my)(?: \w+)? help|"
-    r"which (?:one|ones|product|remedy|formula|drops))\b|"
-    # improvement
+    r"which (?:one|ones|product|remedy|formula|drops))\b", re.I)
+_PRODUCT = r"(?:capsules?|caps|tablets?|pills?|dose|doses|dosage|drops|formula|remedy|remedies|" \
+           r"program|supplements?|bottle|product|tincture|spray|powder)"
+_REACTION = re.compile(
+    r"\b(?:after|since|from|on)\s+(?:\w+\s+){0,4}" + _PRODUCT + r"\b|"
+    r"\b(?:after|since)\s+(?:i\s+)?(?:taking|starting|started|took|began|doubling|"
+    r"increasing|switching)\b|"
+    r"\b(?:gave|giving|made|making) (?:me|him|her|us|them)\b|\breaction to\b", re.I)
+# A habit, not an acute event: "my husband gets hives from shellfish", "whenever".
+_HABITUAL = re.compile(
+    r"\bwhenever\b|\bevery time\b|\b(?:gets?|getting)\b[^!?\n]{0,40}\b(?:from|when)\b|"
+    r"\bwhen (?:i|he|she|they|we|you) (?:get|eat|run|exercise|work out|climb|walk)\b", re.I)
+_EXCLUDE = re.compile(
+    # improvement ("normal" alone is not: "is it normal for my lips to swell")
     r"\b(?:better|(?:is|are|it's|its|they're|all) gone|gone now|cleared|clearing up|went away|"
     r"resolved|improv\w*|no longer|healed|"
-    r"fading|subsided|calmed down|normal)\b|"
+    r"fading|subsided|calmed down|back to normal)\b|"
     # past history
     r"\b(?:years? ago|months? ago|as a (?:child|kid|baby|teen\w*)|when i was (?:a |young|little)|"
     r"last year|in (?:19|20)\d\d|growing up|in the past|used to|back then)\b", re.I)
@@ -451,6 +521,12 @@ _EXCLUDE_FOR = {
     "swelling": re.compile(r"\b(?:chapped|cold sores?)\b", re.I),
     "right-rib-pain": re.compile(r"\b(?:mild|slight\w*|a little|a bit|minor|twinge)\b", re.I),
 }
+
+
+# Negations that are part of the sign itself: "I haven't been able to breathe".
+_SIGN_NEGATION = re.compile(
+    r"\b(?:haven'?t|hasn'?t|have not|has not|not|never)\s+(?:been\s+)?able to\b|"
+    r"\bnot getting (?:enough|any) air\b", re.I)
 
 
 def _sentences(text):
@@ -489,12 +565,14 @@ def _counts(s, bounds, m, key):
     _, end = _clause_at(bounds, max(m.end() - 1, m.start()))
     if _NEGATION.search(s[a:m.start()]):
         return False
-    if key not in ("fever",) and _NEGATION_INSIDE.search(m.group(0)):
+    if key not in ("fever",) and _NEGATION_INSIDE.search(_SIGN_NEGATION.sub(" ", m.group(0))):
         return False
     if _hypothetical(s[a:b]):
         return False
     region = s[a:end]
     if _EXCLUDE.search(region):
+        return False
+    if (_PRODUCT_ASK.search(region) or _HABITUAL.search(region)) and not _REACTION.search(s):
         return False
     extra = _EXCLUDE_FOR.get(key)
     if extra and extra.search(region):
@@ -551,13 +629,19 @@ HEALING_SIGNS = (
     ("mucus", "more mucus"),
 )
 _HEALING_LABELS = dict(HEALING_SIGNS)
+_SYMPTOM = (r"\b(?:pains?|aches?|aching|eczema|psoriasis|rash\w*|acne|itch\w*|symptoms?|"
+            r"problems?|issues?|conditions?|cough\w*|congest\w*|sinus\w*|allerg\w*|migraines?|"
+            r"head ?aches?|insomnia|anxiety|bloat\w*|reflux|arthritis|stiff\w*|numb\w*|tingl\w*|"
+            r"swell\w*|cramp\w*|injur\w*|old \w+)")
 _HEALING_PATTERNS = {
     "old-symptom": [
-        re.compile(r"\b(?:flar(?:e|ed|es|ing)(?: up)?|came back|coming back|come back|"
-                   r"returned|returning|resurfac\w*|back again|is back|are back)\b", re.I),
+        # Round 3 (M2): a return needs a symptom word ("my energy is back" is not one).
+        re.compile(r"\bflar(?:e|ed|es|ing)(?: up)?\b|\bresurfac\w*", re.I),
+        re.compile(_SYMPTOM + r"[^!?\n]{0,40}\b(?:came back|coming back|come back|comes back|"
+                   r"returned|returning|back again|is back|are back|recurr\w*)\b", re.I),
     ],
     "tired-aches": [
-        re.compile(r"\b(?:tired\w*|exhaust\w*|fatigu\w*|wiped out|drained|no energy|"
+        re.compile(r"\b(?:tired(?:ness)?(?!\s+of\b)|exhaust\w*|fatigu\w*|wiped out|drained|no energy|"
                    r"achy|aches?|aching|sore all over|body aches?|joint pain|muscle pain|"
                    r"sore (?:muscles|joints))\b", re.I),
     ],
@@ -566,7 +650,8 @@ _HEALING_PATTERNS = {
     ],
     "rash": [
         re.compile(r"\b(?:rash\w*|break ?outs?|broke out|breaking out|pimples?|acne|"
-                   r"spots|itchy skin)\b", re.I),
+                   r"(?:red|itchy|little) spots|spots on (?:my|his|her|their) (?:skin|face|body|arms?|"
+                   r"legs?|chest|back|neck|hands?|feet)|itchy skin)\b", re.I),
     ],
     "loose-stools": [
         re.compile(r"\b(?:loose (?:stools?|bowels?|poo\w*)|diarr?h?o?ea|diarrhea|"
@@ -584,6 +669,15 @@ _HEALING_PATTERNS = {
     ],
 }
 
+
+# The window is the client's own, so another person's tiredness or rash is not a
+# sign of it (round 3 probe: "My husband is tired after work").
+_HEALING_OTHER = re.compile(
+    r"\b(?:my|our) (?:wife|husband|partner|daughter|son|kids?|children|child|baby|mom|mother|"
+    r"dad|father|sister|brother|friend|boyfriend|girlfriend|dog|cat)\b|"
+    r"\b(?:he|she|they) (?:is|are|has|have|was|were|feels?|seems?)\b", re.I)
+for _k in _HEALING_PATTERNS:
+    _EXCLUDE_FOR[_k] = _HEALING_OTHER
 
 # Same change for the healing-crisis signs: "headache since tuesday" and "rash on
 # my arms" flag inside the window with no report word.
@@ -614,8 +708,8 @@ def _parse_when(text):
 def healing_window(cx, email, now=None, days=None):
     """The open healing-crisis window for this client, or None:
     {"day": whole days since delivery, "delivered_at", "shipment_id", "order_id"}.
-    Cheap: only shipments delivered in the last `days` (+1 for clock slack) are
-    read, and their member orders are resolved the way the coaching code does it
+    Cheap: the client's own biofield orders are read first, then only their
+    shipments delivered in the last `days` (+1 for clock slack) are read, and their member orders are resolved the way the coaching code does it
     (coaching.shipment_member_orders), so a household shipment opens the window only
     for the member whose own order is a biofield order. Plain SQL, Postgres-safe."""
     from dashboard import coaching
@@ -625,10 +719,26 @@ def healing_window(cx, email, now=None, days=None):
     days = HEALING_WINDOW_DAYS if days is None else days
     now_dt = now or datetime.now(timezone.utc)
     since = (now_dt - timedelta(days=days + 1)).strftime("%Y-%m-%d")
+    # This client's own biofield orders first, so only their shipments are read.
+    mine = cx.execute(
+        "SELECT shipment_id, external_ref FROM orders WHERE LOWER(TRIM(email))=? "
+        "AND source=? AND status!='cancelled'", (e, HEALING_ORDER_SOURCE)).fetchall()
+    ship_ids = sorted({r[0] for r in mine if r[0] is not None})
+    refs = sorted({r[1] for r in mine if r[1]})
+    if not (ship_ids or refs):
+        return None
+    links = []
+    params = [since]
+    if ship_ids:
+        links.append("id IN (" + ",".join("?" * len(ship_ids)) + ")")
+        params += ship_ids
+    if refs:
+        links.append("order_uuid IN (" + ",".join("?" * len(refs)) + ")")
+        params += refs
     rows = cx.execute(
         "SELECT id, order_uuid, delivered_at FROM shipments "
-        "WHERE delivered_at IS NOT NULL AND delivered_at >= ? ORDER BY delivered_at DESC",
-        (since,)).fetchall()
+        "WHERE delivered_at IS NOT NULL AND delivered_at >= ? AND (" + " OR ".join(links) + ") "
+        "ORDER BY delivered_at DESC", tuple(params)).fetchall()
     best = None
     for row in rows:
         sid, uuid, delivered = row[0], row[1], row[2]

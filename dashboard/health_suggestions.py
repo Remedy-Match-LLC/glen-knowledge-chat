@@ -399,13 +399,15 @@ def table_row_from(field_id, value):
 
 def _existing_rows(field_id, current):
     """A table's current value as rows, never losing anything. Text (a table that
-    was saved as "MS, asthma") and string items become first-column rows."""
+    was saved as "Warfarin 5 mg, for atrial fibrillation") becomes ONE first-column
+    row, never split at commas: a comma inside a reason is not a second row (round 3
+    L4). String items become first-column rows."""
     cols = _table_cols(field_id) or ["value"]
     if current is None or current == "":
         return []
     if isinstance(current, str):
-        parts = [p.strip() for p in re.split(r"[,;\n]", current) if p.strip()]
-        return [{cols[0]: p} for p in parts]
+        text = current.strip()
+        return [{cols[0]: text}] if text else []
     if isinstance(current, dict):
         return [current]
     if not isinstance(current, list):
