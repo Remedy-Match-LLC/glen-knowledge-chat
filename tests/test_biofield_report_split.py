@@ -1002,9 +1002,11 @@ def test_the_approved_leads_print_word_for_word(cx):
         for want, got in zip(leads[report], paras):
             assert re.sub(r"<[^>]+>", "", got) == html.escape(want), report
     sources = rs.render_report(ctx, "remedy_sources", on["remedy_sources"])
-    # Not linked to the public chat (Glen, 2026-10-19: it is not tied to the
-    # client's data); the portal chat address is still to be settled.
-    assert "https://illtowell.com/" not in sources and "the chat interface" in sources
+    # The portal sign-in, never a private portal link: a client may share a report
+    # (Glen, 2026-10-19). The public chat is not tied to the client's data.
+    assert ('<a href="https://myhealingoasis.com/portal/login">the chat interface of '
+            'Dr. Glen&#x27;s knowledge-base</a>') in sources
+    assert "/portal/" + "login" in sources and "token" not in sources
     assert rs.pr._linked("Ask the chat here.", {"the chat": "https://example.test/p"}) == (
         'Ask <a href="https://example.test/p">the chat</a> here.')
     assert rs.pr._linked("Ask the chat.", {"the chat": "javascript:x"}) == "Ask the chat."

@@ -1,6 +1,10 @@
 {
  "_comment": "Each report's standard lead, printed at the top of the report before any personal passage. Approved by Glen 2026-10-19 (\"approved with edits\", marketing tab). Source: marketing/04 Copy/report-introductions-2026-10-19/intros-APPROVED.md. Print every paragraph as written; do not reword.",
- "links": {},
+ "links": {
+  "remedy_sources": {
+   "the chat interface of Dr. Glen's knowledge-base": "https://myhealingoasis.com/portal/login"
+  }
+ },
  "leads": {
   "biofield": [
    "Your body is always working to heal itself.",
@@ -63,5 +67,5 @@
    "Consider asking the chat interface of Dr. Glen's knowledge-base if you are considering any of these."
   ]
  },
- "_links_note": "The Remedy Sources chat phrase is not linked yet: Glen, 2026-10-19, the public chat is not tied to the client's data; send them to the chat in their own portal. Address to be settled."
+ "_links_note": "Glen, 2026-10-19: link the chat phrase to the portal sign-in, not a private portal link, \"to preserve privacy, as they may wish to share a report with someone.\" The public chat is not tied to the client's data."
 }
