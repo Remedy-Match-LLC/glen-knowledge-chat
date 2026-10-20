@@ -360,6 +360,15 @@ def top_keys(printed):
     return tuple(keys)
 
 
+def report_intro(ctx, report):
+    """This report's own introduction lines, for the book format Glen plans (2026-10-19:
+    "each report will have an individualized introduction"). The wording is not
+    settled, so none is stored yet: ctx["report_intros"] = {report: [lines]} fills it.
+    They print at the top of the report, before the shared intro, in every file."""
+    return tuple(str(t) for t in ((ctx.get("report_intros") or {}).get(report) or ())
+                 if str(t).strip())
+
+
 def render_report(ctx, report, on, intro=True):
     """One stand-alone report as a plan block, sections limited to `on`. `intro`
     False leaves out the intro lines, for every report after the first in a Grouped
@@ -379,7 +388,7 @@ def render_report(ctx, report, on, intro=True):
     extra += _amazon_line(groups, on)
     return pr.render_plan_section(
         printed, ctx["client_name"], ctx["date"], ctx["meanings"],
-        ctx["intro"] if intro else (),
+        report_intro(ctx, report) + tuple(ctx["intro"] if intro else ()),
         pr.cautions_for(printed, ctx["cautions"]), ctx["frame"],
         headings=_headings(on, skip, REPORT_TITLES[report], printed,
                            name_remedies=report == "remedy_sources"),
@@ -455,7 +464,9 @@ def print_jobs(selected, mode, client_name):
 
 
 def grouped_html(ctx, reports, settings_):
-    """One page of the given reports, each starting a new printed page."""
+    """One file of the given reports. Each report starts a new printed page; the
+    sections inside one flow on, and no heading is left alone at a page foot (Glen,
+    2026-10-19: "each report")."""
     body = "".join(
         f"<div class=rs-report style='{'break-before:page' if i else ''}'>"
         f"{render_report(ctx, r, settings_[r], intro=not i)}</div>"
@@ -463,7 +474,9 @@ def grouped_html(ctx, reports, settings_):
     title = html.escape(", ".join(REPORT_TITLES[r] for r in reports))
     return ("<!doctype html><html lang=en><head><meta charset=utf-8>"
             "<meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>{title}</title><style>body{{margin:0;background:#fff}}</style>"
+            f"<title>{title}</title><style>body{{margin:0;background:#fff}}"
+            "@media print{h1,h2,h3,h4{break-after:avoid;page-break-after:avoid}"
+            ".plan-heading,.plan-list li{break-inside:avoid-page}}</style>"
             "</head><body>" + body + "</body></html>")
 
 

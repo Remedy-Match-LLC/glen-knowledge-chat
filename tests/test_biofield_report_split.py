@@ -612,3 +612,29 @@ def test_headings_print_once_and_prl_fullscript_are_labelled(cx):
     ("../etc", "etc"), ("", "Client"), ("\x01", "Client"), ("x" * 200, "x" * 80)])
 def test_file_names_are_safe(name, want):
     assert rs._safe(name) == want
+
+
+def test_grouped_reports_each_start_a_page_and_sections_flow(cx):
+    """Glen, 2026-10-19: each report starts a new page; sections inside flow on, and
+    no heading sits alone at a page foot."""
+    import re
+    _seed(cx)
+    ctx = _ctx(cx)
+    on = {r: set(rs.DEFAULTS[r]) for r in rs.STAND_ALONE}
+    page = rs.grouped_html(ctx, ["diet", "healing_tools", "ingredients"], on)
+    starts = re.findall(r"<div class=rs-report style='([^']*)'>", page)
+    assert starts == ["", "break-before:page", "break-before:page"]
+    assert page.count("break-before:page") == 2       # no forced break inside a report
+    assert "h1,h2,h3,h4{break-after:avoid" in page
+
+
+def test_each_report_has_a_slot_for_its_own_introduction(cx):
+    _seed(cx)
+    ctx = _ctx(cx)
+    on = {r: set(rs.DEFAULTS[r]) for r in rs.STAND_ALONE}
+    assert rs.report_intro(ctx, "diet") == ()
+    ctx["report_intros"] = {"diet": ["Your diet, in brief."], "ingredients": ["  "]}
+    assert "Your diet, in brief." in rs.render_report(ctx, "diet", on["diet"])
+    assert "Your diet, in brief." not in rs.render_report(ctx, "ingredients", on["ingredients"])
+    page = rs.grouped_html(ctx, ["healing_tools", "diet"], on)
+    assert page.count("Your diet, in brief.") == 1    # printed even when not first
