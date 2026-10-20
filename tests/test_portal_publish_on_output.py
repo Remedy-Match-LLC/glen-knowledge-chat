@@ -125,8 +125,9 @@ def _app_with_publish(tmp_path, monkeypatch, calls):
         tid = create_test(cx, "Pam", "pam@example.com", "2026-09-02")
         add_chain_row(cx, tid, 1, "Terrain", "Terrain", "Terrain Restore", confirmed=1)
 
-    def _pub(test_id, special, send=False, send_if_new=False):
-        calls.append({"test_id": test_id, "send": send, "send_if_new": send_if_new})
+    def _pub(test_id, special, send=False, send_if_new=False, primary_on=None):
+        calls.append({"test_id": test_id, "send": send, "send_if_new": send_if_new,
+                      "primary_on": primary_on})
         return {"ok": True, "url": "u"}
 
     return create_app(db, fetch_profile=lambda e: {}, auto_publish=_pub), tid
@@ -151,6 +152,9 @@ def test_printing_the_report_publishes_it_once_only(tmp_path, monkeypatch):
     assert calls, "printing the report did not publish it to the portal"
     assert calls[-1]["send_if_new"] is True
     assert calls[-1]["send"] is False           # never the unconditional email flag
+    # The print hands the publish the switches it printed with (report split).
+    from dashboard import biofield_report_split as rs
+    assert calls[-1]["primary_on"] == rs.DEFAULTS["biofield"]
 
 
 def test_a_portal_failure_never_breaks_the_print(tmp_path, monkeypatch):

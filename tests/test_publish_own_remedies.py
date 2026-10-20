@@ -163,7 +163,7 @@ def test_printing_a_bare_number_never_reaches_the_portal(tmp_path, monkeypatch):
                         lambda html, out: open(out, "wb").write(b"%PDF-FAKE"))
     monkeypatch.setattr(biofield_local_app, "causal_chain_report",
                         lambda cx, t: {"client": {}, "layers": [], "date": ""}, raising=False)
-    monkeypatch.setattr(biofield_local_app, "render_present", lambda rep, narr: "<html></html>")
+    monkeypatch.setattr(biofield_local_app, "render_present", lambda rep, narr, intro=(), **k: "<html></html>")
     assert c.get(f"/test/{tid}/report.pdf").status_code == 200   # the print itself works
     assert len(sent) == 1, "the bare number must not publish"
 

@@ -1477,7 +1477,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        return Response(render_present(rep, narrative), mimetype="text/html")
+        html = render_present(rep, narrative, _primary_intro(), primary_on=_primary_on(test_id))
+        return Response(_with_primary_added(test_id, rep, html), mimetype="text/html")
 
     @app.route("/test/<test_id>/report.pdf")
     def report_present_pdf(test_id):
@@ -1488,7 +1489,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        html = render_present(rep, narrative)
+        # One read of the switches for the whole print, so the downloaded PDF and the
+        # portal published with it can never disagree (review, 2026-10-19).
+        on = _primary_on(test_id)
+        html = _with_primary_added(test_id, rep, render_present(
+            rep, narrative, _primary_intro(), primary_on=on))
         reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
                                      os.path.join(os.path.expanduser("~"), "biofield-reports"))
         date = (rep.get("date") or "").replace("/", "-") or "undated"
@@ -1507,10 +1512,190 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             data = open(out, "rb").read()
         except Exception as e:
             return Response(f"PDF generation failed: {e}", status=500)
-        _auto_publish(test_id)   # printing a report also puts it on the client portal
+        _auto_publish(test_id, primary_on=on)   # printing also puts it on the portal
         suffix = "-with-plan" if request.args.get("plan") == "1" else ""
         return Response(data, mimetype="application/pdf", headers={
             "Content-Disposition": f'inline; filename="biofield-{test_id}{suffix}.pdf"'})
+
+    # --- The five reports and their section buttons (Glen, 2026-10-19) ---
+    def _primary_on(test_id, authored=None):
+        """The sections switched on in this test's Biofield Analysis. The printed
+        report, the portal and the invoice all read them here (Glen, 2026-10-19)."""
+        from dashboard import biofield_report_split as rsplit
+        if authored:
+            test_id = "a" + str(test_id).lstrip("a")
+        with sqlite3.connect(db_path) as cx:
+            return rsplit.settings(cx, test_id, authored)[rsplit.PRIMARY]
+
+    def _primary_invoice(test_id, remedies):
+        """(remedies to bill, layer remedies left off, sections on) for the invoice,
+        from the Biofield Analysis's buttons. At the defaults it bills what it did."""
+        from dashboard import biofield_report_split as rsplit
+        # The invoice routes are /author routes, so the test is always authored:
+        # "/author/48" is test a48, never FileMaker test 48 (review, 2026-10-19).
+        key = rsplit.test_key(test_id, authored=True)
+        on = _primary_on(key, authored=True)
+        with sqlite3.connect(db_path) as cx:
+            powders = []
+            if rsplit.PURE_POWDERS in on:
+                from dashboard.biofield_plan_report import plan
+                powders = rsplit.pure_powder_names(plan(cx, key))
+        billed = rsplit.invoice_remedies(remedies, on, powders)
+        left_off = rsplit.left_off(remedies, on)
+        return billed, left_off, on
+
+    def _split_ctx(test_id, rep=None):
+        """(report data, Glen-only note html) for the five reports."""
+        from html import escape
+        from dashboard import biofield_report_split as rsplit
+        # Anything that leaves the scan's infoceuticals out of Remedy Sources is a
+        # scan problem: Glen sees it here, and the PDF route refuses to print Remedy
+        # Sources with it (review, 2026-10-19).
+        scan_problem, note = [], []
+        with sqlite3.connect(db_path) as cx:
+            if rep is None:
+                rep = _report_for(cx, test_id)
+            client = rep.get("client") or {}
+            email = (client.get("email") or "").strip()
+            marks, order, names = None, [], None
+            try:
+                from dashboard.e4l_scan_marks import infoceutical_marks
+                from dashboard.biofield_authoring import infoceutical_names_by_code
+                sctx = scan_lookup(email) if email else {}
+                if not email:
+                    scan_problem.append("This client has no email, so no scan was looked up")
+                elif not (sctx or {}).get("found"):
+                    scan_problem.append("No scan was found for this client")
+                else:
+                    marks = infoceutical_marks(cx, e4l_db, sctx.get("scan_id"))
+                    order = rsplit.recommended_order(e4l_db, sctx.get("scan_id"))
+                    if marks is None:
+                        scan_problem.append("The scan has no id to read")
+                names = infoceutical_names_by_code(cx) or {}
+            except Exception as exc:  # said to Glen, never silent
+                scan_problem.append(f"The scan could not be read: {exc!r}"[:300])
+            for key in ("recommended_error", "purple_error"):
+                if (marks or {}).get(key):
+                    scan_problem.append(f"Scan: {marks[key]}")
+            # A FileMaker test's layers are its own; it never reads an authored chain.
+            chain = None if rsplit.is_authored(test_id) else [
+                (l.get("remedy") or "").strip() for l in rep.get("layers") or []
+                if (l.get("remedy") or "").strip()]
+            ctx = rsplit.load(cx, test_id, client.get("name") or "", rep.get("date") or "",
+                              _kloud_program_if_ticked(cx, test_id, rep), marks, order, names,
+                              chain=chain)
+            on = rsplit.settings(cx, test_id)
+        if scan_problem:
+            note += [n + ". Remedy Sources leaves out the scan's infoceuticals, and will "
+                     "not print with Infoceuticals switched on" for n in scan_problem]
+        if ctx.get("unnamed_codes"):
+            note.append("No name in the product list for " + ", ".join(ctx["unnamed_codes"])
+                        + ". Remedy Sources leaves them out")
+        ctx["scan_problem"] = scan_problem
+        glen = "".join(f"<details class=plan-glen open><summary>{escape(n)}. Not printed."
+                       "</summary></details>" for n in note)
+        return ctx, on, glen
+
+    def _primary_intro():
+        """The Biofield Analysis's lead and personal passage; empty prints nothing."""
+        from dashboard import biofield_report_split as rsplit
+        try:
+            with sqlite3.connect(db_path) as cx:
+                return rsplit.primary_intro(cx)
+        except Exception:
+            return ()
+
+    def _with_primary_added(test_id, rep, report_html):
+        """The Biofield Analysis with any other section Glen switched on in it added
+        after the narrative. With none on, the report is unchanged."""
+        from dashboard import biofield_report_split as rsplit
+        from dashboard.biofield_plan_report import append_to_report
+        with sqlite3.connect(db_path) as cx:
+            on = rsplit.settings(cx, test_id)[rsplit.PRIMARY]
+        if not any(k not in rsplit.LAYER_SECTIONS for k in on):
+            return report_html
+        ctx, _, _ = _split_ctx(test_id, rep)
+        added = rsplit.primary_added(ctx, on)
+        return append_to_report(report_html, added) if added else report_html
+
+    @app.route("/test/<test_id>/reports")
+    def split_reports(test_id):
+        """Glen's page for the five reports: each one's section buttons, the print
+        ticks and the Singly / Grouped switch."""
+        from dashboard import biofield_report_split as rsplit
+        ctx, on, glen = _split_ctx(test_id)
+        picked, mode = rsplit.print_choice(request.args)
+        return Response(rsplit.render_page(ctx, test_id, on, glen, picked, mode),
+                        mimetype="text/html")
+
+    @app.route("/test/<test_id>/report-sections", methods=["POST"])
+    def split_report_sections(test_id):
+        """Save one section button for this client (Glen: "yes, save per client")."""
+        from dashboard import biofield_report_split as rsplit
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body.get("on"), bool):
+            return jsonify({"ok": False, "error": "on must be true or false"}), 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                rsplit.set_section(cx, test_id, str(body.get("report") or ""),
+                                   str(body.get("section") or ""), body["on"])
+                on = rsplit.settings(cx, test_id)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "on": {r: sorted(v) for r, v in on.items()}})
+
+    @app.route("/test/<test_id>/reports.pdf")
+    def split_reports_pdf(test_id):
+        """One PDF of the stand-alone reports named in r=. Grouped makes one file of
+        them all in report order. Singly makes one file per report, so the page asks
+        for each separately and this refuses more than one."""
+        import os
+        import urllib.parse as _up
+        from dashboard import biofield_report_split as rsplit
+        mode = request.args.get("mode") or "singly"
+        if mode not in ("singly", "grouped"):
+            return Response("mode must be singly or grouped", status=400)
+        ctx, on, _ = _split_ctx(test_id)
+        jobs = rsplit.print_jobs(request.args.getlist("r"), mode, ctx["client_name"])
+        if len(jobs) != 1:
+            return Response("Ask for one file: tick a report, and one report at a time "
+                            "when printing singly.", status=400)
+        name, reports = jobs[0]
+        if ("remedy_sources" in reports and rsplit.cs.INFOCEUTICALS in on["remedy_sources"]
+                and ctx.get("scan_problem")):
+            return Response(
+                "Remedy Sources was not made. " + ". ".join(ctx["scan_problem"])
+                + ". Its Infoceuticals list comes from the scan. Fix the scan, or switch "
+                "Infoceuticals off in Remedy Sources to print it without them.",
+                status=409, mimetype="text/plain")
+        html = rsplit.grouped_html(ctx, reports, on)
+        reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
+                                     os.path.join(os.path.expanduser("~"), "biofield-reports"))
+        date = (ctx["date"] or "").replace("/", "-") or "undated"
+        folder = os.path.join(reports_dir, f"reports_{test_id}_{date}")
+        os.makedirs(folder, exist_ok=True)
+        out = os.path.join(folder, name)
+        # Each request renders to a file of its own, then the finished file takes the
+        # client's name. Two requests never share a path as a buffer (review,
+        # 2026-10-19).
+        import tempfile
+        fd, work = tempfile.mkstemp(dir=folder, prefix=".rendering-", suffix=".pdf")
+        os.close(fd)
+        try:
+            save_report_pdf(html, work)
+            with open(work, "rb") as fh:
+                data = fh.read()
+            os.replace(work, out)
+        except Exception as e:
+            return Response(f"PDF generation failed: {e}", status=500)
+        finally:
+            if os.path.exists(work):
+                os.remove(work)
+        how = "attachment" if request.args.get("download") == "1" else "inline"
+        ascii_name = name.encode("ascii", "replace").decode().replace("?", "_")
+        return Response(data, mimetype="application/pdf", headers={
+            "Content-Disposition": f'{how}; filename="{ascii_name}"; '
+                                   f"filename*=UTF-8''{_up.quote(name)}"})
 
     def _plan_for(test_id):
         from dashboard.biofield_plan_report import build
@@ -1998,6 +2183,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if not nm:
                 continue
             remedies.append({"name": nm, "qty": biofield_invoice.line_bottles(l)})
+        # The invoice follows the Biofield Analysis's section buttons (Glen, 2026-10-19).
+        remedies, left_off, _ = _primary_invoice(test_id, remedies)
+        from html import escape as _esc
+        from dashboard import biofield_report_split as _rsplit
         catalog = invoice_fetch_catalog()
         # Never re-charge a Biofield Analysis the client already paid for: drop the fee
         # line when a paid analysis order exists, invoicing remedies only. If that leaves
@@ -2016,8 +2205,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     "no remedies to invoice, so no new invoice was raised.")
             return {"ok": True, "already_paid": not no_charge, "no_charge": no_charge,
                     "order_id": None if no_charge else paid.get("order_id"),
-                    "added": 0, "skipped": built["skipped"], "warning": "", "note": note,
-                    "print_url": "", "orders_url": "", "external_ref": "", "total_dollars": ""}
+                    "added": 0, "skipped": built["skipped"],
+                    "warning": _esc(_rsplit.left_off_warning(left_off)), "note": note,
+                    "print_url": "", "orders_url": "", "external_ref": "", "total_dollars": "",
+                    "left_off": left_off}
         # A repeated raise refreshes Biofield-sourced remedies from the schedule,
         # while keeping lines added manually in Edit Invoice on the current draft.
         previous = invoice_latest(email) or {}
@@ -2056,6 +2247,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             warning = "The Biofield Analysis line was not accepted by the console; open the order in Orders to check."
         elif accepted and len(accepted) < len(built["lines"]):
             warning = f"{len(built['lines']) - len(accepted)} line(s) were not accepted by the console."
+        # What the Biofield Analysis's buttons left off, shown beside the result. The
+        # page puts warning into innerHTML, so the names are escaped.
+        off = _rsplit.left_off_warning(left_off, fee_only=include_fee and not remedies)
+        if off:
+            warning = (warning + " " if warning else "") + _esc(off)
         return {"ok": True, "already_paid": bool(paid.get("paid")), "no_charge": no_charge,
                 "print_url": link.get("print_url") if link.get("ok") else "",
                 "order_id": created.get("order_id"),
@@ -2066,6 +2262,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 "skipped": built["skipped"],
                 "not_ready": built.get("not_ready") or [],
                 "warning": warning,
+                "left_off": left_off,
                 "total_dollars": biofield_fee.cents_to_dollars(total) if total is not None else ""}
 
     @app.route("/author/<test_id>/invoice/status")
@@ -2118,13 +2315,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if not email:
                 return {"ok": False, "error": "Add a client email in the header first."}, 400
             catalog = invoice_fetch_catalog()
+            # The portal gets what the invoice bills: the Biofield Analysis's
+            # section buttons (Glen, 2026-10-19).
+            hand_on = _primary_on(test_id, authored=True)
             content = biofield_handoff.build_portal_seed(
                 cx, test_id, lambda nm: biofield_invoice.resolve_line_slug(nm, catalog),
                 name=client.get("name"),
                 terrain_restore_ok=biofield_invoice.terrain_restore_sellable(catalog),
                 name_of=lambda sl: next((c.get("name") for c in catalog or []
                                          if c.get("slug") == sl), None),
-                ready=lambda sl: not biofield_invoice.is_not_ready(sl, catalog))
+                ready=lambda sl: not biofield_invoice.is_not_ready(sl, catalog),
+                primary_on=hand_on)
             # The scan date keys the portal's per-scan report AND marks this hand-off's
             # report CURRENT, so the manual Biofield wins over a stale reveal. Fall back
             # to today when the test carries no date.
@@ -2144,6 +2345,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         try:
             remedies = biofield_handoff.report_remedies_for_invoice(
                 db_path, rep, biofield_invoice.bottles_needed)
+            # The invoice follows the Biofield Analysis's section buttons (Glen, 2026-10-19).
+            from dashboard import biofield_report_split as _rsplit
+            n_layer = len(remedies)
+            remedies, _left_off, primary_on = _primary_invoice(test_id, remedies)
+            # The kept layer remedies come first; anything after them is a Pure Powder.
+            powders_added = remedies[n_layer - len(_left_off):]
             # Skip re-charging a paid Biofield Analysis: drop the fee line when already
             # paid (invoice remedies only), and skip the raise entirely if that empties
             # the invoice (pre-paid analysis with no remedies, e.g. Steve Fox).
@@ -2173,6 +2380,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # A folded Terrain Restore line holds several remedies: its count is
                 # the largest of theirs.
                 names = biofield_invoice.held_names(item)
+                if not any(_rsplit.layer_remedy_on(n, primary_on) for n in names):
+                    continue
                 line = {
                     "slug": slug,
                     "qty": max(qty_by_name.get((n or "").strip().lower(), 1) for n in names),
@@ -2181,6 +2390,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 if item.get("note"):
                     line["note"] = item["note"]
                 resolved_remedies.append(line)
+            # Pure Powders on in the Biofield Analysis: one bottle each (Glen, 2026-10-19).
+            for r in powders_added:
+                slug = biofield_invoice.resolve_line_slug(r.get("name") or "", catalog)
+                if (not slug or slug in biofield_invoice.RECOMMEND_ONLY_SLUGS
+                        or biofield_invoice.is_not_ready(slug, catalog)
+                        or any(l["slug"] == slug for l in resolved_remedies)):
+                    continue
+                resolved_remedies.append({"slug": slug, "qty": 1, "source": "biofield"})
             if resolved_remedies:
                 built["lines"] = ([{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}]
                                   if include_fee else []) + resolved_remedies
@@ -2192,6 +2409,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                               "no service-only invoice was created."),
                     "skipped": built.get("skipped") or [],
                 }
+                invoice["warning"] = _rsplit.left_off_warning(_left_off)
+                invoice["left_off"] = _left_off
                 return {"ok": True, "layers": len(content["layers"]),
                         "remedies": len(content["reorder_items"]), "email": email,
                         "invoice": invoice}
@@ -2222,6 +2441,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                "total_dollars": biofield_fee.cents_to_dollars(total) if total is not None else ""}
                 else:
                     invoice = {"ok": False, "error": created.get("error") or "invoice not created"}
+            # What the Biofield Analysis's buttons left off (review, 2026-10-19). The
+            # hand-off page shows it as text.
+            fee_only = bool(built["lines"]) and include_fee and not resolved_remedies
+            invoice["warning"] = _rsplit.left_off_warning(_left_off, fee_only=fee_only)
+            invoice["left_off"] = _left_off
         except Exception as e:
             invoice = {"ok": False, "error": "invoice raise failed"}
         return {"ok": True, "layers": len(content["layers"]),
@@ -4275,7 +4499,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                            [(test_id, n, now) for n in names])
             cx.commit()
 
-    def _do_publish(test_id, special, send, send_if_new=False, own_remedies=()):
+    def _do_publish(test_id, special, send, send_if_new=False, own_remedies=(),
+                    primary_on=None):
         """Build + upload PDF/audio assets + upsert the portal for a test. Returns the
         upsert response dict (or {"unresolved": [...]}); raises on hard errors.
 
@@ -4289,8 +4514,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not re.fullmatch(r"a+\d+", str(test_id)):
             raise ValueError(f"only an authored report (a<number>) can be published, not {test_id!r}")
         from dashboard import biofield_portal_publish as _bpp
+        # The portal and its PDF follow the Biofield Analysis's section buttons, as
+        # the invoice does (Glen, 2026-10-19).
+        on = primary_on if primary_on is not None else _primary_on(test_id, authored=True)
         with sqlite3.connect(db_path) as cx:
-            pre = _bpp.build_portal_content(cx, test_id, special_price_cents=special)
+            pre = _bpp.build_portal_content(cx, test_id, special_price_cents=special,
+                                            primary_on=on)
         confirmed = _own_remedies(test_id) | {str(n).strip() for n in (own_remedies or ())}
         missing = [u for u in pre["unresolved"] if u not in confirmed]
         if missing:
@@ -4308,7 +4537,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        pdf_bytes = report_pdf_bytes(render_present(rep, narrative))
+        pdf_bytes = report_pdf_bytes(render_present(rep, narrative, _primary_intro(),
+                                                    primary_on=on))
         pdf_url = _bpp.upload_asset(pdf_bytes, _bpp._asset_name("pdf"), base_url=base, console_key=key)
         audio_url = None
         audio_path = os.path.join(AUDIO_DIR, f"test_{test_id}.mp3")
@@ -4318,7 +4548,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                               base_url=base, console_key=key)
         with sqlite3.connect(db_path) as cx:
             payload = _bpp.build_portal_content(cx, test_id, special_price_cents=special,
-                                                audio_url=audio_url, report_pdf_url=pdf_url)
+                                                audio_url=audio_url, report_pdf_url=pdf_url,
+                                                primary_on=on)
         # The report can change while the PDF renders. Check what actually goes out.
         late = [u for u in payload["unresolved"] if u not in confirmed]
         if late:
@@ -4329,7 +4560,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             res = {**res, "own_remedies": list(payload["unresolved"])}
         return res
 
-    def _auto_publish(test_id):
+    def _auto_publish(test_id, primary_on=None):
         """Put this test's report on the client portal because it was just printed or
         emailed. Best-effort: an output must never fail because the portal did.
 
@@ -4348,8 +4579,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception:
             special = None
         try:
+            extra = {"primary_on": primary_on} if primary_on is not None else {}
             res = (auto_publish or _do_publish)(
-                test_id, int((special or [0])[0] or 0), send=False, send_if_new=True)
+                test_id, int((special or [0])[0] or 0), send=False, send_if_new=True, **extra)
             if isinstance(res, dict) and res.get("unresolved"):
                 print(f"[auto-publish] {test_id}: unresolved {res['unresolved']}", flush=True)
             return res

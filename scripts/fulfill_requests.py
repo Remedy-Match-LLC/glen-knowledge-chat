@@ -64,7 +64,10 @@ def fulfill_one(cx, req):
     tid = latest_test(cx, email)
     if tid is None:
         return "no-fmp-test", None
-    payload = bpp.build_portal_content(cx, str(tid), special_price_cents=0)
+    # The portal follows the Biofield Analysis's section buttons (Glen, 2026-10-19).
+    from dashboard import biofield_report_split as rsplit
+    on = rsplit.settings(cx, str(tid))[rsplit.PRIMARY]
+    payload = bpp.build_portal_content(cx, str(tid), special_price_cents=0, primary_on=on)
     content = payload.get("content") or {}
     layers = content.get("layers") or []
     if not layers:
