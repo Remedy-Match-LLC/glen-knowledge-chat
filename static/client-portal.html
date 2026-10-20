@@ -3145,7 +3145,7 @@ function reportWords(kind){
     // `target` is the id of this report's own matched-remedies list, or failing that
     // of its report card. With neither, "here" is plain text, never a dead link.
     readyHtml: (target) => rm
-      ? "See which remedies match to your scan. Your Remedy Match is "
+      ? "Your Remedy Match offers suggestions to consider for supporting your current self-healing activities. See them "
         + (target
           ? `<a href="#${esc(target)}" class="rm-here" onclick="return scrollToReportPart('${esc(target)}')">here</a>`
           : "here") + "."
