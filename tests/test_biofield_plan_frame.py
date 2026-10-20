@@ -336,3 +336,42 @@ def test_an_unapproved_oils_header_never_prints(cx, tmp_path):
     pr.load_content(cx, _folder(tmp_path, lines=lines))
     _tick(cx, "Vertigo", cs.ESSENTIAL_OILS, "Lavender")
     assert "Oils need care." not in _page(cx)
+
+
+LEAD = "If you experience intense symptoms like vertigo, please let me know right away."
+
+
+def test_glens_paragraph_leads_the_cautions_before_the_intro(cx, tmp_path):
+    """Glen, 2026-10-20, "approve B": his own paragraph leads the cautions area in every
+    Plan report, before the ingredient caution intro."""
+    lines = {"cautions_lead": {"text": LEAD, "approved": True},
+             "ingredient_caution_intro": {"text": "Some products share a caution.",
+                                          "approved": True}}
+    report = pr.load_content(cx, _folder(tmp_path, lines, cautions=BERBERINE))
+    assert report["frame_lines_unknown"] == []
+    _remedy(cx, "Blood sugar", cs.FORMULATIONS, "Glucose Tolerance")
+    page = _page(cx)
+    assert page.count(LEAD) == 1
+    assert page.index(LEAD) < page.index("Some products share a caution.") \
+        < page.index("It lowers blood sugar.")
+
+
+def test_glens_paragraph_prints_with_no_ingredient_caution_too(cx, tmp_path):
+    pr.load_content(cx, _folder(tmp_path, {"cautions_lead": {"text": LEAD, "approved": True}}))
+    _remedy(cx, "Blood sugar", cs.FORMULATIONS, "Glucose Tolerance")
+    assert _page(cx).count(LEAD) == 1
+
+
+def test_an_unapproved_paragraph_never_prints(cx, tmp_path):
+    pr.load_content(cx, _folder(tmp_path, {"cautions_lead": {"text": LEAD, "approved": False}},
+                                cautions=BERBERINE))
+    _remedy(cx, "Blood sugar", cs.FORMULATIONS, "Glucose Tolerance")
+    assert LEAD not in _page(cx)
+
+
+def test_glens_paragraph_is_escaped(cx, tmp_path):
+    pr.load_content(cx, _folder(tmp_path, {"cautions_lead": {"text": "Call <b>me</b> & rest.",
+                                                             "approved": True}}))
+    _remedy(cx, "Blood sugar", cs.FORMULATIONS, "Glucose Tolerance")
+    page = _page(cx)
+    assert "Call &lt;b&gt;me&lt;/b&gt; &amp; rest." in page and "<b>me</b>" not in page
