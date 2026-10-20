@@ -186,7 +186,10 @@ def validate_policy(policy):
 # Products no cohort ever prices: every fixed_price product in the catalog, which is
 # every Terrain Restore with added ingredients (Glen, 2026-10-19: "yes, always $70").
 # A typed price on the line still wins.
-_NEVER_COHORT_PRICED = frozenset({"terrain-restore-custom"})
+# Named too, so the backstop below holds for them when the catalog cannot be read.
+_NEVER_COHORT_PRICED = frozenset({"terrain-restore-custom", "green-jasper-gem-elixir",
+                                  "forgiveness-flower-essence-in-terrain-restore-2",
+                                  "self-esteem-flower-essence-in-terrain-restore-2"})
 _FIXED_CACHE = [None, frozenset()]     # [(mtime, size), slugs], replaced as one pair
 
 

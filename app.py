@@ -26458,7 +26458,11 @@ def _portal_priced_lines(items, email=None):
                 p, None, total_ff_qty, settings, repertoire_slugs=rep_slugs,
                 program_member=program_member, line_qty=qty))
         else:
-            unit_cents = _inhouse_line_unit_cents(p, _curated_unit_cents(it), total_ff_qty, settings,
+            # A single "X in Terrain Restore" is always $70; a price stored on a report
+            # line for one came from an old courtesy price (review round 3, 2026-10-19).
+            _baked = (None if p.get("fixed_price") and slug != _CUSTOM_TR_SLUG
+                      else _curated_unit_cents(it))
+            unit_cents = _inhouse_line_unit_cents(p, _baked, total_ff_qty, settings,
                                                   repertoire_slugs=rep_slugs,
                                                   program_member=program_member, line_qty=qty)
         subtotal_cents += unit_cents * qty
@@ -26979,44 +26983,59 @@ def _merge_accepted_recommendation_items(cx, email, reorder_items):
     except Exception:
         pass
     try:
-        if not email:
-            return base
-        from dashboard import practitioner_recommendations as _pr
-        cx.row_factory = sqlite3.Row
-        _pr.init_table(cx)
-        rec = _pr.active_for_patient(cx, email)
-        if not rec or rec.get("status") != "accepted":
-            return base
-        have = {(it.get("slug") or "").strip().lower() for it in base}
-        # An ingredient already inside a folded Terrain Restore bottle is not added
-        # again as its own line (2026-10-19).
-        from dashboard.biofield_invoice import held_slugs as _held_slugs
-        for it in base:
-            if isinstance(it, dict):
-                have |= _held_slugs(it)
-        for it in (rec.get("items") or []):
-            slug = (it.get("slug") or "").strip().lower()
-            if not slug or slug in have:
-                continue
-            try:
-                qty = max(1, min(int(it.get("qty", 1) or 1), 99))
-            except Exception:
-                qty = 1
-            base.append(_reorder_item_from_slug(slug, qty))
-            have.add(slug)
-        # A recommended "in Terrain Restore" ingredient joins the client's bottle,
-        # never a second $70 line beside it (2026-10-19). With no bottle yet, one or
-        # more recommended ingredients make one (review round 1).
-        from dashboard import biofield_invoice as _bfi
-        if any(isinstance(it, dict) and (it.get("held") or _bfi.terrain_restore_ingredient(
-                (_get_product((it.get("slug") or "").strip()) or {}).get("name")))
-               for it in base):
-            base = _bfi.fold_reorder_items(
-                base, name_of=lambda sl: (_get_product(sl) or {}).get("name"),
-                base_ok=bool(_get_product(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG))
-                        and not _waitlist_block(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG),
-                ready=lambda sl: bool(_get_product(sl)) and not _waitlist_block(sl))
+        if email:
+            base = _merge_accepted_rec_into(cx, email, base)
+    except Exception:
+        pass
+    return _fold_terrain_restore_items(base)
+
+
+def _merge_accepted_rec_into(cx, email, base):
+    """The accepted recommendation's items added to ``base``, each slug once."""
+    from dashboard import practitioner_recommendations as _pr
+    cx.row_factory = sqlite3.Row
+    _pr.init_table(cx)
+    rec = _pr.active_for_patient(cx, email)
+    if not rec or rec.get("status") != "accepted":
         return base
+    base = list(base)
+    have = {(it.get("slug") or "").strip().lower() for it in base}
+    # An ingredient already inside a folded Terrain Restore bottle is not added
+    # again as its own line (2026-10-19).
+    from dashboard.biofield_invoice import held_slugs as _held_slugs
+    for it in base:
+        if isinstance(it, dict):
+            have |= _held_slugs(it)
+    for it in (rec.get("items") or []):
+        slug = (it.get("slug") or "").strip().lower()
+        if not slug or slug in have:
+            continue
+        try:
+            qty = max(1, min(int(it.get("qty", 1) or 1), 99))
+        except Exception:
+            qty = 1
+        base.append(_reorder_item_from_slug(slug, qty))
+        have.add(slug)
+    return base
+
+
+def _fold_terrain_restore_items(base):
+    """Every "in Terrain Restore" ingredient on the list as one $70 bottle (Glen,
+    2026-10-19: "one or more added ingredient"). A recommended ingredient joins the
+    client's bottle, never a second line beside it. It runs on every read, so a
+    report published before the rule, with a single "X in Terrain Restore" at an old
+    courtesy price, bills $70 too (review round 3). Unchanged on any failure."""
+    try:
+        from dashboard import biofield_invoice as _bfi
+        if not any(isinstance(it, dict) and (it.get("held") or _bfi.terrain_restore_ingredient(
+                (_get_product((it.get("slug") or "").strip()) or {}).get("name")))
+                   for it in base):
+            return base
+        return _bfi.fold_reorder_items(
+            base, name_of=lambda sl: (_get_product(sl) or {}).get("name"),
+            base_ok=bool(_get_product(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG))
+                    and not _waitlist_block(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG),
+            ready=lambda sl: bool(_get_product(sl)) and not _waitlist_block(sl))
     except Exception:
         return base
 
