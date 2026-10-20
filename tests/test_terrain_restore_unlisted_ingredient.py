@@ -118,3 +118,47 @@ def test_the_portal_never_near_matches_an_ingredient_name():
     assert bpp._match("Digestzymes in Terrain Restore Drops", cat) is None
     assert bi.resolve_line_slug("Digestzymes In Terrain Restore.",
                                 [dict(p, slug=s) for s, p in cat.items()]) is None
+
+
+# Review round 3 (2026-10-19).
+def _real_catalogue():
+    import json
+    import pathlib
+    root = pathlib.Path(bpp.__file__).resolve().parents[1]
+    return json.loads((root / "data" / "products.json").read_text())["products"]
+
+
+def test_the_portal_reads_a_double_space_in_the_suffix_as_the_bottle():
+    """Authored names carry stray spaces. "in  Terrain Restore" must still fold,
+    never near-match a bare Digestzymes bottle (kills P1)."""
+    cat = _real_catalogue()
+    for name in ("Digestzymes in  Terrain Restore", "Digestzymes in Terrain  Restore",
+                 "Digestzymes\tin Terrain Restore"):
+        assert bpp._match(name, cat) == "terrain-restore", name
+        assert bpp.resolve_remedy_slug(name, cat) == "terrain-restore", name
+
+
+def test_the_portal_never_guesses_an_inactive_terrain_restore():
+    """Plain Terrain Restore off sale: the ingredient is left for staff (kills P4, P11).
+    With a successor set, the unfiltered fallback would store the successor's slug."""
+    off = dict(CAT_D, **{"terrain-restore": {"name": "Terrain Restore", "inactive": True}})
+    assert bpp._match("Digestzymes in Terrain Restore", off) is None
+    moved = dict(CAT_D, **{"terrain-restore": {"name": "Terrain Restore", "inactive": True,
+                                               "superseded_by": "liver-support"}})
+    assert bpp.resolve_remedy_slug("Digestzymes in Terrain Restore", moved) is None
+
+
+def test_the_portal_never_folds_into_an_inactive_custom_bottle():
+    """Custom bottle off sale (inactive, not waitlisted): the ingredient stays
+    unresolved. Otherwise the portal stores a bare plain Terrain Restore line with the
+    ingredient's name lost and the courtesy price applied (round 1's high finding,
+    on the portal path; kills P7)."""
+    off = dict(CAT_D, **{"terrain-restore-custom": {"name": "Custom Terrain Restore",
+                                                    "inactive": True}})
+    assert bpp._match("Digestzymes in Terrain Restore", off) is None
+    assert bpp.resolve_remedy_slug("Digestzymes in Terrain Restore", off) is None
+
+
+def test_the_portal_never_near_matches_a_hyphenated_suffix():
+    """Round 3: "in Terrain-Restore" near-matched a bare Digestzymes bottle."""
+    assert bpp._match("Digestzymes in Terrain-Restore", _real_catalogue()) is None

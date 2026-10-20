@@ -152,7 +152,7 @@ def _match(name, catalog):
             return slug
     from dashboard.biofield_invoice import (
         CUSTOM_TERRAIN_RESTORE_SLUG, terrain_restore_fallback)
-    if " in terrain restore" in " ".join(wanted.split()):
+    if " in terrain restore" in " ".join(wanted.replace("-", " ").split()):
         # An ingredient for the client's Terrain Restore bottle: an exact product, or
         # the bottle itself, never a near match. A near match turned "Digestzymes in
         # Terrain Restore" into a bare Digestzymes bottle, and "Jasper Gem Elixir in
