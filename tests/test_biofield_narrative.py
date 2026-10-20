@@ -291,7 +291,7 @@ def test_a_remedy_less_anchor_row_is_not_counted_or_listed_as_a_remedy():
     user = build_narrative_prompt({**_report(), "layers": layers}, "")["user"]
     assert "Layer 1 (ONE layer; 1 remedy): Lens" in user
     assert user.count("  - remedy:") == 1
-    assert "remedy: Clear Lens Eyedrops;" in user and "; dose: as directed" in user
+    assert "remedy: Clear Lens Eyedrops;" in user and "; dose: as guided" in user
 
 
 def test_narrative_is_plain_text():

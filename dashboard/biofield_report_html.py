@@ -554,8 +554,10 @@ def render_report_html(report, notes="", narrative="", video_script="", stresses
         srows += f"<tr><td class=slot>{_e(slot)}</td><td{drop}>{cells}</td></tr>"
     asdir = [e for e in entries if e.get("as_directed")]
     if asdir:
-        srows += ("<tr><td class=slot>As directed</td><td>"
-                  + "".join(remedy_chip(e, 0) for e in asdir) + "</td></tr>")
+        from dashboard.biofield_schedule import AS_GUIDED, guided_dose
+        srows += (f"<tr><td class=slot>{AS_GUIDED}</td><td>"
+                  + "".join(remedy_chip(dict(e, per_slot=guided_dose(e), food=""), 0)
+                            for e in asdir) + "</td></tr>")
     schedule = ("<h2>Remedy Schedule</h2>"
                 + ("<p class=sub>Drag a remedy to a different time slot. Changes save automatically.</p>"
                    if editable else "")

@@ -82,7 +82,10 @@ LAYER_SECTIONS = (cs.FORMULATIONS, cs.INFOCEUTICALS)
 # Glen approved on 2026-10-19.
 IN_PROGRAM_NOTE = "Already in your recommended program."
 # From 00 System/claude-memory/feedback_amazon_associate_disclosure.md.
-AMAZON_DISCLOSURE = "As an Amazon Associate, Healing Oasis earns from qualifying purchases."
+# Glen approved this exact text, 2026-10-19 (clinical tab). It matches begin-buy,
+# begin-learn and begin-match.
+AMAZON_DISCLOSURE = ("Some recommendations include affiliate links. "
+                     "As an Amazon Associate, Healing Oasis earns from qualifying purchases.")
 
 _FOODS = ("foods_emphasize", "foods_avoid")
 _REMEDY_KEYS = (cs.FORMULATIONS, cs.INFOCEUTICALS, PURE_POWDERS, PRL, cs.NUTRIENTS,

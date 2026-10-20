@@ -4407,8 +4407,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     @app.route("/test/<test_id>/video-generate", methods=["POST"])
     def video_generate(test_id):
         notes = (request.get_json(silent=True) or {}).get("notes", "")
+        on = _primary_on(test_id)      # read before the connection, as report.pdf does
         with sqlite3.connect(db_path) as cx:
             ctx, rep = _e4l(cx, test_id)
+            # The spoken walkthrough names only the remedies the report and invoice
+            # carry: a section switched off never reaches it (Glen, 2026-10-19, "yes").
+            from dashboard import biofield_report_split as rsplit
+            rep = rsplit.primary_report(rep, on)
             warnings = []
             try:
                 script = generate_video_script(rep, notes, complete, scan=ctx,

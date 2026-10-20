@@ -1167,8 +1167,15 @@ function scheduleHtml(sched){
   });
   const asdir = entries.filter(e=>e.as_directed);
   if(asdir.length){
-    const cells = asdir.map(e=>`${esc(e.name||"")} <span class="dose" style="display:inline;margin:0">(${esc(e.timing||"as directed")})</span>`).join("; ");
-    rows += `<tr><td class="sched-when">As directed</td><td>${cells}</td></tr>`;
+    // Dose, frequency and timing as authored (biofield_schedule.guided_dose).
+    const guided = e=>{
+      const p=[e.dosage,e.frequency,e.timing].map((x,i)=>{const s=String(x||"").trim();return i<2?s.replace(/\.+$/,"").trim():s;});
+      const rest=p.slice(1).filter(Boolean).join(", ");
+      const sep=((Array.isArray(e.contains)&&e.contains.length)||/^contains:/i.test(p[0]))?"; ":", ";
+      return [p[0],rest].filter(Boolean).join(sep)||"as guided";
+    };
+    const cells = asdir.map(e=>`${esc(e.name||"")} <span class="dose" style="display:inline;margin:0">(${esc(guided(e))})</span>`).join("; ");
+    rows += `<tr><td class="sched-when">As guided</td><td>${cells}</td></tr>`;
   }
   if(!rows) return "";
   return `<div class="sched"><h3>Your remedy schedule</h3><table class="sched-tbl"><tr><th>When</th><th>Take</th></tr>${rows}</table></div>`;
