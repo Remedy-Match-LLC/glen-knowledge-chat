@@ -5,6 +5,7 @@ report (Glen, 2026-10-19). Brief: 00 System/pillar-inboxes/platform/
 PDF rendering is always stubbed and publishing is recorded, never run.
 """
 import os
+import pathlib
 import sqlite3
 
 import pytest
@@ -265,7 +266,8 @@ def app_client(tmp_path, monkeypatch):
                        invoice_paid_check=lambda email: {},
                        invoice_latest=lambda email: {"ok": False},
                        scan_lookup=lambda email: {},
-                       auto_publish=lambda *a, **k: published.append(a) or {}).test_client()
+                       auto_publish=lambda *a, **k: published.append(a) or calls.update(
+                           publish_kw=k) or {}).test_client()
     c.db, c.written, c.calls, c.published = db, written, calls, published
     c.tid = f"a{n}" if not str(n).startswith("a") else str(n)
     return c
@@ -795,7 +797,7 @@ def test_the_defaults_print_publish_and_bill_exactly_as_before(rich):
         lead = rs.primary_intro(con)
         assert lead and before["html"] == render_present(rep, narr, lead)
         assert before["pdf_html"] == before["html"]
-        assert before["portal_pdf"] in (render_present(rep, narr), render_present(rep, narr, lead))
+        assert before["portal_pdf"] == render_present(rep, narr, lead)   # the lead too
         old_portal = bpp.build_portal_content(con, c.tid, special_price_cents=0)
         assert bpp.build_portal_content(con, c.tid, special_price_cents=0,
                                         primary_on=rs.DEFAULTS["biofield"]) == old_portal
@@ -1011,3 +1013,25 @@ def test_the_approved_leads_print_word_for_word(cx):
         'Ask <a href="https://example.test/p">the chat</a> here.')
     assert rs.pr._linked("Ask the chat.", {"the chat": "javascript:x"}) == "Ask the chat."
     assert rs.primary_intro(cx) == tuple(leads["biofield"])
+
+
+def test_a_print_publishes_the_switches_it_printed_with(app_client, monkeypatch):
+    """The downloaded PDF and the portal published with it read the switches once,
+    so a click during the render cannot split them (review, 2026-10-19)."""
+    import biofield_local_app as bla
+    c = app_client
+    _toggle(c, "biofield", cs.INFOCEUTICALS, False)
+    seen = {}
+
+    def fake_render(rep, narr, intro=(), primary_on=None):
+        seen["on"] = set(primary_on)
+        _toggle(c, "biofield", cs.INFOCEUTICALS, True)     # Glen clicks mid-render
+        return "<html></html>"
+    monkeypatch.setattr(bla, "render_present", fake_render)
+    monkeypatch.setattr(bla, "save_report_pdf",
+                        lambda html, out: open(out, "wb").write(b"%PDF"))
+    monkeypatch.setenv("BIOFIELD_REPORTS_DIR", str(pathlib.Path(c.db).parent))
+    r = c.get(f"/test/{c.tid}/report.pdf")
+    assert r.status_code == 200, r.data[:200]
+    assert seen["on"] == {cs.FORMULATIONS}
+    assert set(c.calls["publish_kw"]["primary_on"]) == {cs.FORMULATIONS}

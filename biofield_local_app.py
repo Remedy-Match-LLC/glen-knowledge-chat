@@ -1489,8 +1489,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
+        # One read of the switches for the whole print, so the downloaded PDF and the
+        # portal published with it can never disagree (review, 2026-10-19).
+        on = _primary_on(test_id)
         html = _with_primary_added(test_id, rep, render_present(
-            rep, narrative, _primary_intro(), primary_on=_primary_on(test_id)))
+            rep, narrative, _primary_intro(), primary_on=on))
         reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
                                      os.path.join(os.path.expanduser("~"), "biofield-reports"))
         date = (rep.get("date") or "").replace("/", "-") or "undated"
@@ -1509,7 +1512,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             data = open(out, "rb").read()
         except Exception as e:
             return Response(f"PDF generation failed: {e}", status=500)
-        _auto_publish(test_id)   # printing a report also puts it on the client portal
+        _auto_publish(test_id, primary_on=on)   # printing also puts it on the portal
         suffix = "-with-plan" if request.args.get("plan") == "1" else ""
         return Response(data, mimetype="application/pdf", headers={
             "Content-Disposition": f'inline; filename="biofield-{test_id}{suffix}.pdf"'})
@@ -4496,7 +4499,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                            [(test_id, n, now) for n in names])
             cx.commit()
 
-    def _do_publish(test_id, special, send, send_if_new=False, own_remedies=()):
+    def _do_publish(test_id, special, send, send_if_new=False, own_remedies=(),
+                    primary_on=None):
         """Build + upload PDF/audio assets + upsert the portal for a test. Returns the
         upsert response dict (or {"unresolved": [...]}); raises on hard errors.
 
@@ -4512,7 +4516,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard import biofield_portal_publish as _bpp
         # The portal and its PDF follow the Biofield Analysis's section buttons, as
         # the invoice does (Glen, 2026-10-19).
-        on = _primary_on(test_id, authored=True)
+        on = primary_on if primary_on is not None else _primary_on(test_id, authored=True)
         with sqlite3.connect(db_path) as cx:
             pre = _bpp.build_portal_content(cx, test_id, special_price_cents=special,
                                             primary_on=on)
@@ -4533,7 +4537,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        pdf_bytes = report_pdf_bytes(render_present(rep, narrative, primary_on=on))
+        pdf_bytes = report_pdf_bytes(render_present(rep, narrative, _primary_intro(),
+                                                    primary_on=on))
         pdf_url = _bpp.upload_asset(pdf_bytes, _bpp._asset_name("pdf"), base_url=base, console_key=key)
         audio_url = None
         audio_path = os.path.join(AUDIO_DIR, f"test_{test_id}.mp3")
@@ -4555,7 +4560,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             res = {**res, "own_remedies": list(payload["unresolved"])}
         return res
 
-    def _auto_publish(test_id):
+    def _auto_publish(test_id, primary_on=None):
         """Put this test's report on the client portal because it was just printed or
         emailed. Best-effort: an output must never fail because the portal did.
 
@@ -4574,8 +4579,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception:
             special = None
         try:
+            extra = {"primary_on": primary_on} if primary_on is not None else {}
             res = (auto_publish or _do_publish)(
-                test_id, int((special or [0])[0] or 0), send=False, send_if_new=True)
+                test_id, int((special or [0])[0] or 0), send=False, send_if_new=True, **extra)
             if isinstance(res, dict) and res.get("unresolved"):
                 print(f"[auto-publish] {test_id}: unresolved {res['unresolved']}", flush=True)
             return res
