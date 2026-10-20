@@ -359,7 +359,7 @@ def test_the_amazon_line_is_the_approved_wording():
                                     "qualifying purchases.")
 
 
-APPROVED_DIGEST = "8f18f492fd6490c801cabc5fe5f65e8fdd0b3a9504107c397d11ec8e164d0695"
+APPROVED_DIGEST = "b8d1476ba62f9c638b77535577385a0bdd6fb951869cef023dd93d7d83b94a86"
 
 
 def test_a_list_item_never_splits_across_pages(cx):
@@ -386,3 +386,31 @@ def test_the_walkthrough_script_names_only_switched_on_remedies(app_client, monk
     _toggle(c, "biofield", cs.INFOCEUTICALS, False)
     c.post(f"/test/{c.tid}/video-generate", json={})
     assert INFO not in seen[-1] and "Liver Support" in seen[-1]
+
+
+def test_no_report_line_sends_the_client_to_a_doctor():
+    """Glen, 2026-10-20, "approve" in the clinical tab: these six lines ask the client
+    to tell him instead (vault clinical/biofield-sections/explanations/review/
+    batch-12-report-leads/final.json). Written out here, not read from that file."""
+    leads, _ = rs.approved_leads()
+    guidance = (pathlib.Path(__file__).resolve().parents[1] / "data"
+                / "diet-guidance.md").read_text()
+    assert ("If you follow a medical diet or have a food allergy, let me know so each "
+            "change suits it.") in leads["diet"]
+    assert ("Let me know first if you have a pacemaker or other implant, or if you are "
+            "pregnant.") in leads["healing_tools"]
+    assert ("Read the cautions that come with these ingredients. Let me know about any "
+            "medicines you take, so I can plan around them.") in leads["ingredients"]
+    for line in ("Your doctor may have given you a diet, a fluid limit or a medicine that "
+                 "depends on food. If so, keep to that first.",
+                 "If you have diabetes or are pregnant, let me know before you eat less or "
+                 "start a fast. The same applies if you take regular medication or have ever "
+                 "struggled with eating.",
+                 "A fever in a baby needs prompt attention, as does a high or lasting fever. "
+                 "Confusion, trouble breathing or signs of dehydration with a fever need "
+                 "prompt attention too."):
+        assert guidance.count(line) == 1, line
+    for old in ("check each change with your doctor", "Ask your doctor first",
+                "share this list with your doctor", "ask your doctor before cutting back",
+                "See a doctor promptly"):
+        assert old not in json.dumps(leads) and old not in guidance, old

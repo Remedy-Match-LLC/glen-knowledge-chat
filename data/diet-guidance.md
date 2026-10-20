@@ -4,11 +4,11 @@ These are general suggestions for your terrain phase.
 
 They are not a treatment plan.
 
-If your doctor has given you a diet, a fluid limit or a medicine that depends on what you eat, keep to that first.
+Your doctor may have given you a diet, a fluid limit or a medicine that depends on food. If so, keep to that first.
 
 Do not cut back on food, protein or fluids for a child, or if you are older and frail, underweight or losing weight without trying.
 
-If you have diabetes, take regular medication, are pregnant, or have ever struggled with eating, ask your doctor before cutting back on any food or fasting.
+If you have diabetes or are pregnant, let me know before you eat less or start a fast. The same applies if you take regular medication or have ever struggled with eating.
 
 ### Terrain Revive (Phase 1)
 
@@ -38,7 +38,7 @@ If you have a fever, consider eating little or nothing while it lasts, and drink
 
 Return to light food as it passes.
 
-See a doctor promptly for a fever in a baby, a high or lasting fever, or a fever with confusion, trouble breathing or signs of dehydration.
+A fever in a baby needs prompt attention, as does a high or lasting fever. Confusion, trouble breathing or signs of dehydration with a fever need prompt attention too.
 
 ### Terrain Renew (Phase 3)
 
