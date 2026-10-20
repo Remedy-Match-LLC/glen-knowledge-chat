@@ -150,6 +150,18 @@ def _match(name, catalog):
     for slug, product in (catalog or {}).items():
         if (product.get("name") or "").strip().lower() == wanted:
             return slug
+    from dashboard.biofield_invoice import (
+        CUSTOM_TERRAIN_RESTORE_SLUG, terrain_restore_fallback)
+    if " in terrain restore" in " ".join(wanted.replace("-", " ").split()):
+        # An ingredient for the client's Terrain Restore bottle: an exact product, or
+        # the bottle itself, never a near match. A near match turned "Digestzymes in
+        # Terrain Restore" into a bare Digestzymes bottle, and "Jasper Gem Elixir in
+        # Terrain Restore" into Green Jasper (Glen, 2026-10-19; review rounds 1 and 2).
+        # A spelling the bottle cannot take stays unresolved, as the invoice skips it.
+        live = {s: p for s, p in (catalog or {}).items() if not (p or {}).get("inactive")}
+        custom = live.get(CUSTOM_TERRAIN_RESTORE_SLUG) or {}
+        return terrain_restore_fallback(name, live, bool(custom)
+                                        and not custom.get("waitlist_only"))
     return name_to_slug(name, catalog)
 
 
