@@ -367,10 +367,11 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
             item["held"] = cand["held"]       # so a later edit can unfold it
         # No courtesy price means store prices: the item carries no price at all.
         # A stored 0 was read as a $0 price (found on a client report, 2026-10-09).
-        # The custom Terrain Restore is always its catalog price (Glen, 2026-10-19:
-        # "yes, always $70"), so it takes no courtesy price.
+        # A Terrain Restore with added ingredients is always its catalog price (Glen,
+        # 2026-10-19: "yes, always $70"), so it takes no courtesy price.
         if (special_price_cents and int(special_price_cents) > 0
-                and slug != CUSTOM_TERRAIN_RESTORE_SLUG):
+                and slug != CUSTOM_TERRAIN_RESTORE_SLUG
+                and not (cat_d.get(slug) or {}).get("fixed_price")):
             item["price_cents"] = int(special_price_cents)
         reorder.append(item)
 

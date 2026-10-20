@@ -183,15 +183,36 @@ def validate_policy(policy):
     return True
 
 
-# Products no cohort ever prices. The custom Terrain Restore is always its catalog
-# price (Glen, 2026-10-19: "yes, always $70"); a typed price on the line still wins.
+# Products no cohort ever prices: every fixed_price product in the catalog, which is
+# every Terrain Restore with added ingredients (Glen, 2026-10-19: "yes, always $70").
+# A typed price on the line still wins.
 _NEVER_COHORT_PRICED = frozenset({"terrain-restore-custom"})
+_FIXED_CACHE = {"key": None, "slugs": frozenset()}
+
+
+def _never_cohort_priced(slug):
+    import json
+    import os
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "data", "products.json")
+    try:
+        st = os.stat(path)
+        key = (st.st_mtime_ns, st.st_size)
+        if _FIXED_CACHE["key"] != key:
+            with open(path) as fh:
+                prods = (json.load(fh) or {}).get("products") or {}
+            _FIXED_CACHE["slugs"] = frozenset(k for k, p in prods.items()
+                                              if isinstance(p, dict) and p.get("fixed_price"))
+            _FIXED_CACHE["key"] = key
+    except Exception:
+        pass
+    return slug in _NEVER_COHORT_PRICED or slug in _FIXED_CACHE["slugs"]
 
 
 def policy_unit_cents(policy, *, slug, list_cents, is_ff):
     """The unit price this policy sets for the given product, or None if it doesn't
     apply. Pure. list_cents = the product's list price; is_ff = FF-eligible."""
-    if slug in _NEVER_COHORT_PRICED:
+    if _never_cohort_priced(slug):
         return None
     t = (policy or {}).get("type")
     if t == "flat_ff":

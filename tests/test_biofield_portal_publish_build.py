@@ -231,3 +231,27 @@ def test_build_layers_carry_a_stresses_list():
     aid = _seed_karin(cx)
     c = bpp.build_portal_content(cx, aid, special_price_cents=5000, catalog=CATALOG)["content"]
     assert all(isinstance(L.get("stresses"), list) for L in c["layers"])   # per-layer stresses field present
+
+
+def test_a_single_ingredient_bottle_takes_no_courtesy_price_when_it_stands_alone():
+    """With the custom bottle not for sale nothing folds, and the single "in Terrain
+    Restore" product stands alone. It is still always $70 (Glen, 2026-10-19)."""
+    cx = sqlite3.connect(":memory:")
+    tid = create_test(cx, "Debra Herndon", "household@example.com", "2026-09-02")
+    aid = f"a{tid}"
+    add_chain_row(cx, aid, layer=1, head="Eye", most_affected="Glaucoma",
+                  remedy="IOP Syntropy", dosage="1 capsule",
+                  frequency="3 times daily", timing="with food")
+    add_chain_row(cx, aid, layer=2, head="Soul", most_affected="Purpose",
+                  remedy="Living With Soul Flower Essence in Terrain Restore",
+                  dosage="10 drops", frequency="3 times a day", timing="before meals")
+    lws = "living-with-soul-flower-essence-in-terrain-restore"
+    catalog = {"terrain-restore": {"name": "Terrain Restore"},
+               lws: {"name": "Living With Soul Flower Essence in Terrain Restore",
+                     "fixed_price": True},
+               "iop-syntropy": {"name": "IOP Syntropy"}}
+    items = bpp.build_portal_content(cx, aid, special_price_cents=5000,
+                                     catalog=catalog)["content"]["reorder_items"]
+    by = {i["slug"]: i for i in items}
+    assert set(by) == {"iop-syntropy", lws}
+    assert "price_cents" not in by[lws] and by["iop-syntropy"]["price_cents"] == 5000

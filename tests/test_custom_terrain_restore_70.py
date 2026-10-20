@@ -165,3 +165,42 @@ def test_two_accepted_ingredients_make_one_custom_bottle(monkeypatch):
     assert {h["slug"] for h in bottle["held"]} == {
         "pyrite-gem-elixir-in-terrain-restore",
         "quinton-hypertonic-electrolytes-in-terrain-restore"}
+
+
+# A single "X in Terrain Restore" bought on its own is the same bottle: "yes, always $70"
+# (Glen, 2026-10-19, asked about the online store).
+OAK = "oak-flower-essence-in-terrain-restore"      # was listed at $80
+JASPER = "green-jasper-gem-elixir"                 # was volume-priced everywhere
+
+
+def test_every_single_ingredient_bottle_is_70_and_fixed():
+    prods = app_mod._PRODUCTS["products"]
+    singles = [k for k, p in prods.items()
+               if (p.get("name") or "").strip().lower().endswith(" in terrain restore")]
+    assert len(singles) >= 485
+    for k in singles:
+        p = prods[k]
+        assert p["price_cents"] == 7000 and p.get("fixed_price"), k
+        assert not app_mod._qty_eligible(p) and app_mod._counts_toward_volume(p), k
+        assert app_mod._engine_item(p, 1)["volume_eligible"] is False, k
+
+
+def test_the_store_cart_never_discounts_a_single_ingredient_bottle():
+    cart = [{"slug": s, "qty": 2} for s in FFS] + [{"slug": OAK, "qty": 3}, {"slug": JASPER, "qty": 3}]
+    for kw in ({"program_member": True}, {"coupon_pct": 20}, {"subscriber_tier_pct": 15}):
+        assert _cart_unit(cart, OAK, **kw) == 7000, kw
+        assert _cart_unit(cart, JASPER, **kw) == 7000, kw
+
+
+def test_a_single_ingredient_bottle_bills_70_on_an_invoice_and_counts_toward_volume():
+    recs = _priced(_lines({"slug": JASPER, "qty": 1}))
+    assert recs[JASPER]["unit_cents"] == 7000
+    without = _priced(_lines())["paracleanse"]["unit_cents"]
+    assert _priced(_lines({"slug": OAK, "qty": 3}))["paracleanse"]["unit_cents"] < without
+
+
+def test_no_cohort_policy_prices_a_single_ingredient_bottle():
+    from dashboard import cohorts as co
+    for slug in (OAK, JASPER):
+        assert co.policy_unit_cents({"type": "percent_off", "pct": 20, "scope": "all"},
+                                    slug=slug, list_cents=7000, is_ff=True) is None
