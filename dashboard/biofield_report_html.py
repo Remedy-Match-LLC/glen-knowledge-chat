@@ -405,7 +405,9 @@ def render_invoice_page(report, fee_state):
         "if((iv.skipped||[]).length){m+=' \\u2014 '+iv.skipped.length+' remedy(ies) not on catalog, add manually';}}"
         "else if(iv.already_paid){m+=' \\u2014 no invoice raised (Biofield Analysis already paid, order #'+iv.order_id+')';}"
         "else{m+=' \\u2014 analysis only ('+(iv.error||'no invoice')+')';}"
-        "m+='. The invoice and portal draft are ready to review.';s.textContent=m;}"
+        "m+='. The invoice and portal draft are ready to review.';"
+        # What the Biofield Analysis's section buttons left off the invoice (2026-10-19).
+        "if(iv.warning){m+=' '+iv.warning;}s.textContent=m;}"
         "else{s.textContent=' '+(j.error||'Handoff failed.');}})"
         ".catch(function(){b.disabled=false;s.textContent=' Could not reach the app.';});}</script>")
     body = (_client_tabs("invoice", report.get("test_id") or "", c.get("email") or "")

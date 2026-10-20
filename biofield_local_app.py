@@ -1518,12 +1518,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         """(remedies to bill, layer remedies left off, sections on) for the invoice,
         from the Biofield Analysis's buttons. At the defaults it bills what it did."""
         from dashboard import biofield_report_split as rsplit
+        # The invoice routes are /author routes, so the test is always authored:
+        # "/author/48" is test a48, never FileMaker test 48 (review, 2026-10-19).
+        key = rsplit.test_key(test_id, authored=True)
         with sqlite3.connect(db_path) as cx:
-            on = rsplit.settings(cx, test_id)[rsplit.PRIMARY]
+            on = rsplit.settings(cx, key)[rsplit.PRIMARY]
             powders = []
             if rsplit.PURE_POWDERS in on:
                 from dashboard.biofield_plan_report import plan
-                powders = rsplit.pure_powder_names(plan(cx, test_id))
+                powders = rsplit.pure_powder_names(plan(cx, key))
         billed = rsplit.invoice_remedies(remedies, on, powders)
         left_off = rsplit.left_off(remedies, on)
         return billed, left_off, on
@@ -1532,7 +1535,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         """(report data, Glen-only note html) for the five reports."""
         from html import escape
         from dashboard import biofield_report_split as rsplit
-        note = []
+        # Anything that leaves the scan's infoceuticals out of Remedy Sources is a
+        # scan problem: Glen sees it here, and the PDF route refuses to print Remedy
+        # Sources with it (review, 2026-10-19).
+        scan_problem, note = [], []
         with sqlite3.connect(db_path) as cx:
             if rep is None:
                 rep = _report_for(cx, test_id)
@@ -1543,18 +1549,36 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 from dashboard.e4l_scan_marks import infoceutical_marks
                 from dashboard.biofield_authoring import infoceutical_names_by_code
                 sctx = scan_lookup(email) if email else {}
-                if (sctx or {}).get("found"):
+                if not email:
+                    scan_problem.append("This client has no email, so no scan was looked up")
+                elif not (sctx or {}).get("found"):
+                    scan_problem.append("No scan was found for this client")
+                else:
                     marks = infoceutical_marks(cx, e4l_db, sctx.get("scan_id"))
                     order = rsplit.recommended_order(e4l_db, sctx.get("scan_id"))
+                    if marks is None:
+                        scan_problem.append("The scan has no id to read")
                 names = infoceutical_names_by_code(cx) or {}
             except Exception as exc:  # said to Glen, never silent
-                note.append(f"The scan could not be read: {exc!r}"[:300])
+                scan_problem.append(f"The scan could not be read: {exc!r}"[:300])
             for key in ("recommended_error", "purple_error"):
                 if (marks or {}).get(key):
-                    note.append(f"Scan: {marks[key]}")
+                    scan_problem.append(f"Scan: {marks[key]}")
+            # A FileMaker test's layers are its own; it never reads an authored chain.
+            chain = None if rsplit.is_authored(test_id) else [
+                (l.get("remedy") or "").strip() for l in rep.get("layers") or []
+                if (l.get("remedy") or "").strip()]
             ctx = rsplit.load(cx, test_id, client.get("name") or "", rep.get("date") or "",
-                              _kloud_program_if_ticked(cx, test_id, rep), marks, order, names)
+                              _kloud_program_if_ticked(cx, test_id, rep), marks, order, names,
+                              chain=chain)
             on = rsplit.settings(cx, test_id)
+        if scan_problem:
+            note += [n + ". Remedy Sources leaves out the scan's infoceuticals, and will "
+                     "not print with Infoceuticals switched on" for n in scan_problem]
+        if ctx.get("unnamed_codes"):
+            note.append("No name in the product list for " + ", ".join(ctx["unnamed_codes"])
+                        + ". Remedy Sources leaves them out")
+        ctx["scan_problem"] = scan_problem
         glen = "".join(f"<details class=plan-glen open><summary>{escape(n)}. Not printed."
                        "</summary></details>" for n in note)
         return ctx, on, glen
@@ -1578,7 +1602,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         ticks and the Singly / Grouped switch."""
         from dashboard import biofield_report_split as rsplit
         ctx, on, glen = _split_ctx(test_id)
-        return Response(rsplit.render_page(ctx, test_id, on, glen), mimetype="text/html")
+        picked, mode = rsplit.print_choice(request.args)
+        return Response(rsplit.render_page(ctx, test_id, on, glen, picked, mode),
+                        mimetype="text/html")
 
     @app.route("/test/<test_id>/report-sections", methods=["POST"])
     def split_report_sections(test_id):
@@ -1613,6 +1639,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return Response("Ask for one file: tick a report, and one report at a time "
                             "when printing singly.", status=400)
         name, reports = jobs[0]
+        if ("remedy_sources" in reports and rsplit.cs.INFOCEUTICALS in on["remedy_sources"]
+                and ctx.get("scan_problem")):
+            return Response(
+                "Remedy Sources was not made. " + ". ".join(ctx["scan_problem"])
+                + ". Its Infoceuticals list comes from the scan. Fix the scan, or switch "
+                "Infoceuticals off in Remedy Sources to print it without them.",
+                status=409, mimetype="text/plain")
         html = rsplit.grouped_html(ctx, reports, on)
         reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
                                      os.path.join(os.path.expanduser("~"), "biofield-reports"))
@@ -1620,11 +1653,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         folder = os.path.join(reports_dir, f"reports_{test_id}_{date}")
         os.makedirs(folder, exist_ok=True)
         out = os.path.join(folder, name)
+        # Each request renders to a file of its own, then the finished file takes the
+        # client's name. Two requests never share a path as a buffer (review,
+        # 2026-10-19).
+        import tempfile
+        fd, work = tempfile.mkstemp(dir=folder, prefix=".rendering-", suffix=".pdf")
+        os.close(fd)
         try:
-            save_report_pdf(html, out)
-            data = open(out, "rb").read()
+            save_report_pdf(html, work)
+            with open(work, "rb") as fh:
+                data = fh.read()
+            os.replace(work, out)
         except Exception as e:
             return Response(f"PDF generation failed: {e}", status=500)
+        finally:
+            if os.path.exists(work):
+                os.remove(work)
         how = "attachment" if request.args.get("download") == "1" else "inline"
         ascii_name = name.encode("ascii", "replace").decode().replace("?", "_")
         return Response(data, mimetype="application/pdf", headers={
@@ -2119,6 +2163,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             remedies.append({"name": nm, "qty": biofield_invoice.line_bottles(l)})
         # The invoice follows the Biofield Analysis's section buttons (Glen, 2026-10-19).
         remedies, left_off, _ = _primary_invoice(test_id, remedies)
+        from html import escape as _esc
+        from dashboard import biofield_report_split as _rsplit
         catalog = invoice_fetch_catalog()
         # Never re-charge a Biofield Analysis the client already paid for: drop the fee
         # line when a paid analysis order exists, invoicing remedies only. If that leaves
@@ -2137,7 +2183,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     "no remedies to invoice, so no new invoice was raised.")
             return {"ok": True, "already_paid": not no_charge, "no_charge": no_charge,
                     "order_id": None if no_charge else paid.get("order_id"),
-                    "added": 0, "skipped": built["skipped"], "warning": "", "note": note,
+                    "added": 0, "skipped": built["skipped"],
+                    "warning": _esc(_rsplit.left_off_warning(left_off)), "note": note,
                     "print_url": "", "orders_url": "", "external_ref": "", "total_dollars": "",
                     "left_off": left_off}
         # A repeated raise refreshes Biofield-sourced remedies from the schedule,
@@ -2178,6 +2225,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             warning = "The Biofield Analysis line was not accepted by the console; open the order in Orders to check."
         elif accepted and len(accepted) < len(built["lines"]):
             warning = f"{len(built['lines']) - len(accepted)} line(s) were not accepted by the console."
+        # What the Biofield Analysis's buttons left off, shown beside the result. The
+        # page puts warning into innerHTML, so the names are escaped.
+        off = _rsplit.left_off_warning(left_off, fee_only=include_fee and not remedies)
+        if off:
+            warning = (warning + " " if warning else "") + _esc(off)
         return {"ok": True, "already_paid": bool(paid.get("paid")), "no_charge": no_charge,
                 "print_url": link.get("print_url") if link.get("ok") else "",
                 "order_id": created.get("order_id"),
@@ -2331,6 +2383,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                               "no service-only invoice was created."),
                     "skipped": built.get("skipped") or [],
                 }
+                invoice["warning"] = _rsplit.left_off_warning(_left_off)
+                invoice["left_off"] = _left_off
                 return {"ok": True, "layers": len(content["layers"]),
                         "remedies": len(content["reorder_items"]), "email": email,
                         "invoice": invoice}
@@ -2361,6 +2415,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                "total_dollars": biofield_fee.cents_to_dollars(total) if total is not None else ""}
                 else:
                     invoice = {"ok": False, "error": created.get("error") or "invoice not created"}
+            # What the Biofield Analysis's buttons left off (review, 2026-10-19). The
+            # hand-off page shows it as text.
+            fee_only = bool(built["lines"]) and include_fee and not resolved_remedies
+            invoice["warning"] = _rsplit.left_off_warning(_left_off, fee_only=fee_only)
+            invoice["left_off"] = _left_off
         except Exception as e:
             invoice = {"ok": False, "error": "invoice raise failed"}
         return {"ok": True, "layers": len(content["layers"]),

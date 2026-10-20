@@ -4,6 +4,7 @@ report (Glen, 2026-10-19). Brief: 00 System/pillar-inboxes/platform/
 
 PDF rendering is always stubbed and publishing is recorded, never run.
 """
+import os
 import sqlite3
 
 import pytest
@@ -378,13 +379,19 @@ def test_the_pdf_route_makes_the_right_files_in_order(app_client):
     r = c.get(f"/test/{c.tid}/reports.pdf?mode=singly&r=diet&download=1")
     assert r.status_code == 200 and r.data == b"%PDF fake"
     assert 'attachment; filename="Josie Gagnon - Diet.pdf"' in r.headers["Content-Disposition"]
-    html, out = c.written[-1]
-    assert out.endswith("/Josie Gagnon - Diet.pdf") and "Bone broth" in html
-    assert "Castor oil pack" not in html
-    r = c.get(f"/test/{c.tid}/reports.pdf?mode=grouped&r=remedy_sources&r=healing_tools&r=diet")
+    html, work = c.written[-1]
+    folder = os.path.dirname(work)
+    assert os.path.exists(os.path.join(folder, "Josie Gagnon - Diet.pdf"))
+    assert "Bone broth" in html and "Castor oil pack" not in html
+    # No scan for this client: Remedy Sources with Infoceuticals on is refused.
+    grouped = f"/test/{c.tid}/reports.pdf?mode=grouped&r=remedy_sources&r=healing_tools&r=diet"
+    r = c.get(grouped)
+    assert r.status_code == 409 and b"Remedy Sources was not made" in r.data
+    _toggle(c, "remedy_sources", cs.INFOCEUTICALS, False)
+    r = c.get(grouped)
     assert r.headers["Content-Disposition"].startswith('inline; filename="Josie Gagnon - Reports.pdf"')
-    html, out = c.written[-1]
-    assert out.endswith("/Josie Gagnon - Reports.pdf")
+    html, _ = c.written[-1]
+    assert os.path.exists(os.path.join(folder, "Josie Gagnon - Reports.pdf"))
     assert html.index("<h1>Diet</h1>") < html.index("<h1>Healing Tools</h1>") \
         < html.index("<h1>Remedy Sources</h1>")
     assert "<h1>Ingredients</h1>" not in html and html.count("break-before:page") == 2
@@ -404,3 +411,204 @@ def test_the_reports_page_shows_buttons_ticks_and_the_switch(app_client):
     assert page.count("class=rs-pt ") == 4           # no tick for the primary report
     assert "data-m=singly" in page and "data-m=grouped" in page
     assert f"/test/{c.tid}/report.pdf" in page        # the primary's own Print
+
+
+# ---- Review fixes, 2026-10-19 --------------------------------------------------
+
+def _frame(cx, **lines):
+    pr.ensure_schema(cx)
+    cx.executemany("INSERT OR REPLACE INTO biofield_plan_wording (kind,key,text) "
+                   "VALUES ('frame',?,?)", list(lines.items()))
+    cx.commit()
+
+
+@pytest.mark.parametrize("route", ["invoice", "handoff"])
+def test_glen_sees_what_the_invoice_left_off(app_client, route):
+    c = app_client
+    _toggle(c, "biofield", cs.INFOCEUTICALS, False)
+    j = c.post(f"/author/{c.tid}/{route}", json={}).get_json()
+    warning = j["warning"] if route == "invoice" else j["invoice"]["warning"]
+    assert INFO in warning and "switched off in the Biofield Analysis" in warning
+    assert "fee only" not in warning
+    _toggle(c, "biofield", cs.FORMULATIONS, False)
+    j = c.post(f"/author/{c.tid}/{route}", json={}).get_json()
+    assert c.calls["lines"] == TODAY[:1]
+    warning = j["warning"] if route == "invoice" else j["invoice"]["warning"]
+    assert warning.startswith("This invoice holds the Biofield Analysis fee only.")
+    assert "Liver Support" in warning and INFO in warning
+
+
+def test_the_left_off_warning_reaches_both_pages():
+    from dashboard import biofield_report_html as rh
+    import inspect
+    src = inspect.getsource(rh)
+    assert "if(iv.warning){m+=' '+iv.warning;}" in src      # the hand-off message
+    assert "if(j.warning){parts.push(j.warning);}" in src   # the Invoice button
+
+
+def test_the_left_off_warning_is_escaped_for_the_invoice_page(app_client):
+    c = app_client
+    with sqlite3.connect(c.db) as con:
+        con.execute("UPDATE biofield_auth_chain SET remedy='<b>X</b> Infoceutical' "
+                    "WHERE remedy=?", (INFO,))
+    _toggle(c, "biofield", cs.INFOCEUTICALS, False)
+    j = c.post(f"/author/{c.tid}/invoice", json={}).get_json()
+    assert "<b>" not in j["warning"] and "&lt;b&gt;" in j["warning"]
+
+
+def test_plan_wide_lines_print_only_in_reports_they_concern(cx):
+    _seed(cx)
+    _tick(cx, "a49", "Vertigo", cs.NUTRIENTS, _item("Ginkgo", 6))
+    _frame(cx, dose_totals="Count every source.", thyroid_spacing="Space thyroid medicine.",
+           vertigo_safety="Vertigo needs care.")
+    ctx, on = _ctx(cx), rs.settings(cx, "a49")
+    diet = rs.render_report(ctx, "diet", on["diet"])
+    tools = rs.render_report(ctx, "healing_tools", on["healing_tools"])
+    for page in (diet, tools):
+        assert "Count every source." not in page and "Space thyroid medicine." not in page
+        # The Vertigo item is a nutrient, switched off here.
+        assert "Vertigo needs care." not in page
+    ingredients = rs.render_report(ctx, "ingredients", on["ingredients"])
+    assert "Count every source." in ingredients and "Space thyroid medicine." in ingredients
+    assert "Vertigo needs care." in ingredients
+    sources = rs.render_report(ctx, "remedy_sources", on["remedy_sources"])
+    assert "Count every source." in sources          # Fullscript Fish Oil
+    assert "Vertigo needs care." not in sources
+    # Grouped: once per report it concerns, never in the others.
+    page = rs.grouped_html(ctx, ["diet", "healing_tools", "ingredients"], on)
+    assert page.count("Count every source.") == 1 and page.count("Vertigo needs care.") == 1
+    # The intro prints once in a Grouped file, and in each report printed singly.
+    cx.execute("INSERT INTO biofield_plan_wording VALUES ('intro','0','Chosen for you.')")
+    cx.commit()
+    ctx = _ctx(cx)
+    assert ctx["intro"] == ["Chosen for you."] or tuple(ctx["intro"]) == ("Chosen for you.",)
+    assert rs.grouped_html(ctx, ["diet", "healing_tools"], on).count("Chosen for you.") == 1
+    assert "Chosen for you." in rs.render_report(ctx, "healing_tools", on["healing_tools"])
+
+
+def test_a_caution_follows_only_printed_sections(cx):
+    """The caution block is worked out from the printed sections alone."""
+    _seed(cx)
+    ctx = _ctx(cx)
+    ctx["cautions"] = [("Zinc", "Watch zinc.", {(cs.NUTRIENTS, "zinc glycinate")})]
+    on = rs.settings(cx, "a49")
+    assert "Watch zinc." in rs.render_report(ctx, "ingredients", on["ingredients"])
+    assert "Watch zinc." not in rs.render_report(ctx, "diet", on["diet"])
+
+
+def test_remedy_sources_infoceuticals_keep_the_e4l_header(cx):
+    _frame(cx, infoceutical_header="These matches are E4L's own.")
+    marks = {"recommended": {"ET16"}, "purple": set()}
+    names = {"ET16": "ET16 Glial Cell Terrain Infoceutical"}
+    page = rs.render_report(_ctx(cx, marks=marks, names=names), "remedy_sources",
+                            rs.settings(cx, "a49")["remedy_sources"])
+    head = page.index("<h2>Infoceuticals</h2>")
+    assert page.index("These matches are E4L&#x27;s own.") > head
+    assert page.index("These matches are E4L&#x27;s own.") < page.index("ET16 Glial")
+
+
+def test_one_test_has_one_key_and_filemaker_never_reads_an_authored_test(cx):
+    assert rs.test_key("a48") == rs.test_key("a048") == rs.test_key(48, authored=True) \
+        == rs.test_key("48", authored=True) == "a48"
+    assert rs.test_key("48") == "fmp:48" != rs.test_key("a48")
+    with pytest.raises(ValueError):
+        rs.test_key("abc", authored=True)
+    rs.set_section(cx, "48", "diet", cs.NUTRIENTS, True)       # FileMaker test 48
+    assert cs.NUTRIENTS not in rs.settings(cx, "a48")["diet"]
+    rs.set_section(cx, "a48", "diet", cs.HEALING_TOOLS, True)
+    assert cs.HEALING_TOOLS in rs.settings(cx, "48", authored=True)["diet"]
+    assert cs.HEALING_TOOLS not in rs.settings(cx, "48")["diet"]
+    # FileMaker test 48 never reads authored test a48's layers.
+    cx.execute("CREATE TABLE IF NOT EXISTS biofield_auth_chain (test_id INT, remedy TEXT)")
+    cx.execute("INSERT INTO biofield_auth_chain VALUES (48, 'Microbiome')")
+    assert rs.load(cx, "48")["chain"] == []
+    assert rs.load(cx, "a48")["chain"] == ["Microbiome"]
+
+
+def test_the_author_invoice_reads_the_authored_tests_switches(app_client):
+    """/author/1 is authored test a1, so a switch saved on /test/a1 reaches it, and
+    one saved for FileMaker test 1 does not."""
+    c = app_client
+    num = c.tid[1:]
+    r = c.post(f"/test/{num}/report-sections",
+               json={"report": "biofield", "section": cs.INFOCEUTICALS, "on": False})
+    assert r.status_code == 200
+    c.post(f"/author/{num}/invoice", json={})
+    assert c.calls["lines"] == TODAY
+    _toggle(c, "biofield", cs.INFOCEUTICALS, False)
+    c.post(f"/author/{num}/invoice", json={})
+    assert c.calls["lines"] == TODAY[:2]
+
+
+def test_glen_sees_a_note_when_the_scan_is_missing_or_unreadable(app_client):
+    c = app_client
+    page = c.get(f"/test/{c.tid}/reports").get_data(as_text=True)
+    assert "No scan was found for this client" in page and "plan-glen" in page
+    import biofield_local_app as bla
+
+    def broken(email):
+        raise RuntimeError("disk gone")
+    c2 = bla.create_app(c.db, scan_lookup=broken).test_client()
+    page = c2.get(f"/test/{c.tid}/reports").get_data(as_text=True)
+    assert "The scan could not be read" in page
+    r = c2.get(f"/test/{c.tid}/reports.pdf?mode=singly&r=remedy_sources")
+    assert r.status_code == 409 and b"could not be read" in r.data
+    # Reports that do not use the scan still print.
+    assert c.get(f"/test/{c.tid}/reports.pdf?mode=singly&r=diet").status_code == 200
+
+
+def test_a_scan_code_with_no_name_is_left_out_and_named_to_glen(cx):
+    marks = {"recommended": {"ET16", "ZZ9"}, "purple": set()}
+    names = {"ET16": "ET16 Glial Cell Terrain Infoceutical"}
+    ctx = _ctx(cx, marks=marks, names=names)
+    assert [l["name"] for l in ctx["remedy_source_infoceuticals"]] == [
+        "ET16 Glial Cell Terrain Infoceutical"]
+    assert ctx["unnamed_codes"] == ["ZZ9"]
+    page = rs.render_report(ctx, "remedy_sources", rs.settings(cx, "a49")["remedy_sources"])
+    assert "ZZ9" not in page
+
+
+def test_each_pdf_request_renders_to_its_own_file(app_client):
+    c = app_client
+    for _ in range(2):
+        assert c.get(f"/test/{c.tid}/reports.pdf?mode=singly&r=diet").status_code == 200
+    (_, first), (_, second) = c.written[-2:]
+    folder = os.path.dirname(first)
+    final = os.path.join(folder, "Josie Gagnon - Diet.pdf")
+    assert first != second and final not in (first, second)
+    assert os.path.exists(final)
+    assert not [f for f in os.listdir(folder) if f.startswith(".rendering-")]
+
+
+def test_print_choices_survive_the_reload(app_client):
+    c = app_client
+    page = c.get(f"/test/{c.tid}/reports").get_data(as_text=True)
+    assert page.count("checked>") == 4 and "data-m=singly class=on" in page
+    page = c.get(f"/test/{c.tid}/reports?mode=grouped&p=diet&p=ingredients") \
+        .get_data(as_text=True)
+    assert "value='diet' data-title='Diet' checked>" in page
+    assert "value='ingredients' data-title='Ingredients' checked>" in page
+    assert "value='healing_tools' data-title='Healing Tools'>" in page
+    assert "data-m=grouped class=on" in page and "data-mode='grouped'" in page
+    page = c.get(f"/test/{c.tid}/reports?p=").get_data(as_text=True)
+    assert "checked>" not in page
+    assert "history.replaceState" in rs.PAGE_JS and "function show(){keep();" in rs.PAGE_JS
+
+
+def test_headings_print_once_and_prl_fullscript_are_labelled(cx):
+    _seed(cx)
+    _tick_new_section(cx, "a49", "Gut", "prl", "PRL Calm", 6)
+    ctx, on = _ctx(cx), rs.settings(cx, "a49")
+    diet = rs.render_report(ctx, "diet", on["diet"])
+    assert diet.count(">Diet<") == 1
+    tools = rs.render_report(ctx, "healing_tools", on["healing_tools"])
+    assert tools.count(">Healing Tools<") == 1
+    sources = rs.render_report(ctx, "remedy_sources", on["remedy_sources"])
+    assert "<h2>PRL and Fullscript supplements</h2>" in sources
+
+
+@pytest.mark.parametrize("name,want", [
+    ("A/B: C", "A B C"), ('Jo "Jo" Lee', "Jo Jo Lee"), ("Ann\x00\x07\tBee", "Ann Bee"),
+    ("../etc", "etc"), ("", "Client"), ("\x01", "Client"), ("x" * 200, "x" * 80)])
+def test_file_names_are_safe(name, want):
+    assert rs._safe(name) == want

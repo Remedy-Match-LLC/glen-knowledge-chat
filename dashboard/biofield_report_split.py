@@ -90,6 +90,26 @@ _REMEDY_KEYS = (cs.FORMULATIONS, cs.INFOCEUTICALS, PURE_POWDERS, PRL, cs.NUTRIEN
 
 # ---- Saved settings ---------------------------------------------------------
 
+def test_key(test_id, authored=None):
+    """The one key a test's switches are saved under (review, 2026-10-19).
+
+    An authored test is always "a<number>": "/author/48" and "/test/a48" are the same
+    test, and "a048" is too. A FileMaker test is "fmp:<id>", so FileMaker test 48 can
+    never read or write authored test a48's switches. `authored` is True on the
+    /author routes, which always mean an authored test; None reads the prefix."""
+    s = str(test_id).strip()
+    digits = s[1:] if s.startswith("a") else s
+    if authored or (authored is None and s.startswith("a") and digits.isdigit()):
+        if not digits.isdigit():
+            raise ValueError(f"not an authored test id: {test_id!r}")
+        return f"a{int(digits)}"
+    return f"fmp:{s}"
+
+
+def is_authored(test_id):
+    return test_key(test_id).startswith("a")
+
+
 def ensure_schema(cx):
     """One row per switch Glen has pressed. A switch never pressed is its default."""
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_report_section (
@@ -98,21 +118,23 @@ def ensure_schema(cx):
         PRIMARY KEY (test_id, report, section))""")
 
 
-def settings(cx, test_id):
+def settings(cx, test_id, authored=None):
     """{report key: frozenset of section keys switched on} for this test."""
     ensure_schema(cx)
+    key = test_key(test_id, authored)
     out = {report: set(DEFAULTS[report]) for report in REPORT_KEYS}
     for report, section, is_on in cx.execute(
             "SELECT report,section,is_on FROM biofield_report_section WHERE test_id=?",
-            (str(test_id),)):
+            (key,)):
         if report not in out or section not in SECTION_KEYS:
             continue
         (out[report].add if is_on else out[report].discard)(section)
     return {report: frozenset(on) for report, on in out.items()}
 
 
-def set_section(cx, test_id, report, section, on):
+def set_section(cx, test_id, report, section, on, authored=None):
     """Save one switch. Raises ValueError for a report or section that does not exist."""
+    key = test_key(test_id, authored)
     if report not in REPORT_KEYS:
         raise ValueError(f"unknown report {report!r}")
     if section not in SECTION_KEYS:
@@ -121,7 +143,7 @@ def set_section(cx, test_id, report, section, on):
     cx.execute("INSERT INTO biofield_report_section (test_id,report,section,is_on) "
                "VALUES (?,?,?,?) ON CONFLICT(test_id,report,section) DO UPDATE SET "
                "is_on=excluded.is_on, updated_at=CURRENT_TIMESTAMP",
-               (str(test_id), report, section, 1 if on else 0))
+               (key, report, section, 1 if on else 0))
     cx.commit()
 
 
@@ -155,6 +177,21 @@ def left_off(remedies, primary_on):
     """Layer remedies the invoice leaves out because their section is off."""
     return [r.get("name") for r in remedies or []
             if layer_section(r.get("name") or "") not in primary_on]
+
+
+def left_off_warning(left_off_names, fee_only=False):
+    """What Glen reads beside a raised invoice when the Biofield Analysis's buttons
+    took layer remedies off it (review, 2026-10-19). Plain text; empty when nothing
+    was left off."""
+    names = [n for n in left_off_names or () if n]
+    if not names:
+        return ""
+    text = ("Left off this invoice because their section is switched off in the "
+            "Biofield Analysis: " + ", ".join(names) + ".")
+    if fee_only:
+        text = ("This invoice holds the Biofield Analysis fee only. Every layer remedy "
+                "is switched off in the Biofield Analysis. ") + text
+    return text
 
 
 def pure_powder_names(groups):
@@ -211,7 +248,9 @@ def remedy_source_infoceuticals(groups, marks, chain, names=None, recommended_or
               if cs.infoceutical_code(line["name"])}
     out = []
     for code in ordered:
-        line = dict(ticked.get(code) or {"name": (names or {}).get(code) or code,
+        if code not in ticked and not (names or {}).get(code):
+            continue    # no readable name: left out, and named to Glen (unnamed_codes)
+        line = dict(ticked.get(code) or {"name": names[code],
                                          "kind": "", "overall": None, "entries": []})
         why = [w for w, ok in (("one of the scan's 5 recommended", code in recommended),
                                ("purple on the scan", code in purple)) if ok]
@@ -222,18 +261,41 @@ def remedy_source_infoceuticals(groups, marks, chain, names=None, recommended_or
     return out
 
 
-def _flat_list(title, lines):
+def unnamed_codes(groups, marks, names=None):
+    """The scan's recommended and purple infoceutical codes with no readable name, so
+    Remedy Sources leaves them out rather than print a bare code. Glen sees them."""
+    marks = marks or {}
+    codes = {c.upper() for c in marks.get("recommended") or ()}
+    codes |= {c.upper() for c in marks.get("purple") or ()
+              if cs.infoceutical_code(c) == c.upper()}
+    ticked = {cs.infoceutical_code(line["name"])
+              for line in (groups or {}).get(cs.INFOCEUTICALS) or []}
+    return sorted(c for c in codes if c not in ticked and not (names or {}).get(c))
+
+
+def _flat_list(title, lines, header=""):
     if not lines:
         return ""
-    return (f"<section class=plan-heading><h2>{html.escape(title)}</h2><ul class=plan-list>"
+    return (f"<section class=plan-heading><h2>{html.escape(title)}</h2>"
+            + (f"<p class=plan-frame>{html.escape(header)}</p>" if header else "")
+            + "<ul class=plan-list>"
             + "".join(pr._line_html(line, False) for line in lines) + "</ul></section>")
 
 
 # ---- Rendering ----------------------------------------------------------------
 
-def _headings(on, skip=()):
+def _join(titles):
+    titles = list(titles)
+    return titles[0] if len(titles) == 1 else ", ".join(titles[:-1]) + " and " + titles[-1]
+
+
+def _headings(on, skip=(), title="", groups=None, name_remedies=False):
     """The report's headings from its switched-on sections, in print order: the
-    foods, then the remedy sections mixed by score, then Healing Tools."""
+    foods, then the remedy sections mixed by score, then Healing Tools.
+
+    A block heading the same as the report's title is not printed twice. With
+    `name_remedies` (Remedy Sources) the mixed block is headed by the sections that
+    hold lines, so PRL and Fullscript never sit unlabelled."""
     keys = [k for k in SECTION_KEYS if k in on and k not in skip]
     out = []
     foods = [(k, SECTION_TITLES[k]) for k in _FOODS if k in keys]
@@ -242,13 +304,18 @@ def _headings(on, skip=()):
         if cs.HEALING_TOOLS in keys else []
     blocks = sum(bool(b) for b in (foods, remedies, tools))
     if foods:
-        out.append(("Diet", tuple(foods), False, True))
+        out.append(("Diet", tuple(foods), False, title != "Diet"))
     if remedies:
-        # Alone in a report, the Remedies heading only repeats the report's title.
-        name = "Remedies" if len(remedies) > 1 else remedies[0][1]
-        out.append((name, tuple(remedies), True, blocks > 1 or name != "Remedies"))
+        if name_remedies:
+            have = [t for k, t in remedies if (groups or {}).get(k)]
+            name, show = _join(have or [t for _, t in remedies]), True
+        else:
+            # Alone in a report, the Remedies heading only repeats the report's title.
+            name = "Remedies" if len(remedies) > 1 else remedies[0][1]
+            show = blocks > 1 or name != "Remedies"
+        out.append((name, tuple(remedies), True, show and name != title))
     if tools:
-        out.append(("Healing Tools", tuple(tools), False, True))
+        out.append(("Healing Tools", tuple(tools), False, title != "Healing Tools"))
     return tuple(out)
 
 
@@ -266,13 +333,39 @@ def _amazon_line(groups, on):
             if amazon_shown(groups, on) else "")
 
 
-def _cautions(groups, on, cautions):
-    return pr.cautions_for({k: v for k, v in (groups or {}).items() if k in on}, cautions)
+# The sections whose products carry nutrients, minerals or binders. The plan-wide
+# dose totals and thyroid spacing lines concern these and nothing else, so they
+# print only in a report that prints a line from one of them (review, 2026-10-19).
+SUPPLEMENT_KEYS = (cs.FORMULATIONS, PURE_POWDERS, PRL, cs.NUTRIENTS, cs.BOTANICALS,
+                   cs.FULLSCRIPT, AMAZON)
 
 
-def render_report(ctx, report, on):
-    """One stand-alone report as a plan block, sections limited to `on`."""
+def printed_groups(ctx, report, on):
+    """{section: lines} that this report actually prints. Every report-level line
+    and caution is worked out from these alone, never from a switched-off section."""
+    groups = ctx["groups"] or {}
+    out = {k: v for k, v in groups.items() if k in on and v}
+    if report == "remedy_sources" and cs.INFOCEUTICALS in on:
+        out.pop(cs.INFOCEUTICALS, None)
+        if ctx.get("remedy_source_infoceuticals"):
+            out[cs.INFOCEUTICALS] = ctx["remedy_source_infoceuticals"]
+    return out
+
+
+def top_keys(printed):
+    """The plan-wide lines this report may print, from what it prints."""
+    keys = ["vertigo_safety"]          # render_plan_section adds it only with a Vertigo tick
+    if any(printed.get(k) for k in SUPPLEMENT_KEYS):
+        keys += ["dose_totals", "thyroid_spacing"]
+    return tuple(keys)
+
+
+def render_report(ctx, report, on, intro=True):
+    """One stand-alone report as a plan block, sections limited to `on`. `intro`
+    False leaves out the intro lines, for every report after the first in a Grouped
+    file."""
     groups = ctx["groups"]
+    printed = printed_groups(ctx, report, on)
     skip, extra = (), ""
     if report == "remedy_sources":
         # Here the two remedy sections are lists of their own (Glen, 2026-10-19).
@@ -281,13 +374,16 @@ def render_report(ctx, report, on):
             extra += _flat_list("Functional Formulations",
                                 remedy_source_formulations(groups, ctx["chain"]))
         if cs.INFOCEUTICALS in on:
-            extra += _flat_list("Infoceuticals", ctx["remedy_source_infoceuticals"])
+            extra += _flat_list("Infoceuticals", ctx["remedy_source_infoceuticals"],
+                                (ctx["frame"] or {}).get("infoceutical_header") or "")
     extra += _amazon_line(groups, on)
     return pr.render_plan_section(
-        groups, ctx["client_name"], ctx["date"], ctx["meanings"], ctx["intro"],
-        _cautions(groups, on, ctx["cautions"]), ctx["frame"],
-        headings=_headings(on, skip),
-        title=REPORT_TITLES[report], extra=extra)
+        printed, ctx["client_name"], ctx["date"], ctx["meanings"],
+        ctx["intro"] if intro else (),
+        pr.cautions_for(printed, ctx["cautions"]), ctx["frame"],
+        headings=_headings(on, skip, REPORT_TITLES[report], printed,
+                           name_remedies=report == "remedy_sources"),
+        title=REPORT_TITLES[report], extra=extra, top_keys=top_keys(printed))
 
 
 def primary_added(ctx, on):
@@ -298,10 +394,11 @@ def primary_added(ctx, on):
     extra_on = {k for k in on if k not in LAYER_SECTIONS}
     if not any(groups.get(k) for k in extra_on):
         return ""
+    printed = printed_groups(ctx, PRIMARY, extra_on)
     return pr.render_plan_section(
-        groups, "", "", ctx["meanings"], (), _cautions(groups, extra_on, ctx["cautions"]),
+        printed, "", "", ctx["meanings"], (), pr.cautions_for(printed, ctx["cautions"]),
         ctx["frame"], headings=_headings(extra_on), title="",
-        extra=_amazon_line(groups, extra_on))
+        extra=_amazon_line(groups, extra_on), top_keys=top_keys(printed))
 
 
 def counts(ctx, report):
@@ -337,7 +434,11 @@ def button_row(test_id, report, on, section_counts):
 # ---- Printing -----------------------------------------------------------------
 
 def _safe(name):
-    return " ".join(re.sub(r'[\\/:*?"<>|\r\n]+', " ", name or "").split()) or "Client"
+    """A client name fit for a file name: no path separators, quotes, control
+    characters or leading dots, and at most 80 characters."""
+    text = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]+', " ", name or "")
+    text = " ".join(text.split()).lstrip(". ")[:80].rstrip(". ")
+    return text or "Client"
 
 
 def print_jobs(selected, mode, client_name):
@@ -357,7 +458,8 @@ def grouped_html(ctx, reports, settings_):
     """One page of the given reports, each starting a new printed page."""
     body = "".join(
         f"<div class=rs-report style='{'break-before:page' if i else ''}'>"
-        f"{render_report(ctx, r, settings_[r])}</div>" for i, r in enumerate(reports))
+        f"{render_report(ctx, r, settings_[r], intro=not i)}</div>"
+        for i, r in enumerate(reports))
     title = html.escape(", ".join(REPORT_TITLES[r] for r in reports))
     return ("<!doctype html><html lang=en><head><meta charset=utf-8>"
             "<meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -366,19 +468,26 @@ def grouped_html(ctx, reports, settings_):
 
 
 def load(cx, test_id, client_name="", date="", kloud_program="", marks=None,
-         recommended_order=(), names=None):
-    """Everything the reports print from, read once."""
+         recommended_order=(), names=None, chain=None):
+    """Everything the reports print from, read once.
+
+    `chain` is the remedies on this test's Biofield layers. Left None, an authored
+    test reads its own chain and a FileMaker test has none: chain_remedies strips
+    the "a", so FileMaker test 48 would read authored test a48, another client
+    (review, 2026-10-19). The app passes a FileMaker test's own layers."""
     merge_map, meanings, intro = pr.stored_wording(cx)
     frame, cautions = pr.stored_frame(cx)
     groups = pr.plan(cx, test_id, merge_map)
     for line in pr.kloud_lines(groups):
         line["program"] = kloud_program
-    chain = cs.chain_remedies(cx, test_id)
+    if chain is None:
+        chain = cs.chain_remedies(cx, test_id) if is_authored(test_id) else []
     return {"groups": groups, "meanings": meanings, "intro": intro, "frame": frame,
             "cautions": cautions, "chain": chain, "client_name": client_name,
             "date": date, "marks": marks,
             "remedy_source_infoceuticals": remedy_source_infoceuticals(
-                groups, marks, chain, names, recommended_order)}
+                groups, marks, chain, names, recommended_order),
+            "unnamed_codes": unnamed_codes(groups, marks, names)}
 
 
 def recommended_order(e4l_db, scan_id):
@@ -435,21 +544,32 @@ function post(b){var on=!b.classList.contains('on');
  .catch(function(e){alert('Not saved: '+e)})}
 document.querySelectorAll('.rs-b').forEach(function(b){b.onclick=function(){post(b)}});
 var bar=document.getElementById('rs-pbar'); if(!bar)return;
-var tid=bar.dataset.tid, who=bar.dataset.who, mode='singly';
+var tid=bar.dataset.tid, who=bar.dataset.who, mode=bar.dataset.mode||'singly';
+// The ticks and the switch live in the address, so a section button's reload keeps them.
+function keep(){try{var q=new URLSearchParams();q.set('mode',mode);var t=ticked();
+ if(t.length){t.forEach(function(k){q.append('p',k)})}else{q.append('p','')}
+ history.replaceState(null,'',location.pathname+'?'+q.toString())}catch(e){}}
 function ticked(){return [].slice.call(bar.querySelectorAll('.rs-pt'))
  .filter(function(c){return c.checked}).map(function(c){return c.value})}
 function jobs(){var t=ticked(); if(!t.length)return [];
  if(mode==='grouped')return [{name:who+' - Reports.pdf',r:t}];
  return t.map(function(k){return {name:who+' - '+bar.querySelector('.rs-pt[value="'+k+'"]').dataset.title+'.pdf',r:[k]}})}
 function url(j,dl){return '/test/'+tid+'/reports.pdf?mode='+mode+j.r.map(function(k){return '&r='+k}).join('')+(dl?'&download=1':'')}
-function show(){var o=document.getElementById('rs-pout'),js=jobs();
+function show(){keep();var o=document.getElementById('rs-pout'),js=jobs();
  o.innerHTML=js.length?js.map(function(j){return '<li>'+j.name.replace(/</g,'&lt;')+'</li>'}).join(''):'<li>Nothing: tick a report.</li>'}
 bar.querySelectorAll('.rs-sw button').forEach(function(b){b.onclick=function(){mode=b.dataset.m;
  bar.querySelectorAll('.rs-sw button').forEach(function(x){x.classList.toggle('on',x===b)});show()}});
 bar.querySelectorAll('.rs-pt').forEach(function(c){c.onchange=show});
-document.getElementById('rs-save').onclick=function(){
- jobs().forEach(function(j,i){setTimeout(function(){var a=document.createElement('a');
-  a.href=url(j,true);a.download=j.name;document.body.appendChild(a);a.click();a.remove()},i*400)})};
+// Each file is fetched first, so a refusal (a scan that could not be read) is shown here.
+function save(j){return fetch(url(j,true)).then(function(r){
+ if(!r.ok)return r.text().then(function(t){throw new Error(t)});return r.blob()})
+ .then(function(b){var a=document.createElement('a');a.href=URL.createObjectURL(b);
+  a.download=j.name;document.body.appendChild(a);a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},2000)})}
+document.getElementById('rs-save').onclick=function(){var m=document.getElementById('rs-miss'),errs=[];
+ m.textContent='';jobs().reduce(function(p,j){return p.then(function(){return save(j)
+  .catch(function(e){errs.push(j.name+': '+e.message)})})},Promise.resolve())
+ .then(function(){if(errs.length)m.textContent='Not saved. '+errs.join(' ')})};
 document.getElementById('rs-print').onclick=function(){var miss=[];
  jobs().forEach(function(j){if(!window.open(url(j,false),'_blank'))miss.push(j)});
  var m=document.getElementById('rs-miss');
@@ -459,23 +579,39 @@ show()})();
 </script>"""
 
 
-def print_bar(test_id, client_name):
+def print_choice(args):
+    """(ticked reports, mode) from the page's address. No `p` means every report
+    ticked, as on a first visit; `p=` alone means none."""
+    mode = args.get("mode") if args.get("mode") in ("singly", "grouped") else "singly"
+    if "p" not in args:
+        return list(STAND_ALONE), mode
+    picked = set(args.getlist("p"))
+    return [r for r in STAND_ALONE if r in picked], mode
+
+
+def print_bar(test_id, client_name, picked=STAND_ALONE, mode="singly"):
     e = html.escape
+    picked = set(picked)
     ticks = "".join(
-        f"<label><input type=checkbox class=rs-pt value='{r}' data-title='{e(REPORT_TITLES[r])}' "
-        f"checked> {e(REPORT_TITLES[r])}</label>" for r in STAND_ALONE)
+        f"<label><input type=checkbox class=rs-pt value='{r}' data-title='{e(REPORT_TITLES[r])}'"
+        f"{' checked' if r in picked else ''}> {e(REPORT_TITLES[r])}</label>"
+        for r in STAND_ALONE)
+    grouped = mode == "grouped"
     return (f"<section class=rs-pbar id=rs-pbar data-tid='{e(str(test_id))}' "
+            f"data-mode='{'grouped' if grouped else 'singly'}' "
             f"data-who='{e(_safe(client_name))}'><h2>Save and print the stand-alone reports</h2>"
             f"<div class=rs-prow>{ticks}</div>"
-            "<div class=rs-prow><span class=rs-sw><button type=button data-m=singly class=on>"
-            "Singly</button><button type=button data-m=grouped>Grouped</button></span>"
+            "<div class=rs-prow><span class=rs-sw>"
+            f"<button type=button data-m=singly{'' if grouped else ' class=on'}>Singly</button>"
+            f"<button type=button data-m=grouped{' class=on' if grouped else ''}>Grouped</button>"
+            "</span>"
             "<button type=button class=rs-act id=rs-save>Save PDF</button>"
             "<button type=button class=rs-act id=rs-print>Print</button></div>"
             "<p class=rs-out>Save PDF and Print both make:</p><ul class=rs-out id=rs-pout></ul>"
             "<p class=rs-out id=rs-miss></p></section>")
 
 
-def render_page(ctx, test_id, settings_, glen_note=""):
+def render_page(ctx, test_id, settings_, glen_note="", picked=STAND_ALONE, mode="singly"):
     """Glen's working page: the print bar, then each report under its buttons."""
     e = html.escape
     tid = e(str(test_id))
@@ -502,5 +638,5 @@ def render_page(ctx, test_id, settings_, glen_note=""):
             f"<title>Reports</title><style>{PAGE_CSS}</style></head><body><div class=rs-wrap>"
             f"<p><a href='/test/{tid}'>&larr; Report</a> · <a href='/author/{tid}'>Edit</a></p>"
             f"<h1>{e(ctx['client_name'] or 'Client')}: the reports</h1>"
-            + glen_note + print_bar(test_id, ctx["client_name"]) + "".join(parts)
+            + glen_note + print_bar(test_id, ctx["client_name"], picked, mode) + "".join(parts)
             + "</div>" + PAGE_JS + "</body></html>")

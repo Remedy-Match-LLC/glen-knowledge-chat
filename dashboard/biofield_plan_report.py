@@ -479,11 +479,13 @@ def e_(text):
 
 
 PLAN_TITLE = "Foods, Remedies and Healing Tools Plan"
+# The report-level lines printed once at the top, in this order.
+TOP_KEYS = ("vertigo_safety", "dose_totals", "thyroid_spacing")
 
 
 def render_plan_section(plan_groups, client_name="", date="", score_meanings=None,
                         intro=(), cautions=(), frame=None, headings=None, title=PLAN_TITLE,
-                        extra=""):
+                        extra="", top_keys=None):
     """The plan as one block with its own scoped styles, so it can follow the
     Biofield Analysis in the same PDF or stand alone. Nothing unapproved is printed.
     Under Remedies, sections mix within each score, so each line names its kind.
@@ -493,7 +495,9 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
     `headings` replaces HEADINGS for one report (Glen, 2026-10-19: the Plan splits
     into stand-alone reports). Each is (heading, groups) or (heading, groups, mixed,
     show heading); by default only "Remedies" mixes. `title` heads the block, and
-    none prints when it is empty. `extra` is html placed after the headings."""
+    none prints when it is empty. `extra` is html placed after the headings.
+    `top_keys` limits the report-level lines to those a stand-alone report concerns;
+    None prints all three, as the single Plan always has."""
     e = html.escape
     frame = frame or {}
     parts = []
@@ -531,8 +535,10 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
     who = f"<p class=plan-who>{e(client_name)}{' · ' + e(date) if date else ''}</p>" \
         if client_name and title else ""
     # Report-level lines print once at the top; the vertigo line only with a Vertigo tick.
-    top = [frame[k] for k in ("vertigo_safety", "dose_totals", "thyroid_spacing")
-           if frame.get(k) and (k != "vertigo_safety" or _has_condition(plan_groups, "vertigo"))]
+    allowed = TOP_KEYS if top_keys is None else top_keys
+    top = [frame[k] for k in TOP_KEYS
+           if k in allowed and frame.get(k)
+           and (k != "vertigo_safety" or _has_condition(plan_groups, "vertigo"))]
     # Each caution once, naming the client's items that hold its ingredient.
     caution = ""
     if cautions:
