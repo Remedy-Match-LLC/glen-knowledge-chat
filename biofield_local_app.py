@@ -1477,7 +1477,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        return Response(_with_primary_added(test_id, rep, render_present(rep, narrative)),
+        return Response(_with_primary_added(test_id, rep, render_present(rep, narrative, _primary_intro())),
                         mimetype="text/html")
 
     @app.route("/test/<test_id>/report.pdf")
@@ -1489,7 +1489,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        html = _with_primary_added(test_id, rep, render_present(rep, narrative))
+        html = _with_primary_added(test_id, rep, render_present(rep, narrative, _primary_intro()))
         reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
                                      os.path.join(os.path.expanduser("~"), "biofield-reports"))
         date = (rep.get("date") or "").replace("/", "-") or "undated"
@@ -1582,6 +1582,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         glen = "".join(f"<details class=plan-glen open><summary>{escape(n)}. Not printed."
                        "</summary></details>" for n in note)
         return ctx, on, glen
+
+    def _primary_intro():
+        """The Biofield Analysis's lead and personal passage; empty prints nothing."""
+        from dashboard import biofield_report_split as rsplit
+        try:
+            with sqlite3.connect(db_path) as cx:
+                return rsplit.primary_intro(cx)
+        except Exception:
+            return ()
 
     def _with_primary_added(test_id, rep, report_html):
         """The Biofield Analysis with any other section Glen switched on in it added

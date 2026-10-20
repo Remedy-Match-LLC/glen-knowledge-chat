@@ -646,3 +646,12 @@ def test_each_report_has_a_lead_then_a_personal_slot(cx):
     assert "For your energy and sleep." not in rs.render_report(ctx, "ingredients", on["ingredients"])
     page = rs.grouped_html(ctx, ["healing_tools", "diet"], on)
     assert page.count("Food is the base.") == 1       # printed even when not first
+
+
+def test_the_primary_report_reads_its_own_lead(cx):
+    assert rs.primary_intro(cx) == ()
+    cx.execute("INSERT INTO biofield_plan_wording VALUES ('report_lead','biofield:1','Your layers.')")
+    cx.execute("INSERT INTO biofield_plan_wording VALUES ('report_lead','diet:1','Food first.')")
+    cx.commit()
+    assert rs.primary_intro(cx) == ("Your layers.",)
+    assert rs.primary_intro(cx, ["For your sleep."]) == ("Your layers.", "For your sleep.")

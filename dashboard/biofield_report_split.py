@@ -360,6 +360,24 @@ def top_keys(printed):
     return tuple(keys)
 
 
+def stored_leads(cx):
+    """{report: [lead lines]} as stored: biofield_plan_wording kind 'report_lead', key
+    '<report>:<n>'. The same for every client."""
+    pr.ensure_schema(cx)
+    leads = {}
+    for key, text in cx.execute(
+            "SELECT key,text FROM biofield_plan_wording WHERE kind='report_lead' ORDER BY key"):
+        leads.setdefault(str(key).split(":")[0], []).append(text)
+    return leads
+
+
+def primary_intro(cx, personal=()):
+    """The Biofield Analysis's own introduction: its lead, then the personal passage
+    (phase 2, empty for now). Glen, 2026-10-19: the same two parts as the others."""
+    return report_intro({"report_leads": stored_leads(cx),
+                         "report_personal": {PRIMARY: list(personal or ())}}, PRIMARY)
+
+
 def report_intro(ctx, report):
     """This report's own introduction, for the book format Glen plans (2026-10-19).
     Two parts, in order: the standard lead, the same for every client, then a
@@ -499,11 +517,7 @@ def load(cx, test_id, client_name="", date="", kloud_program="", marks=None,
         line["program"] = kloud_program
     if chain is None:
         chain = cs.chain_remedies(cx, test_id) if is_authored(test_id) else []
-    leads = {}
-    for kind_key, text in cx.execute(
-            "SELECT key,text FROM biofield_plan_wording WHERE kind='report_lead' ORDER BY key"):
-        leads.setdefault(str(kind_key).split(":")[0], []).append(text)
-    return {"report_leads": leads, "report_personal": {},
+    return {"report_leads": stored_leads(cx), "report_personal": {},
             "groups": groups, "meanings": meanings, "intro": intro, "frame": frame,
             "cautions": cautions, "chain": chain, "client_name": client_name,
             "date": date, "marks": marks,

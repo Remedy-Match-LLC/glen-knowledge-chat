@@ -223,8 +223,15 @@ def _diet(report):
         return ""
 
 
-def render_present(report, narrative=""):
-    body = (_masthead(report) + _terrain(report) + _schedule(report) + _narrative(narrative)
+def _intro(lines):
+    """The report's own introduction (Glen, 2026-10-19): the standard lead, then a
+    personal passage. Nothing at all prints while both are empty."""
+    paras = "".join(f"<p>{_e(str(p).strip())}</p>" for p in (lines or ()) if str(p).strip())
+    return f'<div class="report-intro">{paras}</div>' if paras else ""
+
+
+def render_present(report, narrative="", intro=()):
+    body = (_masthead(report) + _intro(intro) + _terrain(report) + _schedule(report) + _narrative(narrative)
             + _life_stress(report) + _chain(report) + _diet(report)
             + f'<div class="footer">{_e(FOOTER)}</div>')
     return (f"<!doctype html><html><head><meta charset=utf-8>"

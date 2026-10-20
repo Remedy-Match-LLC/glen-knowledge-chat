@@ -97,3 +97,14 @@ def test_terrain_restore_schedule_entry_tagged_with_phase():
     assert "Terrain Relief" in html
     i = html.index("Terrain Restore")
     assert "Terrain Relief" in html[i:i + 80]
+
+
+def test_the_introduction_slot_prints_nothing_when_empty_and_leads_when_filled():
+    """Glen, 2026-10-19: the Biofield Analysis gets the same two-part introduction as
+    the other reports. Empty, the report is exactly what it was."""
+    base = render_present(REPORT, narrative="x")
+    assert render_present(REPORT, narrative="x", intro=()) == base
+    assert render_present(REPORT, narrative="x", intro=("  ",)) == base
+    html = render_present(REPORT, narrative="x", intro=("Your Biofield, in brief.", "For you <b>"))
+    assert 'class="report-intro"' in html and "For you &lt;b&gt;" in html
+    assert html.index("Your Biofield, in brief.") < html.index("For you") < html.index("<h2>Narrative</h2>")
