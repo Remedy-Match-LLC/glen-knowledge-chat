@@ -17,6 +17,9 @@ def _answer_parts(answers):
     narrative = [str(answers.get(k)).strip() for k in (
         "other_symptoms", "obstacles", "sleep", "dental", "vaccinations",
         "physical_trauma", "psychoemotional_trauma", "toxins") if answers.get(k)]
+    # Labelled, because a bare "keto" or "2 beers nightly" loses its meaning in a list.
+    narrative += [f"{label}: {str(answers.get(k)).strip()}" for k, label in (
+        ("diet", "Diet"), ("alcohol", "Alcohol")) if str(answers.get(k) or "").strip()]
     narrative += _table_values(answers.get("medications"), "medication", "reason")
     narrative += _table_values(answers.get("otc_drugs"), "medication", "reason")
     narrative += _table_values(answers.get("supplements"), "brand", "name", "reason")

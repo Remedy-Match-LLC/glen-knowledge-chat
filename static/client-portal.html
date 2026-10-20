@@ -2127,13 +2127,34 @@ function initAppointmentProposals(){
 // (Task 4, below) to swap the value for an input and POST the change. Table
 // fields keep their Edit button but only reveal a "coming soon" note — full
 // row add/remove editing is out of scope for Task 4.
+// One table row as "Label: value; Label: value", using the field's column labels
+// (health_profile.build_block sends them) and falling back to the raw key.
+function healthRowText(f, row){
+  const cols = (f && Array.isArray(f.columns)) ? f.columns : [];
+  const labelOf = {};
+  cols.forEach(c => { labelOf[c.id] = c.label || c.id; });
+  const keys = cols.length ? cols.map(c => c.id).filter(k => row && row[k] !== undefined && row[k] !== null && row[k] !== "")
+                           : Object.keys(row || {});
+  return keys.map(k => `${labelOf[k] || k}: ${row[k]}`).join("; ");
+}
+// A pending suggestion's value as the client should read it. A table suggestion is
+// one row stored as JSON text; anything else is shown as stored.
+function healthSuggestionValueText(s){
+  const f = findHealthField(_healthProfileBlock, s.field_id);
+  if (f && f.type === "table") {
+    try {
+      const row = JSON.parse(s.suggested_value);
+      if (row && typeof row === "object" && !Array.isArray(row)) return healthRowText(f, row);
+    } catch (e) {}
+  }
+  return String(s.suggested_value ?? "");
+}
 function healthFieldValueHtml(f){
   if (f.type === "table") {
     const rows = Array.isArray(f.value) ? f.value : [];
     if (!rows.length) return `<p class="muted small">Not provided yet.</p>`;
     return `<ul class="health-table-list">${rows.map(row => {
-      const cells = Object.keys(row || {}).map(k => `${esc(k)}: ${esc(row[k])}`).join(" &middot; ");
-      return `<li>${cells}</li>`;
+      return `<li>${esc(healthRowText(f, row))}</li>`;
     }).join("")}</ul>`;
   }
   const val = f.value;
@@ -3653,9 +3674,9 @@ function healthSuggestionItemHtml(s){
   const lead = (s.source === "clinician")
     ? `Your practitioner suggests: ${rationale}. Update ${label}?`
     : `We heard this in your conversations: ${rationale}. Update ${label}?`;
-  return `<div class="health-suggestion" data-sid="${esc(s.id)}" data-field-id="${esc(s.field_id)}">
+  return `<div class="health-suggestion" data-sid="${esc(s.id)}" data-field-id="${esc(s.field_id)}" data-raw-value="${esc(s.suggested_value ?? "")}">
     <p class="health-suggestion-text">${lead}</p>
-    <p class="health-suggestion-value">Suggested: <strong>${esc(s.suggested_value)}</strong></p>
+    <p class="health-suggestion-value">Suggested: <strong>${esc(healthSuggestionValueText(s))}</strong></p>
     <div class="health-suggestion-actions">
       <button type="button" class="health-sugg-confirm">Confirm</button>
       <button type="button" class="health-sugg-edit">Edit</button>
@@ -3705,6 +3726,20 @@ document.addEventListener("click", function(ev){
     const valueEl = item.querySelector(".health-suggestion-value strong");
     const rawValue = valueEl ? valueEl.textContent : "";
     if (!item.hasAttribute("data-prev-actions")) item.setAttribute("data-prev-actions", actions.innerHTML);
+    const tableField = findHealthField(_healthProfileBlock, fieldId);
+    if (tableField && tableField.type === "table" && Array.isArray(tableField.columns)) {
+      // A table suggestion is one row: edit it column by column and send an object.
+      let row = {};
+      try { row = JSON.parse(item.getAttribute("data-raw-value") || "{}") || {}; } catch (e) { row = {}; }
+      actions.innerHTML = tableField.columns.map(c =>
+        `<label class="small">${esc(c.label || c.id)} <input type="text" class="health-sugg-edit-col" data-col="${esc(c.id)}" value="${esc(row[c.id] ?? "")}"></label>`
+      ).join(" ") + `
+      <button type="button" class="health-sugg-save-btn">Save</button>
+      <button type="button" class="health-sugg-cancel-btn">Cancel</button>`;
+      const first = actions.querySelector(".health-sugg-edit-col");
+      if (first) first.focus();
+      return;
+    }
     actions.innerHTML = `<input type="text" class="health-sugg-edit-input" value="${esc(rawValue)}">
       <button type="button" class="health-sugg-save-btn">Save</button>
       <button type="button" class="health-sugg-cancel-btn">Cancel</button>`;
@@ -3723,8 +3758,15 @@ document.addEventListener("click", function(ev){
   if (confirmBtn) { payload = {action: "confirm"}; btn = confirmBtn; }
   else if (dismissBtn) { payload = {action: "dismiss"}; btn = dismissBtn; }
   else if (saveBtn) {
-    const input = actions.querySelector(".health-sugg-edit-input");
-    payload = {action: "edit", value: input ? input.value : ""};
+    const cols = actions.querySelectorAll(".health-sugg-edit-col");
+    if (cols.length) {
+      const row = {};
+      cols.forEach(el => { const v = el.value.trim(); if (v) row[el.getAttribute("data-col")] = v; });
+      payload = {action: "edit", value: row};
+    } else {
+      const input = actions.querySelector(".health-sugg-edit-input");
+      payload = {action: "edit", value: input ? input.value : ""};
+    }
     btn = saveBtn;
   }
   if (!payload || !btn) return;

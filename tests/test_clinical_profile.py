@@ -77,3 +77,20 @@ def test_intake_priorities_skip_blank_concerns():
 
 def test_intake_priorities_empty_without_intake():
     assert consolidate({"conditions": ["Dry eye"]})["intake_priorities"] == []
+
+
+def test_diet_and_alcohol_reach_challenges_with_their_labels():
+    p = consolidate({}, {"status": "submitted", "answers": {
+        "diet": "Low-oxalate, medical", "alcohol": "Four beers nightly",
+        "diagnoses": [{"diagnosis": "Pregnancy", "current": "Current"}],
+        "surgeries": [{"procedure": "Pacemaker", "age": 62}]}})
+    lines = p["challenges"].split("\n")
+    assert "Diet: Low-oxalate, medical" in lines
+    assert "Alcohol: Four beers nightly" in lines
+    assert "Pacemaker" in lines
+    assert "Pregnancy — Current" in p["conditions"]
+
+
+def test_blank_diet_and_alcohol_add_nothing():
+    p = consolidate({}, {"status": "submitted", "answers": {"diet": "  ", "alcohol": ""}})
+    assert p["challenges"] == ""

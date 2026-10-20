@@ -169,3 +169,109 @@ def test_identity_from_token_not_body(client):
         attacker = intake.get_response(cx, "attacker@evil.com")
     assert real["answers"]["terrain"] == 3
     assert attacker is None
+
+
+# --- append, never replace (Glen, 20 Oct 2026) --------------------------------
+
+def _seed_intake(appmod, email, answers):
+    from dashboard import intake
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        intake.init_intake_table(cx)
+        intake.submit(cx, email, answers, "2026-10-01T00:00:00")
+
+
+def _answers(appmod, email):
+    from dashboard import intake
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        return intake.get_response(cx, email)["answers"]
+
+
+@pytest.mark.parametrize("field,old,new", [
+    ("diagnoses", {"diagnosis": "Asthma", "current": "Past"},
+     {"diagnosis": "Pregnancy", "current": "Current"}),
+    ("surgeries", {"procedure": "Appendectomy"}, {"procedure": "Pacemaker", "age": 62}),
+    ("medications", {"medication": "Metformin"}, {"medication": "Warfarin", "reason": "blood"}),
+    ("otc_drugs", {"medication": "Aspirin"}, {"medication": "Ibuprofen"}),
+    ("allergies", {"sensitivity": "Shellfish"}, {"sensitivity": "Peanuts", "reaction": "hives"}),
+])
+def test_confirm_table_row_appends_to_existing_rows(client, field, old, new):
+    c, appmod = client
+    token = _mint_portal(appmod, "a@b.com")
+    _seed_intake(appmod, "a@b.com", {field: [old], "sleep": "fine"})
+    sid = _seed_suggestion(appmod, "a@b.com", field, new)
+    r = c.post(f"/api/portal/{token}/health-suggestions/{sid}/resolve", json={"action": "confirm"})
+    assert r.status_code == 200, r.get_json()
+    a = _answers(appmod, "a@b.com")
+    assert a[field] == [old, new]
+    assert a["sleep"] == "fine"
+
+
+def test_confirm_identical_row_is_not_doubled(client):
+    c, appmod = client
+    token = _mint_portal(appmod, "a@b.com")
+    row = {"medication": "Warfarin"}
+    _seed_intake(appmod, "a@b.com", {"medications": [row]})
+    sid = _seed_suggestion(appmod, "a@b.com", "medications", row)
+    c.post(f"/api/portal/{token}/health-suggestions/{sid}/resolve", json={"action": "confirm"})
+    assert _answers(appmod, "a@b.com")["medications"] == [row]
+
+
+@pytest.mark.parametrize("field", ["diet", "alcohol"])
+def test_confirm_text_appends_on_a_new_line(client, field):
+    c, appmod = client
+    token = _mint_portal(appmod, "a@b.com")
+    _seed_intake(appmod, "a@b.com", {field: "What I wrote myself."})
+    sid = _seed_suggestion(appmod, "a@b.com", field, "Added from chat")
+    c.post(f"/api/portal/{token}/health-suggestions/{sid}/resolve", json={"action": "confirm"})
+    assert _answers(appmod, "a@b.com")[field] == "What I wrote myself.\nAdded from chat"
+
+
+def test_edit_table_row_object_appends(client):
+    c, appmod = client
+    token = _mint_portal(appmod, "a@b.com")
+    _seed_intake(appmod, "a@b.com", {"medications": [{"medication": "Metformin"}]})
+    sid = _seed_suggestion(appmod, "a@b.com", "medications", {"medication": "Warfrin"})
+    r = c.post(f"/api/portal/{token}/health-suggestions/{sid}/resolve",
+               json={"action": "edit", "value": {"medication": "Warfarin", "reason": "AF"}})
+    assert r.status_code == 200
+    assert _answers(appmod, "a@b.com")["medications"] == [
+        {"medication": "Metformin"}, {"medication": "Warfarin", "reason": "AF"}]
+
+
+def test_edit_table_with_a_bare_string_is_refused_and_keeps_the_table(client):
+    c, appmod = client
+    token = _mint_portal(appmod, "a@b.com")
+    _seed_intake(appmod, "a@b.com", {"medications": [{"medication": "Metformin"}]})
+    sid = _seed_suggestion(appmod, "a@b.com", "medications", {"medication": "Warfarin"})
+    r = c.post(f"/api/portal/{token}/health-suggestions/{sid}/resolve",
+               json={"action": "edit", "value": "warfarin"})
+    assert r.status_code == 400
+    assert _answers(appmod, "a@b.com")["medications"] == [{"medication": "Metformin"}]
+    from dashboard import health_suggestions as hs
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        assert len(hs.list_pending(cx, "a@b.com")) == 1
+
+
+def test_edit_text_appends(client):
+    c, appmod = client
+    token = _mint_portal(appmod, "a@b.com")
+    _seed_intake(appmod, "a@b.com", {"diet": "Vegetarian."})
+    sid = _seed_suggestion(appmod, "a@b.com", "diet", "Low salt")
+    c.post(f"/api/portal/{token}/health-suggestions/{sid}/resolve",
+           json={"action": "edit", "value": "Low salt, doctor's orders"})
+    assert _answers(appmod, "a@b.com")["diet"] == "Vegetarian.\nLow salt, doctor's orders"
+
+
+def test_health_profile_block_carries_column_labels(client):
+    c, appmod = client
+    from dashboard import health_profile
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        from dashboard import intake
+        intake.init_intake_table(cx)
+        block = health_profile.build_block(cx, "a@b.com", True)
+    fields = {f["id"]: f for s in block["sections"] for f in s["fields"]}
+    assert fields["medications"]["columns"][0] == {"id": "medication", "label": "Medication"}
+    assert "columns" not in fields["diet"]

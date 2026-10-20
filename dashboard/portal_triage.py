@@ -98,7 +98,21 @@ _TRIAGE_SYSTEM = (
     "- a service problem or bug (portal broken, link dead, wrong/missing order);\n"
     "- a question the AI clearly could NOT answer, or where the client is stuck or frustrated "
     "after the AI's reply.\n"
-    "When unsure whether the AI handled it, do NOT escalate. Return STRICT JSON ONLY, no prose: "
+    "WARNING SIGNS. These ALWAYS need Dr. Glen: needs_attention=true, category "
+    "\"health-concern\", urgency \"high\", even when the AI answered well and even when you are "
+    "unsure. The client reports one of these in themself or in someone in their care:\n"
+    "- sudden or severe new dizziness;\n"
+    "- dizziness with weakness or slurred speech;\n"
+    "- a high or lasting fever;\n"
+    "- swelling of the lips, tongue or throat;\n"
+    "- hives or trouble breathing;\n"
+    "- yellow skin or eyes;\n"
+    "- severe pain under the right ribs;\n"
+    "- any healing crisis.\n"
+    "A general education question about one of these, with nothing happening to anyone, is "
+    "not a warning sign.\n"
+    "When unsure whether the AI handled it, do NOT escalate. That rule never holds back a "
+    "warning sign above. Return STRICT JSON ONLY, no prose: "
     '{"needs_attention": true|false, "category": "question"|"complaint"|"issue"|"bug"|'
     '"health-concern"|"request"|"other", "urgency": "low"|"medium"|"high", '
     '"summary": "one-line what they need", "recommendation": "what Dr. Glen should do"}. '
@@ -132,3 +146,187 @@ def classify(complete, query, answer="", history_text=""):
     return {"needs_attention": True, "category": cat, "urgency": urg,
             "summary": (data.get("summary") or "").strip() or "(no summary)",
             "recommendation": (data.get("recommendation") or "").strip() or "(no recommendation)"}
+
+
+# --- Warning-sign backstop -------------------------------------------------
+# Glen, 20 Oct 2026: these signs must always reach him at high urgency with an
+# immediate email, "not as a substitute for local health care, but a support for
+# self-healing". The model is told so in _TRIAGE_SYSTEM, but a model can say no,
+# return garbage, or error. This keyword check runs on the CLIENT'S message only
+# and forces the flag whatever the model did.
+#
+# Scope. A sign trips only inside a sentence that also reads as a report of it
+# happening: a first-person or possessive word (I, I'm, my, me, we, our, so "my
+# baby" counts), or a time word (since, today, this morning, started, for 3 days,
+# after taking). An education question with none of those ("Does this remedy help
+# with fever?") is left to the model. A sign just after a negation ("I don't have a
+# fever") or inside a hypothetical with no present report ("What if I get hives?")
+# does not trip.
+
+WARNING_SIGNS = (
+    ("dizziness", "sudden or severe new dizziness"),
+    ("stroke", "dizziness with weakness or slurred speech"),
+    ("fever", "a high or lasting fever"),
+    ("swelling", "swelling of the lips, tongue or throat"),
+    ("hives-breathing", "hives or trouble breathing"),
+    ("jaundice", "yellow skin or eyes"),
+    ("right-rib-pain", "severe pain under the right ribs"),
+    ("healing-crisis", "a healing crisis"),
+)
+_SIGN_LABELS = dict(WARNING_SIGNS)
+
+_DIZZY = r"(?:dizz\w*|vertigo|light[- ]?headed\w*|(?:room|world|everything)\s+(?:is\s+|was\s+|keeps\s+)?spinning)"
+_SIGN_PATTERNS = {
+    "dizziness": [
+        re.compile(r"\b(?:sudden\w*|severe\w*|extreme\w*|very|really|so|terribl\w*|horribl\w*|"
+                   r"out of nowhere|new|worst)\b[^.!?\n]{0,30}" + _DIZZY, re.I),
+        re.compile(_DIZZY + r"[^.!?\n]{0,60}\b(?:sudden\w*|severe\w*|out of nowhere|"
+                   r"can'?t stand|cannot stand|fell|fall(?:ing)? down|faint\w*|passed out|"
+                   r"never (?:had|felt)|first time|since (?:yesterday|this morning|last night|today)|"
+                   r"started (?:today|yesterday|this morning|last night))\b", re.I),
+        re.compile(r"\b(?:faint(?:ed|ing)|passed out|blacked out)\b", re.I),
+    ],
+    "stroke": [
+        re.compile(r"\bslurr\w*\b|\b(?:can'?t|cannot|trouble|hard to)\s+(?:speak|talk|get (?:my|the) words out)\b|"
+                   r"\b(?:face|mouth|smile)\s+(?:is\s+|was\s+)?droop\w*|\bdroop\w*\s+(?:face|mouth)\b", re.I),
+        re.compile(_DIZZY + r"[^.!?\n]{0,60}\b(?:weak\w*|numb\w*)\b", re.I),
+        re.compile(r"\b(?:weak\w*|numb\w*)\b[^.!?\n]{0,60}" + _DIZZY, re.I),
+    ],
+    "fever": [
+        re.compile(r"\b(?:high|very high|spiking|raging|burning)\s+(?:fever|temp\w*)\b", re.I),
+        re.compile(r"\b(?:fever|temp\w*)\b[^.!?\n]{0,40}\b(?:10[2-7]|39|4[0-2])(?:[.,]\d+)?\s*"
+                   r"(?:°|degrees?|f\b|c\b)?", re.I),
+        re.compile(r"\bfever\w*\b[^.!?\n]{0,40}\b(?:for|over|more than)\s+(?:\d+|two|three|four|five|"
+                   r"six|seven|several|a few|many)\s+(?:days?|weeks?)\b", re.I),
+        re.compile(r"\bfever\w*\b[^.!?\n]{0,40}\b(?:won'?t|will not|doesn'?t|does not|isn'?t|not)\s+"
+                   r"(?:go(?:ing)?|come|coming|break|breaking)\b", re.I),
+        re.compile(r"\bfever\w*\b[^.!?\n]{0,30}\b(?:since|all week|for days|keeps coming back|lasting|"
+                   r"persistent)\b", re.I),
+        re.compile(r"\b(?:lasting|persistent|ongoing|constant)\s+fever\b", re.I),
+    ],
+    "swelling": [
+        re.compile(r"\b(?:swell\w*|swollen|puff\w*)\b[^.!?\n]{0,40}\b(?:lips?|tongue|throat)\b", re.I),
+        re.compile(r"\b(?:lips?|tongue|throat)\b[^.!?\n]{0,30}\b(?:swell\w*|swollen|puff\w*)\b", re.I),
+        re.compile(r"\bthroat\b[^.!?\n]{0,20}\b(?:closing|tightening|closing up)\b", re.I),
+    ],
+    "hives-breathing": [
+        re.compile(r"\b(?:hives|welts|urticaria)\b", re.I),
+        re.compile(r"\b(?:trouble|difficulty|hard|struggling|struggle|can'?t|cannot|unable)\s+"
+                   r"(?:to\s+)?(?:breath\w*|catch my breath)\b", re.I),
+        re.compile(r"\bshort(?:ness)?\s+of\s+breath\b|\bwheez\w*|\bgasping\b", re.I),
+    ],
+    "jaundice": [
+        re.compile(r"\bjaundic\w*\b", re.I),
+        re.compile(r"\byellow\w*\b[^.!?\n]{0,30}\b(?:skin|eyes?|whites)\b", re.I),
+        re.compile(r"\b(?:skin|eyes?|whites of (?:my|his|her|their) eyes)\b[^.!?\n]{0,25}"
+                   r"\b(?:yellow\w*)\b", re.I),
+    ],
+    "right-rib-pain": [
+        re.compile(r"\b(?:pain\w*|hurt\w*|ache\w*|aching|cramp\w*|stabbing|sharp)\b[^.!?\n]{0,50}"
+                   r"\bright\b[^.!?\n]{0,25}\b(?:ribs?|rib cage|ribcage|upper (?:abdomen|belly|side))\b", re.I),
+        re.compile(r"\bright\b[^.!?\n]{0,25}\b(?:ribs?|rib cage|ribcage|upper (?:abdomen|belly|side))\b"
+                   r"[^.!?\n]{0,40}\b(?:pain\w*|hurt\w*|ache\w*|aching|cramp\w*|stabbing|sharp)\b", re.I),
+        re.compile(r"\bgall\s?bladder attack\b", re.I),
+    ],
+    "healing-crisis": [
+        re.compile(r"\bhealing\s+(?:crisis|crises|reaction)\b", re.I),
+        re.compile(r"\bherx\w*\b", re.I),
+    ],
+}
+
+# A report of it happening: someone the client speaks for, or a time anchor.
+_REPORT_MARKER = re.compile(
+    r"\b(?:i|i'm|im|i've|ive|i'd|i'll|me|my|mine|myself|we|we're|our|us)\b|"
+    r"\b(?:since|today|tonight|yesterday|this (?:morning|afternoon|evening|week)|"
+    r"last night|right now|started|starting|began|keeps?|for (?:\d+|two|three|a few|several) "
+    r"(?:hours?|days?|weeks?)|after (?:taking|starting|i|the))\b", re.I)
+# A present report that overrides a hypothetical framing.
+_PRESENT_REPORT = re.compile(
+    r"\b(?:i have|i've|ive|i'm|im|i am|i got|i feel|i felt|i think i|i've been|we have|"
+    r"my \w+(?: \w+)? (?:is|are|has|have|was|were|feels?|looks?|got|turned|went|keeps?)|"
+    r"has (?:a|had)|since|today|tonight|yesterday|this morning|last night|right now)\b", re.I)
+_HYPOTHETICAL = re.compile(
+    r"\b(?:if|what if|in case|could (?:i|it|this|that)|will (?:i|it|this)|would (?:i|it|this)|"
+    r"is it possible|can (?:this|it|that|the \w+) cause|should i expect)\b", re.I)
+# The condition clause of "If I get hives, ..." is not a present report.
+_IF_CLAUSE = re.compile(r"\b(?:what if|if|in case)\b[^,]*,?|"
+                        r"\b(?:could|will|would|can|should) i\b", re.I)
+_NEGATION_BEFORE = re.compile(
+    r"\b(?:no|not|never|don'?t|doesn'?t|didn'?t|haven'?t|hasn'?t|hadn'?t|isn'?t|aren'?t|"
+    r"wasn'?t|weren'?t|without|nor|no longer|free of)\b", re.I)
+
+
+def _sentences(text):
+    return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
+
+
+# Negation inside the matched words ("my lips are not swollen"). Not used for
+# fever, whose own patterns read "won't go down" / "will not break" as a sign.
+_NEGATION_INSIDE = re.compile(r"\b(?:not|isn'?t|aren'?t|wasn'?t|weren'?t|no longer|never)\b", re.I)
+
+
+def _negated(sentence, m, key):
+    before = sentence[:m.start()].split()[-3:]
+    if _NEGATION_BEFORE.search(" ".join(before)):
+        return True
+    return key != "fever" and bool(_NEGATION_INSIDE.search(m.group(0)))
+
+
+def warning_signs(message):
+    """The warning-sign keys the client's message reports, in WARNING_SIGNS order.
+    Empty when none. Pure and deterministic: no model call."""
+    found = set()
+    for sentence in _sentences(message):
+        if not _REPORT_MARKER.search(sentence):
+            continue
+        if (_HYPOTHETICAL.search(sentence)
+                and not _PRESENT_REPORT.search(_IF_CLAUSE.sub(" ", sentence))):
+            continue
+        for key, patterns in _SIGN_PATTERNS.items():
+            if key in found:
+                continue
+            for pat in patterns:
+                m = pat.search(sentence)
+                if m and not _negated(sentence, m, key):
+                    found.add(key)
+                    break
+    return [k for k, _ in WARNING_SIGNS if k in found]
+
+
+def warning_sign_labels(keys):
+    return [_SIGN_LABELS[k] for k in keys if k in _SIGN_LABELS]
+
+
+WARNING_RECOMMENDATION = ("Reach the client today. A warning sign was reported; they may need "
+                          "local urgent care alongside your support for their self-healing.")
+
+
+def warning_flag(keys, base=None):
+    """The triage result for a matched warning sign: always high urgency, category
+    health-concern. Keeps the model's own summary/recommendation when it gave one."""
+    base = base or {}
+    labels = "; ".join(warning_sign_labels(keys))
+    summary = f"Warning sign: {labels}."
+    model_summary = (base.get("summary") or "").strip()
+    if model_summary and model_summary != "(no summary)":
+        summary += " " + model_summary
+    rec = (base.get("recommendation") or "").strip()
+    if not rec or rec == "(no recommendation)":
+        rec = WARNING_RECOMMENDATION
+    return {"needs_attention": True, "category": "health-concern", "urgency": "high",
+            "summary": summary, "recommendation": rec, "warning_signs": list(keys)}
+
+
+def triage(complete, query, answer="", history_text=""):
+    """classify() plus the warning-sign backstop. The backstop runs on `query` (the
+    client's message) only, and wins over a model 'no', garbage, or an error.
+    Never raises."""
+    try:
+        res = classify(complete, query, answer, history_text)
+    except Exception as e:
+        print(f"[triage] classify failed: {e!r}", flush=True)
+        res = None
+    keys = warning_signs(query)
+    if keys:
+        return warning_flag(keys, res)
+    return res

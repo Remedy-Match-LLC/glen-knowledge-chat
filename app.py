@@ -32497,6 +32497,10 @@ def api_portal_health_suggestion_resolve(token, sid):
         suggestion's field_id is re-validated against EDITABLE_FIELD_IDS (defense
         in depth alongside health_suggestions.extract_from_turn's filter).
       - dismiss: resolve(...,'dismissed') only — no record write.
+    Confirm and edit go through health_suggestions.apply_suggestion: a table row is
+    appended to the client's rows (an identical row is skipped) and text is added on
+    a new line, so a suggestion never wipes what the client already wrote. An edit
+    of a table suggestion sends the row as an object.
     Returns the refreshed health_profile block for a live re-render."""
     if not _PORTAL_HEALTH_PROFILE_ENABLED:
         return ("", 404)
@@ -32518,19 +32522,21 @@ def api_portal_health_suggestion_resolve(token, sid):
         match = next((s for s in pending if s["id"] == sid), None)
         if not match:
             return jsonify({"ok": False, "error": "unknown suggestion"}), 404
-        if action == "confirm":
+        if action in ("confirm", "edit"):
             field_id = match["field_id"]
             if field_id not in _hp.EDITABLE_FIELD_IDS:
                 return jsonify({"ok": False, "error": "non-editable field"}), 400
-            value = _decode_suggested_value(match["suggested_value"])
-            _intake.save_self_edit(cx, email, {field_id: value}, _hst_now().isoformat())
-            _hs.resolve(cx, sid, email, "confirmed")
-        elif action == "edit":
-            field_id = match["field_id"]
-            if field_id not in _hp.EDITABLE_FIELD_IDS:
-                return jsonify({"ok": False, "error": "non-editable field"}), 400
-            _intake.save_self_edit(cx, email, {field_id: body.get("value")}, _hst_now().isoformat())
-            _hs.resolve(cx, sid, email, "edited")
+            value = (_decode_suggested_value(match["suggested_value"]) if action == "confirm"
+                     else body.get("value"))
+            # Append, never replace: a confirmed row joins the client's table and a
+            # note joins their text (merge_answers alone would replace the field).
+            current = ((_intake.get_response(cx, email) or {}).get("answers") or {}).get(field_id)
+            try:
+                merged = _hs.apply_suggestion(field_id, current, value)
+            except ValueError:
+                return jsonify({"ok": False, "error": "a table suggestion needs a row"}), 400
+            _intake.save_self_edit(cx, email, {field_id: merged}, _hst_now().isoformat())
+            _hs.resolve(cx, sid, email, "confirmed" if action == "confirm" else "edited")
         else:  # dismiss
             _hs.resolve(cx, sid, email, "dismissed")
         block = _hp.build_block(cx, email, True)
@@ -32875,6 +32881,13 @@ def api_portal_chat(token):
     user_block = ((f"CONTEXT:\n{context_str}\n\n" if context_str else "") + query
                   + _approved_wording_reminder(context_str))
     messages.append({"role": "user", "content": user_block})
+    # Warning-sign keyword backstop on the client's own message (cheap, no model).
+    try:
+        from dashboard import portal_triage as _pt_ws
+        _warning_keys = _pt_ws.warning_signs(query)
+    except Exception as e:
+        print(f"[triage] warning-sign check failed: {e!r}", flush=True)
+        _warning_keys = []
 
     def generate():
         if cart_added:
@@ -32895,8 +32908,27 @@ def api_portal_chat(token):
             # The browser keeps the original message in the composer so it can
             # be retried after a transient deployment or provider interruption.
             print(f"[portal-concierge] response failed: {e!r}", flush=True)
+            if _warning_keys:
+                # No reply reached the client, but a warning sign still reaches Glen.
+                try:
+                    import threading as _tw
+                    _tw.Thread(target=_triage_portal_message,
+                               args=(email, portal.get("name") or "", query, "(no answer: "
+                                     "assistant unavailable)"), daemon=True).start()
+                except Exception:
+                    pass
             yield sse({"error": "assistant temporarily unavailable"}); return
         answer = _store_links_text("".join(full))  # the stored thread matches what was shown
+        # Warning-sign backstop: store the flag now, and tell the client it was
+        # passed on only when that store succeeded.
+        _warning_item_id = None
+        if _warning_keys:
+            _warning_item_id = _store_warning_sign_flag(
+                email, portal.get("name") or "", query, answer, _warning_keys)
+            if _warning_item_id:
+                _line = "\n\n" + PORTAL_WARNING_SIGN_LINE
+                answer = answer + _line
+                yield sse({"token": _line})
         try:
             import threading as _t
             _t.Thread(target=ash_ally.record_turn,
@@ -32919,21 +32951,18 @@ def api_portal_chat(token):
         # effort and flag-gated; must never break the chat stream.
         if _PORTAL_HEALTH_PROFILE_ENABLED:
             try:
-                from dashboard import health_suggestions as _hs
-                candidates = _hs.extract_from_turn(query, answer)
-                if candidates:
-                    with _db_lock, db.connect(LOG_DB) as _hcx:
-                        for cand in candidates:
-                            _hs.add_pending(_hcx, email, cand.get("field_id"),
-                                            cand.get("value"), cand.get("rationale"),
-                                            source="chat", source_msg_id=_client_msg_id)
+                import threading as _th
+                _th.Thread(target=_extract_portal_health_suggestions,
+                           args=(email, query, answer, _client_msg_id),
+                           daemon=True).start()
             except Exception as e:
                 print(f"[health-suggestions] extract failed: {e!r}", flush=True)
         # Triage: flag messages that need Dr. Glen's attention -> console + email him.
         try:
             import threading as _t2
             _t2.Thread(target=_triage_portal_message,
-                       args=(email, portal.get("name") or "", query, answer),
+                       args=(email, portal.get("name") or "", query, answer,
+                             _warning_item_id),
                        daemon=True).start()
         except Exception:
             pass
@@ -33114,9 +33143,62 @@ def api_console_portal_draft_reply(email):
     return jsonify({"ok": True, "draft": draft})
 
 
-def _triage_portal_message(email, name, query, answer):
+# Glen, 20 Oct 2026, word for word. Shown in the reply ONLY after a warning-sign
+# triage item was actually stored, because its first sentence says so.
+PORTAL_WARNING_SIGN_LINE = ("I have passed this to Dr. Glen. This chat is for supporting your "
+                            "self-healing as a supplement to your local health care.")
+
+
+def _extract_portal_health_suggestions(email, query, answer, client_msg_id=None):
+    """Background: propose intake updates from the client's own chat message
+    (health_suggestions.llm_extractor, Haiku). The model never sees `answer`; the
+    client confirms each suggestion on the portal card before it is recorded.
+    Gated by PORTAL_HEALTH_PROFILE_ENABLED here as well as at the call site."""
+    if not _PORTAL_HEALTH_PROFILE_ENABLED:
+        return []
+    try:
+        from dashboard import health_suggestions as _hs
+
+        def _complete(system, user):
+            m = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=400,
+                                    system=system, messages=[{"role": "user", "content": user}])
+            return m.content[0].text
+
+        candidates = _hs.extract_from_turn(query, answer, extractor=_hs.llm_extractor(_complete))
+        if candidates:
+            with _db_lock, db.connect(LOG_DB) as _hcx:
+                for cand in candidates:
+                    _hs.add_pending(_hcx, email, cand.get("field_id"),
+                                    cand.get("value"), cand.get("rationale"),
+                                    source="chat", source_msg_id=client_msg_id)
+        return candidates
+    except Exception as e:
+        print(f"[health-suggestions] extract failed: {e!r}", flush=True)
+        return []
+
+
+def _store_warning_sign_flag(email, name, query, answer, keys):
+    """Synchronously store the triage item for a warning sign the keyword backstop
+    found in the client's message. Returns the new item id, or None when the
+    insert failed (logged). The chat shows PORTAL_WARNING_SIGN_LINE only on an id."""
+    try:
+        from dashboard import portal_triage as _pt
+        res = _pt.warning_flag(keys)
+        with _db_lock, db.connect(LOG_DB) as cx:
+            item_id = _pt.add_item(cx, email, name, res["category"], res["urgency"],
+                                   res["summary"], res["recommendation"], query, answer)
+        return item_id or None
+    except Exception as e:
+        print(f"[triage] warning-sign store failed: {e!r}", flush=True)
+        return None
+
+
+def _triage_portal_message(email, name, query, answer, stored_item_id=None):
     """Background: classify a client's portal message; if it needs Dr. Glen's
-    attention, store a triage item and email him full context + a recommendation."""
+    attention, store a triage item and email him full context + a recommendation.
+    The warning-sign backstop (portal_triage.triage) forces high urgency even when
+    the model says no, returns garbage, or errors. `stored_item_id` is the item the
+    chat route already stored for a warning sign, so it is not stored twice."""
     try:
         from dashboard import portal_triage as _pt
 
@@ -33125,12 +33207,13 @@ def _triage_portal_message(email, name, query, answer):
                                     system=system, messages=[{"role": "user", "content": user}])
             return m.content[0].text
 
-        res = _pt.classify(_complete, query, answer)
+        res = _pt.triage(_complete, query, answer)
         if not res:
             return
-        with _db_lock, db.connect(LOG_DB) as cx:
-            _pt.add_item(cx, email, name, res["category"], res["urgency"],
-                         res["summary"], res["recommendation"], query, answer)
+        if not stored_item_id:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                _pt.add_item(cx, email, name, res["category"], res["urgency"],
+                             res["summary"], res["recommendation"], query, answer)
         # All flagged items show in the console queue + roll into the daily digest;
         # only HIGH urgency emails Dr. Glen immediately.
         if res["urgency"] != "high":
@@ -33144,7 +33227,10 @@ def _triage_portal_message(email, name, query, answer):
             link = portal_link(token) if token else ""
         except Exception:
             link = ""
+        signs = _pt.warning_sign_labels(res.get("warning_signs") or [])
+        sign_line = (f"Warning signs reported: {'; '.join(signs)}\n" if signs else "")
         body = (f"A client message may need your attention.\n\n"
+                f"{sign_line}"
                 f"Client: {name or ''} <{email}>\n"
                 f"Category: {res['category']}   Urgency: {res['urgency']}\n\n"
                 f"What they need: {res['summary']}\n"

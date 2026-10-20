@@ -50,5 +50,8 @@ def test_extract_from_turn_filters_to_editable_fields():
     assert result == [{"field_id": "terrain", "value": 3, "rationale": "x"}]
 
 
-def test_extract_from_turn_defaults_to_empty_seam():
+def test_extract_from_turn_without_an_extractor_is_empty():
+    """The module itself never calls a model. The portal chat wires the real one,
+    hs.llm_extractor, from app.py (tests/test_health_suggestions_wiring.py)."""
     assert hs.extract_from_turn("client message", "assistant message") == []
+    assert callable(hs.llm_extractor(lambda s, u: "{}"))

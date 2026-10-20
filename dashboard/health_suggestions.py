@@ -115,6 +115,222 @@ def resolve(cx, sug_id, email, status):
     return cur.rowcount == 1
 
 
+# --- LLM extractor (Glen's rulings, 20 Oct 2026) ------------------------------
+# Only facts the client states about themself, in their own message, for these
+# fields. The client confirms each one on the portal "Suggested updates" card.
+# Placement: "pregnancy or breastfeeding can go in as current health conditions.
+# Implants and pacemakers fit in surgeries. Heavy drinking and medical diet go in
+# diet", with diet and alcohol as two separate fields.
+
+# field_id -> its row columns, primary column first. A row needs the primary.
+TABLE_COLUMNS = {
+    "diagnoses": ("diagnosis", "current"),
+    "surgeries": ("procedure", "reason", "age"),
+    "medications": ("medication", "reason"),
+    "otc_drugs": ("medication", "reason"),
+    "allergies": ("sensitivity", "reaction"),
+}
+TEXT_FIELDS = ("diet", "alcohol")
+EXTRACT_FIELDS = tuple(TABLE_COLUMNS) + TEXT_FIELDS
+
+EXTRACT_SYSTEM = (
+    "You read ONE message a client wrote in their health portal chat. Find only these facts "
+    "that the client states about THEMSELF, as true now or in their past:\n"
+    "- pregnancy or breastfeeding -> field \"diagnoses\", value {\"diagnosis\": \"Pregnancy\" "
+    "or \"Breastfeeding\", \"current\": \"Current\"}\n"
+    "- epilepsy, a heart rhythm problem, kidney disease, gallstones, a blocked bile duct, or "
+    "asthma -> field \"diagnoses\", value {\"diagnosis\": name, \"current\": \"Current\"}, "
+    "or \"Past\" only when the client says it is in the past\n"
+    "- a pacemaker or any other implant -> field \"surgeries\", value {\"procedure\": what was "
+    "implanted, \"reason\": why if stated, \"age\": their age then if stated}\n"
+    "- a regular prescription medicine (blood thinners such as warfarin, thyroid, diabetes, "
+    "blood pressure, or any other) -> field \"medications\", value {\"medication\": name, "
+    "\"reason\": what for if stated}\n"
+    "- a regular non-prescription drug -> field \"otc_drugs\", value {\"medication\": name, "
+    "\"reason\": what for if stated}\n"
+    "- a food allergy -> field \"allergies\", value {\"sensitivity\": the food, "
+    "\"reaction\": the reaction if stated}\n"
+    "- a medical or special diet -> field \"diet\", value: a short text in their words\n"
+    "- heavy or regular drinking of alcohol -> field \"alcohol\", value: a short text with the "
+    "amount, type and how often, as stated\n"
+    "Never record a fact about anyone else (a child, partner, friend, parent). Never guess or "
+    "infer. Never record a question (\"is it safe if I were pregnant?\"). Leave out anything "
+    "not on this list. For every item, \"quote\" is the client's exact words that state it, "
+    "copied from their message, and \"about\" is \"self\".\n"
+    "Return STRICT JSON ONLY, no prose: {\"items\": [{\"field_id\": ..., \"value\": ..., "
+    "\"quote\": ..., \"about\": \"self\"}]}. With nothing to record return {\"items\": []}."
+)
+
+
+def _strict_json(text):
+    """json.loads of the whole reply (a ```json fence is allowed, nothing else).
+    Anything else is garbage -> None."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t[3:]
+        if t.lower().startswith("json"):
+            t = t[4:]
+        if not t.rstrip().endswith("```"):
+            return None
+        t = t.rstrip()[:-3]
+    try:
+        return json.loads(t)
+    except (TypeError, ValueError):
+        return None
+
+
+def _squash(text):
+    return " ".join(str(text or "").split()).casefold()
+
+
+def _cell(value, limit=200):
+    if value is None or isinstance(value, (dict, list, bool)):
+        return ""
+    return " ".join(str(value).split())[:limit]
+
+
+def normalize_row(field_id, value):
+    """A row dict for a table field, holding only that field's column ids, or None
+    when the primary column is empty. diagnoses.current is 'Current' or 'Past'."""
+    cols = TABLE_COLUMNS.get(field_id)
+    if not cols or not isinstance(value, dict):
+        return None
+    row = {}
+    for col in cols:
+        cell = _cell(value.get(col))
+        if col == "current":
+            cell = "Past" if cell.casefold() == "past" else "Current"
+        elif col == "age":
+            try:
+                cell = int(float(cell)) if cell else ""
+            except ValueError:
+                cell = ""
+        if cell != "":
+            row[col] = cell
+    return row if row.get(cols[0]) else None
+
+
+def _normalize_item(item, client_msg):
+    if not isinstance(item, dict):
+        return None
+    if item.get("about") != "self":
+        return None
+    fid = item.get("field_id")
+    if fid not in EXTRACT_FIELDS:
+        return None
+    quote = _cell(item.get("quote"), 300)
+    # The evidence must be the client's own words, so nothing from the AI's
+    # answer, and nothing the model made up, can become a suggestion.
+    if not quote or _squash(quote) not in _squash(client_msg):
+        return None
+    if fid in TABLE_COLUMNS:
+        value = normalize_row(fid, item.get("value"))
+    else:
+        value = _cell(item.get("value"), 500) or None
+    if not value:
+        return None
+    return {"field_id": fid, "value": value, "rationale": f'"{quote}"'}
+
+
+def llm_extractor(complete):
+    """An extractor for extract_from_turn backed by `complete(system, user) -> str`
+    (the same injected-call pattern as portal_triage.classify). The model sees the
+    CLIENT'S message only, never the assistant's answer. Strict JSON; garbage or an
+    error -> []."""
+    def _extract(client_msg, assistant_msg=None):
+        text = (client_msg or "").strip()
+        if not text:
+            return []
+        try:
+            data = _strict_json(complete(EXTRACT_SYSTEM, text))
+        except Exception as e:
+            print(f"[health-suggestions] extractor call failed: {e!r}", flush=True)
+            return []
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            return []
+        out, seen = [], set()
+        for item in items:
+            norm = _normalize_item(item, text)
+            if not norm:
+                continue
+            key = (norm["field_id"], json.dumps(norm["value"], sort_keys=True))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(norm)
+        return out
+    return _extract
+
+
+# --- applying a confirmed suggestion ----------------------------------------
+# intake_public.merge_answers REPLACES a whole field. A one-row suggestion must
+# not wipe a client's table, and a note must not overwrite their own words, so
+# the resolve path builds the merged value here first.
+
+def _form_field(field_id):
+    from dashboard import intake
+    for f in intake._fields():
+        if f["id"] == field_id:
+            return f
+    return None
+
+
+def _row_key(row):
+    return tuple(sorted((k, _squash(v)) for k, v in (row or {}).items()
+                        if _squash(v)))
+
+
+def table_row_from(field_id, value):
+    """Decode a confirmed/edited value for a table field into one row dict, using
+    the form's own columns. Accepts a dict or its JSON text. None when unusable."""
+    f = _form_field(field_id)
+    if not f or f.get("type") != "table":
+        return None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None
+    if not isinstance(value, dict):
+        return None
+    cols = [c["id"] for c in f.get("columns") or []]
+    row = {c: value[c] for c in cols
+           if c in value and value[c] not in (None, "") and not isinstance(value[c], (dict, list))}
+    if not row or not str(row.get(cols[0], "")).strip():
+        return None
+    return row
+
+
+def apply_suggestion(field_id, current, value):
+    """The field's new value once a suggestion is confirmed or edited.
+    - table: append the row to the existing rows; skip it when an identical row is there.
+    - text/textarea: append on a new line to non-empty text; skip text already present.
+    - anything else (scales, numbers, choices): the value replaces, as before.
+    Raises ValueError when a table value is not a usable row."""
+    f = _form_field(field_id) or {}
+    ftype = f.get("type")
+    if ftype == "table":
+        row = table_row_from(field_id, value)
+        if row is None:
+            raise ValueError("not a table row")
+        rows = [r for r in (current if isinstance(current, list) else []) if isinstance(r, dict)]
+        if any(_row_key(r) == _row_key(row) for r in rows):
+            return rows
+        return rows + [row]
+    if ftype in ("text", "textarea"):
+        new = str(value if value is not None else "").strip()
+        have = str(current if current is not None else "").strip()
+        if not new:
+            return have
+        if not have:
+            return new
+        if _squash(new) in _squash(have):
+            return have
+        return have + "\n" + new
+    return value
+
+
 def extract_from_turn(client_msg, assistant_msg, extractor=None):
     """Parse one chat turn into candidate editable health-record edits:
     [{"field_id", "value", "rationale"}, ...]. Pure and testable — pass
@@ -123,11 +339,9 @@ def extract_from_turn(client_msg, assistant_msg, extractor=None):
     `health_profile.EDITABLE_FIELD_IDS` before it comes back, so an
     extractor can never smuggle in an identity/consent field.
 
-    With no `extractor` given this is a documented no-op seam (returns [])
-    rather than wiring a live model call — an LLM-backed default belongs in
-    app.py alongside `_CONCIERGE_EXTRACT_SYSTEM`, where the Anthropic client
-    and streaming context already live; duplicating that here would either
-    import app.py (circular) or fork the client setup.
+    With no `extractor` given this returns []. The portal chat passes
+    `llm_extractor(<Haiku call>)` from app.py (_extract_portal_health_suggestions),
+    where the Anthropic client lives.
     """
     if extractor is None:
         candidates = []

@@ -186,6 +186,11 @@ INTAKE_FORM = {
                  {"id": "sensitivity", "type": "text", "label": "Sensitivity"},
                  {"id": "reaction", "type": "text", "label": "Reaction"},
             ]},
+            # Diet, Glen 20 Oct 2026: two fields, one for the diet and one for alcohol.
+            {"id": "diet", "type": "textarea",
+             "label": "Describe your diet, including any special or medical diet."},
+            {"id": "alcohol", "type": "textarea",
+             "label": "Alcohol: how much, what type, and how often?"},
             {"id": "portrait", "type": "textarea",
              "label": "Portrait photo",
              "help": "Link to a photo for our clinical database, or note that one was sent."},
