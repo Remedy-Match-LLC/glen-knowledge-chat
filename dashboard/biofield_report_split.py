@@ -355,13 +355,18 @@ def unnamed_codes(groups, marks, names=None):
     return sorted(c for c in codes if c not in ticked and not (names or {}).get(c))
 
 
-def _flat_list(title, lines, header=""):
+def _flat_list(title, lines, header="", frame=None):
+    """`frame` is the stored frame, for the links in the header and explanations."""
     if not lines:
         return ""
+    by_line, everywhere = pr._frame_links(frame)
+    head = pr.sentence_html(header, by_line.get("infoceutical_header"), everywhere) \
+        if header else ""
     return (f"<section class=plan-heading><h2>{html.escape(title)}</h2>"
-            + (f"<p class=plan-frame>{html.escape(header)}</p>" if header else "")
+            + (f"<p class=plan-frame>{head}</p>" if header else "")
             + "<ul class=plan-list>"
-            + "".join(pr._line_html(line, False) for line in lines) + "</ul></section>")
+            + "".join(pr._line_html(line, False, everywhere) for line in lines)
+            + "</ul></section>")
 
 
 # ---- Rendering ----------------------------------------------------------------
@@ -506,10 +511,12 @@ def render_report(ctx, report, on, intro=True):
         skip = LAYER_SECTIONS
         if cs.FORMULATIONS in on:
             extra += _flat_list("Functional Formulations",
-                                remedy_source_formulations(groups, ctx.get("program_chain", ctx["chain"])))
+                                remedy_source_formulations(groups, ctx.get("program_chain", ctx["chain"])),
+                                frame=ctx["frame"])
         if cs.INFOCEUTICALS in on:
             extra += _flat_list("Infoceuticals", ctx["remedy_source_infoceuticals"],
-                                (ctx["frame"] or {}).get("infoceutical_header") or "")
+                                (ctx["frame"] or {}).get("infoceutical_header") or "",
+                                frame=ctx["frame"])
     extra += _amazon_line(groups, on)
     return pr.render_plan_section(
         printed, ctx["client_name"], ctx["date"], ctx["meanings"],

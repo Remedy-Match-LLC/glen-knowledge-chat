@@ -1647,10 +1647,20 @@ const PORTAL_HASH_ROUTES = {
   // Events card on the first page carries the same Reserve and Join buttons.
   // openCard: the link opens its card over the fold state (see applyPortalHash).
   calendar: {panel:"calendar", target:"calendar-card", alt:"calendar-summary", openCard:true},
+  // #chat is what the Plan report links to (Glen, 2026-10-20: "let us know" in your
+  // portal chat). The Messages card renders in the ask panel under the hub and in
+  // `current` without it; showTab falls back to `current` when there is no ask panel,
+  // so one route serves every layout. It opens over the fold state like #calendar,
+  // and `focus` puts the cursor in the card's own box (shell) or the real one.
+  // dashboard/portal_return.py keeps the same keys for sign-in: add a key there too.
+  chat:     {panel:"ask", target:"chatCard", openCard:true, focus:["chatCardInput", "chatInput"]},
 };
 
 function applyPortalHash(userAction){
-  const key = decodeURIComponent((location.hash || "").replace(/^#/, "")).toLowerCase();
+  // A malformed escape (#%E0) must not throw: render() calls this on every paint.
+  let key = "";
+  try{ key = decodeURIComponent((location.hash || "").replace(/^#/, "")).toLowerCase(); }
+  catch(e){ return false; }
   const route = PORTAL_HASH_ROUTES[key];
   if(!route) return false;
   // The onboarding checklist's Biofield link always means the newest report.
@@ -1668,8 +1678,10 @@ function applyPortalHash(userAction){
   // The Terms gate intentionally suppresses every portal panel. When an
   // independently-rendered onboarding link points at Intake, lead the client
   // to the prerequisite instead of silently falling back to a missing panel.
+  // #chat lands here too: the Messages card is behind the same gate, and after
+  // "I agree" load() renders again with the hash still set, so the link completes.
   const tosCard = document.getElementById("portal-tos-card");
-  if(key === "intake" && tosCard){
+  if((key === "intake" || key === "chat") && tosCard){
     tosCard.setAttribute("tabindex", "-1");
     tosCard.scrollIntoView({behavior:"smooth", block:"start"});
     tosCard.focus({preventScroll:true});
@@ -1684,7 +1696,9 @@ function applyPortalHash(userAction){
   // Only routes that ask for it (openCard), and only when the link is FOLLOWED: the
   // first application on load, a click, or a hashchange. render() calls this again
   // after most actions, and re-opening then would undo a fold the client chose.
-  if(route.openCard && (userAction || window._portalHashOpened !== key)){
+  // Followed, not re-applied by a render: only then may the link take the cursor.
+  const followed = userAction || window._portalHashOpened !== key;
+  if(route.openCard && followed){
     window._portalHashOpened = key;
     window._foldDeepLinkOpen = route.target;
     if(typeof _foldOpenCard === "function") _foldOpenCard(route.target);
@@ -1693,10 +1707,18 @@ function applyPortalHash(userAction){
   window.setTimeout(()=>{
     const target = document.getElementById(route.target) ||
                    (route.alt ? document.getElementById(route.alt) : null);
-    if(target){
+    // A route that takes the cursor (#chat) scrolls and focuses only when followed:
+    // re-applied after every render, it would pull the client away mid-conversation.
+    if(target && (followed || !route.focus)){
       target.setAttribute("tabindex", "-1");
       target.scrollIntoView({behavior:"smooth", block:"start"});
       target.focus({preventScroll:true});
+    }
+    // The box to write in, first one present. Never on a re-render, or every poll
+    // would pull the cursor back while the client types somewhere else.
+    if(followed && route.focus){
+      const box = route.focus.map(id => document.getElementById(id)).find(Boolean);
+      if(box) box.focus({preventScroll:true});
     }
   }, 0);
   return true;
@@ -3173,10 +3195,22 @@ function printReport(){ printDoc(buildReportPrintHtml(window.__reportData)); }
 const ICON_INFO = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
 const ICON_LOCK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
 
+// "?next=<key>" for a known hash route, else "". Only a key from the routes table
+// leaves this page; the server checks it against its own list again.
+function portalLoginNext(){
+  let key = "";
+  try{ key = decodeURIComponent((location.hash || "").replace(/^#/, "")).toLowerCase(); }
+  catch(e){ return ""; }
+  return Object.prototype.hasOwnProperty.call(PORTAL_HASH_ROUTES, key)
+    ? "?next=" + encodeURIComponent(key) : "";
+}
+
 function notFound(){
   document.getElementById("loading").hidden = true;
   // A logged-out /portal/me visitor is sent to sign in; a bad token shows help.
-  if(isMe){ location.href = "/portal/login"; return; }
+  // The hash never reaches the server, so a deep link (#chat in a Plan report)
+  // rides to sign-in as ?next=, a route key only, and comes back after login.
+  if(isMe){ location.href = "/portal/login" + portalLoginNext(); return; }
   document.getElementById("notfound").hidden = false;
 }
 

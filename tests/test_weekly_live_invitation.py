@@ -191,7 +191,9 @@ def test_the_calendar_route_exists_in_the_portal():
     html = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                              "static", "client-portal.html")).read()
     assert 'calendar: {panel:"calendar", target:"calendar-card", alt:"calendar-summary", openCard:true}' in html
-    assert html.count("openCard:true") == 1, "only #calendar opens its card"
+    # #chat (the Plan report's "let us know" link, 2026-10-20) is the only other one.
+    assert html.count("openCard:true") == 2, "only #calendar and #chat open their card"
+    assert 'chat:     {panel:"ask", target:"chatCard", openCard:true,' in html
 
 
 def test_the_email_link_is_an_explicit_anchor_with_the_fragment():
@@ -212,7 +214,8 @@ def test_a_deep_link_opens_its_card_over_the_fold_state():
     hash_fn = html[html.index("function applyPortalHash(userAction){"):html.index('window.addEventListener("hashchange", applyPortalHash);')]
     assert hash_fn.index("window._foldDeepLinkOpen = route.target;") < hash_fn.index("showTab(")
     # only routes that ask, and only when the link is followed (not on every re-render)
-    assert "route.openCard && (userAction || window._portalHashOpened !== key)" in hash_fn
+    assert "const followed = userAction || window._portalHashOpened !== key;" in hash_fn
+    assert "route.openCard && followed" in hash_fn
     # round 3 survivors: record the key, open synchronously, fall back, clicks are user actions
     assert "window._portalHashOpened = key;" in hash_fn
     assert 'if(typeof _foldOpenCard === "function") _foldOpenCard(route.target);' in hash_fn
@@ -224,7 +227,9 @@ def test_a_deep_link_opens_its_card_over_the_fold_state():
     assert "_dl.scrollIntoView" in apply_fn, "re-scroll after the folds settle"
     assert "window._foldDeepLinkOpen = null" in apply_fn
     assert 'calendar: {panel:"calendar", target:"calendar-card", alt:"calendar-summary", openCard:true}' in html
-    assert html.count("openCard:true") == 1, "only #calendar opens its card"
+    # #chat (the Plan report's "let us know" link, 2026-10-20) is the only other one.
+    assert html.count("openCard:true") == 2, "only #calendar and #chat open their card"
+    assert 'chat:     {panel:"ask", target:"chatCard", openCard:true,' in html
 
 
 
