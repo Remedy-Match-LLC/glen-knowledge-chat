@@ -14789,6 +14789,9 @@ def begin_checkout_return():
                 paid = "1"
                 pi_id = sess.get("payment_intent")
                 inv, cid = md.get("invoice_id"), md.get("customer_id")
+                # A balance paid on an invoice: ledger only (Glen, 2026-10-19).
+                if _kind == "invoice-balance":
+                    _record_invoice_balance_payment(md, int(sess.get("amount_total") or 0), pi_id)
                 # In-house pay-link (Phase 3): a card payment on an in-house proposed/
                 # confirmed invoice auto-records as paid and drops into fulfillment.
                 if _kind == "in-house" and inv:
@@ -15115,7 +15118,9 @@ def order_confirmation():
 
     response = Response(render_template_string(
         _ORDER_CONFIRMATION_HTML,
-        order_number=((order or {}).get("id") or order_ref[-8:].upper()),
+        # A balance payment names its order by id only, so the receipt shows no items.
+        order_number=((order or {}).get("id") or order_ref[-8:].upper()
+                      or (md.get("order_id") if md.get("kind") == "invoice-balance" else "")),
         amount=f"${amount_cents / 100:,.2f}", email=email, items=items,
         return_to=return_to, return_label=return_label), mimetype="text/html")
     response.headers["Cache-Control"] = "no-store, private"
@@ -35134,6 +35139,22 @@ def api_portal_caregiver_pay(token):
     return jsonify({"ok": True, "url": url})
 
 
+def _fulfill_invoice_balance(session_id):
+    """Webhook side of an invoice balance payment, so a closed tab still records it
+    and the button does not invite a second charge. Recording is once per
+    PaymentIntent, so the browser return and this cannot both write."""
+    try:
+        from dashboard import stripe_pay as _sp
+        sess = _sp.get_session(session_id)
+        md = sess.get("metadata") or {}
+        if md.get("kind") != "invoice-balance" or sess.get("payment_status") != "paid":
+            return
+        _record_invoice_balance_payment(md, int(sess.get("amount_total") or 0),
+                                        sess.get("payment_intent"))
+    except Exception as _e:  # noqa: BLE001
+        print(f"[invoice-balance] webhook fulfill: {_e!r}", flush=True)
+
+
 def _fulfill_caregiver_pay(session_id):
     """Record a caregiver's card payment against the beneficiary's order, stamped
     to the PAYER. Never raises. Idempotent via external_ref=payment_intent (the
@@ -45021,6 +45042,7 @@ def webhook_stripe():
                 _fulfill_coach_sub(session_id)
                 _fulfill_family_plan(session_id)
                 _fulfill_caregiver_pay(session_id)   # kind == "caregiver-pay"
+                _fulfill_invoice_balance(session_id)   # kind == "invoice-balance"
 
                 # Webhook-back the paid-only Sales-Receipt booking so a closed browser
                 # tab (dropped redirect) can't leave money collected with no QBO
@@ -60507,11 +60529,87 @@ def _invoice_display_name(order):
 from dashboard import invoice_payability as _invoice_payability
 
 
+def _invoice_balance_cents(order):
+    """What the client still owes on this order: the invoice total less what the
+    payments ledger says was paid. A refund is NOT counted back as owed: money we
+    returned is never asked for again (review round 1, 2026-10-19). None when the
+    ledger cannot be read, so the caller refuses rather than guessing."""
+    if not order or not order.get("id"):
+        return None
+    try:
+        cx = db.connect(LOG_DB)
+        cx.row_factory = _sqlite3.Row
+        try:
+            _op.ensure_table(cx)
+            bal = _op.balance(cx, order["id"])
+            return int(bal["invoice_cents"]) - int(bal["paid_cents"])
+        finally:
+            cx.close()
+    except Exception as e:  # noqa: BLE001
+        print(f"[invoice] balance unavailable for #{order.get('id')}: {e!r}", flush=True)
+        return None
+
+
+def _record_invoice_balance_payment(md, amount_cents, pi_id):
+    """Record a card payment of an invoice balance (kind "invoice-balance") in the
+    ledger, once per PaymentIntent. A paid pre-ledger order first gets its earlier
+    payment backfilled, or the new row would hide it from the balance. Nothing else
+    on the order changes: its status, captured payment and PaymentIntent stay. When
+    the ledger reaches the total, add_payment projects an unpaid order to paid."""
+    try:
+        oid = int((md or {}).get("order_id") or 0)
+    except (TypeError, ValueError):
+        oid = 0
+    if not oid or amount_cents <= 0 or not pi_id:
+        _alert_stripe("invoice-balance-record", f"paid but not recorded: order={oid} "
+                      f"amount={amount_cents} pi={bool(pi_id)}")
+        return False
+    try:
+        # The browser return and the Stripe webhook both arrive for one payment, often
+        # seconds apart. The lock makes the duplicate check and the write one step.
+        with _db_lock:
+            cx = db.connect(LOG_DB)
+            cx.row_factory = _sqlite3.Row
+            try:
+                o = _bos_orders.get_order(cx, oid)
+                if not o:
+                    _alert_stripe("invoice-balance-record", f"paid but order #{oid} not found")
+                    return False
+                _op.ensure_table(cx)
+                dup = cx.execute("SELECT 1 FROM order_payments WHERE order_id=? AND "
+                                 "external_ref=? AND status='active'", (oid, pi_id)).fetchone()
+                _op.add_payment(cx, oid, amount_cents, "Credit card (Stripe)",
+                                source="stripe", external_ref=pi_id)
+                bal = _op.balance(cx, oid)
+                over = int(bal["paid_cents"]) - int(bal["invoice_cents"])
+            finally:
+                cx.close()
+        # Two checkout tabs can each be paid. The money is recorded either way, and
+        # Glen hears that a refund is owed. Its own email: the Stripe alert is
+        # throttled and its wording is about a failed charge.
+        if not dup and over > 0:
+            try:
+                from dashboard import inbox as _inbox
+                _inbox.send_email(
+                    "drglenswartwout@gmail.com",
+                    f"Overpaid: invoice {o.get('external_ref')}",
+                    f"Invoice {o.get('external_ref')} (order #{oid}) has now been paid "
+                    f"${over/100:,.2f} more than its total. The latest card payment was "
+                    f"${amount_cents/100:,.2f}. A refund is probably owed.")
+            except Exception as _e:  # noqa: BLE001
+                print(f"[invoice-balance] overpaid notice failed for #{oid}: {_e!r}", flush=True)
+        return True
+    except Exception as e:  # noqa: BLE001
+        _alert_stripe("invoice-balance-record", f"paid but not recorded for #{oid}: {e!r}")
+        return False
+
+
 def _invoice_summary(order):
     """Customer-safe view — no person_id, notes, phone, or full address."""
     lines = order.get("items") or []
     subtotal = sum(int(l.get("line_cents") or 0) for l in lines)
     member_credit_cents = 0
+    owed = _invoice_balance_cents(order)
     return {
         "member_credit_cents": member_credit_cents,
         "points_balance_cents": _invoice_points_balance(order),
@@ -60546,7 +60644,10 @@ def _invoice_summary(order):
         # button on `editable` hid it on every shipped-but-unpaid order.
         "editable": order.get("status") in ("proposed", "confirmed"),
         "payable": _invoice_payability.is_payable(order.get("status"),
-                                                  order.get("pay_status")),
+                                                  order.get("pay_status"), owed),
+        # What the pay button asks for and /pay charges. "balance_due_cents" (set by
+        # the GET route) is the ledger balance shown in the totals.
+        "pay_amount_cents": owed if owed is not None else int(order.get("total_cents") or 0),
         "pay_enabled": bool(INVOICE_PAYLINK_ENABLED and _STRIPE_ACTIVE),
         "paylink_enabled": bool(INVOICE_PAYLINK_ENABLED),
     }
@@ -61040,12 +61141,25 @@ def api_invoice_pay(token):
     order = _invoice_order_for_token(token)
     if not order:
         return jsonify({"ok": False, "error": "invalid or expired invoice"}), 404
-    if order.get("pay_status") == "paid" or order.get("status") not in ("proposed", "confirmed"):
+    # The same test the page uses to show the button, on the ledger balance: a paid
+    # order that later gained a line still owes the difference (Glen, 2026-10-19).
+    owed = _invoice_balance_cents(order)
+    if owed is None:
+        return jsonify({"ok": False, "error": "Payment is temporarily unavailable. "
+                                              "Please contact us."}), 503
+    if not _invoice_payability.is_payable(order.get("status"), order.get("pay_status"), owed):
         return jsonify({"ok": False, "error": "this invoice is already paid"}), 409
     if not INVOICE_PAYLINK_ENABLED:
         return jsonify({"ok": False, "error": "online payment is not enabled yet"}), 403
     method = ((request.get_json(silent=True) or {}).get("method") or "card").strip().lower()
-    amount = int(order.get("total_cents") or 0)  # SERVER amount only
+    amount = int(owed)  # SERVER amount only: the balance, never the full total
+    # A first payment on an open invoice keeps its own path, which moves the order
+    # into fulfillment. Anything else (a balance after a payment, or an order past
+    # confirmed) is recorded in the ledger only, so it never re-opens an order or
+    # overwrites the payment already captured on it.
+    balance_payment = (order.get("pay_status") == "paid"
+                       or order.get("status") not in ("proposed", "confirmed")
+                       or amount != int(order.get("total_cents") or 0))
     if method == "card":
         _card_unavailable = ("Card payment is temporarily unavailable — "
                              "please use Zelle or Wise, or contact us.")
@@ -61056,11 +61170,17 @@ def api_invoice_pay(token):
         # A Stripe failure (bad key, API error, timeout) must NOT 500 a paying
         # customer — degrade to a clean message pointing at Zelle/Wise.
         try:
+            # A balance payment carries no invoice_id, so no handler keyed on it
+            # (receipt booking, settlement, the fulfillment move) acts on the order.
+            md = ({"kind": "invoice-balance", "order_id": str(order["id"]),
+                   "balance_ref": ext or "", "customer_id": ""} if balance_payment else
+                  {"kind": "in-house", "order_id": str(order["id"]),
+                   "invoice_id": ext, "customer_id": ""})
             sess = _sp.create_checkout_session(
                 amount, customer_email=order.get("email") or "",
-                description=f"Remedy Match invoice {ext}",
-                metadata={"kind": "in-house", "order_id": str(order["id"]),
-                          "invoice_id": ext, "customer_id": ""},
+                description=(f"Remedy Match invoice {ext}, balance" if balance_payment
+                             else f"Remedy Match invoice {ext}"),
+                metadata=md,
                 success_url=f"{PUBLIC_BASE_URL}/begin/checkout-return?session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=f"{PUBLIC_BASE_URL}/invoice/{token}")
             url = sess.get("url")
@@ -61090,23 +61210,31 @@ def api_invoice_claim_paid(token):
     order = _invoice_order_for_token(token)
     if not order:
         return jsonify({"ok": False, "error": "invalid or expired invoice"}), 404
-    if order.get("pay_status") == "paid" or order.get("status") not in ("proposed", "confirmed"):
+    owed = _invoice_balance_cents(order)
+    if owed is None:
+        return jsonify({"ok": False, "error": "Payment is temporarily unavailable. "
+                                              "Please contact us."}), 503
+    if not _invoice_payability.is_payable(order.get("status"), order.get("pay_status"), owed):
         return jsonify({"ok": False, "error": "this invoice is already paid"}), 409
     method = ((request.get_json(silent=True) or {}).get("method") or "").strip().lower()
     if method not in ("zelle", "wise"):
         return jsonify({"ok": False, "error": "unknown payment method"}), 400
-    cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
-    try:
-        _bos_orders.set_order_payment_claimed(cx, order["id"], method=method)
-    finally:
-        cx.close()
+    # A paid order keeps "paid" while its balance is claimed: "claimed" would read as
+    # unpaid on the board for money already taken. Glen's email still asks him to check.
+    if order.get("pay_status") != "paid":
+        cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
+        try:
+            _bos_orders.set_order_payment_claimed(cx, order["id"], method=method)
+        finally:
+            cx.close()
     try:
         from dashboard import inbox as _inbox
         _inbox.send_email(
             "drglenswartwout@gmail.com",
             f"Payment claimed: invoice {order.get('external_ref')}",
             f"{order.get('name') or 'A customer'} reports sending "
-            f"${int(order.get('total_cents') or 0)/100:,.2f} via {method} for invoice "
+            f"${int(owed)/100:,.2f} "
+            f"via {method} for invoice "
             f"{order.get('external_ref')}. Confirm receipt, then Record payment.")
     except Exception as _e:
         print(f"[invoice] claim notify skipped: {_e!r}", flush=True)

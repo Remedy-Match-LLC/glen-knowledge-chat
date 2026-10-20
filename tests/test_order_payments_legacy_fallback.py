@@ -62,10 +62,13 @@ def test_ledger_row_wins_over_legacy_field(cx):
     _mark_legacy_paid(cx, oid, amount_cents=94947)
     op.add_payment(cx, oid, 25000, "Zelle")   # a real ledger payment appears
     b = op.balance(cx, oid)
-    assert b["paid_cents"] == 25000            # ledger wins, legacy ignored
-    assert b["balance_cents"] == 93197
+    # The ledger wins, and since 2026-10-19 the earlier payment is carried into it
+    # first: a further payment on an order that still owes is new money, so it must
+    # not wipe the $949.47 already paid (order 230 would have shown $433 owed).
+    assert b["paid_cents"] == 94947 + 25000
     assert b["legacy_fallback"] is False
-    assert b["ledger_paid_cents"] == 25000
+    assert b["ledger_paid_cents"] == 94947 + 25000
+    assert sorted(r["source"] for r in op.list_payments(cx, oid)) == ["legacy", "manual"]
 
 
 def test_no_fallback_when_not_marked_paid(cx):

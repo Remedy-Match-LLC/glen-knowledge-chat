@@ -82,7 +82,11 @@ def ledger_rows_for_payments_view(cx, *, limit=200):
         # refund is source='stripe' but has NO row in the Stripe charge ledger
         # (dashboard.payments tracks charges, not refunds), so include it here.
         # Stripe PAYMENTS (card charges) stay excluded — they're already there.
-        "WHERE op.status='active' AND (op.source != 'stripe' OR op.kind='refund') "
+        # A card payment whose PaymentIntent is not the order's captured one (an
+        # invoice balance paid later, 2026-10-19) is in no charge ledger either.
+        "WHERE op.status='active' AND (op.source != 'stripe' OR op.kind='refund' "
+        "  OR COALESCE(op.external_ref,'') NOT IN (COALESCE(o.stripe_payment_intent,''), "
+        "                                          COALESCE(o.external_ref,''))) "
         "AND op.kind IN ('payment','refund') "
         # The pre-ledger bridge wrote a second manual/QBO payment at the exact
         # moment orders.set_order_payment recorded the real Stripe capture. Match
@@ -101,8 +105,10 @@ def ledger_rows_for_payments_view(cx, *, limit=200):
         if r["kind"] == "refund":
             amt = -amt
         method = (r["method"] or "other").strip()
-        if (r["op_source"] or "") == "stripe":
+        if (r["op_source"] or "") == "stripe" and r["kind"] == "refund":
             tag = "card:refund"   # a Stripe-issued card refund (money out, shown negative)
+        elif (r["op_source"] or "") == "stripe":
+            tag = "card:balance"  # a later card payment on an order already captured
         else:
             tag = "manual:" + (method.lower().replace(" ", "-") or "other")
         out.append({
@@ -296,6 +302,9 @@ def add_payment(cx, order_id, amount_cents, method, *, source="manual",
             row = _row(cx, dup[0])
             _sync_fully_paid_order(cx, order_id, row.get("method") or method)
             return _row(cx, dup[0])
+    # A paid pre-ledger order that still owes: put its earlier payment in the ledger
+    # first, whoever records this one (card return, webhook, Edit Invoice, import).
+    backfill_legacy_payment(cx, order_id, amount_cents=amount_cents, external_ref=external_ref)
     row = _insert(cx, order_id, kind="payment", amount_cents=amount_cents,
                   method=method, source=source, external_ref=external_ref,
                   refunds_payment_id=None, paid_at=paid_at, note=note,
@@ -447,6 +456,53 @@ def caregiver_payers_for(cx, order_id, owner_email):
         "AND kind='payment' AND status='active' AND payer_email IS NOT NULL "
         "AND lower(payer_email) <> lower(?)", (order_id, owner_email or "")).fetchall()
     return [r[0] for r in rows]
+
+
+def backfill_legacy_payment(cx, order_id, *, amount_cents=None, external_ref=None):
+    """The one-order form of backfill_legacy_payments, run by add_payment before a
+    further payment lands on a paid pre-ledger order that still owes money. Without
+    it the new row turns balance()'s legacy fallback off, and the earlier payment
+    vanishes from the balance: order 230 had $433 on the order row, so a $40 row
+    would have left $433 owed (2026-10-19).
+
+    Runs only while balance() is on its fallback (no ACTIVE ledger row) and the
+    order's total is above what it records as paid. A fully paid legacy order is
+    left alone: a payment recorded on it is most likely that same money being
+    reconciled into the ledger, and backfilling would count it twice.
+
+    Same row as the bulk backfill: source 'legacy', synced, no QBO push. paid_at is
+    the order's own, so the Money view's shadow-row match still hides it. Returns
+    True when it wrote a row.
+
+    `external_ref` is the payment about to be recorded. When it is the order's own
+    captured PaymentIntent, it is that earlier payment arriving in the ledger, so
+    nothing is backfilled. An equal amount is NOT taken as the same money: $200 paid
+    on a total raised to $400 owes exactly $200 more (review round 3, 2026-10-19).
+    `amount_cents` is accepted for callers and unused."""
+    try:
+        o = orders.get_order(cx, order_id) or {}
+    except Exception:  # noqa: BLE001  ledger-only use runs without an orders table
+        return False
+    lp = int(o.get("paid_cents") or 0)
+    pi = (o.get("stripe_payment_intent") or "").strip()
+    same_money = bool(external_ref and pi and external_ref == pi)
+    if (lp <= 0 or same_money or o.get("pay_status") != "paid"
+            or o.get("status") == "cancelled"
+            or int(o.get("total_cents") or 0) <= lp or _has_active_rows(cx, order_id)):
+        return False
+    ts = o.get("paid_at") or o.get("created_at") or _now()
+    # One statement, so the "no active row yet" test and the insert cannot be split.
+    cur = cx.execute(
+        "INSERT INTO order_payments (order_id, kind, amount_cents, method, source, "
+        "status, qbo_sync, note, paid_at, created_at, updated_at, created_by) "
+        "SELECT ?, 'payment', ?, ?, 'legacy', 'active', 'synced', "
+        "'legacy pay_status backfill', ?, ?, ?, 'backfill' "
+        "WHERE NOT EXISTS (SELECT 1 FROM order_payments WHERE order_id=? "
+        "AND status='active')",
+        (order_id, lp, o.get("pay_method") or "legacy", o.get("paid_at"), ts, ts,
+         order_id))
+    cx.commit()
+    return (cur.rowcount or 0) > 0
 
 
 def backfill_legacy_payments(cx, *, dry_run=True, skip_order_ids=None):

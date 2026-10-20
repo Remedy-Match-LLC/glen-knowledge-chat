@@ -282,6 +282,9 @@ def test_payments_view_shows_card_refund_but_not_card_payment(cx, monkeypatch):
                         lambda pi, amount_cents=None: {"id": "re_1", "status": "succeeded",
                                                        "amount": amount_cents})
     oid = _oid(cx)
+    # Every card path stamps its PaymentIntent on the order; the view leaves out
+    # only that one. A later balance payment has another and is shown (2026-10-19).
+    cx.execute("UPDATE orders SET stripe_payment_intent='pi_9' WHERE id=?", (oid,))
     card = op.add_payment(cx, oid, 22291, "Credit card (Stripe)",
                           source="stripe", external_ref="pi_9")
     op.add_payment(cx, oid, 13100, "Zelle")                       # manual payment
