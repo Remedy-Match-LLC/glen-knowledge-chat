@@ -1,6 +1,6 @@
 """Where a client lands after signing in: a portal hash route, carried through login.
 
-A Plan report links to https://illtowell.com/portal/me#chat (Glen, 2026-10-20). A
+A Plan report links to https://myhealingoasis.com/portal/me#chat (Glen, 2026-10-20). A
 browser never sends the part after "#" to the server, and the sign-in link is often
 opened in another browser or a mail app, so the hash would be lost at login. The
 portal page passes it to /portal/login as ?next=<key>; the login page sends it with

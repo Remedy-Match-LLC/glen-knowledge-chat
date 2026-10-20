@@ -20,8 +20,8 @@ from dashboard import biofield_clinical_sections as cs
 from dashboard import biofield_plan_report as pr
 from tests.test_biofield_plan_frame import _folder, _item, _remedy, _tick
 
-CHAT = "https://illtowell.com/portal/me#chat"
-INTAKE = "https://illtowell.com/portal/me#intake"
+CHAT = "https://myhealingoasis.com/portal/me#chat"
+INTAKE = "https://myhealingoasis.com/portal/me#intake"
 CHAT_A = f'<a href="{CHAT}">'
 LEAD = ("If you experience intense symptoms like vertigo, please let us know right away "
         "by portal chat, email, and even follow with a phone call if there is urgency.")
@@ -315,8 +315,8 @@ def test_the_rendered_pdf_has_clickable_links(cx, tmp_path):
         pytest.skip("Playwright's Chromium is not installed here")
     from dashboard.biofield_report_pdf import report_pdf_bytes
     data = report_pdf_bytes(_pdf_page(cx, tmp_path))
-    assert b"/URI (https://illtowell.com/portal/me#chat)" in data
-    assert b"/URI (https://illtowell.com/portal/me#intake)" in data
+    assert b"/URI (https://myhealingoasis.com/portal/me#chat)" in data
+    assert b"/URI (https://myhealingoasis.com/portal/me#intake)" in data
 
 
 # ── Review rounds 1 and 2 (2026-10-20) ──────────────────────────────────────
