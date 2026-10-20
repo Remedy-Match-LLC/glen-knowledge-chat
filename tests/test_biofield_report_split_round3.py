@@ -349,7 +349,7 @@ def test_the_leads_are_the_approved_wording():
     assert leads["biofield"][7] == "Use each remedy as guided."
     # Glen, 2026-10-20, "approve" on the deferral sweep: no prescriber deferral.
     assert leads["biofield"][9] == "If you take any medicine, let me know so I can plan around it."
-    assert "prescriber" not in json.dumps(leads)
+    assert "prescriber" not in json.dumps(leads).lower()
 
 
 def test_the_amazon_line_is_the_approved_wording():
