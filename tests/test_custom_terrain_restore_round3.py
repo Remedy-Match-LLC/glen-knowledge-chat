@@ -164,3 +164,13 @@ def test_an_all_formula_flat_rate_never_lowers_a_terrain_restore_with_ingredient
     # A per-SKU special saved on the bottle itself still lowers it (Glen: "yes").
     assert app_mod._client_special_for(CUSTOM, app_mod._get_product(CUSTOM),
                                        {CUSTOM: 5000}, None) == 5000
+
+
+def test_a_special_on_a_single_ingredient_product_does_not_follow_it_into_the_bottle():
+    """Glen, 2026-10-19: "no". The custom bottle is a multi-ingredient formulation with
+    the client's own ingredient added and their name on the label, so a special saved
+    on the single product does not price it."""
+    folded = app_mod._fold_terrain_restore_items([{"slug": OAK, "qty": 1}])
+    assert [i["slug"] for i in folded] == [CUSTOM]
+    assert app_mod._client_special_for(CUSTOM, app_mod._get_product(CUSTOM),
+                                       {OAK: 5000}, None) is None
