@@ -499,7 +499,12 @@ def report_intro(ctx, report):
     return _lines("report_leads") + _lines("report_personal")
 
 
-def render_report(ctx, report, on, intro=True, once=None):
+def report_cautions(ctx, report, on):
+    """The ingredient cautions this report prints: [(name, text, line names)]."""
+    return pr.cautions_for(printed_groups(ctx, report, on), ctx["cautions"])
+
+
+def render_report(ctx, report, on, intro=True, once=None, lead_here=True):
     """One stand-alone report as a plan block, sections limited to `on`. `intro`
     False leaves out the intro lines, for every report after the first in a Grouped
     file."""
@@ -525,10 +530,18 @@ def render_report(ctx, report, on, intro=True, once=None):
         headings=_headings(on, skip, REPORT_TITLES[report], printed,
                            name_remedies=report == "remedy_sources"),
         title=REPORT_TITLES[report], extra=extra, top_keys=top_keys(printed),
-        intro_links=approved_leads()[1].get(report), printed=once)
+        intro_links=approved_leads()[1].get(report), printed=once, lead_here=lead_here)
 
 
-def primary_added(ctx, on, once=None):
+def added_cautions(ctx, on):
+    """The ingredient cautions the block added to the Biofield Analysis prints."""
+    extra_on = {k for k in on if k not in LAYER_SECTIONS}
+    if not any((ctx["groups"] or {}).get(k) for k in extra_on):
+        return []
+    return report_cautions(ctx, PRIMARY, extra_on)
+
+
+def primary_added(ctx, on, once=None, lead_here=True):
     """The sections switched on in the Biofield Analysis beyond its layer remedies,
     as a block to follow the layer narrative. Empty when there are none to print,
     so the default report is exactly what it was. `once`: see render_plan_section's
@@ -541,7 +554,8 @@ def primary_added(ctx, on, once=None):
     return pr.render_plan_section(
         printed, "", "", ctx["meanings"], (), pr.cautions_for(printed, ctx["cautions"]),
         ctx["frame"], headings=_headings(extra_on), title="",
-        extra=_amazon_line(groups, extra_on), top_keys=top_keys(printed), printed=once)
+        extra=_amazon_line(groups, extra_on), top_keys=top_keys(printed), printed=once,
+        lead_here=lead_here)
 
 
 def counts(ctx, report):
@@ -602,9 +616,13 @@ def grouped_html(ctx, reports, settings_):
     sections inside one flow on, and no heading is left alone at a page foot (Glen,
     2026-10-19: "each report")."""
     once = set()     # one document: the once-only lines print in the first report
+    # The cautions lead and routes belong with the cautions: the first report that
+    # prints any carries them, or the first report when none does (review round 3).
+    with_cautions = [r for r in reports if report_cautions(ctx, r, settings_[r])]
+    lead_in = with_cautions[0] if with_cautions else (reports[0] if reports else None)
     body = "".join(
         f"<div class=rs-report style='{'break-before:page' if i else ''}'>"
-        f"{render_report(ctx, r, settings_[r], intro=not i, once=once)}</div>"
+        f"{render_report(ctx, r, settings_[r], intro=not i, once=once, lead_here=r == lead_in)}</div>"
         for i, r in enumerate(reports))
     title = html.escape(", ".join(REPORT_TITLES[r] for r in reports))
     return ("<!doctype html><html lang=en><head><meta charset=utf-8>"

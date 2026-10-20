@@ -1656,13 +1656,20 @@ const PORTAL_HASH_ROUTES = {
   chat:     {panel:"ask", target:"chatCard", openCard:true, focus:["chatCardInput", "chatInput"]},
 };
 
-function applyPortalHash(userAction){
+// `fromHistory` is a route key kept in history.state by an earlier follow (see the
+// end of this function and onPortalPopState): Back and Forward re-apply it although
+// the address no longer carries a hash.
+function applyPortalHash(userAction, fromHistory){
   // A malformed escape (#%E0) must not throw: render() calls this on every paint.
   let key = "";
-  try{ key = decodeURIComponent((location.hash || "").replace(/^#/, "")).toLowerCase(); }
-  catch(e){ return false; }
+  if(fromHistory) key = String(fromHistory).toLowerCase();
+  else{
+    try{ key = decodeURIComponent((location.hash || "").replace(/^#/, "")).toLowerCase(); }
+    catch(e){ return false; }
+  }
+  // Own keys only, so #constructor is not a route.
+  if(!Object.prototype.hasOwnProperty.call(PORTAL_HASH_ROUTES, key)) return false;
   const route = PORTAL_HASH_ROUTES[key];
-  if(!route) return false;
   // The onboarding checklist's Biofield link always means the newest report.
   // A scan selected from Scan History is carried in ?scan_date=; remove only
   // that selector, preserving family-member and other portal context.
@@ -1678,13 +1685,18 @@ function applyPortalHash(userAction){
   // The Terms gate intentionally suppresses every portal panel. When an
   // independently-rendered onboarding link points at Intake, lead the client
   // to the prerequisite instead of silently falling back to a missing panel.
-  // #chat lands here too: the Messages card is behind the same gate, and after
-  // "I agree" load() renders again with the hash still set, so the link completes.
+  // #chat lands here too: the Messages card is behind the same gate.
+  // Every route returns here under the gate, before anything is opened or cleared:
+  // after "I agree" load() renders again with the hash still set, and the link
+  // completes wherever it pointed (#calendar, #cart, #recs...), as it always has
+  // (review round 3, 2026-10-20). The hash is cleared only once applied past it.
   const tosCard = document.getElementById("portal-tos-card");
-  if((key === "intake" || key === "chat") && tosCard){
-    tosCard.setAttribute("tabindex", "-1");
-    tosCard.scrollIntoView({behavior:"smooth", block:"start"});
-    tosCard.focus({preventScroll:true});
+  if(tosCard){
+    if(key === "intake" || key === "chat"){
+      tosCard.setAttribute("tabindex", "-1");
+      tosCard.scrollIntoView({behavior:"smooth", block:"start"});
+      tosCard.focus({preventScroll:true});
+    }
     return true;
   }
   const wanted = portalPanelFor(route);
@@ -1726,16 +1738,28 @@ function applyPortalHash(userAction){
   // 2026-10-20). render() re-applies the hash after most actions, and #chat is where
   // a client stays longest. Safe for every route: nothing reads the hash afterwards
   // except the Terms gate, which returns above and keeps it until "I agree".
+  // The route stays in this entry's history.state, so Back and Forward still move
+  // card to card (onPortalPopState) while the address itself carries no hash.
   if(followed){
     try{
-      history.replaceState(null, "", location.pathname + location.search);
+      history.replaceState({portalRoute: key}, "", location.pathname + location.search);
       window._portalHashOpened = null;
     }catch(e){}
   }
   return true;
 }
 
+// Back or Forward onto an entry whose route was followed and then cleared. An entry
+// with no route (the page as first opened) changes nothing, as before. An entry that
+// still has its hash is handled by hashchange, so it is left to that.
+function onPortalPopState(event){
+  const st = event && event.state;
+  if(!st || !st.portalRoute || location.hash) return false;
+  return applyPortalHash(true, st.portalRoute);
+}
+
 window.addEventListener("hashchange", applyPortalHash);
+window.addEventListener("popstate", onPortalPopState);
 document.addEventListener("click", function(event){
   const link = event.target.closest('a[href^="#"]');
   if(!link) return;

@@ -602,7 +602,8 @@ TOP_KEYS = ("vertigo_safety", "dose_totals", "thyroid_spacing")
 
 def render_plan_section(plan_groups, client_name="", date="", score_meanings=None,
                         intro=(), cautions=(), frame=None, headings=None, title=PLAN_TITLE,
-                        extra="", top_keys=None, intro_links=None, printed=None):
+                        extra="", top_keys=None, intro_links=None, printed=None,
+                        lead_here=True):
     """The plan as one block with its own scoped styles, so it can follow the
     Biofield Analysis in the same PDF or stand alone. Nothing unapproved is printed.
     Under Remedies, sections mix within each score, so each line names its kind.
@@ -619,7 +620,11 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
     `printed` is a set shared by every block of ONE document (a Grouped PDF, or the
     Biofield Analysis with its added block and the Plan): a line in ONCE_KEYS prints
     in the first block that carries it and is added to the set. None: this block is
-    its own document."""
+    its own document.
+
+    `lead_here` False holds back cautions_lead and cautions_routes for a later block of
+    the same document: they belong with the cautions, so a caller whose document has
+    cautions in a later block lets that block print them (review round 3)."""
     e = html.escape
     frame = frame or {}
     by_line, everywhere = _frame_links(frame)
@@ -683,10 +688,10 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
     # Glen's own paragraph leads the cautions area in every Plan report, before the
     # ingredient cautions ("approve B", clinical tab, 2026-10-20).
     lead = (f"<p class=plan-caution-lead>{said('cautions_lead')}</p>"
-            if once("cautions_lead") else "")
+            if lead_here and once("cautions_lead") else "")
     # Where to tell us, once, straight after Glen's paragraph, in every Plan report
     # (Glen, "approve", clinical tab, 2026-10-20).
-    if once("cautions_routes"):
+    if lead_here and once("cautions_routes"):
         lead += f"<p class=plan-caution-routes>{said('cautions_routes')}</p>"
     # Each caution once, naming the client's items that hold its ingredient.
     caution = f"<div class=plan-cautions>{lead}</div>" if lead else ""
@@ -748,6 +753,8 @@ def kloud_lines(plan_groups):
 
 
 def build(cx, test_id, client_name="", date="", kloud_program="", printed=None):
+    """`printed`: see render_plan_section. The Plan is always allowed the cautions lead;
+    the once-set keeps it from printing twice."""
     """(plan section html, entries lacking an approved explanation) from what is
     stored: the ticks, the approved merge map, score lines, intro and cautions. A
     Kloud line names `kloud_program`, which the scan's Phase sets (Glen, 2026-10-18)."""

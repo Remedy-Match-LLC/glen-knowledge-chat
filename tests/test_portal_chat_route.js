@@ -20,6 +20,7 @@ const nextFn = /function portalLoginNext\(\)\{[\s\S]*?\n\}/.exec(page);
 assert.ok(nextFn, 'portalLoginNext() not found');
 const SRC = page.slice(start, end) + '\n' + nextFn[0] +
   '\nthis.applyPortalHash = applyPortalHash; this.portalLoginNext = portalLoginNext;' +
+  '\nthis.onPortalPopState = onPortalPopState;' +
   '\nthis.ROUTES = PORTAL_HASH_ROUTES;';
 
 function El(id) {
@@ -45,7 +46,7 @@ function run(hash, panels, ids, opts) {
       return m && panels.indexOf(m[1]) !== -1 ? { panel: m[1] } : null;
     }
   };
-  const calls = { showTab: [], opened: [], replaced: [] };
+  const calls = { showTab: [], opened: [], replaced: [], states: [] };
   const win = {
     __portalView: opts.shell ? { shell_enabled: true } : {},
     PortalShell: opts.shell ? {} : undefined,
@@ -56,6 +57,7 @@ function run(hash, panels, ids, opts) {
   const history = {
     replaceState(st, title, url) {
       calls.replaced.push(url);
+      calls.states.push(st);
       const at = url.indexOf('#');
       location.hash = at === -1 ? '' : url.slice(at);
     }
@@ -141,6 +143,40 @@ Object.keys(run('', [], []).ctx.ROUTES).filter(k => k !== 'biofield-latest').for
   r.location.hash = '#chat';
   r.ctx.applyPortalHash();
   assert.deepStrictEqual(r.calls.opened, ['chatCard', 'chatCard'], 'a second follow re-opens');
+}
+
+// Back and Forward: the cleared entry keeps its route in history.state, and popstate
+// re-applies it card to card. An entry with no route, or one that still has its hash
+// (hashchange handles that), changes nothing here.
+{
+  const r = run('#intake', ['hub', 'current', 'intake', 'ask', 'calendar'],
+                ['portal-intake-card', 'calendar-card', 'chatCard']);
+  assert.strictEqual(JSON.stringify(r.calls.states), '[{"portalRoute":"intake"}]',
+    'the followed entry must remember its route');
+  r.location.hash = '#calendar';
+  r.ctx.applyPortalHash({ type: 'hashchange' });
+  assert.strictEqual(JSON.stringify(r.calls.states[1]), '{"portalRoute":"calendar"}');
+  r.calls.showTab.length = 0;
+  assert.strictEqual(r.ctx.onPortalPopState({ state: { portalRoute: 'intake' } }), true);
+  assert.deepStrictEqual(r.calls.showTab, ['intake'], 'Back returns to the intake card');
+  assert.strictEqual(r.location.hash, '', 'Back brings no hash back, so no render pull');
+  assert.strictEqual(r.ctx.onPortalPopState({ state: { portalRoute: 'calendar' } }), true);
+  assert.deepStrictEqual(r.calls.showTab, ['intake', 'calendar'], 'Forward returns to calendar');
+  // A render after Back finds no hash and moves nothing.
+  assert.strictEqual(r.ctx.applyPortalHash(), false);
+  assert.strictEqual(r.ctx.onPortalPopState({ state: null }), false);
+  assert.strictEqual(r.ctx.onPortalPopState({ state: { portalRoute: 'constructor' } }), false);
+  r.location.hash = '#chat';
+  assert.strictEqual(r.ctx.onPortalPopState({ state: { portalRoute: 'intake' } }), false,
+    'an entry with its hash is left to hashchange');
+  assert.deepStrictEqual(r.calls.showTab, ['intake', 'calendar']);
+}
+
+// #constructor and other inherited names are not routes.
+{
+  const r = run('#constructor', ['hub', 'current'], []);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.location.hash, '#constructor', 'a non-route is left alone');
 }
 
 // Terms gate: no panels, only the Terms card. #chat leads to it, as #intake does, and

@@ -38928,7 +38928,6 @@ def client_google_start():
     resp = _mkresp(_redir(url))
     resp.set_cookie(_provider_state_cookie("google"), state, max_age=600,
                     httponly=True, secure=True, samesite="None")
-    _clear_old_next_cookie(resp)
     return resp
 
 
@@ -38948,24 +38947,12 @@ def client_apple_start():
     resp = _mkresp(_redir(url))
     resp.set_cookie(_provider_state_cookie("apple"), state, max_age=600,
                     httponly=True, secure=True, samesite="None")
-    _clear_old_next_cookie(resp)
     return resp
 
 
-# The route key (#chat) now travels inside the provider transaction, bound to its
-# state, so a Google and an Apple sign-in running at once each keep their own (review
-# round 2, 2026-10-20). One browser-wide cookie carried it for a short while before
-# that; any copy still held is deleted, never read.
-_OLD_NEXT_COOKIE = "rm_portal_next"
-
-
-def _clear_old_next_cookie(resp):
-    if request.cookies.get(_OLD_NEXT_COOKIE) is None:
-        return resp
-    from flask import make_response as _mkresp
-    resp = _mkresp(resp)
-    resp.delete_cookie(_OLD_NEXT_COOKIE, secure=True, samesite="None")
-    return resp
+# The route key (#chat) travels inside the provider transaction, bound to its state,
+# so a Google and an Apple sign-in running at once each keep their own (review round
+# 2, 2026-10-20).
 
 
 def _login_error(kind, next_key=""):
@@ -39034,8 +39021,7 @@ def client_google_callback():
     except Exception as exc:
         app.logger.warning("Google portal login failed: %r", exc)
         return _login_error("provider", next_key)
-    return _clear_old_next_cookie(
-        _finish_external_provider(profile, transaction.get("next", "")))
+    return _finish_external_provider(profile, transaction.get("next", ""))
 
 
 @app.route("/portal/auth/apple/callback", methods=["POST"])
@@ -39063,8 +39049,7 @@ def client_apple_callback():
     except Exception as exc:
         app.logger.warning("Apple portal login failed: %r", exc)
         return _login_error("provider", next_key)
-    return _clear_old_next_cookie(
-        _finish_external_provider(profile, transaction.get("next", "")))
+    return _finish_external_provider(profile, transaction.get("next", ""))
 
 
 @app.route("/portal/auth/link-confirm", methods=["GET", "POST"])

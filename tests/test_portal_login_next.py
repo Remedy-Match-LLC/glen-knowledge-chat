@@ -290,19 +290,6 @@ def test_a_second_start_without_a_route_does_not_erase_the_first(client, monkeyp
         == "/portal/me#chat"
 
 
-def test_an_old_next_cookie_is_deleted_and_never_read(client, monkeypatch):
-    c, appmod = client
-    _providers_on(appmod, monkeypatch)
-    _link_sub(appmod, "both@example.com", "google", "both-g")
-    c.set_cookie("rm_portal_next", "intake")
-    start = c.get("/portal/auth/google/start")
-    assert "rm_portal_next=;" in " ".join(start.headers.getlist("Set-Cookie"))
-    c.set_cookie("rm_portal_next", "intake")      # still held, say from another tab
-    done = c.get(f"/portal/auth/google/callback?state={_state(start)}&code=x")
-    assert done.headers["Location"] == "/portal/me"
-    assert "rm_portal_next=;" in " ".join(done.headers.getlist("Set-Cookie"))
-
-
 @pytest.mark.parametrize("nxt,tail", [("chat", "&next=chat"), ("https://evil.example", ""),
                                       ("", "")])
 def test_a_provider_error_returns_to_sign_in_with_the_route(client, monkeypatch, nxt, tail):

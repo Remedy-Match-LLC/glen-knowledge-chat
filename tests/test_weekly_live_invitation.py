@@ -211,7 +211,7 @@ def test_a_deep_link_opens_its_card_over_the_fold_state():
     import os
     html = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                              "static", "client-portal.html")).read()
-    hash_fn = html[html.index("function applyPortalHash(userAction){"):html.index('window.addEventListener("hashchange", applyPortalHash);')]
+    hash_fn = html[html.index("function applyPortalHash(userAction, fromHistory){"):html.index('window.addEventListener("hashchange", applyPortalHash);')]
     assert hash_fn.index("window._foldDeepLinkOpen = route.target;") < hash_fn.index("showTab(")
     # only routes that ask, and only when the link is followed (not on every re-render)
     assert "const followed = userAction || window._portalHashOpened !== key;" in hash_fn

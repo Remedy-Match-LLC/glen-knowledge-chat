@@ -412,27 +412,102 @@ def test_the_block_added_to_the_biofield_analysis_starts_with_symptoms(cx, tmp_p
 from tests.test_biofield_plan_report import client  # noqa: E402,F401  (the local app)
 
 
-def test_the_report_pdf_with_its_plan_prints_each_once_line_once(client, tmp_path):
-    """/test/<id>/report.pdf?plan=1 is one PDF: the block added to the Biofield
-    Analysis and the Plan after it share the once-only lines."""
+ZINC_CAUTION = {"Zinc": {"text": "Zinc adds up, so let us know your total.", "approved": True,
+                         "items": [{"section": cs.NUTRIENTS, "name": "Zinc"}]}}
+OIL_CAUTION = {"Lavender": {"text": "Lavender can calm too much.", "approved": True,
+                            "items": [{"section": cs.ESSENTIAL_OILS, "name": "Lavender"}]}}
+LEAD_P, BLOCK = "<p class=plan-caution-lead>", "plan-appended"
+
+
+def _report_pdf(client, tmp_path, cautions, added=True, plan=True, oil=False):
     from dashboard import biofield_report_split as rsplit
     tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
     with sqlite3.connect(client.db) as con:
-        pr.load_content(con, _folder(tmp_path, _lines()))
+        pr.load_content(con, _folder(tmp_path, _lines(), cautions=cautions))
         cs.upsert_item(con, "Gut", cs.NUTRIENTS, _item("Zinc"), origin_test=tid)
         cs.save_pick(con, tid, "Gut", cs.NUTRIENTS, "Zinc", checked=True)
-        rsplit.set_section(con, tid, rsplit.PRIMARY, cs.NUTRIENTS, True)
+        if oil:
+            cs.upsert_item(con, "Vertigo", cs.ESSENTIAL_OILS, _item("Lavender"), origin_test=tid)
+            cs.save_pick(con, tid, "Vertigo", cs.ESSENTIAL_OILS, "Lavender", checked=True)
+        if added:
+            rsplit.set_section(con, tid, rsplit.PRIMARY, cs.NUTRIENTS, True)
         con.commit()
-    assert client.get(f"/test/{tid}/report.pdf?plan=1").status_code == 200
+    r = client.get(f"/test/{tid}/report.pdf" + ("?plan=1" if plan else ""))
+    assert r.status_code == 200
     html = client.written[-1][0]
-    assert html.count("plan-appended") == 2, "the added block and the Plan are both there"
+    blocks = html.split(BLOCK)[1:]       # each appended block, in document order
     for p in ONCE_P:
         assert html.count(p) == 1, p
-    # In the first block, which is the one added to the Biofield Analysis.
-    second = html.index("plan-appended", html.index("plan-appended") + 1)
-    assert html.index(SYMPTOMS_P) < second
-    # Without the Plan, the added block prints them itself.
-    client.get(f"/test/{tid}/report.pdf")
-    alone = client.written[-1][0]
+    return blocks
+
+
+def _where(blocks, p):
+    return [i for i, b in enumerate(blocks) if p in b]
+
+
+def test_report_and_plan_the_added_block_with_cautions_carries_all_three(client, tmp_path):
+    blocks = _report_pdf(client, tmp_path, ZINC_CAUTION)
+    assert len(blocks) == 2
+    assert _where(blocks, SYMPTOMS_P) == [0]
+    assert _where(blocks, LEAD_P) == [0] and _where(blocks, ROUTES_P) == [0]
+    assert "Zinc adds up" in blocks[0]
+
+
+def test_report_and_plan_the_lead_follows_the_cautions_into_the_plan(client, tmp_path):
+    """The added block prints Nutrients and no caution; the Plan prints the oil caution."""
+    blocks = _report_pdf(client, tmp_path, OIL_CAUTION, oil=True)
+    assert _where(blocks, SYMPTOMS_P) == [0], "symptom_changes heads the first plan block"
+    assert _where(blocks, LEAD_P) == [1] and _where(blocks, ROUTES_P) == [1]
+    plan = blocks[1]
+    assert plan.index(LEAD_P) < plan.index(ROUTES_P) < plan.index("Lavender can calm")
+
+
+def test_report_and_plan_with_no_caution_the_plan_carries_the_lead(client, tmp_path):
+    blocks = _report_pdf(client, tmp_path, None)
+    assert _where(blocks, SYMPTOMS_P) == [0]
+    assert _where(blocks, LEAD_P) == [1] and _where(blocks, ROUTES_P) == [1]
+
+
+def test_report_and_plan_with_no_added_block_the_plan_carries_all(client, tmp_path):
+    blocks = _report_pdf(client, tmp_path, ZINC_CAUTION, added=False)
+    assert len(blocks) == 1
     for p in ONCE_P:
-        assert alone.count(p) == 1, p
+        assert _where(blocks, p) == [0], p
+    assert blocks[0].index(SYMPTOMS_P) < blocks[0].index("<span class=plan-name>")
+
+
+@pytest.mark.parametrize("cautions", [None, ZINC_CAUTION])
+def test_the_report_alone_its_added_block_carries_all(client, tmp_path, cautions):
+    blocks = _report_pdf(client, tmp_path, cautions, plan=False)
+    assert len(blocks) == 1
+    for p in ONCE_P:
+        assert _where(blocks, p) == [0], p
+
+
+def _grouped(cx, tmp_path, cautions):
+    from dashboard import biofield_report_split as rsplit
+    pr.load_content(cx, _folder(tmp_path, _lines(), cautions=cautions))
+    _tick(cx, "Gut", "foods_emphasize", "Bone broth")
+    _tick(cx, "Gut", cs.NUTRIENTS, "Zinc")
+    frame, stored = pr.stored_frame(cx)
+    ctx = _ctx(frame, pr.plan(cx, "a49"))
+    ctx["cautions"] = stored
+    doc = rsplit.grouped_html(ctx, ["diet", "ingredients"],
+                              {"diet": {"foods_emphasize"}, "ingredients": {cs.NUTRIENTS}})
+    parts = doc.split("<div class=rs-report")[1:]
+    for p in ONCE_P:
+        assert doc.count(p) == 1, p
+    return parts
+
+
+def test_grouped_the_lead_goes_to_the_first_report_with_a_caution(cx, tmp_path):
+    parts = _grouped(cx, tmp_path, ZINC_CAUTION)
+    assert _where(parts, SYMPTOMS_P) == [0]
+    assert _where(parts, LEAD_P) == [1] and _where(parts, ROUTES_P) == [1]
+    assert parts[1].index(LEAD_P) < parts[1].index("Zinc adds up")
+
+
+def test_grouped_with_no_caution_the_first_report_carries_all(cx, tmp_path):
+    parts = _grouped(cx, tmp_path, None)
+    for p in ONCE_P:
+        assert _where(parts, p) == [0], p
