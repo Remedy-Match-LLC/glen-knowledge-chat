@@ -57,7 +57,7 @@ SYSTEMIC_SYMPTOM_OPTIONS = [
 ]
 
 INTAKE_FORM = {
-    "version": "2026-08-09",
+    "version": "2026-10-20",  # diet and alcohol fields added
     "sections": [
         {"id": "personal", "title": "Personal Information", "fields": [
             {"id": "first_name", "type": "text", "label": "Legal first name", "required": True},
