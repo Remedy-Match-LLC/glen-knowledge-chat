@@ -218,7 +218,7 @@ def ensure_schema(cx):
 
 # Report-level lines in frame-lines.json, each printed once (Glen, 2026-10-18).
 FRAME_KEYS = ("vertigo_safety", "dose_totals", "thyroid_spacing", "infoceutical_header",
-              "ingredient_caution_intro", "essential_oils_header")
+              "cautions_lead", "ingredient_caution_intro", "essential_oils_header")
 
 
 def load_content(cx, folder):
@@ -539,10 +539,14 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
     top = [frame[k] for k in TOP_KEYS
            if k in allowed and frame.get(k)
            and (k != "vertigo_safety" or _has_condition(plan_groups, "vertigo"))]
+    # Glen's own paragraph leads the cautions area in every Plan report, before the
+    # ingredient cautions ("approve B", clinical tab, 2026-10-20).
+    lead = (f"<p class=plan-caution-lead>{e(frame['cautions_lead'])}</p>"
+            if frame.get("cautions_lead") else "")
     # Each caution once, naming the client's items that hold its ingredient.
-    caution = ""
+    caution = f"<div class=plan-cautions>{lead}</div>" if lead else ""
     if cautions:
-        caution = ("<div class=plan-cautions>"
+        caution = ("<div class=plan-cautions>" + lead
                    + (f"<p class=plan-caution-intro>{e(frame['ingredient_caution_intro'])}</p>"
                       if frame.get("ingredient_caution_intro") else "")
                    + "".join(f"<div class=plan-caution><p><span class=plan-caution-name>"
