@@ -147,6 +147,89 @@ def test_an_explicit_kind_is_written_and_junk_is_ignored(tmp_path):
     assert pbr.normalize_kind("animal_infoceuticals") == "remedy_match"
 
 
+class _RacingCx:
+    """A connection on which another writer commits a kind right after upsert_report
+    reads the row, as a second worker would."""
+    def __init__(self, cx, kind):
+        self._cx, self._kind = cx, kind
+
+    def execute(self, sql, params=()):
+        cur = self._cx.execute(sql, params)
+        if sql.startswith("SELECT id, report_kind, content_json"):
+            rows = cur.fetchall()
+            self._cx.execute("UPDATE portal_biofield_reports SET report_kind=?", (self._kind,))
+            return _Rows(rows)
+        return cur
+
+    def commit(self):
+        self._cx.commit()
+
+
+class _Rows:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+
+def test_update_never_overwrites_a_kind_committed_after_its_read(tmp_path):
+    cx = _db(tmp_path)
+    pbr.upsert_report(cx, "a@x.com", "2026-10-14", "", {}, "ai_draft", report_kind="remedy_match")
+    # A console confirm (no kind) reads remedy_match; a paid publish then commits
+    # biofield before the confirm writes. The confirm must not put remedy_match back.
+    pbr.upsert_report(_RacingCx(cx, "biofield"), "a@x.com", "2026-10-14", "", {}, "confirmed")
+    assert _stored(cx, "a@x.com", "2026-10-14") == "biofield"
+
+
+def test_update_from_old_content_never_overwrites_a_kind_set_after_its_read(tmp_path):
+    cx = _db(tmp_path)
+    cx.execute("INSERT INTO portal_biofield_reports (email, scan_date, scan_id, content_json, "
+               "status) VALUES ('h@x.com','2026-10-14','',?, 'ai_draft')", (json.dumps(HANDOFF),))
+    cx.commit()
+    pbr.upsert_report(_RacingCx(cx, "remedy_match"), "h@x.com", "2026-10-14", "",
+                      CONSOLE_STRIPPED, "confirmed")
+    assert _stored(cx, "h@x.com", "2026-10-14") == "remedy_match"
+
+
+class _FakePgCx:
+    """Enough of a Postgres connection for init_table: the column is missing and the
+    ALTER fails, as a lock timeout would."""
+    backend = "postgres"
+
+    def __init__(self):
+        self.calls = []
+
+    def execute(self, sql, params=()):
+        self.calls.append(sql.split()[0] + " " + sql.split()[1])
+        if sql.startswith("ALTER"):
+            raise RuntimeError("canceling statement due to lock timeout")
+        return _Rows([])
+
+    def rollback(self):
+        self.calls.append("ROLLBACK")
+
+    def commit(self):
+        self.calls.append("COMMIT")
+
+
+def test_a_failed_column_add_on_postgres_is_rolled_back():
+    cx = _FakePgCx()
+    pbr.init_table(cx)
+    assert "ROLLBACK" in cx.calls
+    assert cx.calls.index("ROLLBACK") > cx.calls.index("ALTER TABLE")
+
+
+def test_a_failed_column_add_on_sqlite_is_not_rolled_back(monkeypatch):
+    # SQLite's failed ALTER leaves the transaction usable; a rollback would drop a
+    # caller's pending writes.
+    cx = _FakePgCx()
+    cx.backend = "sqlite"
+    monkeypatch.setattr(pbr._db, "column_exists", lambda c, t, col: False)
+    pbr.init_table(cx)
+    assert "ALTER TABLE" in cx.calls and "ROLLBACK" not in cx.calls
+
+
 def test_status_change_keeps_the_kind(tmp_path):
     cx = _db(tmp_path)
     pbr.upsert_report(cx, "a@x.com", "2026-10-14", "", {}, "ai_draft", report_kind="remedy_match")
@@ -423,6 +506,36 @@ def test_notify_email_follows_the_current_pointer(app_env, monkeypatch):
     assert sent[-1][1] == "Your new Biofield Analysis is ready"
 
 
+def test_notify_pointer_at_a_reveal_only_date_is_a_remedy_match(app_env, monkeypatch):
+    c, appmod, sent = app_env
+    from dashboard import biofield_reveals as br
+    monkeypatch.setenv("PORTAL_SCAN_NOTIFY_ENABLED", "1")
+    _portal(appmod, "k@x.com", "Kai Lee", {"current_scan_date": "2026-10-14"})
+    with _cx(appmod) as cx:
+        pbr.upsert_report(cx, "k@x.com", "2026-09-01", "", {}, "confirmed",
+                          report_kind="biofield")
+        br.init_table(cx)
+        br.upsert(cx, "k@x.com", "2026-10-14", {"greeting": "Aloha"},
+                  [{"name": "Top", "slug": "top", "meaning": "m"}], "src")
+    c.post("/api/console/portal/notify-scan", headers=AUTH, json={"email": "k@x.com"})
+    assert sent[-1][1] == "Your new Remedy Match is ready"
+
+
+def test_notify_does_not_send_when_the_kind_lookup_fails(app_env, monkeypatch):
+    c, appmod, sent = app_env
+    monkeypatch.setenv("PORTAL_SCAN_NOTIFY_ENABLED", "1")
+    _portal(appmod, "g@x.com", "Gita Wright")
+
+    def _boom(cx, email):
+        raise RuntimeError("db went away")
+
+    monkeypatch.setattr(appmod, "_current_report_kind", _boom)
+    r = c.post("/api/console/portal/notify-scan", headers=AUTH, json={"email": "g@x.com"})
+    assert r.status_code == 503
+    assert r.get_json()["sent"] is False
+    assert sent == []
+
+
 def test_family_notify_for_a_remedy_match(app_env, monkeypatch):
     c, appmod, sent = app_env
     from dashboard import household as hh
@@ -511,11 +624,12 @@ def _extract_fn(src, name):
 
 
 def _run_words(kind_js):
-    js = (_extract_fn(PORTAL, "reportWords") +
+    esc = re.search(r"\nconst esc = [^\n]*", PORTAL).group(0)
+    js = (esc + _extract_fn(PORTAL, "reportWords") +
           f"const w = reportWords({kind_js});"
           "console.log(JSON.stringify({remedyMatch: w.remedyMatch, name: w.name,"
           " printTitle: w.printTitle, header: w.header('2026-10-14'),"
-          " readyHtml: w.readyHtml, aiNotice: w.aiNotice}));")
+          " readyHtml: w.readyHtml('biofield-section'), aiNotice: w.aiNotice}));")
     out = subprocess.run([_node(), "-e", js], capture_output=True, text=True, timeout=20)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout)
@@ -527,7 +641,8 @@ def test_portal_words_for_a_remedy_match():
     assert w["printTitle"] == "Remedy Match"
     assert w["aiNotice"] == "Generated by Dr. Glen's knowledgebase."
     assert w["readyHtml"].startswith("See which remedies match to your scan. Your Remedy Match is <a ")
-    assert ">here</a>." in w["readyHtml"] and "scrollToRemedyMatches()" in w["readyHtml"]
+    assert ">here</a>." in w["readyHtml"]
+    assert "scrollToReportPart('biofield-section')" in w["readyHtml"]
     assert "—" not in json.dumps(w, ensure_ascii=False)
 
 
@@ -567,4 +682,7 @@ def test_console_shows_the_kind_beside_the_date():
 def test_reveal_page_says_remedy_match():
     assert "<title>Your Remedy Match - Dr. Glen Swartwout</title>" in REVEAL_PAGE
     assert '"Your Remedy Match is ready."' in REVEAL_PAGE
+    # Glen, 2026-10-20: "Reserve 'layers' language for causal Biofield Analysis."
+    assert 'layersLabel.textContent = "Your Active Stress Patterns";' in REVEAL_PAGE
+    assert "Stress Pattern Layers" not in REVEAL_PAGE
     assert "Biofield Analysis" not in REVEAL_PAGE

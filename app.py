@@ -34232,29 +34232,35 @@ def api_console_portal_release_shipped_reports():
 
 
 def _current_report_kind(cx, email):
-    """'remedy_match' or 'biofield' for the report /api/portal/<token> shows this email
-    as current: the portal's current_scan_date pointer when it names a row, else the
-    newest row. No row but a scan reveal is a Remedy Match. Anything else, including
-    an error, is Biofield, which is what every report said before the column existed."""
+    """'remedy_match' or 'biofield' for this email's current report.
+
+    The portal's current_scan_date pointer decides when it names a stored row; a
+    pointer naming a reveal-only date is a Remedy Match, since every reveal is. With no
+    usable pointer, the newest stored row decides, then any reveal (a Remedy Match),
+    then the legacy portal content by the rule. A report the rule cannot classify is
+    Biofield, which is what every report said before the column existed.
+
+    Raises on a lookup error. A caller that sends mail must not guess the wording."""
     from dashboard import client_portal as _cp, portal_biofield_reports as _pbr
+    from dashboard import biofield_reveals as _brv
     email = (email or "").strip().lower()
     if not email:
         return _pbr.BIOFIELD
-    try:
-        _pbr.init_table(cx)
-        kinds = _pbr.kinds_by_date(cx, email)
-        if kinds:
-            ptr = _cp.get_current_scan(cx, email)
-            return kinds[ptr] if ptr in kinds else kinds[max(kinds)]
-        from dashboard import biofield_reveals as _brv
-        _brv.init_table(cx)
-        if _brv.list_for_email(cx, email):
-            return _pbr.REMEDY_MATCH
-        rec = _cp.get_portal_content_by_email(cx, email)
-        return _pbr.effective_kind(None, (rec or {}).get("content") or {})
-    except Exception as e:
-        print(f"[report-kind] {email}: {e!r}", flush=True)
-        return _pbr.BIOFIELD
+    _pbr.init_table(cx)
+    _brv.init_table(cx)
+    kinds = _pbr.kinds_by_date(cx, email)
+    reveal_dates = {r.get("scan_date") for r in (_brv.list_for_email(cx, email) or [])}
+    ptr = _cp.get_current_scan(cx, email)
+    if ptr and ptr in kinds:
+        return kinds[ptr]
+    if ptr and ptr in reveal_dates:
+        return _pbr.REMEDY_MATCH
+    if kinds:
+        return kinds[max(kinds)]
+    if reveal_dates:
+        return _pbr.REMEDY_MATCH
+    rec = _cp.get_portal_content_by_email(cx, email)
+    return _pbr.effective_kind(None, (rec or {}).get("content") or {})
 
 
 def _notify_scan_wording(kind, member_first=None, member=False):
@@ -34322,8 +34328,16 @@ def api_console_portal_notify_scan():
         link, _reissued = _cp.portal_link_for(cx, email, portal_base())
         rec = _cp.get_portal_content_by_email(cx, email)
         mrec = _cp.get_portal_content_by_email(cx, member) if member else None
-        # The wording follows the report the recipient (or the member) will open.
-        kind = _current_report_kind(cx, member or email)
+        # The wording follows the report the recipient (or the member) will open. A
+        # failed lookup sends nothing: the operator retries rather than the client
+        # getting the wrong report's name.
+        try:
+            kind = _current_report_kind(cx, member or email)
+        except Exception as e:
+            print(f"[notify-scan] report kind lookup failed for {member or email}: {e!r}",
+                  flush=True)
+            return jsonify({"ok": False, "sent": False,
+                            "reason": "report kind lookup failed; try again"}), 503
     if not link:
         return jsonify({"ok": True, "sent": False, "reason": "no portal"})
     _name_parts = ((rec or {}).get("name") or "").split()

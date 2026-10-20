@@ -31,6 +31,7 @@ def init_table(cx) -> None:
             status       TEXT,
             created_at   TEXT,
             updated_at   TEXT,
+            report_kind  TEXT,
             UNIQUE(email, scan_date)
         )
     """)
@@ -42,7 +43,16 @@ def init_table(cx) -> None:
         try:
             cx.execute("ALTER TABLE portal_biofield_reports ADD COLUMN report_kind TEXT")
         except Exception:
-            pass
+            # On Postgres a failed ALTER (a lock timeout on first deploy) aborts the
+            # transaction. Roll back so this request's later reads still work; the next
+            # init_table call retries the add.
+            # SQLite needs no rollback: a failed ALTER leaves its transaction usable,
+            # and rolling back would discard a caller's pending writes.
+            if _db.backend_of(cx) == "postgres":
+                try:
+                    cx.rollback()
+                except Exception:
+                    pass
     cx.commit()
 
 
@@ -115,17 +125,23 @@ def upsert_report(cx, email, scan_date, scan_id, content, status, report_kind=No
         "WHERE email=? AND scan_date=?", (email, scan_date)).fetchone()
     cj = json.dumps(content or {})
     if row:
-        if kind is None:
-            kind = normalize_kind(row[1])
-        if kind is None:
+        # The rule's answer for the content being replaced, used only if the row still
+        # has no kind when the UPDATE runs.
+        from_old = None
+        if kind is None and normalize_kind(row[1]) is None:
             try:
                 old = json.loads(row[2] or "{}")
             except Exception:
                 old = {}
-            kind = infer_kind(old, row[3])
+            from_old = infer_kind(old, row[3])
+        # One statement, so the kind is chosen against the row as it is at write time:
+        # an explicit kind wins, else the stored kind stands, else the old content's.
+        # A kind another writer committed after the SELECT above is never overwritten
+        # by a caller that passed none.
         cx.execute("UPDATE portal_biofield_reports SET scan_id=?, content_json=?, "
-                   "status=?, updated_at=?, report_kind=? WHERE id=?",
-                   (scan_id, cj, status, now, kind, row[0]))
+                   "status=?, updated_at=?, report_kind=COALESCE(CAST(? AS TEXT), report_kind, CAST(? AS TEXT)) "
+                   "WHERE id=?",
+                   (scan_id, cj, status, now, kind, from_old, row[0]))
     else:
         if kind is None:
             kind = infer_kind(content, scan_id)

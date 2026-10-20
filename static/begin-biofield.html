@@ -617,7 +617,8 @@
         layersCard.className = "card";
         var layersLabel = document.createElement("div");
         layersLabel.className = "remedy-section-label";
-        layersLabel.textContent = "Your Remedy Match Stress Pattern Layers";
+        // Glen, 2026-10-20: "layers" wording is reserved for the paid causal analysis.
+        layersLabel.textContent = "Your Active Stress Patterns";
         layersCard.appendChild(layersLabel);
         renderLayers(layersCard, data);
         root.appendChild(layersCard);
