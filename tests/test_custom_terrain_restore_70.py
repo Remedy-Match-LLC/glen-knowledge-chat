@@ -73,13 +73,17 @@ SHIP = {"name": "T", "address1": "1 A St", "city": "Hilo", "state": "HI", "zip":
 
 
 def _cart_unit(cart, slug, **kw):
+    """What one bottle is charged, read off the engine's line total (items_rec
+    carries the list price, so it would pass whether or not a discount applied)."""
     out = app_mod._price_cart(cart, ship=SHIP, **kw)
-    rec = next(r for r in out["items_rec"] if r["slug"] == slug)
-    return rec["unit_cents"]
+    line = next(l for l in out["priced"]["lines"] if l["slug"] == slug)
+    return line["line_total_cents"] // line["qty"]
 
 
 def test_the_cart_engine_never_discounts_it():
     cart = [{"slug": s, "qty": 2} for s in FFS] + [{"slug": CUSTOM, "qty": 3}]
+    # The same cart does discount a formulation, so these offers are live.
+    assert _cart_unit(cart, "paracleanse", coupon_pct=20) < app_mod._get_product("paracleanse")["price_cents"]
     assert _cart_unit(cart, CUSTOM, program_member=True) == 7000
     assert _cart_unit(cart, CUSTOM, coupon_pct=20) == 7000
     assert _cart_unit(cart, CUSTOM, subscriber_tier_pct=15) == 7000
@@ -112,3 +116,9 @@ def test_a_published_report_gives_it_no_courtesy_price():
     from dashboard import biofield_portal_publish as bpp
     src = inspect.getsource(bpp)
     assert "slug != CUSTOM_TERRAIN_RESTORE_SLUG" in src
+
+
+def test_a_family_pool_counts_it_toward_volume():
+    members = [{"items": [{"slug": "paracleanse", "qty": 2}]},
+               {"items": [{"slug": CUSTOM, "qty": 3}, {"slug": "biofield-analysis", "qty": 1}]}]
+    assert app_mod._pooled_volume_qty(members) == 5

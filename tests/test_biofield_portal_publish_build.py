@@ -108,9 +108,17 @@ def test_build_maps_layers_dedups_and_prices(tmp_path):
     assert [L["n"] for L in c["layers"]] == [1, 2, 3, 4]
     # reorder deduped to 5 unique slugs (Focus,Neuromagnesium -> one line for the stocked jar)
     slugs = [it["slug"] for it in c["reorder_items"]]
+    # Community Spirit Formula in Terrain Restore is one added ingredient, so it is the
+    # Custom Terrain Restore (Glen, 2026-10-19: "one or more added ingredient").
     assert sorted(slugs) == ["chelation", "focus-neuro-magnesium-powder", "nous-energy",
-                             "terrain-restore", "vitality"]
-    assert all(it["price_cents"] == 5000 and it["qty"] == 1 for it in c["reorder_items"])
+                             "terrain-restore-custom", "vitality"]
+    assert all(it["qty"] == 1 for it in c["reorder_items"])
+    # The custom bottle is always its catalog price, so it takes no courtesy price.
+    by_slug = {it["slug"]: it for it in c["reorder_items"]}
+    assert "price_cents" not in by_slug["terrain-restore-custom"]
+    assert by_slug["terrain-restore-custom"]["note"] == "With Community Spirit Formula"
+    assert all(it["price_cents"] == 5000 for s, it in by_slug.items()
+               if s != "terrain-restore-custom")
 
 
 def test_build_uses_exact_individualized_sku_and_calculates_bottles():
@@ -142,9 +150,12 @@ def test_build_uses_exact_individualized_sku_and_calculates_bottles():
     # No courtesy price: the items carry no price, so the store price applies.
     assert items == [
         {"slug": "iop-syntropy", "qty": 1},   # 1 unless set (Glen 2026-09-25)
-        # One "in Terrain Restore" ingredient keeps its own exact product, with no
-        # note and no held list (Glen 2026-10-19).
-        {"slug": "living-with-soul-flower-essence-in-terrain-restore", "qty": 1},
+        # One "in Terrain Restore" ingredient is the Custom Terrain Restore, naming it
+        # and holding its exact product so the line can be unfolded (Glen 2026-10-19).
+        {"slug": "terrain-restore-custom", "qty": 1,
+         "note": "With Living With Soul Flower Essence",
+         "held": [{"name": "Living With Soul Flower Essence in Terrain Restore",
+                   "slug": "living-with-soul-flower-essence-in-terrain-restore", "qty": 1}]},
     ]
 
 def test_build_meaning_from_narrative_segments(tmp_path):

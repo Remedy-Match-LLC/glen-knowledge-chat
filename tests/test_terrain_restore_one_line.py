@@ -1,6 +1,7 @@
 """All "in Terrain Restore" items on one Biofield are one line (Glen, 2026-10-19).
-Two or more different added ingredients make the Custom Terrain Restore, named by a
-note under it. One added ingredient keeps that ingredient's own product."""
+One or more different added ingredients make the Custom Terrain Restore, named by a
+note under it: "a bottle of Terrain Restore with one or more added ingredient should
+be $70". No added ingredient is plain Terrain Restore."""
 import sqlite3
 
 import pytest
@@ -50,19 +51,21 @@ def test_josies_two_become_one_line_with_the_largest_count():
         {"slug": "microbiome", "qty": 2, "source": "biofield"}]
 
 
-def test_a_single_ingredient_keeps_its_own_product_with_no_note():
+def test_a_single_ingredient_is_the_custom_bottle_with_its_note():
     built = inv.build_invoice_lines({}, [PYRITE], CATALOG, include_fee=False)
-    assert built["lines"] == [{"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 1,
-                               "source": "biofield"}]
+    assert built["lines"] == [{"slug": CUSTOM, "qty": 1, "source": "biofield",
+                               "note": "With Pyrite Gem Elixir"}]
 
 
-def test_oak_essence_alone_bills_as_itself_and_with_another_as_the_custom_bottle():
-    # The dearer Oak essence alone is its own product; beside a second ingredient it
-    # is in the Custom Terrain Restore, always $70 (Glen, 2026-10-19).
+def test_oak_essence_alone_or_with_another_bills_as_the_custom_bottle():
+    # The dearer Oak essence is in the Custom Terrain Restore, always $70, alone or
+    # beside a second ingredient (Glen, 2026-10-19).
     built = inv.build_invoice_lines({}, [OAK], CATALOG, include_fee=False)
-    assert [l["slug"] for l in built["lines"]] == ["oak-flower-essence-in-terrain-restore"]
+    assert [(l["slug"], l.get("note")) for l in built["lines"]] == [
+        (CUSTOM, "With Oak Flower Essence")]
     built = inv.build_invoice_lines({}, [OAK, PYRITE], CATALOG, include_fee=False)
-    assert [l["slug"] for l in built["lines"]] == [CUSTOM]
+    assert [(l["slug"], l.get("note")) for l in built["lines"]] == [
+        (CUSTOM, "With Oak Flower Essence and Pyrite Gem Elixir")]
 
 
 def test_an_ingredient_named_twice_is_listed_once_and_plain_restore_joins():
@@ -70,11 +73,12 @@ def test_an_ingredient_named_twice_is_listed_once_and_plain_restore_joins():
                                     include_fee=False)
     assert built["lines"] == [{"slug": CUSTOM, "qty": 1, "source": "biofield",
                                "note": NOTE_BOTH}]
-    # With one ingredient, plain Terrain Restore joins that ingredient's own product.
+    # With one ingredient named twice, plain Terrain Restore joins the custom bottle,
+    # which names that ingredient once.
     built = inv.build_invoice_lines({}, ["Terrain Restore", PYRITE, PYRITE], CATALOG,
                                     include_fee=False)
-    assert built["lines"] == [{"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 1,
-                               "source": "biofield"}]
+    assert built["lines"] == [{"slug": CUSTOM, "qty": 1, "source": "biofield",
+                               "note": "With Pyrite Gem Elixir"}]
 
 
 def test_plain_terrain_restore_alone_carries_no_note():
@@ -406,11 +410,12 @@ def test_an_ingredient_that_stops_being_ready_comes_out_of_the_bottle():
     assert [(i["slug"], i.get("note")) for i in out] == [
         (CUSTOM, "With Pyrite Gem Elixir and Oak Flower Essence"),
         ("quinton-in-terrain-restore", None)]
-    # With only one ingredient left, the bottle is that ingredient's own product.
+    # With only one ingredient left, it is still the custom bottle, holding that one.
     out = inv.fold_reorder_items([dict(FOLDED)], _name_of, True,
                                  ready=lambda sl: sl != "quinton-in-terrain-restore")
     assert [(i["slug"], i.get("note"), i.get("held")) for i in out] == [
-        ("pyrite-gem-elixir-in-terrain-restore", None, None),
+        (CUSTOM, "With Pyrite Gem Elixir",
+         [{"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 2}]),
         ("quinton-in-terrain-restore", None, None)]
 
 
@@ -431,12 +436,13 @@ def test_only_an_override_set_on_the_bottle_prices_it():
     # Unfolded again, the bottle's override does not land on each ingredient.
     out = inv.fold_reorder_items([priced], _name_of, base_ok=False)
     assert all("price_cents" not in i for i in out)
-    # One ingredient keeps its own product, so its own override is its price.
+    # One ingredient alone is the custom bottle too, so its own override does not
+    # price it: the bottle takes its catalog price.
     out = inv.fold_reorder_items(
         [{"slug": "oak-flower-essence-in-terrain-restore", "qty": 1, "price_cents": 9500}],
         _name_of, True)
-    assert out == [{"slug": "oak-flower-essence-in-terrain-restore", "qty": 1,
-                    "price_cents": 9500}]
+    assert out == [{"slug": CUSTOM, "qty": 1, "held": [dict(OAK_HELD, qty=1)],
+                    "note": "With Oak Flower Essence"}]
 
 
 def test_the_same_product_twice_keeps_the_largest_count_never_the_sum():
@@ -627,10 +633,13 @@ def test_sync_from_layers_keeps_the_folded_line_and_only_what_the_layers_name():
     # Quinton removed from the layers: the line no longer holds it.
     out = _run_sync([{"remedy": PYRITE}], [folded], cat)
     assert [h["slug"] for h in out[0]["held"]] == ["pyrite-gem-elixir-in-terrain-restore"]
-    # Published with one ingredient left, it is that ingredient's own product.
+    # Published with one ingredient left, it is still the custom bottle, now naming
+    # only that ingredient, and Rae's count and price on the line survive.
     published = inv.fold_reorder_items(out, _name_of, True)
-    assert [i["slug"] for i in published] == ["pyrite-gem-elixir-in-terrain-restore"]
-    assert "note" not in published[0] and "held" not in published[0]
+    assert [i["slug"] for i in published] == [CUSTOM]
+    assert published[0]["note"] == "With Pyrite Gem Elixir"
+    assert [h["slug"] for h in published[0]["held"]] == ["pyrite-gem-elixir-in-terrain-restore"]
+    assert published[0]["qty"] == 3 and published[0]["price_cents"] == 6000
     # A line folded before the custom product existed syncs the same way.
     out = _run_sync([{"remedy": QUINTON}, {"remedy": PYRITE}],
                     [dict(folded, slug="terrain-restore")], cat)
@@ -685,6 +694,24 @@ def test_edit_invoice_puts_the_note_on_an_existing_line_too():
     assert "if(rec.note) existing.note=String(rec.note);" in branch
 
 
+def test_one_ingredient_alone_folds_to_the_custom_bottle_naming_it():
+    # Glen, 2026-10-19: "a bottle of Terrain Restore with one or more added
+    # ingredient should be $70".
+    out = inv.fold_terrain_restore(
+        [{"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE, "qty": 2},
+         {"slug": "microbiome", "name": "Microbiome", "qty": 1}], True, name_of=_name_of)
+    assert out == [
+        {"slug": CUSTOM, "name": "Custom Terrain Restore", "qty": 2,
+         "held": [{"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 2}],
+         "note": "With Pyrite Gem Elixir"},
+        {"slug": "microbiome", "name": "Microbiome", "qty": 1}]
+    # When the custom bottle cannot be sold, the ingredient stays its own product.
+    out = inv.fold_terrain_restore(
+        [{"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE, "qty": 2}],
+        False, name_of=_name_of)
+    assert out == [{"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE, "qty": 2}]
+
+
 # ── Round 4 ───────────────────────────────────────────────────────────────────
 def test_raes_bottle_count_survives_a_republish():
     folded = dict(FOLDED, held=_with_qty(HELD_BOTH, 1, 2))
@@ -703,10 +730,9 @@ def test_unfolding_leaves_no_internal_keys_and_never_sums_a_repeat():
             {"name": PYRITE, "slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 3}]
     out = inv.fold_reorder_items([dict(FOLDED, held=held, price_cents=6000)],
                                  _name_of, base_ok=False)
-    # One ingredient is its own product, the line the bottle becomes, so the price
-    # typed on the bottle carries over (Glen, 2026-10-19). No "_tr_price" is left.
-    assert out == [{"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 3,
-                    "price_cents": 6000}]
+    # Unfolded, the one ingredient is its own product again at its largest count.
+    # The price typed on the bottle stays with the bottle, and no "_tr_price" is left.
+    assert out == [{"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 3}]
     refolded = inv.fold_terrain_restore(
         [{"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE, "qty": 1},
          {"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE, "qty": 3},

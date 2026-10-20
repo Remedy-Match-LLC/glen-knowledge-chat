@@ -182,10 +182,10 @@ RECOMMEND_ONLY_SLUGS = frozenset({"harmony-laser"})
 # with all those ingredients "in Terrain Restore"." One bottle at the normal Terrain
 # Restore price ("yes"), named by a note under the line ("yes" to the wording).
 TERRAIN_RESTORE_SLUG = "terrain-restore"
-# Glen, 2026-10-19: a Terrain Restore made up with two or more added ingredients is
-# its own product, "yes, always $70" (volume pricing off), that still counts toward
-# the volume rate of the other formulations. One added ingredient keeps that
-# ingredient's own "X in Terrain Restore" product.
+# Glen, 2026-10-19: a Terrain Restore with one or more added ingredients is its own
+# product, "yes, always $70" (volume pricing off), that still counts toward the
+# volume rate of the other formulations. He first said two or more, then: "a bottle
+# of Terrain Restore with one or more added ingredient should be $70".
 CUSTOM_TERRAIN_RESTORE_SLUG = "terrain-restore-custom"
 CUSTOM_TERRAIN_RESTORE_NAME = "Custom Terrain Restore"
 _IN_TR = " in terrain restore"
@@ -225,13 +225,13 @@ def fold_terrain_restore(items, base_ok, name_of=None, ready=None):
     place of the first, in the given (layer) order. Which item depends on how many
     different ingredients are added (Glen, 2026-10-19):
 
-    - two or more: the custom bottle (CUSTOM_TERRAIN_RESTORE_SLUG), always its own
-      catalog price, its ingredients named in "note" and listed in "held" as
+    - one or more: the custom bottle (CUSTOM_TERRAIN_RESTORE_SLUG), always its own
+      catalog price ("a bottle of Terrain Restore with one or more added ingredient
+      should be $70"), its ingredients named in "note" and listed in "held" as
       {name, slug, qty}: the authored name, so a count looked up by name is found,
       and the ingredient's own product, so the line can be unfolded again. When the
       custom product cannot be sold (`base_ok` False) nothing folds, so nothing is
       billed as a product that is not there;
-    - one: that ingredient's own "X in Terrain Restore" product;
     - none: plain Terrain Restore.
 
     `items` are dicts carrying the remedy "name" and a resolved "slug"; any "qty" is
@@ -256,13 +256,10 @@ def fold_terrain_restore(items, base_ok, name_of=None, ready=None):
     for _it, _nm, ing, ok in rows:
         if ok and ing and ing.lower() not in {i.lower() for i in ingredients}:
             ingredients.append(ing)
-    custom = len(ingredients) >= 2
+    custom = len(ingredients) >= 1
     if custom and not base_ok:
         rows = [(it, nm, ing, False) for it, nm, ing, _ok in rows]
-    if len(ingredients) == 1:
-        own = next(it for it, _nm, ing, ok in rows if ok and ing)
-        slug, label = own["slug"], own.get("name")
-    elif custom:
+    if custom:
         slug, label = CUSTOM_TERRAIN_RESTORE_SLUG, CUSTOM_TERRAIN_RESTORE_NAME
     else:
         slug, label = TERRAIN_RESTORE_SLUG, "Terrain Restore"

@@ -57565,6 +57565,18 @@ def _hold_new_order_and_invite(cx, order_id):
     return res
 
 
+def _pooled_volume_qty(members):
+    """Bottles across a household's orders that count toward the pooled volume rate.
+    The custom Terrain Restore counts, though it is never discounted itself."""
+    pooled_qty = 0
+    for m in members:
+        for item in (m.get("items") or []):
+            product = _get_product((item.get("slug") or "").strip())
+            if product and _counts_toward_volume(product):
+                pooled_qty += max(1, int(item.get("qty") or 1))
+    return pooled_qty
+
+
 def _recompute_combined_shipping(cx, sid):
     """Recompute a combined shipment's ONE-parcel shipping (the geometric packer on
     the union of all members' bottles, via the same _price_cart the invoices use)
@@ -57586,12 +57598,7 @@ def _recompute_combined_shipping(cx, sid):
             _fp.init_family_plan_table(cx)
             holder = _fp.shared_active_plan_holder(cx, [m.get("email") for m in members])
             if holder:
-                pooled_qty = 0
-                for m in members:
-                    for item in (m.get("items") or []):
-                        product = _get_product((item.get("slug") or "").strip())
-                        if product and _counts_toward_volume(product):
-                            pooled_qty += max(1, int(item.get("qty") or 1))
+                pooled_qty = _pooled_volume_qty(members)
                 changed = []
                 # _pricing_settings() contains only persisted overrides. Merge the
                 # engine defaults so a sparse/absent file still has volume_anchors,

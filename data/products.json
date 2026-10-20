@@ -11219,7 +11219,7 @@
    "volume_eligible": false,
    "fixed_price": true,
    "bottle_type": "Dropper 50 mL",
-   "description": "A Terrain Restore bottle made for one client, with two or more added ingredients named on the order line. Always $70 a bottle (Glen, 2026-10-19)."
+   "description": "A Terrain Restore bottle made for one client, with one or more added ingredients named on the order line. Always $70 a bottle (Glen, 2026-10-19)."
   },
   "et6-cfi": {
    "name": "ET6 CFI Immune Energetic Terrain Infoceutical",
