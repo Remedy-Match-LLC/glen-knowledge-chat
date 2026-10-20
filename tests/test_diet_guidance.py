@@ -53,7 +53,7 @@ def test_one_phase_never_carries_another_phase_s_text():
             assert dg.guidance(m)["paragraphs"][0] not in html
 
 
-def test_every_sentence_is_its_own_paragraph():
+def test_every_source_line_is_its_own_paragraph():
     html = dg.guidance_html(4)
     assert "<p>An overnight fast of 12 to 14 hours suits those with strength to spare.</p>" in html
     assert html.count("<p>") == 5 + 6
