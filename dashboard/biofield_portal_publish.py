@@ -150,7 +150,18 @@ def _match(name, catalog):
     for slug, product in (catalog or {}).items():
         if (product.get("name") or "").strip().lower() == wanted:
             return slug
-    return name_to_slug(name, catalog)
+    near = name_to_slug(name, catalog)
+    from dashboard.biofield_invoice import terrain_restore_fallback, terrain_restore_ingredient
+    if terrain_restore_ingredient(name):
+        # An ingredient for the client's Terrain Restore bottle. A near match counts
+        # only when it is itself an "in Terrain Restore" product: a bare "Digestzymes"
+        # bottle would put a second product on the portal (Glen, 2026-10-19).
+        near_name = ((catalog or {}).get(near) or {}).get("name") if near else None
+        if near and terrain_restore_ingredient(near_name):
+            return near
+        return terrain_restore_fallback(
+            name, (s for s, p in (catalog or {}).items() if not (p or {}).get("inactive")))
+    return near
 
 
 def _dosing(layer):

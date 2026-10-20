@@ -96,10 +96,18 @@ def test_nothing_folds_when_the_custom_terrain_restore_cannot_be_sold():
             "pyrite-gem-elixir-in-terrain-restore", "quinton-in-terrain-restore"]
 
 
-def test_an_unknown_name_still_goes_to_skipped():
+def test_an_unlisted_ingredient_still_goes_in_the_bottle():
+    """Glen, 2026-10-19: an ingredient with no product of its own "is made into her
+    Terrain Restore with the other ingredients, with no change in the fee"."""
     built = inv.build_invoice_lines({}, ["Made Up in Terrain Restore"], CATALOG,
                                     include_fee=False)
-    assert built["lines"] == [] and built["skipped"] == ["Made Up in Terrain Restore"]
+    assert built["skipped"] == []
+    assert [l.get("note") for l in built["lines"]] == ["With Made Up"]
+
+
+def test_an_unknown_name_still_goes_to_skipped():
+    built = inv.build_invoice_lines({}, ["Made Up Formula"], CATALOG, include_fee=False)
+    assert built["lines"] == [] and built["skipped"] == ["Made Up Formula"]
 
 
 def test_the_handoff_seed_folds_in_layer_order(tmp_path):
