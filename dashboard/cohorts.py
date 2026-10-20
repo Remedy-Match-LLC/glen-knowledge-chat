@@ -187,26 +187,33 @@ def validate_policy(policy):
 # every Terrain Restore with added ingredients (Glen, 2026-10-19: "yes, always $70").
 # A typed price on the line still wins.
 _NEVER_COHORT_PRICED = frozenset({"terrain-restore-custom"})
-_FIXED_CACHE = {"key": None, "slugs": frozenset()}
+_FIXED_CACHE = [None, frozenset()]     # [(mtime, size), slugs], replaced as one pair
 
 
 def _never_cohort_priced(slug):
+    """True for a product no cohort prices. The slug ending is a backstop that holds
+    even when the catalog cannot be read (review round 2, 2026-10-19)."""
     import json
     import os
+    slug = (slug or "").strip().lower()
+    if slug in _NEVER_COHORT_PRICED or slug.endswith("-in-terrain-restore"):
+        return True
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "data", "products.json")
+    global _FIXED_CACHE
     try:
         st = os.stat(path)
         key = (st.st_mtime_ns, st.st_size)
-        if _FIXED_CACHE["key"] != key:
+        cache = _FIXED_CACHE
+        if cache[0] != key:
             with open(path) as fh:
                 prods = (json.load(fh) or {}).get("products") or {}
-            _FIXED_CACHE["slugs"] = frozenset(k for k, p in prods.items()
-                                              if isinstance(p, dict) and p.get("fixed_price"))
-            _FIXED_CACHE["key"] = key
+            cache = [key, frozenset(k for k, p in prods.items()
+                                    if isinstance(p, dict) and p.get("fixed_price"))]
+            _FIXED_CACHE = cache
     except Exception:
-        pass
-    return slug in _NEVER_COHORT_PRICED or slug in _FIXED_CACHE["slugs"]
+        cache = _FIXED_CACHE
+    return slug in cache[1]
 
 
 def policy_unit_cents(policy, *, slug, list_cents, is_ff):

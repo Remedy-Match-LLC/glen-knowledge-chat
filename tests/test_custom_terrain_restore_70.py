@@ -204,3 +204,11 @@ def test_no_cohort_policy_prices_a_single_ingredient_bottle():
     for slug in (OAK, JASPER):
         assert co.policy_unit_cents({"type": "percent_off", "pct": 20, "scope": "all"},
                                     slug=slug, list_cents=7000, is_ff=True) is None
+
+
+def test_an_unreadable_catalog_still_never_cohort_prices_a_terrain_restore_bottle(monkeypatch):
+    from dashboard import cohorts as co
+    monkeypatch.setattr(co, "_FIXED_CACHE", [None, frozenset()])
+    monkeypatch.setattr("os.stat", lambda *a, **k: (_ for _ in ()).throw(OSError("gone")))
+    assert co.policy_unit_cents({"type": "percent_off", "pct": 20, "scope": "all"},
+                                slug=OAK, list_cents=7000, is_ff=True) is None
