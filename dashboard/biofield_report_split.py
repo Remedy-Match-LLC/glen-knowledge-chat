@@ -462,9 +462,12 @@ def stored_leads(cx):
     leads, _links = approved_leads()
     rows = {}
     for key, text in cx.execute(
-            "SELECT key,text FROM biofield_plan_wording WHERE kind='report_lead' ORDER BY key"):
-        rows.setdefault(str(key).split(":")[0], []).append(text)
-    leads.update(rows)
+            "SELECT key,text FROM biofield_plan_wording WHERE kind='report_lead'"):
+        report, _, n = str(key).partition(":")
+        rows.setdefault(report, []).append((int(n) if n.isdigit() else 0, text))
+    # By paragraph number, so a tenth paragraph never sorts second as text would.
+    leads.update({r: [t for _n, t in sorted(v, key=lambda x: x[0])]
+                  for r, v in rows.items()})
     return leads
 
 
