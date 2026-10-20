@@ -655,3 +655,286 @@ def test_the_primary_report_reads_its_own_lead(cx):
     cx.commit()
     assert rs.primary_intro(cx) == ("Your layers.",)
     assert rs.primary_intro(cx, ["For your sleep."]) == ("Your layers.", "For your sleep.")
+
+
+# ---- A switched-off layer section leaves the report and the portal too ------------
+# Glen, 2026-10-19: "Yes, I think so, at least for now. That way it is presented as the
+# complete report for that individual at that time." The invoice, the printed report
+# and the portal all use rs.layer_remedy_on, so they cannot disagree.
+
+ED7 = "ED7 Stomach Energetic Driver Infoceutical"
+PYRITE = "Pyrite Gem Elixir in Terrain Restore"
+QUINTON = "Quinton Hypertonic Electrolytes in Terrain Restore"
+RICH_CATALOG = CATALOG + [
+    {"slug": "ed7", "name": ED7},
+    {"slug": "microbiome", "name": "Microbiome"},
+    {"slug": "terrain-restore", "name": "Terrain Restore"},
+    {"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE},
+    {"slug": "quinton-in-terrain-restore", "name": QUINTON}]
+NARRATIVE = ("1. Lens: Liver Support clears the lens.\n\n"
+             "2. " + INFO + " restores what lies beneath.\n\n"
+             "3. Blood: Pyrite Gem Elixir and Quinton rebuild the blood.\n\n"
+             "4. Gut: Microbiome with " + ED7 + " settles the gut.")
+
+
+@pytest.fixture
+def rich(tmp_path, monkeypatch):
+    """Josie-like chain: a formulation layer, an infoceutical-only layer, a Terrain
+    Restore layer of two essences, and a layer holding one of each. Every outside
+    call is stubbed: PDF, portal upload and publish, the hand-off push."""
+    import biofield_local_app as bla
+    from dashboard import biofield_invoice as bi
+    from dashboard import biofield_portal_publish as bpp
+    from dashboard.biofield_authoring import add_chain_row, create_test, init_auth_tables
+    from dashboard.biofield_narrative import save_narrative
+    rec = {"pdf_html": [], "portal": [], "pushed": [], "lines": None, "written": []}
+    monkeypatch.setattr(bla, "_fetch_life_stress_curation", lambda email: None)
+
+    def fake_pdf(html, out):
+        rec["written"].append(html)
+        with open(out, "wb") as f:
+            f.write(b"%PDF fake")
+        return out
+    monkeypatch.setattr(bla, "save_report_pdf", fake_pdf)
+    monkeypatch.setattr(bla, "report_pdf_bytes",
+                        lambda html: rec["pdf_html"].append(html) or b"%PDF fake")
+    monkeypatch.setattr(bpp, "load_catalog",
+                        lambda: {c["slug"]: {"name": c["name"]} for c in RICH_CATALOG})
+    # A fixed address: the real asset name is random on every upload.
+    monkeypatch.setattr(bpp, "upload_asset", lambda data, name, **kw: "https://x/asset")
+    monkeypatch.setattr(bpp, "publish_to_portal",
+                        lambda payload, **kw: rec["portal"].append(payload) or {"ok": True})
+    monkeypatch.setattr(bi, "default_handoff_push",
+                        lambda email, name, content, **kw: rec["pushed"].append(content)
+                        or {"ok": True})
+    monkeypatch.setenv("PORTAL_PUBLISH_BASE_URL", "https://example.invalid")
+    monkeypatch.setenv("BIOFIELD_REPORTS_DIR", str(tmp_path))
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as con:
+        init_auth_tables(con)
+        n = create_test(con, name="Josie Gagnon", email="j@x.com", date="2026-10-19")
+        add_chain_row(con, n, 1, "Lens", "Lens", "Liver Support", "1 capsule", "daily",
+                      "with breakfast")
+        # Its paragraph names only the remedy, never the head "Renal", so the
+        # narrative can be cut into cards only by the remedy as Glen wrote it.
+        add_chain_row(con, n, 2, "Renal", "Renal", INFO, "1 sachet", "daily", "")
+        add_chain_row(con, n, 3, "Blood", "Blood", PYRITE, "10 drops", "daily", "")
+        add_chain_row(con, n, 3, "Blood", "Blood", QUINTON, "10 drops", "daily", "")
+        add_chain_row(con, n, 4, "Gut", "Gut", "Microbiome", "1 capsule", "twice daily", "")
+        add_chain_row(con, n, 4, "Gut", "Gut", ED7, "1 sachet", "daily", "")
+        con.execute("UPDATE biofield_auth_chain SET bottles='3' WHERE remedy=?", (QUINTON,))
+        save_narrative(con, n, NARRATIVE)
+        # A finding on the Gut layer, placed there by ED7's row.
+        from dashboard import biofield_stress as bs
+        bs.add_stress(con, n, "Stomach acid")
+        rid = con.execute("SELECT id FROM biofield_auth_chain WHERE remedy=?", (ED7,)).fetchone()[0]
+        bs.cover_stress(con, n, bs.stress_id_for(con, n, "Stomach acid"), [rid])
+
+    def fake_create(customer, lines, replace_open=False, invoice_note=None,
+                    update_order_id=None, idempotency_key=""):
+        rec["lines"] = lines
+        return {"ok": True, "order_id": 7, "external_ref": "INH", "total_cents": 1}
+    c = bla.create_app(db, invoice_fetch_catalog=lambda: RICH_CATALOG,
+                       invoice_create=fake_create, invoice_link=lambda oid: {"ok": False},
+                       invoice_paid_check=lambda email: {},
+                       invoice_latest=lambda email: {"ok": False},
+                       scan_lookup=lambda email: {}).test_client()
+    c.db, c.rec = db, rec
+    c.tid = n if str(n).startswith("a") else f"a{n}"
+    return c
+
+
+def _everything(c):
+    """What each output carries now: the printed report (HTML and PDF), the portal
+    content and its PDF (published on print), the hand-off seed, and both invoices."""
+    rec = c.rec
+    for k in ("pdf_html", "portal", "pushed", "written"):
+        rec[k].clear()
+    html = c.get(f"/test/{c.tid}/report").get_data(as_text=True)
+    assert c.get(f"/test/{c.tid}/report.pdf").status_code == 200
+    pdf_html = rec["written"][-1]
+    portal, portal_pdf = rec["portal"][-1]["content"], rec["pdf_html"][-1]
+    assert c.post(f"/author/{c.tid}/handoff", json={}).get_json()["ok"]
+    seed, handoff_lines = rec["pushed"][-1], rec["lines"]
+    assert c.post(f"/author/{c.tid}/invoice", json={}).get_json()["ok"]
+    return {"html": html, "pdf_html": pdf_html, "portal": portal, "portal_pdf": portal_pdf,
+            "seed": seed, "handoff_lines": handoff_lines, "invoice_lines": rec["lines"]}
+
+
+def _outside_narrative(html):
+    """The report with Glen's narrative cut out: what the code lists."""
+    import re
+    return re.sub(r'<div class="narrative">.*?</div>', "", html, flags=re.S)
+
+
+def _narrative_div(html):
+    import re
+    return re.search(r'<div class="narrative">.*?</div>', html, flags=re.S).group(0)
+
+
+def _slugs(items):
+    return [i["slug"] for i in items]
+
+
+def test_the_defaults_print_publish_and_bill_exactly_as_before(rich):
+    """Pressing a switch that is already on writes a row; the outputs must still be
+    byte for byte what the code without this change made."""
+    from dashboard import biofield_portal_publish as bpp
+    from dashboard.biofield_authoring import authored_report
+    from dashboard.biofield_handoff import build_portal_seed
+    from dashboard.biofield_narrative import get_narrative
+    from dashboard.biofield_report_present import render_present
+    c = rich
+    before = _everything(c)
+    with sqlite3.connect(c.db) as con:
+        rep, narr = authored_report(con, c.tid), get_narrative(con, c.tid)
+        # The old call, with no switch at all, is what the report printed before.
+        assert before["html"] == render_present(rep, narr)
+        assert before["pdf_html"] == before["html"]
+        assert before["portal_pdf"] == render_present(rep, narr)
+        old_portal = bpp.build_portal_content(con, c.tid, special_price_cents=0)
+        assert bpp.build_portal_content(con, c.tid, special_price_cents=0,
+                                        primary_on=rs.DEFAULTS["biofield"]) == old_portal
+        resolve = lambda nm: __import__("dashboard.biofield_invoice", fromlist=["x"]) \
+            .resolve_line_slug(nm, RICH_CATALOG)
+        assert build_portal_seed(con, c.tid, resolve, name="Josie",
+                                 primary_on=rs.DEFAULTS["biofield"]) \
+            == build_portal_seed(con, c.tid, resolve, name="Josie")
+    assert rs.primary_report(rep, rs.DEFAULTS["biofield"]) is rep
+    # Other sections on in the primary report never touch the layer remedies.
+    assert render_present(rep, narr, primary_on=rs.DEFAULTS["biofield"] | {
+        "pure_powders", "foods_emphasize"}) == render_present(rep, narr)
+    # Switches pressed off and back on: still exactly the same everywhere.
+    for s in (cs.INFOCEUTICALS, cs.FORMULATIONS):
+        _toggle(c, "biofield", s, False)
+        _toggle(c, "biofield", s, True)
+    assert _everything(c) == before
+    assert _slugs(before["portal"]["reorder_items"]) == [
+        "liver-support", "ed12", "terrain-restore", "microbiome", "ed7"]
+    assert before["invoice_lines"][1:] == [
+        {"slug": "liver-support", "qty": 1, "source": "biofield"},
+        {"slug": "ed12", "qty": 1, "source": "biofield"},
+        {"slug": "terrain-restore", "qty": 3, "source": "biofield",
+         "note": "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"},
+        {"slug": "microbiome", "qty": 1, "source": "biofield"},
+        {"slug": "ed7", "qty": 1, "source": "biofield"}]
+
+
+def test_infoceuticals_off_leave_the_report_the_portal_and_the_invoice_together(rich):
+    c = rich
+    before = _everything(c)
+    _toggle(c, "biofield", cs.INFOCEUTICALS, False)
+    now = _everything(c)
+    for key in ("html", "pdf_html", "portal_pdf"):
+        listed = _outside_narrative(now[key])
+        assert INFO not in listed and ED7 not in listed, key
+        assert "Liver Support" in listed and "Microbiome" in listed, key
+        # Glen's prose is untouched, names and all.
+        assert _narrative_div(now[key]) == _narrative_div(before[key]), key
+        # The Renal layer keeps its number and head, with no remedy.
+        assert ("<td class=lyr rowspan=1>2</td><td rowspan=1>Renal</td>"
+                "<td rowspan=1>Renal</td><td></td><td></td><td></td><td></td>") in listed, key
+    # The portal: same cards and the same words on them; no infoceutical anywhere.
+    p, b = now["portal"], before["portal"]
+    assert [L["title"] for L in p["layers"]] == [L["title"] for L in b["layers"]]
+    assert [L["meaning"] for L in p["layers"]] == [L["meaning"] for L in b["layers"]]
+    assert p["layers"][1]["meaning"].startswith(INFO) and p["greeting"] == b["greeting"]
+    # The layers' findings stay, even one placed there by a switched-off remedy.
+    assert [L["stresses"] for L in p["layers"]] == [L["stresses"] for L in b["layers"]]
+    assert [x["label"] for x in b["layers"][3]["stresses"]] == ["Stomach acid"]
+    assert [L["remedy"] for L in p["layers"]] == [
+        "Liver Support", "", PYRITE + " + " + QUINTON, "Microbiome"]
+    assert _slugs(p["reorder_items"]) == ["liver-support", "terrain-restore", "microbiome"]
+    assert p["reorder_items"][1]["note"] == \
+        "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"
+    assert p["reorder_items"][1]["qty"] == 3
+    assert not any(e["name"] in (INFO, ED7) for e in p["schedule"]["entries"])
+    # The hand-off seed Rae publishes.
+    s = now["seed"]
+    assert [L["remedy"] for L in s["layers"]] == [
+        "Liver Support", "", PYRITE, QUINTON, "Microbiome"]
+    assert [L["title"] for L in s["layers"]] == ["Lens", "Renal", "Blood", "Blood", "Gut"]
+    assert _slugs(s["reorder_items"]) == ["liver-support", "terrain-restore", "microbiome"]
+    # The invoice, both routes.
+    for key in ("invoice_lines", "handoff_lines"):
+        assert [l["slug"] for l in now[key]] == [
+            "biofield-analysis", "liver-support", "terrain-restore", "microbiome"], key
+
+
+def test_formulations_off_leave_only_the_infoceuticals_and_fold_nothing(rich):
+    c = rich
+    before = _everything(c)
+    _toggle(c, "biofield", cs.FORMULATIONS, False)
+    now = _everything(c)
+    for key in ("html", "pdf_html", "portal_pdf"):
+        listed = _outside_narrative(now[key])
+        for name in ("Liver Support", "Pyrite", "Quinton", "Microbiome", "Terrain Restore"):
+            assert name not in listed, (key, name)
+        assert INFO in listed and ED7 in listed, key
+        assert _narrative_div(now[key]) == _narrative_div(before[key]), key
+        for n, head in ((1, "Lens"), (3, "Blood")):
+            assert (f"<td class=lyr rowspan=1>{n}</td><td rowspan=1>{head}</td>"
+                    f"<td rowspan=1>{head}</td><td></td><td></td><td></td><td></td>") in listed
+    p = now["portal"]
+    assert [L["remedy"] for L in p["layers"]] == ["", INFO, "", ED7]
+    assert [L["meaning"] for L in p["layers"]] == [L["meaning"] for L in before["portal"]["layers"]]
+    assert _slugs(p["reorder_items"]) == ["ed12", "ed7"]
+    assert _slugs(now["seed"]["reorder_items"]) == ["ed12", "ed7"]
+    assert [L["remedy"] for L in now["seed"]["layers"]] == ["", INFO, "", ED7]
+    for key in ("invoice_lines", "handoff_lines"):
+        assert [l["slug"] for l in now[key]] == ["biofield-analysis", "ed12", "ed7"], key
+
+
+def test_terrain_restore_folds_what_remains_when_one_ingredient_is_off():
+    """One Terrain Restore holding an infoceutical and an essence: with
+    Infoceuticals off, the bottle still folds, holding the essence alone."""
+    from dashboard.biofield_invoice import fold_terrain_restore
+    rows = [{"head": "Blood", "remedy": PYRITE}, {"head": "Blood", "remedy": "ED3 Infoceutical in Terrain Restore"}]
+    kept = rs.primary_rows(rows, {cs.FORMULATIONS})
+    assert kept == rows[:1]
+    items = [{"name": r["remedy"], "slug": "pyrite-gem-elixir-in-terrain-restore"} for r in kept]
+    folded = fold_terrain_restore(items, True)
+    assert [i["slug"] for i in folded] == ["terrain-restore"]
+    assert folded[0]["note"] == "With Pyrite Gem Elixir"
+
+
+def test_the_schedule_keeps_every_remaining_entry_as_it_was(rich):
+    from dashboard.biofield_authoring import authored_report
+    with sqlite3.connect(rich.db) as con:
+        rep = authored_report(con, rich.tid)
+    off = rs.primary_report(rep, {cs.FORMULATIONS})
+    assert off is not rep and rep["layers"][1]["remedy"] == INFO   # the original is untouched
+    by_name = {e["name"]: e for e in rep["schedule"]["entries"]}
+    assert [e["name"] for e in off["schedule"]["entries"]] == [
+        "Liver Support", "Microbiome", "Terrain Restore"]
+    for e in off["schedule"]["entries"]:
+        assert e == by_name[e["name"]]
+
+
+def test_one_function_classifies_for_all_three(monkeypatch):
+    """The invoice, the printed report and the portal all ask layer_remedy_on."""
+    seen = []
+    real = rs.layer_remedy_on
+
+    def spy(name, on):
+        seen.append(name)
+        return real(name, on)
+    monkeypatch.setattr(rs, "layer_remedy_on", spy)
+    rs.invoice_remedies([{"name": "Liver Support"}], {cs.FORMULATIONS})
+    rs.primary_rows([{"head": "", "remedy": INFO}], {cs.FORMULATIONS})
+    assert set(seen) == {"Liver Support", INFO}
+
+
+def test_life_stress_essences_follow_the_switch(monkeypatch):
+    from dashboard import life_stress as ls
+    from dashboard import life_stress_curation as lsc
+    from dashboard.biofield_report_present import render_present
+    monkeypatch.setenv("LIFE_STRESS_ENABLED", "1")
+    monkeypatch.setattr(ls, "_load_json", lambda path: {"products": {}})
+    monkeypatch.setattr(lsc, "apply_data", lambda cur, block, products: {
+        "curated": True, "items": [{"name": "Oak Flower Essence", "description": "Calm."}]})
+    rep = {"client": {"name": "J"}, "layers": [], "schedule": {"slots": [], "entries": []},
+           "life_stress_curation": {"slugs": ["oak"]}}
+    assert "Oak Flower Essence" in render_present(rep, "", primary_on=rs.DEFAULTS["biofield"])
+    assert render_present(rep, "", primary_on=rs.DEFAULTS["biofield"]) == render_present(rep, "")
+    assert "Life Stress" not in render_present(rep, "", primary_on={cs.INFOCEUTICALS})

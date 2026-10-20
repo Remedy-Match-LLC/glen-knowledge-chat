@@ -1477,8 +1477,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        return Response(_with_primary_added(test_id, rep, render_present(rep, narrative, _primary_intro())),
-                        mimetype="text/html")
+        html = render_present(rep, narrative, _primary_intro(), primary_on=_primary_on(test_id))
+        return Response(_with_primary_added(test_id, rep, html), mimetype="text/html")
 
     @app.route("/test/<test_id>/report.pdf")
     def report_present_pdf(test_id):
@@ -1489,7 +1489,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        html = _with_primary_added(test_id, rep, render_present(rep, narrative, _primary_intro()))
+        html = _with_primary_added(test_id, rep, render_present(
+            rep, narrative, _primary_intro(), primary_on=_primary_on(test_id)))
         reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
                                      os.path.join(os.path.expanduser("~"), "biofield-reports"))
         date = (rep.get("date") or "").replace("/", "-") or "undated"
@@ -1514,6 +1515,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             "Content-Disposition": f'inline; filename="biofield-{test_id}{suffix}.pdf"'})
 
     # --- The five reports and their section buttons (Glen, 2026-10-19) ---
+    def _primary_on(test_id, authored=None):
+        """The sections switched on in this test's Biofield Analysis. The printed
+        report, the portal and the invoice all read them here (Glen, 2026-10-19)."""
+        from dashboard import biofield_report_split as rsplit
+        if authored:
+            test_id = "a" + str(test_id).lstrip("a")
+        with sqlite3.connect(db_path) as cx:
+            return rsplit.settings(cx, test_id, authored)[rsplit.PRIMARY]
+
     def _primary_invoice(test_id, remedies):
         """(remedies to bill, layer remedies left off, sections on) for the invoice,
         from the Biofield Analysis's buttons. At the defaults it bills what it did."""
@@ -1521,8 +1531,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         # The invoice routes are /author routes, so the test is always authored:
         # "/author/48" is test a48, never FileMaker test 48 (review, 2026-10-19).
         key = rsplit.test_key(test_id, authored=True)
+        on = _primary_on(key, authored=True)
         with sqlite3.connect(db_path) as cx:
-            on = rsplit.settings(cx, key)[rsplit.PRIMARY]
             powders = []
             if rsplit.PURE_POWDERS in on:
                 from dashboard.biofield_plan_report import plan
@@ -2302,13 +2312,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if not email:
                 return {"ok": False, "error": "Add a client email in the header first."}, 400
             catalog = invoice_fetch_catalog()
+            # The portal gets what the invoice bills: the Biofield Analysis's
+            # section buttons (Glen, 2026-10-19).
+            hand_on = _primary_on(test_id, authored=True)
             content = biofield_handoff.build_portal_seed(
                 cx, test_id, lambda nm: biofield_invoice.resolve_line_slug(nm, catalog),
                 name=client.get("name"),
                 terrain_restore_ok=biofield_invoice.terrain_restore_sellable(catalog),
                 name_of=lambda sl: next((c.get("name") for c in catalog or []
                                          if c.get("slug") == sl), None),
-                ready=lambda sl: not biofield_invoice.is_not_ready(sl, catalog))
+                ready=lambda sl: not biofield_invoice.is_not_ready(sl, catalog),
+                primary_on=hand_on)
             # The scan date keys the portal's per-scan report AND marks this hand-off's
             # report CURRENT, so the manual Biofield wins over a stale reveal. Fall back
             # to today when the test carries no date.
@@ -2363,7 +2377,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # A folded Terrain Restore line holds several remedies: its count is
                 # the largest of theirs.
                 names = biofield_invoice.held_names(item)
-                if not any(_rsplit.layer_section(n) in primary_on for n in names):
+                if not any(_rsplit.layer_remedy_on(n, primary_on) for n in names):
                     continue
                 line = {
                     "slug": slug,
@@ -4496,8 +4510,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not re.fullmatch(r"a+\d+", str(test_id)):
             raise ValueError(f"only an authored report (a<number>) can be published, not {test_id!r}")
         from dashboard import biofield_portal_publish as _bpp
+        # The portal and its PDF follow the Biofield Analysis's section buttons, as
+        # the invoice does (Glen, 2026-10-19).
+        on = _primary_on(test_id, authored=True)
         with sqlite3.connect(db_path) as cx:
-            pre = _bpp.build_portal_content(cx, test_id, special_price_cents=special)
+            pre = _bpp.build_portal_content(cx, test_id, special_price_cents=special,
+                                            primary_on=on)
         confirmed = _own_remedies(test_id) | {str(n).strip() for n in (own_remedies or ())}
         missing = [u for u in pre["unresolved"] if u not in confirmed]
         if missing:
@@ -4515,7 +4533,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
         _add_intake_fallback(rep)
-        pdf_bytes = report_pdf_bytes(render_present(rep, narrative))
+        pdf_bytes = report_pdf_bytes(render_present(rep, narrative, primary_on=on))
         pdf_url = _bpp.upload_asset(pdf_bytes, _bpp._asset_name("pdf"), base_url=base, console_key=key)
         audio_url = None
         audio_path = os.path.join(AUDIO_DIR, f"test_{test_id}.mp3")
@@ -4525,7 +4543,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                               base_url=base, console_key=key)
         with sqlite3.connect(db_path) as cx:
             payload = _bpp.build_portal_content(cx, test_id, special_price_cents=special,
-                                                audio_url=audio_url, report_pdf_url=pdf_url)
+                                                audio_url=audio_url, report_pdf_url=pdf_url,
+                                                primary_on=on)
         # The report can change while the PDF renders. Check what actually goes out.
         late = [u for u in payload["unresolved"] if u not in confirmed]
         if late:

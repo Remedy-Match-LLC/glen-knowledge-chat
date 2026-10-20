@@ -156,6 +156,84 @@ def layer_section(name):
     return pr._remedy_section(name)
 
 
+def layer_remedy_on(name, primary_on):
+    """True when a layer remedy belongs in the Biofield Analysis: its section is on.
+
+    The one test the invoice, the printed report and the client's portal all use, so
+    the three can never disagree (Glen, 2026-10-19: a section switched off "is
+    presented as the complete report for that individual at that time")."""
+    return layer_section(name or "") in primary_on
+
+
+def all_layers_on(primary_on):
+    """True when no layer section is switched off: nothing is filtered at all."""
+    return all(k in primary_on for k in LAYER_SECTIONS)
+
+
+def _head_group(row):
+    """The layer a chain row belongs to, as group_layers groups it: rows sharing a
+    non-empty head are one layer, and an empty-head row is a layer of its own."""
+    head = (row.get("head") or "").strip().lower()
+    return ("head", head) if head else ("row", id(row))
+
+
+_BLANK_REMEDY = {"remedy": "", "dosage": "", "frequency": "", "timing": ""}
+
+
+def primary_rows(rows, primary_on, remedy_of=lambda r: r.get("remedy"),
+                 group_of=_head_group, blank=lambda r: dict(r, **_BLANK_REMEDY)):
+    """Chain rows with every switched-off layer remedy taken out, in their order.
+
+    A layer whose remedies are all switched off keeps its first row with the remedy
+    blanked, so its number, head and findings still print with no remedy. A row that
+    never had a remedy is kept as it is. With every layer section on, `rows` itself
+    is returned, untouched."""
+    rows = list(rows or [])
+    if all_layers_on(primary_on):
+        return rows
+
+    def _on(r):
+        name = (remedy_of(r) or "").strip()
+        return not name or layer_remedy_on(name, primary_on)
+    kept_groups = {group_of(r) for r in rows if _on(r)}
+    out, placed = [], set()
+    for r in rows:
+        g = group_of(r)
+        if _on(r):
+            out.append(r)
+        elif g not in kept_groups and g not in placed:
+            out.append(blank(r))
+        placed.add(g)
+    return out
+
+
+def primary_report(report, primary_on):
+    """The Biofield Analysis report dict with switched-off layer remedies taken out
+    of its layers and its Remedy Schedule. The narrative is Glen's prose and is not
+    in here. With every layer section on, the same dict is returned, untouched."""
+    if all_layers_on(primary_on):
+        return report
+    from dashboard.biofield_schedule import build_schedule
+    report = dict(report)
+    original = report.get("layers") or []
+    layers = primary_rows(original, primary_on)
+    report["layers"] = layers
+    # The schedule is rebuilt from the rows still printed, as the report builders
+    # build it. A FileMaker report schedules a row with no remedy too; an authored
+    # one does not. A row blanked here is never scheduled.
+    old = (report.get("schedule") or {}).get("entries") or []
+    keep_unnamed = any(not (e.get("name") or "").strip() for e in old)
+    own = {id(r) for r in original}
+    report["schedule"] = build_schedule([
+        {"name": l.get("remedy"), "dosage": l.get("dosage"),
+         "frequency": l.get("frequency"), "timing": l.get("timing"),
+         "schedule_slot": l.get("schedule_slot"),
+         "source_rids": [l["rid"]] if l.get("rid") is not None else []}
+        for l in layers
+        if id(l) in own and ((l.get("remedy") or "").strip() or keep_unnamed)])
+    return report
+
+
 def invoice_remedies(remedies, primary_on, pure_powder_names=()):
     """The layer remedies the invoice may bill, as [{name, qty}], in order.
 
@@ -163,7 +241,7 @@ def invoice_remedies(remedies, primary_on, pure_powder_names=()):
     Powders ticked for this client are added, one bottle each, only when Pure Powders
     is on in the primary report. Nothing from a stand-alone report is ever added.
     With the default settings this returns `remedies` unchanged."""
-    kept = [r for r in remedies or [] if layer_section(r.get("name") or "") in primary_on]
+    kept = [r for r in remedies or [] if layer_remedy_on(r.get("name"), primary_on)]
     if PURE_POWDERS in primary_on:
         have = {_norm(r.get("name") or "") for r in kept}
         for name in pure_powder_names or ():
@@ -176,7 +254,7 @@ def invoice_remedies(remedies, primary_on, pure_powder_names=()):
 def left_off(remedies, primary_on):
     """Layer remedies the invoice leaves out because their section is off."""
     return [r.get("name") for r in remedies or []
-            if layer_section(r.get("name") or "") not in primary_on]
+            if not layer_remedy_on(r.get("name"), primary_on)]
 
 
 def left_off_warning(left_off_names, fee_only=False):

@@ -273,13 +273,25 @@ def segment_narrative(narrative, layers):
 
 
 def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
-                         audio_url=None, report_pdf_url=None, findings_provider=None):
+                         audio_url=None, report_pdf_url=None, findings_provider=None,
+                         primary_on=None):
     """Map an authored intake report to the portal content payload.
+
+    `primary_on` is the set of sections switched on in the Biofield Analysis. A layer
+    remedy whose section is off is left out of the layers, the reorder list and the
+    schedule, as it is left off the invoice and the printed report (Glen,
+    2026-10-19). None publishes every layer remedy, as before.
 
     Returns {email, name, scan_date, scan_id, content, unresolved}. Never raises
     on missing narrative (falls back to greeting=full narrative, blank meanings)."""
     cat = catalog if catalog is not None else load_catalog()
     rep = authored_report(cx, test_id)
+    # Glen's narrative is cut into cards by the layers as he wrote them, so a
+    # switch never changes which of his words land on which card.
+    written_layers = rep.get("layers") or []
+    if primary_on is not None:
+        from dashboard.biofield_report_split import primary_report
+        rep = primary_report(rep, primary_on)
     raw_layers = rep.get("layers") or []
     client = rep.get("client") or {}
     name = (client.get("name") or "").strip()
@@ -292,9 +304,10 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
     # intake page's own group_layers, so the portal numbers layers as the page does.
     from dashboard.biofield_report_html import group_layers
     groups = group_layers(raw_layers)
+    written = group_layers(written_layers) if written_layers is not raw_layers else groups
 
     narrative = get_narrative(cx, test_id) or ""
-    segs = segment_narrative(narrative, [g["rows"][0] for g in groups])
+    segs = segment_narrative(narrative, [g["rows"][0] for g in written])
     if segs:
         greeting = f"Aloha {first}," if first else "Aloha,"
         meanings = segs
@@ -382,9 +395,11 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
     # Best-effort; a stress lookup failure must never break a publish.
     try:
         from dashboard import biofield_stress as _bstr
+        # The layers' findings are the scan's, not the remedies': read from the rows
+        # as written, so a switched-off remedy never hides its layer's stresses.
         _chain = [{"layer": g["layer"], "head": L.get("head"), "remedy": L.get("remedy"),
                    "rid": L.get("rid")}
-                  for g in groups for L in g["rows"]]
+                  for g in written for L in g["rows"]]
         _sbl = {}
         for _grp in (_bstr.list_stresses(cx, test_id, _chain).get("by_layer") or []):
             _sbl[_grp.get("layer")] = [{"code": (s.get("code") or ""), "label": (s.get("label") or "")}

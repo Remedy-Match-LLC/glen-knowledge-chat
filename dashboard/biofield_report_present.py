@@ -173,8 +173,10 @@ def _stress_essence_for(remedy_item, layers, products):
     return None
 
 
-def _life_stress(report):
-    """Render only hand-tested Terrain Restore essences, never an AI fallback."""
+def _life_stress(report, primary_on=None):
+    """Render only hand-tested Terrain Restore essences, never an AI fallback. An
+    essence whose layer section is switched off in the Biofield Analysis is left out,
+    by the same test the invoice uses."""
     if _os.environ.get("LIFE_STRESS_ENABLED", "").strip().lower() not in ("1", "true", "yes", "on"):
         return ""
     try:
@@ -187,8 +189,14 @@ def _life_stress(report):
         ls = _lsc.apply_data(curation, {}, products)
         if not ls or not ls.get("curated") or not ls.get("items"):
             return ""
+        items = ls["items"]
+        if primary_on is not None:
+            from dashboard.biofield_report_split import layer_remedy_on
+            items = [i for i in items if layer_remedy_on(i.get("name"), primary_on)]
+        if not items:
+            return ""
         rows = []
-        for item in ls["items"]:
+        for item in items:
             stress = _stress_essence_for(item, (report or {}).get("layers"), products)
             indication = ""
             if stress:
@@ -230,9 +238,16 @@ def _intro(lines):
     return f'<div class="report-intro">{paras}</div>' if paras else ""
 
 
-def render_present(report, narrative="", intro=()):
+def render_present(report, narrative="", intro=(), primary_on=None):
+    """`primary_on` is the set of sections switched on in the Biofield Analysis.
+    A layer remedy whose section is off is left out of the schedule, the causal
+    chain and the life stress essences (Glen, 2026-10-19). Glen's narrative prints
+    as he wrote it. None, or both layer sections on, prints the report unchanged."""
+    if primary_on is not None:
+        from dashboard.biofield_report_split import primary_report
+        report = primary_report(report, primary_on)
     body = (_masthead(report) + _intro(intro) + _terrain(report) + _schedule(report) + _narrative(narrative)
-            + _life_stress(report) + _chain(report) + _diet(report)
+            + _life_stress(report, primary_on) + _chain(report) + _diet(report)
             + f'<div class="footer">{_e(FOOTER)}</div>')
     return (f"<!doctype html><html><head><meta charset=utf-8>"
             f"<title>Biofield Analysis</title><style>{_CSS}</style></head>"

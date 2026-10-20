@@ -7,12 +7,17 @@ Bobbi. Pushed to prod as a portal ai_draft; Rae publishes it from the console.
 
 
 def build_portal_seed(cx, test_id, resolve_slug, name=None, terrain_restore_ok=None,
-                      name_of=None, ready=None):
+                      name_of=None, ready=None, primary_on=None):
     """Return a portal-seed content dict {greeting, layers, reorder_items} from the
     authored chain. Layers are FLAT ({title, meaning, remedy (name string), dosing});
     reorder_items resolve each remedy to a catalog slug via resolve_slug(name)->slug|None.
     Pure read of biofield_auth_chain; never raises on a missing slug (that remedy just
-    doesn't get a reorder row)."""
+    doesn't get a reorder row).
+
+    `primary_on` is the set of sections switched on in the Biofield Analysis. A layer
+    remedy whose section is off is left out of the layers and the reorder list, as it
+    is left off the invoice (Glen, 2026-10-19). A layer whose remedies are all off
+    keeps its title with no remedy. None hands off every layer remedy, as before."""
     tnum = int(str(test_id).lstrip("a") or 0)
     # Terrain reading (BSI phase P + spoken location) carried onto the portal report.
     try:
@@ -26,11 +31,20 @@ def build_portal_seed(cx, test_id, resolve_slug, name=None, terrain_restore_ok=N
         "SELECT layer, head, most_affected, remedy, dosage, frequency, timing "
         "FROM biofield_auth_chain WHERE test_id=? AND TRIM(COALESCE(remedy,''))<>'' "
         "ORDER BY layer, sort_seq", (tnum,)).fetchall()
+    if primary_on is not None:
+        from dashboard.biofield_report_split import primary_rows
+        rows = primary_rows(
+            rows, primary_on, remedy_of=lambda r: r[3],
+            group_of=lambda r: (("head", (r[1] or "").strip().lower())
+                                if (r[1] or "").strip() else ("row", id(r))),
+            blank=lambda r: (r[0], r[1], r[2], "", "", "", ""))
     layers, reorder, seen = [], [], set()
     for lay, head, _tail, remedy, dose, freq, timing in rows:
         dosing = " ".join(x for x in (dose, freq, timing) if (x or "").strip()).strip()
         layers.append({"n": lay, "title": head or "", "meaning": "",
                        "remedy": remedy, "dosing": dosing})
+        if not (remedy or "").strip():
+            continue                 # a layer whose remedies are all switched off
         try:
             slug = resolve_slug(remedy)
         except Exception:
