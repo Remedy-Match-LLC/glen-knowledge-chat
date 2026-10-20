@@ -485,7 +485,7 @@ TOP_KEYS = ("vertigo_safety", "dose_totals", "thyroid_spacing")
 
 def render_plan_section(plan_groups, client_name="", date="", score_meanings=None,
                         intro=(), cautions=(), frame=None, headings=None, title=PLAN_TITLE,
-                        extra="", top_keys=None):
+                        extra="", top_keys=None, intro_links=None):
     """The plan as one block with its own scoped styles, so it can follow the
     Biofield Analysis in the same PDF or stand alone. Nothing unapproved is printed.
     Under Remedies, sections mix within each score, so each line names its kind.
@@ -551,9 +551,20 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
                              for name, text, hits in cautions) + "</div>")
     return (f"<style>{PLAN_CSS}</style><main class=plan>"
             + (f"<h1>{e(title)}</h1>" if title else "") + who
-            + "".join(f"<p class=plan-intro>{e(line)}</p>" for line in intro or ())
+            + "".join(f"<p class=plan-intro>{_linked(line, intro_links)}</p>"
+                      for line in intro or ())
             + "".join(f"<p class=plan-frame>{e(line)}</p>" for line in top)
             + caution + "".join(parts) + extra + "</main>")
+
+
+def _linked(line, links):
+    """One intro line, escaped, with each approved phrase in `links` ({phrase: url})
+    made a link. Only an http(s) address is linked."""
+    out = e_(line)
+    for phrase, url in (links or {}).items():
+        if phrase and str(url).startswith(("https://", "http://")):
+            out = out.replace(e_(phrase), f'<a href="{e_(url)}">{e_(phrase)}</a>')
+    return out
 
 
 def plan_page(body):

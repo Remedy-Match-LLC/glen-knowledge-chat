@@ -628,9 +628,10 @@ def test_grouped_reports_each_start_a_page_and_sections_flow(cx):
     assert "h1,h2,h3,h4{break-after:avoid" in page
 
 
-def test_each_report_has_a_lead_then_a_personal_slot(cx):
+def test_each_report_has_a_lead_then_a_personal_slot(cx, monkeypatch):
     """Glen, 2026-10-19: the standard lead first, the same for every client; a
     personal passage after it (phase 2) that prints nothing while empty."""
+    monkeypatch.setattr(rs, "approved_leads", lambda: ({}, {}))
     _seed(cx)
     on = {r: set(rs.DEFAULTS[r]) for r in rs.STAND_ALONE}
     ctx = _ctx(cx)
@@ -648,7 +649,8 @@ def test_each_report_has_a_lead_then_a_personal_slot(cx):
     assert page.count("Food is the base.") == 1       # printed even when not first
 
 
-def test_the_primary_report_reads_its_own_lead(cx):
+def test_the_primary_report_reads_its_own_lead(cx, monkeypatch):
+    monkeypatch.setattr(rs, "approved_leads", lambda: ({}, {}))
     assert rs.primary_intro(cx) == ()
     cx.execute("INSERT INTO biofield_plan_wording VALUES ('report_lead','biofield:1','Your layers.')")
     cx.execute("INSERT INTO biofield_plan_wording VALUES ('report_lead','diet:1','Food first.')")
@@ -789,9 +791,11 @@ def test_the_defaults_print_publish_and_bill_exactly_as_before(rich):
     with sqlite3.connect(c.db) as con:
         rep, narr = authored_report(con, c.tid), get_narrative(con, c.tid)
         # The old call, with no switch at all, is what the report printed before.
-        assert before["html"] == render_present(rep, narr)
+        # The old call plus the approved lead, the one thing added on purpose.
+        lead = rs.primary_intro(con)
+        assert lead and before["html"] == render_present(rep, narr, lead)
         assert before["pdf_html"] == before["html"]
-        assert before["portal_pdf"] == render_present(rep, narr)
+        assert before["portal_pdf"] in (render_present(rep, narr), render_present(rep, narr, lead))
         old_portal = bpp.build_portal_content(con, c.tid, special_price_cents=0)
         assert bpp.build_portal_content(con, c.tid, special_price_cents=0,
                                         primary_on=rs.DEFAULTS["biofield"]) == old_portal
@@ -958,3 +962,46 @@ def test_a_switched_off_remedy_is_not_called_in_the_program(cx):
     rs.set_section(cx, "a49", rs.PRIMARY, cs.FORMULATIONS, False)
     page = rs.render_report(_ctx(cx, marks=marks, names=names), "remedy_sources", on)
     assert rs.IN_PROGRAM_NOTE not in page
+
+
+def test_ingredients_prints_the_oils_line_when_an_oil_is_ticked(cx):
+    """The approved Ingredients lead says "Use essential oils only as their cautions
+    direct", so the oils' safety line must print there (marketing, 2026-10-19)."""
+    _seed(cx)
+    _tick(cx, "a49", "Gut", cs.ESSENTIAL_OILS, _item("Peppermint oil", 6))
+    _frame(cx, essential_oils_header="Oils are strong.", dose_totals="Count every source.")
+    ctx, on = _ctx(cx), rs.settings(cx, "a49")
+    page = rs.render_report(ctx, "ingredients", on["ingredients"])
+    assert "Peppermint oil" in page and "Oils are strong." in page
+    assert "Count every source." in page
+    # Oils alone, nutrients and botanicals switched off: the line still prints.
+    page = rs.render_report(ctx, "ingredients", {cs.ESSENTIAL_OILS})
+    assert "Oils are strong." in page
+
+
+def test_the_approved_leads_print_word_for_word(cx):
+    """Glen approved the five leads on 2026-10-19 ("approved with edits"). Every
+    paragraph prints as written, one per paragraph, before any personal passage."""
+    import html
+    import json
+    import pathlib
+    import re
+    src = pathlib.Path(__file__).resolve().parents[1] / "data" / "report_leads.json"
+    leads, links = rs.approved_leads()
+    assert set(leads) == {"biofield", "diet", "healing_tools", "ingredients", "remedy_sources"}
+    assert leads["biofield"][0] == "Your body is always working to heal itself."
+    assert leads["remedy_sources"][-1] == ("Consider asking the chat interface of Dr. Glen's "
+                                           "knowledge-base if you are considering any of these.")
+    assert "\u2014" not in src.read_text() and "\u2014" not in json.dumps(leads)
+    _seed(cx)
+    ctx, on = _ctx(cx), rs.settings(cx, "a49")
+    for report in rs.STAND_ALONE:
+        page = rs.render_report(ctx, report, on[report])
+        paras = re.findall(r"<p class=plan-intro>(.*?)</p>", page)
+        assert len(paras) >= len(leads[report])
+        for want, got in zip(leads[report], paras):
+            assert re.sub(r"<[^>]+>", "", got) == html.escape(want), report
+    sources = rs.render_report(ctx, "remedy_sources", on["remedy_sources"])
+    assert ('<a href="https://illtowell.com/">the chat interface of Dr. Glen&#x27;s '
+            'knowledge-base</a>') in sources
+    assert rs.primary_intro(cx) == tuple(leads["biofield"])

@@ -21,6 +21,7 @@ here. Until then their buttons say "no data yet".
 Brief: 00 System/pillar-inboxes/platform/2026-10-19-report-split-and-section-buttons.md
 """
 import html
+import json
 import os
 import re
 
@@ -438,14 +439,32 @@ def top_keys(printed):
     return tuple(keys)
 
 
+_LEADS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "data", "report_leads.json")
+
+
+def approved_leads():
+    """({report: [lead lines]}, {report: {phrase: url}}) from data/report_leads.json:
+    the leads Glen approved on 2026-10-19 ("approved with edits"), printed as written."""
+    try:
+        with open(_LEADS_FILE, encoding="utf-8") as fh:
+            doc = json.load(fh) or {}
+        return dict(doc.get("leads") or {}), dict(doc.get("links") or {})
+    except Exception:
+        return {}, {}
+
+
 def stored_leads(cx):
-    """{report: [lead lines]} as stored: biofield_plan_wording kind 'report_lead', key
-    '<report>:<n>'. The same for every client."""
+    """{report: [lead lines]}, the same for every client: the approved file, unless
+    biofield_plan_wording holds rows of kind 'report_lead' (key '<report>:<n>') for
+    that report."""
     pr.ensure_schema(cx)
-    leads = {}
+    leads, _links = approved_leads()
+    rows = {}
     for key, text in cx.execute(
             "SELECT key,text FROM biofield_plan_wording WHERE kind='report_lead' ORDER BY key"):
-        leads.setdefault(str(key).split(":")[0], []).append(text)
+        rows.setdefault(str(key).split(":")[0], []).append(text)
+    leads.update(rows)
     return leads
 
 
@@ -492,7 +511,8 @@ def render_report(ctx, report, on, intro=True):
         pr.cautions_for(printed, ctx["cautions"]), ctx["frame"],
         headings=_headings(on, skip, REPORT_TITLES[report], printed,
                            name_remedies=report == "remedy_sources"),
-        title=REPORT_TITLES[report], extra=extra, top_keys=top_keys(printed))
+        title=REPORT_TITLES[report], extra=extra, top_keys=top_keys(printed),
+        intro_links=approved_leads()[1].get(report))
 
 
 def primary_added(ctx, on):
