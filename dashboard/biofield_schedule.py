@@ -207,3 +207,17 @@ def build_schedule(remedies):
             "source_rids": r.get("source_rids") or [],
         })
     return {"slots": SLOTS, "entries": entries}
+
+
+# The heading of the schedule row for remedies with no daily slot. Glen, 2026-10-19:
+# "I typically like "As guided" vs "As directed"."
+AS_GUIDED = "As guided"
+
+
+def guided_dose(entry):
+    """What an "As guided" entry shows in its brackets: its dose, frequency and timing
+    as authored ("30 minutes, every other day, as the laser sets itself"), or "as
+    guided" when none was written. A slot-less remedy keeps its whole dose: before,
+    only the dose printed and "every other day" was lost (clinical, 2026-10-19)."""
+    parts = [str(entry.get(k) or "").strip() for k in ("dosage", "frequency", "timing")]
+    return ", ".join(p for p in parts if p) or AS_GUIDED.lower()

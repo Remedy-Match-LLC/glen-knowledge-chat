@@ -345,7 +345,8 @@ def test_the_leads_are_the_approved_wording():
     file passed. This pins the file to the approved text."""
     leads, _ = rs.approved_leads()
     assert _digest(leads) == APPROVED_DIGEST
-    assert leads["biofield"][7] == "Take each remedy as directed."
+    # Glen, 2026-10-19: "Use each remedy as guided." not 'take'.
+    assert leads["biofield"][7] == "Use each remedy as guided."
 
 
 def test_the_amazon_line_is_the_approved_wording():
@@ -354,7 +355,7 @@ def test_the_amazon_line_is_the_approved_wording():
                                     "qualifying purchases.")
 
 
-APPROVED_DIGEST = "10e3667beda01ac8654cc4c30aaf4d1cfee92b1cb02e35e31bca144f43513802"
+APPROVED_DIGEST = "6740036ce596393cfbbf58727649e891080a07af66bc037e9391d787ba314ec3"
 
 
 def test_a_list_item_never_splits_across_pages(cx):
@@ -363,3 +364,21 @@ def test_a_list_item_never_splits_across_pages(cx):
     _seed(cx)
     page = rs.grouped_html(_ctx(cx), ["diet"], {"diet": rs.DEFAULTS["diet"]})
     assert ".plan-list li{break-inside:avoid-page}" in page
+
+
+def test_the_walkthrough_script_names_only_switched_on_remedies(app_client, monkeypatch):
+    """Glen, 2026-10-19, "yes": the spoken walkthrough follows the section switches,
+    as the printed report and the invoice do."""
+    import biofield_local_app as bla
+    seen = []
+
+    def fake_script(rep, notes, complete, scan=None, problems_out=None):
+        seen.append([l.get("remedy") for l in rep.get("layers") or []])
+        return "Aloha"
+    monkeypatch.setattr(bla, "generate_video_script", fake_script)
+    c = app_client
+    assert c.post(f"/test/{c.tid}/video-generate", json={}).get_json()["script"] == "Aloha"
+    assert INFO in seen[-1] and "Liver Support" in seen[-1]
+    _toggle(c, "biofield", cs.INFOCEUTICALS, False)
+    c.post(f"/test/{c.tid}/video-generate", json={})
+    assert INFO not in seen[-1] and "Liver Support" in seen[-1]

@@ -368,10 +368,10 @@ def _user_block(report, notes, scan=None, profile=None, animal=None, with_tail=T
             qualities = _catalog_description(remedy) if is_life_stress else ""
             pathways = (_pathways_source(remedy, other_cues[display_ln])
                         if beyond and with_tail else "")
-            # The report prints "(as directed)" for a remedy with no dosing; say the same
+            # The report prints "(as guided)" for a remedy with no dosing; say the same
             # here, or the writer reports the dose as missing.
             dose = " ".join(x for x in (l.get("dosage") or "", l.get("frequency") or "",
-                                        l.get("timing") or "") if x.strip()) or "as directed"
+                                        l.get("timing") or "") if x.strip()) or "as guided"
             lines.append(
                 f"  - {role}: {remedy}"
                 f"{('; healing qualities: ' + qualities) if qualities else ''}"

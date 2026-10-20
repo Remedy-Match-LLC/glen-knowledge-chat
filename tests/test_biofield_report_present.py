@@ -43,10 +43,11 @@ def test_no_edit_chrome():
     for forbidden in ("<button", "<textarea", "<input", "<nav", "onclick"):
         assert forbidden not in html.lower()
 
-def test_schedule_slots_and_as_directed():
+def test_schedule_slots_and_as_guided():
     html = render_present(REPORT, narrative="x")
     assert "On rising" in html and "Sulfur Syntropy" in html and "before food" in html
-    assert "As directed" in html and "Reverse AGE" in html
+    assert "As guided" in html and "Reverse AGE" in html
+    assert "As directed" not in html
 
 def test_chain_table_and_escaping():
     rep = {**REPORT, "client": {"name": "A & B <x>", "email": ""}}

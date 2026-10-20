@@ -120,10 +120,11 @@ def _schedule(report):
         rows += f"<tr><td class=slot>{_e(slot)}</td><td>{cells}</td></tr>"
     asdir = [e for e in entries if e.get("as_directed")]
     if asdir:
+        from dashboard.biofield_schedule import AS_GUIDED, guided_dose
         cells = "; ".join(
-            f"{_sched_name(e.get('name'), report)} <span class=food>({_e(e.get('timing') or 'as directed')})</span>"
+            f"{_sched_name(e.get('name'), report)} <span class=food>({_e(guided_dose(e))})</span>"
             for e in asdir)
-        rows += f"<tr><td class=slot>As directed</td><td>{cells}</td></tr>"
+        rows += f"<tr><td class=slot>{AS_GUIDED}</td><td>{cells}</td></tr>"
     return ("<h2>Remedy Schedule</h2>"
             "<table><tr><th>When</th><th>Take</th></tr>" + rows + "</table>")
 
