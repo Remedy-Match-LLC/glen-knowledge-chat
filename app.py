@@ -8446,12 +8446,19 @@ def _line_qty(ln):
         return 1
 
 
+def _counts_toward_volume(p):
+    """A product whose bottles count toward the order's volume rate: every Functional
+    Formulation, and a product flagged counts_toward_volume that is never discounted
+    itself (the custom Terrain Restore, Glen 2026-10-19: "yes")."""
+    return bool(p) and (_qty_eligible(p) or bool(p.get("counts_toward_volume")))
+
+
 def _inhouse_total_ff_qty(lines_in):
     """Sum of qty across $70 functional-formulation lines in the cart."""
     tot = 0
     for ln in lines_in:
         p = _get_product((ln.get("slug") or "").strip())
-        if p and _qty_eligible(p):
+        if p and _counts_toward_volume(p):
             # A zero-qty reference line must not count toward the order-wide volume
             # tier -- it would quietly cheapen every other bottle on the invoice.
             tot += _line_qty(ln)
@@ -26991,8 +26998,8 @@ def _merge_accepted_recommendation_items(cx, email, reorder_items):
             from dashboard import biofield_invoice as _bfi
             base = _bfi.fold_reorder_items(
                 base, name_of=lambda sl: (_get_product(sl) or {}).get("name"),
-                base_ok=bool(_get_product(_bfi.TERRAIN_RESTORE_SLUG))
-                        and not _waitlist_block(_bfi.TERRAIN_RESTORE_SLUG),
+                base_ok=bool(_get_product(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG))
+                        and not _waitlist_block(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG),
                 ready=lambda sl: bool(_get_product(sl)) and not _waitlist_block(sl))
         return base
     except Exception:
@@ -30703,12 +30710,11 @@ def _portal_open_cart(cx, portal, *, seed=True):
     # A folded Terrain Restore line replaces the ingredient rows an earlier seed put
     # in the cart, or checkout would bill the bottle and each ingredient (2026-10-19).
     # Only rows this seeding added go; a row the client added stays.
-    from dashboard.biofield_invoice import TERRAIN_RESTORE_SLUG as _TR, held_slugs as _held_slugs
-    _tr_sellable = bool(_get_product(_TR)) and not _waitlist_block(_TR)
+    from dashboard.biofield_invoice import FOLDED_SLUGS as _FOLDED, held_slugs as _held_slugs
     for item in curated:
-        if (_tr_sellable and isinstance(item, dict)
-                and (item.get("slug") or "").strip().lower() == _TR):
-            for _gone in _held_slugs(item) - {_TR}:
+        _fslug = (item.get("slug") or "").strip().lower() if isinstance(item, dict) else ""
+        if (_fslug in _FOLDED and _get_product(_fslug) and not _waitlist_block(_fslug)):
+            for _gone in _held_slugs(item) - {_fslug}:
                 cx.execute("DELETE FROM cart_items WHERE token=? AND slug=? "
                            "AND source='portal-curated'", (token, _gone))
             cx.commit()
@@ -33927,8 +33933,8 @@ def api_console_biofield_publish():
         content["reorder_items"] = _bfi.fold_reorder_items(
             content["reorder_items"],
             name_of=lambda sl: (_get_product(sl) or {}).get("name"),
-            base_ok=bool(_get_product(_bfi.TERRAIN_RESTORE_SLUG))
-                    and not _waitlist_block(_bfi.TERRAIN_RESTORE_SLUG),
+            base_ok=bool(_get_product(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG))
+                    and not _waitlist_block(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG),
             ready=lambda sl: bool(_get_product(sl)) and not _waitlist_block(sl))
     from dashboard import client_portal as _cp
     # Publishing a report makes it the client's CURRENT one (wins over any older
@@ -57584,7 +57590,7 @@ def _recompute_combined_shipping(cx, sid):
                 for m in members:
                     for item in (m.get("items") or []):
                         product = _get_product((item.get("slug") or "").strip())
-                        if product and _qty_eligible(product):
+                        if product and _counts_toward_volume(product):
                             pooled_qty += max(1, int(item.get("qty") or 1))
                 changed = []
                 # _pricing_settings() contains only persisted overrides. Merge the

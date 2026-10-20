@@ -182,6 +182,12 @@ RECOMMEND_ONLY_SLUGS = frozenset({"harmony-laser"})
 # with all those ingredients "in Terrain Restore"." One bottle at the normal Terrain
 # Restore price ("yes"), named by a note under the line ("yes" to the wording).
 TERRAIN_RESTORE_SLUG = "terrain-restore"
+# Glen, 2026-10-19: a Terrain Restore made up with two or more added ingredients is
+# its own product, "yes, always $70" (volume pricing off), that still counts toward
+# the volume rate of the other formulations. One added ingredient keeps that
+# ingredient's own "X in Terrain Restore" product.
+CUSTOM_TERRAIN_RESTORE_SLUG = "terrain-restore-custom"
+CUSTOM_TERRAIN_RESTORE_NAME = "Custom Terrain Restore"
 _IN_TR = " in terrain restore"
 
 
@@ -215,64 +221,80 @@ def _qty(value):
 
 
 def fold_terrain_restore(items, base_ok, name_of=None, ready=None):
-    """Every "in Terrain Restore" item (and plain Terrain Restore) as ONE Terrain
-    Restore item, at the place of the first, in the given (layer) order.
+    """Every "in Terrain Restore" item (and plain Terrain Restore) as ONE item, at the
+    place of the first, in the given (layer) order. Which item depends on how many
+    different ingredients are added (Glen, 2026-10-19):
+
+    - two or more: the custom bottle (CUSTOM_TERRAIN_RESTORE_SLUG), always its own
+      catalog price, its ingredients named in "note" and listed in "held" as
+      {name, slug, qty}: the authored name, so a count looked up by name is found,
+      and the ingredient's own product, so the line can be unfolded again. When the
+      custom product cannot be sold (`base_ok` False) nothing folds, so nothing is
+      billed as a product that is not there;
+    - one: that ingredient's own "X in Terrain Restore" product;
+    - none: plain Terrain Restore.
 
     `items` are dicts carrying the remedy "name" and a resolved "slug"; any "qty" is
-    the largest among them. The folded item names its ingredients in "note", each
-    once, and lists what it holds in "held" as {name, slug}: the authored name, so a
-    count looked up by name is found, and the ingredient's own product, so the line
-    can be unfolded again. When the plain Terrain Restore product cannot be sold
-    (`base_ok` False) nothing is folded, so nothing is billed as a product that is
-    not there.
+    the largest among them. `name_of(slug)` gives the catalog name, so a remedy
+    written without the suffix that still resolves to an "in Terrain Restore"
+    product folds too. An item whose slug `ready(slug)` refuses stays its own item,
+    so the caller's not-ready check still sees it.
 
-    `name_of(slug)` gives the catalog name, so a remedy written without the suffix
-    that still resolves to an "in Terrain Restore" product folds too. An item whose
-    slug `ready(slug)` refuses stays its own item, so the caller's not-ready check
-    still sees it and a bottle is never billed for an ingredient that cannot be had.
-
-    A price override counts only when it was set on Terrain Restore itself (an item
-    whose slug is terrain-restore, or "_tr_price" from a line folded before). An
-    ingredient's own override never prices the bottle."""
-    out, folded, ingredients, price = [], None, [], None
+    A price set on a line folded before ("_tr_price") or on the product the result
+    is keeps that price. An ingredient's own override never prices a custom bottle."""
+    rows = []
     for it in items or []:
-        if not isinstance(it, dict):
-            out.append(it)
-            continue
-        name = it.get("name")
-        if terrain_restore_ingredient(name) is None and name_of and it.get("slug"):
+        name = it.get("name") if isinstance(it, dict) else None
+        if isinstance(it, dict) and terrain_restore_ingredient(name) is None and name_of \
+                and it.get("slug"):
             name = name_of(it["slug"]) or name
         ingredient = terrain_restore_ingredient(name)
-        if (not base_ok or ingredient is None or not it.get("slug")
-                or (ready and not ready(it["slug"]))):
-            out.append({k: v for k, v in it.items() if k != "_tr_price"})
+        foldable = (isinstance(it, dict) and ingredient is not None and bool(it.get("slug"))
+                    and not (ready and not ready(it["slug"])))
+        rows.append((it, name, ingredient, foldable))
+    ingredients = []
+    for _it, _nm, ing, ok in rows:
+        if ok and ing and ing.lower() not in {i.lower() for i in ingredients}:
+            ingredients.append(ing)
+    custom = len(ingredients) >= 2
+    if custom and not base_ok:
+        rows = [(it, nm, ing, False) for it, nm, ing, _ok in rows]
+    if len(ingredients) == 1:
+        own = next(it for it, _nm, ing, ok in rows if ok and ing)
+        slug, label = own["slug"], own.get("name")
+    elif custom:
+        slug, label = CUSTOM_TERRAIN_RESTORE_SLUG, CUSTOM_TERRAIN_RESTORE_NAME
+    else:
+        slug, label = TERRAIN_RESTORE_SLUG, "Terrain Restore"
+    out, folded, price, held = [], None, None, []
+    for it, name, ingredient, ok in rows:
+        if not ok:
+            out.append({k: v for k, v in it.items() if k != "_tr_price"}
+                       if isinstance(it, dict) else it)
             continue
         if folded is None:
             folded = {k: v for k, v in it.items() if k not in ("price_cents", "_tr_price", "note")}
-            folded.update(slug=TERRAIN_RESTORE_SLUG, name="Terrain Restore", held=[])
+            folded.update(slug=slug, name=label)
             out.append(folded)
         elif "qty" in it:
             folded["qty"] = max(_qty(folded.get("qty")), _qty(it.get("qty")))
         if price is None:
             if it.get("_tr_price") is not None:
                 price = it["_tr_price"]
-            elif it["slug"] == TERRAIN_RESTORE_SLUG and it.get("price_cents") is not None:
+            elif it["slug"] == slug and it.get("price_cents") is not None:
                 price = it["price_cents"]
-        held = {"name": it.get("name") or name, "slug": it["slug"]}
-        same = next((h for h in folded["held"]
-                     if h["name"] == held["name"] and h["slug"] == held["slug"]), None)
+        h = {"name": it.get("name") or name, "slug": it["slug"]}
+        same = next((x for x in held if x["name"] == h["name"] and x["slug"] == h["slug"]), None)
         if same is None:
             if "qty" in it:
-                held["qty"] = _qty(it.get("qty"))
-            folded["held"].append(held)
+                h["qty"] = _qty(it.get("qty"))
+            held.append(h)
         elif "qty" in it:
             same["qty"] = max(_qty(same.get("qty")), _qty(it.get("qty")))
-        if ingredient and ingredient.lower() not in {i.lower() for i in ingredients}:
-            ingredients.append(ingredient)
     if folded is not None:
-        note = terrain_restore_note(ingredients)
-        if note:
-            folded["note"] = note
+        if custom:
+            folded["held"] = held
+            folded["note"] = terrain_restore_note(ingredients)
         if price is not None:
             folded["price_cents"] = price
     return out
@@ -283,7 +305,7 @@ def _settle_bottle(items, bottles):
     survives a republish. An ingredient that joined since still raises it; the ones
     it already held do not. `bottles` is (that count, the (slug, name) it held)."""
     for it in items:
-        if isinstance(it, dict) and it.get("slug") == TERRAIN_RESTORE_SLUG and bottles:
+        if isinstance(it, dict) and it.get("slug") == CUSTOM_TERRAIN_RESTORE_SLUG and bottles:
             joined = [_qty(h.get("qty")) for h in it.get("held") or []
                       if isinstance(h, dict) and (h.get("slug"), h.get("name")) not in bottles[1]]
             it["qty"] = max([bottles[0]] + joined)
@@ -319,7 +341,7 @@ def fold_reorder_items(items, name_of, base_ok, ready=None):
         base = {k: v for k, v in it.items() if k not in ("held", "names", "note", "name")}
         held = [h for h in (it.get("held") or [])
                 if isinstance(h, dict) and h.get("slug") and h.get("name")]
-        if not held and it["slug"] == TERRAIN_RESTORE_SLUG and it.get("note"):
+        if not held and it["slug"] in FOLDED_SLUGS and it.get("note"):
             # A line folded by an older build: only its note says what it holds.
             held = [{"name": "%s in Terrain Restore" % n, "slug": TERRAIN_RESTORE_SLUG}
                     for n in note_ingredients(it.get("note"))]
@@ -354,6 +376,11 @@ def fold_reorder_items(items, name_of, base_ok, ready=None):
     return out
 
 
+# A folded line: the custom product, or plain Terrain Restore folded by #2074 before
+# the custom product existed (its "held" list or note still says what it holds).
+FOLDED_SLUGS = (CUSTOM_TERRAIN_RESTORE_SLUG, TERRAIN_RESTORE_SLUG)
+
+
 def note_ingredients(note):
     """The ingredients a terrain_restore_note names, in order. Display text read
     back, so it is used only for a line that carries no "held" list."""
@@ -367,9 +394,9 @@ def note_ingredients(note):
 
 
 def terrain_restore_sellable(catalog):
-    """True when the catalog list holds plain Terrain Restore, active and ready."""
-    return any(it.get("slug") == TERRAIN_RESTORE_SLUG and not it.get("inactive")
-               for it in catalog or []) and not is_not_ready(TERRAIN_RESTORE_SLUG, catalog)
+    """True when the catalog list holds the custom Terrain Restore, active and ready."""
+    return any(it.get("slug") == CUSTOM_TERRAIN_RESTORE_SLUG and not it.get("inactive")
+               for it in catalog or []) and not is_not_ready(CUSTOM_TERRAIN_RESTORE_SLUG, catalog)
 
 
 def build_invoice_lines(client, remedies, catalog, include_fee=True):

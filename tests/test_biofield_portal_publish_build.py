@@ -10,6 +10,7 @@ CATALOG = {
     "neuro-magnesium":{"name": "Neuro Magnesium"},                  # the Founding Batch presale
     "focus-neuro-magnesium-powder": {"name": "Focus Neuro-Magnesium Powder"},   # the stocked jar
     "terrain-restore":{"name": "Terrain Restore"},
+    "terrain-restore-custom": {"name": "Custom Terrain Restore"},
 }
 
 def _seed_karin(cx):
@@ -131,6 +132,7 @@ def test_build_uses_exact_individualized_sku_and_calculates_bottles():
     ])
     catalog = {
         "terrain-restore": {"name": "Terrain Restore"},
+        "terrain-restore-custom": {"name": "Custom Terrain Restore"},
         "living-with-soul-flower-essence-in-terrain-restore": {
             "name": "Living With Soul Flower Essence in Terrain Restore"},
         "iop-syntropy": {"name": "IOP Syntropy"},
@@ -140,10 +142,9 @@ def test_build_uses_exact_individualized_sku_and_calculates_bottles():
     # No courtesy price: the items carry no price, so the store price applies.
     assert items == [
         {"slug": "iop-syntropy", "qty": 1},   # 1 unless set (Glen 2026-09-25)
-        # Every "in Terrain Restore" item is one Terrain Restore line (Glen 2026-10-19).
-        {"slug": "terrain-restore", "qty": 1, "note": "With Living With Soul Flower Essence",
-         "held": [{"name": "Living With Soul Flower Essence in Terrain Restore",
-                   "slug": "living-with-soul-flower-essence-in-terrain-restore", "qty": 1}]},
+        # One "in Terrain Restore" ingredient keeps its own exact product, with no
+        # note and no held list (Glen 2026-10-19).
+        {"slug": "living-with-soul-flower-essence-in-terrain-restore", "qty": 1},
     ]
 
 def test_build_meaning_from_narrative_segments(tmp_path):

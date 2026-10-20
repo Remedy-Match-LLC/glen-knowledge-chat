@@ -183,9 +183,16 @@ def validate_policy(policy):
     return True
 
 
+# Products no cohort ever prices. The custom Terrain Restore is always its catalog
+# price (Glen, 2026-10-19: "yes, always $70"); a typed price on the line still wins.
+_NEVER_COHORT_PRICED = frozenset({"terrain-restore-custom"})
+
+
 def policy_unit_cents(policy, *, slug, list_cents, is_ff):
     """The unit price this policy sets for the given product, or None if it doesn't
     apply. Pure. list_cents = the product's list price; is_ff = FF-eligible."""
+    if slug in _NEVER_COHORT_PRICED:
+        return None
     t = (policy or {}).get("type")
     if t == "flat_ff":
         return int(policy["cents"]) if is_ff else None

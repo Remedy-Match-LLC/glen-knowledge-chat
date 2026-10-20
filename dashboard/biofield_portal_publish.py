@@ -343,14 +343,14 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
     # All "in Terrain Restore" items are one bottle of Terrain Restore, as on the
     # invoice (Glen, 2026-10-19). Then one remedy on several layers is one product
     # with the largest count, as the invoice does (build_invoice_lines).
-    from dashboard.biofield_invoice import TERRAIN_RESTORE_SLUG, fold_terrain_restore
+    from dashboard.biofield_invoice import CUSTOM_TERRAIN_RESTORE_SLUG, fold_terrain_restore
     cat_d = cat if isinstance(cat, dict) else {}
 
     def _ready(slug):
         p = cat_d.get(slug)
         return bool(p) and not p.get("inactive") and not p.get("waitlist_only")
 
-    for cand in fold_terrain_restore(candidates, _ready(TERRAIN_RESTORE_SLUG),
+    for cand in fold_terrain_restore(candidates, _ready(CUSTOM_TERRAIN_RESTORE_SLUG),
                                      name_of=lambda sl: (cat_d.get(sl) or {}).get("name"),
                                      ready=_ready):
         slug = cand["slug"]
@@ -367,7 +367,10 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
             item["held"] = cand["held"]       # so a later edit can unfold it
         # No courtesy price means store prices: the item carries no price at all.
         # A stored 0 was read as a $0 price (found on a client report, 2026-10-09).
-        if special_price_cents and int(special_price_cents) > 0:
+        # The custom Terrain Restore is always its catalog price (Glen, 2026-10-19:
+        # "yes, always $70"), so it takes no courtesy price.
+        if (special_price_cents and int(special_price_cents) > 0
+                and slug != CUSTOM_TERRAIN_RESTORE_SLUG):
             item["price_cents"] = int(special_price_cents)
         reorder.append(item)
 
