@@ -673,6 +673,7 @@ RICH_CATALOG = CATALOG + [
     {"slug": "ed7", "name": ED7},
     {"slug": "microbiome", "name": "Microbiome"},
     {"slug": "terrain-restore", "name": "Terrain Restore"},
+    {"slug": "terrain-restore-custom", "name": "Custom Terrain Restore"},
     {"slug": "pyrite-gem-elixir-in-terrain-restore", "name": PYRITE},
     {"slug": "quinton-in-terrain-restore", "name": QUINTON}]
 NARRATIVE = ("1. Lens: Liver Support clears the lens.\n\n"
@@ -816,11 +817,11 @@ def test_the_defaults_print_publish_and_bill_exactly_as_before(rich):
         _toggle(c, "biofield", s, True)
     assert _everything(c) == before
     assert _slugs(before["portal"]["reorder_items"]) == [
-        "liver-support", "ed12", "terrain-restore", "microbiome", "ed7"]
+        "liver-support", "ed12", "terrain-restore-custom", "microbiome", "ed7"]
     assert before["invoice_lines"][1:] == [
         {"slug": "liver-support", "qty": 1, "source": "biofield"},
         {"slug": "ed12", "qty": 1, "source": "biofield"},
-        {"slug": "terrain-restore", "qty": 3, "source": "biofield",
+        {"slug": "terrain-restore-custom", "qty": 3, "source": "biofield",
          "note": "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"},
         {"slug": "microbiome", "qty": 1, "source": "biofield"},
         {"slug": "ed7", "qty": 1, "source": "biofield"}]
@@ -850,7 +851,7 @@ def test_infoceuticals_off_leave_the_report_the_portal_and_the_invoice_together(
     assert [x["label"] for x in b["layers"][3]["stresses"]] == ["Stomach acid"]
     assert [L["remedy"] for L in p["layers"]] == [
         "Liver Support", "", PYRITE + " + " + QUINTON, "Microbiome"]
-    assert _slugs(p["reorder_items"]) == ["liver-support", "terrain-restore", "microbiome"]
+    assert _slugs(p["reorder_items"]) == ["liver-support", "terrain-restore-custom", "microbiome"]
     assert p["reorder_items"][1]["note"] == \
         "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"
     assert p["reorder_items"][1]["qty"] == 3
@@ -860,11 +861,11 @@ def test_infoceuticals_off_leave_the_report_the_portal_and_the_invoice_together(
     assert [L["remedy"] for L in s["layers"]] == [
         "Liver Support", "", PYRITE, QUINTON, "Microbiome"]
     assert [L["title"] for L in s["layers"]] == ["Lens", "Renal", "Blood", "Blood", "Gut"]
-    assert _slugs(s["reorder_items"]) == ["liver-support", "terrain-restore", "microbiome"]
+    assert _slugs(s["reorder_items"]) == ["liver-support", "terrain-restore-custom", "microbiome"]
     # The invoice, both routes.
     for key in ("invoice_lines", "handoff_lines"):
         assert [l["slug"] for l in now[key]] == [
-            "biofield-analysis", "liver-support", "terrain-restore", "microbiome"], key
+            "biofield-analysis", "liver-support", "terrain-restore-custom", "microbiome"], key
 
 
 def test_formulations_off_leave_only_the_infoceuticals_and_fold_nothing(rich):
@@ -900,7 +901,7 @@ def test_terrain_restore_folds_what_remains_when_one_ingredient_is_off():
     assert kept == rows[:1]
     items = [{"name": r["remedy"], "slug": "pyrite-gem-elixir-in-terrain-restore"} for r in kept]
     folded = fold_terrain_restore(items, True)
-    assert [i["slug"] for i in folded] == ["terrain-restore"]
+    assert [i["slug"] for i in folded] == ["terrain-restore-custom"]
     assert folded[0]["note"] == "With Pyrite Gem Elixir"
 
 
