@@ -11,7 +11,8 @@ def _reveal_email_body_fn(tmp_path, monkeypatch):
     return _app._reveal_email_body
 
 
-ORIGINAL = ("Aloha,\n\nYour Biofield Analysis is ready. View your reading here:\n"
+# A reveal is always an AI Remedy Match (Glen, 2026-10-20, approved wording).
+ORIGINAL = ("Aloha,\n\nYour Remedy Match is ready. View your recommendations here:\n"
             "https://x/begin/biofield/tok\n\nIn wellness,\nDr. Glen and Rae\n")
 
 def test_body_without_portal_is_byte_identical_to_original(tmp_path, monkeypatch):

@@ -608,6 +608,10 @@ function populate(d){
 // ── Load / publish ──────────────────────────────────────────────────────────
 let curScanDate = "";
 let SCAN_DATES = [];
+let SCAN_KINDS = {};   // {scan_date: 'remedy_match' | 'biofield'} from the GET; Publish never changes a kind
+let CUR_KIND = "";
+// Shown beside each date so Rae sees which kind of report she is confirming.
+function kindLabel(k){ return k === 'remedy_match' ? 'Remedy Match' : 'Biofield'; }
 let PORTAL_CURRENT_DATE = null;   // initialized from the GET response's persisted
                                    // current_scan_date, then kept live by in-session clicks
 let _lastLoadedEmail = "";
@@ -623,26 +627,29 @@ async function loadExisting(scanDate){
   const r = await api('GET', url);
   if(!r.ok){ setStatus('Could not load.', false); return; }
   if(!r.json.found){ setStatus('No portal yet for that email — fill the form to create one.', true);
-    $('scanWrap').style.display='none'; curScanDate=""; SCAN_DATES=[]; renderScanDatesList();
+    $('scanWrap').style.display='none'; curScanDate=""; SCAN_DATES=[]; SCAN_KINDS={}; CUR_KIND=""; renderScanDatesList();
     CAREGIVERS=[]; CAREGIVERS_MEMBER_EMAIL=""; renderCaregiverList(); return; }
   $('name').value = r.json.name||'';
   populate(r.json.content||{});
   const dates = r.json.scan_dates || [];
   curScanDate = r.json.scan_date || "";
   SCAN_DATES = dates;
+  SCAN_KINDS = r.json.scan_kinds || {};
+  CUR_KIND = r.json.report_kind || "";
   PORTAL_CURRENT_DATE = r.json.current_scan_date || null;
   CAREGIVERS = r.json.caregivers || [];
   CAREGIVERS_MEMBER_EMAIL = email;
   renderCaregiverList();
   const wrap = $('scanWrap'), sel = $('scanSel');
   if(dates.length){
-    sel.innerHTML = dates.map(d=>`<option value="${esc(d)}"${d===curScanDate?' selected':''}>${esc(d)}</option>`).join('');
+    sel.innerHTML = dates.map(d=>`<option value="${esc(d)}"${d===curScanDate?' selected':''}>${esc(d)} · ${esc(kindLabel(SCAN_KINDS[d]))}</option>`).join('');
     wrap.style.display='';
   } else { wrap.style.display='none'; }
   renderScanDatesList();
   const stat = r.json.status ? ` [${r.json.status}]` : '';
+  const kindTxt = CUR_KIND ? ` (${kindLabel(CUR_KIND)})` : '';
   setStatus(curScanDate
-    ? `Loaded scan ${curScanDate}${stat} — edit and Publish to confirm this report.`
+    ? `Loaded scan ${curScanDate}${kindTxt}${stat} — edit and Publish to confirm this report.`
     : 'Loaded existing portal — edit and republish (the link stays the same).', true);
   loadInvoicePanel(email);
 }
@@ -661,7 +668,7 @@ function renderScanDatesList(){
     row.style.cssText = 'display:flex;align-items:center;gap:8px';
     const label = document.createElement('span');
     label.style.minWidth = '110px';
-    label.textContent = d;
+    label.textContent = d + ' · ' + kindLabel(SCAN_KINDS[d]);
     row.appendChild(label);
     const isCurrent = d === PORTAL_CURRENT_DATE;
     const btn = document.createElement('button');
@@ -764,7 +771,9 @@ async function importFmp(){
 function buildContent(){
   const c = { greeting: val('greeting'), layers: collectLayers() };
   const vu = val('videoUrl');
-  if(vu) c.video = { url: vu, label: val('videoLabel') || 'Watch your Biofield walkthrough' };
+  // "Biofield" is only for the paid analysis, so a Remedy Match gets a neutral default.
+  if(vu) c.video = { url: vu, label: val('videoLabel') ||
+    (CUR_KIND === 'remedy_match' ? 'Watch your walkthrough' : 'Watch your Biofield walkthrough') };
   const items = collectItems();
   // The client's FF price now lives in client_prices (set on the Invoice panel) and is
   // applied at render, so we no longer bake special_price_cents into reorder_items —

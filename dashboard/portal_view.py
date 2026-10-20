@@ -124,7 +124,7 @@ def _biofield_block(cx, email, scan_date=None, unlocked=True):
             return {"visible": False}
         return _assemble_biofield(cx, _content, "confirmed", scan_date=scan_date,
                                   scan_dates=_all_dates, actionable=False,
-                                  unlocked=unlocked)
+                                  unlocked=unlocked, report_kind=_pbr.REMEDY_MATCH)
     if dates:
         picked = scan_date if (scan_date in dates) else dates[0]
         rep = _pbr.get_report(cx, email, picked) or {}
@@ -134,7 +134,7 @@ def _biofield_block(cx, email, scan_date=None, unlocked=True):
         actionable = (status != "confirmed") and _pbr.is_actionable(picked, today)
         return _assemble_biofield(cx, content, status, scan_date=picked,
                                   scan_dates=_all_dates, actionable=actionable,
-                                  unlocked=unlocked)
+                                  unlocked=unlocked, report_kind=rep.get("report_kind"))
     # System A: the funnel reveal (biofield_reveals). Rendered as the portal scan
     # when the client has no System B report. Blur is binary (paid -> remedies).
     if _reveals:
@@ -147,7 +147,8 @@ def _biofield_block(cx, email, scan_date=None, unlocked=True):
         # status 'confirmed' so the assembler's show-gate depends only on `unlocked`
         # (paid) — binary blur, identical to a paid System B report.
         return _assemble_biofield(cx, _content, "confirmed", scan_date=_picked,
-                                  scan_dates=_rev_dates, actionable=False, unlocked=unlocked)
+                                  scan_dates=_rev_dates, actionable=False, unlocked=unlocked,
+                                  report_kind=_pbr.REMEDY_MATCH)
     # Legacy fallback: single confirmed report, no tabs.
     try:
         rec = _cp.get_portal_content_by_email(cx, email)
@@ -162,7 +163,10 @@ def _biofield_block(cx, email, scan_date=None, unlocked=True):
                               scan_dates=[], actionable=False, unlocked=unlocked)
 
 
-def _assemble_biofield(cx, content, status, *, scan_date, scan_dates, actionable, unlocked=True):
+def _assemble_biofield(cx, content, status, *, scan_date, scan_dates, actionable, unlocked=True,
+                       report_kind=None):
+    # report_kind picks the page's words: a reveal is always a Remedy Match; a stored
+    # row carries its own; the legacy single-content fallback uses the rule.
     # A report's remedies un-blur only when it's confirmed AND the client has paid.
     # `status` is still reported truthfully (the report exists); only the gated
     # content and `blurred` flag depend on payment.
@@ -181,6 +185,7 @@ def _assemble_biofield(cx, content, status, *, scan_date, scan_dates, actionable
             item["remedy_href"] = rr["href"] or ""
         layers.append(item)
     return {"visible": True, "status": status, "blurred": not show,
+            "report_kind": _pbr.normalize_kind(report_kind) or _pbr.effective_kind(None, content),
             "actionable": actionable, "scan_date": scan_date, "scan_dates": scan_dates,
             "greeting": content.get("greeting", ""), "video": content.get("video") or {},
             "layers": layers, "pricing_note": content.get("pricing_note", "") if show else ""}

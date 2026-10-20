@@ -1243,8 +1243,10 @@ def _household_cc_report(member_email, member_label_or_subject):
             _hh.init_household_tables(cx)
             recips = _hh.cc_recipients_for(cx, (member_email or "").strip().lower())
         for care in recips:
-            subj = "A new biofield report is available for someone in your care"
-            body = ("A new biofield report was just published for a member of your household. "
+            # Only the scan reveal calls this, and a reveal is always a Remedy Match
+            # (Glen, 2026-10-20).
+            subj = "A new Remedy Match is available for someone in your care"
+            body = ("A new Remedy Match was just published for a member of your household. "
                     f"Open your portal to view it.\n\n{portal_base()}/portal/login")
             try:
                 _send_inquiry_email(care, subj, body)
@@ -1254,11 +1256,15 @@ def _household_cc_report(member_email, member_label_or_subject):
         print(f"[household-cc] report fanout: {_e!r}", flush=True)
 
 
+# A scan reveal is always an AI Remedy Match, never the paid Biofield (Glen, 2026-10-20:
+# "Use Remedy Match for the AI matching of our FF's to her scan.").
+REVEAL_EMAIL_SUBJECT = "Your Remedy Match is ready"
+
+
 def _reveal_email_body(reveal_url, portal_url=None):
     """Reveal-ready email body. Adds the client-portal line only when a portal URL
-    is provided (slice 2, flag-gated); with portal_url falsy it is byte-identical to
-    the original wording."""
-    body = ("Aloha,\n\nYour Biofield Analysis is ready. View your reading here:\n"
+    is provided (slice 2, flag-gated)."""
+    body = ("Aloha,\n\nYour Remedy Match is ready. View your recommendations here:\n"
             f"{reveal_url}\n")
     if portal_url:
         body += ("\nYour personal client portal — where your scans and matches live — "
@@ -1318,7 +1324,7 @@ def _send_reveal_link(rid):
         cx.commit()
     url = f"{PUBLIC_BASE_URL}/begin/biofield/{tok}"
     body = _reveal_email_body(url, portal_url)
-    sent = _send_inquiry_email(email, "Your Biofield Analysis is ready", body)
+    sent = _send_inquiry_email(email, REVEAL_EMAIL_SUBJECT, body)
     if sent:
         with _db_lock, db.connect(LOG_DB) as cx:
             _br.set_notified(cx, rid)
@@ -27771,6 +27777,9 @@ def api_client_portal(token):
     _rev_by_date = {r["scan_date"]: r for r in _revs}
     _all_bf_dates = sorted(set(dates) | set(_rev_by_date), reverse=True)
 
+    # Which words the page uses for this report (Glen, 2026-10-20): a scan reveal is
+    # always a Remedy Match; a stored report carries its own kind.
+    bf_kind = _pbr.REMEDY_MATCH
     if req_date in _rev_by_date and req_date not in dates:
         _row = _rev_by_date[req_date]
         bf_content = _pv._reveal_as_report_content(_row)
@@ -27793,6 +27802,7 @@ def api_client_portal(token):
         rep = _pbr.get_report(cx_r, email_for_reports, picked) or {}
         bf_content = rep.get("content") or {}
         bf_status = rep.get("status") or "confirmed"
+        bf_kind = rep.get("report_kind") or _pbr.effective_kind(None, bf_content)
         bf_scan_date, bf_scan_dates = picked, _all_bf_dates
         bf_actionable = (bf_status != "confirmed") and _pbr.is_actionable(
             picked, _dt.date.today().isoformat())
@@ -27808,6 +27818,7 @@ def api_client_portal(token):
         else:
             bf_content = content
             bf_status = content.get("biofield_status") or "confirmed"
+            bf_kind = _pbr.effective_kind(None, bf_content)
             bf_scan_date, bf_scan_dates, bf_actionable = None, [], False
     # An owner hold (the console "Set to draft" button) wins over any stored status. It is
     # the only way to un-publish a reveal date, which has no status of its own.
@@ -27931,6 +27942,7 @@ def api_client_portal(token):
         "membership_category": membership_cat,
         "trial_credit_cents": trial_credit_cents,
         "biofield_status": bf_status, "blurred": not bf_show,
+        "report_kind": bf_kind,
         "actionable": bf_actionable, "scan_date": bf_scan_date, "scan_dates": bf_scan_dates,
         "greeting": bf_content.get("greeting", ""),
         # Terrain reading (BSI phase 1-5 + spoken location) shown at the top of the
@@ -33902,7 +33914,7 @@ def api_console_animal_report():
             content = dict(content, biofield_status="confirmed")
         _cp.upsert_portal(cx, email, name, content)
         _pbr.upsert_report(cx, email, scan_date, (body.get("scan_id") or ""), content,
-                           content["biofield_status"])
+                           content["biofield_status"], report_kind=_pbr.REMEDY_MATCH)
         outcome = "kept_confirmed"
         if content["biofield_status"] == "ai_draft" and missing:
             # Held for the catalog to be fixed, not autoconfirmed with a shortened list.
@@ -34219,6 +34231,60 @@ def api_console_portal_release_shipped_reports():
     return jsonify({"ok": True, "committed": commit, **result})
 
 
+def _current_report_kind(cx, email):
+    """'remedy_match' or 'biofield' for the report /api/portal/<token> shows this email
+    as current: the portal's current_scan_date pointer when it names a row, else the
+    newest row. No row but a scan reveal is a Remedy Match. Anything else, including
+    an error, is Biofield, which is what every report said before the column existed."""
+    from dashboard import client_portal as _cp, portal_biofield_reports as _pbr
+    email = (email or "").strip().lower()
+    if not email:
+        return _pbr.BIOFIELD
+    try:
+        _pbr.init_table(cx)
+        kinds = _pbr.kinds_by_date(cx, email)
+        if kinds:
+            ptr = _cp.get_current_scan(cx, email)
+            return kinds[ptr] if ptr in kinds else kinds[max(kinds)]
+        from dashboard import biofield_reveals as _brv
+        _brv.init_table(cx)
+        if _brv.list_for_email(cx, email):
+            return _pbr.REMEDY_MATCH
+        rec = _cp.get_portal_content_by_email(cx, email)
+        return _pbr.effective_kind(None, (rec or {}).get("content") or {})
+    except Exception as e:
+        print(f"[report-kind] {email}: {e!r}", flush=True)
+        return _pbr.BIOFIELD
+
+
+def _notify_scan_wording(kind, member_first=None, member=False):
+    """(subject, noun) for the console "Notify client" email. A Remedy Match says so;
+    a paid Biofield keeps "Biofield Analysis" (Glen, 2026-10-20)."""
+    noun = "Remedy Match" if kind == "remedy_match" else "Biofield Analysis"
+    if member:
+        subject = (f"{member_first}'s new {noun} is ready" if member_first
+                   else f"A new {noun} is ready")
+    else:
+        subject = f"Your new {noun} is ready"
+    return subject, noun
+
+
+@app.route("/api/console/portal/backfill-report-kinds", methods=["POST"])
+def api_console_portal_backfill_report_kinds():
+    """Classify every report row with no stored kind as remedy_match or biofield.
+
+    Dry run is the default: it returns the counts and the unclassifiable rows and
+    writes nothing. {"commit": true} writes the column, only where it is still NULL.
+    Never touches content, status or mail."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    commit = (request.get_json(silent=True) or {}).get("commit") is True
+    from dashboard import portal_biofield_reports as _pbr
+    with _db_lock, db.connect(LOG_DB) as cx:
+        result = _pbr.backfill_report_kinds(cx, dry_run=not commit)
+    return jsonify({"ok": True, "committed": commit, **result})
+
+
 @app.route("/api/console/portal/notify-scan", methods=["POST"])
 def api_console_portal_notify_scan():
     """Operator confirm-to-send: email the client that a new analysis is ready.
@@ -34256,6 +34322,8 @@ def api_console_portal_notify_scan():
         link, _reissued = _cp.portal_link_for(cx, email, portal_base())
         rec = _cp.get_portal_content_by_email(cx, email)
         mrec = _cp.get_portal_content_by_email(cx, member) if member else None
+        # The wording follows the report the recipient (or the member) will open.
+        kind = _current_report_kind(cx, member or email)
     if not link:
         return jsonify({"ok": True, "sent": False, "reason": "no portal"})
     _name_parts = ((rec or {}).get("name") or "").split()
@@ -34265,11 +34333,10 @@ def api_console_portal_notify_scan():
         _mp = ((mrec or {}).get("name") or "").split()
         member_first = _mp[0] if _mp else ""
         member_possessive = f"{member_first}'s" if member_first else "Your family member's"
-        subject = (f"{member_first}'s new Biofield Analysis is ready" if member_first
-                   else "A new Biofield Analysis is ready")
+        subject, noun = _notify_scan_wording(kind, member_first, member=True)
         body = (
             f"{greeting}\n\n"
-            f"{member_possessive} newest Biofield Analysis is ready in your family portal. "
+            f"{member_possessive} newest {noun} is ready in your family portal. "
             "It maps the layers their body is working through now, with the gentle remedy "
             "schedule matched to where they are today.\n\n"
             "There is nothing to prepare. When you have a quiet moment, open your portal "
@@ -34282,10 +34349,10 @@ def api_console_portal_notify_scan():
             "PO Box 126, Hilo, HI 96721"
         )
     else:
-        subject = "Your new Biofield Analysis is ready"
+        subject, noun = _notify_scan_wording(kind)
         body = (
             f"{greeting}\n\n"
-            "Your newest Biofield Analysis is ready in your portal. It maps the layers "
+            f"Your newest {noun} is ready in your portal. It maps the layers "
             "your body is working through right now, along with the gentle remedy schedule "
             "matched to where you are today.\n\n"
             "There is nothing to prepare. When you have a quiet moment, open your portal "
@@ -36859,8 +36926,12 @@ def api_console_biofield_load():
         if dates:
             picked = req_date if req_date in dates else dates[0]
             rep = _pbr.get_report(cx, email, picked) or {}
+            # The kind is shown beside the date so Rae sees which one she confirms.
+            # Publishing never changes it.
             return jsonify({"found": True, "name": (rec or {}).get("name") or "",
                             "content": rep.get("content") or {}, "status": rep.get("status") or "",
+                            "report_kind": rep.get("report_kind") or _pbr.BIOFIELD,
+                            "scan_kinds": _pbr.kinds_by_date(cx, email),
                             "scan_date": picked, "scan_dates": dates, "has_token": bool(rec),
                             "current_scan_date": current_scan_date, "caregivers": caregivers})
     if not rec:
@@ -39567,8 +39638,12 @@ def admin_client_portal_upsert():
                 content["biofield_status"] = "confirmed"
         token, pid = _cp.upsert_portal(cx, email, name, content)
         if scan_date:
+            # The writer says what made the report: the scan pipeline sends
+            # remedy_match, the paid publish and hand-off send biofield. Absent, a new
+            # row is classified by the rule and an existing row keeps its kind.
             _pbr.upsert_report(cx, email, scan_date, (body.get("scan_id") or ""),
-                               content, content.get("biofield_status") or "ai_draft")
+                               content, content.get("biofield_status") or "ai_draft",
+                               report_kind=body.get("report_kind"))
         # Phase-1 auto-confirm (dark unless ANALYSIS_AUTOCONFIRM_ENABLED): a freshly
         # written ai_draft that clears the quality gate and isn't audit-sampled is
         # confirmed in place so the free tier self-serves. Held drafts stay ai_draft
@@ -40610,7 +40685,7 @@ def api_e4l_reveal_draft():
                         portal_url = _ensure_portal_link(_pcx, email, "")
                     url = f"{PUBLIC_BASE_URL}/begin/biofield/{token}"
                     body = _reveal_email_body(url, portal_url)
-                    if _send_inquiry_email(email, "Your Biofield Analysis is ready", body):
+                    if _send_inquiry_email(email, REVEAL_EMAIL_SUBJECT, body):
                         with _db_lock, db.connect(LOG_DB) as cx:
                             _br.set_notified(cx, rid)
             except Exception as e:

@@ -137,6 +137,7 @@ def ingest_payload(cx, payload, *, commit=False):
                 client_portal.upsert_portal(cx, email, row.get("name") or "", {})
                 result["portals_created"] += 1
             portal_biofield_reports.upsert_report(
-                cx, email, scan_date, f"legacy-fmp:{email}:{scan_date}", content, "confirmed")
+                cx, email, scan_date, f"legacy-fmp:{email}:{scan_date}", content, "confirmed",
+                report_kind=portal_biofield_reports.BIOFIELD)
         result["inserted"] += 1
     return result

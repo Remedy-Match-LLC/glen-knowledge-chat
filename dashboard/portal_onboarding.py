@@ -174,9 +174,10 @@ def _safe(fn, cx, email):
 
 
 def _biofield_completed(cx, email):
-    """Only a published report checks Biofield in the client checklist."""
-    return _safe(lambda c, e: portal_biofield_reports.latest_report(c, e) is not None,
-                 cx, email)
+    """Only a paid Biofield report checks Biofield in the client checklist. A Remedy
+    Match (the AI match of the formulations to a scan) is not the paid analysis, so it
+    neither ticks this step nor hides the Biofield order card (Glen, 2026-10-20)."""
+    return _safe(portal_biofield_reports.has_biofield_report, cx, email)
 
 
 def build_status(cx, email, client_id=None):

@@ -6,6 +6,15 @@ import json
 import re
 import sqlite3
 
+from dashboard import db as _db
+
+# What made a report (Glen, 2026-09-10 and 2026-10-20). An AI match of the Functional
+# Formulations to a scan is a "Remedy Match". "Biofield" is the paid manual analysis.
+# Status cannot tell them apart: a paid hand-off also arrives as ai_draft.
+REMEDY_MATCH = "remedy_match"
+BIOFIELD = "biofield"
+REPORT_KINDS = (REMEDY_MATCH, BIOFIELD)
+
 
 def _now_iso() -> str:
     return datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -26,26 +35,108 @@ def init_table(cx) -> None:
         )
     """)
     cx.execute("CREATE INDEX IF NOT EXISTS ix_pbr_email ON portal_biofield_reports(email)")
+    # Nullable on purpose: NULL means "not yet classified", and only NULL rows are
+    # touched by backfill_report_kinds. Checked first so a Postgres read path never
+    # takes the ALTER's table lock once the column exists.
+    if not _db.column_exists(cx, "portal_biofield_reports", "report_kind"):
+        try:
+            cx.execute("ALTER TABLE portal_biofield_reports ADD COLUMN report_kind TEXT")
+        except Exception:
+            pass
     cx.commit()
 
 
-def upsert_report(cx, email, scan_date, scan_id, content, status):
+def normalize_kind(kind):
+    """'remedy_match' or 'biofield', or None for anything else. The animal writer's
+    content key value 'animal_infoceuticals' is an AI match, so it is a Remedy Match."""
+    k = (kind or "").strip().lower() if isinstance(kind, str) else ""
+    if k == "animal_infoceuticals":
+        return REMEDY_MATCH
+    return k if k in REPORT_KINDS else None
+
+
+_PAID_KEYS = ("legacy_source", "phase", "location", "schedule", "comped_intake", "client_id")
+_AI_LAYER_KEYS = ("alternatives", "second_match", "ranked_second")
+
+
+def infer_kind(content, scan_id=None):
+    """Classify a report that has no stored kind, from the marks its writer left.
+
+    1. Biofield: a legacy Healing Oasis import, or any paid-publish field (phase,
+       location, schedule, comped_intake, client_id, a report PDF), or the paid
+       hand-off greeting.
+    2. Otherwise Remedy Match: scan patterns or ranked alternatives on a layer, the
+       animal writer's marker, or a numeric E4L scan_id.
+    3. Otherwise None: the content cannot say. Callers read None as Biofield, which
+       is what every report showed before this column existed.
+    See platform/plans/2026-10-20-remedy-match-label-scope.md, section 2."""
+    c = content if isinstance(content, dict) else {}
+    sid = str(scan_id or "").strip()
+    if sid.startswith("legacy-fmp:"):
+        return BIOFIELD
+    if any(k in c for k in _PAID_KEYS):
+        return BIOFIELD
+    pdf = c.get("report_pdf")
+    if isinstance(pdf, dict) and str(pdf.get("url") or "").strip():
+        return BIOFIELD
+    if "Here is your Biofield Analysis" in str(c.get("greeting") or ""):
+        return BIOFIELD
+    for L in (c.get("layers") or []):
+        if not isinstance(L, dict):
+            continue
+        if isinstance(L.get("patterns"), list) and L.get("patterns"):
+            return REMEDY_MATCH
+        if any(k in L for k in _AI_LAYER_KEYS):
+            return REMEDY_MATCH
+    if c.get("report_kind") == "animal_infoceuticals":
+        return REMEDY_MATCH
+    if sid.isdigit():
+        return REMEDY_MATCH
+    return None
+
+
+def effective_kind(stored, content, scan_id=None):
+    """The kind a page or email should use: the stored one, else the rule, else
+    Biofield (what an unclassifiable report has always shown)."""
+    return normalize_kind(stored) or infer_kind(content, scan_id) or BIOFIELD
+
+
+def upsert_report(cx, email, scan_date, scan_id, content, status, report_kind=None):
+    """Write one report row. `report_kind` is set by the writers that know what made
+    the report. An update that passes no kind keeps the stored one, so the console's
+    confirm (which rebuilds content and drops the paid marks) never changes a row's
+    kind. A row with no stored kind is classified from its OLD content before that
+    content is replaced. A new row with no kind given is classified by infer_kind."""
     email = (email or "").strip().lower()
     now = _now_iso()
+    kind = normalize_kind(report_kind)
     row = cx.execute(
-        "SELECT id FROM portal_biofield_reports WHERE email=? AND scan_date=?",
-        (email, scan_date)).fetchone()
+        "SELECT id, report_kind, content_json, scan_id FROM portal_biofield_reports "
+        "WHERE email=? AND scan_date=?", (email, scan_date)).fetchone()
     cj = json.dumps(content or {})
     if row:
+        if kind is None:
+            kind = normalize_kind(row[1])
+        if kind is None:
+            try:
+                old = json.loads(row[2] or "{}")
+            except Exception:
+                old = {}
+            kind = infer_kind(old, row[3])
         cx.execute("UPDATE portal_biofield_reports SET scan_id=?, content_json=?, "
-                   "status=?, updated_at=? WHERE id=?",
-                   (scan_id, cj, status, now, row[0]))
+                   "status=?, updated_at=?, report_kind=? WHERE id=?",
+                   (scan_id, cj, status, now, kind, row[0]))
     else:
+        if kind is None:
+            kind = infer_kind(content, scan_id)
         cx.execute("INSERT INTO portal_biofield_reports "
-                   "(email, scan_date, scan_id, content_json, status, created_at, updated_at) "
-                   "VALUES (?,?,?,?,?,?,?)",
-                   (email, scan_date, scan_id, cj, status, now, now))
+                   "(email, scan_date, scan_id, content_json, status, created_at, updated_at, "
+                   "report_kind) VALUES (?,?,?,?,?,?,?,?)",
+                   (email, scan_date, scan_id, cj, status, now, now, kind))
     cx.commit()
+
+
+_COLS = "id, scan_date, scan_id, content_json, status, report_kind"
 
 
 def _row_to_dict(row):
@@ -53,15 +144,76 @@ def _row_to_dict(row):
         content = json.loads(row[3] or "{}")
     except Exception:
         content = {}
-    return {"scan_date": row[1], "scan_id": row[2], "content": content, "status": row[4]}
+    return {"scan_date": row[1], "scan_id": row[2], "content": content, "status": row[4],
+            "report_kind": effective_kind(row[5], content, row[2]),
+            "report_kind_stored": normalize_kind(row[5])}
 
 
 def get_report(cx, email, scan_date):
     email = (email or "").strip().lower()
-    row = cx.execute("SELECT id, scan_date, scan_id, content_json, status "
+    row = cx.execute(f"SELECT {_COLS} "
                      "FROM portal_biofield_reports WHERE email=? AND scan_date=?",
                      (email, scan_date)).fetchone()
     return _row_to_dict(row) if row else None
+
+
+def kinds_by_date(cx, email):
+    """{scan_date: 'remedy_match' | 'biofield'} for every report row of one email."""
+    email = (email or "").strip().lower()
+    rows = cx.execute("SELECT scan_date, scan_id, content_json, report_kind "
+                      "FROM portal_biofield_reports WHERE email=?", (email,)).fetchall()
+    out = {}
+    for sd, sid, cj, rk in rows:
+        try:
+            content = json.loads(cj or "{}")
+        except Exception:
+            content = {}
+        out[sd] = effective_kind(rk, content, sid)
+    return out
+
+
+def has_biofield_report(cx, email):
+    """True when this email has at least one paid Biofield report. A Remedy Match
+    does not count: it must not tick the paid Biofield step or hide its order card."""
+    init_table(cx)
+    return BIOFIELD in kinds_by_date(cx, email).values()
+
+
+def backfill_report_kinds(cx, *, dry_run=True):
+    """Write the rule's answer into report_kind for every row that has none.
+
+    Dry run unless dry_run=False. Only NULL rows are written, and only when the rule
+    gives an answer; an unclassifiable row stays NULL (it reads as Biofield) and is
+    listed for Glen by email and date. The write is compare-and-set on NULL, so a
+    writer that set a kind mid-run is never overwritten. content_json, status and
+    updated_at are left alone. Returns counts plus the unknown rows."""
+    init_table(cx)
+    rows = cx.execute("SELECT id, email, scan_date, scan_id, content_json, status "
+                      "FROM portal_biofield_reports WHERE report_kind IS NULL "
+                      "ORDER BY id").fetchall()
+    out = {"dry_run": bool(dry_run), "rows_without_kind": len(rows),
+           REMEDY_MATCH: 0, BIOFIELD: 0, "written": 0, "raced": 0, "unknown": []}
+    for rid, email, sd, sid, cj, status in rows:
+        try:
+            content = json.loads(cj or "{}")
+        except Exception:
+            content = {}
+        kind = infer_kind(content, sid)
+        if kind is None:
+            out["unknown"].append({"id": rid, "email": email, "scan_date": sd,
+                                   "status": status})
+            continue
+        out[kind] += 1
+        if not dry_run:
+            cur = cx.execute("UPDATE portal_biofield_reports SET report_kind=? "
+                             "WHERE id=? AND report_kind IS NULL", (kind, rid))
+            if cur.rowcount:
+                out["written"] += 1
+            else:
+                out["raced"] += 1
+    if not dry_run:
+        cx.commit()
+    return out
 
 
 def list_report_dates(cx, email):
@@ -73,7 +225,7 @@ def list_report_dates(cx, email):
 
 def latest_report(cx, email):
     email = (email or "").strip().lower()
-    row = cx.execute("SELECT id, scan_date, scan_id, content_json, status "
+    row = cx.execute(f"SELECT {_COLS} "
                      "FROM portal_biofield_reports WHERE email=? "
                      "ORDER BY scan_date DESC LIMIT 1", (email,)).fetchone()
     return _row_to_dict(row) if row else None

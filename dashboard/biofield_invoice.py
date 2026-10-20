@@ -787,8 +787,11 @@ def default_handoff_push(email, name, content, scan_date=""):
     # AI reveal (which owns its own per-scan report row) regardless of scan date.
     if (scan_date or "").strip():
         payload["current_scan_date"] = scan_date.strip()
+    # A hand-off is Glen's handwritten Biofield, staged as ai_draft for Rae. Its status
+    # says draft; report_kind says what it is, so the portal never calls it AI.
     body = _json.dumps({"email": email, "name": name or "", "content": payload,
-                        "scan_date": scan_date or "", "scan_id": ""}).encode("utf-8")
+                        "scan_date": scan_date or "", "scan_id": "",
+                        "report_kind": "biofield"}).encode("utf-8")
     try:
         req = urllib.request.Request(f"{base}/admin/portal/upsert", data=body, method="POST",
                                      headers={"Content-Type": "application/json", "X-Console-Key": key})

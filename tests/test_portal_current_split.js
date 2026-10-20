@@ -126,7 +126,7 @@ const SIGS = [
   ['scans', '<h2>Your personal message from Dr. Glen</h2>'],
   ['scans', '<h2>Your audio walkthrough</h2>'],
   ['scans', '<h2>Your written report</h2>'],
-  ['scans', '<h2>Preparing your Biofield Analysis'],
+  ['scans', '<h2>Preparing your Remedy Match'],
   ['scans', '<h2>Curious what your body is asking for?</h2>'],
   ['scans', '<h2>Your scan analysis</h2>'],
   ['scans', 'class="rr-header"'],                              // read-receipt report variant
