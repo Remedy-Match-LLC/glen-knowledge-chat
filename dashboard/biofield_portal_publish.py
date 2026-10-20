@@ -150,18 +150,19 @@ def _match(name, catalog):
     for slug, product in (catalog or {}).items():
         if (product.get("name") or "").strip().lower() == wanted:
             return slug
-    near = name_to_slug(name, catalog)
-    from dashboard.biofield_invoice import terrain_restore_fallback, terrain_restore_ingredient
-    if terrain_restore_ingredient(name):
-        # An ingredient for the client's Terrain Restore bottle. A near match counts
-        # only when it is itself an "in Terrain Restore" product: a bare "Digestzymes"
-        # bottle would put a second product on the portal (Glen, 2026-10-19).
-        near_name = ((catalog or {}).get(near) or {}).get("name") if near else None
-        if near and terrain_restore_ingredient(near_name):
-            return near
-        return terrain_restore_fallback(
-            name, (s for s, p in (catalog or {}).items() if not (p or {}).get("inactive")))
-    return near
+    from dashboard.biofield_invoice import (
+        CUSTOM_TERRAIN_RESTORE_SLUG, terrain_restore_fallback)
+    if " in terrain restore" in " ".join(wanted.split()):
+        # An ingredient for the client's Terrain Restore bottle: an exact product, or
+        # the bottle itself, never a near match. A near match turned "Digestzymes in
+        # Terrain Restore" into a bare Digestzymes bottle, and "Jasper Gem Elixir in
+        # Terrain Restore" into Green Jasper (Glen, 2026-10-19; review rounds 1 and 2).
+        # A spelling the bottle cannot take stays unresolved, as the invoice skips it.
+        live = {s: p for s, p in (catalog or {}).items() if not (p or {}).get("inactive")}
+        custom = live.get(CUSTOM_TERRAIN_RESTORE_SLUG) or {}
+        return terrain_restore_fallback(name, live, bool(custom)
+                                        and not custom.get("waitlist_only"))
+    return name_to_slug(name, catalog)
 
 
 def _dosing(layer):

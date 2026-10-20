@@ -90,17 +90,21 @@ def resolve_line_slug(name, catalog):
     slug = _old_names().get(norm)
     if slug and any(it.get("slug") == slug and not it.get("inactive") for it in catalog or []):
         return slug
-    return terrain_restore_fallback(name, (it.get("slug") for it in catalog or []
-                                           if not it.get("inactive")))
+    return terrain_restore_fallback(
+        name, (it.get("slug") for it in catalog or [] if not it.get("inactive")),
+        terrain_restore_sellable(catalog))
 
 
-def terrain_restore_fallback(name, slugs):
+def terrain_restore_fallback(name, slugs, custom_ok):
     """An "X in Terrain Restore" remedy with no product of its own is still made into
     the client's one bottle: Terrain Restore, which folds into the custom bottle and
     keeps its fee (Glen, 2026-10-19, Josie's "Digestzymes in Terrain Restore": "It is
     made into her Terrain Restore with the other ingredients, with no change in the
-    fee."). None for any other name, or when Terrain Restore is not in `slugs`."""
-    if not terrain_restore_ingredient(name):
+    fee."). None for any other name, when Terrain Restore is not in `slugs` (the
+    live slugs), or when the custom bottle cannot be sold (`custom_ok` False): plain
+    Terrain Restore would then bill the ingredients at its own price and drop their
+    names, so they stay skipped for staff instead (review round 1, 2026-10-19)."""
+    if not custom_ok or not terrain_restore_ingredient(name):
         return None
     return TERRAIN_RESTORE_SLUG if TERRAIN_RESTORE_SLUG in set(slugs) else None
 

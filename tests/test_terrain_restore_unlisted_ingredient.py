@@ -87,3 +87,34 @@ def test_the_real_catalogue_never_makes_a_bare_bottle_of_an_ingredient():
     assert bpp._match("Microbiome in Terrain Restore", cat) == "terrain-restore"
     assert bpp._match("Pyrite Gem Elixir in Terrain Restore", cat) \
         == "pyrite-gem-elixir-in-terrain-restore"
+
+
+def test_no_sellable_custom_bottle_means_skipped_never_plain_terrain_restore():
+    """Review round 1: with the custom bottle waitlisted the ingredients billed as one
+    plain Terrain Restore at the volume price, and their names were lost."""
+    for cat in ([dict(c, waitlist_only=True) if c["slug"] == "terrain-restore-custom" else c
+                 for c in CATALOG],
+                [c for c in CATALOG if c["slug"] != "terrain-restore-custom"]):
+        out = bi.build_invoice_lines({}, ["Digestzymes in Terrain Restore"], cat,
+                                     include_fee=False)
+        assert out["lines"] == [] and out["skipped"] == ["Digestzymes in Terrain Restore"]
+    waitlisted = dict(CAT_D, **{"terrain-restore-custom": {"name": "Custom Terrain Restore",
+                                                           "waitlist_only": True}})
+    assert bpp._match("Digestzymes in Terrain Restore", waitlisted) is None
+    assert bpp._match("Digestzymes in Terrain Restore",
+                      {k: v for k, v in CAT_D.items() if k != "terrain-restore-custom"}) is None
+
+
+def test_the_portal_never_near_matches_an_ingredient_name():
+    """Review rounds 1 and 2: a near match picked another product for these."""
+    import json
+    import pathlib
+    cat = json.loads((pathlib.Path(__file__).resolve().parents[1] / "data" / "products.json")
+                     .read_text())["products"]
+    assert bpp._match("Jasper Gem Elixir in Terrain Restore", cat) == "terrain-restore"
+    assert bpp._match("Gem Elixir in Terrain Restore", cat) == "terrain-restore"
+    # Spellings the bottle cannot take stay unresolved, as the invoice skips them.
+    assert bpp._match("Digestzymes In Terrain Restore.", cat) is None
+    assert bpp._match("Digestzymes in Terrain Restore Drops", cat) is None
+    assert bi.resolve_line_slug("Digestzymes In Terrain Restore.",
+                                [dict(p, slug=s) for s, p in cat.items()]) is None
