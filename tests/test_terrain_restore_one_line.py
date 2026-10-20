@@ -559,12 +559,12 @@ def test_a_cart_seeded_before_the_fold_loses_the_ingredient_rows(monkeypatch, tm
 def test_a_cart_seeded_with_the_old_folded_plain_bottle_loses_it(monkeypatch, tmp_path):
     """An older build seeded the folded bottle as plain Terrain Restore. The custom
     bottle replaces it, or checkout bills two bottles (review round 2)."""
-    old = [{"slug": "terrain-restore", "qty": 1, "note": NOTE_BOTH, "held": HELD_BOTH},
-           {"slug": "microbiome", "qty": 1}]
-    appmod, cart_store, cx, portal = _cart_portal(monkeypatch, tmp_path, old)
+    appmod, cart_store, cx, portal = _cart_portal(monkeypatch, tmp_path, [])
     with appmod.app.test_request_context("/"):
         token = appmod._portal_open_cart(cx, portal)
-        assert "terrain-restore" in {i["slug"] for i in cart_store.items(cx, token)}
+        # The row an older build's seed left behind.
+        cart_store.add_item(cx, token, "terrain-restore", source="portal-curated")
+        cart_store.add_item(cx, token, "microbiome", source="portal-curated")
         portal["content"]["reorder_items"] = [
             {"slug": CUSTOM, "qty": 1, "note": NOTE_BOTH, "held": HELD_BOTH},
             {"slug": "microbiome", "qty": 1}]

@@ -1,7 +1,7 @@
-"""A Terrain Restore bottle with two or more added ingredients is always $70.
+"""A Terrain Restore bottle with one or more added ingredients is always $70.
 
-Glen, 2026-10-19: "yes, always $70", then "yes, when there is more than one specially
-added ingredient". Josie's order 236 billed the folded bottle at $58, because #2074
+Glen, 2026-10-19: "yes, always $70", then "a bottle of Terrain Restore with one or
+more added ingredient should be $70". Josie's order 236 billed the folded bottle at $58, because #2074
 folded it into plain Terrain Restore, which takes the member volume rate. The bottle
 is now its own product, terrain-restore-custom: never discounted, still counted
 toward the volume rate of the other formulations, and Rae can type over its price.
@@ -122,3 +122,46 @@ def test_a_family_pool_counts_it_toward_volume():
     members = [{"items": [{"slug": "paracleanse", "qty": 2}]},
                {"items": [{"slug": CUSTOM, "qty": 3}, {"slug": "biofield-analysis", "qty": 1}]}]
     assert app_mod._pooled_volume_qty(members) == 5
+
+
+def test_the_app_constant_matches_the_fold_module():
+    from dashboard import biofield_invoice as bi
+    assert app_mod._CUSTOM_TR_SLUG == bi.CUSTOM_TERRAIN_RESTORE_SLUG
+
+
+OLD_FOLDED = {"slug": "terrain-restore", "qty": 3, "price_cents": 5000,
+              "note": "With Pyrite Gem Elixir and Quinton Hypertonic Electrolytes"}
+
+
+def test_a_report_published_before_this_change_bills_70():
+    """Order 236's shape: the old folded plain bottle, read straight from a stored report."""
+    from dashboard import biofield_invoice as bi
+    up = bi.upgrade_old_folded([OLD_FOLDED, {"slug": "terrain-restore", "qty": 1},
+                                {"slug": "microbiome", "qty": 1}])
+    assert [i["slug"] for i in up] == [CUSTOM, "terrain-restore", "microbiome"]
+    assert "price_cents" not in up[0] and up[0]["note"] == OLD_FOLDED["note"]
+    _lines, recs, _sub = app_mod._portal_priced_lines([OLD_FOLDED])
+    assert [(r["slug"], r["unit_cents"]) for r in recs] == [(CUSTOM, 7000)]
+
+
+def test_plain_terrain_restore_on_a_report_is_not_upgraded():
+    _lines, recs, _sub = app_mod._portal_priced_lines([{"slug": "terrain-restore", "qty": 3}])
+    assert recs[0]["slug"] == "terrain-restore"
+
+
+def test_two_accepted_ingredients_make_one_custom_bottle(monkeypatch):
+    import sqlite3
+    from dashboard import practitioner_recommendations as pr
+    monkeypatch.setattr(pr, "init_table", lambda cx: None)
+    monkeypatch.setattr(pr, "active_for_patient", lambda cx, e: {
+        "status": "accepted", "items": [
+            {"slug": "pyrite-gem-elixir-in-terrain-restore", "qty": 1},
+            {"slug": "quinton-hypertonic-electrolytes-in-terrain-restore", "qty": 1},
+            {"slug": "microbiome", "qty": 1}]})
+    out = app_mod._merge_accepted_recommendation_items(
+        sqlite3.connect(":memory:"), "j@example.com", [{"slug": "paracleanse", "qty": 1}])
+    assert sorted(i["slug"] for i in out) == sorted([CUSTOM, "microbiome", "paracleanse"])
+    bottle = next(i for i in out if i["slug"] == CUSTOM)
+    assert {h["slug"] for h in bottle["held"]} == {
+        "pyrite-gem-elixir-in-terrain-restore",
+        "quinton-hypertonic-electrolytes-in-terrain-restore"}

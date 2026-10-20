@@ -383,6 +383,23 @@ def fold_reorder_items(items, name_of, base_ok, ready=None):
 FOLDED_SLUGS = (CUSTOM_TERRAIN_RESTORE_SLUG, TERRAIN_RESTORE_SLUG)
 
 
+def upgrade_old_folded(items):
+    """Reorder items with a plain Terrain Restore line folded by an older build
+    (it holds ingredients or names them in its note) read as the custom bottle,
+    with no stored price: that price came from the old volume or courtesy rule.
+    Reports published before the custom product existed then bill $70 without a
+    republish (review round 1, 2026-10-19). Other items pass through unchanged."""
+    out = []
+    for it in items or []:
+        if (isinstance(it, dict)
+                and (it.get("slug") or "").strip().lower() == TERRAIN_RESTORE_SLUG
+                and (it.get("held") or note_ingredients(it.get("note")))):
+            it = {k: v for k, v in it.items() if k not in ("price_cents", "_tr_price")}
+            it["slug"] = CUSTOM_TERRAIN_RESTORE_SLUG
+        out.append(it)
+    return out
+
+
 def note_ingredients(note):
     """The ingredients a terrain_restore_note names, in order. Display text read
     back, so it is used only for a line that carries no "held" list."""

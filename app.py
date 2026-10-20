@@ -8446,6 +8446,9 @@ def _line_qty(ln):
         return 1
 
 
+_CUSTOM_TR_SLUG = "terrain-restore-custom"   # dashboard.biofield_invoice.CUSTOM_TERRAIN_RESTORE_SLUG
+
+
 def _counts_toward_volume(p):
     """A product whose bottles count toward the order's volume rate: every Functional
     Formulation, and a product flagged counts_toward_volume that is never discounted
@@ -26426,6 +26429,9 @@ def _portal_priced_lines(items, email=None):
             print(f"[portal-checkout] client-price lookup failed for {email!r}: {e!r}", flush=True)
             client_by_slug, client_ff_flat = {}, None
     lines, items_rec, subtotal_cents = [], [], 0
+    if _get_product(_CUSTOM_TR_SLUG):
+        from dashboard.biofield_invoice import upgrade_old_folded as _upgrade
+        items = _upgrade(items)
     for it in (items or []):
         slug = (it.get("slug") or "").strip()
         p = _get_product(slug) if slug else None
@@ -26967,6 +26973,12 @@ def _merge_accepted_recommendation_items(cx, email, reorder_items):
     failure must never break a portal render or a checkout."""
     base = list(reorder_items or [])
     try:
+        from dashboard.biofield_invoice import upgrade_old_folded as _upgrade
+        if _get_product(_CUSTOM_TR_SLUG):
+            base = _upgrade(base)
+    except Exception:
+        pass
+    try:
         if not email:
             return base
         from dashboard import practitioner_recommendations as _pr
@@ -26993,9 +27005,12 @@ def _merge_accepted_recommendation_items(cx, email, reorder_items):
             base.append(_reorder_item_from_slug(slug, qty))
             have.add(slug)
         # A recommended "in Terrain Restore" ingredient joins the client's bottle,
-        # never a second $70 line beside it (2026-10-19).
-        if any(isinstance(it, dict) and it.get("held") for it in base):
-            from dashboard import biofield_invoice as _bfi
+        # never a second $70 line beside it (2026-10-19). With no bottle yet, one or
+        # more recommended ingredients make one (review round 1).
+        from dashboard import biofield_invoice as _bfi
+        if any(isinstance(it, dict) and (it.get("held") or _bfi.terrain_restore_ingredient(
+                (_get_product((it.get("slug") or "").strip()) or {}).get("name")))
+               for it in base):
             base = _bfi.fold_reorder_items(
                 base, name_of=lambda sl: (_get_product(sl) or {}).get("name"),
                 base_ok=bool(_get_product(_bfi.CUSTOM_TERRAIN_RESTORE_SLUG))
