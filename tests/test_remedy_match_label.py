@@ -477,6 +477,9 @@ def test_notify_email_for_a_remedy_match(app_env, monkeypatch):
     _, subject, body = sent[-1]
     assert subject == "Your new Remedy Match is ready"
     assert "Your newest Remedy Match is ready in your portal." in body
+    assert ("It maps the stress patterns your body is working through right now, along "
+            "with the gentle remedy schedule matched to where you are today.") in body
+    assert "layer" not in body
     assert "Biofield" not in subject + body and "—" not in body
 
 
@@ -491,6 +494,8 @@ def test_notify_email_for_a_biofield_is_unchanged(app_env, monkeypatch):
     _, subject, body = sent[-1]
     assert subject == "Your new Biofield Analysis is ready"
     assert "Your newest Biofield Analysis is ready in your portal." in body
+    assert ("It maps the layers your body is working through right now, along with the "
+            "gentle remedy schedule matched to where you are today.") in body
 
 
 def test_notify_email_follows_the_current_pointer(app_env, monkeypatch):
@@ -506,18 +511,36 @@ def test_notify_email_follows_the_current_pointer(app_env, monkeypatch):
     assert sent[-1][1] == "Your new Biofield Analysis is ready"
 
 
-def test_notify_pointer_at_a_reveal_only_date_is_a_remedy_match(app_env, monkeypatch):
+def test_notify_and_page_agree_when_the_pointer_names_a_reveal_only_date(app_env, monkeypatch):
+    # The page does not follow a pointer to a reveal-only date when stored reports
+    # exist: it shows the newest stored report. The email must name that same report.
     c, appmod, sent = app_env
     from dashboard import biofield_reveals as br
     monkeypatch.setenv("PORTAL_SCAN_NOTIFY_ENABLED", "1")
-    _portal(appmod, "k@x.com", "Kai Lee", {"current_scan_date": "2026-10-14"})
+    tok = _portal(appmod, "k@x.com", "Kai Lee", {"current_scan_date": "2026-10-14"})
     with _cx(appmod) as cx:
         pbr.upsert_report(cx, "k@x.com", "2026-09-01", "", {}, "confirmed",
                           report_kind="biofield")
         br.init_table(cx)
         br.upsert(cx, "k@x.com", "2026-10-14", {"greeting": "Aloha"},
                   [{"name": "Top", "slug": "top", "meaning": "m"}], "src")
+    page = c.get(f"/api/portal/{tok}").get_json()
     c.post("/api/console/portal/notify-scan", headers=AUTH, json={"email": "k@x.com"})
+    assert (page["scan_date"], page["report_kind"]) == ("2026-09-01", "biofield")
+    assert sent[-1][1] == "Your new Biofield Analysis is ready"
+
+
+def test_notify_and_page_agree_on_a_reveal_only_client(app_env, monkeypatch):
+    c, appmod, sent = app_env
+    from dashboard import biofield_reveals as br
+    monkeypatch.setenv("PORTAL_SCAN_NOTIFY_ENABLED", "1")
+    tok = _portal(appmod, "r@x.com", "Rae Lee")
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        br.init_table(cx)
+        br.upsert(cx, "r@x.com", "2026-10-14", {"greeting": "Aloha"},
+                  [{"name": "Top", "slug": "top", "meaning": "m"}], "src")
+    assert c.get(f"/api/portal/{tok}").get_json()["report_kind"] == "remedy_match"
+    c.post("/api/console/portal/notify-scan", headers=AUTH, json={"email": "r@x.com"})
     assert sent[-1][1] == "Your new Remedy Match is ready"
 
 
@@ -557,6 +580,30 @@ def test_family_notify_for_a_remedy_match(app_env, monkeypatch):
     _, subject, body = sent[-1]
     assert subject == "Kai's new Remedy Match is ready"
     assert "Kai's newest Remedy Match is ready in your family portal." in body
+    assert ("It maps the stress patterns their body is working through now, with the "
+            "gentle remedy schedule matched to where they are today.") in body
+    assert "layer" not in body
+
+
+def test_family_notify_for_a_biofield_keeps_layers(app_env, monkeypatch):
+    c, appmod, sent = app_env
+    from dashboard import household as hh
+    monkeypatch.setenv("PORTAL_SCAN_NOTIFY_ENABLED", "1")
+    _portal(appmod, "care@x.com", "Karin Takahashi")
+    _portal(appmod, "kid@x.com", "Kai Takahashi")
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        hh.init_household_tables(cx)
+        hh.add_member(cx, "care@x.com", "kid@x.com", label="Kai", relationship="child")
+    with _cx(appmod) as cx:
+        pbr.upsert_report(cx, "kid@x.com", "2026-10-14", "", {}, "confirmed",
+                          report_kind="biofield")
+    c.post("/api/console/portal/notify-scan", headers=AUTH,
+           json={"email": "care@x.com", "member": "kid@x.com"})
+    _, subject, body = sent[-1]
+    assert subject == "Kai's new Biofield Analysis is ready"
+    assert "Kai's newest Biofield Analysis is ready in your family portal." in body
+    assert ("It maps the layers their body is working through now, with the gentle "
+            "remedy schedule matched to where they are today.") in body
 
 
 def test_reveal_email_wording(app_env):
@@ -685,4 +732,12 @@ def test_reveal_page_says_remedy_match():
     # Glen, 2026-10-20: "Reserve 'layers' language for causal Biofield Analysis."
     assert 'layersLabel.textContent = "Your Active Stress Patterns";' in REVEAL_PAGE
     assert "Stress Pattern Layers" not in REVEAL_PAGE
+    # Glen's own wording, 2026-10-20.
+    assert ('tosP.textContent = "To view your personal Remedy Match, please agree to our '
+            'terms of service.";') in REVEAL_PAGE
+
+
+def test_console_video_label_by_kind():
+    assert ("(CUR_KIND === 'remedy_match' ? 'Watch your Remedy Match walkthrough' : "
+            "'Watch your Biofield walkthrough')") in CONSOLE
     assert "Biofield Analysis" not in REVEAL_PAGE

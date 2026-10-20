@@ -27777,28 +27777,26 @@ def api_client_portal(token):
     _rev_by_date = {r["scan_date"]: r for r in _revs}
     _all_bf_dates = sorted(set(dates) | set(_rev_by_date), reverse=True)
 
+    # Which report is "current" is decided by _pick_portal_report, which the console
+    # notify email also calls, so the email always names the report this page shows.
+    cur_ptr = (content or {}).get("current_scan_date")
+    if dates and not (req_date and req_date in dates) and cur_ptr and cur_ptr not in dates:
+        app.logger.warning("portal current_scan_date %r not in reports for %s; using newest",
+                           cur_ptr, email_for_reports)
+    _src, _picked = _pick_portal_report(dates, list(_rev_by_date), cur_ptr, req_date)
     # Which words the page uses for this report (Glen, 2026-10-20): a scan reveal is
     # always a Remedy Match; a stored report carries its own kind.
     bf_kind = _pbr.REMEDY_MATCH
-    if req_date in _rev_by_date and req_date not in dates:
-        _row = _rev_by_date[req_date]
-        bf_content = _pv._reveal_as_report_content(_row)
+    if _src == "reveal":
+        bf_content = _pv._reveal_as_report_content(_rev_by_date[_picked])
         bf_status = "confirmed"
-        bf_scan_date, bf_scan_dates, bf_actionable = req_date, _all_bf_dates, False
-    elif dates:
-        # Which report is "current": an explicit ?scan_date= wins; else the report the
-        # authoring/hand-off stamped as current (content.current_scan_date) so a manual
-        # Biofield beats a stale AI reveal regardless of date; else newest by date.
-        cur_ptr = (content or {}).get("current_scan_date")
-        if req_date and req_date in dates:
-            picked = req_date
-        elif cur_ptr and cur_ptr in dates:
-            picked = cur_ptr
-        else:
-            if cur_ptr and cur_ptr not in dates:
-                app.logger.warning("portal current_scan_date %r not in reports for %s; using newest",
-                                   cur_ptr, email_for_reports)
-            picked = dates[0]
+        # A reveal picked by ?scan_date= sits in the full history; a reveal shown by
+        # default (no stored reports) lists the reveal dates only, as before.
+        bf_scan_date = _picked
+        bf_scan_dates = _all_bf_dates if _picked == req_date else list(_rev_by_date)
+        bf_actionable = False
+    elif _src == "report":
+        picked = _picked
         rep = _pbr.get_report(cx_r, email_for_reports, picked) or {}
         bf_content = rep.get("content") or {}
         bf_status = rep.get("status") or "confirmed"
@@ -27807,19 +27805,10 @@ def api_client_portal(token):
         bf_actionable = (bf_status != "confirmed") and _pbr.is_actionable(
             picked, _dt.date.today().isoformat())
     else:
-        # System A: the funnel reveal (biofield_reveals).
-        if _revs:
-            _rev_dates = list(_rev_by_date)
-            _picked = req_date if req_date in _rev_dates else _rev_dates[0]
-            _row = _rev_by_date[_picked]
-            bf_content = _pv._reveal_as_report_content(_row)
-            bf_status = "confirmed"
-            bf_scan_date, bf_scan_dates, bf_actionable = _picked, _rev_dates, False
-        else:
-            bf_content = content
-            bf_status = content.get("biofield_status") or "confirmed"
-            bf_kind = _pbr.effective_kind(None, bf_content)
-            bf_scan_date, bf_scan_dates, bf_actionable = None, [], False
+        bf_content = content
+        bf_status = content.get("biofield_status") or "confirmed"
+        bf_kind = _pbr.effective_kind(None, bf_content)
+        bf_scan_date, bf_scan_dates, bf_actionable = None, [], False
     # An owner hold (the console "Set to draft" button) wins over any stored status. It is
     # the only way to un-publish a reveal date, which has no status of its own.
     try:
@@ -34231,14 +34220,37 @@ def api_console_portal_release_shipped_reports():
     return jsonify({"ok": True, "committed": commit, **result})
 
 
-def _current_report_kind(cx, email):
-    """'remedy_match' or 'biofield' for this email's current report.
+def _pick_portal_report(dates, reveal_dates, cur_ptr, req_date=""):
+    """Which report /api/portal/<token> shows. The one place that choice is made.
 
-    The portal's current_scan_date pointer decides when it names a stored row; a
-    pointer naming a reveal-only date is a Remedy Match, since every reveal is. With no
-    usable pointer, the newest stored row decides, then any reveal (a Remedy Match),
-    then the legacy portal content by the rule. A report the rule cannot classify is
-    Biofield, which is what every report said before the column existed.
+    `dates` are the stored report dates, newest first; `reveal_dates` the reveal
+    dates in biofield_reveals.list_for_email order. Returns (source, scan_date) with
+    source "reveal", "report" or "legacy" (the single client_portals content).
+
+    1. An explicit ?scan_date= naming a reveal-only date shows that reveal.
+    2. With stored reports: ?scan_date= if it names one, else the portal's
+       current_scan_date pointer if it names one, else the newest. A pointer naming a
+       reveal-only date is NOT followed here; the newest stored report shows.
+    3. With no stored reports: the requested reveal, else the first reveal.
+    4. Otherwise the legacy content."""
+    if req_date and req_date in reveal_dates and req_date not in dates:
+        return "reveal", req_date
+    if dates:
+        if req_date and req_date in dates:
+            return "report", req_date
+        if cur_ptr and cur_ptr in dates:
+            return "report", cur_ptr
+        return "report", dates[0]
+    if reveal_dates:
+        return "reveal", (req_date if req_date in reveal_dates else reveal_dates[0])
+    return "legacy", None
+
+
+def _current_report_kind(cx, email):
+    """'remedy_match' or 'biofield' for the report /api/portal/<token> shows this email
+    with no ?scan_date=, chosen by the same _pick_portal_report. A reveal is a Remedy
+    Match. A report the rule cannot classify is Biofield, which is what every report
+    said before the column existed.
 
     Raises on a lookup error. A caller that sends mail must not guess the wording."""
     from dashboard import client_portal as _cp, portal_biofield_reports as _pbr
@@ -34248,31 +34260,33 @@ def _current_report_kind(cx, email):
         return _pbr.BIOFIELD
     _pbr.init_table(cx)
     _brv.init_table(cx)
-    kinds = _pbr.kinds_by_date(cx, email)
-    reveal_dates = {r.get("scan_date") for r in (_brv.list_for_email(cx, email) or [])}
-    ptr = _cp.get_current_scan(cx, email)
-    if ptr and ptr in kinds:
-        return kinds[ptr]
-    if ptr and ptr in reveal_dates:
-        return _pbr.REMEDY_MATCH
-    if kinds:
-        return kinds[max(kinds)]
-    if reveal_dates:
-        return _pbr.REMEDY_MATCH
+    dates = _pbr.list_report_dates(cx, email)
+    reveal_dates = []
+    for r in (_brv.list_for_email(cx, email) or []):
+        if r.get("scan_date") not in reveal_dates:
+            reveal_dates.append(r.get("scan_date"))
     rec = _cp.get_portal_content_by_email(cx, email)
-    return _pbr.effective_kind(None, (rec or {}).get("content") or {})
+    content = (rec or {}).get("content") or {}
+    source, picked = _pick_portal_report(dates, reveal_dates, content.get("current_scan_date"))
+    if source == "reveal":
+        return _pbr.REMEDY_MATCH
+    if source == "report":
+        return _pbr.kinds_by_date(cx, email)[picked]
+    return _pbr.effective_kind(None, content)
 
 
 def _notify_scan_wording(kind, member_first=None, member=False):
-    """(subject, noun) for the console "Notify client" email. A Remedy Match says so;
-    a paid Biofield keeps "Biofield Analysis" (Glen, 2026-10-20)."""
+    """(subject, noun, maps) for the console "Notify client" email. A Remedy Match says
+    so; a paid Biofield keeps "Biofield Analysis" and "layers" (Glen, 2026-10-20)."""
     noun = "Remedy Match" if kind == "remedy_match" else "Biofield Analysis"
+    # Glen, 2026-10-20: "layers" wording is reserved for the paid causal analysis.
+    maps = "stress patterns" if kind == "remedy_match" else "layers"
     if member:
         subject = (f"{member_first}'s new {noun} is ready" if member_first
                    else f"A new {noun} is ready")
     else:
         subject = f"Your new {noun} is ready"
-    return subject, noun
+    return subject, noun, maps
 
 
 @app.route("/api/console/portal/backfill-report-kinds", methods=["POST"])
@@ -34347,11 +34361,11 @@ def api_console_portal_notify_scan():
         _mp = ((mrec or {}).get("name") or "").split()
         member_first = _mp[0] if _mp else ""
         member_possessive = f"{member_first}'s" if member_first else "Your family member's"
-        subject, noun = _notify_scan_wording(kind, member_first, member=True)
+        subject, noun, maps = _notify_scan_wording(kind, member_first, member=True)
         body = (
             f"{greeting}\n\n"
             f"{member_possessive} newest {noun} is ready in your family portal. "
-            "It maps the layers their body is working through now, with the gentle remedy "
+            f"It maps the {maps} their body is working through now, with the gentle remedy "
             "schedule matched to where they are today.\n\n"
             "There is nothing to prepare. When you have a quiet moment, open your portal "
             "and read through it at your own pace. If anything raises a question, we are here.\n\n"
@@ -34363,10 +34377,10 @@ def api_console_portal_notify_scan():
             "PO Box 126, Hilo, HI 96721"
         )
     else:
-        subject, noun = _notify_scan_wording(kind)
+        subject, noun, maps = _notify_scan_wording(kind)
         body = (
             f"{greeting}\n\n"
-            f"Your newest {noun} is ready in your portal. It maps the layers "
+            f"Your newest {noun} is ready in your portal. It maps the {maps} "
             "your body is working through right now, along with the gentle remedy schedule "
             "matched to where you are today.\n\n"
             "There is nothing to prepare. When you have a quiet moment, open your portal "

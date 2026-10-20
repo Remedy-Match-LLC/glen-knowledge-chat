@@ -178,4 +178,57 @@ function hasNotice(html) {
   assert.strictEqual(title({}), 'Biofield Analysis');
 }
 
+// --- "From the surface layer down to the deepest root" is Biofield wording only ---
+// Glen, 2026-10-20: layers wording is reserved for the paid causal analysis.
+{
+  const SURFACE = 'From the surface layer down to the deepest root, we support them in order, and the whole chain unwinds.';
+  for (const status of ['interested', 'confirmed']) {
+    assert.ok(render(report('remedy_match', status)).indexOf(SURFACE) === -1,
+      'no surface-layer line on a Remedy Match (' + status + ')');
+    assert.ok(render(report('biofield', status)).indexOf(SURFACE) !== -1,
+      'a Biofield keeps the surface-layer line (' + status + ')');
+    // A report whose kind the page cannot tell keeps today's Biofield text.
+    assert.ok(render(report(undefined, status)).indexOf(SURFACE) !== -1);
+  }
+  // The read-receipt variant renders the same body.
+  assert.ok(render(report('remedy_match', 'confirmed', { opens: {} })).indexOf(SURFACE) === -1);
+  assert.ok(render(report('biofield', 'confirmed', { opens: {} })).indexOf(SURFACE) !== -1);
+}
+
+// --- The printed page and its PDF: the same rule ---
+{
+  const PRINT_SURFACE = 'From the surface layer down to the deepest root, supported in order, so the whole chain unwinds.';
+  const at = src.indexOf('const PRINT_HEADER = ');
+  const header = src.slice(at, src.indexOf('</div>`;', at) + 8);
+  const build = (0, eval)([
+    line('const esc = '), 'var fmtDate = function(x){ return String(x); };',
+    'var terrainBanner = function(){ return ""; }, dietGuidanceHtml = function(){ return ""; };',
+    'var escGreeting = function(x){ return String(x); };',
+    header, fnSource('reportWords'), fnSource('buildReportPrintHtml'),
+    '(buildReportPrintHtml)'].join('\n'));
+  const page = (kind) => build({ report_kind: kind, layers: LAYERS });
+  assert.ok(page('remedy_match').indexOf(PRINT_SURFACE) === -1, 'no surface-layer line in a Remedy Match PDF');
+  assert.ok(page('remedy_match').indexOf('<h3>Your healing path</h3>') !== -1, 'the path itself still prints');
+  assert.ok(page('biofield').indexOf(PRINT_SURFACE) !== -1, 'a Biofield PDF keeps it');
+  assert.ok(page(undefined).indexOf(PRINT_SURFACE) !== -1, 'an unknown kind keeps it');
+}
+
+// --- The reveal page (always a Remedy Match): patterns, not layers ---
+{
+  const reveal = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'static', 'begin-biofield.html'), 'utf8');
+  const at = reveal.indexOf('function renderLayers(root, data) {');
+  assert.ok(at !== -1, 'renderLayers not found');
+  const fnText = reveal.slice(at, reveal.indexOf('\n      }\n', at) + 8);
+  const el = (tag) => ({ tag, className: '', textContent: '', children: [],
+                         appendChild(c) { this.children.push(c); } });
+  const renderLayers = (0, eval)('(function(document, renderRemedyInto){ ' + fnText +
+                                 '\n return renderLayers; })')({ createElement: el }, function(){});
+  const root = el('div');
+  renderLayers(root, { layers: [{ n: 2, remedy_blurred: true }, { title: 'Liver', n: 3 }] });
+  const texts = root.children.map(sec => sec.children.map(c => c.textContent));
+  assert.deepStrictEqual(texts[0], ['Pattern 2', 'Your Remedy Match for this pattern']);
+  assert.deepStrictEqual(texts[1], ['Liver']);
+}
+
 console.log('test_remedy_match_label_render: ok');

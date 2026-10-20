@@ -771,9 +771,9 @@ async function importFmp(){
 function buildContent(){
   const c = { greeting: val('greeting'), layers: collectLayers() };
   const vu = val('videoUrl');
-  // "Biofield" is only for the paid analysis, so a Remedy Match gets a neutral default.
+  // "Biofield" is only for the paid analysis, so a Remedy Match gets its own default.
   if(vu) c.video = { url: vu, label: val('videoLabel') ||
-    (CUR_KIND === 'remedy_match' ? 'Watch your walkthrough' : 'Watch your Biofield walkthrough') };
+    (CUR_KIND === 'remedy_match' ? 'Watch your Remedy Match walkthrough' : 'Watch your Biofield walkthrough') };
   const items = collectItems();
   // The client's FF price now lives in client_prices (set on the Invoice panel) and is
   // applied at render, so we no longer bake special_price_cents into reorder_items —

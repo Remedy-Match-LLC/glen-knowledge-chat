@@ -3182,7 +3182,7 @@ function buildReportPrintHtml(d){
     </div>
     ${terrainBanner(d, "print")}
     ${d.greeting?`<div class="pd-greeting">${escGreeting(d.greeting)}</div>`:""}
-    ${path?`<div class="pd-sec"><h3>Your healing path</h3><p class="pd-muted">From the surface layer down to the deepest root, supported in order, so the whole chain unwinds.</p>${path}</div>`:""}
+    ${path?`<div class="pd-sec"><h3>Your healing path</h3>${reportWords(d.report_kind).remedyMatch ? "" : `<p class="pd-muted">From the surface layer down to the deepest root, supported in order, so the whole chain unwinds.</p>`}${path}</div>`:""}
     ${finds}
     ${dietGuidanceHtml(d.diet_guidance, "print")}
     <div class="pd-foot">It is an honor to be on your wellness team. Aloha, Dr. Glen &amp; Rae</div>
@@ -5069,7 +5069,7 @@ function render(d, v){
       const reportBody = `${tabs}
         ${terrainBanner(d, "screen")}
         ${patternsBlock}
-        <p class="muted small">From the surface layer down to the deepest root, we support them in order, and the whole chain unwinds.</p>
+        ${words.remedyMatch ? "" : `<p class="muted small">From the surface layer down to the deepest root, we support them in order, and the whole chain unwinds.</p>`}
         <div class="path">${path}</div>
         ${status === "confirmed" ? scheduleHtml(d.schedule) : ""}
         ${extra}
