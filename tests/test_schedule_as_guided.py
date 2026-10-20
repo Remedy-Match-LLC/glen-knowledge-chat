@@ -26,6 +26,39 @@ def test_the_guided_dose_keeps_dose_frequency_and_timing():
         "and use less at first as you need.")
 
 
+def test_terrain_restore_keeps_its_contents_apart_from_its_timing():
+    """Review round 1: "contains: Aspen, Walnut, every other day" read as three items."""
+    e = {"dosage": "contains: Aspen, Walnut", "frequency": "every other day",
+         "timing": "under the tongue", "contains": ["Aspen", "Walnut"]}
+    assert guided_dose(e) == "contains: Aspen, Walnut; every other day, under the tongue"
+
+
+def test_a_full_stop_never_meets_a_comma():
+    e = {"dosage": "30 minutes.", "frequency": "every other day.", "timing": "as guided."}
+    assert guided_dose(e) == "30 minutes, every other day, as guided."
+
+
+def test_the_portal_copy_of_the_rule_matches(tmp_path):
+    """Review round 1 (L3): the rule lives in Python and in the portal's script. Run the
+    portal's copy under node on the same entries and compare."""
+    import re
+    import shutil
+    import subprocess
+    if not shutil.which("node"):
+        import pytest
+        pytest.skip("node not installed")
+    src = (pathlib.Path(__file__).resolve().parents[1] / "static" / "client-portal.html").read_text()
+    js = re.search(r"const guided = e=>\{.*?\n    \};", src, re.S).group(0)
+    cases = [LASER, {"dosage": "contains: Aspen, Walnut", "frequency": "every other day",
+                     "timing": "", "contains": ["Aspen", "Walnut"]},
+             {"dosage": "30 minutes.", "frequency": "", "timing": "at night"}, {}]
+    import json
+    prog = js + "\nconsole.log(JSON.stringify(" + json.dumps(cases) + ".map(guided)));"
+    got = json.loads(subprocess.run(["node", "-e", prog], capture_output=True, text=True,
+                                    check=True).stdout)
+    assert got == [guided_dose(c) for c in cases]
+
+
 def test_a_remedy_with_nothing_written_reads_as_guided():
     assert guided_dose({"dosage": " ", "frequency": "", "timing": None}) == "as guided"
     assert AS_GUIDED == "As guided"

@@ -220,4 +220,10 @@ def guided_dose(entry):
     guided" when none was written. A slot-less remedy keeps its whole dose: before,
     only the dose printed and "every other day" was lost (clinical, 2026-10-19)."""
     parts = [str(entry.get(k) or "").strip() for k in ("dosage", "frequency", "timing")]
-    return ", ".join(p for p in parts if p) or AS_GUIDED.lower()
+    # A part ending a sentence loses its full stop before the next ("30 minutes.,").
+    parts = [p.rstrip(".").rstrip() if i < 2 else p for i, p in enumerate(parts)]
+    dose, rest = parts[0], ", ".join(p for p in parts[1:] if p)
+    # Terrain Restore's dose lists what it contains, so "every other day" after another
+    # comma would read as one more ingredient (review round 1): a semicolon parts them.
+    sep = "; " if entry.get("contains") or dose.lower().startswith("contains:") else ", "
+    return sep.join(p for p in (dose, rest) if p) or AS_GUIDED.lower()
