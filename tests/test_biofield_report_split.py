@@ -938,3 +938,23 @@ def test_life_stress_essences_follow_the_switch(monkeypatch):
     assert "Oak Flower Essence" in render_present(rep, "", primary_on=rs.DEFAULTS["biofield"])
     assert render_present(rep, "", primary_on=rs.DEFAULTS["biofield"]) == render_present(rep, "")
     assert "Life Stress" not in render_present(rep, "", primary_on={cs.INFOCEUTICALS})
+
+
+def test_a_switched_off_remedy_is_not_called_in_the_program(cx):
+    """With Infoceuticals off in the Biofield Analysis, an infoceutical on the layers
+    is not in the program, so Remedy Sources does not say it is (2026-10-19)."""
+    from dashboard.biofield_clinical_proposals import save_selection
+    save_selection(cx, "a49", "Gut", ["Microbiome", INFO])
+    marks = {"recommended": {"ED12"}, "purple": set()}
+    names = {"ED12": INFO}
+    cx.execute("CREATE TABLE IF NOT EXISTS biofield_auth_chain (test_id INT, remedy TEXT)")
+    cx.executemany("INSERT INTO biofield_auth_chain VALUES (49, ?)", [("Microbiome",), (INFO,)])
+    on = rs.settings(cx, "a49")["remedy_sources"]
+    assert rs.render_report(_ctx(cx, marks=marks, names=names), "remedy_sources", on
+                            ).count(rs.IN_PROGRAM_NOTE) == 2
+    rs.set_section(cx, "a49", rs.PRIMARY, cs.INFOCEUTICALS, False)
+    page = rs.render_report(_ctx(cx, marks=marks, names=names), "remedy_sources", on)
+    assert page.count(rs.IN_PROGRAM_NOTE) == 1          # Microbiome only
+    rs.set_section(cx, "a49", rs.PRIMARY, cs.FORMULATIONS, False)
+    page = rs.render_report(_ctx(cx, marks=marks, names=names), "remedy_sources", on)
+    assert rs.IN_PROGRAM_NOTE not in page

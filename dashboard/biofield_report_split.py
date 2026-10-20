@@ -481,7 +481,7 @@ def render_report(ctx, report, on, intro=True):
         skip = LAYER_SECTIONS
         if cs.FORMULATIONS in on:
             extra += _flat_list("Functional Formulations",
-                                remedy_source_formulations(groups, ctx["chain"]))
+                                remedy_source_formulations(groups, ctx.get("program_chain", ctx["chain"])))
         if cs.INFOCEUTICALS in on:
             extra += _flat_list("Infoceuticals", ctx["remedy_source_infoceuticals"],
                                 (ctx["frame"] or {}).get("infoceutical_header") or "")
@@ -595,12 +595,20 @@ def load(cx, test_id, client_name="", date="", kloud_program="", marks=None,
         line["program"] = kloud_program
     if chain is None:
         chain = cs.chain_remedies(cx, test_id) if is_authored(test_id) else []
+    # "Already in your recommended program" names only what the Biofield Analysis
+    # keeps: a remedy in a switched-off section is not in the program (2026-10-19).
+    try:
+        primary_on = settings(cx, test_id)[PRIMARY]
+    except Exception:
+        primary_on = set(DEFAULTS[PRIMARY])
+    program_chain = [r for r in chain if layer_remedy_on(r, primary_on)]
     return {"report_leads": stored_leads(cx), "report_personal": {},
+            "program_chain": program_chain,
             "groups": groups, "meanings": meanings, "intro": intro, "frame": frame,
             "cautions": cautions, "chain": chain, "client_name": client_name,
             "date": date, "marks": marks,
             "remedy_source_infoceuticals": remedy_source_infoceuticals(
-                groups, marks, chain, names, recommended_order),
+                groups, marks, program_chain, names, recommended_order),
             "unnamed_codes": unnamed_codes(groups, marks, names)}
 
 
