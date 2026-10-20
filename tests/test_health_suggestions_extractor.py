@@ -21,7 +21,7 @@ def _item(field_id, value, quote, about="self"):
 
 CASES = [
     ("I'm 20 weeks pregnant right now.",
-     _item("diagnoses", {"diagnosis": "Pregnancy"}, "20 weeks pregnant"),
+     _item("diagnoses", {"diagnosis": "Pregnancy"}, "I'm 20 weeks pregnant"),
      "diagnoses", {"diagnosis": "Pregnancy", "current": "Current"}),
     ("I am breastfeeding my 3 month old.",
      _item("diagnoses", {"diagnosis": "Breastfeeding", "current": "Current"}, "I am breastfeeding"),
@@ -39,8 +39,8 @@ CASES = [
     ("I have gallstones.",
      _item("diagnoses", {"diagnosis": "Gallstones"}, "I have gallstones"),
      "diagnoses", {"diagnosis": "Gallstones", "current": "Current"}),
-    ("They found a blocked bile duct last month.",
-     _item("diagnoses", {"diagnosis": "Blocked bile duct"}, "a blocked bile duct"),
+    ("I have a blocked bile duct.",
+     _item("diagnoses", {"diagnosis": "Blocked bile duct"}, "I have a blocked bile duct"),
      "diagnoses", {"diagnosis": "Blocked bile duct", "current": "Current"}),
     ("I've had asthma since childhood.",
      _item("diagnoses", {"diagnosis": "Asthma"}, "I've had asthma since childhood"),
@@ -50,7 +50,7 @@ CASES = [
            "I got a pacemaker at 62"),
      "surgeries", {"procedure": "Pacemaker", "reason": "slow heartbeat", "age": 62}),
     ("I have a titanium hip implant.",
-     _item("surgeries", {"procedure": "Hip implant"}, "titanium hip implant"),
+     _item("surgeries", {"procedure": "Hip implant"}, "I have a titanium hip implant"),
      "surgeries", {"procedure": "Hip implant"}),
     ("I take warfarin as a blood thinner.",
      _item("medications", {"medication": "Warfarin", "reason": "blood thinner"},
@@ -65,7 +65,7 @@ CASES = [
      "medications", {"medication": "Metformin"}),
     ("I take lisinopril for blood pressure.",
      _item("medications", {"medication": "Lisinopril", "reason": "blood pressure"},
-           "lisinopril for blood pressure"),
+           "I take lisinopril for blood pressure"),
      "medications", {"medication": "Lisinopril", "reason": "blood pressure"}),
     ("I take ibuprofen most days for my back.",
      _item("otc_drugs", {"medication": "Ibuprofen", "reason": "back pain"},
@@ -77,10 +77,10 @@ CASES = [
      "allergies", {"sensitivity": "Peanuts", "reaction": "throat itches"}),
     ("I follow a low-oxalate diet for my kidneys.",
      _item("diet", "Low-oxalate diet for kidneys", "I follow a low-oxalate diet"),
-     "diet", "Low-oxalate diet for kidneys"),
+     "diet", "I follow a low-oxalate diet"),
     ("I drink about four beers every night.",
      _item("alcohol", "About four beers every night", "I drink about four beers every night"),
-     "alcohol", "About four beers every night"),
+     "alcohol", "I drink about four beers every night"),
 ]
 
 
@@ -213,9 +213,34 @@ def test_table_suggestion_drops_unknown_columns():
     assert merged == [{"medication": "W"}]
 
 
-def test_table_suggestion_rejects_a_bare_string():
+def test_old_shape_plain_string_becomes_a_first_column_row():
+    assert hs.apply_suggestion("medications", [{"medication": "A"}], "warfarin") == [
+        {"medication": "A"}, {"medication": "warfarin"}]
+
+
+def test_table_suggestion_with_nothing_usable_raises():
     with pytest.raises(ValueError):
-        hs.apply_suggestion("medications", [{"medication": "A"}], "warfarin")
+        hs.apply_suggestion("medications", [{"medication": "A"}], {"reason": "x"})
+
+
+def test_whole_list_clinician_suggestion_appends_each_row():
+    merged = hs.apply_suggestion("medications", [{"medication": "A"}],
+                                 json.dumps([{"medication": "B"}, {"medication": "A"}]))
+    assert merged == [{"medication": "A"}, {"medication": "B"}]
+
+
+@pytest.mark.parametrize("current", ["MS, asthma", ["MS", "asthma"], "MS\nasthma"])
+def test_table_stored_as_text_is_never_emptied(current):
+    merged = hs.apply_suggestion("diagnoses", current, {"diagnosis": "Pregnancy",
+                                                        "current": "Current"})
+    assert merged == [{"diagnosis": "MS"}, {"diagnosis": "asthma"},
+                      {"diagnosis": "Pregnancy", "current": "Current"}]
+
+
+def test_mixed_list_keeps_rows_and_strings():
+    merged = hs.apply_suggestion("medications", [{"medication": "A", "reason": "r"}, "B"],
+                                 {"medication": "C"})
+    assert merged == [{"medication": "A", "reason": "r"}, {"medication": "B"}, {"medication": "C"}]
 
 
 @pytest.mark.parametrize("field", ["diet", "alcohol", "sleep"])
@@ -228,9 +253,87 @@ def test_text_suggestion_fills_an_empty_field():
     assert hs.apply_suggestion("alcohol", "", "Wine on weekends") == "Wine on weekends"
 
 
-def test_text_suggestion_skips_text_already_there():
-    assert hs.apply_suggestion("diet", "Keto. No gluten.", "no gluten") == "Keto. No gluten."
+def test_text_suggestion_skips_an_equal_line():
+    assert hs.apply_suggestion("diet", "Keto\nNo gluten", "no   GLUTEN") == "Keto\nNo gluten"
+
+
+def test_text_dedup_is_whole_line_never_substring():
+    assert hs.apply_suggestion("alcohol", "12 beers nightly", "2 beers nightly") == \
+        "12 beers nightly\n2 beers nightly"
+    assert hs.apply_suggestion("diet", "Keto. No gluten.", "no gluten") == \
+        "Keto. No gluten.\nno gluten"
 
 
 def test_scale_suggestion_still_replaces():
     assert hs.apply_suggestion("terrain", 2, 4) == 4
+
+
+# --- evidence checks (review rounds 1 and 2) -----------------------------------
+
+def _one(msg, item):
+    return hs.extract_from_turn(msg, "", extractor=hs.llm_extractor(_llm([item])))
+
+
+@pytest.mark.parametrize("msg,item", [
+    ("My wife is pregnant, can she take this?",
+     _item("diagnoses", {"diagnosis": "Pregnancy"}, "pregnant")),
+    ("My wife is pregnant and I take warfarin.",
+     _item("diagnoses", {"diagnosis": "Pregnancy"}, "My wife is pregnant")),
+    ("My husband and I both take warfarin daily.",
+     _item("medications", {"medication": "Warfarin"}, "I both take warfarin daily")),
+    ("My daughter has asthma, I worry.",
+     _item("diagnoses", {"diagnosis": "Asthma"}, "My daughter has asthma")),
+    ("I think I'm fine", _item("diagnoses", {"diagnosis": "Epilepsy"}, "I")),
+    ("Is it safe if I am pregnant?", _item("diagnoses", {"diagnosis": "Pregnancy"}, "I am pregnant")),
+    ("Taking warfarin daily.", _item("medications", {"medication": "Warfarin"}, "Taking warfarin daily")),
+    ("I take warfarin.", _item("medications", {"medication": "Warfarin"}, "warfarin")),
+])
+def test_unsupported_or_third_party_quotes_are_dropped(msg, item):
+    assert _one(msg, item) == []
+
+
+def test_table_key_term_must_be_in_the_quote():
+    assert _one("I take my pills daily.",
+                _item("medications", {"medication": "Warfarin"}, "I take my pills daily")) == []
+
+
+def test_diet_value_is_the_quote_not_the_paraphrase():
+    out = _one("I drink 2 beers nightly.",
+               _item("alcohol", "12 beers a night, heavy drinker", "I drink 2 beers nightly"))
+    assert out[0]["value"] == "I drink 2 beers nightly"
+
+
+@pytest.mark.parametrize("msg,quote,diag", [
+    ("I was pregnant in 2010.", "I was pregnant in 2010", "Pregnancy"),
+    ("I used to breastfeed my kids.", "I used to breastfeed", "Breastfeeding"),
+    ("I had a pregnancy years ago.", "I had a pregnancy years ago", "Pregnancy"),
+])
+def test_past_pregnancy_and_breastfeeding_are_dropped(msg, quote, diag):
+    item = _item("diagnoses", {"diagnosis": diag, "current": "Current"}, quote)
+    assert _one(msg, item) == []
+
+
+@pytest.mark.parametrize("msg,quote,given", [
+    ("I had asthma as a kid.", "I had asthma as a kid", "Current"),
+    ("I had gallstones years ago.", "I had gallstones years ago", None),
+    ("I no longer have epilepsy symptoms, my epilepsy is gone.", "I no longer have epilepsy", "Current"),
+])
+def test_past_tense_diagnosis_is_past_even_when_the_model_says_current(msg, quote, given):
+    value = {"diagnosis": {"I had asthma as a kid": "Asthma",
+                           "I had gallstones years ago": "Gallstones",
+                           "I no longer have epilepsy": "Epilepsy"}[quote]}
+    if given:
+        value["current"] = given
+    out = _one(msg, _item("diagnoses", value, quote))
+    assert out and out[0]["value"]["current"] == "Past"
+
+
+@pytest.mark.parametrize("msg,quote", [
+    ("I've had asthma since childhood.", "I've had asthma since childhood"),
+    ("I was diagnosed with epilepsy.", "I was diagnosed with epilepsy"),
+    ("I have been breastfeeding for a month.", "I have been breastfeeding"),
+])
+def test_present_facts_stay_current(msg, quote):
+    diag = "Asthma" if "asthma" in quote else ("Epilepsy" if "epilepsy" in quote else "Breastfeeding")
+    out = _one(msg, _item("diagnoses", {"diagnosis": diag}, quote))
+    assert out and out[0]["value"]["current"] == "Current"

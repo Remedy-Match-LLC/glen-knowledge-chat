@@ -13,6 +13,7 @@ Profile" suggestion badge (see health_profile.build_block), and `resolve`
 is how a client accepts/edits/dismisses a suggestion.
 """
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 
@@ -136,8 +137,8 @@ EXTRACT_FIELDS = tuple(TABLE_COLUMNS) + TEXT_FIELDS
 EXTRACT_SYSTEM = (
     "You read ONE message a client wrote in their health portal chat. Find only these facts "
     "that the client states about THEMSELF, as true now or in their past:\n"
-    "- pregnancy or breastfeeding -> field \"diagnoses\", value {\"diagnosis\": \"Pregnancy\" "
-    "or \"Breastfeeding\", \"current\": \"Current\"}\n"
+    "- a CURRENT pregnancy or breastfeeding -> field \"diagnoses\", value {\"diagnosis\": "
+    "\"Pregnancy\" or \"Breastfeeding\", \"current\": \"Current\"}. Never a past one.\n"
     "- epilepsy, a heart rhythm problem, kidney disease, gallstones, a blocked bile duct, or "
     "asthma -> field \"diagnoses\", value {\"diagnosis\": name, \"current\": \"Current\"}, "
     "or \"Past\" only when the client says it is in the past\n"
@@ -150,13 +151,14 @@ EXTRACT_SYSTEM = (
     "\"reason\": what for if stated}\n"
     "- a food allergy -> field \"allergies\", value {\"sensitivity\": the food, "
     "\"reaction\": the reaction if stated}\n"
-    "- a medical or special diet -> field \"diet\", value: a short text in their words\n"
-    "- heavy or regular drinking of alcohol -> field \"alcohol\", value: a short text with the "
-    "amount, type and how often, as stated\n"
+    "- a medical or special diet -> field \"diet\"; the quote is what gets recorded\n"
+    "- heavy or regular drinking of alcohol -> field \"alcohol\"; the quote, with the amount, "
+    "type and how often as stated, is what gets recorded\n"
     "Never record a fact about anyone else (a child, partner, friend, parent). Never guess or "
     "infer. Never record a question (\"is it safe if I were pregnant?\"). Leave out anything "
-    "not on this list. For every item, \"quote\" is the client's exact words that state it, "
-    "copied from their message, and \"about\" is \"self\".\n"
+    "not on this list. For every item, \"quote\" is the client's exact words that state it "
+    "(at least 3 words, including I or my, and the name you put in the value), copied from "
+    "their message, and \"about\" is \"self\".\n"
     "Return STRICT JSON ONLY, no prose: {\"items\": [{\"field_id\": ..., \"value\": ..., "
     "\"quote\": ..., \"about\": \"self\"}]}. With nothing to record return {\"items\": []}."
 )
@@ -199,7 +201,7 @@ def normalize_row(field_id, value):
     for col in cols:
         cell = _cell(value.get(col))
         if col == "current":
-            cell = "Past" if cell.casefold() == "past" else "Current"
+            cell = "Past" if cell.casefold() == "past" else "Current"   # _normalize_item may revise
         elif col == "age":
             try:
                 cell = int(float(cell)) if cell else ""
@@ -208,6 +210,45 @@ def normalize_row(field_id, value):
         if cell != "":
             row[col] = cell
     return row if row.get(cols[0]) else None
+
+
+# Someone else. A quote, or the sentence it came from, naming one is not the
+# client's own fact, whatever the model says in "about".
+_OTHER_PERSON = re.compile(
+    r"\b(?:wife|husband|daughters?|sons?|mom|mum|mother|dad|father|sisters?|brothers?|"
+    r"friends?|partner|bab(?:y|ies)|child|children|kids?|boyfriend|girlfriend|"
+    r"grand(?:ma|pa|mother|father|son|daughter)|aunt|uncle|cousin|niece|nephew|"
+    r"neighbou?r|coworker|client|patient)\b", re.I)
+_FIRST_PERSON = re.compile(r"\b(?:i|i'm|im|i've|ive|i'd|i'll|my|me|myself|mine)\b", re.I)
+# Past tense in a quote. "I've had asthma since childhood" is present, so the
+# present perfect is removed before the check.
+_PRESENT_PERFECT = re.compile(r"\b(?:(?:i've|ive|i have|has|have)\s+(?:had|been)|"
+                              r"(?:was|were|got|been) diagnosed)\b", re.I)
+_PAST = re.compile(
+    r"\b(?:was|were|had|used to|ago|previously|formerly|back in|last year|as a (?:child|kid)|"
+    r"in (?:19|20)\d\d|no longer|anymore|any more)\b|\b\w+ed\b(?= (?:in|at|when|back|before))",
+    re.I)
+_PREGNANCY = re.compile(r"\b(?:pregnan\w*|breast-?feed\w*|breastfed|nursing)\b", re.I)
+
+
+def _source_sentence(quote, client_msg):
+    q = _squash(quote)
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", client_msg or ""):
+        if q and q in _squash(sent):
+            return sent
+    return client_msg or ""
+
+
+def _is_past(quote):
+    return bool(_PAST.search(_PRESENT_PERFECT.sub(" ", quote)))
+
+
+def _term_in_quote(term, quote):
+    """Every word (3+ letters) of the key term appears in the quote, matched on its
+    first 6 letters, so "Pregnancy" is supported by "pregnant"."""
+    words = [w for w in re.findall(r"[a-z0-9]+", str(term).casefold()) if len(w) >= 3]
+    q = _squash(quote)
+    return bool(words) and all(w[:6] in q for w in words)
 
 
 def _normalize_item(item, client_msg):
@@ -223,10 +264,29 @@ def _normalize_item(item, client_msg):
     # answer, and nothing the model made up, can become a suggestion.
     if not quote or _squash(quote) not in _squash(client_msg):
         return None
+    if len(quote.split()) < 3 or not _FIRST_PERSON.search(quote):
+        return None
+    sentence = _source_sentence(quote, client_msg)
+    own = re.compile(r"\bas a (?:child|kid|baby)\b|\bsince (?:i was a )?(?:child|kid|baby)hood\b",
+                     re.I)        # the client's own childhood, not another person
+    if _OTHER_PERSON.search(own.sub(" ", quote)) or _OTHER_PERSON.search(own.sub(" ", sentence)):
+        return None
+    if sentence.rstrip().endswith("?"):
+        return None                      # a question is not a fact
     if fid in TABLE_COLUMNS:
         value = normalize_row(fid, item.get("value"))
+        if not value or not _term_in_quote(value[TABLE_COLUMNS[fid][0]], quote):
+            return None
+        if fid == "diagnoses":
+            past = _is_past(quote)
+            if _PREGNANCY.search(value["diagnosis"]) or _PREGNANCY.search(quote):
+                if past:
+                    return None          # a past pregnancy is not a current condition
+                value["current"] = "Current"
+            elif past:
+                value["current"] = "Past"
     else:
-        value = _cell(item.get("value"), 500) or None
+        value = quote                    # diet and alcohol: the client's words, not a paraphrase
     if not value:
         return None
     return {"field_id": fid, "value": value, "rationale": f'"{quote}"'}
@@ -281,20 +341,14 @@ def _row_key(row):
                         if _squash(v)))
 
 
-def table_row_from(field_id, value):
-    """Decode a confirmed/edited value for a table field into one row dict, using
-    the form's own columns. Accepts a dict or its JSON text. None when unusable."""
+def _table_cols(field_id):
     f = _form_field(field_id)
     if not f or f.get("type") != "table":
         return None
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except ValueError:
-            return None
-    if not isinstance(value, dict):
-        return None
-    cols = [c["id"] for c in f.get("columns") or []]
+    return [c["id"] for c in f.get("columns") or []]
+
+
+def _row_from_dict(cols, value):
     row = {c: value[c] for c in cols
            if c in value and value[c] not in (None, "") and not isinstance(value[c], (dict, list))}
     if not row or not str(row.get(cols[0], "")).strip():
@@ -302,22 +356,87 @@ def table_row_from(field_id, value):
     return row
 
 
+def table_rows_from(field_id, value):
+    """Decode a confirmed or edited value for a table field into row dicts, using the
+    form's own columns. Accepts a row dict, its JSON text, a list of rows, or plain
+    text (an old clinician suggestion): plain text becomes a first-column row, never
+    an error. Empty list when nothing usable."""
+    cols = _table_cols(field_id)
+    if not cols:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            decoded = json.loads(text)
+        except ValueError:
+            decoded = None
+        if isinstance(decoded, (dict, list)):
+            value = decoded
+        else:
+            return [{cols[0]: text}] if text else []
+    items = value if isinstance(value, list) else [value]
+    rows = []
+    for item in items:
+        if isinstance(item, dict):
+            row = _row_from_dict(cols, item)
+        elif isinstance(item, str) and item.strip():
+            row = {cols[0]: item.strip()}
+        else:
+            row = None
+        if row:
+            rows.append(row)
+    return rows
+
+
+def table_row_from(field_id, value):
+    """The first usable row of table_rows_from, or None."""
+    rows = table_rows_from(field_id, value)
+    return rows[0] if rows else None
+
+
+def _existing_rows(field_id, current):
+    """A table's current value as rows, never losing anything. Text (a table that
+    was saved as "MS, asthma") and string items become first-column rows."""
+    cols = _table_cols(field_id) or ["value"]
+    if current is None or current == "":
+        return []
+    if isinstance(current, str):
+        parts = [p.strip() for p in re.split(r"[,;\n]", current) if p.strip()]
+        return [{cols[0]: p} for p in parts]
+    if isinstance(current, dict):
+        return [current]
+    if not isinstance(current, list):
+        return [{cols[0]: str(current)}]
+    out = []
+    for item in current:
+        if isinstance(item, dict):
+            out.append(item)
+        elif item is not None and str(item).strip():
+            out.append({cols[0]: str(item).strip()})
+    return out
+
+
 def apply_suggestion(field_id, current, value):
     """The field's new value once a suggestion is confirmed or edited.
-    - table: append the row to the existing rows; skip it when an identical row is there.
-    - text/textarea: append on a new line to non-empty text; skip text already present.
+    - table: append each new row to the existing rows. Existing text or string items
+      are kept as first-column rows. A row equal to an existing one (case and spacing
+      ignored) is skipped.
+    - text/textarea: append on a new line. Skip only when an existing LINE equals the
+      new text (case and spacing ignored), never on a substring: "2 beers nightly"
+      is not "12 beers nightly".
     - anything else (scales, numbers, choices): the value replaces, as before.
-    Raises ValueError when a table value is not a usable row."""
+    Raises ValueError when a table value holds no usable row."""
     f = _form_field(field_id) or {}
     ftype = f.get("type")
     if ftype == "table":
-        row = table_row_from(field_id, value)
-        if row is None:
+        new_rows = table_rows_from(field_id, value)
+        if not new_rows:
             raise ValueError("not a table row")
-        rows = [r for r in (current if isinstance(current, list) else []) if isinstance(r, dict)]
-        if any(_row_key(r) == _row_key(row) for r in rows):
-            return rows
-        return rows + [row]
+        rows = _existing_rows(field_id, current)
+        for row in new_rows:
+            if not any(_row_key(r) == _row_key(row) for r in rows):
+                rows.append(row)
+        return rows
     if ftype in ("text", "textarea"):
         new = str(value if value is not None else "").strip()
         have = str(current if current is not None else "").strip()
@@ -325,7 +444,7 @@ def apply_suggestion(field_id, current, value):
             return have
         if not have:
             return new
-        if _squash(new) in _squash(have):
+        if any(_squash(line) == _squash(new) for line in have.split("\n")):
             return have
         return have + "\n" + new
     return value

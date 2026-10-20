@@ -15580,7 +15580,8 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
 
 def _send_full_report_email(to_email: str, name: str,
                             subject: str, body: str, *,
-                            respect_suppression: bool = True):
+                            respect_suppression: bool = True,
+                            log_body: bool = True):
     """Send the full report — tries Gmail API → SMTP → GHL/Mailgun → console log.
     Returns (sent_via, error_or_none).
 
@@ -15646,9 +15647,14 @@ def _send_full_report_email(to_email: str, name: str,
     except Exception as e:
         print(f"[full-report] GHL/Mailgun fallback failed: {e}", flush=True)
 
-    # Path 4: console log (last resort — dev / nothing configured)
-    print(f"\n[full-report] TO: {to_email}\nSUBJECT: {subject}\n\n{body}\n",
-          flush=True)
+    # Path 4: console log (last resort — dev / nothing configured). A caller whose
+    # body holds client health text passes log_body=False: only the header is logged.
+    if log_body:
+        print(f"\n[full-report] TO: {to_email}\nSUBJECT: {subject}\n\n{body}\n",
+              flush=True)
+    else:
+        print(f"\n[full-report] NOT SENT (no mechanism). TO: {to_email}\nSUBJECT: {subject}\n"
+              f"(body withheld from the log)\n", flush=True)
     return ("console-log", "no email-send mechanism configured")
 
 
@@ -32882,12 +32888,18 @@ def api_portal_chat(token):
                   + _approved_wording_reminder(context_str))
     messages.append({"role": "user", "content": user_block})
     # Warning-sign keyword backstop on the client's own message (cheap, no model).
+    # Stored and handed to the email job HERE, before the reply streams, so a client
+    # disconnect, a stream error or a slow model can neither lose nor delay it.
     try:
         from dashboard import portal_triage as _pt_ws
         _warning_keys = _pt_ws.warning_signs(query)
     except Exception as e:
         print(f"[triage] warning-sign check failed: {e!r}", flush=True)
         _warning_keys = []
+    _warning_item_id = None
+    if _warning_keys:
+        _warning_item_id = _start_warning_sign_delivery(
+            email, portal.get("name") or "", query, _warning_keys)
 
     def generate():
         if cart_added:
@@ -32908,27 +32920,19 @@ def api_portal_chat(token):
             # The browser keeps the original message in the composer so it can
             # be retried after a transient deployment or provider interruption.
             print(f"[portal-concierge] response failed: {e!r}", flush=True)
-            if _warning_keys:
-                # No reply reached the client, but a warning sign still reaches Glen.
-                try:
-                    import threading as _tw
-                    _tw.Thread(target=_triage_portal_message,
-                               args=(email, portal.get("name") or "", query, "(no answer: "
-                                     "assistant unavailable)"), daemon=True).start()
-                except Exception:
-                    pass
             yield sse({"error": "assistant temporarily unavailable"}); return
         answer = _store_links_text("".join(full))  # the stored thread matches what was shown
-        # Warning-sign backstop: store the flag now, and tell the client it was
-        # passed on only when that store succeeded.
-        _warning_item_id = None
-        if _warning_keys:
-            _warning_item_id = _store_warning_sign_flag(
-                email, portal.get("name") or "", query, answer, _warning_keys)
-            if _warning_item_id:
-                _line = "\n\n" + PORTAL_WARNING_SIGN_LINE
-                answer = answer + _line
-                yield sse({"token": _line})
+        # Tell the client it was passed on only when the warning item was stored
+        # (before the stream). A client who disconnected first misses the line.
+        if _warning_item_id:
+            _line = "\n\n" + PORTAL_WARNING_SIGN_LINE
+            answer = answer + _line
+            yield sse({"token": _line})
+            try:
+                with _db_lock, db.connect(LOG_DB) as _acx:
+                    _pt_ws.set_answer(_acx, _warning_item_id, answer)
+            except Exception as e:
+                print(f"[triage] answer update failed: {e!r}", flush=True)
         try:
             import threading as _t
             _t.Thread(target=ash_ally.record_turn,
@@ -32958,14 +32962,15 @@ def api_portal_chat(token):
             except Exception as e:
                 print(f"[health-suggestions] extract failed: {e!r}", flush=True)
         # Triage: flag messages that need Dr. Glen's attention -> console + email him.
-        try:
-            import threading as _t2
-            _t2.Thread(target=_triage_portal_message,
-                       args=(email, portal.get("name") or "", query, answer,
-                             _warning_item_id),
-                       daemon=True).start()
-        except Exception:
-            pass
+        # A warning sign was already handed off before the stream.
+        if not _warning_keys:
+            try:
+                import threading as _t2
+                _t2.Thread(target=_triage_portal_message,
+                           args=(email, portal.get("name") or "", query, answer),
+                           daemon=True).start()
+            except Exception:
+                pass
         # Refresh the member's TCM element state from their recent chat (paid
         # members only; drives the Glendalf backdrop). Fire-and-forget, text mode.
         try:
@@ -33177,28 +33182,156 @@ def _extract_portal_health_suggestions(email, query, answer, client_msg_id=None)
         return []
 
 
-def _store_warning_sign_flag(email, name, query, answer, keys):
+TRIAGE_EMAIL_TO = "drglenswartwout@gmail.com"
+# The model call that only enriches a warning email's stored summary: short and with
+# no retries, because nothing waits on it.
+_TRIAGE_ENRICH_TIMEOUT_S = 20.0
+
+
+def _store_warning_sign_flag(email, name, query, keys, answer=""):
     """Synchronously store the triage item for a warning sign the keyword backstop
-    found in the client's message. Returns the new item id, or None when the
-    insert failed (logged). The chat shows PORTAL_WARNING_SIGN_LINE only on an id."""
+    found in the client's message, once per message per 10 minutes (a retry finds
+    the first item). Returns (item_id, created); item_id is None when the insert
+    failed (logged). The chat shows PORTAL_WARNING_SIGN_LINE only on an id."""
     try:
         from dashboard import portal_triage as _pt
-        res = _pt.warning_flag(keys)
         with _db_lock, db.connect(LOG_DB) as cx:
-            item_id = _pt.add_item(cx, email, name, res["category"], res["urgency"],
-                                   res["summary"], res["recommendation"], query, answer)
-        return item_id or None
+            item_id, created = _pt.add_warning_item(cx, email, name, keys, query, answer)
+        return (item_id or None), bool(item_id and created)
     except Exception as e:
         print(f"[triage] warning-sign store failed: {e!r}", flush=True)
-        return None
+        return None, False
+
+
+def _start_warning_sign_delivery(email, name, query, keys):
+    """Store the warning item now and start its email at once. A store failure
+    falls back to the background triage job, which stores and emails on its own.
+    Returns the stored item id, or None."""
+    item_id, created = _store_warning_sign_flag(email, name, query, keys)
+    try:
+        import threading as _tw
+        if item_id and created:
+            _tw.Thread(target=_warning_email_job, args=(item_id, email, name, query, keys),
+                       daemon=True).start()
+        elif not item_id:
+            _tw.Thread(target=_triage_portal_message, args=(email, name, query, ""),
+                       daemon=True).start()
+    except Exception as e:
+        print(f"[triage] warning delivery start failed: {e!r}", flush=True)
+    return item_id
+
+
+def _triage_email_text(email, name, res, query, answer):
+    subject = f"[Portal triage · {res['urgency']}] {res['category']} — {name or email}"
+    try:
+        token = None
+        with _db_lock, db.connect(LOG_DB) as cx:
+            from dashboard import client_portal as _cp
+            token = _cp.ensure_token(cx, email, name or "")
+        link = portal_link(token) if token else ""
+    except Exception:
+        link = ""
+    from dashboard import portal_triage as _pt
+    signs = _pt.warning_sign_labels(res.get("warning_signs") or [])
+    sign_line = (f"Warning signs reported: {'; '.join(signs)}\n" if signs else "")
+    body = (f"A client message may need your attention.\n\n"
+            f"{sign_line}"
+            f"Client: {name or ''} <{email}>\n"
+            f"Category: {res['category']}   Urgency: {res['urgency']}\n\n"
+            f"What they need: {res['summary']}\n"
+            f"Recommendation: {res['recommendation']}\n\n"
+            f"--- Their message ---\n{query}\n\n"
+            f"--- AI answer given ---\n{answer or '(the reply was still being written)'}\n\n"
+            f"Reply in their portal chat (console → Biofield Portal Editor → Portal chat),"
+            f" or open their portal:\n{link}\n")
+    return subject, body
+
+
+def _send_triage_item_email(item_id, email, name, res, query, answer):
+    """Email Glen about one stored triage item and record the outcome on it.
+    The console-log fallback logs no body, so no client health text reaches the log.
+    Returns True on a real send."""
+    from dashboard import portal_triage as _pt
+    subject, body = _triage_email_text(email, name, res, query, answer)
+    try:
+        sent_via, _err = _send_full_report_email(TRIAGE_EMAIL_TO, "Dr. Glen", subject, body,
+                                                 log_body=False)
+    except Exception as e:
+        print(f"[triage] email failed for item {item_id}: {type(e).__name__}", flush=True)
+        sent_via = "error"
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            ok = _pt.record_email(cx, item_id, sent_via)
+    except Exception as e:
+        print(f"[triage] email status not recorded for item {item_id}: {e!r}", flush=True)
+        ok = sent_via not in _pt.NOT_DELIVERED and sent_via != "error"
+    if not ok:
+        print(f"[triage] item {item_id} email NOT delivered ({sent_via}); resend job will retry",
+              flush=True)
+    return ok
+
+
+def _triage_enrich_client():
+    with_options = getattr(_cl, "with_options", None)
+    if callable(with_options):
+        return with_options(timeout=_TRIAGE_ENRICH_TIMEOUT_S, max_retries=0)
+    return _cl
+
+
+def _warning_email_job(item_id, email, name, query, keys):
+    """Background: email Glen about a stored warning item from the backstop result
+    alone, at once. Only then may the model run, to enrich the stored summary; it
+    never gates or delays the send."""
+    try:
+        from dashboard import portal_triage as _pt
+        _send_triage_item_email(item_id, email, name, _pt.warning_flag(keys), query, "")
+    except Exception as e:
+        print(f"[triage] warning email job failed: {e!r}", flush=True)
+    try:
+        from dashboard import portal_triage as _pt
+        client = _triage_enrich_client()
+
+        def _complete(system, user):
+            m = client.messages.create(model="claude-haiku-4-5-20251001", max_tokens=300,
+                                       system=system, messages=[{"role": "user", "content": user}])
+            return m.content[0].text
+
+        res = _pt.classify(_complete, query, "")
+        if res and res.get("summary") and res["summary"] != "(no summary)":
+            with _db_lock, db.connect(LOG_DB) as cx:
+                _pt.set_summary(cx, item_id, _pt.warning_flag(keys, res)["summary"])
+    except Exception as e:
+        print(f"[triage] enrich skipped: {type(e).__name__}", flush=True)
+
+
+def _resend_unsent_triage_emails():
+    """Scheduler job: retry the immediate email for open high-urgency items whose
+    send did not deliver (console-log, suppressed or an error). Each item is claimed
+    first, so two workers never send the same one. Returns the number re-sent."""
+    from dashboard import portal_triage as _pt
+    sent = 0
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            rows = _pt.unsent_high(cx)
+        for row in rows:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                if not _pt.claim_resend(cx, row["id"], row.get("email_last_try")):
+                    continue
+            res = {k: row.get(k) for k in ("category", "urgency", "summary", "recommendation")}
+            if _send_triage_item_email(row["id"], row.get("email") or "", row.get("name") or "",
+                                       res, row.get("message") or "", row.get("answer") or ""):
+                sent += 1
+    except Exception as e:
+        print(f"[triage] resend failed: {e!r}", flush=True)
+    return sent
 
 
 def _triage_portal_message(email, name, query, answer, stored_item_id=None):
     """Background: classify a client's portal message; if it needs Dr. Glen's
     attention, store a triage item and email him full context + a recommendation.
-    The warning-sign backstop (portal_triage.triage) forces high urgency even when
-    the model says no, returns garbage, or errors. `stored_item_id` is the item the
-    chat route already stored for a warning sign, so it is not stored twice."""
+    A warning sign is stored and emailed without waiting on the model. `stored_item_id`
+    is the item the chat route already stored for a warning sign, so it is not stored
+    twice."""
     try:
         from dashboard import portal_triage as _pt
 
@@ -33207,42 +33340,31 @@ def _triage_portal_message(email, name, query, answer, stored_item_id=None):
                                     system=system, messages=[{"role": "user", "content": user}])
             return m.content[0].text
 
+        # A warning sign is stored and emailed from the backstop alone, before any
+        # model call (this path runs when the chat route could not store it).
+        keys = _pt.warning_signs(query)
+        if keys:
+            if stored_item_id:
+                return
+            item_id, created = _store_warning_sign_flag(email, name, query, keys, answer)
+            if item_id and created:
+                _warning_email_job(item_id, email, name, query, keys)
+            return
         res = _pt.triage(_complete, query, answer)
         if not res:
             return
-        if not stored_item_id:
-            with _db_lock, db.connect(LOG_DB) as cx:
-                _pt.add_item(cx, email, name, res["category"], res["urgency"],
-                             res["summary"], res["recommendation"], query, answer)
+        with _db_lock, db.connect(LOG_DB) as cx:
+            item_id = _pt.add_item(cx, email, name, res["category"], res["urgency"],
+                                   res["summary"], res["recommendation"], query, answer)
+            if res["urgency"] == "high":
+                cx.execute("UPDATE portal_triage SET email_status='pending' WHERE id=?",
+                           (int(item_id),))
+                cx.commit()
         # All flagged items show in the console queue + roll into the daily digest;
         # only HIGH urgency emails Dr. Glen immediately.
         if res["urgency"] != "high":
             return
-        subject = f"[Portal triage · {res['urgency']}] {res['category']} — {name or email}"
-        try:
-            token = None
-            with _db_lock, db.connect(LOG_DB) as cx:
-                from dashboard import client_portal as _cp
-                token = _cp.ensure_token(cx, email, name or "")
-            link = portal_link(token) if token else ""
-        except Exception:
-            link = ""
-        signs = _pt.warning_sign_labels(res.get("warning_signs") or [])
-        sign_line = (f"Warning signs reported: {'; '.join(signs)}\n" if signs else "")
-        body = (f"A client message may need your attention.\n\n"
-                f"{sign_line}"
-                f"Client: {name or ''} <{email}>\n"
-                f"Category: {res['category']}   Urgency: {res['urgency']}\n\n"
-                f"What they need: {res['summary']}\n"
-                f"Recommendation: {res['recommendation']}\n\n"
-                f"--- Their message ---\n{query}\n\n"
-                f"--- AI answer given ---\n{answer}\n\n"
-                f"Reply in their portal chat (console → Biofield Portal Editor → Portal chat),"
-                f" or open their portal:\n{link}\n")
-        try:
-            _send_full_report_email("drglenswartwout@gmail.com", "Dr. Glen", subject, body)
-        except Exception as e:
-            print(f"[triage] email failed: {e!r}", flush=True)
+        _send_triage_item_email(item_id, email, name, res, query, answer)
     except Exception as e:
         print(f"[triage] {e!r}", flush=True)
 
@@ -51382,6 +51504,10 @@ def _start_scheduler():
                           id="biofield_bonuses")
         scheduler.add_job(_drain_sales_image_queue, "interval", minutes=1, id="sales_image_gen")
         scheduler.add_job(_drain_review_videos, "interval", minutes=1, id="review_videos")
+        # Portal triage: retry any high-urgency email that did not deliver. Rows are
+        # claimed before sending, so both gunicorn workers' schedulers are safe.
+        scheduler.add_job(_resend_unsent_triage_emails, "interval", minutes=5,
+                          id="triage_email_resend")
         # Flag-gated inside (REMEDY_MATCH_EMAIL_ENABLED): a no-op until switched on.
         scheduler.add_job(_drain_remedy_match_emails, "interval", minutes=1,
                           id="remedy_match_emails")

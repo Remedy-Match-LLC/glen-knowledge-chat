@@ -11,7 +11,7 @@ testable offline. Pure sqlite store; caller passes the connection.
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from dashboard import dbwrite
 
@@ -29,6 +29,14 @@ def init_table(cx):
         urgency TEXT, summary TEXT, recommendation TEXT, message TEXT, answer TEXT,
         created_at TEXT, resolved INTEGER NOT NULL DEFAULT 0)""")
     cx.execute("CREATE INDEX IF NOT EXISTS idx_triage_open ON portal_triage(resolved, id)")
+    # Delivery tracking for the immediate email, and the retry key for warning signs.
+    # Additive and nullable, so old rows read as "never tracked" and are left alone.
+    from dashboard import db as _db
+    for col in ("email_status", "emailed_at", "email_last_try", "message_key"):
+        if not _db.column_exists(cx, "portal_triage", col):
+            cx.execute(f"ALTER TABLE portal_triage ADD COLUMN {col} TEXT")
+    if not _db.column_exists(cx, "portal_triage", "email_attempts"):
+        cx.execute("ALTER TABLE portal_triage ADD COLUMN email_attempts INTEGER")
     cx.commit()
 
 
@@ -42,6 +50,99 @@ def add_item(cx, email, name, category, urgency, summary, recommendation, messag
          summary, recommendation, message, answer, _now()))
     cx.commit()
     return new_id
+
+
+def message_key(text):
+    """The retry key for a client message: case, spacing and end punctuation ignored."""
+    t = " ".join(str(text or "").casefold().split())
+    return t.strip(" .!?,;:")
+
+
+def add_warning_item(cx, email, name, keys, message, answer="", window_minutes=10, now=None):
+    """Store a warning-sign item, once. A retry of the same message by the same client
+    within `window_minutes` returns the earlier item instead of a second one.
+    Returns (item_id, created)."""
+    init_table(cx)
+    e = (email or "").strip().lower()
+    key = message_key(message)
+    now_dt = now or datetime.now(timezone.utc)
+    since = (now_dt - timedelta(minutes=window_minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    row = cx.execute(
+        "SELECT id FROM portal_triage WHERE email=? AND message_key=? AND created_at>=? "
+        "ORDER BY id DESC LIMIT 1", (e, key, since)).fetchone()
+    if row:
+        return row[0], False
+    res = warning_flag(keys)
+    new_id = dbwrite.insert_returning_id(
+        cx,
+        "INSERT INTO portal_triage(email,name,category,urgency,summary,recommendation,"
+        "message,answer,created_at,resolved,message_key,email_status) "
+        "VALUES(?,?,?,?,?,?,?,?,?,0,?,'pending')",
+        (e, (name or "").strip(), res["category"], res["urgency"], res["summary"],
+         res["recommendation"], message, answer, now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"), key))
+    cx.commit()
+    return new_id, True
+
+
+def set_answer(cx, item_id, answer):
+    init_table(cx)
+    cx.execute("UPDATE portal_triage SET answer=? WHERE id=?", (answer, int(item_id)))
+    cx.commit()
+
+
+def set_summary(cx, item_id, summary):
+    init_table(cx)
+    cx.execute("UPDATE portal_triage SET summary=? WHERE id=?", (summary, int(item_id)))
+    cx.commit()
+
+
+# Values of `sent_via` from app._send_full_report_email that are not a delivery.
+NOT_DELIVERED = ("console-log", "suppressed")
+
+
+def record_email(cx, item_id, sent_via, now=None):
+    """Record one send attempt. A real send stamps emailed_at; anything else
+    (console-log, suppressed, error) leaves the item for the resend job."""
+    init_table(cx)
+    stamp = now or _now()
+    sent = bool(sent_via) and sent_via not in NOT_DELIVERED and not str(sent_via).startswith("error")
+    status = f"sent:{sent_via}" if sent else f"unsent:{sent_via or 'error'}"
+    cx.execute(
+        "UPDATE portal_triage SET email_status=?, email_last_try=?, "
+        "email_attempts=COALESCE(email_attempts,0)+1, emailed_at=? WHERE id=?",
+        (status, stamp, stamp if sent else None, int(item_id)))
+    cx.commit()
+    return sent
+
+
+def unsent_high(cx, now=None, retry_after_minutes=15, max_attempts=12, limit=20):
+    """Open high-urgency items whose immediate email has not gone, due a retry.
+    Rows from before delivery tracking (email_status NULL) are not touched."""
+    init_table(cx)
+    now_dt = now or datetime.now(timezone.utc)
+    cutoff = (now_dt - timedelta(minutes=retry_after_minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cx.row_factory = sqlite3.Row
+    rows = cx.execute(
+        "SELECT * FROM portal_triage WHERE resolved=0 AND urgency='high' "
+        "AND (email_status LIKE 'unsent%' OR email_status='pending') "
+        "AND COALESCE(email_attempts,0)<? "
+        "AND COALESCE(email_last_try, created_at)<? ORDER BY id LIMIT ?",
+        (int(max_attempts), cutoff, int(limit))).fetchall()
+    return [dict(r) for r in rows]
+
+
+def claim_resend(cx, item_id, seen_last_try, now=None):
+    """Claim one item for a resend, so two workers never send it twice."""
+    init_table(cx)
+    stamp = now or _now()
+    if seen_last_try is None:
+        cur = cx.execute("UPDATE portal_triage SET email_last_try=? "
+                         "WHERE id=? AND email_last_try IS NULL", (stamp, int(item_id)))
+    else:
+        cur = cx.execute("UPDATE portal_triage SET email_last_try=? "
+                         "WHERE id=? AND email_last_try=?", (stamp, int(item_id), seen_last_try))
+    cx.commit()
+    return cur.rowcount == 1
 
 
 def list_open(cx, limit=50):
@@ -154,14 +255,6 @@ def classify(complete, query, answer="", history_text=""):
 # self-healing". The model is told so in _TRIAGE_SYSTEM, but a model can say no,
 # return garbage, or error. This keyword check runs on the CLIENT'S message only
 # and forces the flag whatever the model did.
-#
-# Scope. A sign trips only inside a sentence that also reads as a report of it
-# happening: a first-person or possessive word (I, I'm, my, me, we, our, so "my
-# baby" counts), or a time word (since, today, this morning, started, for 3 days,
-# after taking). An education question with none of those ("Does this remedy help
-# with fever?") is left to the model. A sign just after a negation ("I don't have a
-# fever") or inside a hypothetical with no present report ("What if I get hives?")
-# does not trip.
 
 WARNING_SIGNS = (
     ("dizziness", "sudden or severe new dizziness"),
@@ -175,68 +268,102 @@ WARNING_SIGNS = (
 )
 _SIGN_LABELS = dict(WARNING_SIGNS)
 
-_DIZZY = r"(?:dizz\w*|vertigo|light[- ]?headed\w*|(?:room|world|everything)\s+(?:is\s+|was\s+|keeps\s+)?spinning)"
+# How a sign is judged. The message is cut into sentences, and each sentence into
+# clauses at commas, semicolons, colons and but / and / so / because / though / while.
+# Every occurrence of every pattern is checked (finditer), so a negated first
+# mention cannot hide a later real one. An occurrence counts unless:
+#   - a negation sits earlier in its clause ("I don't currently have any hives"),
+#     or inside the matched words ("my lips are not swollen");
+#   - its clause is a hypothetical or an education question with no present report
+#     ("What if I get hives?", "What causes swollen lips?", "Can you explain hives
+#     to me?"). Lead-ins such as "not sure if", "I don't know if", "if it helps"
+#     are blanked first, so a hedge never hides the report after it;
+#   - the clauses it touches are about a product or an order ("drops for hives",
+#     "the hives formula", "order more", "how do I take"), an improvement ("better",
+#     "gone", "cleared", "no longer"), or past history ("years ago", "as a child",
+#     "last year");
+#   - a sign-specific exclusion applies: a blocked nose for breathing, chapped lips
+#     for swelling, "mild" or "slight" for right-rib pain.
+# Most signs also need a report word in the sentence: a first-person or possessive
+# word (I, I'm, my, we, our; "me" as an object does not count), a time word (since,
+# today, this morning, started, for 3 days, after taking), or "!" / "help" / "urgent".
+# Swelling, trouble breathing and a fever in a baby trip without one: "Swollen lips
+# and tongue!" must flag, because a false alarm costs Glen one email and a miss costs
+# far more. The typo spellings are a reviewed list, not fuzzy matching.
+
+_DIZZY = (r"(?:dizz\w*|di+z+y\w*|vertigo|light[- ]?headed\w*|"
+          r"(?:room|world|everything)\s+(?:is\s+|was\s+|keeps\s+)?spinning)")
+_FEVER = r"(?:fever|feaver|feever|fevor|fevre|fevr)\w*"
+_HOT = r"(?:10[2-7]|39|4[0-2])(?:[.,]\d+)?"
+_SWELL = r"(?:swell\w*|swollen|swolen|swollon|swolln|sweling|puff\w*)"
+_MOUTH = r"(?:lips?|tongue|tounge|throat)"
+_RIB = (r"(?:right\b[^!?\n]{0,25}\b(?:ribs?|rib cage|ribcage|upper (?:abdomen|belly|side))|"
+        r"upper right (?:abdomen|side|belly|quadrant|ribs?))")
+_PAIN = r"(?:pain\w*|hurt\w*|ache\w*|aching|cramp\w*|stabbing|sharp|killing me)"
 _BABY = (r"\b(?:bab(?:y|y's|ies)|infant\w*|newborn\w*|toddler\w*|little one\w*|"
          r"(?:\d{1,2}|one|two|three|six|nine|eleven|eighteen)[- ](?:week|month)s?[- ]old|"
          r"(?:1|one|2|two)[- ]years?[- ]old)\b")
 _SIGN_PATTERNS = {
     "dizziness": [
-        re.compile(r"\b(?:sudden\w*|severe\w*|extreme\w*|very|really|so|terribl\w*|horribl\w*|"
-                   r"out of nowhere|new|worst)\b[^.!?\n]{0,30}" + _DIZZY, re.I),
-        re.compile(_DIZZY + r"[^.!?\n]{0,60}\b(?:sudden\w*|severe\w*|out of nowhere|"
+        re.compile(r"\b(?:sudden\w*|severe\w*|extreme\w*|very|really|realy|real|super|so|"
+                   r"terribl\w*|horribl\w*|out of nowhere|new|worst)\b[^!?\n]{0,30}" + _DIZZY, re.I),
+        re.compile(_DIZZY + r"[^!?\n]{0,60}\b(?:sudden\w*|severe\w*|out of nowhere|"
                    r"can'?t stand|cannot stand|fell|fall(?:ing)? down|faint\w*|passed out|"
                    r"never (?:had|felt)|first time|since (?:yesterday|this morning|last night|today)|"
                    r"started (?:today|yesterday|this morning|last night))\b", re.I),
-        re.compile(r"\b(?:faint(?:ed|ing)|passed out|blacked out)\b", re.I),
+        re.compile(r"\b(?:faint(?:ed|ing)|passed out|blacked out|feel(?:ing)? faint)\b", re.I),
     ],
     "stroke": [
         re.compile(r"\bslurr\w*\b|\b(?:can'?t|cannot|trouble|hard to)\s+(?:speak|talk|get (?:my|the) words out)\b|"
                    r"\b(?:face|mouth|smile)\s+(?:is\s+|was\s+)?droop\w*|\bdroop\w*\s+(?:face|mouth)\b", re.I),
-        re.compile(_DIZZY + r"[^.!?\n]{0,60}\b(?:weak\w*|numb\w*)\b", re.I),
-        re.compile(r"\b(?:weak\w*|numb\w*)\b[^.!?\n]{0,60}" + _DIZZY, re.I),
+        re.compile(_DIZZY + r"[^!?\n]{0,60}\b(?:weak\w*|numb\w*)\b", re.I),
+        re.compile(r"\b(?:weak\w*|numb\w*)\b[^!?\n]{0,60}" + _DIZZY, re.I),
     ],
     "fever": [
-        re.compile(r"\b(?:high|very high|spiking|raging|burning)\s+(?:fever|temp\w*)\b", re.I),
-        re.compile(r"\b(?:fever|temp\w*)\b[^.!?\n]{0,40}\b(?:10[2-7]|39|4[0-2])(?:[.,]\d+)?\s*"
-                   r"(?:°|degrees?|f\b|c\b)?", re.I),
-        re.compile(r"\bfever\w*\b[^.!?\n]{0,40}\b(?:for|over|more than)\s+(?:\d+|two|three|four|five|"
-                   r"six|seven|several|a few|many)\s+(?:days?|weeks?)\b", re.I),
-        re.compile(r"\bfever\w*\b[^.!?\n]{0,40}\b(?:won'?t|will not|doesn'?t|does not|isn'?t|not)\s+"
+        re.compile(r"\b(?:high|very high|spiking|raging|burning)\s+(?:" + _FEVER + r"|temp\w*)", re.I),
+        re.compile(r"\b(?:" + _FEVER + r"|temp\w*)[^!?\n]{0,40}\b" + _HOT +
+                   r"\s*(?:°|degrees?|f\b|c\b)?", re.I),
+        re.compile(r"\b" + _HOT + r"\s*(?:°\s*[fc]?|degrees?(?:\s+[fc])?|[fc])?\s+" + _FEVER, re.I),
+        re.compile(r"\b" + _FEVER + r"[^!?\n]{0,40}\b(?:(?:for|over|more than)\s+)?(?:\d+|two|three|"
+                   r"four|five|six|seven|several|a few|many)\s+(?:days?|weeks?)\b", re.I),
+        re.compile(r"\b" + _FEVER + r"[^!?\n]{0,40}\b(?:won'?t|will not|doesn'?t|does not|isn'?t|not)\s+"
                    r"(?:go(?:ing)?|come|coming|break|breaking)\b", re.I),
-        re.compile(r"\bfever\w*\b[^.!?\n]{0,30}\b(?:since|all week|for days|keeps coming back|lasting|"
-                   r"persistent)\b", re.I),
-        re.compile(r"\b(?:lasting|persistent|ongoing|constant)\s+fever\b", re.I),
+        re.compile(r"\b(?:" + _FEVER + r"|temp\w*)[^!?\n]{0,30}\b(?:since|all week|for days|"
+                   r"keeps coming back|lasting|persistent)\b", re.I),
+        re.compile(r"\b(?:lasting|persistent|ongoing|constant)\s+" + _FEVER, re.I),
     ],
     "swelling": [
-        re.compile(r"\b(?:swell\w*|swollen|puff\w*)\b[^.!?\n]{0,40}\b(?:lips?|tongue|throat)\b", re.I),
-        re.compile(r"\b(?:lips?|tongue|throat)\b[^.!?\n]{0,30}\b(?:swell\w*|swollen|puff\w*)\b", re.I),
-        re.compile(r"\bthroat\b[^.!?\n]{0,20}\b(?:closing|tightening|closing up)\b", re.I),
+        re.compile(r"\b" + _SWELL + r"[^!?\n]{0,40}\b" + _MOUTH + r"\b", re.I),
+        re.compile(r"\b" + _MOUTH + r"\b[^!?\n]{0,30}\b" + _SWELL, re.I),
+        re.compile(r"\b(?:throat|tongue|tounge)\b[^!?\n]{0,20}\b(?:closing|tight\w*|thick)\b", re.I),
     ],
     "hives": [
-        re.compile(r"\b(?:hives|welts|urticaria)\b", re.I),
+        re.compile(r"\b(?:hives|hivs|hivez|welts|urticaria)\b", re.I),
+        re.compile(r"\bitchy (?:bumps|welts)\b|\bbroke out in (?:a )?(?:rash|bumps|hives|welts)\b", re.I),
     ],
     "breathing": [
-        re.compile(r"\b(?:trouble|difficulty|hard|struggling|struggle|can'?t|cannot|unable)\s+"
-                   r"(?:to\s+)?(?:breath\w*|catch my breath)\b", re.I),
+        re.compile(r"\b(?:trouble|difficulty|a hard time|hard time|hard|struggling|struggle|"
+                   r"can'?t|cant|cannot|unable|barely|hardly)\s+(?:to\s+)?"
+                   r"(?:breath\w*|breth\w*|catch (?:my|his|her|their|our) breath)", re.I),
+        re.compile(r"\bbreathing (?:is|feels)\s+(?:\w+\s+)?(?:hard|difficult|labou?red|tight|shallow)\b", re.I),
         re.compile(r"\bshort(?:ness)?\s+of\s+breath\b|\bwheez\w*|\bgasping\b", re.I),
     ],
     # Any fever in a baby or a child under about 2 (coordinator for Glen, 20 Oct
     # 2026; his approved report line: "A fever in a baby needs prompt attention").
     "fever-baby": [
-        re.compile(_BABY + r"[^.!?\n]{0,50}\b(?:fever\w*|temp\w*)\b", re.I),
-        re.compile(r"\b(?:fever\w*|temp\w*)\b[^.!?\n]{0,40}" + _BABY, re.I),
+        re.compile(_BABY + r"[^!?\n]{0,50}\b(?:" + _FEVER + r"|temp\w*)", re.I),
+        re.compile(r"\b(?:" + _FEVER + r"|temp\w*)[^!?\n]{0,40}" + _BABY, re.I),
     ],
+    # "yellow" must describe skin or eyes: "yellow skin", "my eyes look yellow".
     "jaundice": [
-        re.compile(r"\bjaundic\w*\b", re.I),
-        re.compile(r"\byellow\w*\b[^.!?\n]{0,30}\b(?:skin|eyes?|whites)\b", re.I),
-        re.compile(r"\b(?:skin|eyes?|whites of (?:my|his|her|their) eyes)\b[^.!?\n]{0,25}"
-                   r"\b(?:yellow\w*)\b", re.I),
+        re.compile(r"\bjaund[ia]\w*", re.I),
+        re.compile(r"\byellow\w*\s+(?:skin|eyes?|tinge)\b", re.I),
+        re.compile(r"\b(?:skin|eyes?|whites of (?:my|his|her|their|the) eyes)\s+(?:\w+\s+){0,2}"
+                   r"yellow\w*", re.I),
     ],
     "right-rib-pain": [
-        re.compile(r"\b(?:pain\w*|hurt\w*|ache\w*|aching|cramp\w*|stabbing|sharp)\b[^.!?\n]{0,50}"
-                   r"\bright\b[^.!?\n]{0,25}\b(?:ribs?|rib cage|ribcage|upper (?:abdomen|belly|side))\b", re.I),
-        re.compile(r"\bright\b[^.!?\n]{0,25}\b(?:ribs?|rib cage|ribcage|upper (?:abdomen|belly|side))\b"
-                   r"[^.!?\n]{0,40}\b(?:pain\w*|hurt\w*|ache\w*|aching|cramp\w*|stabbing|sharp)\b", re.I),
+        re.compile(r"\b" + _PAIN + r"\b[^!?\n]{0,50}\b" + _RIB + r"\b", re.I),
+        re.compile(r"\b" + _RIB + r"\b[^!?\n]{0,40}\b" + _PAIN, re.I),
         re.compile(r"\bgall\s?bladder attack\b", re.I),
     ],
     "healing-crisis": [
@@ -245,52 +372,123 @@ _SIGN_PATTERNS = {
     ],
 }
 
-# A report of it happening: someone the client speaks for, or a time anchor.
+# Internal pattern groups that report as one public sign key.
+_REPORTS_AS = {"hives": "hives-breathing", "breathing": "hives-breathing",
+               "fever-baby": "fever"}
+# These trip with no report word (see above). Negation, hypothetical and the
+# exclusions still apply.
+_NO_MARKER_NEEDED = {"swelling", "breathing", "fever-baby"}
+
+# A report of it happening: someone the client speaks for, a time anchor, or alarm.
 _REPORT_MARKER = re.compile(
-    r"\b(?:i|i'm|im|i've|ive|i'd|i'll|me|my|mine|myself|we|we're|our|us)\b|"
+    r"\b(?:i|i'm|im|i've|ive|i'd|i'll|my|mine|myself|we|we're|our)\b|"
     r"\b(?:since|today|tonight|yesterday|this (?:morning|afternoon|evening|week)|"
     r"last night|right now|started|starting|began|keeps?|for (?:\d+|two|three|a few|several) "
-    r"(?:hours?|days?|weeks?)|after (?:taking|starting|i|the))\b", re.I)
-# A present report that overrides a hypothetical framing.
+    r"(?:hours?|days?|weeks?)|after (?:taking|starting|i|the))\b|!|\bhelp\b|\burgent\w*\b", re.I)
 _PRESENT_REPORT = re.compile(
     r"\b(?:i have|i've|ive|i'm|im|i am|i got|i feel|i felt|i think i|i've been|we have|"
-    r"my \w+(?: \w+)? (?:is|are|has|have|was|were|feels?|looks?|got|turned|went|keeps?)|"
-    r"has (?:a|had)|since|today|tonight|yesterday|this morning|last night|right now)\b", re.I)
-_HYPOTHETICAL = re.compile(
-    r"\b(?:if|what if|in case|could (?:i|it|this|that)|will (?:i|it|this)|would (?:i|it|this)|"
-    r"is it possible|can (?:this|it|that|the \w+) cause|should i expect)\b", re.I)
-# The condition clause of "If I get hives, ..." is not a present report.
-_IF_CLAUSE = re.compile(r"\b(?:what if|if|in case)\b[^,]*,?|"
-                        r"\b(?:could|will|would|can|should) i\b", re.I)
-_NEGATION_BEFORE = re.compile(
+    r"my \w+(?: \w+){0,3} (?:is|are|has|have|was|were|feels?|looks?|got|turned|went|keeps?)|"
+    r"has (?:a|had))\b", re.I)
+_PRESENT_TIME = re.compile(
+    r"\b(?:right now|currently|at the moment|today|tonight|since|this morning|last night|"
+    r"yesterday)\b", re.I)
+_HYPO_CUE = re.compile(
+    r"\b(?:if|what if|in case|unless|could (?:i|it|this|that)|will (?:i|it|this)|"
+    r"would (?:i|it|this)|is it possible|can (?:this|it|that|the \w+) cause|should i expect|"
+    r"can (?:a|an|someone|people|kids|babies)\b)", re.I)
+_EDU_CUE = re.compile(
+    r"\b(?:what causes?|what can cause|why do(?:es)?|what (?:is|are)|what does|explain|"
+    r"tell me (?:about|more))\b", re.I)
+# Reading or asking about a topic: education even with "I'm" in the clause.
+_TOPIC_CUE = re.compile(
+    r"\b(?:read(?:ing)? (?:about|up on)|article|"
+    r"learn(?:ing)? about|curious about|info(?:rmation)? (?:on|about))\b", re.I)
+# The conditional part of a clause, and a modal question ("could I have ..."),
+# are not a present report.
+_IF_PART = re.compile(r"\b(?:what if|if|in case|unless)\b.*|\b(?:could|will|would|can|should) i\b", re.I)
+# Hedges that introduce a report rather than make it hypothetical. Blanked first.
+_LEAD_IN = re.compile(
+    r"\b(?:i'?m not sure|not sure|unsure|i don'?t know|don'?t know|dunno|i wonder|wondering|"
+    r"i can'?t tell|can'?t tell)\s+(?:if|whether|why|what|how)\b|"
+    r"\bif (?:it|this|that) (?:helps|matters)\b|\bif you need to know\b|"
+    r"\bnever\s+(?:felt|been)\b", re.I)
+_CLAUSE_SPLIT = re.compile(
+    r"[,;:]|\b(?:but|and|so|because|though|although|while)\b", re.I)
+_NEGATION = re.compile(
     r"\b(?:no|not|never|don'?t|doesn'?t|didn'?t|haven'?t|hasn'?t|hadn'?t|isn'?t|aren'?t|"
     r"wasn'?t|weren'?t|without|nor|no longer|free of)\b", re.I)
+# Negation inside the matched words ("my lips are not swollen"). Not used for the
+# fever patterns, which read "won't go down" / "will not break" as a sign.
+_NEGATION_INSIDE = re.compile(r"\b(?:not|isn'?t|aren'?t|wasn'?t|weren'?t|no longer|never|"
+                              r"doesn'?t|don'?t|didn'?t|hasn'?t|haven'?t)\b", re.I)
+_EXCLUDE = re.compile(
+    # product or ordering
+    r"\b(?:drops? for|formula|remedy for|order(?:ing|ed)?|reorder\w*|"
+    r"how (?:do|should|much|often|many) (?:i|we|you)|capsules?|tablets?|dose|dosage|buy|"
+    r"purchase|in stock|price|use (?:this|it|these) for|"
+    r"(?:fever|hives?|allergy|wheeze|cough) (?:drops|remedy|tincture|spray)|"
+    r"can (?:she|he|i|we|they|my \w+) (?:take|use|have) (?:the|this|it|these))\b|"
+    # improvement
+    r"\b(?:better|(?:is|are|it's|its|they're|all) gone|gone now|cleared|clearing up|went away|"
+    r"resolved|improv\w*|no longer|healed|"
+    r"fading|subsided|calmed down|normal)\b|"
+    # past history
+    r"\b(?:years? ago|months? ago|as a (?:child|kid|baby|teen\w*)|when i was (?:a |young|little)|"
+    r"last year|in (?:19|20)\d\d|growing up|in the past|used to|back then)\b", re.I)
+_EXCLUDE_FOR = {
+    "breathing": re.compile(r"\b(?:nose|nasal|nostrils?|stuffy|congest\w*|sinus\w*)\b", re.I),
+    "swelling": re.compile(r"\b(?:chapped|cold sores?)\b", re.I),
+    "right-rib-pain": re.compile(r"\b(?:mild|slight\w*|a little|a bit|minor|twinge)\b", re.I),
+}
 
 
 def _sentences(text):
     return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
 
 
-# Negation inside the matched words ("my lips are not swollen"). Not used for
-# fever, whose own patterns read "won't go down" / "will not break" as a sign.
-_NEGATION_INSIDE = re.compile(r"\b(?:not|isn'?t|aren'?t|wasn'?t|weren'?t|no longer|never|"
-                              r"doesn'?t|don'?t|didn'?t|hasn'?t|haven'?t)\b", re.I)
+def _clause_bounds(s):
+    """[(start, end), ...] for the clauses of sentence s."""
+    cuts = [0]
+    for m in _CLAUSE_SPLIT.finditer(s):
+        cuts += [m.start(), m.end()]
+    cuts.append(len(s))
+    return [(cuts[i], cuts[i + 1]) for i in range(0, len(cuts), 2)]
 
 
-def _negated(sentence, m, key):
-    before = sentence[:m.start()].split()[-3:]
-    if _NEGATION_BEFORE.search(" ".join(before)):
+def _clause_at(bounds, pos):
+    for a, b in bounds:
+        if a <= pos < b:
+            return a, b
+    return bounds[-1]
+
+
+def _hypothetical(clause):
+    if _TOPIC_CUE.search(clause):
         return True
-    return key != "fever" and bool(_NEGATION_INSIDE.search(m.group(0)))
+    if not (_HYPO_CUE.search(clause) or _EDU_CUE.search(clause)):
+        return False
+    if _PRESENT_TIME.search(clause):
+        return False
+    return not _PRESENT_REPORT.search(_IF_PART.sub(" ", clause))
 
 
-# Internal pattern groups that report as one public sign key.
-_REPORTS_AS = {"hives": "hives-breathing", "breathing": "hives-breathing",
-               "fever-baby": "fever"}
-# These trip with no first-person or time word: "Swollen lips and tongue!" must
-# flag. A false alarm costs Glen one email; a miss costs far more. The negation
-# and hypothetical rules still apply.
-_NO_MARKER_NEEDED = {"swelling", "breathing"}
+def _counts(s, bounds, m, key):
+    """Whether one occurrence `m` of a sign in sentence s is a report of it."""
+    a, b = _clause_at(bounds, m.start())
+    _, end = _clause_at(bounds, max(m.end() - 1, m.start()))
+    if _NEGATION.search(s[a:m.start()]):
+        return False
+    if key not in ("fever",) and _NEGATION_INSIDE.search(m.group(0)):
+        return False
+    if _hypothetical(s[a:b]):
+        return False
+    region = s[a:end]
+    if _EXCLUDE.search(region):
+        return False
+    extra = _EXCLUDE_FOR.get(key)
+    if extra and extra.search(region):
+        return False
+    return True
 
 
 def warning_signs(message):
@@ -298,21 +496,17 @@ def warning_signs(message):
     Empty when none. Pure and deterministic: no model call."""
     found = set()
     for sentence in _sentences(message):
-        if (_HYPOTHETICAL.search(sentence)
-                and not _PRESENT_REPORT.search(_IF_CLAUSE.sub(" ", sentence))):
-            continue
-        has_marker = bool(_REPORT_MARKER.search(sentence))
+        s = _LEAD_IN.sub(lambda m: " " * len(m.group(0)), sentence)
+        bounds = _clause_bounds(s)
+        has_marker = bool(_REPORT_MARKER.search(s))
         for key, patterns in _SIGN_PATTERNS.items():
             out = _REPORTS_AS.get(key, key)
             if out in found:
                 continue
             if not has_marker and key not in _NO_MARKER_NEEDED:
                 continue
-            for pat in patterns:
-                m = pat.search(sentence)
-                if m and not _negated(sentence, m, key):
-                    found.add(out)
-                    break
+            if any(_counts(s, bounds, m, key) for pat in patterns for m in pat.finditer(s)):
+                found.add(out)
     return [k for k, _ in WARNING_SIGNS if k in found]
 
 
@@ -326,16 +520,16 @@ WARNING_RECOMMENDATION = ("Reach the client today. A warning sign was reported; 
 
 def warning_flag(keys, base=None):
     """The triage result for a matched warning sign: always high urgency, category
-    health-concern. Keeps the model's own summary/recommendation when it gave one."""
+    health-concern, and the warning recommendation. The model's summary, when it
+    gave one, is kept after the warning; its recommendation never is, because it
+    can contradict the flag ("wait until your next appointment")."""
     base = base or {}
     labels = "; ".join(warning_sign_labels(keys))
     summary = f"Warning sign: {labels}."
     model_summary = (base.get("summary") or "").strip()
     if model_summary and model_summary != "(no summary)":
         summary += " " + model_summary
-    rec = (base.get("recommendation") or "").strip()
-    if not rec or rec == "(no recommendation)":
-        rec = WARNING_RECOMMENDATION
+    rec = WARNING_RECOMMENDATION
     return {"needs_attention": True, "category": "health-concern", "urgency": "high",
             "summary": summary, "recommendation": rec, "warning_signs": list(keys)}
 

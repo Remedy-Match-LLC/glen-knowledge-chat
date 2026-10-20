@@ -239,19 +239,38 @@ def test_edit_table_row_object_appends(client):
         {"medication": "Metformin"}, {"medication": "Warfarin", "reason": "AF"}]
 
 
-def test_edit_table_with_a_bare_string_is_refused_and_keeps_the_table(client):
+def test_edit_table_with_a_bare_string_appends_a_first_column_row(client):
     c, appmod = client
     token = _mint_portal(appmod, "a@b.com")
     _seed_intake(appmod, "a@b.com", {"medications": [{"medication": "Metformin"}]})
     sid = _seed_suggestion(appmod, "a@b.com", "medications", {"medication": "Warfarin"})
     r = c.post(f"/api/portal/{token}/health-suggestions/{sid}/resolve",
                json={"action": "edit", "value": "warfarin"})
+    assert r.status_code == 200
+    assert _answers(appmod, "a@b.com")["medications"] == [
+        {"medication": "Metformin"}, {"medication": "warfarin"}]
+
+
+def test_old_shape_clinician_string_confirms_as_a_row(client):
+    c, appmod = client
+    token = _mint_portal(appmod, "a@b.com")
+    _seed_intake(appmod, "a@b.com", {"diagnoses": "MS, asthma"})
+    sid = _seed_suggestion(appmod, "a@b.com", "diagnoses", "Hypothyroidism", source="clinician")
+    r = c.post(f"/api/portal/{token}/health-suggestions/{sid}/resolve", json={"action": "confirm"})
+    assert r.status_code == 200, r.get_json()
+    assert _answers(appmod, "a@b.com")["diagnoses"] == [
+        {"diagnosis": "MS"}, {"diagnosis": "asthma"}, {"diagnosis": "Hypothyroidism"}]
+
+
+def test_edit_table_with_nothing_usable_is_refused_and_keeps_the_table(client):
+    c, appmod = client
+    token = _mint_portal(appmod, "a@b.com")
+    _seed_intake(appmod, "a@b.com", {"medications": [{"medication": "Metformin"}]})
+    sid = _seed_suggestion(appmod, "a@b.com", "medications", {"medication": "Warfarin"})
+    r = c.post(f"/api/portal/{token}/health-suggestions/{sid}/resolve",
+               json={"action": "edit", "value": {"reason": "only a reason"}})
     assert r.status_code == 400
     assert _answers(appmod, "a@b.com")["medications"] == [{"medication": "Metformin"}]
-    from dashboard import health_suggestions as hs
-    with sqlite3.connect(appmod.LOG_DB) as cx:
-        cx.row_factory = sqlite3.Row
-        assert len(hs.list_pending(cx, "a@b.com")) == 1
 
 
 def test_edit_text_appends(client):
