@@ -246,6 +246,8 @@ ROUTINE = [
     "I have slight pain under my right ribs",
     "I had a fever as a child",
     "Tell me how hives work.",
+    "Does this help with hives?",
+    "Can the drops help my breathing?",
     "Remind me which one is for hives.",
 ]
 

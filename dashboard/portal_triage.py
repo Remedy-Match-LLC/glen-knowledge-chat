@@ -58,7 +58,8 @@ def message_key(text):
     return t.strip(" .!?,;:")
 
 
-def add_warning_item(cx, email, name, keys, message, answer="", window_minutes=10, now=None):
+def add_warning_item(cx, email, name, keys, message, answer="", window_minutes=10, now=None,
+                     flag=None):
     """Store a warning-sign item, once. A retry of the same message by the same client
     within `window_minutes` returns the earlier item instead of a second one.
     Returns (item_id, created)."""
@@ -72,7 +73,7 @@ def add_warning_item(cx, email, name, keys, message, answer="", window_minutes=1
         "ORDER BY id DESC LIMIT 1", (e, key, since)).fetchone()
     if row:
         return row[0], False
-    res = warning_flag(keys)
+    res = flag or warning_flag(keys)
     new_id = dbwrite.insert_returning_id(
         cx,
         "INSERT INTO portal_triage(email,name,category,urgency,summary,recommendation,"
@@ -384,7 +385,8 @@ _REPORT_MARKER = re.compile(
     r"\b(?:i|i'm|im|i've|ive|i'd|i'll|my|mine|myself|we|we're|our)\b|"
     r"\b(?:since|today|tonight|yesterday|this (?:morning|afternoon|evening|week)|"
     r"last night|right now|started|starting|began|keeps?|for (?:\d+|two|three|a few|several) "
-    r"(?:hours?|days?|weeks?)|after (?:taking|starting|i|the))\b|!|\bhelp\b|\burgent\w*\b", re.I)
+    r"(?:hours?|days?|weeks?)|after (?:taking|starting|i|the))\b|!|"
+    r"\bhelp\s*(?:!|$)|\b(?:please|need) help\b|\burgent\w*\b", re.I)
 _PRESENT_REPORT = re.compile(
     r"\b(?:i have|i've|ive|i'm|im|i am|i got|i feel|i felt|i think i|i've been|we have|"
     r"my \w+(?: \w+){0,3} (?:is|are|has|have|was|were|feels?|looks?|got|turned|went|keeps?)|"
@@ -491,23 +493,163 @@ def _counts(s, bounds, m, key):
     return True
 
 
-def warning_signs(message):
-    """The warning-sign keys the client's message reports, in WARNING_SIGNS order.
-    Empty when none. Pure and deterministic: no model call."""
+def _scan(message, patterns_by_key, no_marker=(), reports_as=None):
+    """The keys whose patterns report something in `message`, by the rules above."""
+    reports_as = reports_as or {}
     found = set()
     for sentence in _sentences(message):
         s = _LEAD_IN.sub(lambda m: " " * len(m.group(0)), sentence)
         bounds = _clause_bounds(s)
         has_marker = bool(_REPORT_MARKER.search(s))
-        for key, patterns in _SIGN_PATTERNS.items():
-            out = _REPORTS_AS.get(key, key)
+        for key, patterns in patterns_by_key.items():
+            out = reports_as.get(key, key)
             if out in found:
                 continue
-            if not has_marker and key not in _NO_MARKER_NEEDED:
+            if not has_marker and key not in no_marker:
                 continue
             if any(_counts(s, bounds, m, key) for pat in patterns for m in pat.finditer(s)):
                 found.add(out)
+    return found
+
+
+def warning_signs(message):
+    """The warning-sign keys the client's message reports, in WARNING_SIGNS order.
+    Empty when none. Pure and deterministic: no model call."""
+    found = _scan(message, _SIGN_PATTERNS, _NO_MARKER_NEEDED, _REPORTS_AS)
     return [k for k, _ in WARNING_SIGNS if k in found]
+
+
+# --- Healing-crisis watch (Glen, 20 Oct 2026) ------------------------------
+# "alert me to signs of a possible healing crisis, typically in the first 7 to 10
+# days after delivery of a new program". The window opens at the carrier delivery
+# (shipments.delivered_at) of a shipment holding an order with source "biofield"
+# for this client, an order raised from a report. Reorders and other sources do
+# not open it. Inside the window these signs flag to Glen at high urgency; outside
+# it nothing changes. Same report-word, negation, hypothetical and exclusion rules
+# as the warning signs; every sign here needs a report word.
+# Spec: clinical/biofield-sections/plan-report/symptom-changes-2026-10-20/
+# healing-crisis-watch.json in the vault.
+
+HEALING_WINDOW_DAYS = 10
+HEALING_ORDER_SOURCE = "biofield"
+HEALING_SIGNS = (
+    ("old-symptom", "an old symptom returning or flaring"),
+    ("tired-aches", "tiredness or aches"),
+    ("headache", "a headache"),
+    ("rash", "a rash or breakouts"),
+    ("loose-stools", "loose stools"),
+    ("flu-like", "flu-like feelings or a mild fever"),
+    ("mucus", "more mucus"),
+)
+_HEALING_LABELS = dict(HEALING_SIGNS)
+_HEALING_PATTERNS = {
+    "old-symptom": [
+        re.compile(r"\b(?:flar(?:e|ed|es|ing)(?: up)?|came back|coming back|come back|"
+                   r"returned|returning|resurfac\w*|back again|is back|are back)\b", re.I),
+    ],
+    "tired-aches": [
+        re.compile(r"\b(?:tired\w*|exhaust\w*|fatigu\w*|wiped out|drained|no energy|"
+                   r"achy|aches?|aching|sore all over|body aches?|joint pain|muscle pain|"
+                   r"sore (?:muscles|joints))\b", re.I),
+    ],
+    "headache": [
+        re.compile(r"\b(?:head ?aches?|migraines?|head (?:hurts|is pounding|is killing me))\b", re.I),
+    ],
+    "rash": [
+        re.compile(r"\b(?:rash\w*|break ?outs?|broke out|breaking out|pimples?|acne|"
+                   r"spots|itchy skin)\b", re.I),
+    ],
+    "loose-stools": [
+        re.compile(r"\b(?:loose (?:stools?|bowels?|poo\w*)|diarr?h?o?ea|diarrhea|"
+                   r"runny (?:stools?|poo\w*)|the runs)\b", re.I),
+    ],
+    "flu-like": [
+        re.compile(r"\b(?:flu[- ]?like|fluish|flu-?ish|chills|feverish|"
+                   r"(?:mild|low|slight|low[- ]grade|little) (?:fever|temp\w*)|"
+                   r"(?:like|getting|coming down with) (?:the |a )?flu|a fever|have a fever)\b",
+                   re.I),
+    ],
+    "mucus": [
+        re.compile(r"\b(?:mucus|mucous|phlegm|snot\w*|catarrh|runny nose|"
+                   r"coughing (?:stuff|things) up)\b", re.I),
+    ],
+}
+
+
+def healing_signs(message):
+    """The healing-crisis sign keys the client's message reports, in HEALING_SIGNS
+    order. Pure; the caller decides whether the client is inside the window."""
+    found = _scan(message, _HEALING_PATTERNS)
+    return [k for k, _ in HEALING_SIGNS if k in found]
+
+
+def _parse_when(text):
+    t = str(text or "").strip()
+    if not t:
+        return None
+    try:
+        d = datetime.fromisoformat(t.replace("Z", "+00:00").replace(" ", "T", 1))
+    except ValueError:
+        try:
+            d = datetime.strptime(t[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def healing_window(cx, email, now=None, days=None):
+    """The open healing-crisis window for this client, or None:
+    {"day": whole days since delivery, "delivered_at", "shipment_id", "order_id"}.
+    Cheap: only shipments delivered in the last `days` (+1 for clock slack) are
+    read, and their member orders are resolved the way the coaching code does it
+    (coaching.shipment_member_orders), so a household shipment opens the window only
+    for the member whose own order is a biofield order. Plain SQL, Postgres-safe."""
+    from dashboard import coaching
+    e = (email or "").strip().lower()
+    if not e:
+        return None
+    days = HEALING_WINDOW_DAYS if days is None else days
+    now_dt = now or datetime.now(timezone.utc)
+    since = (now_dt - timedelta(days=days + 1)).strftime("%Y-%m-%d")
+    rows = cx.execute(
+        "SELECT id, order_uuid, delivered_at FROM shipments "
+        "WHERE delivered_at IS NOT NULL AND delivered_at >= ? ORDER BY delivered_at DESC",
+        (since,)).fetchall()
+    best = None
+    for row in rows:
+        sid, uuid, delivered = row[0], row[1], row[2]
+        when = _parse_when(delivered)
+        if when is None or when > now_dt:
+            continue
+        elapsed = now_dt - when
+        if elapsed >= timedelta(days=days):
+            continue
+        for m in coaching.shipment_member_orders(cx, sid, uuid):
+            if m.get("email") == e and m.get("source") == HEALING_ORDER_SOURCE:
+                cand = {"day": elapsed.days, "delivered_at": delivered,
+                        "shipment_id": sid, "order_id": m.get("id")}
+                if best is None or cand["day"] < best["day"]:
+                    best = cand
+    return best
+
+
+HEALING_RECOMMENDATION = ("Check in with the client: this may be a healing crisis in the first "
+                          "days of a new program. Advise on pacing the remedies, and local care "
+                          "if anything becomes acute.")
+
+
+def healing_flag(keys, window, base=None):
+    """The triage result for healing-crisis signs inside the window."""
+    day = int((window or {}).get("day") or 0)
+    when = "delivery day" if day == 0 else f"day {day} after delivery"
+    labels = "; ".join(_HEALING_LABELS[k] for k in keys if k in _HEALING_LABELS)
+    summary = f"Possible healing crisis, {when} of a Biofield program: {labels}."
+    model_summary = ((base or {}).get("summary") or "").strip()
+    if model_summary and model_summary != "(no summary)":
+        summary += " " + model_summary
+    return {"needs_attention": True, "category": "health-concern", "urgency": "high",
+            "summary": summary, "recommendation": HEALING_RECOMMENDATION,
+            "healing_signs": list(keys), "window": window}
 
 
 def warning_sign_labels(keys):

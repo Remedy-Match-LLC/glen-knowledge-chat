@@ -32897,9 +32897,18 @@ def api_portal_chat(token):
         print(f"[triage] warning-sign check failed: {e!r}", flush=True)
         _warning_keys = []
     _warning_item_id = None
+    _healing_keys = []
     if _warning_keys:
         _warning_item_id = _start_warning_sign_delivery(
             email, portal.get("name") or "", query, _warning_keys)
+    else:
+        # Healing-crisis watch: only inside the 10 days after a Biofield delivery.
+        _healing_keys, _healing = _healing_crisis_check(email, query)
+        if _healing:
+            _warning_item_id = _start_warning_sign_delivery(
+                email, portal.get("name") or "", query, _healing_keys, flag=_healing)
+        else:
+            _healing_keys = []
 
     def generate():
         if cart_added:
@@ -32962,8 +32971,8 @@ def api_portal_chat(token):
             except Exception as e:
                 print(f"[health-suggestions] extract failed: {e!r}", flush=True)
         # Triage: flag messages that need Dr. Glen's attention -> console + email him.
-        # A warning sign was already handed off before the stream.
-        if not _warning_keys:
+        # A warning sign or healing-crisis flag was already handed off before the stream.
+        if not (_warning_keys or _healing_keys):
             try:
                 import threading as _t2
                 _t2.Thread(target=_triage_portal_message,
@@ -33188,7 +33197,32 @@ TRIAGE_EMAIL_TO = "drglenswartwout@gmail.com"
 _TRIAGE_ENRICH_TIMEOUT_S = 20.0
 
 
-def _store_warning_sign_flag(email, name, query, keys, answer=""):
+def _healing_crisis_check(email, query):
+    """(keys, flag) when the client's message shows healing-crisis signs AND they
+    are inside the window after a Biofield delivery; else ([], None). The window
+    lookup runs only when a sign matched, and fails safe: an error is logged and
+    treated as outside the window."""
+    from dashboard import portal_triage as _pt
+    try:
+        keys = _pt.healing_signs(query)
+    except Exception as e:
+        print(f"[triage] healing-sign check failed: {e!r}", flush=True)
+        return [], None
+    if not keys:
+        return [], None
+    try:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row      # shipment_member_orders reads rows by name
+            window = _pt.healing_window(cx, email)
+    except Exception as e:
+        print(f"[triage] healing window lookup failed, treated as outside: {e!r}", flush=True)
+        return [], None
+    if not window:
+        return [], None
+    return keys, _pt.healing_flag(keys, window)
+
+
+def _store_warning_sign_flag(email, name, query, keys, answer="", flag=None):
     """Synchronously store the triage item for a warning sign the keyword backstop
     found in the client's message, once per message per 10 minutes (a retry finds
     the first item). Returns (item_id, created); item_id is None when the insert
@@ -33196,22 +33230,26 @@ def _store_warning_sign_flag(email, name, query, keys, answer=""):
     try:
         from dashboard import portal_triage as _pt
         with _db_lock, db.connect(LOG_DB) as cx:
-            item_id, created = _pt.add_warning_item(cx, email, name, keys, query, answer)
+            item_id, created = _pt.add_warning_item(cx, email, name, keys, query, answer,
+                                                    flag=flag)
         return (item_id or None), bool(item_id and created)
     except Exception as e:
         print(f"[triage] warning-sign store failed: {e!r}", flush=True)
         return None, False
 
 
-def _start_warning_sign_delivery(email, name, query, keys):
-    """Store the warning item now and start its email at once. A store failure
-    falls back to the background triage job, which stores and emails on its own.
-    Returns the stored item id, or None."""
-    item_id, created = _store_warning_sign_flag(email, name, query, keys)
+def _start_warning_sign_delivery(email, name, query, keys, flag=None):
+    """Store the warning (or healing-crisis `flag`) item now and start its email at
+    once. A store failure falls back to a background retry that stores and emails on
+    its own. Returns the stored item id, or None."""
+    item_id, created = _store_warning_sign_flag(email, name, query, keys, flag=flag)
     try:
         import threading as _tw
         if item_id and created:
-            _tw.Thread(target=_warning_email_job, args=(item_id, email, name, query, keys),
+            _tw.Thread(target=_warning_email_job,
+                       args=(item_id, email, name, query, keys, flag), daemon=True).start()
+        elif not item_id and flag:
+            _tw.Thread(target=_flag_delivery_retry, args=(email, name, query, keys, flag),
                        daemon=True).start()
         elif not item_id:
             _tw.Thread(target=_triage_portal_message, args=(email, name, query, ""),
@@ -33278,13 +33316,21 @@ def _triage_enrich_client():
     return _cl
 
 
-def _warning_email_job(item_id, email, name, query, keys):
+def _flag_delivery_retry(email, name, query, keys, flag):
+    """Background: one more try at storing a healing-crisis item whose first store
+    failed, then its email."""
+    item_id, created = _store_warning_sign_flag(email, name, query, keys, flag=flag)
+    if item_id and created:
+        _warning_email_job(item_id, email, name, query, keys, flag)
+
+
+def _warning_email_job(item_id, email, name, query, keys, flag=None):
     """Background: email Glen about a stored warning item from the backstop result
-    alone, at once. Only then may the model run, to enrich the stored summary; it
-    never gates or delays the send."""
+    (or the healing-crisis `flag`) alone, at once. Only then may the model run, to
+    enrich the stored summary; it never gates or delays the send."""
     try:
         from dashboard import portal_triage as _pt
-        _send_triage_item_email(item_id, email, name, _pt.warning_flag(keys), query, "")
+        _send_triage_item_email(item_id, email, name, flag or _pt.warning_flag(keys), query, "")
     except Exception as e:
         print(f"[triage] warning email job failed: {e!r}", flush=True)
     try:
@@ -33298,8 +33344,10 @@ def _warning_email_job(item_id, email, name, query, keys):
 
         res = _pt.classify(_complete, query, "")
         if res and res.get("summary") and res["summary"] != "(no summary)":
+            enriched = (_pt.healing_flag(keys, flag.get("window"), res) if flag
+                        else _pt.warning_flag(keys, res))["summary"]
             with _db_lock, db.connect(LOG_DB) as cx:
-                _pt.set_summary(cx, item_id, _pt.warning_flag(keys, res)["summary"])
+                _pt.set_summary(cx, item_id, enriched)
     except Exception as e:
         print(f"[triage] enrich skipped: {type(e).__name__}", flush=True)
 
