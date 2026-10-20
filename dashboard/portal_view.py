@@ -98,7 +98,8 @@ def _orders_block(cx, email, roles):
 
 def _biofield_block(cx, email, scan_date=None, unlocked=True):
     """The 'healing adventure' map — per-scan from portal_biofield_reports
-    (newest by default, or an explicit scan_date), falling back to the legacy
+    (an explicit scan_date, else the portal's current_scan_date pointer, else the
+    newest: portal_biofield_reports.pick_current_report), falling back to the legacy
     client_portals content as a single confirmed report when no rows exist.
 
     `unlocked` = the client has PAID for this content (paid Biofield Analysis or
@@ -117,16 +118,30 @@ def _biofield_block(cx, email, scan_date=None, unlocked=True):
         _reveals = []
     _reveal_by_date = {r["scan_date"]: r for r in _reveals}
     _all_dates = sorted(set(dates) | set(_reveal_by_date), reverse=True)
+    # The same picker /api/portal/<token> and the notify email use, so this card names
+    # the report the page payload and the email name. It follows the portal's
+    # current_scan_date pointer, which this block used to ignore.
+    try:
+        _rec0 = _cp.get_portal_content_by_email(cx, email)
+    except Exception:
+        _rec0 = None
+    cur_ptr = ((_rec0 or {}).get("content") or {}).get("current_scan_date")
+    source, picked = _pbr.pick_current_report(dates, list(_reveal_by_date), cur_ptr,
+                                              scan_date or "")
 
-    if scan_date in _reveal_by_date and scan_date not in dates:
-        _content = _reveal_as_report_content(_reveal_by_date[scan_date])
+    if source == "reveal":
+        _content = _reveal_as_report_content(_reveal_by_date[picked])
         if not _content["layers"] and not _content["greeting"]:
             return {"visible": False}
-        return _assemble_biofield(cx, _content, "confirmed", scan_date=scan_date,
-                                  scan_dates=_all_dates, actionable=False,
-                                  unlocked=unlocked, report_kind=_pbr.REMEDY_MATCH)
-    if dates:
-        picked = scan_date if (scan_date in dates) else dates[0]
+        # A reveal picked by date sits in the full history; a reveal shown by default
+        # (no stored reports) lists the reveal dates only, as before.
+        _dates = _all_dates if picked == scan_date else list(_reveal_by_date)
+        # status 'confirmed' so the assembler's show-gate depends only on `unlocked`
+        # (paid): binary blur, identical to a paid System B report.
+        return _assemble_biofield(cx, _content, "confirmed", scan_date=picked,
+                                  scan_dates=_dates, actionable=False, unlocked=unlocked,
+                                  report_kind=_pbr.REMEDY_MATCH)
+    if source == "report":
         rep = _pbr.get_report(cx, email, picked) or {}
         content = rep.get("content") or {}
         status = rep.get("status") or "confirmed"
@@ -135,26 +150,8 @@ def _biofield_block(cx, email, scan_date=None, unlocked=True):
         return _assemble_biofield(cx, content, status, scan_date=picked,
                                   scan_dates=_all_dates, actionable=actionable,
                                   unlocked=unlocked, report_kind=rep.get("report_kind"))
-    # System A: the funnel reveal (biofield_reveals). Rendered as the portal scan
-    # when the client has no System B report. Blur is binary (paid -> remedies).
-    if _reveals:
-        _rev_dates = list(_reveal_by_date)
-        _picked = scan_date if (scan_date in _rev_dates) else _rev_dates[0]
-        _row = _reveal_by_date[_picked]
-        _content = _reveal_as_report_content(_row)
-        if not _content["layers"] and not _content["greeting"]:
-            return {"visible": False}
-        # status 'confirmed' so the assembler's show-gate depends only on `unlocked`
-        # (paid) — binary blur, identical to a paid System B report.
-        return _assemble_biofield(cx, _content, "confirmed", scan_date=_picked,
-                                  scan_dates=_rev_dates, actionable=False, unlocked=unlocked,
-                                  report_kind=_pbr.REMEDY_MATCH)
     # Legacy fallback: single confirmed report, no tabs.
-    try:
-        rec = _cp.get_portal_content_by_email(cx, email)
-    except Exception:
-        rec = None
-    content = (rec or {}).get("content") or {}
+    content = (_rec0 or {}).get("content") or {}
     if not (content.get("greeting") or content.get("layers") or content.get("video")):
         return {"visible": False}
     # Legacy portals (no biofield_status) are treated as confirmed → render fully.

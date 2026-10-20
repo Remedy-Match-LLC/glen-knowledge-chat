@@ -27777,13 +27777,14 @@ def api_client_portal(token):
     _rev_by_date = {r["scan_date"]: r for r in _revs}
     _all_bf_dates = sorted(set(dates) | set(_rev_by_date), reverse=True)
 
-    # Which report is "current" is decided by _pick_portal_report, which the console
-    # notify email also calls, so the email always names the report this page shows.
+    # Which report is "current" is decided by portal_biofield_reports.pick_current_report,
+    # which the /view card (portal_view._biofield_block) and the console notify email
+    # also call, so the card, this payload and the email always name the same report.
     cur_ptr = (content or {}).get("current_scan_date")
     if dates and not (req_date and req_date in dates) and cur_ptr and cur_ptr not in dates:
         app.logger.warning("portal current_scan_date %r not in reports for %s; using newest",
                            cur_ptr, email_for_reports)
-    _src, _picked = _pick_portal_report(dates, list(_rev_by_date), cur_ptr, req_date)
+    _src, _picked = _pbr.pick_current_report(dates, list(_rev_by_date), cur_ptr, req_date)
     # Which words the page uses for this report (Glen, 2026-10-20): a scan reveal is
     # always a Remedy Match; a stored report carries its own kind.
     bf_kind = _pbr.REMEDY_MATCH
@@ -34220,37 +34221,12 @@ def api_console_portal_release_shipped_reports():
     return jsonify({"ok": True, "committed": commit, **result})
 
 
-def _pick_portal_report(dates, reveal_dates, cur_ptr, req_date=""):
-    """Which report /api/portal/<token> shows. The one place that choice is made.
-
-    `dates` are the stored report dates, newest first; `reveal_dates` the reveal
-    dates in biofield_reveals.list_for_email order. Returns (source, scan_date) with
-    source "reveal", "report" or "legacy" (the single client_portals content).
-
-    1. An explicit ?scan_date= naming a reveal-only date shows that reveal.
-    2. With stored reports: ?scan_date= if it names one, else the portal's
-       current_scan_date pointer if it names one, else the newest. A pointer naming a
-       reveal-only date is NOT followed here; the newest stored report shows.
-    3. With no stored reports: the requested reveal, else the first reveal.
-    4. Otherwise the legacy content."""
-    if req_date and req_date in reveal_dates and req_date not in dates:
-        return "reveal", req_date
-    if dates:
-        if req_date and req_date in dates:
-            return "report", req_date
-        if cur_ptr and cur_ptr in dates:
-            return "report", cur_ptr
-        return "report", dates[0]
-    if reveal_dates:
-        return "reveal", (req_date if req_date in reveal_dates else reveal_dates[0])
-    return "legacy", None
-
-
 def _current_report_kind(cx, email):
-    """'remedy_match' or 'biofield' for the report /api/portal/<token> shows this email
-    with no ?scan_date=, chosen by the same _pick_portal_report. A reveal is a Remedy
-    Match. A report the rule cannot classify is Biofield, which is what every report
-    said before the column existed.
+    """'remedy_match' or 'biofield' for the report this email's portal shows with no
+    ?scan_date=, chosen by portal_biofield_reports.pick_current_report, the picker the
+    card and the page payload also use. A reveal is a Remedy Match. A report the rule
+    cannot classify is Biofield, which is what every report said before the column
+    existed.
 
     Raises on a lookup error. A caller that sends mail must not guess the wording."""
     from dashboard import client_portal as _cp, portal_biofield_reports as _pbr
@@ -34267,7 +34243,8 @@ def _current_report_kind(cx, email):
             reveal_dates.append(r.get("scan_date"))
     rec = _cp.get_portal_content_by_email(cx, email)
     content = (rec or {}).get("content") or {}
-    source, picked = _pick_portal_report(dates, reveal_dates, content.get("current_scan_date"))
+    source, picked = _pbr.pick_current_report(dates, reveal_dates,
+                                              content.get("current_scan_date"))
     if source == "reveal":
         return _pbr.REMEDY_MATCH
     if source == "report":

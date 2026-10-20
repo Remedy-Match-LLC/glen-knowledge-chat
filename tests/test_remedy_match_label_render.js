@@ -17,6 +17,12 @@ function fnSource(name) {
   const end = src.indexOf('\n}', at);
   return src.slice(at, end + 2);
 }
+// A multi-line top-level const, through its closing "};".
+function constBlock(marker) {
+  const i = src.indexOf(marker);
+  assert.ok(i !== -1, 'source block not found: ' + marker);
+  return src.slice(i, src.indexOf('\n};', i) + 3);
+}
 function line(marker) {
   const i = src.indexOf(marker);
   assert.ok(i !== -1, 'source line not found: ' + marker);
@@ -29,7 +35,7 @@ const STUBS = harness.STUBS.concat(['foldSlug', 'terrainBanner', 'scheduleHtml',
 const code = [
   line('const esc = '), line('const money = '), line('const ICON_LOCK = '),
   line('const ICON_INFO = '),
-  'var fmtDate = function(x){ return String(x); };',
+  constBlock('const fmtDate = '),
   fnSource('backToHub'), fnSource('backToHome'), fnSource('reportWords'),
   '(function(d, v, _hub, _shell, _doors, seg, token, onboardingMount, hubHtml, first, badges, recSections, _ppTimer, location, window){',
   STUBS.map(n => '  var ' + n + ' = function(){ return ""; };').join('\n'),
@@ -110,7 +116,8 @@ function hasNotice(html) {
 {
   // No page state renders the line without its card today, so this drives the
   // helper the card calls, with the target it would pass when neither exists.
-  const words = (0, eval)([line('const esc = '), fnSource('reportWords'), '(reportWords)'].join('\n'));
+  const words = (0, eval)([line('const esc = '), constBlock('const fmtDate = '), fnSource('reportWords'),
+                               '(reportWords)'].join('\n'));
   const plain = words('remedy_match').readyHtml(null);
   assert.strictEqual(plain, 'See which remedies match to your scan. Your Remedy Match is here.');
   assert.ok(plain.indexOf('<a') === -1);
@@ -138,7 +145,7 @@ function hasNotice(html) {
 // --- The read-receipt header ---
 {
   const rm = render(report('remedy_match', 'confirmed', { opens: {} }));
-  assert.ok(rm.indexOf('<strong>Remedy Match, 2026-10-14</strong>') !== -1, 'Remedy Match header');
+  assert.ok(rm.indexOf('<strong>Remedy Match, Oct 14, 2026</strong>') !== -1, 'Remedy Match header');
   assert.ok(rm.indexOf('Biofield report') === -1);
   assert.ok(!hasNotice(rm), 'a confirmed report keeps today\'s rule: no notice once confirmed');
   const bf = render(report('biofield', 'confirmed', { opens: {} }));
@@ -167,7 +174,7 @@ function hasNotice(html) {
   const at = src.indexOf('const PRINT_HEADER = ');
   const header = src.slice(at, src.indexOf('</div>`;', at) + 8);
   const build = (0, eval)([
-    line('const esc = '), 'var fmtDate = function(x){ return String(x); };',
+    line('const esc = '), constBlock('const fmtDate = '),
     'var terrainBanner = function(){ return ""; }, dietGuidanceHtml = function(){ return ""; };',
     'var escGreeting = function(x){ return String(x); };',
     header, fnSource('reportWords'), fnSource('buildReportPrintHtml'),
@@ -201,7 +208,7 @@ function hasNotice(html) {
   const at = src.indexOf('const PRINT_HEADER = ');
   const header = src.slice(at, src.indexOf('</div>`;', at) + 8);
   const build = (0, eval)([
-    line('const esc = '), 'var fmtDate = function(x){ return String(x); };',
+    line('const esc = '), constBlock('const fmtDate = '),
     'var terrainBanner = function(){ return ""; }, dietGuidanceHtml = function(){ return ""; };',
     'var escGreeting = function(x){ return String(x); };',
     header, fnSource('reportWords'), fnSource('buildReportPrintHtml'),

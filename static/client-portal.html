@@ -3139,7 +3139,9 @@ function reportWords(kind){
     remedyMatch: rm,
     name: rm ? "Remedy Match" : "Biofield Analysis",
     printTitle: rm ? "Remedy Match" : "Biofield Analysis",
-    header: (date) => rm ? "Remedy Match, " + date : "Biofield report — " + date,
+    // A Remedy Match heading shows the date the way the scan tabs above it do
+    // (fmtDate). A Biofield heading keeps its date exactly as it is today.
+    header: (date) => rm ? "Remedy Match, " + fmtDate(date) : "Biofield report — " + date,
     // `target` is the id of this report's own matched-remedies list, or failing that
     // of its report card. With neither, "here" is plain text, never a dead link.
     readyHtml: (target) => rm

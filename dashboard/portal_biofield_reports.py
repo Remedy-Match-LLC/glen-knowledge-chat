@@ -173,6 +173,36 @@ def get_report(cx, email, scan_date):
     return _row_to_dict(row) if row else None
 
 
+def pick_current_report(dates, reveal_dates, cur_ptr, req_date=""):
+    """Which report a client's portal shows. The one place that choice is made: the
+    report card (portal_view._biofield_block), the page payload (/api/portal/<token>)
+    and the console notify email all call this, so they always name the same report.
+
+    `dates` are the stored report dates, newest first; `reveal_dates` the reveal dates
+    in biofield_reveals.list_for_email order; `cur_ptr` the portal's current_scan_date.
+    Returns (source, scan_date), source "reveal", "report" or "legacy" (the single
+    client_portals content).
+
+    1. An explicit ?scan_date= naming a reveal-only date shows that reveal.
+    2. With stored reports: ?scan_date= if it names one, else the current pointer if
+       it names one (so a hand-off's manual Biofield beats a newer AI report, as the
+       hand-off intends), else the newest. A pointer naming a reveal-only date is not
+       followed here; the newest stored report shows.
+    3. With no stored reports: the requested reveal, else the first reveal.
+    4. Otherwise the legacy content."""
+    if req_date and req_date in reveal_dates and req_date not in dates:
+        return "reveal", req_date
+    if dates:
+        if req_date and req_date in dates:
+            return "report", req_date
+        if cur_ptr and cur_ptr in dates:
+            return "report", cur_ptr
+        return "report", dates[0]
+    if reveal_dates:
+        return "reveal", (req_date if req_date in reveal_dates else reveal_dates[0])
+    return "legacy", None
+
+
 def kinds_by_date(cx, email):
     """{scan_date: 'remedy_match' | 'biofield'} for every report row of one email."""
     email = (email or "").strip().lower()
