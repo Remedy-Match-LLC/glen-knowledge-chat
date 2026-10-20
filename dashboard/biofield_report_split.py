@@ -361,12 +361,16 @@ def top_keys(printed):
 
 
 def report_intro(ctx, report):
-    """This report's own introduction lines, for the book format Glen plans (2026-10-19:
-    "each report will have an individualized introduction"). The wording is not
-    settled, so none is stored yet: ctx["report_intros"] = {report: [lines]} fills it.
-    They print at the top of the report, before the shared intro, in every file."""
-    return tuple(str(t) for t in ((ctx.get("report_intros") or {}).get(report) or ())
-                 if str(t).strip())
+    """This report's own introduction, for the book format Glen plans (2026-10-19).
+    Two parts, in order: the standard lead, the same for every client, then a
+    personal passage relating the guidance to this client's challenges and goals.
+    Phase 1 fills only the lead (stored as biofield_plan_wording kind 'report_lead',
+    keyed by report); the personal passage (ctx["report_personal"]) is phase 2 and
+    prints nothing while empty. Both print before the shared intro, in every file."""
+    def _lines(src):
+        return tuple(str(t) for t in ((ctx.get(src) or {}).get(report) or ())
+                     if str(t).strip())
+    return _lines("report_leads") + _lines("report_personal")
 
 
 def render_report(ctx, report, on, intro=True):
@@ -495,7 +499,12 @@ def load(cx, test_id, client_name="", date="", kloud_program="", marks=None,
         line["program"] = kloud_program
     if chain is None:
         chain = cs.chain_remedies(cx, test_id) if is_authored(test_id) else []
-    return {"groups": groups, "meanings": meanings, "intro": intro, "frame": frame,
+    leads = {}
+    for kind_key, text in cx.execute(
+            "SELECT key,text FROM biofield_plan_wording WHERE kind='report_lead' ORDER BY key"):
+        leads.setdefault(str(kind_key).split(":")[0], []).append(text)
+    return {"report_leads": leads, "report_personal": {},
+            "groups": groups, "meanings": meanings, "intro": intro, "frame": frame,
             "cautions": cautions, "chain": chain, "client_name": client_name,
             "date": date, "marks": marks,
             "remedy_source_infoceuticals": remedy_source_infoceuticals(
