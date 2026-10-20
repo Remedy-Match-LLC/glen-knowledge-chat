@@ -348,7 +348,7 @@ def test_glens_paragraph_leads_the_cautions_before_the_intro(cx, tmp_path):
              "ingredient_caution_intro": {"text": "Some products share a caution.",
                                           "approved": True}}
     report = pr.load_content(cx, _folder(tmp_path, lines, cautions=BERBERINE))
-    assert "cautions_lead" not in json.dumps(report.get("unknown") or [])
+    assert report["frame_lines_unknown"] == []
     _remedy(cx, "Blood sugar", cs.FORMULATIONS, "Glucose Tolerance")
     page = _page(cx)
     assert page.count(LEAD) == 1
