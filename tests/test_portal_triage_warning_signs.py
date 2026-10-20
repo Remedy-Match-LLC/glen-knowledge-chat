@@ -151,23 +151,13 @@ TRIPS["jaundice"] += [
     "I think I have jaundise",
 ]
 
-# Fragments with no report word for a sign that needs one. Unflagged by design;
-# the model still sees them. Pinned so a change to this rule is a visible choice.
-NO_MARKER_BY_DESIGN = [
-    "eyes look yellow",
-    "102.5 fever",
-    "fever 40C",
-    "high fever",
-    "room is spinning",
-    "fainted",
-    "got hives all over",
-    "sharp pain under right rib cage",
-]
-
-
-@pytest.mark.parametrize("phrase", NO_MARKER_BY_DESIGN)
-def test_fragments_without_a_report_word_stay_with_the_model(phrase):
-    assert pt.warning_signs(phrase) == [], phrase
+# Glen, via the coordinator, 20 Oct 2026: in this chat a bare fragment is a
+# report. No warning sign needs a report word ("I", "my", a time word).
+TRIPS["jaundice"] += ["eyes look yellow"]
+TRIPS["fever"] += ["102.5 fever", "fever 40C", "high fever"]
+TRIPS["dizziness"] += ["room is spinning", "fainted", "the world keeps spinning"]
+TRIPS["hives-breathing"] += ["got hives all over"]
+TRIPS["right-rib-pain"] += ["sharp pain under right rib cage"]
 
 
 @pytest.mark.parametrize("key,phrase", [(k, p) for k, ps in TRIPS.items() for p in ps])
@@ -249,6 +239,19 @@ ROUTINE = [
     "Does this help with hives?",
     "Can the drops help my breathing?",
     "Remind me which one is for hives.",
+    # Fragments with no report word: the exclusions still apply.
+    "no fever",
+    "fever drops",
+    "high fever as a child",
+    "high fever years ago",
+    "high fever is gone now",
+    "what causes a high fever",
+    "Hives are caused by histamine.",
+    "Will these drops help hives?",
+    "which remedy for hives",
+    "the room is not spinning",
+    "How long does a healing crisis last?",
+    "high fever in kids",
 ]
 
 

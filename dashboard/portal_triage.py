@@ -313,6 +313,7 @@ _SIGN_PATTERNS = {
                    r"never (?:had|felt)|first time|since (?:yesterday|this morning|last night|today)|"
                    r"started (?:today|yesterday|this morning|last night))\b", re.I),
         re.compile(r"\b(?:faint(?:ed|ing)|passed out|blacked out|feel(?:ing)? faint)\b", re.I),
+        re.compile(r"\b(?:room|world|everything)\s+(?:is\s+|was\s+|keeps\s+|starts?\s+)?spinn?\w*", re.I),
     ],
     "stroke": [
         re.compile(r"\bslurr\w*\b|\b(?:can'?t|cannot|trouble|hard to)\s+(?:speak|talk|get (?:my|the) words out)\b|"
@@ -378,7 +379,11 @@ _REPORTS_AS = {"hives": "hives-breathing", "breathing": "hives-breathing",
                "fever-baby": "fever"}
 # These trip with no report word (see above). Negation, hypothetical and the
 # exclusions still apply.
-_NO_MARKER_NEEDED = {"swelling", "breathing", "fever-baby"}
+# Coordinator for Glen, 20 Oct 2026: in this chat a client typing "high fever" or
+# "eyes look yellow" is reporting it, so NO warning sign needs a report word. The
+# negation, hypothetical, education, product, improvement and past-history rules
+# do the filtering instead.
+_NO_MARKER_NEEDED = frozenset(_SIGN_PATTERNS)
 
 # A report of it happening: someone the client speaks for, a time anchor, or alarm.
 _REPORT_MARKER = re.compile(
@@ -400,11 +405,13 @@ _HYPO_CUE = re.compile(
     r"can (?:a|an|someone|people|kids|babies)\b)", re.I)
 _EDU_CUE = re.compile(
     r"\b(?:what causes?|what can cause|why do(?:es)?|what (?:is|are)|what does|explain|"
-    r"tell me (?:about|more))\b", re.I)
+    r"tell me (?:about|more|how)|how (?:do|does) \w+ work|can come from|"
+    r"(?:is|are) caused by|how long (?:does|do|will|can|should|is|are)\b(?! (?:my|mine|i|this|it)\b))\b", re.I)
 # Reading or asking about a topic: education even with "I'm" in the clause.
 _TOPIC_CUE = re.compile(
     r"\b(?:read(?:ing)? (?:about|up on)|article|"
-    r"learn(?:ing)? about|curious about|info(?:rmation)? (?:on|about))\b", re.I)
+    r"learn(?:ing)? about|curious about|info(?:rmation)? (?:on|about)|"
+    r"in (?:kids|children|babies|infants|adults|people|general))\b", re.I)
 # The conditional part of a clause, and a modal question ("could I have ..."),
 # are not a present report.
 _IF_PART = re.compile(r"\b(?:what if|if|in case|unless)\b.*|\b(?:could|will|would|can|should) i\b", re.I)
@@ -428,8 +435,10 @@ _EXCLUDE = re.compile(
     r"\b(?:drops? for|formula|remedy for|order(?:ing|ed)?|reorder\w*|"
     r"how (?:do|should|much|often|many) (?:i|we|you)|capsules?|tablets?|dose|dosage|buy|"
     r"purchase|in stock|price|use (?:this|it|these) for|"
-    r"(?:fever|hives?|allergy|wheeze|cough) (?:drops|remedy|tincture|spray)|"
-    r"can (?:she|he|i|we|they|my \w+) (?:take|use|have) (?:the|this|it|these))\b|"
+    r"(?:fever|hives?|allergy|wheeze|cough|headache|migraine|rash|skin) (?:drops|remedy|tincture|spray)|"
+    r"can (?:she|he|i|we|they|my \w+) (?:take|use|have) (?:the|this|it|these)|"
+    r"(?:does|do|can|will|would|could|might) (?:this|it|these|those|that|they|the|my)(?: \w+)? help|"
+    r"which (?:one|ones|product|remedy|formula|drops))\b|"
     # improvement
     r"\b(?:better|(?:is|are|it's|its|they're|all) gone|gone now|cleared|clearing up|went away|"
     r"resolved|improv\w*|no longer|healed|"
@@ -576,10 +585,15 @@ _HEALING_PATTERNS = {
 }
 
 
+# Same change for the healing-crisis signs: "headache since tuesday" and "rash on
+# my arms" flag inside the window with no report word.
+_HEALING_NO_MARKER = frozenset(_HEALING_PATTERNS)
+
+
 def healing_signs(message):
     """The healing-crisis sign keys the client's message reports, in HEALING_SIGNS
     order. Pure; the caller decides whether the client is inside the window."""
-    found = _scan(message, _HEALING_PATTERNS)
+    found = _scan(message, _HEALING_PATTERNS, _HEALING_NO_MARKER)
     return [k for k, _ in HEALING_SIGNS if k in found]
 
 

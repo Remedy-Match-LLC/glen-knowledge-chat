@@ -126,10 +126,19 @@ SIGNS = {
                     "I feel exhausted."],
     "headache": ["I've had a headache since yesterday.", "I have a migraine today."],
     "rash": ["I have a rash on my arms.", "My skin is breaking out.", "I broke out in spots."],
+
     "loose-stools": ["I have loose stools.", "I've had diarrhea since Monday."],
     "flu-like": ["I feel flu-like today.", "I have a mild fever.", "I have chills tonight."],
     "mucus": ["I'm coughing up more mucus.", "I have a lot of phlegm today."],
 }
+
+
+# No report word needed (coordinator for Glen, 20 Oct 2026).
+SIGNS["headache"] += ["headache since tuesday", "bad headache"]
+SIGNS["rash"] += ["rash on my arms", "rash all over"]
+SIGNS["loose-stools"] += ["loose stools"]
+SIGNS["mucus"] += ["coughing up mucus"]
+SIGNS["headache"] += ["How long will my headache last? It started today."]
 
 
 @pytest.mark.parametrize("key,msg", [(k, m) for k, ms in SIGNS.items() for m in ms])
@@ -146,6 +155,14 @@ def test_each_healing_sign_is_recognised(key, msg):
     "I'm tired of waiting for my order.",
     "I had acne as a teenager.",
     "Thanks, I feel great.",
+    # Fragments with no report word: the exclusions still apply.
+    "headache gone now",
+    "no rash",
+    "rash as a kid",
+    "what causes a rash",
+    "headache drops",
+    "will the drops help headaches",
+    "How long do headaches last?",
 ])
 def test_routine_messages_are_not_healing_signs(msg):
     assert pt.healing_signs(msg) == [], msg
@@ -259,6 +276,21 @@ def test_inside_window_flags_with_the_line(env):
     assert len(rows) == 1 and rows[0]["urgency"] == "high"
     assert rows[0]["summary"].startswith("Possible healing crisis, day 4 after delivery")
     assert len(sent) == 1 and "Possible healing crisis" in sent[0]
+
+
+@pytest.mark.parametrize("msg", ["headache since tuesday", "rash on my arms"])
+def test_fragment_without_a_report_word_flags_inside_the_window(env, msg):
+    appmod, deliver, chat, items, sent = env
+    deliver(3.0)
+    assert chat(msg).count(LINE) == 1
+    assert len(items()) == 1 and len(sent) == 1
+
+
+@pytest.mark.parametrize("msg", ["headache gone now", "no rash"])
+def test_excluded_fragment_does_not_flag_inside_the_window(env, msg):
+    appmod, deliver, chat, items, sent = env
+    deliver(3.0)
+    assert LINE not in chat(msg)
 
 
 def test_outside_window_changes_nothing(env):

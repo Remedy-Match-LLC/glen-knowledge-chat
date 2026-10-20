@@ -292,6 +292,30 @@ def test_unsupported_or_third_party_quotes_are_dropped(msg, item):
     assert _one(msg, item) == []
 
 
+@pytest.mark.parametrize("msg,quote,diag", [
+    ("I'm pregnant with my second baby.", "I'm pregnant with my second baby", "Pregnancy"),
+    ("I'm pregnant with my first child.", "I'm pregnant with my first child", "Pregnancy"),
+    ("I'm pregnant, expecting our second baby in May.", "I'm pregnant, expecting our second baby",
+     "Pregnancy"),
+    ("I am breastfeeding my baby.", "I am breastfeeding my baby", "Breastfeeding"),
+    ("I'm breastfeeding my youngest kid.", "I'm breastfeeding my youngest kid", "Breastfeeding"),
+])
+def test_own_pregnancy_or_breastfeeding_with_baby_is_recorded(msg, quote, diag):
+    out = _one(msg, _item("diagnoses", {"diagnosis": diag}, quote))
+    assert len(out) == 1, msg
+    assert out[0]["value"]["diagnosis"] == diag and out[0]["value"]["current"] == "Current"
+
+
+@pytest.mark.parametrize("msg,item", [
+    ("My baby has a rash.", _item("diagnoses", {"diagnosis": "Rash"}, "My baby has a rash")),
+    ("My child has eczema.", _item("diagnoses", {"diagnosis": "Eczema"}, "My child has eczema")),
+    ("I'm pregnant with my second baby and my kid has asthma.",
+     _item("diagnoses", {"diagnosis": "Asthma"}, "my kid has asthma")),
+])
+def test_baby_or_child_as_the_subject_stays_third_party(msg, item):
+    assert _one(msg, item) == []
+
+
 def test_table_key_term_must_be_in_the_quote():
     assert _one("I take my pills daily.",
                 _item("medications", {"medication": "Warfarin"}, "I take my pills daily")) == []

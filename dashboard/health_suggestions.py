@@ -267,7 +267,10 @@ def _normalize_item(item, client_msg):
     if len(quote.split()) < 3 or not _FIRST_PERSON.search(quote):
         return None
     sentence = _source_sentence(quote, client_msg)
-    own = re.compile(r"\bas a (?:child|kid|baby)\b|\bsince (?:i was a )?(?:child|kid|baby)hood\b",
+    own = re.compile(r"\bas a (?:child|kid|baby)\b|\bsince (?:i was a )?(?:child|kid|baby)hood\b|"
+                     # the client's own pregnancy or breastfeeding (coordinator, 20 Oct 2026)
+                     r"\b(?:pregnant with|expecting|nursing|breast-?feeding)\s+"
+                     r"(?:(?:my|our|a|an)\s+)?(?:\w+\s+)?(?:bab(?:y|ies)|child|kids?)\b",
                      re.I)        # the client's own childhood, not another person
     if _OTHER_PERSON.search(own.sub(" ", quote)) or _OTHER_PERSON.search(own.sub(" ", sentence)):
         return None
