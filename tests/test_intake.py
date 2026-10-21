@@ -231,3 +231,21 @@ def test_import_may_overwrite_an_external_stub():
     intake.import_response(cx, "d@x.com", {"first_name": "Now Real"}, "2026-07-07T01:00:00")
     a = intake.get_response(cx, "d@x.com")["answers"]
     assert a["first_name"] == "Now Real" and a["_imported"] == "practice-better"
+
+
+def test_diet_and_alcohol_are_two_history_fields():
+    """Glen, 20 Oct 2026: two separate fields under diet."""
+    from dashboard import health_profile
+    history = next(s for s in intake.INTAKE_FORM["sections"] if s["id"] == "history")
+    ids = [f["id"] for f in history["fields"]]
+    fields = {f["id"]: f for f in history["fields"]}
+    assert fields["diet"] == {"id": "diet", "type": "textarea",
+                              "label": "Describe your diet, including any special or medical diet."}
+    assert fields["alcohol"] == {"id": "alcohol", "type": "textarea",
+                                 "label": "Alcohol: how much, what type, and how often?"}
+    assert ids.index("alcohol") == ids.index("diet") + 1
+    assert {"diet", "alcohol"} <= health_profile.EDITABLE_FIELD_IDS
+    cx = _cx()
+    intake.save_draft(cx, "d@x.com", {"diet": "Keto", "alcohol": "None"}, "2026-10-20T00:00:00")
+    assert intake.get_response(cx, "d@x.com")["answers"]["alcohol"] == "None"
+    assert intake.validate_response({}) == intake.validate_response({"diet": "x", "alcohol": "y"})

@@ -13,6 +13,7 @@ Profile" suggestion badge (see health_profile.build_block), and `resolve`
 is how a client accepts/edits/dismisses a suggestion.
 """
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 
@@ -115,6 +116,383 @@ def resolve(cx, sug_id, email, status):
     return cur.rowcount == 1
 
 
+# --- LLM extractor (Glen's rulings, 20 Oct 2026) ------------------------------
+# Only facts the client states about themself, in their own message, for these
+# fields. The client confirms each one on the portal "Suggested updates" card.
+# Placement: "pregnancy or breastfeeding can go in as current health conditions.
+# Implants and pacemakers fit in surgeries. Heavy drinking and medical diet go in
+# diet", with diet and alcohol as two separate fields.
+
+# field_id -> its row columns, primary column first. A row needs the primary.
+TABLE_COLUMNS = {
+    "diagnoses": ("diagnosis", "current"),
+    "surgeries": ("procedure", "reason", "age"),
+    "medications": ("medication", "reason"),
+    "otc_drugs": ("medication", "reason"),
+    "allergies": ("sensitivity", "reaction"),
+}
+TEXT_FIELDS = ("diet", "alcohol")
+EXTRACT_FIELDS = tuple(TABLE_COLUMNS) + TEXT_FIELDS
+
+EXTRACT_SYSTEM = (
+    "You read ONE message a client wrote in their health portal chat. Find only these facts "
+    "that the client states about THEMSELF, as true now or in their past:\n"
+    "- a CURRENT pregnancy or breastfeeding -> field \"diagnoses\", value {\"diagnosis\": "
+    "\"Pregnancy\" or \"Breastfeeding\", \"current\": \"Current\"}. Never a past one.\n"
+    "- epilepsy, a heart rhythm problem, kidney disease, gallstones, a blocked bile duct, or "
+    "asthma -> field \"diagnoses\", value {\"diagnosis\": name, \"current\": \"Current\"}, "
+    "or \"Past\" only when the client says it is in the past\n"
+    "- a pacemaker or any other implant -> field \"surgeries\", value {\"procedure\": what was "
+    "implanted, \"reason\": why if stated, \"age\": their age then if stated}\n"
+    "- a regular prescription medicine (blood thinners such as warfarin, thyroid, diabetes, "
+    "blood pressure, or any other) -> field \"medications\", value {\"medication\": name, "
+    "\"reason\": what for if stated}\n"
+    "- a regular non-prescription drug -> field \"otc_drugs\", value {\"medication\": name, "
+    "\"reason\": what for if stated}\n"
+    "- a food allergy -> field \"allergies\", value {\"sensitivity\": the food, "
+    "\"reaction\": the reaction if stated}\n"
+    "- a medical or special diet -> field \"diet\"; the quote is what gets recorded\n"
+    "- heavy or regular drinking of alcohol -> field \"alcohol\"; the quote, with the amount, "
+    "type and how often as stated, is what gets recorded\n"
+    "Never record a fact about anyone else (a child, partner, friend, parent). Never guess or "
+    "infer. Never record a question (\"is it safe if I were pregnant?\"). Leave out anything "
+    "not on this list. For every item, \"quote\" is the client's exact words that state it "
+    "(at least 3 words, including I or my, and the name you put in the value), copied from "
+    "their message, and \"about\" is \"self\".\n"
+    "Return STRICT JSON ONLY, no prose: {\"items\": [{\"field_id\": ..., \"value\": ..., "
+    "\"quote\": ..., \"about\": \"self\"}]}. With nothing to record return {\"items\": []}."
+)
+
+
+def _strict_json(text):
+    """json.loads of the whole reply (a ```json fence is allowed, nothing else).
+    Anything else is garbage -> None."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t[3:]
+        if t.lower().startswith("json"):
+            t = t[4:]
+        if not t.rstrip().endswith("```"):
+            return None
+        t = t.rstrip()[:-3]
+    try:
+        return json.loads(t)
+    except (TypeError, ValueError):
+        return None
+
+
+def _squash(text):
+    return " ".join(str(text or "").split()).casefold()
+
+
+def _cell(value, limit=200):
+    if value is None or isinstance(value, (dict, list, bool)):
+        return ""
+    return " ".join(str(value).split())[:limit]
+
+
+def normalize_row(field_id, value):
+    """A row dict for a table field, holding only that field's column ids, or None
+    when the primary column is empty. diagnoses.current is 'Current' or 'Past'."""
+    cols = TABLE_COLUMNS.get(field_id)
+    if not cols or not isinstance(value, dict):
+        return None
+    row = {}
+    for col in cols:
+        cell = _cell(value.get(col))
+        if col == "current":
+            cell = "Past" if cell.casefold() == "past" else "Current"   # _normalize_item may revise
+        elif col == "age":
+            try:
+                cell = int(float(cell)) if cell else ""
+            except ValueError:
+                cell = ""
+        if cell != "":
+            row[col] = cell
+    return row if row.get(cols[0]) else None
+
+
+# Someone else. A quote, or the sentence it came from, naming one is not the
+# client's own fact, whatever the model says in "about".
+_OTHER_PERSON = re.compile(
+    r"\b(?:wife|husband|daughters?|sons?|mom|mum|mother|dad|father|sisters?|brothers?|"
+    r"friends?|partner|bab(?:y|ies)|child|children|kids?|boyfriend|girlfriend|"
+    r"grand(?:ma|pa|mother|father|son|daughter)|aunt|uncle|cousin|niece|nephew|"
+    r"neighbou?r|coworker|client|patient)\b", re.I)
+_FIRST_PERSON = re.compile(r"\b(?:i|i'm|im|i've|ive|i'd|i'll|my|me|myself|mine)\b", re.I)
+# Past tense in a quote. "I've had asthma since childhood" is present, so the
+# present perfect is removed before the check.
+_PRESENT_PERFECT = re.compile(r"\b(?:(?:i've|ive|i have|has|have)\s+(?:had|been)|"
+                              r"(?:was|were|got|been) diagnosed)\b", re.I)
+_PAST = re.compile(
+    r"\b(?:was|were|had|used to|ago|previously|formerly|back in|last year|as a (?:child|kid)|"
+    r"in (?:19|20)\d\d|no longer|anymore|any more)\b|\b\w+ed\b(?= (?:in|at|when|back|before))",
+    re.I)
+_PREGNANCY = re.compile(r"\b(?:pregnan\w*|breast-?feed\w*|breastfed|nursing)\b", re.I)
+
+
+def _source_sentence(quote, client_msg):
+    q = _squash(quote)
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", client_msg or ""):
+        if q and q in _squash(sent):
+            return sent
+    return client_msg or ""
+
+
+# A fact stated before a question in the same sentence is still a fact (marketing's
+# live run, 20 Oct 2026): "I take warfarin, can I use the enzymes?". The quote's
+# own clause must open plainly, and what follows it must be the question.
+_ASKING = re.compile(r"\b(?:if|whether|when|what|how|why|which|is|are|am|can|could|should|"
+                     r"would|will|do|does|did|may|might|possible|suppose|supposing)\b", re.I)
+_SUPPOSING = re.compile(r"\b(?:if|whether|suppose|supposing|what if|in case|were)\b", re.I)
+_QUESTION_AFTER = re.compile(r"^[\s,;:.!-]*(?:(?:and|but|so|then)\s+)?(?:is|are|am|can|could|"
+                             r"should|would|will|do|does|did|may|might|what|how|which|"
+                             r"any|anything)\b", re.I)
+
+
+def _asked(quote, sentence):
+    """True when the quote sits inside the sentence's question rather than before it."""
+    if not sentence.rstrip().endswith("?"):
+        return False
+    flat, q = _squash(sentence), _squash(quote)
+    at = flat.find(q)
+    if at < 0:
+        return True
+    before = re.split(r"[,;:]", flat[:at])[-1]
+    after = flat[at + len(q):]
+    # "Can I take this while I'm on warfarin?" asks about a fact it also states, so a
+    # stating link straight before the quote keeps it (marketing's live run, 20 Oct).
+    stated = re.search(r"\b(?:while|since|as|because|given(?: that)?|now that)\s*$", before)
+    if _SUPPOSING.search(flat[:at]):
+        return True                      # "is it safe if, while I'm pregnant, I fast?"
+    if stated:
+        return False
+    if _ASKING.search(before):
+        return True                      # "is it safe if I am pregnant?"
+    # A clause break after the quote ends the fact ("I take warfarin and metformin,
+    # can I..."); with none, the question must start straight after it.
+    return not re.search(r"[,;:]", after) and not _QUESTION_AFTER.search(after)
+
+
+def _is_past(quote):
+    return bool(_PAST.search(_PRESENT_PERFECT.sub(" ", quote)))
+
+
+def _term_in_quote(term, quote):
+    """Every word (3+ letters) of the key term appears in the quote, matched on its
+    first 6 letters, so "Pregnancy" is supported by "pregnant"."""
+    words = [w for w in re.findall(r"[a-z0-9]+", str(term).casefold()) if len(w) >= 3]
+    q = _squash(quote)
+    return bool(words) and all(w[:6] in q for w in words)
+
+
+def _normalize_item(item, client_msg):
+    if not isinstance(item, dict):
+        return None
+    if item.get("about") != "self":
+        return None
+    fid = item.get("field_id")
+    if fid not in EXTRACT_FIELDS:
+        return None
+    quote = _cell(item.get("quote"), 300)
+    # The evidence must be the client's own words, so nothing from the AI's
+    # answer, and nothing the model made up, can become a suggestion.
+    if not quote or _squash(quote) not in _squash(client_msg):
+        return None
+    # Two words are enough for a table fact whose term the quote must name anyway
+    # ("I'm pregnant"); free-text fields keep three.
+    if len(quote.split()) < (2 if fid in TABLE_COLUMNS else 3) or not _FIRST_PERSON.search(quote):
+        return None
+    sentence = _source_sentence(quote, client_msg)
+    own = re.compile(r"\bas a (?:child|kid|baby)\b|\bsince (?:i was a )?(?:child|kid|baby)hood\b|"
+                     # the client's own pregnancy or breastfeeding (coordinator, 20 Oct 2026)
+                     r"\b(?:pregnant with|expecting|nursing|breast-?feeding)\s+"
+                     r"(?:(?:my|our|a|an)\s+)?(?:\w+\s+)?(?:bab(?:y|ies)|child|kids?|sons?|daughters?|"
+                     r"twins|little one)\b",
+                     re.I)        # the client's own childhood, not another person
+    if _OTHER_PERSON.search(own.sub(" ", quote)) or _OTHER_PERSON.search(own.sub(" ", sentence)):
+        return None
+    if _asked(quote, sentence):
+        return None                      # a question is not a fact
+    if fid in TABLE_COLUMNS:
+        value = normalize_row(fid, item.get("value"))
+        if not value or not _term_in_quote(value[TABLE_COLUMNS[fid][0]], quote):
+            return None
+        if fid == "diagnoses":
+            past = _is_past(quote)
+            if _PREGNANCY.search(value["diagnosis"]) or _PREGNANCY.search(quote):
+                if past:
+                    return None          # a past pregnancy is not a current condition
+                value["current"] = "Current"
+            elif past:
+                value["current"] = "Past"
+    else:
+        value = quote                    # diet and alcohol: the client's words, not a paraphrase
+    if not value:
+        return None
+    return {"field_id": fid, "value": value, "rationale": f'"{quote}"'}
+
+
+def llm_extractor(complete):
+    """An extractor for extract_from_turn backed by `complete(system, user) -> str`
+    (the same injected-call pattern as portal_triage.classify). The model sees the
+    CLIENT'S message only, never the assistant's answer. Strict JSON; garbage or an
+    error -> []."""
+    def _extract(client_msg, assistant_msg=None):
+        text = (client_msg or "").strip()
+        if not text:
+            return []
+        try:
+            data = _strict_json(complete(EXTRACT_SYSTEM, text))
+        except Exception as e:
+            print(f"[health-suggestions] extractor call failed: {e!r}", flush=True)
+            return []
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            return []
+        out, seen = [], set()
+        for item in items:
+            norm = _normalize_item(item, text)
+            if not norm:
+                continue
+            key = (norm["field_id"], json.dumps(norm["value"], sort_keys=True))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(norm)
+        return out
+    return _extract
+
+
+# --- applying a confirmed suggestion ----------------------------------------
+# intake_public.merge_answers REPLACES a whole field. A one-row suggestion must
+# not wipe a client's table, and a note must not overwrite their own words, so
+# the resolve path builds the merged value here first.
+
+def _form_field(field_id):
+    from dashboard import intake
+    for f in intake._fields():
+        if f["id"] == field_id:
+            return f
+    return None
+
+
+def _row_key(row):
+    return tuple(sorted((k, _squash(v)) for k, v in (row or {}).items()
+                        if _squash(v)))
+
+
+def _table_cols(field_id):
+    f = _form_field(field_id)
+    if not f or f.get("type") != "table":
+        return None
+    return [c["id"] for c in f.get("columns") or []]
+
+
+def _row_from_dict(cols, value):
+    row = {c: value[c] for c in cols
+           if c in value and value[c] not in (None, "") and not isinstance(value[c], (dict, list))}
+    if not row or not str(row.get(cols[0], "")).strip():
+        return None
+    return row
+
+
+def table_rows_from(field_id, value):
+    """Decode a confirmed or edited value for a table field into row dicts, using the
+    form's own columns. Accepts a row dict, its JSON text, a list of rows, or plain
+    text (an old clinician suggestion): plain text becomes a first-column row, never
+    an error. Empty list when nothing usable."""
+    cols = _table_cols(field_id)
+    if not cols:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            decoded = json.loads(text)
+        except ValueError:
+            decoded = None
+        if isinstance(decoded, (dict, list)):
+            value = decoded
+        else:
+            return [{cols[0]: text}] if text else []
+    items = value if isinstance(value, list) else [value]
+    rows = []
+    for item in items:
+        if isinstance(item, dict):
+            row = _row_from_dict(cols, item)
+        elif isinstance(item, str) and item.strip():
+            row = {cols[0]: item.strip()}
+        else:
+            row = None
+        if row:
+            rows.append(row)
+    return rows
+
+
+def table_row_from(field_id, value):
+    """The first usable row of table_rows_from, or None."""
+    rows = table_rows_from(field_id, value)
+    return rows[0] if rows else None
+
+
+def _existing_rows(field_id, current):
+    """A table's current value as rows, never losing anything. Text (a table that
+    was saved as "Warfarin 5 mg, for atrial fibrillation") becomes ONE first-column
+    row, never split at commas: a comma inside a reason is not a second row (round 3
+    L4). String items become first-column rows."""
+    cols = _table_cols(field_id) or ["value"]
+    if current is None or current == "":
+        return []
+    if isinstance(current, str):
+        text = current.strip()
+        return [{cols[0]: text}] if text else []
+    if isinstance(current, dict):
+        return [current]
+    if not isinstance(current, list):
+        return [{cols[0]: str(current)}]
+    out = []
+    for item in current:
+        if isinstance(item, dict):
+            out.append(item)
+        elif item is not None and str(item).strip():
+            out.append({cols[0]: str(item).strip()})
+    return out
+
+
+def apply_suggestion(field_id, current, value):
+    """The field's new value once a suggestion is confirmed or edited.
+    - table: append each new row to the existing rows. Existing text or string items
+      are kept as first-column rows. A row equal to an existing one (case and spacing
+      ignored) is skipped.
+    - text/textarea: append on a new line. Skip only when an existing LINE equals the
+      new text (case and spacing ignored), never on a substring: "2 beers nightly"
+      is not "12 beers nightly".
+    - anything else (scales, numbers, choices): the value replaces, as before.
+    Raises ValueError when a table value holds no usable row."""
+    f = _form_field(field_id) or {}
+    ftype = f.get("type")
+    if ftype == "table":
+        new_rows = table_rows_from(field_id, value)
+        if not new_rows:
+            raise ValueError("not a table row")
+        rows = _existing_rows(field_id, current)
+        for row in new_rows:
+            if not any(_row_key(r) == _row_key(row) for r in rows):
+                rows.append(row)
+        return rows
+    if ftype in ("text", "textarea"):
+        new = str(value if value is not None else "").strip()
+        have = str(current if current is not None else "").strip()
+        if not new:
+            return have
+        if not have:
+            return new
+        if any(_squash(line) == _squash(new) for line in have.split("\n")):
+            return have
+        return have + "\n" + new
+    return value
+
+
 def extract_from_turn(client_msg, assistant_msg, extractor=None):
     """Parse one chat turn into candidate editable health-record edits:
     [{"field_id", "value", "rationale"}, ...]. Pure and testable — pass
@@ -123,11 +501,9 @@ def extract_from_turn(client_msg, assistant_msg, extractor=None):
     `health_profile.EDITABLE_FIELD_IDS` before it comes back, so an
     extractor can never smuggle in an identity/consent field.
 
-    With no `extractor` given this is a documented no-op seam (returns [])
-    rather than wiring a live model call — an LLM-backed default belongs in
-    app.py alongside `_CONCIERGE_EXTRACT_SYSTEM`, where the Anthropic client
-    and streaming context already live; duplicating that here would either
-    import app.py (circular) or fork the client setup.
+    With no `extractor` given this returns []. The portal chat passes
+    `llm_extractor(<Haiku call>)` from app.py (_extract_portal_health_suggestions),
+    where the Anthropic client lives.
     """
     if extractor is None:
         candidates = []

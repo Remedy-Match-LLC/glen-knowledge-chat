@@ -55,6 +55,10 @@ def build_block(cx, email, enabled):
             }
             if f.get("options"):
                 field["options"] = f["options"]
+            if f.get("columns"):
+                # Column labels, so the portal can show a table row readably.
+                field["columns"] = [{"id": c["id"], "label": c.get("label", c["id"])}
+                                    for c in f["columns"]]
             fields.append(field)
         sections.append({"title": sec["title"], "fields": fields})
     try:
