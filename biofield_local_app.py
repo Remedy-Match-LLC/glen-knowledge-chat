@@ -3107,10 +3107,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     @app.route("/author/<test_id>/layer/<int:source>/consolidate-balances", methods=["POST"])
     def author_layer_consolidate_balances(test_id, source):
         from dashboard.biofield_stress import consolidate_layer_balances
-        target = (request.get_json(silent=True) or {}).get("target_layer")
+        body = request.get_json(silent=True) or {}
+        target = body.get("target_layer")
+        # The card's own row ids (data-rids). A card groups rows by Head, so it can
+        # span two stored layer numbers; the number alone left a row behind (a50,
+        # 2026-10-20).
+        source_rids = body.get("source_rids") or None
+        target_rids = body.get("target_rids") or None
         try:
             with sqlite3.connect(db_path) as cx:
-                moved = consolidate_layer_balances(cx, test_id, source, target)
+                moved = consolidate_layer_balances(cx, test_id, source, target,
+                                                   source_rids=source_rids,
+                                                   target_rids=target_rids)
         except ValueError as e:
             return {"ok": False, "error": str(e)}, 400
         return {"ok": True, "moved": moved, "source_layer": source,
@@ -3125,15 +3133,23 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not raw:
             return {"ok": False, "error": "empty label"}, 400
         layer = d.get("layer")
+        # A card sends its own row ids: its number on the page is a display position,
+        # and one card can hold rows on several stored layers.
+        card_rids = d.get("rids") or None
         with sqlite3.connect(db_path) as cx:
+            if card_rids:
+                try:
+                    card_rids = _st._rids_on_test(cx, test_id, card_rids)
+                except ValueError as e:
+                    return {"ok": False, "error": str(e)}, 400
             label = resolve_stress_name(cx, raw)
             if not _st.vocab_has(cx, label):
                 _st.add_custom_vocab(cx, label)
             _st.add_stress(cx, test_id, label, source="manual", balance="required")
             sid = _st.stress_id_for(cx, test_id, label)
             balanced_layer = None
-            if sid is not None and layer is not None:
-                rids = _st.layer_chain_rids(cx, test_id, layer)
+            if sid is not None and (layer is not None or card_rids):
+                rids = card_rids or _st.layer_chain_rids(cx, test_id, layer)
                 if rids:
                     _st.cover_stress(cx, test_id, sid, rids)
                 else:

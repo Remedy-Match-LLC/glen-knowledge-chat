@@ -387,13 +387,62 @@ def cover_stress(cx, tid, stress_id, rids):
     return code
 
 
-def consolidate_layer_balances(cx, tid, source_layer, target_layer):
-    """Move remedy-linked stress coverage from one layer to another.
+def card_rids_for_layer(cx, tid, layer):
+    """Every chain-row id on the card(s) that hold stored layer `layer`.
+
+    A card on the page is a `group_layers` group: rows sharing a Head are one card,
+    whatever their stored layer numbers. The Minimum program writes each remedy on its
+    own number, so one card can hold rows on layers 12 and 13 (Sharon, a50,
+    2026-10-20). Uses the page's own grouping, never a copy of it."""
+    from dashboard.biofield_authoring import ordered_chain
+    from dashboard.biofield_report_html import group_layers
+    try:
+        ln = int(layer)
+    except (TypeError, ValueError):
+        return []
+    factory = cx.row_factory
+    try:
+        chain = ordered_chain(cx, tid)
+    finally:
+        cx.row_factory = factory          # ordered_chain switches it to sqlite3.Row
+    out = []
+    for g in group_layers(chain):
+        rows = g.get("rows") or []
+        if any(r.get("stored_layer") == ln for r in rows):
+            out.extend(int(r["id"]) for r in rows if r.get("id") is not None)
+    return out
+
+
+def _rids_on_test(cx, tid, rids):
+    """`rids` as ints, refused with ValueError if any is not a chain row of this test."""
+    try:
+        want = sorted({int(r) for r in rids})
+    except (TypeError, ValueError):
+        raise ValueError("invalid row id")
+    if not want:
+        return []
+    marks = ",".join("?" for _ in want)
+    found = {int(r[0]) for r in cx.execute(
+        f"SELECT id FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
+        (_num(tid), *want)).fetchall()}
+    if found != set(want):
+        raise ValueError("a row is not on this intake")
+    return want
+
+
+def consolidate_layer_balances(cx, tid, source_layer, target_layer,
+                               source_rids=None, target_rids=None):
+    """Move remedy-linked stress coverage from one layer card to another.
 
     Coverage is stored by normalized remedy name rather than layer number.  Copy
     every code covered by a source remedy to every target remedy, then remove the
     source links unless that remedy also belongs to the target layer.  Returns the
     number of distinct stress codes moved.
+
+    A card is identified by its row ids (`source_rids`/`target_rids`, the page's
+    data-rids). Without them a stored layer number stands for the whole card that
+    holds it, so a card spanning layers 12 and 13 moves both rows. Every row id
+    must belong to this test.
     """
     init_stress_tables(cx)
     t = _num(tid)
@@ -404,14 +453,21 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer):
     if source == target:
         raise ValueError("source and target layers must differ")
 
-    def layer_rows(layer):
+    def card_rows(layer, rids):
+        ids = (_rids_on_test(cx, tid, rids) if rids
+               else card_rids_for_layer(cx, tid, layer))
+        if not ids:
+            return []
+        marks = ",".join("?" for _ in ids)
         return cx.execute(
-            "SELECT id,remedy,head,most_affected FROM biofield_auth_chain "
-            "WHERE test_id=? AND layer=?",
-            (t, layer),
+            f"SELECT id,remedy,head,most_affected FROM biofield_auth_chain "
+            f"WHERE test_id=? AND id IN ({marks}) ORDER BY id",
+            (t, *ids),
         ).fetchall()
 
-    source_rows, target_rows = layer_rows(source), layer_rows(target)
+    source_rows, target_rows = card_rows(source, source_rids), card_rows(target, target_rids)
+    if {int(r[0]) for r in source_rows} & {int(r[0]) for r in target_rows}:
+        raise ValueError("source and target layers must differ")
     source_rids = {int(r[0]) for r in source_rows}
     target_rids = {int(r[0]) for r in target_rows}
     source_remedies = {((r[1] or "").strip().lower()) for r in source_rows
