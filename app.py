@@ -2364,23 +2364,28 @@ _CautionLine = _namedtuple("_CautionLine", "key text ref")
 # What the bot may not add around a caution it copies. Live chat on 81acb916, 2026-10-21:
 # asked about Vitamin D Syntropy and warfarin, it called the caution the label's, said some
 # patients tolerate it with monitoring, said to adjust the warfarin dose, and offered a
-# different vitamin D source. Labels carry no cautions (Glen, 2026-10-15). Kept in all
-# three copy rules below so whichever one fires carries it.
+# different vitamin D source. Labels carry no cautions (Glen, 2026-10-15). Scoped to the
+# caution's own subject, so approved text and other questions are untouched (review round
+# 1: the Vitamin D description's own monitoring line, and the caution-only note). It names
+# no one to ask: the caution's own advice stands (review round 1, F3). Written once per
+# answer, after the copy rule in the header.
 _CAUTION_NO_ADDITIONS = (
-    "Call each caution \"the caution on the product page\", never the label caution. Add "
-    "no advice of your own around a caution. Do not say how well clients tolerate the "
-    "product. Do not suggest monitoring, or changing any medicine or dose. Name no other "
-    "product or source in place of the product. For anything beyond the caution, say to "
-    "ask Dr. Glen.")
+    "Call a caution \"the caution on the product page\", never the label caution. When "
+    "the user asks about a medicine, pregnancy or a condition that a caution names, give "
+    "that caution's own advice and add none of your own. On that subject, do not say how "
+    "well clients tolerate the product, and do not suggest monitoring or changing any "
+    "medicine or dose. Name no other product or source in its place, and no one else to "
+    "ask. This limits only what you add yourself. Repeat the approved description and "
+    "directions below as written, and answer other questions as before.")
 _SEVERAL_CAUTIONS_RULE = (
     "There is more than one caution below. Copy each one word for word, as its own "
     "paragraph starting \"Caution for <product name>:\", every sentence of it, even where "
     "two cautions share sentences. Do not shorten, reword, merge or summarise them, and do "
-    "not fold them into the rest of the answer. " + _CAUTION_NO_ADDITIONS)
+    "not fold them into the rest of the answer.")
 _ONE_CAUTION_RULE = (
     "Copy the caution below word for word, as its own paragraph starting \"Caution for "
     "<product name>:\", every sentence of it. Do not shorten, reword, merge or summarise "
-    "it, and do not fold it into the rest of the answer. " + _CAUTION_NO_ADDITIONS)
+    "it, and do not fold it into the rest of the answer.")
 # For a pinned product whose cautions reach the chat (Brain Cleanse, Sleep Syntropy, the
 # Sleep Bundle). Live read-back on 087e718f, 2026-10-15: "try two or more capsules during
 # that first week" came from old knowledge-base advice, and a long answer merged the two
@@ -2404,8 +2409,7 @@ _NO_DESCRIPTION = ("No description of {name} is approved here. If asked what it 
 _NO_DESCRIPTION_GATED = ("No description of {name} is approved here. If asked what it is, "
                          "give its name and its Page, and describe it no further.")
 _CAUTION_COPY_REMINDER = ("Copy each caution below word for word, as its own paragraph. "
-                          "Do not merge them into one safety summary. "
-                          + _CAUTION_NO_ADDITIONS)
+                          "Do not merge them into one safety summary.")
 _CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
                       "For anything else, answer from the snippets as usual.")
 
@@ -2626,6 +2630,10 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         # is the product page's (Glen "yes", 2026-10-15).
         several = several.replace('"Caution for <product name>:"',
                                   '"The caution on the product page for <product name> is:"')
+    if several and any_copy_rule:
+        # Once per answer, beside the copy rule, and only where an opted-in caution set it
+        # (review round 1, F5). Answers without the opt-in keep the header they had.
+        several += _CAUTION_NO_ADDITIONS + "\n"
     if all_caution_only:
         # Only cautions are approved for these products, so the header asks for no dose and
         # no description from this text: those come from the snippets, as they did before
