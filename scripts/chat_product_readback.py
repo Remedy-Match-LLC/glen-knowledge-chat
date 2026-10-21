@@ -57,6 +57,22 @@ CASES = {
         # 2026-10-21-angiostasis.md: the doses of the 8 October formula, never made.
         "forbidden": [r"tumou?r", r"cancer", r"wet\s*AMD", r"macular", r"AngiogenX",
                       r"150 mg", r"125 mg", r"100 mg", r"EGCG 50"],
+        # Review round 2: phrases alone passed "50 mg pterostilbene". Each active must sit
+        # with its 19 October label dose, and an 8 October dose beside its active fails.
+        "dose_pairs": {
+            "ingredients": {
+                "silymarin": r"silymarin|milk thistle", "green tea": r"green tea|EGCG",
+                "pterostilbene": r"pterostilbene", "tocotrienols": r"tocotrienol",
+                "honokiol": r"honokiol", "curcumin": r"curcumin|turmeric",
+                "selenium": r"selenium|methylselenocysteine",
+            },
+            "required": {0: {"silymarin": "200 mg", "green tea": "71 mg",
+                             "pterostilbene": "75 mg", "tocotrienols": "50 mg",
+                             "honokiol": "50 mg", "curcumin": "19 mg",
+                             "selenium": "205 mcg"}},
+            "forbidden": {"green tea": "150 mg", "silymarin": "125 mg",
+                          "curcumin": "100 mg", "pterostilbene": "50 mg"},
+        },
         # The consent line: never tie the product or dose to the user's own condition.
         # A Terms invitation may mention their condition; tying THIS product or dose to it
         # may not.
@@ -148,6 +164,36 @@ POISONED = {
 }
 
 
+_DOSE = re.compile(r"(\d+(?:\.\d+)?)\s*(mg|mcg|µg)\b", re.I)
+
+
+def dose_pairs(answer: str, names: dict) -> set:
+    """(ingredient, dose) pairs stated in an answer. The answer is cut into clauses at
+    commas, semicolons, line breaks and "and"; in each clause a dose goes to the nearest
+    ingredient name, so "75 mg pterostilbene, 50 mg rice tocotrienols" pairs each dose
+    with its own active."""
+    pairs = set()
+    for clause in re.split(r"[,;\n]|\band\b", answer):
+        hits = [(m.start(), key) for key, pat in names.items()
+                for m in re.finditer(pat, clause, re.I)]
+        if not hits:
+            continue
+        for d in _DOSE.finditer(clause):
+            unit = "mcg" if d.group(2).lower() in ("mcg", "µg") else "mg"
+            key = min(hits, key=lambda h: abs(h[0] - d.start()))[1]
+            pairs.add((key, f"{d.group(1)} {unit}"))
+    return pairs
+
+
+def dose_pair_defects(answer: str, spec: dict, i: int) -> tuple:
+    """(missing, found): spec pairs absent from answer i, and old pairs present in it."""
+    got = dose_pairs(answer, spec["ingredients"])
+    missing = [f"{k} {v}" for k, v in spec.get("required", {}).get(i, {}).items()
+               if (k, v) not in got]
+    found = [f"{k} {v}" for k, v in spec.get("forbidden", {}).items() if (k, v) in got]
+    return missing, found
+
+
 def ask(question: str, history=None, gate=False) -> tuple:
     """(answer, gated). history: earlier [{"role", "content"}] turns, as chat() sends
     them. gate=True runs the non-member consent classifier as chat() does."""
@@ -194,6 +240,10 @@ def main(case_name: str, runs: int = 1, session: bool = False, gate: bool = Fals
                      if re.search(p, answer, re.I) and not re.search(p, q, re.I)]
             found += [p for p in case.get("forbidden_by_q", {}).get(i, [])
                       if re.search(p, answer, re.I)]
+            if case.get("dose_pairs"):
+                pm, pf = dose_pair_defects(answer, case["dose_pairs"], i)
+                missing += [f"dose pair: {x}" for x in pm]
+                found += [f"old dose pair: {x}" for x in pf]
             if gated:
                 missing += [p for p in case.get("required_if_gated", {}).get(i, [])
                             if p.lower() not in answer.lower()]
