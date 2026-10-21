@@ -70,6 +70,18 @@ def guidance(phase):
             "paragraphs": list(paras), "phase": n}
 
 
+# "portal chat" links to the client's portal chat, as in the report openings (Glen,
+# "link", 2026-10-20). The client portal host, never illtowell.com.
+CHAT_PHRASE = "portal chat"
+CHAT_URL = "https://myhealingoasis.com/portal/me#chat"
+
+
+def _linked(text):
+    """One line, escaped, with "portal chat" made a link to the chat."""
+    e = html.escape(text)
+    return e.replace(CHAT_PHRASE, f'<a href="{CHAT_URL}">{CHAT_PHRASE}</a>')
+
+
 def guidance_html(phase):
     """The guidance as HTML, each source line its own paragraph, or "". A few approved
     lines hold two sentences (Glen, 2026-10-20), so never split them."""
@@ -78,9 +90,9 @@ def guidance_html(phase):
         return ""
     e = html.escape
     return (f'<section class="diet-guidance"><h2>{e(g["title"])}</h2>'
-            + "".join(f"<p>{e(p)}</p>" for p in g["intro"])
+            + "".join(f"<p>{_linked(p)}</p>" for p in g["intro"])
             + f'<h3>{e(g["heading"])}</h3>'
-            + "".join(f"<p>{e(p)}</p>" for p in g["paragraphs"])
+            + "".join(f"<p>{_linked(p)}</p>" for p in g["paragraphs"])
             + "</section>")
 
 

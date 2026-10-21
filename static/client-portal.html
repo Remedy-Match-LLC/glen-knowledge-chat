@@ -1423,7 +1423,10 @@ function terrainPhaseName(p){ return TERRAIN_PHASE_NAMES[parseInt(p,10)] || ""; 
 // its own paragraph; a few approved lines hold two sentences (2026-10-20). kind "print" uses the print classes.
 function dietGuidanceHtml(g, kind){
   if(!g || !g.heading || !Array.isArray(g.intro) || !Array.isArray(g.paragraphs)) return "";
-  const p = (t)=>`<p>${esc(t)}</p>`;
+  // "portal chat" opens the Messages card on screen, and links to the portal chat in
+  // print (Glen, "link", 2026-10-20).
+  const chat = kind === "print" ? "https://myhealingoasis.com/portal/me#chat" : "#chat";
+  const p = (t)=>`<p>${esc(t).split("portal chat").join(`<a href="${chat}">portal chat</a>`)}</p>`;
   const cls = kind === "print" ? "pd-sec diet-guidance" : "diet-guidance";
   return `<div class="${cls}"><h3>${esc(g.title||"Eating for your terrain")}</h3>`
     + g.intro.map(p).join("")
