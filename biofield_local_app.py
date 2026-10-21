@@ -3112,8 +3112,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         # The card's own row ids (data-rids). A card groups rows by Head, so it can
         # span two stored layer numbers; the number alone left a row behind (a50,
         # 2026-10-20).
-        source_rids = body.get("source_rids") or None
-        target_rids = body.get("target_rids") or None
+        # An empty list means "no ids sent". Anything else that is not a list of
+        # integers is refused by the resolver, never read as a number.
+        source_rids, target_rids = body.get("source_rids"), body.get("target_rids")
+        source_rids = None if source_rids == [] else source_rids
+        target_rids = None if target_rids == [] else target_rids
         try:
             with sqlite3.connect(db_path) as cx:
                 moved = consolidate_layer_balances(cx, test_id, source, target,
@@ -3135,9 +3138,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         layer = d.get("layer")
         # A card sends its own row ids: its number on the page is a display position,
         # and one card can hold rows on several stored layers.
-        card_rids = d.get("rids") or None
+        card_rids = d.get("rids")
+        card_rids = None if card_rids == [] else card_rids
         with sqlite3.connect(db_path) as cx:
-            if card_rids:
+            if card_rids is not None:
                 try:
                     card_rids = _st._rids_on_test(cx, test_id, card_rids)
                 except ValueError as e:

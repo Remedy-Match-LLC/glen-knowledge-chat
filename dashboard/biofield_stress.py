@@ -387,40 +387,92 @@ def cover_stress(cx, tid, stress_id, rids):
     return code
 
 
-def card_rids_for_layer(cx, tid, layer):
-    """Every chain-row id on the card(s) that hold stored layer `layer`.
+RELOAD = "Reload the page and try again."
 
-    A card on the page is a `group_layers` group: rows sharing a Head are one card,
-    whatever their stored layer numbers. The Minimum program writes each remedy on its
-    own number, so one card can hold rows on layers 12 and 13 (Sharon, a50,
-    2026-10-20). Uses the page's own grouping, never a copy of it."""
+
+def _current_cards(cx, tid):
+    """The cards as the page shows them now: `group_layers` over `ordered_chain`."""
     from dashboard.biofield_authoring import ordered_chain
     from dashboard.biofield_report_html import group_layers
-    try:
-        ln = int(layer)
-    except (TypeError, ValueError):
-        return []
     factory = cx.row_factory
     try:
         chain = ordered_chain(cx, tid)
     finally:
         cx.row_factory = factory          # ordered_chain switches it to sqlite3.Row
+    return [[(int(r["id"]), r.get("stored_layer")) for r in g.get("rows") or []
+             if r.get("id") is not None] for g in group_layers(chain)]
+
+
+def _int_ids(rids):
+    """A list of real integers, else ValueError. A string is never iterated, and a
+    bool or a float is refused, so "12" cannot become rows 1 and 2."""
+    if not isinstance(rids, (list, tuple)):
+        raise ValueError("invalid row id")
     out = []
-    for g in group_layers(chain):
-        rows = g.get("rows") or []
-        if any(r.get("stored_layer") == ln for r in rows):
-            out.extend(int(r["id"]) for r in rows if r.get("id") is not None)
+    for r in rids:
+        if type(r) is not int:
+            raise ValueError("invalid row id")
+        out.append(r)
     return out
+
+
+def card_rids_for_layer(cx, tid, layer):
+    """Every chain-row id of the card that holds stored layer `layer`.
+
+    A card on the page is a `group_layers` group: rows sharing a Head are one card,
+    whatever their stored layer numbers. The Minimum program writes each remedy on its
+    own number, so one card can hold rows on layers 12 and 13 (Sharon, a50,
+    2026-10-20). Uses the page's own grouping, never a copy of it.
+
+    Rows with no remedy, Head or Tail are not on any card, but the old `layer=?`
+    query moved them, so those on this number come along. Two cards on one number
+    are refused: the number alone cannot say which is meant."""
+    try:
+        ln = int(layer)
+    except (TypeError, ValueError):
+        return []
+    cards = [c for c in _current_cards(cx, tid) if any(sl == ln for _, sl in c)]
+    if len(cards) > 1:
+        raise ValueError(f"More than one layer card uses layer number {ln}. {RELOAD}")
+    out = [rid for rid, _ in cards[0]] if cards else []
+    out += [int(r[0]) for r in cx.execute(
+        "SELECT id FROM biofield_auth_chain WHERE test_id=? AND layer=? "
+        "AND TRIM(COALESCE(remedy,''))='' AND TRIM(COALESCE(head,''))='' "
+        "AND TRIM(COALESCE(most_affected,''))=''", (_num(tid), ln)).fetchall()]
+    return out
+
+
+def card_rids_for_rows(cx, tid, layer, rids):
+    """The whole CURRENT card holding the submitted rows `rids`.
+
+    The page sends the card's data-rids as it was when the page loaded. A stale tab
+    would miss a row added to the card since, or the rows of a card it absorbed, so
+    the server expands the set to the card as it is now. Refused, with nothing
+    changed, if a row is not on this test, if the rows now sit on more than one
+    card, or if none of them is still on the stated layer number."""
+    want = _rids_on_test(cx, tid, rids)
+    try:
+        ln = int(layer)
+    except (TypeError, ValueError):
+        raise ValueError("invalid layer")
+    on_layer = {int(r[0]) for r in cx.execute(
+        f"SELECT id FROM biofield_auth_chain WHERE test_id=? AND layer=? "
+        f"AND id IN ({','.join('?' for _ in want)})", (_num(tid), ln, *want)).fetchall()}
+    if not on_layer:
+        raise ValueError(f"That layer has changed since the page loaded. {RELOAD}")
+    cards = [c for c in _current_cards(cx, tid) if any(rid in want for rid, _ in c)]
+    if len(cards) != 1:
+        raise ValueError(f"Those rows are now on more than one layer. {RELOAD}"
+                         if cards else
+                         f"That layer has changed since the page loaded. {RELOAD}")
+    return [rid for rid, _ in cards[0]]
 
 
 def _rids_on_test(cx, tid, rids):
     """`rids` as ints, refused with ValueError if any is not a chain row of this test."""
-    try:
-        want = sorted({int(r) for r in rids})
-    except (TypeError, ValueError):
-        raise ValueError("invalid row id")
+    want = sorted(set(_int_ids(rids)))
     if not want:
-        return []
+        raise ValueError("invalid row id")
     marks = ",".join("?" for _ in want)
     found = {int(r[0]) for r in cx.execute(
         f"SELECT id FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
@@ -450,11 +502,11 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
         source, target = int(source_layer), int(target_layer)
     except (TypeError, ValueError):
         raise ValueError("invalid layer")
-    if source == target:
-        raise ValueError("source and target layers must differ")
+    # No numeric source == target check: two cards with different Heads can share
+    # a stored number. The same CARD on both sides is what is refused, below.
 
     def card_rows(layer, rids):
-        ids = (_rids_on_test(cx, tid, rids) if rids
+        ids = (card_rids_for_rows(cx, tid, layer, rids) if rids is not None
                else card_rids_for_layer(cx, tid, layer))
         if not ids:
             return []
@@ -467,7 +519,7 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
 
     source_rows, target_rows = card_rows(source, source_rids), card_rows(target, target_rids)
     if {int(r[0]) for r in source_rows} & {int(r[0]) for r in target_rows}:
-        raise ValueError("source and target layers must differ")
+        raise ValueError("source and target layers must differ")   # one card, both sides
     source_rids = {int(r[0]) for r in source_rows}
     target_rids = {int(r[0]) for r in target_rows}
     source_remedies = {((r[1] or "").strip().lower()) for r in source_rows

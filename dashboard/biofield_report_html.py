@@ -809,7 +809,7 @@ async function balanceToLayer(sid,sel){var rids=(sel.value||'').split(',').filte
 async function consolidateBalances(source,sourceLabel,sel){var target=Number(sel.value||0);
  if(!target){astat('Choose the destination layer first.');return}
  var card=sel.closest('.lcard'),opt=sel.options[sel.selectedIndex];
- var rids=function(s){return (s||'').split(',').filter(Boolean)};
+ var rids=function(s){return (s||'').split(',').filter(Boolean).map(Number)};
  var targetLabel=(sel.options[sel.selectedIndex].text||target).replace(/^Layer\\s+/,'');
  if(!confirm('Move all balanced stresses from layer '+sourceLabel+' to layer '+targetLabel+'?'))return;
  astat('Consolidating balanced stresses…');
@@ -834,7 +834,7 @@ async function addStress(label,layer,rids){label=(label||'').trim();if(!label)re
 async function addLayerStress(input,layer){var label=(input.value||'').trim();if(!label)return;
  input.disabled=true;
  // The card's own rows: its number is a display position, not a stored layer.
- var card=input.closest('.lcard'),rids=card?(card.dataset.rids||'').split(',').filter(Boolean):[];
+ var card=input.closest('.lcard'),rids=card?(card.dataset.rids||'').split(',').filter(Boolean).map(Number):[];
  try{await addStress(label,layer,rids);location.reload()}finally{input.disabled=false}}
 async function assignStress(sid){astat('Assigning…');const j=await post('/author/__TID__/stress/'+sid+'/assign',{});astat(j&&j.ok?('Assigned to its layer.'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function assignAllStresses(){astat('Assigning all…');const j=await post('/author/__TID__/stresses/assign-all',{});astat(j&&j.ok?('Assigned '+(j.assigned||0)+' stress(es).'):((j&&j.error)||'Assign failed.'));setStress(j)}

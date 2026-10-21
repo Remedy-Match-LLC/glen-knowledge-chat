@@ -208,3 +208,195 @@ def test_add_stress_refuses_a_foreign_row(tmp_path):
     assert res.status_code == 400 and res.get_json()["ok"] is False
     with sqlite3.connect(db) as cx:
         assert cx.execute("SELECT COUNT(*) FROM biofield_auth_layer_stress").fetchone()[0] == 0
+
+
+# Review rounds 1 and 2, 2026-10-20.
+
+def _links(db):
+    with sqlite3.connect(db) as cx:
+        return {r[0] for r in cx.execute(
+            "SELECT DISTINCT chain_rid FROM biofield_auth_layer_stress")}
+
+
+def test_a_stale_source_moves_a_row_added_to_the_card_since_the_page_loaded(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    with sqlite3.connect(db) as cx:                  # another tab adds to the card
+        add_chain_row(cx, tid, 14, GLAUCOMA, "", "Eye Drops")
+        late = cx.execute("SELECT MAX(id) FROM biofield_auth_chain").fetchone()[0]
+        st.consolidate_layer_balances(cx, tid, 12, 6, source_rids=[ocu, iop],
+                                      target_rids=[eye])
+    rows = _rows(db)
+    assert rows[late] == (6, "Eye and Vision Care"), "REGRESSION: the late row stayed behind"
+
+
+def test_a_stale_destination_includes_the_rows_of_a_card_it_absorbed(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    with sqlite3.connect(db) as cx:                  # another tab merged a card into Eye
+        add_chain_row(cx, tid, 7, "Eye and Vision Care", "", "Lens Support")
+        absorbed = cx.execute("SELECT MAX(id) FROM biofield_auth_chain").fetchone()[0]
+        st.consolidate_layer_balances(cx, tid, 12, 6, source_rids=[ocu, iop],
+                                      target_rids=[eye])
+    assert absorbed in _links(db), "REGRESSION: the absorbed row got no stress links"
+
+
+def test_rows_now_on_two_cards_are_refused_and_nothing_changes(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    with sqlite3.connect(db) as cx:
+        liver = _chain(cx, tid, [(20, "Liver", "Liver Support")])[-1]
+    before, links = _rows(db), _links(db)
+    with sqlite3.connect(db) as cx:
+        with pytest.raises(ValueError, match="now on more than one layer"):
+            st.consolidate_layer_balances(cx, tid, 12, 20, source_rids=[ocu, eye],
+                                          target_rids=[liver])
+    assert _rows(db) == before and _links(db) == links
+
+
+def test_rows_with_none_on_the_stated_layer_are_refused(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    before = _rows(db)
+    with sqlite3.connect(db) as cx:
+        with pytest.raises(ValueError, match="changed since the page loaded"):
+            st.consolidate_layer_balances(cx, tid, 5, 6, source_rids=[ocu, iop],
+                                          target_rids=[eye])
+        with pytest.raises(ValueError, match="changed since the page loaded"):
+            st.consolidate_layer_balances(cx, tid, 12, 9, source_rids=[ocu, iop],
+                                          target_rids=[eye])
+    assert _rows(db) == before
+
+
+def _two_heads_on_one_number(db):
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        st.init_stress_tables(cx)
+        tid = create_test(cx, "Fixture", "fixture@example.com", "2026-10-20")
+        a, b = _chain(cx, tid, [(3, "Adrenal", "Adrenal Syntropy"), (3, "Bone", "Bone Support")])
+    return tid, a, b
+
+
+def test_two_cards_that_share_a_layer_number_can_consolidate(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, a, b = _two_heads_on_one_number(db)
+    with sqlite3.connect(db) as cx:
+        st.consolidate_layer_balances(cx, tid, 3, 3, source_rids=[a], target_rids=[b])
+    assert _rows(db) == {a: (3, "Bone"), b: (3, "Bone")}
+
+
+def test_the_same_card_on_both_sides_is_refused(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    with sqlite3.connect(db) as cx:
+        with pytest.raises(ValueError, match="must differ"):
+            st.consolidate_layer_balances(cx, tid, 12, 13, source_rids=[ocu],
+                                          target_rids=[iop])
+
+
+def test_a_number_shared_by_two_cards_is_refused_without_ids(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, a, b = _two_heads_on_one_number(db)
+    with sqlite3.connect(db) as cx:
+        _chain(cx, tid, [(4, "Colon", "Colon Support")])
+        with pytest.raises(ValueError, match="More than one layer card uses layer number 3"):
+            st.consolidate_layer_balances(cx, tid, 3, 4)
+
+
+@pytest.mark.parametrize("bad", ["12", "456", True, 2.0, ["12"], [True], [2.9], [None], {"a": 1}])
+def test_ids_must_be_real_integers(tmp_path, bad):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    before = _rows(db)
+    with sqlite3.connect(db) as cx:
+        with pytest.raises(ValueError, match="invalid row id"):
+            st.consolidate_layer_balances(cx, tid, 12, 6, source_rids=bad, target_rids=[eye])
+    assert _rows(db) == before
+
+
+@pytest.mark.parametrize("bad", ["12", True, False, 0, [str(1)]])
+def test_routes_refuse_ids_that_are_not_integers(tmp_path, bad):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    client = _client(db)
+    res = client.post(f"/author/{tid}/layer/12/consolidate-balances", json={
+        "target_layer": 6, "source_rids": bad, "target_rids": [eye]})
+    assert res.status_code == 400 and res.get_json()["error"] == "invalid row id"
+    res = client.post(f"/author/{tid}/stress/add",
+                      json={"label": "Bloating", "layer": 1, "rids": bad})
+    assert res.status_code == 400 and res.get_json()["error"] == "invalid row id"
+
+
+def test_route_target_ids_name_a_destination_on_two_layers(tmp_path):
+    """The destination card spans 12 and 13, and another card also uses 12. The
+    number alone is ambiguous, so only the target ids can name the card."""
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    with sqlite3.connect(db) as cx:
+        _chain(cx, tid, [(12, "Other on twelve", "Other Remedy")])
+    res = _client(db).post(f"/author/{tid}/layer/6/consolidate-balances", json={
+        "target_layer": 12, "source_rids": [eye], "target_rids": [ocu, iop]})
+    assert res.status_code == 200, res.get_json()
+    assert {ocu, iop} <= _links(db)
+    assert _rows(db)[eye] == (12, GLAUCOMA)
+
+
+def test_the_number_only_path_also_moves_wholly_empty_rows(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    with sqlite3.connect(db) as cx:
+        add_chain_row(cx, tid, 12, "", "", "")
+        empty = cx.execute("SELECT MAX(id) FROM biofield_auth_chain").fetchone()[0]
+        st.consolidate_layer_balances(cx, tid, 12, 6)
+    assert _rows(db)[empty][0] == 6
+
+
+def _js(html, start, end):
+    a = html.index(start)
+    return html[a:html.index(end, a)]
+
+
+def _run_node(script):
+    import json
+    import shutil
+    import subprocess
+    if not shutil.which("node"):
+        pytest.skip("needs node")
+    out = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=20)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+_STUBS = """
+var sent=[];var location={reload:function(){sent.push('reload')}};
+function astat(){} function loadStress(){} function confirm(){return true}
+async function post(p,b){sent.push([p,b]);return {ok:true}}
+"""
+
+
+def test_add_layer_stress_posts_the_cards_rids_as_numbers(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    html = _client(db).get(f"/author/{tid}").get_data(as_text=True)
+    fns = _js(html, "async function addStress(", "async function assignStress(")
+    got = _run_node(_STUBS + fns + """
+var card={dataset:{rids:'456,457'}};
+var input={value:' Bile flow ',disabled:false,closest:function(s){return s==='.lcard'?card:null}};
+addLayerStress(input,2).then(function(){console.log(JSON.stringify(sent))});
+""")
+    assert got[0][1] == {"label": "Bile flow", "layer": 2, "rids": [456, 457]}
+    assert got[1] == "reload"
+
+
+def test_consolidate_posts_both_cards_rids_as_numbers(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    html = _client(db).get(f"/author/{tid}").get_data(as_text=True)
+    fn = _js(html, "async function consolidateBalances(", "async function renameStress(")
+    got = _run_node(_STUBS + fn + """
+var card={dataset:{rids:'456,457'}};
+var opt={text:'Layer 1: Eye',getAttribute:function(k){return k==='data-rids'?'5':null}};
+var sel={value:'6',selectedIndex:0,options:[opt],closest:function(s){return s==='.lcard'?card:null}};
+consolidateBalances(12,2,sel).then(function(){console.log(JSON.stringify(sent))});
+""")
+    assert got[0][1] == {"target_layer": 6, "source_rids": [456, 457], "target_rids": [5]}
