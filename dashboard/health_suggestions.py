@@ -196,8 +196,12 @@ EXTRACT_SYSTEM = (
     "had breast cancer\") -> field \"family_history\", value {\"relative\": who (Mother, "
     "Father, Sister, Grandmother...), \"condition\": the condition, \"age_onset\": the "
     "relative's age when it began, only if stated}, and \"about\" is \"family\". Only the "
-    "client's OWN blood relatives: never a spouse, partner, in-law, step-relative, friend, "
-    "neighbour, coworker, client or patient, and never anyone's relative but the client's.\n"
+    "client's OWN blood relatives. Blood relatives are parents, children, siblings, "
+    "half-siblings, grandparents, grandchildren, aunts, uncles, nieces, nephews and cousins. "
+    "A parent's sibling (\"my mother's brother\" is an uncle) or a parent's parent (\"my "
+    "dad's mother\" is a grandmother) IS a blood relative: record it. Spouses, partners, "
+    "in-laws, step-relatives and adoptive relatives are NOT blood relatives, and never a "
+    "friend, neighbour, coworker, client, patient, or anyone's relative but the client's.\n"
     "Never record anything else about another person. Never guess or infer. Leave a value "
     "column blank unless the client said it: never fill in a reason, brand, reaction or age "
     "they did not state.\n"
@@ -274,16 +278,28 @@ def normalize_row(field_id, value):
 
 # Someone else. A quote, or the sentence it came from, naming one is not the
 # client's own fact, whatever the model says in "about".
+# Round 3 H1 widened it to spouses, in-laws and step-relatives, plural family words,
+# young children, pets, and the pronouns he, she and they.
 _OTHER_PERSON = re.compile(
-    r"\b(?:wi(?:fe|fes|ves)|husbands?|daughters?|sons?|moms?|mums?|mothers?|dads?|fathers?|"
-    r"sisters?|brothers?|friends?|partners?|bab(?:y|ies)|child|childs|children|kids?|"
-    r"boyfriends?|girlfriends?|grand(?:ma|pa|mother|father|son|daughter)s?|aunts?|uncles?|"
-    r"cousins?|nieces?|nephews?|neighbou?rs?|coworkers?|clients?|patients?)\b", re.I)
+    r"\b(?:wi(?:fe|fes|ves)|wifey|husbands?|hubby|spouses?|fianc[eé]e?s?|partners?|"
+    r"boyfriends?|girlfriends?|daughters?|sons?|step\w*|\w+-in-laws?|in-laws?|"
+    r"moms?|mums?|mothers?|dads?|fathers?|parents?|sisters?|brothers?|siblings?|twins?|"
+    r"bab(?:y|ies)|toddlers?|teens?|teenagers?|child|childs|children|kids?|"
+    r"grand(?:ma|pa|mother|father|son|daughter|parent|child|kid)s?|grandchildren|"
+    r"aunts?|uncles?|cousins?|nieces?|nephews?|friends?|neighbou?rs?|co-?workers?|"
+    r"colleagues?|room-?mates?|boss(?:es)?|clients?|patients?|"
+    r"dogs?|cats?|pets?|pupp(?:y|ies)|kittens?|horses?|"
+    # Not they or them: "I still get them" is about the client's own migraines.
+    r"he|she|him|his|her|hers)\b", re.I)
 _FIRST_PERSON = re.compile(r"\b(?:i|i'm|im|i've|ive|i'd|i'll|my|me|myself|mine)\b", re.I)
-# Past tense in a quote. "I've had asthma since childhood" is present, so the
-# present perfect is removed before the check.
-_PRESENT_PERFECT = re.compile(r"\b(?:(?:i've|ive|i have|has|have)\s+(?:had|been)|"
-                              r"(?:was|were|got|been) diagnosed)\b", re.I)
+# The present perfect ("I've had shingles twice") is past unless something says it
+# goes on ("since", "for", "still", "every week") or it is ongoing ("I've been
+# sleeping badly", "I've been on warfarin", "I've been diagnosed"). Round 3 M2.
+_PERFECT = re.compile(r"\b(?:i've|ive|i have|have|has)\s+(?:had|been)\b", re.I)
+_PERFECT_GOES_ON = re.compile(r"\s+(?:\w+ing|on|diagnosed|told)\b", re.I)
+_ONGOING = re.compile(r"\b(?:since|for|still|now|currently|lately|these days|nowadays|every|"
+                      r"this (?:week|month|year)|all my life|my whole life|always|on and off)\b",
+                      re.I)
 _PAST = re.compile(
     r"\b(?:was|were|had|used to|ago|previously|formerly|back in|last year|as a (?:child|kid)|"
     r"in (?:19|20)\d\d|no longer|anymore|any more)\b|\b\w+ed\b(?= (?:in|at|when|back|before))",
@@ -331,6 +347,9 @@ def _asked(quote, sentence):
         return False
     if _ASKING.search(before):
         return True                      # "is it safe if I am pregnant?"
+    if re.match(r"^\s*,?\s*(?:right|correct|true|yes|no|or not|isn['’]?t it|don['’]?t i|"
+                r"is that right|am i right)\s*\?", after):
+        return True                      # "I have candida, right?" (round 3 L2)
     # A clause break after the quote ends the fact ("I take warfarin and metformin,
     # can I..."); with none, the question must start straight after it.
     return not re.search(r"[,;:]", after) and not _QUESTION_AFTER.search(after)
@@ -338,7 +357,7 @@ def _asked(quote, sentence):
 
 def _clauses(text):
     """A text split at commas, semicolons and joining words, blanks dropped."""
-    return [c for c in re.split(r"[,;:]|\b(?:and|but|which|who|although|though|whereas)\b",
+    return [c for c in re.split(r"[,;:]|\b(?:and|but|so|which|who|although|though|whereas)\b",
                                 text or "", flags=re.I) if c.strip()]
 
 
@@ -349,16 +368,19 @@ def _clauses(text):
 _ENDED = re.compile(
     r"\b(?:no longer|not any ?more|anymore|any more|used to|stopped|quit|came off|come off|"
     r"went off|gone off|gave up|given up|discontinued|resolved|cured|gone|went away|"
-    r"got over|recovered|in remission|outgrew|grew out of)\b", re.I)
+    r"got over|recovered|in remission|outgrew|grew out of|did until|until recently|"
+    r"until last \w+)\b", re.I)
 _PRESENT = re.compile(
     r"\b(?:have|has|i've|ive|i'm|im|am|is|are|now|still|currently|since|lately|these days|"
-    r"nowadays|diagnosed|started|began)\b", re.I)
+    r"nowadays|diagnosed|started|began|developed|born with)\b", re.I)
 
 
-def _is_past(quote, term=None):
+def _is_past(quote, term=None, trail=""):
     """True when the quote says the fact is over. With a term, the clause that names
     it decides ("I had a hip replacement and now have arthritis": arthritis is now),
-    and an ended marker in that clause or after it wins."""
+    and an ended marker in that clause or after it wins. `trail` is the sentence after
+    the quote ("I take aspirin but stopped last week"), read for an ended marker and
+    for "still"."""
     parts = _clauses(quote) or [quote]
     at = 0
     if term:
@@ -368,11 +390,17 @@ def _is_past(quote, term=None):
         own, rest = parts[at], " ".join(parts[at:])
     else:
         own = rest = quote
+    rest = rest + " " + (trail or "")
     if _ENDED.search(rest):
         return True
+    if re.search(r"\bstill\b", rest, re.I):
+        return False                     # "I got Lyme in 2015 and still have symptoms"
+    perfect = _PERFECT.search(own)
+    if perfect:
+        return not (_PERFECT_GOES_ON.match(own, perfect.end()) or _ONGOING.search(own))
     if _PRESENT.search(own):
         return False
-    return bool(_PAST.search(_PRESENT_PERFECT.sub(" ", own)))
+    return bool(_PAST.search(own))
 
 
 # --- evidence: words the client actually said (round 2) ------------------------
@@ -380,7 +408,8 @@ _STOP_WORDS = frozenset(("a", "an", "the", "and", "of", "for", "with", "in", "on
                          "or"))
 # A key term may carry these without the client saying them: "Knee surgery" from "I
 # had my knee operated on". At least one other word must remain.
-_ALWAYS_GENERIC = frozenset(("surgery", "surgical", "operation", "procedure", "op"))
+_ALWAYS_GENERIC = frozenset(("surgery", "surgical", "operation", "procedure", "op",
+                             "implant", "implantation", "insertion", "placement"))
 # "Gallbladder removal" is supported only when the client said it came out.
 _REMOVAL_WORDS = frozenset(("removal", "removed", "removing", "excision"))
 _SAYS_REMOVED = re.compile(r"\b(?:out|removed|removal|excised)\b", re.I)
@@ -395,12 +424,23 @@ def _significant(text):
     return [w for w in _tokens(text) if w not in _STOP_WORDS]
 
 
+def _shared(a, b):
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n
+
+
 def _word_supported(word, toks):
     """A short word or one with a digit ("C", "B12", "D3", "2") must be said exactly.
-    A longer word matches on its first 6 letters, so "Pregnancy" fits "pregnant"."""
+    A longer word may differ from the client's only in its last 3 letters, so
+    "Pregnancy" fits "pregnant" and "Anemia" fits "anemic", but "Osteoporosis" does
+    not fit "osteopenia" (round 3 M4)."""
     if len(word) <= 3 or any(ch.isdigit() for ch in word):
         return word in toks
-    return any(t.startswith(word[:6]) for t in toks)
+    return any(_shared(word, t) >= max(4, max(len(word), len(t)) - 3) for t in toks)
 
 
 def _term_in_quote(term, quote):
@@ -468,11 +508,25 @@ _THROUGH_PARENT = {"mother": "grandmother", "father": "grandfather", "parent": "
 _SIDE = {"mother": "maternal", "father": "paternal"}
 
 
+# "my brother and sister", "my mom and dad": a relative joined to a chain is the
+# client's too (round 3 L1).
+_JOINED_RELATIVE = re.compile(r"\s*(?:,|\band\b|\bor\b|&)\s*(?:(?:my|our)\s+)?" + _MOD +
+                              r"*(" + _RELATIVE_WORD + r")\b", re.I)
+
+
 def _family_targets(quote):
     """{relative: side} for each "my ..." relative chain in the quote. A chain that
     cannot be named as one relative ("my mother's son") gives nothing."""
     out = {}
     for m in _REL_CHAIN.finditer(quote or ""):
+        if not m.group(2):
+            at = m.end()
+            while True:
+                j = _JOINED_RELATIVE.match(quote, at)
+                if not j or _CHAIN_GOES_ON.match(quote, j.end()):
+                    break
+                out.setdefault(_RELATIVES[j.group(1).casefold()], None)
+                at = j.end()
         if _CHAIN_GOES_ON.match(quote, m.end()):
             continue
         links = [_RELATIVES[m.group(1).casefold()]]
@@ -512,13 +566,31 @@ _NEGATION = re.compile(r"\b(?:not|never|nor)\b|\b(?:do|does|did|have|has|had|am|
                        r"were|wo|would)n['’]?t\b|\bain['’]?t\b", re.I)
 _SUSPECT = re.compile(r"\b(?:might|maybe|possibly|perhaps|probably|suspect|suspected|wonder|"
                       r"wondering|unsure|not sure|may have|may be|could be|could have|i think|"
-                      r"i guess|i believe|i feel like)\b", re.I)
+                      r"i guess|i believe|i feel like|thinks?|suspects?|worr(?:y|ied|ies)|"
+                      r"afraid|scared|fear|at (?:high )?risk|risk (?:of|for)|tested for|"
+                      r"testing for|screened for|screening for|negative for|tested negative|"
+                      r"came back negative|ruled out|rule out|checked for)\b", re.I)
 _PLANNED = re.compile(r"\b(?:trying to|try to|going to|gonna|plan(?:ning|s)? to|scheduled|"
                       r"booked|next (?:week|month|year|time)|tomorrow|needs? (?:a|an|to)|"
                       r"wants? me to|told me to|asked me to|advised me to|recommended|"
                       r"should (?:start|take|get|have)|will (?:start|take|have|be|get)|i'll|"
                       r"i will|thinking (?:of|about)|considering|about to|hope to|hoping to|"
-                      r"waiting for|waiting list|due for)\b", re.I)
+                      r"waiting for|waiting list|wait ?list|on the list for|due for|"
+                      r"want(?:s|ed)? (?:a|an|to have|to start|to try|to take|"
+                      r"to begin|to do)\b)", re.I)
+# "I'm getting my gallbladder out", "I'm having surgery in May": a booked event. Read
+# for surgeries, dental and vaccinations only, since "I'm having headaches" is now.
+_PROGRESSIVE = re.compile(r"\b(?:i'm|im|i am)\s+(?:getting|having|going in for|going for|"
+                          r"booked|due)\b", re.I)
+# After the quote: doubt, a medicine not started, or a date to come (round 3 H2).
+_TRAIL_NOT = re.compile(
+    r"\b(?:or at least|thinks? so|suspects? so|not sure|not confirmed|unconfirmed|supposedly|"
+    r"apparently|allegedly|possibly|maybe|probably|not yet|next (?:week|month|year)|tomorrow|"
+    r"later this \w+)\b|\b(?:haven['’]?t|have not|never|didn['’]?t|did not)\s+"
+    r"(?:started|taken|begun|filled|tried|done|had)\b", re.I)
+# A wish to be pregnant is not a pregnancy (round 3 M1).
+_PREG_WISH = re.compile(r"\b(?:want|wanting|like to|i'd like|would like|hope|hoping|wish|"
+                        r"trying|try|planning|plan to|conceive|ttc)\b", re.I)
 # A health goal is something the client wants for themself.
 _GOAL = re.compile(r"\b(?:want|wanting|goal|goals|hope|hoping|like to|love to|trying to|"
                    r"try to|aim|aiming|wish|working on|get rid of|get over)\b", re.I)
@@ -547,7 +619,57 @@ def _reported(quote, client_msg, sentence, family):
     tail = m.group(2)
     if re.fullmatch(r"\s*[,:]\s*[\"“'‘]?\s*|\s*[\"“'‘]\s*", tail):
         return True                      # direct speech
+    # Indirect speech by a relative keeps the client's "my": "My mom told me my
+    # grandmother had diabetes" is how clients learn family history (round 3 L1).
+    if m.group(1) in _RELATIVES:
+        return False
     return family and bool(re.fullmatch(r"\s*(?:that\s*)?", tail))
+
+
+# A conjoined fact inherits the client's subject: in "I have type 2 diabetes and high
+# blood pressure" the model quotes "high blood pressure" (live run, 20 Oct 2026).
+_JOINED_END = re.compile(r"(?:,|\band|\bplus|\bas well as|&)\s*(?:also\s+)?$|\balso\s*$", re.I)
+
+
+def _conjoined_lead(quote, sentence):
+    """The client's own first-person statement the quote is joined to, or None. The
+    quote must follow it straight after "and", "plus", "as well as", "also" or a
+    comma, in the same clause, and that statement must name no one else."""
+    before = _before(quote, sentence)
+    m = _JOINED_END.search(before)
+    if not before or not m:
+        return None
+    seg = re.split(r"[.;:!?]|\bbut\b|\bso\b", before[:m.start()])[-1]
+    if not _FIRST_PERSON.search(seg) or _OTHER_PERSON.search(seg):
+        return None
+    return seg
+
+
+def _after(quote, sentence):
+    """The sentence's text after the quote, squashed."""
+    flat, q = _squash(sentence), _squash(quote)
+    at = flat.find(q)
+    return flat[at + len(q):] if at >= 0 else ""
+
+
+# The client's own, though the words name someone: their own childhood, their own
+# pregnancy or breastfeeding, a baby aspirin, a children's dose, and a life event that
+# dates their own symptom ("since my mom died").
+_OWN = re.compile(
+    r"\bas an? (?:child|kid|baby|toddler|teen|teenager)\b|"
+    r"\bsince (?:i was an? )?(?:child|kid|baby)hood\b|"
+    r"\b(?:pregnant with|expecting|nursing|breast-?feeding)\s+"
+    r"(?:(?:my|our|a|an)\s+)?(?:\w+\s+)?(?:bab(?:y|ies)|child|kids?|sons?|daughters?|"
+    r"twins|little one)\b|"
+    r"\bbaby aspirin\b|(?<!my )(?<!our )\b(?:children|kids?)['’]s?\s+(?=\w)|"
+    r"\b(?:since|after|when|because)\s+(?:my|our)\s+(?:\w+\s+){1,2}?"
+    r"(?:died|passed(?:\s+away)?|was born|were born|left|moved out)\b", re.I)
+# Free-text fields where a negative is not a real answer to append (round 3 M5).
+# "I am not vaccinated", "I don't drink" and "I don't sleep well" are real answers.
+_TEXT_NEGATION_DROPS = ("physical_trauma", "toxins")
+# Free-text fields where "need to", "trying to" or "I'll" are part of the symptom
+# ("I wake and need to pee"), so only doubt is checked there.
+_TEXT_DOUBT_ONLY = ("other_symptoms", "sleep")
 
 
 def _normalize_item(item, client_msg):
@@ -557,6 +679,7 @@ def _normalize_item(item, client_msg):
     if fid not in EXTRACT_FIELDS:
         return None
     family = fid == "family_history"
+    table = fid in TABLE_COLUMNS
     if item.get("about") != ("family" if family else "self"):
         return None
     quote = _cell(item.get("quote"), 300)
@@ -564,39 +687,40 @@ def _normalize_item(item, client_msg):
     # answer, and nothing the model made up, can become a suggestion.
     if not quote or _squash(quote) not in _squash(client_msg):
         return None
-    # Two words are enough for a table fact whose term the quote must name anyway
-    # ("I'm pregnant"); free-text fields keep three.
-    if len(quote.split()) < (2 if fid in TABLE_COLUMNS else 3):
-        return None
-    if not (_FIRST_PERSON.search(quote) or (family and _REL_CHAIN.search(quote))):
-        return None                      # "our mother" is the client's own family too
     sentence = _source_sentence(quote, client_msg)
+    joined = None
+    if not (_FIRST_PERSON.search(quote) or (family and _REL_CHAIN.search(quote))):
+        joined = _conjoined_lead(quote, sentence) if table and not family else None
+        if joined is None:
+            return None                  # "our mother" is the client's own family too
+    # Two words are enough for a table fact whose term the quote must name anyway
+    # ("I'm pregnant"), one for a fact joined to the client's own ("and asthma");
+    # free-text fields keep three.
+    if len(quote.split()) < (1 if joined is not None else 2 if table else 3):
+        return None
     if _reported(quote, client_msg, sentence, family):
         return None                      # someone else's words
-    own = re.compile(r"\bas a (?:child|kid|baby)\b|\bsince (?:i was a )?(?:child|kid|baby)hood\b|"
-                     # the client's own pregnancy or breastfeeding (coordinator, 20 Oct 2026)
-                     r"\b(?:pregnant with|expecting|nursing|breast-?feeding)\s+"
-                     r"(?:(?:my|our|a|an)\s+)?(?:\w+\s+)?(?:bab(?:y|ies)|child|kids?|sons?|daughters?|"
-                     r"twins|little one)\b",
-                     re.I)        # the client's own childhood, not another person
     # A quote naming another person is not the client's fact. A relative elsewhere in
     # the sentence does not matter ("I have high blood pressure like my dad", round 1
     # M2). Family history has its own check below.
-    if not family and _OTHER_PERSON.search(own.sub(" ", quote)):
+    if not family and _OTHER_PERSON.search(_OWN.sub(" ", quote)):
         return None
     if _asked(quote, sentence):
         return None                      # a question is not a fact
-    lead = (_clauses(_before(quote, sentence)) or [""])[-1]
+    lead = joined if joined is not None else (_clauses(_before(quote, sentence)) or [""])[-1]
     if _HYPOTHETICAL.search(lead):
         return None                      # "If I had diabetes I would cut sugar."
     scope = lead + " " + quote
-    if fid in TABLE_COLUMNS:
+    trail = _after(quote, sentence)
+    booked = fid in ("surgeries", "dental", "vaccinations") and _PROGRESSIVE.search(scope)
+    if table:
         if _NEGATION.search(scope):
             return None                  # "I don't have diabetes", "not allergic"
         if fid == "health_concerns":
             if _NOT_GOAL.search(scope) or not _GOAL.search(quote):
                 return None              # a goal is something the client wants
-        elif _SUSPECT.search(scope) or _PLANNED.search(scope):
+        elif _SUSPECT.search(scope) or _PLANNED.search(scope) or booked \
+                or _TRAIL_NOT.search(trail):
             return None                  # "I might have Lyme", "I need a hip replacement"
         value = normalize_row(fid, item.get("value"))
         primary = TABLE_COLUMNS[fid][0]
@@ -613,20 +737,26 @@ def _normalize_item(item, client_msg):
                 del value[col]           # a reason, brand, reaction or age never said
         if family and not _own_family_fact(quote, value.get("relative", "")):
             return None
-        if fid in _CURRENT_ONLY_TABLES and _is_past(quote, value[primary]):
+        if fid in _CURRENT_ONLY_TABLES and _is_past(quote, value[primary], trail):
             return None                  # "I stopped taking warfarin last year"
+        if fid == "allergies" and _ENDED.search(quote + " " + trail):
+            return None                  # "I outgrew my peanut allergy" (round 3 M3)
         if fid == "diagnoses":
             past = _is_past(quote, value["diagnosis"])
             if _PREGNANCY.search(value["diagnosis"]) or _PREGNANCY.search(quote):
-                if past:
-                    return None          # a past pregnancy is not a current condition
+                if past or _PREG_WISH.search(scope):
+                    return None          # a past or wished-for pregnancy is not current
                 value["current"] = "Current"
             else:
                 value["current"] = "Past" if past else "Current"
     else:
-        if fid == "vaccinations" and (_SUSPECT.search(scope) or _PLANNED.search(scope)):
-            return None                  # "I'm thinking of getting the flu shot"
-        if fid in _CURRENT_ONLY_TEXT and _is_past(quote):
+        if _SUSPECT.search(scope):
+            return None                  # "I might have a cavity"
+        if fid not in _TEXT_DOUBT_ONLY and (_PLANNED.search(scope) or booked):
+            return None                  # "I'm going to try the keto diet"
+        if fid in _TEXT_NEGATION_DROPS and _NEGATION.search(scope):
+            return None                  # "I have never broken a bone"
+        if fid in _CURRENT_ONLY_TEXT and _is_past(quote, trail=trail):
             return None                  # a symptom that is over is not a current symptom
         value = quote                    # free text: the client's words, not a paraphrase
     if not value:
@@ -790,11 +920,17 @@ def apply_suggestion(field_id, current, value):
             raise ValueError("not a table row")
         rows = _existing_rows(field_id, current)
         for row in new_rows:
-            if not any(_row_key(r) == _row_key(row) for r in rows):
+            # A row already held, or already held with more columns, adds nothing
+            # ("Metformin" beside "Metformin, for diabetes"), round 3 L3.
+            if not any(set(_row_key(row)) <= set(_row_key(r)) for r in rows):
                 rows.append(row)
         return rows
     if ftype in ("text", "textarea"):
         new = str(value if value is not None else "").strip()
+        if isinstance(current, (list, tuple)):
+            # A list in a text field is its items, one per line, never Python's repr.
+            current = "\n".join(str(x).strip() for x in current
+                                if x is not None and str(x).strip())
         have = str(current if current is not None else "").strip()
         if not new:
             return have

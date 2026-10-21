@@ -1173,3 +1173,374 @@ def test_a_value_naming_two_relatives_is_refused():
 def test_still_or_since_keeps_a_dated_symptom(msg, field):
     out = _one(msg, _item(field, "x", msg.rstrip(".")))
     assert out, msg
+
+
+# --- fix round 2 (marketing live run on 0d5d4dff, review round 3) ---------------
+
+def test_live_run_conjoined_fact_inherits_the_clients_subject():
+    """Haiku returned both items; the second quote had no "I" and was dropped."""
+    msg = "I have type 2 diabetes and high blood pressure."
+    out = _all(msg, [_item("diagnoses", {"diagnosis": "Type 2 diabetes"}, "I have type 2 diabetes"),
+                     _item("diagnoses", {"diagnosis": "High blood pressure"}, "high blood pressure")])
+    assert [o["value"]["diagnosis"] for o in out] == ["Type 2 diabetes", "High blood pressure"]
+
+
+@pytest.mark.parametrize("msg,quote,ok", [
+    ("I have diabetes and asthma.", "asthma", True),
+    ("I have diabetes, asthma.", "asthma", True),
+    ("I have diabetes plus asthma.", "asthma", True),
+    ("I have diabetes as well as asthma.", "asthma", True),
+    ("I have diabetes and also asthma.", "asthma", True),
+    ("My husband has diabetes and asthma.", "asthma", False),
+    ("I don't have diabetes and asthma.", "asthma", False),
+    ("If I have diabetes and asthma, is it ok?", "asthma", False),
+    ("I have diabetes but asthma runs in the family.", "asthma runs in the family", False),
+    ("Asthma is common.", "Asthma is common", False),
+    ("I have diabetes. Asthma too.", "Asthma too", False),
+])
+def test_conjoined_fact_rules(msg, quote, ok):
+    out = _one(msg, _item("diagnoses", {"diagnosis": "Asthma"}, quote))
+    assert bool(out) is ok, msg
+
+
+def test_prompt_names_blood_relatives():
+    p = hs.EXTRACT_SYSTEM
+    assert ("Blood relatives are parents, children, siblings, half-siblings, grandparents, "
+            "grandchildren, aunts, uncles, nieces, nephews and cousins.") in p
+    assert "A parent's sibling (\"my mother's brother\" is an uncle)" in p
+    assert "a parent's parent" in p and "IS a blood relative" in p
+    assert ("Spouses, partners, in-laws, step-relatives and adoptive relatives are NOT "
+            "blood relatives") in p
+
+
+def test_mothers_brother_records_as_maternal_uncle():
+    out = _one("My mother's brother had colon cancer.",
+               _item("family_history", {"relative": "Maternal uncle", "condition": "Colon cancer"},
+                     "My mother's brother had colon cancer", about="family"))
+    assert out and out[0]["value"]["relative"] == "Maternal uncle"
+
+
+# H1: the other-person list.
+@pytest.mark.parametrize("msg,item", [
+    ("My dog has arthritis.", _item("diagnoses", {"diagnosis": "Arthritis"}, "My dog has arthritis")),
+    ("I give my dog turmeric every day.",
+     _item("supplements", {"name": "Turmeric"}, "I give my dog turmeric every day")),
+    ("My cat is allergic to chicken.",
+     _item("allergies", {"sensitivity": "Chicken"}, "My cat is allergic to chicken")),
+    ("My spouse has diabetes.", _item("diagnoses", {"diagnosis": "Diabetes"}, "My spouse has diabetes")),
+    ("My parents have diabetes.", _item("diagnoses", {"diagnosis": "Diabetes"}, "My parents have diabetes")),
+    ("My roommate takes Xanax.", _item("medications", {"medication": "Xanax"}, "My roommate takes Xanax")),
+    ("My colleague takes metformin.",
+     _item("medications", {"medication": "Metformin"}, "My colleague takes metformin")),
+    ("My toddler has eczema.", _item("diagnoses", {"diagnosis": "Eczema"}, "My toddler has eczema")),
+    ("My grandkids have asthma.", _item("diagnoses", {"diagnosis": "Asthma"}, "My grandkids have asthma")),
+    ("My stepson has autism.", _item("diagnoses", {"diagnosis": "Autism"}, "My stepson has autism")),
+    ("He has diabetes and I worry.", _item("diagnoses", {"diagnosis": "Diabetes"}, "He has diabetes and I worry")),
+    ("She had a hysterectomy and I'm next.",
+     _item("surgeries", {"procedure": "Hysterectomy"}, "She had a hysterectomy and I'm next")),
+    ("My hubby has gout.", _item("diagnoses", {"diagnosis": "Gout"}, "My hubby has gout")),
+    ("My fiance has asthma.", _item("diagnoses", {"diagnosis": "Asthma"}, "My fiance has asthma")),
+    ("My boss takes statins.", _item("medications", {"medication": "Statins"}, "My boss takes statins")),
+    ("My sibling has celiac.", _item("diagnoses", {"diagnosis": "Celiac"}, "My sibling has celiac")),
+    ("My teenager has acne.", _item("diagnoses", {"diagnosis": "Acne"}, "My teenager has acne")),
+    ("My grandchildren have eczema.",
+     _item("diagnoses", {"diagnosis": "Eczema"}, "My grandchildren have eczema")),
+    ("My sister-in-law has lupus.", _item("diagnoses", {"diagnosis": "Lupus"}, "My sister-in-law has lupus")),
+    ("My puppy has allergies to chicken.",
+     _item("allergies", {"sensitivity": "Chicken"}, "My puppy has allergies to chicken")),
+    # Round 3 mutation M20: these four were untested.
+    ("My neighbour has diabetes.", _item("diagnoses", {"diagnosis": "Diabetes"}, "My neighbour has diabetes")),
+    ("My coworker takes metformin.",
+     _item("medications", {"medication": "Metformin"}, "My coworker takes metformin")),
+    ("My client has asthma.", _item("diagnoses", {"diagnosis": "Asthma"}, "My client has asthma")),
+    ("My patient takes warfarin.", _item("medications", {"medication": "Warfarin"}, "My patient takes warfarin")),
+])
+def test_other_people_and_pets_record_nothing(msg, item):
+    assert _one(msg, item) == [], msg
+
+
+# H2: the text after the quote is read.
+@pytest.mark.parametrize("msg,item", [
+    ("I take aspirin but stopped last week.", _item("otc_drugs", {"medication": "Aspirin"}, "I take aspirin")),
+    ("I take warfarin, well I did until March.",
+     _item("medications", {"medication": "Warfarin"}, "I take warfarin")),
+    ("My doctor prescribed metformin but I haven't started it.",
+     _item("medications", {"medication": "Metformin"}, "My doctor prescribed metformin")),
+    ("I have diabetes, or at least my doctor thinks so.",
+     _item("diagnoses", {"diagnosis": "Diabetes"}, "I have diabetes")),
+    ("I'm getting my gallbladder out next month.",
+     _item("surgeries", {"procedure": "Gallbladder removal"}, "I'm getting my gallbladder out")),
+    ("I'm getting my gallbladder out next month.",
+     _item("surgeries", {"procedure": "Gallbladder removal"}, "my gallbladder out")),
+    ("I'm having surgery on my shoulder in May.",
+     _item("surgeries", {"procedure": "Shoulder surgery"}, "I'm having surgery on my shoulder in May")),
+    ("I'm getting a colonoscopy on Friday.",
+     _item("surgeries", {"procedure": "Colonoscopy"}, "I'm getting a colonoscopy on Friday")),
+])
+def test_text_after_the_quote_is_read(msg, item):
+    assert _one(msg, item) == [], msg
+
+
+# H3: doubt and negative results are not diagnoses.
+@pytest.mark.parametrize("msg,item", [
+    ("My doctor thinks I have Lyme disease.",
+     _item("diagnoses", {"diagnosis": "Lyme disease"}, "I have Lyme disease")),
+    ("My doctor suspects I have Hashimoto's.",
+     _item("diagnoses", {"diagnosis": "Hashimoto's"}, "I have Hashimoto's")),
+    ("I'm worried I have cancer.", _item("diagnoses", {"diagnosis": "Cancer"}, "I have cancer")),
+    ("I'm afraid I have diabetes.", _item("diagnoses", {"diagnosis": "Diabetes"}, "I have diabetes")),
+    ("I'm at risk for osteoporosis.",
+     _item("diagnoses", {"diagnosis": "Osteoporosis"}, "I'm at risk for osteoporosis")),
+    ("I tested negative for Lyme.", _item("diagnoses", {"diagnosis": "Lyme"}, "I tested negative for Lyme")),
+    ("My doctor ruled out MS.", _item("diagnoses", {"diagnosis": "MS"}, "My doctor ruled out MS")),
+    ("I was tested for celiac and it was negative.",
+     _item("diagnoses", {"diagnosis": "Celiac"}, "I was tested for celiac")),
+    ("I was screened for breast cancer.",
+     _item("diagnoses", {"diagnosis": "Breast cancer"}, "I was screened for breast cancer")),
+    ("My surgeon wants to do a knee replacement.",
+     _item("surgeries", {"procedure": "Knee replacement"}, "My surgeon wants to do a knee replacement")),
+    ("I want a hip replacement.", _item("surgeries", {"procedure": "Hip replacement"}, "I want a hip replacement")),
+    ("I'm on the waitlist for a knee replacement.",
+     _item("surgeries", {"procedure": "Knee replacement"}, "I'm on the waitlist for a knee replacement")),
+])
+def test_doubt_and_negative_results_record_nothing(msg, item):
+    assert _one(msg, item) == [], msg
+
+
+def test_tested_positive_still_records():
+    out = _one("I tested positive for Lyme.",
+               _item("diagnoses", {"diagnosis": "Lyme"}, "I tested positive for Lyme"))
+    assert out and out[0]["value"]["diagnosis"] == "Lyme"
+
+
+# M1: a wished-for or past pregnancy.
+@pytest.mark.parametrize("msg,quote", [
+    ("I want to get pregnant.", "I want to get pregnant"),
+    ("I'd like to get pregnant soon.", "I'd like to get pregnant soon"),
+    ("I've been pregnant three times.", "I've been pregnant three times"),
+])
+def test_wished_or_past_pregnancy_records_nothing(msg, quote):
+    assert _one(msg, _item("diagnoses", {"diagnosis": "Pregnancy"}, quote)) == [], msg
+
+
+def test_pregnant_for_twenty_weeks_is_current():
+    out = _one("I have been pregnant for 20 weeks.",
+               _item("diagnoses", {"diagnosis": "Pregnancy"}, "I have been pregnant for 20 weeks"))
+    assert out and out[0]["value"]["current"] == "Current"
+
+
+# M2: tense in both directions.
+@pytest.mark.parametrize("msg,diag,status", [
+    ("I've had shingles twice.", "Shingles", "Past"),
+    ("I've had pneumonia three times.", "Pneumonia", "Past"),
+    ("I developed diabetes in 2015.", "Diabetes", "Current"),
+    ("I was born with a heart murmur.", "Heart murmur", "Current"),
+    ("I got Lyme in 2015 and still have symptoms.", "Lyme", "Current"),
+    ("I've had asthma for years.", "Asthma", "Current"),
+    ("I've been diagnosed with lupus.", "Lupus", "Current"),
+])
+def test_tense_round3(msg, diag, status):
+    out = _one(msg, _item("diagnoses", {"diagnosis": diag}, msg.rstrip(".")))
+    assert out and out[0]["value"]["current"] == status, msg
+
+
+@pytest.mark.parametrize("msg,med", [
+    ("My thyroid was removed in 2010 so I take levothyroxine.", "Levothyroxine"),
+    ("I had a heart attack in 2019 so I take a statin.", "Statin"),
+])
+def test_a_past_event_before_so_does_not_end_a_current_drug(msg, med):
+    out = _one(msg, _item("medications", {"medication": med}, msg.rstrip(".")))
+    assert out and out[0]["value"]["medication"] == med, msg
+
+
+# M3: allergies that ended.
+@pytest.mark.parametrize("msg,sens", [
+    ("I outgrew my peanut allergy.", "Peanut"),
+    ("I used to be allergic to cats as a kid.", "Cats"),
+])
+def test_an_ended_allergy_records_nothing(msg, sens):
+    assert _one(msg, _item("allergies", {"sensitivity": sens}, msg.rstrip("."))) == [], msg
+
+
+def test_a_past_reaction_is_still_an_allergy():
+    out = _one("I had a bad reaction to penicillin once.",
+               _item("allergies", {"sensitivity": "Penicillin"}, "I had a bad reaction to penicillin once"))
+    assert len(out) == 1
+
+
+# M4: a different condition sharing a prefix.
+@pytest.mark.parametrize("msg,diag", [
+    ("I have osteopenia.", "Osteoporosis"),
+    ("I have diverticulosis.", "Diverticulitis"),
+    ("I have endometrial thickening.", "Endometriosis"),
+    ("I had hypothermia once hiking.", "Hypothyroidism"),
+])
+def test_a_shared_prefix_is_not_the_same_condition(msg, diag):
+    assert _one(msg, _item("diagnoses", {"diagnosis": diag}, msg.rstrip("."))) == [], msg
+
+
+@pytest.mark.parametrize("msg,diag", [
+    ("I'm anemic.", "Anemia"), ("I'm diabetic.", "Diabetes"), ("I'm hypothyroid.", "Hypothyroidism"),
+    ("I'm asthmatic.", "Asthma"), ("I'm epileptic.", "Epilepsy"),
+])
+def test_an_adjective_supports_its_condition(msg, diag):
+    out = _one(msg, _item("diagnoses", {"diagnosis": diag}, msg.rstrip(".")))
+    assert out and out[0]["value"]["diagnosis"] == diag, msg
+
+
+def test_pacemaker_implant_from_i_have_a_pacemaker():
+    out = _one("I have a pacemaker.", _item("surgeries", {"procedure": "Pacemaker implant"},
+                                              "I have a pacemaker"))
+    assert out and out[0]["value"]["procedure"] == "Pacemaker implant"
+
+
+# M5: free text gets doubt, plan and (for trauma and toxins) negation checks.
+@pytest.mark.parametrize("msg,field,quote", [
+    ("I might have a cavity.", "dental", "I might have a cavity"),
+    ("I think I have a cavity.", "dental", "I have a cavity"),
+    ("My dentist wants to do a root canal.", "dental", "My dentist wants to do a root canal"),
+    ("I'm thinking of getting my amalgams out.", "dental", "I'm thinking of getting my amalgams out"),
+    ("I'm getting a root canal on Friday.", "dental", "I'm getting a root canal on Friday"),
+    ("I'm going to try the keto diet.", "diet", "I'm going to try the keto diet"),
+    ("I have never broken a bone.", "physical_trauma", "I have never broken a bone"),
+    ("I don't think I've ever been exposed to mold.", "toxins", "I've ever been exposed to mold"),
+    ("He drinks every night but I don't.", "alcohol", "He drinks every night but I don't"),
+])
+def test_free_text_doubt_plans_and_negation(msg, field, quote):
+    assert _one(msg, _item(field, "x", quote)) == [], msg
+
+
+@pytest.mark.parametrize("msg,field", [
+    ("I don't drink alcohol at all.", "alcohol"),
+    ("I don't eat gluten or dairy.", "diet"),
+    ("I wake and need to pee twice a night.", "sleep"),
+])
+def test_free_text_negatives_and_needs_that_are_real_answers(msg, field):
+    out = _one(msg, _item(field, "x", msg.rstrip(".")))
+    assert out, msg
+
+
+# L1: real facts that were dropped.
+@pytest.mark.parametrize("msg,relative", [
+    ("My brother and sister both have celiac.", "Sister"),
+    ("My brother and sister both have celiac.", "Brother"),
+    ("My mom and dad both had cancer.", "Father"),
+    ("My mom and dad both had cancer.", "Mother"),
+])
+def test_joined_relatives_both_record(msg, relative):
+    cond = "Celiac" if "celiac" in msg else "Cancer"
+    out = _one(msg, _item("family_history", {"relative": relative, "condition": cond},
+                          msg.rstrip("."), about="family"))
+    assert out and out[0]["value"]["relative"] == relative, (msg, relative)
+
+
+def test_a_relative_telling_the_client_about_family_records():
+    out = _one("My mom told me my grandmother had diabetes.",
+               _item("family_history", {"relative": "Grandmother", "condition": "Diabetes"},
+                     "my grandmother had diabetes", about="family"))
+    assert out and out[0]["value"]["relative"] == "Grandmother"
+
+
+@pytest.mark.parametrize("msg,field,item_value,quote", [
+    ("I take a baby aspirin every day.", "otc_drugs", {"medication": "Aspirin"},
+     "I take a baby aspirin every day"),
+    ("I take a children's chewable vitamin.", "supplements", {"name": "Chewable vitamin"},
+     "I take a children's chewable vitamin"),
+    ("I've been sleeping badly since my mom died.", "sleep", "x",
+     "I've been sleeping badly since my mom died"),
+])
+def test_own_facts_naming_a_child_word_or_a_loss(msg, field, item_value, quote):
+    assert _one(msg, _item(field, item_value, quote)), msg
+
+
+def test_my_childrens_vitamin_is_still_theirs():
+    assert _one("My children's vitamin has iron.",
+                _item("supplements", {"name": "Vitamin"}, "My children's vitamin has iron")) == []
+
+
+# L2: a tag question.
+@pytest.mark.parametrize("msg", ["I have candida, right?", "I have candida, is that right?"])
+def test_a_tag_question_records_nothing(msg):
+    assert _one(msg, _item("diagnoses", {"diagnosis": "Candida"}, "I have candida")) == [], msg
+
+
+# L3: the apply path.
+def test_a_list_in_a_text_field_is_joined_not_reprd():
+    assert hs.apply_suggestion("diet", ["vegan"], "keto") == "vegan\nketo"
+
+
+def test_a_row_already_held_with_more_columns_adds_nothing():
+    have = [{"medication": "Metformin", "reason": "diabetes"}]
+    assert hs.apply_suggestion("medications", have, {"medication": "Metformin"}) == have
+
+
+def test_a_row_with_new_detail_is_still_appended():
+    have = [{"medication": "Metformin"}]
+    assert hs.apply_suggestion("medications", have, {"medication": "Metformin",
+                                                     "reason": "diabetes"}) == [
+        {"medication": "Metformin"}, {"medication": "Metformin", "reason": "diabetes"}]
+
+
+# Round 3 surviving mutations.
+def test_unless_is_hypothetical():
+    assert _one("Unless I have diabetes, I'm fine.",
+                _item("diagnoses", {"diagnosis": "Diabetes"}, "I have diabetes")) == []
+
+
+def test_age_written_as_yo():
+    out = _one("I had my tonsils out as a 9 yo.",
+               _item("surgeries", {"procedure": "Tonsils removal", "age": 9}, "I had my tonsils out"))
+    assert out and out[0]["value"].get("age") == 9
+
+
+def test_a_three_letter_word_must_be_said_exactly():
+    assert _one("I have IBSO.", _item("diagnoses", {"diagnosis": "IBS"}, "I have IBSO")) == []
+    assert _one("I have IBS.", _item("diagnoses", {"diagnosis": "IBS"}, "I have IBS"))
+
+
+def test_a_fenced_reply_without_its_closing_fence_is_garbage():
+    reply = '```json\n{"items": [{"field_id": "medications", "value": {"medication": "Warfarin"}, ' \
+            '"quote": "I take warfarin", "about": "self"}]}'
+    assert hs.extract_from_turn("I take warfarin.", "",
+                                extractor=hs.llm_extractor(lambda s, u: reply)) == []
+
+
+@pytest.mark.parametrize("msg,item", [
+    ("I won't take metformin.", _item("medications", {"medication": "Metformin"}, "I won't take metformin")),
+    ("I wouldn't have a hip replacement.",
+     _item("surgeries", {"procedure": "Hip replacement"}, "I wouldn't have a hip replacement")),
+])
+def test_wont_and_wouldnt_are_negation(msg, item):
+    assert _one(msg, item) == [], msg
+
+
+@pytest.mark.parametrize("msg,quote,ok", [
+    ("I have diabetes also asthma.", "asthma", True),
+    ("The cleanse helped diabetes and asthma.", "asthma", False),
+    ("I take metformin but the doctor says gout and asthma.", "asthma", False),
+])
+def test_conjoined_fact_edges(msg, quote, ok):
+    assert bool(_one(msg, _item("diagnoses", {"diagnosis": "Asthma"}, quote))) is ok, msg
+
+
+def test_a_date_to_come_after_the_quote_records_nothing():
+    assert _one("I have my gallbladder surgery next month.",
+                _item("surgeries", {"procedure": "Gallbladder surgery"},
+                      "I have my gallbladder surgery")) == []
+
+
+def test_a_four_letter_word_needs_four_shared_letters():
+    assert _one("I have lymph node swelling.",
+                _item("diagnoses", {"diagnosis": "Lyme"}, "I have lymph node swelling")) == []
+
+
+def test_a_fenced_reply_with_trailing_junk_is_garbage():
+    reply = '```json\n{"items": [{"field_id": "medications", "value": {"medication": "Warfarin"}, ' \
+            '"quote": "I take warfarin", "about": "self"}]}abc'
+    assert hs.extract_from_turn("I take warfarin.", "",
+                                extractor=hs.llm_extractor(lambda s, u: reply)) == []
+
+
+def test_tomorrow_after_the_quote_records_nothing():
+    assert _one("I have my knee surgery tomorrow.",
+                _item("surgeries", {"procedure": "Knee surgery"}, "I have my knee surgery")) == []
