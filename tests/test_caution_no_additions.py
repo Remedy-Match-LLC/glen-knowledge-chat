@@ -299,3 +299,93 @@ def test_chat_prior_turns_are_the_user_turns_of_its_history():
                {"role": "assistant", "content": "It is a D3 formula."}]
     assert app._chat_prior_user_turns(history, "s1") == PRIOR
     assert app._chat_prior_user_turns([], None) == []
+
+
+# Review round 3: one list of earlier turns, the query_log fallback, failing open,
+# punctuation and more spellings.
+import sqlite3 as _sqlite3
+
+ALL = [f"m{i}" for i in range(7)]
+
+
+@pytest.fixture
+def logged(monkeypatch, tmp_path):
+    """A query_log holding one earlier question for session s-fb."""
+    path = tmp_path / "chat_log.db"
+    cx = _sqlite3.connect(path)
+    cx.execute("CREATE TABLE query_log (id INTEGER PRIMARY KEY, session_id TEXT, "
+               "query TEXT, answer TEXT)")
+    cx.execute("INSERT INTO query_log (session_id, query, answer) VALUES (?, ?, ?)",
+               ("s-fb", PRIOR[0], "It is a D3 formula."))
+    cx.commit()
+    cx.close()
+    monkeypatch.setattr(app, "LOG_DB", path)
+    return path
+
+
+def _post(history, session_id="s-fb"):
+    try:
+        app.app.test_client().post(
+            "/chat", json={"query": "Can I take it with warfarin?", "level": "executive",
+                           "history": history, "session_id": session_id}, buffered=True)
+    except _Stop:
+        pass
+
+
+def test_with_no_history_the_logged_question_carries_the_product(logged, spy):
+    assert app._chat_prior_user_turns([], "s-fb") == PRIOR
+    _post([])
+    assert spy == [["m5", "m6"]]
+
+
+def test_an_assistant_only_history_reads_no_log_like_chat(logged, spy):
+    # chat() reads query_log only when history is empty, so the filter must not either:
+    # the facts block would carry no caution while the snippets were gone.
+    history = [{"role": "assistant", "content": "Aloha, how can I help?"}]
+    assert app._chat_prior_user_turns(history, "s-fb") == []
+    _post(history)
+    assert spy == [ALL]
+
+
+def test_a_failed_log_read_gives_no_turns(monkeypatch):
+    def _boom(*a, **k):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(app.db, "connect", _boom)
+    assert app._chat_prior_user_turns([], "s-fb") == []
+
+
+def test_the_filter_fails_open(monkeypatch, spy):
+    def _boom(*a, **k):
+        raise RuntimeError("facts builder broke")
+    monkeypatch.setattr(app, "_caution_subjects_asked", _boom)
+    ms = _matches()
+    assert app._drop_caution_subject_snippets(ms, "Can I take Vitamin D Syntropy on warfarin?") is ms
+    try:
+        app.app.test_client().post(
+            "/chat", json={"query": "Can I take Vitamin D Syntropy if I am on warfarin?",
+                           "level": "executive"}, buffered=True)
+    except _Stop:
+        pass
+    assert spy == [ALL]
+
+
+@pytest.mark.parametrize("q, subject", [
+    ("Is Vitamin D Syntropy safe during pregnancy?", "pregnan"),
+    ("Can I take Vitamin D Syntropy with levothyroxine?", "thyroid"),
+    ("Can I take Vitamin D Syntropy with Synthroid?", "thyroid"),
+    ("Is Vitamin D Syntropy ok with Hashimoto's?", "thyroid"),
+    ("Is Brain Cleanse ok while nursing?", "breastfeeding"),
+    ("Can I take Brain Cleanse with St. John's Wort?", "st john"),
+    ("Can I take Brain Cleanse with St John's wort?", "st john"),
+])
+def test_more_spellings_match(q, subject):
+    assert subject in app._caution_subjects_asked(q)
+
+
+def test_subject_words_come_from_this_message_only():
+    # The earlier turn named warfarin; this one asks only about the dose.
+    prior = ["Is Vitamin D Syntropy ok on warfarin?"]
+    q = "How much should I take?"
+    assert app._caution_subjects_asked(q, prior) == []
+    ms = _matches()
+    assert app._drop_caution_subject_snippets(ms, q, prior) is ms

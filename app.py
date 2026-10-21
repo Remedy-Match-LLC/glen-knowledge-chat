@@ -2834,27 +2834,31 @@ def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
         return []
     given = set()
     _named_product_facts(_carried_query(query_text, prior_user_turns), given_out=given)
-    caution = " ".join((products.get(k) or {}).get("warning") or "" for k in sorted(given)
-                       if (products.get(k) or {}).get("chat_caution")).lower()
-    q = query_text.lower()
+    # Punctuation becomes a space, so "St. John's" reads as "st john s" (review round 3).
+    norm = lambda t: " ".join(re.sub(r"[^a-z0-9]+", " ", t.lower()).split())
+    caution = norm(" ".join((products.get(k) or {}).get("warning") or "" for k in sorted(given)
+                            if (products.get(k) or {}).get("chat_caution")))
+    q = norm(query_text)
     return [key for key, words in _CAUTION_SUBJECT_WORDS.items()
             if key in caution and any(w in q for w in words)]
 
 
 def _chat_prior_user_turns(history, session_id) -> list:
-    """The earlier user turns chat() gives the facts block: the request's history, or,
-    with none, this session's last three logged questions. Read here for the snippet
-    filter, which runs before chat() builds its messages. A failed read gives none, so
-    the snippets are left as they are."""
-    turns = [t.get("content") for t in (history or [])[-6:]
-             if isinstance(t, dict) and t.get("role") == "user" and t.get("content")]
-    if turns or not session_id:
-        return turns
+    """The earlier user turns of a chat() request, built once and given to both the
+    snippet filter and the facts block (review round 3). It mirrors how chat() builds
+    its messages: with no history at all, this session's last three logged questions
+    come first; then the user turns of the last six history entries. A failed read
+    gives none, so the filter keeps every snippet and chat() carries on."""
     try:
-        with _db_lock, db.connect(LOG_DB) as cx:
-            rows = cx.execute("SELECT query FROM query_log WHERE session_id = ? "
-                              "ORDER BY id DESC LIMIT 3", (session_id,)).fetchall()
-        return [r[0] for r in reversed(rows) if r[0]]
+        turns = []
+        if not history and session_id:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                rows = cx.execute("SELECT query FROM query_log WHERE session_id = ? "
+                                  "ORDER BY id DESC LIMIT 3", (session_id,)).fetchall()
+            turns += [r[0] for r in reversed(rows) if r[0]]
+        turns += [t["content"] for t in (history or [])[-6:]
+                  if t.get("role") == "user" and t.get("content")]
+        return turns
     except Exception as e:
         print(f"[chat] prior turns for the snippet filter failed: {e!r}", flush=True)
         return []
@@ -2864,7 +2868,12 @@ def _drop_caution_subject_snippets(matches, query_text: str, prior_user_turns=No
     """Drug interaction snippets are dropped only when the answer carries an opted-in
     caution and the question names a subject that caution names. Every other question
     keeps its snippets unchanged."""
-    if not matches or not _caution_subjects_asked(query_text, prior_user_turns):
+    # Fails open: any error keeps every snippet, so the answer goes on (review round 3).
+    try:
+        if not matches or not _caution_subjects_asked(query_text, prior_user_turns):
+            return matches
+    except Exception as e:
+        print(f"[chat] caution snippet filter failed, snippets kept: {e!r}", flush=True)
         return matches
     return [m for m in matches if not _is_drug_interaction_snippet(m.metadata)]
 
@@ -6723,9 +6732,11 @@ def chat():
             return
 
         # A follow-up ("Can I take it with warfarin?") resolves its product from the
-        # earlier user turns, as the facts block does (review round 2b).
+        # earlier user turns. The one list goes to the filter here and to the facts block
+        # below, so both see the same turns (review rounds 2b and 3).
+        _prior_user = _chat_prior_user_turns(history, session_id)
         context_str, sources_list = build_context(_drop_caution_subject_snippets(
-            all_matches, query, _chat_prior_user_turns(history, session_id)))
+            all_matches, query, _prior_user))
 
         # ── Slice 4: member-mode overlay ──────────────────────────────────────
         # Read the rm_member_email cookie set by /coaching/auth/<token>.
@@ -6800,7 +6811,6 @@ def chat():
         )
         product_block = f"{product_directive}\n\n" if product_directive else ""
 
-        _prior_user = [m["content"] for m in messages if m.get("role") == "user"]
         messages.append({"role": "user", "content":
             f"USER QUESTION: {query}\n\n"
             f"{attachment_context}"
@@ -15769,7 +15779,10 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
     if not matches:
         return ("No relevant content found.", [], 0)
 
-    context_str, sources_list = build_context(_drop_caution_subject_snippets(matches, query))
+    # One request, no earlier turns: the filter and the facts block get the same none.
+    _prior_user = None
+    context_str, sources_list = build_context(
+        _drop_caution_subject_snippets(matches, query, _prior_user))
     product_directive = build_product_directive(
         snippets_text=(context_str or ""),
         query_text=query or "",
@@ -15782,7 +15795,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
         f"{product_block}"
         f"{synth_instr}"
-        f"{named_product_facts_block(query)}"
+        f"{named_product_facts_block(query, prior_user_turns=_prior_user)}"
         f"{_approved_wording_reminder(context_str)}"
     )
 
@@ -15951,8 +15964,10 @@ def _full_report_stream(log_id, query, level, session_id,
                        "log_id": log_id, "mode": "full"})
             return
 
+        # One request, no earlier turns: the filter and the facts block get the same none.
+        _prior_user = None
         context_str, sources_list = build_context(
-            _drop_caution_subject_snippets(matches, query))
+            _drop_caution_subject_snippets(matches, query, _prior_user))
         product_directive = build_product_directive(
             snippets_text=(context_str or ""),
             query_text=query or "",
@@ -15965,7 +15980,7 @@ def _full_report_stream(log_id, query, level, session_id,
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             f"{product_block}"
             f"{synth_instr}"
-            f"{named_product_facts_block(query)}"
+            f"{named_product_facts_block(query, prior_user_turns=_prior_user)}"
             f"{_approved_wording_reminder(context_str)}"
         )
 
