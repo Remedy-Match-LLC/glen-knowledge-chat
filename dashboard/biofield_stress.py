@@ -443,30 +443,6 @@ def move_links_off(cx, tid, rids, to_rids=None):
     out["moved"] = sorted(moved)
     out["unbalanced"] = sorted(stranded - moved)
     return out
-    t = _num(tid)
-    gone = sorted({int(r) for r in rids or []})
-    if not gone:
-        return out
-    marks = ",".join("?" for _ in gone)
-    if to_rids is None:
-        heads = {(h or "").strip().lower() for (h,) in cx.execute(
-            f"SELECT head FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
-            (t, *gone))} - {""}
-        to_rids = [int(r[0]) for r in cx.execute(
-            f"SELECT id,head FROM biofield_auth_chain WHERE test_id=? AND id NOT IN ({marks})",
-            (t, *gone)) if (r[1] or "").strip().lower() in heads]
-    to_rids = [int(r) for r in to_rids if int(r) not in gone]
-    linked = sorted({int(r[0]) for r in cx.execute(
-        f"SELECT stress_id FROM biofield_auth_layer_stress WHERE test_id=? "
-        f"AND chain_rid IN ({marks})", (t, *gone))})
-    for sid in linked:
-        for rid in to_rids:
-            cx.execute("INSERT OR IGNORE INTO biofield_auth_layer_stress"
-                       "(test_id,stress_id,chain_rid) VALUES(?,?,?)", (t, sid, rid))
-        (out["moved"] if to_rids else out["unbalanced"]).append(sid)
-    cx.execute(f"DELETE FROM biofield_auth_layer_stress WHERE test_id=? "
-               f"AND chain_rid IN ({marks})", (t, *gone))
-    return out
 
 
 _FIELD_SEP = re.compile(r"[,;\n]+")

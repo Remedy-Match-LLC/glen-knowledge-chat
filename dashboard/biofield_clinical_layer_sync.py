@@ -98,10 +98,10 @@ def targets(cx, items):
         label = str(item.get("label") or "").strip()
         if not label:
             continue
-        # The stored pattern names the layer when there is one; the pattern the page
-        # shows (one typed for this test, else a suggestion) only when none is stored.
-        # Review round 1 F7: the program and correct_chain read the stored one.
-        pattern = str(item.get("remembered_pattern") or item.get("stress_pattern") or "").strip()
+        # The pattern the page shows: one Glen typed for this test wins, then the
+        # stored one, then a suggestion (apply_selection and build set that order).
+        # The + button sends the same value, so both name a condition alike (round 3 N1).
+        pattern = str(item.get("stress_pattern") or "").strip()
         key = _norm(label)
         if pattern:
             name, keys = pattern, {_norm(pattern)}

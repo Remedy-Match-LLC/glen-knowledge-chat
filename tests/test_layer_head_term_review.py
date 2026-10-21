@@ -138,7 +138,7 @@ def test_a_head_glen_typed_without_the_punctuation_stays(tmp_path):
     ht.correct_chain(cx, tid, dry_run=False)
     assert _row(cx, typed) == ("Adrenal fatigue current 2023",
                                "Nerve, adrenal fatigue current 2023")
-    assert _row(cx, cased) == ("Adrenal", "Nerve,  Adrenal")
+    assert _row(cx, cased) == ("Adrenal", "Nerve, Adrenal")
 
 
 def test_a_wording_inside_a_longer_item_is_not_a_match(tmp_path):
@@ -296,7 +296,8 @@ def _sync(db, tid, conditions):
                                   "chosen": chosen}).status_code == 200
 
 
-def test_update_clinical_layers_prefers_the_stored_pattern(tmp_path):
+def test_update_clinical_layers_prefers_the_pattern_typed_for_this_test(tmp_path):
+    """Round 3 N1: the typed pattern wins, as it does on the + button."""
     db, cx, tid = _db(tmp_path)
     remember_stress_pattern(cx, ADRENAL, "Adrenal")
     save_selection(cx, tid, ADRENAL, ["Endocrine Restore"])
@@ -305,19 +306,108 @@ def test_update_clinical_layers_prefers_the_stored_pattern(tmp_path):
     cx.close()
     _sync(db, tid, [ADRENAL])
     with sqlite3.connect(db) as cx:
-        assert {r[0] for r in cx.execute("SELECT head FROM biofield_auth_chain")} == {"Adrenal"}
+        assert {r[0] for r in cx.execute("SELECT head FROM biofield_auth_chain")} == \
+            {"Typed for this test"}
 
 
-def test_update_clinical_layers_falls_back_when_none_is_stored(tmp_path):
+def test_update_clinical_layers_falls_back_to_the_stored_pattern(tmp_path):
     db, cx, tid = _db(tmp_path)
+    remember_stress_pattern(cx, ADRENAL, "Adrenal")
     save_selection(cx, tid, ADRENAL, ["Endocrine Restore"])
-    save_pattern(cx, tid, ADRENAL, "Typed for this test")
     cx.commit()
     cx.close()
     _sync(db, tid, [ADRENAL])
     with sqlite3.connect(db) as cx:
-        assert {r[0] for r in cx.execute("SELECT head FROM biofield_auth_chain")} == \
-            {"Typed for this test"}
+        assert {r[0] for r in cx.execute("SELECT head FROM biofield_auth_chain")} == {"Adrenal"}
+
+
+def test_the_plus_button_and_update_clinical_layers_agree(tmp_path):
+    """Round 3 N1 probe: + names the layer "Kidney"; Update must not add "Adrenal"."""
+    db, cx, tid = _db(tmp_path)
+    remember_stress_pattern(cx, ADRENAL, "Adrenal")
+    save_selection(cx, tid, ADRENAL, ["Endocrine Restore"])
+    save_pattern(cx, tid, ADRENAL, "Kidney")
+    cx.commit()
+    cx.close()
+    client = _client(db, [ADRENAL])
+    j = client.post(f"/author/{tid}/clinical-items/balance", json={
+        "label": ADRENAL, "layer": 1, "remedies": ["Endocrine Restore"],
+        "pattern": "Kidney"}).get_json()
+    assert j["ok"], j
+    plan = client.post(f"/author/{tid}/clinical-items/layers/update", json={}).get_json()
+    assert [c for c in plan["changes"] if c["kind"] == "new"] == []
+
+
+# 3b. A pattern cycle is no pattern (round 3 N3) ------------------------------------
+
+def test_a_pattern_cycle_is_treated_as_no_pattern_and_flagged(tmp_path):
+    db, cx, tid = _db(tmp_path)
+    remember_stress_pattern(cx, "Alpha cond", "Beta cond")
+    remember_stress_pattern(cx, "Beta cond", "Alpha cond")
+    add_stress(cx, tid, "Alpha cond", source="tag")
+    add_stress(cx, tid, "Beta cond", source="tag")
+    rid = add_chain_row(cx, tid, 1, "Alpha cond", "Alpha cond", "X")
+    assert ht.pattern_cycles(cx, tid) == {"alpha cond", "beta cond"}
+    plan = ht.correct_chain(cx, tid, dry_run=False)
+    assert plan["rows"] == [] and _row(cx, rid) == ("Alpha cond", "Alpha cond")
+    cx.close()
+    page = _client(db, ["Alpha cond"]).get(f"/author/{tid}").get_data(as_text=True)
+    assert ht.NO_PATTERN_FLAG in page
+
+
+# 7b. A replaced item is stored without stray whitespace (round 3 N4) ---------------
+
+def test_a_replaced_tail_never_starts_with_a_space(tmp_path):
+    db, cx, tid = _db(tmp_path)
+    remember_stress_pattern(cx, ADRENAL, "Adrenal")
+    save_selection(cx, tid, ADRENAL, ["x"])
+    first = add_chain_row(cx, tid, 1, "Kidney", f"{ADRENAL}, Adrenal", "X")
+    spaced = add_chain_row(cx, tid, 2, "Liver", f"Nerve,   {ADRENAL}  ;Liver", "Y")
+    ht.correct_chain(cx, tid, dry_run=False)
+    assert _row(cx, first) == ("Kidney", "Adrenal")
+    assert _row(cx, spaced) == ("Liver", "Nerve, Adrenal;Liver")
+
+
+# 5. Round 3 mutation gaps -----------------------------------------------------------
+
+def test_a_program_failing_after_a_transcript_layer_writes_nothing(tmp_path, monkeypatch):
+    """Round 3 M9: the transcript's rows are in the same batch."""
+    db, cx, tid = _db(tmp_path)
+    remember_stress_pattern(cx, ADRENAL, "Adrenal")
+    save_selection(cx, tid, ADRENAL, ["Adren Remedy"])
+    cx.commit()
+    cx.close()
+    client = create_app(db, scan_lookup=lambda e: _NO_SCAN,
+                        fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: {},
+                        interpret_complete=lambda s, u: json.dumps({"layers": [
+                            {"layer": 1, "head": "Grief", "most_affected": "Grief",
+                             "remedy": "Heart Health", "dosage": "1", "frequency": "1",
+                             "timing": "am"}]})).test_client()
+    client.post(f"/author/{tid}/session", json={"transcript": "she spoke of grief"})
+    seen = []
+
+    def dosing(cx, name):
+        seen.append(name)
+        if name.startswith("Adren"):
+            raise RuntimeError("dosing failed on the Mind pick")
+        return {}
+    monkeypatch.setattr(biofield_local_app, "remedy_dosing", dosing)
+    _post_swallowing(client, f"/author/{tid}/program", {"mode": "full", "apply": True})
+    assert any(n.startswith("Adren") for n in seen)
+    with sqlite3.connect(db) as cx:
+        assert cx.execute("SELECT COUNT(*) FROM biofield_auth_chain").fetchone()[0] == 0
+
+
+def test_the_correction_links_the_wording_to_every_row_of_the_card(tmp_path):
+    """Round 3 M20: one row holds the wording, the card has two."""
+    db, cx, tid = _db(tmp_path)
+    remember_stress_pattern(cx, GLAUCOMA, "Eye Pressure Regulation")
+    save_selection(cx, tid, GLAUCOMA, ["x"])
+    a = add_chain_row(cx, tid, 1, "Eye and Vision Care", f"Eyes, {GLAUCOMA}", "A")
+    b = add_chain_row(cx, tid, 1, "Eye and Vision Care", "", "B")
+    ht.correct_chain(cx, tid, dry_run=False)
+    assert _balances(cx, tid, a) == [GLAUCOMA]
+    assert _balances(cx, tid, b) == [GLAUCOMA]
 
 
 # 10. Paths the round 1 mutations showed untested -----------------------------------

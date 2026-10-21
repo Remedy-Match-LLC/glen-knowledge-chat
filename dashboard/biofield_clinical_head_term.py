@@ -57,27 +57,51 @@ def _key(text):
     return (text or "").strip().casefold()
 
 
-def conditions(cx, tid, patterns=None):
-    """This client's conditions that have a stored pattern: {_key(wording): (wording,
-    pattern)}. Wording comes from client_condition_labels, the same source set as
-    consolidate. The pattern is followed to a fixed point: when one condition's
-    pattern is another condition's wording, the final term is used, so a second
-    correction changes nothing (review round 1 F5)."""
+def _resolve(cx, tid, patterns=None):
+    """(conditions, cycles). `conditions` is {_key(wording): (wording, final pattern)}
+    for this client's conditions with a usable stored pattern. `cycles` is the set of
+    _key(wording) whose pattern chain loops back on itself."""
     patterns = stored_patterns(cx) if patterns is None else patterns
     direct = {}
     for label in client_condition_labels(cx, tid):
         p = pattern_of(label, patterns)
         if p:
             direct.setdefault(_key(label), (label, p))
-    out = {}
+    out, cycles = {}, set()
     for k, (label, p) in direct.items():
-        seen = {k}
-        while _key(p) in direct and _key(p) not in seen:
-            seen.add(_key(p))
-            p = direct[_key(p)][1]
-        if _key(p) != k:              # a wording that already IS its term needs nothing
+        if _key(p) == k:              # a wording that already IS its term needs nothing
+            continue
+        cur, seen, loop = k, {k}, False
+        while _key(p) in direct:
+            nk = _key(p)
+            if nk == cur:             # the chain ends at a term that names itself
+                break
+            if nk in seen:            # back to a wording already passed: a cycle
+                loop = True
+                break
+            seen.add(nk)
+            cur, p = nk, direct[nk][1]
+        if loop:
+            cycles.add(k)
+        else:
             out[k] = (label, p)
-    return out
+    return out, cycles
+
+
+def conditions(cx, tid, patterns=None):
+    """This client's conditions that have a stored pattern: {_key(wording): (wording,
+    pattern)}. Wording comes from client_condition_labels, the same source set as
+    consolidate. The pattern is followed to a fixed point: when one condition's
+    pattern is another condition's wording, the final term is used, so a second
+    correction changes nothing (review round 1 F5). A condition whose chain loops is
+    left out, so it is handled as a condition with no pattern (review round 3 N3)."""
+    return _resolve(cx, tid, patterns)[0]
+
+
+def pattern_cycles(cx, tid, patterns=None):
+    """_key(wording) of this client's conditions whose pattern chain loops. Their cards
+    show the missing-pattern flag."""
+    return _resolve(cx, tid, patterns)[1]
 
 
 def layer_fields(covers, conds, lead=None):
@@ -101,12 +125,7 @@ def layer_fields(covers, conds, lead=None):
         if _key(c) not in seen:
             seen.add(_key(c))
             tail.append(c)
-    lead_hit = conds.get(_key(lead)) if lead else None
     head = (conds.get(_key(head0)) or (None, head0))[1]
-    if lead_hit and lead not in wording:
-        wording.insert(0, lead)
-        if _key(lead_hit[1]) not in seen:
-            tail.insert(0, lead_hit[1])
     if not wording:
         return head, ", ".join(covers)[:200], []
     return head, ", ".join(tail)[:200], wording
@@ -161,9 +180,11 @@ def card_rids(cx, tid, head):
 
 def no_pattern_heads(items):
     """{normalised wording: wording} of the Clinical Summary rows with no stored
-    pattern. A card whose Head or any Tail item is one of these is flagged."""
+    pattern, or whose pattern chain loops (`pattern_cycle`, set by the page). A card
+    whose Head or any Tail item is one of these is flagged."""
     return {_cnorm(i.get("label")): str(i.get("label")).strip() for i in items or []
-            if (i.get("label") or "").strip() and not (i.get("remembered_pattern") or "").strip()}
+            if (i.get("label") or "").strip()
+            and (i.get("pattern_cycle") or not (i.get("remembered_pattern") or "").strip())}
 
 
 # ---- correcting an existing chain -------------------------------------------------
@@ -205,7 +226,10 @@ def _replace_in_field(text, conds):
                 keep.append(None)
                 continue
             used.add(_key(term))
-            item = item[:m.start()] + term + item[m.end():]
+            # The replaced item is the term alone, after one space when it follows a
+            # comma or semicolon (review round 3 N4).
+            prev = seps[n - 1] if n > 0 else "\n"
+            item = term if prev.endswith("\n") else " " + term
         keep.append(item)
     out = ""
     for n, item in enumerate(keep):
@@ -214,7 +238,9 @@ def _replace_in_field(text, conds):
         if out or any(k is not None for k in keep[:n]):
             out += seps[n - 1] if n > 0 else ""
         out += item
-    return out, found
+    # Nothing is stored with leading or trailing whitespace, even when the first
+    # item was the one dropped.
+    return out.strip(), found
 
 
 def plan_correction(cx, test_id):

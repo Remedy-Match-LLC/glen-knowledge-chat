@@ -1865,6 +1865,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                   if item_key(item.get("label")) not in hidden]
             clinical_checklist = apply_order(cx, test_id, clinical_checklist)
             clinical_checklist = apply_selection(cx, test_id, clinical_checklist)
+            # A condition whose pattern chain loops has no usable pattern: its card is
+            # flagged like one with none (review round 3 N3).
+            try:
+                from dashboard.biofield_clinical_head_term import _key as _hk, pattern_cycles
+                _cyc = pattern_cycles(cx, test_id)
+                for _item in clinical_checklist:
+                    if _hk(_item.get("label")) in _cyc:
+                        _item["pattern_cycle"] = True
+            except Exception as _ce:
+                print(f"[pattern-cycle] {test_id}: skipped: {_ce!r}", flush=True)
             # Five rated sections under every row (Glen, 2026-10-17). The remedy list
             # becomes the first one; a failure here leaves the plain list showing.
             clinical_botanical = None
