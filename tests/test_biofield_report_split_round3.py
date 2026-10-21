@@ -347,8 +347,9 @@ def test_the_leads_are_the_approved_wording():
     assert _digest(leads) == APPROVED_DIGEST
     # Glen, 2026-10-19: "Use each remedy as guided." not 'take'.
     assert leads["biofield"][7] == "Use each remedy as guided."
-    # Glen, 2026-10-20, "approve" on the deferral sweep: no prescriber deferral.
-    assert leads["biofield"][9] == "If you take any medicine, let me know so I can plan around it."
+    # Glen, 2026-10-20, "approve" in the clinical tab: no prescriber deferral.
+    assert leads["biofield"][9] == ("Before you start, tell Dr. Glen in your portal chat about "
+                                    "any medicines or supplements you take.")
     assert "prescriber" not in json.dumps(leads).lower()
 
 
@@ -359,7 +360,7 @@ def test_the_amazon_line_is_the_approved_wording():
                                     "qualifying purchases.")
 
 
-APPROVED_DIGEST = "b8d1476ba62f9c638b77535577385a0bdd6fb951869cef023dd93d7d83b94a86"
+APPROVED_DIGEST = "4b92699d5d3c4ca75634c83390a714f1d26c14c7c14f2cdd34c3dc8a09cbd878"
 
 
 def test_a_list_item_never_splits_across_pages(cx):
@@ -389,18 +390,24 @@ def test_the_walkthrough_script_names_only_switched_on_remedies(app_client, monk
 
 
 def test_no_report_line_sends_the_client_to_a_doctor():
-    """Glen, 2026-10-20, "approve" in the clinical tab: these six lines ask the client
-    to tell him instead (vault clinical/biofield-sections/explanations/review/
-    batch-12-report-leads/final.json). Written out here, not read from that file."""
+    """Glen, 2026-10-20, "approve" in the clinical tab: these lines ask the client to
+    tell him in the portal chat instead (vault clinical/biofield-sections/plan-report/
+    report-leads-2026-10-20/text-APPROVED.txt; the diet-guidance lines are batch 12).
+    Written out here, not read from that file."""
     leads, _ = rs.approved_leads()
     guidance = (pathlib.Path(__file__).resolve().parents[1] / "data"
                 / "diet-guidance.md").read_text()
-    assert ("If you follow a medical diet or have a food allergy, let me know so each "
-            "change suits it.") in leads["diet"]
-    assert ("Let me know first if you have a pacemaker or other implant, or if you are "
-            "pregnant.") in leads["healing_tools"]
-    assert ("Read the cautions that come with these ingredients. Let me know about any "
-            "medicines you take, so I can plan around them.") in leads["ingredients"]
+    assert ("Before you start, tell Dr. Glen in your portal chat about any medicines or "
+            "supplements you take.") in leads["biofield"]
+    assert ("If you follow a special diet for your health or have a food allergy, mention "
+            "it in your portal chat.") in leads["diet"]
+    assert ("Before using these tools, tell Dr. Glen in your portal chat about a pacemaker "
+            "or other implant or a pregnancy.") in leads["healing_tools"]
+    i = leads["ingredients"].index("Read the caution listed with each ingredient in this report.")
+    assert leads["ingredients"][i:i + 3] == [
+        "Read the caution listed with each ingredient in this report.",
+        "Before you start, tell Dr. Glen in your portal chat about any medicines you take.",
+        "Tell Dr. Glen too if a caution applies to you."]
     for line in ("Your doctor may have given you a diet, a fluid limit or a medicine that "
                  "depends on food. If so, keep to that first.",
                  "If you have diabetes or are pregnant, let me know before you eat less or "
@@ -412,5 +419,14 @@ def test_no_report_line_sends_the_client_to_a_doctor():
         assert guidance.count(line) == 1, line
     for old in ("check each change with your doctor", "Ask your doctor first",
                 "share this list with your doctor", "ask your doctor before cutting back",
-                "See a doctor promptly"):
+                "See a doctor promptly", "share this program with your prescriber",
+                "let me know so"):
         assert old not in json.dumps(leads) and old not in guidance, old
+
+
+def test_portal_chat_in_each_lead_links_to_the_chat():
+    """Glen, 2026-10-20: "portal chat" in the four new lead lines links to the chat."""
+    leads, links = rs.approved_leads()
+    for report in ("biofield", "diet", "healing_tools", "ingredients"):
+        assert any("portal chat" in line for line in leads[report]), report
+        assert links[report]["portal chat"] == "https://myhealingoasis.com/portal/me#chat", report

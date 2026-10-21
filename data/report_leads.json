@@ -1,8 +1,20 @@
 {
- "_comment": "Each report's standard lead, printed at the top of the report before any personal passage. Approved by Glen 2026-10-19 (\"approved with edits\", marketing tab). Source: marketing/04 Copy/report-introductions-2026-10-19/intros-APPROVED.md. Print every paragraph as written; do not reword.",
+ "_comment": "Each report's standard lead, printed at the top of the report before any personal passage. Approved by Glen 2026-10-19 (\"approved with edits\", marketing tab). Source: marketing/04 Copy/report-introductions-2026-10-19/intros-APPROVED.md. Print every paragraph as written; do not reword. The four portal-chat lines replaced the doctor and prescriber lines on 2026-10-20 (Glen, \"approve\", clinical tab; source clinical/biofield-sections/plan-report/report-leads-2026-10-20/text-APPROVED.txt).",
  "links": {
   "remedy_sources": {
    "the chat interface of Dr. Glen's knowledge-base": "https://myhealingoasis.com/portal/login"
+  },
+  "biofield": {
+   "portal chat": "https://myhealingoasis.com/portal/me#chat"
+  },
+  "diet": {
+   "portal chat": "https://myhealingoasis.com/portal/me#chat"
+  },
+  "healing_tools": {
+   "portal chat": "https://myhealingoasis.com/portal/me#chat"
+  },
+  "ingredients": {
+   "portal chat": "https://myhealingoasis.com/portal/me#chat"
   }
  },
  "leads": {
@@ -16,7 +28,7 @@
    "These findings describe your biofield and are not a medical diagnosis.",
    "Use each remedy as guided.",
    "Consider starting with less and building up over a few days.",
-   "If you take any medicine, let me know so I can plan around it.",
+   "Before you start, tell Dr. Glen in your portal chat about any medicines or supplements you take.",
    "As your body completes one task, your next analysis can show the next one."
   ],
   "diet": [
@@ -29,7 +41,7 @@
    "You do not need to change everything at once.",
    "Consider adding one food to emphasize this week, and setting aside one food to avoid.",
    "You can notice how you feel before taking the next step.",
-   "If you follow a medical diet or have a food allergy, let me know so each change suits it."
+   "If you follow a special diet for your health or have a food allergy, mention it in your portal chat."
   ],
   "healing_tools": [
    "Your body runs on energy alongside chemistry.",
@@ -39,7 +51,7 @@
    "Many can be used at home as part of your daily routine.",
    "Consider starting with one tool before adding another.",
    "Follow each tool's own instructions for how long and how often to use it.",
-   "Let me know first if you have a pacemaker or other implant, or if you are pregnant.",
+   "Before using these tools, tell Dr. Glen in your portal chat about a pacemaker or other implant or a pregnancy.",
    "Never stare at a laser light source, or point it at the open eye.",
    "These tools add to your medical care and never replace it."
   ],
@@ -52,7 +64,9 @@
    "This report can help you choose foods and products that supply these ingredients.",
    "Start any new nutrient or botanical with a small amount.",
    "Use essential oils only as their cautions direct.",
-   "Read the cautions that come with these ingredients. Let me know about any medicines you take, so I can plan around them."
+   "Read the caution listed with each ingredient in this report.",
+   "Before you start, tell Dr. Glen in your portal chat about any medicines you take.",
+   "Tell Dr. Glen too if a caution applies to you."
   ],
   "remedy_sources": [
    "Where a remedy comes from matters.",
