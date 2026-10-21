@@ -181,7 +181,15 @@
       if (d.price) document.getElementById('h-price').textContent = d.price; else hide('h-price');
       show('content');
 
-      if (d.info_only){
+      if (d.not_ready_line){
+        // Not ready to order (2026-10-20): no price, no Order button. One line, and a
+        // link to the product page, where the waiting list is.
+        hide('buy-top'); hide('h-price');
+        document.getElementById('bb-head').textContent = d.not_ready_line;
+        var nb = document.getElementById('buy-bottom-btn');
+        nb.setAttribute('href', d.buy_url || ('/begin/product/' + encodeURIComponent(slug)));
+        nb.textContent = 'Join the waiting list \u2192';
+      } else if (d.info_only){
         hide('buy-top'); hide('buy-bottom'); hide('h-price');
         var sl = document.getElementById('store-link');
         if ((d.affiliate_url||'').trim()){ sl.setAttribute('href', d.affiliate_url); show('infoonly'); }

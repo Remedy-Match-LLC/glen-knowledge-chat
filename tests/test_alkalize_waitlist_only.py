@@ -209,3 +209,63 @@ def test_the_autoship_charge_job_refuses_it_and_keeps_the_date(monkeypatch, tmp_
         dates = dict(cx.execute("SELECT id, next_charge_date FROM subscriptions").fetchall())
     assert dates[ids["alk"]] == "2000-01-01"
     assert dates[ids["control"]] != "2000-01-01"
+
+
+# ── The waiting list (Glen approved intro and consent, 2026-10-20) ────────────
+
+ALK_WORDS = {
+    "product": "Alkalize Bicarbonate Blend",
+    "consent": ("We will email you when Alkalize Bicarbonate Blend is ready to order. "
+                "Joining this list does not add you to any other mailing list."),
+    "intro": ("Alkalize Bicarbonate Blend is not ready to order yet. Join the waiting list "
+              "and we will email you when it is ready. No card, no charge."),
+    "reserve_line": "",
+    "subject": "Confirm your Alkalize Bicarbonate Blend email",
+    "body_lead": ("Please confirm you'd like an email when Alkalize Bicarbonate Blend is "
+                  "ready to order:"),
+    "page_title": "Confirm your Alkalize Bicarbonate Blend email",
+    "success": "We'll email you when Alkalize Bicarbonate Blend is ready.",
+}
+
+
+def test_the_list_and_its_wording_are_pinned_literally():
+    from dashboard import product_waitlist as pw
+    assert pw.LISTS[SLUG] == "alkalize-bicarbonate-blend-waitlist"
+    assert pw.TEXTS[SLUG] == ALK_WORDS
+    assert set(pw.TEXTS[SLUG]) == set(pw.TEXTS["fungal-nail-repair"])
+
+
+@pytest.fixture()
+def list_client(monkeypatch, tmp_path):
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
+    app._init_people_table()
+    from dashboard.chat_limits import VelocityLimiter
+    monkeypatch.setattr(app, "_waitlist_velocity", VelocityLimiter())
+    monkeypatch.setattr(app, "_founding_enabled", lambda: False)
+    sent = []
+    monkeypatch.setattr(app._inbox, "send_email",
+                        lambda to, subject, body, **k: sent.append((to, subject, body)) or {"ok": True})
+    app.app.config["TESTING"] = True
+    return app.app.test_client(), sent
+
+
+def test_the_page_offers_the_list(list_client):
+    c, _sent = list_client
+    d = c.get(f"/begin/product-page-data/{SLUG}").get_json()
+    assert d["waitlist"]["slug"] == SLUG
+    assert d["waitlist"]["intro"] == ALK_WORDS["intro"]
+    assert d["waitlist"]["consent"] == ALK_WORDS["consent"]
+    assert "Scar" not in json.dumps(d["waitlist"]) and "Fungal" not in json.dumps(d["waitlist"])
+
+
+def test_a_sign_up_sends_the_alkalize_email_and_stores_its_consent(list_client):
+    c, sent = list_client
+    r = c.post(f"/api/waitlist/{SLUG}", json={"email": "a@x.com", "first_name": "Ann"})
+    assert r.status_code == 200, r.get_data(as_text=True)[:300]
+    to, subject, body = sent[0]
+    assert to == "a@x.com" and subject == ALK_WORDS["subject"]
+    assert body.startswith(f"Hi Ann,\n\n{ALK_WORDS['body_lead']}\n")
+    assert "Fungal" not in subject + body and "Scar" not in subject + body
+    with sqlite3.connect(app.LOG_DB) as db:
+        assert db.execute("SELECT consent_text FROM product_waitlist WHERE email='a@x.com'"
+                          ).fetchone()[0] == ALK_WORDS["consent"]

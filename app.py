@@ -10883,7 +10883,9 @@ def begin_product_page_data(slug):
                     rp_ = _get_product(rs) or _prods.get(rs, {})
                     imgs = rp_.get("page_images") or []
                     return {"slug": rs, "name": rp_.get("name", rs),
-                            "price": f"${rp_.get('price_cents', 0) / 100:.2f}",
+                            # No price on a product not ready to order (2026-10-20).
+                            "price": ("" if _waitlist_block(rs) else
+                                      f"${rp_.get('price_cents', 0) / 100:.2f}"),
                             "url": f"/begin/product/{rs}",
                             "image": (imgs[0] if imgs else ""),
                             "reason": _reasons.get(rs, "")}
@@ -12914,13 +12916,19 @@ def begin_learn_data(slug):
             sources = lm.get("sources", [])
         except Exception as e:
             print(f"[product_content] learn_more failed {slug}: {e}", flush=True)
-    return jsonify({
+    out = {
         "slug": slug, "name": p["name"],
         "price": f"${p['price_cents']/100:.2f}",
         "markdown": markdown, "sources": sources,
         "buy_url": f"/begin/buy/{slug}",
         "info_only": bool(p.get("info_only")), "affiliate_url": p.get("affiliate_url", ""),
-    })
+    }
+    # Not ready to order (Alkalize, 2026-10-20): no price and no Buy button. The page
+    # shows the refusal line and links to the product page, where the waiting list is.
+    _nr = _waitlist_refusal(p.get("slug") or slug)
+    if _nr:
+        out.update(price="", buy_url=_nr.url, not_ready_line=str(_nr))
+    return jsonify(out)
 
 
 @app.route("/api/qbo/content-refresh/<slug>", methods=["POST"])
@@ -15230,6 +15238,10 @@ def _resolve_complement(name):
         # An off-sale product is neither added nor opened on the store: its vector still
         # carries the old page's url and price (Molybdenum Syntropy, 2026-10-07).
         slug = _live_slug(slug)
+        # Not ready to order (waitlist_only or out of stock): never suggested, since the
+        # card offers "Add to my order" with its price (Alkalize, 2026-10-20).
+        if slug and _waitlist_block(slug):
+            slug = None
         if not slug:
             url = price = None
     out = {"name": name, "title": title, "url": url, "price": price,
@@ -42472,6 +42484,8 @@ def api_reorder_items():
             seen.add(nm.lower())
             slug = _resolve_buy_slug(nm)
             p = _get_product(slug) if slug else None
+            # Not ready to order (Alkalize, 2026-10-20): unavailable, with the refusal line.
+            _nr = _waitlist_refusal(p.get("slug") or slug) if p else None
             items.append({
                 "name": nm,
                 "slug": (p.get("slug") if p else None),
@@ -42479,7 +42493,8 @@ def api_reorder_items():
                 "current_price": (f"${p['price_cents'] / 100:.2f}" if p else None),
                 "qty": int(it.get("qty") or 1),
                 "last_ordered": (o.get("created_at") or "")[:10],
-                "available": bool(p),
+                "available": bool(p) and not _nr,
+                **({"not_ready_line": str(_nr)} if _nr else {}),
             })
     # Annotate each item with whether the buyer has already reviewed it.
     # Open a dedicated short connection — the orders cx is already closed.
@@ -61590,6 +61605,11 @@ def api_invoice_pay(token):
                                               "Please contact us."}), 503
     if not _invoice_payability.is_payable(order.get("status"), order.get("pay_status"), owed):
         return jsonify({"ok": False, "error": "this invoice is already paid"}), 409
+    # An invoice holding a product that is not ready to order is refused before any
+    # charge or payment instructions (Alkalize, Glen 2026-10-20: "waiting list, no orders").
+    _wl = _cart_waitlist_refusal(order.get("items") or [])
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     if not INVOICE_PAYLINK_ENABLED:
         return jsonify({"ok": False, "error": "online payment is not enabled yet"}), 403
     method = ((request.get_json(silent=True) or {}).get("method") or "card").strip().lower()

@@ -27,7 +27,8 @@ from dashboard import people as _pe
 # One list per product slug, with the tag it carries in house and in GoHighLevel.
 LISTS = {"neuro-magnesium": "retina-renew-waitlist",
          "scar-soft-drink": "scar-soft-drink-waitlist",
-         "fungal-nail-repair": "fungal-nail-repair-waitlist"}
+         "fungal-nail-repair": "fungal-nail-repair-waitlist",
+         "alkalize-bicarbonate-blend": "alkalize-bicarbonate-blend-waitlist"}
 
 # Every string a person sees, per list. Retina Renew's are Glen's approved wording of
 # 2026-09-29, word for word, except the consent (Glen, 2026-10-09: "fix Retina Renew also";
@@ -77,6 +78,23 @@ TEXTS = {
         "body_lead": "Please confirm you'd like an email when Fungal Nail Repair is ready to order:",
         "page_title": "Confirm your Fungal Nail Repair email",
         "success": "We'll email you when Fungal Nail Repair is ready.",
+    },
+    # Fourth list, 2026-10-20: Alkalize Bicarbonate Blend is out of stock and being
+    # reformulated. Glen: "Take back orders, or a waiting list." He approved `intro` and
+    # `consent` word for word (platform tab, 2026-10-20). The other fields are Fungal Nail
+    # Repair's with the product name swapped.
+    "alkalize-bicarbonate-blend": {
+        "product": "Alkalize Bicarbonate Blend",
+        "consent": ("We will email you when Alkalize Bicarbonate Blend is ready to order. "
+                    "Joining this list does not add you to any other mailing list."),
+        "intro": ("Alkalize Bicarbonate Blend is not ready to order yet. Join the waiting list "
+                  "and we will email you when it is ready. No card, no charge."),
+        "reserve_line": "",
+        "subject": "Confirm your Alkalize Bicarbonate Blend email",
+        "body_lead": ("Please confirm you'd like an email when Alkalize Bicarbonate Blend is "
+                      "ready to order:"),
+        "page_title": "Confirm your Alkalize Bicarbonate Blend email",
+        "success": "We'll email you when Alkalize Bicarbonate Blend is ready.",
     },
 }
 # Retina Renew's consent, kept as the module constant earlier code and tests import.
