@@ -373,3 +373,54 @@ def test_present_facts_stay_current(msg, quote):
     diag = "Asthma" if "asthma" in quote else ("Epilepsy" if "epilepsy" in quote else "Breastfeeding")
     out = _one(msg, _item("diagnoses", {"diagnosis": diag}, quote))
     assert out and out[0]["value"]["current"] == "Current"
+
+
+# Marketing's live run on the real extractor, 20 Oct 2026: a fact stated before a
+# question in the same message was dropped. These are the phrasings that failed.
+@pytest.mark.parametrize("msg,item,diag_or_med", [
+    ("I'm 5 months pregnant, is the cleanse ok for me?",
+     _item("diagnoses", {"diagnosis": "Pregnancy", "current": "Current"}, "I'm 5 months pregnant"),
+     "Pregnancy"),
+    ("I take warfarin, can I use the enzymes?",
+     _item("medications", {"medication": "Warfarin"}, "I take warfarin"), "Warfarin"),
+    ("I have a pacemaker, is the PEMF mat safe?",
+     _item("surgeries", {"procedure": "Pacemaker"}, "I have a pacemaker"), "Pacemaker"),
+    ("I'm allergic to shellfish, does this have any?",
+     _item("allergies", {"sensitivity": "Shellfish"}, "I'm allergic to shellfish"), "Shellfish"),
+    ("I'm pregnant. Is the cleanse ok?",
+     _item("diagnoses", {"diagnosis": "Pregnancy"}, "I'm pregnant"), "Pregnancy"),
+    ("Hi Dr Glen, I take warfarin and metformin, can I use the enzymes?",
+     _item("medications", {"medication": "Warfarin"}, "I take warfarin"), "Warfarin"),
+    ("I take warfarin so can I use the enzymes?",
+     _item("medications", {"medication": "Warfarin"}, "I take warfarin"), "Warfarin"),
+    ("I'm breastfeeding my son, is this safe?",
+     _item("diagnoses", {"diagnosis": "Breastfeeding"}, "I'm breastfeeding my son"), "Breastfeeding"),
+    ("I'm breastfeeding my daughter.",
+     _item("diagnoses", {"diagnosis": "Breastfeeding"}, "I'm breastfeeding my daughter"),
+     "Breastfeeding"),
+])
+def test_a_fact_before_a_question_is_recorded(msg, item, diag_or_med):
+    out = _one(msg, item)
+    assert len(out) == 1, msg
+    assert diag_or_med in json.dumps(out[0]["value"]), msg
+
+
+@pytest.mark.parametrize("msg,item", [
+    ("Is it ok if I'm 5 months pregnant?",
+     _item("diagnoses", {"diagnosis": "Pregnancy"}, "I'm 5 months pregnant")),
+    ("Can I use the enzymes if I take warfarin?",
+     _item("medications", {"medication": "Warfarin"}, "I take warfarin")),
+    ("What if I have a pacemaker, is the mat safe?",
+     _item("surgeries", {"procedure": "Pacemaker"}, "I have a pacemaker")),
+    ("Could I be pregnant, or is it the cleanse?",
+     _item("diagnoses", {"diagnosis": "Pregnancy"}, "I be pregnant")),
+    ("So I take warfarin with food?",
+     _item("medications", {"medication": "Warfarin"}, "I take warfarin")),
+    ("Do I take warfarin with food?",
+     _item("medications", {"medication": "Warfarin"}, "I take warfarin")),
+    ("My son is breastfeeding, is that ok?",
+     _item("diagnoses", {"diagnosis": "Breastfeeding"}, "My son is breastfeeding")),
+    ("I'm pregnant.", _item("diet", "x", "I'm pregnant")),
+])
+def test_a_question_or_another_person_still_records_nothing(msg, item):
+    assert _one(msg, item) == []

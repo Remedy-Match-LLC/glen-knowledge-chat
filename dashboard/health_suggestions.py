@@ -239,6 +239,33 @@ def _source_sentence(quote, client_msg):
     return client_msg or ""
 
 
+# A fact stated before a question in the same sentence is still a fact (marketing's
+# live run, 20 Oct 2026): "I take warfarin, can I use the enzymes?". The quote's
+# own clause must open plainly, and what follows it must be the question.
+_ASKING = re.compile(r"\b(?:if|whether|when|what|how|why|which|is|are|am|can|could|should|"
+                     r"would|will|do|does|did|may|might|possible|suppose|supposing)\b", re.I)
+_QUESTION_AFTER = re.compile(r"^[\s,;:.!-]*(?:(?:and|but|so|then)\s+)?(?:is|are|am|can|could|"
+                             r"should|would|will|do|does|did|may|might|what|how|which|"
+                             r"any|anything)\b", re.I)
+
+
+def _asked(quote, sentence):
+    """True when the quote sits inside the sentence's question rather than before it."""
+    if not sentence.rstrip().endswith("?"):
+        return False
+    flat, q = _squash(sentence), _squash(quote)
+    at = flat.find(q)
+    if at < 0:
+        return True
+    before = re.split(r"[,;:]", flat[:at])[-1]
+    after = flat[at + len(q):]
+    if _ASKING.search(before):
+        return True                      # "is it safe if I am pregnant?"
+    # A clause break after the quote ends the fact ("I take warfarin and metformin,
+    # can I..."); with none, the question must start straight after it.
+    return not re.search(r"[,;:]", after) and not _QUESTION_AFTER.search(after)
+
+
 def _is_past(quote):
     return bool(_PAST.search(_PRESENT_PERFECT.sub(" ", quote)))
 
@@ -264,17 +291,20 @@ def _normalize_item(item, client_msg):
     # answer, and nothing the model made up, can become a suggestion.
     if not quote or _squash(quote) not in _squash(client_msg):
         return None
-    if len(quote.split()) < 3 or not _FIRST_PERSON.search(quote):
+    # Two words are enough for a table fact whose term the quote must name anyway
+    # ("I'm pregnant"); free-text fields keep three.
+    if len(quote.split()) < (2 if fid in TABLE_COLUMNS else 3) or not _FIRST_PERSON.search(quote):
         return None
     sentence = _source_sentence(quote, client_msg)
     own = re.compile(r"\bas a (?:child|kid|baby)\b|\bsince (?:i was a )?(?:child|kid|baby)hood\b|"
                      # the client's own pregnancy or breastfeeding (coordinator, 20 Oct 2026)
                      r"\b(?:pregnant with|expecting|nursing|breast-?feeding)\s+"
-                     r"(?:(?:my|our|a|an)\s+)?(?:\w+\s+)?(?:bab(?:y|ies)|child|kids?)\b",
+                     r"(?:(?:my|our|a|an)\s+)?(?:\w+\s+)?(?:bab(?:y|ies)|child|kids?|sons?|daughters?|"
+                     r"twins|little one)\b",
                      re.I)        # the client's own childhood, not another person
     if _OTHER_PERSON.search(own.sub(" ", quote)) or _OTHER_PERSON.search(own.sub(" ", sentence)):
         return None
-    if sentence.rstrip().endswith("?"):
+    if _asked(quote, sentence):
         return None                      # a question is not a fact
     if fid in TABLE_COLUMNS:
         value = normalize_row(fid, item.get("value"))
