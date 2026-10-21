@@ -151,13 +151,15 @@ def ask(question: str, history=None, gate=False) -> tuple:
     them. gate=True runs the non-member consent classifier as chat() does."""
     vec = app.embed(question)
     matches = app.query_all_namespaces(vec)
-    # chat() drops drug interaction snippets on a caution's own subject (2026-10-21);
-    # older builds lack it, so the same script still measures main.
-    matches = getattr(app, "_drop_caution_subject_snippets", lambda m, q: m)(matches, question)
+    prior = [h["content"] for h in (history or []) if h.get("role") == "user"]
+    # chat() drops drug interaction snippets on a caution's own subject, a follow-up
+    # included (2026-10-21); older builds lack it, so the script still measures main.
+    _drop = getattr(app, "_drop_caution_subject_snippets", None)
+    if _drop:
+        matches = _drop(matches, question, prior)
     context_str, _ = app.build_context(matches)
     directive = app.build_product_directive(snippets_text=context_str, query_text=question)
     product_block = f"{directive}\n\n" if directive else ""
-    prior = [h["content"] for h in (history or []) if h.get("role") == "user"]
     facts = _facts(question, prior)
     system = app.get_system_prompt("self-healing")
     gated = bool(gate and app._is_gated_question(question))

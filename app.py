@@ -2453,7 +2453,7 @@ def _bundle_bot_cautions(bundle, products):
             if products[c].get("chat_caution") and (products[c].get("warning") or "").strip()]
 
 
-def _named_product_facts(query_text: str, gated: bool = False) -> str:
+def _named_product_facts(query_text: str, gated: bool = False, given_out=None) -> str:
     """Approved store text for the catalog products the user names in the question.
 
     The chat does not search `specific-formulations`, so a product whose facts live
@@ -2643,6 +2643,10 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     # A caution held inside a pinned description is shown too, so it counts here, but
     # only beside a caution-only product: answers about pinned products alone keep the
     # header they had (review round 3).
+    # The products whose cautions this block carries, after the product cap, for the
+    # snippet filter (review round 2b).
+    if given_out is not None:
+        given_out.update(given)
     shown = written + held if any_copy_rule else written
     several = ((_SEVERAL_CAUTIONS_RULE + "\n") if shown > 1
                else (_ONE_CAUTION_RULE + "\n") if shown == 1 and any_copy_rule
@@ -2782,7 +2786,8 @@ def named_product_facts_block(query_text: str, gated: bool = False,
 _CAUTION_SUBJECT_WORDS = {
     "warfarin": ("warfarin", "coumadin", "jantoven"),
     "blood thinner": ("blood thinner", "anticoagulant", "warfarin", "coumadin", "jantoven",
-                      "eliquis", "apixaban", "xarelto", "rivaroxaban", "plavix", "heparin"),
+                      "eliquis", "apixaban", "xarelto", "rivaroxaban", "pradaxa",
+                      "dabigatran", "savaysa", "edoxaban", "plavix", "heparin"),
     "pregnan": ("pregnan",),
     "breastfeeding": ("breastfeeding", "breast feeding", "nursing"),
     "thyroid": ("thyroid", "levothyroxine", "synthroid", "hashimoto"),
@@ -2818,31 +2823,48 @@ def _is_drug_interaction_snippet(meta) -> bool:
             and " interactions " in str(meta.get("title") or "").lower())
 
 
-def _caution_subjects_asked(query_text: str) -> list:
-    """The caution subjects the question names, for opted-in cautions the answer carries.
-    Empty when no named product brings an opted-in caution."""
+def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
+    """The caution subjects the question names, for the opted-in cautions its facts block
+    carries. The products come from the facts builder itself, so a follow-up resolves
+    from the earlier turns and a product cut by the cap brings no caution (review round
+    2b). The subject words come from this message. Matching is by substring, so
+    "hypothyroidism" finds "thyroid". Empty when no opted-in caution is carried."""
     products = (_PRODUCTS or {}).get("products", {}) or {}
     if not query_text or not products:
         return []
-    cautions = []
-    for slug in _named_product_spans(query_text, products):
-        product = products[slug]
-        if product.get("chat_caution"):
-            cautions.append(product.get("warning") or "")
-        if product.get("bundle"):
-            cautions += [products[c].get("warning") or ""
-                         for c in _bundle_bot_cautions(product, products)]
-    caution = " ".join(cautions).lower()
+    given = set()
+    _named_product_facts(_carried_query(query_text, prior_user_turns), given_out=given)
+    caution = " ".join((products.get(k) or {}).get("warning") or "" for k in sorted(given)
+                       if (products.get(k) or {}).get("chat_caution")).lower()
     q = query_text.lower()
     return [key for key, words in _CAUTION_SUBJECT_WORDS.items()
-            if key in caution and any(re.search(r"\b" + re.escape(w), q) for w in words)]
+            if key in caution and any(w in q for w in words)]
 
 
-def _drop_caution_subject_snippets(matches, query_text: str):
+def _chat_prior_user_turns(history, session_id) -> list:
+    """The earlier user turns chat() gives the facts block: the request's history, or,
+    with none, this session's last three logged questions. Read here for the snippet
+    filter, which runs before chat() builds its messages. A failed read gives none, so
+    the snippets are left as they are."""
+    turns = [t.get("content") for t in (history or [])[-6:]
+             if isinstance(t, dict) and t.get("role") == "user" and t.get("content")]
+    if turns or not session_id:
+        return turns
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            rows = cx.execute("SELECT query FROM query_log WHERE session_id = ? "
+                              "ORDER BY id DESC LIMIT 3", (session_id,)).fetchall()
+        return [r[0] for r in reversed(rows) if r[0]]
+    except Exception as e:
+        print(f"[chat] prior turns for the snippet filter failed: {e!r}", flush=True)
+        return []
+
+
+def _drop_caution_subject_snippets(matches, query_text: str, prior_user_turns=None):
     """Drug interaction snippets are dropped only when the answer carries an opted-in
     caution and the question names a subject that caution names. Every other question
     keeps its snippets unchanged."""
-    if not matches or not _caution_subjects_asked(query_text):
+    if not matches or not _caution_subjects_asked(query_text, prior_user_turns):
         return matches
     return [m for m in matches if not _is_drug_interaction_snippet(m.metadata)]
 
@@ -6700,8 +6722,10 @@ def chat():
                        "image_count": len(attachment_blocks)})
             return
 
-        context_str, sources_list = build_context(
-            _drop_caution_subject_snippets(all_matches, query))
+        # A follow-up ("Can I take it with warfarin?") resolves its product from the
+        # earlier user turns, as the facts block does (review round 2b).
+        context_str, sources_list = build_context(_drop_caution_subject_snippets(
+            all_matches, query, _chat_prior_user_turns(history, session_id)))
 
         # ── Slice 4: member-mode overlay ──────────────────────────────────────
         # Read the rm_member_email cookie set by /coaching/auth/<token>.

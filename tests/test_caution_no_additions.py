@@ -241,3 +241,61 @@ def test_the_full_report_stream_drops_them_too(spy):
             for _ in resp.response:
                 pass
     assert spy == [["m5", "m6"]]
+
+
+# Review round 2b: follow-ups, other spellings of a subject, and the product cap.
+PRIOR = ["Tell me about Vitamin D Syntropy"]
+
+
+def test_a_follow_up_filters_from_the_product_named_before():
+    q = "Can I take it with warfarin?"
+    assert app._caution_subjects_asked(q, PRIOR) == ["warfarin", "blood thinner"]
+    assert [m.id for m in app._drop_caution_subject_snippets(_matches(), q, PRIOR)] == [
+        "m5", "m6"]
+    # With no earlier turn there is no product and so no caution: snippets stay.
+    ms = _matches()
+    assert app._drop_caution_subject_snippets(ms, q) is ms
+
+
+def test_chat_filters_a_follow_up_from_its_history(spy):
+    try:
+        app.app.test_client().post(
+            "/chat", json={"query": "Can I take it with warfarin?", "level": "executive",
+                           "history": [{"role": "user", "content": PRIOR[0]},
+                                       {"role": "assistant", "content": "It is a D3 formula."}]},
+            buffered=True)
+    except _Stop:
+        pass
+    assert spy == [["m5", "m6"]]
+
+
+@pytest.mark.parametrize("q, subject", [
+    ("Is Vitamin D Syntropy safe with hypothyroidism?", "thyroid"),
+    ("Is Vitamin D Syntropy safe with hyperthyroidism?", "thyroid"),
+    ("Can I take Vitamin D Syntropy on Pradaxa?", "blood thinner"),
+    ("Can I take Vitamin D Syntropy with dabigatran?", "blood thinner"),
+    ("Can I take Vitamin D Syntropy on Savaysa?", "blood thinner"),
+    ("Can I take Vitamin D Syntropy with edoxaban?", "blood thinner"),
+])
+def test_other_names_for_a_subject_match(q, subject):
+    assert subject in app._caution_subjects_asked(q)
+
+
+def test_a_product_cut_by_the_cap_brings_no_caution():
+    # Three earlier blocks fill the cap, so Vitamin D Syntropy's caution never reaches
+    # the answer and its warfarin subject must not remove the interaction snippets.
+    q = "Can I take Iron Out, Estro-Clear, Angiostasis and Vitamin D Syntropy with warfarin?"
+    assert "### Vitamin D Syntropy" not in app.named_product_facts_block(q)
+    assert app._caution_subjects_asked(q) == []
+    ms = _matches()
+    assert app._drop_caution_subject_snippets(ms, q) is ms
+    # Named first, it is inside the cap and filters.
+    q2 = "Can I take Vitamin D Syntropy, Iron Out, Estro-Clear and Angiostasis with warfarin?"
+    assert app._caution_subjects_asked(q2) == ["warfarin", "blood thinner"]
+
+
+def test_chat_prior_turns_are_the_user_turns_of_its_history():
+    history = [{"role": "user", "content": PRIOR[0]},
+               {"role": "assistant", "content": "It is a D3 formula."}]
+    assert app._chat_prior_user_turns(history, "s1") == PRIOR
+    assert app._chat_prior_user_turns([], None) == []
