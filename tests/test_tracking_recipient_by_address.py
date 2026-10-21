@@ -366,3 +366,30 @@ def test_a_failed_holds_read_is_none_and_rolls_back():
             _Broken.rolled += 1
     assert tr.dropship_holds(_Broken()) is None
     assert _Broken.rolled == 1
+
+
+@pytest.mark.parametrize("label,full,ok", [
+    ("Mary Smith", "Mary Ann Smith", True),
+    ("Robin Roemer Brown", "Robin Roemer-Brown", True),
+    ("Cyndi O'Brien", "Cyndi OBrien", True),
+    ("Alice Smith", "Andrew Smith", False),
+    ("T Client", "Tony Client", False),
+    ("Maria Garcia", "Maria Garcia Lopez", False),
+])
+def test_the_strict_match_needs_the_first_name_and_the_surname(label, full, ok):
+    assert tr.strict_name_agrees(label, full) is ok
+
+
+def test_a_loose_dropship_match_drafts_instead_of_routing():
+    """Round 2c: Alice's label must not route to the practitioner of Andrew's order."""
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720", ship_name="Andrew Smith")
+    r = tr.resolve_by_address(cx, _ship("Alice Smith", "4 Hale St", "96720"))
+    assert r["email"] is None and r["conflict"] is True
+
+
+def test_an_own_order_named_only_loosely_is_not_its_buyers_own():
+    cx = _dropship_db()
+    _own_order(cx, "c@own.example", "C Obrien", "4 Hale St", "96720")
+    r = tr.resolve_by_address(cx, _ship("Cyndi Obrien", "4 Hale St", "96720"))
+    assert (r["email"], r["name_agrees"]) == ("c@own.example", False)

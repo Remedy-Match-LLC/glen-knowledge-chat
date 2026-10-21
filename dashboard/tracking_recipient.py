@@ -155,7 +155,8 @@ def _street_after_business_line(shipment):
 def resolve_by_address(cx, shipment):
     """{email, source: 'board'|'fmp'|None, conflict, reason, candidates, dropship,
     name_agrees}. `dropship` is True when the email came from a drop-ship order;
-    `name_agrees` when a board order's own name agrees with the label.
+    `name_agrees` when a board order's own name agrees with the label by the strict
+    match, which is what lets the watcher treat it as that person's own purchase.
 
     A label's business line is joined onto its street, and then the street matches
     nothing on file: Fukushima's 6 labels on 2026-10-14 became 6 blank drafts. When the
@@ -222,9 +223,21 @@ def _name_words(full):
     return [w for w in (_alnum(t) for t in re.findall(r"[a-z0-9'-]+", _ascii(full))) if w]
 
 
+def strict_name_agrees(label_name, full_name):
+    """The strict match, for CHOOSING a recipient. The normalised first names are the
+    same and so are the surnames: the last words, or everything after the first name
+    run together ('Roemer Brown' with 'Roemer-Brown'). 'Mary Smith' agrees with 'Mary
+    Ann Smith'; 'Alice Smith' never agrees with 'Andrew Smith'."""
+    a, b = _name_words(label_name), _name_words(full_name)
+    if len(a) < 2 or len(b) < 2 or a[0] != b[0]:
+        return False
+    return a[-1] == b[-1] or "".join(a[1:]) == "".join(b[1:])
+
+
 def client_name_agrees(label_name, ship_name):
-    """Does a label name the client on a drop-ship ship-to? Used only together with a
-    matching address. The full names agree once normalised, or the first initials
+    """The loose match, for HOLDING only, never for choosing a recipient: one person
+    or a household member with the same initial and surname. Used only together with
+    a matching address. The full names agree once normalised, or the first initials
     agree and they share a later word, so a middle or a double surname still agrees:
     'Mary Ann Smith' with 'Mary Smith', 'Maria Garcia Lopez' with 'Maria Garcia'."""
     a, b = _name_words(label_name), _name_words(ship_name)
@@ -309,25 +322,28 @@ def dropship_holds(cx):
     return holds
 
 
-def holds_touching(holds, shipment, to=None):
-    """The holds this parcel cannot be told apart from: the held client's own email, or
-    the same full ship-to address AND a name that agrees. A name alone never holds:
-    surnames repeat across the country, and a stranger would lose their tracking."""
+def holds_at_address(holds, shipment):
+    """The holds whose full ship-to address is this label's, read with and without
+    the label's business line."""
     z = zip5(shipment.get("zip"))
     streets = {street_key(shipment.get("street"))}
     alt = _street_after_business_line(shipment)
     if alt:
         streets.add(street_key(alt))
     streets.discard("")
+    return [h for h in holds or [] if z and h["zip"] == z and h["streets"] & streets]
+
+
+def holds_touching(holds, shipment, to=None):
+    """The holds this parcel cannot be told apart from: the held client's own email, or
+    the same full ship-to address AND a name that agrees loosely. A name alone never
+    holds: surnames repeat across the country, and a stranger would lose their tracking."""
     label = shipment.get("recipient_name") or ""
     to = (to or "").strip().lower()
-    out = []
-    for h in holds or []:
-        if (h["client"] and h["client"] == to) or \
-                (z and h["zip"] == z and h["streets"] & streets
-                 and client_name_agrees(label, h["name"])):
-            out.append(h)
-    return out
+    here = holds_at_address(holds, shipment)
+    return [h for h in holds or []
+            if (h["client"] and h["client"] == to)
+            or (h in here and client_name_agrees(label, h["name"]))]
 
 
 def email_is_held(cx, email, holds=None):
@@ -347,7 +363,13 @@ def email_is_held(cx, email, holds=None):
         return False
     rows = cx.execute("SELECT recipient_name, address_block FROM shipments "
                       "WHERE lower(resolved_email) = ?", (em,)).fetchall()
-    return any(holds_touching(holds, shipment_from_block(r[0], r[1])) for r in rows)
+    for r in rows:
+        touched = holds_touching(holds, shipment_from_block(r[0], r[1]))
+        # A client's parcel correctly sent to its own practitioner says nothing about
+        # the practitioner, so it never holds the practitioner's own mail.
+        if any(h["prac"] != em for h in touched):
+            return True
+    return False
 
 
 def _resolve_at(cx, name, z, sk, require_name):
@@ -370,6 +392,9 @@ def _resolve_at(cx, name, z, sk, require_name):
             return client_name_agrees(name, _order_name(o))
         return names_agree(name, *_split_name(_order_name(o)))
 
+    def strict(o):
+        return strict_name_agrees(name, _order_name(o))
+
     # Glen, 2026-10-21: a drop-ship client gets mail from us only when that
     # practitioner turns it on. Drop-ship orders are weighed before the name filter
     # below, by the client's name on the ship-to, never the practitioner's.
@@ -377,7 +402,10 @@ def _resolve_at(cx, name, z, sk, require_name):
     if dropship:
         own = [o for o in board if o.get("source") != "dropship" and agrees(o)]
         ours = [o for o in dropship if agrees(o)]
-        if ours and not own:
+        # Routing to a practitioner, which can auto-send, needs the strict match. A
+        # drop-ship that agrees only loosely (Alice Smith on the label, Andrew Smith on
+        # the order) may be the client or a housemate, so it drafts.
+        if ours and not own and all(strict(o) for o in ours):
             email, clash = _one_email([(_dropship_to(o, _switched_on(cx)), True)
                                        for o in ours])
             if email:
@@ -388,7 +416,7 @@ def _resolve_at(cx, name, z, sk, require_name):
             # A housemate's own order: the label names them, not the drop-ship client.
             email, clash = _one_email([(o.get("email"), True) for o in own])
             if email:
-                return _result(email, "board", name_agrees=True,
+                return _result(email, "board", name_agrees=any(strict(o) for o in own),
                                reason="own order at a drop-ship address, name agrees")
         return _result(conflict=True,
                        reason="drop-ship order at the address; the label name does not settle it",
@@ -399,13 +427,13 @@ def _resolve_at(cx, name, z, sk, require_name):
     if board:
         email, clash = _one_email([(o.get("email"), True) for o in board])
         if email:
-            return _result(email, "board", name_agrees=any(agrees(o) for o in board),
+            return _result(email, "board", name_agrees=any(strict(o) for o in board),
                            reason="open board order at the ship-to address")
         # Several emails at one address (a household): narrow by the label's name.
         named = [o for o in board if agrees(o)]
         email, clash = _one_email([(o.get("email"), True) for o in named])
         if email:
-            return _result(email, "board", name_agrees=True,
+            return _result(email, "board", name_agrees=any(strict(o) for o in named),
                            reason="board order at the address, name agrees")
         return _result(conflict=True, reason="several board orders at the address",
                        candidates=[(o.get("email") or "").lower() for o in board])

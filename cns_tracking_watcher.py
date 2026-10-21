@@ -358,11 +358,15 @@ def _dropship_hold(r, shipments, cx):
         return True, f"Held: {r.get('review_reason') or 'address lookup failed'}."
     path = r.get("path") or "other"
     if path == "dropship" and not r.get("to_client"):
-        hit = []      # a drop-ship order at the address, going to its practitioner
+        # A drop-ship going to its practitioner, unless that practitioner is herself
+        # another practitioner's held client at this very address.
+        hit = [h for s in shipments for h in _trc.holds_at_address(holds, s)
+               if h["client"] and h["client"] == to]
     elif path == "own":
         # The board order is this person's own purchase, not a drop-ship, and the label
-        # names them. Glen's rule covers drop-ship orders, not a person's own purchases,
-        # so a former drop-ship client's own order still sends, even to a held email.
+        # names its buyer by the strict match. Glen's rule covers drop-ship orders, not
+        # a person's own purchases, so a former drop-ship client's own order still
+        # sends, even to a held email.
         hit = []
     else:
         # Every name-only fallback, a board order that does not name the label, and a

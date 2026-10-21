@@ -327,3 +327,36 @@ def test_a_client_of_two_practitioners_is_held_while_either_is_off(cx):
     cx.commit()
     r, sends, drafts = _real(cx, NONE)
     assert sends == [] and drafts == [None] and r["confidence"] == "dropship-held"
+
+
+def test_alice_is_not_sent_to_the_practitioner_of_andrews_order(cx):
+    """Round 2c: same initial, same surname, same address. It drafts."""
+    from tests.test_cns_watcher_one_email_per_address import _block, _confirmation
+    _with_dropship(cx, ship_name="Andrew Smith", client=None, **AT_LABEL)
+    html = _confirmation(_block("9405530109355600000011", "Alice Smith", "1016 W CHICAGO CT",
+                                "CHANDLER AZ 85224-5249 US"))
+    r, sends, drafts = _real(cx, _match("alice@x.example", "high"), html)
+    assert sends == [] and drafts == [None]
+
+
+def test_a_practitioner_who_is_a_held_client_at_the_address_is_not_sent(cx):
+    """Round 2c: Ashley's drop-ship goes to Ashley, but another practitioner's held
+    drop-ship to Ashley sits at this address, so it drafts."""
+    _with_dropship(cx, **AT_LABEL)
+    cx.execute("INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+               "practitioner_id, recipient_email, address_json) VALUES (?,?,?,?,?,?,?,?,?)",
+               ("2026-09-01", "dropship", "d2", "other@prac.example", "Other", "done", "p2",
+                PRAC, json.dumps({"name": "Ashley King", "street": "1016 W Chicago Ct",
+                                  "zip": "85224"})))
+    cx.commit()
+    r, sends, drafts = _real(cx, NONE)
+    assert sends == [] and drafts == [None] and r["confidence"] == "dropship-held"
+
+
+def test_the_own_order_exception_needs_the_strict_name(cx):
+    """Round 2c: 'C O'Brien' on her own order under the held email does not prove the
+    label 'Cyndi O'Brien' is that order's parcel, so the held email drafts."""
+    _with_dropship(cx, status="delivered", ship_name="Cyndi O'Brien", **AT_LABEL)
+    _own(cx, CLIENT, "C O'Brien")
+    r, sends, drafts = _real(cx, NONE)
+    assert sends == [] and drafts == [None]

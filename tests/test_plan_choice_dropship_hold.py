@@ -111,3 +111,17 @@ def test_the_console_lists_held_shipments(monkeypatch, tmp_db):
     r = app.app.test_client().get("/api/console/shipments/held",
                                   headers={"X-Console-Key": "testkey"})
     assert [h["tracking_number"] for h in r.get_json()["held"]] == ["T3"]
+
+
+def test_a_practitioner_is_not_held_by_her_clients_parcels(monkeypatch, tmp_db):
+    """Round 2c: tracking correctly sent to the practitioner at her client's address
+    does not hold the practitioner's own plan-choice mail."""
+    from dashboard.tracking import record_shipment
+    app, sent = _setup(monkeypatch, tmp_db)
+    with sqlite3.connect(tmp_db) as cx:
+        record_shipment(cx, tracking_number="T9", resolved_email="ashley@prac.example",
+                        match_confidence="address-board", status="sent",
+                        recipient_name="Tony Client",
+                        address_block="4 HALE ST / HILO HI 96720-1234 US")
+    assert _send(app, {"email": "ashley@prac.example"}).get_json()["count"] == 1
+    assert sent == ["ashley@prac.example"]
