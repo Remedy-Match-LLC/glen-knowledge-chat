@@ -19,6 +19,19 @@ _ZERO_DOSE = re.compile(r"^\s*0(?:\.0+)?\s*(?:mg|mcg|µg|g|iu)?\s*$", re.I)
 _CAPSULE_SHELL = re.compile(r"^\s*enteric\s+acid[\s-]+resistant\s+veg(?:i\s*cap(?:sule)?|icap)\s+00\s*$", re.I)
 
 
+# The page-copy scraper (02 Skills/scrape-remedymatch.py, chunk()) writes each
+# specific-formulations chunk as "<title>. Price: <price>. <body>". That price was
+# copied from the old store page and is stale; data/products.json price_cents is the
+# only price source (Glen, 2026-10-21). Text bound for a prompt drops it.
+_SCRAPED_PRICE_RE = re.compile(
+    r"\bPrice:\s*(?:US\$|USD\s?|\$)?\s?\d[\d,]*(?:\.\d+)?\.?\s*", re.I)
+
+
+def redact_scraped_price(text):
+    """`text` with every scraped "Price: $X." anchor removed."""
+    return _SCRAPED_PRICE_RE.sub("", text or "")
+
+
 def shown_ingredients(items):
     """The ingredient rows a customer sees. A 0 mg row and the capsule shell are dropped.
 

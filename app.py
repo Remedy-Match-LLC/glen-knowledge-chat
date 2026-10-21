@@ -3507,6 +3507,9 @@ def query_ns(vec, ns, k):
 # guide, AI-training asides), and product-price queries pull 0/5 priced results
 # from it — the vectors are semantically too far from product questions to leak.
 _TRANSCRIPT_NAMESPACES = {"consultations"}
+# Scraped store pages: each chunk opens "<title>. Price: <price>." with a stale copied
+# price. Only that anchor is dropped; the store's price_cents is the price (2026-10-21).
+_STORE_COPY_NAMESPACES = {"specific-formulations"}
 _MONEY_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d{2})?")
 
 
@@ -3516,6 +3519,9 @@ def _redact_transcript_prices(text, meta):
     ns = (meta or {}).get("_source_ns") or (meta or {}).get("namespace")
     if ns in _TRANSCRIPT_NAMESPACES:
         return _MONEY_RE.sub("$[amount omitted]", text)
+    if ns in _STORE_COPY_NAMESPACES:
+        from dashboard.products import redact_scraped_price
+        return redact_scraped_price(text)
     return text
 
 
@@ -15279,13 +15285,15 @@ _RESOLVE_NAME_INDEX = _build_resolve_name_index(_PRODUCTS.get("products") or {})
 def _complement_store_price(slug):
     """The store's price label for a catalog slug, formatted as the product page
     formats it ("$70.00"). None when the product is unknown or has no price_cents
-    of its own: no price is shown rather than a default or a copied one."""
+    of its own: no price is shown rather than a default or a copied one. A zero
+    price is a price, so it shows as "$0.00". This is the base store price, as the
+    product page shows it, and the one /begin/concierge/add charges."""
     p = _get_product(slug)
     if not p:
         return None
     raw = (_PRODUCTS.get("products") or {}).get(p["slug"]) or {}
     cents = raw.get("price_cents")
-    if not cents:
+    if cents is None:
         return None
     return f"${cents/100:.2f}"
 
@@ -15297,8 +15305,12 @@ def _resolve_complement(name):
         return None
     key = name.strip().lower()
     if key in _COMPLEMENT_CACHE:
-        return _COMPLEMENT_CACHE[key]
-    title = url = price = None
+        # The cache holds the resolution, never the price: the price is read from
+        # the catalog on every call, so a store price change shows at once.
+        hit = dict(_COMPLEMENT_CACHE[key])
+        hit["price"] = _complement_store_price(hit["slug"]) if hit["slug"] else None
+        return hit
+    title = url = None
     try:
         vec = embed(name)
         res = _idx.query(vector=vec, top_k=1, namespace="specific-formulations", include_metadata=True)
@@ -15318,13 +15330,18 @@ def _resolve_complement(name):
         # card offers "Add to my order" with its price (Alkalize, 2026-10-20).
         if slug and _waitlist_block(slug):
             slug = None
+        # info_only, inactive or otherwise not orderable: no "Add to my order" card,
+        # since /begin/concierge/add refuses it (Biofield Analysis, 2026-10-21).
+        if slug and not _is_orderable(slug):
+            slug = None
         if not slug:
             url = None
-    price = _complement_store_price(slug) if slug else None
-    out = {"name": name, "title": title, "url": url, "price": price,
+    out = {"name": name, "title": title, "url": url, "price": None,
            "slug": slug, "in_catalog": bool(slug)}
     _COMPLEMENT_CACHE[key] = out
-    return out
+    hit = dict(out)
+    hit["price"] = _complement_store_price(slug) if slug else None
+    return hit
 
 
 _CONCIERGE_SYSTEM = (
@@ -15496,6 +15513,10 @@ def begin_concierge_add():
         return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     if not p or not _is_orderable(p.get("slug") or slug, p):
         return jsonify({"ok": False, "error": "not an addable catalog product"}), 400
+    # The card showed no price for a product with no price_cents of its own, so it
+    # must not be charged at the catalog default. One rule for card and charge.
+    if _complement_store_price(p["slug"]) is None:
+        return jsonify({"ok": False, "error": "this product has no store price yet"}), 400
     if not invoice_id:
         return jsonify({"ok": False, "error": "invoice_id required"}), 400
     try:
@@ -15544,14 +15565,17 @@ def qbo_price_coverage():
     It used to harvest prices from the specific-formulations vectors, to help
     populate products.json. The store's price_cents is now the only price source
     (Glen, 2026-10-21) and 154 of 155 vector prices were stale, so this reports
-    catalog coverage only and never reads vector metadata."""
+    catalog coverage of active products only and never reads vector metadata. A
+    zero price counts as covered."""
     if not _qbo_auth_ok():
         return jsonify({"error": "Unauthorized"}), 401
     out = []
     for slug, p in (_PRODUCTS.get("products") or {}).items():
+        if p.get("inactive"):
+            continue  # active products only: an inactive record is not sold
         cents = p.get("price_cents")
-        row = {"slug": slug, "name": p.get("name", ""), "found": bool(cents)}
-        if cents:
+        row = {"slug": slug, "name": p.get("name", ""), "found": cents is not None}
+        if cents is not None:
             row.update({"price_cents": cents, "price": f"${cents/100:.2f}"})
         out.append(row)
     return jsonify({"ok": True, "covered": sum(1 for o in out if o.get("found")),
