@@ -82,7 +82,9 @@ def test_intake_panel_is_rendered_for_hub_and_legacy_portals():
 
 def test_intake_hash_routes_to_terms_prerequisite_when_gate_is_active():
     assert 'const tosCard = document.getElementById("portal-tos-card")' in HTML
-    assert 'if(key === "intake" && tosCard)' in HTML
+    # Every route returns under the gate and keeps its hash; intake and chat also
+    # lead to the Terms card (review round 3, 2026-10-20).
+    assert 'if(tosCard){\n    if(key === "intake" || key === "chat"){' in HTML
     assert 'id="portal-tos-card"' in HTML
     assert "applyPortalHash();\n    return;   // suppress the home until agreed" in HTML
 

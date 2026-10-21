@@ -38994,9 +38994,11 @@ def client_google_start():
         return ("Not found", 404)
     from flask import make_response as _mkresp, redirect as _redir
     from dashboard import portal_providers as _providers
+    from dashboard import portal_return as _ret
     redirect_uri = _portal_provider_redirect_uri("google")
     with _db_lock, db.connect(LOG_DB) as cx:
-        state, nonce, verifier = _providers.create_transaction(cx, "google", redirect_uri)
+        state, nonce, verifier = _providers.create_transaction(
+            cx, "google", redirect_uri, _ret.clean_next(request.args.get("next")))
     url = _providers.google_authorization_url(
         os.environ["PORTAL_GOOGLE_CLIENT_ID"], redirect_uri, state, nonce, verifier)
     resp = _mkresp(_redir(url))
@@ -39011,9 +39013,11 @@ def client_apple_start():
         return ("Not found", 404)
     from flask import make_response as _mkresp, redirect as _redir
     from dashboard import portal_providers as _providers
+    from dashboard import portal_return as _ret
     redirect_uri = _portal_provider_redirect_uri("apple")
     with _db_lock, db.connect(LOG_DB) as cx:
-        state, nonce, _ = _providers.create_transaction(cx, "apple", redirect_uri)
+        state, nonce, _ = _providers.create_transaction(
+            cx, "apple", redirect_uri, _ret.clean_next(request.args.get("next")))
     url = _providers.apple_authorization_url(
         os.environ["PORTAL_APPLE_SERVICES_ID"], redirect_uri, state, nonce)
     resp = _mkresp(_redir(url))
@@ -39022,31 +39026,46 @@ def client_apple_start():
     return resp
 
 
-def _finish_external_provider(profile):
+# The route key (#chat) travels inside the provider transaction, bound to its state,
+# so a Google and an Apple sign-in running at once each keep their own (review round
+# 2, 2026-10-20).
+
+
+def _login_error(kind, next_key=""):
+    """Back to sign in after a failure, keeping the route the client set out for.
+    Only a known route key survives (dashboard/portal_return)."""
+    from flask import redirect as _redir
+    from dashboard import portal_return as _ret
+    return _redir(f"/portal/login?error={kind}{_ret.query(next_key)}")
+
+
+def _finish_external_provider(profile, next_key=""):
     """Sign in a known provider subject, or require canonical-email proof before
-    first link. Never provisions a person from a returning-client login."""
+    first link. Never provisions a person from a returning-client login.
+    `next_key` is checked again here: only a known portal route survives."""
     from flask import make_response as _mkresp, redirect as _redir
     from dashboard import portal_auth as _pa, portal_identity as _pi
+    from dashboard import portal_return as _ret
     provider, subject = profile["provider"], profile["subject"]
     with _db_lock, db.connect(LOG_DB) as cx:
         pid = _pa.identity_by_provider_subject(cx, provider, subject)
         if pid:
             sess = _pi.create_client_session(cx, pid, profile.get("email", ""))
-            resp = _mkresp(_redir("/portal/me"))
+            resp = _mkresp(_redir(_ret.portal_me(next_key)))
             resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
                             httponly=True, samesite="Lax", secure=request.is_secure)
             return resp
         email = profile.get("email", "")
         pid = _pa.person_by_verified_email(cx, email) if email else None
         if not pid:
-            return _redir("/portal/login?error=provider")
+            return _login_error("provider", next_key)
         token = _pa.create_provider_link_confirmation(
             cx, pid, provider, subject, email, profile.get("name", ""))
         row = cx.execute("SELECT name FROM people WHERE id=?", (pid,)).fetchone()
     _send_full_report_email(
         email, row[0] if row else "", "Confirm your Healing Oasis sign-in",
         "Aloha,\n\nConfirm that you want to use " + provider.title() + " to sign in:\n"
-        f"{portal_base()}/portal/auth/link-confirm?token={token}\n\n"
+        f"{portal_base()}/portal/auth/link-confirm?token={token}{_ret.query(next_key)}\n\n"
         f"This link expires in {_format_ttl(_pa.PROVIDER_LINK_TTL_MIN)}. "
         "If you did not request it, ignore this email.",
         respect_suppression=False)
@@ -39063,20 +39082,22 @@ def client_google_callback():
     from flask import redirect as _redir
     from dashboard import portal_providers as _providers
     state = (request.args.get("state") or "").strip()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        next_key = _providers.transaction_next(cx, state, "google")
     if not state or state != request.cookies.get(_provider_state_cookie("google"), ""):
-        return _redir("/portal/login?error=provider")
+        return _login_error("provider", next_key)
     with _db_lock, db.connect(LOG_DB) as cx:
         transaction = _providers.consume_transaction(cx, state, "google")
     if not transaction:
-        return _redir("/portal/login?error=provider")
+        return _login_error("provider", next_key)
     try:
         profile = _providers.exchange_google(
             request.args.get("code", ""), os.environ["PORTAL_GOOGLE_CLIENT_ID"],
             os.environ["PORTAL_GOOGLE_CLIENT_SECRET"], transaction)
     except Exception as exc:
         app.logger.warning("Google portal login failed: %r", exc)
-        return _redir("/portal/login?error=provider")
-    return _finish_external_provider(profile)
+        return _login_error("provider", next_key)
+    return _finish_external_provider(profile, transaction.get("next", ""))
 
 
 @app.route("/portal/auth/apple/callback", methods=["POST"])
@@ -39086,12 +39107,14 @@ def client_apple_callback():
     from flask import redirect as _redir
     from dashboard import portal_providers as _providers
     state = (request.form.get("state") or "").strip()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        next_key = _providers.transaction_next(cx, state, "apple")
     if not state or state != request.cookies.get(_provider_state_cookie("apple"), ""):
-        return _redir("/portal/login?error=provider")
+        return _login_error("provider", next_key)
     with _db_lock, db.connect(LOG_DB) as cx:
         transaction = _providers.consume_transaction(cx, state, "apple")
     if not transaction:
-        return _redir("/portal/login?error=provider")
+        return _login_error("provider", next_key)
     try:
         profile = _providers.exchange_apple(
             request.form.get("code", ""), request.form.get("id_token", ""),
@@ -39101,30 +39124,33 @@ def client_apple_callback():
             request.form.get("user"))
     except Exception as exc:
         app.logger.warning("Apple portal login failed: %r", exc)
-        return _redir("/portal/login?error=provider")
-    return _finish_external_provider(profile)
+        return _login_error("provider", next_key)
+    return _finish_external_provider(profile, transaction.get("next", ""))
 
 
 @app.route("/portal/auth/link-confirm", methods=["GET", "POST"])
 def client_provider_link_confirm():
     from flask import make_response as _mkresp, redirect as _redir
     from dashboard import portal_auth as _pa, portal_identity as _pi
+    from dashboard import portal_return as _ret
     token = (request.args.get("token") or request.form.get("token") or "").strip()
+    next_key = _ret.clean_next(request.args.get("next") or request.form.get("next"))
     if request.method == "GET":
         with _db_lock, db.connect(LOG_DB) as cx:
             pending = _pa.validate_provider_link_confirmation(cx, token)
         if not pending:
-            return _redir("/portal/login?error=provider")
+            return _login_error("provider", next_key)
         return _confirm_post_page(
             "/portal/auth/link-confirm", title="Confirm sign in", heading="Connect your account",
             blurb=f"Use {pending['provider'].title()} to sign in to your Healing Oasis.",
-            button="Connect and sign in", hidden={"token": token})
+            button="Connect and sign in",
+            hidden={"token": token, **({"next": next_key} if next_key else {})})
     with _db_lock, db.connect(LOG_DB) as cx:
         pid = _pa.consume_provider_link_confirmation(cx, token)
         if not pid:
-            return _redir("/portal/login?error=provider")
+            return _login_error("provider", next_key)
         sess = _pi.create_client_session(cx, pid, "")
-    resp = _mkresp(_redir("/portal/me"))
+    resp = _mkresp(_redir(_ret.portal_me(next_key)))
     resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
                     httponly=True, samesite="Lax", secure=request.is_secure)
     return resp
@@ -39215,8 +39241,13 @@ def client_login_request():
     if not _client_login_enabled():
         return jsonify({"error": "not found"}), 404
     from dashboard import portal_identity as _pi
+    from dashboard import portal_return as _ret
     _t0 = time.monotonic()   # see _equalise_response_time below
-    email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    # Where the client was going (#chat from a Plan report). A route key only, never
+    # a URL; anything else is dropped here and again at login-verify.
+    next_q = _ret.query(body.get("next"))
     limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
     if limited is not None:
         return limited
@@ -39231,7 +39262,7 @@ def client_login_request():
                     sent_via, send_err = _send_full_report_email(
                         email, row[1] or "", "Your Remedy Match sign-in link",
                         "Aloha,\n\nClick to sign in to your healing home:\n"
-                        f"{portal_base()}/portal/login-verify?token={magic}\n\n"
+                        f"{portal_base()}/portal/login-verify?token={magic}{next_q}\n\n"
                         f"This link expires in {_pi.CLIENT_MAGIC_TTL_LABEL}.",
                         respect_suppression=False)
                     print(f"[client-login] requested account=found delivery={sent_via} "
@@ -39254,9 +39285,11 @@ def client_password_login():
         return jsonify({"error": "not found"}), 404
     from flask import make_response as _mkresp, redirect as _redir
     from dashboard import portal_auth as _pa, portal_identity as _pi
+    from dashboard import portal_return as _ret
     body = request.get_json(silent=True) or request.form
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
+    home = _ret.portal_me(body.get("next"))
     limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
     if limited is not None:
         return limited
@@ -39290,9 +39323,9 @@ def client_password_login():
                                        "sign-in link."}), 401
         sess = _pi.create_client_session(cx, pid, email)
     if request.is_json:
-        resp = _mkresp(jsonify({"ok": True, "redirect": "/portal/me"}))
+        resp = _mkresp(jsonify({"ok": True, "redirect": home}))
     else:
-        resp = _mkresp(_redir("/portal/me"))
+        resp = _mkresp(_redir(home))
     resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
                     httponly=True, samesite="Lax", secure=request.is_secure)
     return resp
@@ -39303,8 +39336,11 @@ def client_password_reset_request():
     if not _portal_password_login_enabled():
         return jsonify({"error": "not found"}), 404
     from dashboard import portal_auth as _pa
+    from dashboard import portal_return as _ret
     _t0 = time.monotonic()   # see _equalise_response_time below
-    email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    next_q = _ret.query(body.get("next"))   # the route the client set out for, a key only
     limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
     if limited is not None:
         return limited
@@ -39318,7 +39354,7 @@ def client_password_reset_request():
                     _send_full_report_email(
                         email, row[1] or "", "Set your Healing Oasis password",
                         "Aloha,\n\nSet or reset your password here:\n"
-                        f"{portal_base()}/portal/password-reset?token={token}\n\n"
+                        f"{portal_base()}/portal/password-reset?token={token}{next_q}\n\n"
                         f"This link expires in {_format_ttl(_pa.RESET_TTL_MIN)}. If you did not request it, ignore this email.")
                 except Exception as e:
                     print(f"[client-password-reset] email failed: {e!r}", flush=True)
@@ -39335,11 +39371,14 @@ def client_password_reset():
         return ("Not found", 404)
     from flask import make_response as _mkresp, redirect as _redir
     from dashboard import portal_auth as _pa, portal_identity as _pi
+    from dashboard import portal_return as _ret
     token = (request.args.get("token") or (request.get_json(silent=True) or {}).get("token") or "").strip()
+    next_key = _ret.clean_next(request.args.get("next")
+                               or (request.get_json(silent=True) or {}).get("next"))
     if request.method == "GET":
         with _db_lock, db.connect(LOG_DB) as cx:
             if not _pa.validate_password_reset(cx, token):
-                return _redir("/portal/login?error=reset")
+                return _login_error("reset", next_key)
         resp = _mkresp(send_from_directory(STATIC, "client-password-reset.html"))
         resp.headers["Cache-Control"] = "no-store"
         return resp
@@ -39366,7 +39405,7 @@ def client_password_reset():
         if not pid:
             return jsonify({"ok": False, "message": "This password link is invalid or has expired."}), 400
         sess = _pi.create_client_session(cx, pid, "")
-    resp = _mkresp(jsonify({"ok": True, "redirect": "/portal/me"}))
+    resp = _mkresp(jsonify({"ok": True, "redirect": _ret.portal_me(next_key)}))
     resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
                     httponly=True, samesite="Lax", secure=request.is_secure)
     return resp
@@ -39396,7 +39435,12 @@ def client_login_verify():
     if not _client_login_enabled():
         return ("Not found", 404)
     from dashboard import portal_identity as _pi
+    from dashboard import portal_return as _ret
     token = (request.args.get("token") or request.form.get("token") or "").strip()
+    # The hash the client set out for (#chat), carried on the emailed link because a
+    # browser never sends a hash. Checked against the route keys; else plain /portal/me.
+    next_key = _ret.clean_next(request.args.get("next") or request.form.get("next"))
+    home = _ret.portal_me(next_key)
     sess_cookie = request.cookies.get("rm_portal_session", "")
     if request.method == "GET":
         with _db_lock, db.connect(LOG_DB) as cx:
@@ -39408,13 +39452,14 @@ def client_login_verify():
                 # before treating this as an error.
                 ident = _pi.identity_from_session(cx, sess_cookie) if sess_cookie else None
                 if ident:
-                    return _redir("/portal/me")
-                return _redir("/portal/login?error=link")
+                    return _redir(home)
+                return _login_error("link", next_key)
         resp = _mkresp(_confirm_post_page(
             "/portal/login-verify", title="Sign in",
             heading="Welcome back",
             blurb="Continue to open your healing home.",
-            button="Continue", hidden={"token": token}))
+            button="Continue",
+            hidden={"token": token, **({"next": next_key} if next_key else {})}))
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["Pragma"] = "no-cache"
         return resp
@@ -39426,10 +39471,10 @@ def client_login_verify():
             # that already signed the browser in.
             ident = _pi.identity_from_session(cx, sess_cookie) if sess_cookie else None
             if ident:
-                return _redir("/portal/me")
-            return _redir("/portal/login?error=link")
+                return _redir(home)
+            return _login_error("link", next_key)
         sess = _pi.create_client_session(cx, pid, "")
-    resp = _mkresp(_redir("/portal/me"))
+    resp = _mkresp(_redir(home))
     resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
                     httponly=True, samesite="Lax", secure=request.is_secure)
     return resp

@@ -95,6 +95,23 @@
 <script>
 const form = document.getElementById("loginForm"), go = document.getElementById("go"), msg = document.getElementById("msg");
 const passwordLogin = document.getElementById("passwordLogin");
+// Where the client was going: /portal/me sends a deep link here as ?next=chat, and a
+// link straight to /portal/login#chat works too. Only the shape of a route key leaves
+// this page; the server keeps it only if it is one of the portal's own routes.
+const portalNext = (function(){
+  let v = "";
+  try{
+    v = new URLSearchParams(location.search).get("next") || decodeURIComponent((location.hash || "").replace(/^#/, ""));
+  }catch(e){ v = ""; }
+  v = String(v || "").toLowerCase();
+  return /^[a-z-]{1,40}$/.test(v) ? v : "";
+})();
+if(portalNext){
+  ["googleGo", "appleGo"].forEach(function(id){
+    const a = document.getElementById(id);
+    if(a) a.setAttribute("href", a.getAttribute("href") + "?next=" + encodeURIComponent(portalNext));
+  });
+}
 fetch('/api/portal/login-methods').then(r=>r.json()).then(d=>{
   if(d && d.password) passwordLogin.hidden=false;
   if(d && d.google) document.getElementById('googleGo').hidden=false;
@@ -108,7 +125,7 @@ async function signInWithPassword(){
   if(!email||!secret){msg.textContent='Enter your email and password.';return;}
   const button=document.getElementById('passwordGo'); button.disabled=true;
   try{
-    const r=await fetch('/portal/password-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:secret})});
+    const r=await fetch('/portal/password-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:secret,next:portalNext})});
     const j=await r.json(); msg.textContent=j.message||'';
     if(r.ok&&j.redirect) location.assign(j.redirect);
   }catch(e){msg.textContent='Something went wrong. Please try again.';}
@@ -136,7 +153,7 @@ document.getElementById('resetGo').addEventListener('click', async ()=>{
   if(!email){msg.textContent='Enter your email first.';return;}
   msg.textContent='Sending…';
   try{
-    const r=await fetch('/portal/password-reset-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    const r=await fetch('/portal/password-reset-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,next:portalNext})});
     const j=await r.json(); msg.textContent=j.message||'Check your email.';
   }catch(e){msg.textContent='Something went wrong. Please try again.';}
 });
@@ -148,7 +165,7 @@ form.addEventListener("submit", async (event)=>{
   go.disabled = true; go.textContent = "Sending…"; msg.textContent = "";
   try{
     const r = await fetch("/portal/login-request", {method:"POST",
-      headers:{"Content-Type":"application/json"}, body:JSON.stringify({email})});
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({email, next:portalNext})});
     const j = await r.json();
     if(!r.ok) throw new Error(j.error || "Request failed");
     msg.textContent = j.message || "Check your email for a sign-in link.";

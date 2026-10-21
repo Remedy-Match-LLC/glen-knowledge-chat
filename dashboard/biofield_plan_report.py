@@ -18,6 +18,7 @@ through a merge map clinical writes and Glen approves.
 import html
 import json
 import os
+import re
 
 from dashboard import biofield_clinical_sections as cs
 from dashboard.biofield_clinical_checklist import _norm
@@ -218,7 +219,106 @@ def ensure_schema(cx):
 
 # Report-level lines in frame-lines.json, each printed once (Glen, 2026-10-18).
 FRAME_KEYS = ("vertigo_safety", "dose_totals", "thyroid_spacing", "infoceutical_header",
-              "cautions_lead", "ingredient_caution_intro", "essential_oils_header")
+              "symptom_changes", "cautions_lead", "cautions_routes",
+              "ingredient_caution_intro", "essential_oils_header")
+
+# Links in the approved wording (Glen, "approve", clinical tab, 2026-10-20). The one
+# source is the `links` map on each line of clinical's frame-lines.json, carried by
+# the loader into biofield_plan_wording:
+#   kind 'frame_link', key '<frame key>|<phrase>': that phrase, as written, in that line;
+#   kind 'sentence_link', key '<phrase>': a key with a note in brackets, such as
+#     "let us know (every caution and item sentence)", links the phrase in any case,
+#     as a whole phrase, in every approved sentence: frame lines, cautions and item
+#     explanations. Never in a name, a condition, a heading or an intro line.
+# stored_frame() hands them on in frame["_links"]; no frame key starts with "_".
+# Only an https address is kept. The approved ones are portal routes
+# (/portal/me#chat, #intake) and carry no per-client token: a client who is not
+# signed in signs in and comes back to the same card (dashboard/portal_return.py).
+LINKS_KEY = "_links"
+# The one map key that makes a phrase sentence-wide, exactly as clinical writes it.
+# Any other key holding " (" is refused rather than guessed at.
+SENTENCE_RULE = " (every caution and item sentence)"
+# Printed once per document, in the first report that carries them (review round 2,
+# 2026-10-20): a Grouped PDF of several reports is one document.
+ONCE_KEYS = ("symptom_changes", "cautions_lead", "cautions_routes")
+# A line that names its own links takes no sentence-wide ones: cautions_routes says
+# "Let us know" and then names where, so only those two are links (review round 2).
+OWN_LINKS_ONLY = ("cautions_routes",)
+
+
+def _anchor(url, escaped_text):
+    return f'<a href="{html.escape(url)}">{escaped_text}</a>'
+
+
+def link_pattern(line_links=None, sentence_links=None):
+    """(compiled pattern, {group: url}) or (None, {}). One pass over the text, longest
+    phrase first, so an inserted link is never searched again. A phrase links only as
+    a whole: no word character may touch either end, so "portal chatroom" stays text.
+    A line's own phrase matches as written; a sentence-wide one in any case."""
+    alts = []
+    for phrase, url in (line_links or {}).items():
+        alts.append((len(phrase), r"(?<!\w)" + re.escape(html.escape(phrase)) + r"(?!\w)", url))
+    for phrase, url in (sentence_links or {}).items():
+        alts.append((len(phrase),
+                     r"(?i:(?<!\w)" + re.escape(html.escape(phrase)) + r"(?!\w))", url))
+    if not alts:
+        return None, {}
+    alts.sort(key=lambda a: -a[0])
+    urls = {f"g{i}": url for i, (_n, _alt, url) in enumerate(alts)}
+    return re.compile("|".join(f"(?P<g{i}>{alt})" for i, (_n, alt, _u) in enumerate(alts))), urls
+
+
+def sentence_html(text, line_links=None, sentence_links=None):
+    """One approved sentence, escaped FIRST, then its phrases made links. A phrase is
+    matched in the escaped text, so nothing from the text is ever unescaped."""
+    escaped = html.escape(str(text))
+    pattern, urls = link_pattern(line_links, sentence_links)
+    if pattern is None:
+        return escaped
+    return pattern.sub(lambda m: _anchor(urls[m.lastgroup], m.group(0)), escaped)
+
+
+def _frame_links(frame):
+    """({frame key: {phrase: url}}, {phrase: url}) from a stored frame."""
+    links = (frame or {}).get(LINKS_KEY) or {}
+    return links.get("lines") or {}, links.get("sentences") or {}
+
+
+def _parse_links(key, entry, report, seen):
+    """[(kind, key, url)] from one approved line's `links` map, checked. `seen` holds
+    {(scope, phrase): (line, url)} across lines: the same phrase given a different
+    address elsewhere is a conflict, reported, and the first address is kept."""
+    out = []
+    for phrase, url in (entry.get("links") or {}).items():
+        phrase, url = str(phrase), str(url or "")
+        if not url.startswith("https://"):
+            report["frame_links_refused"].append(f"{key}: {phrase}: {url}")
+            continue
+        if phrase.endswith(SENTENCE_RULE):
+            scope, bare = "sentence", phrase[:-len(SENTENCE_RULE)].strip()
+        elif " (" in phrase:
+            report["frame_links_refused"].append(f"{key}: {phrase}: {url}")
+            continue
+        else:
+            scope, bare = "line", phrase
+        if not bare:
+            report["frame_links_refused"].append(f"{key}: {phrase}: {url}")
+            continue
+        mark = (scope, bare.lower() if scope == "sentence" else bare)
+        if mark in seen and seen[mark][1] != url:
+            report["frame_links_conflict"].append(
+                f"{bare}: {seen[mark][0]} {seen[mark][1]} / {key} {url}")
+            if scope == "sentence":
+                continue        # the first address stands; nothing is overwritten
+        seen.setdefault(mark, (key, url))
+        if scope == "sentence":
+            if mark[1] not in {k.lower() for _kind, k, _u in out if _kind == "sentence_link"}:
+                out.append(("sentence_link", bare, url))
+            continue
+        if phrase not in str(entry.get("text") or ""):
+            report["frame_links_unplaced"].append(f"{key}: {phrase}")
+        out.append(("frame_link", f"{key}|{phrase}", url))
+    return out
 
 
 def load_content(cx, folder):
@@ -269,8 +369,9 @@ def _parse_frame(path):
     clinical lists under it, so one with no items never prints and is counted."""
     report = {"frame_lines_applied": 0, "frame_lines_waiting": 0, "frame_lines_unknown": [],
               "cautions_applied": 0, "cautions_waiting": 0, "cautions_without_items": [],
-              "caution_items": 0}
-    frame, cautions = [], []
+              "caution_items": 0, "frame_links_refused": [], "frame_links_unplaced": [],
+              "frame_links_conflict": []}
+    frame, cautions, links, seen = [], [], [], {}
     if not os.path.exists(path):
         return frame, cautions, report
     with open(path, encoding="utf-8") as f:
@@ -281,6 +382,7 @@ def _parse_frame(path):
         elif entry.get("approved") is True and entry.get("text"):
             frame.append((key, str(entry["text"])))
             report["frame_lines_applied"] += 1
+            links.extend(_parse_links(key, entry, report, seen))
         else:
             report["frame_lines_waiting"] += 1
     for name, entry in (data.get("ingredient_cautions") or {}).items():
@@ -297,7 +399,8 @@ def _parse_frame(path):
         cautions.append((name, str(entry["text"]), items))
         report["cautions_applied"] += 1
         report["caution_items"] += len(items)
-    return frame, cautions, report
+    # Links ride with the frame rows; _write_frame tells them apart by length.
+    return frame + links, cautions, report
 
 
 def _write_frame(cx, frame, cautions):
@@ -313,8 +416,10 @@ def _write_frame(cx, frame, cautions):
     except Exception:  # PRL tables absent
         pass
     unknown = []
-    for key, text in frame:
-        cx.execute("INSERT INTO biofield_plan_wording VALUES ('frame',?,?)", (key, text))
+    for row in frame:
+        kind, key, text = row if len(row) == 3 else ("frame",) + tuple(row)
+        cx.execute("INSERT OR REPLACE INTO biofield_plan_wording VALUES (?,?,?)",
+                   (kind, key, text))
     for pos, (name, text, items) in enumerate(cautions):
         cx.execute("INSERT INTO biofield_plan_caution VALUES (?,?,?)", (pos, name, text))
         for section, key, raw in items:
@@ -329,6 +434,17 @@ def stored_frame(cx):
     """({frame key: text}, [(caution name, text, {(section, name key)})]), approved only."""
     ensure_schema(cx)
     frame = dict(cx.execute("SELECT key,text FROM biofield_plan_wording WHERE kind='frame'"))
+    lines, sentences = {}, {}
+    for kind, key, url in cx.execute(
+            "SELECT kind,key,text FROM biofield_plan_wording "
+            "WHERE kind IN ('frame_link','sentence_link')"):
+        if kind == "sentence_link":
+            sentences[key] = url
+        else:
+            line, _, phrase = key.partition("|")
+            lines.setdefault(line, {})[phrase] = url
+    if lines or sentences:
+        frame[LINKS_KEY] = {"lines": lines, "sentences": sentences}
     # One statement, so a caution and its items always come from the same load.
     cautions = {}
     for pos, name, text, section, key in cx.execute(
@@ -427,7 +543,7 @@ def missing(plan_groups):
             for line in lines for en in line["entries"] if not en["explanation"]]
 
 
-def _line_html(line, show_kind):
+def _line_html(line, show_kind, sentence_links=None):
     e = html.escape
     # One dose heads the line only when every condition gives that same dose.
     doses = {en["dose"] for en in line["entries"]}
@@ -448,12 +564,13 @@ def _line_html(line, show_kind):
         if en["dose"] and not one_dose:
             bits.append(e(en["dose"]))
         subs.append(f"<li><span class=plan-for>{' · '.join(bits)}</span>"
-                    + (f"<p class=plan-why>{e(en['explanation'])}</p>" if en["explanation"] else "")
+                    + (f"<p class=plan-why>{sentence_html(en['explanation'], None, sentence_links)}</p>"
+                       if en["explanation"] else "")
                     + "</li>")
     return f"<li>{head}" + (f"<ul class=plan-conds>{''.join(subs)}</ul>" if subs else "") + "</li>"
 
 
-def _by_score(lines, show_kind, meanings):
+def _by_score(lines, show_kind, meanings, sentence_links=None):
     """Lines grouped under "Score N" headings, highest first (Glen, 2026-10-18). A
     heading's one-line meaning prints only once Glen has approved it."""
     out, current = [], None
@@ -468,7 +585,7 @@ def _by_score(lines, show_kind, meanings):
                        + (f"<p class=plan-score-means>{e_(meaning)}</p>" if meaning else "")
                        + "<ul class=plan-list>")
             current = digit
-        out.append(_line_html(line, show_kind))
+        out.append(_line_html(line, show_kind, sentence_links))
     if current is not None:
         out.append("</ul>")
     return "".join(out)
@@ -485,7 +602,8 @@ TOP_KEYS = ("vertigo_safety", "dose_totals", "thyroid_spacing")
 
 def render_plan_section(plan_groups, client_name="", date="", score_meanings=None,
                         intro=(), cautions=(), frame=None, headings=None, title=PLAN_TITLE,
-                        extra="", top_keys=None, intro_links=None):
+                        extra="", top_keys=None, intro_links=None, printed=None,
+                        lead_here=True):
     """The plan as one block with its own scoped styles, so it can follow the
     Biofield Analysis in the same PDF or stand alone. Nothing unapproved is printed.
     Under Remedies, sections mix within each score, so each line names its kind.
@@ -497,9 +615,32 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
     show heading); by default only "Remedies" mixes. `title` heads the block, and
     none prints when it is empty. `extra` is html placed after the headings.
     `top_keys` limits the report-level lines to those a stand-alone report concerns;
-    None prints all three, as the single Plan always has."""
+    None prints all three, as the single Plan always has.
+
+    `printed` is a set shared by every block of ONE document (a Grouped PDF, or the
+    Biofield Analysis with its added block and the Plan): a line in ONCE_KEYS prints
+    in the first block that carries it and is added to the set. None: this block is
+    its own document.
+
+    `lead_here` False holds back cautions_lead and cautions_routes for a later block of
+    the same document: they belong with the cautions, so a caller whose document has
+    cautions in a later block lets that block print them (review round 3)."""
     e = html.escape
     frame = frame or {}
+    by_line, everywhere = _frame_links(frame)
+    printed = set() if printed is None else printed
+
+    def said(key):
+        """A frame line, escaped, with its own links and the sentence-wide ones."""
+        return sentence_html(frame[key], by_line.get(key),
+                             None if key in OWN_LINKS_ONLY else everywhere)
+
+    def once(key):
+        """True the first time this document prints `key`."""
+        if not frame.get(key) or key in printed:
+            return False
+        printed.add(key)
+        return True
     parts = []
     for entry in (HEADINGS if headings is None else headings):
         heading, groups = entry[0], entry[1]
@@ -511,23 +652,23 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
             lines = sorted((line for key, _ in groups for line in plan_groups.get(key) or []),
                            key=lambda i: (-(i["overall"] or 0), i["name"].lower()))
             if lines:
-                blocks.append(_by_score(lines, True, score_meanings))
+                blocks.append(_by_score(lines, True, score_meanings, everywhere))
         else:
             # Foods to emphasize and Foods to avoid stay apart (Glen, 2026-10-18).
             for key, group_title in groups:
                 lines = plan_groups.get(key) or []
                 if lines:
                     sub = f"<h3>{e(group_title)}</h3>" if len(groups) > 1 else ""
-                    blocks.append(sub + _by_score(lines, False, score_meanings))
+                    blocks.append(sub + _by_score(lines, False, score_meanings, everywhere))
         # The infoceutical header heads Remedies, where infoceuticals mix by score.
         if mixed and cs.INFOCEUTICALS in keys and plan_groups.get(cs.INFOCEUTICALS) \
                 and frame.get("infoceutical_header"):
-            blocks.insert(0, f"<p class=plan-frame>{e(frame['infoceutical_header'])}</p>")
+            blocks.insert(0, f"<p class=plan-frame>{said('infoceutical_header')}</p>")
         # The oils' safety line heads Remedies too, once, only with an oil ticked.
         if mixed and cs.ESSENTIAL_OILS in keys and plan_groups.get(cs.ESSENTIAL_OILS) \
                 and frame.get("essential_oils_header"):
             at = 1 if blocks and blocks[0].startswith("<p class=plan-frame>") else 0
-            blocks.insert(at, f"<p class=plan-frame>{e(frame['essential_oils_header'])}</p>")
+            blocks.insert(at, f"<p class=plan-frame>{said('essential_oils_header')}</p>")
         if blocks:
             parts.append("<section class=plan-heading>"
                          + (f"<h2>{e(heading)}</h2>" if show_heading else "")
@@ -536,28 +677,39 @@ def render_plan_section(plan_groups, client_name="", date="", score_meanings=Non
         if client_name and title else ""
     # Report-level lines print once at the top; the vertigo line only with a Vertigo tick.
     allowed = TOP_KEYS if top_keys is None else top_keys
-    top = [frame[k] for k in TOP_KEYS
+    top = [k for k in TOP_KEYS
            if k in allowed and frame.get(k)
            and (k != "vertigo_safety" or _has_condition(plan_groups, "vertigo"))]
+    # Report any change in symptoms: its own line at the top of the block, after the
+    # intro and before every other line and item, outside the cautions (Glen, clinical
+    # tab, 2026-10-20). In the block added to the Biofield Analysis it heads that block.
+    symptoms = (f"<p class=plan-symptoms>{said('symptom_changes')}</p>"
+                if once("symptom_changes") else "")
     # Glen's own paragraph leads the cautions area in every Plan report, before the
     # ingredient cautions ("approve B", clinical tab, 2026-10-20).
-    lead = (f"<p class=plan-caution-lead>{e(frame['cautions_lead'])}</p>"
-            if frame.get("cautions_lead") else "")
+    lead = (f"<p class=plan-caution-lead>{said('cautions_lead')}</p>"
+            if lead_here and once("cautions_lead") else "")
+    # Where to tell us, once, straight after Glen's paragraph, in every Plan report
+    # (Glen, "approve", clinical tab, 2026-10-20).
+    if lead_here and once("cautions_routes"):
+        lead += f"<p class=plan-caution-routes>{said('cautions_routes')}</p>"
     # Each caution once, naming the client's items that hold its ingredient.
     caution = f"<div class=plan-cautions>{lead}</div>" if lead else ""
     if cautions:
         caution = ("<div class=plan-cautions>" + lead
-                   + (f"<p class=plan-caution-intro>{e(frame['ingredient_caution_intro'])}</p>"
+                   + (f"<p class=plan-caution-intro>{said('ingredient_caution_intro')}</p>"
                       if frame.get("ingredient_caution_intro") else "")
                    + "".join(f"<div class=plan-caution><p><span class=plan-caution-name>"
-                             f"{e(name)}</span> {e(text)}</p><p class=plan-caution-items>"
+                             f"{e(name)}</span> {sentence_html(text, None, everywhere)}</p>"
+                             f"<p class=plan-caution-items>"
                              f"{' · '.join(e(n) for n in hits)}</p></div>"
                              for name, text, hits in cautions) + "</div>")
     return (f"<style>{PLAN_CSS}</style><main class=plan>"
             + (f"<h1>{e(title)}</h1>" if title else "") + who
             + "".join(f"<p class=plan-intro>{_linked(line, intro_links)}</p>"
                       for line in intro or ())
-            + "".join(f"<p class=plan-frame>{e(line)}</p>" for line in top)
+            + symptoms
+            + "".join(f"<p class=plan-frame>{said(k)}</p>" for k in top)
             + caution + "".join(parts) + extra + "</main>")
 
 
@@ -600,7 +752,9 @@ def kloud_lines(plan_groups):
     return [line for lines in plan_groups.values() for line in lines if is_kloud(line["name"])]
 
 
-def build(cx, test_id, client_name="", date="", kloud_program=""):
+def build(cx, test_id, client_name="", date="", kloud_program="", printed=None):
+    """`printed`: see render_plan_section. The Plan is always allowed the cautions lead;
+    the once-set keeps it from printing twice."""
     """(plan section html, entries lacking an approved explanation) from what is
     stored: the ticks, the approved merge map, score lines, intro and cautions. A
     Kloud line names `kloud_program`, which the scan's Phase sets (Glen, 2026-10-18)."""
@@ -610,7 +764,7 @@ def build(cx, test_id, client_name="", date="", kloud_program=""):
     for line in kloud_lines(groups):
         line["program"] = kloud_program
     return (render_plan_section(groups, client_name, date, meanings, intro,
-                                cautions_for(groups, cautions), frame),
+                                cautions_for(groups, cautions), frame, printed=printed),
             missing(groups))
 
 
@@ -619,6 +773,7 @@ PLAN_CSS = (
     "font:15px/1.5 Georgia,serif}"
     ".plan-cautions{border:1px solid #d9c7a3;background:#fbf6ec;border-radius:6px;"
     "padding:8px 12px;margin:12px 0}.plan-cautions p{margin:4px 0}"
+    ".plan a{color:#2f5d73;text-decoration:underline}.plan-symptoms{margin:8px 0}"
     ".plan-caution{margin:8px 0}.plan-caution-name{font-weight:600}"
     ".plan-caution-items{color:#555;font-size:.92em}.plan-frame{margin:8px 0}"
     ".plan-program{font-weight:600}"

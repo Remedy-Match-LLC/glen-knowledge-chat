@@ -1492,8 +1492,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         # One read of the switches for the whole print, so the downloaded PDF and the
         # portal published with it can never disagree (review, 2026-10-19).
         on = _primary_on(test_id)
+        # One PDF is one document: the Plan's once-only lines (symptom_changes, the
+        # cautions lead and routes) print in the first block that carries them.
+        once = set()
+        with_plan = request.args.get("plan") == "1"
         html = _with_primary_added(test_id, rep, render_present(
-            rep, narrative, _primary_intro(), primary_on=on))
+            rep, narrative, _primary_intro(), primary_on=on), once, with_plan)
         reports_dir = os.environ.get("BIOFIELD_REPORTS_DIR",
                                      os.path.join(os.path.expanduser("~"), "biofield-reports"))
         date = (rep.get("date") or "").replace("/", "-") or "undated"
@@ -1504,7 +1508,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             from dashboard.biofield_plan_report import append_to_report, build
             with sqlite3.connect(db_path) as cx:
                 section, _ = build(cx, test_id, (rep.get("client") or {}).get("name") or "",
-                                   rep.get("date") or "", _kloud_program_if_ticked(cx, test_id, rep))
+                                   rep.get("date") or "", _kloud_program_if_ticked(cx, test_id, rep),
+                                   printed=once)
             html = append_to_report(html, section)
             out = os.path.join(reports_dir, f"report_{test_id}_{date}_with_plan.pdf")
         try:
@@ -1605,9 +1610,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception:
             return ()
 
-    def _with_primary_added(test_id, rep, report_html):
+    def _with_primary_added(test_id, rep, report_html, once=None, plan_follows=False):
         """The Biofield Analysis with any other section Glen switched on in it added
-        after the narrative. With none on, the report is unchanged."""
+        after the narrative. With none on, the report is unchanged.
+
+        `plan_follows`: the Plan is appended to the same PDF. The cautions lead and
+        routes then go with the cautions: in this block only when it prints some,
+        otherwise in the Plan (review round 3). symptom_changes stays at the top of
+        this block, the first plan block of the document."""
         from dashboard import biofield_report_split as rsplit
         from dashboard.biofield_plan_report import append_to_report
         with sqlite3.connect(db_path) as cx:
@@ -1615,7 +1625,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not any(k not in rsplit.LAYER_SECTIONS for k in on):
             return report_html
         ctx, _, _ = _split_ctx(test_id, rep)
-        added = rsplit.primary_added(ctx, on)
+        lead_here = not plan_follows or bool(rsplit.added_cautions(ctx, on))
+        added = rsplit.primary_added(ctx, on, once, lead_here)
         return append_to_report(report_html, added) if added else report_html
 
     @app.route("/test/<test_id>/reports")
