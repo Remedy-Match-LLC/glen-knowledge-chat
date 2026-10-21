@@ -122,9 +122,11 @@ def _rows(cx, sql, params=()):
     return [dict(zip(cols, r)) for r in rows]
 
 
-def _result(email=None, source=None, conflict=False, reason="", candidates=()):
+def _result(email=None, source=None, conflict=False, reason="", candidates=(),
+            dropship=False, name_agrees=False):
     return {"email": email, "source": source, "conflict": conflict, "reason": reason,
-            "candidates": sorted(set(candidates))}
+            "candidates": sorted(set(candidates)), "dropship": dropship,
+            "name_agrees": name_agrees}
 
 
 def _one_email(found):
@@ -151,7 +153,9 @@ def _street_after_business_line(shipment):
 
 
 def resolve_by_address(cx, shipment):
-    """{email, source: 'board'|'fmp'|None, conflict, reason, candidates}.
+    """{email, source: 'board'|'fmp'|None, conflict, reason, candidates, dropship,
+    name_agrees}. `dropship` is True when the email came from a drop-ship order;
+    `name_agrees` when a board order's own name agrees with the label.
 
     A label's business line is joined onto its street, and then the street matches
     nothing on file: Fukushima's 6 labels on 2026-10-14 became 6 blank drafts. When the
@@ -187,6 +191,26 @@ def _switched_on(cx):
     return _ps.pids_with_client_review_emails(cx)
 
 
+def _ship_to(order):
+    try:
+        a = json.loads(order.get("address_json") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return a if isinstance(a, dict) else {}
+
+
+def _split_name(full):
+    return ((full or "").split(" ", 1) + [""])[:2]
+
+
+def _order_name(order):
+    """The person the parcel is for. A drop-ship's `name` is the practitioner's, so
+    its client's name is read from the ship-to instead."""
+    if order.get("source") == "dropship":
+        return _ship_to(order).get("name") or ""
+    return order.get("name") or ""
+
+
 def _dropship_to(order, switched_on):
     """A drop-ship order's tracking address: the client only when that practitioner
     turned client mail on and the order names a client; otherwise the practitioner."""
@@ -197,35 +221,59 @@ def _dropship_to(order, switched_on):
     return order.get("email")
 
 
-def dropship_recipients_held(cx):
-    """{client email: practitioner email} for every drop-ship client whose practitioner
-    has client mail off. The watcher never auto-sends to these addresses.
+def dropship_holds(cx):
+    """Every drop-ship client whose practitioner has client mail off, from orders in
+    any status: [{prac, client, name, zip, street}]. `client` is '' when the
+    practitioner typed no email, so the hold also works by ship-to address and name.
 
-    None when the read fails, so the caller can draft everything rather than send
-    blind. A database without the columns has no drop-ship clients and returns {}."""
+    Read fresh for every send, so a switch turned off mid-run holds the next email.
+    None when the read fails: the caller then drafts rather than send blind. A
+    database without the drop-ship columns has no drop-ship clients and returns []."""
     from dashboard import db as _db
     try:
-        if not _db.column_exists(cx, "orders", "recipient_email"):
-            return {}
-        pid_col = ("practitioner_id" if _db.column_exists(cx, "orders", "practitioner_id")
-                   else "NULL")
+        if not _db.column_exists(cx, "orders", "source"):
+            return []
         rows = cx.execute(
-            f"SELECT email, recipient_email, {pid_col} FROM orders "
-            "WHERE source = 'dropship' AND TRIM(COALESCE(recipient_email,'')) <> ''"
-        ).fetchall()
+            f"SELECT email, address_json, {_dropship_columns(cx)} FROM orders "
+            "WHERE source = 'dropship'").fetchall()
         switched_on = _switched_on(cx)
     except Exception:
         try:
-            cx.rollback()
+            cx.rollback()      # on Postgres a failed read blocks the next statement
         except Exception:
             pass
         return None
-    held = {}
-    for prac, client, pid in rows:
+    holds = []
+    for prac, address_json, _source, pid, client in rows:
         if str(pid or "").strip() in switched_on:
             continue
-        held.setdefault(client.strip().lower(), (prac or "").strip().lower())
-    return held
+        a = _ship_to({"address_json": address_json})
+        holds.append({"prac": (prac or "").strip().lower(),
+                      "client": (client or "").strip().lower(),
+                      "name": a.get("name") or "",
+                      "zip": zip5(a.get("zip") or a.get("postal_code")),
+                      "street": street_key(a.get("street") or a.get("address1"))})
+    return holds
+
+
+def holds_touching(holds, shipment, to=None):
+    """The holds this parcel cannot be told apart from: same ship-to address, a name
+    that agrees with the label, or the held client's own email."""
+    z = zip5(shipment.get("zip"))
+    streets = {street_key(shipment.get("street"))}
+    alt = _street_after_business_line(shipment)
+    if alt:
+        streets.add(street_key(alt))
+    streets.discard("")
+    label = shipment.get("recipient_name") or ""
+    to = (to or "").strip().lower()
+    out = []
+    for h in holds or []:
+        if (h["client"] and h["client"] == to) or \
+                (z and h["zip"] == z and h["street"] in streets) or \
+                names_agree(label, *_split_name(h["name"])):
+            out.append(h)
+    return out
 
 
 def _resolve_at(cx, name, z, sk, require_name):
@@ -243,30 +291,45 @@ def _resolve_at(cx, name, z, sk, require_name):
         if zip5(a.get("zip") or a.get("postal_code")) == z and \
                 street_key(a.get("street") or a.get("address1")) == sk:
             board.append(o)
-    if require_name:
-        board = [o for o in board
-                 if names_agree(name, *(((o.get("name") or "").split(" ", 1) + [""])[:2]))]
+    def agrees(o):
+        return names_agree(name, *_split_name(_order_name(o)))
+
     # Glen, 2026-10-21: a drop-ship client gets mail from us only when that
-    # practitioner turns it on. An open drop-ship order at the address wins over any
-    # other order there, so a client's own order cannot pull the parcel to the client.
+    # practitioner turns it on. Drop-ship orders are weighed before the name filter
+    # below, by the client's name on the ship-to, never the practitioner's.
     dropship = [o for o in board if o.get("source") == "dropship"]
     if dropship:
-        switched_on = _switched_on(cx)
-        email, clash = _one_email([(_dropship_to(o, switched_on), True) for o in dropship])
-        if email:
-            return _result(email, "board", reason="open drop-ship order at the ship-to address")
-        return _result(conflict=True, reason="several drop-ship orders at the address",
-                       candidates=[(o.get("email") or "").lower() for o in dropship])
+        own = [o for o in board if o.get("source") != "dropship" and agrees(o)]
+        ours = [o for o in dropship if agrees(o)]
+        if ours and not own:
+            email, clash = _one_email([(_dropship_to(o, _switched_on(cx)), True)
+                                       for o in ours])
+            if email:
+                return _result(email, "board", dropship=True,
+                               reason="open drop-ship order at the ship-to address")
+        elif own and not ours:
+            # A housemate's own order: the label names them, not the drop-ship client.
+            email, clash = _one_email([(o.get("email"), True) for o in own])
+            if email:
+                return _result(email, "board", name_agrees=True,
+                               reason="own order at a drop-ship address, name agrees")
+        return _result(conflict=True,
+                       reason="drop-ship order at the address; the label name does not settle it",
+                       candidates=[(o.get("email") or "").lower() for o in board])
+
+    if require_name:
+        board = [o for o in board if agrees(o)]
     if board:
         email, clash = _one_email([(o.get("email"), True) for o in board])
         if email:
-            return _result(email, "board", reason="open board order at the ship-to address")
+            return _result(email, "board", name_agrees=any(agrees(o) for o in board),
+                           reason="open board order at the ship-to address")
         # Several emails at one address (a household): narrow by the label's name.
-        named = [o for o in board
-                 if names_agree(name, *(((o.get("name") or "").split(" ", 1) + [""])[:2]))]
+        named = [o for o in board if agrees(o)]
         email, clash = _one_email([(o.get("email"), True) for o in named])
         if email:
-            return _result(email, "board", reason="board order at the address, name agrees")
+            return _result(email, "board", name_agrees=True,
+                           reason="board order at the address, name agrees")
         return _result(conflict=True, reason="several board orders at the address",
                        candidates=[(o.get("email") or "").lower() for o in board])
 

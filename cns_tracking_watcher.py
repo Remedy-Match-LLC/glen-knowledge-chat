@@ -238,15 +238,12 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
     # soon as now. Fukushima's 6 boxes on 2026-10-14 had made 6 drafts. The recipient is
     # resolved once per name at an address, and the groups are formed after resolution so
     # two names that resolve to one email still get one email.
-    from dashboard import tracking_recipient as _trc
-    held = _trc.dropship_recipients_held(cx) if fresh else {}
     resolved_for = {}
     groups = {}
     for s in fresh:
         rkey = (_addr_key(s), _norm(s["recipient_name"]))
         if rkey not in resolved_for:
-            resolved_for[rkey] = _resolve(s, find_contact, address_resolve, harvest_fn,
-                                          held)
+            resolved_for[rkey] = _resolve(s, find_contact, address_resolve, harvest_fn)
         r = resolved_for[rkey]
         # The confidence is in the key: a box resolved with less certainty never rides
         # along on another box's auto-send (review round 2).
@@ -257,7 +254,7 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
     for g in groups.values():
         results.extend(_notify_group(g["r"], g["shipments"], parsed, msg_id, cx, draft_fn,
                                      persist_contact, send_fn, auto_send, dry_run,
-                                     link_orders, held))
+                                     link_orders))
     return results
 
 
@@ -275,11 +272,13 @@ def _addr_key(s):
     return ("block", _norm(s.get("address_block")), _norm(s.get("recipient_name")))
 
 
-def _resolve(s, find_contact, address_resolve, harvest_fn, held=None):
-    """Who this box goes to: {to, conf, ghl_contact_id, review_reason, harvested}.
+def _resolve(s, find_contact, address_resolve, harvest_fn):
+    """Who this box goes to: {to, conf, ghl_contact_id, review_reason, harvested,
+    path, addr_failed}.
 
-    `held` is tracking_recipient.dropship_recipients_held: drop-ship clients whose
-    practitioner has client mail off."""
+    `path` says how far the drop-ship hold may trust the answer: 'dropship' (a
+    drop-ship order at the address), 'own' (a board order whose own name agrees with
+    the label), or 'other' (anything else, including every name-only fallback)."""
     match = find_contact(s["recipient_name"])
     conf = match["confidence"] if match else "none"
     to = match["email"] if (match and conf in ("high", "medium")) else None
@@ -292,11 +291,14 @@ def _resolve(s, find_contact, address_resolve, harvest_fn, held=None):
     # conflict of equal standing and goes to review. The board outranks GHL.
     review_reason = ""
     addr = None
+    addr_failed = False
+    path = "other"
     if address_resolve is not None:
         try:
             addr = address_resolve(s)
         except Exception as exc:
             addr = None
+            addr_failed = True
             review_reason = f"address lookup failed: {type(exc).__name__}"
     ghl_email = (to or "").strip().lower() or None
     if addr and addr.get("email"):
@@ -306,6 +308,10 @@ def _resolve(s, find_contact, address_resolve, harvest_fn, held=None):
             review_reason = f"FileMaker has {a_email}, GHL has {ghl_email}"
         else:
             to, conf = a_email, f"address-{addr.get('source')}"
+            if addr.get("dropship"):
+                path = "dropship"
+            elif addr.get("source") == "board" and addr.get("name_agrees"):
+                path = "own"
             if ghl_email != a_email:
                 ghl_contact_id = None      # that GHL contact is someone else
     elif addr and addr.get("conflict"):
@@ -326,21 +332,46 @@ def _resolve(s, find_contact, address_resolve, harvest_fn, held=None):
         if harvested and harvested.get("email"):
             to = harvested["email"]
             conf = "harvested"
-
-    # Glen, 2026-10-21: a drop-ship client gets no mail unless the practitioner turned
-    # it on. The board step already sends a drop-ship parcel to the practitioner; the
-    # name and FileMaker fallbacks never pick that client instead. Cleared here so no
-    # GHL contact is made for them either.
-    if to and conf != "address-board" and held and to.strip().lower() in held:
-        review_reason = (f"drop-ship client of {held[to.strip().lower()] or 'a practitioner'}"
-                         ", who has client mail off")
-        to, conf, ghl_contact_id, harvested = None, "dropship-held", None, None
     return {"to": to, "conf": conf, "ghl_contact_id": ghl_contact_id,
-            "review_reason": review_reason, "harvested": harvested}
+            "review_reason": review_reason, "harvested": harvested,
+            "path": path, "addr_failed": addr_failed}
+
+
+def _dropship_hold(r, shipments, cx):
+    """(held, practitioner emails, reason) for one email about to go out.
+
+    Glen, 2026-10-21: "Give them the option, with fallback being no emails." A
+    drop-ship client gets mail from us only when the practitioner's switch is on.
+    When the watcher cannot prove a parcel is not a held client's, it drafts: a wrong
+    send is the failure that matters, and an extra draft is cheap. The holds are read
+    here, right before the send, so a switch turned off mid-run holds the next email."""
+    from dashboard import tracking_recipient as _trc
+    to = (r.get("to") or "").strip().lower()
+    if not to:
+        return False, set(), ""
+    holds = _trc.dropship_holds(cx)
+    if holds is None:
+        return True, set(), "drop-ship list could not be read"
+    if r.get("addr_failed"):
+        return True, set(), r.get("review_reason") or "address lookup failed"
+    path = r.get("path") or "other"
+    if path == "dropship":
+        # Its own practitioner, or the client while the switch was on. Held only if the
+        # switch has since gone off, which puts the client's email in the holds.
+        hit = [h for h in holds if h["client"] and h["client"] == to]
+    elif path == "own":
+        hit = []      # the label names this order's own buyer, a drop-ship client or not
+    else:
+        hit = [h for s in shipments for h in _trc.holds_touching(holds, s, to)]
+    if not hit:
+        return False, set(), ""
+    pracs = {h["prac"] for h in hit if h["prac"]}
+    return True, pracs, (f"may be a drop-ship client of {', '.join(sorted(pracs)) or 'a practitioner'}"
+                         ", who has client mail off")
 
 
 def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, send_fn,
-                  auto_send, dry_run, link_orders, held=None):
+                  auto_send, dry_run, link_orders):
     """One email (sent or drafted) for every box in the group; one shipments row each."""
     to, conf = r["to"], r["conf"]
     ghl_contact_id, harvested = r["ghl_contact_id"], r["harvested"]
@@ -348,14 +379,14 @@ def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, s
     first = shipments[0]
     numbers = [s["tracking"] for s in shipments]
 
-    # The drop-ship guard, whatever path chose the address: a held drop-ship client
-    # drafts for review and is never auto-sent. `held` is None when the drop-ship read
-    # failed, and then nothing auto-sends.
-    guarded = held is None or bool(to and to.strip().lower() in held)
-    if guarded and to:
-        review_reason = review_reason or (
-            "drop-ship list could not be read" if held is None
-            else "drop-ship client whose practitioner has client mail off")
+    # A held parcel is drafted, never sent. The draft goes to the practitioner when
+    # exactly one is known, else blank, so one click in Gmail cannot mail the client.
+    # No GHL contact is made for a held client either.
+    guarded, pracs, hold_reason = _dropship_hold(r, shipments, cx)
+    if guarded:
+        to = pracs.pop() if len(pracs) == 1 else None
+        conf, ghl_contact_id, harvested = "dropship-held", None, None
+        review_reason = hold_reason
 
     # Auto-send only high-confidence recipients; everything else drafts.
     send_eligible = (auto_send and to is not None and not guarded

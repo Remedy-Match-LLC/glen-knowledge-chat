@@ -298,18 +298,18 @@ def test_upsert_order_records_the_client_email():
     assert got[0] == "tony@x.com"
 
 
-# Glen, 2026-10-21: "Give them the option, with fallback being no emails." The same
-# switch now covers tracking too. Off, a drop-ship sends no review invite at all.
+# Glen, 2026-10-21: "Give them the option, with fallback being no emails." A drop-ship
+# sends nothing unless its practitioner's switch is on. One with no practitioner
+# recorded has no switch, and its `email` is a practitioner's, never a buyer's.
 
-def test_a_dropship_with_the_switch_off_sends_no_invite_to_anyone():
+def test_a_dropship_with_no_practitioner_sends_no_invite():
     cx = _cx()
-    _client_order(cx, source="dropship", recipient_email="tony@x.com")
+    _client_order(cx, source="dropship", pid=None, recipient_email="tony@x.com")
     ps.init_settings_table(cx)
     assert ri.pending(cx, days=14) == []
 
 
-def test_a_dropship_with_the_switch_on_invites_the_client_as_before():
+def test_a_store_order_with_no_practitioner_still_invites_its_buyer():
     cx = _cx()
-    _client_order(cx, source="dropship", recipient_email="tony@x.com")
-    _switch(cx, "p1", True)
-    assert [r["email"] for r in ri.pending(cx, days=14)] == ["tony@x.com"]
+    _client_order(cx, source="storefront", pid=None, email="buyer@x.com")
+    assert [r["email"] for r in ri.pending(cx, days=14)] == ["buyer@x.com"]

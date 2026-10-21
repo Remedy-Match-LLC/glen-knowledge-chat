@@ -60884,16 +60884,31 @@ def _plan_choice_pending(days=21, window=10):
             rows = cx.execute(
                 "SELECT DISTINCT lower(resolved_email) e FROM shipments "
                 "WHERE delivered_at IS NOT NULL AND delivered_at >= ? AND delivered_at <= ? "
-                "AND resolved_email IS NOT NULL AND resolved_email != ''", (lo, hi)).fetchall()
+                "AND resolved_email IS NOT NULL AND resolved_email != '' "
+                "AND COALESCE(match_confidence,'') <> 'dropship-held'", (lo, hi)).fetchall()
+            held = _plan_choice_held(cx)
             out = []
             for r in rows:
                 em = r["e"]
+                if em in held:
+                    continue
                 if em and not any(c["key"] in choice_keys for c in _co.member_cohorts(cx, em)):
                     out.append(em)
             return out
     except Exception as _e:
         print(f"[plan-choice] pending skipped: {_e!r}", flush=True)
         return []
+
+
+def _plan_choice_held(cx):
+    """Drop-ship clients whose practitioner has client mail off. Glen, 2026-10-21: the
+    switch covers all mail from us, so they get no plan-choice email. Raises when the
+    list cannot be read, so the caller sends nothing rather than send blind."""
+    from dashboard import tracking_recipient as _trc
+    holds = _trc.dropship_holds(cx)
+    if holds is None:
+        raise RuntimeError("drop-ship holds could not be read")
+    return {h["client"] for h in holds if h["client"]}
 
 
 @app.route("/api/console/plan-choice/pending", methods=["GET"])
@@ -60912,6 +60927,14 @@ def api_console_plan_choice_send():
     body = request.get_json(silent=True) or {}
     one = (body.get("email") or "").strip().lower()
     targets = [one] if one else _plan_choice_pending()
+    if one:
+        try:
+            with db.connect(LOG_DB) as cx:
+                if one in _plan_choice_held(cx):
+                    return jsonify({"ok": True, "sent": [], "count": 0,
+                                    "skipped": "drop-ship client with client mail off"})
+        except Exception as _e:
+            return jsonify({"ok": False, "error": f"drop-ship check failed: {_e!r}"}), 503
     base = PUBLIC_BASE_URL.rstrip("/")
     sent = []
     for em in targets:

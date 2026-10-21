@@ -62,6 +62,11 @@ def _client_address(email, name, source, practitioner_id, recipient_email,
     `email` is the practitioner's own and they never used the product."""
     pid = str(practitioner_id).strip() if practitioner_id is not None else ""
     if not pid:
+        # Glen, 2026-10-21: a drop-ship sends nothing unless its practitioner's switch
+        # is on. One with no practitioner recorded has no switch, so it sends nothing;
+        # its `email` is a practitioner's, never a buyer's.
+        if source == "dropship":
+            return "", ""
         return email, name
     if pid not in switched_on:
         return "", ""
