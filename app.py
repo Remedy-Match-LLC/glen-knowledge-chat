@@ -2379,11 +2379,13 @@ _CAUTION_NO_ADDITIONS = (
     "directions below as written, and answer other questions as before.")
 # Directly after each opted-in caution, held or written. The header rule alone did not
 # hold: read-back on d12e2929 (2026-10-21) still added INR monitoring, a dose change and a
-# vitamin D3 without K2, taken from warfarin snippets (review round 2, variant a).
+# vitamin D3 without K2, taken from warfarin snippets (review round 2, variant a). "Give
+# only the caution's words" made 4 of 6 answers quote one sentence, so it asks for every
+# sentence first (variant d).
 _CAUTION_STAY_LINE = (
-    "For any medicine, pregnancy or condition this caution names, give only the caution's "
-    "words above. Add no monitoring, dose, tolerance or other-product advice, and no one "
-    "else to ask.")
+    "Copy every sentence of the caution above. Then add nothing of your own on any "
+    "medicine, pregnancy or condition it names: no monitoring, dose, tolerance or "
+    "other-product advice, and no one else to ask.")
 # The last words of the user message when an opted-in caution is in the answer. The facts
 # block is already last, after the snippets; this closes it (review round 2, variants b and
 # c: the read-back answers took INR monitoring from a cited drug interaction book).
@@ -2771,6 +2773,78 @@ def named_product_facts_block(query_text: str, gated: bool = False,
     if _CAUTION_STAY_LINE in facts:
         facts += "\n\n" + _CAUTION_CLOSING_REMINDER
     return f"\n\n{facts}" if facts else ""
+
+
+# Subjects an opted-in caution can name, each with the words a question may use for it.
+# A subject counts only when its key appears in the caution text itself, so the caution
+# decides which apply. Read-back on 2d7fa1f3 (2026-10-21): with Stargrove's warfarin pages
+# in the snippets, no prompt wording stopped INR and dose advice (variant d).
+_CAUTION_SUBJECT_WORDS = {
+    "warfarin": ("warfarin", "coumadin", "jantoven"),
+    "blood thinner": ("blood thinner", "anticoagulant", "warfarin", "coumadin", "jantoven",
+                      "eliquis", "apixaban", "xarelto", "rivaroxaban", "plavix", "heparin"),
+    "pregnan": ("pregnan",),
+    "breastfeeding": ("breastfeeding", "breast feeding", "nursing"),
+    "thyroid": ("thyroid", "levothyroxine", "synthroid", "hashimoto"),
+    "antidepressant": ("antidepressant", "ssri", "sertraline", "fluoxetine", "zoloft",
+                       "prozac"),
+    "tramadol": ("tramadol",),
+    "dextromethorphan": ("dextromethorphan",),
+    "st john": ("st john",),
+    "migraine medicine": ("migraine medicine", "triptan", "sumatriptan"),
+    "blood sugar": ("blood sugar", "diabetes", "metformin", "insulin"),
+    "blood pressure": ("blood pressure", "hypertension"),
+    "seizure": ("seizure", "epilepsy"),
+    "sedative": ("sedative",),
+    "liver disease": ("liver disease",),
+}
+
+
+def _is_drug_interaction_snippet(meta) -> bool:
+    """Stargrove's Herb, Nutrient and Drug Interactions in its three stored forms, by
+    metadata (2026-10-21): the clinical-references book (`book`), its PDF chunks in
+    ingredients (`title`), and the IBIS interaction modules (`ibis_modality` INTE, or an
+    ibis `title` holding " interactions ")."""
+    meta = meta or {}
+    norm = lambda v: re.sub(r"[^a-z ]", "", str(v or "").lower())
+    if "stargrove" in str(meta.get("author") or "").lower():
+        return True
+    if any(norm(meta.get(k)).startswith("herb nutrient and drug interactions")
+           for k in ("book", "title")):
+        return True
+    if str(meta.get("ibis_modality") or "").upper() == "INTE":
+        return True
+    return (meta.get("source") == "ibis"
+            and " interactions " in str(meta.get("title") or "").lower())
+
+
+def _caution_subjects_asked(query_text: str) -> list:
+    """The caution subjects the question names, for opted-in cautions the answer carries.
+    Empty when no named product brings an opted-in caution."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    if not query_text or not products:
+        return []
+    cautions = []
+    for slug in _named_product_spans(query_text, products):
+        product = products[slug]
+        if product.get("chat_caution"):
+            cautions.append(product.get("warning") or "")
+        if product.get("bundle"):
+            cautions += [products[c].get("warning") or ""
+                         for c in _bundle_bot_cautions(product, products)]
+    caution = " ".join(cautions).lower()
+    q = query_text.lower()
+    return [key for key, words in _CAUTION_SUBJECT_WORDS.items()
+            if key in caution and any(re.search(r"\b" + re.escape(w), q) for w in words)]
+
+
+def _drop_caution_subject_snippets(matches, query_text: str):
+    """Drug interaction snippets are dropped only when the answer carries an opted-in
+    caution and the question names a subject that caution names. Every other question
+    keeps its snippets unchanged."""
+    if not matches or not _caution_subjects_asked(query_text):
+        return matches
+    return [m for m in matches if not _is_drug_interaction_snippet(m.metadata)]
 
 
 def build_product_directive(snippets_text: str = "", query_text: str = ""):
@@ -6626,7 +6700,8 @@ def chat():
                        "image_count": len(attachment_blocks)})
             return
 
-        context_str, sources_list = build_context(all_matches)
+        context_str, sources_list = build_context(
+            _drop_caution_subject_snippets(all_matches, query))
 
         # ── Slice 4: member-mode overlay ──────────────────────────────────────
         # Read the rm_member_email cookie set by /coaching/auth/<token>.
@@ -15670,7 +15745,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
     if not matches:
         return ("No relevant content found.", [], 0)
 
-    context_str, sources_list = build_context(matches)
+    context_str, sources_list = build_context(_drop_caution_subject_snippets(matches, query))
     product_directive = build_product_directive(
         snippets_text=(context_str or ""),
         query_text=query or "",
@@ -15852,7 +15927,8 @@ def _full_report_stream(log_id, query, level, session_id,
                        "log_id": log_id, "mode": "full"})
             return
 
-        context_str, sources_list = build_context(matches)
+        context_str, sources_list = build_context(
+            _drop_caution_subject_snippets(matches, query))
         product_directive = build_product_directive(
             snippets_text=(context_str or ""),
             query_text=query or "",

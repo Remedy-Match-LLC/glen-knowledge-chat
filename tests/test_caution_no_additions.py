@@ -115,6 +115,9 @@ def test_the_warfarin_block_has_the_stay_line_after_the_caution_and_closes_on_th
     # Review round 2, variants a to c: the header rule alone let warfarin snippets through.
     b = app.named_product_facts_block("Can I take Vitamin D Syntropy if I am on warfarin?")
     assert b.count(STAY) == 1 and b.index(STAY) > b.index(WARNING)
+    # "Give only the caution's words" made answers quote one sentence (variant d).
+    assert STAY.startswith("Copy every sentence of the caution above.")
+    assert "give only" not in STAY.lower()
     assert b.count(CLOSING) == 1 and b.endswith("\n\n" + CLOSING)
     assert "skip the drug interaction text in the snippets" in CLOSING
     assert "never the label" in CLOSING and "Dr. Glen" not in b
@@ -128,3 +131,113 @@ def test_each_opted_in_caution_gets_one_stay_line_and_the_answer_one_reminder():
 def test_a_caution_without_the_opt_in_gets_neither():
     b = app.named_product_facts_block("Is Estro-Clear safe?")
     assert "### Estro-Clear" in b and STAY not in b and CLOSING not in b
+
+
+# The snippet filter (variant d, 2026-10-21). Metadata copied from live retrieval for the
+# warfarin question: Stargrove in its three stored forms, and two snippets that stay.
+from types import SimpleNamespace as _M
+
+_STARGROVE_BOOK = {"author": "Mitchell Bebel Stargrove + Lori Beth Stargrove",
+                   "book": "Herb, Nutrient and Drug Interactions: Clinical Implications and "
+                           "Therapeutic Strategies", "_source_ns": "clinical-references"}
+_STARGROVE_PDF = {"source": "pdf-book", "title": "Herb Nutrient and Drug Interactions",
+                  "_source_ns": "ingredients"}
+_IBIS_INTE = {"source": "ibis", "title": "Integrative — materia-medica — rx — interactions — "
+              "Warfarin (Coumadin) — Integra", "_source_ns": "ingredients"}
+_IBIS_RX = {"ibis_modality": "INTE", "ibis_topic": "WARFARIN",
+            "_source_ns": "clinical-references"}
+_STUDY = {"chunk_type": "study", "ingredient": "Vitamin K1 (Phylloquinone)",
+          "_source_ns": "ingredients"}
+_IBIS_VITAMIN = {"source": "ibis", "title": "Nutrition — materia-medica — rx — vitamin — "
+                 "Vitamin K — Nutrition", "_source_ns": "ingredients"}
+# A Stargrove record known only by its author, so the author check stands on its own.
+_STARGROVE_AUTHOR = {"author": "Mitchell Bebel Stargrove + Health Resources Unlimited Inc.",
+                     "_source_ns": "clinical-references"}
+_DROPPED = [_STARGROVE_BOOK, _STARGROVE_PDF, _IBIS_INTE, _IBIS_RX, _STARGROVE_AUTHOR]
+_KEPT = [_STUDY, _IBIS_VITAMIN]
+
+
+def _matches():
+    return [_M(id=f"m{i}", score=0.8, metadata=dict(meta, text="warfarin text"))
+            for i, meta in enumerate(_DROPPED + _KEPT)]
+
+
+@pytest.mark.parametrize("q", ["Can I take Vitamin D Syntropy if I am on warfarin?",
+                               "My INR is stable on Coumadin, can I add Vitamin D Syntropy?",
+                               "Is Vitamin D Syntropy safe on a blood thinner?",
+                               "Is Vitamin D Syntropy ok if I am pregnant?"])
+def test_a_caution_subject_question_drops_only_the_drug_interaction_snippets(q):
+    kept = app._drop_caution_subject_snippets(_matches(), q)
+    assert [m.metadata["_source_ns"] for m in kept] == ["ingredients", "ingredients"]
+    assert [m.id for m in kept] == ["m5", "m6"]
+
+
+@pytest.mark.parametrize("q", [
+    "How much Vitamin D Syntropy should I take?",   # no caution subject named
+    "Can I take warfarin with vitamin K?",          # control: no product named
+    "Is Estro-Clear safe with warfarin?",           # pinned caution, never opted in
+    "Is Clear the Way safe with my blood thinner?", # names the subject, never opted in
+    "Can I take Scar Silk while pregnant?",         # opted in, but its caution has no pregnancy
+])
+def test_every_other_question_keeps_its_snippets(q):
+    ms = _matches()
+    assert app._drop_caution_subject_snippets(ms, q) is ms
+
+
+def test_the_subject_words_come_from_the_caution():
+    assert app._caution_subjects_asked(
+        "Can I take Vitamin D Syntropy if I am on warfarin?") == ["warfarin", "blood thinner"]
+    assert app._caution_subjects_asked(
+        "My INR is stable on Coumadin, can I add Vitamin D Syntropy?") == [
+        "warfarin", "blood thinner"]
+    assert app._caution_subjects_asked(
+        "Is the Sleep Bundle ok if I am pregnant?") == ["pregnan"]
+    assert app._caution_subjects_asked("How much Vitamin D Syntropy should I take?") == []
+
+
+class _Stop(Exception):
+    pass
+
+
+@pytest.fixture
+def spy(monkeypatch):
+    """Stubs retrieval and stops at build_context, recording what reached it. Nothing
+    after it runs, so no model call, log row or mail."""
+    seen = []
+    monkeypatch.setattr(app, "embed", lambda text: [0.0] * 1536)
+    monkeypatch.setattr(app, "query_all_namespaces", lambda vec: _matches())
+
+    def _record(matches):
+        seen.append([m.id for m in matches])
+        raise _Stop()
+    monkeypatch.setattr(app, "build_context", _record)
+    return seen
+
+
+def test_chat_drops_them_before_the_snippets_are_built(spy):
+    try:
+        app.app.test_client().post(
+            "/chat", json={"query": "Can I take Vitamin D Syntropy if I am on warfarin?",
+                           "level": "executive"}, buffered=True)
+    except _Stop:
+        pass
+    assert spy == [["m5", "m6"]]
+
+
+def test_the_full_answer_drops_them_too(spy):
+    with pytest.raises(_Stop):
+        app._generate_full_answer("Can I take Vitamin D Syntropy if I am on warfarin?",
+                                  "executive")
+    with pytest.raises(_Stop):
+        app._generate_full_answer("Can I take warfarin with vitamin K?", "executive")
+    assert spy == [["m5", "m6"], [f"m{i}" for i in range(7)]]
+
+
+def test_the_full_report_stream_drops_them_too(spy):
+    with app.app.test_request_context():
+        resp = app._full_report_stream(
+            1, "Can I take Vitamin D Syntropy if I am on warfarin?", "executive", "s1")
+        with pytest.raises(_Stop):
+            for _ in resp.response:
+                pass
+    assert spy == [["m5", "m6"]]

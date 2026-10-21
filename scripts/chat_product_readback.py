@@ -150,7 +150,11 @@ def ask(question: str, history=None, gate=False) -> tuple:
     """(answer, gated). history: earlier [{"role", "content"}] turns, as chat() sends
     them. gate=True runs the non-member consent classifier as chat() does."""
     vec = app.embed(question)
-    context_str, _ = app.build_context(app.query_all_namespaces(vec))
+    matches = app.query_all_namespaces(vec)
+    # chat() drops drug interaction snippets on a caution's own subject (2026-10-21);
+    # older builds lack it, so the same script still measures main.
+    matches = getattr(app, "_drop_caution_subject_snippets", lambda m, q: m)(matches, question)
+    context_str, _ = app.build_context(matches)
     directive = app.build_product_directive(snippets_text=context_str, query_text=question)
     product_block = f"{directive}\n\n" if directive else ""
     prior = [h["content"] for h in (history or []) if h.get("role") == "user"]
