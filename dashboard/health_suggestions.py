@@ -117,50 +117,94 @@ def resolve(cx, sug_id, email, status):
 
 
 # --- LLM extractor (Glen's rulings, 20 Oct 2026) ------------------------------
-# Only facts the client states about themself, in their own message, for these
-# fields. The client confirms each one on the portal "Suggested updates" card.
+# Glen, 20 Oct 2026: record "any condition or surgery a client mentions... Also
+# symptoms, supplements, medications... anything that can be added to their Intake
+# form", always as a suggestion the client confirms on the portal "Suggested
+# updates" card. Facts are the client's own, stated in their own message. The one
+# exception is family_history, where a blood relative's condition is the point.
 # Placement: "pregnancy or breastfeeding can go in as current health conditions.
 # Implants and pacemakers fit in surgeries. Heavy drinking and medical diet go in
 # diet", with diet and alcohol as two separate fields.
+#
+# Left out on purpose: identity and contact fields, the 1-10 scales and ratings
+# (supplements.need, health_concerns.rating), budget, commitment, consent and
+# portrait; psychoemotional_trauma (sensitive); systemic_symptoms (a fixed
+# multi-choice list, and a confirmed value would replace the client's picks:
+# symptoms go to other_symptoms instead); obstacles.
 
-# field_id -> its row columns, primary column first. A row needs the primary.
+# field_id -> its row columns, primary column first. A row needs the primary, and
+# the primary's words must appear in the client's quote.
 TABLE_COLUMNS = {
-    "diagnoses": ("diagnosis", "current"),
+    "diagnoses": ("diagnosis", "current", "age_onset"),
     "surgeries": ("procedure", "reason", "age"),
     "medications": ("medication", "reason"),
     "otc_drugs": ("medication", "reason"),
+    "supplements": ("name", "brand", "reason"),
     "allergies": ("sensitivity", "reaction"),
+    "family_history": ("condition", "relative", "age_onset"),
+    "health_concerns": ("concern",),
 }
-TEXT_FIELDS = ("diet", "alcohol")
+# Free text: the client's own words are what gets recorded, appended as a new line.
+TEXT_FIELDS = ("diet", "alcohol", "other_symptoms", "sleep", "dental", "toxins",
+               "physical_trauma", "vaccinations")
 EXTRACT_FIELDS = tuple(TABLE_COLUMNS) + TEXT_FIELDS
+# These ask about now, so a symptom or sleep trouble the client says is over is not
+# recorded.
+_CURRENT_ONLY_TEXT = ("other_symptoms", "sleep")
 
 EXTRACT_SYSTEM = (
-    "You read ONE message a client wrote in their health portal chat. Find only these facts "
-    "that the client states about THEMSELF, as true now or in their past:\n"
-    "- a CURRENT pregnancy or breastfeeding -> field \"diagnoses\", value {\"diagnosis\": "
-    "\"Pregnancy\" or \"Breastfeeding\", \"current\": \"Current\"}. Never a past one.\n"
-    "- epilepsy, a heart rhythm problem, kidney disease, gallstones, a blocked bile duct, or "
-    "asthma -> field \"diagnoses\", value {\"diagnosis\": name, \"current\": \"Current\"}, "
-    "or \"Past\" only when the client says it is in the past\n"
-    "- a pacemaker or any other implant -> field \"surgeries\", value {\"procedure\": what was "
-    "implanted, \"reason\": why if stated, \"age\": their age then if stated}\n"
-    "- a regular prescription medicine (blood thinners such as warfarin, thyroid, diabetes, "
-    "blood pressure, or any other) -> field \"medications\", value {\"medication\": name, "
+    "You read ONE message a client wrote in their health portal chat. Find only facts the "
+    "client states about THEMSELF, as true now or in their past, that belong on their health "
+    "intake form. Family history is the one exception, below.\n"
+    "- any medical condition or diagnosis, current or past -> field \"diagnoses\", value "
+    "{\"diagnosis\": name, \"current\": \"Current\", or \"Past\" only when the client "
+    "says it is in the past, \"age_onset\": their age when it began, only if stated}. One "
+    "item per condition: \"I have type 2 diabetes and high blood pressure\" is two items. A "
+    "CURRENT pregnancy or breastfeeding is a condition: {\"diagnosis\": \"Pregnancy\" or "
+    "\"Breastfeeding\", \"current\": \"Current\"}. Never a past pregnancy.\n"
+    "- any surgery, operation, procedure, hospital stay, or implant (a pacemaker, a hip) -> "
+    "field \"surgeries\", value {\"procedure\": what was done, \"reason\": why if stated, "
+    "\"age\": their age then if stated}\n"
+    "- a prescription medicine -> field \"medications\", value {\"medication\": name, "
     "\"reason\": what for if stated}\n"
-    "- a regular non-prescription drug -> field \"otc_drugs\", value {\"medication\": name, "
+    "- a non-prescription drug (a pain reliever, an antacid, an antihistamine) -> field "
+    "\"otc_drugs\", value {\"medication\": name, \"reason\": what for if stated}\n"
+    "- a supplement (a vitamin, mineral, herb, probiotic, oil or remedy) -> field "
+    "\"supplements\", value {\"name\": the supplement, \"brand\": brand if stated, "
     "\"reason\": what for if stated}\n"
-    "- a food allergy -> field \"allergies\", value {\"sensitivity\": the food, "
-    "\"reaction\": the reaction if stated}\n"
-    "- a medical or special diet -> field \"diet\"; the quote is what gets recorded\n"
-    "- heavy or regular drinking of alcohol -> field \"alcohol\"; the quote, with the amount, "
-    "type and how often as stated, is what gets recorded\n"
-    "Never record a fact about anyone else (a child, partner, friend, parent). Never guess or "
-    "infer. Never record a question (\"is it safe if I were pregnant?\"). Leave out anything "
-    "not on this list. For every item, \"quote\" is the client's exact words that state it "
-    "(at least 3 words, including I or my, and the name you put in the value), copied from "
-    "their message, and \"about\" is \"self\".\n"
+    "- any allergy or sensitivity (a food, pollen, mould, a drug, a chemical) -> field "
+    "\"allergies\", value {\"sensitivity\": what they react to, \"reaction\": the "
+    "reaction if stated}\n"
+    "- a health goal the client states for themself (\"I want to get rid of my migraines\") "
+    "-> field \"health_concerns\", value {\"concern\": the goal or concern in their words}\n"
+    "- a symptom the client has now -> field \"other_symptoms\"\n"
+    "- trouble falling asleep, staying asleep or waking -> field \"sleep\"\n"
+    "- dental work or problems (amalgam fillings, root canals, implants in the mouth) -> field "
+    "\"dental\"\n"
+    "- an exposure to a toxin (mould, pesticides, metals, solvents, smoke) -> field "
+    "\"toxins\"\n"
+    "- a physical injury or accident (a fall, a fracture, a car accident, a concussion) -> "
+    "field \"physical_trauma\"\n"
+    "- a vaccination -> field \"vaccinations\"\n"
+    "- a medical or special diet -> field \"diet\"\n"
+    "- heavy or regular drinking of alcohol -> field \"alcohol\"\n"
+    "For every free-text field above (other_symptoms, sleep, dental, toxins, physical_trauma, "
+    "vaccinations, diet, alcohol) the quote is what gets recorded, so quote the whole fact.\n"
+    "- FAMILY HISTORY: a condition a blood relative of the client has or had (\"my mother "
+    "had breast cancer\") -> field \"family_history\", value {\"relative\": who (Mother, "
+    "Father, Sister, Grandmother...), \"condition\": the condition, \"age_onset\": the "
+    "relative's age when it began, only if stated}, and \"about\" is \"family\". Only the "
+    "client's OWN blood relatives: never a spouse, partner, in-law, step-relative, friend, "
+    "neighbour, coworker, client or patient, and never anyone's relative but the client's.\n"
+    "Never record anything else about another person. Never guess or infer. Never record a "
+    "question (\"is it safe if I were pregnant?\", \"does breast cancer run in families?\"). "
+    "Leave out anything not on this list, and never record feelings, trauma, stress, budget, "
+    "ratings or contact details. For every item, \"quote\" is the client's exact words that "
+    "state it (at least 3 words, including I, my or our, and the name you put in the value), "
+    "copied from their message, and \"about\" is \"self\" (\"family\" for family "
+    "history).\n"
     "Return STRICT JSON ONLY, no prose: {\"items\": [{\"field_id\": ..., \"value\": ..., "
-    "\"quote\": ..., \"about\": \"self\"}]}. With nothing to record return {\"items\": []}."
+    "\"quote\": ..., \"about\": ...}]}. With nothing to record return {\"items\": []}."
 )
 
 
@@ -202,7 +246,7 @@ def normalize_row(field_id, value):
         cell = _cell(value.get(col))
         if col == "current":
             cell = "Past" if cell.casefold() == "past" else "Current"   # _normalize_item may revise
-        elif col == "age":
+        elif col in ("age", "age_onset"):
             try:
                 cell = int(float(cell)) if cell else ""
             except ValueError:
@@ -215,10 +259,10 @@ def normalize_row(field_id, value):
 # Someone else. A quote, or the sentence it came from, naming one is not the
 # client's own fact, whatever the model says in "about".
 _OTHER_PERSON = re.compile(
-    r"\b(?:wife|husband|daughters?|sons?|mom|mum|mother|dad|father|sisters?|brothers?|"
-    r"friends?|partner|bab(?:y|ies)|child|children|kids?|boyfriend|girlfriend|"
-    r"grand(?:ma|pa|mother|father|son|daughter)|aunt|uncle|cousin|niece|nephew|"
-    r"neighbou?r|coworker|client|patient)\b", re.I)
+    r"\b(?:wi(?:fe|fes|ves)|husbands?|daughters?|sons?|moms?|mums?|mothers?|dads?|fathers?|"
+    r"sisters?|brothers?|friends?|partners?|bab(?:y|ies)|child|childs|children|kids?|"
+    r"boyfriends?|girlfriends?|grand(?:ma|pa|mother|father|son|daughter)s?|aunts?|uncles?|"
+    r"cousins?|nieces?|nephews?|neighbou?rs?|coworkers?|clients?|patients?)\b", re.I)
 _FIRST_PERSON = re.compile(r"\b(?:i|i'm|im|i've|ive|i'd|i'll|my|me|myself|mine)\b", re.I)
 # Past tense in a quote. "I've had asthma since childhood" is present, so the
 # present perfect is removed before the check.
@@ -278,21 +322,87 @@ def _is_past(quote):
     return bool(_PAST.search(_PRESENT_PERFECT.sub(" ", quote)))
 
 
+# Words a key term may carry that the client need not say: "I had my gallbladder
+# out" supports "Gallbladder removal". At least one other word must remain.
+_GENERIC_TERM_WORDS = frozenset((
+    "surgery", "surgical", "operation", "procedure", "removal", "removed", "repair",
+    "replacement", "the", "and", "for", "with"))
+
+
 def _term_in_quote(term, quote):
     """Every word (3+ letters) of the key term appears in the quote, matched on its
-    first 6 letters, so "Pregnancy" is supported by "pregnant"."""
+    first 6 letters, so "Pregnancy" is supported by "pregnant". Generic words
+    ("removal", "surgery") are not needed, but a term made only of them is refused."""
     words = [w for w in re.findall(r"[a-z0-9]+", str(term).casefold()) if len(w) >= 3]
+    words = [w for w in words if w not in _GENERIC_TERM_WORDS]
     q = _squash(quote)
     return bool(words) and all(w[:6] in q for w in words)
+
+
+# Family history (Glen, 20 Oct 2026): the client's OWN blood relatives only. Each
+# spelling maps to one canonical relative, so "Mother" in the value is supported by
+# "my mom" in the quote.
+_RELATIVES = {
+    "mother": "mother", "mom": "mother", "mum": "mother", "mama": "mother", "mommy": "mother",
+    "father": "father", "dad": "father", "papa": "father", "daddy": "father",
+    "parent": "parent", "parents": "parent",
+    "sister": "sister", "sisters": "sister", "brother": "brother", "brothers": "brother",
+    "sibling": "sibling", "siblings": "sibling", "twin": "twin",
+    "grandmother": "grandmother", "grandma": "grandmother", "granny": "grandmother",
+    "grandfather": "grandfather", "grandpa": "grandfather",
+    "grandparent": "grandparent", "grandparents": "grandparent",
+    "aunt": "aunt", "aunts": "aunt", "uncle": "uncle", "uncles": "uncle",
+    "cousin": "cousin", "cousins": "cousin", "niece": "niece", "nephew": "nephew",
+    "son": "son", "sons": "son", "daughter": "daughter", "daughters": "daughter",
+    "child": "child", "children": "child", "kid": "child", "kids": "child",
+}
+_RELATIVE_WORD = "(?:" + "|".join(sorted(_RELATIVES, key=len, reverse=True)) + ")"
+# "my mother", "our late father", "my maternal grandmother": the relative is the
+# client's own, at most two words after my or our.
+_OWN_RELATIVE = re.compile(r"\b(?:my|our)\s+(?:[a-z]+\s+){0,2}?(" + _RELATIVE_WORD + r")\b",
+                           re.I)
+# Not the client's blood family, or someone else's relative ("my friend's mother").
+_NOT_FAMILY_WORDS = (r"(?:friends?|neighbou?rs?|co-?workers?|colleagues?|clients?|patients?|"
+                     r"boss(?:es)?|partners?|wi(?:fe|fes|ves)|husbands?|spouses?|boyfriends?|"
+                     r"girlfriends?|fianc[eé]e?s?|"
+                     r"room-?mates?|in-?laws?|step-?\w*)")
+_NOT_FAMILY = re.compile(r"\b" + _NOT_FAMILY_WORDS + r"\b", re.I)
+
+
+def _relatives_in(text):
+    return {_RELATIVES[m.group(1).casefold()] for m in _OWN_RELATIVE.finditer(text or "")}
+
+
+def _own_family_fact(quote, relative):
+    """The quote names the client's own blood relative ("my" or "our" before it), the
+    same one as the value's `relative`, and no one outside the blood family is in the
+    quote ("my friend's mother", "my mother-in-law"). A quote without "my" fails the
+    first-person check before this runs."""
+    if _NOT_FAMILY.search(quote):
+        return False
+    named = {_RELATIVES[w] for w in re.findall(r"[a-z]+", str(relative).casefold())
+             if w in _RELATIVES}
+    return bool(named) and bool(named & _relatives_in(quote))
+
+
+# A health goal is something the client wants for themself.
+_GOAL = re.compile(r"\b(?:want|wanting|goal|goals|hope|hoping|like to|love to|trying to|"
+                   r"try to|aim|aiming|wish|working on|get rid of|get over)\b", re.I)
+
+
+def _age_stated(age, client_msg):
+    """An age is kept only when that number is in the client's message."""
+    return str(age) in re.findall(r"\d+", client_msg or "")
 
 
 def _normalize_item(item, client_msg):
     if not isinstance(item, dict):
         return None
-    if item.get("about") != "self":
-        return None
     fid = item.get("field_id")
     if fid not in EXTRACT_FIELDS:
+        return None
+    family = fid == "family_history"
+    if item.get("about") != ("family" if family else "self"):
         return None
     quote = _cell(item.get("quote"), 300)
     # The evidence must be the client's own words, so nothing from the AI's
@@ -301,8 +411,10 @@ def _normalize_item(item, client_msg):
         return None
     # Two words are enough for a table fact whose term the quote must name anyway
     # ("I'm pregnant"); free-text fields keep three.
-    if len(quote.split()) < (2 if fid in TABLE_COLUMNS else 3) or not _FIRST_PERSON.search(quote):
+    if len(quote.split()) < (2 if fid in TABLE_COLUMNS else 3):
         return None
+    if not (_FIRST_PERSON.search(quote) or (family and _OWN_RELATIVE.search(quote))):
+        return None                      # "our mother" is the client's own family too
     sentence = _source_sentence(quote, client_msg)
     own = re.compile(r"\bas a (?:child|kid|baby)\b|\bsince (?:i was a )?(?:child|kid|baby)hood\b|"
                      # the client's own pregnancy or breastfeeding (coordinator, 20 Oct 2026)
@@ -310,7 +422,10 @@ def _normalize_item(item, client_msg):
                      r"(?:(?:my|our|a|an)\s+)?(?:\w+\s+)?(?:bab(?:y|ies)|child|kids?|sons?|daughters?|"
                      r"twins|little one)\b",
                      re.I)        # the client's own childhood, not another person
-    if _OTHER_PERSON.search(own.sub(" ", quote)) or _OTHER_PERSON.search(own.sub(" ", sentence)):
+    # Another person's fact is dropped, except a relative's on family_history, which
+    # has its own check below.
+    if not family and (_OTHER_PERSON.search(own.sub(" ", quote))
+                       or _OTHER_PERSON.search(own.sub(" ", sentence))):
         return None
     if _asked(quote, sentence):
         return None                      # a question is not a fact
@@ -318,6 +433,13 @@ def _normalize_item(item, client_msg):
         value = normalize_row(fid, item.get("value"))
         if not value or not _term_in_quote(value[TABLE_COLUMNS[fid][0]], quote):
             return None
+        for col in ("age", "age_onset"):
+            if col in value and not _age_stated(value[col], client_msg):
+                del value[col]           # an age the client never gave
+        if family and not _own_family_fact(quote, value.get("relative", "")):
+            return None
+        if fid == "health_concerns" and not _GOAL.search(quote):
+            return None                  # a goal is something the client wants
         if fid == "diagnoses":
             past = _is_past(quote)
             if _PREGNANCY.search(value["diagnosis"]) or _PREGNANCY.search(quote):
@@ -327,7 +449,9 @@ def _normalize_item(item, client_msg):
             elif past:
                 value["current"] = "Past"
     else:
-        value = quote                    # diet and alcohol: the client's words, not a paraphrase
+        if fid in _CURRENT_ONLY_TEXT and _is_past(quote):
+            return None                  # a symptom that is over is not a current symptom
+        value = quote                    # free text: the client's words, not a paraphrase
     if not value:
         return None
     return {"field_id": fid, "value": value, "rationale": f'"{quote}"'}
@@ -382,11 +506,23 @@ def _row_key(row):
                         if _squash(v)))
 
 
+# A table whose form lists an optional column first. Supplements start with
+# "brand", but a supplement named without a brand is still a row: "name" is the
+# column a row needs, and the one plain text lands in.
+_PRIMARY_COL = {"supplements": "name"}
+
+
 def _table_cols(field_id):
+    """The form's column ids, the column a row needs first."""
     f = _form_field(field_id)
     if not f or f.get("type") != "table":
         return None
-    return [c["id"] for c in f.get("columns") or []]
+    cols = [c["id"] for c in f.get("columns") or []]
+    primary = _PRIMARY_COL.get(field_id)
+    if primary in cols:
+        cols.remove(primary)
+        cols.insert(0, primary)
+    return cols
 
 
 def _row_from_dict(cols, value):

@@ -145,9 +145,14 @@ def test_extractor_error_returns_empty():
 
 
 def test_extractor_refuses_fields_off_the_list():
-    items = [_item("terrain", 3, "I take warfarin"), _item("sleep", "bad", "I take warfarin"),
-             _item("first_name", "Zed", "I take warfarin")]
-    out = hs.extract_from_turn("I take warfarin.", "", extractor=hs.llm_extractor(_llm(items)))
+    # Scales, budget, identity, the sensitive trauma field and the fixed symptom list
+    # are never suggested from chat.
+    items = [_item(f, "x", "I take warfarin daily") for f in (
+        "terrain", "first_name", "budget_monthly", "commitment", "psychoemotional_trauma",
+        "systemic_symptoms", "obstacles", "portrait", "occupation", "terms")]
+    # The quote is in the message, so only the field list can refuse them.
+    out = hs.extract_from_turn("I take warfarin daily.", "",
+                               extractor=hs.llm_extractor(_llm(items)))
     assert out == []
 
 
@@ -430,3 +435,345 @@ def test_a_fact_before_a_question_is_recorded(msg, item, diag_or_med):
 ])
 def test_a_question_or_another_person_still_records_nothing(msg, item):
     assert _one(msg, item) == []
+
+
+# --- Glen, 20 Oct 2026: anything that can go on the intake form -----------------
+
+def _all(msg, items):
+    return hs.extract_from_turn(msg, "", extractor=hs.llm_extractor(_llm(items)))
+
+
+def test_two_conditions_in_one_sentence_give_two_rows():
+    msg = "I have type 2 diabetes and high blood pressure."
+    q = "I have type 2 diabetes and high blood pressure"
+    out = _all(msg, [_item("diagnoses", {"diagnosis": "Type 2 diabetes"}, q),
+                     _item("diagnoses", {"diagnosis": "High blood pressure"}, q)])
+    assert [o["value"] for o in out] == [
+        {"diagnosis": "Type 2 diabetes", "current": "Current"},
+        {"diagnosis": "High blood pressure", "current": "Current"}]
+
+
+def test_any_past_condition_is_recorded_as_past():
+    out = _one("I had shingles in 2019.",
+               _item("diagnoses", {"diagnosis": "Shingles", "current": "Current"},
+                     "I had shingles in 2019"))
+    assert out[0]["value"] == {"diagnosis": "Shingles", "current": "Past"}
+
+
+NEW_POSITIVE = [
+    ("I had my gallbladder out in 2015.",
+     _item("surgeries", {"procedure": "Gallbladder removal"}, "I had my gallbladder out in 2015"),
+     "surgeries", {"procedure": "Gallbladder removal"}),
+    ("I had knee replacement surgery at 58.",
+     _item("surgeries", {"procedure": "Knee replacement surgery", "age": 58},
+           "I had knee replacement surgery at 58"),
+     "surgeries", {"procedure": "Knee replacement surgery", "age": 58}),
+    ("I take magnesium glycinate at night.",
+     _item("supplements", {"name": "Magnesium glycinate", "reason": "sleep", "need": 9},
+           "I take magnesium glycinate at night"),
+     "supplements", {"name": "Magnesium glycinate", "reason": "sleep"}),
+    ("I take Thorne vitamin D every morning.",
+     _item("supplements", {"name": "Vitamin D", "brand": "Thorne"},
+           "I take Thorne vitamin D every morning"),
+     "supplements", {"name": "Vitamin D", "brand": "Thorne"}),
+    ("I take Tylenol for headaches.",
+     _item("otc_drugs", {"medication": "Tylenol", "reason": "headaches"},
+           "I take Tylenol for headaches"),
+     "otc_drugs", {"medication": "Tylenol", "reason": "headaches"}),
+    ("I'm on prednisone for my arthritis.",
+     _item("medications", {"medication": "Prednisone", "reason": "arthritis"},
+           "I'm on prednisone for my arthritis"),
+     "medications", {"medication": "Prednisone", "reason": "arthritis"}),
+    ("I'm allergic to penicillin, I get hives.",
+     _item("allergies", {"sensitivity": "Penicillin", "reaction": "hives"},
+           "I'm allergic to penicillin"),
+     "allergies", {"sensitivity": "Penicillin", "reaction": "hives"}),
+    ("I react badly to mould in my house.",
+     _item("allergies", {"sensitivity": "Mould"}, "I react badly to mould"),
+     "allergies", {"sensitivity": "Mould"}),
+    ("My mother had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "My mother had breast cancer", about="family"),
+     "family_history", {"relative": "Mother", "condition": "Breast cancer"}),
+    ("My dad got type 2 diabetes at 50.",
+     _item("family_history", {"relative": "Father", "condition": "Type 2 diabetes",
+                              "age_onset": 50},
+           "My dad got type 2 diabetes at 50", about="family"),
+     "family_history", {"relative": "Father", "condition": "Type 2 diabetes", "age_onset": 50}),
+    ("I want to get rid of my migraines.",
+     _item("health_concerns", {"concern": "Migraines", "rating": 10},
+           "I want to get rid of my migraines"),
+     "health_concerns", {"concern": "Migraines"}),
+    ("I've had migraines every week this month.",
+     _item("other_symptoms", "Weekly migraines", "I've had migraines every week this month"),
+     "other_symptoms", "I've had migraines every week this month"),
+    ("I sleep badly, waking at 3 every night.",
+     _item("sleep", "Poor sleep", "I sleep badly, waking at 3 every night"),
+     "sleep", "I sleep badly, waking at 3 every night"),
+    ("I have four amalgam fillings and a root canal.",
+     _item("dental", "Amalgams", "I have four amalgam fillings and a root canal"),
+     "dental", "I have four amalgam fillings and a root canal"),
+    ("I worked with pesticides on a farm for ten years.",
+     _item("toxins", "Pesticides", "I worked with pesticides on a farm for ten years"),
+     "toxins", "I worked with pesticides on a farm for ten years"),
+    ("I broke my wrist in a car accident.",
+     _item("physical_trauma", "Broken wrist", "I broke my wrist in a car accident"),
+     "physical_trauma", "I broke my wrist in a car accident"),
+    ("I had two COVID shots in 2021.",
+     _item("vaccinations", "COVID x2", "I had two COVID shots in 2021"),
+     "vaccinations", "I had two COVID shots in 2021"),
+]
+
+
+@pytest.mark.parametrize("msg,item,field,value", NEW_POSITIVE)
+def test_new_fields_record_the_clients_own_fact(msg, item, field, value):
+    out = _one(msg, item)
+    assert len(out) == 1, msg
+    assert out[0]["field_id"] == field
+    assert out[0]["value"] == value
+    assert out[0]["rationale"] == f'"{item["quote"]}"'
+
+
+NEW_QUESTIONS = [
+    ("Can I take this if I have type 2 diabetes?",
+     _item("diagnoses", {"diagnosis": "Type 2 diabetes"}, "I have type 2 diabetes")),
+    ("Is it safe if I had my gallbladder out?",
+     _item("surgeries", {"procedure": "Gallbladder removal"}, "I had my gallbladder out")),
+    ("Should I take magnesium glycinate at night?",
+     _item("supplements", {"name": "Magnesium glycinate"}, "I take magnesium glycinate at night")),
+    ("Can I take Tylenol for headaches with this?",
+     _item("otc_drugs", {"medication": "Tylenol"}, "I take Tylenol for headaches")),
+    ("What if I'm allergic to penicillin?",
+     _item("allergies", {"sensitivity": "Penicillin"}, "I'm allergic to penicillin")),
+    ("Does breast cancer run in families?",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "breast cancer run in families", about="family")),
+    ("Is it worth it if my mother had breast cancer?",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "my mother had breast cancer", about="family")),
+    ("Can this help if I want to get rid of my migraines?",
+     _item("health_concerns", {"concern": "Migraines"}, "I want to get rid of my migraines")),
+    ("Is it normal if I've had migraines every week?",
+     _item("other_symptoms", "x", "I've had migraines every week")),
+    ("Would this help if I sleep badly every night?",
+     _item("sleep", "x", "I sleep badly every night")),
+    ("Should I worry if I have amalgam fillings?",
+     _item("dental", "x", "I have amalgam fillings")),
+    ("Is it a problem if I worked with pesticides?",
+     _item("toxins", "x", "I worked with pesticides")),
+    ("Does it matter if I broke my wrist?",
+     _item("physical_trauma", "x", "I broke my wrist")),
+    ("Is it ok if I had two COVID shots?",
+     _item("vaccinations", "x", "I had two COVID shots")),
+]
+
+
+@pytest.mark.parametrize("msg,item", NEW_QUESTIONS)
+def test_new_fields_record_nothing_from_a_question(msg, item):
+    assert _one(msg, item) == [], msg
+
+
+NEW_THIRD_PARTY = [
+    ("My husband has type 2 diabetes.",
+     _item("diagnoses", {"diagnosis": "Type 2 diabetes"}, "My husband has type 2 diabetes")),
+    ("My friend had her gallbladder out.",
+     _item("surgeries", {"procedure": "Gallbladder removal"}, "My friend had her gallbladder out")),
+    ("My wife and I take magnesium glycinate.",
+     _item("supplements", {"name": "Magnesium glycinate"}, "I take magnesium glycinate")),
+    ("My son takes Tylenol for headaches.",
+     _item("otc_drugs", {"medication": "Tylenol"}, "My son takes Tylenol for headaches")),
+    ("My daughter is allergic to penicillin.",
+     _item("allergies", {"sensitivity": "Penicillin"}, "My daughter is allergic to penicillin")),
+    ("My friend's mother had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "My friend's mother had breast cancer", about="family")),
+    ("My friend's mother had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "mother had breast cancer", about="family")),
+    ("My friends mother had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "My friends mother had breast cancer", about="family")),
+    ("My mother-in-law had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "My mother-in-law had breast cancer", about="family")),
+    ("My step-father had a stroke.",
+     _item("family_history", {"relative": "Father", "condition": "Stroke"},
+           "My step-father had a stroke", about="family")),
+    ("My step mother had a stroke.",
+     _item("family_history", {"relative": "Mother", "condition": "Stroke"},
+           "My step mother had a stroke", about="family")),
+    ("My husband's mother had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "My husband's mother had breast cancer", about="family")),
+    ("My wife's father had a stroke.",
+     _item("family_history", {"relative": "Father", "condition": "Stroke"},
+           "My wife's father had a stroke", about="family")),
+    # Typed without the apostrophe, only the not-family word list catches these.
+    ("My husbands mother had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "My husbands mother had breast cancer", about="family")),
+    ("My wifes father had a stroke.",
+     _item("family_history", {"relative": "Father", "condition": "Stroke"},
+           "My wifes father had a stroke", about="family")),
+    ("My stepfather had a stroke.",
+     _item("family_history", {"relative": "Father", "condition": "Stroke"},
+           "My stepfather had a stroke", about="family")),
+    ("My husband has heart disease.",
+     _item("family_history", {"relative": "Husband", "condition": "Heart disease"},
+           "My husband has heart disease", about="family")),
+    ("My client's father had a stroke.",
+     _item("family_history", {"relative": "Father", "condition": "Stroke"},
+           "father had a stroke", about="family")),
+    ("My husband wants to get rid of his migraines.",
+     _item("health_concerns", {"concern": "Migraines"},
+           "My husband wants to get rid of his migraines")),
+    ("My daughter has had migraines every week.",
+     _item("other_symptoms", "x", "My daughter has had migraines every week")),
+    ("My partner sleeps badly every night.",
+     _item("sleep", "x", "My partner sleeps badly every night")),
+    ("My kid has three amalgam fillings, I think.",
+     _item("dental", "x", "My kid has three amalgam fillings")),
+    ("My husband worked with pesticides for years.",
+     _item("toxins", "x", "My husband worked with pesticides for years")),
+    ("My brother broke my wrist wrestling.",
+     _item("physical_trauma", "x", "My brother broke my wrist wrestling")),
+    # Typed without the apostrophe, the possessive is still someone else's.
+    ("My husbands doctor has him on warfarin.",
+     _item("medications", {"medication": "Warfarin"}, "My husbands doctor has him on warfarin")),
+    ("My moms diabetes is getting worse.",
+     _item("diagnoses", {"diagnosis": "Diabetes"}, "My moms diabetes is getting worse")),
+    ("My mother had two COVID shots.",
+     _item("vaccinations", "x", "My mother had two COVID shots")),
+]
+
+
+@pytest.mark.parametrize("msg,item", NEW_THIRD_PARTY)
+def test_new_fields_record_nothing_about_another_person(msg, item):
+    assert _one(msg, item) == [], msg
+
+
+@pytest.mark.parametrize("msg,item", [
+    # The family field still needs about=family, and other fields still need self.
+    ("My mother had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "My mother had breast cancer")),
+    # A relative's fact never lands on the client's own diagnoses.
+    ("My mother had breast cancer.",
+     _item("diagnoses", {"diagnosis": "Breast cancer"}, "My mother had breast cancer",
+           about="family")),
+    ("My mother had breast cancer.",
+     _item("diagnoses", {"diagnosis": "Breast cancer"}, "My mother had breast cancer")),
+    # The relative in the value must be the one in the quote.
+    ("My mother had breast cancer.",
+     _item("family_history", {"relative": "Sister", "condition": "Breast cancer"},
+           "My mother had breast cancer", about="family")),
+    ("My mother had breast cancer.",
+     _item("family_history", {"relative": "", "condition": "Breast cancer"},
+           "My mother had breast cancer", about="family")),
+    # The condition must be in the quote.
+    ("My mother had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Ovarian cancer"},
+           "My mother had breast cancer", about="family")),
+    # A goal is something the client wants, not just a symptom named.
+    ("I get migraines.", _item("health_concerns", {"concern": "Migraines"}, "I get migraines")),
+    # A symptom or sleep trouble the client says is over is not recorded.
+    ("I used to get migraines every week.",
+     _item("other_symptoms", "x", "I used to get migraines every week")),
+    ("I had trouble sleeping years ago.",
+     _item("sleep", "x", "I had trouble sleeping years ago")),
+    # A procedure made only of generic words has no evidence.
+    ("I had surgery last year.", _item("surgeries", {"procedure": "Surgery"}, "I had surgery")),
+])
+def test_new_field_evidence_checks(msg, item):
+    assert _one(msg, item) == [], msg
+
+
+def test_our_mother_is_the_clients_own_family():
+    out = _one("Our mother had breast cancer.",
+               _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+                     "Our mother had breast cancer", about="family"))
+    assert out and out[0]["value"]["relative"] == "Mother"
+
+
+def test_my_mom_supports_relative_mother():
+    out = _one("My mom has Alzheimer's.",
+               _item("family_history", {"relative": "Mother", "condition": "Alzheimer's"},
+                     "My mom has Alzheimer's", about="family"))
+    assert out and out[0]["value"] == {"relative": "Mother", "condition": "Alzheimer's"}
+
+
+def test_an_age_the_client_never_gave_is_dropped():
+    out = _one("I had my appendix out as a teenager.",
+               _item("surgeries", {"procedure": "Appendix removal", "age": 15},
+                     "I had my appendix out as a teenager"))
+    assert out and out[0]["value"] == {"procedure": "Appendix removal"}
+    out = _one("My mother had breast cancer.",
+               _item("family_history", {"relative": "Mother", "condition": "Breast cancer",
+                                        "age_onset": 52},
+                     "My mother had breast cancer", about="family"))
+    assert out and "age_onset" not in out[0]["value"]
+
+
+def test_a_relative_must_be_the_clients_own():
+    assert _one("I know a mother who had breast cancer.",
+                _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+                      "I know a mother who had breast cancer", about="family")) == []
+
+
+def test_own_mother_beside_a_friends_mother_still_records():
+    out = _one("My mother had breast cancer, and so did my friend's mom.",
+               _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+                     "My mother had breast cancer", about="family"))
+    assert len(out) == 1
+
+
+def test_a_relatives_condition_mentioned_with_a_friend_still_records():
+    out = _one("My mother had breast cancer, like my friend.",
+               _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+                     "My mother had breast cancer", about="family"))
+    assert len(out) == 1
+
+
+NEW_ROWS = {
+    "supplements": ({"name": "Fish oil", "brand": "Nordic"}, {"name": "Magnesium glycinate"}),
+    "family_history": ({"relative": "Father", "condition": "Stroke"},
+                       {"relative": "Mother", "condition": "Breast cancer"}),
+    "health_concerns": ({"concern": "Fatigue", "rating": 8}, {"concern": "Migraines"}),
+}
+
+
+@pytest.mark.parametrize("field", sorted(NEW_ROWS))
+def test_new_table_suggestion_appends_a_row(field):
+    old, new = NEW_ROWS[field]
+    assert hs.apply_suggestion(field, [old], json.dumps(new)) == [old, new]
+
+
+@pytest.mark.parametrize("field", list(hs.TEXT_FIELDS))
+def test_every_text_field_appends_a_line(field):
+    assert hs.apply_suggestion(field, "Earlier note.", "New note") == "Earlier note.\nNew note"
+
+
+def test_every_extract_field_is_an_editable_intake_field():
+    from dashboard import health_profile, intake
+    assert set(hs.EXTRACT_FIELDS) <= health_profile.EDITABLE_FIELD_IDS
+    forms = {f["id"]: f for f in intake._fields()}
+    for fid, cols in hs.TABLE_COLUMNS.items():
+        assert forms[fid]["type"] == "table", fid
+        assert set(cols) <= {c["id"] for c in forms[fid]["columns"]}, fid
+    for fid in hs.TEXT_FIELDS:
+        assert forms[fid]["type"] == "textarea", fid
+
+
+def test_a_supplement_without_a_brand_is_a_row():
+    assert hs.apply_suggestion("supplements", [], {"name": "Magnesium glycinate"}) == [
+        {"name": "Magnesium glycinate"}]
+    assert hs.apply_suggestion("supplements", None, "Vitamin C") == [{"name": "Vitamin C"}]
+    with pytest.raises(ValueError):
+        hs.apply_suggestion("supplements", [], {"brand": "Thorne"})
+
+
+def test_a_diagnosis_keeps_a_stated_age_of_onset():
+    out = _one("I was diagnosed with lupus at 34.",
+               _item("diagnoses", {"diagnosis": "Lupus", "age_onset": "34"},
+                     "I was diagnosed with lupus at 34"))
+    assert out and out[0]["value"] == {"diagnosis": "Lupus", "current": "Current", "age_onset": 34}

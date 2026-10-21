@@ -33175,8 +33175,10 @@ def _extract_portal_health_suggestions(email, query, answer, client_msg_id=None)
     try:
         from dashboard import health_suggestions as _hs
 
+        # 1200 tokens: one message can now give many items (every condition, drug,
+        # supplement and symptom), and a reply cut off mid-JSON records nothing.
         def _complete(system, user):
-            m = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=400,
+            m = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=1200,
                                     system=system, messages=[{"role": "user", "content": user}])
             return m.content[0].text
 
