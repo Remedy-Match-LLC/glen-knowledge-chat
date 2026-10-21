@@ -188,7 +188,10 @@ def test_a_listed_bundle_gets_each_component_caution_by_name(q, bundle):
     section = b[b.index("### "):]
     assert section.split("\n") == (
         [f"### {name}", f"Page: {app._catalog_page_url(bundle)}", NOTE]
-        + [f"Caution for {NAMES[c]}: {APPROVED[c]}" for c in EXPECTED[bundle]]), q
+        + [line for c in EXPECTED[bundle]
+           for line in (f"Caution for {NAMES[c]}: {APPROVED[c]}", app._CAUTION_STAY_LINE)]
+        # The closing reminder ends the block (cautionadd, 2026-10-21).
+        + ["", app._CAUTION_CLOSING_REMINDER]), q
 
 
 def test_an_unpinned_bundle_block_carries_no_description_or_components():

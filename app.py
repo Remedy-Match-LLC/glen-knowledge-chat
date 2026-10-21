@@ -2377,6 +2377,22 @@ _CAUTION_NO_ADDITIONS = (
     "medicine or dose. Name no other product or source in its place, and no one else to "
     "ask. This limits only what you add yourself. Repeat the approved description and "
     "directions below as written, and answer other questions as before.")
+# Directly after each opted-in caution, held or written. The header rule alone did not
+# hold: read-back on d12e2929 (2026-10-21) still added INR monitoring, a dose change and a
+# vitamin D3 without K2, taken from warfarin snippets (review round 2, variant a).
+_CAUTION_STAY_LINE = (
+    "For any medicine, pregnancy or condition this caution names, give only the caution's "
+    "words above. Add no monitoring, dose, tolerance or other-product advice, and no one "
+    "else to ask.")
+# The last words of the user message when an opted-in caution is in the answer. The facts
+# block is already last, after the snippets; this closes it (review round 2, variants b and
+# c: the read-back answers took INR monitoring from a cited drug interaction book).
+_CAUTION_CLOSING_REMINDER = (
+    "Caution reminder: for any medicine, pregnancy or condition a caution above names, "
+    "that caution is the whole answer. Copy every sentence of it. Call it the caution on "
+    "the product page, never the label. On that subject, skip the drug interaction text "
+    "in the snippets: do not use it, quote it or cite it. Add no monitoring, INR, dose, "
+    "tolerance or other-product advice, and name no one else to ask.")
 _SEVERAL_CAUTIONS_RULE = (
     "There is more than one caution below. Copy each one word for word, as its own "
     "paragraph starting \"Caution for <product name>:\", every sentence of it, even where "
@@ -2601,9 +2617,14 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                     part = f"Caution: {part.ref} is given in full above and applies here too."
                 else:
                     given.add(part.key)
-                    part = part.text
+                    key, part = part.key, part.text
                     written += 1 if part else 0
                     held += 0 if part else 1
+                    # Held inside the description or written here, an opted-in caution
+                    # gets the stay line straight after it.
+                    if products.get(key, {}).get("chat_caution"):
+                        lines.extend([part] if part else [])
+                        part = _CAUTION_STAY_LINE
             if part:
                 lines.append(part)
         # The copy reminder stays only above a caution given in full here. Above a
@@ -2747,6 +2768,8 @@ def named_product_facts_block(query_text: str, gated: bool = False,
         facts = (f"FOLLOW-UP: the user's message is about {name}, which they named in their "
                  f"previous question. Answer it about {name} from the text below, in the "
                  f"format the text below sets for a dose or safety question.\n" + facts)
+    if _CAUTION_STAY_LINE in facts:
+        facts += "\n\n" + _CAUTION_CLOSING_REMINDER
     return f"\n\n{facts}" if facts else ""
 
 

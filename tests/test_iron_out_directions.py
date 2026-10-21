@@ -65,7 +65,9 @@ def test_the_section_is_exactly_the_approved_lines(question):
         f"Directions: {DIRECTIONS}",
         app._PINNED_DOSE_RULE.format(name="Iron Out", example=""),
         app._CAUTION_COPY_REMINDER,
-        f"Caution: {CAUTION}"])
+        f"Caution: {CAUTION}",
+        # The stay line after the caution and the closing reminder (cautionadd, 2026-10-21).
+        app._CAUTION_STAY_LINE, "", app._CAUTION_CLOSING_REMINDER])
 
 
 def test_the_everyday_phrase_gets_no_block():

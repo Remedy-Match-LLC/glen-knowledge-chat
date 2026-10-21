@@ -105,3 +105,26 @@ def test_the_gated_rewording_still_finds_its_target():
                                       gated=True)
     assert '"The caution on the product page for <product name> is:"' in b
     assert b.count(WARNING) == 1 and b.count(RULE) == 1
+
+
+STAY = app._CAUTION_STAY_LINE
+CLOSING = app._CAUTION_CLOSING_REMINDER
+
+
+def test_the_warfarin_block_has_the_stay_line_after_the_caution_and_closes_on_the_reminder():
+    # Review round 2, variants a to c: the header rule alone let warfarin snippets through.
+    b = app.named_product_facts_block("Can I take Vitamin D Syntropy if I am on warfarin?")
+    assert b.count(STAY) == 1 and b.index(STAY) > b.index(WARNING)
+    assert b.count(CLOSING) == 1 and b.endswith("\n\n" + CLOSING)
+    assert "skip the drug interaction text in the snippets" in CLOSING
+    assert "never the label" in CLOSING and "Dr. Glen" not in b
+
+
+def test_each_opted_in_caution_gets_one_stay_line_and_the_answer_one_reminder():
+    b = app.named_product_facts_block("Is Brain Cleanse safe with Sleep Syntropy?")
+    assert b.count(STAY) == 2 and b.count(CLOSING) == 1
+
+
+def test_a_caution_without_the_opt_in_gets_neither():
+    b = app.named_product_facts_block("Is Estro-Clear safe?")
+    assert "### Estro-Clear" in b and STAY not in b and CLOSING not in b
