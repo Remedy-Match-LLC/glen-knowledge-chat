@@ -19,7 +19,8 @@ from dashboard import cart_store as CS
 from dashboard import practitioner_portal as pp
 
 VD = "vitamin-d-syntropy"
-LINE = "Vitamin D Syntropy is out of stock. The new formula arrives Monday, 19 October."
+NOTE = "The new formula arrives Monday, 19 October."
+LINE = "Vitamin D Syntropy is out of stock. " + NOTE
 URL = "/begin/product/vitamin-d-syntropy"
 BUNDLE = "test-vd-bundle"
 PAGE = open(os.path.join(os.path.dirname(__file__), "..", "static",
@@ -35,8 +36,10 @@ def _real():
 def catalog(monkeypatch):
     products = app._PRODUCTS.setdefault("products", {})
     real = _real()
-    for s in (VD, "scar-silk"):
-        monkeypatch.setitem(products, s, dict(real[s]))
+    # The real record is back on sale (spec 2026-10-16-vitamin-d-syntropy), so the
+    # refusal tests give their copy of it the flag the live file carried until then.
+    monkeypatch.setitem(products, VD, dict(real[VD], out_of_stock=NOTE))
+    monkeypatch.setitem(products, "scar-silk", dict(real["scar-silk"]))
     monkeypatch.setitem(products, BUNDLE, {
         "name": "Test VD Bundle", "bundle": True, "price_cents": 14000,
         "bundle_component_slugs": [{"slug": "scar-silk", "qty": 1}, {"slug": VD, "qty": 1}]})
@@ -68,11 +71,12 @@ def _refused(r):
     assert body.get("url") == URL, body
 
 
-def test_the_catalog_file_marks_it_out_of_stock_and_nothing_else():
+def test_the_catalog_file_marks_no_product_out_of_stock():
+    """Vitamin D Syntropy's new formula is back in stock (spec 2026-10-16-vitamin-d-syntropy)."""
     p = _real()[VD]
-    assert p["out_of_stock"] == "The new formula arrives Monday, 19 October."
+    assert "out_of_stock" not in p
     assert not p.get("inactive") and not p.get("waitlist_only")
-    assert [s for s, q in _real().items() if isinstance(q, dict) and q.get("out_of_stock")] == [VD]
+    assert [s for s, q in _real().items() if isinstance(q, dict) and "out_of_stock" in q] == []
 
 
 def test_the_predicate_refuses_it_with_the_one_line(catalog):

@@ -141,11 +141,12 @@ def test_vitamin_d_also_answers_to_its_powder_name():
 
 
 # SHA-256 of each `description` in production's store-correction.json (2026-09-30),
-# which lives in the vault, not this repo. The whole string is compared.
+# which lives in the vault, not this repo. The whole string is compared. Vitamin D's is the
+# new formula's description (spec 2026-10-16-vitamin-d-syntropy, Glen 2026-10-17).
 APPROVED_DESCRIPTIONS = {
     "magnesium-syntropy": "025d37824c47b6efb7d955dbdc5ef0173bcbe7377e9764916f7c96ec4ca19d11",
     "zinc-syntropy": "63e5b1f6005a70472c1c172be5f889d7d4183d5865da25e2983ed36de22444a1",
-    "vitamin-d-syntropy": "d8737ecacb97a0894acde78b3be5424e28ffc786f2e2816f3dbd99639938347d",
+    "vitamin-d-syntropy": "1ad885b3fe17a73e31edcf26044af2b801674ecaac1e3b4a63310cd6ccec8eea",
     "seaamino-syntropy": "b710d733ba590973f0e0c4565b622d9b975703a02999ba5649a61e460226c1d2",
 }
 
