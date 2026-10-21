@@ -412,8 +412,10 @@ def test_the_seven_cautions_opt_in_where_each_is_recorded():
     # read back without the switch quoted one sentence and invented a reason.
     for slug in SEVEN:
         assert PRODUCTS[slug]["chat_caution"] is True, slug
-        if slug in CORRECTIONS:
-            assert CORRECTIONS[slug]["chat_caution"] is True, slug
+    # Phytolacca alone has no corrections record; the other six must keep theirs.
+    assert [s for s in SEVEN if s not in CORRECTIONS] == ["phytolacca-americana-oil-roll-on"]
+    for slug in SEVEN[:-1]:
+        assert CORRECTIONS[slug]["chat_caution"] is True, slug
 
 
 def test_the_angiostasis_blood_thinner_answer_carries_the_whole_caution_and_its_rules():
@@ -424,3 +426,25 @@ def test_the_angiostasis_blood_thinner_answer_carries_the_whole_caution_and_its_
     assert b.count(STAY) == 1 and b.index(STAY) > b.index(warning)
     assert b.count(RULE) == 1 and b.endswith("\n\n" + CLOSING)
     assert "blood thinner" in app._caution_subjects_asked(q)
+
+
+def test_fibrosolve_s_unlabelled_caution_is_marked_once_in_its_description():
+    b = app.named_product_facts_block("Can I take Fibrosolve with warfarin?")
+    warning = PRODUCTS["fibrosolve"]["warning"]
+    assert "Caution: " + warning in b and b.count(warning) == 1
+    assert b.count(STAY) == 1 and b.index(STAY) > b.index(warning)
+
+
+def test_a_labelled_caution_is_not_labelled_twice():
+    b = app.named_product_facts_block("Is Angiostasis safe with a blood thinner?")
+    assert "Caution: Caution:" not in b
+
+
+@pytest.mark.parametrize("q", ["Can I take Fibrosolve with warfarin?",
+                               "I'm on Eliquis. Can I take Fibrosolve?"])
+def test_an_anticoagulant_caution_answers_a_blood_thinner_question(q):
+    assert "blood thinner" in app._caution_subjects_asked(q)
+
+
+def test_a_nursing_caution_answers_a_breastfeeding_question():
+    assert "breastfeeding" in app._caution_subjects_asked("Is Estro-Clear ok while nursing?")
