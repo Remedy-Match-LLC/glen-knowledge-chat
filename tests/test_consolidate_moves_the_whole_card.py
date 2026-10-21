@@ -183,7 +183,7 @@ def test_add_stress_on_a_card_uses_the_cards_rows_not_its_display_number(tmp_pat
     assert "addStress(label,layer,rids)" in html
     assert "if(rids&&rids.length)body.rids=rids" in html
     j = client.post(f"/author/{tid}/stress/add",
-                    json={"label": "Bile flow", "layer": 2, "rids": [liver]}).get_json()
+                    json={"label": "Bile flow", "layer": 3, "rids": [liver]}).get_json()
     assert j["ok"] is True
     with sqlite3.connect(db) as cx:
         placed = {r[0] for r in cx.execute(
@@ -380,11 +380,13 @@ def test_add_layer_stress_posts_the_cards_rids_as_numbers(tmp_path):
     html = _client(db).get(f"/author/{tid}").get_data(as_text=True)
     fns = _js(html, "async function addStress(", "async function assignStress(")
     got = _run_node(_STUBS + fns + """
-var card={dataset:{rids:'456,457'}};
+var card={dataset:{rids:'456,457'},querySelector:function(q){
+ return q==='input[id$="_layer"]'?{value:'12'}:null}};
 var input={value:' Bile flow ',disabled:false,closest:function(s){return s==='.lcard'?card:null}};
 addLayerStress(input,2).then(function(){console.log(JSON.stringify(sent))});
 """)
-    assert got[0][1] == {"label": "Bile flow", "layer": 2, "rids": [456, 457]}
+    # The stored layer from the card's hidden input, never the display number 2.
+    assert got[0][1] == {"label": "Bile flow", "layer": 12, "rids": [456, 457]}
     assert got[1] == "reload"
 
 
@@ -400,3 +402,51 @@ var sel={value:'6',selectedIndex:0,options:[opt],closest:function(s){return s===
 consolidateBalances(12,2,sel).then(function(){console.log(JSON.stringify(sent))});
 """)
     assert got[0][1] == {"target_layer": 6, "source_rids": [456, 457], "target_rids": [5]}
+
+
+# Add stress on a card resolves to the current card too (coordinator, 2026-10-20).
+
+def _stress_links(db, sid):
+    with sqlite3.connect(db) as cx:
+        return {r[0] for r in cx.execute(
+            "SELECT chain_rid FROM biofield_auth_layer_stress WHERE stress_id=?", (sid,))}
+
+
+def _stress_count(db):
+    with sqlite3.connect(db) as cx:
+        return cx.execute("SELECT COUNT(*) FROM biofield_auth_stress").fetchone()[0]
+
+
+def test_a_stale_add_stress_covers_a_row_added_to_the_card_since_load(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    with sqlite3.connect(db) as cx:                  # another tab adds to the card
+        add_chain_row(cx, tid, 14, GLAUCOMA, "", "Eye Drops")
+        late = cx.execute("SELECT MAX(id) FROM biofield_auth_chain").fetchone()[0]
+    j = _client(db).post(f"/author/{tid}/stress/add", json={
+        "label": "Corneal thinning", "layer": 12, "rids": [ocu, iop]}).get_json()
+    assert j["ok"] is True
+    assert _stress_links(db, j["sid"]) == {ocu, iop, late}, (
+        "REGRESSION: the stress covered only part of the card")
+
+
+def test_add_stress_refuses_rows_now_on_two_cards(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    before = _stress_count(db)
+    res = _client(db).post(f"/author/{tid}/stress/add", json={
+        "label": "Corneal thinning", "layer": 12, "rids": [ocu, eye]})
+    assert res.status_code == 400
+    assert res.get_json()["error"].startswith("Those rows are now on more than one layer.")
+    assert _stress_count(db) == before
+
+
+def test_add_stress_refuses_rows_with_none_on_the_stated_layer(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    before = _stress_count(db)
+    res = _client(db).post(f"/author/{tid}/stress/add", json={
+        "label": "Corneal thinning", "layer": 2, "rids": [ocu, iop]})
+    assert res.status_code == 400
+    assert res.get_json()["error"].startswith("That layer has changed since the page loaded.")
+    assert _stress_count(db) == before

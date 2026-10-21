@@ -833,9 +833,10 @@ async function addStress(label,layer,rids){label=(label||'').trim();if(!label)re
  astat(j&&j.ok?'Stress added.':((j&&j.error)||'Add failed.'));loadStress()}
 async function addLayerStress(input,layer){var label=(input.value||'').trim();if(!label)return;
  input.disabled=true;
- // The card's own rows: its number is a display position, not a stored layer.
+ // The card's own rows and stored layer: its number on the page is a display position.
  var card=input.closest('.lcard'),rids=card?(card.dataset.rids||'').split(',').filter(Boolean).map(Number):[];
- try{await addStress(label,layer,rids);location.reload()}finally{input.disabled=false}}
+ var stored=card&&card.querySelector('input[id$="_layer"]');stored=stored?Number(stored.value)||layer:layer;
+ try{await addStress(label,stored,rids);location.reload()}finally{input.disabled=false}}
 async function assignStress(sid){astat('Assigning…');const j=await post('/author/__TID__/stress/'+sid+'/assign',{});astat(j&&j.ok?('Assigned to its layer.'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function assignAllStresses(){astat('Assigning all…');const j=await post('/author/__TID__/stresses/assign-all',{});astat(j&&j.ok?('Assigned '+(j.assigned||0)+' stress(es).'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function saveHeader(){const j=await post('/author/__TID__/header',

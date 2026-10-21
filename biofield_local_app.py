@@ -3136,14 +3136,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not raw:
             return {"ok": False, "error": "empty label"}, 400
         layer = d.get("layer")
-        # A card sends its own row ids: its number on the page is a display position,
-        # and one card can hold rows on several stored layers.
+        # A card sends its own row ids and its stored layer number. The ids are
+        # expanded to the whole CURRENT card, as consolidate does, so a stale tab
+        # cannot add a stress to only part of a card.
         card_rids = d.get("rids")
         card_rids = None if card_rids == [] else card_rids
         with sqlite3.connect(db_path) as cx:
             if card_rids is not None:
                 try:
-                    card_rids = _st._rids_on_test(cx, test_id, card_rids)
+                    card_rids = _st.card_rids_for_rows(cx, test_id, layer, card_rids)
                 except ValueError as e:
                     return {"ok": False, "error": str(e)}, 400
             label = resolve_stress_name(cx, raw)
