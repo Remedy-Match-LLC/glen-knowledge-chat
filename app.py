@@ -57278,10 +57278,18 @@ def console_order_invoice_link(oid):
 def _order_tracking_fields(tracking_number):
     """{tracking_number, tracking_url} for a portal order row. The link is set only for
     a carrier this code knows: USPS, whose numbers are 22 digits starting with 9
-    (dashboard/tracking._TRACK_22). Any other number is shown without a link."""
+    (dashboard/tracking._TRACK_22). normalize_tracking reads a spaced or IMpb form
+    (420+ZIP prefix) first; the number is shown as stored. Any other number gets no link."""
     tn = (tracking_number or "").strip()
-    url = _tracking.tracking_url(tn) if re.fullmatch(r"9\d{21}", tn) else ""
+    usps = _tracking.normalize_tracking(tn) or ""
+    url = _tracking.tracking_url(usps) if re.fullmatch(r"9\d{21}", usps) else ""
     return {"tracking_number": tn, "tracking_url": url}
+
+
+# An order replaced by another (dashboard/orders.supersede_order) keeps its row, but its
+# tracking number is stale: the replacement carries the parcel that went out.
+_PORTAL_TRACKING_SQL = ("CASE WHEN superseded_by_order_id IS NULL "
+                        "THEN COALESCE(tracking_number,'') ELSE '' END")
 
 
 def _published_invoices_for(cx, email):
@@ -57294,7 +57302,7 @@ def _published_invoices_for(cx, email):
     try:
         rows = cx.execute(
             "SELECT total_cents, invoice_token, COALESCE(items_json,'[]'), "
-            "COALESCE(tracking_number,'') FROM orders "
+            f"{_PORTAL_TRACKING_SQL} FROM orders "
             "WHERE lower(coalesce(email,''))=? AND portal_published=1 "
             "AND coalesce(pay_status,'')<>'paid' AND coalesce(invoice_token,'')<>'' "
             "AND coalesce(status,'') NOT IN ('cancelled','delivered','done') "
@@ -57323,7 +57331,7 @@ def _past_invoices_for(cx, email):
         rows = cx.execute(
             "SELECT total_cents, COALESCE(invoice_token,''), "
             "COALESCE(paid_at, updated_at, created_at, ''), COALESCE(items_json,'[]'), "
-            "COALESCE(tracking_number,'') FROM orders "
+            f"{_PORTAL_TRACKING_SQL} FROM orders "
             "WHERE lower(coalesce(email,''))=? AND coalesce(pay_status,'')='paid' "
             "AND coalesce(status,'')<>'cancelled' ORDER BY id DESC", (email,)).fetchall()
     except Exception:

@@ -141,8 +141,8 @@ def test_orders_hash_route_points_at_the_orders_rows():
     assert line, "#orders is not a portal hash route"
     assert 'panel:"orders"' in line.group(1)
     assert 'target:"orders-invoices"' in line.group(1)
-    assert 'alt:"history-receipts"' in line.group(1)
-    assert 'id="history-receipts"' in PAGE
+    assert 'alt:"orders-legacy"' in line.group(1)
+    assert "openCard:true" in line.group(1)
 
 
 def test_orders_survives_sign_in():
@@ -162,23 +162,157 @@ def test_every_hash_route_lands_in_a_panel_that_reveals_it():
     assert "test_portal_hash_routes: ok" in out.stdout
 
 
-def test_legacy_history_card_shows_tracking_too():
-    # Without the tabs or the hub there is no orders panel: the same rows render in the
-    # History & receipts card inside render(), which #orders reaches through `alt`.
+def _node(js):
     node = shutil.which("node")
     if not node:
         pytest.skip("node is not installed")
-    d = {"scan_history_enabled": False, "past_invoices": [
-        {"amount_dollars": "473.00", "paid": True, "when": "2026-10-10", "link": "",
-         "tracking_number": USPS, "tracking_url": USPS_URL}]}
-    js = "\n".join([
-        "const h = require('./tests/lib/portal-render-harness.js');",
-        "const src = h.read();",
-        "function fn(n){const a=src.indexOf('\\nfunction '+n+'(');return src.slice(a, src.indexOf('\\n}', a)+2);}",
-        "(0, eval)(src.match(/^const esc = .*$/m)[0].replace('const esc', 'globalThis.esc'));",
-        "(0, eval)(fn('invoiceTrackingHtml') + fn('pastInvoiceItemsHtml'));",
-        "process.stdout.write(h.render(src, {d: " + json.dumps(d) + "}));"])
     out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=60, cwd=ROOT)
     assert out.returncode == 0, out.stderr[-2000:]
-    card = out.stdout[out.stdout.index('id="history-receipts"'):]
+    return out.stdout
+
+
+def _render_legacy(d):
+    """render() with no tabs and no hub: the layout with no orders panel."""
+    return _node("\n".join([
+        "const h = require('./tests/lib/portal-render-harness.js');",
+        "process.stdout.write(h.render(h.read(), {d: " + json.dumps(d) + "}));"]))
+
+
+PAST = {"amount_dollars": "473.00", "paid": True, "when": "2026-10-10", "link": "",
+        "tracking_number": USPS, "tracking_url": USPS_URL}
+OPEN = {"amount_dollars": "50.00", "link": "/invoice/x", "url": "x",
+        "tracking_number": USPS, "tracking_url": USPS_URL}
+
+
+def test_legacy_history_card_shows_tracking_too():
+    html = _render_legacy({"scan_history_enabled": False, "past_invoices": [PAST]})
+    card = html[html.index('id="orders-legacy"'):]
+    assert card.startswith('id="orders-legacy" data-fold-id="scans-history-receipts"')
     assert f'Tracking: <a href="{USPS_URL}"' in card
+
+
+def test_legacy_unpaid_shipped_order_shows_tracking_and_is_the_destination():
+    # Round 2: an unpaid-only client with no history still has somewhere to land.
+    html = _render_legacy({"scan_history_enabled": False, "invoices": [OPEN]})
+    card = html[html.index('id="orders-legacy"'):]
+    assert card.startswith('id="orders-legacy" data-fold-id="scans-invoice-x"')
+    assert f'Tracking: <a href="{USPS_URL}"' in card.split("</div>")[0]
+    # With both, only the first order card carries the anchor.
+    both = _render_legacy({"scan_history_enabled": False, "invoices": [OPEN], "past_invoices": [PAST]})
+    assert both.count('id="orders-legacy"') == 1
+    assert both.index('id="orders-legacy"') < both.index("Your invoice")
+
+
+# ── F1: the link opens the folded card it lands on ───────────────────────────
+
+def _route_open_state(d, layout):
+    """First visit: which fold id #orders opens, and the billing door's resolved folds.
+
+    The page's own portalRouteFoldId, _foldIdOf and PortalFolds run against a stand-in
+    for the DOM that answers querySelector/closest from the rendered markup."""
+    js = r"""
+const h = require('./tests/lib/portal-render-harness.js');
+const F = require('./static/js/portal-folds.js');
+const src = h.read();
+function fn(n){const a=src.indexOf('\nfunction '+n+'(');return src.slice(a, src.indexOf('\n}', a)+2);}
+const D = __D__;
+let html;
+if (__LAYOUT__ === 'panel') {
+  (0, eval)(src.match(/^const esc = .*$/m)[0].replace('const esc', 'globalThis.esc'));
+  (0, eval)(fn('foldSlug') + fn('invoiceTrackingHtml') + fn('pastInvoiceItemsHtml') + fn('buildOrdersHtml'));
+  html = buildOrdersHtml(D);
+} else {
+  html = h.render(src, {d: D});
+}
+// Every card in the order group, in page order, as the fold glue sees them.
+const cards = [];
+const re = /<div class="card[^"]*"([^>]*)>/g; let m;
+while ((m = re.exec(html))) {
+  const a = m[1], id = /\sid="([^"]+)"/.exec(a), fid = /data-fold-id="([^"]+)"/.exec(a);
+  cards.push({at: m.index, id: id ? id[1] : '', dataset: {foldId: fid ? fid[1] : undefined,
+              foldOpen: /data-fold-open/.test(a) ? '1' : undefined}, isCard: true});
+}
+function El(id, at){
+  const card = cards.find(c => c.at === at);
+  return {id: id, dataset: card ? card.dataset : {},
+    matches(){ return !!card; },
+    querySelector(){ return cards.find(c => c.at > at && c.dataset.foldId) || null; },
+    closest(){ return card || null; }};
+}
+globalThis.document = {getElementById(id){
+  const i = html.indexOf('id="' + id + '"'); if (i === -1) return null;
+  return El(id, html.lastIndexOf('<div', i));
+}};
+(0, eval)(fn('_foldIdOf') + fn('portalRouteFoldId'));
+const ROUTES = (0, eval)('(' + src.slice(src.indexOf('{', src.indexOf('const PORTAL_HASH_ROUTES = {')),
+                                       src.indexOf('\n};', src.indexOf('const PORTAL_HASH_ROUTES = {')) + 2) + ')');
+const foldId = portalRouteFoldId(ROUTES.orders);
+const ids = cards.map(c => c.dataset.foldId || c.id);
+const openIds = cards.filter(c => c.dataset.foldOpen).map(c => c.dataset.foldId || c.id);
+const before = F.resolveDoor(F.emptyState(), ids, 'billing', openIds);
+const after = F.resolveDoor(F.setCard(F.emptyState(), foldId, false), ids, 'billing', openIds);
+process.stdout.write(JSON.stringify({foldId, ids, before, after}));
+""".replace("__D__", json.dumps(d)).replace("__LAYOUT__", json.dumps(layout))
+    return json.loads(_node(js))
+
+
+def test_orders_link_opens_the_folded_past_invoices_card_on_first_visit():
+    r = _route_open_state({"past_invoices": [PAST]}, "panel")
+    assert r["ids"][0] == "orders-product-picker"
+    assert r["foldId"] == "billing-past-invoices"
+    assert r["before"]["billing-past-invoices"] is True      # folded without the link
+    assert r["after"]["billing-past-invoices"] is False       # the link opens it
+
+
+def test_orders_link_opens_the_legacy_history_card_on_first_visit():
+    r = _route_open_state({"scan_history_enabled": False, "past_invoices": [PAST]}, "legacy")
+    assert r["foldId"] == "scans-history-receipts"
+    assert r["after"]["scans-history-receipts"] is False
+
+
+def test_portal_route_fold_id_keeps_a_plain_card_target():
+    # #calendar and #chat target a card with no fold name: its id stays the fold id.
+    fn = PAGE[PAGE.index("\nfunction portalRouteFoldId("):]
+    fn = fn[:fn.index("\n}") + 2]
+    assert 'el.matches("[data-fold-id], .card") ? el' in fn
+    assert "return (card && _foldIdOf(card)) || route.target;" in fn
+
+
+# ── F2: a superseded order shows no tracking ────────────────────────────────
+
+def test_superseded_order_keeps_its_row_but_not_its_tracking(client):
+    c, appmod = client
+    from dashboard import orders as _orders
+    email = "sup@example.com"
+    tok = _seed(appmod, email)
+    cx = sqlite3.connect(appmod.LOG_DB)
+    ids = dict(cx.execute("SELECT external_ref, id FROM orders WHERE email=?", (email,)).fetchall())
+    _orders.supersede_order(cx, ids["USPS"], ids["NONE"])
+    _orders.supersede_order(cx, ids["OPEN"], ids["NONE"])
+    cx.close()
+    j = c.get(f"/api/portal/{tok}").get_json()
+    past = {p["amount_dollars"]: p for p in j["past_invoices"]}
+    assert past["473.00"]["tracking_number"] == "" and past["473.00"]["tracking_url"] == ""
+    assert past["20.00"]["tracking_number"] == "1Z999AA10123456784"   # others untouched
+    assert {i["token"]: i for i in j["invoices"]}["tok-open"]["tracking_number"] == ""
+
+
+# ── F4: a spaced or IMpb USPS number still gets its link ─────────────────────
+
+def test_spaced_and_impb_usps_numbers_link_to_the_normalised_number():
+    import app as appmod
+    f = appmod._order_tracking_fields
+    spaced = "9405 5118 9922 3197 4284 90"
+    assert f(spaced) == {"tracking_number": spaced, "tracking_url": USPS_URL}
+    assert f("42096720" + USPS)["tracking_url"] == USPS_URL
+
+
+# ── F6: markup in a tracking number is shown as text ─────────────────────────
+
+def test_markup_in_a_tracking_number_is_escaped_and_unlinked():
+    import app as appmod
+    bad = "<img src=x onerror=alert(1)>"
+    assert appmod._order_tracking_fields(bad) == {"tracking_number": bad, "tracking_url": ""}
+    html = _render_orders({"past_invoices": [dict(PAST, tracking_number=bad, tracking_url="")]})
+    assert "Tracking: &lt;img src=x onerror=alert(1)&gt;</p>" in html
+    assert "<img" not in html

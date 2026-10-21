@@ -43,6 +43,8 @@
 //   node tests/test_portal_flag_off_snapshot.js --write-snapshot /tmp/aaa78c42.html
 //   Regenerated 2026-09-18 for the scan-name rename (PR #1739). The diff was five
 //   lines, each "5-Element Voice Analysis" to "Five Element Voice Scan", nothing else.
+//   Regenerated 2026-10-21: the case `plain-orders` was appended (order tracking);
+//   every earlier case is byte-identical.
 //   2026-09-26: the same lines became "Five Element Voice Analysis" (Glen's rename).
 //   Regenerated again 2026-09-18: "30 to 90 seconds" to "about a minute", per Glen.
 //   Regenerated 2026-09-26 for portal folding (PR #1828): 102 lines, each differing
@@ -89,6 +91,17 @@ const LOCKED_ONLY_D = {
   membership_upsell: { already_member: true, savings_cents: 1500, reorders_30d: 2, net_after_fee_cents: -300 }
 };
 
+// The panel-free layout's order cards. Nothing else in this file carries invoices, so
+// until 2026-10-21 the snapshot never saw the History & receipts card.
+const ORDERS_D = {
+  name: 'Mary Boyd', scan_history_enabled: false,
+  invoices: [{ amount_dollars: '50.00', link: '/invoice/tok-open', url: 'tok-open',
+               tracking_number: '9405511899223197428490',
+               tracking_url: 'https://tools.usps.com/go/TrackConfirmAction?tLabels=9405511899223197428490' }],
+  past_invoices: [{ amount_dollars: '473.00', paid: true, when: '2026-10-10', link: '',
+                    tracking_number: '1Z999AA10123456784', tracking_url: '' }]
+};
+
 const CASES = [
   // hub off + scan history off: the `else` arm of the panel wrap.
   ['plain', Object.assign({}, RICH_D, { scan_history_enabled: false }), RICH_V, false],
@@ -98,7 +111,10 @@ const CASES = [
   ['hub', RICH_D, RICH_V, true],
   // locked rows only, both wraps.
   ['tabs-locked-only', LOCKED_ONLY_D, RICH_V, false],
-  ['hub-locked-only', LOCKED_ONLY_D, RICH_V, true]
+  ['hub-locked-only', LOCKED_ONLY_D, RICH_V, true],
+  // the order cards: an unpaid shipped invoice and a paid one, both with tracking,
+  // so the History & receipts card and the invoice card render (2026-10-21).
+  ['plain-orders', ORDERS_D, RICH_V, false]
 ];
 
 // ---------------------------------------------------------------------------
