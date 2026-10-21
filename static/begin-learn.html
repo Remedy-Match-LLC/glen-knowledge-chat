@@ -181,7 +181,26 @@
       if (d.price) document.getElementById('h-price').textContent = d.price; else hide('h-price');
       show('content');
 
-      if (d.info_only){
+      if (d.not_ready_line){
+        // Not ready to order (2026-10-20): no price, no Order button. One line, and a
+        // link to the product page, where the waiting list is.
+        hide('buy-top'); hide('h-price');
+        var nb = document.getElementById('buy-bottom-btn');
+        var page = d.buy_url || ('/begin/product/' + encodeURIComponent(slug));
+        var head = document.getElementById('bb-head');
+        head.textContent = '';
+        var hl = document.createElement('a');
+        hl.setAttribute('href', page);
+        hl.textContent = d.not_ready_line;
+        head.appendChild(hl);
+        if (d.waitlist){
+          // Waiting-list products only. An out-of-stock one has no list: just the line.
+          nb.setAttribute('href', page);
+          nb.textContent = 'Join the waiting list \u2192';
+        } else {
+          nb.style.display = 'none';
+        }
+      } else if (d.info_only){
         hide('buy-top'); hide('buy-bottom'); hide('h-price');
         var sl = document.getElementById('store-link');
         if ((d.affiliate_url||'').trim()){ sl.setAttribute('href', d.affiliate_url); show('infoonly'); }
@@ -196,8 +215,10 @@
       if (md){
         document.getElementById('article').innerHTML = renderMarkdown(md);
       } else {
-        document.getElementById('article').innerHTML =
-          '<p>A deeper research write-up for this remedy is on its way. In the meantime, you can order below, or head back to find your best match.</p>';
+        // Not ready to order: no "you can order below" (review round 3).
+        document.getElementById('article').innerHTML = d.not_ready_line
+          ? '<p>A deeper research write-up for this remedy is on its way.</p>'
+          : '<p>A deeper research write-up for this remedy is on its way. In the meantime, you can order below, or head back to find your best match.</p>';
       }
 
       // Only render a separate Sources block if the article did not already include one.

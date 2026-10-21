@@ -319,6 +319,11 @@
     // Wording matches the portal's Zelle instructions (client-portal.html zelleInstructionsHtml).
     function money(c){ return "$" + (Number(c || 0) / 100).toFixed(2); }
     function zelleHtml(d){
+      // Not ready to order (2026-10-20): the line, linked to its page. No instructions.
+      if (d.not_ready){
+        return '<div class="zelle-box"><a href="' + esc(d.not_ready.url || "") + '">' +
+          esc(d.not_ready.line || "") + '</a></div>';
+      }
       var z = d.pay_instructions || {};
       var link = z.pay_link || z.bank_url || "";
       return '<div class="zelle-box"><strong>Your Zelle payment instructions</strong>' +

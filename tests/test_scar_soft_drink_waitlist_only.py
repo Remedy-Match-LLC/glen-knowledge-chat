@@ -19,7 +19,6 @@ import pytest
 import app
 from dashboard import bundle_pricing
 from dashboard import cart_store as CS
-from dashboard import client_invoice_lines as cil
 from dashboard import practitioner_portal as pp
 from dashboard import wholesale_checkout as wc
 
@@ -171,16 +170,6 @@ def test_build_order_refuses_before_redeeming_credit(monkeypatch, catalog):
                          catalog=catalog)
     assert out["ok"] is False and out["error"] == REFUSAL and out["url"] == URL
     assert redeemed == []
-
-
-def test_invoice_rebuild_refuses_a_posted_line_whole():
-    with pytest.raises(cil.NotOrderable):
-        cil.rebuild([{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 2}], {},
-                    known=lambda s: True, refusal=app._waitlist_refusal)
-    # A zero-qty reference line orders nothing, so it is not refused.
-    assert cil.rebuild([{"slug": SCAR, "qty": 0}], {}, known=lambda s: True,
-                       refusal=app._waitlist_refusal) == [
-        {"slug": SCAR, "qty": 0, "format": "bottle"}]
 
 
 # ── Funnel and cart routes ────────────────────────────────────────────────────
@@ -443,8 +432,12 @@ def test_post_orders_is_refused(client, monkeypatch):
     _refused(client.post("/api/orders", json={"items": [{"slug": SCAR, "qty": 1}]}))
 
 
-def test_order_edit_is_refused(client, monkeypatch):
+def test_order_edit_is_refused(client, logdb, monkeypatch):
+    """Adding it to an order that does not hold it is refused. Since 2026-10-20 a line
+    already on the order may be kept (tests/test_waitlist_sale_surfaces.py)."""
     monkeypatch.setattr(app, "_bos_actor", lambda: _Owner())
+    monkeypatch.setattr(app._bos_orders, "get_order", lambda cx, oid: {
+        "id": 1, "status": "proposed", "items": [{"slug": "scar-silk", "qty": 1}]})
     _refused(client.post("/api/orders/1/edit", json={"lines": [{"slug": SCAR, "qty": 1}]}))
 
 

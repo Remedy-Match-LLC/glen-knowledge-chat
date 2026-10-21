@@ -73,8 +73,9 @@ def _spy_pricer(appmod, monkeypatch, captured):
     still runs."""
     def spy(lines_in, *, email, pickup, ship, discount_cents_in=None,
             adjustment_cents_in=None, points_redeem_cents_in=None,
-            shipping_override_cents_in=None, strict_packaging=False):
+            shipping_override_cents_in=None, strict_packaging=False, allow_waitlist=False):
         captured["lines"] = lines_in
+        captured["allow_waitlist"] = allow_waitlist
         captured["email"] = email
         captured["is_paid_member"] = appmod._is_paid_member(email)
         captured["strict_packaging"] = strict_packaging
@@ -157,3 +158,16 @@ def test_rejects_order_with_no_email(env, monkeypatch):
     # No membership was granted to a blank email.
     with sqlite3.connect(db) as cx:
         assert cx.execute("SELECT COUNT(*) FROM memberships").fetchone()[0] == 0
+
+
+def test_a_held_not_ready_line_never_blocks_the_reprice(env, monkeypatch):
+    """Alkalize, 2026-10-20: the grant reprices the order's own lines, so a line already
+    on the order that is not ready to order must not refuse it (review round 3)."""
+    appmod, db, O = env
+    oid = _seed_order(appmod, db, O, items=ITEMS + [
+        {"slug": "alkalize-bicarbonate-blend", "name": "Alkalize", "qty": 1}])
+    captured = {}
+    _spy_pricer(appmod, monkeypatch, captured)
+    r = appmod.app.test_client().post(f"/api/orders/{oid}/grant-member-access", json={})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert captured["allow_waitlist"] is True
