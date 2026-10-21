@@ -473,6 +473,9 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
         "name": name,
         "scan_date": scan_date,
         "scan_id": "",
+        # Glen's own analysis, published from the local app: a paid Biofield. Sent at
+        # the top of the upsert body so the report row keeps it through any later edit.
+        "report_kind": "biofield",
         "content": content,
         "unresolved": unresolved,
     }

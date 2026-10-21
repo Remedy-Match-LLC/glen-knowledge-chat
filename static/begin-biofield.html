@@ -4,7 +4,7 @@
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Your Biofield Analysis - Dr. Glen Swartwout</title>
+  <title>Your Remedy Match - Dr. Glen Swartwout</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Raleway:wght@600;700&display=swap" rel="stylesheet" />
@@ -384,11 +384,11 @@
         tosCard.className = "tos-gate";
 
         var tosH = document.createElement("h2");
-        tosH.textContent = "Your Biofield Analysis is ready.";
+        tosH.textContent = "Your Remedy Match is ready.";
         tosCard.appendChild(tosH);
 
         var tosP = document.createElement("p");
-        tosP.textContent = "To view your personal Biofield Analysis, please agree to our terms.";
+        tosP.textContent = "To view your personal Remedy Match, please agree to our terms of service.";
         tosCard.appendChild(tosP);
 
         var checkRow = document.createElement("div");
@@ -590,13 +590,13 @@
           var L = layers[i];
           var sec = document.createElement("div");
           sec.className = "bf-layer";
-          var t = document.createElement("div"); t.className = "layer-title"; t.textContent = L.title || ("Layer " + (L.n || (i + 1)));
+          var t = document.createElement("div"); t.className = "layer-title"; t.textContent = L.title || ("Pattern " + (L.n || (i + 1)));
           sec.appendChild(t);
           if (L.summary) { var s = document.createElement("p"); s.className = "layer-summary"; s.textContent = L.summary; sec.appendChild(s); }
           if (L.remedy && L.remedy.slug) {
             renderRemedyInto(sec, L.remedy);              // existing helper: name link + meaning + Order btn (+ #4c cart row)
           } else if (L.remedy_blurred) {
-            var b = document.createElement("p"); b.className = "layer-blurred"; b.textContent = "Your matched remedy for this layer";
+            var b = document.createElement("p"); b.className = "layer-blurred"; b.textContent = "Your Remedy Match for this pattern";
             sec.appendChild(b);
           }
           root.appendChild(sec);
@@ -617,7 +617,8 @@
         layersCard.className = "card";
         var layersLabel = document.createElement("div");
         layersLabel.className = "remedy-section-label";
-        layersLabel.textContent = "Your Biofield Stress Pattern Layers";
+        // Glen, 2026-10-20: "layers" wording is reserved for the paid causal analysis.
+        layersLabel.textContent = "Your Active Stress Patterns";
         layersCard.appendChild(layersLabel);
         renderLayers(layersCard, data);
         root.appendChild(layersCard);

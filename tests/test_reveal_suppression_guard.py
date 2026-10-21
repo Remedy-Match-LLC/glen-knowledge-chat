@@ -1,4 +1,4 @@
-"""Reveal-ready emails (Your Biofield Analysis is ready) route through
+"""Reveal-ready emails (Your Remedy Match is ready) route through
 _send_inquiry_email, which is EXEMPT from the email suppression guard. These tests
 pin the correction: the reveal-ready send sites (_send_reveal_link + the
 /api/e4l/reveal-draft ingest) must NOT email a suppressed (hard-bounced) address.
