@@ -198,7 +198,8 @@ def parse_cns_confirmation(html: str) -> Dict[str, object]:
 # ── Draft email (Glen's "tracking number" email, replicated) ─────────────────
 
 def build_tracking_email(tracking, recipient_name: Optional[str] = None,
-                         resolved_email: Optional[str] = None) -> dict:
+                         resolved_email: Optional[str] = None,
+                         hold_note: Optional[str] = None) -> dict:
     """Build the draft Glen reviews + sends. Mirrors his manual email exactly:
     an "Aloha <first name>" greeting (when we know the name), the tracking number
     as a live USPS link, then his standard sign-off.
@@ -214,10 +215,14 @@ def build_tracking_email(tracking, recipient_name: Optional[str] = None,
     number emails when going to the same address the same day." Labels bought in one
     Click-N-Ship checkout for one address come as a list and go out as ONE email. One
     number reads exactly as it always has.
+
+    hold_note: why the watcher held this draft (a drop-ship client whose practitioner
+    has client mail off). It replaces the "find their address" note, which would tell
+    the reviewer to do the one thing they must not.
     """
     numbers = [tracking] if isinstance(tracking, str) else list(tracking)
     if len(numbers) > 1:
-        return _build_multi(numbers, recipient_name, resolved_email)
+        return _build_multi(numbers, recipient_name, resolved_email, hold_note)
     tracking = numbers[0]
     url = tracking_url(tracking)
     greeting_html = (
@@ -228,7 +233,11 @@ def build_tracking_email(tracking, recipient_name: Optional[str] = None,
     )
     # No email match: surface the full name (esp. the last name) for Glen's lookup.
     note_html = note_text = ""
-    if not (resolved_email or "").strip() and recipient_name and len(recipient_name.split()) > 1:
+    if hold_note:
+        note_html = (f'<p style="color:#b00020"><strong>[{escape(hold_note)} '
+                     f"Do not send this to the client.]</strong></p>")
+        note_text = f"[{hold_note} Do not send this to the client.]\n\n"
+    elif not (resolved_email or "").strip() and recipient_name and len(recipient_name.split()) > 1:
         who = recipient_name.strip()
         note_html = (
             f'<p style="color:#b00020"><strong>[No email on file for {escape(who)} '
@@ -253,9 +262,9 @@ def build_tracking_email(tracking, recipient_name: Optional[str] = None,
     return {"subject": EMAIL_SUBJECT, "html": html, "text": text}
 
 
-def _build_multi(numbers, recipient_name, resolved_email):
+def _build_multi(numbers, recipient_name, resolved_email, hold_note=None):
     """One email for several boxes to one address: the same email, with every number."""
-    one = build_tracking_email(numbers[0], recipient_name, resolved_email)
+    one = build_tracking_email(numbers[0], recipient_name, resolved_email, hold_note)
     single_html = f'<p>Your order is on its way. Here is your USPS tracking number:</p>' \
                   f'<h3><a href="{tracking_url(numbers[0])}">{numbers[0]}</a></h3>'
     single_text = (f"Your order is on its way. Here is your USPS tracking number:\n\n"
@@ -281,6 +290,8 @@ def _build_multi(numbers, recipient_name, resolved_email):
 #   'sent'         — delivered to GHL's outbound conversation-message API
 #   'needs_review' — parsed, but no confident GHL email match (To: left blank)
 #   'send_failed'  — GHL failed; a Gmail review draft was created, not sent
+# A drop-ship hold is match_confidence 'dropship-held' with its reason in hold_reason.
+# GET /api/console/shipments/held lists them.
 #
 # tracking_number is UNIQUE so re-running the watcher over the same confirmation
 # email is a no-op (we never double-draft).
@@ -354,7 +365,7 @@ def init_tracking_schema(cx: sqlite3.Connection) -> None:
         "scheduled_delivery_date", "notification_channel",
         "notification_sent_at", "notification_error",
         "delivered_at", "easypost_tracker_id",
-        "order_link_status", "order_link_reason", "linked_order_ids",
+        "order_link_status", "order_link_reason", "linked_order_ids", "hold_reason",
     ):
         if not db.column_exists(cx, "shipments", column):
             cx.execute(f"ALTER TABLE shipments ADD COLUMN {column} TEXT")
@@ -362,6 +373,17 @@ def init_tracking_schema(cx: sqlite3.Connection) -> None:
         cx.execute(
             "ALTER TABLE shipments ADD COLUMN coaching_opened INTEGER NOT NULL DEFAULT 0")
     cx.commit()
+
+
+def held_shipments(cx, limit=200):
+    """Shipments the watcher held as a possible drop-ship client, newest first."""
+    rows = cx.execute(
+        "SELECT id, tracking_number, recipient_name, address_block, status, hold_reason, "
+        "draft_id, created_at FROM shipments WHERE match_confidence = 'dropship-held' "
+        "ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()
+    keys = ("id", "tracking_number", "recipient_name", "address_block", "status",
+            "hold_reason", "draft_id", "created_at")
+    return [dict(zip(keys, tuple(r))) for r in rows]
 
 
 def shipment_exists(cx: sqlite3.Connection, tracking_number: str) -> bool:
@@ -383,6 +405,7 @@ def record_shipment(cx: sqlite3.Connection, **fields) -> Optional[int]:
         "resolved_email", "match_confidence", "ghl_contact_id", "draft_id",
         "status", "source_msg_id", "scheduled_delivery_date",
         "notification_channel", "notification_sent_at", "notification_error",
+        "hold_reason",
     ]
     vals = [fields.get(c) for c in cols]
     placeholders = ", ".join("?" for _ in cols)

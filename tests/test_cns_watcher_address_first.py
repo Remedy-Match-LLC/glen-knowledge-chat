@@ -107,3 +107,256 @@ def test_a_medium_name_match_alone_still_only_drafts(cx):
     r, sends, drafts = _run(cx, _match("cyndi@x.example", "medium"),
                             {"email": None, "source": None, "conflict": False})
     assert r["status"] == "drafted" and sends == [] and drafts == ["cyndi@x.example"]
+
+# --- drop-ship clients ------------------------------------------------------------------
+# Glen, 2026-10-21: the watcher never auto-sends to a drop-ship client unless that
+# practitioner's switch (practitioner_settings.client_review_emails) is on. When it
+# cannot prove a parcel is not a held client's, it drafts with no recipient and says
+# why. ONE_SHIPMENT is Cyndi O'Brien at 1016 W Chicago Ct 85224.
+
+import json  # noqa: E402
+
+CLIENT = "cyndi@client.example"
+PRAC = "ashley@prac.example"
+NO_ADDR = {"email": None, "source": None, "conflict": False}
+AT_LABEL = {"street": "1016 W Chicago Ct", "zip5": "85224"}
+
+
+def _with_dropship(cx, *, switch=False, street="9 Other Rd", zip5="96720",
+                   client=CLIENT, ship_name="Cyndi O'Brien", status="packed"):
+    from dashboard import orders as _orders
+    from dashboard import practitioner_settings as _ps
+    _orders.init_orders_table(cx)
+    _ps.init_settings_table(cx)
+    cur = cx.execute(
+        "INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+        "practitioner_id, recipient_email, address_json) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("2026-10-01", "dropship", "d1", PRAC, "Ashley King", status, "p1", client,
+         json.dumps({"name": ship_name, "street": street, "zip": zip5})))
+    if switch:
+        _ps.set_client_review_emails(cx, "p1", True)
+    cx.commit()
+    return cur.lastrowid
+
+
+def _held(r, sends, drafts):
+    assert sends == [] and drafts == [None]
+    assert r["status"] == "needs_review" and r["confidence"] == "dropship-held"
+    assert r["review_reason"].startswith("Held: drop-ship client, switch off (order #")
+
+
+def test_switch_off_a_blank_client_email_is_held_by_address_and_name(cx):
+    """Round 1 F1: no client email typed, order delivered, GHL knows Cyndi."""
+    _with_dropship(cx, client=None, status="delivered", **AT_LABEL)
+    _held(*_run(cx, _match("cyndi@gmail.example", "high"), NO_ADDR))
+
+
+def test_switch_off_a_typed_client_email_is_held_anywhere(cx):
+    _with_dropship(cx, status="done")
+    _held(*_run(cx, _match(CLIENT, "high"), NO_ADDR))
+
+
+def test_a_name_alone_never_holds(cx):
+    """Round 3 R3-2: Cyndi O'Brien elsewhere is a stranger to this hold."""
+    _with_dropship(cx, client="cyndi@work.example", status="done")
+    r, sends, _ = _run(cx, _match("cyndi@gmail.example", "high"), NO_ADDR)
+    assert sends == ["cyndi@gmail.example"] and r["status"] == "sent"
+
+
+def test_switch_off_a_filemaker_match_to_the_client_is_held(cx):
+    _with_dropship(cx, client=None, **AT_LABEL)
+    _held(*_run(cx, NONE, {"email": "cyndi@fmp.example", "source": "fmp",
+                           "conflict": False}))
+
+
+def test_switch_off_a_harvest_of_the_client_is_held_and_not_saved(cx):
+    _with_dropship(cx, client=None, **AT_LABEL)
+    saved = []
+    sends, drafts = _sends(), _drafts()
+    res = handle_confirmation(ONE_SHIPMENT, "m1", cx, NONE, drafts,
+                              harvest_fn=lambda n: {"email": "cyndi@x.example"},
+                              persist_contact=lambda *a: saved.append(a) or {},
+                              send_fn=sends, auto_send=True, dry_run=False,
+                              address_resolve=lambda s: NO_ADDR)
+    _held(res[0], sends.calls, drafts.calls)
+    assert saved == []
+
+
+def test_switch_off_a_board_match_without_its_own_name_is_held(cx):
+    _with_dropship(cx)
+    _held(*_run(cx, NONE, {"email": CLIENT, "source": "board", "conflict": False}))
+
+
+def test_the_held_draft_says_why_and_the_reason_is_listed(cx):
+    """Round 3 R3-3: never 'find their address'. The reason is stored for the console."""
+    from dashboard.tracking import held_shipments
+    oid = _with_dropship(cx, status="done")
+    drafts = []
+    handle_confirmation(ONE_SHIPMENT, "m1", cx, _match(CLIENT, "high"),
+                        lambda to, subject, html, text: drafts.append((to, text)) or "d1",
+                        send_fn=_sends(), auto_send=True, dry_run=False,
+                        address_resolve=lambda s: NO_ADDR)
+    (to, text), = drafts
+    assert to is None and f"Held: drop-ship client, switch off (order #{oid})." in text
+    assert "find their address" not in text and "Do not send this to the client" in text
+    (row,) = held_shipments(cx)
+    assert row["hold_reason"] == f"Held: drop-ship client, switch off (order #{oid})."
+
+
+def test_switch_on_the_client_gets_tracking_as_before(cx):
+    _with_dropship(cx, switch=True, client=None, **AT_LABEL)
+    r, sends, _ = _run(cx, _match(CLIENT, "high"), NO_ADDR)
+    assert r["status"] == "sent" and sends == [CLIENT]
+
+
+def _real(cx, find, label=ONE_SHIPMENT):
+    from dashboard import tracking_recipient as tr
+    sends, drafts = _sends(), _drafts()
+    res = handle_confirmation(label, "m1", cx, find, drafts,
+                              send_fn=sends, auto_send=True, dry_run=False,
+                              address_resolve=lambda s: tr.resolve_by_address(cx, s))
+    return res[0], sends.calls, drafts.calls
+
+
+def _own(cx, email, name, status="packed"):
+    cx.execute("INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+               "address_json) VALUES (?,?,?,?,?,?,?)",
+               ("2026-10-02", "storefront", "s1", email, name, status,
+                json.dumps({"street": "1016 W Chicago Ct", "zip": "85224"})))
+    cx.commit()
+
+
+def test_a_dropship_order_at_the_label_address_sends_to_the_practitioner(cx):
+    _with_dropship(cx, **AT_LABEL)
+    r, sends, _ = _real(cx, _match(CLIENT, "high"))
+    assert sends == [PRAC] and r["confidence"] == "address-board"
+
+
+def test_a_former_dropship_client_s_own_order_still_sends(cx):
+    """Round 2b: her own purchase, under the held email itself, is not a drop-ship."""
+    _with_dropship(cx, status="delivered", **AT_LABEL)
+    _own(cx, CLIENT, "Cyndi O'Brien")
+    r, sends, _ = _real(cx, NONE)
+    assert sends == [CLIENT] and r["status"] == "sent"
+
+
+def test_a_strangers_label_on_a_held_clients_own_order_is_held(cx):
+    """The own-order exception needs the label to name the order's buyer."""
+    from tests.test_cns_watcher_one_email_per_address import _block, _confirmation
+    _with_dropship(cx, status="delivered", **AT_LABEL)
+    _own(cx, CLIENT, "Cyndi O'Brien")
+    html = _confirmation(_block("9405530109355600000011", "Carl Lee", "1016 W CHICAGO CT",
+                                "CHANDLER AZ 85224-5249 US"))
+    r, sends, drafts = _real(cx, NONE, html)
+    assert sends == [] and drafts == [None] and r["confidence"] == "dropship-held"
+
+
+def test_a_housemate_at_a_dropship_address_gets_her_own_tracking(cx):
+    """Round 1 F3: the drop-ship is to Tony; Cyndi's own parcel is not sent to Ashley."""
+    _with_dropship(cx, client="tony@x.example", ship_name="Tony Client", **AT_LABEL)
+    _own(cx, "cyndi@own.example", "Cyndi O'Brien")
+    r, sends, _ = _real(cx, NONE)
+    assert sends == ["cyndi@own.example"]
+
+
+def test_an_unreadable_holds_list_drafts_with_no_address(cx, monkeypatch):
+    from dashboard import tracking_recipient as tr
+    monkeypatch.setattr(tr, "dropship_holds", lambda _cx: None)
+    r, sends, drafts = _run(cx, NONE, {"email": "someone@board.example",
+                                       "source": "board", "conflict": False})
+    assert sends == [] and drafts == [None] and r["status"] == "needs_review"
+
+
+def test_a_failed_address_lookup_drafts(cx):
+    """Round 1 F8: the lookup raising must not hand the box to the name match."""
+    def boom(s):
+        raise RuntimeError("db down")
+    sends, drafts = _sends(), _drafts()
+    handle_confirmation(ONE_SHIPMENT, "m1", cx, _match(CLIENT, "high"), drafts,
+                        send_fn=sends, auto_send=True, dry_run=False, address_resolve=boom)
+    assert sends.calls == [] and drafts.calls == [None]
+
+
+def test_the_switch_is_read_again_before_each_send(cx):
+    """Round 2 High 2: turned off after the first email, it holds the second."""
+    from dashboard import practitioner_settings as _ps
+    from tests.test_cns_watcher_one_email_per_address import _block, _confirmation
+    _with_dropship(cx, switch=True)
+    html = _confirmation(
+        _block("9405530109355600000011", "Cal Lee", "9 MAUKA RD", "HILO HI 96720-1234 US"),
+        _block("9405530109355600000028", "Cyndi O'Brien", "5 KAI ST", "HILO HI 96720-1234 US"))
+    emails = {"Cal Lee": "cal@x.example", "Cyndi O'Brien": CLIENT}
+    sent = []
+    def send(to, subject, html, text):
+        sent.append(to)
+        _ps.set_client_review_emails(cx, "p1", False)
+        return "msg"
+    drafts = _drafts()
+    handle_confirmation(html, "m1", cx, lambda n: {"email": emails[n], "contact_id": "c",
+                                                    "name": n, "confidence": "high"},
+                        drafts, send_fn=send, auto_send=True, dry_run=False,
+                        address_resolve=lambda s: NO_ADDR)
+    assert sent == ["cal@x.example"] and drafts.calls == [None]
+
+
+def test_a_switch_turned_off_after_resolving_holds_the_client(cx):
+    """Resolved to the client while the switch was on; off by send time, it drafts."""
+    from dashboard import practitioner_settings as _ps
+    from dashboard import tracking_recipient as tr
+    _with_dropship(cx, switch=True, **AT_LABEL)
+    def resolve_then_switch_off(s):
+        r = tr.resolve_by_address(cx, s)
+        _ps.set_client_review_emails(cx, "p1", False)
+        return r
+    sends, drafts = _sends(), _drafts()
+    handle_confirmation(ONE_SHIPMENT, "m1", cx, NONE, drafts, send_fn=sends,
+                        auto_send=True, dry_run=False,
+                        address_resolve=resolve_then_switch_off)
+    assert sends.calls == [] and drafts.calls == [None]
+
+
+def test_a_client_of_two_practitioners_is_held_while_either_is_off(cx):
+    """Round 3 R3-4: p1 is on and resolves to the client; p2's closed order holds it."""
+    from dashboard import practitioner_settings as _ps
+    _with_dropship(cx, switch=True, **AT_LABEL)
+    cx.execute("INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+               "practitioner_id, recipient_email, address_json) VALUES (?,?,?,?,?,?,?,?,?)",
+               ("2026-09-01", "dropship", "d2", "other@prac.example", "Other", "done", "p2",
+                None, json.dumps({"name": "Cyndi O'Brien", "street": "1016 W Chicago Ct",
+                                  "zip": "85224"})))
+    cx.commit()
+    r, sends, drafts = _real(cx, NONE)
+    assert sends == [] and drafts == [None] and r["confidence"] == "dropship-held"
+
+
+def test_alice_is_not_sent_to_the_practitioner_of_andrews_order(cx):
+    """Round 2c: same initial, same surname, same address. It drafts."""
+    from tests.test_cns_watcher_one_email_per_address import _block, _confirmation
+    _with_dropship(cx, ship_name="Andrew Smith", client=None, **AT_LABEL)
+    html = _confirmation(_block("9405530109355600000011", "Alice Smith", "1016 W CHICAGO CT",
+                                "CHANDLER AZ 85224-5249 US"))
+    r, sends, drafts = _real(cx, _match("alice@x.example", "high"), html)
+    assert sends == [] and drafts == [None]
+
+
+def test_a_practitioner_who_is_a_held_client_at_the_address_is_not_sent(cx):
+    """Round 2c: Ashley's drop-ship goes to Ashley, but another practitioner's held
+    drop-ship to Ashley sits at this address, so it drafts."""
+    _with_dropship(cx, **AT_LABEL)
+    cx.execute("INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+               "practitioner_id, recipient_email, address_json) VALUES (?,?,?,?,?,?,?,?,?)",
+               ("2026-09-01", "dropship", "d2", "other@prac.example", "Other", "done", "p2",
+                PRAC, json.dumps({"name": "Ashley King", "street": "1016 W Chicago Ct",
+                                  "zip": "85224"})))
+    cx.commit()
+    r, sends, drafts = _real(cx, NONE)
+    assert sends == [] and drafts == [None] and r["confidence"] == "dropship-held"
+
+
+def test_the_own_order_exception_needs_the_strict_name(cx):
+    """Round 2c: 'C O'Brien' on her own order under the held email does not prove the
+    label 'Cyndi O'Brien' is that order's parcel, so the held email drafts."""
+    _with_dropship(cx, status="delivered", ship_name="Cyndi O'Brien", **AT_LABEL)
+    _own(cx, CLIENT, "C O'Brien")
+    r, sends, drafts = _real(cx, NONE)
+    assert sends == [] and drafts == [None]

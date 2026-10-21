@@ -172,3 +172,224 @@ def test_filemaker_resolves_through_the_postgres_cursor():
     _fmp(cx, "1", "Judith", "Tom", "judith@example.com", "5 Kahala Ave", "96822")
     r = tr.resolve_by_address(_PgLikeConn(cx), _ship("Judy Tom", "5 Kahala Ave", "96822"))
     assert (r["email"], r["source"]) == ("judith@example.com", "fmp")
+
+# --- drop-ship clients ------------------------------------------------------------------
+# Glen, 2026-10-21: a drop-ship practitioner's clients get mail from us only when that
+# practitioner's switch (practitioner_settings.client_review_emails) is on. Off, the
+# tracking goes to the practitioner, who is orders.email on a drop-ship. A drop-ship's
+# `name` is the practitioner's; the client's name is on its ship-to.
+
+PRAC = "ashley@prac.example"
+
+
+def _dropship_db():
+    from dashboard import orders as _orders
+    from dashboard import practitioner_settings as _ps
+    cx = _db()
+    cx.execute("DROP TABLE orders")
+    _orders.init_orders_table(cx)
+    _ps.init_settings_table(cx)
+    return cx
+
+
+def _dropship(cx, street, zip5, *, pid="p1", prac=PRAC, client="tony@client.example",
+              ship_name="Tony Client", status="packed", ref="d1", address2=""):
+    cx.execute("INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+               "practitioner_id, recipient_email, address_json) VALUES (?,?,?,?,?,?,?,?,?)",
+               ("2026-10-01", "dropship", ref, prac, "Ashley King", status, pid, client,
+                json.dumps({"name": ship_name, "street": street, "address2": address2,
+                            "zip": zip5})))
+
+
+def _own_order(cx, email, name, street, zip5, ref="s1", status="packed"):
+    cx.execute("INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+               "address_json) VALUES (?,?,?,?,?,?,?)",
+               ("2026-10-01", "storefront", ref, email, name, status,
+                json.dumps({"street": street, "zip": zip5})))
+
+
+def _switch_on(cx, pid="p1"):
+    from dashboard import practitioner_settings as _ps
+    _ps.set_client_review_emails(cx, pid, True)
+
+
+def test_a_dropship_order_whose_client_name_agrees_goes_to_the_practitioner():
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720")
+    r = tr.resolve_by_address(cx, _ship("Tony Client", "4 Hale Street", "96720"))
+    assert (r["email"], r["source"], r["dropship"], r["to_client"]) == (
+        PRAC, "board", True, False)
+
+
+def test_a_dropship_with_a_unit_and_a_middle_name_matches_the_board():
+    """Round 3 A3: the label prints the unit on the street; the order keeps it in address2."""
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720", address2="Apt 2", ship_name="Mary Ann Smith")
+    r = tr.resolve_by_address(cx, _ship("Mary Smith", "4 HALE ST APT 2", "96720"))
+    assert (r["email"], r["dropship"]) == (PRAC, True)
+
+
+def test_a_housemates_own_order_is_not_routed_to_the_practitioner():
+    """Round 1 F3: Cyndi's own parcel at Tony's address goes to Cyndi."""
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720")
+    _own_order(cx, "cyndi@own.example", "Cyndi Obrien", "4 Hale St", "96720")
+    r = tr.resolve_by_address(cx, _ship("Cyndi Obrien", "4 Hale St", "96720"))
+    assert (r["email"], r["dropship"], r["name_agrees"]) == ("cyndi@own.example", False, True)
+
+
+def test_a_board_order_whose_name_disagrees_does_not_count_as_its_own():
+    cx = _dropship_db()
+    _own_order(cx, "cyndi@own.example", "Cyndi Obrien", "4 Hale St", "96720")
+    r = tr.resolve_by_address(cx, _ship("Carl Lee", "4 Hale St", "96720"))
+    assert (r["email"], r["name_agrees"]) == ("cyndi@own.example", False)
+
+
+def test_a_dropship_and_the_clients_own_order_together_are_a_conflict():
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720")
+    _own_order(cx, "tony@client.example", "Tony Client", "4 Hale St", "96720")
+    r = tr.resolve_by_address(cx, _ship("Tony Client", "4 Hale St", "96720"))
+    assert r["email"] is None and r["conflict"] is True
+
+
+def test_a_dropship_address_with_an_unsettled_name_is_a_conflict():
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720")
+    r = tr.resolve_by_address(cx, _ship("Mary Smith", "4 Hale St", "96720"))
+    assert r["email"] is None and r["conflict"] is True
+
+
+def test_a_dropship_with_the_switch_on_resolves_to_the_client():
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720")
+    _switch_on(cx)
+    r = tr.resolve_by_address(cx, _ship("Tony Client", "4 Hale St", "96720"))
+    assert (r["email"], r["to_client"]) == ("tony@client.example", True)
+
+
+def test_switch_on_with_no_client_email_still_goes_to_the_practitioner():
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720", client=None)
+    _switch_on(cx)
+    r = tr.resolve_by_address(cx, _ship("Tony Client", "4 Hale St", "96720"))
+    assert r["email"] == PRAC
+
+
+def test_the_business_line_retry_finds_a_dropship_order():
+    """Round 1 F4: the retry compares the client's ship-to name, not orders.name."""
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720")
+    s = {"recipient_name": "Tony Client", "street": "Kalani Center 4 Hale St",
+         "zip": "96720", "address_block": "Kalani Center / 4 Hale St / HILO HI 96720 US"}
+    r = tr.resolve_by_address(cx, s)
+    assert (r["email"], r["dropship"]) == (PRAC, True)
+
+
+def test_a_failed_lookup_rolls_back_before_raising():
+    """Round 3 R3-6: on Postgres an aborted transaction would stop the box being recorded."""
+    class _Broken:
+        rolled = 0
+        def execute(self, *a, **k):
+            raise RuntimeError("db down")
+        def rollback(self):
+            _Broken.rolled += 1
+    with pytest.raises(RuntimeError):
+        tr.resolve_by_address(_Broken(), _ship("Tony Client", "4 Hale St", "96720"))
+    assert _Broken.rolled >= 1
+
+
+def test_holds_cover_closed_orders_and_a_blank_client_email():
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720", status="done", client=None, address2="Apt 2")
+    holds = tr.dropship_holds(cx)
+    assert [(h["prac"], h["client"], h["name"], h["zip"]) for h in holds] == [
+        (PRAC, "", "Tony Client", "96720")]
+    assert holds[0]["streets"] == {tr.street_key("4 Hale St Apt 2"), tr.street_key("4 Hale St")}
+    _switch_on(cx)
+    assert tr.dropship_holds(cx) == []
+
+
+def test_a_client_of_two_practitioners_is_held_while_either_switch_is_off():
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720", pid="p1", ref="d1")
+    _dropship(cx, "4 Hale St", "96720", pid="p2", prac="other@prac.example", ref="d2",
+              status="done")
+    _switch_on(cx, "p1")
+    assert [h["prac"] for h in tr.dropship_holds(cx)] == ["other@prac.example"]
+
+
+def _hold(**kw):
+    h = {"order_id": 7, "prac": PRAC, "client": "", "name": "Tony Client", "zip": "96720",
+         "streets": {tr.street_key("4 Hale St Apt 2"), tr.street_key("4 Hale St")}}
+    h.update(kw)
+    return [h]
+
+
+def test_a_hold_needs_the_address_and_the_name_together():
+    """Round 3 R3-2: a name alone never holds; neither does an address alone."""
+    assert tr.holds_touching(_hold(), _ship("Tony Client", "4 HALE ST APT 2", "96720"))
+    assert tr.holds_touching(_hold(), _ship("Tony Client", "1 Other Rd", "10001")) == []
+    assert tr.holds_touching(_hold(), _ship("Mary Smith", "4 Hale St", "96720")) == []
+
+
+def test_a_hold_matches_the_held_client_email_anywhere():
+    holds = _hold(client="tony@client.example")
+    assert tr.holds_touching(holds, _ship("Mary Smith", "1 Other Rd", "10001"),
+                             to="TONY@client.example")
+
+
+@pytest.mark.parametrize("ship_name,label", [
+    ("Maria Garcia Lopez", "Maria Garcia"),
+    ("Mary Ann Smith", "Mary Smith"),
+    ("Tony Client", "T Client"),
+    ("Robin Roemer-Brown", "Robin Roemer Brown"),
+])
+def test_middle_and_double_surnames_agree_at_the_address(ship_name, label):
+    """Round 3 R3-1, A1 and A2."""
+    assert tr.holds_touching(_hold(name=ship_name), _ship(label, "4 HALE ST APT 2", "96720"))
+
+
+def test_a_hold_matched_only_through_the_business_line_street():
+    s = {"recipient_name": "Tony Client", "street": "Kalani Center 4 Hale St",
+         "zip": "96720", "address_block": "Kalani Center / 4 Hale St / HILO HI 96720 US"}
+    assert tr.holds_touching(_hold(streets={tr.street_key("4 Hale St")}), s)
+
+
+def test_a_failed_holds_read_is_none_and_rolls_back():
+    """An empty answer would let the watcher send; None makes it draft everything."""
+    class _Broken:
+        rolled = 0
+        def execute(self, *a, **k):
+            raise RuntimeError("db down")
+        def rollback(self):
+            _Broken.rolled += 1
+    assert tr.dropship_holds(_Broken()) is None
+    assert _Broken.rolled == 1
+
+
+@pytest.mark.parametrize("label,full,ok", [
+    ("Mary Smith", "Mary Ann Smith", True),
+    ("Robin Roemer Brown", "Robin Roemer-Brown", True),
+    ("Cyndi O'Brien", "Cyndi OBrien", True),
+    ("Alice Smith", "Andrew Smith", False),
+    ("T Client", "Tony Client", False),
+    ("Maria Garcia", "Maria Garcia Lopez", False),
+])
+def test_the_strict_match_needs_the_first_name_and_the_surname(label, full, ok):
+    assert tr.strict_name_agrees(label, full) is ok
+
+
+def test_a_loose_dropship_match_drafts_instead_of_routing():
+    """Round 2c: Alice's label must not route to the practitioner of Andrew's order."""
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720", ship_name="Andrew Smith")
+    r = tr.resolve_by_address(cx, _ship("Alice Smith", "4 Hale St", "96720"))
+    assert r["email"] is None and r["conflict"] is True
+
+
+def test_an_own_order_named_only_loosely_is_not_its_buyers_own():
+    cx = _dropship_db()
+    _own_order(cx, "c@own.example", "C Obrien", "4 Hale St", "96720")
+    r = tr.resolve_by_address(cx, _ship("Cyndi Obrien", "4 Hale St", "96720"))
+    assert (r["email"], r["name_agrees"]) == ("c@own.example", False)

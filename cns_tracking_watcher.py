@@ -273,7 +273,12 @@ def _addr_key(s):
 
 
 def _resolve(s, find_contact, address_resolve, harvest_fn):
-    """Who this box goes to: {to, conf, ghl_contact_id, review_reason, harvested}."""
+    """Who this box goes to: {to, conf, ghl_contact_id, review_reason, harvested,
+    path, addr_failed}.
+
+    `path` says how far the drop-ship hold may trust the answer: 'dropship' (a
+    drop-ship order at the address), 'own' (a board order whose own name agrees with
+    the label), or 'other' (anything else, including every name-only fallback)."""
     match = find_contact(s["recipient_name"])
     conf = match["confidence"] if match else "none"
     to = match["email"] if (match and conf in ("high", "medium")) else None
@@ -286,11 +291,15 @@ def _resolve(s, find_contact, address_resolve, harvest_fn):
     # conflict of equal standing and goes to review. The board outranks GHL.
     review_reason = ""
     addr = None
+    addr_failed = False
+    to_client = False
+    path = "other"
     if address_resolve is not None:
         try:
             addr = address_resolve(s)
         except Exception as exc:
             addr = None
+            addr_failed = True
             review_reason = f"address lookup failed: {type(exc).__name__}"
     ghl_email = (to or "").strip().lower() or None
     if addr and addr.get("email"):
@@ -300,6 +309,11 @@ def _resolve(s, find_contact, address_resolve, harvest_fn):
             review_reason = f"FileMaker has {a_email}, GHL has {ghl_email}"
         else:
             to, conf = a_email, f"address-{addr.get('source')}"
+            if addr.get("dropship"):
+                path = "dropship"
+                to_client = bool(addr.get("to_client"))
+            elif addr.get("source") == "board" and addr.get("name_agrees"):
+                path = "own"
             if ghl_email != a_email:
                 ghl_contact_id = None      # that GHL contact is someone else
     elif addr and addr.get("conflict"):
@@ -321,7 +335,47 @@ def _resolve(s, find_contact, address_resolve, harvest_fn):
             to = harvested["email"]
             conf = "harvested"
     return {"to": to, "conf": conf, "ghl_contact_id": ghl_contact_id,
-            "review_reason": review_reason, "harvested": harvested}
+            "review_reason": review_reason, "harvested": harvested,
+            "path": path, "addr_failed": addr_failed, "to_client": to_client}
+
+
+def _dropship_hold(r, shipments, cx):
+    """(held, reason) for one email about to go out.
+
+    Glen, 2026-10-21: "Give them the option, with fallback being no emails." A
+    drop-ship client gets mail from us only when the practitioner's switch is on.
+    When the watcher cannot prove a parcel is not a held client's, it drafts: a wrong
+    send is the failure that matters, and an extra draft is cheap. The holds are read
+    here, right before the send, so a switch turned off mid-run holds the next email."""
+    from dashboard import tracking_recipient as _trc
+    to = (r.get("to") or "").strip().lower()
+    if not to:
+        return False, ""
+    holds = _trc.dropship_holds(cx)
+    if holds is None:
+        return True, "Held: the drop-ship list could not be read."
+    if r.get("addr_failed"):
+        return True, f"Held: {r.get('review_reason') or 'address lookup failed'}."
+    path = r.get("path") or "other"
+    if path == "dropship" and not r.get("to_client"):
+        # A drop-ship going to its practitioner, unless that practitioner is herself
+        # another practitioner's held client at this very address.
+        hit = [h for s in shipments for h in _trc.holds_at_address(holds, s)
+               if h["client"] and h["client"] == to]
+    elif path == "own":
+        # The board order is this person's own purchase, not a drop-ship, and the label
+        # names its buyer by the strict match. Glen's rule covers drop-ship orders, not
+        # a person's own purchases, so a former drop-ship client's own order still
+        # sends, even to a held email.
+        hit = []
+    else:
+        # Every name-only fallback, a board order that does not name the label, and a
+        # drop-ship going to its client: a second practitioner's hold still applies.
+        hit = [h for s in shipments for h in _trc.holds_touching(holds, s, to)]
+    if not hit:
+        return False, ""
+    orders = ", ".join(sorted({f"#{h['order_id']}" for h in hit}))
+    return True, f"Held: drop-ship client, switch off (order {orders})."
 
 
 def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, send_fn,
@@ -329,16 +383,27 @@ def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, s
     """One email (sent or drafted) for every box in the group; one shipments row each."""
     to, conf = r["to"], r["conf"]
     ghl_contact_id, harvested = r["ghl_contact_id"], r["harvested"]
+    review_reason = r["review_reason"]
     first = shipments[0]
     numbers = [s["tracking"] for s in shipments]
 
+    # A held parcel is drafted, never sent, with no recipient at all: one click in
+    # Gmail must not mail the client, nor tell a practitioner about a stranger. The
+    # draft and the shipments row carry the reason. No GHL contact is made either.
+    guarded, hold_reason = _dropship_hold(r, shipments, cx)
+    if guarded:
+        to = None
+        conf, ghl_contact_id, harvested = "dropship-held", None, None
+        review_reason = hold_reason
+
     # Auto-send only high-confidence recipients; everything else drafts.
-    send_eligible = (auto_send and to is not None
+    send_eligible = (auto_send and to is not None and not guarded
                      and conf in AUTO_SEND_CONFIDENCES)
     status = ("sent" if send_eligible else
               "drafted" if to else "needs_review")
     email = build_tracking_email(numbers if len(numbers) > 1 else numbers[0],
-                                 first["recipient_name"], resolved_email=to)
+                                 first["recipient_name"], resolved_email=to,
+                                 hold_note=hold_reason if guarded else None)
 
     draft_id = None
     onboarded = False
@@ -389,7 +454,8 @@ def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, s
                     scheduled_delivery_date=normalize_delivery_date(s.get("delivery_date")),
                     notification_channel=("ghl" if status == "sent" else None),
                     notification_sent_at=(_iso_now() if status == "sent" else None),
-                    notification_error=notification_error)
+                    notification_error=notification_error,
+                    hold_reason=(hold_reason if guarded else None))
             except Exception as exc:
                 shipment_id = None
                 record_error = f"{type(exc).__name__}: {exc}"
@@ -416,7 +482,7 @@ def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, s
                             s.get("delivery_date")),
                         "notification_channel": "ghl" if status == "sent" else None,
                         "notification_error": notification_error,
-                        "review_reason": r["review_reason"],
+                        "review_reason": review_reason,
                         "record_error": record_error,
                         "order_link": order_link if not dry_run else None})
     return results

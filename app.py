@@ -61066,16 +61066,36 @@ def _plan_choice_pending(days=21, window=10):
             rows = cx.execute(
                 "SELECT DISTINCT lower(resolved_email) e FROM shipments "
                 "WHERE delivered_at IS NOT NULL AND delivered_at >= ? AND delivered_at <= ? "
-                "AND resolved_email IS NOT NULL AND resolved_email != ''", (lo, hi)).fetchall()
+                "AND resolved_email IS NOT NULL AND resolved_email != '' "
+                "AND COALESCE(match_confidence,'') <> 'dropship-held'", (lo, hi)).fetchall()
+            from dashboard import tracking_recipient as _trc
+            holds = _trc.dropship_holds(cx)
+            if holds is None:
+                raise RuntimeError("drop-ship holds could not be read")
             out = []
             for r in rows:
                 em = r["e"]
+                if _trc.email_is_held(cx, em, holds):
+                    continue
                 if em and not any(c["key"] in choice_keys for c in _co.member_cohorts(cx, em)):
                     out.append(em)
             return out
     except Exception as _e:
         print(f"[plan-choice] pending skipped: {_e!r}", flush=True)
         return []
+
+
+def _plan_choice_held(email):
+    """Glen, 2026-10-21: the drop-ship switch covers all mail from us, so a held
+    drop-ship client gets no plan-choice email. Read fresh right before each send.
+    True when the check fails, so a failure sends nothing."""
+    try:
+        from dashboard import tracking_recipient as _trc
+        with db.connect(LOG_DB) as cx:
+            return _trc.email_is_held(cx, email)
+    except Exception as _e:
+        print(f"[plan-choice] drop-ship check for {email} failed: {_e!r}", flush=True)
+        return True
 
 
 @app.route("/api/console/plan-choice/pending", methods=["GET"])
@@ -61095,8 +61115,11 @@ def api_console_plan_choice_send():
     one = (body.get("email") or "").strip().lower()
     targets = [one] if one else _plan_choice_pending()
     base = PUBLIC_BASE_URL.rstrip("/")
-    sent = []
+    sent, held = [], []
     for em in targets:
+        if _plan_choice_held(em):
+            held.append(em)
+            continue
         try:
             tok = _mint_plan_choice_token(em)
             link = f"{base}/choose/{tok}"
@@ -61108,7 +61131,20 @@ def api_console_plan_choice_send():
             sent.append(em)
         except Exception as _e:
             print(f"[plan-choice] send to {em} failed: {_e!r}", flush=True)
-    return jsonify({"ok": True, "sent": sent, "count": len(sent)})
+    return jsonify({"ok": True, "sent": sent, "count": len(sent), "held": held})
+
+
+@app.route("/api/console/shipments/held", methods=["GET"])
+def api_console_shipments_held():
+    """Read-only: tracking emails the CNS watcher held as a possible drop-ship client
+    whose practitioner has client mail off. Each is a blank Gmail draft with the reason."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import tracking as _tracking
+    with db.connect(LOG_DB) as cx:
+        _tracking.init_tracking_schema(cx)
+        rows = _tracking.held_shipments(cx)
+    return jsonify({"ok": True, "held": rows, "count": len(rows)})
 
 
 # ── Customer invoice pay-link (Phase 3) — PUBLIC, token-scoped ─────────────────
