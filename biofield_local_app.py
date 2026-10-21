@@ -287,8 +287,8 @@ def _fetch_life_stress_curation(email):
 
 def _fetch_intake_answers(email):
     """Best-effort: a client's intake answers from the prod console endpoint, for the
-    diet guidance's fallback phase when the report has no tested phase (Glen,
-    2026-10-16). None on any failure, so it never blocks the report. The key goes in
+    Kloud program's fallback phase when no test gives one. The diet section it once
+    also fed left the reports on 2026-10-21. None on any failure, so it never blocks the report. The key goes in
     a header only, never in the URL."""
     import json as _json
     import urllib.parse
