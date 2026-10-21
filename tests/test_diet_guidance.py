@@ -357,6 +357,11 @@ const h = dietGuidanceHtml(field.diet_guidance["5"], "screen");
 assert.ok(h.includes('Terrain Relief (Phase 5)') && !h.includes('Terrain Revive'));
 assert.strictEqual(dietGuidanceHtml(null, "screen"), "");
 assert.ok(dietGuidanceHtml({title: "t", heading: "<b>", intro: [], paragraphs: ["a&b"]}, "print").includes("&lt;b&gt;"));
+// "portal chat" links to the chat: in-page on screen, the full address in print (Glen, "link", 2026-10-20)
+const linkLine = {title: "t", heading: "h", intro: ["Ask in your portal chat <now>."], paragraphs: []};
+assert.ok(dietGuidanceHtml(linkLine, "screen").includes('<a href="#chat">portal chat</a> &lt;now&gt;'));
+assert.ok(dietGuidanceHtml(linkLine, "print").includes('<a href="https://myhealingoasis.com/portal/me#chat">portal chat</a>'));
+assert.ok(!dietGuidanceHtml({title: "t", heading: "h", intro: ["No chat here."], paragraphs: []}, "print").includes("<a "));
 console.log('OK');
 """
 
@@ -396,3 +401,18 @@ def test_the_local_fetch_ignores_a_draft_intake(monkeypatch):
     monkeypatch.setenv("CONSOLE_SECRET", "ci-secret")
     monkeypatch.setattr(urllib.request, "build_opener", lambda *h: _Opener())
     assert bla._fetch_intake_answers("a@example.com") is None
+
+
+def test_portal_chat_links_to_the_chat_in_every_phase():
+    """Glen, "link", 2026-10-20: the fasting line's "portal chat" links to the chat."""
+    want = '<a href="https://myhealingoasis.com/portal/me#chat">portal chat</a>'
+    for n in range(1, 6):
+        page = dg.guidance_html(n)
+        assert page.count(want) == 1, n
+        assert page.count("<a ") == 1, n
+
+
+def test_the_link_wraps_escaped_text():
+    out = dg._linked('Use your portal chat <b>now</b>.')
+    assert out == ('Use your <a href="https://myhealingoasis.com/portal/me#chat">portal chat</a>'
+                   ' &lt;b&gt;now&lt;/b&gt;.')
