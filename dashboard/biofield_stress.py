@@ -387,13 +387,128 @@ def cover_stress(cx, tid, stress_id, rids):
     return code
 
 
-def consolidate_layer_balances(cx, tid, source_layer, target_layer):
-    """Move remedy-linked stress coverage from one layer to another.
+RELOAD = "Reload the page and try again."
+
+
+def _current_cards(cx, tid):
+    """The cards as the page shows them now: `group_layers` over `ordered_chain`."""
+    from dashboard.biofield_authoring import ordered_chain
+    from dashboard.biofield_report_html import group_layers
+    factory = cx.row_factory
+    try:
+        chain = ordered_chain(cx, tid)
+    finally:
+        cx.row_factory = factory          # ordered_chain switches it to sqlite3.Row
+    return [[(int(r["id"]), r.get("stored_layer")) for r in g.get("rows") or []
+             if r.get("id") is not None] for g in group_layers(chain)]
+
+
+def _int_ids(rids):
+    """A list of real integers, else ValueError. A string is never iterated, and a
+    bool or a float is refused, so "12" cannot become rows 1 and 2."""
+    if not isinstance(rids, (list, tuple)):
+        raise ValueError("invalid row id")
+    out = []
+    for r in rids:
+        if type(r) is not int:
+            raise ValueError("invalid row id")
+        out.append(r)
+    return out
+
+
+def card_rids_for_layer(cx, tid, layer):
+    """Every chain-row id of the card that holds stored layer `layer`.
+
+    A card on the page is a `group_layers` group: rows sharing a Head are one card,
+    whatever their stored layer numbers. The Minimum program writes each remedy on its
+    own number, so one card can hold rows on layers 12 and 13 (Sharon, a50,
+    2026-10-20). Uses the page's own grouping, never a copy of it.
+
+    Rows with no remedy, Head or Tail are not on any card, but the old `layer=?`
+    query moved them, so those on this number come along. Two cards on one number
+    are refused: the number alone cannot say which is meant."""
+    try:
+        ln = int(layer)
+    except (TypeError, ValueError):
+        return []
+    cards = [c for c in _current_cards(cx, tid) if any(sl == ln for _, sl in c)]
+    if len(cards) > 1:
+        raise ValueError(f"More than one layer card uses layer number {ln}. {RELOAD}")
+    out = [rid for rid, _ in cards[0]] if cards else []
+    return out + _empty_rids_on(cx, tid, [ln])
+
+
+def _empty_rids_on(cx, tid, layers):
+    """Rows with no remedy, Head or Tail on these stored layer numbers. They are on
+    no card, but the old `layer=?` query moved them with the layer."""
+    nums = sorted({int(n) for n in layers if n is not None})
+    if not nums:
+        return []
+    return [int(r[0]) for r in cx.execute(
+        f"SELECT id FROM biofield_auth_chain WHERE test_id=? "
+        f"AND layer IN ({','.join('?' for _ in nums)}) "
+        "AND TRIM(COALESCE(remedy,''))='' AND TRIM(COALESCE(head,''))='' "
+        "AND TRIM(COALESCE(most_affected,''))=''", (_num(tid), *nums)).fetchall()]
+
+
+def card_rids_for_rows(cx, tid, layer, rids, with_empty=False):
+    """The submitted rows `rids`, checked to be exactly one CURRENT card.
+
+    The page sends the card's data-rids as it was when the page loaded. A move must
+    never touch a row the page did not show, and never leave one it did show, so a
+    stale set is refused rather than expanded. Refused, with nothing changed, if a
+    row is not on this test, if none is still on the stated layer number, if the
+    rows now sit on more than one card or on none, or if the card now holds rows the
+    page did not send. `with_empty` adds the wholly empty rows on the card's stored
+    layer numbers, which the old `layer=?` query moved with it."""
+    stale = f"That layer has changed since the page loaded. {RELOAD}"
+    want = _rids_on_test(cx, tid, rids)
+    try:
+        ln = int(layer)
+    except (TypeError, ValueError):
+        raise ValueError("invalid layer")
+    on_layer = {int(r[0]) for r in cx.execute(
+        f"SELECT id FROM biofield_auth_chain WHERE test_id=? AND layer=? "
+        f"AND id IN ({','.join('?' for _ in want)})", (_num(tid), ln, *want)).fetchall()}
+    if not on_layer:
+        raise ValueError(stale)
+    cards = [c for c in _current_cards(cx, tid) if any(rid in want for rid, _ in c)]
+    if len(cards) > 1:
+        raise ValueError(f"Those rows are now on more than one layer. {RELOAD}")
+    if not cards or {rid for rid, _ in cards[0]} != set(want):
+        raise ValueError(stale)
+    if not with_empty:
+        return list(want)
+    return list(want) + _empty_rids_on(cx, tid, [sl for _, sl in cards[0]])
+
+
+def _rids_on_test(cx, tid, rids):
+    """`rids` as ints, refused with ValueError if any is not a chain row of this test."""
+    want = sorted(set(_int_ids(rids)))
+    if not want:
+        raise ValueError("invalid row id")
+    marks = ",".join("?" for _ in want)
+    found = {int(r[0]) for r in cx.execute(
+        f"SELECT id FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
+        (_num(tid), *want)).fetchall()}
+    if found != set(want):
+        raise ValueError(f"A row is not on this intake. {RELOAD}")
+    return want
+
+
+def consolidate_layer_balances(cx, tid, source_layer, target_layer,
+                               source_rids=None, target_rids=None):
+    """Move remedy-linked stress coverage from one layer card to another.
 
     Coverage is stored by normalized remedy name rather than layer number.  Copy
     every code covered by a source remedy to every target remedy, then remove the
     source links unless that remedy also belongs to the target layer.  Returns the
     number of distinct stress codes moved.
+
+    A card is identified by its row ids (`source_rids`/`target_rids`, the page's
+    data-rids). Without them a stored layer number stands for the whole card that
+    holds it, so a card spanning layers 12 and 13 moves both rows. Every row id
+    must belong to this test.
     """
     init_stress_tables(cx)
     t = _num(tid)
@@ -401,17 +516,25 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer):
         source, target = int(source_layer), int(target_layer)
     except (TypeError, ValueError):
         raise ValueError("invalid layer")
-    if source == target:
-        raise ValueError("source and target layers must differ")
+    # No numeric source == target check: two cards with different Heads can share
+    # a stored number. The same CARD on both sides is what is refused, below.
 
-    def layer_rows(layer):
+    def card_rows(layer, rids, with_empty=False):
+        ids = (card_rids_for_rows(cx, tid, layer, rids, with_empty=with_empty)
+               if rids is not None else card_rids_for_layer(cx, tid, layer))
+        if not ids:
+            return []
+        marks = ",".join("?" for _ in ids)
         return cx.execute(
-            "SELECT id,remedy,head,most_affected FROM biofield_auth_chain "
-            "WHERE test_id=? AND layer=?",
-            (t, layer),
+            f"SELECT id,remedy,head,most_affected FROM biofield_auth_chain "
+            f"WHERE test_id=? AND id IN ({marks}) ORDER BY id",
+            (t, *ids),
         ).fetchall()
 
-    source_rows, target_rows = layer_rows(source), layer_rows(target)
+    source_rows = card_rows(source, source_rids, with_empty=True)
+    target_rows = card_rows(target, target_rids)
+    if {int(r[0]) for r in source_rows} & {int(r[0]) for r in target_rows}:
+        raise ValueError(f"Source and target layers must differ. {RELOAD}")   # one card
     source_rids = {int(r[0]) for r in source_rows}
     target_rids = {int(r[0]) for r in target_rows}
     source_remedies = {((r[1] or "").strip().lower()) for r in source_rows

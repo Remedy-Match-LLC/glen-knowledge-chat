@@ -808,10 +808,13 @@ async function balanceToLayer(sid,sel){var rids=(sel.value||'').split(',').filte
  await post('/author/__TID__/stress/'+sid+'/cover',{rids:rids});location.reload()}
 async function consolidateBalances(source,sourceLabel,sel){var target=Number(sel.value||0);
  if(!target){astat('Choose the destination layer first.');return}
+ var card=sel.closest('.lcard'),opt=sel.options[sel.selectedIndex];
+ var rids=function(s){return (s||'').split(',').filter(Boolean).map(Number)};
  var targetLabel=(sel.options[sel.selectedIndex].text||target).replace(/^Layer\\s+/,'');
  if(!confirm('Move all balanced stresses from layer '+sourceLabel+' to layer '+targetLabel+'?'))return;
  astat('Consolidating balanced stresses…');
- var j=await post('/author/__TID__/layer/'+source+'/consolidate-balances',{target_layer:target});
+ var j=await post('/author/__TID__/layer/'+source+'/consolidate-balances',{target_layer:target,
+  source_rids:rids(card&&card.dataset.rids),target_rids:rids(opt&&opt.getAttribute('data-rids'))});
  if(j&&j.ok)location.reload();else astat((j&&j.error)||'Consolidation failed.')}
 async function renameStress(sid,label){
  var next=prompt('Correct this stress term:',label);
@@ -822,14 +825,18 @@ async function renameStress(sid,label){
 async function deleteStress(sid,label){if(!confirm('Delete tag "'+label+'" from this intake?'))return;
  const j=await post('/author/__TID__/stress/'+sid+'/delete',{});
  astat(j&&j.ok?'Tag deleted.':((j&&j.error)||'Delete failed.'));if(j&&j.ok)loadStress()}
-async function addStress(label,layer){label=(label||'').trim();if(!label)return;
+async function addStress(label,layer,rids){label=(label||'').trim();if(!label)return;
  astat('Adding stress…');
  const body=(layer==null?{label:label}:{label:label,layer:layer});
+ if(rids&&rids.length)body.rids=rids;
  const j=await post('/author/__TID__/stress/add',body);
  astat(j&&j.ok?'Stress added.':((j&&j.error)||'Add failed.'));loadStress()}
 async function addLayerStress(input,layer){var label=(input.value||'').trim();if(!label)return;
  input.disabled=true;
- try{await addStress(label,layer);location.reload()}finally{input.disabled=false}}
+ // The card's own rows and stored layer: its number on the page is a display position.
+ var card=input.closest('.lcard'),rids=card?(card.dataset.rids||'').split(',').filter(Boolean).map(Number):[];
+ var stored=card&&card.querySelector('input[id$="_layer"]');stored=stored?Number(stored.value)||layer:layer;
+ try{await addStress(label,stored,rids);location.reload()}finally{input.disabled=false}}
 async function assignStress(sid){astat('Assigning…');const j=await post('/author/__TID__/stress/'+sid+'/assign',{});astat(j&&j.ok?('Assigned to its layer.'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function assignAllStresses(){astat('Assigning all…');const j=await post('/author/__TID__/stresses/assign-all',{});astat(j&&j.ok?('Assigned '+(j.assigned||0)+' stress(es).'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function saveHeader(){const j=await post('/author/__TID__/header',
@@ -2091,6 +2098,11 @@ def _move_target_label(group):
     return f"{label}: {head}"
 
 
+def _card_rids(group):
+    """"5,6": a card's chain-row ids, as its data-rids attribute carries them."""
+    return ",".join(str(r.get("rid")) for r in group["rows"] if r.get("rid") is not None)
+
+
 def _render_chain_cards(report, depth_values, covered_by_layer=None,
                         bottles_by_remedy=None):
     covered_by_layer = covered_by_layer or {}
@@ -2110,8 +2122,11 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None,
         tail_in = _xwrap(f'<input id={gid}_most list=vocab value="{me}" title="{me}" oninput="dirtyLayer(this)">')
         source_layer = int(g.get("stored_layer") or n)
         # Glen, 2026-10-19: "show the name of the layer in addition to the number."
+        # data-rids carries the destination card's rows: a card can span several
+        # stored layer numbers, so the number alone does not name all of it.
         targets = "".join(
-            f"<option value='{int(other.get('stored_layer') or other['layer'])}'>"
+            f"<option data-rids='{_e(_card_rids(other))}' "
+            f"value='{int(other.get('stored_layer') or other['layer'])}'>"
             f"{_e(_move_target_label(other))}</option>"
             for other in groups if other["layer"] != n)
         consolidate = (

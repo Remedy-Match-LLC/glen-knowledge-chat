@@ -22,5 +22,6 @@ def test_the_cards_list_the_other_layers_by_name_and_escape_them():
         {"rid": 1, "layer": 1, "stored_layer": 1, "head": "Gut", "remedy": "Microbiome"},
         {"rid": 2, "layer": 2, "stored_layer": 5, "head": "<b>Liver</b>", "remedy": "TMG"}]}
     html = _render_chain_cards(report, {})
-    assert "<option value='5'>Layer 2: &lt;b&gt;Liver&lt;/b&gt;</option>" in html
-    assert "<option value='1'>Layer 1: Gut</option>" in html
+    # data-rids names the destination card's rows, not only its stored number.
+    assert "<option data-rids='2' value='5'>Layer 2: &lt;b&gt;Liver&lt;/b&gt;</option>" in html
+    assert "<option data-rids='1' value='1'>Layer 1: Gut</option>" in html
