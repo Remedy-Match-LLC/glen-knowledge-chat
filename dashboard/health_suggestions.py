@@ -151,6 +151,8 @@ EXTRACT_FIELDS = tuple(TABLE_COLUMNS) + TEXT_FIELDS
 # These ask about now, so a symptom or sleep trouble the client says is over is not
 # recorded.
 _CURRENT_ONLY_TEXT = ("other_symptoms", "sleep")
+# The form asks what the client takes now (round 1 H1).
+_CURRENT_ONLY_TABLES = ("medications", "otc_drugs", "supplements")
 
 EXTRACT_SYSTEM = (
     "You read ONE message a client wrote in their health portal chat. Find only facts the "
@@ -196,13 +198,25 @@ EXTRACT_SYSTEM = (
     "relative's age when it began, only if stated}, and \"about\" is \"family\". Only the "
     "client's OWN blood relatives: never a spouse, partner, in-law, step-relative, friend, "
     "neighbour, coworker, client or patient, and never anyone's relative but the client's.\n"
-    "Never record anything else about another person. Never guess or infer. Never record a "
-    "question (\"is it safe if I were pregnant?\", \"does breast cancer run in families?\"). "
-    "Leave out anything not on this list, and never record feelings, trauma, stress, budget, "
-    "ratings or contact details. For every item, \"quote\" is the client's exact words that "
-    "state it (at least 3 words, including I, my or our, and the name you put in the value), "
-    "copied from their message, and \"about\" is \"self\" (\"family\" for family "
-    "history).\n"
+    "Never record anything else about another person. Never guess or infer. Leave a value "
+    "column blank unless the client said it: never fill in a reason, brand, reaction or age "
+    "they did not state.\n"
+    "A fact the client states inside a question is still a fact. In \"Can I take this while "
+    "I'm on warfarin?\", \"Is the mat safe since I have a pacemaker?\", \"Is it ok because I "
+    "take metformin?\" and \"I take warfarin, can I use the enzymes?\" the client IS on "
+    "warfarin, HAS a pacemaker and DOES take metformin: record those. Only a fact under if, "
+    "whether, suppose or what if is hypothetical and is not recorded (\"is it safe if I were "
+    "pregnant?\", \"does breast cancer run in families?\").\n"
+    "Never record something the client does not have, only suspects, has stopped, or only "
+    "plans (\"I don't have diabetes\", \"I might have Lyme\", \"I stopped taking "
+    "warfarin\", \"I need a hip replacement\"). A past condition is recorded as Past.\n"
+    "Leave out anything not on this list, and never record feelings, emotional trauma, stress, "
+    "budget, ratings or contact details. Physical injuries are recorded as above. For every "
+    "item, \"quote\" is the client's exact words that state it, copied from their message: "
+    "at least 3 words, with I or my (my or our for family history), and the name you put in "
+    "the value. Quote only the client's own clause: \"I have high blood pressure\" from \"I "
+    "have high blood pressure like my dad\". \"about\" is \"self\" (\"family\" for "
+    "family history).\n"
     "Return STRICT JSON ONLY, no prose: {\"items\": [{\"field_id\": ..., \"value\": ..., "
     "\"quote\": ..., \"about\": ...}]}. With nothing to record return {\"items\": []}."
 )
@@ -249,7 +263,9 @@ def normalize_row(field_id, value):
         elif col in ("age", "age_onset"):
             try:
                 cell = int(float(cell)) if cell else ""
-            except ValueError:
+            except (ValueError, OverflowError):
+                cell = ""                # "inf" or "nan" from the model (round 1 L2)
+            if cell != "" and not 0 <= cell <= 120:
                 cell = ""
         if cell != "":
             row[col] = cell
@@ -306,7 +322,9 @@ def _asked(quote, sentence):
     after = flat[at + len(q):]
     # "Can I take this while I'm on warfarin?" asks about a fact it also states, so a
     # stating link straight before the quote keeps it (marketing's live run, 20 Oct).
-    stated = re.search(r"\b(?:while|since|as|because|given(?: that)?|now that)\s*$", before)
+    # The link may also open the quote ("while I'm on warfarin"), live run 20 Oct.
+    link = r"\b(?:while|since|as|because|given(?: that)?|now that)"
+    stated = re.search(link + r"\s*$", before) or re.match(link + r"\b", q)
     if _SUPPOSING.search(flat[:at]):
         return True                      # "is it safe if, while I'm pregnant, I fast?"
     if stated:
@@ -318,36 +336,111 @@ def _asked(quote, sentence):
     return not re.search(r"[,;:]", after) and not _QUESTION_AFTER.search(after)
 
 
-def _is_past(quote):
-    return bool(_PAST.search(_PRESENT_PERFECT.sub(" ", quote)))
+def _clauses(text):
+    """A text split at commas, semicolons and joining words, blanks dropped."""
+    return [c for c in re.split(r"[,;:]|\b(?:and|but|which|who|although|though|whereas)\b",
+                                text or "", flags=re.I) if c.strip()]
 
 
-# Words a key term may carry that the client need not say: "I had my gallbladder
-# out" supports "Gallbladder removal". At least one other word must remain.
-_GENERIC_TERM_WORDS = frozenset((
-    "surgery", "surgical", "operation", "procedure", "removal", "removed", "repair",
-    "replacement", "the", "and", "for", "with"))
+# --- tense (review round 1, H1 H2 M3) ------------------------------------------
+# A date of diagnosis or onset says when it began, not that it ended. So an ended
+# marker decides Past, then a present marker decides Current, and only then does a
+# past-tense word count. "I was diagnosed with diabetes last year" is Current.
+_ENDED = re.compile(
+    r"\b(?:no longer|not any ?more|anymore|any more|used to|stopped|quit|came off|come off|"
+    r"went off|gone off|gave up|given up|discontinued|resolved|cured|gone|went away|"
+    r"got over|recovered|in remission|outgrew|grew out of)\b", re.I)
+_PRESENT = re.compile(
+    r"\b(?:have|has|i've|ive|i'm|im|am|is|are|now|still|currently|since|lately|these days|"
+    r"nowadays|diagnosed|started|began)\b", re.I)
+
+
+def _is_past(quote, term=None):
+    """True when the quote says the fact is over. With a term, the clause that names
+    it decides ("I had a hip replacement and now have arthritis": arthritis is now),
+    and an ended marker in that clause or after it wins."""
+    parts = _clauses(quote) or [quote]
+    at = 0
+    if term:
+        words = _significant(term)
+        toks = [_tokens(c) for c in parts]
+        at = next((i for i, t in enumerate(toks) if any(_word_supported(w, t) for w in words)), 0)
+        own, rest = parts[at], " ".join(parts[at:])
+    else:
+        own = rest = quote
+    if _ENDED.search(rest):
+        return True
+    if _PRESENT.search(own):
+        return False
+    return bool(_PAST.search(_PRESENT_PERFECT.sub(" ", own)))
+
+
+# --- evidence: words the client actually said (round 2) ------------------------
+_STOP_WORDS = frozenset(("a", "an", "the", "and", "of", "for", "with", "in", "on", "to", "my",
+                         "or"))
+# A key term may carry these without the client saying them: "Knee surgery" from "I
+# had my knee operated on". At least one other word must remain.
+_ALWAYS_GENERIC = frozenset(("surgery", "surgical", "operation", "procedure", "op"))
+# "Gallbladder removal" is supported only when the client said it came out.
+_REMOVAL_WORDS = frozenset(("removal", "removed", "removing", "excision"))
+_SAYS_REMOVED = re.compile(r"\b(?:out|removed|removal|excised)\b", re.I)
+
+
+def _tokens(text):
+    flat = re.sub(r"['’]s\b", "", str(text or "").casefold())
+    return re.findall(r"[a-z0-9]+", flat)
+
+
+def _significant(text):
+    return [w for w in _tokens(text) if w not in _STOP_WORDS]
+
+
+def _word_supported(word, toks):
+    """A short word or one with a digit ("C", "B12", "D3", "2") must be said exactly.
+    A longer word matches on its first 6 letters, so "Pregnancy" fits "pregnant"."""
+    if len(word) <= 3 or any(ch.isdigit() for ch in word):
+        return word in toks
+    return any(t.startswith(word[:6]) for t in toks)
 
 
 def _term_in_quote(term, quote):
-    """Every word (3+ letters) of the key term appears in the quote, matched on its
-    first 6 letters, so "Pregnancy" is supported by "pregnant". Generic words
-    ("removal", "surgery") are not needed, but a term made only of them is refused."""
-    words = [w for w in re.findall(r"[a-z0-9]+", str(term).casefold()) if len(w) >= 3]
-    words = [w for w in words if w not in _GENERIC_TERM_WORDS]
-    q = _squash(quote)
-    return bool(words) and all(w[:6] in q for w in words)
+    """Every significant word of the key term is in the quote. Only the generic
+    surgery words, and removal words when the client said it came out, are spared."""
+    toks = _tokens(quote)
+    removed = bool(_SAYS_REMOVED.search(quote))
+    need = [w for w in _significant(term)
+            if w not in _ALWAYS_GENERIC and not (removed and w in _REMOVAL_WORDS)]
+    return bool(need) and all(_word_supported(w, toks) for w in need)
 
 
-# Family history (Glen, 20 Oct 2026): the client's OWN blood relatives only. Each
-# spelling maps to one canonical relative, so "Mother" in the value is supported by
-# "my mom" in the quote.
+def _cell_supported(text, client_msg):
+    """A reason, brand or reaction is kept only when the client said its words."""
+    words = _significant(text)
+    toks = _tokens(client_msg)
+    return bool(words) and all(_word_supported(w, toks) for w in words)
+
+
+def _age_stated(age, client_msg):
+    """An age is kept only when the message ties that number to an age: "at 34", "age
+    34", "when I was 34", "34 years old". A dose or a duration is not an age."""
+    n = re.escape(str(age))
+    tied = (r"\b(?:at(?:\s+the)?(?:\s+age(?:\s+of)?)?|aged?(?:\s+of)?|"
+            r"when\s+(?:i|he|she|they)\s+(?:was|were)|(?:i|he|she)\s+was)\s+" + n +
+            r"\b(?!\s*(?:am|pm|a\.m|p\.m|o'?clock|mg|mcg|g|ml|%|:|percent|times|days?|weeks?|"
+            r"months?|lbs?|kg|pounds)\b)")
+    old = r"\b" + n + r"(?:\s*-\s*|\s+)(?:years?|yrs?)(?:\s*-\s*|\s+)old\b|\b" + n + r"\s*(?:yo|y/o)\b"
+    return bool(re.search(tied, client_msg or "", re.I) or re.search(old, client_msg or "", re.I))
+
+
+# --- family history (Glen, 20 Oct 2026; rounds 1 and 2) ------------------------
+# The client's OWN blood relatives only. Each spelling maps to one canonical
+# relative, so "Mother" in the value is supported by "my mom" in the quote.
 _RELATIVES = {
     "mother": "mother", "mom": "mother", "mum": "mother", "mama": "mother", "mommy": "mother",
     "father": "father", "dad": "father", "papa": "father", "daddy": "father",
     "parent": "parent", "parents": "parent",
     "sister": "sister", "sisters": "sister", "brother": "brother", "brothers": "brother",
-    "sibling": "sibling", "siblings": "sibling", "twin": "twin",
+    "sibling": "sibling", "siblings": "sibling",
     "grandmother": "grandmother", "grandma": "grandmother", "granny": "grandmother",
     "grandfather": "grandfather", "grandpa": "grandfather",
     "grandparent": "grandparent", "grandparents": "grandparent",
@@ -357,42 +450,104 @@ _RELATIVES = {
     "child": "child", "children": "child", "kid": "child", "kids": "child",
 }
 _RELATIVE_WORD = "(?:" + "|".join(sorted(_RELATIVES, key=len, reverse=True)) + ")"
-# "my mother", "our late father", "my maternal grandmother": the relative is the
-# client's own, at most two words after my or our.
-_OWN_RELATIVE = re.compile(r"\b(?:my|our)\s+(?:[a-z]+\s+){0,2}?(" + _RELATIVE_WORD + r")\b",
-                           re.I)
-# Not the client's blood family, or someone else's relative ("my friend's mother").
-_NOT_FAMILY_WORDS = (r"(?:friends?|neighbou?rs?|co-?workers?|colleagues?|clients?|patients?|"
-                     r"boss(?:es)?|partners?|wi(?:fe|fes|ves)|husbands?|spouses?|boyfriends?|"
-                     r"girlfriends?|fianc[eé]e?s?|"
-                     r"room-?mates?|in-?laws?|step-?\w*)")
-_NOT_FAMILY = re.compile(r"\b" + _NOT_FAMILY_WORDS + r"\b", re.I)
+# Only these words may sit between "my" and the relative. Anything else ("adoptive",
+# "foster", "step", "doctors", "friends") means it is not the client's blood relative.
+_FAMILY_MODIFIERS = ("late", "older", "younger", "eldest", "oldest", "elder", "youngest",
+                     "little", "big", "baby", "biological", "birth", "maternal", "paternal",
+                     "own", "twin", "half", "great", "dear")
+_MOD = r"(?:(?:" + "|".join(_FAMILY_MODIFIERS) + r")(?:\s+|-))"
+# "my mother", "our late father", "my mother's brother": the chain's last link is who.
+_REL_CHAIN = re.compile(r"\b(?:my|our)\s+" + _MOD + r"*(" + _RELATIVE_WORD + r")\b"
+                        r"((?:['’]s\s+" + _MOD + r"*" + _RELATIVE_WORD + r"\b)*)", re.I)
+# A chain that goes on to someone else is not the subject: "my mother's friend",
+# "my mother-in-law", "my mother's side".
+_CHAIN_GOES_ON = re.compile(r"(?:['’]s|s['’])\s|\s*-?\s*in-?laws?\b", re.I)
+# A two-link chain through a parent: my mother's brother is my maternal uncle.
+_THROUGH_PARENT = {"mother": "grandmother", "father": "grandfather", "parent": "grandparent",
+                   "brother": "uncle", "sister": "aunt"}
+_SIDE = {"mother": "maternal", "father": "paternal"}
 
 
-def _relatives_in(text):
-    return {_RELATIVES[m.group(1).casefold()] for m in _OWN_RELATIVE.finditer(text or "")}
+def _family_targets(quote):
+    """{relative: side} for each "my ..." relative chain in the quote. A chain that
+    cannot be named as one relative ("my mother's son") gives nothing."""
+    out = {}
+    for m in _REL_CHAIN.finditer(quote or ""):
+        if _CHAIN_GOES_ON.match(quote, m.end()):
+            continue
+        links = [_RELATIVES[m.group(1).casefold()]]
+        links += [_RELATIVES[w.casefold()] for w in re.findall(_RELATIVE_WORD, m.group(2), re.I)]
+        if len(links) == 1:
+            out[links[0]] = None
+        elif len(links) == 2 and links[0] in ("mother", "father", "parent") \
+                and links[1] in _THROUGH_PARENT:
+            out[_THROUGH_PARENT[links[1]]] = _SIDE.get(links[0])
+    return out
 
 
 def _own_family_fact(quote, relative):
-    """The quote names the client's own blood relative ("my" or "our" before it), the
-    same one as the value's `relative`, and no one outside the blood family is in the
-    quote ("my friend's mother", "my mother-in-law"). A quote without "my" fails the
-    first-person check before this runs."""
-    if _NOT_FAMILY.search(quote):
+    """The value names exactly one relative, the one the quote's "my ..." chain names,
+    and a side ("Maternal uncle") only when the quote supports it. Only the allowed
+    modifiers may sit inside the chain, so "my adoptive mother", "my step mother" and
+    "my friends mother" name no relative at all."""
+    targets = _family_targets(quote)
+    words = _tokens(relative)
+    named = {_RELATIVES[w] for w in words if w in _RELATIVES}
+    if len(named) != 1:
         return False
-    named = {_RELATIVES[w] for w in re.findall(r"[a-z]+", str(relative).casefold())
-             if w in _RELATIVES}
-    return bool(named) and bool(named & _relatives_in(quote))
+    who = next(iter(named))
+    if who not in targets:
+        return False
+    q = _tokens(quote)
+    for side, parent in (("maternal", r"(?:mother|mom|mum)"), ("paternal", r"(?:father|dad)")):
+        if side in words and targets[who] != side and side not in q and not re.search(
+                r"\b" + parent + r"['’]?s?\s+side\b", quote, re.I):
+            return False
+    return True
 
 
+# --- what is not a fact (round 1 M1, L5; round 2 quoted speech) ----------------
+_HYPOTHETICAL = re.compile(r"\b(?:if|whether|suppose|supposing|unless|in case|imagine)\b", re.I)
+_NEGATION = re.compile(r"\b(?:not|never|nor)\b|\b(?:do|does|did|have|has|had|am|is|are|was|"
+                       r"were|wo|would)n['’]?t\b|\bain['’]?t\b", re.I)
+_SUSPECT = re.compile(r"\b(?:might|maybe|possibly|perhaps|probably|suspect|suspected|wonder|"
+                      r"wondering|unsure|not sure|may have|may be|could be|could have|i think|"
+                      r"i guess|i believe|i feel like)\b", re.I)
+_PLANNED = re.compile(r"\b(?:trying to|try to|going to|gonna|plan(?:ning|s)? to|scheduled|"
+                      r"booked|next (?:week|month|year|time)|tomorrow|needs? (?:a|an|to)|"
+                      r"wants? me to|told me to|asked me to|advised me to|recommended|"
+                      r"should (?:start|take|get|have)|will (?:start|take|have|be|get)|i'll|"
+                      r"i will|thinking (?:of|about)|considering|about to|hope to|hoping to|"
+                      r"waiting for|waiting list|due for)\b", re.I)
 # A health goal is something the client wants for themself.
 _GOAL = re.compile(r"\b(?:want|wanting|goal|goals|hope|hoping|like to|love to|trying to|"
                    r"try to|aim|aiming|wish|working on|get rid of|get over)\b", re.I)
+_NOT_GOAL = re.compile(r"\bwant(?:s|ed)? to (?:know|ask|check|see|find out|understand|learn|"
+                       r"confirm|make sure)\b", re.I)
+_SPEECH = re.compile(r"(\S+)\s+(?:said|says|wrote|writes|told me|tells me|asked|asks)\b(.*)$")
 
 
-def _age_stated(age, client_msg):
-    """An age is kept only when that number is in the client's message."""
-    return str(age) in re.findall(r"\d+", client_msg or "")
+def _before(quote, sentence):
+    """The sentence's text before the quote, squashed."""
+    flat, q = _squash(sentence), _squash(quote)
+    at = flat.find(q)
+    return flat[:at] if at > 0 else ""
+
+
+def _reported(quote, client_msg, sentence, family):
+    """True when the quote is someone else's words: inside quotation marks, or direct
+    speech after another person's "said," or "told me:". On family history any "said"
+    or "told me" by another person counts, because their "my mother" is theirs."""
+    flat, q = _squash(client_msg), _squash(quote)
+    if len(re.findall(r'["“”]', flat[:flat.find(q)])) % 2 == 1:
+        return True
+    m = _SPEECH.search(_before(quote, sentence))
+    if not m or m.group(1) in ("i", "i've", "ive"):
+        return False
+    tail = m.group(2)
+    if re.fullmatch(r"\s*[,:]\s*[\"“'‘]?\s*|\s*[\"“'‘]\s*", tail):
+        return True                      # direct speech
+    return family and bool(re.fullmatch(r"\s*(?:that\s*)?", tail))
 
 
 def _normalize_item(item, client_msg):
@@ -413,42 +568,64 @@ def _normalize_item(item, client_msg):
     # ("I'm pregnant"); free-text fields keep three.
     if len(quote.split()) < (2 if fid in TABLE_COLUMNS else 3):
         return None
-    if not (_FIRST_PERSON.search(quote) or (family and _OWN_RELATIVE.search(quote))):
+    if not (_FIRST_PERSON.search(quote) or (family and _REL_CHAIN.search(quote))):
         return None                      # "our mother" is the client's own family too
     sentence = _source_sentence(quote, client_msg)
+    if _reported(quote, client_msg, sentence, family):
+        return None                      # someone else's words
     own = re.compile(r"\bas a (?:child|kid|baby)\b|\bsince (?:i was a )?(?:child|kid|baby)hood\b|"
                      # the client's own pregnancy or breastfeeding (coordinator, 20 Oct 2026)
                      r"\b(?:pregnant with|expecting|nursing|breast-?feeding)\s+"
                      r"(?:(?:my|our|a|an)\s+)?(?:\w+\s+)?(?:bab(?:y|ies)|child|kids?|sons?|daughters?|"
                      r"twins|little one)\b",
                      re.I)        # the client's own childhood, not another person
-    # Another person's fact is dropped, except a relative's on family_history, which
-    # has its own check below.
-    if not family and (_OTHER_PERSON.search(own.sub(" ", quote))
-                       or _OTHER_PERSON.search(own.sub(" ", sentence))):
+    # A quote naming another person is not the client's fact. A relative elsewhere in
+    # the sentence does not matter ("I have high blood pressure like my dad", round 1
+    # M2). Family history has its own check below.
+    if not family and _OTHER_PERSON.search(own.sub(" ", quote)):
         return None
     if _asked(quote, sentence):
         return None                      # a question is not a fact
+    lead = (_clauses(_before(quote, sentence)) or [""])[-1]
+    if _HYPOTHETICAL.search(lead):
+        return None                      # "If I had diabetes I would cut sugar."
+    scope = lead + " " + quote
     if fid in TABLE_COLUMNS:
+        if _NEGATION.search(scope):
+            return None                  # "I don't have diabetes", "not allergic"
+        if fid == "health_concerns":
+            if _NOT_GOAL.search(scope) or not _GOAL.search(quote):
+                return None              # a goal is something the client wants
+        elif _SUSPECT.search(scope) or _PLANNED.search(scope):
+            return None                  # "I might have Lyme", "I need a hip replacement"
         value = normalize_row(fid, item.get("value"))
-        if not value or not _term_in_quote(value[TABLE_COLUMNS[fid][0]], quote):
+        primary = TABLE_COLUMNS[fid][0]
+        if not value or not _term_in_quote(value[primary], quote):
             return None
-        for col in ("age", "age_onset"):
-            if col in value and not _age_stated(value[col], client_msg):
-                del value[col]           # an age the client never gave
+        for col in list(value):
+            if col in (primary, "current", "relative"):
+                continue
+            if col in ("age", "age_onset"):
+                keep = _age_stated(value[col], client_msg)
+            else:
+                keep = _cell_supported(value[col], client_msg)
+            if not keep:
+                del value[col]           # a reason, brand, reaction or age never said
         if family and not _own_family_fact(quote, value.get("relative", "")):
             return None
-        if fid == "health_concerns" and not _GOAL.search(quote):
-            return None                  # a goal is something the client wants
+        if fid in _CURRENT_ONLY_TABLES and _is_past(quote, value[primary]):
+            return None                  # "I stopped taking warfarin last year"
         if fid == "diagnoses":
-            past = _is_past(quote)
+            past = _is_past(quote, value["diagnosis"])
             if _PREGNANCY.search(value["diagnosis"]) or _PREGNANCY.search(quote):
                 if past:
                     return None          # a past pregnancy is not a current condition
                 value["current"] = "Current"
-            elif past:
-                value["current"] = "Past"
+            else:
+                value["current"] = "Past" if past else "Current"
     else:
+        if fid == "vaccinations" and (_SUSPECT.search(scope) or _PLANNED.search(scope)):
+            return None                  # "I'm thinking of getting the flu shot"
         if fid in _CURRENT_ONLY_TEXT and _is_past(quote):
             return None                  # a symptom that is over is not a current symptom
         value = quote                    # free text: the client's words, not a paraphrase

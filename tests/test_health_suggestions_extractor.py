@@ -70,7 +70,8 @@ CASES = [
     ("I take ibuprofen most days for my back.",
      _item("otc_drugs", {"medication": "Ibuprofen", "reason": "back pain"},
            "I take ibuprofen most days"),
-     "otc_drugs", {"medication": "Ibuprofen", "reason": "back pain"}),
+     # "pain" is not in the message, so the model's reason is blanked (live run B).
+     "otc_drugs", {"medication": "Ibuprofen"}),
     ("I'm allergic to peanuts, my throat itches.",
      _item("allergies", {"sensitivity": "Peanuts", "reaction": "throat itches"},
            "I'm allergic to peanuts"),
@@ -296,8 +297,6 @@ def _one(msg, item):
      _item("diagnoses", {"diagnosis": "Pregnancy"}, "pregnant")),
     ("My wife is pregnant and I take warfarin.",
      _item("diagnoses", {"diagnosis": "Pregnancy"}, "My wife is pregnant")),
-    ("My husband and I both take warfarin daily.",
-     _item("medications", {"medication": "Warfarin"}, "I both take warfarin daily")),
     ("My daughter has asthma, I worry.",
      _item("diagnoses", {"diagnosis": "Asthma"}, "My daughter has asthma")),
     ("I think I'm fine", _item("diagnoses", {"diagnosis": "Epilepsy"}, "I")),
@@ -471,7 +470,8 @@ NEW_POSITIVE = [
     ("I take magnesium glycinate at night.",
      _item("supplements", {"name": "Magnesium glycinate", "reason": "sleep", "need": 9},
            "I take magnesium glycinate at night"),
-     "supplements", {"name": "Magnesium glycinate", "reason": "sleep"}),
+     # The client never said why, so the model's "sleep" is blanked (live run B).
+     "supplements", {"name": "Magnesium glycinate"}),
     ("I take Thorne vitamin D every morning.",
      _item("supplements", {"name": "Vitamin D", "brand": "Thorne"},
            "I take Thorne vitamin D every morning"),
@@ -578,8 +578,6 @@ NEW_THIRD_PARTY = [
      _item("diagnoses", {"diagnosis": "Type 2 diabetes"}, "My husband has type 2 diabetes")),
     ("My friend had her gallbladder out.",
      _item("surgeries", {"procedure": "Gallbladder removal"}, "My friend had her gallbladder out")),
-    ("My wife and I take magnesium glycinate.",
-     _item("supplements", {"name": "Magnesium glycinate"}, "I take magnesium glycinate")),
     ("My son takes Tylenol for headaches.",
      _item("otc_drugs", {"medication": "Tylenol"}, "My son takes Tylenol for headaches")),
     ("My daughter is allergic to penicillin.",
@@ -777,3 +775,401 @@ def test_a_diagnosis_keeps_a_stated_age_of_onset():
                _item("diagnoses", {"diagnosis": "Lupus", "age_onset": "34"},
                      "I was diagnosed with lupus at 34"))
     assert out and out[0]["value"] == {"diagnosis": "Lupus", "current": "Current", "age_onset": 34}
+
+
+
+# --- fix round 1 (marketing live run, review rounds 1 and 2) --------------------
+
+def test_prompt_says_a_fact_inside_a_question_is_a_fact():
+    """Live run A: the model called "while I'm on warfarin?" only a question."""
+    p = hs.EXTRACT_SYSTEM
+    assert "A fact the client states inside a question is still a fact." in p
+    assert "Can I take this while I'm on warfarin?" in p
+    assert "Only a fact under if, whether, suppose or what if is hypothetical" in p
+
+
+def test_prompt_says_leave_unsaid_columns_blank():
+    assert "Leave a value column blank unless the client said it" in hs.EXTRACT_SYSTEM
+
+
+def test_prompt_trauma_line_is_emotional_only():
+    p = hs.EXTRACT_SYSTEM
+    assert "emotional trauma" in p and "never record feelings, trauma" not in p
+    assert "Physical injuries are recorded" in p
+
+
+def test_prompt_first_person_matches_the_code():
+    p = hs.EXTRACT_SYSTEM
+    assert "with I or my (my or our for family history)" in p
+    assert "including I, my or our" not in p
+
+
+@pytest.mark.parametrize("msg,quote", [
+    ("Can I take this while I'm on warfarin?", "I'm on warfarin"),
+    ("Can I take this while I'm on warfarin?", "while I'm on warfarin"),
+    ("Is it ok because I take warfarin?", "I take warfarin"),
+])
+def test_a_fact_stated_inside_a_question_records(msg, quote):
+    out = _one(msg, _item("medications", {"medication": "Warfarin"}, quote))
+    assert out and out[0]["value"] == {"medication": "Warfarin"}, msg
+
+
+# B / round 1 M4 / round 2: secondary cells must be in the client's message.
+@pytest.mark.parametrize("msg,item,expect", [
+    ("I take magnesium glycinate at night.",
+     _item("supplements", {"name": "Magnesium glycinate", "reason": "sleep", "brand": "Thorne"},
+           "I take magnesium glycinate at night"),
+     {"name": "Magnesium glycinate"}),
+    ("I take magnesium glycinate for sleep.",
+     _item("supplements", {"name": "Magnesium glycinate", "reason": "sleep"},
+           "I take magnesium glycinate for sleep"),
+     {"name": "Magnesium glycinate", "reason": "sleep"}),
+    ("I'm allergic to penicillin.",
+     _item("allergies", {"sensitivity": "Penicillin", "reaction": "hives"},
+           "I'm allergic to penicillin"),
+     {"sensitivity": "Penicillin"}),
+    ("I take warfarin.",
+     _item("medications", {"medication": "Warfarin", "reason": "atrial fibrillation"},
+           "I take warfarin"),
+     {"medication": "Warfarin"}),
+])
+def test_unsaid_secondary_cells_are_blanked(msg, item, expect):
+    out = _one(msg, item)
+    assert out and out[0]["value"] == expect, msg
+
+
+# Round 2: short and significant words in a term must be said.
+@pytest.mark.parametrize("msg,item", [
+    ("I take vitamin C daily.", _item("supplements", {"name": "Vitamin D"}, "I take vitamin C daily")),
+    ("I take B12 shots.", _item("supplements", {"name": "B6"}, "I take B12 shots")),
+    ("I take vitamin D3.", _item("supplements", {"name": "Vitamin D2"}, "I take vitamin D3")),
+    ("I had knee surgery.", _item("surgeries", {"procedure": "Knee replacement"}, "I had knee surgery")),
+    ("I had my gallbladder looked at.",
+     _item("surgeries", {"procedure": "Gallbladder removal"}, "I had my gallbladder looked at")),
+])
+def test_significant_words_of_the_term_must_be_said(msg, item):
+    assert _one(msg, item) == [], msg
+
+
+@pytest.mark.parametrize("msg,item,name", [
+    ("I take vitamin C daily.", _item("supplements", {"name": "Vitamin C"}, "I take vitamin C daily"),
+     "Vitamin C"),
+    ("I take B12 shots.", _item("supplements", {"name": "B12"}, "I take B12 shots"), "B12"),
+    ("I had my knee operated on.", _item("surgeries", {"procedure": "Knee surgery"},
+                                         "I had my knee operated on"), "Knee surgery"),
+    ("My appendix was removed at 12.",
+     _item("surgeries", {"procedure": "Appendix removal", "age": 12}, "My appendix was removed at 12"),
+     "Appendix removal"),
+])
+def test_said_terms_still_record(msg, item, name):
+    out = _one(msg, item)
+    assert out and name in out[0]["value"].values(), msg
+
+
+# Round 2 and round 1 L1: an age needs age wording, not just the number.
+@pytest.mark.parametrize("msg,item,kept", [
+    ("I had knee replacement surgery. I take 50 mg of medication daily.",
+     _item("surgeries", {"procedure": "Knee replacement surgery", "age": 50},
+           "I had knee replacement surgery"), False),
+    ("I have had diabetes for 10 years.",
+     _item("diagnoses", {"diagnosis": "Diabetes", "age_onset": 10},
+           "I have had diabetes for 10 years"), False),
+    ("I was diagnosed with lupus at age 34.",
+     _item("diagnoses", {"diagnosis": "Lupus", "age_onset": 34}, "I was diagnosed with lupus"), True),
+    ("I got asthma when I was 7.",
+     _item("diagnoses", {"diagnosis": "Asthma", "age_onset": 7}, "I got asthma"), True),
+    ("I had my tonsils out, I was 9 years old.",
+     _item("surgeries", {"procedure": "Tonsils removal", "age": 9}, "I had my tonsils out"), True),
+])
+def test_an_age_needs_age_wording(msg, item, kept):
+    out = _one(msg, item)
+    assert out, msg
+    col = "age" if "age" in item["value"] else "age_onset"
+    assert (col in out[0]["value"]) is kept, msg
+
+
+@pytest.mark.parametrize("age", ["inf", "1e999", "nan", "-5", "400"])
+def test_a_bad_age_is_blanked_never_raises(age):
+    assert hs.normalize_row("surgeries", {"procedure": "Pacemaker", "age": age}) == {
+        "procedure": "Pacemaker"}
+
+
+# Round 1 M5 and round 2: only allowed words between "my" and the relative.
+@pytest.mark.parametrize("msg", [
+    "My adoptive mother had breast cancer.", "My foster mother had breast cancer.",
+    "My doctors mother had breast cancer.", "My godmother had breast cancer.",
+    "My step-mother had breast cancer.", "My ex mother had breast cancer.",
+])
+def test_non_blood_or_other_peoples_relatives_are_refused(msg):
+    q = msg.rstrip(".")
+    item = _item("family_history", {"relative": "Mother", "condition": "Breast cancer"}, q,
+                 about="family")
+    assert _one(msg, item) == [], msg
+
+
+@pytest.mark.parametrize("msg,relative", [
+    ("My late mother had breast cancer.", "Mother"),
+    ("My older sister had breast cancer.", "Sister"),
+    ("My maternal grandmother had breast cancer.", "Maternal grandmother"),
+    ("My biological father had breast cancer.", "Father"),
+    ("My half-brother had breast cancer.", "Brother"),
+])
+def test_allowed_family_modifiers_record(msg, relative):
+    q = msg.rstrip(".")
+    out = _one(msg, _item("family_history", {"relative": relative, "condition": "Breast cancer"},
+                          q, about="family"))
+    assert out and out[0]["value"]["relative"] == relative, msg
+
+
+# Round 1 M6: the relative must be the chain's last link, named exactly.
+@pytest.mark.parametrize("msg,relative,ok", [
+    ("My mother's brother had colon cancer.", "Mother", False),
+    ("My mother's brother had colon cancer.", "Brother", False),
+    ("My mother's brother had colon cancer.", "Maternal uncle", True),
+    ("My mother's brother had colon cancer.", "Uncle", True),
+    ("My mother's brother had colon cancer.", "Paternal uncle", False),
+    ("My mom's dad had colon cancer.", "Grandfather", True),
+    ("My mom's dad had colon cancer.", "Father", False),
+    ("My grandmother had colon cancer.", "Maternal grandmother", False),
+    ("My grandmother on my mother's side had colon cancer.", "Maternal grandmother", True),
+    ("My mother had colon cancer.", "Mother and aunt", False),
+])
+def test_relative_matches_the_chain_exactly(msg, relative, ok):
+    q = msg.rstrip(".")
+    out = _one(msg, _item("family_history", {"relative": relative, "condition": "Colon cancer"},
+                          q, about="family"))
+    assert bool(out) is ok, (msg, relative)
+
+
+# Round 2: quoted speech is someone else's words.
+@pytest.mark.parametrize("msg,item", [
+    ('My friend said, "My mother had breast cancer".',
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "My mother had breast cancer", about="family")),
+    ("My friend told me my mother had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "my mother had breast cancer", about="family")),
+    ('She wrote: "I take warfarin daily".',
+     _item("medications", {"medication": "Warfarin"}, "I take warfarin daily")),
+    ("He said, I have diabetes.", _item("diagnoses", {"diagnosis": "Diabetes"}, "I have diabetes")),
+])
+def test_quoted_speech_records_nothing(msg, item):
+    assert _one(msg, item) == [], msg
+
+
+def test_reported_speech_about_the_client_records():
+    """Indirect speech keeps the client's own "I": the doctor told the client."""
+    out = _one("My doctor told me I have hypothyroidism.",
+               _item("diagnoses", {"diagnosis": "Hypothyroidism"}, "I have hypothyroidism"))
+    assert out and out[0]["value"]["current"] == "Current"
+
+
+# Round 1 H1: a stopped medicine, supplement or OTC drug is not taken now.
+@pytest.mark.parametrize("msg,field,col,name", [
+    ("I stopped taking warfarin last year.", "medications", "medication", "Warfarin"),
+    ("I used to take fish oil.", "supplements", "name", "Fish oil"),
+    ("I no longer take Tylenol.", "otc_drugs", "medication", "Tylenol"),
+    ("I came off metformin in March.", "medications", "medication", "Metformin"),
+    ("I quit taking ibuprofen.", "otc_drugs", "medication", "Ibuprofen"),
+    ("I was on prednisone in 2019.", "medications", "medication", "Prednisone"),
+])
+def test_a_stopped_medicine_or_supplement_records_nothing(msg, field, col, name):
+    assert _one(msg, _item(field, {col: name}, msg.rstrip("."))) == [], msg
+
+
+def test_a_medicine_started_in_a_past_year_is_current():
+    out = _one("I started metformin in 2020.",
+               _item("medications", {"medication": "Metformin"}, "I started metformin in 2020"))
+    assert out and out[0]["value"] == {"medication": "Metformin"}
+
+
+# Round 1 H2: a date of diagnosis does not make it Past.
+@pytest.mark.parametrize("msg,diag", [
+    ("I was diagnosed with diabetes last year.", "Diabetes"),
+    ("I was diagnosed with Hashimoto's in 2019.", "Hashimoto's"),
+    ("I was told I have hypothyroidism.", "Hypothyroidism"),
+    ("I had a hip replacement and now have arthritis.", "Arthritis"),
+])
+def test_dated_diagnosis_stays_current(msg, diag):
+    out = _one(msg, _item("diagnoses", {"diagnosis": diag, "current": "Current"}, msg.rstrip(".")))
+    assert out and out[0]["value"]["current"] == "Current", msg
+
+
+@pytest.mark.parametrize("msg,diag", [
+    ("I was diagnosed with cancer in 2010 and it was cured.", "Cancer"),
+    ("I had hepatitis in 2015, it resolved.", "Hepatitis"),
+])
+def test_an_ended_diagnosis_is_past(msg, diag):
+    out = _one(msg, _item("diagnoses", {"diagnosis": diag}, msg.rstrip(".")))
+    assert out and out[0]["value"]["current"] == "Past", msg
+
+
+# Round 1 M1: negation, suspicion, plans and a leading "if" are not facts.
+@pytest.mark.parametrize("msg,item", [
+    ("I don't have diabetes.", _item("diagnoses", {"diagnosis": "Diabetes"}, "I don't have diabetes")),
+    ("I'm not allergic to penicillin.",
+     _item("allergies", {"sensitivity": "Penicillin"}, "I'm not allergic to penicillin")),
+    ("I think I might have Lyme disease.",
+     _item("diagnoses", {"diagnosis": "Lyme disease"}, "I might have Lyme disease")),
+    ("I think I have Lyme disease.",
+     _item("diagnoses", {"diagnosis": "Lyme disease"}, "I have Lyme disease")),
+    ("Maybe I have IBS.", _item("diagnoses", {"diagnosis": "IBS"}, "I have IBS")),
+    ("I'm not sure if I have Lyme disease.",
+     _item("diagnoses", {"diagnosis": "Lyme disease"}, "I have Lyme disease")),
+    ("I'm trying to get pregnant.",
+     _item("diagnoses", {"diagnosis": "Pregnancy"}, "I'm trying to get pregnant")),
+    ("I'm having my gallbladder out next month.",
+     _item("surgeries", {"procedure": "Gallbladder removal"},
+           "I'm having my gallbladder out next month")),
+    ("I need a hip replacement.",
+     _item("surgeries", {"procedure": "Hip replacement"}, "I need a hip replacement")),
+    ("My doctor wants me to start metformin.",
+     _item("medications", {"medication": "Metformin"}, "wants me to start metformin")),
+    ("I'm going to start metformin.",
+     _item("medications", {"medication": "Metformin"}, "I'm going to start metformin")),
+    ("If I had diabetes I would cut sugar.",
+     _item("diagnoses", {"diagnosis": "Diabetes"}, "I had diabetes")),
+    ("I'm thinking of getting the flu shot.",
+     _item("vaccinations", "x", "I'm thinking of getting the flu shot")),
+    ("My mother never had breast cancer.",
+     _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+           "My mother never had breast cancer", about="family")),
+])
+def test_negation_suspicion_plans_and_if_record_nothing(msg, item):
+    assert _one(msg, item) == [], msg
+
+
+def test_not_vaccinated_is_a_real_vaccinations_answer():
+    out = _one("I am not vaccinated.", _item("vaccinations", "x", "I am not vaccinated"))
+    assert out and out[0]["value"] == "I am not vaccinated"
+
+
+# Round 1 M2: the client's own fact with a relative in the sentence still records.
+@pytest.mark.parametrize("msg,quote,diag", [
+    ("I have high blood pressure like my dad.", "I have high blood pressure", "High blood pressure"),
+    ("I have diabetes, it runs in my family and my mother had it too.", "I have diabetes", "Diabetes"),
+    ("My mother and I both have diabetes.", "I both have diabetes", "Diabetes"),
+])
+def test_own_fact_beside_a_relative_records(msg, quote, diag):
+    out = _one(msg, _item("diagnoses", {"diagnosis": diag}, quote))
+    assert out and out[0]["value"]["diagnosis"] == diag, msg
+
+
+@pytest.mark.parametrize("msg,quote", [
+    ("My husband and I both take warfarin daily.", "I both take warfarin daily"),
+    ("My wife and I take magnesium glycinate.", "I take magnesium glycinate"),
+])
+def test_a_joint_statement_records_for_the_client(msg, quote):
+    field = "supplements" if "magnesium" in msg else "medications"
+    col = "name" if field == "supplements" else "medication"
+    term = "Magnesium glycinate" if field == "supplements" else "Warfarin"
+    assert len(_one(msg, _item(field, {col: term}, quote))) == 1, msg
+
+
+def test_own_fact_and_family_fact_from_one_sentence():
+    msg = "My mother and I both have diabetes."
+    out = _all(msg, [
+        _item("diagnoses", {"diagnosis": "Diabetes"}, "I both have diabetes"),
+        _item("family_history", {"relative": "Mother", "condition": "Diabetes"},
+              "My mother and I both have diabetes", about="family")])
+    assert [o["field_id"] for o in out] == ["diagnoses", "family_history"]
+
+
+# Round 1 M3: a dated start of a current symptom or sleep problem stays.
+@pytest.mark.parametrize("msg,field", [
+    ("I've had headaches since I was in a car accident.", "other_symptoms"),
+    ("I started getting migraines in 2020 and still get them.", "other_symptoms"),
+    ("I have had trouble sleeping since my surgery last year.", "sleep"),
+])
+def test_dated_start_of_a_current_symptom_records(msg, field):
+    out = _one(msg, _item(field, "x", msg.rstrip(".")))
+    assert out and out[0]["value"] == msg.rstrip("."), msg
+
+
+# Round 1 L5: an anti-goal or a wish to know is not a health concern.
+@pytest.mark.parametrize("msg,quote,concern", [
+    ("I don't want to take metformin.", "I don't want to take metformin", "Take metformin"),
+    ("I want to know if I have diabetes.", "I want to know if I have diabetes", "Diabetes"),
+])
+def test_anti_goals_are_not_concerns(msg, quote, concern):
+    assert _one(msg, _item("health_concerns", {"concern": concern}, quote)) == [], msg
+
+
+
+@pytest.mark.parametrize("msg,item,ok", [
+    ("I take CoQ100 daily.", _item("supplements", {"name": "CoQ10"}, "I take CoQ100 daily"), False),
+    ("I take CoQ10 daily.", _item("supplements", {"name": "CoQ10"}, "I take CoQ10 daily"), True),
+])
+def test_a_word_with_a_digit_must_be_said_exactly(msg, item, ok):
+    assert bool(_one(msg, item)) is ok, msg
+
+
+@pytest.mark.parametrize("msg,item,kept", [
+    ("I went in at 8 pm and had my appendix out.",
+     _item("surgeries", {"procedure": "Appendix removal", "age": 8}, "had my appendix out"), False),
+    ("I was 40 when I had my hysterectomy.",
+     _item("surgeries", {"procedure": "Hysterectomy", "age": 40}, "I had my hysterectomy"), True),
+])
+def test_age_wording_edges(msg, item, kept):
+    out = _one(msg, item)
+    assert out and ("age" in out[0]["value"]) is kept, msg
+
+
+def test_a_quote_inside_quotation_marks_records_nothing():
+    assert _one('I read "I take warfarin daily" on a forum.',
+                _item("medications", {"medication": "Warfarin"}, "I take warfarin daily")) == []
+
+
+def test_the_client_quoting_themself_records():
+    out = _one("I said, I take warfarin daily.",
+               _item("medications", {"medication": "Warfarin"}, "I take warfarin daily"))
+    assert len(out) == 1
+
+
+@pytest.mark.parametrize("msg,diag,status", [
+    ("I had shingles in 2019 and I am fine now.", "Shingles", "Past"),
+    ("I stopped smoking and I have asthma.", "Asthma", "Current"),
+])
+def test_the_clause_naming_the_diagnosis_decides(msg, diag, status):
+    out = _one(msg, _item("diagnoses", {"diagnosis": diag}, msg.rstrip(".")))
+    assert out and out[0]["value"]["current"] == status, msg
+
+
+@pytest.mark.parametrize("msg", [
+    "My mother's friend had breast cancer.", "My mother-in-law had breast cancer.",
+    "My mothers friend had breast cancer.",
+])
+def test_a_chain_that_goes_on_to_someone_else_is_refused(msg):
+    item = _item("family_history", {"relative": "Mother", "condition": "Breast cancer"},
+                 msg.rstrip("."), about="family")
+    assert _one(msg, item) == [], msg
+
+
+
+@pytest.mark.parametrize("msg,item,kept", [
+    ("I got asthma at 5 years of age.",
+     _item("diagnoses", {"diagnosis": "Asthma", "age_onset": 5}, "I got asthma"), True),
+    ("I was 6 months pregnant when I had my appendix out.",
+     _item("surgeries", {"procedure": "Appendix removal", "age": 6}, "I had my appendix out"), False),
+])
+def test_age_wording_years_and_months(msg, item, kept):
+    out = _one(msg, item)
+    col = "age" if "age" in item["value"] else "age_onset"
+    assert out and (col in out[0]["value"]) is kept, msg
+
+
+def test_a_value_naming_two_relatives_is_refused():
+    msg = "My mother and my aunt had colon cancer."
+    out = _one(msg, _item("family_history", {"relative": "Mother and aunt",
+                                             "condition": "Colon cancer"},
+                          "My mother and my aunt had colon cancer", about="family"))
+    assert out == []
+
+
+@pytest.mark.parametrize("msg,field", [
+    ("I got migraines in 2019 and still get them.", "other_symptoms"),
+    ("My sleep got bad in 2019 and since then I wake at 3.", "sleep"),
+])
+def test_still_or_since_keeps_a_dated_symptom(msg, field):
+    out = _one(msg, _item(field, "x", msg.rstrip(".")))
+    assert out, msg
