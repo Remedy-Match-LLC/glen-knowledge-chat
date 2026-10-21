@@ -10542,19 +10542,19 @@
    "no_groovekart": true,
    "ingredients": [
     {
-     "name": "Green Tea EGCG 50% (Camellia sinensis)",
-     "dose": "150 mg"
-    },
-    {
      "name": "Silymarin 80% (Silybum marianum) (fructus)",
-     "dose": "125 mg"
+     "dose": "200 mg"
     },
     {
-     "name": "Curcumin (Curcuma longa) (rhizoma)",
-     "dose": "100 mg"
+     "name": "EGCG 98% (Camellia sinensis)",
+     "dose": "71 mg"
     },
     {
      "name": "Pterostilbene (Pterocarpus marsupium)",
+     "dose": "75 mg"
+    },
+    {
+     "name": "Tocotrienols (Oryza sativa)",
      "dose": "50 mg"
     },
     {
@@ -10562,13 +10562,17 @@
      "dose": "50 mg"
     },
     {
+     "name": "Curcumin (Curcuma longa) (rhizoma)",
+     "dose": "19 mg"
+    },
+    {
      "name": "Selenium (as Methylselenocysteine)",
      "dose": "205 mcg"
     }
    ],
-   "ingredients_source": "label-2026-10-08",
-   "intro": "Angiostasis supports healthy, orderly blood vessel growth throughout the body. Its formula combines green tea, milk thistle, curcumin, pterostilbene, honokiol and selenium.",
-   "description": "Each vegicap supplies 150 mg green tea extract (EGCG 50%), 125 mg silymarin 80%, 100 mg curcumin, 50 mg pterostilbene, 50 mg honokiol and 205 mcg selenium as methylselenocysteine. There are no fillers or excipients.\n\nTake 1 capsule daily with the evening meal, or as guided.\n\nAngiostasis is synergistic with Brain Cleanse, which is taken at bedtime.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: May cause drowsiness. Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses, in pregnancy or while breastfeeding. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use. If you are under medical treatment, consult your physician before use.",
+   "ingredients_source": "label-2026-10-19",
+   "intro": "Angiostasis supports healthy, orderly blood vessel growth throughout the body. Its formula combines milk thistle, green tea, pterostilbene, tocotrienols, honokiol, curcumin and selenium.",
+   "description": "Each vegicap supplies 200 mg silymarin 80%, 71 mg green tea extract (EGCG 98%), 75 mg pterostilbene, 50 mg rice tocotrienols, 50 mg honokiol, 19 mg curcumin and 205 mcg selenium as methylselenocysteine. There are no fillers or excipients.\n\nTake 1 capsule daily with the evening meal, or as guided.\n\nAngiostasis is synergistic with Brain Cleanse, which is taken at bedtime.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: May cause drowsiness. Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses, in pregnancy or while breastfeeding. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use. If you are under medical treatment, consult your physician before use.",
    "directions": "Take 1 capsule daily with the evening meal, or as guided.",
    "warning": "May cause drowsiness. Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses, in pregnancy or while breastfeeding. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use. If you are under medical treatment, consult your physician before use.",
    "panel_note": "Synergistic with Brain Cleanse.",
@@ -10585,7 +10589,7 @@
     "benefits",
     "research"
    ],
-   "content_since": "2026-10-08",
+   "content_since": "2026-10-21T17:32:10Z",
    "bottle_type": "30 Caps",
    "fmp_id": "1201",
    "images": [

@@ -1,8 +1,9 @@
-"""Angiostasis: a new six-ingredient formula, one capsule a day with the evening meal.
+"""Angiostasis: a seven-ingredient formula, one capsule a day with the evening meal.
 
-Spec: production/05 Formulations/_store-updates/2026-10-08-angiostasis.md (Glen "approve",
-2026-10-08, via formulation). FileMaker 1201 holds it. The copy is pinned, benefits and
-how-it-works are empty, the two approved photos go in the `images` gallery, and the page
+Spec: production/05 Formulations/_store-updates/2026-10-21-angiostasis.md (Glen "yes",
+2026-10-21, via formulation), the 19 October 2026 batch. It replaces the six-ingredient
+formula of 2026-10-08-angiostasis.md, which was never made. FileMaker 1201 holds it.
+The copy is pinned, benefits and how-it-works are empty, the two approved photos go in the `images` gallery, and the page
 never queues, generates or shows AI-made images (Glen ruled out a blood-vessel picture).
 """
 import importlib
@@ -14,16 +15,18 @@ import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SLUG = "angiostasis"
-SIX = [
-    ("Green Tea EGCG 50% (Camellia sinensis)", "150 mg"),
-    ("Silymarin 80% (Silybum marianum) (fructus)", "125 mg"),
-    ("Curcumin (Curcuma longa) (rhizoma)", "100 mg"),
-    ("Pterostilbene (Pterocarpus marsupium)", "50 mg"),
+SEVEN = [
+    ("Silymarin 80% (Silybum marianum) (fructus)", "200 mg"),
+    ("EGCG 98% (Camellia sinensis)", "71 mg"),
+    ("Pterostilbene (Pterocarpus marsupium)", "75 mg"),
+    ("Tocotrienols (Oryza sativa)", "50 mg"),
     ("Honokiol (Magnolia grandiflora) (cortex)", "50 mg"),
+    ("Curcumin (Curcuma longa) (rhizoma)", "19 mg"),
     ("Selenium (as Methylselenocysteine)", "205 mcg"),
 ]
 INTRO = ("Angiostasis supports healthy, orderly blood vessel growth throughout the body. Its "
-         "formula combines green tea, milk thistle, curcumin, pterostilbene, honokiol and selenium.")
+         "formula combines milk thistle, green tea, pterostilbene, tocotrienols, honokiol, curcumin "
+         "and selenium.")
 DIRECTIONS = "Take 1 capsule daily with the evening meal, or as guided."
 WARNING = ("May cause drowsiness. Avoid use while healing a wound or any other tissue injury, such "
            "as a cut, fracture, sprain or burn. Also avoid use during menses, in pregnancy or while "
@@ -31,9 +34,9 @@ WARNING = ("May cause drowsiness. Avoid use while healing a wound or any other t
            "take a blood thinner, consult your physician before use. If you are under medical "
            "treatment, consult your physician before use.")
 DESCRIPTION = "\n\n".join([
-    "Each vegicap supplies 150 mg green tea extract (EGCG 50%), 125 mg silymarin 80%, 100 mg "
-    "curcumin, 50 mg pterostilbene, 50 mg honokiol and 205 mcg selenium as methylselenocysteine. "
-    "There are no fillers or excipients.",
+    "Each vegicap supplies 200 mg silymarin 80%, 71 mg green tea extract (EGCG 98%), 75 mg "
+    "pterostilbene, 50 mg rice tocotrienols, 50 mg honokiol, 19 mg curcumin and 205 mcg selenium "
+    "as methylselenocysteine. There are no fillers or excipients.",
     DIRECTIONS,
     "Angiostasis is synergistic with Brain Cleanse, which is taken at bedtime.",
     "Other ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. "
@@ -52,10 +55,10 @@ def _entry(fname="products.json"):
 
 
 @pytest.mark.parametrize("fname", ["products.json", "products-manual-corrections.json"])
-def test_the_six_ingredients_in_order_and_the_copy(fname):
+def test_the_seven_ingredients_in_order_and_the_copy(fname):
     e = _entry(fname)
-    assert [(i["name"], i["dose"]) for i in e["ingredients"]] == SIX
-    assert e["ingredients_source"] == "label-2026-10-08"
+    assert [(i["name"], i["dose"]) for i in e["ingredients"]] == SEVEN
+    assert e["ingredients_source"] == "label-2026-10-19"
     assert e["description"] == DESCRIPTION
     assert e["directions"] == DIRECTIONS
     assert e["warning"] == WARNING
@@ -68,7 +71,7 @@ def test_the_store_entry():
     e = _entry()
     assert e["intro"] == INTRO
     assert e["copy_pinned"] == ["ingredients", "intro", "description", "benefits", "research"]
-    assert e["content_since"] == "2026-10-08"
+    assert e["content_since"] == "2026-10-21T17:32:10Z"
     assert e["price_cents"] == 7000 and e["fmp_id"] == "1201" and e["name"] == "Angiostasis"
     assert e["pinecone_title"] == "Angiostasis"
     assert e["url"] == "https://myhealingoasis.com/begin/product/angiostasis"
@@ -142,7 +145,7 @@ def test_no_cached_ai_draft_replaces_the_pinned_copy(appmod):
         assert "ai" not in secs[sec], sec
     assert secs["research"]["body"]["how_it_works"] == ""
     body = secs["ingredients"]["body"]
-    assert [(i["name"], i["dose"]) for i in body["ingredients"]] == SIX
+    assert [(i["name"], i["dose"]) for i in body["ingredients"]] == SEVEN
     assert body["directions"] == DIRECTIONS and body["warning"] == WARNING
     assert [i["src"] for i in d["images"]] == PHOTOS
 
