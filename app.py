@@ -2361,6 +2361,40 @@ from collections import namedtuple as _namedtuple  # noqa: E402
 # One caution held until the product cap is applied: `key` is the product whose caution
 # it is, `ref` names it when a repeat only points back.
 _CautionLine = _namedtuple("_CautionLine", "key text ref")
+# What the bot may not add around a caution it copies. Live chat on 81acb916, 2026-10-21:
+# asked about Vitamin D Syntropy and warfarin, it called the caution the label's, said some
+# patients tolerate it with monitoring, said to adjust the warfarin dose, and offered a
+# different vitamin D source. Labels carry no cautions (Glen, 2026-10-15). Scoped to the
+# caution's own subject, so approved text and other questions are untouched (review round
+# 1: the Vitamin D description's own monitoring line, and the caution-only note). It names
+# no one to ask: the caution's own advice stands (review round 1, F3). Written once per
+# answer, after the copy rule in the header.
+_CAUTION_NO_ADDITIONS = (
+    "Call a caution \"the caution on the product page\", never the label caution. When "
+    "the user asks about a medicine, pregnancy or a condition that a caution names, give "
+    "that caution's own advice and add none of your own. On that subject, do not say how "
+    "well clients tolerate the product, and do not suggest monitoring or changing any "
+    "medicine or dose. Name no other product or source in its place, and no one else to "
+    "ask. This limits only what you add yourself. Repeat the approved description and "
+    "directions below as written, and answer other questions as before.")
+# Directly after each opted-in caution, held or written. The header rule alone did not
+# hold: read-back on d12e2929 (2026-10-21) still added INR monitoring, a dose change and a
+# vitamin D3 without K2, taken from warfarin snippets (review round 2, variant a). "Give
+# only the caution's words" made 4 of 6 answers quote one sentence, so it asks for every
+# sentence first (variant d).
+_CAUTION_STAY_LINE = (
+    "Copy every sentence of the caution above. Then add nothing of your own on any "
+    "medicine, pregnancy or condition it names: no monitoring, dose, tolerance or "
+    "other-product advice, and no one else to ask.")
+# The last words of the user message when an opted-in caution is in the answer. The facts
+# block is already last, after the snippets; this closes it (review round 2, variants b and
+# c: the read-back answers took INR monitoring from a cited drug interaction book).
+_CAUTION_CLOSING_REMINDER = (
+    "Caution reminder: for any medicine, pregnancy or condition a caution above names, "
+    "that caution is the whole answer. Copy every sentence of it. Call it the caution on "
+    "the product page, never the label. On that subject, skip the drug interaction text "
+    "in the snippets: do not use it, quote it or cite it. Add no monitoring, INR, dose, "
+    "tolerance or other-product advice, and name no one else to ask.")
 _SEVERAL_CAUTIONS_RULE = (
     "There is more than one caution below. Copy each one word for word, as its own "
     "paragraph starting \"Caution for <product name>:\", every sentence of it, even where "
@@ -2419,7 +2453,7 @@ def _bundle_bot_cautions(bundle, products):
             if products[c].get("chat_caution") and (products[c].get("warning") or "").strip()]
 
 
-def _named_product_facts(query_text: str, gated: bool = False) -> str:
+def _named_product_facts(query_text: str, gated: bool = False, given_out=None) -> str:
     """Approved store text for the catalog products the user names in the question.
 
     The chat does not search `specific-formulations`, so a product whose facts live
@@ -2585,9 +2619,14 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
                     part = f"Caution: {part.ref} is given in full above and applies here too."
                 else:
                     given.add(part.key)
-                    part = part.text
+                    key, part = part.key, part.text
                     written += 1 if part else 0
                     held += 0 if part else 1
+                    # Held inside the description or written here, an opted-in caution
+                    # gets the stay line straight after it.
+                    if products.get(key, {}).get("chat_caution"):
+                        lines.extend([part] if part else [])
+                        part = _CAUTION_STAY_LINE
             if part:
                 lines.append(part)
         # The copy reminder stays only above a caution given in full here. Above a
@@ -2604,6 +2643,10 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     # A caution held inside a pinned description is shown too, so it counts here, but
     # only beside a caution-only product: answers about pinned products alone keep the
     # header they had (review round 3).
+    # The products whose cautions this block carries, after the product cap, for the
+    # snippet filter (review round 2b).
+    if given_out is not None:
+        given_out.update(given)
     shown = written + held if any_copy_rule else written
     several = ((_SEVERAL_CAUTIONS_RULE + "\n") if shown > 1
                else (_ONE_CAUTION_RULE + "\n") if shown == 1 and any_copy_rule
@@ -2614,6 +2657,10 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         # is the product page's (Glen "yes", 2026-10-15).
         several = several.replace('"Caution for <product name>:"',
                                   '"The caution on the product page for <product name> is:"')
+    if several and any_copy_rule:
+        # Once per answer, beside the copy rule, and only where an opted-in caution set it
+        # (review round 1, F5). Answers without the opt-in keep the header they had.
+        several += _CAUTION_NO_ADDITIONS + "\n"
     if all_caution_only:
         # Only cautions are approved for these products, so the header asks for no dose and
         # no description from this text: those come from the snippets, as they did before
@@ -2727,7 +2774,108 @@ def named_product_facts_block(query_text: str, gated: bool = False,
         facts = (f"FOLLOW-UP: the user's message is about {name}, which they named in their "
                  f"previous question. Answer it about {name} from the text below, in the "
                  f"format the text below sets for a dose or safety question.\n" + facts)
+    if _CAUTION_STAY_LINE in facts:
+        facts += "\n\n" + _CAUTION_CLOSING_REMINDER
     return f"\n\n{facts}" if facts else ""
+
+
+# Subjects an opted-in caution can name, each with the words a question may use for it.
+# A subject counts only when its key appears in the caution text itself, so the caution
+# decides which apply. Read-back on 2d7fa1f3 (2026-10-21): with Stargrove's warfarin pages
+# in the snippets, no prompt wording stopped INR and dose advice (variant d).
+_CAUTION_SUBJECT_WORDS = {
+    "warfarin": ("warfarin", "coumadin", "jantoven"),
+    "blood thinner": ("blood thinner", "anticoagulant", "warfarin", "coumadin", "jantoven",
+                      "eliquis", "apixaban", "xarelto", "rivaroxaban", "pradaxa",
+                      "dabigatran", "savaysa", "edoxaban", "plavix", "heparin"),
+    "pregnan": ("pregnan",),
+    "breastfeeding": ("breastfeeding", "breast feeding", "nursing"),
+    "thyroid": ("thyroid", "levothyroxine", "synthroid", "hashimoto"),
+    "antidepressant": ("antidepressant", "ssri", "sertraline", "fluoxetine", "zoloft",
+                       "prozac"),
+    "tramadol": ("tramadol",),
+    "dextromethorphan": ("dextromethorphan",),
+    "st john": ("st john",),
+    "migraine medicine": ("migraine medicine", "triptan", "sumatriptan"),
+    "blood sugar": ("blood sugar", "diabetes", "metformin", "insulin"),
+    "blood pressure": ("blood pressure", "hypertension"),
+    "seizure": ("seizure", "epilepsy"),
+    "sedative": ("sedative",),
+    "liver disease": ("liver disease",),
+}
+
+
+def _is_drug_interaction_snippet(meta) -> bool:
+    """Stargrove's Herb, Nutrient and Drug Interactions in its three stored forms, by
+    metadata (2026-10-21): the clinical-references book (`book`), its PDF chunks in
+    ingredients (`title`), and the IBIS interaction modules (`ibis_modality` INTE, or an
+    ibis `title` holding " interactions ")."""
+    meta = meta or {}
+    norm = lambda v: re.sub(r"[^a-z ]", "", str(v or "").lower())
+    if "stargrove" in str(meta.get("author") or "").lower():
+        return True
+    if any(norm(meta.get(k)).startswith("herb nutrient and drug interactions")
+           for k in ("book", "title")):
+        return True
+    if str(meta.get("ibis_modality") or "").upper() == "INTE":
+        return True
+    return (meta.get("source") == "ibis"
+            and " interactions " in str(meta.get("title") or "").lower())
+
+
+def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
+    """The caution subjects the question names, for the opted-in cautions its facts block
+    carries. The products come from the facts builder itself, so a follow-up resolves
+    from the earlier turns and a product cut by the cap brings no caution (review round
+    2b). The subject words come from this message. Matching is by substring, so
+    "hypothyroidism" finds "thyroid". Empty when no opted-in caution is carried."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    if not query_text or not products:
+        return []
+    given = set()
+    _named_product_facts(_carried_query(query_text, prior_user_turns), given_out=given)
+    # Punctuation becomes a space, so "St. John's" reads as "st john s" (review round 3).
+    norm = lambda t: " ".join(re.sub(r"[^a-z0-9]+", " ", t.lower()).split())
+    caution = norm(" ".join((products.get(k) or {}).get("warning") or "" for k in sorted(given)
+                            if (products.get(k) or {}).get("chat_caution")))
+    q = norm(query_text)
+    return [key for key, words in _CAUTION_SUBJECT_WORDS.items()
+            if key in caution and any(w in q for w in words)]
+
+
+def _chat_prior_user_turns(history, session_id) -> list:
+    """The earlier user turns of a chat() request, built once and given to both the
+    snippet filter and the facts block (review round 3). It mirrors how chat() builds
+    its messages: with no history at all, this session's last three logged questions
+    come first; then the user turns of the last six history entries. A failed read
+    gives none, so the filter keeps every snippet and chat() carries on."""
+    try:
+        turns = []
+        if not history and session_id:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                rows = cx.execute("SELECT query FROM query_log WHERE session_id = ? "
+                                  "ORDER BY id DESC LIMIT 3", (session_id,)).fetchall()
+            turns += [r[0] for r in reversed(rows) if r[0]]
+        turns += [t["content"] for t in (history or [])[-6:]
+                  if t.get("role") == "user" and t.get("content")]
+        return turns
+    except Exception as e:
+        print(f"[chat] prior turns for the snippet filter failed: {e!r}", flush=True)
+        return []
+
+
+def _drop_caution_subject_snippets(matches, query_text: str, prior_user_turns=None):
+    """Drug interaction snippets are dropped only when the answer carries an opted-in
+    caution and the question names a subject that caution names. Every other question
+    keeps its snippets unchanged."""
+    # Fails open: any error keeps every snippet, so the answer goes on (review round 3).
+    try:
+        if not matches or not _caution_subjects_asked(query_text, prior_user_turns):
+            return matches
+    except Exception as e:
+        print(f"[chat] caution snippet filter failed, snippets kept: {e!r}", flush=True)
+        return matches
+    return [m for m in matches if not _is_drug_interaction_snippet(m.metadata)]
 
 
 def build_product_directive(snippets_text: str = "", query_text: str = ""):
@@ -6583,7 +6731,12 @@ def chat():
                        "image_count": len(attachment_blocks)})
             return
 
-        context_str, sources_list = build_context(all_matches)
+        # A follow-up ("Can I take it with warfarin?") resolves its product from the
+        # earlier user turns. The one list goes to the filter here and to the facts block
+        # below, so both see the same turns (review rounds 2b and 3).
+        _prior_user = _chat_prior_user_turns(history, session_id)
+        context_str, sources_list = build_context(_drop_caution_subject_snippets(
+            all_matches, query, _prior_user))
 
         # ── Slice 4: member-mode overlay ──────────────────────────────────────
         # Read the rm_member_email cookie set by /coaching/auth/<token>.
@@ -6658,7 +6811,6 @@ def chat():
         )
         product_block = f"{product_directive}\n\n" if product_directive else ""
 
-        _prior_user = [m["content"] for m in messages if m.get("role") == "user"]
         messages.append({"role": "user", "content":
             f"USER QUESTION: {query}\n\n"
             f"{attachment_context}"
@@ -15627,7 +15779,10 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
     if not matches:
         return ("No relevant content found.", [], 0)
 
-    context_str, sources_list = build_context(matches)
+    # One request, no earlier turns: the filter and the facts block get the same none.
+    _prior_user = None
+    context_str, sources_list = build_context(
+        _drop_caution_subject_snippets(matches, query, _prior_user))
     product_directive = build_product_directive(
         snippets_text=(context_str or ""),
         query_text=query or "",
@@ -15640,7 +15795,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
         f"{product_block}"
         f"{synth_instr}"
-        f"{named_product_facts_block(query)}"
+        f"{named_product_facts_block(query, prior_user_turns=_prior_user)}"
         f"{_approved_wording_reminder(context_str)}"
     )
 
@@ -15809,7 +15964,10 @@ def _full_report_stream(log_id, query, level, session_id,
                        "log_id": log_id, "mode": "full"})
             return
 
-        context_str, sources_list = build_context(matches)
+        # One request, no earlier turns: the filter and the facts block get the same none.
+        _prior_user = None
+        context_str, sources_list = build_context(
+            _drop_caution_subject_snippets(matches, query, _prior_user))
         product_directive = build_product_directive(
             snippets_text=(context_str or ""),
             query_text=query or "",
@@ -15822,7 +15980,7 @@ def _full_report_stream(log_id, query, level, session_id,
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             f"{product_block}"
             f"{synth_instr}"
-            f"{named_product_facts_block(query)}"
+            f"{named_product_facts_block(query, prior_user_turns=_prior_user)}"
             f"{_approved_wording_reminder(context_str)}"
         )
 

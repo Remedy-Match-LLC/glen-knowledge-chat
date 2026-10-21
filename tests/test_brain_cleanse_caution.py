@@ -236,7 +236,9 @@ def test_the_block_holds_the_approved_description_directions_and_caution(slug):
         app._PINNED_DOSE_RULE.format(name=NAMES[slug],
                                      example=app._WITHDRAWN_DOSE_EXAMPLE[slug]),
         app._CAUTION_COPY_REMINDER,
-        f"Caution: {APPROVED[slug]}"])
+        f"Caution: {APPROVED[slug]}",
+        # The stay line after the caution and the closing reminder (cautionadd, 2026-10-21).
+        app._CAUTION_STAY_LINE, "", app._CAUTION_CLOSING_REMINDER])
     assert app._CAUTION_ONLY_NOTE not in b
 
 

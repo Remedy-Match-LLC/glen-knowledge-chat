@@ -103,7 +103,9 @@ def test_the_chatbot_carries_the_directions_and_the_caution_once(q):
         app._NO_DESCRIPTION.format(name="Scar Silk"),
         f"Directions: {DIRECTIONS}",
         app._PINNED_DOSE_RULE.format(name="Scar Silk", example=""),
-        app._CAUTION_COPY_REMINDER, f"Caution: {APPROVED}"]
+        app._CAUTION_COPY_REMINDER, f"Caution: {APPROVED}",
+        # The stay line after the caution and the closing reminder (cautionadd, 2026-10-21).
+        app._CAUTION_STAY_LINE, "", app._CAUTION_CLOSING_REMINDER]
     assert b.count(APPROVED) == 1
     assert app._ONE_CAUTION_RULE in b
     # The sleep products' example could forbid two at once, which up to 3 a day allows.
