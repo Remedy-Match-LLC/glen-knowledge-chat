@@ -526,12 +526,12 @@
     <a class="btn full" href="/portal/SEG/bodymap">Open your Body Map</a></div><div class="card quiet" data-fold-id="learn-my-courses"><h2>My Courses</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Open the certification courses you qualify for, along with Dr. Glen's free MasterClasses and teachings.</p>
     <a class="btn full" href="/api/portal/SEG/courses">Open MentorshipU</a></div>
-        <div class="card invoice-card" id="orders-legacy" data-fold-id="scans-invoice-tok-open" data-fold-open="1">
+        <div class="card invoice-card" data-fold-id="scans-invoice-tok-open" data-fold-open="1">
           <h2>Your invoice</h2>
           <p>Amount due: <strong>$50.00</strong></p>
           <a class="btn" href="/invoice/tok-open" target="_blank" rel="noopener">View &amp; pay invoice</a>
           <p class="small invoice-tracking" style="margin:.1rem 0 .5rem .6rem">Tracking: <a href="https://tools.usps.com/go/TrackConfirmAction?tLabels=9405511899223197428490" target="_blank" rel="noopener">9405511899223197428490 ↗</a></p>
-        </div><div class="card history-card" data-fold-id="scans-history-receipts"><h2>History &amp; receipts</h2>
+        </div><div class="card history-card" id="orders-legacy" data-fold-id="scans-history-receipts"><h2>History &amp; receipts</h2>
       <p class="muted" style="margin:0 0 .6rem">Your earlier analyses and invoices, for reference.</p><p class="muted" style="margin:.7rem 0 .3rem">Past invoices</p><p class="muted" style="margin:.25rem 0">$473.00 — paid · 2026-10-10</p><p class="small invoice-tracking" style="margin:.1rem 0 .5rem .6rem">Tracking: 1Z999AA10123456784</p></div><div class="card" data-fold-id="billing-your-orders"><h2>Your orders</h2><div><div class="ord"><span><span class="nm">$123.00</span>
         <span class="od">2026-08-01</span></span>
         <span class="pill">paid</span></div></div><p class="muted small" style="margin:.6rem 0 0">Taking something you're not sure about? <a href="https://illtowell.com/product-review">Get it reviewed free &rarr;</a></p></div><div class="card" data-fold-id="billing-orders-you-pay"><h2>Orders you're paying for</h2>

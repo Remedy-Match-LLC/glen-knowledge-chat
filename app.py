@@ -57278,11 +57278,14 @@ def console_order_invoice_link(oid):
 def _order_tracking_fields(tracking_number):
     """{tracking_number, tracking_url} for a portal order row. The link is set only for
     a carrier this code knows: USPS, whose numbers are 22 digits starting with 9
-    (dashboard/tracking._TRACK_22). normalize_tracking reads a spaced or IMpb form
-    (420+ZIP prefix) first; the number is shown as stored. Any other number gets no link."""
+    (dashboard/tracking._TRACK_22) behind a 92-95 service banner. tracking.py trusts any
+    9-led run and names no prefix list (its examples are 9205/9270/9361/9400/9405/9407),
+    so the banner range is the narrower rule here: a 96-led FedEx Ground number gets no
+    link. normalize_tracking reads a spaced or IMpb form (420+ZIP prefix) first; the
+    number is shown as stored. Any other number gets no link."""
     tn = (tracking_number or "").strip()
     usps = _tracking.normalize_tracking(tn) or ""
-    url = _tracking.tracking_url(usps) if re.fullmatch(r"9\d{21}", usps) else ""
+    url = _tracking.tracking_url(usps) if re.fullmatch(r"9[2-5]\d{20}", usps) else ""
     return {"tracking_number": tn, "tracking_url": url}
 
 

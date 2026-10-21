@@ -197,46 +197,56 @@ def test_legacy_unpaid_shipped_order_shows_tracking_and_is_the_destination():
     card = html[html.index('id="orders-legacy"'):]
     assert card.startswith('id="orders-legacy" data-fold-id="scans-invoice-x"')
     assert f'Tracking: <a href="{USPS_URL}"' in card.split("</div>")[0]
-    # With both, only the first order card carries the anchor.
-    both = _render_legacy({"scan_history_enabled": False, "invoices": [OPEN], "past_invoices": [PAST]})
+    # With both and no paid tracking, only the first order card carries the anchor.
+    both = _render_legacy({"scan_history_enabled": False, "invoices": [OPEN],
+                           "past_invoices": [PAST_NO_TRACK]})
     assert both.count('id="orders-legacy"') == 1
     assert both.index('id="orders-legacy"') < both.index("Your invoice")
 
 
 # ── F1: the link opens the folded card it lands on ───────────────────────────
 
-def _route_open_state(d, layout):
-    """First visit: which fold id #orders opens, and the billing door's resolved folds.
+def _route_open_state(d, layout, route="orders", html=None):
+    """First visit: which fold id a route opens, and the door's resolved folds.
 
     The page's own portalRouteFoldId, _foldIdOf and PortalFolds run against a stand-in
-    for the DOM that answers querySelector/closest from the rendered markup."""
+    for the DOM that answers querySelector/querySelectorAll/closest from the markup.
+    `html` skips rendering and uses the markup given."""
     js = r"""
 const h = require('./tests/lib/portal-render-harness.js');
 const F = require('./static/js/portal-folds.js');
 const src = h.read();
 function fn(n){const a=src.indexOf('\nfunction '+n+'(');return src.slice(a, src.indexOf('\n}', a)+2);}
 const D = __D__;
-let html;
-if (__LAYOUT__ === 'panel') {
+let html = __HTML__;
+if (html === null && __LAYOUT__ === 'panel') {
   (0, eval)(src.match(/^const esc = .*$/m)[0].replace('const esc', 'globalThis.esc'));
   (0, eval)(fn('foldSlug') + fn('invoiceTrackingHtml') + fn('pastInvoiceItemsHtml') + fn('buildOrdersHtml'));
   html = buildOrdersHtml(D);
-} else {
+} else if (html === null) {
   html = h.render(src, {d: D});
 }
-// Every card in the order group, in page order, as the fold glue sees them.
+// Every card, in page order, as the fold glue sees them. A card's body runs to the
+// next card, which is how these flat card lists are laid out.
 const cards = [];
 const re = /<div class="card[^"]*"([^>]*)>/g; let m;
 while ((m = re.exec(html))) {
   const a = m[1], id = /\sid="([^"]+)"/.exec(a), fid = /data-fold-id="([^"]+)"/.exec(a);
   cards.push({at: m.index, id: id ? id[1] : '', dataset: {foldId: fid ? fid[1] : undefined,
-              foldOpen: /data-fold-open/.test(a) ? '1' : undefined}, isCard: true});
+              foldOpen: /data-fold-open/.test(a) ? '1' : undefined}});
 }
+cards.forEach((c, i) => {
+  const body = html.slice(c.at, i + 1 < cards.length ? cards[i + 1].at : html.length);
+  c.querySelector = sel => (sel === '.invoice-tracking' && body.indexOf('invoice-tracking') !== -1) ? {} : null;
+});
 function El(id, at){
   const card = cards.find(c => c.at === at);
+  const inside = cards.filter(c => c.at > at && c.dataset.foldId);
   return {id: id, dataset: card ? card.dataset : {},
     matches(){ return !!card; },
-    querySelector(){ return cards.find(c => c.at > at && c.dataset.foldId) || null; },
+    querySelector(){ return inside[0] || null; },
+    querySelectorAll(sel){ return sel.indexOf(':not([data-fold-open])') !== -1
+                                 ? inside.filter(c => !c.dataset.foldOpen) : inside; },
     closest(){ return card || null; }};
 }
 globalThis.document = {getElementById(id){
@@ -246,13 +256,14 @@ globalThis.document = {getElementById(id){
 (0, eval)(fn('_foldIdOf') + fn('portalRouteFoldId'));
 const ROUTES = (0, eval)('(' + src.slice(src.indexOf('{', src.indexOf('const PORTAL_HASH_ROUTES = {')),
                                        src.indexOf('\n};', src.indexOf('const PORTAL_HASH_ROUTES = {')) + 2) + ')');
-const foldId = portalRouteFoldId(ROUTES.orders);
+const foldId = portalRouteFoldId(ROUTES[__ROUTE__]);
 const ids = cards.map(c => c.dataset.foldId || c.id);
 const openIds = cards.filter(c => c.dataset.foldOpen).map(c => c.dataset.foldId || c.id);
 const before = F.resolveDoor(F.emptyState(), ids, 'billing', openIds);
 const after = F.resolveDoor(F.setCard(F.emptyState(), foldId, false), ids, 'billing', openIds);
 process.stdout.write(JSON.stringify({foldId, ids, before, after}));
-""".replace("__D__", json.dumps(d)).replace("__LAYOUT__", json.dumps(layout))
+""".replace("__D__", json.dumps(d)).replace("__LAYOUT__", json.dumps(layout)) \
+       .replace("__ROUTE__", json.dumps(route)).replace("__HTML__", json.dumps(html))
     return json.loads(_node(js))
 
 
@@ -316,3 +327,79 @@ def test_markup_in_a_tracking_number_is_escaped_and_unlinked():
     html = _render_orders({"past_invoices": [dict(PAST, tracking_number=bad, tracking_url="")]})
     assert "Tracking: &lt;img src=x onerror=alert(1)&gt;</p>" in html
     assert "<img" not in html
+
+
+# ── Round 3 ──────────────────────────────────────────────────────────────────
+
+PAST_NO_TRACK = dict(PAST, tracking_number="", tracking_url="")
+
+
+def test_orders_link_opens_the_paid_card_over_an_open_invoice_card():
+    # An unpaid invoice comes first and is open anyway; the paid order with tracking
+    # sits in the Past invoices card, which would fold. That card is the one opened.
+    r = _route_open_state({"invoices": [OPEN], "past_invoices": [PAST]}, "panel")
+    assert r["foldId"] == "billing-past-invoices"
+    assert r["before"]["billing-past-invoices"] is True
+    assert r["after"]["billing-past-invoices"] is False
+
+
+def test_orders_link_falls_back_to_the_invoice_card_without_paid_tracking():
+    r = _route_open_state({"invoices": [OPEN], "past_invoices": [PAST_NO_TRACK]}, "panel")
+    assert r["foldId"] == "billing-invoice-x"
+
+
+def test_legacy_orders_link_opens_the_history_card_when_a_paid_order_is_tracked():
+    d = {"scan_history_enabled": False, "invoices": [OPEN], "past_invoices": [PAST]}
+    r = _route_open_state(d, "legacy")
+    assert r["foldId"] == "scans-history-receipts"
+    assert r["after"]["scans-history-receipts"] is False
+    html = _render_legacy(d)
+    assert html.count('id="orders-legacy"') == 1
+    assert html.index('id="orders-legacy"') > html.index("Your invoice")
+
+
+def test_legacy_orders_link_falls_back_to_the_invoice_card():
+    d = {"scan_history_enabled": False, "invoices": [OPEN], "past_invoices": [PAST_NO_TRACK]}
+    assert _route_open_state(d, "legacy")["foldId"] == "scans-invoice-x"
+
+
+def test_calendar_under_the_hub_still_opens_the_full_calendar():
+    # The hub renders both the summary (alt) and the full card (target). The target wins.
+    html = ('<div class="card calendar-summary" data-fold-skip="1" id="calendar-summary">'
+            '<h2>Upcoming Live Events</h2></div>'
+            '<div class="card" id="calendar-card"><h2>Live Calendar</h2></div>')
+    assert _route_open_state({}, "panel", route="calendar", html=html)["foldId"] == "calendar-card"
+
+
+def test_a_fedex_96_number_gets_no_usps_link():
+    import app as appmod
+    f = appmod._order_tracking_fields
+    assert f("9612019123456789012345")["tracking_url"] == ""
+    assert f("9205590164917312751089")["tracking_url"].endswith("9205590164917312751089")
+    assert f("9361289698090314734271")["tracking_url"].endswith("9361289698090314734271")
+    assert f("9500110000000000000000")["tracking_url"].endswith("9500110000000000000000")
+
+
+def test_markup_around_a_linked_number_is_escaped():
+    bad = "<b>" + USPS + "</b>"
+    html = _render_orders({"past_invoices": [dict(PAST, tracking_number=bad)]})
+    assert "<b>" not in html
+    assert f"&lt;b&gt;{USPS}&lt;/b&gt; ↗</a>" in html
+
+
+def test_another_clients_tracking_never_reaches_this_portal(client):
+    c, appmod = client
+    tok = _seed(appmod, "mine@example.com")
+    other = "9405500000000000000077"
+    cx = sqlite3.connect(appmod.LOG_DB)
+    for ref, pay, status, pub, itok in (("THEIRS", "paid", "done", 0, ""),
+                                        ("THEIRS-OPEN", "unpaid", "shipped", 1, "tok-theirs")):
+        cx.execute("INSERT INTO orders (source,external_ref,name,email,status,pay_status,"
+                   "total_cents,items_json,address_json,created_at,portal_published,"
+                   "invoice_token,paid_at,tracking_number) "
+                   "VALUES ('t',?,'O','other@example.com',?,?,7700,'[]','{}','2026-10-11',?,?,"
+                   "'2026-10-11',?)", (ref, status, pay, pub, itok, other))
+    cx.commit(); cx.close()
+    body = c.get(f"/api/portal/{tok}").get_data(as_text=True)
+    assert USPS in body                      # this client's own tracking is there
+    assert other not in body and "77.00" not in body

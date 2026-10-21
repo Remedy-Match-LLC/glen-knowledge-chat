@@ -1660,19 +1660,24 @@ const PORTAL_HASH_ROUTES = {
   // #orders is for an email about an order (tracking, a receipt). It lands on the
   // client's own orders, below the product picker, and opens the first of those cards
   // (portalRouteFoldId). alt: without the tabs or the hub there is no orders panel;
-  // the first order card that layout renders carries id="orders-legacy".
+  // id="orders-legacy" sits on the History & receipts card when a paid order has
+  // tracking, otherwise on the first order card that layout renders.
   orders:   {panel:"orders", target:"orders-invoices", alt:"orders-legacy", openCard:true},
 };
 
 // The fold a route opens: the fold id of the card that holds its target. For a card
 // with no fold name (#calendar, #chat) that is the target's own id, as before. #orders
-// targets a group of cards, so the first card with a fold name inside it is opened.
+// targets a group of cards. It opens the card holding a tracking line that would
+// otherwise fold (the paid orders card), else the first card with a fold name.
 function portalRouteFoldId(route){
   const el = document.getElementById(route.target) ||
              (route.alt ? document.getElementById(route.alt) : null);
   if(!el || typeof el.closest !== "function" || typeof _foldIdOf !== "function") return route.target;
+  const tracked = el.matches("[data-fold-id], .card") ? null
+    : Array.from(el.querySelectorAll("[data-fold-id]:not([data-fold-open])"))
+        .find(c => c.querySelector(".invoice-tracking"));
   const card = el.matches("[data-fold-id], .card") ? el
-             : (el.querySelector("[data-fold-id]") || el.closest("[data-fold-id], .card"));
+             : (tracked || el.querySelector("[data-fold-id]") || el.closest("[data-fold-id], .card"));
   return (card && _foldIdOf(card)) || route.target;
 }
 
@@ -4982,11 +4987,15 @@ function render(d, v){
   }
   // Task 7: when scan_history_enabled, unpaid invoices move to the Orders &
   // Invoices tab (buildOrdersHtml) instead of rendering here.
-  // #orders (PORTAL_HASH_ROUTES alt) lands on the first order card this layout renders.
+  // #orders (PORTAL_HASH_ROUTES alt) lands on the paid orders (History & receipts)
+  // card when one of them has tracking, otherwise on the first order card rendered.
+  const _pastTracked = (Array.isArray(d.past_invoices) ? d.past_invoices : [])
+    .some(inv => String(inv.tracking_number || "").trim());
   let _ordersLegacyId = ' id="orders-legacy"';
+  let _ordersLegacyInv = _pastTracked ? "" : _ordersLegacyId;
   if(!d.scan_history_enabled && Array.isArray(d.invoices) && d.invoices.length){
     d.invoices.forEach(function(inv){
-      const anchor = _ordersLegacyId; _ordersLegacyId = "";
+      const anchor = _ordersLegacyInv; _ordersLegacyInv = ""; if(anchor) _ordersLegacyId = "";
       part("billing", `
         <div class="card invoice-card"${anchor} data-fold-id="scans-invoice-${foldSlug(inv.url || "")}" data-fold-open="1">
           <h2>Your invoice</h2>
