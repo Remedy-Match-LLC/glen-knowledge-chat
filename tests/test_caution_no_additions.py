@@ -29,6 +29,13 @@ MONITORING = ("Individuals who take more than 2,000 IU per day of vitamin D shou
 RULE = app._CAUTION_NO_ADDITIONS
 
 
+def _opt_out(monkeypatch, *slugs):
+    # Every pinned product with a caution opts in since 2026-10-21 (Glen's yes to all
+    # seven), so the "never opted in" path is exercised by switching real ones off here.
+    for slug in slugs:
+        monkeypatch.setitem(app._PRODUCTS["products"][slug], "chat_caution", False)
+
+
 def _header(b):
     return b[:b.index("\n### ")]
 
@@ -93,8 +100,9 @@ def test_two_opted_in_cautions_still_carry_the_rule_once():
     assert RULE not in app._CAUTION_COPY_REMINDER
 
 
-def test_a_product_without_the_opt_in_keeps_its_header():
-    # Estro-Clear is pinned with a warning but never opted in: no copy rule, no new rule.
+def test_a_product_without_the_opt_in_keeps_its_header(monkeypatch):
+    # Estro-Clear switched off: pinned with a warning, no copy rule, no new rule.
+    _opt_out(monkeypatch, "estro-clear")
     b = app.named_product_facts_block("Is Estro-Clear safe?")
     assert "### Estro-Clear" in b and RULE not in b
 
@@ -128,7 +136,8 @@ def test_each_opted_in_caution_gets_one_stay_line_and_the_answer_one_reminder():
     assert b.count(STAY) == 2 and b.count(CLOSING) == 1
 
 
-def test_a_caution_without_the_opt_in_gets_neither():
+def test_a_caution_without_the_opt_in_gets_neither(monkeypatch):
+    _opt_out(monkeypatch, "estro-clear")
     b = app.named_product_facts_block("Is Estro-Clear safe?")
     assert "### Estro-Clear" in b and STAY not in b and CLOSING not in b
 
@@ -175,11 +184,12 @@ def test_a_caution_subject_question_drops_only_the_drug_interaction_snippets(q):
 @pytest.mark.parametrize("q", [
     "How much Vitamin D Syntropy should I take?",   # no caution subject named
     "Can I take warfarin with vitamin K?",          # control: no product named
-    "Is Estro-Clear safe with warfarin?",           # pinned caution, never opted in
-    "Is Clear the Way safe with my blood thinner?", # names the subject, never opted in
+    "Is Estro-Clear safe with warfarin?",           # pinned caution, switched off here
+    "Is Clear the Way safe with my blood thinner?", # names the subject, switched off here
     "Can I take Scar Silk while pregnant?",         # opted in, but its caution has no pregnancy
 ])
-def test_every_other_question_keeps_its_snippets(q):
+def test_every_other_question_keeps_its_snippets(q, monkeypatch):
+    _opt_out(monkeypatch, "estro-clear", "clear-the-way")
     ms = _matches()
     assert app._drop_caution_subject_snippets(ms, q) is ms
 
@@ -281,9 +291,11 @@ def test_other_names_for_a_subject_match(q, subject):
     assert subject in app._caution_subjects_asked(q)
 
 
-def test_a_product_cut_by_the_cap_brings_no_caution():
+def test_a_product_cut_by_the_cap_brings_no_caution(monkeypatch):
     # Three earlier blocks fill the cap, so Vitamin D Syntropy's caution never reaches
     # the answer and its warfarin subject must not remove the interaction snippets.
+    # Estro-Clear and Angiostasis are switched off, so only the cut product names it.
+    _opt_out(monkeypatch, "estro-clear", "angiostasis")
     q = "Can I take Iron Out, Estro-Clear, Angiostasis and Vitamin D Syntropy with warfarin?"
     assert "### Vitamin D Syntropy" not in app.named_product_facts_block(q)
     assert app._caution_subjects_asked(q) == []
@@ -389,3 +401,26 @@ def test_subject_words_come_from_this_message_only():
     assert app._caution_subjects_asked(q, prior) == []
     ms = _matches()
     assert app._drop_caution_subject_snippets(ms, q, prior) is ms
+
+
+SEVEN = ["vitamin-a-syntropy", "clear-the-way", "angiogenx", "angiostasis", "estro-clear",
+         "fibrosolve", "phytolacca-americana-oil-roll-on"]
+
+
+def test_the_seven_cautions_opt_in_where_each_is_recorded():
+    # Glen, 2026-10-21: the chat copies these cautions word for word too. Angiostasis
+    # read back without the switch quoted one sentence and invented a reason.
+    for slug in SEVEN:
+        assert PRODUCTS[slug]["chat_caution"] is True, slug
+        if slug in CORRECTIONS:
+            assert CORRECTIONS[slug]["chat_caution"] is True, slug
+
+
+def test_the_angiostasis_blood_thinner_answer_carries_the_whole_caution_and_its_rules():
+    q = "I'm on a blood thinner. Can I take Angiostasis?"
+    b = app.named_product_facts_block(q)
+    warning = PRODUCTS["angiostasis"]["warning"]
+    assert b.count(warning) == 1
+    assert b.count(STAY) == 1 and b.index(STAY) > b.index(warning)
+    assert b.count(RULE) == 1 and b.endswith("\n\n" + CLOSING)
+    assert "blood thinner" in app._caution_subjects_asked(q)

@@ -336,6 +336,8 @@ def test_one_opted_in_caution_gets_the_word_for_word_rule(q):
 @pytest.mark.parametrize("gated", [False, True])
 def test_a_pinned_product_alone_keeps_its_header_unchanged(q, gated, monkeypatch):
     # Byte for byte: with both rules switched off entirely, the block is the same.
+    # Estro-Clear opts in since 2026-10-21, so it is switched off for this path.
+    monkeypatch.setitem(app._PRODUCTS["products"]["estro-clear"], "chat_caution", False)
     _block = lambda q: app.named_product_facts_block(q, gated=gated)  # noqa: E731
     b = _block(q)
     assert "### " in b and "Caution: " in b, q
@@ -357,8 +359,11 @@ def test_a_gated_answer_asks_for_the_label_caution_wording(q):
     assert '"Caution for <product name>:"' not in b
 
 
-def test_a_gated_pinned_only_answer_with_several_cautions_is_unchanged():
+def test_a_gated_pinned_only_answer_with_several_cautions_is_unchanged(monkeypatch):
     # Review round 3: the gated rewording belongs to answers with an opted-in caution.
+    # All three opt in since 2026-10-21, so they are switched off for this path.
+    for slug in ("vitamin-a-syntropy", "estro-clear", "phytolacca-americana-oil-roll-on"):
+        monkeypatch.setitem(app._PRODUCTS["products"][slug], "chat_caution", False)
     q = "Vitamin A Syntropy, Estro-Clear and Phytolacca americana Oil Roll-On?"
     b = app.named_product_facts_block(q, gated=True)
     assert app._SEVERAL_CAUTIONS_RULE in b
