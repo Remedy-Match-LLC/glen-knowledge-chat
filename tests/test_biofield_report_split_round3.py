@@ -430,3 +430,26 @@ def test_portal_chat_in_each_lead_links_to_the_chat():
     for report in ("biofield", "diet", "healing_tools", "ingredients"):
         assert any("portal chat" in line for line in leads[report]), report
         assert links[report]["portal chat"] == "https://myhealingoasis.com/portal/me#chat", report
+
+
+def test_each_new_lead_renders_one_portal_chat_link(cx):
+    """Round 2 (2026-10-20): render the real file, not just its config. "portal chat"
+    is the only linked phrase, once per report, and the Ingredients lines stay three
+    paragraphs."""
+    import re
+    _seed(cx)
+    ctx = _ctx(cx)
+    want = '<a href="https://myhealingoasis.com/portal/me#chat">portal chat</a>'
+    for r in ("biofield", "diet", "healing_tools", "ingredients"):
+        if r == rs.PRIMARY:
+            from dashboard.biofield_report_present import _intro
+            page = _intro(rs.primary_intro(cx))
+        else:
+            page = rs.render_report(ctx, r, rs.DEFAULTS[r])
+        anchors = re.findall(r"<a [^>]*>.*?</a>", page)
+        chat = [a for a in anchors if "portal/me#chat" in a]
+        assert chat.count(want) >= 1 and set(chat) == {want}, (r, chat)
+    page = rs.render_report(ctx, "ingredients", rs.DEFAULTS["ingredients"])
+    for line in ("Read the caution listed with each ingredient in this report.",
+                 "Tell Dr. Glen too if a caution applies to you."):
+        assert re.search(r"<p[^>]*>" + re.escape(line) + r"</p>", page), line
