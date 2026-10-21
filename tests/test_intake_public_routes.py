@@ -252,3 +252,12 @@ def test_a_draft_left_by_start_itself_makes_the_next_start_a_return(client):
     second = _start(client, email="stub@x.com")
     b = second.get_json()
     assert not b.get("token") and b.get("existing") is True
+
+
+def test_the_public_intake_form_still_carries_the_diet_guidance(client):
+    """Glen, 2026-10-21: the diet guidance left the reports but stays on the intake form."""
+    tok = _start(client).get_json()["token"]
+    form = client.get(f"/api/intake/public/form?token={tok}").get_json()["form"]
+    terrain = [f for s in form["sections"] for f in s["fields"] if f["id"] == "terrain"][0]
+    assert sorted(terrain["diet_guidance"]) == ["1", "2", "3", "4", "5"]
+    assert terrain["diet_guidance"]["4"]["heading"] == "Terrain Refresh (Phase 4)"

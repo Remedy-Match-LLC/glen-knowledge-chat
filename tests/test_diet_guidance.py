@@ -1,8 +1,8 @@
 """Diet guidance by terrain phase (Glen approved the text 2026-10-16; rnd-1b build request).
 
-Each client sees the intro (every caution line) and only their own phase's section, in the
-Biofield report (tested phase first, the intake answer as fallback: Glen, 2026-10-16) and on
-the intake form once the terrain question is answered.
+Each client sees the intro (every caution line) and only their own phase's section, on the
+intake form once the terrain question is answered. Glen took it out of the Biofield report
+and the portal report on 2026-10-21, on screen and in print; the intake forms keep it.
 """
 import hashlib
 import json
@@ -46,24 +46,24 @@ def test_each_phase_has_its_section_and_the_intro_cautions():
 
 def test_one_phase_never_carries_another_phase_s_text():
     for n in range(1, 6):
-        html = dg.guidance_html(n)
+        mine = "\n".join(dg.guidance(n)["paragraphs"])
         for m in range(1, 6):
             if m == n:
                 continue
-            assert dg.guidance(m)["heading"] not in html
-            assert dg.guidance(m)["paragraphs"][0] not in html
+            assert dg.guidance(m)["paragraphs"][0] not in mine
 
 
 def test_every_source_line_is_its_own_paragraph():
-    html = dg.guidance_html(4)
-    assert "<p>An overnight fast of 12 to 14 hours suits those with strength to spare.</p>" in html
-    assert html.count("<p>") == 5 + 6
-    assert "Better out than in: help your body&#x27;s own elimination" in html
+    g = dg.guidance(4)
+    assert "An overnight fast of 12 to 14 hours suits those with strength to spare." in g["paragraphs"]
+    assert len(g["intro"]) == 5 and len(g["paragraphs"]) == 6
+    assert any(p.startswith("Better out than in: help your body's own elimination")
+               for p in g["paragraphs"])
 
 
 @pytest.mark.parametrize("bad", [None, "", 0, 6, "phase 3", "x"])
 def test_no_valid_phase_shows_nothing(bad):
-    assert dg.guidance(bad) is None and dg.guidance_html(bad) == ""
+    assert dg.guidance(bad) is None
 
 
 def test_the_intake_phase_is_the_lowest_ticked():
@@ -94,11 +94,10 @@ def test_only_a_submitted_intake_can_be_the_report_fallback(row, want):
     assert dg.report_fallback_answers(row) == want
 
 
-def test_the_report_uses_the_tested_phase_and_falls_back_to_the_intake():
-    assert dg.report_phase(5, {"terrain": 1}) == 5
-    assert dg.report_phase("3", None) == 3
-    assert dg.report_phase(None, {"terrain_selections": [4, 2]}) == 2
-    assert dg.report_phase("", {}) is None
+def test_the_report_only_helpers_are_gone():
+    """Nothing renders the guidance as report HTML any more (Glen, 2026-10-21)."""
+    for name in ("guidance_html", "report_phase", "_linked"):
+        assert not hasattr(dg, name), name
 
 
 def test_the_parser_refuses_a_broken_copy():
@@ -120,42 +119,41 @@ def test_the_form_copy_carries_all_five_and_the_form_is_untouched():
     assert all("diet_guidance" not in f for f in others)
 
 
-# --- the PDF report (biofield_report_present, made on Glen's Mac) ---
+# --- the PDF report (biofield_report_present, made on Glen's Mac): no longer shown ---
 
 def _report(**kw):
     return {"client": {"name": "Test", "email": "t@example.com"}, "date": "2026-10-16",
             "layers": [], "schedule": {}, **kw}
 
 
-def test_the_pdf_shows_the_tested_phase_after_the_remedy_content():
+def _absent(html):
+    assert "Eating for your terrain" not in html
+    assert "diet-guidance" not in html
+    assert CAUTION not in html
+    for n in range(1, 6):
+        assert dg.guidance(n)["paragraphs"][0] not in html, n
+
+
+def test_the_pdf_no_longer_shows_the_tested_phase_guidance():
     from dashboard.biofield_report_present import render_present
     html = render_present(_report(phase=4, intake_answers={"terrain": 1}))
-    assert "Terrain Refresh (Phase 4)" in html and "Terrain Revive (Phase 1)" not in html
-    assert html.index("Remedy Schedule") < html.index("Eating for your terrain") \
-        < html.index('class="footer"')
+    assert "Remedy Schedule" in html
+    _absent(html)
 
 
-def test_the_pdf_falls_back_to_the_intake_and_shows_nothing_without_either():
+def test_the_pdf_no_longer_falls_back_to_the_intake():
     from dashboard.biofield_report_present import render_present
-    assert "Terrain Repair (Phase 2)" in render_present(
-        _report(intake_answers={"terrain_selections": [3, 2]}))
-    assert "Eating for your terrain" not in render_present(_report())
+    _absent(render_present(_report(intake_answers={"terrain_selections": [3, 2]})))
+    _absent(render_present(_report()))
 
 
-def test_the_local_app_fetches_the_intake_only_when_there_is_no_tested_phase(monkeypatch):
+def test_the_local_app_no_longer_adds_an_intake_fallback():
+    """The fallback fed only the diet section. The Kloud program fetches the intake itself
+    when it needs it (biofield_local_app._kloud_program)."""
     import biofield_local_app as bla
-    calls = []
-    monkeypatch.setattr(bla, "_fetch_intake_answers",
-                        lambda email: calls.append(email) or {"terrain": 3})
-    rep = bla._add_intake_fallback(_report(phase=5))
-    assert calls == [] and "intake_answers" not in rep
-    rep = bla._add_intake_fallback(_report())
-    assert calls == ["t@example.com"] and rep["intake_answers"] == {"terrain": 3}
-
-
-def test_every_local_render_adds_the_fallback():
+    assert not hasattr(bla, "_add_intake_fallback")
     src = (ROOT / "biofield_local_app.py").read_text()
-    assert src.count("        _add_intake_fallback(rep)\n") == 3
+    assert "_add_intake_fallback" not in src
 
 
 def test_the_local_fetch_sends_the_key_in_a_header_only(monkeypatch):
@@ -220,7 +218,7 @@ def test_a_missing_file_shows_nothing_and_breaks_nothing(monkeypatch, tmp_path):
     from dashboard.biofield_report_present import render_present
     monkeypatch.setattr(dg, "_PATH", str(tmp_path / "nope.md"))
     monkeypatch.setattr(dg, "_LOADED", None)
-    assert dg.guidance(3) is None and dg.guidance_html(3) == ""
+    assert dg.guidance(3) is None
     out = dg.form_with_guidance(intake.INTAKE_FORM)
     assert all("diet_guidance" not in f for s in out["sections"] for f in s["fields"])
     assert "Remedy Schedule" in render_present(_report(phase=3))
@@ -254,29 +252,21 @@ def portal(tmp_db, monkeypatch):
     return make
 
 
-def test_the_portal_payload_carries_the_tested_phase(portal):
+def test_the_portal_payload_has_no_diet_guidance_with_a_tested_phase(portal):
     j = portal("p1@example.com", {"phase": 4}, {"terrain": 1})
-    assert j["diet_guidance"]["heading"] == "Terrain Refresh (Phase 4)"
+    assert "diet_guidance" not in j and j["phase"] == 4
 
 
-def test_the_portal_payload_falls_back_to_the_intake(portal):
+def test_the_portal_payload_has_no_diet_guidance_from_the_intake(portal):
     j = portal("p2@example.com", {}, {"terrain": 2, "terrain_selections": [2, 5]})
-    assert j["diet_guidance"]["heading"] == "Terrain Repair (Phase 2)"
+    assert "diet_guidance" not in j
 
 
-def test_a_draft_intake_is_not_a_report_fallback(portal):
-    j = portal("p5@example.com", {}, {"terrain": 2}, status="draft")
-    assert j["diet_guidance"] is None
-
-
-def test_the_portal_payload_has_none_without_either(portal):
-    assert portal("p3@example.com", {})["diet_guidance"] is None
-
-
-def test_a_guidance_error_does_not_break_the_payload(portal, monkeypatch):
-    monkeypatch.setattr(dg, "guidance", lambda n: 1 / 0)
-    j = portal("p4@example.com", {"phase": 3})
-    assert j["diet_guidance"] is None and "phase" in j
+def test_the_portal_payload_never_looks_the_guidance_up(portal, monkeypatch):
+    calls = []
+    monkeypatch.setattr(dg, "guidance", lambda n: calls.append(n))
+    j = portal("p4@example.com", {"phase": 3}, {"terrain": 3})
+    assert calls == [] and "diet_guidance" not in j and "phase" in j
 
 
 # --- the intake form routes ---
@@ -294,9 +284,13 @@ PORTAL = (ROOT / "static" / "client-portal.html").read_text()
 PUBLIC = (ROOT / "static" / "begin-intake.html").read_text()
 
 
-def test_the_portal_report_and_its_print_view_render_it():
-    assert '${dietGuidanceHtml(d.diet_guidance, "screen")}' in PORTAL
-    assert '${dietGuidanceHtml(d.diet_guidance, "print")}' in PORTAL
+def test_the_portal_report_and_its_print_view_no_longer_render_it():
+    assert "dietGuidanceHtml" not in PORTAL
+    assert "d.diet_guidance" not in PORTAL
+    css = PORTAL[:PORTAL.index("</style>")]
+    assert ".diet-guidance" not in css.replace(".intake-diet-guidance", "")
+    # The intake form's own box stays.
+    assert ".intake-diet-guidance{" in css and "f.diet_guidance" in PORTAL
 
 
 def _fn(page, name):
@@ -329,7 +323,6 @@ function all(n){ const out = []; (function walk(x){ x.children.forEach(c => { ou
 function text(n){ return all(n).map(c => c.textContent).join('\n'); }
 
 RENDERER
-DIETHTML
 
 const field = FIELD;
 const getters = {}, els = {};
@@ -352,16 +345,6 @@ assert.strictEqual(dgBox.hidden, true);
 // a saved answer shows its guidance on load
 const w2 = renderIntakeField(field, 3, {}, {}, () => {}, {}, [3, 5]);
 assert.ok(text(all(w2).find(c => c.className === 'intake-diet-guidance')).includes('Terrain Renew (Phase 3)'));
-// the report block: one phase, escaped, nothing for null
-const h = dietGuidanceHtml(field.diet_guidance["5"], "screen");
-assert.ok(h.includes('Terrain Relief (Phase 5)') && !h.includes('Terrain Revive'));
-assert.strictEqual(dietGuidanceHtml(null, "screen"), "");
-assert.ok(dietGuidanceHtml({title: "t", heading: "<b>", intro: [], paragraphs: ["a&b"]}, "print").includes("&lt;b&gt;"));
-// "portal chat" links to the chat: in-page on screen, the full address in print (Glen, "link", 2026-10-20)
-const linkLine = {title: "t", heading: "h", intro: ["Ask in your portal chat <now>."], paragraphs: []};
-assert.ok(dietGuidanceHtml(linkLine, "screen").includes('<a href="#chat">portal chat</a> &lt;now&gt;'));
-assert.ok(dietGuidanceHtml(linkLine, "print").includes('<a href="https://myhealingoasis.com/portal/me#chat">portal chat</a>'));
-assert.ok(!dietGuidanceHtml({title: "t", heading: "h", intro: ["No chat here."], paragraphs: []}, "print").includes("<a "));
 console.log('OK');
 """
 
@@ -372,7 +355,6 @@ def test_the_portal_intake_shows_only_the_scored_phase(tmp_path):
     field = [f for s in form["sections"] for f in s["fields"] if f["id"] == "terrain"][0]
     js = tmp_path / "h.js"
     js.write_text(HARNESS.replace("RENDERER", _fn(PORTAL, "renderIntakeField"))
-                  .replace("DIETHTML", _fn(PORTAL, "dietGuidanceHtml"))
                   .replace("FIELD", json.dumps(field)).replace("CAUTION", json.dumps(CAUTION)))
     out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
@@ -401,18 +383,3 @@ def test_the_local_fetch_ignores_a_draft_intake(monkeypatch):
     monkeypatch.setenv("CONSOLE_SECRET", "ci-secret")
     monkeypatch.setattr(urllib.request, "build_opener", lambda *h: _Opener())
     assert bla._fetch_intake_answers("a@example.com") is None
-
-
-def test_portal_chat_links_to_the_chat_in_every_phase():
-    """Glen, "link", 2026-10-20: the fasting line's "portal chat" links to the chat."""
-    want = '<a href="https://myhealingoasis.com/portal/me#chat">portal chat</a>'
-    for n in range(1, 6):
-        page = dg.guidance_html(n)
-        assert page.count(want) == 1, n
-        assert page.count("<a ") == 1, n
-
-
-def test_the_link_wraps_escaped_text():
-    out = dg._linked('Use your portal chat <b>now</b>.')
-    assert out == ('Use your <a href="https://myhealingoasis.com/portal/me#chat">portal chat</a>'
-                   ' &lt;b&gt;now&lt;/b&gt;.')

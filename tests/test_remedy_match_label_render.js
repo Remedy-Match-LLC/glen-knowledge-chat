@@ -30,8 +30,9 @@ function line(marker) {
 }
 
 // Builders outside the slice that the report card calls. Each has its own test.
-const STUBS = harness.STUBS.concat(['foldSlug', 'terrainBanner', 'scheduleHtml',
-                                    'dietGuidanceHtml']);
+// dietGuidanceHtml is gone (Glen, 2026-10-21), so it is not stubbed: a call left behind
+// throws here.
+const STUBS = harness.STUBS.concat(['foldSlug', 'terrainBanner', 'scheduleHtml']);
 const code = [
   line('const esc = '), line('const money = '), line('const ICON_LOCK = '),
   line('const ICON_INFO = '),
@@ -175,7 +176,7 @@ function hasNotice(html) {
   const header = src.slice(at, src.indexOf('</div>`;', at) + 8);
   const build = (0, eval)([
     line('const esc = '), constBlock('const fmtDate = '),
-    'var terrainBanner = function(){ return ""; }, dietGuidanceHtml = function(){ return ""; };',
+    'var terrainBanner = function(){ return ""; };',
     'var escGreeting = function(x){ return String(x); };',
     header, fnSource('reportWords'), fnSource('buildReportPrintHtml'),
     '(buildReportPrintHtml)'].join('\n'));
@@ -209,7 +210,7 @@ function hasNotice(html) {
   const header = src.slice(at, src.indexOf('</div>`;', at) + 8);
   const build = (0, eval)([
     line('const esc = '), constBlock('const fmtDate = '),
-    'var terrainBanner = function(){ return ""; }, dietGuidanceHtml = function(){ return ""; };',
+    'var terrainBanner = function(){ return ""; };',
     'var escGreeting = function(x){ return String(x); };',
     header, fnSource('reportWords'), fnSource('buildReportPrintHtml'),
     '(buildReportPrintHtml)'].join('\n'));
