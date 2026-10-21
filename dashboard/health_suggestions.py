@@ -652,9 +652,27 @@ def _reported(quote, client_msg, sentence, family):
 _JOINED_END = re.compile(r"(?:,|\band|\bplus|\bas well as|&)\s*(?:also\s+)?$|\balso\s*$", re.I)
 
 
-# The subject and verb a model may put in front of a joined fact.
-_REBUILT_SUBJECT = re.compile(r"\s*(?:i have|i've had|i've|ive had|i had|i'm|im|i am|"
-                              r"i take|my)\s+", re.I)
+def _term_said(term, clause):
+    """The key term is in the clause as whole words, generic surgery words aside, or
+    as one of its synonyms. Stricter than _term_in_quote: no near-spelling."""
+    for alt in _TERM_SYNONYMS.get(" ".join(_tokens(term)), ()):
+        if re.search(r"\b" + alt + r"\b", clause, re.I):
+            return True
+    toks = _tokens(clause)
+    removed = bool(_SAYS_REMOVED.search(clause))
+    need = [w for w in _significant(term)
+            if w not in _ALWAYS_GENERIC and not (removed and w in _REMOVAL_WORDS)]
+    # A term of generic words only is refused later by _term_in_quote.
+    return all(w in toks for w in need)
+
+
+def _clause_with_term(term, client_msg):
+    """The one clause of the client's message that says the key term, or None when
+    no clause or more than one does. Clauses are the sentences split as _clauses
+    splits them."""
+    hits = [c.strip(" .!?") for sent in re.split(r"(?<=[.!?])\s+|\n+", client_msg or "")
+            for c in _clauses(sent) if _term_said(term, c)]
+    return hits[0] if len(hits) == 1 else None
 
 
 def _conjoined_lead(quote, sentence):
@@ -698,6 +716,10 @@ _TEXT_NEGATION_DROPS = ("physical_trauma", "toxins")
 _TEXT_DOUBT_ONLY = ("other_symptoms", "sleep")
 
 
+# "It runs in my family" is family history, never the client's own fact.
+_FAMILY_TRAIT = re.compile(r"\bruns? in (?:my|our|the) family\b|\bfamily history\b", re.I)
+
+
 def _normalize_item(item, client_msg):
     if not isinstance(item, dict):
         return None
@@ -713,24 +735,21 @@ def _normalize_item(item, client_msg):
     # answer, and nothing the model made up, can become a suggestion.
     if not quote:
         return None
-    rebuilt = False
     if _squash(quote) not in _squash(client_msg):
-        # The model rebuilt a joined fact with the client's subject ("I have high blood
-        # pressure" from "...diabetes and high blood pressure"), live run 20 Oct. The
-        # words it added go, and what is left must be the client's own, joined fact.
-        # _conjoined_lead below finds the remainder in the sentence or refuses it, and
-        # a family quote without its "my" fails the family check.
-        m = _REBUILT_SUBJECT.match(quote)
-        if not m or not table:
+        # The model rewrote the quote ("I have high blood pressure" from "...diabetes
+        # and high blood pressure", "I have me on levothyroxine"), live runs 20 Oct.
+        # For a table field the client's own clause that says the key term becomes
+        # the quote, and every check below runs on it. Free text has no key term.
+        # A rewrite that names someone else is the model reading it as theirs.
+        row = normalize_row(fid, item.get("value")) if table else None
+        if not row or (not family and _OTHER_PERSON.search(quote)):
             return None
-        quote, rebuilt = quote[m.end():].strip(), True
+        quote = _clause_with_term(row[TABLE_COLUMNS[fid][0]], client_msg)
+        if not quote:
+            return None                  # no clause, or more than one, says it
     sentence = _source_sentence(quote, client_msg)
     joined = None
-    if rebuilt:
-        joined = _conjoined_lead(quote, sentence)
-        if joined is None:
-            return None                  # not joined to the client's own clause
-    elif not (_FIRST_PERSON.search(quote) or (family and _REL_CHAIN.search(quote))):
+    if not (_FIRST_PERSON.search(quote) or (family and _REL_CHAIN.search(quote))):
         joined = _conjoined_lead(quote, sentence) if table and not family else None
         if joined is None:
             return None                  # "our mother" is the client's own family too
@@ -744,12 +763,12 @@ def _normalize_item(item, client_msg):
     # A quote naming another person is not the client's fact. A relative elsewhere in
     # the sentence does not matter ("I have high blood pressure like my dad", round 1
     # M2). Family history has its own check below.
-    if not family and _OTHER_PERSON.search(_OWN.sub(" ", quote)):
+    if not family and (_OTHER_PERSON.search(_OWN.sub(" ", quote)) or _FAMILY_TRAIT.search(quote)):
         return None
     if _asked(quote, sentence):
         return None                      # a question is not a fact
     lead = joined if joined is not None else (_clauses(_before(quote, sentence)) or [""])[-1]
-    if _HYPOTHETICAL.search(lead):
+    if _HYPOTHETICAL.search(lead) or _HYPOTHETICAL.match(quote.lstrip()):
         return None                      # "If I had diabetes I would cut sugar."
     scope = lead + " " + quote
     trail = _after(quote, sentence)

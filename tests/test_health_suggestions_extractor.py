@@ -1563,7 +1563,6 @@ def test_live_run_rebuilt_quote_for_a_joined_fact_records():
     ("High blood pressure runs in my family.", "I have high blood pressure"),
     ("I don't have diabetes and high blood pressure.", "I have high blood pressure"),
     ("My husband has diabetes and high blood pressure.", "I have high blood pressure"),
-    ("I have diabetes and high blood pressure.", "I have very high blood pressure"),
     ("I have diabetes and high blood pressure.", "She has high blood pressure"),
 ])
 def test_a_rebuilt_quote_not_joined_to_the_client_records_nothing(msg, quote):
@@ -1626,7 +1625,6 @@ def test_a_rebuilt_quote_on_a_text_field_records_nothing():
 
 @pytest.mark.parametrize("msg,quote", [
     ("I have asthma and mother had breast cancer.", "my mother had breast cancer"),
-    ("I have asthma and high blood pressure.", "I have very high blood pressure"),
 ])
 def test_rebuilt_quotes_that_still_fail(msg, quote):
     field = "family_history" if "mother" in quote else "diagnoses"
@@ -1634,3 +1632,73 @@ def test_rebuilt_quotes_that_still_fail(msg, quote):
              else {"diagnosis": "High blood pressure"})
     about = "family" if field == "family_history" else "self"
     assert _one(msg, _item(field, value, quote, about=about)) == [], msg
+
+
+
+# --- fix round 4 (live run on 5e164984): a rewritten quote on a table field -----
+
+def test_live_run_garbled_quote_records_from_the_clients_clause():
+    msg = "My doctor has me on levothyroxine and metformin."
+    out = _all(msg, [_item("medications", {"medication": "Levothyroxine"}, "I have me on levothyroxine"),
+                     _item("medications", {"medication": "Metformin"}, "metformin")])
+    assert [o["value"]["medication"] for o in out] == ["Levothyroxine", "Metformin"]
+    assert out[0]["rationale"] == '"My doctor has me on levothyroxine"'
+
+
+def test_a_reworded_quote_records_the_clients_words():
+    out = _one("I have diabetes and high blood pressure.",
+               _item("diagnoses", {"diagnosis": "High blood pressure"}, "I have very high blood pressure"))
+    assert out and out[0]["rationale"] == '"high blood pressure"'
+
+
+@pytest.mark.parametrize("msg,quote", [
+    ("My husband takes warfarin.", "I take warfarin"),
+    ("I don't take warfarin anymore.", "I take warfarin"),
+    ("Should I take warfarin?", "I take warfarin daily"),
+    ("If I took warfarin, would it clash?", "I take warfarin"),
+    ("My doctor wants me to start warfarin.", "I take warfarin"),
+    ("I take warfarin, and my mother took warfarin too.", "I take warfarin daily"),
+    ("I take warfarin. My wife takes warfarin.", "I am on warfarin"),
+    ("I take vitamins.", "I take warfarin"),
+    ("I take warfarin.", "She takes warfarin"),
+])
+def test_a_garbled_quote_still_fails_every_check(msg, quote):
+    assert _one(msg, _item("medications", {"medication": "Warfarin"}, quote)) == [], msg
+
+
+def test_a_garbled_text_quote_still_records_nothing():
+    assert _one("I sleep badly every night.", _item("sleep", "x", "I sleep very badly")) == []
+
+
+def test_a_garbled_quote_needs_the_whole_term_word():
+    assert _one("I have diabetic neuropathy.",
+                _item("diagnoses", {"diagnosis": "Diabetes"}, "I have diabetes")) == []
+
+
+def test_a_quote_opening_with_if_is_hypothetical():
+    assert _one("If I took warfarin, would it clash?",
+                _item("medications", {"medication": "Warfarin"}, "If I took warfarin")) == []
+
+
+@pytest.mark.parametrize("msg,quote", [
+    ("High blood pressure runs in my family.", "High blood pressure runs in my family"),
+    ("I have a family history of diabetes.", "I have a family history of diabetes"),
+])
+def test_a_family_trait_is_not_the_clients_diagnosis(msg, quote):
+    diag = "High blood pressure" if "pressure" in msg else "Diabetes"
+    assert _one(msg, _item("diagnoses", {"diagnosis": diag}, quote)) == [], msg
+
+
+@pytest.mark.parametrize("msg,item,said", [
+    ("I have hypertension.",
+     _item("diagnoses", {"diagnosis": "High blood pressure"}, "I have hypertension issues"),
+     "I have hypertension"),
+    ("I had my gallbladder out.",
+     _item("surgeries", {"procedure": "Gallbladder removal"}, "I had gallbladder removal"),
+     "I had my gallbladder out"),
+    ("I take warfarin. My wife is worried.",
+     _item("medications", {"medication": "Warfarin"}, "I am on warfarin"), "I take warfarin"),
+])
+def test_a_garbled_quote_finds_the_clients_clause(msg, item, said):
+    out = _one(msg, item)
+    assert out and out[0]["rationale"] == f'"{said}"', msg
