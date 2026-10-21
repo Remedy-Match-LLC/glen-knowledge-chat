@@ -250,8 +250,8 @@ def _hidden(cx, test_id, fa, names):
         return set()
     exceptions = cs._exception_keys(botanical.get("exceptions"))
     rated = {r[0] for r in cx.execute(
-        "SELECT name_key FROM biofield_prl_rating WHERE focus_area_id=? AND botanical=1 "
-        "AND (reviewed=1 OR origin_test IN ('',?))", (int(fa), str(test_id)))}
+        "SELECT name_key FROM biofield_prl_rating WHERE focus_area_id=? AND botanical=1",
+        (int(fa),))}
     kept = {r[0] for r in cx.execute(
         "SELECT name_key FROM biofield_prl_pick WHERE test_id=? AND focus_area_id=? "
         "AND (checked=1 OR unhidden=1)", (str(test_id), int(fa)))}
@@ -377,8 +377,9 @@ def view(cx, test_id, item_codes):
         for p in products:
             key = _norm(p["name"])
             r = ratings.get(key)
-            if r and not (r[8] or r[9] in ("", test_id)):
-                r = None   # unapproved and written for another client
+            # An unapproved rating shows on every client's page, marked not reviewed, so
+            # Glen can approve it wherever its area appears (Glen, 2026-10-20). It is
+            # shared: approving it anywhere marks the one row reviewed.
             pick = picks.get(key)
             scores = (r[1], r[2], r[3]) if r else (None, None, None)
             if pick and pick[3] is not None:
