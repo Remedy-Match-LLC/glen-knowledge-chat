@@ -57433,6 +57433,26 @@ def console_order_invoice_link(oid):
                     "link": f"{PUBLIC_BASE_URL.rstrip('/')}/invoice/{tok}?print=1"})
 
 
+def _order_tracking_fields(tracking_number):
+    """{tracking_number, tracking_url} for a portal order row. The link is set only for
+    a carrier this code knows: USPS, whose numbers are 22 digits starting with 9
+    (dashboard/tracking._TRACK_22) behind a 92-95 service banner. tracking.py trusts any
+    9-led run and names no prefix list (its examples are 9205/9270/9361/9400/9405/9407),
+    so the banner range is the narrower rule here: a 96-led FedEx Ground number gets no
+    link. normalize_tracking reads a spaced or IMpb form (420+ZIP prefix) first; the
+    number is shown as stored. Any other number gets no link."""
+    tn = (tracking_number or "").strip()
+    usps = _tracking.normalize_tracking(tn) or ""
+    url = _tracking.tracking_url(usps) if re.fullmatch(r"9[2-5]\d{20}", usps) else ""
+    return {"tracking_number": tn, "tracking_url": url}
+
+
+# An order replaced by another (dashboard/orders.supersede_order) keeps its row, but its
+# tracking number is stale: the replacement carries the parcel that went out.
+_PORTAL_TRACKING_SQL = ("CASE WHEN superseded_by_order_id IS NULL "
+                        "THEN COALESCE(tracking_number,'') ELSE '' END")
+
+
 def _published_invoices_for(cx, email):
     """Portal-published, still-unpaid invoices for an email -> [{token, amount_dollars,
     link}]. Read-only: the publish endpoint already stored the invoice_token on the
@@ -57442,7 +57462,8 @@ def _published_invoices_for(cx, email):
         return []
     try:
         rows = cx.execute(
-            "SELECT total_cents, invoice_token, COALESCE(items_json,'[]') FROM orders "
+            "SELECT total_cents, invoice_token, COALESCE(items_json,'[]'), "
+            f"{_PORTAL_TRACKING_SQL} FROM orders "
             "WHERE lower(coalesce(email,''))=? AND portal_published=1 "
             "AND coalesce(pay_status,'')<>'paid' AND coalesce(invoice_token,'')<>'' "
             "AND coalesce(status,'') NOT IN ('cancelled','delivered','done') "
@@ -57452,7 +57473,8 @@ def _published_invoices_for(cx, email):
     base = PUBLIC_BASE_URL.rstrip("/")
     return [{"token": tok, "amount_dollars": f"{(total_cents or 0) / 100:.2f}",
              "physical_units": _order_physical_units({"items_json": items_json}),
-             "link": f"{base}/invoice/{tok}"} for total_cents, tok, items_json in rows]
+             "link": f"{base}/invoice/{tok}", **_order_tracking_fields(tn)}
+            for total_cents, tok, items_json, tn in rows]
 
 
 def _past_invoices_for(cx, email):
@@ -57469,7 +57491,8 @@ def _past_invoices_for(cx, email):
     try:
         rows = cx.execute(
             "SELECT total_cents, COALESCE(invoice_token,''), "
-            "COALESCE(paid_at, updated_at, created_at, ''), COALESCE(items_json,'[]') FROM orders "
+            "COALESCE(paid_at, updated_at, created_at, ''), COALESCE(items_json,'[]'), "
+            f"{_PORTAL_TRACKING_SQL} FROM orders "
             "WHERE lower(coalesce(email,''))=? AND coalesce(pay_status,'')='paid' "
             "AND coalesce(status,'')<>'cancelled' ORDER BY id DESC", (email,)).fetchall()
     except Exception:
@@ -57478,8 +57501,9 @@ def _past_invoices_for(cx, email):
     out = [{"token": tok, "amount_dollars": f"{(tc or 0) / 100:.2f}",
             "paid": True, "status": "paid", "when": (when or "")[:10],
             "physical_units": _order_physical_units({"items_json": items_json}),
-            "link": (f"{base}/invoice/{tok}" if tok else ""), "source": "orders"}
-           for tc, tok, when, items_json in rows]
+            "link": (f"{base}/invoice/{tok}" if tok else ""), "source": "orders",
+            **_order_tracking_fields(tn)}
+           for tc, tok, when, items_json, tn in rows]
     seen = {(r["when"], r["amount_dollars"]) for r in out}
 
     def _amount(raw):

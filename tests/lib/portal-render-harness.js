@@ -80,6 +80,11 @@ function buildRenderer(src) {
     line(src, 'const ICON_LOCK = '),
     fnSource(src, 'backToHub'),
     fnSource(src, 'backToHome', true),
+    // The order rows' own helpers, so a fixture with invoices renders them for real
+    // (the tracking line, 2026-10-21). Optional: older page sources predate them.
+    fnSource(src, 'foldSlug', true),
+    fnSource(src, 'invoiceTrackingHtml', true),
+    fnSource(src, 'pastInvoiceItemsHtml', true),
     '(function(d, v, _hub, _shell, _doors, seg, token, onboardingMount, hubHtml, first, badges, recSections, _ppTimer, location, window){',
     stubs,
     slice(src),

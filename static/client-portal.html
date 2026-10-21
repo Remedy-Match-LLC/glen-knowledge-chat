@@ -1657,7 +1657,29 @@ const PORTAL_HASH_ROUTES = {
   // and `focus` puts the cursor in the card's own box (shell) or the real one.
   // dashboard/portal_return.py keeps the same keys for sign-in: add a key there too.
   chat:     {panel:"ask", target:"chatCard", openCard:true, focus:["chatCardInput", "chatInput"]},
+  // #orders is for an email about an order (tracking, a receipt). It lands on the
+  // client's own orders, below the product picker, and opens the first of those cards
+  // (portalRouteFoldId). alt: without the tabs or the hub there is no orders panel;
+  // id="orders-legacy" sits on the History & receipts card when a paid order has
+  // tracking, otherwise on the first order card that layout renders.
+  orders:   {panel:"orders", target:"orders-invoices", alt:"orders-legacy", openCard:true},
 };
+
+// The fold a route opens: the fold id of the card that holds its target. For a card
+// with no fold name (#calendar, #chat) that is the target's own id, as before. #orders
+// targets a group of cards. It opens the card holding a tracking line that would
+// otherwise fold (the paid orders card), else the first card with a fold name.
+function portalRouteFoldId(route){
+  const el = document.getElementById(route.target) ||
+             (route.alt ? document.getElementById(route.alt) : null);
+  if(!el || typeof el.closest !== "function" || typeof _foldIdOf !== "function") return route.target;
+  const tracked = el.matches("[data-fold-id], .card") ? null
+    : Array.from(el.querySelectorAll("[data-fold-id]:not([data-fold-open])"))
+        .find(c => c.querySelector(".invoice-tracking"));
+  const card = el.matches("[data-fold-id], .card") ? el
+             : (tracked || el.querySelector("[data-fold-id]") || el.closest("[data-fold-id], .card"));
+  return (card && _foldIdOf(card)) || route.target;
+}
 
 // `fromHistory` is a route key kept in history.state by an earlier follow (see the
 // end of this function and onPortalPopState): Back and Forward re-apply it although
@@ -1715,8 +1737,9 @@ function applyPortalHash(userAction, fromHistory){
   const followed = userAction || window._portalHashOpened !== key;
   if(route.openCard && followed){
     window._portalHashOpened = key;
-    window._foldDeepLinkOpen = route.target;
-    if(typeof _foldOpenCard === "function") _foldOpenCard(route.target);
+    const foldId = portalRouteFoldId(route);
+    window._foldDeepLinkOpen = foldId;
+    if(typeof _foldOpenCard === "function") _foldOpenCard(foldId);
   }
   showTab(panel ? wanted : (document.querySelector('[data-panel="current"]') ? "current" : "hub"));
   window.setTimeout(()=>{
@@ -2797,6 +2820,16 @@ function pastInvoiceItemsHtml(inv){
       return `<li>${prefix}${esc(it.description || it.product_name || "Invoice line")}${adjustment}</li>`;
     }).join("")}</ul></details>`;
 }
+// An order's tracking number, under its row. tracking_url is set by the server only
+// for a carrier it knows (USPS), so any other number shows without a link.
+function invoiceTrackingHtml(inv){
+  const tn = String(inv.tracking_number || "").trim();
+  if(!tn) return "";
+  const num = inv.tracking_url
+    ? `<a href="${esc(inv.tracking_url)}" target="_blank" rel="noopener">${esc(tn)} ↗</a>`
+    : esc(tn);
+  return `<p class="small invoice-tracking" style="margin:.1rem 0 .5rem .6rem">Tracking: ${num}</p>`;
+}
 function buildOrdersHtml(d){
   const invs = Array.isArray(d.invoices) ? d.invoices : [];
   const past = Array.isArray(d.past_invoices) ? d.past_invoices : [];
@@ -2812,11 +2845,14 @@ function buildOrdersHtml(d){
     <div id="orders-product-results" class="muted small">Search by product or ingredient.</div>
     <div id="orders-basket" style="margin-top:1rem"></div>
   </div>`;
+  // #orders lands here (PORTAL_HASH_ROUTES): the client's own orders, below the picker.
+  body += `<div id="orders-invoices">`;
   invs.forEach(inv => {
     body += `<div class="card invoice-card" data-fold-id="billing-invoice-${foldSlug(inv.url || "")}" data-fold-open="1">
       <h2>Your invoice</h2>
       <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
       <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
+      ${invoiceTrackingHtml(inv)}
     </div>`;
   });
   if(past.length){
@@ -2827,14 +2863,14 @@ function buildOrdersHtml(d){
           const heading = inv.link
             ? `<p style="margin:.25rem 0"><a href="${esc(inv.link)}" target="_blank" rel="noopener">${label} ↗</a></p>`
             : `<p class="muted" style="margin:.25rem 0">${label}</p>`;
-          return heading + pastInvoiceItemsHtml(inv);
+          return heading + invoiceTrackingHtml(inv) + pastInvoiceItemsHtml(inv);
         }).join("")
       + `</div>`;
   }
   if(!invs.length && !past.length){
     body += `<div class="card" data-fold-id="billing-orders-invoices"><h2>Orders &amp; Invoices</h2><p class="muted">No invoices yet.</p></div>`;
   }
-  return body;
+  return body + `</div>`;
 }
 
 let ordersBasket = [];
@@ -4951,13 +4987,21 @@ function render(d, v){
   }
   // Task 7: when scan_history_enabled, unpaid invoices move to the Orders &
   // Invoices tab (buildOrdersHtml) instead of rendering here.
+  // #orders (PORTAL_HASH_ROUTES alt) lands on the paid orders (History & receipts)
+  // card when one of them has tracking, otherwise on the first order card rendered.
+  const _pastTracked = (Array.isArray(d.past_invoices) ? d.past_invoices : [])
+    .some(inv => String(inv.tracking_number || "").trim());
+  let _ordersLegacyId = ' id="orders-legacy"';
+  let _ordersLegacyInv = _pastTracked ? "" : _ordersLegacyId;
   if(!d.scan_history_enabled && Array.isArray(d.invoices) && d.invoices.length){
     d.invoices.forEach(function(inv){
+      const anchor = _ordersLegacyInv; _ordersLegacyInv = ""; if(anchor) _ordersLegacyId = "";
       part("billing", `
-        <div class="card invoice-card" data-fold-id="scans-invoice-${foldSlug(inv.url || "")}" data-fold-open="1">
+        <div class="card invoice-card"${anchor} data-fold-id="scans-invoice-${foldSlug(inv.url || "")}" data-fold-open="1">
           <h2>Your invoice</h2>
           <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
           <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
+          ${invoiceTrackingHtml(inv)}
         </div>`);
     });
   }
@@ -4992,7 +5036,7 @@ function render(d, v){
   // Task 7: superseded by the Scan History + Orders & Invoices tabs when the flag
   // is on (buildScanHistoryHtml / buildOrdersHtml cover this same data there).
   if(!d.scan_history_enabled && (pastDates.length || pastInv.length)){
-    let hist = `<div class="card history-card" data-fold-id="scans-history-receipts"><h2>History &amp; receipts</h2>
+    let hist = `<div class="card history-card"${pastInv.length ? _ordersLegacyId : ""} data-fold-id="scans-history-receipts"><h2>History &amp; receipts</h2>
       <p class="muted" style="margin:0 0 .6rem">Your earlier analyses and invoices, for reference.</p>`;
     if(pastDates.length){
       hist += `<p class="muted" style="margin:.2rem 0 .3rem">Past analyses</p><div class="scantabs">`
@@ -5007,7 +5051,7 @@ function render(d, v){
             const heading = inv.link
               ? `<p style="margin:.25rem 0"><a href="${esc(inv.link)}" target="_blank" rel="noopener">${label} ↗</a></p>`
               : `<p class="muted" style="margin:.25rem 0">${label}</p>`;
-            return heading + pastInvoiceItemsHtml(inv);
+            return heading + invoiceTrackingHtml(inv) + pastInvoiceItemsHtml(inv);
           }).join("");
     }
     hist += `</div>`;
@@ -9215,7 +9259,8 @@ function _foldApplyAll(){
   if(typeof _foldBars === "function") _foldBars(byDoor);
   // Folding the cards above it can move a deep-linked card out of view: scroll again.
   if(_deepLinked){
-    var _dl = document.getElementById(_deepLinked);
+    var _dl = document.getElementById(_deepLinked) ||
+              document.querySelector('[data-fold-id="' + _deepLinked + '"]');
     if(_dl) window.setTimeout(function(){ _dl.scrollIntoView({behavior:"smooth", block:"start"}); }, 0);
   }
 }
