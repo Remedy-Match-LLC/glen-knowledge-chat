@@ -71,7 +71,7 @@ def test_the_store_entry():
     e = _entry()
     assert e["intro"] == INTRO
     assert e["copy_pinned"] == ["ingredients", "intro", "description", "benefits", "research"]
-    assert e["content_since"] == "2026-10-21T17:32:10Z"
+    assert e["content_since"] == "2026-10-21T22:00:00Z"
     assert e["price_cents"] == 7000 and e["fmp_id"] == "1201" and e["name"] == "Angiostasis"
     assert e["pinecone_title"] == "Angiostasis"
     assert e["url"] == "https://myhealingoasis.com/begin/product/angiostasis"
