@@ -174,12 +174,66 @@ def resolve_by_address(cx, shipment):
     return found
 
 
+def _dropship_columns(cx):
+    """SELECT list for the drop-ship columns. Older databases may lack them; select
+    NULL rather than fail, because a failed read here empties the whole board step."""
+    from dashboard import db as _db
+    return ", ".join(c if _db.column_exists(cx, "orders", c) else f"NULL AS {c}"
+                     for c in ("source", "practitioner_id", "recipient_email"))
+
+
+def _switched_on(cx):
+    from dashboard import practitioner_settings as _ps
+    return _ps.pids_with_client_review_emails(cx)
+
+
+def _dropship_to(order, switched_on):
+    """A drop-ship order's tracking address: the client only when that practitioner
+    turned client mail on and the order names a client; otherwise the practitioner."""
+    pid = str(order.get("practitioner_id") or "").strip()
+    client = (order.get("recipient_email") or "").strip()
+    if pid and pid in switched_on and client:
+        return client
+    return order.get("email")
+
+
+def dropship_recipients_held(cx):
+    """{client email: practitioner email} for every drop-ship client whose practitioner
+    has client mail off. The watcher never auto-sends to these addresses.
+
+    None when the read fails, so the caller can draft everything rather than send
+    blind. A database without the columns has no drop-ship clients and returns {}."""
+    from dashboard import db as _db
+    try:
+        if not _db.column_exists(cx, "orders", "recipient_email"):
+            return {}
+        pid_col = ("practitioner_id" if _db.column_exists(cx, "orders", "practitioner_id")
+                   else "NULL")
+        rows = cx.execute(
+            f"SELECT email, recipient_email, {pid_col} FROM orders "
+            "WHERE source = 'dropship' AND TRIM(COALESCE(recipient_email,'')) <> ''"
+        ).fetchall()
+        switched_on = _switched_on(cx)
+    except Exception:
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        return None
+    held = {}
+    for prac, client, pid in rows:
+        if str(pid or "").strip() in switched_on:
+            continue
+        held.setdefault(client.strip().lower(), (prac or "").strip().lower())
+    return held
+
+
 def _resolve_at(cx, name, z, sk, require_name):
     # 1. Board orders at this address.
     marks = ",".join("?" for _ in _OPEN)
     board = []
-    for o in _rows(cx, f"SELECT email, name, address_json FROM orders "
-                       f"WHERE status IN ({marks})", _OPEN):
+    for o in _rows(cx, f"SELECT email, name, address_json, {_dropship_columns(cx)} "
+                       f"FROM orders WHERE status IN ({marks})", _OPEN):
         try:
             a = json.loads(o.get("address_json") or "{}")
         except (TypeError, ValueError):
@@ -192,6 +246,17 @@ def _resolve_at(cx, name, z, sk, require_name):
     if require_name:
         board = [o for o in board
                  if names_agree(name, *(((o.get("name") or "").split(" ", 1) + [""])[:2]))]
+    # Glen, 2026-10-21: a drop-ship client gets mail from us only when that
+    # practitioner turns it on. An open drop-ship order at the address wins over any
+    # other order there, so a client's own order cannot pull the parcel to the client.
+    dropship = [o for o in board if o.get("source") == "dropship"]
+    if dropship:
+        switched_on = _switched_on(cx)
+        email, clash = _one_email([(_dropship_to(o, switched_on), True) for o in dropship])
+        if email:
+            return _result(email, "board", reason="open drop-ship order at the ship-to address")
+        return _result(conflict=True, reason="several drop-ship orders at the address",
+                       candidates=[(o.get("email") or "").lower() for o in dropship])
     if board:
         email, clash = _one_email([(o.get("email"), True) for o in board])
         if email:

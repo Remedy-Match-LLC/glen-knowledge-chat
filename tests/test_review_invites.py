@@ -296,3 +296,20 @@ def test_upsert_order_records_the_client_email():
                                recipient_email="tony@x.com")
     got = cx.execute("SELECT recipient_email FROM orders WHERE id=?", (oid,)).fetchone()
     assert got[0] == "tony@x.com"
+
+
+# Glen, 2026-10-21: "Give them the option, with fallback being no emails." The same
+# switch now covers tracking too. Off, a drop-ship sends no review invite at all.
+
+def test_a_dropship_with_the_switch_off_sends_no_invite_to_anyone():
+    cx = _cx()
+    _client_order(cx, source="dropship", recipient_email="tony@x.com")
+    ps.init_settings_table(cx)
+    assert ri.pending(cx, days=14) == []
+
+
+def test_a_dropship_with_the_switch_on_invites_the_client_as_before():
+    cx = _cx()
+    _client_order(cx, source="dropship", recipient_email="tony@x.com")
+    _switch(cx, "p1", True)
+    assert [r["email"] for r in ri.pending(cx, days=14)] == ["tony@x.com"]

@@ -238,12 +238,15 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
     # soon as now. Fukushima's 6 boxes on 2026-10-14 had made 6 drafts. The recipient is
     # resolved once per name at an address, and the groups are formed after resolution so
     # two names that resolve to one email still get one email.
+    from dashboard import tracking_recipient as _trc
+    held = _trc.dropship_recipients_held(cx) if fresh else {}
     resolved_for = {}
     groups = {}
     for s in fresh:
         rkey = (_addr_key(s), _norm(s["recipient_name"]))
         if rkey not in resolved_for:
-            resolved_for[rkey] = _resolve(s, find_contact, address_resolve, harvest_fn)
+            resolved_for[rkey] = _resolve(s, find_contact, address_resolve, harvest_fn,
+                                          held)
         r = resolved_for[rkey]
         # The confidence is in the key: a box resolved with less certainty never rides
         # along on another box's auto-send (review round 2).
@@ -254,7 +257,7 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
     for g in groups.values():
         results.extend(_notify_group(g["r"], g["shipments"], parsed, msg_id, cx, draft_fn,
                                      persist_contact, send_fn, auto_send, dry_run,
-                                     link_orders))
+                                     link_orders, held))
     return results
 
 
@@ -272,8 +275,11 @@ def _addr_key(s):
     return ("block", _norm(s.get("address_block")), _norm(s.get("recipient_name")))
 
 
-def _resolve(s, find_contact, address_resolve, harvest_fn):
-    """Who this box goes to: {to, conf, ghl_contact_id, review_reason, harvested}."""
+def _resolve(s, find_contact, address_resolve, harvest_fn, held=None):
+    """Who this box goes to: {to, conf, ghl_contact_id, review_reason, harvested}.
+
+    `held` is tracking_recipient.dropship_recipients_held: drop-ship clients whose
+    practitioner has client mail off."""
     match = find_contact(s["recipient_name"])
     conf = match["confidence"] if match else "none"
     to = match["email"] if (match and conf in ("high", "medium")) else None
@@ -320,20 +326,39 @@ def _resolve(s, find_contact, address_resolve, harvest_fn):
         if harvested and harvested.get("email"):
             to = harvested["email"]
             conf = "harvested"
+
+    # Glen, 2026-10-21: a drop-ship client gets no mail unless the practitioner turned
+    # it on. The board step already sends a drop-ship parcel to the practitioner; the
+    # name and FileMaker fallbacks never pick that client instead. Cleared here so no
+    # GHL contact is made for them either.
+    if to and conf != "address-board" and held and to.strip().lower() in held:
+        review_reason = (f"drop-ship client of {held[to.strip().lower()] or 'a practitioner'}"
+                         ", who has client mail off")
+        to, conf, ghl_contact_id, harvested = None, "dropship-held", None, None
     return {"to": to, "conf": conf, "ghl_contact_id": ghl_contact_id,
             "review_reason": review_reason, "harvested": harvested}
 
 
 def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, send_fn,
-                  auto_send, dry_run, link_orders):
+                  auto_send, dry_run, link_orders, held=None):
     """One email (sent or drafted) for every box in the group; one shipments row each."""
     to, conf = r["to"], r["conf"]
     ghl_contact_id, harvested = r["ghl_contact_id"], r["harvested"]
+    review_reason = r["review_reason"]
     first = shipments[0]
     numbers = [s["tracking"] for s in shipments]
 
+    # The drop-ship guard, whatever path chose the address: a held drop-ship client
+    # drafts for review and is never auto-sent. `held` is None when the drop-ship read
+    # failed, and then nothing auto-sends.
+    guarded = held is None or bool(to and to.strip().lower() in held)
+    if guarded and to:
+        review_reason = review_reason or (
+            "drop-ship list could not be read" if held is None
+            else "drop-ship client whose practitioner has client mail off")
+
     # Auto-send only high-confidence recipients; everything else drafts.
-    send_eligible = (auto_send and to is not None
+    send_eligible = (auto_send and to is not None and not guarded
                      and conf in AUTO_SEND_CONFIDENCES)
     status = ("sent" if send_eligible else
               "drafted" if to else "needs_review")
@@ -416,7 +441,7 @@ def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, s
                             s.get("delivery_date")),
                         "notification_channel": "ghl" if status == "sent" else None,
                         "notification_error": notification_error,
-                        "review_reason": r["review_reason"],
+                        "review_reason": review_reason,
                         "record_error": record_error,
                         "order_link": order_link if not dry_run else None})
     return results

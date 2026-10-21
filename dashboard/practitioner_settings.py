@@ -56,9 +56,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# ── Review-request emails to the practitioner's clients ──────────────────────
-# Glen 2026-09-13: the practitioner decides, off by default, and the CLIENT gets
-# the email. Read by dashboard.review_invites.pending().
+# ── Mail to the practitioner's clients ───────────────────────────────────────
+# Glen, 2026-10-21: "Give them the option, with fallback being no emails." This one
+# switch decides whether a practitioner's clients get any mail from us: review
+# requests and tracking notices. Off by default. Off, a drop-ship sends no review
+# invite and its tracking goes to the practitioner (orders.email). Read by
+# dashboard.review_invites.pending() and dashboard.tracking_recipient.
 
 def _has_client_review_column(cx) -> bool:
     # A missing table or column reads as "off". Checked, never caught: a failed

@@ -172,3 +172,70 @@ def test_filemaker_resolves_through_the_postgres_cursor():
     _fmp(cx, "1", "Judith", "Tom", "judith@example.com", "5 Kahala Ave", "96822")
     r = tr.resolve_by_address(_PgLikeConn(cx), _ship("Judy Tom", "5 Kahala Ave", "96822"))
     assert (r["email"], r["source"]) == ("judith@example.com", "fmp")
+
+
+# --- drop-ship clients ------------------------------------------------------------------
+# Glen, 2026-10-21: a drop-ship practitioner's clients get mail from us only when that
+# practitioner's switch (practitioner_settings.client_review_emails) is on. Off, the
+# tracking goes to the practitioner, who is orders.email on a drop-ship.
+
+def _dropship_db():
+    from dashboard import orders as _orders
+    from dashboard import practitioner_settings as _ps
+    cx = _db()
+    cx.execute("DROP TABLE orders")
+    _orders.init_orders_table(cx)
+    _ps.init_settings_table(cx)
+    return cx
+
+
+def _dropship(cx, street, zip5, *, pid="p1", prac="ashley@prac.example",
+              client="tony@client.example", status="packed", ref="d1"):
+    cx.execute("INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+               "practitioner_id, recipient_email, address_json) VALUES (?,?,?,?,?,?,?,?,?)",
+               ("2026-10-01", "dropship", ref, prac, "Ashley King", status, pid, client,
+                json.dumps({"name": "Tony Client", "street": street, "zip": zip5})))
+
+
+def _own_order(cx, email, name, street, zip5, ref="s1"):
+    cx.execute("INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+               "address_json) VALUES (?,?,?,?,?,?,?)",
+               ("2026-10-01", "storefront", ref, email, name, "packed",
+                json.dumps({"street": street, "zip": zip5})))
+
+
+def test_a_dropship_order_at_the_address_wins_over_the_clients_own_order():
+    """The client's own open order used to win by name; the practitioner's order now wins."""
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720")
+    _own_order(cx, "tony@client.example", "Tony Client", "4 Hale Street", "96720")
+    r = tr.resolve_by_address(cx, _ship("Tony Client", "4 Hale St", "96720"))
+    assert (r["email"], r["source"]) == ("ashley@prac.example", "board")
+
+
+def test_a_dropship_with_the_switch_on_resolves_to_the_client():
+    from dashboard import practitioner_settings as _ps
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720")
+    _ps.set_client_review_emails(cx, "p1", True)
+    r = tr.resolve_by_address(cx, _ship("Tony Client", "4 Hale St", "96720"))
+    assert r["email"] == "tony@client.example"
+
+
+def test_held_recipients_follow_the_switch():
+    from dashboard import practitioner_settings as _ps
+    cx = _dropship_db()
+    _dropship(cx, "4 Hale St", "96720", status="done")
+    assert tr.dropship_recipients_held(cx) == {"tony@client.example": "ashley@prac.example"}
+    _ps.set_client_review_emails(cx, "p1", True)
+    assert tr.dropship_recipients_held(cx) == {}
+
+
+def test_held_recipients_read_failure_is_none_not_empty():
+    """An empty answer would let the watcher send; None makes it draft everything."""
+    class _Broken:
+        def execute(self, *a, **k):
+            raise RuntimeError("db down")
+        def rollback(self):
+            pass
+    assert tr.dropship_recipients_held(_Broken()) is None
