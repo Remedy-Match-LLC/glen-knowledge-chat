@@ -63,6 +63,10 @@ TRIPS = {
         "I might be having a herx reaction.",
         "Since starting the cleanse I've had a strong healing reaction.",
         "If I have hives, what should I do? I'm in a healing crisis right now.",
+        "I think this is die-off from the cleanse.",
+        "Having some die off since Monday.",
+        "The candida must be dying off, I feel awful.",
+        "I'm having a Herxheimer reaction.",
     ],
 }
 
@@ -169,6 +173,8 @@ def test_each_warning_sign_trips_the_backstop(key, phrase):
 ROUTINE = [
     "Does this remedy help with fever?",
     "What is a healing crisis?",
+    "What is die-off?",
+    "How long does a Herxheimer reaction last?",
     "Can this cause hives?",
     "What if I get hives?",
     "I don't have a fever anymore, thanks.",
@@ -337,7 +343,7 @@ PROMPT_SIGNS = [
     "hives or trouble breathing",
     "yellow skin or eyes",
     "severe pain under the right ribs",
-    "any healing crisis",
+    "any healing crisis, die-off or Herxheimer reaction",
 ]
 
 

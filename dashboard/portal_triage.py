@@ -255,7 +255,7 @@ _TRIAGE_SYSTEM = (
     "- hives or trouble breathing;\n"
     "- yellow skin or eyes;\n"
     "- severe pain under the right ribs;\n"
-    "- any healing crisis.\n"
+    "- any healing crisis, die-off or Herxheimer reaction.\n"
     "A general education question about one of these, with nothing happening to anyone, is "
     "not a warning sign.\n"
     "When unsure whether the AI handled it, do NOT escalate. That rule never holds back a "
@@ -421,6 +421,9 @@ _SIGN_PATTERNS = {
     "healing-crisis": [
         re.compile(r"\bhealing\s+(?:crisis|crises|reaction)\b", re.I),
         re.compile(r"\bherx\w*\b", re.I),
+        # Glen, 20 Oct 2026: die-off is a healing crisis; its other name is a
+        # Herxheimer reaction (caught by the line above).
+        re.compile(r"\bdie[- ]?off\b|\bdying off\b", re.I),
     ],
 }
 
