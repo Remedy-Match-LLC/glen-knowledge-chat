@@ -215,8 +215,10 @@
       if (md){
         document.getElementById('article').innerHTML = renderMarkdown(md);
       } else {
-        document.getElementById('article').innerHTML =
-          '<p>A deeper research write-up for this remedy is on its way. In the meantime, you can order below, or head back to find your best match.</p>';
+        // Not ready to order: no "you can order below" (review round 3).
+        document.getElementById('article').innerHTML = d.not_ready_line
+          ? '<p>A deeper research write-up for this remedy is on its way.</p>'
+          : '<p>A deeper research write-up for this remedy is on its way. In the meantime, you can order below, or head back to find your best match.</p>';
       }
 
       // Only render a separate Sources block if the article did not already include one.

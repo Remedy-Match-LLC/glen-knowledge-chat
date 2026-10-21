@@ -19,7 +19,6 @@ import pytest
 import app
 from dashboard import bundle_pricing
 from dashboard import cart_store as CS
-from dashboard import client_invoice_lines as cil
 from dashboard import practitioner_portal as pp
 from dashboard import wholesale_checkout as wc
 
@@ -171,16 +170,6 @@ def test_build_order_refuses_before_redeeming_credit(monkeypatch, catalog):
                          catalog=catalog)
     assert out["ok"] is False and out["error"] == REFUSAL and out["url"] == URL
     assert redeemed == []
-
-
-def test_invoice_rebuild_refuses_a_posted_line_whole():
-    with pytest.raises(cil.NotOrderable):
-        cil.rebuild([{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 2}], {},
-                    known=lambda s: True, refusal=app._waitlist_refusal)
-    # A zero-qty reference line orders nothing, so it is not refused.
-    assert cil.rebuild([{"slug": SCAR, "qty": 0}], {}, known=lambda s: True,
-                       refusal=app._waitlist_refusal) == [
-        {"slug": SCAR, "qty": 0, "format": "bottle"}]
 
 
 # ── Funnel and cart routes ────────────────────────────────────────────────────

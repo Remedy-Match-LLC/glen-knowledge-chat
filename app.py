@@ -9005,14 +9005,25 @@ def _cart_waitlist_refusal(lines, skip_zero_qty=True):
     return None
 
 
+# What a client who reported sending payment is told (claim-paid's own reply).
+_CLAIM_PENDING_LINE = "Thanks — we’ll confirm your payment shortly."
+
+
+def _money_on_the_way(order):
+    """True when the client reported sending payment (pay_status "claimed"). Such an
+    order is never told to join the waiting list (review round 3, 2026-10-20)."""
+    return (order.get("pay_status") or "").strip().lower() == "claimed"
+
+
 def _first_payment_waitlist_refusal(order, owed=None):
     """The refusal for an order's FIRST payment when it holds a product not ready to
     order, else None (Alkalize, 2026-10-20). Only an order with nothing paid and nothing
     shipped is refused: a paid, part-paid, shipped or finished order may still settle its
     balance, so a past sale never freezes (review round 1). `owed` is the ledger balance
     when the caller has it; a balance below the total means something was paid."""
-    if (order.get("pay_status") == "paid"
-            or order.get("status") in ("shipped", "delivered", "done", "cancelled")):
+    if ((order.get("pay_status") or "").strip().lower() == "paid"
+            or (order.get("status") or "").strip().lower()
+            in ("shipped", "delivered", "done", "cancelled")):
         return None
     try:
         if owed is not None and int(owed) < int(order.get("total_cents") or 0):
@@ -25477,7 +25488,8 @@ def api_cart_zelle_orders():
                 # Not ready to order (2026-10-20): the line and its page, never the
                 # payment instructions.
                 _nr = _first_payment_waitlist_refusal(o)
-                if _nr:
+                # Money on the way keeps its instructions: never the waiting-list line.
+                if _nr and not _money_on_the_way(o):
                     out.append({"order_id": o["id"], "order_ref": o.get("external_ref") or "",
                                 "not_ready": {"line": str(_nr), "url": _nr.url}})
                 else:
@@ -59238,8 +59250,10 @@ def _bill_lines_to_caregiver(*, member_email, member_name, caregiver_email, line
     # Without a family plan the member's lines keep the price they would have alone.
     frozen = []
     if not family_level:
+        # Lines already on the member's order move as they are, a not-ready one too.
         solo = _price_inhouse_invoice([dict(l) for l in lines_in], email=member, pickup=False,
-                                      ship={"country": "US"}, points_redeem_cents_in=None)
+                                      ship={"country": "US"}, points_redeem_cents_in=None,
+                                      allow_waitlist=True)
         solo_by_slug = {}
         for rec in (solo or {}).get("items_rec") or []:
             solo_by_slug.setdefault(rec.get("slug"), rec.get("unit_cents"))
@@ -59262,7 +59276,8 @@ def _bill_lines_to_caregiver(*, member_email, member_name, caregiver_email, line
         try:
             priced, _ = _reprice_and_persist_invoice(
                 cx, target, keep + member_lines,
-                pickup=(target.get("channel") == "pickup"), strict_packaging=True)
+                pickup=(target.get("channel") == "pickup"), strict_packaging=True,
+                allow_waitlist=True)
         finally:
             cx.close()
         if priced is None:
@@ -59605,7 +59620,9 @@ def api_orders_grant_member_access(oid):
         try:
             priced, was_paid = _reprice_and_persist_invoice(
                 cx, order, lines_in, pickup=pickup,   # invoice_note=None -> note preserved
-                strict_packaging=True)
+                strict_packaging=True,
+                # The order's own lines: a held not-ready line never blocks (2026-10-20).
+                allow_waitlist=True)
         except CheckoutError as e:
             return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         if priced is None:
@@ -61140,6 +61157,12 @@ def _invoice_summary(order):
     member_credit_cents = 0
     owed = _invoice_balance_cents(order)
     _nr_pay = _first_payment_waitlist_refusal(order, owed)
+    # Money on the way: no Pay button and no waiting-list line, the claimed wording only.
+    _claim_pending = bool(_nr_pay) and _money_on_the_way(order)
+    if _claim_pending:
+        _nr_pay_shown = None
+    else:
+        _nr_pay_shown = _nr_pay
     return {
         "member_credit_cents": member_credit_cents,
         "points_balance_cents": _invoice_points_balance(order),
@@ -61177,7 +61200,9 @@ def _invoice_summary(order):
                                                    order.get("pay_status"), owed)
                     and _nr_pay is None),
         # Not ready to order (2026-10-20): the line and its product page, in place of Pay.
-        "not_ready": ({"line": str(_nr_pay), "url": _nr_pay.url} if _nr_pay else None),
+        "not_ready": ({"line": str(_nr_pay_shown), "url": _nr_pay_shown.url}
+                      if _nr_pay_shown else None),
+        "claim_pending": (_CLAIM_PENDING_LINE if _claim_pending else None),
         # What the pay button asks for and /pay charges. "balance_due_cents" (set by
         # the GET route) is the ledger balance shown in the totals.
         "pay_amount_cents": owed if owed is not None else int(order.get("total_cents") or 0),
@@ -61421,7 +61446,9 @@ def api_invoice_membership(token):
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
         priced, _was_paid = _reprice_and_persist_invoice(
-            cx, order, payload, pickup=(order.get("channel") == "pickup"))
+            cx, order, payload, pickup=(order.get("channel") == "pickup"),
+            # The order's own lines: a held not-ready line never blocks (2026-10-20).
+            allow_waitlist=True)
     except CheckoutError as e:
         return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     finally:
@@ -61782,7 +61809,7 @@ def api_invoice_claim_paid(token):
             f"{order.get('external_ref')}. Confirm receipt, then Record payment.")
     except Exception as _e:
         print(f"[invoice] claim notify skipped: {_e!r}", flush=True)
-    return jsonify({"ok": True, "message": "Thanks — we’ll confirm your payment shortly."})
+    return jsonify({"ok": True, "message": _CLAIM_PENDING_LINE})
 
 
 @app.route("/api/invoice/<token>/chat", methods=["POST"])

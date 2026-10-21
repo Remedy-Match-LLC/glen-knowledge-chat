@@ -6730,6 +6730,12 @@ function render(d, v){
       body: JSON.stringify({order_id: Number(el.dataset.order)})})
       .then(r => r.json()).then(j => {
         if(j && j.ok && j.url){ location.href = j.url; }
+        else if (j && !j.ok && j.url && j.error){
+          // Not ready to order (2026-10-20): the refusal line, linked to its page.
+          const a = document.createElement("a");
+          a.href = j.url; a.textContent = j.error; a.className = "cg-not-ready";
+          el.replaceWith(a);
+        }
         else { el.disabled = false; el.textContent = "Try again"; }
       }).catch(() => { el.disabled = false; el.textContent = "Try again"; });
   }));

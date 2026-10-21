@@ -15,7 +15,6 @@ import pytest
 
 import app
 from dashboard import cart_store as CS
-from dashboard import client_invoice_lines as cil
 from dashboard import practitioner_portal as pp
 from dashboard import wholesale_checkout as wc
 
@@ -134,12 +133,6 @@ def test_reorder_subscribe_is_refused(client, monkeypatch):
 
 
 # ── Invoices ──────────────────────────────────────────────────────────────────
-
-def test_invoice_rebuild_refuses_a_posted_line_whole():
-    with pytest.raises(cil.NotOrderable):
-        cil.rebuild([{"slug": CONTROL, "qty": 1}, {"slug": SLUG, "qty": 2}], {},
-                    known=lambda s: True, refusal=app._waitlist_refusal)
-
 
 def test_wholesale_order_is_refused_before_credit_is_redeemed(monkeypatch, catalog):
     redeemed = []

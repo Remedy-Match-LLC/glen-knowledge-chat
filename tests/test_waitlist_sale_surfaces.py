@@ -477,3 +477,223 @@ def test_the_repricer_hands_the_kept_line_permission_to_the_pricer(monkeypatch, 
                                      pickup=True, allow_waitlist=allow)
     assert seen and seen[0].get("allow_waitlist", False) is allow
     assert ("allow_waitlist" in seen[0]) is allow
+
+
+# ── Fix round 2 (review round 3, 2026-10-20) ──────────────────────────────────
+
+def _html(name):
+    return open(os.path.join(os.path.dirname(__file__), "..", "static", name)).read()
+
+
+# Finding 1: a new/packed unpaid order is refused, and the owner removing the line
+# lets it pay.
+
+@pytest.mark.parametrize("status", ["new", "packed"])
+def test_the_owner_removes_the_line_and_the_order_then_pays(inv, monkeypatch, status):
+    monkeypatch.setattr(app, "_bos_actor", lambda: _Owner())
+    monkeypatch.setattr(app, "_push_invoice_edit_to_qbo", lambda *a, **k: None)
+    monkeypatch.setattr(app, "_special_price_warning", lambda *a, **k: "")
+    cx = sqlite3.connect(app.LOG_DB)
+    cx.row_factory = sqlite3.Row
+    oid = _order(cx, f"DS-{status}", [{"slug": ALK, "qty": 1}, {"slug": CONTROL, "qty": 1}],
+                 status=status, channel="pickup")
+    tok = pp.create_order_invoice_token(oid, db_path=app.LOG_DB)
+    assert inv["c"].post(f"/api/invoice/{tok}/pay", json={"method": "card"}).status_code == 400
+    r = inv["c"].post(f"/api/orders/{oid}/edit",
+                      json={"lines": [{"slug": CONTROL, "qty": 1}], "pickup": True})
+    assert r.status_code == 200, r.get_json()
+    o = inv["c"].get(f"/api/invoice/{tok}").get_json()["order"]
+    assert o["not_ready"] is None and o["payable"] is True
+    r = inv["c"].post(f"/api/invoice/{tok}/pay", json={"method": "card"})
+    assert r.status_code == 200, r.get_json()
+    assert len(inv["made"]) == 1
+
+
+# Finding 2: membership add/remove and caregiver rebill keep a held line.
+
+def _spy_reprice(monkeypatch):
+    calls = []
+    monkeypatch.setattr(app, "_reprice_and_persist_invoice",
+                        lambda cx, order, lines, **k: calls.append(k) or (None, False))
+    return calls
+
+
+@pytest.mark.parametrize("action", ["remove", "add"])
+def test_the_invoice_membership_action_reprices_with_a_held_line(monkeypatch, tmp_path, action):
+    from dashboard import membership_products as mp
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "m.db"))
+    monkeypatch.setattr(app, "_invoice_order_for_token", lambda token: {
+        "id": 1, "status": "proposed", "pay_status": "unpaid", "email": "m@x.com",
+        "items": [{"slug": ALK, "qty": 1}, {"slug": CONTROL, "qty": 1}]})
+    monkeypatch.setattr(mp, "invoice_offer_tiers", lambda: ["month"])
+    monkeypatch.setattr(mp, "owns_group", lambda cx, email: False)
+    monkeypatch.setattr(app, "_order_has_biofield", lambda o: False)
+    calls = _spy_reprice(monkeypatch)
+    app.app.test_client().post("/api/invoice/tok/membership",
+                               json={"action": action, "tier": "month"})
+    assert calls and calls[0]["allow_waitlist"] is True
+
+
+def test_the_caregiver_rebill_moves_a_held_line(monkeypatch):
+    from dashboard import household as hh, family_plan as fp
+    monkeypatch.setattr(hh, "init_household_tables", lambda cx: None)
+    monkeypatch.setattr(hh, "can_pay", lambda cx, a, b: True)
+    monkeypatch.setattr(fp, "init_family_plan_table", lambda cx: None)
+    monkeypatch.setattr(fp, "is_active", lambda cx, e: False)
+    monkeypatch.setattr(app, "_caregiver_open_order", lambda cx, e: {
+        "id": 7, "channel": "retail", "items": [], "external_ref": "T"})
+    priced = []
+    monkeypatch.setattr(app, "_price_inhouse_invoice",
+                        lambda lines, **k: priced.append(k) or {"items_rec": []})
+    calls = []
+    monkeypatch.setattr(app, "_reprice_and_persist_invoice",
+                        lambda cx, order, lines, **k: calls.append(k) or (
+                            {"total_cents": 7000, "items_rec": lines}, False))
+    monkeypatch.setattr(app, "_push_invoice_edit_to_qbo", lambda *a, **k: None)
+    res = app._bill_lines_to_caregiver(member_email="m@x.com", member_name="M",
+                                       caregiver_email="c@x.com",
+                                       lines_in=[{"slug": ALK, "qty": 1}], remember=False)
+    assert res["ok"] and res["order_id"] == 7
+    assert priced[0]["allow_waitlist"] is True and calls[0]["allow_waitlist"] is True
+
+
+# Finding 3: removing the line brings Pay back without a reload.
+
+def test_the_invoice_page_reruns_setup_pay_after_an_edit():
+    html = _html("invoice.html")
+    assert "ORDER=j.order; renderFromOrder(); setupPay();" in html
+    i = html.index("function setupPay(){")
+    head = html[i:html.index("if (ORDER.claim_pending){", i)]
+    assert "$('pay-card').style.display='';" in head
+    assert "['pay-methods','pay-btn'].forEach(id=>{ $(id).style.display=''; });" in head
+    assert "$('pay-notice').innerHTML='';" in head
+
+
+# Finding 4: money on the way is never told to join the waiting list.
+
+def test_a_claimed_invoice_shows_the_claimed_wording_not_the_line(inv2):
+    tok = inv2["order2"]([{"slug": ALK, "qty": 1}], pay_status="claimed", pay_method="zelle")
+    o = inv2["c"].get(f"/api/invoice/{tok}").get_json()["order"]
+    assert o["payable"] is False and o["not_ready"] is None
+    assert o["claim_pending"] == app._CLAIM_PENDING_LINE
+    r = inv2["c"].post(f"/api/invoice/{tok}/pay", json={"method": "card"})
+    assert r.status_code == 400 and inv2["made"] == []
+    plain = inv2["c"].get(f"/api/invoice/{inv2['order2']([{'slug': ALK, 'qty': 1}])}").get_json()
+    assert plain["order"]["claim_pending"] is None
+
+
+def test_the_claim_reply_is_the_same_wording():
+    assert app._CLAIM_PENDING_LINE == "Thanks — we’ll confirm your payment shortly."
+    i = _html("invoice.html").index("if (ORDER.claim_pending){")
+    assert "esc(ORDER.claim_pending)" in _html("invoice.html")[i:i + 300]
+
+
+def test_a_claimed_zelle_order_keeps_its_instructions(zel):
+    c, orders = zel
+    a = "d" * 32
+    orders[a] = _zorder(a, [{"slug": ALK, "qty": 1}], pay_status="claimed")
+    got = c.post("/api/cart/zelle-orders", json={"refs": [a]}).get_json()["orders"][0]
+    assert "pay_instructions" in got and "not_ready" not in got
+
+
+# Finding 5: the caregiver portal shows the line and its link.
+
+def test_the_caregiver_portal_shows_the_refusal_line():
+    html = _html("client-portal.html")
+    i = html.index('fetch(`/api/portal/${encodeURIComponent(token)}/caregiver-pay`')
+    block = html[i:i + 900]
+    assert "else if (j && !j.ok && j.url && j.error){" in block
+    assert "a.href = j.url; a.textContent = j.error;" in block and "el.replaceWith(a);" in block
+
+
+# Finding 6: case-insensitive statuses, and no "you can order below".
+
+@pytest.mark.parametrize("order", [{"status": "Shipped"}, {"pay_status": "PAID"},
+                                   {"status": " done "}])
+def test_the_status_compare_ignores_case(order):
+    assert app._first_payment_waitlist_refusal(
+        {"items": [{"slug": ALK, "qty": 1}], "total_cents": 7000, **order}) is None
+
+
+def test_the_learn_fallback_never_says_order_below_for_a_not_ready_product():
+    html = _html("begin-learn.html")
+    i = html.index("document.getElementById('article').innerHTML = d.not_ready_line")
+    branch = html[i:i + 400]
+    first = branch[:branch.index(":")]
+    assert "order below" not in first and "A deeper research write-up" in first
+
+
+# Surviving mutations from review round 3
+
+def test_a_zero_qty_reference_line_leaves_the_invoice_payable(inv2):     # M06
+    tok = inv2["order2"]([{"slug": ALK, "qty": 0}, {"slug": CONTROL, "qty": 1}])
+    o = inv2["c"].get(f"/api/invoice/{tok}").get_json()["order"]
+    assert o["payable"] is True and o["not_ready"] is None
+    assert inv2["c"].post(f"/api/invoice/{tok}/pay", json={"method": "card"}).status_code == 200
+
+
+@pytest.mark.parametrize("lines", [[{"slug": ALK, "qty": -1}, {"slug": ALK, "qty": 2}],   # M09
+                                   [{"slug": ALK, "qty": 1}, {"slug": ALK, "qty": 1}]])   # M10
+def test_split_or_negative_lines_cannot_raise_a_held_line_by_the_owner(edit, lines):
+    c, calls = edit          # the order holds ALK 1
+    r = c.post("/api/orders/5/edit", json={"lines": lines})
+    assert r.status_code == 400 and calls == []
+
+
+@pytest.mark.parametrize("lines", [[{"slug": ALK, "qty": -1}, {"slug": ALK, "qty": 2}],
+                                   [{"slug": ALK, "qty": 1}, {"slug": ALK, "qty": 1}]])
+def test_split_or_negative_lines_cannot_raise_a_held_line_by_the_client(cupd, lines):
+    c, calls = cupd          # the invoice holds ALK 1
+    r = c.post("/api/invoice/tok/update", json={"lines": lines})
+    assert r.status_code == 400 and calls == []
+
+
+def test_the_client_keeps_a_held_line_while_editing_another(cupd, tmp_path, monkeypatch):  # M14
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "k.db"))
+    c, calls = cupd
+    r = c.post("/api/invoice/tok/update", json={"lines": [{"slug": ALK, "qty": 1},
+                                                          {"slug": CONTROL, "qty": 3}]})
+    assert r.status_code == 200, r.get_json()
+    assert calls[0][1]["allow_waitlist"] is True
+
+
+def test_the_pay_refusal_comes_before_the_paylink_flag(inv2, monkeypatch):          # M17
+    monkeypatch.setattr(app, "INVOICE_PAYLINK_ENABLED", False)
+    tok = inv2["order2"]([{"slug": ALK, "qty": 1}])
+    r = inv2["c"].post(f"/api/invoice/{tok}/pay", json={"method": "card"})
+    assert r.status_code == 400 and r.get_json()["error"] == ALK_REFUSAL
+
+
+def test_the_reorder_row_carries_the_page_url(monkeypatch, tmp_path):                 # M34
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "r.db"))
+    monkeypatch.setattr(app, "_reorder_email_from_cookie", lambda: "r@x.com")
+    monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
+    monkeypatch.setattr(app, "_REVIEWS_ENABLED", False)
+    monkeypatch.setattr(app._bos_orders, "list_orders_by_email", lambda cx, email: [
+        {"created_at": "2026-09-01", "items": [{"name": "Alkalize Bicarbonate Blend", "qty": 1}]}])
+    monkeypatch.setattr(app, "_resolve_buy_slug", lambda nm: ALK)
+    (it,) = app.app.test_client().get("/api/reorder/items").get_json()["items"]
+    assert it["not_ready_url"] == f"/begin/product/{ALK}"
+
+
+def test_the_reorder_page_links_only_when_there_is_a_url():                          # M41
+    html = _html("reorder.html")
+    assert ("${it.not_ready_url ? `<a href=\"${esc(it.not_ready_url)}\">${esc(it.not_ready_line)}</a>`"
+            " : esc(it.not_ready_line || 'no longer available')}") in html
+
+
+def test_the_learn_waitlist_button_points_at_the_product_page():                      # M37
+    html = _html("begin-learn.html")
+    assert "var page = d.buy_url || ('/begin/product/' + encodeURIComponent(slug));" in html
+    i = html.index("if (d.waitlist){")
+    assert "nb.setAttribute('href', page);" in html[i:html.index("} else {", i)]
+
+
+def test_the_claim_paid_reply_uses_the_same_wording(inv2, monkeypatch):
+    from dashboard import inbox
+    sent = []
+    monkeypatch.setattr(inbox, "send_email", lambda *a, **k: sent.append(a))
+    tok = inv2["order2"]([{"slug": CONTROL, "qty": 1}])
+    j = inv2["c"].post(f"/api/invoice/{tok}/claim-paid", json={"method": "zelle"}).get_json()
+    assert j["message"] == app._CLAIM_PENDING_LINE
+    assert len(sent) == 1 and sent[0][0] == "drglenswartwout@gmail.com"

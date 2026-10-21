@@ -541,7 +541,8 @@ async function pushUpdate(){
   const r = await fetch(API+'/update', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lines})});
   const j = await r.json();
   if(!j.ok){ alert(j.error||'update failed'); renderFromOrder(); return; }
-  ORDER=j.order; renderFromOrder();
+  // setupPay too, so removing a not-ready line brings Pay back without a reload.
+  ORDER=j.order; renderFromOrder(); setupPay();
 }
 function linesFromOrder(){
   return ORDER.lines.map(l=>({slug:l.slug, name:l.name, qty:l.qty, unit_cents:l.unit_cents,
@@ -556,6 +557,17 @@ function setupPay(){
   // editable hid this button on every unpaid order outside proposed/confirmed.
   // Not ready to order (2026-10-20): no Pay button. The refusal line links to the
   // product page, where the waiting list is. Cancel stays.
+  // Re-run after an edit (review round 3): undo what a not-ready pass hid.
+  $('pay-card').style.display='';
+  ['pay-methods','pay-btn'].forEach(id=>{ $(id).style.display=''; });
+  $('pay-notice').innerHTML='';
+  // Payment reported sent on an order holding a not-ready product: the claimed
+  // wording, no Pay button, never the waiting-list line.
+  if (ORDER.claim_pending){
+    ['pay-methods','pay-btn','pay-due'].forEach(id=>{ $(id).style.display='none'; });
+    $('pay-notice').innerHTML = '<div class="notice">'+esc(ORDER.claim_pending)+'</div>';
+    return;
+  }
   if (ORDER.not_ready){
     ['pay-methods','pay-btn','pay-due'].forEach(id=>{ $(id).style.display='none'; });
     document.querySelector('.fee-free-note').hidden = true;
