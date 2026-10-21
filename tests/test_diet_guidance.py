@@ -21,9 +21,13 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 # The client text from rnd/review/2026-10-16-client-diet-guidance/client-diet-guidance-draft-v1.md
 # (source sha256 ecab1ee2fbe7ffde...), "## Eating for your terrain" to the end, byte for byte.
 # A wording change goes back to Glen through rnd, and then this hash changes with it.
-APPROVED_SHA256 = "ed7bc97e7cbeed632dcdb6c9b5b3a12e6bf4774446062cbd786a16e146c91925"
-CAUTION = ("If you have diabetes, take regular medication, are pregnant, or have ever "
-           "struggled with eating, ask your doctor before cutting back on any food or fasting.")
+# Changed 2026-10-20: three lines no longer defer to a doctor (Glen, "approve", clinical tab;
+# the fasting line from report-leads-2026-10-20/diet-line-APPROVED.txt, the others from
+# vault clinical/biofield-sections/explanations/review/batch-12-report-leads/final.json).
+APPROVED_SHA256 = "9d30036e9d6322bfe9b0f727cf8759871517b15ec179d43ecfd9dc8ce1f9f8be"
+CAUTION = ("If you have diabetes or are pregnant or breastfeeding, ask Dr. Glen in your "
+           "portal chat before fasting or dieting. The same applies if you take any "
+           "medicine or have ever had an eating disorder.")
 
 
 def test_the_text_is_the_approved_text_byte_for_byte():
@@ -50,7 +54,7 @@ def test_one_phase_never_carries_another_phase_s_text():
             assert dg.guidance(m)["paragraphs"][0] not in html
 
 
-def test_every_sentence_is_its_own_paragraph():
+def test_every_source_line_is_its_own_paragraph():
     html = dg.guidance_html(4)
     assert "<p>An overnight fast of 12 to 14 hours suits those with strength to spare.</p>" in html
     assert html.count("<p>") == 5 + 6

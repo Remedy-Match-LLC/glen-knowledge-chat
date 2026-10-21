@@ -71,7 +71,8 @@ def guidance(phase):
 
 
 def guidance_html(phase):
-    """The guidance as HTML, each sentence its own paragraph as in the source, or ""."""
+    """The guidance as HTML, each source line its own paragraph, or "". A few approved
+    lines hold two sentences (Glen, 2026-10-20), so never split them."""
     g = guidance(phase)
     if not g:
         return ""

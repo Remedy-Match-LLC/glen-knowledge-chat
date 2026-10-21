@@ -1419,8 +1419,8 @@ const money = (c)=> (c==null? "" : "$"+(c/100).toFixed(2));
 const TERRAIN_PHASE_NAMES = {1:"Terrain Revive",2:"Terrain Repair",3:"Terrain Renew",4:"Terrain Refresh",5:"Terrain Relief"};
 function terrainPhaseName(p){ return TERRAIN_PHASE_NAMES[parseInt(p,10)] || ""; }
 // Diet guidance for the client's terrain phase (Glen approved the text 2026-10-16). The
-// server sends one phase's section with the intro cautions, or null. Every sentence is
-// its own paragraph, as in the approved source. kind "print" uses the print classes.
+// server sends one phase's section with the intro cautions, or null. Each source line is
+// its own paragraph; a few approved lines hold two sentences (2026-10-20). kind "print" uses the print classes.
 function dietGuidanceHtml(g, kind){
   if(!g || !g.heading || !Array.isArray(g.intro) || !Array.isArray(g.paragraphs)) return "";
   const p = (t)=>`<p>${esc(t)}</p>`;

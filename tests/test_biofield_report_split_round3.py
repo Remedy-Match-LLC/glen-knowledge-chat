@@ -347,6 +347,10 @@ def test_the_leads_are_the_approved_wording():
     assert _digest(leads) == APPROVED_DIGEST
     # Glen, 2026-10-19: "Use each remedy as guided." not 'take'.
     assert leads["biofield"][7] == "Use each remedy as guided."
+    # Glen, 2026-10-20, "approve" in the clinical tab: no prescriber deferral.
+    assert leads["biofield"][9] == ("Before you start, tell Dr. Glen in your portal chat about "
+                                    "any medicines or supplements you take.")
+    assert "prescriber" not in json.dumps(leads).lower()
 
 
 def test_the_amazon_line_is_the_approved_wording():
@@ -356,7 +360,7 @@ def test_the_amazon_line_is_the_approved_wording():
                                     "qualifying purchases.")
 
 
-APPROVED_DIGEST = "6740036ce596393cfbbf58727649e891080a07af66bc037e9391d787ba314ec3"
+APPROVED_DIGEST = "4b92699d5d3c4ca75634c83390a714f1d26c14c7c14f2cdd34c3dc8a09cbd878"
 
 
 def test_a_list_item_never_splits_across_pages(cx):
@@ -383,3 +387,69 @@ def test_the_walkthrough_script_names_only_switched_on_remedies(app_client, monk
     _toggle(c, "biofield", cs.INFOCEUTICALS, False)
     c.post(f"/test/{c.tid}/video-generate", json={})
     assert INFO not in seen[-1] and "Liver Support" in seen[-1]
+
+
+def test_no_report_line_sends_the_client_to_a_doctor():
+    """Glen, 2026-10-20, "approve" in the clinical tab: these lines ask the client to
+    tell him in the portal chat instead (vault clinical/biofield-sections/plan-report/
+    report-leads-2026-10-20/text-APPROVED.txt; the diet-guidance lines are batch 12).
+    Written out here, not read from that file."""
+    leads, _ = rs.approved_leads()
+    guidance = (pathlib.Path(__file__).resolve().parents[1] / "data"
+                / "diet-guidance.md").read_text()
+    assert ("Before you start, tell Dr. Glen in your portal chat about any medicines or "
+            "supplements you take.") in leads["biofield"]
+    assert ("If you follow a special diet for your health or have a food allergy, mention "
+            "it in your portal chat.") in leads["diet"]
+    assert ("Before using these tools, tell Dr. Glen in your portal chat about a pacemaker "
+            "or other implant or a pregnancy.") in leads["healing_tools"]
+    i = leads["ingredients"].index("Read the caution listed with each ingredient in this report.")
+    assert leads["ingredients"][i:i + 3] == [
+        "Read the caution listed with each ingredient in this report.",
+        "Before you start, tell Dr. Glen in your portal chat about any medicines you take.",
+        "Tell Dr. Glen too if a caution applies to you."]
+    for line in ("Your doctor may have given you a diet, a fluid limit or a medicine that "
+                 "depends on food. If so, keep to that first.",
+                 "If you have diabetes or are pregnant or breastfeeding, ask Dr. Glen in your "
+                 "portal chat before fasting or dieting. The same applies if you take any "
+                 "medicine or have ever had an eating disorder.",
+                 "A fever in a baby needs prompt attention, as does a high or lasting fever. "
+                 "Confusion, trouble breathing or signs of dehydration with a fever need "
+                 "prompt attention too."):
+        assert guidance.count(line) == 1, line
+    for old in ("check each change with your doctor", "Ask your doctor first",
+                "share this list with your doctor", "ask your doctor before cutting back",
+                "See a doctor promptly", "share this program with your prescriber",
+                "let me know"):
+        assert old not in json.dumps(leads) and old not in guidance, old
+
+
+def test_portal_chat_in_each_lead_links_to_the_chat():
+    """Glen, 2026-10-20: "portal chat" in the four new lead lines links to the chat."""
+    leads, links = rs.approved_leads()
+    for report in ("biofield", "diet", "healing_tools", "ingredients"):
+        assert any("portal chat" in line for line in leads[report]), report
+        assert links[report]["portal chat"] == "https://myhealingoasis.com/portal/me#chat", report
+
+
+def test_each_new_lead_renders_one_portal_chat_link(cx):
+    """Round 2 (2026-10-20): render the real file, not just its config. "portal chat"
+    is the only linked phrase, once per report, and the Ingredients lines stay three
+    paragraphs."""
+    import re
+    _seed(cx)
+    ctx = _ctx(cx)
+    want = '<a href="https://myhealingoasis.com/portal/me#chat">portal chat</a>'
+    for r in ("biofield", "diet", "healing_tools", "ingredients"):
+        if r == rs.PRIMARY:
+            from dashboard.biofield_report_present import _intro
+            page = _intro(rs.primary_intro(cx))
+        else:
+            page = rs.render_report(ctx, r, rs.DEFAULTS[r])
+        anchors = re.findall(r"<a [^>]*>.*?</a>", page)
+        chat = [a for a in anchors if "portal/me#chat" in a]
+        assert chat.count(want) >= 1 and set(chat) == {want}, (r, chat)
+    page = rs.render_report(ctx, "ingredients", rs.DEFAULTS["ingredients"])
+    for line in ("Read the caution listed with each ingredient in this report.",
+                 "Tell Dr. Glen too if a caution applies to you."):
+        assert re.search(r"<p[^>]*>" + re.escape(line) + r"</p>", page), line

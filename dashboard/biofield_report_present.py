@@ -234,8 +234,17 @@ def _diet(report):
 
 def _intro(lines):
     """The report's own introduction (Glen, 2026-10-19): the standard lead, then a
-    personal passage. Nothing at all prints while both are empty."""
-    paras = "".join(f"<p>{_e(str(p).strip())}</p>" for p in (lines or ()) if str(p).strip())
+    personal passage. Nothing at all prints while both are empty. "portal chat" links
+    to the chat as in the other reports (Glen, 2026-10-20)."""
+    try:
+        from dashboard.biofield_plan_report import _linked
+        from dashboard.biofield_report_split import PRIMARY, approved_leads
+        links = approved_leads()[1].get(PRIMARY) or {}
+    except Exception:  # noqa: BLE001 -- a missing link never blocks the report
+        _linked, links = None, {}
+    def para(t):
+        return _linked(t, links) if _linked else _e(t)
+    paras = "".join(f"<p>{para(str(p).strip())}</p>" for p in (lines or ()) if str(p).strip())
     return f'<div class="report-intro">{paras}</div>' if paras else ""
 
 
