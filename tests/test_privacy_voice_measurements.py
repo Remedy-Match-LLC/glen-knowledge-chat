@@ -31,5 +31,7 @@ def test_three_sentences_each_own_paragraph_in_place():
     assert paras[pay + 4].startswith("All personal information that you provide to us")
 
 
-def test_heading_appears_once():
-    assert sum("Voice measurements." in p for p in _paragraphs()) == 1
+def test_heading_and_each_sentence_appear_once():
+    html = re.sub(r"<!--.*?-->", "", PRIVACY.read_text(), flags=re.S)
+    for text in ["Voice measurements."] + SENTENCES:
+        assert html.count(text) == 1, text
