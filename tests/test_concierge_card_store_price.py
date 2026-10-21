@@ -134,6 +134,27 @@ def test_an_info_only_product_gets_no_add_card(monkeypatch, probe):
     assert c["price"] is None and c["url"] is None
 
 
+
+def test_a_cached_card_loses_its_add_once_the_product_goes_info_only(monkeypatch, probe):
+    monkeypatch.setattr(app, "_idx", _Idx(TITLE))
+    app._COMPLEMENT_CACHE.clear()
+    assert app._resolve_complement(NAME)["in_catalog"]
+    _set(monkeypatch, probe, price_cents=7000, info_only=True)
+    c = app._resolve_complement(NAME)
+    assert c["slug"] is None and not c["in_catalog"]
+    assert c["price"] is None and c["url"] is None
+    _set(monkeypatch, probe, price_cents=7000)
+    assert app._resolve_complement(NAME)["in_catalog"]
+
+
+def test_a_cached_card_loses_its_add_once_the_product_is_waitlisted(monkeypatch, probe):
+    monkeypatch.setattr(app, "_idx", _Idx(TITLE))
+    app._COMPLEMENT_CACHE.clear()
+    assert app._resolve_complement(NAME)["in_catalog"]
+    monkeypatch.setattr(app, "_waitlist_block", lambda s: s == SLUG)
+    c = app._resolve_complement(NAME)
+    assert c["slug"] is None and c["price"] is None
+
 # ── e. The add route ──────────────────────────────────────────────────────────
 
 def _order(monkeypatch, tmp_path):

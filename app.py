@@ -15298,50 +15298,58 @@ def _complement_store_price(slug):
     return f"${cents/100:.2f}"
 
 
+def _orderable_complement_slug(slug):
+    """The slug if the product can be added to an order right now, else None.
+    Checked on every call, cache hit or not, so a product that goes off sale,
+    waitlisted or info-only after it was first resolved loses its add card."""
+    if not slug:
+        return None
+    # An off-sale product is neither added nor opened on the store: its vector still
+    # carries the old page's url and price (Molybdenum Syntropy, 2026-10-07).
+    slug = _live_slug(slug)
+    # Not ready to order (waitlist_only or out of stock): never suggested, since the
+    # card offers "Add to my order" with its price (Alkalize, 2026-10-20).
+    if slug and _waitlist_block(slug):
+        return None
+    # info_only, inactive or otherwise not orderable: no "Add to my order" card,
+    # since /begin/concierge/add refuses it (Biofield Analysis, 2026-10-21).
+    if slug and not _is_orderable(slug):
+        return None
+    return slug
+
+
 def _resolve_complement(name):
     """Resolve a complement product NAME to {name, title, url, price, slug, in_catalog}.
     in_catalog (slug present) -> addable to the invoice; else -> open on the store."""
     if not name:
         return None
     key = name.strip().lower()
+    # The cache holds only the vector lookup (title, url, catalog slug). Eligibility
+    # and price are read from the catalog on every call, so a store change shows at once.
     if key in _COMPLEMENT_CACHE:
-        # The cache holds the resolution, never the price: the price is read from
-        # the catalog on every call, so a store price change shows at once.
-        hit = dict(_COMPLEMENT_CACHE[key])
-        hit["price"] = _complement_store_price(hit["slug"]) if hit["slug"] else None
-        return hit
-    title = url = None
-    try:
-        vec = embed(name)
-        res = _idx.query(vector=vec, top_k=1, namespace="specific-formulations", include_metadata=True)
-        if res.matches and res.matches[0].score >= 0.83:
-            md = res.matches[0].metadata or {}
-            # Never the vector's price: the store's price_cents is the only price
-            # source (Glen, 2026-10-21). 154 of 155 metadata prices were stale.
-            title, url = md.get("title"), md.get("url")
-    except Exception as e:
-        print(f"[concierge] resolve {name}: {e}", flush=True)
-    slug = _TITLE_TO_SLUG.get(title) if title else None
-    if slug:
-        # An off-sale product is neither added nor opened on the store: its vector still
-        # carries the old page's url and price (Molybdenum Syntropy, 2026-10-07).
-        slug = _live_slug(slug)
-        # Not ready to order (waitlist_only or out of stock): never suggested, since the
-        # card offers "Add to my order" with its price (Alkalize, 2026-10-20).
-        if slug and _waitlist_block(slug):
-            slug = None
-        # info_only, inactive or otherwise not orderable: no "Add to my order" card,
-        # since /begin/concierge/add refuses it (Biofield Analysis, 2026-10-21).
-        if slug and not _is_orderable(slug):
-            slug = None
-        if not slug:
-            url = None
-    out = {"name": name, "title": title, "url": url, "price": None,
-           "slug": slug, "in_catalog": bool(slug)}
-    _COMPLEMENT_CACHE[key] = out
-    hit = dict(out)
-    hit["price"] = _complement_store_price(slug) if slug else None
-    return hit
+        base = _COMPLEMENT_CACHE[key]
+    else:
+        title = url = None
+        try:
+            vec = embed(name)
+            res = _idx.query(vector=vec, top_k=1, namespace="specific-formulations", include_metadata=True)
+            if res.matches and res.matches[0].score >= 0.83:
+                md = res.matches[0].metadata or {}
+                # Never the vector's price: the store's price_cents is the only price
+                # source (Glen, 2026-10-21). 154 of 155 metadata prices were stale.
+                title, url = md.get("title"), md.get("url")
+        except Exception as e:
+            print(f"[concierge] resolve {name}: {e}", flush=True)
+        base = {"title": title, "url": url,
+                "catalog_slug": _TITLE_TO_SLUG.get(title) if title else None}
+        _COMPLEMENT_CACHE[key] = base
+    slug = _orderable_complement_slug(base["catalog_slug"])
+    url = base["url"]
+    if base["catalog_slug"] and not slug:
+        url = None
+    return {"name": name, "title": base["title"], "url": url,
+            "price": _complement_store_price(slug) if slug else None,
+            "slug": slug, "in_catalog": bool(slug)}
 
 
 _CONCIERGE_SYSTEM = (
