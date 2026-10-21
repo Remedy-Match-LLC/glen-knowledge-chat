@@ -123,10 +123,10 @@ def _rows(cx, sql, params=()):
 
 
 def _result(email=None, source=None, conflict=False, reason="", candidates=(),
-            dropship=False, name_agrees=False):
+            dropship=False, name_agrees=False, to_client=False):
     return {"email": email, "source": source, "conflict": conflict, "reason": reason,
             "candidates": sorted(set(candidates)), "dropship": dropship,
-            "name_agrees": name_agrees}
+            "name_agrees": name_agrees, "to_client": to_client}
 
 
 def _one_email(found):
@@ -160,7 +160,22 @@ def resolve_by_address(cx, shipment):
     A label's business line is joined onto its street, and then the street matches
     nothing on file: Fukushima's 6 labels on 2026-10-14 became 6 blank drafts. When the
     whole street finds nobody, it is tried once more without that line, and then a board
-    order must ALSO agree on the name, because a shortened street is a weaker key."""
+    order must ALSO agree on the name, because a shortened street is a weaker key.
+
+    A failure is rolled back before it is raised. On Postgres the aborted transaction
+    would otherwise make the watcher's record_shipment fail, and an unrecorded box is
+    drafted again on every run."""
+    try:
+        return _resolve_by_address(cx, shipment)
+    except Exception:
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        raise
+
+
+def _resolve_by_address(cx, shipment):
     name = shipment.get("recipient_name") or ""
     z = zip5(shipment.get("zip"))
     sk = street_key(shipment.get("street"))
@@ -203,6 +218,42 @@ def _split_name(full):
     return ((full or "").split(" ", 1) + [""])[:2]
 
 
+def _name_words(full):
+    return [w for w in (_alnum(t) for t in re.findall(r"[a-z0-9'-]+", _ascii(full))) if w]
+
+
+def client_name_agrees(label_name, ship_name):
+    """Does a label name the client on a drop-ship ship-to? Used only together with a
+    matching address. The full names agree once normalised, or the first initials
+    agree and they share a later word, so a middle or a double surname still agrees:
+    'Mary Ann Smith' with 'Mary Smith', 'Maria Garcia Lopez' with 'Maria Garcia'."""
+    a, b = _name_words(label_name), _name_words(ship_name)
+    if not a or not b:
+        return False
+    if "".join(a) == "".join(b) or names_agree(label_name, *_split_name(ship_name)):
+        return True
+    return a[0][0] == b[0][0] and bool(set(a[1:]) & set(b[1:]))
+
+
+def _street_keys(a):
+    """The keys an order's ship-to can be matched by: street with address2 (the unit,
+    as a label prints it) and street alone."""
+    street = a.get("street") or a.get("address1") or ""
+    unit = a.get("address2") or a.get("street2") or ""
+    keys = {street_key(f"{street} {unit}"), street_key(street)}
+    keys.discard("")
+    return keys
+
+
+def shipment_from_block(recipient_name, address_block):
+    """A recorded shipment row as the label dict the hold reads. The block is
+    'street lines / CITY ST 12345-6789 US', as the watcher stored it."""
+    lines = [ln.strip() for ln in str(address_block or "").split(" / ") if ln.strip()]
+    m = re.search(r"\b(\d{5})(?:-\d{4})?\b", lines[-1]) if lines else None
+    return {"recipient_name": recipient_name or "", "street": " ".join(lines[:-1]),
+            "zip": m.group(1) if m else "", "address_block": address_block or ""}
+
+
 def _order_name(order):
     """The person the parcel is for. A drop-ship's `name` is the practitioner's, so
     its client's name is read from the ship-to instead."""
@@ -223,8 +274,9 @@ def _dropship_to(order, switched_on):
 
 def dropship_holds(cx):
     """Every drop-ship client whose practitioner has client mail off, from orders in
-    any status: [{prac, client, name, zip, street}]. `client` is '' when the
+    any status: [{order_id, prac, client, name, zip, streets}]. `client` is '' when the
     practitioner typed no email, so the hold also works by ship-to address and name.
+    A client of two practitioners is held while either one has the switch off.
 
     Read fresh for every send, so a switch turned off mid-run holds the next email.
     None when the read fails: the caller then drafts rather than send blind. A
@@ -234,7 +286,7 @@ def dropship_holds(cx):
         if not _db.column_exists(cx, "orders", "source"):
             return []
         rows = cx.execute(
-            f"SELECT email, address_json, {_dropship_columns(cx)} FROM orders "
+            f"SELECT id, email, address_json, {_dropship_columns(cx)} FROM orders "
             "WHERE source = 'dropship'").fetchall()
         switched_on = _switched_on(cx)
     except Exception:
@@ -244,21 +296,23 @@ def dropship_holds(cx):
             pass
         return None
     holds = []
-    for prac, address_json, _source, pid, client in rows:
+    for order_id, prac, address_json, _source, pid, client in rows:
         if str(pid or "").strip() in switched_on:
             continue
         a = _ship_to({"address_json": address_json})
-        holds.append({"prac": (prac or "").strip().lower(),
+        holds.append({"order_id": order_id,
+                      "prac": (prac or "").strip().lower(),
                       "client": (client or "").strip().lower(),
                       "name": a.get("name") or "",
                       "zip": zip5(a.get("zip") or a.get("postal_code")),
-                      "street": street_key(a.get("street") or a.get("address1"))})
+                      "streets": _street_keys(a)})
     return holds
 
 
 def holds_touching(holds, shipment, to=None):
-    """The holds this parcel cannot be told apart from: same ship-to address, a name
-    that agrees with the label, or the held client's own email."""
+    """The holds this parcel cannot be told apart from: the held client's own email, or
+    the same full ship-to address AND a name that agrees. A name alone never holds:
+    surnames repeat across the country, and a stranger would lose their tracking."""
     z = zip5(shipment.get("zip"))
     streets = {street_key(shipment.get("street"))}
     alt = _street_after_business_line(shipment)
@@ -270,10 +324,30 @@ def holds_touching(holds, shipment, to=None):
     out = []
     for h in holds or []:
         if (h["client"] and h["client"] == to) or \
-                (z and h["zip"] == z and h["street"] in streets) or \
-                names_agree(label, *_split_name(h["name"])):
+                (z and h["zip"] == z and h["streets"] & streets
+                 and client_name_agrees(label, h["name"])):
             out.append(h)
     return out
+
+
+def email_is_held(cx, email, holds=None):
+    """Is this email a held drop-ship client for mail that is not about one parcel,
+    such as the plan-choice email? True when it is a held client's typed email, or
+    when any shipment recorded for it went to a held ship-to address and name. The
+    same address-plus-name rule as the watcher. Raises when the holds cannot be read,
+    so the caller sends nothing rather than send blind."""
+    if holds is None:
+        holds = dropship_holds(cx)
+    if holds is None:
+        raise RuntimeError("drop-ship holds could not be read")
+    em = (email or "").strip().lower()
+    if any(h["client"] and h["client"] == em for h in holds):
+        return True
+    if not holds:
+        return False
+    rows = cx.execute("SELECT recipient_name, address_block FROM shipments "
+                      "WHERE lower(resolved_email) = ?", (em,)).fetchall()
+    return any(holds_touching(holds, shipment_from_block(r[0], r[1])) for r in rows)
 
 
 def _resolve_at(cx, name, z, sk, require_name):
@@ -288,10 +362,12 @@ def _resolve_at(cx, name, z, sk, require_name):
             continue
         if not isinstance(a, dict):
             continue
-        if zip5(a.get("zip") or a.get("postal_code")) == z and \
-                street_key(a.get("street") or a.get("address1")) == sk:
+        if zip5(a.get("zip") or a.get("postal_code")) == z and sk in _street_keys(a):
             board.append(o)
+
     def agrees(o):
+        if o.get("source") == "dropship":
+            return client_name_agrees(name, _order_name(o))
         return names_agree(name, *_split_name(_order_name(o)))
 
     # Glen, 2026-10-21: a drop-ship client gets mail from us only when that
@@ -305,7 +381,8 @@ def _resolve_at(cx, name, z, sk, require_name):
             email, clash = _one_email([(_dropship_to(o, _switched_on(cx)), True)
                                        for o in ours])
             if email:
-                return _result(email, "board", dropship=True,
+                pracs = {(o.get("email") or "").strip().lower() for o in ours}
+                return _result(email, "board", dropship=True, to_client=email not in pracs,
                                reason="open drop-ship order at the ship-to address")
         elif own and not ours:
             # A housemate's own order: the label names them, not the drop-ship client.
