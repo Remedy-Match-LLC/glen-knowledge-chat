@@ -383,7 +383,8 @@ def test_the_client_cannot_raise_it(cupd):
 def test_the_learn_page_offers_the_list_only_for_a_waitlist_product(monkeypatch, catalog):
     monkeypatch.setattr(app, "_product_content", None)
     vd = "vitamin-d-syntropy"
-    monkeypatch.setitem(catalog, vd, dict(_real()[vd]))
+    # Out of stock set here, so the test does not depend on the real stock state.
+    monkeypatch.setitem(catalog, vd, dict(_real()[vd], out_of_stock="Back soon."))
     c = app.app.test_client()
     alk = c.get(f"/begin/learn-data/{ALK}").get_json()
     assert alk["waitlist"] is True
