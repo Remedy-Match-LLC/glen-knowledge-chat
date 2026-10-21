@@ -10740,7 +10740,7 @@ def _related_semantic(slug, k=12):
     slug (their ids come from the page-copy scraper/ingest, e.g. chunked
     `{ns_prefix}-{title-slug}-{i:03d}` ids), so a `fetch(ids=[slug])` would not
     find this product's vector. Instead this follows the same pattern already
-    used by `_resolve_complement()` / `qbo_price_coverage()`: embed the
+    used by `_resolve_complement()`: embed the
     product's own `pinecone_title` (or `name`) text, query the
     `specific-formulations` namespace for nearest neighbours by similarity,
     then map each neighbour's `metadata['title']` back to a catalog slug via
@@ -15276,6 +15276,20 @@ def _build_resolve_name_index(products):
 _RESOLVE_NAME_INDEX = _build_resolve_name_index(_PRODUCTS.get("products") or {})
 
 
+def _complement_store_price(slug):
+    """The store's price label for a catalog slug, formatted as the product page
+    formats it ("$70.00"). None when the product is unknown or has no price_cents
+    of its own: no price is shown rather than a default or a copied one."""
+    p = _get_product(slug)
+    if not p:
+        return None
+    raw = (_PRODUCTS.get("products") or {}).get(p["slug"]) or {}
+    cents = raw.get("price_cents")
+    if not cents:
+        return None
+    return f"${cents/100:.2f}"
+
+
 def _resolve_complement(name):
     """Resolve a complement product NAME to {name, title, url, price, slug, in_catalog}.
     in_catalog (slug present) -> addable to the invoice; else -> open on the store."""
@@ -15290,7 +15304,9 @@ def _resolve_complement(name):
         res = _idx.query(vector=vec, top_k=1, namespace="specific-formulations", include_metadata=True)
         if res.matches and res.matches[0].score >= 0.83:
             md = res.matches[0].metadata or {}
-            title, url, price = md.get("title"), md.get("url"), md.get("price")
+            # Never the vector's price: the store's price_cents is the only price
+            # source (Glen, 2026-10-21). 154 of 155 metadata prices were stale.
+            title, url = md.get("title"), md.get("url")
     except Exception as e:
         print(f"[concierge] resolve {name}: {e}", flush=True)
     slug = _TITLE_TO_SLUG.get(title) if title else None
@@ -15303,7 +15319,8 @@ def _resolve_complement(name):
         if slug and _waitlist_block(slug):
             slug = None
         if not slug:
-            url = price = None
+            url = None
+    price = _complement_store_price(slug) if slug else None
     out = {"name": name, "title": title, "url": url, "price": price,
            "slug": slug, "in_catalog": bool(slug)}
     _COMPLEMENT_CACHE[key] = out
@@ -15522,32 +15539,21 @@ def begin_concierge_add():
 
 @app.route("/api/qbo/price-coverage", methods=["GET"])
 def qbo_price_coverage():
-    """Diagnostic: for each products.json product, query specific-formulations for a
-    price (the last scrape stored price_your/price_retail). Shows match title + score
-    so we can judge coverage + match quality before populating products.json."""
+    """Diagnostic: which products.json products carry their own store price.
+
+    It used to harvest prices from the specific-formulations vectors, to help
+    populate products.json. The store's price_cents is now the only price source
+    (Glen, 2026-10-21) and 154 of 155 vector prices were stale, so this reports
+    catalog coverage only and never reads vector metadata."""
     if not _qbo_auth_ok():
         return jsonify({"error": "Unauthorized"}), 401
     out = []
     for slug, p in (_PRODUCTS.get("products") or {}).items():
-        name = p["name"]
-        try:
-            vec = embed(name)
-            res = _idx.query(vector=vec, top_k=4, namespace="specific-formulations",
-                             include_metadata=True)
-            best = None
-            for m in res.matches:
-                md = m.metadata or {}
-                price = md.get("price") or md.get("price_your") or md.get("price_retail")
-                if price:
-                    best = {"match_title": md.get("title", ""), "price": str(price),
-                            "score": round(float(m.score), 3)}
-                    break
-            row = {"slug": slug, "name": name, "found": bool(best)}
-            if best:
-                row.update(best)
-            out.append(row)
-        except Exception as e:
-            out.append({"slug": slug, "name": name, "error": str(e)[:120]})
+        cents = p.get("price_cents")
+        row = {"slug": slug, "name": p.get("name", ""), "found": bool(cents)}
+        if cents:
+            row.update({"price_cents": cents, "price": f"${cents/100:.2f}"})
+        out.append(row)
     return jsonify({"ok": True, "covered": sum(1 for o in out if o.get("found")),
                     "total": len(out), "products": out})
 
