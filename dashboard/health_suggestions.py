@@ -244,6 +244,7 @@ def _source_sentence(quote, client_msg):
 # own clause must open plainly, and what follows it must be the question.
 _ASKING = re.compile(r"\b(?:if|whether|when|what|how|why|which|is|are|am|can|could|should|"
                      r"would|will|do|does|did|may|might|possible|suppose|supposing)\b", re.I)
+_SUPPOSING = re.compile(r"\b(?:if|whether|suppose|supposing|what if|in case|were)\b", re.I)
 _QUESTION_AFTER = re.compile(r"^[\s,;:.!-]*(?:(?:and|but|so|then)\s+)?(?:is|are|am|can|could|"
                              r"should|would|will|do|does|did|may|might|what|how|which|"
                              r"any|anything)\b", re.I)
@@ -259,6 +260,13 @@ def _asked(quote, sentence):
         return True
     before = re.split(r"[,;:]", flat[:at])[-1]
     after = flat[at + len(q):]
+    # "Can I take this while I'm on warfarin?" asks about a fact it also states, so a
+    # stating link straight before the quote keeps it (marketing's live run, 20 Oct).
+    stated = re.search(r"\b(?:while|since|as|because|given(?: that)?|now that)\s*$", before)
+    if _SUPPOSING.search(flat[:at]):
+        return True                      # "is it safe if, while I'm pregnant, I fast?"
+    if stated:
+        return False
     if _ASKING.search(before):
         return True                      # "is it safe if I am pregnant?"
     # A clause break after the quote ends the fact ("I take warfarin and metformin,
