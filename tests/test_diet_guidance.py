@@ -22,11 +22,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 # (source sha256 ecab1ee2fbe7ffde...), "## Eating for your terrain" to the end, byte for byte.
 # A wording change goes back to Glen through rnd, and then this hash changes with it.
 # Changed 2026-10-20: three lines no longer defer to a doctor (Glen, "approve", clinical tab;
+# the fasting line from report-leads-2026-10-20/diet-line-APPROVED.txt, the others from
 # vault clinical/biofield-sections/explanations/review/batch-12-report-leads/final.json).
-APPROVED_SHA256 = "b49432cadabc171879dc375b558c1546a5bf10de89398f5bf5f3e1fe0ea8a534"
-CAUTION = ("If you have diabetes or are pregnant, let me know before you eat less or start "
-           "a fast. The same applies if you take regular medication or have ever struggled "
-           "with eating.")
+APPROVED_SHA256 = "9d30036e9d6322bfe9b0f727cf8759871517b15ec179d43ecfd9dc8ce1f9f8be"
+CAUTION = ("If you have diabetes or are pregnant or breastfeeding, ask Dr. Glen in your "
+           "portal chat before fasting or dieting. The same applies if you take any "
+           "medicine or have ever had an eating disorder.")
 
 
 def test_the_text_is_the_approved_text_byte_for_byte():

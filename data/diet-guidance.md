@@ -8,7 +8,7 @@ Your doctor may have given you a diet, a fluid limit or a medicine that depends 
 
 Do not cut back on food, protein or fluids for a child, or if you are older and frail, underweight or losing weight without trying.
 
-If you have diabetes or are pregnant, let me know before you eat less or start a fast. The same applies if you take regular medication or have ever struggled with eating.
+If you have diabetes or are pregnant or breastfeeding, ask Dr. Glen in your portal chat before fasting or dieting. The same applies if you take any medicine or have ever had an eating disorder.
 
 ### Terrain Revive (Phase 1)
 

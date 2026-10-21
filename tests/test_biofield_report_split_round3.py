@@ -410,9 +410,9 @@ def test_no_report_line_sends_the_client_to_a_doctor():
         "Tell Dr. Glen too if a caution applies to you."]
     for line in ("Your doctor may have given you a diet, a fluid limit or a medicine that "
                  "depends on food. If so, keep to that first.",
-                 "If you have diabetes or are pregnant, let me know before you eat less or "
-                 "start a fast. The same applies if you take regular medication or have ever "
-                 "struggled with eating.",
+                 "If you have diabetes or are pregnant or breastfeeding, ask Dr. Glen in your "
+                 "portal chat before fasting or dieting. The same applies if you take any "
+                 "medicine or have ever had an eating disorder.",
                  "A fever in a baby needs prompt attention, as does a high or lasting fever. "
                  "Confusion, trouble breathing or signs of dehydration with a fever need "
                  "prompt attention too."):
@@ -420,7 +420,7 @@ def test_no_report_line_sends_the_client_to_a_doctor():
     for old in ("check each change with your doctor", "Ask your doctor first",
                 "share this list with your doctor", "ask your doctor before cutting back",
                 "See a doctor promptly", "share this program with your prescriber",
-                "let me know so"):
+                "let me know"):
         assert old not in json.dumps(leads) and old not in guidance, old
 
 
