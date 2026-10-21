@@ -157,6 +157,18 @@ function panelsHolding(id, seen) {
       const p = at !== -1 && at < wrapEnd ? sectionPanelAt(at) : null;
       if (p) { out[p] = true; found = true; }
     }
+    // 6. a helper whose result is assigned to a local INSIDE the panel wrap
+    //    (`const ordersHtml = _payerOrdersHtml + buildOrdersHtml(d);`), which one
+    //    section then renders as `${ordersHtml}`. Added for #orders (2026-10-21).
+    for (c = page.indexOf(fnName + '(', wrapStart); c !== -1 && c < wrapEnd;
+         c = page.indexOf(fnName + '(', c + 1)) {
+      const lineStart = page.lastIndexOf('\n', c) + 1;
+      const local = /^\s*const (\w+Html) = [^;\n]*$/.exec(page.slice(lineStart, c));
+      if (!local) continue;
+      const at = page.indexOf('${' + local[1] + '}', c);
+      const p = at !== -1 && at < wrapEnd ? sectionPanelAt(at) : null;
+      if (p) { out[p] = true; found = true; }
+    }
     assert.ok(found, 'helper ' + fnName + '() emits ' + needle + ' but is never rendered into a panel');
   }
   const panels = Object.keys(out);

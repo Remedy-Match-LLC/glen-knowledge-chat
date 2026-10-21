@@ -17,7 +17,7 @@ import re
 ROUTE_KEYS = frozenset((
     "biofield", "biofield-latest", "biofield-order", "recs", "recommendations",
     "remedies", "intake", "health", "documents", "offers", "photo", "cart", "shop",
-    "finder", "calendar", "chat",
+    "finder", "calendar", "chat", "orders",
 ))
 
 _SHAPE = re.compile(r"[a-z-]{1,40}")
