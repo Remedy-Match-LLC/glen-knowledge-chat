@@ -554,6 +554,14 @@ function setupPay(){
   // Gated on `payable`, not `editable`: a shipped order must not be re-priced by
   // the customer, but it is the LAST one that should be unpayable. Gating on
   // editable hid this button on every unpaid order outside proposed/confirmed.
+  // Not ready to order (2026-10-20): no Pay button. The refusal line links to the
+  // product page, where the waiting list is. Cancel stays.
+  if (ORDER.not_ready){
+    ['pay-methods','pay-btn','pay-due'].forEach(id=>{ $(id).style.display='none'; });
+    document.querySelector('.fee-free-note').hidden = true;
+    $('pay-notice').innerHTML = '<div class="notice"><a href="'+esc(ORDER.not_ready.url)+'">'+esc(ORDER.not_ready.line)+'</a></div>';
+    return;
+  }
   if (!ORDER.payable){ $('pay-card').style.display='none'; return; }
   // Amount due, up top, so the call to action is unmistakable.
   // The balance, never the full total: a paid order that gained a line owes only
@@ -568,7 +576,11 @@ function setupPay(){
 async function pay(){
   $('pay-msg').textContent='…';
   const r = await fetch(API+'/pay', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({method:curMethod})});
-  const j = await r.json(); if(!j.ok){ $('pay-msg').textContent=j.error||'payment unavailable'; return; }
+  const j = await r.json(); if(!j.ok){
+    // A refusal carries its product page as `url`: the line links to it (2026-10-20).
+    if (j.url) $('pay-msg').innerHTML='<a href="'+esc(j.url)+'">'+esc(j.error||'')+'</a>';
+    else $('pay-msg').textContent=j.error||'payment unavailable';
+    return; }
   $('pay-msg').textContent='';
   if (j.method==='card' && j.url){ location.href=j.url; return; }
   if (j.instructions){ $('pay-instr').textContent=j.instructions; $('pay-instr').style.display='block'; $('claim-btn').style.display='inline-block'; }

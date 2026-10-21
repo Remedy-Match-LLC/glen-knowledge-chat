@@ -146,7 +146,7 @@ function renderList(sel, items){
   $(sel).innerHTML = items.map(it => {
     const r = rows[it.slug] || rows['__na__'+it.name];
     if (!it.available) return `<div class="row un"><input type="checkbox" disabled>
-      <div class="nm"><b>${esc(it.name)}</b><small>${esc(it.not_ready_line || 'no longer available')}</small></div></div>`;
+      <div class="nm"><b>${esc(it.name)}</b><small>${it.not_ready_url ? `<a href="${esc(it.not_ready_url)}">${esc(it.not_ready_line)}</a>` : esc(it.not_ready_line || 'no longer available')}</small></div></div>`;
     const needsReview = it.reviewed === false;
     return `<div class="row" id="row-${it.slug}">
       <input type="checkbox" ${r.checked&&!needsReview?'checked':''} ${needsReview?'disabled title="Rate this product first"':''}

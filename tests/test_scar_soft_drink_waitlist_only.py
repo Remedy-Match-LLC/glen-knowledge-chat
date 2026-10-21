@@ -443,8 +443,12 @@ def test_post_orders_is_refused(client, monkeypatch):
     _refused(client.post("/api/orders", json={"items": [{"slug": SCAR, "qty": 1}]}))
 
 
-def test_order_edit_is_refused(client, monkeypatch):
+def test_order_edit_is_refused(client, logdb, monkeypatch):
+    """Adding it to an order that does not hold it is refused. Since 2026-10-20 a line
+    already on the order may be kept (tests/test_waitlist_sale_surfaces.py)."""
     monkeypatch.setattr(app, "_bos_actor", lambda: _Owner())
+    monkeypatch.setattr(app._bos_orders, "get_order", lambda cx, oid: {
+        "id": 1, "status": "proposed", "items": [{"slug": "scar-silk", "qty": 1}]})
     _refused(client.post("/api/orders/1/edit", json={"lines": [{"slug": SCAR, "qty": 1}]}))
 
 

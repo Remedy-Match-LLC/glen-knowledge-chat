@@ -9005,6 +9005,51 @@ def _cart_waitlist_refusal(lines, skip_zero_qty=True):
     return None
 
 
+def _first_payment_waitlist_refusal(order, owed=None):
+    """The refusal for an order's FIRST payment when it holds a product not ready to
+    order, else None (Alkalize, 2026-10-20). Only an order with nothing paid and nothing
+    shipped is refused: a paid, part-paid, shipped or finished order may still settle its
+    balance, so a past sale never freezes (review round 1). `owed` is the ledger balance
+    when the caller has it; a balance below the total means something was paid."""
+    if (order.get("pay_status") == "paid"
+            or order.get("status") in ("shipped", "delivered", "done", "cancelled")):
+        return None
+    try:
+        if owed is not None and int(owed) < int(order.get("total_cents") or 0):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return _cart_waitlist_refusal(order.get("items") or [])
+
+
+def _waitlist_increase_refusal(lines_in, existing_items):
+    """The refusal for an edit that ADDS a product not ready to order, or raises its
+    quantity above what the order already holds, else None. Keeping or lowering a line
+    already on the order is allowed, so a past order can still be corrected (review
+    round 1, 2026-10-20)."""
+    def _tally(lines):
+        t = {}
+        for it in (lines or []):
+            if not isinstance(it, dict):
+                continue
+            slug = (it.get("slug") or "").strip()
+            if not slug:
+                continue
+            try:
+                q = int(it.get("qty") if it.get("qty") not in (None, "") else 1)
+            except (TypeError, ValueError):
+                q = 1
+            t[slug] = t.get(slug, 0) + max(q, 0)
+        return t
+    had = _tally(existing_items)
+    for slug, q in _tally(lines_in).items():
+        if q > had.get(slug, 0):
+            msg = _waitlist_refusal(slug)
+            if msg:
+                return msg
+    return None
+
+
 def _superseded(slug):
     """Follow a deprecated product's `superseded_by` pointer to its live twin.
 
@@ -12925,9 +12970,13 @@ def begin_learn_data(slug):
     }
     # Not ready to order (Alkalize, 2026-10-20): no price and no Buy button. The page
     # shows the refusal line and links to the product page, where the waiting list is.
-    _nr = _waitlist_refusal(p.get("slug") or slug)
-    if _nr:
-        out.update(price="", buy_url=_nr.url, not_ready_line=str(_nr))
+    _nrb = _waitlist_block(p.get("slug") or slug)
+    if _nrb:
+        _nr = _waitlist_refusal(p.get("slug") or slug)
+        out.update(price="", buy_url=_nr.url, not_ready_line=str(_nr),
+                   # The waiting-list button only for a product with an open list; an
+                   # out-of-stock one (Vitamin D Syntropy) has none (review round 1).
+                   waitlist=bool(not _nrb.get("out_of_stock") and _waitlist_open(_nrb["slug"])))
     return jsonify(out)
 
 
@@ -25424,6 +25473,13 @@ def api_cart_zelle_orders():
                     continue
                 if o.get("pay_status") == "paid" or o.get("status") == "cancelled":
                     closed.append(r)
+                    continue
+                # Not ready to order (2026-10-20): the line and its page, never the
+                # payment instructions.
+                _nr = _first_payment_waitlist_refusal(o)
+                if _nr:
+                    out.append({"order_id": o["id"], "order_ref": o.get("external_ref") or "",
+                                "not_ready": {"line": str(_nr), "url": _nr.url}})
                 else:
                     out.append(_zelle_instructions(o))
     return jsonify({"ok": True, "orders": out, "closed": closed})
@@ -35490,6 +35546,7 @@ def api_portal_caregiver_pay(token):
         payer = (portal.get("email") or "").strip().lower()
         o = cx.execute("SELECT email, total_cents, pay_status, status FROM orders WHERE id=?",
                        (order_id,)).fetchone()
+        _full = _bos_orders.get_order(cx, order_id) if o else None
         if not o:
             return jsonify({"ok": False, "error": "order not found"}), 404
         beneficiary = (o["email"] or "").strip().lower()
@@ -35505,6 +35562,11 @@ def api_portal_caregiver_pay(token):
         # status 'open'/'new'). Only block re-charging a paid or terminal order.
         if o["pay_status"] == "paid" or o["status"] in ("cancelled", "delivered", "done"):
             return jsonify({"ok": False, "error": "this order is already paid"}), 409
+        # An order holding a product not ready to order is refused before any Stripe
+        # session, as on the invoice (Alkalize, 2026-10-20).
+        _wl = _first_payment_waitlist_refusal(_full or {})
+        if _wl:
+            return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
         amount = int(o["total_cents"] or 0)
     base = PUBLIC_BASE_URL.rstrip("/")
     _card_unavailable = "Card payment is temporarily unavailable — please contact us."
@@ -42494,7 +42556,7 @@ def api_reorder_items():
                 "qty": int(it.get("qty") or 1),
                 "last_ordered": (o.get("created_at") or "")[:10],
                 "available": bool(p) and not _nr,
-                **({"not_ready_line": str(_nr)} if _nr else {}),
+                **({"not_ready_line": str(_nr), "not_ready_url": _nr.url} if _nr else {}),
             })
     # Annotate each item with whether the buyer has already reviewed it.
     # Open a dedicated short connection — the orders cx is already closed.
@@ -58556,7 +58618,7 @@ def _capped_override_unit(unit_cents, *, product, slug, cprices, ff_flat, price_
 def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
                            discount_cents_in=None, points_redeem_cents_in=None,
                            adjustment_cents_in=None, shipping_override_cents_in=None,
-                           strict_packaging=False):
+                           strict_packaging=False, allow_waitlist=False):
     """Shared server-authoritative pricing for the in-house order builder AND the
     console invoice editor. Honors per-line unit_cents overrides; FF capsules get a
     volume rate — the order-wide mix/match rate for a paid member, the same-SKU
@@ -58715,7 +58777,10 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             # would hide the gap. This function is ALSO reached by the token-authed
             # customer membership control on an invoice, which has no operator --
             # there it substitutes the fallback rather than refusing the customer.
-            strict_packaging=strict_packaging)
+            strict_packaging=strict_packaging,
+            # True only when the caller already refused any ADDED not-ready line, so a
+            # line already on the order can be kept (2026-10-20).
+            allow_waitlist=allow_waitlist)
         shipping_cents = _bos_orders.effective_shipping_cents(pickup, pc.get("shipping_cents"))
         get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
     except CheckoutError:
@@ -58793,7 +58858,8 @@ def _harvest_line_note_snippets(cx, items):
 def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_in=None,
                                  adjustment_cents_in=None, invoice_note=None,
                                  address_override=None, shipping_override_cents_in=None,
-                                 strict_packaging=False, points_redeem_cents_in=None):
+                                 strict_packaging=False, points_redeem_cents_in=None,
+                                 allow_waitlist=False):
     """Reprice an order's line items at the current pricing (membership-aware) and
     persist the invoice. Shared by the manual invoice editor (/api/orders/<oid>/edit)
     and the one-click grant-and-reprice button. Carries the order's existing points +
@@ -58826,7 +58892,9 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         adjustment_cents_in=adjustment_cents_in,
         shipping_override_cents_in=shipping_override_cents_in,
         points_redeem_cents_in=None,
-        strict_packaging=strict_packaging)
+        strict_packaging=strict_packaging,
+        # Passed only when set, so a caller or spy written before 2026-10-20 still fits.
+        **({"allow_waitlist": True} if allow_waitlist else {}))
     if priced is None:
         return None, None
     existing_points = int(order.get("points_redeemed_cents") or 0)
@@ -59043,9 +59111,8 @@ def api_orders_edit(oid):
     lines_in = body.get("lines") or []
     if not lines_in:
         return jsonify({"ok": False, "error": "no line items"}), 400
-    _wl = _cart_waitlist_refusal(lines_in if isinstance(lines_in, list) else [])
-    if _wl:
-        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
+    if not isinstance(lines_in, list):
+        return jsonify({"ok": False, "error": "no line items"}), 400
     pickup = bool(body.get("pickup"))
     cx = db.connect(LOG_DB)
     cx.row_factory = _sqlite3.Row
@@ -59055,6 +59122,11 @@ def api_orders_edit(oid):
             return jsonify({"ok": False, "error": "order not found"}), 404
         if order.get("status") == "cancelled":
             return jsonify({"ok": False, "error": "a cancelled order can't be edited"}), 400
+        # A not-ready product may stay on an order that already holds it; adding one,
+        # or raising its quantity, is refused (review round 1, 2026-10-20).
+        _wl = _waitlist_increase_refusal(lines_in, order.get("items"))
+        if _wl:
+            return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
         try:
             _addr_in = body.get("address")
             priced, was_paid = _reprice_and_persist_invoice(
@@ -59065,7 +59137,8 @@ def api_orders_edit(oid):
                 invoice_note=body.get("invoice_note"),
                 address_override=(_addr_in if isinstance(_addr_in, dict) else None),
                 strict_packaging=True,
-                points_redeem_cents_in=body.get("points_redeem_cents"))
+                points_redeem_cents_in=body.get("points_redeem_cents"),
+                allow_waitlist=True)
         except CheckoutError as e:
             return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         if priced is None:
@@ -61066,6 +61139,7 @@ def _invoice_summary(order):
     subtotal = sum(int(l.get("line_cents") or 0) for l in lines)
     member_credit_cents = 0
     owed = _invoice_balance_cents(order)
+    _nr_pay = _first_payment_waitlist_refusal(order, owed)
     return {
         "member_credit_cents": member_credit_cents,
         "points_balance_cents": _invoice_points_balance(order),
@@ -61099,8 +61173,11 @@ def _invoice_summary(order):
         # client still owe money on it. Two different questions; gating the pay
         # button on `editable` hid it on every shipped-but-unpaid order.
         "editable": order.get("status") in ("proposed", "confirmed"),
-        "payable": _invoice_payability.is_payable(order.get("status"),
-                                                  order.get("pay_status"), owed),
+        "payable": (_invoice_payability.is_payable(order.get("status"),
+                                                   order.get("pay_status"), owed)
+                    and _nr_pay is None),
+        # Not ready to order (2026-10-20): the line and its product page, in place of Pay.
+        "not_ready": ({"line": str(_nr_pay), "url": _nr_pay.url} if _nr_pay else None),
         # What the pay button asks for and /pay charges. "balance_due_cents" (set by
         # the GET route) is the ledger balance shown in the totals.
         "pay_amount_cents": owed if owed is not None else int(order.get("total_cents") or 0),
@@ -61192,6 +61269,8 @@ def api_invoice_products(token):
         {"slug": p.get("slug"), "name": p.get("name"),
          "price_cents": int(p.get("price_cents") or 0)}
         for p in products if p.get("slug") and p.get("name")
+        # Not ready to order (2026-10-20): never offered on the invoice picker.
+        and _waitlist_block(p.get("slug")) is None
     ]})
 
 
@@ -61480,13 +61559,15 @@ def api_invoice_update(token):
     existing = {(it.get("slug") or "").strip(): it
                 for it in (order.get("items") or []) if (it.get("slug") or "").strip()}
     from dashboard import client_invoice_lines as _cil
-    try:
-        lines_in = _cil.rebuild(body.get("lines"), existing,
-                                known=lambda _s: _get_product(_s) is not None,
-                                refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}),
-                                refusal=_waitlist_refusal)
-    except _cil.NotOrderable as e:
-        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
+    # Adding a not-ready product, or raising its quantity, is refused; removing or
+    # lowering one already on the invoice is allowed (review round 1, 2026-10-20).
+    _wl = _waitlist_increase_refusal(
+        body.get("lines") if isinstance(body.get("lines"), list) else [], order.get("items"))
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
+    lines_in = _cil.rebuild(body.get("lines"), existing,
+                            known=lambda _s: _get_product(_s) is not None,
+                            refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}))
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
@@ -61498,7 +61579,8 @@ def api_invoice_update(token):
             adjustment_cents_in=order.get("adjustment_cents"),
             # The amount was quoted by the owner. Preserve it while a customer edits
             # products instead of replacing it (or dropping it on a rate error).
-            shipping_override_cents_in=order.get("shipping_cents"))
+            shipping_override_cents_in=order.get("shipping_cents"),
+            allow_waitlist=True)
         if priced is None:
             return jsonify({"ok": False, "error": "no valid items"}), 400
         updated = _bos_orders.get_order(cx, order["id"])
@@ -61607,7 +61689,8 @@ def api_invoice_pay(token):
         return jsonify({"ok": False, "error": "this invoice is already paid"}), 409
     # An invoice holding a product that is not ready to order is refused before any
     # charge or payment instructions (Alkalize, Glen 2026-10-20: "waiting list, no orders").
-    _wl = _cart_waitlist_refusal(order.get("items") or [])
+    # Its FIRST payment only: a paid, part-paid or shipped order still settles its balance.
+    _wl = _first_payment_waitlist_refusal(order, owed)
     if _wl:
         return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     if not INVOICE_PAYLINK_ENABLED:

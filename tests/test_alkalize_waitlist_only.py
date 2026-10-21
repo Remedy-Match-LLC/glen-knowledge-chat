@@ -243,29 +243,74 @@ def list_client(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "_waitlist_velocity", VelocityLimiter())
     monkeypatch.setattr(app, "_founding_enabled", lambda: False)
     sent = []
+    # Every call, keyword arguments included, so a second send or a changed sender shows.
     monkeypatch.setattr(app._inbox, "send_email",
-                        lambda to, subject, body, **k: sent.append((to, subject, body)) or {"ok": True})
+                        lambda *a, **k: sent.append((a, k)) or {"ok": True})
     app.app.config["TESTING"] = True
     return app.app.test_client(), sent
 
 
-def test_the_page_offers_the_list(list_client):
-    c, _sent = list_client
+def test_the_page_offers_the_list_and_sends_nothing(list_client):
+    c, sent = list_client
     d = c.get(f"/begin/product-page-data/{SLUG}").get_json()
     assert d["waitlist"]["slug"] == SLUG
     assert d["waitlist"]["intro"] == ALK_WORDS["intro"]
     assert d["waitlist"]["consent"] == ALK_WORDS["consent"]
     assert "Scar" not in json.dumps(d["waitlist"]) and "Fungal" not in json.dumps(d["waitlist"])
+    assert sent == []
 
 
-def test_a_sign_up_sends_the_alkalize_email_and_stores_its_consent(list_client):
+
+
+@pytest.mark.parametrize("slug", [SLUG, "scar-soft-drink"])
+def test_a_sign_up_sends_exactly_one_email_from_the_same_sender(list_client, slug):
+    """One send, to the typed address, positional (to, subject, body) and NO keyword
+    arguments: inbox.send_email's default sender, Glen's Gmail. Scar's list is the
+    reference path and must send the same way."""
+    from dashboard import product_waitlist as pw
     c, sent = list_client
-    r = c.post(f"/api/waitlist/{SLUG}", json={"email": "a@x.com", "first_name": "Ann"})
+    r = c.post(f"/api/waitlist/{slug}", json={"email": "a@x.com", "first_name": "Ann"})
     assert r.status_code == 200, r.get_data(as_text=True)[:300]
-    to, subject, body = sent[0]
-    assert to == "a@x.com" and subject == ALK_WORDS["subject"]
-    assert body.startswith(f"Hi Ann,\n\n{ALK_WORDS['body_lead']}\n")
-    assert "Fungal" not in subject + body and "Scar" not in subject + body
+    assert len(sent) == 1, sent
+    (to, subject, body), kwargs = sent[0]
+    assert kwargs == {}
+    assert to == "a@x.com" and subject == pw.TEXTS[slug]["subject"]
+    assert body.startswith(f"Hi Ann,\n\n{pw.TEXTS[slug]['body_lead']}\n")
+    if slug == SLUG:
+        assert subject == ALK_WORDS["subject"]
+        assert "Fungal" not in subject + body and "Scar" not in subject + body
+        with sqlite3.connect(app.LOG_DB) as db:
+            assert db.execute("SELECT consent_text FROM product_waitlist WHERE email='a@x.com'"
+                              ).fetchone()[0] == ALK_WORDS["consent"]
+
+
+def test_a_repeat_sign_up_sends_nothing_until_the_resend_window(list_client):
+    from dashboard import product_waitlist as pw
+    c, sent = list_client
+    codes = [c.post(f"/api/waitlist/{SLUG}", json={"email": "r@x.com"}).status_code
+             for _ in range(3)]
+    assert codes == [200, 200, 200] and len(sent) == 1
+    # Past the resend window, one more, and still to the same address.
+    from datetime import datetime, timedelta, timezone
+    old = (datetime.now(timezone.utc) - timedelta(minutes=pw.RESEND_MINUTES + 1)).isoformat()
     with sqlite3.connect(app.LOG_DB) as db:
-        assert db.execute("SELECT consent_text FROM product_waitlist WHERE email='a@x.com'"
-                          ).fetchone()[0] == ALK_WORDS["consent"]
+        db.execute("UPDATE product_waitlist SET confirm_sent_at=? WHERE email='r@x.com'", (old,))
+    from dashboard.chat_limits import VelocityLimiter
+    app._waitlist_velocity = VelocityLimiter()   # the per-visitor rate limit is not under test
+    assert c.post(f"/api/waitlist/{SLUG}", json={"email": "r@x.com"}).status_code == 200
+    assert len(sent) == 2 and sent[1][0][0] == "r@x.com"
+
+
+def test_a_failed_send_keeps_the_sign_up_and_sends_once(list_client, monkeypatch):
+    c, sent = list_client
+    calls = []
+
+    def _boom(*a, **k):
+        calls.append(a)
+        raise RuntimeError("gmail down")
+    monkeypatch.setattr(app._inbox, "send_email", _boom)
+    r = c.post(f"/api/waitlist/{SLUG}", json={"email": "f@x.com"})
+    assert r.status_code == 200 and len(calls) == 1
+    with sqlite3.connect(app.LOG_DB) as db:
+        assert db.execute("SELECT COUNT(*) FROM product_waitlist WHERE email='f@x.com'"
+                          ).fetchone()[0] == 1
