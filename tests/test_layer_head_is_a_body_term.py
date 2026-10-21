@@ -316,3 +316,28 @@ def test_add_one_from_the_remedy_set_names_a_condition_layer_by_its_pattern(
     (rid, head, tail, _remedy), = _rows(db, tid)
     assert (head, tail) == ("Adrenal", "Adrenal")
     assert _balances(db, tid, rid) == [ADRENAL]
+
+
+@pytest.mark.parametrize("with_pattern", [True, False])
+def test_consolidate_moves_a_conditions_wording_as_one_stress(tmp_path, with_pattern):
+    """Consolidate split a Tail on commas, so a50 grew stresses "Current", "2020" and
+    "Past". A condition's full wording moves whole, pattern or not; short terms still
+    split."""
+    from dashboard.biofield_stress import consolidate_layer_balances
+    db = str(tmp_path / "c.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        init_stress_tables(cx)
+        tid = create_test(cx, "S", "s@x.com", "2026-10-20")
+        if with_pattern:
+            remember_stress_pattern(cx, GLAUCOMA, "Eye Pressure Regulation")
+        save_selection(cx, tid, GLAUCOMA, ["OcuFlow Bedtime"])
+        add_chain_row(cx, tid, 1, "Eye and Vision Care", "Eyes Rejuvenator", "IOP Syntropy")
+        add_chain_row(cx, tid, 2, GLAUCOMA, f"Lens Clarity, {GLAUCOMA}", "OcuFlow Bedtime")
+        consolidate_layer_balances(cx, tid, 2, 1)
+        labels = sorted(r[0] for r in cx.execute(
+            "SELECT label FROM biofield_auth_stress WHERE source='chain'"))
+        tails = {r[0] for r in cx.execute("SELECT most_affected FROM biofield_auth_chain")}
+    assert labels == sorted([GLAUCOMA, "Lens Clarity"])
+    assert "Current" not in labels and "2020" not in labels
+    assert tails == {f"Eyes Rejuvenator, {GLAUCOMA}, Lens Clarity"}

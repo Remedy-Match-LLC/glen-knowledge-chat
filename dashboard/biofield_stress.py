@@ -438,6 +438,59 @@ def move_links_off(cx, tid, rids, to_rids=None):
     return out
 
 
+_FIELD_SEP = re.compile(r"[,;\n]+")
+
+
+def condition_wordings(cx, tid):
+    """This client's condition wordings that hold a separator themselves, such as
+    "Adrenal Fatigue, Current, 2023". From the Clinical Summary ticks and the intake's
+    own non-scan stresses, with or without a stored pattern. A "chain" stress is left
+    out: it is what an earlier split made, never a condition."""
+    t = _num(tid)
+    labels = []
+    if _table_exists(cx, "biofield_clinical_selection"):
+        labels += [r[0] for r in cx.execute(
+            "SELECT label FROM biofield_clinical_selection WHERE test_id IN (?,?)",
+            ("a" + str(t), str(t)))]
+    if _table_exists(cx, "biofield_auth_stress"):
+        labels += [r[0] for r in cx.execute(
+            "SELECT label FROM biofield_auth_stress WHERE test_id=? "
+            "AND source NOT IN ('scan','chain')", (t,))]
+    out = []
+    for label in labels:
+        label = (label or "").strip()
+        if _FIELD_SEP.search(label) and label not in out:
+            out.append(label)
+    return out
+
+
+def split_field(text, wordings=()):
+    """A Head or Tail as its items. A condition's full wording is ONE item, matched
+    whole between separators, longest first. Everything else splits on commas,
+    semicolons and newlines as before. Without this, consolidate turned a50's
+    "Suspect of Glaucoma/high pressures and thinning cornea, Current, 2020" into the
+    stresses "Current" and "2020" (Glen, 2026-10-20)."""
+    text = text or ""
+    found = []
+    for w in sorted({w.strip() for w in wordings or () if (w or "").strip()}, key=len,
+                    reverse=True):
+        rx = re.compile(r"(?:^|(?<=[,;\n]))\s*" + re.escape(w) + r"\s*(?=[,;\n]|$)", re.I)
+
+        def keep(_m, w=w):
+            found.append(w)
+            return "\x00%d\x00" % (len(found) - 1)
+        text = rx.sub(keep, text)
+    out = []
+    for part in _FIELD_SEP.split(text):
+        part = part.strip()
+        m = re.fullmatch(r"\x00(\d+)\x00", part)
+        if m:
+            out.append(found[int(m.group(1))])
+        elif part:
+            out.append(part)
+    return out
+
+
 RELOAD = "Reload the page and try again."
 
 
@@ -659,11 +712,12 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
     # field item that is not already in the stress list, then explicitly place it
     # on the destination along with remedy-covered and manually placed stresses.
     field_labels = []
+    wordings = condition_wordings(cx, tid)   # each moves as one stress, never in pieces
     for row in source_rows:
         head = (row[2] or "").strip()
         if head:
             field_labels.append(head)
-        field_labels.extend(x.strip() for x in re.split(r"[,;\n]+", row[3] or "") if x.strip())
+        field_labels.extend(split_field(row[3], wordings))
     existing = cx.execute(
         "SELECT id,label FROM biofield_auth_stress WHERE test_id=?", (t,)).fetchall()
     by_label = {_norm(label): int(stress_id) for stress_id, label in existing}
@@ -703,7 +757,7 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
         head = (row[2] or "").strip()
         if head and _norm(head) != _norm(target_head):
             tail_items.append(head)
-        tail_items.extend(x.strip() for x in re.split(r"[,;\n]+", row[3] or "") if x.strip())
+        tail_items.extend(split_field(row[3], wordings))
     merged_tail, seen = [], set()
     for item in tail_items:
         key = _norm(item)
