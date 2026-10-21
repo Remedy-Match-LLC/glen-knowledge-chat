@@ -3770,8 +3770,18 @@ function updateHealthTileBadge(count){
 // One pending suggestion, source-aware framing per the task brief. A colon/
 // period separates the rationale from the question -- no em dashes in
 // user-facing copy. Every interpolated value goes through esc() first.
+// The card's name for a field. Some form labels are questions or instructions
+// ("Do you have trouble falling asleep...?"), which read badly after "Update", so
+// those get a short name here; every other field uses its form label.
+function healthSuggestionLabel(fieldId){
+  const short = {
+    health_concerns: "Health concerns", other_symptoms: "Other symptoms", sleep: "Sleep",
+    dental: "Dental history", vaccinations: "Vaccinations", diet: "Diet", alcohol: "Alcohol",
+  };
+  return short[fieldId] || healthFieldLabel(fieldId);
+}
 function healthSuggestionItemHtml(s){
-  const label = esc(healthFieldLabel(s.field_id));
+  const label = esc(healthSuggestionLabel(s.field_id));
   const rationale = esc(s.rationale || "");
   const lead = (s.source === "clinician")
     ? `Your practitioner suggests: ${rationale}. Update ${label}?`
