@@ -219,8 +219,11 @@ EXTRACT_SYSTEM = (
     "item, \"quote\" is the client's exact words that state it, copied from their message: "
     "at least 3 words, with I or my (my or our for family history), and the name you put in "
     "the value. Quote only the client's own clause: \"I have high blood pressure\" from \"I "
-    "have high blood pressure like my dad\". \"about\" is \"self\" (\"family\" for "
-    "family history).\n"
+    "have high blood pressure like my dad\". Copy the quote EXACTLY as the client wrote it, "
+    "never reworded and never with words added. For a second fact joined by \"and\", quote "
+    "only the words the client wrote: from \"I have type 2 diabetes and high blood "
+    "pressure\" the second quote is \"high blood pressure\", not \"I have high blood "
+    "pressure\". \"about\" is \"self\" (\"family\" for family history).\n"
     "Return STRICT JSON ONLY, no prose: {\"items\": [{\"field_id\": ..., \"value\": ..., "
     "\"quote\": ..., \"about\": ...}]}. With nothing to record return {\"items\": []}."
 )
@@ -443,9 +446,27 @@ def _word_supported(word, toks):
     return any(_shared(word, t) >= max(4, max(len(word), len(t)) - 3) for t in toks)
 
 
+# A small synonym list for the key-term check only (live run, 20 Oct 2026). A key
+# term on the left is also supported when the quote says one of these instead.
+_TERM_SYNONYMS = {
+    # "nursing" but not "nursing a cold": after a/an/the it needs a baby word.
+    # "breastfeed" and "breastfeeds" already match by the word rule in _word_supported.
+    "breastfeeding": (r"nursing(?!\s+(?:a|an|the)\s+(?!bab|child|newborn|little))",
+                      r"breast[ -]feeding"),
+    # "expecting" only with a baby or child word, as in the own-baby rule.
+    "pregnancy": (r"pregnant", r"expecting\s+(?:(?:my|our|a|an)\s+)?(?:\w+\s+)?"
+                               r"(?:bab(?:y|ies)|child|twins|little one)"),
+    "high blood pressure": (r"hypertension", r"high bp"),
+    "irritable bowel syndrome": (r"ibs",),
+}
+
+
 def _term_in_quote(term, quote):
     """Every significant word of the key term is in the quote. Only the generic
     surgery words, and removal words when the client said it came out, are spared."""
+    for alt in _TERM_SYNONYMS.get(" ".join(_tokens(term)), ()):
+        if re.search(r"\b" + alt + r"\b", quote, re.I):
+            return True
     toks = _tokens(quote)
     removed = bool(_SAYS_REMOVED.search(quote))
     need = [w for w in _significant(term)
@@ -631,6 +652,11 @@ def _reported(quote, client_msg, sentence, family):
 _JOINED_END = re.compile(r"(?:,|\band|\bplus|\bas well as|&)\s*(?:also\s+)?$|\balso\s*$", re.I)
 
 
+# The subject and verb a model may put in front of a joined fact.
+_REBUILT_SUBJECT = re.compile(r"\s*(?:i have|i've had|i've|ive had|i had|i'm|im|i am|"
+                              r"i take|my)\s+", re.I)
+
+
 def _conjoined_lead(quote, sentence):
     """The client's own first-person statement the quote is joined to, or None. The
     quote must follow it straight after "and", "plus", "as well as", "also" or a
@@ -658,7 +684,7 @@ def _after(quote, sentence):
 _OWN = re.compile(
     r"\bas an? (?:child|kid|baby|toddler|teen|teenager)\b|"
     r"\bsince (?:i was an? )?(?:child|kid|baby)hood\b|"
-    r"\b(?:pregnant with|expecting|nursing|breast-?feeding)\s+"
+    r"\b(?:pregnant with|expecting|nursing|breast-?feed(?:ing|s)?|breast feeding)\s+"
     r"(?:(?:my|our|a|an)\s+)?(?:\w+\s+)?(?:bab(?:y|ies)|child|kids?|sons?|daughters?|"
     r"twins|little one)\b|"
     r"\bbaby aspirin\b|(?<!my )(?<!our )\b(?:children|kids?)['’]s?\s+(?=\w)|"
@@ -685,11 +711,26 @@ def _normalize_item(item, client_msg):
     quote = _cell(item.get("quote"), 300)
     # The evidence must be the client's own words, so nothing from the AI's
     # answer, and nothing the model made up, can become a suggestion.
-    if not quote or _squash(quote) not in _squash(client_msg):
+    if not quote:
         return None
+    rebuilt = False
+    if _squash(quote) not in _squash(client_msg):
+        # The model rebuilt a joined fact with the client's subject ("I have high blood
+        # pressure" from "...diabetes and high blood pressure"), live run 20 Oct. The
+        # words it added go, and what is left must be the client's own, joined fact.
+        # _conjoined_lead below finds the remainder in the sentence or refuses it, and
+        # a family quote without its "my" fails the family check.
+        m = _REBUILT_SUBJECT.match(quote)
+        if not m or not table:
+            return None
+        quote, rebuilt = quote[m.end():].strip(), True
     sentence = _source_sentence(quote, client_msg)
     joined = None
-    if not (_FIRST_PERSON.search(quote) or (family and _REL_CHAIN.search(quote))):
+    if rebuilt:
+        joined = _conjoined_lead(quote, sentence)
+        if joined is None:
+            return None                  # not joined to the client's own clause
+    elif not (_FIRST_PERSON.search(quote) or (family and _REL_CHAIN.search(quote))):
         joined = _conjoined_lead(quote, sentence) if table and not family else None
         if joined is None:
             return None                  # "our mother" is the client's own family too

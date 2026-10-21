@@ -1544,3 +1544,93 @@ def test_a_fenced_reply_with_trailing_junk_is_garbage():
 def test_tomorrow_after_the_quote_records_nothing():
     assert _one("I have my knee surgery tomorrow.",
                 _item("surgeries", {"procedure": "Knee surgery"}, "I have my knee surgery")) == []
+
+
+# --- fix round 3 (marketing live run on f89fcb1a) -------------------------------
+
+def test_live_run_rebuilt_quote_for_a_joined_fact_records():
+    """RAW quotes were ['I have type 2 diabetes', 'I have high blood pressure']."""
+    msg = "I have type 2 diabetes and high blood pressure."
+    out = _all(msg, [_item("diagnoses", {"diagnosis": "Type 2 diabetes"}, "I have type 2 diabetes"),
+                     _item("diagnoses", {"diagnosis": "High blood pressure"},
+                           "I have high blood pressure")])
+    assert [o["value"]["diagnosis"] for o in out] == ["Type 2 diabetes", "High blood pressure"]
+    assert out[1]["rationale"] == '"high blood pressure"'
+
+
+@pytest.mark.parametrize("msg,quote", [
+    ("My dad has high blood pressure.", "I have high blood pressure"),
+    ("High blood pressure runs in my family.", "I have high blood pressure"),
+    ("I don't have diabetes and high blood pressure.", "I have high blood pressure"),
+    ("My husband has diabetes and high blood pressure.", "I have high blood pressure"),
+    ("I have diabetes and high blood pressure.", "I have very high blood pressure"),
+    ("I have diabetes and high blood pressure.", "She has high blood pressure"),
+])
+def test_a_rebuilt_quote_not_joined_to_the_client_records_nothing(msg, quote):
+    assert _one(msg, _item("diagnoses", {"diagnosis": "High blood pressure"}, quote)) == [], msg
+
+
+def test_a_rebuilt_quote_is_table_only():
+    assert _one("I sleep badly and wake at 3.",
+                _item("sleep", "x", "I wake at 3 every night")) == []
+
+
+def test_a_rebuilt_family_quote_records_nothing():
+    assert _one("My mother had breast cancer and diabetes.",
+                _item("family_history", {"relative": "Mother", "condition": "Diabetes"},
+                      "my diabetes", about="family")) == []
+
+
+def test_prompt_says_copy_the_quote_exactly():
+    p = hs.EXTRACT_SYSTEM
+    assert "Copy the quote EXACTLY as the client wrote it" in p
+    assert "the second quote is \"high blood pressure\", not \"I have high blood pressure\"" in p
+
+
+@pytest.mark.parametrize("msg,quote,diag", [
+    ("I'm nursing my baby.", "I'm nursing my baby", "Breastfeeding"),
+    ("I breastfeed my son.", "I breastfeed my son", "Breastfeeding"),
+    ("I'm breast feeding.", "I'm breast feeding", "Breastfeeding"),
+    ("I'm expecting a baby in May.", "I'm expecting a baby", "Pregnancy"),
+    ("I have hypertension.", "I have hypertension", "High blood pressure"),
+    ("I have high BP.", "I have high BP", "High blood pressure"),
+    ("I have IBS.", "I have IBS", "Irritable bowel syndrome"),
+])
+def test_term_synonyms(msg, quote, diag):
+    out = _one(msg, _item("diagnoses", {"diagnosis": diag}, quote))
+    assert out and out[0]["value"] == {"diagnosis": diag, "current": "Current"}, msg
+
+
+@pytest.mark.parametrize("msg,quote,diag", [
+    ("My daughter is nursing.", "My daughter is nursing", "Breastfeeding"),
+    ("I'm expecting results soon.", "I'm expecting results soon", "Pregnancy"),
+    ("I'm nursing a cold.", "I'm nursing a cold", "Breastfeeding"),
+    ("I'm nursing an injury.", "I'm nursing an injury", "Breastfeeding"),
+    ("I have IBSO.", "I have IBSO", "Irritable bowel syndrome"),
+    ("I have hypertensive kidneys.", "I have hypertensive kidneys", "High blood pressure"),
+])
+def test_term_synonyms_do_not_widen(msg, quote, diag):
+    assert _one(msg, _item("diagnoses", {"diagnosis": diag}, quote)) == [], msg
+
+
+def test_nursing_a_baby_records():
+    out = _one("I'm nursing a newborn.",
+               _item("diagnoses", {"diagnosis": "Breastfeeding"}, "I'm nursing a newborn"))
+    assert out and out[0]["value"]["diagnosis"] == "Breastfeeding"
+
+
+def test_a_rebuilt_quote_on_a_text_field_records_nothing():
+    assert _one("I have insomnia and nightmares.",
+                _item("sleep", "x", "I have nightmares")) == []
+
+
+@pytest.mark.parametrize("msg,quote", [
+    ("I have asthma and mother had breast cancer.", "my mother had breast cancer"),
+    ("I have asthma and high blood pressure.", "I have very high blood pressure"),
+])
+def test_rebuilt_quotes_that_still_fail(msg, quote):
+    field = "family_history" if "mother" in quote else "diagnoses"
+    value = ({"relative": "Mother", "condition": "Breast cancer"} if field == "family_history"
+             else {"diagnosis": "High blood pressure"})
+    about = "family" if field == "family_history" else "self"
+    assert _one(msg, _item(field, value, quote, about=about)) == [], msg
