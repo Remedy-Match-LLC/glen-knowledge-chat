@@ -435,21 +435,33 @@ def card_rids_for_layer(cx, tid, layer):
     if len(cards) > 1:
         raise ValueError(f"More than one layer card uses layer number {ln}. {RELOAD}")
     out = [rid for rid, _ in cards[0]] if cards else []
-    out += [int(r[0]) for r in cx.execute(
-        "SELECT id FROM biofield_auth_chain WHERE test_id=? AND layer=? "
+    return out + _empty_rids_on(cx, tid, [ln])
+
+
+def _empty_rids_on(cx, tid, layers):
+    """Rows with no remedy, Head or Tail on these stored layer numbers. They are on
+    no card, but the old `layer=?` query moved them with the layer."""
+    nums = sorted({int(n) for n in layers if n is not None})
+    if not nums:
+        return []
+    return [int(r[0]) for r in cx.execute(
+        f"SELECT id FROM biofield_auth_chain WHERE test_id=? "
+        f"AND layer IN ({','.join('?' for _ in nums)}) "
         "AND TRIM(COALESCE(remedy,''))='' AND TRIM(COALESCE(head,''))='' "
-        "AND TRIM(COALESCE(most_affected,''))=''", (_num(tid), ln)).fetchall()]
-    return out
+        "AND TRIM(COALESCE(most_affected,''))=''", (_num(tid), *nums)).fetchall()]
 
 
-def card_rids_for_rows(cx, tid, layer, rids):
-    """The whole CURRENT card holding the submitted rows `rids`.
+def card_rids_for_rows(cx, tid, layer, rids, with_empty=False):
+    """The submitted rows `rids`, checked to be exactly one CURRENT card.
 
-    The page sends the card's data-rids as it was when the page loaded. A stale tab
-    would miss a row added to the card since, or the rows of a card it absorbed, so
-    the server expands the set to the card as it is now. Refused, with nothing
-    changed, if a row is not on this test, if the rows now sit on more than one
-    card, or if none of them is still on the stated layer number."""
+    The page sends the card's data-rids as it was when the page loaded. A move must
+    never touch a row the page did not show, and never leave one it did show, so a
+    stale set is refused rather than expanded. Refused, with nothing changed, if a
+    row is not on this test, if none is still on the stated layer number, if the
+    rows now sit on more than one card or on none, or if the card now holds rows the
+    page did not send. `with_empty` adds the wholly empty rows on the card's stored
+    layer numbers, which the old `layer=?` query moved with it."""
+    stale = f"That layer has changed since the page loaded. {RELOAD}"
     want = _rids_on_test(cx, tid, rids)
     try:
         ln = int(layer)
@@ -459,13 +471,15 @@ def card_rids_for_rows(cx, tid, layer, rids):
         f"SELECT id FROM biofield_auth_chain WHERE test_id=? AND layer=? "
         f"AND id IN ({','.join('?' for _ in want)})", (_num(tid), ln, *want)).fetchall()}
     if not on_layer:
-        raise ValueError(f"That layer has changed since the page loaded. {RELOAD}")
+        raise ValueError(stale)
     cards = [c for c in _current_cards(cx, tid) if any(rid in want for rid, _ in c)]
-    if len(cards) != 1:
-        raise ValueError(f"Those rows are now on more than one layer. {RELOAD}"
-                         if cards else
-                         f"That layer has changed since the page loaded. {RELOAD}")
-    return [rid for rid, _ in cards[0]]
+    if len(cards) > 1:
+        raise ValueError(f"Those rows are now on more than one layer. {RELOAD}")
+    if not cards or {rid for rid, _ in cards[0]} != set(want):
+        raise ValueError(stale)
+    if not with_empty:
+        return list(want)
+    return list(want) + _empty_rids_on(cx, tid, [sl for _, sl in cards[0]])
 
 
 def _rids_on_test(cx, tid, rids):
@@ -478,7 +492,7 @@ def _rids_on_test(cx, tid, rids):
         f"SELECT id FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
         (_num(tid), *want)).fetchall()}
     if found != set(want):
-        raise ValueError("a row is not on this intake")
+        raise ValueError(f"A row is not on this intake. {RELOAD}")
     return want
 
 
@@ -505,9 +519,9 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
     # No numeric source == target check: two cards with different Heads can share
     # a stored number. The same CARD on both sides is what is refused, below.
 
-    def card_rows(layer, rids):
-        ids = (card_rids_for_rows(cx, tid, layer, rids) if rids is not None
-               else card_rids_for_layer(cx, tid, layer))
+    def card_rows(layer, rids, with_empty=False):
+        ids = (card_rids_for_rows(cx, tid, layer, rids, with_empty=with_empty)
+               if rids is not None else card_rids_for_layer(cx, tid, layer))
         if not ids:
             return []
         marks = ",".join("?" for _ in ids)
@@ -517,9 +531,10 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
             (t, *ids),
         ).fetchall()
 
-    source_rows, target_rows = card_rows(source, source_rids), card_rows(target, target_rids)
+    source_rows = card_rows(source, source_rids, with_empty=True)
+    target_rows = card_rows(target, target_rids)
     if {int(r[0]) for r in source_rows} & {int(r[0]) for r in target_rows}:
-        raise ValueError("source and target layers must differ")   # one card, both sides
+        raise ValueError(f"Source and target layers must differ. {RELOAD}")   # one card
     source_rids = {int(r[0]) for r in source_rows}
     target_rids = {int(r[0]) for r in target_rows}
     source_remedies = {((r[1] or "").strip().lower()) for r in source_rows

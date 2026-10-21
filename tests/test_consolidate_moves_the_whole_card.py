@@ -16,6 +16,7 @@ from dashboard import biofield_stress as st
 from dashboard.biofield_authoring import add_chain_row, create_test, init_auth_tables
 
 GLAUCOMA = "Suspect of Glaucoma/high pressures and thinning cornea, Current, 2020"
+STALE = "That layer has changed since the page loaded. Reload the page and try again."
 
 
 @pytest.fixture(autouse=True)
@@ -218,27 +219,99 @@ def _links(db):
             "SELECT DISTINCT chain_rid FROM biofield_auth_layer_stress")}
 
 
-def test_a_stale_source_moves_a_row_added_to_the_card_since_the_page_loaded(tmp_path):
+# Review round 3: a stale set is refused, never expanded. A move must never touch a
+# row the page did not show, nor leave one it did show.
+
+def test_a_stale_source_with_a_row_added_since_load_is_refused(tmp_path):
     db = str(tmp_path / "c.db")
     tid, eye, ocu, iop = _sharon_like(db)
     with sqlite3.connect(db) as cx:                  # another tab adds to the card
         add_chain_row(cx, tid, 14, GLAUCOMA, "", "Eye Drops")
-        late = cx.execute("SELECT MAX(id) FROM biofield_auth_chain").fetchone()[0]
-        st.consolidate_layer_balances(cx, tid, 12, 6, source_rids=[ocu, iop],
-                                      target_rids=[eye])
-    rows = _rows(db)
-    assert rows[late] == (6, "Eye and Vision Care"), "REGRESSION: the late row stayed behind"
+    before, links = _rows(db), _links(db)
+    with sqlite3.connect(db) as cx:
+        with pytest.raises(ValueError) as exc:
+            st.consolidate_layer_balances(cx, tid, 12, 6, source_rids=[ocu, iop],
+                                          target_rids=[eye])
+    assert str(exc.value) == STALE
+    assert _rows(db) == before and _links(db) == links
 
 
-def test_a_stale_destination_includes_the_rows_of_a_card_it_absorbed(tmp_path):
+def test_a_stale_destination_that_absorbed_a_card_is_refused(tmp_path):
     db = str(tmp_path / "c.db")
     tid, eye, ocu, iop = _sharon_like(db)
     with sqlite3.connect(db) as cx:                  # another tab merged a card into Eye
         add_chain_row(cx, tid, 7, "Eye and Vision Care", "", "Lens Support")
-        absorbed = cx.execute("SELECT MAX(id) FROM biofield_auth_chain").fetchone()[0]
-        st.consolidate_layer_balances(cx, tid, 12, 6, source_rids=[ocu, iop],
-                                      target_rids=[eye])
-    assert absorbed in _links(db), "REGRESSION: the absorbed row got no stress links"
+    before, links = _rows(db), _links(db)
+    with sqlite3.connect(db) as cx:
+        with pytest.raises(ValueError) as exc:
+            st.consolidate_layer_balances(cx, tid, 12, 6, source_rids=[ocu, iop],
+                                          target_rids=[eye])
+    assert str(exc.value) == STALE
+    assert _rows(db) == before and _links(db) == links
+
+
+def test_a_stale_source_never_moves_a_card_it_did_not_show(tmp_path):
+    """Round 3, D1: another tab renames Liver's head to Glaucoma's, so Liver joins
+    the Glaucoma card. The stale tab's Consolidate must not re-head Liver."""
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    with sqlite3.connect(db) as cx:
+        liver = _chain(cx, tid, [(20, "Liver", "Liver Support")])[-1]
+        cx.execute("UPDATE biofield_auth_chain SET head=? WHERE id=?", (GLAUCOMA, liver))
+    before = _rows(db)
+    res = _client(db).post(f"/author/{tid}/layer/12/consolidate-balances", json={
+        "target_layer": 6, "source_rids": [ocu, iop], "target_rids": [eye]})
+    assert res.status_code == 400 and res.get_json()["error"] == STALE
+    assert _rows(db) == before
+
+
+def test_page_consolidate_moves_wholly_empty_rows_on_the_source_layers(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    with sqlite3.connect(db) as cx:
+        add_chain_row(cx, tid, 13, "", "", "")
+        empty = cx.execute("SELECT MAX(id) FROM biofield_auth_chain").fetchone()[0]
+    res = _client(db).post(f"/author/{tid}/layer/12/consolidate-balances", json={
+        "target_layer": 6, "source_rids": [ocu, iop], "target_rids": [eye]})
+    assert res.status_code == 200, res.get_json()
+    assert _rows(db)[empty][0] == 6, "REGRESSION: the empty row stayed on layer 13"
+
+
+def _empty_the_card(db, rids):
+    with sqlite3.connect(db) as cx:
+        cx.executemany("UPDATE biofield_auth_chain SET remedy='', head='', most_affected='' "
+                       "WHERE id=?", [(r,) for r in rids])
+
+
+def test_rows_now_on_no_card_are_refused_with_a_400(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    _empty_the_card(db, [ocu, iop])                  # another tab emptied the card
+    before, n = _rows(db), _stress_count(db)
+    client = _client(db)
+    res = client.post(f"/author/{tid}/layer/12/consolidate-balances", json={
+        "target_layer": 6, "source_rids": [ocu, iop], "target_rids": [eye]})
+    assert res.status_code == 400 and res.get_json()["error"] == STALE
+    res = client.post(f"/author/{tid}/stress/add", json={
+        "label": "Corneal thinning", "layer": 12, "rids": [ocu, iop]})
+    assert res.status_code == 400 and res.get_json()["error"] == STALE
+    assert _rows(db) == before and _stress_count(db) == n
+
+
+def test_stale_refusals_name_the_reload(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
+    with sqlite3.connect(db) as cx:
+        with pytest.raises(ValueError) as exc:
+            st.consolidate_layer_balances(cx, tid, 12, 13, source_rids=[ocu, iop],
+                                          target_rids=[ocu, iop])
+        assert str(exc.value) == ("Source and target layers must differ. "
+                                  "Reload the page and try again.")
+        cx.execute("DELETE FROM biofield_auth_chain WHERE id=?", (iop,))   # another tab
+        with pytest.raises(ValueError) as exc:
+            st.consolidate_layer_balances(cx, tid, 12, 6, source_rids=[ocu, iop],
+                                          target_rids=[eye])
+        assert str(exc.value) == "A row is not on this intake. Reload the page and try again."
 
 
 def test_rows_now_on_two_cards_are_refused_and_nothing_changes(tmp_path):
@@ -285,13 +358,18 @@ def test_two_cards_that_share_a_layer_number_can_consolidate(tmp_path):
     assert _rows(db) == {a: (3, "Bone"), b: (3, "Bone")}
 
 
-def test_the_same_card_on_both_sides_is_refused(tmp_path):
+def test_part_of_a_card_is_refused_on_either_side(tmp_path):
     db = str(tmp_path / "c.db")
     tid, eye, ocu, iop = _sharon_like(db)
     with sqlite3.connect(db) as cx:
-        with pytest.raises(ValueError, match="must differ"):
-            st.consolidate_layer_balances(cx, tid, 12, 13, source_rids=[ocu],
+        with pytest.raises(ValueError) as exc:
+            st.consolidate_layer_balances(cx, tid, 12, 6, source_rids=[ocu],
+                                          target_rids=[eye])
+        assert str(exc.value) == STALE
+        with pytest.raises(ValueError) as exc:
+            st.consolidate_layer_balances(cx, tid, 6, 12, source_rids=[eye],
                                           target_rids=[iop])
+        assert str(exc.value) == STALE
 
 
 def test_a_number_shared_by_two_cards_is_refused_without_ids(tmp_path):
@@ -417,17 +495,24 @@ def _stress_count(db):
         return cx.execute("SELECT COUNT(*) FROM biofield_auth_stress").fetchone()[0]
 
 
-def test_a_stale_add_stress_covers_a_row_added_to_the_card_since_load(tmp_path):
+def test_a_stale_add_stress_with_a_row_added_since_load_is_refused(tmp_path):
     db = str(tmp_path / "c.db")
     tid, eye, ocu, iop = _sharon_like(db)
     with sqlite3.connect(db) as cx:                  # another tab adds to the card
         add_chain_row(cx, tid, 14, GLAUCOMA, "", "Eye Drops")
-        late = cx.execute("SELECT MAX(id) FROM biofield_auth_chain").fetchone()[0]
+    n = _stress_count(db)
+    res = _client(db).post(f"/author/{tid}/stress/add", json={
+        "label": "Corneal thinning", "layer": 12, "rids": [ocu, iop]})
+    assert res.status_code == 400 and res.get_json()["error"] == STALE
+    assert _stress_count(db) == n
+
+
+def test_add_stress_covers_exactly_the_cards_rows(tmp_path):
+    db = str(tmp_path / "c.db")
+    tid, eye, ocu, iop = _sharon_like(db)
     j = _client(db).post(f"/author/{tid}/stress/add", json={
         "label": "Corneal thinning", "layer": 12, "rids": [ocu, iop]}).get_json()
-    assert j["ok"] is True
-    assert _stress_links(db, j["sid"]) == {ocu, iop, late}, (
-        "REGRESSION: the stress covered only part of the card")
+    assert j["ok"] is True and _stress_links(db, j["sid"]) == {ocu, iop}
 
 
 def test_add_stress_refuses_rows_now_on_two_cards(tmp_path):

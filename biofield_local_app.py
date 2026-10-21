@@ -3136,9 +3136,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not raw:
             return {"ok": False, "error": "empty label"}, 400
         layer = d.get("layer")
-        # A card sends its own row ids and its stored layer number. The ids are
-        # expanded to the whole CURRENT card, as consolidate does, so a stale tab
-        # cannot add a stress to only part of a card.
+        # A card sends its own row ids and its stored layer number. They must be
+        # exactly the CURRENT card, as on consolidate, so a stale tab is refused
+        # rather than adding a stress to part of a card, or to rows it never showed.
         card_rids = d.get("rids")
         card_rids = None if card_rids == [] else card_rids
         with sqlite3.connect(db_path) as cx:
