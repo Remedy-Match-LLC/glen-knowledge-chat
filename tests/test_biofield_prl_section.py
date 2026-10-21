@@ -129,15 +129,29 @@ def test_ratings_sort_each_area_and_x_is_ten(cx):
     assert [(i["name"], i["rating"]) for i in area["items"]] == [(c, "X21"), (a, "758"), (b, "")]
 
 
-def test_an_unreviewed_rating_shows_only_on_its_client_until_approved(cx):
+def test_an_unreviewed_rating_shows_on_every_client_marked_not_reviewed(cx):
+    """Glen, 2026-10-20: a rating proposed on one test shows, not reviewed, on another,
+    and approving it there marks the shared row reviewed everywhere."""
     a = _names()[0]
     ps.upsert_rating(cx, PANCREAS, {"name": a, "overall": 7, "research": 5, "uniqueness": 8},
                      origin_test="a49")
     mine = next(i for i in _area(cx)["items"] if i["name"] == a)
     theirs = next(i for i in _area(cx, "a50")["items"] if i["name"] == a)
-    assert mine["rating"] == "758" and not mine["reviewed"] and theirs["rating"] == ""
+    assert mine["rating"] == "758" and not mine["reviewed"]
+    assert theirs["rating"] == "758" and theirs["rated"] and not theirs["reviewed"]
     assert ps.approve_rating(cx, PANCREAS, a)
-    assert next(i for i in _area(cx, "a50")["items"] if i["name"] == a)["rating"] == "758"
+    for test in ("a49", "a50"):
+        item = next(i for i in _area(cx, test)["items"] if i["name"] == a)
+        assert item["rating"] == "758" and item["reviewed"], test
+
+
+def test_a_client_score_still_wins_over_an_unreviewed_shared_rating(cx):
+    a = _names()[0]
+    ps.upsert_rating(cx, PANCREAS, {"name": a, "overall": 7, "research": 5, "uniqueness": 8},
+                     origin_test="a49")
+    ps.act(cx, "a50", PANCREAS, "rating", a, "x99")
+    assert next(i for i in _area(cx, "a50")["items"] if i["name"] == a)["rating"] == "X99"
+    assert next(i for i in _area(cx)["items"] if i["name"] == a)["rating"] == "758"
 
 
 def test_a_per_client_rating_edit(cx):
@@ -329,3 +343,17 @@ def test_a_tick_before_the_switch_does_not_exempt_a_product_from_it(cx):
     assert [i["name"] for i in _area(cx)["items"] if i.get("hidden")] == [a]
     ps.act(cx, "a49", PANCREAS, "all_on")
     assert a not in _ticked(_area(cx))
+
+
+def test_an_unreviewed_botanical_from_another_client_is_greyed_out_too(cx):
+    """The rating now shows on every page, so its botanical flag greys it out there too."""
+    a = _names()[0]
+    ps.upsert_rating(cx, PANCREAS, {"name": a, "overall": 7, "research": 5, "uniqueness": 8,
+                                    "botanical": True}, origin_test="a49")
+    cs.save_botanical_setting(cx, "a50", avoid=True, exceptions="")
+    area = _area(cx, "a50")
+    assert [i["name"] for i in area["items"] if i.get("hidden")] == [a]
+    assert area["botanical_hidden"] == 1
+    # All never ticks it there either.
+    ps.act(cx, "a50", PANCREAS, "all_on")
+    assert a not in _ticked(_area(cx, "a50"))
