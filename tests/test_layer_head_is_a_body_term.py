@@ -290,13 +290,13 @@ def test_balance_all_names_a_condition_layer_by_its_pattern(tmp_path):
     assert _balances(db, tid, rid) == [ADRENAL]
 
 
-def test_layer_fields_replaces_only_covers_with_a_stored_pattern():
-    """The rule _append_layers and the program share. With no pattern it returns what
-    those paths wrote before."""
-    patterns = {"adrenal fatigue current 2023": "Adrenal"}
-    assert ht.layer_fields(["Kidney Driver", ADRENAL], patterns) == \
+def test_layer_fields_replaces_only_covers_that_are_a_condition():
+    """The rule _append_layers and the program share. With no condition among the
+    covers it returns what those paths wrote before."""
+    conds = {ADRENAL.casefold(): (ADRENAL, "Adrenal")}
+    assert ht.layer_fields(["Kidney Driver", ADRENAL], conds) == \
         ("Kidney Driver", "Kidney Driver, Adrenal", [ADRENAL])
-    assert ht.layer_fields([ADRENAL, "Lymph Star"], patterns) == \
+    assert ht.layer_fields([ADRENAL, "Lymph Star"], conds) == \
         ("Adrenal", "Adrenal, Lymph Star", [ADRENAL])
     assert ht.layer_fields([ADRENAL, "Lymph Star"], {}) == \
         (ADRENAL, f"{ADRENAL}, Lymph Star", [])
@@ -308,6 +308,7 @@ def test_add_one_from_the_remedy_set_names_a_condition_layer_by_its_pattern(
     db, tid, client = _setup(tmp_path, [], {ADRENAL: "Adrenal"}, {})
     with sqlite3.connect(db) as cx:      # no email: the species gate has nothing to ask
         cx.execute("UPDATE biofield_auth_tests SET email=''")
+        add_stress(cx, tid, ADRENAL, source="tag")     # the intake's own condition
     monkeypatch.setattr(st, "resolve_remedy_set", lambda *a, **k: {
         "picks": [{"remedy": "Endocrine Restore", "covers": [ADRENAL]}]})
     j = client.post(f"/author/{tid}/remedy-set/add-one",

@@ -2726,7 +2726,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         nxt = int(cx.execute("SELECT COALESCE(MAX(layer),0) FROM biofield_auth_chain "
                              "WHERE test_id=?", (tnum,)).fetchone()[0] or 0)
         from dashboard import biofield_clinical_head_term as _ht
-        patterns = _ht.stored_patterns(cx)
+        from dashboard.biofield_authoring import init_auth_tables
+        conds = _ht.conditions(cx, test_id)
+        # One batch, committed once: both init calls commit, so they run first.
+        init_auth_tables(cx)
+        _st.init_stress_tables(cx)
+        added = 0
+        try:
+            added = _append_batch(cx, test_id, rems, cover_by, nxt, conds)
+            cx.commit()
+        except BaseException:
+            cx.rollback()
+            raise
+        return added
+
+    def _append_batch(cx, test_id, rems, cover_by, nxt, conds):
+        from dashboard import biofield_clinical_head_term as _ht
         added = 0
         for r in rems:
             nxt += 1
@@ -2734,16 +2749,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # Root driver as Head, every covered stressor in the Tail. A Clinical
             # Summary condition with a stored pattern is named by that pattern, and its
             # full wording goes to the layer's Balances (Glen, 2026-10-20).
-            head, tail, wording = _ht.layer_fields(covers, patterns)
+            head, tail, wording = _ht.layer_fields(covers, conds)
             name = resolve_remedy_name(cx, r)     # 'heart health' -> 'Heart Health'
             d = remedy_dosing(cx, name)           # auto-fill dosage/frequency/timing from the FF
             rid = add_chain_row(cx, test_id, nxt, head, tail, name,
                                 d.get("dosage", ""), d.get("frequency", ""), d.get("timing", ""),
-                                confirmed=1, origin="live")
-            if wording:
-                _st.init_stress_tables(cx)
-                _ht.link_wording(cx, test_id, wording, [rid])
-                cx.commit()
+                                confirmed=1, origin="live", commit=False)
+            _ht.link_wording(cx, test_id, wording, [rid])
             added += 1
         return added
 
@@ -3883,35 +3895,41 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if existing and not body.get("force"):
             return {"ok": False, "needs_confirm": True, "existing": existing,
                     "error": f"This intake already has {existing} layer(s)."}
-        from dashboard.biofield_authoring import add_chain_row
+        from dashboard.biofield_authoring import add_chain_row, init_auth_tables
         from dashboard import biofield_clinical_head_term as _ht
         made = 0
         with sqlite3.connect(db_path) as cx:
-            patterns = _ht.stored_patterns(cx)
-            n = _last_layer_no(rep)
-            for L in layers:
-                n += 1
-                names = [m["name"] for m in L["members"]]
-                head = names[0]
-                tail = ", ".join(names[1:]) or head
-                # A member that is a Clinical Summary condition with a stored pattern
-                # shows as that pattern; its full wording goes to the Balances.
-                wording = [x for x in names if _ht.pattern_of(x, patterns)]
-                if wording:
-                    terms = []
-                    for x in names:
-                        x = _ht.pattern_of(x, patterns) or x
-                        if x not in terms:
-                            terms.append(x)
-                    head = terms[0]
-                    tail = ", ".join(terms[1:]) or head
-                rid = add_chain_row(cx, test_id, n, head, tail, "",
-                                    confirmed=0, origin="balance-all")
-                if wording:
-                    _st.init_stress_tables(cx)
+            conds = _ht.conditions(cx, test_id)
+            # One batch, committed once at the end; both init calls commit, so first.
+            init_auth_tables(cx)
+            _st.init_stress_tables(cx)
+            try:
+                n = _last_layer_no(rep)
+                for L in layers:
+                    n += 1
+                    names = [m["name"] for m in L["members"]]
+                    head = names[0]
+                    tail = ", ".join(names[1:]) or head
+                    # A member that is one of this client's conditions with a stored
+                    # pattern shows as that pattern, in Head AND Tail; its full wording
+                    # goes to the Balances.
+                    wording = [x for x in names if _ht._key(x) in conds]
+                    if wording:
+                        terms = []
+                        for x in names:
+                            x = (conds.get(_ht._key(x)) or (None, x))[1]
+                            if x not in terms:
+                                terms.append(x)
+                        head = terms[0]
+                        tail = ", ".join(terms)
+                    rid = add_chain_row(cx, test_id, n, head, tail, "",
+                                        confirmed=0, origin="balance-all", commit=False)
                     _ht.link_wording(cx, test_id, wording, [rid])
-                    cx.commit()
-                made += 1
+                    made += 1
+                cx.commit()
+            except BaseException:
+                cx.rollback()
+                raise
         return {"ok": True, "applied": True, "layers_added": made}
 
     @app.route("/author/<test_id>/clinical-catalog")
@@ -4354,45 +4372,54 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"ok": False, "needs_confirm": True, "existing": existing,
                         "error": f"This intake already has {existing} layer(s)."}
 
+            from dashboard import biofield_clinical_head_term as _ht
+            from dashboard.biofield_authoring import init_auth_tables
+            conds = _ht.conditions(cx, test_id)
+            # One batch, committed once at the end: a failure part way leaves no half
+            # chain to retry against. Both init calls commit, so they run first.
+            init_auth_tables(cx)
+            _st.init_stress_tables(cx)
             n, made = _last_layer_no(rep), 0
-            # The transcript's layers land exactly as the Interpret button writes
-            # them: unconfirmed, because he may still edit what he spoke.
-            for l in interpreted:
-                n += 1
-                add_chain_row(cx, test_id, n, l["head"], l["most_affected"],
-                              l["remedy"], l["dosage"], l["frequency"], l["timing"],
-                              confirmed=0, origin="program")
-                made += 1
+            try:
+                # The transcript's layers land exactly as the Interpret button writes
+                # them: unconfirmed, because he may still edit what he spoke.
+                for l in interpreted:
+                    n += 1
+                    add_chain_row(cx, test_id, n, l["head"], l["most_affected"],
+                                  l["remedy"], l["dosage"], l["frequency"], l["timing"],
+                                  confirmed=0, origin="program", commit=False)
+                    made += 1
+                # Each stage's picks follow, mirroring _append_layers: the head is the
+                # root driver among the covered stresses, the tail keeps them all. A
+                # Mind pick names its Clinical Summary condition; with a stored
+                # pattern, that pattern is the Head and Tail and the condition's full
+                # wording goes to the layer's Balances (Glen, 2026-10-20).
+                for st in prog["stages"]:
+                    for p in st["picks"]:
+                        n += 1
+                        lead = (p.get("label") or "").strip()
+                        ctok = token_of({"label": lead, "source": "tag"}) if lead else ""
+                        named = bool(lead) and _ht._key(lead) in conds
+                        covers = [lead if (named and c == ctok) else label_of.get(c, c)
+                                  for c in p.get("covers") or []]
+                        head, tail, wording = _ht.layer_fields(
+                            covers, conds, lead=lead if named else None)
+                        name = resolve_remedy_name(cx, p["remedy"])
+                        d = remedy_dosing(cx, name)
+                        rid = add_chain_row(cx, test_id, n, head, tail, name,
+                                            d.get("dosage", ""), d.get("frequency", ""),
+                                            d.get("timing", ""), confirmed=1,
+                                            origin="program", commit=False)
+                        _ht.link_wording(cx, test_id, wording, [rid])
+                        made += 1
+                cx.commit()
+            except BaseException:
+                cx.rollback()
+                raise
+            # Terrain is its own write, after the chain: update_terrain commits.
             if spirit_meta:
                 update_terrain(cx, test_id, phase=spirit_meta.get("phase"),
                                location=spirit_meta.get("location"))
-            # Each stage's picks follow, mirroring _append_layers: the head is the
-            # root driver among the covered stresses, the tail keeps them all. A Mind
-            # pick names its Clinical Summary condition; with a stored pattern, that
-            # pattern is the Head and Tail and the condition's full wording goes to the
-            # layer's Balances (Glen, 2026-10-20).
-            from dashboard import biofield_clinical_head_term as _ht
-            patterns = _ht.stored_patterns(cx)
-            for st in prog["stages"]:
-                for p in st["picks"]:
-                    n += 1
-                    lead = (p.get("label") or "").strip()
-                    ctok = token_of({"label": lead, "source": "tag"}) if lead else ""
-                    named = bool(lead) and bool(_ht.pattern_of(lead, patterns))
-                    covers = [lead if (named and c == ctok) else label_of.get(c, c)
-                              for c in p.get("covers") or []]
-                    head, tail, wording = _ht.layer_fields(
-                        covers, patterns, lead=lead if named else None)
-                    name = resolve_remedy_name(cx, p["remedy"])
-                    d = remedy_dosing(cx, name)
-                    rid = add_chain_row(cx, test_id, n, head, tail, name,
-                                        d.get("dosage", ""), d.get("frequency", ""),
-                                        d.get("timing", ""), confirmed=1, origin="program")
-                    if wording:
-                        _st.init_stress_tables(cx)
-                        _ht.link_wording(cx, test_id, wording, [rid])
-                        cx.commit()
-                    made += 1
         return {"ok": True, "applied": True, "mode": mode, "layers_added": made}
 
     @app.route("/author/<test_id>/delete", methods=["POST"])

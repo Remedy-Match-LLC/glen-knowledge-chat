@@ -839,6 +839,8 @@ def balance_item(cx, test_id, label, layer, remedies, resolve_name=lambda cx, na
         raise ValueError("Item and a positive layer number are required")
     term = str(pattern or "").strip()[:160] or label
     init_auth_tables(cx)
+    from dashboard.biofield_stress import init_stress_tables
+    init_stress_tables(cx)       # it commits, so before any write here
     rows = cx.execute(
         "SELECT id,head,most_affected,remedy FROM biofield_auth_chain "
         "WHERE test_id=? AND layer=? ORDER BY id", (_num(test_id), layer),
@@ -878,8 +880,6 @@ def balance_item(cx, test_id, label, layer, remedies, resolve_name=lambda cx, na
         # The term names the layer; the condition's full wording is what it balances.
         # Glen, 2026-10-20.
         from dashboard.biofield_clinical_head_term import card_rids, link_wording
-        from dashboard.biofield_stress import init_stress_tables
-        init_stress_tables(cx)
         link_wording(cx, test_id, [label], card_rids(cx, test_id, head_text))
     cx.commit()
     return {"layer": layer, "added_remedies": added}

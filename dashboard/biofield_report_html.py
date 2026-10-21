@@ -2111,14 +2111,17 @@ def _no_pattern_heads(items):
         return set()
 
 
-def _no_pattern_flag(head, no_pattern_heads):
-    """A card whose Head is a Clinical Summary condition's full wording because the
-    condition has no stored pattern yet (Glen, 2026-10-20)."""
-    if not no_pattern_heads or not (head or "").strip():
+def _no_pattern_flag(head, tail, no_pattern_heads):
+    """A card whose Head or any Tail item is a Clinical Summary condition's full
+    wording, because the condition has no stored pattern yet (Glen, 2026-10-20;
+    review round 2: a Tail item counts too)."""
+    if not no_pattern_heads:
         return ""
     from dashboard.biofield_clinical_checklist import _norm
     from dashboard.biofield_clinical_head_term import NO_PATTERN_FLAG
-    if _norm(head) not in no_pattern_heads:
+    from dashboard.biofield_stress import split_field
+    items = [head] + split_field(tail, no_pattern_heads.values())
+    if not any(_norm(i) in no_pattern_heads for i in items if (i or "").strip()):
         return ""
     return f"<div class='warn no-pattern-flag'>{_e(NO_PATTERN_FLAG)}</div>"
 
@@ -2163,7 +2166,7 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None,
             f"<label>Head</label>{head_in}"
             f"<label>Tail</label>{tail_in}"
             f"</div><input type=hidden id={gid}_layer value=\"{stored_layer}\"></div>"
-            + _no_pattern_flag(g["head"], no_pattern_heads)
+            + _no_pattern_flag(g["head"], g["most_affected"], no_pattern_heads)
             + lines + _covered_html(covered_by_layer.get(n), n) + _new_remedy_line(gid, "Add remedy") +
             f"<div class=lfoot><span class=food>Layer {n}</span>{consolidate}"
             f"<button class='btn ghost savebtn saved' data-dirty='Update layer' "

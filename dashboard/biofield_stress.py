@@ -401,10 +401,12 @@ def cover_stress(cx, tid, stress_id, rids):
 
 
 def move_links_off(cx, tid, rids, to_rids=None):
-    """Call BEFORE deleting chain rows `rids`. Each stress they balance moves to
-    `to_rids`, or, when that is None, to the rows left on the same card (rows sharing
-    a Head, as group_layers groups them). A stress with nowhere to go loses its link
-    and so shows as unbalanced. Never commits: the caller's delete is the same unit.
+    """Call BEFORE deleting chain rows `rids`. Each deleted row's Balances move to
+    `to_rids` when given, else to the rows left on THAT row's own card (rows sharing
+    its Head, as group_layers groups them). Worked out per card, never per batch, so a
+    stress never crosses to another card deleted in the same call (review round 2). A
+    stress with nowhere to go loses its link and so shows as unbalanced. Never commits:
+    the caller's delete is the same unit.
 
     A link to a deleted row is invisible. On a50, stress 1914 linked only to row 449
     after Glen deleted it, so it read as balanced by no layer (2026-10-20).
@@ -412,6 +414,35 @@ def move_links_off(cx, tid, rids, to_rids=None):
     out = {"moved": [], "unbalanced": []}
     if not _table_exists(cx, "biofield_auth_layer_stress"):
         return out
+    t = _num(tid)
+    gone = sorted({int(r) for r in rids or []})
+    if not gone:
+        return out
+    marks = ",".join("?" for _ in gone)
+    head_of = {int(i): (h or "").strip().lower() for i, h in cx.execute(
+        f"SELECT id, head FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
+        (t, *gone))}
+    survivors = {}
+    for i, h in cx.execute(
+            f"SELECT id, head FROM biofield_auth_chain WHERE test_id=? AND id NOT IN ({marks})",
+            (t, *gone)):
+        survivors.setdefault((h or "").strip().lower(), []).append(int(i))
+    fixed = None if to_rids is None else [int(r) for r in to_rids if int(r) not in gone]
+    moved, stranded = set(), set()
+    for rid in gone:
+        h = head_of.get(rid, "")
+        dest = fixed if fixed is not None else (survivors.get(h, []) if h else [])
+        for (sid,) in cx.execute("SELECT stress_id FROM biofield_auth_layer_stress "
+                                 "WHERE test_id=? AND chain_rid=?", (t, rid)).fetchall():
+            for d in dest:
+                cx.execute("INSERT OR IGNORE INTO biofield_auth_layer_stress"
+                           "(test_id,stress_id,chain_rid) VALUES(?,?,?)", (t, int(sid), d))
+            (moved if dest else stranded).add(int(sid))
+    cx.execute(f"DELETE FROM biofield_auth_layer_stress WHERE test_id=? "
+               f"AND chain_rid IN ({marks})", (t, *gone))
+    out["moved"] = sorted(moved)
+    out["unbalanced"] = sorted(stranded - moved)
+    return out
     t = _num(tid)
     gone = sorted({int(r) for r in rids or []})
     if not gone:
@@ -441,27 +472,41 @@ def move_links_off(cx, tid, rids, to_rids=None):
 _FIELD_SEP = re.compile(r"[,;\n]+")
 
 
-def condition_wordings(cx, tid):
-    """This client's condition wordings that hold a separator themselves, such as
-    "Adrenal Fatigue, Current, 2023". From the Clinical Summary ticks and the intake's
-    own non-scan stresses, with or without a stored pattern. A "chain" stress is left
-    out: it is what an earlier split made, never a condition."""
+# Stress sources that hold a client's conditions: "tag" (mined from the intake form
+# and the CRM, which is where a50's full wordings live), "paste" (intake notes Glen
+# pastes), "clinical" (added from the Clinical Summary) and "intake" (named by the
+# review; no stress carries it today). Left out: "chain" (pieces an earlier split
+# made), "voice" and "manual" (Spirit: what Glen spoke or tested), "comm" (mined from
+# messages, never ticked) and "scan" (E4L). Review round 1, F1.
+CONDITION_SOURCES = ("tag", "paste", "clinical", "intake")
+
+
+def client_condition_labels(cx, tid):
+    """This client's condition wordings, in order: the Clinical Summary ticks, then the
+    stresses from CONDITION_SOURCES. With or without a stored pattern."""
     t = _num(tid)
     labels = []
     if _table_exists(cx, "biofield_clinical_selection"):
         labels += [r[0] for r in cx.execute(
-            "SELECT label FROM biofield_clinical_selection WHERE test_id IN (?,?)",
-            ("a" + str(t), str(t)))]
+            "SELECT label FROM biofield_clinical_selection WHERE test_id IN (?,?) "
+            "ORDER BY rowid", ("a" + str(t), str(t)))]
     if _table_exists(cx, "biofield_auth_stress"):
+        marks = ",".join("?" for _ in CONDITION_SOURCES)
         labels += [r[0] for r in cx.execute(
-            "SELECT label FROM biofield_auth_stress WHERE test_id=? "
-            "AND source NOT IN ('scan','chain')", (t,))]
+            f"SELECT label FROM biofield_auth_stress WHERE test_id=? "
+            f"AND source IN ({marks}) ORDER BY id", (t, *CONDITION_SOURCES))]
     out = []
     for label in labels:
         label = (label or "").strip()
-        if _FIELD_SEP.search(label) and label not in out:
+        if label and label not in out:
             out.append(label)
     return out
+
+
+def condition_wordings(cx, tid):
+    """This client's condition wordings that hold a separator themselves, such as
+    "Adrenal Fatigue, Current, 2023". Same sources as client_condition_labels."""
+    return [l for l in client_condition_labels(cx, tid) if _FIELD_SEP.search(l)]
 
 
 def split_field(text, wordings=()):

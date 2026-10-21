@@ -159,8 +159,12 @@ def update_terrain(cx, tid, phase=None, location=None):
 
 
 def add_chain_row(cx, tid, layer, head, most_affected, remedy,
-                  dosage="", frequency="", timing="", confirmed=1, origin="live", codes=None):
-    init_auth_tables(cx)
+                  dosage="", frequency="", timing="", confirmed=1, origin="live", codes=None,
+                  commit=True):
+    """commit=False is for a batch: the caller has run init_auth_tables first and
+    commits once at the end, so a failure part way leaves nothing behind."""
+    if commit:
+        init_auth_tables(cx)
     now = _now()   # born unedited: updated_at == created_at
     codes_json = json.dumps([str(c).strip() for c in (codes or []) if str(c).strip()])
     new_id = dbwrite.insert_returning_id(cx,
@@ -170,7 +174,8 @@ def add_chain_row(cx, tid, layer, head, most_affected, remedy,
         (_num(tid), layer, (head or "").strip(), (most_affected or "").strip(),
          (remedy or "").strip(), dosage or "", frequency or "", timing or "", 0, now, now,
          1 if confirmed else 0, (origin or "live"), codes_json))
-    cx.commit()
+    if commit:
+        cx.commit()
     return new_id
 
 

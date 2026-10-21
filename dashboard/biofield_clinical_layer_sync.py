@@ -98,7 +98,10 @@ def targets(cx, items):
         label = str(item.get("label") or "").strip()
         if not label:
             continue
-        pattern = str(item.get("stress_pattern") or "").strip()
+        # The stored pattern names the layer when there is one; the pattern the page
+        # shows (one typed for this test, else a suggestion) only when none is stored.
+        # Review round 1 F7: the program and correct_chain read the stored one.
+        pattern = str(item.get("remembered_pattern") or item.get("stress_pattern") or "").strip()
         key = _norm(label)
         if pattern:
             name, keys = pattern, {_norm(pattern)}

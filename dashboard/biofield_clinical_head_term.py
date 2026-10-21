@@ -26,7 +26,8 @@ always stays.
 import re
 
 from dashboard.biofield_clinical_checklist import _norm as _cnorm
-from dashboard.biofield_stress import _norm as _snorm, _num, _now, _table_exists, move_links_off
+from dashboard.biofield_stress import (_norm as _snorm, _num, _now, _table_exists,
+                                       client_condition_labels, move_links_off)
 
 # Shown on a layer card whose Head is a condition's full wording because the condition
 # has no stored pattern yet. Glen approves this text.
@@ -45,32 +46,67 @@ def stored_patterns(cx):
 
 
 def pattern_of(label, patterns):
+    """The stored pattern for a label, looked up the way stress_pattern() does."""
     return patterns.get(_cnorm(label), "") if label else ""
 
 
-def layer_fields(covers, patterns, lead=None):
+def _key(text):
+    """The only folding a full-wording match allows: case and surrounding spaces.
+    No punctuation folding, so "Adrenal fatigue current 2023" typed by Glen is not
+    "Adrenal Fatigue, Current, 2023" (review round 1 F3, round 2)."""
+    return (text or "").strip().casefold()
+
+
+def conditions(cx, tid, patterns=None):
+    """This client's conditions that have a stored pattern: {_key(wording): (wording,
+    pattern)}. Wording comes from client_condition_labels, the same source set as
+    consolidate. The pattern is followed to a fixed point: when one condition's
+    pattern is another condition's wording, the final term is used, so a second
+    correction changes nothing (review round 1 F5)."""
+    patterns = stored_patterns(cx) if patterns is None else patterns
+    direct = {}
+    for label in client_condition_labels(cx, tid):
+        p = pattern_of(label, patterns)
+        if p:
+            direct.setdefault(_key(label), (label, p))
+    out = {}
+    for k, (label, p) in direct.items():
+        seen = {k}
+        while _key(p) in direct and _key(p) not in seen:
+            seen.add(_key(p))
+            p = direct[_key(p)][1]
+        if _key(p) != k:              # a wording that already IS its term needs nothing
+            out[k] = (label, p)
+    return out
+
+
+def layer_fields(covers, conds, lead=None):
     """(head, tail, wording) for a layer built from `covers`, the stress labels its
     remedy balances. Today's rule picks the Head: `lead` when given, else the first
-    cover ending in "driver", else the first cover. Each cover with a stored pattern
-    is replaced by that pattern in Head and Tail, and returned in `wording` to be
-    linked as a balance. With no patterns this returns exactly what the paths wrote
-    before."""
+    cover ending in "driver", else the first cover. A cover that is exactly one of
+    this client's conditions (`conds`, from conditions()) is replaced by its pattern in
+    Head and Tail, and returned in `wording` to be linked as a balance. Any other
+    cover, such as a voice stress Glen spoke, keeps its words. With no condition among
+    the covers this returns exactly what the paths wrote before."""
     covers = [c for c in (covers or []) if (c or "").strip()]
     head0 = lead or next((c for c in covers if c.strip().lower().endswith("driver")),
                          covers[0] if covers else "")
     wording, tail, seen = [], [], set()
     for c in covers:
-        p = pattern_of(c, patterns)
-        if p:
+        hit = conds.get(_key(c))
+        if hit:
             if c not in wording:
                 wording.append(c)
-            c = p
-        if _cnorm(c) not in seen:
-            seen.add(_cnorm(c))
+            c = hit[1]
+        if _key(c) not in seen:
+            seen.add(_key(c))
             tail.append(c)
-    head = pattern_of(head0, patterns) or head0
-    if lead and pattern_of(lead, patterns) and lead not in wording:
+    lead_hit = conds.get(_key(lead)) if lead else None
+    head = (conds.get(_key(head0)) or (None, head0))[1]
+    if lead_hit and lead not in wording:
         wording.insert(0, lead)
+        if _key(lead_hit[1]) not in seen:
+            tail.insert(0, lead_hit[1])
     if not wording:
         return head, ", ".join(covers)[:200], []
     return head, ", ".join(tail)[:200], wording
@@ -124,58 +160,61 @@ def card_rids(cx, tid, head):
 
 
 def no_pattern_heads(items):
-    """Normalised wording of the Clinical Summary rows with no stored pattern. A card
-    whose Head is one of these is flagged."""
-    return {_cnorm(i.get("label")) for i in items or []
+    """{normalised wording: wording} of the Clinical Summary rows with no stored
+    pattern. A card whose Head or any Tail item is one of these is flagged."""
+    return {_cnorm(i.get("label")): str(i.get("label")).strip() for i in items or []
             if (i.get("label") or "").strip() and not (i.get("remembered_pattern") or "").strip()}
 
 
 # ---- correcting an existing chain -------------------------------------------------
 
-def _conditions(cx, tid, patterns):
-    """This client's conditions that have a stored pattern: {wording norm: (wording,
-    pattern)}. From the Clinical Summary ticks and the intake's own stress labels, read
-    from the database only, so it needs no network and no profile."""
-    labels = []
-    if _table_exists(cx, "biofield_clinical_selection"):
-        labels += [r[0] for r in cx.execute(
-            "SELECT label FROM biofield_clinical_selection WHERE test_id IN (?,?)",
-            ("a" + str(_num(tid)), str(_num(tid))))]
-    if _table_exists(cx, "biofield_auth_stress"):
-        labels += [r[0] for r in cx.execute(
-            "SELECT label FROM biofield_auth_stress WHERE test_id=? AND source<>'scan'",
-            (_num(tid),))]
-    out = {}
-    for label in labels:
-        label = (label or "").strip()
-        p = pattern_of(label, patterns)
-        # A wording that already IS its term needs nothing.
-        if p and _cnorm(label) != _cnorm(p):
-            out.setdefault(_cnorm(label), (label, p))
-    return out
+_FIELD_SPLIT = re.compile(r"([,;\n]+)")
 
 
-def _strip_wording(text, conds):
-    """(new text, [wording found]). Removes each condition's whole wording from a Head
-    or Tail, then puts its pattern in its place once. The wording holds commas itself
-    ("Adrenal Fatigue, Current, 2023"), so it is matched whole, longest first, between
-    separators, never part by part."""
-    found, out = [], text or ""
-    for key, (wording, pattern) in sorted(conds.items(), key=lambda kv: -len(kv[1][0])):
-        rx = re.compile(r"(?:^|(?<=[,;\n]))\s*" + re.escape(wording.strip()) +
-                        r"\s*(?=[,;\n]|$)", re.I)
-        if rx.search(out):
-            out = rx.sub("\x00" + pattern + "\x00", out)
+def _replace_in_field(text, conds):
+    """(new text, [wording found]). Replaces each item of a Tail that is exactly a
+    condition's wording with its pattern. Every other item, Glen's separators and his
+    repeated items stay as they were (review round 1 F4). The wording holds commas
+    itself, so it is matched whole between separators, longest first. Where the same
+    pattern would then stand twice, the extra copy and its separator go: that repeat
+    is the path's, never Glen's."""
+    text = text or ""
+    found, slots = [], []
+    for k, (wording, pattern) in sorted(conds.items(), key=lambda kv: -len(kv[1][0])):
+        rx = re.compile(r"(?:^|(?<=[,;\n]))(\s*)" + re.escape(wording.strip()) +
+                        r"(\s*)(?=[,;\n]|$)", re.I)
+
+        def put(m, pattern=pattern):
+            slots.append(pattern)
+            return m.group(1) + "\x00%d\x00" % (len(slots) - 1) + m.group(2)
+        new = rx.sub(put, text)
+        if new != text:
             found.append((wording, pattern))
+            text = new
     if not found:
-        return text or "", []
-    parts, seen = [], set()
-    for part in _SEP.split(out.replace("\x00", "")):
-        part = part.strip()
-        if part and _cnorm(part) not in seen:
-            seen.add(_cnorm(part))
-            parts.append(part)
-    return ", ".join(parts), found
+        return text, []
+    parts = _FIELD_SPLIT.split(text)
+    items, seps = parts[0::2], parts[1::2]
+    plain = {_key(i) for i in items if "\x00" not in i}
+    used, keep = set(), []
+    for n, item in enumerate(items):
+        m = re.search(r"\x00(\d+)\x00", item)
+        if m:
+            term = slots[int(m.group(1))]
+            if _key(term) in plain or _key(term) in used:
+                keep.append(None)
+                continue
+            used.add(_key(term))
+            item = item[:m.start()] + term + item[m.end():]
+        keep.append(item)
+    out = ""
+    for n, item in enumerate(keep):
+        if item is None:
+            continue
+        if out or any(k is not None for k in keep[:n]):
+            out += seps[n - 1] if n > 0 else ""
+        out += item
+    return out, found
 
 
 def plan_correction(cx, test_id):
@@ -183,8 +222,7 @@ def plan_correction(cx, test_id):
     tail, new_tail, wording}], "links": [{stress_id, label, to}], "dangling": [{stress_id,
     label, deleted_rid, to}], "unbalanced": [...], "fragments": [{stress_id, label}]}."""
     tid = _num(test_id)
-    patterns = stored_patterns(cx)
-    conds = _conditions(cx, tid, patterns)
+    conds = conditions(cx, tid)
     rows = cx.execute("SELECT id, head, most_affected FROM biofield_auth_chain WHERE test_id=? "
                       "ORDER BY layer, sort_seq, id", (tid,)).fetchall()
     plan = {"rows": [], "links": [], "dangling": [], "unbalanced": [], "fragments": []}
@@ -193,11 +231,11 @@ def plan_correction(cx, test_id):
     for rid, head, tail in rows:
         head, tail = (head or "").strip(), (tail or "").strip()
         nh, words = head, []
-        hit = conds.get(_cnorm(head))
+        hit = conds.get(_key(head))
         if hit:                       # a Head that IS a condition's wording, never Glen's
             nh = hit[1]
             words.append(hit[0])
-        nt, found = _strip_wording(tail, conds)
+        nt, found = _replace_in_field(tail, conds)
         words += [w for w, _ in found if w not in words]
         new_head[int(rid)] = nh
         if nh != head or nt != tail:
