@@ -111,7 +111,8 @@ def targets(cx, items):
             continue
         t = next((by_key[k] for k in sorted(keys) if k in by_key), None)
         if t is None:
-            t = {"name": name, "keys": set(), "labels": [], "remedies": [], "checked": False}
+            t = {"name": name, "keys": set(), "labels": [], "remedies": [], "checked": False,
+                 "by_pattern": bool(pattern)}
             out.append(t)
         t["keys"] |= keys
         for k in keys:
@@ -192,7 +193,8 @@ def plan(cx, test_id, items, resolve=None):
                     add.append(name)
             changes.append({"id": "new:" + _norm(t["name"]), "kind": "new",
                             "layer": t["name"], "label": t["labels"][0] if t["labels"] else "",
-                            "remedies": add, "preticked": True})
+                            "remedies": add, "preticked": True,
+                            "balances": _wording(t)})
             continue
         have = {}
         for r in layer["rows"]:
@@ -211,7 +213,8 @@ def plan(cx, test_id, items, resolve=None):
             changes.append({"id": "add:" + layer["key"] + ":" + k, "kind": "add",
                             "layer": layer["head"], "remedy": name,
                             "confirmed_layer": layer["confirmed"],
-                            "preticked": not layer["confirmed"]})
+                            "preticked": not layer["confirmed"],
+                            "balances": _wording(t)})
         for k, rows in have.items():
             if k in ticked:
                 continue
@@ -228,6 +231,13 @@ def plan(cx, test_id, items, resolve=None):
     return {"changes": changes, "stale": stale, "no_pattern": no_pattern,
             "elsewhere": elsewhere,
             "digest": _digest(layers, changes, [_ticks(cx, test_id), blank])}
+
+
+def _wording(t):
+    """The full wording a pattern-named layer balances. Glen, 2026-10-20: the
+    pattern is the Head and Tail, and the condition's wording goes to the Balances.
+    Empty for a layer named by a topic, which keeps the wording in its Tail."""
+    return [l for l in t["labels"] if _norm(l) != _norm(t["name"])] if t.get("by_pattern") else []
 
 
 def _blank_rows(cx, test_id):
@@ -264,6 +274,9 @@ def apply(cx, test_id, items, digest, chosen, resolve=None, dosing=None, now="")
     `chosen` is the list of change ids Glen ticked. One that is not in the plan is
     refused as stale too: it can only come from an older preview."""
     dosing = dosing or (lambda cx, name: {})
+    from dashboard.biofield_clinical_head_term import card_rids, link_wording
+    from dashboard.biofield_stress import init_stress_tables
+    init_stress_tables(cx)   # it commits, so before the write lock, never inside it
     if cx.in_transaction:  # the checklist build may have opened one
         cx.commit()
     cx.execute("BEGIN IMMEDIATE")
@@ -292,6 +305,7 @@ def apply(cx, test_id, items, digest, chosen, resolve=None, dosing=None, now="")
                 g = layers[_norm(c["layer"])]
                 _insert(cx, tid, g["layer"], g["head"], "", c["remedy"],
                         dosing(cx, c["remedy"]), confirmed=0, origin="clinical", now=now)
+                link_wording(cx, tid, c.get("balances"), card_rids(cx, tid, g["head"]))
                 done["added"] += 1
             elif c["kind"] == "remove":
                 _remove(cx, tid, c["rid"], now)
@@ -300,10 +314,14 @@ def apply(cx, test_id, items, digest, chosen, resolve=None, dosing=None, now="")
                 last += 1
                 names = [n for n in c["remedies"] if _norm(n) not in landed]
                 landed |= {_norm(n) for n in names}
+                # A pattern-named layer carries the pattern as its Tail too; the
+                # wording goes to its Balances. A topic-named one keeps the wording.
+                tail = c["layer"] if c.get("balances") else (c["label"] or c["layer"])
                 for name in names or [""]:
-                    _insert(cx, tid, last, c["layer"], c["label"] or c["layer"], name,
+                    _insert(cx, tid, last, c["layer"], tail, name,
                             dosing(cx, name) if name else {}, confirmed=0,
                             origin="clinical", now=now)
+                link_wording(cx, tid, c.get("balances"), card_rids(cx, tid, c["layer"]))
                 done["layers_added"] += 1
         cx.commit()
         return done
@@ -337,6 +355,8 @@ def _remove(cx, tid, rid, now):
         "LOWER(TRIM(COALESCE(most_affected,'')))=LOWER(TRIM(?))",
         (tid, rid, row[0] or "", row[1])).fetchone()[0]
     if siblings and tail_kept:
+        from dashboard.biofield_stress import move_links_off
+        move_links_off(cx, tid, [rid])     # its Balances stay on the card
         cx.execute("DELETE FROM biofield_auth_chain WHERE id=?", (rid,))
     else:
         cx.execute("UPDATE biofield_auth_chain SET remedy='',dosage='',frequency='',timing='',"

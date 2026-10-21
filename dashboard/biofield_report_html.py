@@ -2103,8 +2103,28 @@ def _card_rids(group):
     return ",".join(str(r.get("rid")) for r in group["rows"] if r.get("rid") is not None)
 
 
+def _no_pattern_heads(items):
+    try:
+        from dashboard.biofield_clinical_head_term import no_pattern_heads
+        return no_pattern_heads(items)
+    except Exception:
+        return set()
+
+
+def _no_pattern_flag(head, no_pattern_heads):
+    """A card whose Head is a Clinical Summary condition's full wording because the
+    condition has no stored pattern yet (Glen, 2026-10-20)."""
+    if not no_pattern_heads or not (head or "").strip():
+        return ""
+    from dashboard.biofield_clinical_checklist import _norm
+    from dashboard.biofield_clinical_head_term import NO_PATTERN_FLAG
+    if _norm(head) not in no_pattern_heads:
+        return ""
+    return f"<div class='warn no-pattern-flag'>{_e(NO_PATTERN_FLAG)}</div>"
+
+
 def _render_chain_cards(report, depth_values, covered_by_layer=None,
-                        bottles_by_remedy=None):
+                        bottles_by_remedy=None, no_pattern_heads=None):
     covered_by_layer = covered_by_layer or {}
     cards = ""
     groups = group_layers(report.get("layers") or [])
@@ -2143,6 +2163,7 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None,
             f"<label>Head</label>{head_in}"
             f"<label>Tail</label>{tail_in}"
             f"</div><input type=hidden id={gid}_layer value=\"{stored_layer}\"></div>"
+            + _no_pattern_flag(g["head"], no_pattern_heads)
             + lines + _covered_html(covered_by_layer.get(n), n) + _new_remedy_line(gid, "Add remedy") +
             f"<div class=lfoot><span class=food>Layer {n}</span>{consolidate}"
             f"<button class='btn ghost savebtn saved' data-dirty='Update layer' "
@@ -3117,7 +3138,9 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
              "<div class=chainlayout>" + _render_layer_rail(groups) +
              "<div id=chaintbl class=chain>"
              + _render_chain_cards(report, depth_values, covered_by_layer,
-                                   _bottles_by_remedy(dispensed)) + "</div>"
+                                   _bottles_by_remedy(dispensed),
+                                   no_pattern_heads=_no_pattern_heads(clinical_checklist))
+             + "</div>"
              "</div>"
              "<datalist id=vocab></datalist><datalist id=catalog></datalist>")
     session = (

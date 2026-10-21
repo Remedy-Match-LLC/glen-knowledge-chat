@@ -211,11 +211,20 @@ def list_stresses(cx, tid, chain_rows):
     t = _num(tid)
     remedy_names, head_pairs = _chain_parts(chain_rows)
     covered = covered_codes(cx, tid, remedy_names)
-    directly_placed = {
-        r[0] for r in cx.execute(
-            "SELECT DISTINCT stress_id FROM biofield_auth_layer_stress WHERE test_id=?",
-            (t,)).fetchall()
-    }
+    # Only a link to a row that still exists balances a stress. A link left behind by a
+    # deleted row made the stress read as balanced by no layer at all (a50, 1914).
+    placed_on = {}
+    links = []
+    if _table_exists(cx, "biofield_auth_chain"):
+        links = cx.execute(
+            "SELECT ls.stress_id, c.id, c.remedy, c.layer FROM biofield_auth_layer_stress ls "
+            "JOIN biofield_auth_chain c ON c.id=ls.chain_rid AND c.test_id=ls.test_id "
+            "WHERE ls.test_id=? ORDER BY c.layer, c.id", (t,)).fetchall()
+    for sid, rid, remedy, layer in links:
+        prev = placed_on.get(sid)
+        if prev is None or (not (prev[0] or "").strip() and (remedy or "").strip()):
+            placed_on[sid] = (remedy, layer)
+    directly_placed = set(placed_on)
     head_map = {}
     for h, rem in head_pairs:
         head_map.setdefault(h, rem)
@@ -248,7 +257,7 @@ def list_stresses(cx, tid, chain_rows):
         elif hist_rem is not None:
             by = hist_rem
         elif is_direct:
-            by = "assigned layer"
+            by = (placed_on[r["id"]][0] or "").strip() or "assigned layer"
         elif r["manual_balanced"]:
             by = "manual"
         else:
@@ -257,6 +266,10 @@ def list_stresses(cx, tid, chain_rows):
                 "label": _clean_label(r["label"], r["source"]),
                 "source": r["source"], "balance": r["balance"],
                 "balanced": is_bal, "balanced_by": by}
+        if by and is_direct and not is_cov and lbl_rem is None and hist_rem is None:
+            # The Clinical Summary reads this to say which layer balances a condition
+            # whose wording now sits in that layer's Balances, not in its Head.
+            item["balanced_layer"] = placed_on[r["id"]][1]
         (balanced if is_bal else active).append(item)
         items.append(item)
     # Symptoms, Labs or Conditions for each Mind stress (Glen, 2026-10-16).
@@ -385,6 +398,44 @@ def cover_stress(cx, tid, stress_id, rids):
                        "(test_id,remedy,code) VALUES(?,?,?)", (t, remedy, code))
     cx.commit()
     return code
+
+
+def move_links_off(cx, tid, rids, to_rids=None):
+    """Call BEFORE deleting chain rows `rids`. Each stress they balance moves to
+    `to_rids`, or, when that is None, to the rows left on the same card (rows sharing
+    a Head, as group_layers groups them). A stress with nowhere to go loses its link
+    and so shows as unbalanced. Never commits: the caller's delete is the same unit.
+
+    A link to a deleted row is invisible. On a50, stress 1914 linked only to row 449
+    after Glen deleted it, so it read as balanced by no layer (2026-10-20).
+    Returns {"moved": [stress ids], "unbalanced": [stress ids]}."""
+    out = {"moved": [], "unbalanced": []}
+    if not _table_exists(cx, "biofield_auth_layer_stress"):
+        return out
+    t = _num(tid)
+    gone = sorted({int(r) for r in rids or []})
+    if not gone:
+        return out
+    marks = ",".join("?" for _ in gone)
+    if to_rids is None:
+        heads = {(h or "").strip().lower() for (h,) in cx.execute(
+            f"SELECT head FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
+            (t, *gone))} - {""}
+        to_rids = [int(r[0]) for r in cx.execute(
+            f"SELECT id,head FROM biofield_auth_chain WHERE test_id=? AND id NOT IN ({marks})",
+            (t, *gone)) if (r[1] or "").strip().lower() in heads]
+    to_rids = [int(r) for r in to_rids if int(r) not in gone]
+    linked = sorted({int(r[0]) for r in cx.execute(
+        f"SELECT stress_id FROM biofield_auth_layer_stress WHERE test_id=? "
+        f"AND chain_rid IN ({marks})", (t, *gone))})
+    for sid in linked:
+        for rid in to_rids:
+            cx.execute("INSERT OR IGNORE INTO biofield_auth_layer_stress"
+                       "(test_id,stress_id,chain_rid) VALUES(?,?,?)", (t, sid, rid))
+        (out["moved"] if to_rids else out["unbalanced"]).append(sid)
+    cx.execute(f"DELETE FROM biofield_auth_layer_stress WHERE test_id=? "
+               f"AND chain_rid IN ({marks})", (t, *gone))
+    return out
 
 
 RELOAD = "Reload the page and try again."

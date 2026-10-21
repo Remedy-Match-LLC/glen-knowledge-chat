@@ -91,6 +91,11 @@ def _apply(cx, tid, fold):
         cx.execute(f"UPDATE biofield_auth_chain SET most_affected=? "
                    f"WHERE test_id=? AND id IN ({marks})",
                    [tail, _num(tid)] + list(fold["into_rids"]))
+    # The folded rows' Balances go where the rows went: the layer folded into, or the
+    # rows left on their own card.
+    from dashboard.biofield_stress import move_links_off
+    move_links_off(cx, tid, fold["rids"],
+                   to_rids=fold["into_rids"] if fold["whole"] and fold["into_rids"] else None)
     marks = ",".join("?" * len(fold["rids"]))
     cx.execute(f"DELETE FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
                [_num(tid)] + list(fold["rids"]))

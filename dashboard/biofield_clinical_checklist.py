@@ -874,5 +874,12 @@ def balance_item(cx, test_id, label, layer, remedies, resolve_name=lambda cx, na
     remember_remedies(cx, label, remedies)
     # A term entered for a condition that has none yet becomes the default next time.
     remember_stress_pattern(cx, label, pattern)
+    if term != label and _norm(term) != _norm(label):
+        # The term names the layer; the condition's full wording is what it balances.
+        # Glen, 2026-10-20.
+        from dashboard.biofield_clinical_head_term import card_rids, link_wording
+        from dashboard.biofield_stress import init_stress_tables
+        init_stress_tables(cx)
+        link_wording(cx, test_id, [label], card_rids(cx, test_id, head_text))
     cx.commit()
     return {"layer": layer, "added_remedies": added}

@@ -574,6 +574,10 @@ def was_edited(cx, rid):
 
 
 def delete_chain_row(cx, rid):
+    row = cx.execute("SELECT test_id FROM biofield_auth_chain WHERE id=?", (rid,)).fetchone()
+    if row:
+        from dashboard.biofield_stress import move_links_off
+        move_links_off(cx, row[0], [rid])   # its Balances stay on the card
     cx.execute("DELETE FROM biofield_auth_chain WHERE id=?", (rid,))
     cx.commit()
 
@@ -604,6 +608,10 @@ def remove_remedy_preserving_layer(cx, tid, rid):
         # Empty-head rows are deliberately rendered as separate layers.
         sibling_count = 0
     if sibling_count:
+        # The row's Balances move to the rows left on its card. Leaving them on the
+        # deleted row hid them: a50's stress 1914 balanced no layer after row 449 went.
+        from dashboard.biofield_stress import move_links_off
+        move_links_off(cx, tid, [rid])
         cx.execute("DELETE FROM biofield_auth_chain WHERE id=?", (rid,))
     else:
         cx.execute(
