@@ -96,7 +96,7 @@ def test_the_store_entry():
     assert "out_of_stock" not in e
     assert "enrichment_note" not in e
     assert "inactive" not in e and "waitlist_only" not in e
-    assert e["content_since"] == "2026-10-19"
+    assert e["content_since"] == "2026-10-20"
     assert e["price_cents"] == 7000 and e["fmp_id"] == "395" and e["name"] == "Vitamin D Syntropy"
     assert e["pinecone_title"] == "Vitamin D Syntropy"
     assert e["qty_pricing"] is True
