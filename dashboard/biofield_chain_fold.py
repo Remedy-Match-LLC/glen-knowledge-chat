@@ -26,6 +26,23 @@ def _key(name):
     return str(name or "").strip().lower()
 
 
+def _remedy_key(name):
+    """A remedy's catalog identity, so "ES1 Immune" and "ES1 Lymph and Immune
+    Energetic Star Infoceutical" are one remedy. Glen, 2026-10-22: "When folding
+    layers together, do not duplicate an identical remedy."
+
+    Exact names only: a retired name's survivor, then the catalog's aliases, then the
+    name itself. Never a fuzzy match, because a fold deletes rows."""
+    from dashboard import biofield_authoring as _a
+    k = _a._norm_name(str(name or "").strip())
+    if not k:
+        return ""
+    # Retired-name redirects are left out: some cross product forms or doses
+    # ("Sublingual B12 Powder" to the drops). A missed fold is safe; a wrong delete is not.
+    hit = _a._catalog_exact_aliases().get(k) or _a._catalog_alias_map().get(k)
+    return _a._norm_name(hit) if hit else k
+
+
 def _tail_items(text):
     return [t.strip() for t in str(text or "").split(",") if t.strip()]
 
@@ -53,22 +70,38 @@ def duplicate_folds(groups):
     out = []
     for gi, g in enumerate(groups or []):
         rows = g.get("rows") or []
-        named = [r for r in rows if _key(r.get("remedy"))]
-        repeats = [r for r in named
-                   if _key(r.get("remedy")) in first and first[_key(r.get("remedy"))] < gi]
+        named = [r for r in rows if _remedy_key(r.get("remedy"))]
+        # A repeat of an earlier layer's remedy, or of an earlier row on this same
+        # layer: the first row of each remedy stays, with its dose and note.
+        repeats, same, kept_here = [], [], {}
         for r in named:
-            first.setdefault(_key(r.get("remedy")), gi)
+            k = _remedy_key(r.get("remedy"))
+            if k in first:
+                repeats.append(r)
+                if first[k] == gi:
+                    same.append(r)
+            else:
+                first[k] = gi
+                kept_here[k] = r
         if not repeats:
             continue
         whole = len(repeats) == len(named)
-        into_gi = min(first[_key(r.get("remedy"))] for r in repeats)
+        into_gi = min(first[_remedy_key(r.get("remedy"))] for r in repeats)
         into = groups[into_gi]
         gone = rows if whole else repeats
-        involved = gone + (into.get("rows") or [] if whole else [])
+        # A repeat on its own card involves the row it repeats: when that row is
+        # confirmed, the fold is proposed, never applied on its own (review, 2026-10-22).
+        survivors = [kept_here[_remedy_key(r.get("remedy"))] for r in same]
+        involved = gone + (into.get("rows") or [] if whole else []) + survivors
         out.append({
             "layer": g.get("layer", gi + 1),
             "into": into.get("layer", into_gi + 1),
-            "remedies": [r.get("remedy") for r in repeats],
+            "remedies": [r.get("remedy") for r in repeats if r not in same],
+            "same_card": list(dict.fromkeys(r.get("remedy") for r in same)),
+            "sources": [(r.get("remedy"),
+                         groups[first[_remedy_key(r.get("remedy"))]].get(
+                             "layer", first[_remedy_key(r.get("remedy"))] + 1))
+                        for r in repeats if r not in same],
             "whole": whole,
             "confirmed": any(r.get("confirmed", 1) for r in involved),
             "rids": [r.get("id") for r in gone],
