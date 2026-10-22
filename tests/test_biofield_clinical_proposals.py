@@ -460,3 +460,18 @@ def test_family_history_is_quoted_by_its_condition():
         {"summary": "Diabetes runs on both sides.", "received_at": "2026-10-02"}]}
     [p] = proposals(context, ["family history of diabetes"])
     assert p["evidence"] == "Diabetes runs on both sides."
+
+
+def test_a_label_longer_than_the_stored_cut_keeps_its_pattern_and_tick():
+    """Krist Symons' "P5: stress; ..." row saved "Stress" and showed it empty: the
+    writer keyed the label cut to 160 characters, the reader keyed all of it."""
+    from dashboard.biofield_clinical_proposals import (
+        apply_selection, save_pattern, save_selection)
+    cx = sqlite3.connect(":memory:")
+    label = "P5: stress; S1: muscles; " + "difficulty stepping up or down. " * 8
+    assert len(label) > 160
+    save_pattern(cx, "a53", label, "Stress")
+    save_selection(cx, "a53", label, ["MSM Powder"])
+    [item] = apply_selection(cx, "a53", [{"label": label, "common_remedies": []}])
+    assert item["stress_pattern"] == "Stress"
+    assert item["selected_remedies"] == ["MSM Powder"]

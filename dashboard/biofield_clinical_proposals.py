@@ -4,8 +4,15 @@ import json
 import re
 
 
+# Writers store a label cut to 160 characters, so the key is cut the same way first.
+# Keyed on the whole label, a longer row never found its own saved pattern, tick or
+# order: Krist Symons' "P5: stress; ..." row saved "Stress" and showed it empty
+# (Glen, 2026-10-22).
+LABEL_MAX = 160
+
+
 def _key(value):
-    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").strip()[:LABEL_MAX].lower()).strip()
 
 
 def item_key(value):
