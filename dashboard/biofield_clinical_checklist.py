@@ -25,7 +25,11 @@ MAX_COMMON_REMEDIES = 40
 def _norm(value):
     # "+" reads as "plus": "OcuHeal+ Eye Drops" (10% DMSO) and "OcuHeal Eye Drops"
     # (0.5%) shared one key, so saving one renamed the other's chip (2026-09-24).
-    value = re.sub(r"[^a-z0-9]+", " ", (value or "").lower().replace("+", " plus ")).strip()
+    # Writers store a label cut to 160 characters, so the key cuts first too. A longer
+    # row otherwise never found the remedy just added to it: Krist Symons' "P5: ..."
+    # row (Glen, 2026-10-22).
+    value = str(value or "").strip()[:160]
+    value = re.sub(r"[^a-z0-9]+", " ", value.lower().replace("+", " plus ")).strip()
     return " ".join(value.split())
 
 
