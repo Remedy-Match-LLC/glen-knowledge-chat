@@ -215,7 +215,10 @@ def test_an_opted_in_pinned_block_carries_the_dose_rule_and_the_copy_reminder(q,
 
 @pytest.mark.parametrize("q", ["What is Estro-Clear?", "What is Angiostasis?",
                                "Is the Brain Program safe?"])
-def test_other_products_get_neither(q):
+def test_other_products_get_neither(q, monkeypatch):
+    # Estro-Clear and Angiostasis opt in since 2026-10-21: switched off for this path.
+    for slug in ("estro-clear", "angiostasis"):
+        monkeypatch.setitem(app._PRODUCTS["products"][slug], "chat_caution", False)
     b = _block(q)
     assert "### " in b, q
     assert "are the only dose" not in b

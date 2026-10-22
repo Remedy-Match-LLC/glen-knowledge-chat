@@ -2483,6 +2483,12 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None) -
                 if "description" in _pinned_copy(product) else "")
         if len(desc) > _NAMED_FACTS_MAX_CHARS:
             desc = desc[:_NAMED_FACTS_MAX_CHARS].rsplit(" ", 1)[0] + "..."
+        # An opted-in caution held inside the description with no label (Fibrosolve,
+        # 2026-10-21) gets one, so the copy rule has a marked caution to copy whole.
+        _warn = (product.get("warning") or "").strip()
+        if (desc and product.get("chat_caution") and _warn and _warn in desc
+                and f"Caution: {_warn}" not in desc):
+            desc = desc.replace(_warn, f"Caution: {_warn}", 1)
         parts = [f"### {name}", f"Page: {_catalog_page_url(slug)}"]
         if desc:
             parts.append(desc)
@@ -2803,6 +2809,12 @@ _CAUTION_SUBJECT_WORDS = {
     "sedative": ("sedative",),
     "liver disease": ("liver disease",),
 }
+# A caution may name its subject in other words: Fibrosolve says anticoagulant and
+# antiplatelet, Estro-Clear says nursing (review round 1, 2026-10-21).
+_CAUTION_SUBJECT_IN_CAUTION = {
+    "blood thinner": ("anticoagulant", "antiplatelet"),
+    "breastfeeding": ("nursing",),
+}
 
 
 def _is_drug_interaction_snippet(meta) -> bool:
@@ -2840,7 +2852,8 @@ def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
                             if (products.get(k) or {}).get("chat_caution")))
     q = norm(query_text)
     return [key for key, words in _CAUTION_SUBJECT_WORDS.items()
-            if key in caution and any(w in q for w in words)]
+            if any(t in caution for t in (key,) + _CAUTION_SUBJECT_IN_CAUTION.get(key, ()))
+            and any(w in q for w in words)]
 
 
 def _chat_prior_user_turns(history, session_id) -> list:

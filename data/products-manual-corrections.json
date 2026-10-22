@@ -82,6 +82,7 @@
     "note": "June 2026 label formula (Glen, 2026-10-09: the bottles on the shelf carry the June label): lumbrokinase 18 mg (20,000 IU/mg), nattokinase 100 mg (20,000 FU/g), serrapeptase 25 mg (400,000 u/g), and a 350 mg proprietary blend of bromelain (2,400 GDU/g) and protease from Aspergillus niger (600,000 u/g); the split inside the blend is not stated. Total fill 493 mg. Enteric DRcaps. Ingredient names stay as they were, because the ingredient pages' slugs come from them; the label's activity units sit in the dose. Directions from the label: 1 to 2 capsules a day between meals. FileMaker 1191 still holds the older formula (15 mg lumbrokinase, no protease) and needs Glen's separate yes. Spec: production/05 Formulations/_store-updates/2026-10-09-estrogen-fibrin-balance-program.md. DOSING AND WARNING ARE DETERMINISTIC FIELDS, 2026-09-09. The cached AI draft replaces the description section wholesale, and on 2026-09-09 the live fibrolysis-factors page carried no dosing at all because of it. A dose and a contraindication are label facts and must not be at the mercy of a rewrite, so they are served from directions/warning and rendered under the panel. Glen's ruling, 2026-09-09: a BOM line with zero quantity is a PROPOSED FUTURE ENHANCEMENT and must not be listed publicly until it is implemented. It is not a marker, an alternate grade or a duplicate. Never surface one on a page, and never borrow its standardization percentage for the dosed line above it.",
     "directions": "Take 1 to 2 capsules a day between meals, or as guided.",
     "warning": "Not for use with anticoagulant or antiplatelet medication, with a bleeding disorder, during pregnancy, or within about two weeks of surgery.",
+    "chat_caution": true,
     "description": "Systemic proteolytic enzyme complex with a proprietary bromelain and protease blend. Take 1 to 2 capsules a day between meals, or as guided. Not for use with anticoagulant or antiplatelet medication, with a bleeding disorder, during pregnancy, or within about two weeks of surgery."
   },
   "fibrolysis-factors": {
@@ -169,6 +170,7 @@
     "description": "Estrogen metabolism and clearance support, nine actives at about 497 mg per capsule. Third SKU of the Fibrolysis line, alongside Fibrosolve and Fibrolysis Factors.",
     "directions": "Take 1 capsule 1 to 2 times daily with oils or a fatty meal. Keep the bottle tightly closed and dry.",
     "warning": "Contains piperine, which can raise blood levels of some medications. Consult your health professional before use with medications, thyroid or hormone-sensitive conditions, pregnancy, or nursing.",
+    "chat_caution": true,
     "bottle_type": "30 Caps",
     "intro": "Estro-Clear helps processed estrogen leave the body and supports a healthy balance of estrogen metabolites.",
     "how_it_works": "Your body is always working to clear hormones that have already done their job. Here is what each ingredient in Estro-Clear does.\n\nCalcium-D-glucarate helps processed estrogen leave the body instead of being reabsorbed. DIM supports a healthy balance of estrogen metabolites. Broccoli extract supplies glucoraphanin, which supports the body's own detox enzymes. Black mustard seed supplies myrosinase, the enzyme that activates broccoli glucoraphanin. Vitamin C helps activate the enzyme that releases sulforaphane from broccoli. Iodine supports normal thyroid hormone production. Selenium supports the body's own antioxidant enzymes. Vitamin D3 supports normal cell growth and division.",
@@ -2985,8 +2987,9 @@
     ],
     "ingredients_source": "label-read-2026-09-30",
     "description": "Each Vitamin A Syntropy vegicap gives you 25,000 IU of vitamin A as retinyl acetate/palmitate, plus beta carotene from Dunaliella salina carotenoids. You're also getting vitamins B1, B2, B5 and B6, phosphatidyl choline from egg, vitamin C as zinc ascorbate and vitamin E as mixed tocopherols. The minerals are magnesium as threonate, manganese as glycinate, phosphorus as ATP, potassium as orotate, selenium as methylselenocysteine and zinc as ascorbate. Then aloe vera inner-leaf polysaccharides, humic and fulvic acids and cilantro juice powder work alongside a group of bioavailability factors. Take 1 capsule 1 to 3 times a day with food, or as guided.\n\nOther ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
-    "directions": "1 capsule 1 to 3 times daily with food, or as guided.",
-    "warning": "1 a day for one month for low Vitamin A. Up to 3 a day short term for Phase 1 terrain. Avoid during pregnancy or when planning a pregnancy.",
+    "directions": "1 capsule 1 to 3 times daily with food, or as guided. 1 a day for one month for low Vitamin A. Up to 3 a day short term for Phase 1 terrain.",
+    "warning": "Avoid during pregnancy or when planning a pregnancy.",
+    "chat_caution": true,
     "note": "Replaces a 21-line gut and H. pylori formula matched from the old Formulations table row 'Vitamin U Complex'. Source: Vitamin_A_Syntropy_0124_1.88x6in_30v.ai, (c) January 2024, named by Glen 2026-09-30. Zingiber officinalis corrected to Zingiber officinale; Vinpocetin to Vinpocetine."
   },
   "spike-shield": {
@@ -3047,6 +3050,7 @@
     "description": "Each vegicap supplies 158 mg pine bark OPCs 95%, 100 mg trans-resveratrol 98%, 100 mg curcumin 95%, 75 mg notoginsenosides 80% and 33 mg crocin 45%. There are no fillers or excipients.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
     "directions": "Take 1 capsule daily with food, or as guided.",
     "warning": "Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
+    "chat_caution": true,
     "bottle_type": "30 Caps",
     "intro": "AngiogenX supports the health of the small blood vessels in your eyes. It combines pine bark OPCs, trans-resveratrol, curcumin, notoginseng and crocin from gardenia fruit.",
     "how_it_works": "The retina depends on a dense network of very small blood vessels. Here is what each ingredient in AngiogenX does.\n\nIn human eye studies, a pine bark extract helped small blood vessels keep fluid inside. One study used 150 mg of that extract a day.\n\nIn animal studies, resveratrol helped regulate the signals that drive new blood vessel growth. After oral doses, it and its breakdown products have been found in human eye tissue.\n\nIn an animal study, curcumin helped calm inflammatory signals in the retina.\n\nIn an animal study, notoginseng saponins helped keep the barrier between blood and retina intact.\n\nCrocin is a pigment found in gardenia fruit. It supports the retina. Two human eye trials used 15 mg a day, the amount in one capsule.",
@@ -3107,6 +3111,7 @@
     "description": "Each vegicap supplies 200 mg silymarin 80%, 71 mg green tea extract (EGCG 98%), 75 mg pterostilbene, 50 mg rice tocotrienols, 50 mg honokiol, 19 mg curcumin and 205 mcg selenium as methylselenocysteine. There are no fillers or excipients.\n\nTake 1 capsule daily with the evening meal, or as guided.\n\nAngiostasis is synergistic with Brain Cleanse, which is taken at bedtime.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: May cause drowsiness. Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses, in pregnancy or while breastfeeding. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use. If you are under medical treatment, consult your physician before use.",
     "directions": "Take 1 capsule daily with the evening meal, or as guided.",
     "warning": "May cause drowsiness. Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses, in pregnancy or while breastfeeding. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use. If you are under medical treatment, consult your physician before use.",
+    "chat_caution": true,
     "panel_note": "Synergistic with Brain Cleanse.",
     "panel_note_link": {
       "label": "Brain Cleanse",
@@ -3127,6 +3132,7 @@
    "description": "Each capsule supplies 500 mg serrapeptase at 400,000 units per gram, about 200,000 units. There are no fillers or excipients.\n\nTake 1 capsule daily on an empty stomach, between meals, or as guided.\n\nOther ingredients: Phthalate-free DRcaps\u2122 delayed-release vegicap (hypromellose, gellan gum), Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: If you take a blood thinner, consult your physician before use.",
    "directions": "Take 1 capsule daily on an empty stomach, between meals, or as guided.",
    "warning": "If you take a blood thinner, consult your physician before use.",
+   "chat_caution": true,
    "bottle_type": "30 Caps",
    "note": "October 2026 batch CTW-20261008-10, serrapeptase 500 mg in DRcaps, one capsule a day (Glen, via formulation). Spec: production/05 Formulations/_store-updates/2026-10-08-clear-the-way.md."
   },

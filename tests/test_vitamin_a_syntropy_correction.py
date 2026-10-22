@@ -12,9 +12,11 @@ import pytest
 
 SLUG = "vitamin-a-syntropy"
 GUT = ("mastic", "bismuth", "berberine", "slippery elm", "vitamin u", "intestinal lining", "dgl")
-WARNING = ("1 a day for one month for low Vitamin A. Up to 3 a day short term for Phase 1 terrain. "
-           "Avoid during pregnancy or when planning a pregnancy.")
-DIRECTIONS = "1 capsule 1 to 3 times daily with food, or as guided."
+# Glen, 2026-10-21: the caution is the pregnancy sentence only, and the two dose lines
+# move to the directions, since the chat now copies the caution word for word.
+WARNING = "Avoid during pregnancy or when planning a pregnancy."
+DIRECTIONS = ("1 capsule 1 to 3 times daily with food, or as guided. 1 a day for one month "
+              "for low Vitamin A. Up to 3 a day short term for Phase 1 terrain.")
 
 
 @pytest.fixture(scope="module")
@@ -97,3 +99,8 @@ def test_the_page_serves_the_label_and_pinned_copy(a, catalog):
     assert DIRECTIONS.lower() in blob
     buy = c.get("/begin/product-data/" + SLUG).get_json()
     assert not buy.get("benefits")
+
+
+def test_the_corrections_record_matches(corrections):
+    assert corrections[SLUG]["directions"] == DIRECTIONS
+    assert corrections[SLUG]["warning"] == WARNING
