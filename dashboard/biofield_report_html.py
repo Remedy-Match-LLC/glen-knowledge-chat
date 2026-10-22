@@ -1381,7 +1381,7 @@ async function program(mode){
  var j=await post('/author/__TID__/program',{mode:mode});
  if(!j.ok){s.textContent=j.error||'Could not build it.';return}
  var n=j.remedies.length;
- s.textContent=' '+mode+': '+n+' remedy'+(n===1?'':'ies')+
+ s.textContent=' '+mode+': '+n+' remed'+(n===1?'y':'ies')+
    (j.transcript_layers?', '+j.transcript_layers+' from the transcript':'');
  var h='';
  j.stages.forEach(function(st){
