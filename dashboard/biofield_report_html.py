@@ -6,6 +6,7 @@ HTML-escaped.
 """
 import json
 import os
+import re
 from html import escape as _e
 from urllib.parse import quote as _q
 
@@ -3071,20 +3072,27 @@ def _narrative_warning_box(warnings):
 
 
 # Every section of the Biofield Intake page gets a Show/Hide button, like Previously
-# dispensed. Glen, 2026-10-22: "I have show/hide control on Previously Dispensed, but
-# not other sections." Sections start open, and each remembers its last state in this
-# browser. Several panels are filled in after load and re-rendered later, so a
-# MutationObserver re-applies the buttons and the saved state whenever the page changes.
-# Closing only hides the section's body: nothing is removed, so the page's own scripts
-# still find every element.
+# dispensed. Glen, 2026-10-22: "Start with sections closed. leave open when opened
+# during the session only, or when returning to that page until the report and invoice
+# is done and client notified." So every section starts closed. One he opens stays open
+# for that test, across visits, in localStorage. Once the client has been emailed their
+# report (biofield_test_notified), the test's saved opens are cleared and an open lasts
+# only for the browser session. Several panels are filled in after load and re-rendered
+# later, so a MutationObserver re-applies the buttons and state whenever the page
+# changes. Closing only hides a section's body: nothing is removed, so the page's own
+# scripts still find every element.
 _FOLD_JS = """<style>
 .fold-hidden{display:none !important}
 .fold-btn{margin-left:10px;font-size:11px;padding:2px 9px;vertical-align:middle}
 </style><script>(function(){
 var wrap=document.querySelector('.wrap');if(!wrap)return;
-var PREFIX='intakeFold:';
-function store(k,v){try{if(v)localStorage.setItem(PREFIX+k,'1');else localStorage.removeItem(PREFIX+k)}catch(e){}}
-function closedIn(k){try{return localStorage.getItem(PREFIX+k)==='1'}catch(e){return false}}
+var TID='__FOLDTID__',DONE=__FOLDDONE__,PREFIX='intakeOpen:'+TID+':';
+function box(){try{return DONE?window.sessionStorage:window.localStorage}catch(e){return null}}
+// Notified: the opens kept for this test's return visits are over.
+if(DONE){try{for(var i=localStorage.length-1;i>=0;i--){var lk=localStorage.key(i);
+ if(lk&&lk.indexOf(PREFIX)===0)localStorage.removeItem(lk)}}catch(e){}}
+function store(k,open){try{var b=box();if(!b)return;if(open)b.setItem(PREFIX+k,'1');else b.removeItem(PREFIX+k)}catch(e){}}
+function openIn(k){try{var b=box();return !!b&&b.getItem(PREFIX+k)==='1'}catch(e){return false}}
 // A key from the heading's own words, without its buttons or counts, so a section
 // keeps its state when a count in its heading changes.
 function keyOf(h){var c=h.cloneNode(true);
@@ -3116,9 +3124,9 @@ function apply(){try{sections().forEach(function(sec){var h=sec[0];
  if(!h.querySelector(':scope > .fold-btn')){var b=document.createElement('button');
   b.type='button';b.className='btn ghost fold-btn';
   b.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();
-   var open=b.getAttribute('aria-expanded')!=='true';store(k,!open);apply()});
+   store(k,b.getAttribute('aria-expanded')!=='true');apply()});
   h.appendChild(b)}
- show(sec,!closedIn(k))})}finally{if(obs)obs.takeRecords()}}
+ show(sec,openIn(k))})}finally{if(obs)obs.takeRecords()}}
 apply();
 var queued=false;
 obs=new MutationObserver(function(){if(queued)return;queued=true;
@@ -3132,7 +3140,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                        intake_priorities=None,
                        profile_unavailable=False, alias_map=None, display_map=None,
                        narrative_warnings=None, history_links_html="",
-                       clinical_free_factors=None, clinical_botanical=None):
+                       clinical_free_factors=None, clinical_botanical=None,
+                       client_notified=False):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -3279,7 +3288,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  + history_links_html
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
-                 + _FOLD_JS
+                 + _FOLD_JS.replace("__FOLDTID__", re.sub(r"[^A-Za-z0-9_-]", "", tid))
+                           .replace("__FOLDDONE__", "true" if client_notified else "false")
                  + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag()</script>",
                  client_name=(c.get("name") or ""), client_email=(c.get("email") or ""))
 

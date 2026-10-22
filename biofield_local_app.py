@@ -2042,6 +2042,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception as _he:
             print(f"[history-links] panel skipped: {_he!r}", flush=True)
             _hl_html = ""
+        _notified = ""
+        try:
+            from dashboard import biofield_test_notified as _btn
+            with sqlite3.connect(db_path) as _tcx:
+                _notified = _btn.notified_at(_tcx, test_id)
+        except Exception as _ne:
+            print(f"[notified] {test_id}: not read: {_ne!r}", flush=True)
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
                                            narrative_warnings=_narr_warnings,
@@ -2054,7 +2061,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                                "intake_priorities") or [],
                                            profile_unavailable=profile_unavailable,
                                            alias_map=_alias_map, display_map=_display_map,
-                                           history_links_html=_hl_html),
+                                           history_links_html=_hl_html,
+                                           client_notified=bool(_notified)),
                         mimetype="text/html")
 
     @app.route("/author/<test_id>/invoice-view")
@@ -4655,6 +4663,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                      send_if_new=send_if_new)
         if isinstance(res, dict):
             res = {**res, "own_remedies": list(payload["unresolved"])}
+            # The client now has their report, so the Intake page's sections start
+            # closed again for this test (Glen, 2026-10-22). Best-effort: the email has
+            # already gone, so a failed record must not report a failed publish.
+            if res.get("emailed"):
+                try:
+                    from dashboard import biofield_test_notified as _btn
+                    with sqlite3.connect(db_path) as cx:
+                        _btn.mark(cx, test_id)
+                except Exception as _ne:
+                    print(f"[notified] {test_id}: not recorded: {_ne!r}", flush=True)
         return res
 
     def _auto_publish(test_id, primary_on=None):
