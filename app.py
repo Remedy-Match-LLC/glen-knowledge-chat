@@ -61837,9 +61837,10 @@ def api_invoice_update(token):
     # customer, while owner overrides, notes and recommendation provenance can only
     # come from the stored invoice.  New products deliberately have no unit override
     # so the shared pricer applies this client's special/member/volume price.
-    # In order, one stored line per posted line: a slug can appear twice on a
-    # household invoice, once for the caregiver and once for a member.
-    existing = [it for it in (order.get("items") or []) if (it.get("slug") or "").strip()]
+    # The stored lines in order. The invoice page sends each line's position as `i`,
+    # because a slug can appear twice on a household invoice, once for the caregiver
+    # and once for a member.
+    existing = list(order.get("items") or [])
     from dashboard import client_invoice_lines as _cil
     # Adding a not-ready product, or raising its quantity, is refused; removing or
     # lowering one already on the invoice is allowed (review round 1, 2026-10-20).

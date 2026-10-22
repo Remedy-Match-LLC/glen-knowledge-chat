@@ -55,7 +55,8 @@ def _two_msm():
 def test_client_edit_keeps_each_shared_slug_line_its_own():
     """Rounds 1 and 3: keyed by slug, both lines took the member's billed_for, and
     billing the member again deleted the caregiver's own line."""
-    out = cil.rebuild([{"slug": "msm-powder", "qty": 2}, {"slug": "msm-powder", "qty": 0}],
+    out = cil.rebuild([{"i": 0, "slug": "msm-powder", "qty": 2},
+                       {"i": 1, "slug": "msm-powder", "qty": 0}],
                       _two_msm(), known=lambda s: True)
     assert out[0] == {"slug": "msm-powder", "qty": 2, "format": "bottle",
                       "note": "Hers", "source": "self"}
@@ -67,6 +68,32 @@ def test_a_line_added_beyond_the_stored_ones_copies_nothing():
     assert out[2] == {"slug": "msm-powder", "qty": 1, "format": "bottle"}
 
 
+def test_removing_the_first_of_two_keeps_the_second_its_own():
+    """Round 4: with only the member's line posted, it must not take the caregiver's
+    override price or lose its billed_for."""
+    stored = _two_msm()
+    stored[0].update(override=True, unit_cents=100)
+    out = cil.rebuild([{"i": 1, "slug": "msm-powder", "qty": 1}], stored, known=lambda s: True)
+    assert out == [{"slug": "msm-powder", "qty": 1, "format": "bottle", "note": "For Hershey",
+                    "source": "biofield", "billed_for": "member@example.com"}]
+
+
+def test_without_an_index_two_left_never_hands_on_billed_for():
+    out = cil.rebuild([{"slug": "msm-powder", "qty": 1}], _two_msm(), known=lambda s: True)
+    assert "billed_for" not in out[0]
+
+
+def test_an_index_for_another_slug_is_ignored():
+    out = cil.rebuild([{"i": 0, "slug": "other", "qty": 1}], _two_msm(), known=lambda s: True)
+    assert out == [{"slug": "other", "qty": 1, "format": "bottle"}]
+
+
 def test_customer_update_route_passes_stored_lines_in_order():
     app_src = (Path(__file__).resolve().parent.parent / "app.py").read_text()
-    assert 'existing = [it for it in (order.get("items") or []) if (it.get("slug") or "").strip()]' in app_src
+    assert "existing = list(order.get(\"items\") or [])" in app_src
+
+
+def test_invoice_page_sends_each_lines_stored_place():
+    page = (Path(__file__).resolve().parent.parent / "static" / "invoice.html").read_text()
+    assert "return ORDER.lines.map((l,i)=>({i, slug:l.slug" in page
+    assert "Number.isInteger(l.i) ? {i:l.i} : {}));" in page
