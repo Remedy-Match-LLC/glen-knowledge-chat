@@ -520,7 +520,11 @@ def render_report_html(report, notes="", narrative="", video_script="", stresses
     tid_link = _e(report.get("test_id") or "")
     head += (f'<p class=sub><a href="/test/{tid_link}/report" target="_blank">Open clean report</a>'
              f' &nbsp;·&nbsp; <a class=print-report href="/test/{tid_link}/report.pdf" target="_blank">Print/Download PDF</a>'
-             + _plan_print_choice(tid_link) + '</p>')
+             + _plan_print_choice(tid_link) + '</p>'
+             # Glen, 2026-10-22: the same publish at the top too. It runs the bottom
+             # button's function, prompt and checks; only its status line is its own.
+             + "<div class=btnrow><button class=btn onclick=\"publishPortal('portal-url-top')\">"
+               "Publish to portal</button><span id=portal-url-top></span></div>")
 
     # Causal chain table (grouped by layer, matching the editor's cards)
     chain = ("<h2>Causal Chain Report</h2>"
@@ -637,8 +641,8 @@ async function schedDrop(e){e.preventDefault();var zone=e.currentTarget;zone.cla
         "  if(!/^\\$?\\s*(\\d{1,3}(,\\d{3})+|\\d+)(\\.\\d{1,2})?$/.test(t))return null;\n"
         "  return Math.round(parseFloat(t.replace(/[$,\\s]/g,''))*100);\n"
         "}\n"
-        "async function publishPortal(){\n"
-        "  var el=document.getElementById('portal-url');\n"
+        "async function publishPortal(sid){\n"
+        "  var el=document.getElementById(sid||'portal-url');\n"
         # The box opens with the price this report was last published at, so a blank
         # entry is a choice to clear it, never an accident (review round 1).
         "  var raw=prompt('__WARN__Courtesy price per bottle, in dollars (for example 50). "
