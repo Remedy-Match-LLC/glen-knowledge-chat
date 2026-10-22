@@ -137,9 +137,12 @@ def _page_text(product):
     if not matches:
         return None
     matches = sorted(matches, key=lambda m: (m.metadata or {}).get("chunk_index", 0))
-    text = "\n".join((m.metadata or {}).get("text", "") for m in matches).strip()
+    from dashboard.products import redact_scraped_price
+    text = "\n".join(redact_scraped_price((m.metadata or {}).get("text", ""))
+                     for m in matches).strip()
     md0 = matches[0].metadata or {}
-    return {"text": text, "url": md0.get("url", ""), "price": md0.get("price", ""),
+    # No price: the scraped one is stale, and the store's price_cents is the only source.
+    return {"text": text, "url": md0.get("url", ""), "price": "",
             "n_chunks": len(matches)}
 
 

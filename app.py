@@ -3668,6 +3668,9 @@ def query_ns(vec, ns, k):
 # guide, AI-training asides), and product-price queries pull 0/5 priced results
 # from it — the vectors are semantically too far from product questions to leak.
 _TRANSCRIPT_NAMESPACES = {"consultations"}
+# Scraped store pages: each chunk opens "<title>. Price: <price>." with a stale copied
+# price. Only that anchor is dropped; the store's price_cents is the price (2026-10-21).
+_STORE_COPY_NAMESPACES = {"specific-formulations"}
 _MONEY_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d{2})?")
 
 
@@ -3677,6 +3680,9 @@ def _redact_transcript_prices(text, meta):
     ns = (meta or {}).get("_source_ns") or (meta or {}).get("namespace")
     if ns in _TRANSCRIPT_NAMESPACES:
         return _MONEY_RE.sub("$[amount omitted]", text)
+    if ns in _STORE_COPY_NAMESPACES:
+        from dashboard.products import redact_scraped_price
+        return redact_scraped_price(text)
     return text
 
 
@@ -10905,7 +10911,7 @@ def _related_semantic(slug, k=12):
     slug (their ids come from the page-copy scraper/ingest, e.g. chunked
     `{ns_prefix}-{title-slug}-{i:03d}` ids), so a `fetch(ids=[slug])` would not
     find this product's vector. Instead this follows the same pattern already
-    used by `_resolve_complement()` / `qbo_price_coverage()`: embed the
+    used by `_resolve_complement()`: embed the
     product's own `pinecone_title` (or `name`) text, query the
     `specific-formulations` namespace for nearest neighbours by similarity,
     then map each neighbour's `metadata['title']` back to a catalog slug via
@@ -15441,38 +15447,74 @@ def _build_resolve_name_index(products):
 _RESOLVE_NAME_INDEX = _build_resolve_name_index(_PRODUCTS.get("products") or {})
 
 
+def _complement_store_price(slug):
+    """The store's price label for a catalog slug, formatted as the product page
+    formats it ("$70.00"). None when the product is unknown or has no price_cents
+    of its own: no price is shown rather than a default or a copied one. A zero
+    price is a price, so it shows as "$0.00". This is the base store price, as the
+    product page shows it, and the one /begin/concierge/add charges."""
+    p = _get_product(slug)
+    if not p:
+        return None
+    raw = (_PRODUCTS.get("products") or {}).get(p["slug"]) or {}
+    cents = raw.get("price_cents")
+    if cents is None:
+        return None
+    return f"${cents/100:.2f}"
+
+
+def _orderable_complement_slug(slug):
+    """The slug if the product can be added to an order right now, else None.
+    Checked on every call, cache hit or not, so a product that goes off sale,
+    waitlisted or info-only after it was first resolved loses its add card."""
+    if not slug:
+        return None
+    # An off-sale product is neither added nor opened on the store: its vector still
+    # carries the old page's url and price (Molybdenum Syntropy, 2026-10-07).
+    slug = _live_slug(slug)
+    # Not ready to order (waitlist_only or out of stock): never suggested, since the
+    # card offers "Add to my order" with its price (Alkalize, 2026-10-20).
+    if slug and _waitlist_block(slug):
+        return None
+    # info_only, inactive or otherwise not orderable: no "Add to my order" card,
+    # since /begin/concierge/add refuses it (Biofield Analysis, 2026-10-21).
+    if slug and not _is_orderable(slug):
+        return None
+    return slug
+
+
 def _resolve_complement(name):
     """Resolve a complement product NAME to {name, title, url, price, slug, in_catalog}.
     in_catalog (slug present) -> addable to the invoice; else -> open on the store."""
     if not name:
         return None
     key = name.strip().lower()
+    # The cache holds only the vector lookup (title, url, catalog slug). Eligibility
+    # and price are read from the catalog on every call, so a store change shows at once.
     if key in _COMPLEMENT_CACHE:
-        return _COMPLEMENT_CACHE[key]
-    title = url = price = None
-    try:
-        vec = embed(name)
-        res = _idx.query(vector=vec, top_k=1, namespace="specific-formulations", include_metadata=True)
-        if res.matches and res.matches[0].score >= 0.83:
-            md = res.matches[0].metadata or {}
-            title, url, price = md.get("title"), md.get("url"), md.get("price")
-    except Exception as e:
-        print(f"[concierge] resolve {name}: {e}", flush=True)
-    slug = _TITLE_TO_SLUG.get(title) if title else None
-    if slug:
-        # An off-sale product is neither added nor opened on the store: its vector still
-        # carries the old page's url and price (Molybdenum Syntropy, 2026-10-07).
-        slug = _live_slug(slug)
-        # Not ready to order (waitlist_only or out of stock): never suggested, since the
-        # card offers "Add to my order" with its price (Alkalize, 2026-10-20).
-        if slug and _waitlist_block(slug):
-            slug = None
-        if not slug:
-            url = price = None
-    out = {"name": name, "title": title, "url": url, "price": price,
-           "slug": slug, "in_catalog": bool(slug)}
-    _COMPLEMENT_CACHE[key] = out
-    return out
+        base = _COMPLEMENT_CACHE[key]
+    else:
+        title = url = None
+        try:
+            vec = embed(name)
+            res = _idx.query(vector=vec, top_k=1, namespace="specific-formulations", include_metadata=True)
+            if res.matches and res.matches[0].score >= 0.83:
+                md = res.matches[0].metadata or {}
+                # Never the vector's price: the store's price_cents is the only price
+                # source (Glen, 2026-10-21). 154 of 155 metadata prices were stale.
+                title, url = md.get("title"), md.get("url")
+        except Exception as e:
+            print(f"[concierge] resolve {name}: {e}", flush=True)
+        base = {"title": title, "url": url,
+                "catalog_slug": _TITLE_TO_SLUG.get(title) if title else None}
+        _COMPLEMENT_CACHE[key] = base
+    slug = _orderable_complement_slug(base["catalog_slug"])
+    url = base["url"]
+    if base["catalog_slug"] and not slug:
+        url = None
+    return {"name": name, "title": base["title"], "url": url,
+            "price": _complement_store_price(slug) if slug else None,
+            "slug": slug, "in_catalog": bool(slug)}
 
 
 _CONCIERGE_SYSTEM = (
@@ -15644,6 +15686,10 @@ def begin_concierge_add():
         return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     if not p or not _is_orderable(p.get("slug") or slug, p):
         return jsonify({"ok": False, "error": "not an addable catalog product"}), 400
+    # The card showed no price for a product with no price_cents of its own, so it
+    # must not be charged at the catalog default. One rule for card and charge.
+    if _complement_store_price(p["slug"]) is None:
+        return jsonify({"ok": False, "error": "this product has no store price yet"}), 400
     if not invoice_id:
         return jsonify({"ok": False, "error": "invoice_id required"}), 400
     try:
@@ -15687,32 +15733,24 @@ def begin_concierge_add():
 
 @app.route("/api/qbo/price-coverage", methods=["GET"])
 def qbo_price_coverage():
-    """Diagnostic: for each products.json product, query specific-formulations for a
-    price (the last scrape stored price_your/price_retail). Shows match title + score
-    so we can judge coverage + match quality before populating products.json."""
+    """Diagnostic: which products.json products carry their own store price.
+
+    It used to harvest prices from the specific-formulations vectors, to help
+    populate products.json. The store's price_cents is now the only price source
+    (Glen, 2026-10-21) and 154 of 155 vector prices were stale, so this reports
+    catalog coverage of active products only and never reads vector metadata. A
+    zero price counts as covered."""
     if not _qbo_auth_ok():
         return jsonify({"error": "Unauthorized"}), 401
     out = []
     for slug, p in (_PRODUCTS.get("products") or {}).items():
-        name = p["name"]
-        try:
-            vec = embed(name)
-            res = _idx.query(vector=vec, top_k=4, namespace="specific-formulations",
-                             include_metadata=True)
-            best = None
-            for m in res.matches:
-                md = m.metadata or {}
-                price = md.get("price") or md.get("price_your") or md.get("price_retail")
-                if price:
-                    best = {"match_title": md.get("title", ""), "price": str(price),
-                            "score": round(float(m.score), 3)}
-                    break
-            row = {"slug": slug, "name": name, "found": bool(best)}
-            if best:
-                row.update(best)
-            out.append(row)
-        except Exception as e:
-            out.append({"slug": slug, "name": name, "error": str(e)[:120]})
+        if p.get("inactive"):
+            continue  # active products only: an inactive record is not sold
+        cents = p.get("price_cents")
+        row = {"slug": slug, "name": p.get("name", ""), "found": cents is not None}
+        if cents is not None:
+            row.update({"price_cents": cents, "price": f"${cents/100:.2f}"})
+        out.append(row)
     return jsonify({"ok": True, "covered": sum(1 for o in out if o.get("found")),
                     "total": len(out), "products": out})
 
