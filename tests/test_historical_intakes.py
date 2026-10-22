@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -120,3 +121,131 @@ def test_console_review_requires_auth_and_rejection_forces_hidden(tmp_path, monk
     with sqlite3.connect(appmod.LOG_DB) as cx:
         row = hi.list_for_email(cx, "client@example.com")[0]
     assert row["review_status"] == "rejected" and row["client_visible"] is False
+
+
+_BLOCK = "P5: stress; CC (9): vision. Regulating bowels."
+
+
+def _snap_with_block(cx, email="k@x.com"):
+    return hi.put_import(
+        cx, person_id=1, email=email, form_date="2024-11-16", form_name="Application",
+        answers={"health_concerns": [{"concern": "Other"}, {"concern": _BLOCK}]},
+        source_system="filemaker", source_record_id="39")
+
+
+def test_split_concern_replaces_in_place_and_keeps_the_original():
+    cx = sqlite3.connect(":memory:")
+    sid = _snap_with_block(cx)
+    snap = hi.split_concern(cx, sid, "K@X.com", _BLOCK, ["Vision", " Bowel regulation ", "Vision"],
+                            split_by="Glen")
+    a = snap["answers"]
+    assert a["health_concerns"] == [{"concern": "Other"}, {"concern": "Vision"},
+                                    {"concern": "Bowel regulation"}]
+    [h] = a["health_concerns_split"]
+    assert h["original"] == _BLOCK and h["into"] == ["Vision", "Bowel regulation"]
+    assert h["by"] == "Glen"
+
+
+def test_split_concern_refuses_a_wrong_owner_wording_or_part():
+    cx = sqlite3.connect(":memory:")
+    sid = _snap_with_block(cx)
+    assert hi.split_concern(cx, sid, "other@x.com", _BLOCK, ["Vision"], split_by="") is None
+    assert hi.split_concern(cx, sid, "k@x.com", _BLOCK + " ", ["Vision"], split_by="") is None
+    for bad in ([], [""], ["x" * 161]):
+        try:
+            hi.split_concern(cx, sid, "k@x.com", _BLOCK, bad, split_by="")
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad!r}")
+    assert hi.list_for_email(cx, "k@x.com")[0]["answers"]["health_concerns"][1] == {"concern": _BLOCK}
+
+
+def test_a_reimport_does_not_undo_a_split():
+    cx = sqlite3.connect(":memory:")
+    sid = _snap_with_block(cx)
+    hi.split_concern(cx, sid, "k@x.com", _BLOCK, ["Vision"], split_by="")
+    _snap_with_block(cx)
+    assert {"concern": _BLOCK} not in hi.list_for_email(cx, "k@x.com")[0]["answers"]["health_concerns"]
+
+
+def test_split_route_needs_the_console_key_and_splits(tmp_path, monkeypatch):
+    appmod = _app(tmp_path, monkeypatch)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        sid = _snap_with_block(cx)
+    c = appmod.app.test_client()
+    url = f"/api/console/historical-intake/{sid}/split-concern"
+    body = {"email": "k@x.com", "concern": _BLOCK, "into": ["Vision"]}
+    assert c.post(url, json=body).status_code == 401
+    r = c.post(url, json=body, headers={"X-Console-Key": "secret"})
+    assert r.status_code == 200
+    assert r.get_json()["health_concerns"] == [{"concern": "Other"}, {"concern": "Vision"}]
+    r = c.post(url, json=body, headers={"X-Console-Key": "secret"})
+    assert r.status_code == 404
+    r = c.post(url, json={**body, "into": "Vision"}, headers={"X-Console-Key": "secret"})
+    assert r.status_code == 400
+
+
+def test_split_parts_keep_the_rows_other_fields_and_history_keeps_the_row():
+    cx = sqlite3.connect(":memory:")
+    sid = hi.put_import(
+        cx, person_id=1, email="k@x.com", form_date="", form_name="",
+        answers={"health_concerns": [{"concern": _BLOCK, "rating": "9", "years_since_onset": "3"}]},
+        source_system="filemaker", source_record_id="40")
+    a = hi.split_concern(cx, sid, "k@x.com", _BLOCK, ["Vision", "Bowels"], split_by="")["answers"]
+    assert a["health_concerns"] == [
+        {"concern": "Vision", "rating": "9", "years_since_onset": "3"},
+        {"concern": "Bowels", "rating": "9", "years_since_onset": "3"}]
+    assert a["health_concerns_split"][0]["original_row"] == {
+        "concern": _BLOCK, "rating": "9", "years_since_onset": "3"}
+
+
+def test_split_refuses_a_wording_stored_twice_or_a_part_equal_to_it():
+    cx = sqlite3.connect(":memory:")
+    sid = hi.put_import(
+        cx, person_id=1, email="k@x.com", form_date="", form_name="",
+        answers={"health_concerns": [{"concern": _BLOCK}, {"concern": _BLOCK}]},
+        source_system="filemaker", source_record_id="41")
+    for parts in (["Vision"],):
+        try:
+            hi.split_concern(cx, sid, "k@x.com", _BLOCK, parts, split_by="")
+            raise AssertionError("split a duplicated wording")
+        except ValueError:
+            pass
+    sid2 = _snap_with_block(cx, email="j@x.com")
+    try:
+        hi.split_concern(cx, sid2, "j@x.com", _BLOCK, [_BLOCK, "Vision"], split_by="")
+        raise AssertionError("accepted the whole concern as a part")
+    except ValueError:
+        pass
+
+
+def test_split_does_not_write_over_a_change_made_after_it_read():
+    cx = sqlite3.connect(":memory:")
+    sid = _snap_with_block(cx)
+    real = cx.execute
+
+    class Racing:
+        """Changes the row between split_concern's read and its write."""
+        def __init__(self):
+            self.done = False
+
+        def execute(self, sql, params=()):
+            if sql.startswith("UPDATE historical_intake_snapshots SET answers_json") and not self.done:
+                self.done = True
+                real("UPDATE historical_intake_snapshots SET answers_json=? WHERE id=?",
+                     (json.dumps({"health_concerns": [{"concern": _BLOCK}], "x": 1}), sid))
+            return real(sql, params)
+
+        def commit(self):
+            cx.commit()
+
+    assert hi.split_concern(Racing(), sid, "k@x.com", _BLOCK, ["Vision"], split_by="") is None
+    assert hi.list_for_email(cx, "k@x.com")[0]["answers"]["x"] == 1
+
+
+def test_a_part_already_stored_is_not_added_twice():
+    cx = sqlite3.connect(":memory:")
+    sid = _snap_with_block(cx)
+    a = hi.split_concern(cx, sid, "k@x.com", _BLOCK, ["Other", "Vision"], split_by="")["answers"]
+    assert [r["concern"] for r in a["health_concerns"]] == ["Other", "Vision"]
+    assert a["health_concerns_split"][0]["index"] == 1
