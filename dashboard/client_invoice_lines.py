@@ -34,7 +34,13 @@ def _qty(value):
 
 
 def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
-    """Server-trusted lines from `posted`, using `existing` {slug: stored line}.
+    """Server-trusted lines from `posted`, using `existing` stored lines.
+
+    `existing` is the stored invoice's lines in order, or the older {slug: stored line}.
+    With a list, each posted line takes the first unused stored line with its slug, so
+    two lines for one product (a caregiver's and a member's) each keep their own note,
+    price and billed_for (review rounds 1 and 3, 2026-10-22). A posted line with no
+    stored line left for its slug is new and copies nothing.
 
     `known(slug)` decides whether a slug is a real, sellable product.
     `refill_ok(slug)` decides whether refill packs apply (30-capsule products only,
@@ -43,6 +49,9 @@ def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
     yet (waitlist_only, 2026-10-09), or None. A posted line for one, at any quantity
     above zero, raises NotOrderable: the edit is refused whole, never silently dropped.
     """
+    pool = None
+    if isinstance(existing, list):
+        pool = [dict(i) for i in existing if isinstance(i, dict) and (i.get("slug") or "").strip()]
     out = []
     for line in (posted or []):
         if not isinstance(line, dict):
@@ -54,7 +63,12 @@ def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
                 raise NotOrderable(msg)
         if not slug or not known(slug):
             continue
-        old = existing.get(slug) or {}
+        if pool is None:
+            old = existing.get(slug) or {}
+        else:
+            old = next((i for i in pool if (i.get("slug") or "").strip() == slug), None) or {}
+            if old:
+                pool.remove(old)
         fmt = (line.get("format") or old.get("format") or "bottle").strip().lower()
         if fmt == "refill" and refill_ok is not None and not refill_ok(slug):
             fmt = "bottle"

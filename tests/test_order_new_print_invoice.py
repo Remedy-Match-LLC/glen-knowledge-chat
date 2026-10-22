@@ -53,6 +53,8 @@ def test_clicking_print_opens_that_orders_print_page(reply, expect):
     js = """
 let fetched = [], went = [], toasts = [];
 const HEADERS = {}; let EDIT_OID = null;
+// The edit page's unsaved-changes check (2026-10-22); a clean page here.
+function isDirty(){ return false; }
 let LAST_ORDER = {order_id: 207};
 function toast(m, k){ toasts.push([m, k]); }
 const window = {location: {assign: u => went.push(u)}};

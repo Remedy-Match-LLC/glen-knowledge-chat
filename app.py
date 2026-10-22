@@ -59201,8 +59201,9 @@ def _keep_issued_unit(issued, repriced):
 
 
 def _same_billed_for(stored, line):
-    """Whose line it is. The customer's own invoice edit (client_invoice_lines.rebuild)
-    sends no billed_for, so a line without one matches any stored line."""
+    """Whose line it is. A line sent without billed_for, such as one a customer added,
+    matches any stored line. The customer's own edit carries the stored line's billed_for
+    (client_invoice_lines.rebuild, 2026-10-22)."""
     want = (line.get("billed_for") or "").strip().lower()
     return not want or (stored.get("billed_for") or "") == want
 
@@ -61836,8 +61837,9 @@ def api_invoice_update(token):
     # customer, while owner overrides, notes and recommendation provenance can only
     # come from the stored invoice.  New products deliberately have no unit override
     # so the shared pricer applies this client's special/member/volume price.
-    existing = {(it.get("slug") or "").strip(): it
-                for it in (order.get("items") or []) if (it.get("slug") or "").strip()}
+    # In order, one stored line per posted line: a slug can appear twice on a
+    # household invoice, once for the caregiver and once for a member.
+    existing = [it for it in (order.get("items") or []) if (it.get("slug") or "").strip()]
     from dashboard import client_invoice_lines as _cil
     # Adding a not-ready product, or raising its quantity, is refused; removing or
     # lowering one already on the invoice is allowed (review round 1, 2026-10-20).

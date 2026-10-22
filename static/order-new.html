@@ -567,21 +567,17 @@ function updatePackagingReview(items){
 // Unsaved-changes bar (Glen, 2026-10-22: "I forgot the save button the first time").
 // Edit mode compares what Save would send with what was last loaded or saved, so the
 // bar shows only for a real change and hides again when a change is undone.
-const DIRTY_FIELDS = ["o-discount","o-adjust","o-points","o-shipping","o-note","pickup",
-  "a-name","a-addr1","a-addr2","a-city","a-state","a-zip","a-country"];
 let SAVED_SIG = null;
-function editSig(){
-  const f = DIRTY_FIELDS.map(id=>{ const el=$(id); return !el ? null : (el.type==="checkbox" ? el.checked : el.value); });
-  return JSON.stringify({l:linesPayload(), f});
-}
+function editSig(){ return JSON.stringify(editBody()); }
+function isDirty(){ return !!(EDIT_OID && SAVED_SIG!==null && editSig()!==SAVED_SIG); }
 function checkDirty(){
   const bar = $("unsaved-bar"); if (!bar) return;
-  bar.style.display = (EDIT_OID && SAVED_SIG!==null && editSig()!==SAVED_SIG) ? "flex" : "none";
+  bar.style.display = isDirty() ? "flex" : "none";
 }
 function markSaved(){ SAVED_SIG = editSig(); checkDirty(); }
 ["input","change","click"].forEach(ev=>document.addEventListener(ev, ()=>setTimeout(checkDirty,0), true));
 window.addEventListener("beforeunload", e=>{
-  if (EDIT_OID && SAVED_SIG!==null && editSig()!==SAVED_SIG){ e.preventDefault(); e.returnValue=""; }
+  if (isDirty()){ e.preventDefault(); e.returnValue=""; }
 });
 function refreshPreview(){
   clearTimeout(previewTimer);
@@ -742,7 +738,7 @@ async function priceShipping(){
     // Drop the live quote into the editable Shipping field — the owner can keep it or
     // hand-adjust. Pickup returns $0 and the field stays blank (hidden anyway).
     const q = Number(j.shipping_cents)||0;
-    $("o-shipping").value = j.pickup ? "" : (q/100).toFixed(2); recalc();
+    $("o-shipping").value = j.pickup ? "" : (q/100).toFixed(2); recalc(); checkDirty();
     toast(j.pickup ? "Pickup — no shipping" : "Shipping priced: "+dollars(q));
   }catch(e){ toast(e.message,"error"); }
   finally{ if(btn) btn.disabled=false; }
@@ -793,6 +789,7 @@ function printInvoiceEdit(){ return printInvoiceFor(EDIT_OID); }
 // One print path for both Edit Invoice and the panel shown after "Create proposed invoice".
 async function printInvoiceFor(oid){
   if (!oid) return;
+  if (isDirty()){ toast("Save your changes first. Printing shows the last saved invoice.","error"); return; }
   try {
     const r = await fetch("/api/console/order/"+Number(oid)+"/invoice-link",
                           {headers:HEADERS});
@@ -917,9 +914,9 @@ async function refundPay(pid){
 async function resyncPay(pid){
   await fetch(`/api/orders/payments/${pid}/resync`,{method:"POST",headers:HEADERS}); reloadPayments();
 }
-async function editInvoice(){
-  if (!LINES.length){ toast("Add at least one line item","error"); return; }
-  if (!requestHawaiiShipping()) return;
+// What Save sends. The unsaved-changes bar compares this same body, so "10" and "10.00"
+// in a money field count as the same amount (review round 2).
+function editBody(){
   const dRaw=$("o-discount").value.trim();
   const body = { lines: linesPayload(), pickup: $("pickup").checked, invoice_note: $("o-note").value.trim(), address: addrFromForm() };
   if (dRaw!=="") body.discount_cents = Math.round(parseFloat(dRaw)*100);
@@ -929,12 +926,21 @@ async function editInvoice(){
   if (pRaw!=="") body.points_redeem_cents = Math.round(parseFloat(pRaw)*100);
   const sRaw=$("o-shipping").value.trim();
   if (sRaw!=="") body.shipping_cents = Math.max(0, Math.round(parseFloat(sRaw)*100));   // blank = auto-compute
+  return body;
+}
+async function editInvoice(){
+  if (!LINES.length){ toast("Add at least one line item","error"); return; }
+  if (!requestHawaiiShipping()) return;
+  const body = editBody();
+  // The baseline is what was sent, so a change typed while this save is in flight
+  // still shows as unsaved (review rounds 1 to 3).
+  const sentSig = JSON.stringify(body);
   try{
-    const r = await fetch("/api/orders/"+encodeURIComponent(EDIT_OID)+"/edit", {method:"POST", headers:HEADERS, body:JSON.stringify(body)});
+    const r = await fetch("/api/orders/"+encodeURIComponent(EDIT_OID)+"/edit", {method:"POST", headers:HEADERS, body:sentSig});
     const j = await r.json();
     if (!j.ok){ toast(j.error||"failed","error"); return; }
     LAST_ORDER = {order_id: j.order_id, external_ref: "#"+j.order_id, totals: j.totals};
-    markSaved();
+    SAVED_SIG = sentSig; checkDirty();
     showInvoice({external_ref:"#"+j.order_id, totals:j.totals, lines:j.lines});
     const q = j.qbo||{};
     const msg = j.warning ? j.warning : (q.warning ? ("Saved — "+q.warning) : (q.pushed ? "Saved + synced to QuickBooks" : "Invoice saved"));
@@ -1255,6 +1261,7 @@ function invRefusedBeforeEmail(j){
 }
 async function sendInvoice(btn, orderId){
   if (!orderId){ invSendStatus(btn, "Save the invoice before sending it.", "error"); return false; }
+  if (isDirty()){ invSendStatus(btn, "Save your changes first. Sending emails the last saved invoice.", "error"); return false; }
   if (INV_SENDING){ invSendStatus(btn, "A send is already in progress.", "unknown"); return false; }
   invTrackOrder(orderId);
   if (INV_SENT_AT && !confirm("This invoice was already sent on "+fmtSentTime(INV_SENT_AT)
