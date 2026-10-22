@@ -187,7 +187,10 @@ def build_program(*, stresses, spirit_layers, cover, functions_of=None, mode=FUL
                     continue
                 for remedy in chosen:
                     toks = [ctok] + [c for c in cov(remedy) or () if c]
-                    clin_picks.append({"remedy": remedy, "covers": sorted(set(toks))})
+                    # The label rides along so the layer can be named by the
+                    # condition's stored pattern, not by its full wording.
+                    clin_picks.append({"remedy": remedy, "covers": sorted(set(toks)),
+                                       "label": label})
                     _absorb(remedy, toks)
             # Re-run the stress pass now that his picks are absorbed, so a tag saying the
             # same thing is suppressed rather than placed a second time.

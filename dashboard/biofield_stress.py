@@ -211,11 +211,20 @@ def list_stresses(cx, tid, chain_rows):
     t = _num(tid)
     remedy_names, head_pairs = _chain_parts(chain_rows)
     covered = covered_codes(cx, tid, remedy_names)
-    directly_placed = {
-        r[0] for r in cx.execute(
-            "SELECT DISTINCT stress_id FROM biofield_auth_layer_stress WHERE test_id=?",
-            (t,)).fetchall()
-    }
+    # Only a link to a row that still exists balances a stress. A link left behind by a
+    # deleted row made the stress read as balanced by no layer at all (a50, 1914).
+    placed_on = {}
+    links = []
+    if _table_exists(cx, "biofield_auth_chain"):
+        links = cx.execute(
+            "SELECT ls.stress_id, c.id, c.remedy, c.layer FROM biofield_auth_layer_stress ls "
+            "JOIN biofield_auth_chain c ON c.id=ls.chain_rid AND c.test_id=ls.test_id "
+            "WHERE ls.test_id=? ORDER BY c.layer, c.id", (t,)).fetchall()
+    for sid, rid, remedy, layer in links:
+        prev = placed_on.get(sid)
+        if prev is None or (not (prev[0] or "").strip() and (remedy or "").strip()):
+            placed_on[sid] = (remedy, layer)
+    directly_placed = set(placed_on)
     head_map = {}
     for h, rem in head_pairs:
         head_map.setdefault(h, rem)
@@ -248,7 +257,7 @@ def list_stresses(cx, tid, chain_rows):
         elif hist_rem is not None:
             by = hist_rem
         elif is_direct:
-            by = "assigned layer"
+            by = (placed_on[r["id"]][0] or "").strip() or "assigned layer"
         elif r["manual_balanced"]:
             by = "manual"
         else:
@@ -257,6 +266,10 @@ def list_stresses(cx, tid, chain_rows):
                 "label": _clean_label(r["label"], r["source"]),
                 "source": r["source"], "balance": r["balance"],
                 "balanced": is_bal, "balanced_by": by}
+        if by and is_direct and not is_cov and lbl_rem is None and hist_rem is None:
+            # The Clinical Summary reads this to say which layer balances a condition
+            # whose wording now sits in that layer's Balances, not in its Head.
+            item["balanced_layer"] = placed_on[r["id"]][1]
         (balanced if is_bal else active).append(item)
         items.append(item)
     # Symptoms, Labs or Conditions for each Mind stress (Glen, 2026-10-16).
@@ -385,6 +398,118 @@ def cover_stress(cx, tid, stress_id, rids):
                        "(test_id,remedy,code) VALUES(?,?,?)", (t, remedy, code))
     cx.commit()
     return code
+
+
+def move_links_off(cx, tid, rids, to_rids=None):
+    """Call BEFORE deleting chain rows `rids`. Each deleted row's Balances move to
+    `to_rids` when given, else to the rows left on THAT row's own card (rows sharing
+    its Head, as group_layers groups them). Worked out per card, never per batch, so a
+    stress never crosses to another card deleted in the same call (review round 2). A
+    stress with nowhere to go loses its link and so shows as unbalanced. Never commits:
+    the caller's delete is the same unit.
+
+    A link to a deleted row is invisible. On a50, stress 1914 linked only to row 449
+    after Glen deleted it, so it read as balanced by no layer (2026-10-20).
+    Returns {"moved": [stress ids], "unbalanced": [stress ids]}."""
+    out = {"moved": [], "unbalanced": []}
+    if not _table_exists(cx, "biofield_auth_layer_stress"):
+        return out
+    t = _num(tid)
+    gone = sorted({int(r) for r in rids or []})
+    if not gone:
+        return out
+    marks = ",".join("?" for _ in gone)
+    head_of = {int(i): (h or "").strip().lower() for i, h in cx.execute(
+        f"SELECT id, head FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
+        (t, *gone))}
+    survivors = {}
+    for i, h in cx.execute(
+            f"SELECT id, head FROM biofield_auth_chain WHERE test_id=? AND id NOT IN ({marks})",
+            (t, *gone)):
+        survivors.setdefault((h or "").strip().lower(), []).append(int(i))
+    fixed = None if to_rids is None else [int(r) for r in to_rids if int(r) not in gone]
+    moved, stranded = set(), set()
+    for rid in gone:
+        h = head_of.get(rid, "")
+        dest = fixed if fixed is not None else (survivors.get(h, []) if h else [])
+        for (sid,) in cx.execute("SELECT stress_id FROM biofield_auth_layer_stress "
+                                 "WHERE test_id=? AND chain_rid=?", (t, rid)).fetchall():
+            for d in dest:
+                cx.execute("INSERT OR IGNORE INTO biofield_auth_layer_stress"
+                           "(test_id,stress_id,chain_rid) VALUES(?,?,?)", (t, int(sid), d))
+            (moved if dest else stranded).add(int(sid))
+    cx.execute(f"DELETE FROM biofield_auth_layer_stress WHERE test_id=? "
+               f"AND chain_rid IN ({marks})", (t, *gone))
+    out["moved"] = sorted(moved)
+    out["unbalanced"] = sorted(stranded - moved)
+    return out
+
+
+_FIELD_SEP = re.compile(r"[,;\n]+")
+
+
+# Stress sources that hold a client's conditions: "tag" (mined from the intake form
+# and the CRM, which is where a50's full wordings live), "paste" (intake notes Glen
+# pastes), "clinical" (added from the Clinical Summary) and "intake" (named by the
+# review; no stress carries it today). Left out: "chain" (pieces an earlier split
+# made), "voice" and "manual" (Spirit: what Glen spoke or tested), "comm" (mined from
+# messages, never ticked) and "scan" (E4L). Review round 1, F1.
+CONDITION_SOURCES = ("tag", "paste", "clinical", "intake")
+
+
+def client_condition_labels(cx, tid):
+    """This client's condition wordings, in order: the Clinical Summary ticks, then the
+    stresses from CONDITION_SOURCES. With or without a stored pattern."""
+    t = _num(tid)
+    labels = []
+    if _table_exists(cx, "biofield_clinical_selection"):
+        labels += [r[0] for r in cx.execute(
+            "SELECT label FROM biofield_clinical_selection WHERE test_id IN (?,?) "
+            "ORDER BY rowid", ("a" + str(t), str(t)))]
+    if _table_exists(cx, "biofield_auth_stress"):
+        marks = ",".join("?" for _ in CONDITION_SOURCES)
+        labels += [r[0] for r in cx.execute(
+            f"SELECT label FROM biofield_auth_stress WHERE test_id=? "
+            f"AND source IN ({marks}) ORDER BY id", (t, *CONDITION_SOURCES))]
+    out = []
+    for label in labels:
+        label = (label or "").strip()
+        if label and label not in out:
+            out.append(label)
+    return out
+
+
+def condition_wordings(cx, tid):
+    """This client's condition wordings that hold a separator themselves, such as
+    "Adrenal Fatigue, Current, 2023". Same sources as client_condition_labels."""
+    return [l for l in client_condition_labels(cx, tid) if _FIELD_SEP.search(l)]
+
+
+def split_field(text, wordings=()):
+    """A Head or Tail as its items. A condition's full wording is ONE item, matched
+    whole between separators, longest first. Everything else splits on commas,
+    semicolons and newlines as before. Without this, consolidate turned a50's
+    "Suspect of Glaucoma/high pressures and thinning cornea, Current, 2020" into the
+    stresses "Current" and "2020" (Glen, 2026-10-20)."""
+    text = text or ""
+    found = []
+    for w in sorted({w.strip() for w in wordings or () if (w or "").strip()}, key=len,
+                    reverse=True):
+        rx = re.compile(r"(?:^|(?<=[,;\n]))\s*" + re.escape(w) + r"\s*(?=[,;\n]|$)", re.I)
+
+        def keep(_m, w=w):
+            found.append(w)
+            return "\x00%d\x00" % (len(found) - 1)
+        text = rx.sub(keep, text)
+    out = []
+    for part in _FIELD_SEP.split(text):
+        part = part.strip()
+        m = re.fullmatch(r"\x00(\d+)\x00", part)
+        if m:
+            out.append(found[int(m.group(1))])
+        elif part:
+            out.append(part)
+    return out
 
 
 RELOAD = "Reload the page and try again."
@@ -608,11 +733,12 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
     # field item that is not already in the stress list, then explicitly place it
     # on the destination along with remedy-covered and manually placed stresses.
     field_labels = []
+    wordings = condition_wordings(cx, tid)   # each moves as one stress, never in pieces
     for row in source_rows:
         head = (row[2] or "").strip()
         if head:
             field_labels.append(head)
-        field_labels.extend(x.strip() for x in re.split(r"[,;\n]+", row[3] or "") if x.strip())
+        field_labels.extend(split_field(row[3], wordings))
     existing = cx.execute(
         "SELECT id,label FROM biofield_auth_stress WHERE test_id=?", (t,)).fetchall()
     by_label = {_norm(label): int(stress_id) for stress_id, label in existing}
@@ -652,7 +778,7 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
         head = (row[2] or "").strip()
         if head and _norm(head) != _norm(target_head):
             tail_items.append(head)
-        tail_items.extend(x.strip() for x in re.split(r"[,;\n]+", row[3] or "") if x.strip())
+        tail_items.extend(split_field(row[3], wordings))
     merged_tail, seen = [], set()
     for item in tail_items:
         key = _norm(item)
