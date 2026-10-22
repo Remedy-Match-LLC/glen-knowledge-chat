@@ -69,6 +69,7 @@
   .inv-send-status.error { color:var(--red); } .inv-send-status.unknown { color:var(--accent-light); }
   .auth-warn { background:rgba(204,75,44,.08); border:1px solid var(--red); border-radius:8px; padding:14px; color:var(--red); margin-bottom:20px; display:none; }
   #toast { position:fixed; bottom:20px; right:20px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 16px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  #unsaved-bar { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); z-index:50; display:none; align-items:center; gap:12px; background:var(--surface); border:2px solid var(--accent, #c58b00); border-radius:10px; padding:10px 16px; box-shadow:0 4px 18px rgba(0,0,0,.25); font-size:14px; }
   #toast.show { opacity:1; } #toast.error { border-color:var(--red); color:var(--red); } #toast.ok { border-color:var(--green); color:var(--green); }
 </style>
 </head>
@@ -206,6 +207,7 @@
   </div>
 </div>
 
+<div id="unsaved-bar" role="status"><span>This invoice has unsaved changes.</span><button class="primary" onclick="submitOrder()">Save invoice changes</button></div>
 <div id="toast"></div>
 
 <script>
@@ -447,6 +449,7 @@ async function savePickupDefault(){
   }catch(e){ toast(e.message,"error"); }
 }
 function renderLines(){
+  setTimeout(checkDirty,0);
   // A line known NOT to take refill packs sends "bottle", so the preview's pack count
   // and the shipping quote agree (review round 2).
   for (const l of LINES) if (refillOk(l.slug) === false && l.format === 'refill') l.format = 'bottle';
@@ -521,7 +524,7 @@ function rmLine(i){
 }
 // Send a line's unit_cents only when the owner manually overrode it; otherwise
 // let the server price it (FF capsules get the volume rate).
-function linesPayload(){ return LINES.map(l=>{ const b = l.edited ? {slug:l.slug, qty:l.qty, unit_cents:l.unit_cents} : {slug:l.slug, qty:l.qty}; const n=(l.note||"").trim(); if(n) b.note=n; if((l.format||'bottle')!=='bottle') b.format=l.format; b.source = l.source || 'self'; return b; }); }
+function linesPayload(){ return LINES.map(l=>{ const b = l.edited ? {slug:l.slug, qty:l.qty, unit_cents:l.unit_cents} : {slug:l.slug, qty:l.qty}; const n=(l.note||"").trim(); if(n) b.note=n; if((l.format||'bottle')!=='bottle') b.format=l.format; b.source = l.source || 'self'; if(l.billed_for) b.billed_for=l.billed_for; return b; }); }
 // Per-line note helpers. setNote updates the model without a re-render (re-rendering
 // on each keystroke would drop focus mid-typing); the note doesn't affect pricing.
 function setNote(i,v){ if(LINES[i]) LINES[i].note=v; }
@@ -561,6 +564,25 @@ function updatePackagingReview(items){
   el.textContent="Packaging review required: "+missing.join(", ")+" has unknown package type or size. Enter its specifications before using automatic shipping, or enter a reviewed shipping amount manually.";
   el.style.display="block";
 }
+// Unsaved-changes bar (Glen, 2026-10-22: "I forgot the save button the first time").
+// Edit mode compares what Save would send with what was last loaded or saved, so the
+// bar shows only for a real change and hides again when a change is undone.
+const DIRTY_FIELDS = ["o-discount","o-adjust","o-points","o-shipping","o-note","pickup",
+  "a-name","a-addr1","a-addr2","a-city","a-state","a-zip","a-country"];
+let SAVED_SIG = null;
+function editSig(){
+  const f = DIRTY_FIELDS.map(id=>{ const el=$(id); return !el ? null : (el.type==="checkbox" ? el.checked : el.value); });
+  return JSON.stringify({l:linesPayload(), f});
+}
+function checkDirty(){
+  const bar = $("unsaved-bar"); if (!bar) return;
+  bar.style.display = (EDIT_OID && SAVED_SIG!==null && editSig()!==SAVED_SIG) ? "flex" : "none";
+}
+function markSaved(){ SAVED_SIG = editSig(); checkDirty(); }
+["input","change","click"].forEach(ev=>document.addEventListener(ev, ()=>setTimeout(checkDirty,0), true));
+window.addEventListener("beforeunload", e=>{
+  if (EDIT_OID && SAVED_SIG!==null && editSig()!==SAVED_SIG){ e.preventDefault(); e.returnValue=""; }
+});
 function refreshPreview(){
   clearTimeout(previewTimer);
   if (!LINES.length){ PREVIEW={subtotal_cents:0, lines:[]}; updateUnitsToShip({bottle_units:0,cello_pack_units:0}); updatePackagingReview([]); recalc(); refreshMembershipOffer(); return; }
@@ -820,7 +842,8 @@ async function loadOrderForEdit(oid){
   // the client's current specials — including the all-FFs flat rate — re-apply.
   LINES = (o.items||[]).filter(l=>!l.gift).map(l=>({slug:l.slug||"", name:l.name||l.slug||"",
             qty:Number(l.qty||1), unit_cents:Number(l.unit_cents||0), edited:l.override===true,
-            note:l.note||"", format:(l.format||'bottle'), source:(l.source||'self')}));
+            note:l.note||"", format:(l.format||'bottle'), source:(l.source||'self'),
+            billed_for:l.billed_for||""}));
   if (o.discount_cents) $("o-discount").value = (o.discount_cents/100).toFixed(2);
   if (o.adjustment_cents) $("o-adjust").value = (o.adjustment_cents/100).toFixed(2);  // signed
   // Prefill the shipping fee from the stored order so it's visible and STICKY — editing
@@ -911,6 +934,7 @@ async function editInvoice(){
     const j = await r.json();
     if (!j.ok){ toast(j.error||"failed","error"); return; }
     LAST_ORDER = {order_id: j.order_id, external_ref: "#"+j.order_id, totals: j.totals};
+    markSaved();
     showInvoice({external_ref:"#"+j.order_id, totals:j.totals, lines:j.lines});
     const q = j.qbo||{};
     const msg = j.warning ? j.warning : (q.warning ? ("Saved — "+q.warning) : (q.pushed ? "Saved + synced to QuickBooks" : "Invoice saved"));
@@ -1304,7 +1328,7 @@ async function init(){
   try{ await loadCatalog(); }catch(e){ if(e.message!=="unauthorized") toast(e.message,"error"); return; }
   loadSnippets();   // populate the shared per-line note dropdown (non-blocking)
   $("o-method").addEventListener("change", refreshInvMethod);   // keep the card's method line live
-  if (EDIT_OID){ try{ await loadOrderForEdit(EDIT_OID); }catch(e){ toast(e.message,"error"); } }
+  if (EDIT_OID){ try{ await loadOrderForEdit(EDIT_OID); markSaved(); }catch(e){ toast(e.message,"error"); } }
   else if (restoreCustomerDraft()) toast("Restored unsaved customer details");
   syncShippingUI();
 }

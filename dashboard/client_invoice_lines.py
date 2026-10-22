@@ -65,7 +65,9 @@ def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
         # how invoice #165 went out at $809.13.
         if old.get("override"):
             rec["unit_cents"] = old.get("unit_cents")
-        for key in ("note", "source"):
+        # billed_for keeps a household member's line marked as theirs, so billing that
+        # member again replaces their lines instead of adding a second set.
+        for key in ("note", "source", "billed_for"):
             if old.get(key):
                 rec[key] = old[key]
         out.append(rec)
