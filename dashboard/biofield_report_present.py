@@ -30,8 +30,6 @@ _CSS = """
   .masthead .mh-name { font-weight: 700; font-size: 20px; text-align: right; margin-left: auto; white-space: nowrap; }
   .masthead .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
   h2 { color: var(--gold); font-size: 16px; border-bottom: 1px solid var(--hair); padding-bottom: 3px; margin: 22px 0 8px; }
-  .diet-guidance h3 { font-size: 13px; margin: 14px 0 6px; }
-  .diet-guidance p { margin: 0 0 6px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 4px 7px; border-bottom: 1px solid var(--hair); vertical-align: top; }
   th { background: #faf7ef; }
@@ -222,16 +220,6 @@ def _chain(report):
     return "<h2>Causal Chain</h2>" + render_chain_table(report.get("layers") or [])
 
 
-def _diet(report):
-    """Diet guidance for the tested phase, else the intake answer's phase (Glen,
-    2026-10-16). The caller puts the client's intake answers on report["intake_answers"]."""
-    try:
-        from dashboard.diet_guidance import guidance_html, report_phase
-        return guidance_html(report_phase(report.get("phase"), report.get("intake_answers")))
-    except Exception:  # noqa: BLE001 -- never blocks the report
-        return ""
-
-
 def _intro(lines):
     """The report's own introduction (Glen, 2026-10-19): the standard lead, then a
     personal passage. Nothing at all prints while both are empty. "portal chat" links
@@ -257,7 +245,7 @@ def render_present(report, narrative="", intro=(), primary_on=None):
         from dashboard.biofield_report_split import primary_report
         report = primary_report(report, primary_on)
     body = (_masthead(report) + _intro(intro) + _terrain(report) + _schedule(report) + _narrative(narrative)
-            + _life_stress(report, primary_on) + _chain(report) + _diet(report)
+            + _life_stress(report, primary_on) + _chain(report)
             + f'<div class="footer">{_e(FOOTER)}</div>')
     return (f"<!doctype html><html><head><meta charset=utf-8>"
             f"<title>Biofield Analysis</title><style>{_CSS}</style></head>"

@@ -163,3 +163,13 @@ def test_submit_systemic_checklist_seeds_starter_remedies(client):
             "SELECT DISTINCT origin_ref FROM recommendation_events "
             "WHERE client_email=? AND source_key='condition'", ("member@x.com",))}
     assert {"symptom-sleep", "symptom-fatigue"} <= origins
+
+
+def test_the_portal_intake_form_still_carries_the_diet_guidance(client):
+    """Glen, 2026-10-21: the diet guidance left the reports but stays on the intake form."""
+    from dashboard import diet_guidance as dg
+    form = client.get("/api/intake/form?token=good").get_json()
+    terrain = [f for s in form["sections"] for f in s["fields"] if f["id"] == "terrain"][0]
+    assert sorted(terrain["diet_guidance"]) == ["1", "2", "3", "4", "5"]
+    assert terrain["diet_guidance"]["2"]["title"] == "Eating for your terrain"
+    assert terrain["diet_guidance"]["2"] == dg.guidance(2)

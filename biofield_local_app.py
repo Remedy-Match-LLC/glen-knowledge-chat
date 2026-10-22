@@ -287,8 +287,8 @@ def _fetch_life_stress_curation(email):
 
 def _fetch_intake_answers(email):
     """Best-effort: a client's intake answers from the prod console endpoint, for the
-    diet guidance's fallback phase when the report has no tested phase (Glen,
-    2026-10-16). None on any failure, so it never blocks the report. The key goes in
+    Kloud program's fallback phase when no test gives one. The diet section it once
+    also fed left the reports on 2026-10-21. None on any failure, so it never blocks the report. The key goes in
     a header only, never in the URL."""
     import json as _json
     import urllib.parse
@@ -338,16 +338,6 @@ def _kloud_program_if_ticked(cx, test_id, rep):
     if not kloud_lines(plan(cx, test_id)):
         return ""
     return _kloud_program(cx, test_id, rep)[0]
-
-
-def _add_intake_fallback(rep):
-    """Put the intake answers on a report that has no tested phase, so the diet guidance
-    can fall back to them. A report with a tested phase makes no request."""
-    from dashboard.terrain_phase import phase_num
-    if not phase_num(rep.get("phase")):
-        rep["intake_answers"] = _fetch_intake_answers(
-            ((rep.get("client") or {}).get("email") or ""))
-    return rep
 
 
 DEFAULT_DB = os.environ.get(
@@ -1476,7 +1466,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             narrative = get_narrative(cx, test_id)
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
-        _add_intake_fallback(rep)
         html = render_present(rep, narrative, _primary_intro(), primary_on=_primary_on(test_id))
         return Response(_with_primary_added(test_id, rep, html), mimetype="text/html")
 
@@ -1488,7 +1477,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             narrative = get_narrative(cx, test_id)
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
-        _add_intake_fallback(rep)
         # One read of the switches for the whole print, so the downloaded PDF and the
         # portal published with it can never disagree (review, 2026-10-19).
         on = _primary_on(test_id)
@@ -4573,7 +4561,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             raise RuntimeError("PORTAL_PUBLISH_BASE_URL not set")
         rep["life_stress_curation"] = _fetch_life_stress_curation(
             ((rep.get("client") or {}).get("email") or ""))
-        _add_intake_fallback(rep)
         pdf_bytes = report_pdf_bytes(render_present(rep, narrative, _primary_intro(),
                                                     primary_on=on))
         pdf_url = _bpp.upload_asset(pdf_bytes, _bpp._asset_name("pdf"), base_url=base, console_key=key)

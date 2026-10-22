@@ -37,3 +37,16 @@ def test_report_pdf_downloads_and_saves(client, tmp_path):
     assert r.get_data()[:5] == b"%PDF-"
     saved = list((tmp_path / "reports").glob("report_*.pdf"))
     assert saved, "PDF should also be saved locally for printing/shipping"
+
+def test_report_view_has_no_diet_guidance_and_fetches_no_intake(client, monkeypatch):
+    """Glen, 2026-10-21: the diet guidance left the Biofield report. With no Kloud line the
+    page asks for no intake answers either; they fed only that section."""
+    import biofield_local_app as bla
+    calls = []
+    monkeypatch.setattr(bla, "_fetch_intake_answers",
+                        lambda email: calls.append(email) or {"terrain": 2})
+    c, tid = client
+    body = c.get(f"/test/{tid}/report").get_data(as_text=True)
+    assert "MSM Lotion" in body
+    assert "Eating for your terrain" not in body and "diet-guidance" not in body
+    assert calls == []

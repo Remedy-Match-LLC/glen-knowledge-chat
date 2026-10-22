@@ -6,9 +6,9 @@ The text lives in data/diet-guidance.md, copied verbatim from the rnd source
 rnd; tests/test_diet_guidance.py pins the file's hash so a silent edit fails.
 
 A client sees the intro (every caution line) and only their own phase's section, never
-another phase's. With no phase, nothing shows.
+another phase's. With no phase, nothing shows. It appears on the intake forms only: Glen
+took it out of the Biofield report and the portal report on 21 October 2026.
 """
-import html
 import os
 import re
 
@@ -70,32 +70,6 @@ def guidance(phase):
             "paragraphs": list(paras), "phase": n}
 
 
-# "portal chat" links to the client's portal chat, as in the report openings (Glen,
-# "link", 2026-10-20). The client portal host, never illtowell.com.
-CHAT_PHRASE = "portal chat"
-CHAT_URL = "https://myhealingoasis.com/portal/me#chat"
-
-
-def _linked(text):
-    """One line, escaped, with "portal chat" made a link to the chat."""
-    e = html.escape(text)
-    return e.replace(CHAT_PHRASE, f'<a href="{CHAT_URL}">{CHAT_PHRASE}</a>')
-
-
-def guidance_html(phase):
-    """The guidance as HTML, each source line its own paragraph, or "". A few approved
-    lines hold two sentences (Glen, 2026-10-20), so never split them."""
-    g = guidance(phase)
-    if not g:
-        return ""
-    e = html.escape
-    return (f'<section class="diet-guidance"><h2>{e(g["title"])}</h2>'
-            + "".join(f"<p>{_linked(p)}</p>" for p in g["intro"])
-            + f'<h3>{e(g["heading"])}</h3>'
-            + "".join(f"<p>{_linked(p)}</p>" for p in g["paragraphs"])
-            + "</section>")
-
-
 def intake_phase(answers):
     """The phase an intake answer scores. Every writer stores `terrain` as the lowest
     number ticked, and an edit can leave older `terrain_selections` behind (review
@@ -113,8 +87,8 @@ def intake_phase(answers):
 
 
 def report_fallback_answers(row):
-    """The intake answers the report may fall back to: a submitted intake only, never a
-    draft and never an imported stub. A draft is unfinished, and the public form saves
+    """The intake answers a report may fall back to for its Kloud Phase: a submitted
+    intake only, never a draft and never an imported stub. A draft is unfinished, and the public form saves
     one for any typed address (review round 1)."""
     row = row or {}
     answers = row.get("answers")
@@ -123,12 +97,6 @@ def report_fallback_answers(row):
     if answers.get("_external"):
         return None
     return answers
-
-
-def report_phase(tested_phase, intake_answers=None):
-    """Glen, 2026-10-16: the report uses the tested phase; the intake answer is the
-    fallback."""
-    return phase_num(tested_phase) or intake_phase(intake_answers)
 
 
 def form_with_guidance(form):
