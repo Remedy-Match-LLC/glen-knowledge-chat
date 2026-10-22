@@ -3102,6 +3102,13 @@ _FOLD_JS = """<style>
 .fold-bar:hover{color:var(--fg);border-color:var(--accent)}
 .fold-bar .fold-sum{margin-left:auto}
 .fold-top{scroll-margin-top:calc(52px + var(--intake-nav-h,0px))}
+.fold-head{position:relative;cursor:pointer;border:1px solid var(--line);border-radius:6px;
+ padding:4px 10px 4px 26px !important}
+.fold-head:hover{border-color:var(--accent)}
+.fold-head .fold-act{position:absolute;left:9px;top:50%;transform:translateY(-50%);
+ color:var(--muted);font-size:12px;font-weight:normal}
+.fold-head .fold-sum{color:var(--muted);font-size:12px;font-weight:normal;margin-left:10px}
+.fold-head .fold-sum:empty{display:none}
 .rail{top:calc(52px + var(--intake-nav-h,0px)) !important}
 .dd{z-index:9500 !important}
 </style><script>(function(){
@@ -3118,7 +3125,7 @@ function ours(el){return !!(el.classList&&(el.classList.contains('fold-bar')||el
 function skip(el){return el.tagName==='SCRIPT'||el.tagName==='STYLE'||el.tagName==='DATALIST'||ours(el)}
 // The heading's own words, without its buttons or counts.
 function label(h){var c=h.cloneNode(true);
- c.querySelectorAll('button,input,select,textarea,.food,.clinical-count,.pill,.fold-bar').forEach(function(x){x.remove()});
+ c.querySelectorAll('button,input,select,textarea,.food,.clinical-count,.pill,.fold-bar,.fold-bit').forEach(function(x){x.remove()});
  return (c.textContent||'').replace(/\\s+/g,' ').trim()}
 // A key without digits, so a section keeps its state when a count in its heading changes.
 function keyOf(h){return label(h).replace(/[0-9]+/g,'').replace(/\\s+/g,' ').trim().toLowerCase().slice(0,60)}
@@ -3156,6 +3163,21 @@ function bar(cls,k,onClick){var b=document.createElement('button');b.type='butto
  b.className='fold-bar '+cls;b.dataset.foldFor=k;
  b.innerHTML='<span class=fold-act></span><span class=fold-sum></span>';
  b.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();onClick(b)});return b}
+// Glen, 2026-10-22: the section's title sits inside its top bar. The heading itself
+// becomes the bar; a click on one of its own controls still does only that control.
+function headBar(h,k){h.classList.add('fold-top','fold-head');h.dataset.foldFor=k;
+ if(!h.dataset.foldWired){h.dataset.foldWired='1';h.tabIndex=0;h.setAttribute('role','button');
+  var act=document.createElement('span'),sum=document.createElement('span');
+  act.className='fold-bit fold-act';sum.className='fold-bit fold-sum';
+  h.insertBefore(act,h.firstChild);h.appendChild(sum);
+  function toggle(){var key=h.dataset.foldFor;steady(h,function(){set(key,!openIn(key))})}
+  h.addEventListener('click',function(e){
+   var c=e.target.closest('button,a,input,select,textarea,label,summary,[contenteditable]');
+   if(c&&c!==h&&h.contains(c))return;toggle()});
+  h.addEventListener('keydown',function(e){if(e.target===h&&(e.key==='Enter'||e.key===' ')){e.preventDefault();toggle()}})}
+ var act=h.querySelector(':scope > .fold-act'),sum=h.querySelector(':scope > .fold-sum');
+ if(!act||!sum)return null;
+ return {act:act,sum:sum}}
 function find(cls,k){return [].filter.call(wrap.querySelectorAll('.'+cls),function(x){return x.dataset.foldFor===k})}
 function navBottom(){var n=document.getElementById('intakeNav');return n?n.getBoundingClientRect().bottom:0}
 // Keep `el` where it is on screen across a change, so nothing jumps (#2045, #2048).
@@ -3195,11 +3217,7 @@ function renderNav(list){var nav=document.getElementById('intakeNav');
 var obs=null;
 function apply(){try{var list=sections();
  list.forEach(function(s){if(s.disp)return;var k=s.k,open=openIn(k);
-  var top=s.h.previousElementSibling;
-  if(!(top&&top.classList.contains('fold-top')&&top.dataset.foldFor===k)){
-   find('fold-top',k).forEach(function(x){x.remove()});
-   top=bar('fold-top',k,function(b){steady(b,function(){set(k,!openIn(k))})});
-   s.h.parentNode.insertBefore(top,s.h)}
+  var top=s.h,bits=headBar(top,k);if(!bits)return;
   var last=s.body[s.body.length-1],bot=last.nextElementSibling;
   if(!(bot&&bot.classList.contains('fold-bottom')&&bot.dataset.foldFor===k)){
    find('fold-bottom',k).forEach(function(x){x.remove()});
@@ -3208,7 +3226,7 @@ function apply(){try{var list=sections();
    last.parentNode.insertBefore(bot,last.nextSibling)}
   s.body.forEach(function(x){if(x.classList.contains('fold-hidden')===open)x.classList.toggle('fold-hidden',!open)});
   if(bot.classList.contains('fold-hidden')===open)bot.classList.toggle('fold-hidden',!open);
-  setText(top.firstChild,open?'▾ Hide':'▸ Show');setText(top.lastChild,summary(s));
+  setText(bits.act,open?'▾':'▸');setText(bits.sum,open||s.h.querySelector('.clinical-count')?'':summary(s));
   setText(bot.firstChild,'▴ Hide '+s.label);
   var a=open?'true':'false';if(top.getAttribute('aria-expanded')!==a)top.setAttribute('aria-expanded',a)});
  renderNav(list)}finally{if(obs)obs.takeRecords()}}

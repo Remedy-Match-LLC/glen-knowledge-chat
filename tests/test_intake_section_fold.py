@@ -54,20 +54,20 @@ def test_a_pinned_bar_lists_every_section_with_open_and_close_all():
 
 def test_each_section_has_a_bar_above_and_below():
     js = brh._FOLD_JS
-    assert "top=bar('fold-top',k," in js and "bot=bar('fold-bottom',k," in js
+    assert "var top=s.h,bits=headBar(top,k);" in js and "bot=bar('fold-bottom',k," in js
     assert "setText(bot.firstChild,'▴ Hide '+s.label);" in js
 
 
 def test_a_closed_section_shows_a_one_line_count():
     js = brh._FOLD_JS
-    assert "setText(top.lastChild,summary(s));" in js
+    assert "setText(bits.sum,open||s.h.querySelector('.clinical-count')?'':summary(s));" in js
     assert "if(boxes.length>1)return boxes.filter(function(x){return x.checked}).length+' of '+boxes.length+' ticked';" in js
 
 
 def test_opening_closing_and_jumping_keep_the_page_still():
     js = brh._FOLD_JS
     assert "function steady(el,change){" in js
-    assert "steady(b,function(){set(k,!openIn(k))})" in js
+    assert "steady(h,function(){set(key,!openIn(key))})" in js
     assert ".rail{top:calc(52px + var(--intake-nav-h,0px)) !important}" in js
 
 
@@ -85,7 +85,7 @@ def test_late_panels_are_covered():
 def test_a_count_or_badge_in_a_heading_does_not_change_its_key():
     js = brh._FOLD_JS
     assert ".replace(/[0-9]+/g,'')" in js
-    assert ".clinical-count,.pill,.fold-bar')" in js
+    assert ".clinical-count,.pill,.fold-bar,.fold-bit')" in js
 
 
 def test_applying_never_queues_itself_again():
@@ -123,3 +123,10 @@ def test_a_jump_clears_the_bars_and_dropdowns_sit_above_them():
     js = brh._FOLD_JS
     assert "var gap=top.getBoundingClientRect().top-navBottom()-8;if(gap<0)window.scrollBy(0,gap)}" in js
     assert ".dd{z-index:9500 !important}" in js
+
+
+def test_the_title_is_the_top_bar():
+    # Glen, 2026-10-22: the show/hide bar contains the section's title.
+    js = brh._FOLD_JS
+    assert "h.classList.add('fold-top','fold-head')" in js
+    assert "if(c&&c!==h&&h.contains(c))return;toggle()" in js
