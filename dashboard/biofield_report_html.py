@@ -3081,9 +3081,29 @@ def _narrative_warning_box(warnings):
 # later, so a MutationObserver re-applies the buttons and state whenever the page
 # changes. Closing only hides a section's body: nothing is removed, so the page's own
 # scripts still find every element.
+#
+# Glen, 2026-10-22: "Look for the planned addition of a navigation bar at the top of
+# Biofield Intake, and finish the implementation. Also add a small bar at the top and
+# bottom of each section to click for open/close." A bar pinned under the top bar lists
+# every section, with Open all and Close all. A slim bar above each section shows or
+# hides it, with a one-line count while closed, and one below it hides it again. Every
+# open, close and jump keeps the page from jumping under the reader.
 _FOLD_JS = """<style>
 .fold-hidden{display:none !important}
-.fold-btn{margin-left:10px;font-size:11px;padding:2px 9px;vertical-align:middle}
+#intakeNav{position:sticky;top:40px;z-index:9000;display:flex;gap:6px;align-items:center;
+ overflow-x:auto;white-space:nowrap;background:var(--bg);border-bottom:1px solid var(--line);
+ padding:6px 0;margin:0 0 10px}
+#intakeNav button{font:inherit;font-size:12px;padding:3px 10px;flex:0 0 auto}
+#intakeNav button.nav-open{border-color:var(--accent);color:var(--accent)}
+#intakeNav .nav-sep{flex:0 0 1px;align-self:stretch;background:var(--line);margin:0 4px}
+.fold-bar{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;margin:6px 0 4px;
+ padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:transparent;
+ color:var(--muted);font:inherit;font-size:12px;line-height:1.4;text-align:left;cursor:pointer}
+.fold-bar:hover{color:var(--fg);border-color:var(--accent)}
+.fold-bar .fold-sum{margin-left:auto}
+.fold-top{scroll-margin-top:calc(52px + var(--intake-nav-h,0px))}
+.rail{top:calc(52px + var(--intake-nav-h,0px)) !important}
+.dd{z-index:9500 !important}
 </style><script>(function(){
 var wrap=document.querySelector('.wrap');if(!wrap)return;
 var TID='__FOLDTID__',DONE=__FOLDDONE__,PREFIX='intakeOpen:'+TID+':';
@@ -3093,44 +3113,112 @@ if(DONE){try{for(var i=localStorage.length-1;i>=0;i--){var lk=localStorage.key(i
  if(lk&&lk.indexOf(PREFIX)===0)localStorage.removeItem(lk)}}catch(e){}}
 function store(k,open){try{var b=box();if(!b)return;if(open)b.setItem(PREFIX+k,'1');else b.removeItem(PREFIX+k)}catch(e){}}
 function openIn(k){try{var b=box();return !!b&&b.getItem(PREFIX+k)==='1'}catch(e){return false}}
-// A key from the heading's own words, without its buttons or counts, so a section
-// keeps its state when a count in its heading changes.
-function keyOf(h){var c=h.cloneNode(true);
- c.querySelectorAll('button,input,select,textarea,.food,.clinical-count,.pill').forEach(function(x){x.remove()});
- return (c.textContent||'').replace(/[0-9]+/g,'').replace(/\\s+/g,' ').trim().toLowerCase().slice(0,60)}
-// [heading, body elements] for every section on the page.
+function setText(el,t){if(el.textContent!==t)el.textContent=t}
+function ours(el){return !!(el.classList&&(el.classList.contains('fold-bar')||el.id==='intakeNav'))}
+function skip(el){return el.tagName==='SCRIPT'||el.tagName==='STYLE'||el.tagName==='DATALIST'||ours(el)}
+// The heading's own words, without its buttons or counts.
+function label(h){var c=h.cloneNode(true);
+ c.querySelectorAll('button,input,select,textarea,.food,.clinical-count,.pill,.fold-bar').forEach(function(x){x.remove()});
+ return (c.textContent||'').replace(/\\s+/g,' ').trim()}
+// A key without digits, so a section keeps its state when a count in its heading changes.
+function keyOf(h){return label(h).replace(/[0-9]+/g,'').replace(/\\s+/g,' ').trim().toLowerCase().slice(0,60)}
+// {h: heading, body: [elements]} for every section, in page order. Previously
+// dispensed keeps its own control, so it is listed for the bar only (disp).
 function sections(){var out=[];
- function card(c){if(c.querySelector('#dispbtn'))return; // Previously dispensed has its own
-  var kids=[].slice.call(c.children).filter(function(k){return k.tagName!=='SCRIPT'&&k.tagName!=='STYLE'});
-  if(kids.length>1)out.push([kids[0],kids.slice(1)])}
+ function card(c){if(c.querySelector('#dispbtn')){out.push({h:c,body:[],disp:true});return}
+  var kids=[].slice.call(c.children).filter(function(k){return !skip(k)});
+  if(kids.length>1)out.push({h:kids[0],body:kids.slice(1)})}
  [].slice.call(wrap.children).forEach(function(el){
+  if(skip(el))return;
   if(el.classList.contains('card'))card(el);
   else if(el.id==='e4lpanel'||el.id==='stresspanel'||el.id==='suggestpanel')
    [].slice.call(el.children).forEach(function(c){if(c.classList.contains('card'))card(c)});
   else if(el.matches('section.clinical-summary')){var h=el.querySelector(':scope > .clinical-head');
-   if(h)out.push([h,[].slice.call(el.children).filter(function(k){return k!==h&&k.tagName!=='SCRIPT'&&k.tagName!=='STYLE'})])}
+   if(h)out.push({h:h,body:[].slice.call(el.children).filter(function(k){return k!==h&&!skip(k)})})}
   else if(el.tagName==='H2'){var body=[],n=el.nextElementSibling;
-   while(n&&n.tagName!=='H2'&&!n.matches('section,.card')){if(n.tagName!=='SCRIPT'&&n.tagName!=='STYLE'&&n.tagName!=='DATALIST')body.push(n);n=n.nextElementSibling}
-   if(body.length)out.push([el,body])}
- });return out}
-function show(sec,open){var h=sec[0],b=h.querySelector(':scope > .fold-btn');
- sec[1].forEach(function(x){x.classList.toggle('fold-hidden',!open)});
- // Write only on a change: a rewrite is itself a mutation, and would re-run apply.
- if(b){var t=open?'Hide':'Show',a=open?'true':'false';
-  if(b.textContent!==t)b.textContent=t;if(b.getAttribute('aria-expanded')!==a)b.setAttribute('aria-expanded',a)}}
+   while(n&&n.tagName!=='H2'&&!n.matches('section,.card')){if(!skip(n))body.push(n);n=n.nextElementSibling}
+   if(body.length)out.push({h:el,body:body})}
+ });
+ out.forEach(function(s){if(!s.h.dataset.foldKey)s.h.dataset.foldKey=s.disp?'previously dispensed':keyOf(s.h);
+  s.k=s.h.dataset.foldKey;s.label=s.disp?'Previously dispensed':label(s.h)});
+ return out.filter(function(s){return s.k})}
+// One line for a closed section: its own count, else its ticks (a single box is a
+// setting, not a list), else its words.
+function summary(s){var cc=s.h.querySelector('.clinical-count');
+ if(cc&&cc.textContent.trim())return cc.textContent.replace(/\\s+/g,' ').trim();
+ var boxes=[],ta=null;
+ s.body.forEach(function(b){boxes=boxes.concat([].slice.call(b.querySelectorAll('input[type=checkbox]')));
+  if(!ta)ta=b.matches('textarea')?b:b.querySelector('textarea')});
+ if(boxes.length>1)return boxes.filter(function(x){return x.checked}).length+' of '+boxes.length+' ticked';
+ if(ta){var w=(ta.value||'').trim();return w?w.split(/\\s+/).length+' words':'empty'}
+ return ''}
+function bar(cls,k,onClick){var b=document.createElement('button');b.type='button';
+ b.className='fold-bar '+cls;b.dataset.foldFor=k;
+ b.innerHTML='<span class=fold-act></span><span class=fold-sum></span>';
+ b.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();onClick(b)});return b}
+function find(cls,k){return [].filter.call(wrap.querySelectorAll('.'+cls),function(x){return x.dataset.foldFor===k})}
+function navBottom(){var n=document.getElementById('intakeNav');return n?n.getBoundingClientRect().bottom:0}
+// Keep `el` where it is on screen across a change, so nothing jumps (#2045, #2048).
+function steady(el,change){var y=el&&el.isConnected?el.getBoundingClientRect().top:null;change();
+ if(y!==null&&el.isConnected){var d=el.getBoundingClientRect().top-y;if(d)window.scrollBy(0,d)}}
+function set(k,open){store(k,open);apply()}
+function goTo(s){var top=find('fold-top',s.k)[0]||s.h;
+ if(s.disp){var db=document.getElementById('dispbody');if(db&&db.style.display==='none'&&window.toggleDispensed)window.toggleDispensed()}
+ else set(s.k,true);
+ top=find('fold-top',s.k)[0]||s.h;top.scrollIntoView({block:'start'});
+ // A target with no scroll margin of its own (Previously dispensed) lands under the bars.
+ var gap=top.getBoundingClientRect().top-navBottom()-8;if(gap<0)window.scrollBy(0,gap)}
+function firstVisibleTop(){var nb=navBottom();
+ return [].filter.call(wrap.querySelectorAll('.fold-top'),function(t){return t.getBoundingClientRect().top>=nb})[0]}
+function all(open,list){steady(firstVisibleTop(),function(){
+ list.forEach(function(s){if(!s.disp)store(s.k,open)});apply()})}
+function renderNav(list){var nav=document.getElementById('intakeNav');
+ if(!nav){nav=document.createElement('nav');nav.id='intakeNav';nav.setAttribute('aria-label','Sections');
+  var at=wrap.querySelector(':scope > .authorheadgrid');
+  wrap.insertBefore(nav,at?at.nextSibling:wrap.firstChild)}
+ var sig=list.map(function(s){return s.k}).join('|');
+ if(nav.dataset.sig!==sig){nav.dataset.sig=sig;nav.innerHTML='';
+  list.forEach(function(s){var b=document.createElement('button');b.type='button';b.className='btn ghost';
+   b.dataset.foldFor=s.k;b.title=s.label;b.textContent=s.label.length>28?s.label.slice(0,27)+'…':s.label;
+   b.addEventListener('click',function(){var cur=sections().filter(function(x){return x.k===s.k})[0];if(cur)goTo(cur)});
+   nav.appendChild(b)});
+  var sep=document.createElement('span');sep.className='nav-sep';nav.appendChild(sep);
+  [['Open all',true],['Close all',false]].forEach(function(p){var b=document.createElement('button');
+   b.type='button';b.className='btn ghost';b.textContent=p[0];
+   b.addEventListener('click',function(){all(p[1],sections())});nav.appendChild(b)})}
+ list.forEach(function(s){var b=[].filter.call(nav.children,function(x){return x.dataset.foldFor===s.k})[0];
+  var open=s.disp?!!(document.getElementById('dispbody')&&document.getElementById('dispbody').style.display!=='none'):openIn(s.k);
+  if(b&&b.classList.contains('nav-open')!==open)b.classList.toggle('nav-open',open)});
+ var hpx=nav.offsetHeight+'px';
+ if(document.documentElement.style.getPropertyValue('--intake-nav-h')!==hpx)
+  document.documentElement.style.setProperty('--intake-nav-h',hpx)}
 var obs=null;
-function apply(){try{sections().forEach(function(sec){var h=sec[0];
- if(!h.dataset.foldKey)h.dataset.foldKey=keyOf(h);var k=h.dataset.foldKey;if(!k)return;
- if(!h.querySelector(':scope > .fold-btn')){var b=document.createElement('button');
-  b.type='button';b.className='btn ghost fold-btn';
-  b.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();
-   store(k,b.getAttribute('aria-expanded')!=='true');apply()});
-  h.appendChild(b)}
- show(sec,openIn(k))})}finally{if(obs)obs.takeRecords()}}
+function apply(){try{var list=sections();
+ list.forEach(function(s){if(s.disp)return;var k=s.k,open=openIn(k);
+  var top=s.h.previousElementSibling;
+  if(!(top&&top.classList.contains('fold-top')&&top.dataset.foldFor===k)){
+   find('fold-top',k).forEach(function(x){x.remove()});
+   top=bar('fold-top',k,function(b){steady(b,function(){set(k,!openIn(k))})});
+   s.h.parentNode.insertBefore(top,s.h)}
+  var last=s.body[s.body.length-1],bot=last.nextElementSibling;
+  if(!(bot&&bot.classList.contains('fold-bottom')&&bot.dataset.foldFor===k)){
+   find('fold-bottom',k).forEach(function(x){x.remove()});
+   bot=bar('fold-bottom',k,function(){set(k,false);
+    var t=find('fold-top',k)[0];if(t&&t.getBoundingClientRect().top<navBottom())t.scrollIntoView({block:'start'})});
+   last.parentNode.insertBefore(bot,last.nextSibling)}
+  s.body.forEach(function(x){if(x.classList.contains('fold-hidden')===open)x.classList.toggle('fold-hidden',!open)});
+  if(bot.classList.contains('fold-hidden')===open)bot.classList.toggle('fold-hidden',!open);
+  setText(top.firstChild,open?'▾ Hide':'▸ Show');setText(top.lastChild,summary(s));
+  setText(bot.firstChild,'▴ Hide '+s.label);
+  var a=open?'true':'false';if(top.getAttribute('aria-expanded')!==a)top.setAttribute('aria-expanded',a)});
+ renderNav(list)}finally{if(obs)obs.takeRecords()}}
 apply();
 var queued=false;
-obs=new MutationObserver(function(){if(queued)return;queued=true;
- setTimeout(function(){queued=false;apply()},0)}).observe(wrap,{childList:true,subtree:true});
+function later(){if(queued)return;queued=true;setTimeout(function(){queued=false;apply()},0)}
+obs=new MutationObserver(later);
+obs.observe(wrap,{childList:true,subtree:true});
+// A tick changes a closed section's count without changing the page's structure.
+wrap.addEventListener('change',later,true);
 })();</script>"""
 
 
