@@ -475,3 +475,11 @@ def test_a_label_longer_than_the_stored_cut_keeps_its_pattern_and_tick():
     [item] = apply_selection(cx, "a53", [{"label": label, "common_remedies": []}])
     assert item["stress_pattern"] == "Stress"
     assert item["selected_remedies"] == ["MSM Powder"]
+
+
+def test_a_long_label_keeps_a_remedy_added_to_it():
+    from dashboard.biofield_clinical_checklist import remedies_for
+    cx = sqlite3.connect(":memory:")
+    label = "P5: stress; S1: muscles; " + "difficulty stepping up or down. " * 8
+    assert remember_remedies(cx, label, ["MSM Powder"]) == 1
+    assert [r["remedy"] for r in remedies_for(cx, label)] == ["MSM Powder"]
