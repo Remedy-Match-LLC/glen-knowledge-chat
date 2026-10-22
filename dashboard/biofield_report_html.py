@@ -3045,16 +3045,30 @@ def _render_fold_notice(groups):
     from dashboard.biofield_chain_fold import duplicate_folds
     items = []
     for f in duplicate_folds(groups):
-        names = ", ".join(_e(r) for r in f["remedies"])
+        names = ", ".join(_e(r) for r in f.get("remedies") or [])
         what = (f"Its tail joins layer {f['into']}&rsquo;s tail and layer {f['layer']} goes."
                 if f["whole"] else
                 f"Only that row goes. Layer {f['layer']} keeps its other remedies.")
         rids = ",".join(str(int(r)) for r in f["rids"])
+        # A remedy listed more than once on one layer (2026-10-22): the extra rows go.
+        twice = ", ".join(_e(r) for r in f.get("same_card") or [])
+        same = f["into"] == f["layer"]
+        parts = []
+        if names:
+            # Each repeat names the layer it came from, which may not be `into`.
+            by = {}
+            for rem, src in f.get("sources") or [(r, f["into"]) for r in f["remedies"]]:
+                by.setdefault(src, []).append(_e(rem))
+            frm = "; ".join(f"{', '.join(v)} from layer {k}" for k, v in sorted(by.items()))
+            parts.append(f"Layer {f['layer']} repeats {frm}. {what}")
+        if twice:
+            parts.append(f"Layer {f['layer']} lists {twice} more than once. The extra rows go.")
+        lead = " ".join(parts)
         items.append(
-            f"<li>Layer {f['layer']} repeats {names} from layer {f['into']}. {what} "
+            f"<li>{lead} "
             f"<button type=button class='btn ghost' "
             f"onclick=\"foldLayer({int(f['layer'])},[{rids}],this)\">"
-            f"Fold into layer {f['into']}</button></li>")
+            f"{'Remove the repeat' if same else 'Fold into layer ' + str(f['into'])}</button></li>")
     if not items:
         return ""
     return ("<div class=clinical-warn id=foldnotice><b>Repeated remedies.</b> "
