@@ -35,12 +35,40 @@ def test_after_the_notice_the_tests_saved_opens_are_cleared():
 
 def test_sections_start_closed():
     js = brh._FOLD_JS
-    assert "show(sec,openIn(k))" in js
+    assert "if(s.disp)return;var k=s.k,open=openIn(k);" in js
     assert "return !!b&&b.getItem(PREFIX+k)==='1'" in js
 
 
-def test_previously_dispensed_keeps_its_own_control():
-    assert "if(c.querySelector('#dispbtn'))return;" in brh._FOLD_JS
+def test_previously_dispensed_keeps_its_own_control_and_is_in_the_bar():
+    js = brh._FOLD_JS
+    assert "if(c.querySelector('#dispbtn')){out.push({h:c,body:[],disp:true});return}" in js
+    assert "list.forEach(function(s){if(s.disp)return;" in js
+
+
+def test_a_pinned_bar_lists_every_section_with_open_and_close_all():
+    js = brh._FOLD_JS
+    assert "#intakeNav{position:sticky;top:40px;" in js
+    assert "[['Open all',true],['Close all',false]]" in js
+    assert "if(cur)goTo(cur)" in js
+
+
+def test_each_section_has_a_bar_above_and_below():
+    js = brh._FOLD_JS
+    assert "top=bar('fold-top',k," in js and "bot=bar('fold-bottom',k," in js
+    assert "setText(bot.firstChild,'▴ Hide '+s.label);" in js
+
+
+def test_a_closed_section_shows_a_one_line_count():
+    js = brh._FOLD_JS
+    assert "setText(top.lastChild,summary(s));" in js
+    assert "if(boxes.length>1)return boxes.filter(function(x){return x.checked}).length+' of '+boxes.length+' ticked';" in js
+
+
+def test_opening_closing_and_jumping_keep_the_page_still():
+    js = brh._FOLD_JS
+    assert "function steady(el,change){" in js
+    assert "steady(b,function(){set(k,!openIn(k))})" in js
+    assert ".rail{top:calc(52px + var(--intake-nav-h,0px)) !important}" in js
 
 
 def test_storage_failures_never_break_the_page():
@@ -57,13 +85,16 @@ def test_late_panels_are_covered():
 def test_a_count_or_badge_in_a_heading_does_not_change_its_key():
     js = brh._FOLD_JS
     assert ".replace(/[0-9]+/g,'')" in js
-    assert ".clinical-count,.pill')" in js
+    assert ".clinical-count,.pill,.fold-bar')" in js
 
 
 def test_applying_never_queues_itself_again():
     js = brh._FOLD_JS
-    assert "if(b.textContent!==t)b.textContent=t;" in js
+    assert "function setText(el,t){if(el.textContent!==t)el.textContent=t}" in js
     assert "finally{if(obs)obs.takeRecords()}" in js
+    # observe() returns nothing: assigned in one line, obs stayed null and the guard
+    # above never ran (found 2026-10-22).
+    assert "obs=new MutationObserver(later);\nobs.observe(wrap," in js
 
 
 def test_a_test_id_cannot_break_out_of_the_script():
@@ -86,3 +117,9 @@ def test_publish_records_the_notice_only_when_the_email_was_delivered():
     src = open(__import__("biofield_local_app").__file__).read()
     assert '            if res.get("emailed"):\n                try:\n                    from dashboard import biofield_test_notified as _btn' in src
     assert "client_notified=bool(_notified))" in src
+
+
+def test_a_jump_clears_the_bars_and_dropdowns_sit_above_them():
+    js = brh._FOLD_JS
+    assert "var gap=top.getBoundingClientRect().top-navBottom()-8;if(gap<0)window.scrollBy(0,gap)}" in js
+    assert ".dd{z-index:9500 !important}" in js
