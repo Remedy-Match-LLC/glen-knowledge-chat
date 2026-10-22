@@ -184,3 +184,20 @@ def test_a_second_publish_on_the_same_page_reopens_with_the_price_used():
             "console.log(JSON.stringify(asked));});")
     out = subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True)
     assert json.loads(out.stdout.strip()) == ["", "50"]
+
+
+def test_the_top_button_runs_the_same_publish_and_reports_beside_itself():
+    # Glen, 2026-10-22: a second Publish to portal at the top of the page.
+    import json, subprocess
+    page = _page(None)
+    assert page.count("onclick=\"publishPortal('portal-url-top')\">Publish to portal</button>") == 1
+    assert page.count("onclick=publishPortal()>Publish to portal</button>") == 1
+    assert page.index("portal-url-top") < page.index("Causal Chain Report")
+    js = (_RUN.replace("var document={getElementById:function(){return el;}};",
+                       "var ids=[];var document={getElementById:function(i){ids.push(i);return el;}};")
+              .replace("ANSWER", "'50'") + _node_js()
+          + "\npublishPortal('portal-url-top').then(function(){console.log(JSON.stringify("
+            "{posted:posted.special_price_cents, ids:ids}));});")
+    out = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True,
+                                    check=True).stdout.strip())
+    assert out["posted"] == 5000 and out["ids"][0] == "portal-url-top"
