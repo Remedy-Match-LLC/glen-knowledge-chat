@@ -53,6 +53,17 @@ def test_a_zeroed_line_is_still_sent_to_the_server():
                    {"slug": "b", "qty": 2, "format": "bottle"}]
 
 
+def test_each_line_carries_its_stored_place():
+    payload = re.search(r"const lines = LINES\.map\([^;]+;", PAGE.read_text()).group(0)
+    out = _run("""
+      const LINES = [{i:1, slug:'a', qty:1}, {slug:'b', qty:2}];
+      %s
+      console.log(JSON.stringify(lines));
+    """ % payload)
+    assert out == [{"slug": "a", "qty": 1, "format": "bottle", "i": 1},
+                   {"slug": "b", "qty": 2, "format": "bottle"}]
+
+
 def test_removing_a_line_drops_it_and_asks_first():
     js = _fn("removeLine")
     out = _run("""

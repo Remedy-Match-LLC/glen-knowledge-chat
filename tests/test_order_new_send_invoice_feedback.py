@@ -57,6 +57,8 @@ def _run(order_id=196, *, replies=(OK,), sent_at=None, confirm=True, script=None
 let calls = 0, asked = [], toasts = [], inflight = [];
 const REPLIES = %s;
 const HEADERS = {};
+// The edit page's unsaved-changes check (2026-10-22); a clean page here.
+function isDirty(){ return false; }
 function toast(m, k){ toasts.push([m, k || 'ok']); }
 function confirm(m){ asked.push(m); return %s; }
 let gate = null;

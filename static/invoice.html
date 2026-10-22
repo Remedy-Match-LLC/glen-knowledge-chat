@@ -537,7 +537,8 @@ function addProduct(){ const s=$('add-sel').value; if(!s)return; const p=CATALOG
 async function pushUpdate(){
   // Zero-qty lines are SENT: they stay on the invoice as a reorder reference
   // (the console keeps them too). Removing a line is removeLine(), not a zero.
-  const lines = LINES.map(l=>({slug:l.slug, qty:l.qty, format:l.format||'bottle'}));
+  const lines = LINES.map(l=>Object.assign({slug:l.slug, qty:l.qty, format:l.format||'bottle'},
+    Number.isInteger(l.i) ? {i:l.i} : {}));
   const r = await fetch(API+'/update', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lines})});
   const j = await r.json();
   if(!j.ok){ alert(j.error||'update failed'); renderFromOrder(); return; }
@@ -545,7 +546,9 @@ async function pushUpdate(){
   ORDER=j.order; renderFromOrder(); setupPay();
 }
 function linesFromOrder(){
-  return ORDER.lines.map(l=>({slug:l.slug, name:l.name, qty:l.qty, unit_cents:l.unit_cents,
+  // i is the line's place on the stored invoice. Sent back on update, it keeps two
+  // lines for one product apart, such as a caregiver's and a member's (2026-10-22).
+  return ORDER.lines.map((l,i)=>({i, slug:l.slug, name:l.name, qty:l.qty, unit_cents:l.unit_cents,
     kind:l.kind, tier:l.tier, note:l.note, format:l.format||'bottle',
     service:l.service, srp_cents:l.srp_cents, regular_cents:l.regular_cents,
     refill_eligible:l.refill_eligible}));

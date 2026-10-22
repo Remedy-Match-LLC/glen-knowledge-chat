@@ -34,7 +34,17 @@ def _qty(value):
 
 
 def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
-    """Server-trusted lines from `posted`, using `existing` {slug: stored line}.
+    """Server-trusted lines from `posted`, using `existing` stored lines.
+
+    `existing` is the stored invoice's lines in order, or the older {slug: stored line}.
+    With a list, a posted line names its stored line by `i`, its position in the stored
+    lines, so two lines for one product (a caregiver's and a member's) each keep their
+    own note, price and billed_for, even after the customer removes one (review
+    rounds 1 to 4, 2026-10-22). Without a usable `i`, the one unused stored line with
+    that slug is used. When several are left, as from a page opened before positions
+    were sent, the line copies only the fields all of them share, so no line can take
+    another's price or billed_for (round 5). A line with no stored line left for its
+    slug is new and copies nothing.
 
     `known(slug)` decides whether a slug is a real, sellable product.
     `refill_ok(slug)` decides whether refill packs apply (30-capsule products only,
@@ -43,6 +53,29 @@ def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
     yet (waitlist_only, 2026-10-09), or None. A posted line for one, at any quantity
     above zero, raises NotOrderable: the edit is refused whole, never silently dropped.
     """
+    pool = list(existing) if isinstance(existing, list) else None
+    used = set()
+
+    def _stored_slug(k):
+        it = pool[k]
+        return (it.get("slug") or "").strip() if isinstance(it, dict) else ""
+
+    def _stored_for(line, slug):
+        i = line.get("i")
+        if (isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(pool)
+                and i not in used and _stored_slug(i) == slug):
+            used.add(i)
+            return dict(pool[i])
+        left = [k for k in range(len(pool)) if k not in used and _stored_slug(k) == slug]
+        if not left:
+            return {}
+        used.add(left[0])
+        if len(left) == 1:
+            return dict(pool[left[0]])
+        first = pool[left[0]]
+        return {k: v for k, v in first.items()
+                if all(pool[o].get(k) == v for o in left[1:])}
+
     out = []
     for line in (posted or []):
         if not isinstance(line, dict):
@@ -54,7 +87,7 @@ def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
                 raise NotOrderable(msg)
         if not slug or not known(slug):
             continue
-        old = existing.get(slug) or {}
+        old = (existing.get(slug) or {}) if pool is None else _stored_for(line, slug)
         fmt = (line.get("format") or old.get("format") or "bottle").strip().lower()
         if fmt == "refill" and refill_ok is not None and not refill_ok(slug):
             fmt = "bottle"
@@ -65,7 +98,9 @@ def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
         # how invoice #165 went out at $809.13.
         if old.get("override"):
             rec["unit_cents"] = old.get("unit_cents")
-        for key in ("note", "source"):
+        # billed_for keeps a household member's line marked as theirs, so billing that
+        # member again replaces their lines instead of adding a second set.
+        for key in ("note", "source", "billed_for"):
             if old.get(key):
                 rec[key] = old[key]
         out.append(rec)
