@@ -30169,6 +30169,34 @@ def api_console_historical_intake_review(snapshot_id):
                     "client_visible": bool(approved and visible)})
 
 
+@app.route("/api/console/historical-intake/<int:snapshot_id>/split-concern", methods=["POST"])
+def api_console_historical_intake_split_concern(snapshot_id):
+    """Split one imported health concern into separate issues (Glen, 2026-10-22).
+    Body: {email, concern (the exact stored wording), into: [parts], by}."""
+    guard = _console_guard()
+    if guard:
+        return jsonify(guard[0]), guard[1]
+    from dashboard import historical_intakes as _hi
+    body = request.get_json(silent=True) or {}
+    email = str(body.get("email") or "").strip().lower()
+    concern = body.get("concern")
+    into = body.get("into")
+    if not email or not isinstance(concern, str) or not concern.strip():
+        return jsonify({"error": "email and concern required"}), 400
+    if not isinstance(into, list) or not all(isinstance(p, str) for p in into):
+        return jsonify({"error": "into must be a list of strings"}), 400
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            snap = _hi.split_concern(cx, snapshot_id, email, concern, into,
+                                     split_by=str(body.get("by") or "console"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    if not snap:
+        return jsonify({"error": "no such concern on that snapshot"}), 404
+    return jsonify({"ok": True, "id": snapshot_id,
+                    "health_concerns": snap["answers"].get("health_concerns") or []})
+
+
 # Content types safe to render `inline` in a browser at our own origin. Anything
 # not on this list (including any image/* the upload route happens to accept,
 # e.g. image/svg+xml or image/heic) is served as attachment/octet-stream instead —
