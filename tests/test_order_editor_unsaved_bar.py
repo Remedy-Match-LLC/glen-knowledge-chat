@@ -83,6 +83,26 @@ def test_without_an_index_two_left_never_hands_on_billed_for():
     assert "billed_for" not in out[0]
 
 
+def test_a_stale_page_never_moves_a_price_between_lines():
+    """Round 5: posted with no index, the caregiver's line took the member's note
+    and the member's took the caregiver's override price."""
+    stored = _two_msm()
+    stored[0].update(override=True, unit_cents=100)
+    out = cil.rebuild([{"slug": "msm-powder", "qty": 1}, {"slug": "msm-powder", "qty": 1}],
+                      stored, known=lambda s: True)
+    assert "unit_cents" not in out[0] and "billed_for" not in out[0] and "note" not in out[0]
+    # Only the member's line is left for the second, so it is matched exactly.
+    assert out[1]["billed_for"] == "member@example.com" and "unit_cents" not in out[1]
+
+
+def test_a_stale_page_keeps_a_price_both_lines_share():
+    stored = _two_msm()
+    for it in stored:
+        it.update(override=True, unit_cents=0)
+    out = cil.rebuild([{"slug": "msm-powder", "qty": 1}], stored, known=lambda s: True)
+    assert out[0]["unit_cents"] == 0
+
+
 def test_an_index_for_another_slug_is_ignored():
     out = cil.rebuild([{"i": 0, "slug": "other", "qty": 1}], _two_msm(), known=lambda s: True)
     assert out == [{"slug": "other", "qty": 1, "format": "bottle"}]

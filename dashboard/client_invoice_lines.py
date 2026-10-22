@@ -41,9 +41,10 @@ def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
     lines, so two lines for one product (a caregiver's and a member's) each keep their
     own note, price and billed_for, even after the customer removes one (review
     rounds 1 to 4, 2026-10-22). Without a usable `i`, the one unused stored line with
-    that slug is used. When several are left, the last one is used without its
-    billed_for, which is how the slug-keyed version behaved. A line with no stored line
-    left for its slug is new and copies nothing.
+    that slug is used. When several are left, as from a page opened before positions
+    were sent, the line copies only the fields all of them share, so no line can take
+    another's price or billed_for (round 5). A line with no stored line left for its
+    slug is new and copies nothing.
 
     `known(slug)` decides whether a slug is a real, sellable product.
     `refill_ok(slug)` decides whether refill packs apply (30-capsule products only,
@@ -68,11 +69,12 @@ def rebuild(posted, existing, *, known, refill_ok=None, refusal=None):
         left = [k for k in range(len(pool)) if k not in used and _stored_slug(k) == slug]
         if not left:
             return {}
-        used.add(left[-1])
-        old = dict(pool[left[-1]])
-        if len(left) > 1:
-            old.pop("billed_for", None)
-        return old
+        used.add(left[0])
+        if len(left) == 1:
+            return dict(pool[left[0]])
+        first = pool[left[0]]
+        return {k: v for k, v in first.items()
+                if all(pool[o].get(k) == v for o in left[1:])}
 
     out = []
     for line in (posted or []):
