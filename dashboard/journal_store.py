@@ -78,22 +78,30 @@ def _decode(row: sqlite3.Row) -> dict:
     return d
 
 
-def select(cx, *, since_iso: str, order: str = "desc", limit: int | None = None):
+def select(cx, *, since_iso: str, order: str = "desc", limit: int | None = None,
+           user_id: str | None = None):
     """Entries with recorded_at >= since_iso, ordered by recorded_at. JSON columns
-    are decoded back to structures. `order` is 'desc' or 'asc'."""
+    are decoded back to structures. `order` is 'desc' or 'asc'.
+
+    `user_id` set: only that person's rows (a signed-in client sees their own).
+    None: every row, which only a staff caller may ask for."""
     init_table(cx)
     cx.row_factory = sqlite3.Row
     direction = "ASC" if str(order).lower() == "asc" else "DESC"
-    sql = ("SELECT * FROM journal_entries WHERE recorded_at >= ? "
-           f"ORDER BY recorded_at {direction}")
+    where = "recorded_at >= ?"
     params = [since_iso]
+    if user_id is not None:
+        where += " AND user_id = ?"
+        params.append(user_id)
+    sql = (f"SELECT * FROM journal_entries WHERE {where} "
+           f"ORDER BY recorded_at {direction}")
     if limit is not None:
         sql += " LIMIT ?"
         params.append(int(limit))
     return [_decode(r) for r in cx.execute(sql, params).fetchall()]
 
 
-def delete_entry(cx, entry_id):
+def delete_entry(cx, entry_id, user_id=None):
     """Delete ONE journal entry outright. Returns True if a row went.
 
     Glen, 2026-09-18: a "Delete this chat session" box, unchecked by default, one per
@@ -107,6 +115,10 @@ def delete_entry(cx, entry_id):
     Blanking the transcript and keeping the embedding would leave a machine-readable
     trace of the same words while claiming the session was deleted.
     """
-    cur = cx.execute("DELETE FROM journal_entries WHERE id=?", (int(entry_id),))
+    if user_id is None:   # staff: any row
+        cur = cx.execute("DELETE FROM journal_entries WHERE id=?", (int(entry_id),))
+    else:                 # a client: only their own row
+        cur = cx.execute("DELETE FROM journal_entries WHERE id=? AND user_id=?",
+                         (int(entry_id), user_id))
     cx.commit()
     return bool(cur.rowcount)

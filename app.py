@@ -755,7 +755,7 @@ def send_magic_link_email(to_email: str, name: str, magic_url: str) -> tuple:
         f"— Dr. Glen Swartwout\n"
     )
     html_body = (
-        f"<p>Hi {name or 'there'},</p>"
+        f"<p>Hi {html.escape(name or 'there')},</p>"
         f"<p>Click the link below to sign in to Ask Dr. Glen. The link expires in "
         f"{AUTH_TOKEN_TTL_LABEL}.</p>"
         f"<p><a href=\"{magic_url}\">Sign in to Ask Dr. Glen</a></p>"
@@ -860,7 +860,7 @@ def send_evox_setup_link(to_email: str, name: str, setup_url: str) -> tuple:
         f"— Dr. Glen Swartwout\n"
     )
     html_body = (
-        f"<p>Hi {name or 'there'},</p>"
+        f"<p>Hi {html.escape(name or 'there')},</p>"
         f"<p>Click the link below on this device to set up your EVOX remote session.</p>"
         f"<p><a href=\"{setup_url}\">Set up your EVOX session</a></p>"
         f"<p style=\"color:#666;font-size:12px;\">Or paste this URL into your browser: {setup_url}</p>"
@@ -16059,6 +16059,40 @@ def _full_report_stream(log_id, query, level, session_id,
     )
 
 
+# Where a magic link may return the visitor (Glen, 2026-10-22: voice sign-in sends a
+# new visitor back to the page they were on). A same-site path under one of these
+# prefixes, made only of plain path characters. No query string: a page URL can carry
+# ?key=<console secret>, and that must never ride in an email. Anything else, a scheme,
+# "//", a backslash, "@", "?", any "%" encoding, a ".." segment, becomes "/". The check
+# runs when the link is made AND when it is used, so a hand-edited link gains nothing.
+_MAGIC_NEXT_RE = re.compile(
+    r"/(?:journal|begin|voice)(?:/[A-Za-z0-9._~-]+)*/?")
+
+
+def _magic_post_is_ours() -> bool:
+    """A sign-in POST must come from our own confirm page. Another site could otherwise
+    post the attacker's token and sign the visitor in as the attacker, so their journal
+    entries would land in the attacker's account (login CSRF). A request with neither
+    header (an old browser, a script) is let through, as before."""
+    site = (request.headers.get("Sec-Fetch-Site") or "").strip().lower()
+    if site:
+        return site in ("same-origin", "none")
+    origin = (request.headers.get("Origin") or "").strip()
+    if origin and origin != "null":
+        from urllib.parse import urlparse
+        return urlparse(origin).netloc.lower() == (request.host or "").lower()
+    return not origin
+
+
+def _safe_magic_next(value) -> str:
+    s = value if isinstance(value, str) else ""
+    if not s or len(s) > 300 or not _MAGIC_NEXT_RE.fullmatch(s):
+        return "/"
+    if any(seg in (".", "..") for seg in s.split("?", 1)[0].split("/")):
+        return "/"
+    return s
+
+
 @app.route("/auth/magic-link/request", methods=["POST", "OPTIONS"])
 def auth_magic_link_request():
     """Generate a magic-link token, email it, and stash the hash in
@@ -16071,12 +16105,27 @@ def auth_magic_link_request():
     name  = (data.get("name") or "").strip()
     if not email or "@" not in email:
         return jsonify({"error": "Valid email required"}), 400
+    # The voice pages put this request in front of every visitor (2026-10-22), so it
+    # takes the auth routes' limiter: many addresses from one caller are refused.
+    limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
+    if limited:
+        return limited
 
     token = secrets.token_urlsafe(32)
     th    = _hash_token(token)
     now   = _now_utc()
     expires = now + timedelta(minutes=AUTH_TOKEN_TTL_MIN)
     with _db_lock, db.connect(LOG_DB) as cx:
+        # One address asked for again and again is someone filling that inbox: past
+        # five links in ten minutes, the reply is the same and nothing is sent.
+        recent = cx.execute(
+            "SELECT COUNT(*) FROM auth_tokens WHERE email=? AND purpose='magic_link' "
+            "AND created_at > ?", (email, (now - timedelta(minutes=10)).isoformat())
+        ).fetchone()[0]
+        if recent >= 5:
+            return jsonify({"ok": True, "sent_via": "held",
+                            "expires_in_minutes": AUTH_TOKEN_TTL_MIN,
+                            "note": "Check your email for the sign-in link."})
         cx.execute(
             """INSERT INTO auth_tokens (token_hash, email, purpose, created_at, expires_at)
                VALUES (?,?,?,?,?)""",
@@ -16085,7 +16134,17 @@ def auth_magic_link_request():
         cx.commit()
 
     magic_url = f"{PUBLIC_BASE_URL}/auth/magic-link/verify?token={token}"
+    next_path = _safe_magic_next(data.get("next"))
+    if next_path != "/":
+        import urllib.parse as _up
+        magic_url += "&next=" + _up.quote(next_path, safe="")
     sent_via, err = send_magic_link_email(email, name, magic_url)
+    if sent_via not in ("ghl-workflow", "smtp"):
+        # Not delivered: the token goes, so an outage does not use up this address's
+        # five links (review round 2, 2026-10-22).
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.execute("DELETE FROM auth_tokens WHERE token_hash=?", (th,))
+            cx.commit()
 
     return jsonify({
         "ok":       True,
@@ -16107,7 +16166,10 @@ def auth_magic_link_verify():
     token = (request.args.get("token") or request.form.get("token") or "").strip()
     if not token:
         return jsonify({"error": "Missing token"}), 400
+    if request.method == "POST" and not _magic_post_is_ours():
+        return jsonify({"error": "Open the sign-in link from your email."}), 403
     th = _hash_token(token)
+    next_path = _safe_magic_next(request.args.get("next") or request.form.get("next"))
 
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
@@ -16135,7 +16197,8 @@ def auth_magic_link_verify():
                 "/auth/magic-link/verify", title="Sign in",
                 heading="Welcome back",
                 blurb="Continue to sign in to your account.",
-                button="Continue", hidden={"token": token})
+                button="Continue",
+                hidden={"token": token, **({"next": next_path} if next_path != "/" else {})})
 
         email = row["email"]
         # Mark the token consumed. consumed_at IS NULL makes a double submit
@@ -16188,14 +16251,16 @@ def auth_magic_link_verify():
             print(f"[auth] GHL reconciliation failed: {e}", flush=True)
     threading.Thread(target=_reconcile, daemon=True).start()
 
-    # Set auth cookie + redirect to chat home
+    # Set auth cookie + redirect to chat home, or to the allowlisted page they came from.
+    import html as _html
+    _dest = _html.escape(next_path, quote=True)
     resp = Response(
         f"""<!DOCTYPE html><html><head><title>Signed in</title>
-        <meta http-equiv=\"refresh\" content=\"1;url=/\"/>
+        <meta http-equiv=\"refresh\" content=\"1;url={_dest}\"/>
         <style>body{{font-family:sans-serif;background:#0a150d;color:#fdf4d8;
         text-align:center;padding-top:80px}}</style></head>
         <body><h2>You're signed in.</h2>
-        <p>Redirecting to chat… or <a href=\"/\" style=\"color:#d4a843\">click here</a>.</p>
+        <p>Redirecting to chat… or <a href=\"{_dest}\" style=\"color:#d4a843\">click here</a>.</p>
         </body></html>""",
         mimetype="text/html",
     )
@@ -19411,7 +19476,7 @@ def _send_affiliate_magic_link(to_email: str, name: str, magic_url: str) -> tupl
         f"— Remedy Match Affiliate Team\n"
     )
     html_body = (
-        f"<p>Hi {name or 'there'},</p>"
+        f"<p>Hi {html.escape(name or 'there')},</p>"
         f"<p>Click the link below to access your affiliate portal. The link is "
         f"single-use and expires in {AUTH_TOKEN_TTL_LABEL}.</p>"
         f"<p><a href=\"{magic_url}\">Open my affiliate portal</a></p>"
@@ -55655,11 +55720,122 @@ def share_with_practitioner_post(token):
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
+# ── Voice needs a signed-in visitor (Glen, 2026-10-22) ──────────────────────────
+# Voice journaling and dictation require sign-in, and "signed in" means proven by an
+# emailed link. Two existing sessions prove that: the amg_auth cookie from
+# /auth/magic-link/verify, and the rm_portal_session cookie from /portal/login-verify
+# (honoured only while CLIENT_LOGIN_ENABLED is on, exactly as _portal_record_for does).
+# An email typed into a form and a Terms tick (is_member) prove nothing about who is
+# speaking, so they do not count.
+#
+# Staff on the console are let through as well. The console's own dictation boxes use
+# mic-input.js, and Glen's own journal is recorded from his console browser. Neither is
+# a visitor. The pass needs CONSOLE_SECRET to be set: an absent secret must not open it.
+
+VOICE_SIGN_IN_MESSAGE = "Please sign in to use voice. We will email you a link."
+
+
+def _signed_in_email(req=None) -> str:
+    """The lowercased email this request has PROVEN by an emailed link, or "".
+
+    (a) amg_auth session (get_authenticated_user), then
+    (b) rm_portal_session via portal_identity.identity_from_session, only while
+        client login is enabled. Never a typed email, never is_member()."""
+    req = req or request
+    try:
+        user = get_authenticated_user(req)
+    except Exception as e:
+        print(f"[voice-gate] amg_auth lookup failed: {e!r}", flush=True)
+        user = None
+    email = ((user or {}).get("email") or "").strip().lower()
+    if email:
+        return email
+    if not _client_login_enabled():
+        return ""
+    sess = (req.cookies.get("rm_portal_session", "") or "").strip()
+    if not sess:
+        return ""
+    try:
+        from dashboard import portal_identity as _pi
+        with _db_lock, db.connect(LOG_DB) as cx:
+            ident = _pi.identity_from_session(cx, sess)
+    except Exception as e:
+        print(f"[voice-gate] portal session lookup failed: {e!r}", flush=True)
+        return ""
+    return ((ident.email if ident else "") or "").strip().lower()
+
+
+def _voice_staff_label() -> str:
+    """"glen" for the master console key, "owner" for an owner token, "staff" for
+    another valid console token, else "". Requires CONSOLE_SECRET, so an unset
+    secret never opens the gate. Only "glen" and "owner" read every journal row."""
+    if not CONSOLE_SECRET:
+        return ""
+    try:
+        key = _present_console_key()
+    except Exception:
+        return ""
+    if not key:
+        return ""
+    if hmac.compare_digest(str(key), CONSOLE_SECRET):
+        return "glen"
+    try:
+        if _owner_token_ok(key):
+            return "owner"
+        if _role_for_token(key):
+            return "staff"
+    except Exception:
+        return ""
+    return ""
+
+
+def _voice_identity() -> str:
+    """Who may use voice on this request: a staff label, else the signed-in email,
+    else "" (refuse). Staff first, so Glen's entries keep the user_id "glen"."""
+    return _voice_staff_label() or _signed_in_email(request)
+
+
+def _voice_sign_in_url() -> str:
+    """Where a refused visitor asks for a sign-in link: POST {email, next} here.
+    /auth/magic-link/request works for any address, where /portal/login emails only
+    people already known. The emailed link returns them to `next` (allowlisted)."""
+    return "/auth/magic-link/request"
+
+
+def _voice_sign_in_refusal():
+    resp = jsonify({"ok": False, "error": VOICE_SIGN_IN_MESSAGE,
+                    "sign_in": _voice_sign_in_url()})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp, 401
+
+
+# The journal blueprint cannot import app (circular), so app hands it the gate. It
+# lives on app.extensions rather than a module global so a test that reloads
+# journal_blueprint cannot silently unset it. Unset means refuse (fail closed).
+app.extensions["voice_gate"] = {"identity": _voice_identity,
+                                "staff": _voice_staff_label,
+                                "refusal": _voice_sign_in_refusal}
+
+
+@app.route("/voice/sign-in-status", methods=["GET"])
+def voice_sign_in_status():
+    """Lets a page decide BEFORE recording whether voice will be accepted, so nobody
+    speaks for a minute and is then refused. Returns no email."""
+    resp = jsonify({"signed_in": bool(_voice_identity()),
+                    "sign_in": _voice_sign_in_url(),
+                    "message": VOICE_SIGN_IN_MESSAGE})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
     """Transcribe uploaded audio via Whisper (reuses journal_blueprint._whisper_transcribe)."""
     import tempfile, os as _os
     import journal_blueprint
+    # Gate BEFORE touching request.files: reading it parses the upload.
+    if not _voice_identity():
+        return _voice_sign_in_refusal()
     if "audio" not in request.files:
         return jsonify({"error": "no audio"}), 400
     audio_file = request.files["audio"]

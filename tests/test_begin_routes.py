@@ -412,6 +412,9 @@ def test_transcribe_returns_text(monkeypatch, tmp_path):
     app_module = _load_app()
     import journal_blueprint
     monkeypatch.setattr(journal_blueprint, "_whisper_transcribe", lambda p: {"text": "hello from whisper"})
+    # Voice needs a signed-in visitor since 2026-10-22; the gate itself is tested in
+    # tests/test_voice_requires_sign_in.py.
+    monkeypatch.setattr(app_module, "_voice_identity", lambda: "visitor@example.com")
     client = app_module.app.test_client()
     data = {"audio": (io.BytesIO(b"RIFFfake"), "clip.webm")}
     r = client.post("/transcribe", data=data, content_type="multipart/form-data")
@@ -421,6 +424,7 @@ def test_transcribe_returns_text(monkeypatch, tmp_path):
 
 def test_transcribe_no_audio_400(monkeypatch, tmp_path):
     app_module = _load_app()
+    monkeypatch.setattr(app_module, "_voice_identity", lambda: "visitor@example.com")
     client = app_module.app.test_client()
     r = client.post("/transcribe", data={}, content_type="multipart/form-data")
     assert r.status_code == 400

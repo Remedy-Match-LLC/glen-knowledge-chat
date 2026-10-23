@@ -53,7 +53,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
-from flask import Blueprint, jsonify, request, send_from_directory
+from flask import Blueprint, current_app, jsonify, request, send_from_directory
 
 from tcm_mapper import compare_haiku_to_mapper
 from dashboard import journal_store, db
@@ -88,6 +88,77 @@ LOG_DB = Path(os.environ.get("DATA_DIR", str(HERE))) / "chat_log.db"
 
 
 # ---------------------------------------------------------------------------
+# Sign-in gate (Glen, 2026-10-22: voice journaling requires a signed-in visitor)
+# ---------------------------------------------------------------------------
+# app.py owns the session primitives and registers them on app.extensions
+# ["voice_gate"]; this module cannot import app without a cycle. When nothing is
+# registered (a bare Flask app in a test, or app.py failed to wire it) every call is
+# refused: an unwired gate must not open.
+_FALLBACK_SIGN_IN = {"ok": False,
+                     "error": "Please sign in to use voice. We will email you a link.",
+                     "sign_in": "/portal/login"}
+
+
+def _voice_gate():
+    return (current_app.extensions or {}).get("voice_gate") or {}
+
+
+def _voice_identity():
+    """The signed-in email (or staff label) for this request, or ""."""
+    fn = _voice_gate().get("identity")
+    if not fn:
+        return ""
+    try:
+        return (fn() or "").strip()
+    except Exception:
+        log.exception("voice gate identity lookup failed")
+        return ""
+
+
+def _voice_staff():
+    """The staff label (master console key, owner or role token), or ""."""
+    fn = _voice_gate().get("staff")
+    if not fn:
+        return ""
+    try:
+        return (fn() or "").strip()
+    except Exception:
+        log.exception("voice gate staff lookup failed")
+        return ""
+
+
+_NOBODY = object()
+
+
+def _journal_scope():
+    """Whose rows this request may read or delete.
+
+    Glen or an owner token -> None (every row, including the legacy "glen" rows).
+    Another staff token reads only staff recordings: client transcripts are private.
+    A signed-in client -> their own email (only rows with that user_id).
+    Anyone else -> _NOBODY (refuse with the sign-in note)."""
+    staff = _voice_staff()
+    if staff in ("glen", "owner"):
+        return None
+    if staff:
+        return "staff"
+    who = _voice_identity()
+    if who and "@" in who:
+        return who
+    return _NOBODY
+
+
+def _sign_in_refusal():
+    fn = _voice_gate().get("refusal")
+    if fn:
+        try:
+            return fn()
+        except Exception:
+            log.exception("voice gate refusal failed")
+    return jsonify(_FALLBACK_SIGN_IN), 401
+
+
+# ---------------------------------------------------------------------------
 # Page routes
 # ---------------------------------------------------------------------------
 @journal_bp.route("/journal", methods=["GET"])
@@ -105,6 +176,10 @@ def journal_trends_page():
 # ---------------------------------------------------------------------------
 @journal_bp.route("/journal/analyze", methods=["POST"])
 def analyze():
+    # Gate before request.files is read: reading it parses the upload.
+    who = _voice_identity()
+    if not who:
+        return _sign_in_refusal()
     if "audio" not in request.files:
         return jsonify({"error": "missing audio file"}), 400
 
@@ -175,7 +250,10 @@ def analyze():
 
     recorded_at_iso = datetime.now(timezone.utc).isoformat()
     record = {
-        "user_id": "glen",
+        # The signed-in email, so one person's entries can be told from another's.
+        # Was the literal "glen" for every visitor. The master console key still
+        # records "glen", so Glen's console-recorded entries keep their old label.
+        "user_id": who,
         "recorded_at": recorded_at_iso,
         "duration_seconds": duration,
         "transcript": transcript,
@@ -258,11 +336,15 @@ def _build_metadata(words, is_test, parent_entry_id=None, entry_type=None):
 # ---------------------------------------------------------------------------
 @journal_bp.route("/journal/today", methods=["GET"])
 def today():
+    scope = _journal_scope()
+    if scope is _NOBODY:
+        return _sign_in_refusal()
     include_test = request.args.get("include_test", "false").lower() == "true"
     include_followups = request.args.get("include_followups", "false").lower() == "true"
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     with db.connect(LOG_DB) as cx:
-        rows = journal_store.select(cx, since_iso=cutoff, order="desc", limit=10)
+        rows = journal_store.select(cx, since_iso=cutoff, order="desc", limit=10,
+                                    user_id=scope)
     if not include_test:
         rows = [r for r in rows if not (r.get("metadata") or {}).get("test")]
     if not include_followups:
@@ -275,11 +357,14 @@ def today():
 # ---------------------------------------------------------------------------
 @journal_bp.route("/journal/history", methods=["GET"])
 def history():
+    scope = _journal_scope()
+    if scope is _NOBODY:
+        return _sign_in_refusal()
     include_test      = request.args.get("include_test", "false").lower() == "true"
     include_followups = request.args.get("include_followups", "false").lower() == "true"
     cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     with db.connect(LOG_DB) as cx:
-        rows = journal_store.select(cx, since_iso=cutoff, order="asc")
+        rows = journal_store.select(cx, since_iso=cutoff, order="asc", user_id=scope)
     test_rows     = [r for r in rows if (r.get("metadata") or {}).get("test")]
     followup_rows = [r for r in rows if (r.get("metadata") or {}).get("entry_type") == "affirmation_reading"]
     if not include_test:
@@ -303,6 +388,8 @@ def history():
 def match_remedies():
     """Given an entry's transcript + state, returns top remedy matches from
     Pinecone (e4l-protocols + specific-formulations namespaces, dedup'd, ranked)."""
+    if not _voice_identity():
+        return _sign_in_refusal()
     data = request.get_json(silent=True) or {}
     transcript = (data.get("transcript") or "").strip()
     dom_element = data.get("dominant_element")
@@ -384,6 +471,8 @@ def _pinecone_index():
 def generate_affirmations_endpoint():
     """For a list of remedy matches, generates 3 first-person affirmations per
     remedy using Haiku. Best-effort — failures per-remedy degrade gracefully."""
+    if not _voice_identity():
+        return _sign_in_refusal()
     data = request.get_json(silent=True) or {}
     remedies = data.get("remedies") or []
     transcript = data.get("transcript") or ""
@@ -630,9 +719,10 @@ def _embed_ada002(transcript: str) -> list:
 # Glen, 2026-09-18: 'a checkbox to "Delete this chat session" that is unchecked by
 # default. It would cover that particular session, one box for each session.'
 #
-# WHY THIS NEEDS NO IDENTITY, which is the point of the design. journal_blueprint records
-# every entry with a hardcoded user_id of "glen", so nothing knows WHOSE transcript any
-# row is. A per-person deletion path therefore cannot find what it promises to delete.
+# WHY THIS NEEDS NO IDENTITY, which is the point of the design. Until 2026-10-22
+# journal_blueprint recorded every entry with a hardcoded user_id of "glen", so nothing
+# knew WHOSE transcript the older rows are. New rows carry the signed-in email, but
+# a per-person deletion path still cannot find the older rows it promises to delete.
 # A per-SESSION box can: /journal/analyze already returns the row id to the browser, so
 # the client deletes the record in front of them and nobody has to be identified.
 #
@@ -681,13 +771,18 @@ def delete_entry_route(entry_id):
     The client asked for it to be absent; telling them it failed because it is already
     absent would be a worse answer, and a 404 also confirms which ids exist.
     """
+    # Signed in first, then the token. A client deletes only their own rows; another
+    # person's id answers exactly like a row already gone, so ids are not confirmed.
+    scope = _journal_scope()
+    if scope is _NOBODY:
+        return _sign_in_refusal()
     body = request.get_json(silent=True) or {}
     token = body.get("token") or request.args.get("token") or ""
     if not _delete_token_ok(entry_id, token):
         return jsonify({"error": "bad_or_expired_token"}), 403
     try:
         with db.connect(LOG_DB) as cx:
-            gone = journal_store.delete_entry(cx, entry_id)
+            gone = journal_store.delete_entry(cx, entry_id, user_id=scope)
     except Exception as e:
         log.exception("journal delete failed")
         return jsonify({"error": f"delete failed: {e}"}), 500

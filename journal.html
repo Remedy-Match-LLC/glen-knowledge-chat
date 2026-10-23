@@ -688,6 +688,7 @@
 </div>
 
 <script src="/static/organ-clock.js"></script>
+<script src="/static/voice-signin.js"></script>
 <script>
 const ANALYZE_URL = '/journal/analyze';
 
@@ -979,7 +980,27 @@ function stopLevelMeter() {
   els.lvl.style.width = '0%';
 }
 
+// Voice needs a signed-in visitor (Glen, 2026-10-22). Ask before the mic opens, so
+// nobody records and is then refused. An unknown answer lets the server decide.
+let voiceSignedIn = null;
+function showJournalSignIn(url) {
+  voiceSignedIn = false;
+  els.recBtn.disabled = true;
+  els.timerSub.textContent = 'Sign in to record';
+  window.VoiceSignIn.render(els.status, url);
+}
+if (window.VoiceSignIn) {
+  window.VoiceSignIn.check().then(s => {
+    voiceSignedIn = s.signedIn;
+    if (s.signedIn === false) showJournalSignIn(s.url);
+  });
+}
+
 async function record() {
+  if (voiceSignedIn === null && window.VoiceSignIn) {
+    voiceSignedIn = (await window.VoiceSignIn.check()).signedIn;
+  }
+  if (voiceSignedIn === false) { showJournalSignIn(); return; }
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
@@ -1032,7 +1053,13 @@ async function onRecordingStopped() {
   if (IS_TEST_MODE) form.append('test', 'true');
 
   try {
-    const resp = await fetch(ANALYZE_URL, { method: 'POST', body: form });
+    const resp = await fetch(ANALYZE_URL + window.location.search, { method: 'POST', body: form,
+      headers: window.VoiceSignIn ? window.VoiceSignIn.headers() : {} });
+    if (resp.status === 401 && window.VoiceSignIn) {
+      await window.VoiceSignIn.handle(resp, els.status);
+      showJournalSignIn();
+      return;
+    }
     if (!resp.ok) {
       const errText = await resp.text();
       els.timerSub.textContent = 'Analysis failed';
@@ -1310,13 +1337,15 @@ async function loadRemediesAndAffirmations(entry) {
   try {
     const matchResp = await fetch('/journal/match' + window.location.search, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign({ 'Content-Type': 'application/json' },
+        window.VoiceSignIn ? window.VoiceSignIn.headers() : {}),
       body: JSON.stringify({
         transcript: entry.transcript,
         dominant_element: entry.dominant_element,
         dominant_treasure: entry.dominant_treasure,
       }),
     });
+    if (window.VoiceSignIn && await window.VoiceSignIn.handle(matchResp, d7Els.loading)) return;
     if (!matchResp.ok) throw new Error('match ' + matchResp.status);
     const matchData = await matchResp.json();
     matches = (matchData.matches || []).slice(0, 3);   // top 3 to keep UI tight
@@ -1357,7 +1386,8 @@ async function loadRemediesAndAffirmations(entry) {
   try {
     const r = await fetch('/journal/affirmations' + window.location.search, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign({ 'Content-Type': 'application/json' },
+        window.VoiceSignIn ? window.VoiceSignIn.headers() : {}),
       body: JSON.stringify({
         remedies: matches,
         transcript: entry.transcript,
@@ -1365,6 +1395,11 @@ async function loadRemediesAndAffirmations(entry) {
         dominant_treasure: entry.dominant_treasure,
       }),
     });
+    if (r.status === 401 && window.VoiceSignIn) {
+      await window.VoiceSignIn.handle(r, cardEls[0].querySelector('.remedy-aff-loading'));
+      cardEls.slice(1).forEach(card => { card.querySelector('.remedy-aff-loading').textContent = ''; });
+      return;
+    }
     if (!r.ok) throw new Error('affirmations ' + r.status);
     affirmationsResp = await r.json();
   } catch (e) {
@@ -1471,7 +1506,9 @@ async function raOnStopped() {
   if (IS_TEST_MODE) form.append('test', 'true');
 
   try {
-    const resp = await fetch(ANALYZE_URL + window.location.search, { method: 'POST', body: form });
+    const resp = await fetch(ANALYZE_URL + window.location.search, { method: 'POST', body: form,
+      headers: window.VoiceSignIn ? window.VoiceSignIn.headers() : {} });
+    if (window.VoiceSignIn && await window.VoiceSignIn.handle(resp, d7Els.raStatus)) return;
     if (!resp.ok) {
       const errText = await resp.text();
       d7Els.raStatus.textContent = 'Analysis failed: ' + resp.status + ' — ' + errText.slice(0, 200);

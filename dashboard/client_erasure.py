@@ -20,9 +20,10 @@ PROTECTED holds two kinds of table that must survive a "forget me":
     override a record you are required to keep.
 
 NOT HERE, on purpose:
-  - journal_entries is keyed by a hardcoded user_id ("glen"), not by the client's email,
-    so a per-client delete cannot find it. It is erased per-session by the "Delete this
-    session" box instead (2026-09-18).
+  - journal_entries rows written before 2026-10-22 carry a hardcoded user_id ("glen"),
+    not the client's email, so a per-client delete cannot find them. Rows since then
+    carry the signed-in email in user_id, and those ARE erased (HEALTH_TABLES below,
+    review round 2, 2026-10-22). A "glen" row never matches a client's address.
   - the ~30 "other" tables (carts, event registrations, affiliate rows, leads) are neither
     clearly health nor clearly protected. They are left for a later, named decision rather
     than swept in silently.
@@ -35,6 +36,7 @@ back from the cursor, so a delete that did not happen cannot be reported as if i
 # table -> the column holding the client's email. Verified 2026-09-18. Every one keys on
 # `email`; if a new health table keys on something else, put the real column here.
 HEALTH_TABLES = {
+    "journal_entries": "user_id",      # the signed-in email since 2026-10-22
     "intake_responses": "email",
     "historical_intake_snapshots": "email",
     "member_element_state": "email",
