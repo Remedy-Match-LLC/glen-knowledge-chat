@@ -87,6 +87,8 @@ MOVE_TABLES = frozenset({
     "order_payments", "peer_interest", "peer_matches", "portal_library", "prepay_term_grants",
     "portal_library_links",   # a client's Library links, keyed by address (2026-10-13)
     "quiz_responses", "studio_credit_intents", "voice_signals",
+    # Rule C (2026-10-23): a supply grant and a courtesy follow their membership row.
+    "order_supply_grants", "membership_courtesy_log",
 })
 _PERSON_COLUMNS = ("person_id", "people_id")
 _SYSTEM_SCHEMAS = ("pg_catalog", "information_schema", "pg_toast")

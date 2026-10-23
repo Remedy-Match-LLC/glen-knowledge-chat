@@ -87,6 +87,11 @@
         <select id="membership-tier"></select>
         <div class="commerce-actions"><button id="grant-membership">Grant</button><button class="danger" id="revoke-membership">Revoke</button></div>
         <div class="commerce-note" id="membership-note"></div>
+        <label class="sub" for="courtesy-days">Courtesy days of membership</label>
+        <input id="courtesy-days" type="number" min="1" max="366" step="1" placeholder="Days">
+        <input id="courtesy-note" type="text" placeholder="Why (required)">
+        <div class="commerce-actions"><button id="add-courtesy">Add courtesy days</button></div>
+        <div class="commerce-note" id="courtesy-note-msg"></div>
       </div>
     </section>
 
@@ -476,6 +481,13 @@ document.getElementById("grant-membership").onclick=function(){
   var tier=document.getElementById("membership-tier").value;
   if(!tier)return;
   postCommerce("/api/console/membership/enroll",{email:qsEmail(),tier:tier},"membership-note");
+};
+document.getElementById("add-courtesy").onclick=function(){
+  var days=parseInt(document.getElementById("courtesy-days").value,10);
+  var note=document.getElementById("courtesy-note").value.trim();
+  if(!(days>=1)){commerceMessage("courtesy-note-msg","Enter a number of days.",true);return;}
+  if(!note){commerceMessage("courtesy-note-msg","Add a note saying why.",true);return;}
+  postCommerce("/api/console/membership/courtesy",{email:qsEmail(),days:days,note:note},"courtesy-note-msg");
 };
 document.getElementById("revoke-membership").onclick=function(){
   if(!commerceState || !commerceState.membership.active || !confirm("Revoke this client's active membership access?"))return;

@@ -272,6 +272,17 @@ def _sync_fully_paid_order(cx, order_id, method):
         paid_order = orders.get_order(cx, order_id)
         orders.settle_points_on_payment(cx, paid_order)
         orders.settle_referrals_on_payment(cx, paid_order)
+        # The membership, Biofield and rule C supply grants, as the card hub and
+        # record_payment give them. The hook writes on its own connection, so the
+        # paid state is committed first. Best-effort: a grant never fails a payment.
+        hook = getattr(orders, "_membership_grant_hook", None)
+        if hook and paid_order:
+            try:
+                cx.commit()
+                hook(cx, paid_order)
+            except Exception as e:
+                print(f"[order_payments] membership grant skipped for #{order_id}: {e!r}",
+                      flush=True)
 
 
 def add_payment(cx, order_id, amount_cents, method, *, source="manual",

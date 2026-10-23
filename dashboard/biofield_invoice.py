@@ -171,6 +171,25 @@ def line_bottles(line):
     return n if n >= 1 else 1
 
 
+SUPPLY_MONTH_CHOICES = (1, 2, 3)
+
+
+def _multiplies(slug, services):
+    """True for a remedy line: never the Biofield, a service or a membership line."""
+    slug = slug or ""
+    return (slug != BIOFIELD_SLUG and slug not in services
+            and not slug.startswith("membership:"))
+
+
+def normalize_supply_months(value):
+    """The 1 / 2 / 3 month supply choice (Glen, 2026-10-23). Anything else is 1."""
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        return 1
+    return n if n in SUPPLY_MONTH_CHOICES else 1
+
+
 def bottles_needed(freq_text, doses_per_bottle, program_days=30):
     """Bottles for the program = ceil(doses/day * days / doses_per_bottle), >= 1.
     Falls back to 1 when the frequency is unparseable OR doses_per_bottle is missing
@@ -434,12 +453,21 @@ def terrain_restore_sellable(catalog):
                for it in catalog or []) and not is_not_ready(CUSTOM_TERRAIN_RESTORE_SLUG, catalog)
 
 
-def build_invoice_lines(client, remedies, catalog, include_fee=True):
+def build_invoice_lines(client, remedies, catalog, include_fee=True, supply_months=1):
     """Biofield Analysis is lines[0] (unless include_fee is False — e.g. the client
     already PAID for the analysis, so we invoice remedies only); then one line per
     resolvable remedy (order preserved). A remedy is a name string (qty 1) or a
     {"name","qty"} dict (qty = bottles needed). Unresolvable names go to 'skipped',
-    never mispriced."""
+    never mispriced.
+
+    `supply_months` (1, 2 or 3; Glen 2026-10-23: "bottle count multiplies by the
+    number of months") multiplies each remedy line's bottles. It is applied to the
+    base count from the report, never to a count already on an order, so a repeated
+    raise cannot compound it. The Biofield Analysis and any catalog product marked
+    a service never multiply."""
+    months = normalize_supply_months(supply_months)
+    services = {c.get("slug") for c in catalog or []
+                if isinstance(c, dict) and c.get("service")}
     lines = [{"slug": BIOFIELD_SLUG, "qty": 1}] if include_fee else []
     skipped, not_ready, resolved = [], [], []
     for r in remedies or []:
@@ -478,8 +506,12 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
         slug, qty = item["slug"], item["qty"]
         seen = next((l for l in lines if l["slug"] == slug), None)
         if seen is not None:
+            if _multiplies(slug, services):
+                qty = qty * months
             seen["qty"] = max(seen["qty"], qty)
             continue
+        if _multiplies(slug, services):
+            qty = qty * months
         # These remedies came from the practitioner's authored Biofield
         # analysis, so preserve that provenance through order creation and
         # into Edit Invoice instead of falling back to source='self'.
@@ -539,7 +571,7 @@ def default_fetch_catalog():
 
 
 def default_create_order(customer, lines, replace_open=False, invoice_note=None,
-                         update_order_id=None, idempotency_key=""):
+                         update_order_id=None, idempotency_key="", supply_months=None):
     """Create the hand-off invoice on prod. With replace_open=True (a re-hand-off),
     prod first cancels the client's prior OPEN hand-off drafts (proposed, unpaid, not
     yet published) so a repeated hand-off UPDATES rather than piling up duplicates;
@@ -563,6 +595,10 @@ def default_create_order(customer, lines, replace_open=False, invoice_note=None,
         # second. Absent or blank, prod keeps its old random reference per request.
         if str(idempotency_key or "").strip():
             body["idempotency_key"] = str(idempotency_key).strip()
+        # Rule C: the months of remedies this invoice supplies, stored on the order
+        # so the paid hook can size the membership. Absent = 1 on the server.
+        if supply_months is not None:
+            body["supply_months"] = normalize_supply_months(supply_months)
         url = f"{base}/api/orders/manual"
         req = urllib.request.Request(url, data=_json.dumps(body).encode(), method="POST",
                                      headers={"X-Console-Key": key, "Content-Type": "application/json"})

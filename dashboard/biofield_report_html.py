@@ -2247,12 +2247,14 @@ def _fee_js():
         ".then(r=>r.json()).then(function(j){if(j.ok){btn.textContent='Published to portal \\u2713';}"
         "else{btn.disabled=false;btn.textContent=t;alert(j.error||'Publish failed.');}})"
         ".catch(function(){btn.disabled=false;btn.textContent=t;alert('Could not reach the app.');});}"
+        "function supplyMonths(){var e=document.getElementById('supplymonths');"
+        "var n=e?parseInt(e.value,10):1;return (n===2||n===3)?n:1;}"
         "function createInvoice(){var btn=document.getElementById('invoicebtn');"
         "var s=document.getElementById('invstat');"
         "var out=document.getElementById('invresult');btn.disabled=true;s.textContent=' working...';out.textContent='';"
         "fetch(_abase()+'/invoice',{method:'POST',"
         "headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({idempotency_key:orderToken('invoice')})})"
+        "body:JSON.stringify({idempotency_key:orderToken('invoice'),supply_months:supplyMonths()})})"
         ".then(r=>r.json()).then(j=>{s.textContent='';btn.disabled=false;"
         "if(!j.ok){out.textContent=j.error||'Could not create the invoice.';return;}"
         "var parts=[];"
@@ -2337,6 +2339,12 @@ def render_fee_panel(state):
         "<span id=feestat class=food></span></div>"
         + no_charge_html +
         "<div class=btnrow style='margin-top:10px'>"
+        # Rule C (Glen, 2026-10-23): "supply length of 1, 2, or 3 months would be a
+        # selection where we click 'Add remedies to invoice'". Bottles multiply by it,
+        # and the membership grant at payment follows it.
+        "<label for=supplymonths>Supply</label>"
+        "<select id=supplymonths><option value=1 selected>1 month</option>"
+        "<option value=2>2 months</option><option value=3>3 months</option></select>"
         "<button class=btn id=invoicebtn onclick=invoiceAction()>Create invoice &rarr;</button>"
         # Glen, 2026-09-16. The raise already refreshes the remedies onto an OPEN order
         # in place, keeping its number, its link and any line added by hand. But once an
