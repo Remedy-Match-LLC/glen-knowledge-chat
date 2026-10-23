@@ -1,8 +1,8 @@
 """Clarity's "What this does" is Glen's approved wording, pinned (Glen "approved", 2026-10-23).
 
-Source: production/05 Formulations/clarity/2026-10-23/clarity-store-page.html, "Proposed page
-text", the four body paragraphs. It replaces an unreviewed eye-only AI draft that said "One to
-three capsules daily". The formula is one capsule daily, for brain and eyes.
+Source: marketing/04 Copy/clarity-store-page-2026-10-23/clarity-store-page.md, the ten body
+paragraphs, one sentence each, after three review rounds. It replaces an unreviewed eye-only
+AI draft that said "One to three capsules daily". The formula is one capsule daily, for brain and eyes.
 """
 import importlib
 import json
@@ -18,14 +18,24 @@ def entry():
     return json.load(open("data/products.json"))["products"][SLUG]
 
 
-def test_the_intro_is_the_four_approved_paragraphs(entry):
-    paras = entry["intro"].split("\n\n")
-    assert len(paras) == 4
-    assert paras[0].startswith("Clarity supports both your eyes and your brain.")
-    assert paras[1].startswith("Rosmarinic acid is the heart of Clarity.")
-    assert paras[2].startswith("Pterostilbene is a natural polyphenol from blueberries")
-    assert paras[3] == "Piperine, from black pepper, helps your body absorb polyphenols like these."
+PARAS = [
+    "Clarity supports both your eyes and your brain.",
+    "Your retina develops from the same tissue as your brain.",
+    "So your retina and your brain share many of the same needs.",
+    "Rosmarinic acid, concentrated from rosemary, is the heart of Clarity.",
+    "In a laboratory study, it helped keep human lens proteins clear outside the body.",
+    "That study inspired this formula.",
+    "Pterostilbene is a natural polyphenol found in blueberries, and a close relative of resveratrol.",
+    "In studies of aging animals, it supported memory and healthy brain function.",
+    "In cell and animal studies, it also protected delicate eye tissues.",
+    "A small amount of piperine, from black pepper, is included.",
+]
+
+
+def test_the_intro_is_the_ten_approved_paragraphs(entry):
+    assert entry["intro"].split("\n\n") == PARAS
     assert "One to three" not in entry["intro"]
+    assert "absorb" not in entry["intro"]
 
 
 def test_only_the_intro_is_pinned(entry):
