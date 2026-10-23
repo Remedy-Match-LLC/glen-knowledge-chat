@@ -17503,7 +17503,70 @@ def _grant_membership_line_on_paid(cx, order):
     _grant_membership(cx, email, days, _mp.get_tier(tier_key)["source"],
                       skip_customer_upsert=True)
     cx.commit()
+    _membership_confirm_on_grant(cx, email, tier_key)
     return "granted"
+
+
+# What membership includes, in Glen's order (2026-10-22). Placeholder copy until the
+# bnsn pass; the invoice card lists the same five.
+MEMBERSHIP_BENEFITS = (
+    "Weekly live group coaching",
+    "Your protocol re-matched every month",
+    "Your AI ally",
+    "Terrain Restore",
+    "Biofield Analysis at $200 instead of $300",
+)
+
+
+def membership_confirm_content(tier_key):
+    """(subject, body) confirming a paid membership and its terms, or None for a tier
+    that renews: only a one-time tier can truthfully say it does not renew."""
+    tier = _mp.get_tier(tier_key)
+    if not tier or tier.get("billing") != "one_time":
+        return None
+    months = int(tier.get("grant_months") or 1)
+    span = "one month" if months == 1 else f"{months} months"
+    price = f"${int(tier['price_cents']) / 100:,.0f}"
+    body = (
+        "Aloha,\n\n"
+        f"Your membership is active. It runs for {span} from today.\n\n"
+        "It includes:\n"
+        + "".join(f"- {b}\n" for b in MEMBERSHIP_BENEFITS)
+        + f"\nMembership is {price} for {span}. It does not renew, so there is "
+        "nothing to cancel.\n\n"
+        f"Your portal: {portal_base()}/portal/login\n\n"
+        "In wellness,\nDr. Glen"
+    )
+    return "Your membership has started", body
+
+
+def _membership_confirm_on_grant(cx, email, tier_key):
+    """Best-effort: email the terms once a paid membership is granted (Glen,
+    2026-10-22: sent when the invoice is paid, not when the line is added). The
+    caller's per-order claim makes this once per order. Respects suppression; the
+    send runs in a daemon thread so settling a payment never waits on mail. Never
+    raises."""
+    try:
+        em = (email or "").strip().lower()
+        content = membership_confirm_content(tier_key) if em else None
+        if not content:
+            return
+        threading.Thread(target=_send_membership_confirm,
+                         args=(em, content[0], content[1]), daemon=True).start()
+    except Exception as _e:
+        print(f"[grant-membership] confirmation email skipped: {_e!r}", flush=True)
+
+
+def _send_membership_confirm(email, subject, body):
+    """The thread's own guard: an error here never reaches the thread's top level, and
+    the outcome is logged by address so a missing confirmation can be found (review
+    round 2, 2026-10-22)."""
+    try:
+        via, err = _send_full_report_email(email, "", subject, body)
+        print(f"[grant-membership] confirmation to {email}: {via}"
+              + (f" ({err})" if err else ""), flush=True)
+    except Exception as _e:
+        print(f"[grant-membership] confirmation to {email} failed: {_e!r}", flush=True)
 
 
 def _grant_biofield_line_on_paid(cx, order):

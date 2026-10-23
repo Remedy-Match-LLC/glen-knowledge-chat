@@ -292,3 +292,54 @@ def test_a_cert_holder_owns_the_group_for_the_offer(cx):
     _cert(cx, "offer@example.com")
     assert mp.owns_group(cx, "offer@example.com") is True
     assert mp.owns_group(cx, "offer@example.com", include_bonus=False) is False
+
+
+# Glen, 2026-10-22: the terms go by email when the paid membership is granted.
+@pytest.fixture(autouse=True)
+def sent(monkeypatch):
+    out = []
+    monkeypatch.setattr(app_mod, "_send_full_report_email",
+                        lambda *a, **k: out.append(a) or ("test", None))
+
+    class _Now:
+        def __init__(self, target=None, args=(), kwargs=None, **_):
+            self.t, self.a, self.k = target, args, kwargs
+
+        def start(self):
+            self.t(*self.a, **(self.k or {}))
+    monkeypatch.setattr(app_mod.threading, "Thread", _Now)
+    return out
+
+
+def test_a_paid_month_sends_its_terms_once(cx, sent):
+    o = _order_with_membership(cx, email="terms@example.com", ref="INH-TERMS")
+    assert app_mod._grant_membership_line_on_paid(cx, o) == "granted"
+    assert app_mod._grant_membership_line_on_paid(cx, o) == "already"
+    terms = [a for a in sent if a[2] == "Your membership has started"]
+    assert len(terms) == 1 and terms[0][0] == "terms@example.com"
+    body = terms[0][3]
+    assert "Membership is $99 for one month. It does not renew, so there is nothing to cancel." in body
+    assert body.index("Weekly live group coaching") < body.index("Biofield Analysis at $200 instead of $300")
+
+
+def test_an_existing_member_gets_no_terms_email(cx, sent, monkeypatch):
+    monkeypatch.setattr(app_mod._mp, "owns_group", lambda *a, **k: True)
+    o = _order_with_membership(cx, email="member@example.com", ref="INH-MEMBER")
+    assert app_mod._grant_membership_line_on_paid(cx, o) == "member"
+    assert not [a for a in sent if "membership has started" in a[2]]
+
+
+def test_a_renewing_tier_is_never_told_it_does_not_renew():
+    assert app_mod.membership_confirm_content("year_monthly") is None
+    subj, body = app_mod.membership_confirm_content("year_prepay")
+    assert subj == "Your membership has started"
+    assert "Membership is $990 for 12 months. It does not renew" in body
+
+
+
+def test_a_failing_send_is_caught_inside_the_thread(monkeypatch, capsys):
+    def boom(*a, **k):
+        raise RuntimeError("smtp down")
+    monkeypatch.setattr(app_mod, "_send_full_report_email", boom)
+    app_mod._send_membership_confirm("x@example.com", "s", "b")   # must not raise
+    assert "confirmation to x@example.com failed" in capsys.readouterr().out
