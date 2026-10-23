@@ -105,9 +105,17 @@ def test_an_existing_diagnosis_layer_is_corrected_to_the_shown_pattern(tmp_path)
     with sqlite3.connect(db) as cx:
         for n, remedy in enumerate(["AngiogenX", "WholOmega"], start=8):
             add_chain_row(cx, tid, n, WET, WET, remedy, origin="program")
+        cx.commit()
+        before = cx.total_changes
         plan = ht.correct_chain(cx, tid)              # dry run writes nothing
         assert [(r["new_head"], r["new_tail"]) for r in plan["rows"]] == [(WET_TERM, WET_TERM)] * 2
-        assert {r[1] for r in _rows(db, tid)} == {WET}
+        # Checked on THIS connection, so an uncommitted write by the dry run shows too
+        # (review round 2: a second connection cannot see one).
+        assert cx.total_changes == before and not cx.in_transaction
+        assert {(h, t) for h, t in cx.execute(
+            "SELECT head, most_affected FROM biofield_auth_chain WHERE test_id=?",
+            (int(tid.lstrip("a")),))} == {(WET, WET)}
+        assert cx.execute("SELECT COUNT(*) FROM biofield_auth_layer_stress").fetchone()[0] == 0
         ht.correct_chain(cx, tid, dry_run=False)
     rows = _rows(db, tid)
     assert {(h, t) for _, h, t in rows} == {(WET_TERM, WET_TERM)}
