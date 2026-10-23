@@ -29,7 +29,7 @@ import requests
 
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory
 
-from dashboard import biofield_fee, biofield_handoff, biofield_invoice
+from dashboard import biofield_fee, biofield_handoff, biofield_invoice, biofield_progress
 from dashboard.biofield_report import causal_chain_report, list_tests
 from dashboard.biofield_report_html import (
     render_author_html, render_e4l_panel, render_fee_panel, render_invoice_page,
@@ -730,7 +730,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                caregiver_billing=None,
                ingredients_db=None,
                portal_link_fetch=None, auto_publish=None, fetch_fmp_history=None,
-               client_gmail=None, records_reader=None):
+               client_gmail=None, records_reader=None,
+               progress_orders=None, invoice_publish=None, invoice_send=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -929,6 +930,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     invoice_paid_check = invoice_paid_check or biofield_invoice.default_biofield_paid
     invoice_latest = invoice_latest or biofield_invoice.default_latest_invoice
     client_orders = client_orders or biofield_invoice.default_client_orders
+    # The authored-tests progress columns (Glen, 2026-10-23): one orders call per list,
+    # and the two invoice actions its buttons run, each behind a confirm.
+    progress_orders = progress_orders or biofield_progress.fetch_orders
+    invoice_publish = invoice_publish or biofield_invoice.default_publish_invoice
+    invoice_send = invoice_send or biofield_invoice.default_send_invoice
     def _default_portal_link_fetch(email, name):
         # Used only by "View Client Portal", which staff open. staff_open asks for a
         # one-time staff pass, so the portal shows the staff banner and asks before any
@@ -1272,7 +1278,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def index():
         q = request.args.get("q", "")
         with sqlite3.connect(db_path) as cx:
-            html = render_list_html(list_tests(cx, q), q, list_authored(cx))
+            authored = list_authored(cx)
+            local = biofield_progress.local_steps(cx)
+            links = biofield_progress.stored_links(cx)
+            tests = list_tests(cx, q)
+        if authored:
+            # ONE orders call for the whole list, never one per line.
+            orders, orders_err = progress_orders(sorted(set(links.values())))
+            progress = biofield_progress.build(authored, local, links, orders, orders_err)
+            for t, p in zip(authored, progress):
+                t["progress"] = p
+        html = render_list_html(tests, q, authored)
         # Reachable link to the Practice Better intake importer (Task 5). Injected here
         # rather than in dashboard/biofield_report_html.py so this task stays confined to
         # this file, per the task brief.
@@ -2259,6 +2275,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             {"name": client.get("name"), "email": email}, built["lines"], **create_kwargs)
         if not created.get("ok"):
             return {"ok": False, "error": created.get("error") or "Order creation failed."}, 502
+        # Remember which order this test's invoice is, so the list never has to guess
+        # it by email (Glen, 2026-10-23). Best-effort: the invoice already exists.
+        try:
+            if created.get("order_id"):
+                with sqlite3.connect(db_path) as cx:
+                    biofield_progress.link_order(cx, test_id, created["order_id"])
+        except Exception as _le:
+            print(f"[progress] {test_id}: order link not stored: {_le!r}", flush=True)
         link = invoice_link(created.get("order_id"))
         total = created.get("total_cents")
         accepted = created.get("accepted_slugs") or []
@@ -2330,7 +2354,49 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         oid = (request.get_json(silent=True) or {}).get("order_id")
         if not oid:
             return {"ok": False, "error": "no order_id"}, 400
-        return biofield_invoice.default_publish_invoice(oid)
+        return invoice_publish(oid)
+
+    def _progress_action_order(test_id):
+        """The order a list button may act on, or an error response. Only a confirmed
+        click on a STORED link acts: an order matched by email may be the wrong
+        invoice, so its line only opens the order."""
+        body = request.get_json(silent=True) or {}
+        if body.get("confirm") is not True:
+            return None, ({"ok": False, "error": "Not done: this needs a confirm first."}, 400)
+        try:
+            oid = int(body.get("order_id"))
+        except (TypeError, ValueError):
+            return None, ({"ok": False, "error": "no order_id"}, 400)
+        with sqlite3.connect(db_path) as cx:
+            linked = biofield_progress.linked_order(cx, test_id)
+        if linked != oid:
+            return None, ({"ok": False, "error": f"Order #{oid} is not the invoice stored for "
+                           "this test. Open the order to act on it."}, 409)
+        return oid, None
+
+    @app.route("/author/<test_id>/progress/invoice-publish", methods=["POST"])
+    def progress_invoice_publish(test_id):
+        oid, err = _progress_action_order(test_id)
+        if err:
+            return err
+        return invoice_publish(oid)
+
+    @app.route("/author/<test_id>/progress/invoice-email", methods=["POST"])
+    def progress_invoice_email(test_id):
+        oid, err = _progress_action_order(test_id)
+        if err:
+            return err
+        return invoice_send(oid)
+
+    @app.route("/progress/order/<int:oid>")
+    def progress_open_order(oid):
+        """Open an order on prod's Orders board. A redirect, so the console key never
+        sits in the list page's HTML."""
+        url = biofield_invoice.default_orders_link(oid)
+        if not url:
+            return Response("No console key configured on this machine.", status=503,
+                            mimetype="text/plain")
+        return redirect(url)
 
     @app.route("/author/<test_id>/handoff", methods=["POST"])
     def author_handoff(test_id):

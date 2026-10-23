@@ -792,6 +792,33 @@ def default_publish_invoice(order_id):
         return {"ok": False, "error": "publish failed"}
 
 
+def default_send_invoice(order_id):
+    """Email the client their invoice through prod's own action, the one the Edit
+    Invoice page's Send button runs (orders.send_invoice). Real client email: callers
+    must have asked Glen first. Returns {ok, error}."""
+    base, key = _console()
+    if not base or not order_id:
+        return {"ok": False, "error": "send unavailable (no console config)"}
+    try:
+        url = f"{base}/api/action/orders.send_invoice"
+        req = urllib.request.Request(url, data=_json.dumps({"order_id": int(order_id)}).encode(),
+                                     method="POST",
+                                     headers={"Content-Type": "application/json",
+                                              "X-Console-Key": key})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            resp = _json.loads(r.read().decode() or "{}")
+    except Exception as e:
+        # No reply is not a failure: prod may have sent it.
+        return {"ok": False, "unknown": True,
+                "error": f"no reply from prod ({type(e).__name__}); the email may or may not "
+                         "have gone. Reload the list before trying again."}
+    if isinstance(resp, dict) and resp.get("status") == "done":
+        return {"ok": True}
+    err = ((resp or {}).get("result") or {}).get("error") if isinstance(resp, dict) else None
+    return {"ok": False, "error": err or (resp or {}).get("error") or (resp or {}).get("reason")
+            or (resp or {}).get("status") or "send failed"}
+
+
 def default_biofield_paid(email):
     """Has this client already PAID for a Biofield Analysis? Asks prod for a paid,
     non-cancelled order carrying the biofield-analysis line. Returns {paid, order_id,

@@ -523,7 +523,7 @@ def render_report_html(report, notes="", narrative="", video_script="", stresses
              + _plan_print_choice(tid_link) + '</p>'
              # Glen, 2026-10-22: the same publish at the top too. It runs the bottom
              # button's function, prompt and checks; only its status line is its own.
-             + "<div class=btnrow><button class=btn onclick=\"publishPortal('portal-url-top')\">"
+             + "<div class=btnrow id=publish><button class=btn onclick=\"publishPortal('portal-url-top')\">"
                "Publish to portal</button><span id=portal-url-top></span></div>")
 
     # Causal chain table (grouped by layer, matching the editor's cards)
@@ -3386,7 +3386,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         f"'>{_e(transcript)}</textarea>"
         f"<div id=sessSaved class=food>{('Last saved: ' + _e(fmt_saved_hst(transcript_updated))) if transcript_updated else ''}</div>")
     narrative_section = (
-        "<h2>Narrative</h2>"
+        "<span id=narrative></span><h2>Narrative</h2>"
         "<p class=sub>Generate a plain-language narrative from the transcript above and the "
         "causal chain &mdash; then review, edit, and Save. It appears on the client report and PDF.</p>"
         "<div class=btnrow>"
@@ -3445,19 +3445,150 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  client_name=(c.get("name") or ""), client_email=(c.get("email") or ""))
 
 
+def _money(cents):
+    return f"${int(cents or 0) / 100:,.2f}"
+
+
+def _step_done(ts=""):
+    from dashboard.biofield_progress import short_date
+    d = short_date(ts)
+    return ("<td class=stepdone>&#10003;" + (f" <span class=food>{_e(d)}</span>" if d else "")
+            + "</td>")
+
+
+def _step_open(href, label, title):
+    """An open step that only OPENS the place where it is done. Never acts."""
+    return (f'<td><a class=step href="{_e(href)}" title="{_e(title)}">{_e(label)}</a></td>')
+
+
+def _step_act(url, oid, label, question):
+    """An open step that acts on production. It asks first (stepAct), and the
+    server refuses the call without confirm:true."""
+    return (f'<td><button type=button class=step data-url="{_e(url)}" data-order="{int(oid)}" '
+            f'data-confirm="{_e(question)}" onclick="stepAct(this)">{_e(label)}</button></td>')
+
+
+def _step_none(text="&ndash;", title=""):
+    t = f' title="{_e(title)}"' if title else ""
+    return f"<td class=food{t}>{text}</td>"
+
+
+_APPROX = ("Matched by email: no invoice is stored for this test, so this may be another "
+           "of the client's orders. Its buttons open the order instead of acting.")
+
+
+def _progress_cells(t):
+    """The seven step cells for one authored test (Glen, 2026-10-23)."""
+    p = t.get("progress") or {}
+    tid = str(t.get("test_id") or "")
+    qt = _q(tid, safe="")
+    who = t.get("name") or "this client"
+    cells = (_step_done(p["report_done"]) if p.get("report_done") else
+             _step_open(f"/author/{qt}#narrative", "Write", "Generate and save the narrative"))
+    cells += (_step_done(p["report_uploaded"]) if p.get("report_uploaded") else
+              _step_open(f"/test/{qt}#publish", "Publish", "Opens Publish to Portal, to review first"))
+    cells += (_step_done(p["report_emailed"]) if p.get("report_emailed") else
+              _step_open(f"/test/{qt}#publish", "Email",
+                         "Opens Publish to Portal, which sends the report email"))
+    oid = p.get("order_id")
+    order_url = f"/progress/order/{int(oid)}" if oid else ""
+    if not oid:
+        if p.get("orders_error"):
+            why = "Orders unavailable: " + p["orders_error"]
+            return cells + "".join(_step_none("?", why) for _ in range(4))
+        if p.get("no_charge"):
+            return cells + _step_none("No charge") + "".join(_step_none("n/a") for _ in range(3))
+        return (cells + _step_open(f"/author/{qt}#feepanel", "Create", "Opens invoice creation")
+                + "".join(_step_none() for _ in range(3)))
+    if p.get("missing"):
+        why = (p.get("orders_error") or "prod did not return it")
+        return (cells + _step_none(f"#{int(oid)} ?", f"Stored order #{int(oid)}: {why}")
+                + "".join(_step_none("?", why) for _ in range(3)))
+    approx = p.get("basis") == "email"
+    amount = ("&asymp; " if approx else "") + _e(_money(p.get("amount_cents")))
+    title = _APPROX if approx else f"Order #{int(oid)}"
+    if p.get("cancelled"):
+        cells += (f'<td><a class=step href="{_e(order_url)}" title="{_e(title)}">'
+                  f"#{int(oid)} cancelled</a></td>")
+        return cells + "".join(_step_none() for _ in range(3))
+    cells += (f'<td{" class=approx" if approx else ""}><a href="{_e(order_url)}" '
+              f'title="{_e(title)}">{amount}</a></td>')
+    money = _money(p.get("amount_cents"))
+    if p.get("invoice_uploaded"):
+        cells += _step_done()
+    elif approx:
+        cells += _step_open(order_url, "Open order", _APPROX)
+    else:
+        cells += _step_act(f"/author/{qt}/progress/invoice-publish", oid, "Publish",
+                           f"Publish invoice #{int(oid)} ({money}) to {who}'s portal? "
+                           "This changes production.")
+    if p.get("invoice_emailed"):
+        cells += _step_done(p["invoice_emailed"])
+    elif approx:
+        cells += _step_open(order_url, "Open order", _APPROX)
+    else:
+        cells += _step_act(f"/author/{qt}/progress/invoice-email", oid, "Email",
+                           f"Email invoice #{int(oid)} ({money}) to {who}? "
+                           "This sends a real email to the client.")
+    paid = p.get("paid")
+    if paid == "full":
+        cells += _step_done(p.get("paid_at"))
+    elif paid == "part":
+        cells += _step_open(order_url, f"{_money(p.get('paid_cents'))} paid",
+                            "Part paid. Opens the order, where a payment can be recorded")
+    elif paid == "claimed":
+        cells += _step_open(order_url, "Claimed", "The client says they paid. Opens the order")
+    else:
+        cells += _step_open(order_url, "Record", "Opens the order, where a payment can be recorded")
+    return cells
+
+
+_STEP_JS = (
+    "<script>\n"
+    "async function stepAct(btn){\n"
+    "  if(!confirm(btn.dataset.confirm))return;\n"
+    "  var t=btn.textContent;btn.disabled=true;btn.textContent='working...';\n"
+    "  var j=null;\n"
+    "  try{var r=await fetch(btn.dataset.url,{method:'POST',headers:{'Content-Type':'application/json'},"
+    "body:JSON.stringify({order_id:Number(btn.dataset.order),confirm:true})});j=await r.json();}\n"
+    "  catch(e){btn.textContent='unknown';alert('No reply, so this may or may not have gone through. "
+    "Reload the list before trying again.');return;}\n"
+    "  if(j&&j.ok){btn.parentNode.className='stepdone';btn.parentNode.innerHTML='&#10003; just now';return;}\n"
+    "  btn.disabled=false;btn.textContent=t;alert((j&&j.error)||'It did not go through.');\n"
+    "}\n</script>")
+
+_STEP_CSS = ("<style>.progress td{white-space:nowrap}.progress .stepdone{color:#7fd18b}"
+             ".progress tr.finished td{opacity:.45}"
+             ".progress .step{font-size:12px;padding:2px 8px;border-radius:6px;cursor:pointer;"
+             "border:1px solid var(--line);background:transparent;color:var(--accent);"
+             "text-decoration:none;display:inline-block}"
+             ".progress .approx a{font-style:italic}</style>")
+
+
 def render_list_html(tests, q="", authored=None):
     authored = authored or []
     arows = ""
+    errs = set()
     for t in authored:
         atid = _e(str(t.get("test_id") or ""))
-        arows += (f"<tr><td><a href='/author/{atid}'>{_e(t.get('name') or '(unnamed)')}</a> "
-                  f"<a class=food href='/test/{atid}'>(report)</a></td>"
-                  f"<td>{_e(t.get('email') or '')}</td><td>{_e(t.get('date') or '')}</td>"
-                  f"<td><span class=pill>{_e(str(t.get('layer_count') or 0))}</span></td></tr>")
-    asection = ("<h2>Your authored tests</h2>"
-                "<table><tr><th>Client</th><th>Email</th><th>Date</th><th>Remedies</th></tr>"
-                + (arows or "<tr><td colspan=4 class=food>None yet — click New test.</td></tr>")
-                + "</table>")
+        p = t.get("progress") or {}
+        if p.get("orders_error"):
+            errs.add(p["orders_error"])
+        email = t.get("email") or ""
+        arows += (f"<tr{' class=finished' if p.get('all_done') else ''}>"
+                  f"<td><a href='/author/{atid}'>{_e(t.get('name') or '(unnamed)')}</a> "
+                  f"<a class=food href='/test/{atid}'>(report)</a>"
+                  + (f"<div class=food>{_e(email)}</div>" if email else "") + "</td>"
+                  f"<td>{_e(t.get('date') or '')}</td>"
+                  + _progress_cells(t) + "</tr>")
+    note = "".join(f"<p class=food>Invoice columns unavailable: {_e(e)}.</p>" for e in sorted(errs))
+    asection = ("<h2>Your authored tests</h2>" + note +
+                "<table class=progress><tr><th rowspan=2>Client</th><th rowspan=2>Date</th>"
+                "<th colspan=3>Report</th><th colspan=4>Invoice</th></tr>"
+                "<tr><th>Done</th><th>Uploaded</th><th>Emailed</th>"
+                "<th>Amount</th><th>Uploaded</th><th>Emailed</th><th>Paid</th></tr>"
+                + (arows or "<tr><td colspan=9 class=food>None yet — click New test.</td></tr>")
+                + "</table>" + ((_STEP_CSS + _STEP_JS) if arows else ""))
     rows = ""
     for t in tests or []:
         rows += (
