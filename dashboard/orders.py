@@ -143,6 +143,11 @@ def init_orders_table(cx):
             cx.execute(ddl)
         except Exception:
             pass  # already present
+    # Rule C (Glen, 2026-10-23): how many months of remedies this order supplies,
+    # 1, 2 or 3, chosen beside "Add remedies to invoice". The paid hook reads it to
+    # size the membership grant. NULL = 1 (every order raised before this existed).
+    if not db.column_exists(cx, "orders", "supply_months"):
+        cx.execute("ALTER TABLE orders ADD COLUMN supply_months INTEGER")
     cx.commit()
 
 
@@ -1131,6 +1136,20 @@ def set_order_payment(cx, order_id, *, method, amount_cents):
     if cur.rowcount:
         _ensure_portal_receipt(cx, order_id)
         _consume_ship_credit_on_pay(cx, order_id)
+    return cur.rowcount > 0
+
+
+def set_order_supply_months(cx, order_id, months):
+    """Record the 1/2/3-month supply choice on an order. Anything else is 1."""
+    try:
+        n = int(months)
+    except (TypeError, ValueError):
+        n = 1
+    if n not in (1, 2, 3):
+        n = 1
+    cur = cx.execute("UPDATE orders SET supply_months=?, updated_at=? WHERE id=?",
+                     (n, _now(), order_id))
+    cx.commit()
     return cur.rowcount > 0
 
 

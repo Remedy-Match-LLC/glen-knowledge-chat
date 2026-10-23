@@ -69,7 +69,13 @@ def settle_paid_order_effects(*, kind, order, md, pi_id, sid, deps):
         _has_paid_biofield = any(
             (it.get("slug") or "").strip() == "biofield-analysis"
             for it in _items)
-        if _mp.cart_has_membership_tier(_items) or _has_paid_biofield:
+        # Rule C (Glen, 2026-10-23): a remedy order from a coaching-qualifying source,
+        # or an owner-built in-house invoice, earns membership for its supply months.
+        # The dep decides the rest (service lines, members, the Biofield cap).
+        from . import coaching as _coaching
+        _src = (order.get("source") or "").strip()
+        _supply = bool(_items) and (_src in _coaching.QUALIFYING_SOURCES or _src == "in-house")
+        if _mp.cart_has_membership_tier(_items) or _has_paid_biofield or _supply:
             _do("membership_line", lambda: deps.grant_membership_line(order))
 
     return {"kind": kind, "settled": settled, "skipped": skipped}

@@ -2214,7 +2214,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         # No line means no biofield-analysis order, which is what withholds the care
         # window, the 30-day month and member pricing -- all three follow the line.
         include_fee = not paid.get("paid") and not no_charge
-        built = biofield_invoice.build_invoice_lines(client, remedies, catalog, include_fee=include_fee)
+        # Rule C (Glen, 2026-10-23): a 1 / 2 / 3 month supply, chosen beside the
+        # invoice buttons. Each remedy's bottles multiply by it; the analysis never
+        # does. Always applied to the report's own counts, so it cannot compound.
+        _body = request.get_json(silent=True) or {}
+        supply_posted = "supply_months" in _body
+        supply_months = biofield_invoice.normalize_supply_months(_body.get("supply_months"))
+        built = biofield_invoice.build_invoice_lines(client, remedies, catalog,
+                                                     include_fee=include_fee,
+                                                     supply_months=supply_months)
         if not built["lines"]:
             note = ("No charge for this analysis and no remedies to invoice, so no "
                     "invoice was raised." if no_charge else
@@ -2245,6 +2253,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                              .get("idempotency_key") or "")}
         if update_order_id:
             create_kwargs["update_order_id"] = update_order_id
+        if supply_posted:
+            create_kwargs["supply_months"] = supply_months
         created = invoice_create(
             {"name": client.get("name"), "email": email}, built["lines"], **create_kwargs)
         if not created.get("ok"):
@@ -2280,6 +2290,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 "not_ready": built.get("not_ready") or [],
                 "warning": warning,
                 "left_off": left_off,
+                "supply_months": supply_months,
                 "total_dollars": biofield_fee.cents_to_dollars(total) if total is not None else ""}
 
     @app.route("/author/<test_id>/invoice/status")
