@@ -459,11 +459,23 @@ async function applyPlan(forever, btn){
     renderLines(); renderTotals(); renderSavings();   // offer now absent -> banner hides
   }catch(e){ $('savings-msg').textContent='Network error — please try again.'; if(btn) btn.disabled=false; }
 }
-// Join-and-save: offer the customer membership pricing on THIS order, self-served
-// before they pay. Hidden when the invoice is paid or when the server sent no offer
-// (already a member, or nothing to save). When the membership line is already on the
-// order, the card flips to a Remove state. Copy follows the house rule: no em dashes,
-// no shouting.
+// Join-and-save: offer the customer membership on THIS order, self-served before they
+// pay. Hidden when the invoice is paid or when the server sent no offer (already a
+// member). Shown even when membership saves nothing. When the membership line is
+// already on the order, the card flips to a Remove state. Copy follows the house rule:
+// no em dashes, no shouting.
+// The not-added card sets the two totals side by side, neither one preferred
+// (Glen, 2026-10-22). Both come from the server, priced the way an add would price
+// them; without them the card keeps its savings wording rather than guess.
+const MEM_BENEFITS=['Weekly live group coaching','Your protocol re-matched every month',
+  'Your AI ally','Terrain Restore','Biofield Analysis at $200 instead of $300'];
+let MEM_PAYG=false;   // "Keep pay as you go" folds the card for this page view only
+function keepPayAsYouGo(on){ MEM_PAYG=!!on; renderMembershipOffer(); }
+function membershipNetLine(payg, member){
+  if(member<payg) return 'Membership saves you '+money(payg-member)+' on this order.';
+  if(member>payg) return 'Membership adds '+money(member-payg)+' to this order.';
+  return 'Membership costs nothing extra on this order.';
+}
 function renderMembershipOffer(){
   const el=$('membership-offer'), o=ORDER.membership_offer;
   const hasLine=(ORDER.lines||[]).some(l=>String(l.slug||'').indexOf('membership:')===0);
@@ -493,15 +505,40 @@ function renderMembershipOffer(){
       +'<div style="margin:6px 0 10px">'+line1+'</div>'
       +'<button class="ghost" onclick="toggleInvoiceMembership(\'remove\')">Remove membership</button>'
       +msg;
+  } else if(MEM_PAYG){
+    // Folded: one quiet line, and a way back. Nothing is sent to the server.
+    el.innerHTML='<div class="muted" style="margin:0 0 12px">Paying as you go. '
+      +'<button type="button" onclick="keepPayAsYouGo(false)" style="background:none;border:0;padding:0;'
+      +'color:var(--brand);text-decoration:underline;cursor:pointer;font:inherit">Show membership option</button></div>';
   } else {
-    const line2=(o.net_add_cents>0)
-      ? 'That is only '+money(o.net_add_cents)+' more on this order today.'
-      : 'That covers the membership and still saves you '+money(o.net_savings_cents)+' on this order.';
+    // Whole dollars when the fee is a whole-dollar price ($99, not $99.00).
+    const fee=(o.gross_cents%100===0) ? '$'+(o.gross_cents/100) : money(o.gross_cents);
+    const hasTotals=Number.isFinite(o.payg_total_cents) && Number.isFinite(o.member_total_cents);
+    const box='flex:1 1 180px;border:1px solid var(--border);border-radius:8px;background:#fff;padding:8px 10px';
+    let body;
+    if(hasTotals){
+      body='<div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0">'
+        +'<div style="'+box+'">Pay as you go: <b>'+money(o.payg_total_cents)+'</b></div>'
+        +'<div style="'+box+'">Member: <b>'+money(o.member_total_cents)+'</b>, including '+esc(fee)
+          +' for one month of membership</div></div>'
+        +'<div style="margin:0 0 8px">'+membershipNetLine(o.payg_total_cents, o.member_total_cents)+'</div>';
+    } else {
+      // Fallback: the server could not price the totals reliably, so no totals.
+      const line2=(o.net_add_cents>0)
+        ? 'That is '+money(o.net_add_cents)+' more on this order.'
+        : 'That covers the membership and still saves you '+money(o.net_savings_cents)+' on this order.';
+      body='<div style="margin:6px 0 8px">'+(o.savings_cents>0
+        ? 'Member pricing takes '+money(o.savings_cents)+' off these products. '+line2 : '')+'</div>';
+    }
     el.innerHTML=head
-      +'<div style="font-weight:600;color:#22623c">\u{1F49A} Become a member and save on this order</div>'
-      +'<div style="margin:6px 0 10px">Add membership for '+money(o.gross_cents)+' and unlock '
-        +money(o.savings_cents)+' in member pricing on these products. '+line2+'</div>'
-      +'<button class="primary" onclick="toggleInvoiceMembership(\'add\')">Add membership</button>'
+      +'<div style="font-weight:600;color:#22623c">Membership for this order</div>'
+      +body
+      +'<ul style="margin:0 0 8px;padding-left:20px">'
+        +MEM_BENEFITS.map(b=>'<li>'+esc(b)+'</li>').join('')+'</ul>'
+      +'<div class="muted" style="margin:0 0 10px">Membership is '+esc(fee)
+        +' for one month. It does not renew, so there is nothing to cancel.</div>'
+      +'<button class="ghost" onclick="toggleInvoiceMembership(\'add\')">Add membership</button> '
+      +'<button class="ghost" onclick="keepPayAsYouGo(true)">Keep pay as you go</button>'
       +msg;
   }
 }
