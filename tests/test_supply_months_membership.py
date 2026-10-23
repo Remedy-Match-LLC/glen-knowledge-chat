@@ -567,8 +567,13 @@ def test_a_later_order_starts_after_the_earlier_one_as_re_timed(cx):
     appmod._grant_supply_membership_on_paid(cx, a)
     appmod._grant_supply_membership_on_paid(cx, b)
     # A arrives in 10 days, so it now ends 40 days out, past its paid 37.
-    appmod._adjust_supply_on_delivery(cx, a["id"], _iso(_ago(-10)))
-    a_end = _expiry(cx, _grant_row(cx, "INH-A")["membership_id"])
+    arrived = _ago(-10)
+    appmod._adjust_supply_on_delivery(cx, a["id"], _iso(arrived))
+    ga = _grant_row(cx, "INH-A")
+    a_end = _expiry(cx, ga["membership_id"])
+    # A was paid first, so B (stacked behind it) never pushes A back.
+    assert ga["starts_at"] == _iso(arrived)
+    assert a_end == arrived + timedelta(days=30)
     appmod._adjust_supply_on_delivery(cx, b["id"], _iso(_ago(-12)))
     assert _grant_row(cx, "INH-B")["starts_at"] == _iso(a_end)
 
@@ -664,3 +669,68 @@ def test_three_months_uncapped_is_97_days(cx, monkeypatch):
     o = _order(cx, "INH-97", REMEDY, months=3)
     appmod._grant_supply_membership_on_paid(cx, o)
     assert round(_days_from_now(_expiry(cx, _grant_row(cx, "INH-97")["membership_id"]))) == 97
+
+
+
+# ── Third review round ───────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("slug", ["book-dry-eye-relief-ebook", "book-cataract-solutions",
+                                  "empty-vegicaps-size-00", "no-such-product"])
+def test_books_ebooks_boxed_items_and_unknown_slugs_earn_nothing(cx, slug):
+    _biofield(cx)
+    o = _order(cx, "INH-X", [{"slug": slug, "qty": 3, "unit_cents": 1000, "line_cents": 3000}])
+    assert appmod._grant_supply_membership_on_paid(cx, o) == "none"
+
+
+def test_a_zero_dollar_remedy_line_earns_nothing(cx):
+    _biofield(cx)
+    o = _order(cx, "INH-0", [dict(REMEDY[0], unit_cents=0, line_cents=0)])
+    assert appmod._grant_supply_membership_on_paid(cx, o) == "none"
+
+
+def test_a_parcel_after_the_grant_ran_out_still_gets_30_days_from_receipt(cx):
+    _biofield(cx)
+    o = _order(cx, "INH-OUT", REMEDY, months=1)
+    appmod._grant_supply_membership_on_paid(cx, o)
+    g = _grant_row(cx, "INH-OUT")
+    ran_out = datetime.utcnow() - timedelta(days=1)        # ended where it was set
+    cx.execute("UPDATE memberships SET expires_at=? WHERE id=?", (_iso(ran_out), g["membership_id"]))
+    cx.execute("UPDATE order_supply_grants SET ends_at=? WHERE order_ref='INH-OUT'", (_iso(ran_out),))
+    cx.commit()
+    arrived = _ago(0)
+    res = appmod._adjust_supply_on_delivery(cx, o["id"], _iso(arrived))
+    assert res["granted"] is True
+    assert _expiry(cx, g["membership_id"]) == min(arrived + timedelta(days=30),
+                                                  appmod._supply_cap_end(cx, EMAIL))
+
+
+def test_a_revoked_grant_stays_revoked_on_a_second_sweep(cx):
+    _biofield(cx)
+    o = _order(cx, "INH-R2", REMEDY, months=1)
+    appmod._grant_supply_membership_on_paid(cx, o)
+    mid = _grant_row(cx, "INH-R2")["membership_id"]
+    cx.execute("UPDATE memberships SET expires_at=? WHERE id=?",
+               (_iso(datetime.utcnow() - timedelta(minutes=1)), mid))
+    cx.commit()
+    appmod._adjust_supply_on_delivery(cx, o["id"], _iso(_ago(0)))
+    again = appmod._adjust_supply_on_delivery(cx, o["id"], _iso(_ago(0)))
+    assert again["granted"] is False
+
+
+def test_a_biofield_billed_for_another_client_does_not_anchor_the_payers_cap(cx):
+    _order(cx, "BF-CARE", [dict(BIOFIELD[0], billed_for="the.client@example.com")],
+           status="done")
+    assert appmod._supply_cap_end(cx, EMAIL) is None
+
+
+def test_the_waiting_pass_skips_an_order_that_was_refused_as_a_member(cx):
+    appmod._grant_membership(cx, EMAIL, 1, appmod._mp.get_tier("month")["source"])
+    cx.commit()
+    _biofield(cx, ref="BF-OLD", days_ago=200)
+    o = _order(cx, "INH-MEM", REMEDY, months=1)
+    assert appmod._grant_supply_membership_on_paid(cx, o) == "member"
+    cx.execute("UPDATE memberships SET expires_at=?",
+               (_iso(datetime.utcnow() - timedelta(days=1)),))
+    cx.commit()
+    appmod._grant_membership_line_dep(_biofield(cx, ref="BF-NEW"))
+    assert _grant_row(cx, "INH-MEM") is None

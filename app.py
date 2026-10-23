@@ -10240,8 +10240,9 @@ def _grant_membership_line_dep(order):
 
 def _grant_waiting_supply_orders(cx, email):
     """A Biofield just paid: grant the client's paid remedy orders that were paid
-    before it and so found no Biofield then. Only orders within the cap window
-    (paid in the last SUPPLY_CAP_DAYS) and without a claim. Best-effort."""
+    before it and so found no Biofield then (claim reason "no_biofield"). Only
+    orders paid in the last SUPPLY_CAP_DAYS. Each claim is cleared and the grant
+    run again, so the usual checks all apply. Best-effort."""
     email = (email or "").strip().lower()
     if not email:
         return 0
@@ -10255,9 +10256,11 @@ def _grant_waiting_supply_orders(cx, email):
             if (o.get("pay_status") or "") != "paid" or paid is None or paid < since:
                 continue
             ref = o.get("external_ref") or f"id:{o.get('id')}"
-            if cx.execute("SELECT 1 FROM order_supply_grants WHERE order_ref=?",
-                          (ref,)).fetchone():
+            if not cx.execute("SELECT 1 FROM order_supply_grants WHERE order_ref=? "
+                              "AND reason='no_biofield'", (ref,)).fetchone():
                 continue
+            cx.execute("DELETE FROM order_supply_grants WHERE order_ref=? "
+                       "AND reason='no_biofield'", (ref,))
             if _grant_supply_membership_on_paid(cx, o) == "granted":
                 n += 1
         return n
@@ -17700,15 +17703,30 @@ def _order_supply_months(order):
     return _bfi.normalize_supply_months(v if v not in (None, "") else 1)
 
 
+# Sold in the catalog but not a month of remedies: books, devices, tools and
+# anything boxed on its own (empty capsules, shields, crystals). An $8 or $10 item
+# must not buy 37 days of membership (review round 3).
+_NON_REMEDY_BOTTLES = frozenset({
+    "book", "own-box", "harmony-laser", "handcradle", "denas", "nightlight",
+    "toothbrush", "dowsing-rods", "nasal-clip", "one-step"})
+
+
 def _order_has_supply_line(order):
-    """True when the order carries a remedy: not a service, not a membership line,
-    not a $0 review gift."""
+    """True when the order carries a paid remedy: a known catalog product that is
+    not a service, digital, a book, device or boxed item, a membership line, a
+    review gift or a $0 line."""
     for it in ((order or {}).get("items") or []):
         slug = (it.get("slug") or "").strip().lower()
         if not slug or it.get("gift") or _mp.tier_of_line(it):
             continue
-        if not (_get_product(slug) or {}).get("service"):
-            return True
+        if "line_cents" in it and not int(it.get("line_cents") or 0):
+            continue
+        prod = _get_product(slug)
+        if not prod or prod.get("service") or prod.get("digital"):
+            continue
+        if (prod.get("bottle_type") or "") in _NON_REMEDY_BOTTLES:
+            continue
+        return True
     return False
 
 
@@ -17740,6 +17758,7 @@ def _supply_cap_end(cx, email):
         except Exception:
             continue
         if not any((it.get("slug") or "").strip() == "biofield-analysis"
+                   and not (it.get("billed_for") or "").strip()
                    for it in items if isinstance(it, dict)):
             continue
         anchor = _supply_naive(paid_at)
@@ -17752,16 +17771,21 @@ def _supply_cap_end(cx, email):
     return latest + timedelta(days=SUPPLY_CAP_DAYS) if latest is not None else None
 
 
-def _supply_prior_end(cx, email, now, exclude_id=None):
+def _supply_prior_end(cx, email, now, exclude_id=None, granted_before=None):
     """The furthest active expiry among the client's memberships, leaving out the
     Biofield's own 30 days (care taster and Biofield month) and, at delivery, the
-    order's own grant. None when none."""
+    order's own grant and every grant made after it: a later order or courtesy
+    stacked behind this one, so this one must not move behind it. None when none."""
     best = None
-    for mid, exp, src in cx.execute(
-            "SELECT id, expires_at, source FROM memberships WHERE lower(email)=lower(?) "
-            "AND expires_at IS NOT NULL", (email,)).fetchall():
+    for mid, exp, src, granted in cx.execute(
+            "SELECT id, expires_at, source, granted_at FROM memberships "
+            "WHERE lower(email)=lower(?) AND expires_at IS NOT NULL", (email,)).fetchall():
         if (src or "") in _SUPPLY_PRIOR_EXCLUDED or (exclude_id and mid == exclude_id):
             continue
+        if granted_before is not None:
+            g = _supply_naive(granted)
+            if g is None or g >= granted_before:
+                continue
         d = _supply_naive(exp)
         if d is not None and d > now and (best is None or d > best):
             best = d
@@ -17849,12 +17873,6 @@ def _grant_supply_membership_on_paid(cx, order):
          order.get("paid_at") or _supply_iso(now), None, _supply_iso(now)))
     if not claim.rowcount:
         return "already"
-    if reason == "no_biofield":
-        # Not final: the Biofield may be paid later on its own invoice. Drop the
-        # claim so _grant_waiting_supply_orders can grant this order then.
-        cx.execute("DELETE FROM order_supply_grants WHERE order_ref=?", (ref,))
-        cx.commit()
-        return reason
     if reason:
         cx.commit()
         return reason
@@ -17891,17 +17909,22 @@ def _adjust_supply_on_delivery(cx, order_id, delivered_at):
         cx.execute("SAVEPOINT supply_delivery")
     except Exception as e:
         print(f"[supply-grant] savepoint failed for order {order_id!r}: {e!r}", flush=True)
+        try:
+            cx.rollback()
+        except Exception:
+            pass
         return {"granted": False, "error": True}
     try:
         _supply_init_table(cx)
         row = cx.execute(
             "SELECT order_ref, email, months, membership_id, prior_end, ends_at, cap_end, "
-            "delivered_at FROM order_supply_grants WHERE order_id=?", (order_id,)).fetchone()
+            "delivered_at, reason FROM order_supply_grants WHERE order_id=?",
+            (order_id,)).fetchone()
         if not row:
             cx.execute("RELEASE SAVEPOINT supply_delivery")
             return None
-        ref, email, months, mid, prior_s, ends_s, cap_s, done = (
-            row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
+        ref, email, months, mid, prior_s, ends_s, cap_s, done, why = (
+            row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8])
         if not mid:
             if not done:
                 cx.execute("UPDATE order_supply_grants SET delivered_at=? WHERE order_ref=?",
@@ -17911,24 +17934,33 @@ def _adjust_supply_on_delivery(cx, order_id, delivered_at):
             return {"granted": False}
         if done:
             cx.execute("RELEASE SAVEPOINT supply_delivery")
+            if why == "revoked":
+                return {"granted": False, "revoked": True, "already": True}
             return {"granted": True, "ends_at": ends_s, "already": True}
         # A grant revoked since payment (a refund) stays revoked, and a cancelled or
         # refunded order earns nothing. Mark it delivered so a re-run does not retry.
-        cur = cx.execute("SELECT expires_at FROM memberships WHERE id=?", (mid,)).fetchone()
+        cur = cx.execute("SELECT expires_at, granted_at FROM memberships WHERE id=?",
+                         (mid,)).fetchone()
         ost = cx.execute("SELECT status, pay_status FROM orders WHERE id=?",
                          (order_id,)).fetchone()
-        revoked = not cur or (_supply_naive(cur[0]) or datetime.min) <= datetime.utcnow()
+        # Revoke sets the expiry to "now", earlier than the end this grant was given.
+        # A grant that simply ran out (a late parcel) still ends where it was set.
+        set_end = _supply_naive(ends_s)
+        now_end = _supply_naive(cur[0]) if cur else None
+        revoked = (now_end is None or
+                   (set_end is not None and now_end < set_end - timedelta(minutes=1)))
         void = bool(ost) and ((ost[0] or "") == "cancelled" or (ost[1] or "") == "refunded")
         if revoked or void:
-            cx.execute("UPDATE order_supply_grants SET delivered_at=? WHERE order_ref=?",
-                       (delivered_at, ref))
+            cx.execute("UPDATE order_supply_grants SET delivered_at=?, reason='revoked' "
+                       "WHERE order_ref=?", (delivered_at, ref))
             cx.execute("RELEASE SAVEPOINT supply_delivery")
             cx.commit()
             return {"granted": False, "revoked": True}
         delivered = _supply_naive(delivered_at) or datetime.utcnow()
         # Read the access before this order live: an earlier order re-timed at its
         # own delivery has moved, and the stored value would overlap it.
-        prior = _supply_prior_end(cx, email, delivered, exclude_id=mid)
+        prior = _supply_prior_end(cx, email, delivered, exclude_id=mid,
+                                  granted_before=_supply_naive(cur[1]))
         start = max(delivered, prior) if prior else delivered
         end = start + timedelta(days=SUPPLY_MONTH_DAYS * int(months or 1))
         cap = _supply_cap_end(cx, email) or _supply_naive(cap_s)
