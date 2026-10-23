@@ -17507,13 +17507,11 @@ def _grant_membership_line_on_paid(cx, order):
     return "granted"
 
 
-# What membership includes, in Glen's order (2026-10-22). Placeholder copy until the
-# bnsn pass; the invoice card lists the same five.
+# What the one-month plan includes (Glen, 2026-10-22). The monthly re-match and the
+# individual Terrain Restore are the annual plans'. Still open: whether "Your AI ally"
+# is listed, and the Biofield line (copy pass). The invoice card lists the same.
 MEMBERSHIP_BENEFITS = (
-    "Weekly live group coaching",
-    "Your protocol re-matched every month",
-    "Your AI ally",
-    "Terrain Restore",
+    "Live group coaching with Dr. Glen",
     "Biofield Analysis at $200 instead of $300",
 )
 

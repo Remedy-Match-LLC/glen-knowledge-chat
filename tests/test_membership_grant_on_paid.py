@@ -319,7 +319,7 @@ def test_a_paid_month_sends_its_terms_once(cx, sent):
     assert len(terms) == 1 and terms[0][0] == "terms@example.com"
     body = terms[0][3]
     assert "Membership is $99 for one month. It does not renew, so there is nothing to cancel." in body
-    assert body.index("Weekly live group coaching") < body.index("Biofield Analysis at $200 instead of $300")
+    assert body.index("Live group coaching with Dr. Glen") < body.index("Biofield Analysis at $200 instead of $300")
 
 
 def test_an_existing_member_gets_no_terms_email(cx, sent, monkeypatch):
