@@ -444,7 +444,7 @@ async function applyPoints(){
   const cents = Math.max(0, Math.round(parseFloat(($('pts-in')||{}).value||'0')*100));
   const r = await fetch(API+'/apply-points', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cents})});
   const j = await r.json(); if(!j.ok){ alert(j.error||'could not apply points'); return; }
-  ORDER=j.order; renderTotals();
+  ORDER=j.order; renderTotals(); setupPay();   // the balance changed: redo the pay card
 }
 async function cancelOrder(){
   if(!confirm('Cancel this order? You can always reach out and we’ll be glad to help you reorder.')) return;
@@ -481,6 +481,7 @@ async function applyPlan(forever, btn){
     ORDER=j.order;
     LINES=linesFromOrder();
     renderLines(); renderTotals(); renderSavings();   // offer now absent -> banner hides
+    setupPay();   // the total changed: redo the pay card
   }catch(e){ $('savings-msg').textContent='Network error — please try again.'; if(btn) btn.disabled=false; }
 }
 // Join-and-save: offer the customer membership pricing on THIS order, self-served
@@ -585,6 +586,10 @@ function setupPay(){
   // Not ready to order (2026-10-20): no Pay button. The refusal line links to the
   // product page, where the waiting list is. Cancel stays.
   // Re-run after an edit (review round 3): undo what a not-ready pass hid.
+  // Any change to the order voids a Zelle block already on screen and any /pay reply
+  // still loading: both carry the old balance (review 2026-10-23).
+  PAY_GEN++;
+  $('pay-instr').style.display='none'; $('claim-btn').style.display='none'; $('order-notes').hidden=true;
   $('pay-card').style.display='';
   ['pay-methods','pay-btn'].forEach(id=>{ $(id).style.display=''; });
   $('pay-notice').innerHTML='';
@@ -613,12 +618,23 @@ function setupPay(){
   document.querySelectorAll('input[name=m]').forEach(el=>el.onchange=()=>{curMethod=el.value; PAY_GEN++; $('claim-btn').style.display='none'; $('pay-instr').style.display='none'; $('order-notes').hidden=true; $('pay-btn').style.display='';
     // Choosing Zelle shows how to pay at once (Glen, 2026-10-23).
     if (curMethod==='zelle') pay();});
+  // Zelle still chosen: fetch the new balance at once.
+  if (curMethod==='zelle') pay();
 }
 async function pay(){
   const method = curMethod, gen = ++PAY_GEN;
   $('pay-msg').textContent='…';
-  const r = await fetch(API+'/pay', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({method})});
-  const j = await r.json();
+  let j;
+  try {
+    const r = await fetch(API+'/pay', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({method})});
+    j = await r.json();
+  } catch (e) {
+    // A network failure, or a non-JSON reply such as a 502 page: never leave "…".
+    if (gen !== PAY_GEN) return;
+    $('pay-msg').textContent='We could not reach the payment service. Please try again.';
+    $('pay-btn').style.display='';
+    return;
+  }
   if (gen !== PAY_GEN) return;   // a newer selection or pay() superseded this reply
   if(!j.ok){
     // A refusal carries its product page as `url`: the line links to it (2026-10-20).

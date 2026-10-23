@@ -152,6 +152,7 @@ def _setup_pay(order):
       const $ = el;
       const money = c => '$' + (c/100).toFixed(2);
       const document = { querySelectorAll: () => [] };
+      let curMethod = 'card', PAY_GEN = 0;   // page globals setupPay reads
       const ORDER = %s;
       %s
       setupPay();

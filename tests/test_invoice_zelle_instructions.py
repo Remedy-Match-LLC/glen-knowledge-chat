@@ -339,3 +339,163 @@ def test_a_zelle_reply_after_switching_to_card_paints_nothing():
         pending[0](reply(47300)); await tick();
     """))
     assert out == ""
+
+
+# ── round 1/3: the memo for non-invoice refs ────────────────────────────────
+
+@pytest.mark.parametrize("ref,memo", [
+    ("DS-230", "Invoice DS-230"),
+    ("INH-77", "Invoice INH-77"),
+    ("FMP-1234", "Invoice FMP-1234"),
+    ("0123456789abcdef0123456789abcdef", "Order 5"),   # a checkout uuid
+    ("portal-9f2c", "Order 5"),
+    ("", "Order 5"),
+])
+def test_memo_names_an_invoice_only_for_invoice_refs(ref, memo):
+    app_module = importlib.import_module("app")
+    assert app_module._invoice_zelle_memo({"id": 5}, ref) == memo
+
+
+def test_a_checkout_ref_invoice_carries_the_order_memo(env):
+    oid, tok = env["order"](ref="0123456789abcdef0123456789abcdef", total=5000)
+    o = env["c"].get(f"/api/invoice/{tok}").get_json()["order"]
+    assert o["zelle_pay"]["memo"] == f"Order {oid}"
+
+
+# ── round 1/3: a changed order refreshes the Zelle block ────────────────────
+
+def _harness(script):
+    """Real setupPay, pay, applyPoints and zelleInstrHtml, with a fake DOM and a
+    fetch whose /pay replies are released by hand."""
+    return """
+      const els = {};
+      const $ = id => (els[id] = els[id] || {style:{}, hidden:false, textContent:'',
+                                              innerHTML:'', value:'', disabled:false});
+      const radios = ['card','zelle','wise'].map(v => ({value:v}));
+      const document = {querySelectorAll: () => radios,
+                        querySelector: () => ({hidden:false})};
+      const window = {}; const API = '/api/invoice/T';
+      let curMethod = 'card', PAY_GEN = 0;
+      const order = cents => ({payable:true, paylink_enabled:true, pay_amount_cents:cents,
+                               total_cents:47300});
+      let ORDER = order(47300);
+      function renderTotals(){}
+      const payReplies = [];
+      let pointsOrder = null;
+      const fetch = (url) => url.endsWith('/pay')
+        ? new Promise(res => payReplies.push(res))
+        : Promise.resolve({json: () => Promise.resolve({ok:true, order: pointsOrder})});
+      const zReply = cents => ({json: () => Promise.resolve({ok:true, method:'zelle',
+        pay_instructions:{name:'Susan Luscombe', to:'p@x', amount_cents:cents,
+                          memo:'Invoice DS-230'}})});
+      const tick = () => new Promise(r => setTimeout(r, 5));
+      const shown = () => els['pay-instr'].style.display === 'block'
+                          ? els['pay-instr'].innerHTML : '';
+      %s
+      %s
+      %s
+      %s
+      %s
+      %s
+      (async () => { const out = {}; %s console.log(JSON.stringify(out)); })();
+    """ % (_const("money"), _fn("esc"), _fn("zelleInstrHtml"), _fn("setupPay"),
+           "async " + _fn("pay"), "async " + _fn("applyPoints"), script)
+
+
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_points_applied_after_choosing_zelle_show_the_new_balance():
+    out = _run(_harness("""
+        setupPay(); radios[1].onchange(); curMethod = 'zelle';
+        payReplies[0](zReply(47300)); await tick();
+        out.first = shown();
+        pointsOrder = order(40000); els['pts-in'] = {value:'73'};
+        await applyPoints();
+        out.during = shown(); out.claimDuring = els['claim-btn'].style.display;
+        payReplies[payReplies.length-1](zReply(40000)); await tick();
+        out.after = shown(); out.payBtn = els['pay-btn'].style.display;
+    """))
+    assert "$473.00" in out["first"]
+    assert out["during"] == "" and out["claimDuring"] == "none"
+    assert "$400.00" in out["after"] and "$473.00" not in out["after"]
+    assert out["payBtn"] == "none"     # Pay never sits beside "I've sent payment"
+
+
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_an_old_balance_in_flight_when_points_apply_is_dropped():
+    out = _run(_harness("""
+        setupPay(); curMethod = 'zelle'; radios[1].onchange();
+        pointsOrder = order(40000); els['pts-in'] = {value:'73'};
+        await applyPoints();
+        const n = payReplies.length;
+        payReplies[n-1](zReply(40000)); await tick();
+        for (let i = 0; i < n-1; i++) payReplies[i](zReply(47300));
+        await tick();
+        out.after = shown();
+    """))
+    assert "$400.00" in out["after"] and "$473.00" not in out["after"]
+
+
+@pytest.mark.parametrize("fn,call", [
+    ("applyPoints", "applyPoints()"),
+    ("applyPlan", "applyPlan(false, null)"),
+    ("pushUpdate", "pushUpdate()"),
+    ("toggleInvoiceMembership", "toggleInvoiceMembership('add')"),
+])
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_every_order_change_redoes_the_pay_card(fn, call):
+    out = _run("""
+      const $ = id => ({style:{}, value:'1', textContent:''});
+      const API = '/api/invoice/T'; const event = undefined;
+      let ORDER = {savings_offer:{cohort_key:'k'}, membership_offer:{tier:'month'}, lines:[]};
+      let LINES = [], setups = 0;
+      const fetch = () => Promise.resolve({json: () => Promise.resolve({ok:true,
+                                            order:{lines:[]}})});
+      function setupPay(){ setups++; }
+      function renderTotals(){} function renderLines(){} function renderSavings(){}
+      function renderPayments(){} function renderMembershipOffer(){}
+      function renderFromOrder(){} function linesFromOrder(){ return []; }
+      async %s
+      (async () => { await %s; console.log(JSON.stringify(setups)); })();
+    """ % (_fn(fn), call))
+    assert out >= 1
+
+
+# ── round 1/3: pay() survives a failed or non-JSON reply ────────────────────
+
+@pytest.mark.parametrize("failure", [
+    "() => Promise.reject(new TypeError('Failed to fetch'))",
+    "() => Promise.resolve({json: () => Promise.reject(new SyntaxError('Unexpected token <'))})",
+])
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_a_failed_pay_reply_shows_retry_and_keeps_pay(failure):
+    out = _run("""
+      const els = {};
+      const $ = id => (els[id] = els[id] || {style:{display:'none'}, textContent:'', innerHTML:''});
+      const window = {}; const API = '/api/invoice/T';
+      let curMethod = 'zelle', PAY_GEN = 0;
+      const fetch = %s;
+      %s
+      %s
+      %s
+      %s
+      (async () => { await pay(); console.log(JSON.stringify({
+          msg: els['pay-msg'].textContent, btn: els['pay-btn'].style.display})); })();
+    """ % (failure, _const("money"), _fn("esc"), _fn("zelleInstrHtml"), "async " + _fn("pay")))
+    assert out["msg"] == "We could not reach the payment service. Please try again."
+    assert out["btn"] == ""
+
+
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_an_old_zelle_reply_cannot_paint_once_nothing_is_owed():
+    """Points cover the rest while a Zelle fetch is loading: setupPay re-runs with
+    nothing payable and fetches nothing. The old reply must still be dropped."""
+    out = _run(_harness("""
+        setupPay(); curMethod = 'zelle'; radios[1].onchange();
+        pointsOrder = Object.assign(order(0), {payable:false}); els['pts-in'] = {value:'473'};
+        await applyPoints();
+        out.calls = payReplies.length;
+        payReplies[0](zReply(47300)); await tick();
+        out.after = shown(); out.claim = els['claim-btn'].style.display;
+    """))
+    assert out["calls"] == 1
+    assert out["after"] == "" and out["claim"] == "none"

@@ -8510,6 +8510,15 @@ _ALT_PAY = {
 _ZELLE_PAYEE_NAME = (os.environ.get("ZELLE_PAYEE_NAME") or "").strip() or "Susan Luscombe"
 
 
+def _invoice_zelle_memo(order, ref):
+    """The memo the client types into Zelle. An invoice number (INH-, DS-, an FMP ref)
+    reads "Invoice <ref>". A checkout uuid or a portal- ref means nothing to a person,
+    so those read "Order <id>", as the cart's Zelle memo does (review round 1/3)."""
+    if ref and not (_CHECKOUT_REF_RE.fullmatch(ref) or ref.startswith("portal-")):
+        return f"Invoice {ref}"
+    return f"Order {order.get('id')}"
+
+
 def _invoice_zelle_instructions(order, owed_cents):
     """What a client needs to pay this invoice by Zelle: payee, address, the balance
     still owed (never the original total), and the invoice number as the memo."""
@@ -8518,7 +8527,7 @@ def _invoice_zelle_instructions(order, owed_cents):
     link = str(z.get("pay_link") or "").strip()
     return {"label": z["label"], "name": _ZELLE_PAYEE_NAME, "to": z["to"],
             "amount_cents": int(owed_cents),
-            "memo": f"Invoice {ref}" if ref else f"Order {order.get('id')}",
+            "memo": _invoice_zelle_memo(order, ref),
             # An https link only: it is written into an href on the page.
             "pay_link": link if link.startswith("https://") else "",
             "note": "Put the memo above on your Zelle payment so we can match it "
