@@ -17508,8 +17508,8 @@ def _grant_membership_line_on_paid(cx, order):
 
 
 # What the one-month plan includes (Glen, 2026-10-22). The monthly re-match and the
-# individual Terrain Restore are the annual plans'. Still open: whether "Your AI ally"
-# is listed, and the Biofield line (copy pass). The invoice card lists the same.
+# individual Terrain Restore are the annual plans'. The AI ally returns once a
+# member-only chat depth ships. Still open: the Biofield line. The card lists the same.
 MEMBERSHIP_BENEFITS = (
     "Live group coaching with Dr. Glen",
     "Biofield Analysis at $200 instead of $300",
