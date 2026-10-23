@@ -42,16 +42,39 @@ def ensure_schema(cx):
                "source TEXT NOT NULL DEFAULT 'invoice', linked_at TEXT NOT NULL)")
 
 
-def link_order(cx, test_id, order_id, source="invoice"):
-    """Remember that this test's invoice is this order. A later raise replaces it."""
-    oid = int(order_id)
+def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False):
+    """Remember that this test's invoice is this order. Returns (stored, reason).
+
+    Refused when another test already holds this order: a household's second raise
+    updates the same open order, and two tests trusting one order could each email it.
+    With only_if_unlinked, refused when this test already has a link (the backfill
+    must never overwrite one). Both checks run inside the write transaction."""
+    oid, tid = int(order_id), str(test_id)
     ensure_schema(cx)
-    cx.execute(f"INSERT INTO {LINK_TABLE} (test_id, order_id, source, linked_at) "
-               "VALUES (?,?,?,?) ON CONFLICT(test_id) DO UPDATE SET "
-               "order_id=excluded.order_id, source=excluded.source, linked_at=excluded.linked_at",
-               (str(test_id), oid, source,
-                _dt.datetime.now(_dt.timezone.utc).isoformat()))
     cx.commit()
+    cx.execute("BEGIN IMMEDIATE")
+    try:
+        other = cx.execute(f"SELECT test_id FROM {LINK_TABLE} WHERE order_id=? AND test_id<>?",
+                           (oid, tid)).fetchone()
+        if other:
+            cx.rollback()
+            return False, f"order #{oid} is already stored for test {other[0]}"
+        if only_if_unlinked:
+            mine = cx.execute(f"SELECT order_id FROM {LINK_TABLE} WHERE test_id=?",
+                              (tid,)).fetchone()
+            if mine:
+                cx.rollback()
+                return False, f"test {tid} already has order #{mine[0]}"
+        cx.execute(f"INSERT INTO {LINK_TABLE} (test_id, order_id, source, linked_at) "
+                   "VALUES (?,?,?,?) ON CONFLICT(test_id) DO UPDATE SET "
+                   "order_id=excluded.order_id, source=excluded.source, "
+                   "linked_at=excluded.linked_at",
+                   (tid, oid, source, _dt.datetime.now(_dt.timezone.utc).isoformat()))
+        cx.commit()
+        return True, ""
+    except Exception:
+        cx.rollback()
+        raise
 
 
 def _has_table(cx, name):
@@ -148,6 +171,42 @@ def fetch_orders(order_ids=()):
         return [], f"the order lookup failed ({type(e).__name__})"
 
 
+def fetch_order(order_id):
+    """(orders, error) for ONE order and whatever replaced it, re-read at click time."""
+    base, key = _console()
+    if not base:
+        return [], "no console key configured on this machine"
+    url = (f"{base}/api/console/biofield-progress-orders?only=1&ids={int(order_id)}")
+    try:
+        req = urllib.request.Request(url, headers={"X-Console-Key": key})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            body = _json.loads(r.read().decode() or "{}")
+        if not body.get("ok"):
+            return [], body.get("error") or "the order lookup failed"
+        return body.get("orders") or [], None
+    except Exception as e:  # noqa: BLE001
+        return [], f"the order lookup failed ({type(e).__name__})"
+
+
+def follow(order_id, orders):
+    """The order that stands for order_id now: itself, or what replaced it. None when
+    the chain cannot be followed in `orders`."""
+    by_id = {int(o["id"]): o for o in orders or [] if o.get("id") is not None}
+    o, seen = by_id.get(int(order_id)), set()
+    while o and o.get("superseded_by_order_id"):
+        if int(o["id"]) in seen:
+            return None
+        seen.add(int(o["id"]))
+        o = by_id.get(int(o["superseded_by_order_id"]))
+    return o
+
+
+def send_to(order):
+    """The address prod's orders.send_invoice emails: the order's email. (recipient_email
+    is the client on a practitioner drop-ship, never the invoice's addressee.)"""
+    return (order.get("email") or "").strip().lower()
+
+
 def has_biofield_line(items):
     return any((it or {}).get("slug") == BIOFIELD_SLUG or (it or {}).get("source") == "biofield"
                for it in items or [])
@@ -196,25 +255,31 @@ def match_order(test, link_id, orders):
 
 
 def paid_state(order):
-    """("full"|"part"|"claimed"|"open", paid_cents). Full when paid_cents reaches the
-    total, or a paid order predating paid_cents (paid_cents 0 with pay_status paid)."""
+    """("full"|"part"|"claimed"|"open", paid_cents), as prod decides it.
+
+    Full is pay_status "paid". Part paid is the ledger's net payments (as the Orders
+    board reads them) above zero and below the total, falling back to paid_cents for
+    an order the endpoint sent no ledger figure for."""
     total = int(order.get("total_cents") or 0)
     paid = int(order.get("paid_cents") or 0)
     status = (order.get("pay_status") or "").strip().lower()
-    if paid > 0 and paid >= total:
-        return "full", paid
-    if status == "paid" and paid == 0:
-        return "full", paid
-    if paid > 0:
-        return "part", paid
+    ledger = order.get("ledger_paid_cents")
+    got = int(ledger) if ledger is not None else paid
+    if status == "paid":                    # prod's word, whatever the amounts say
+        return "full", got
+    if 0 < got < total:
+        return "part", got
     if status == "claimed":
         return "claimed", 0
-    return "open", 0
+    return "open", got
 
 
 def build(authored, local, links, orders, orders_error=None):
     """One progress dict per authored test, in list order."""
     out = []
+    holders = {}
+    for _tid, _oid in (links or {}).items():
+        holders.setdefault(int(_oid), []).append(_tid)
     for t in authored or []:
         tid = str(t.get("test_id") or "")
         loc = (local or {}).get(tid) or {}
@@ -226,7 +291,8 @@ def build(authored, local, links, orders, orders_error=None):
              "orders_error": orders_error or "",
              "order_id": None, "basis": None, "missing": False, "cancelled": False,
              "amount_cents": None, "invoice_uploaded": False, "invoice_emailed": "",
-             "paid": "open", "paid_cents": 0, "paid_at": ""}
+             "paid": "open", "paid_cents": 0, "paid_at": "", "send_to": "",
+             "recipient_email": "", "shared_with": []}
         link_id = (links or {}).get(tid)
         if orders_error and not link_id:
             p["all_done"] = False
@@ -235,6 +301,12 @@ def build(authored, local, links, orders, orders_error=None):
         o, basis = match_order(t, link_id, orders)
         if o:
             p["order_id"] = int(o["id"])
+            # One order stored for two tests (a household): neither line may trust it.
+            shared = sorted({x for k in {int(link_id or 0), int(o["id"])}
+                             for x in holders.get(k, [])} - {tid}) if link_id else []
+            if shared:
+                basis = "shared"
+                p["shared_with"] = shared
             p["basis"] = basis
             if o.get("missing"):
                 p["missing"] = True
@@ -245,6 +317,8 @@ def build(authored, local, links, orders, orders_error=None):
                 p["invoice_emailed"] = o.get("invoice_sent_at") or ""
                 p["paid"], p["paid_cents"] = paid_state(o)
                 p["paid_at"] = o.get("paid_at") or ""
+                p["send_to"] = send_to(o)
+                p["recipient_email"] = (o.get("recipient_email") or "").strip().lower()
         p["all_done"] = is_done(p)
         out.append(p)
     return out
@@ -264,7 +338,10 @@ def is_done(p):
         return True
     if not p.get("order_id") or p.get("missing") or p.get("cancelled") or p.get("orders_error"):
         return False
-    return bool(p.get("invoice_uploaded") and p.get("invoice_emailed") and p.get("paid") == "full")
+    if p.get("basis") != "link":            # a guessed or shared order never greys a line
+        return False
+    # A paid order needs no invoice email.
+    return bool(p.get("invoice_uploaded") and p.get("paid") == "full")
 
 
 def short_date(ts):
@@ -384,14 +461,20 @@ def propose_links(authored, links, orders_by_email):
     return out
 
 
-def apply_links(cx, proposals):
-    """Write the 'propose' rows only. Returns how many were stored, after reading
-    each one back."""
+def apply_links(cx, proposals, out=print):
+    """Write the 'propose' rows only, and only where the test still has no link and
+    no other test holds the order: both re-checked inside the write transaction, so
+    a link made after the dry run is never overwritten. Returns how many were
+    stored, each read back."""
     n = 0
     for p in proposals:
         if p["status"] != "propose":
             continue
-        link_order(cx, p["test_id"], p["order_id"], source="backfill")
+        ok, why = link_order(cx, p["test_id"], p["order_id"], source="backfill",
+                             only_if_unlinked=True)
+        if not ok:
+            out(f"skipped {p['test_id']}: {why}")
+            continue
         if linked_order(cx, p["test_id"]) != int(p["order_id"]):
             raise RuntimeError(f"{p['test_id']}: link did not land")
         n += 1

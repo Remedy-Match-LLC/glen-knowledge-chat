@@ -56,7 +56,7 @@ def run(db_path, apply=False, fetch=None, out=print):
         out("DRY RUN: nothing written. Re-run with --apply to store the 'propose' rows.")
         return proposals, 0
     with sqlite3.connect(db_path) as cx:
-        n = bp.apply_links(cx, proposals)
+        n = bp.apply_links(cx, proposals, out=out)
     out(f"APPLIED: stored {n} link(s).")
     return proposals, n
 

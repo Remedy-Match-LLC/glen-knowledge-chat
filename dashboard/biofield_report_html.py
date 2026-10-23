@@ -3461,10 +3461,12 @@ def _step_open(href, label, title):
     return (f'<td><a class=step href="{_e(href)}" title="{_e(title)}">{_e(label)}</a></td>')
 
 
-def _step_act(url, oid, label, question):
-    """An open step that acts on production. It asks first (stepAct), and the
-    server refuses the call without confirm:true."""
+def _step_act(url, oid, label, question, amount_cents, recipient):
+    """An open step that acts on production. It asks first (stepAct), and the POST
+    carries the total and addressee that were confirmed: the server re-reads the
+    order and refuses if either changed, and refuses any call without confirm:true."""
     return (f'<td><button type=button class=step data-url="{_e(url)}" data-order="{int(oid)}" '
+            f'data-amount="{int(amount_cents or 0)}" data-recipient="{_e(recipient or "")}" '
             f'data-confirm="{_e(question)}" onclick="stepAct(this)">{_e(label)}</button></td>')
 
 
@@ -3475,6 +3477,8 @@ def _step_none(text="&ndash;", title=""):
 
 _APPROX = ("Matched by email: no invoice is stored for this test, so this may be another "
            "of the client's orders. Its buttons open the order instead of acting.")
+_SHARED = ("This order is stored for another test too (a household), so it may not be this "
+           "test's invoice alone. Its buttons open the order instead of acting.")
 
 
 def _progress_cells(t):
@@ -3504,9 +3508,10 @@ def _progress_cells(t):
         why = (p.get("orders_error") or "prod did not return it")
         return (cells + _step_none(f"#{int(oid)} ?", f"Stored order #{int(oid)}: {why}")
                 + "".join(_step_none("?", why) for _ in range(3)))
-    approx = p.get("basis") == "email"
+    approx = p.get("basis") in ("email", "shared")
     amount = ("&asymp; " if approx else "") + _e(_money(p.get("amount_cents")))
-    title = _APPROX if approx else f"Order #{int(oid)}"
+    why = _SHARED if p.get("basis") == "shared" else _APPROX
+    title = why if approx else f"Order #{int(oid)}"
     if p.get("cancelled"):
         cells += (f'<td><a class=step href="{_e(order_url)}" title="{_e(title)}">'
                   f"#{int(oid)} cancelled</a></td>")
@@ -3514,23 +3519,30 @@ def _progress_cells(t):
     cells += (f'<td{" class=approx" if approx else ""}><a href="{_e(order_url)}" '
               f'title="{_e(title)}">{amount}</a></td>')
     money = _money(p.get("amount_cents"))
+    to = p.get("send_to") or ""
+    client = p.get("recipient_email") or ""
+    also = f" The client on the order is {client}." if client and client != to else ""
+    paid = p.get("paid")
     if p.get("invoice_uploaded"):
         cells += _step_done()
     elif approx:
-        cells += _step_open(order_url, "Open order", _APPROX)
+        cells += _step_open(order_url, "Open order", why)
     else:
         cells += _step_act(f"/author/{qt}/progress/invoice-publish", oid, "Publish",
-                           f"Publish invoice #{int(oid)} ({money}) to {who}'s portal? "
-                           "This changes production.")
+                           f"Publish invoice #{int(oid)} for {money} to the portal of {to} "
+                           f"({who})?{also} This changes production.",
+                           p.get("amount_cents"), to)
     if p.get("invoice_emailed"):
         cells += _step_done(p["invoice_emailed"])
+    elif paid == "full":
+        cells += _step_none("n/a", "Paid, so no invoice email is needed")
     elif approx:
-        cells += _step_open(order_url, "Open order", _APPROX)
+        cells += _step_open(order_url, "Open order", why)
     else:
         cells += _step_act(f"/author/{qt}/progress/invoice-email", oid, "Email",
-                           f"Email invoice #{int(oid)} ({money}) to {who}? "
-                           "This sends a real email to the client.")
-    paid = p.get("paid")
+                           f"Email invoice #{int(oid)} for {money} to {to} ({who})?{also} "
+                           "This sends a real email, and any caregiver set to get copies "
+                           "is emailed too.", p.get("amount_cents"), to)
     if paid == "full":
         cells += _step_done(p.get("paid_at"))
     elif paid == "part":
@@ -3545,15 +3557,27 @@ def _progress_cells(t):
 
 _STEP_JS = (
     "<script>\n"
+    "async function stepPost(btn,resend){\n"
+    "  var body={order_id:Number(btn.dataset.order),amount_cents:Number(btn.dataset.amount),"
+    "recipient:btn.dataset.recipient,confirm:true};\n"
+    "  if(resend)body.resend=true;\n"
+    "  var r=await fetch(btn.dataset.url,{method:'POST',headers:{'Content-Type':'application/json'},"
+    "body:JSON.stringify(body)});return await r.json();\n"
+    "}\n"
+    "function stepUnknown(btn){btn.disabled=true;"
+    "btn.textContent='result unknown, reload before retrying';}\n"
     "async function stepAct(btn){\n"
     "  if(!confirm(btn.dataset.confirm))return;\n"
     "  var t=btn.textContent;btn.disabled=true;btn.textContent='working...';\n"
     "  var j=null;\n"
-    "  try{var r=await fetch(btn.dataset.url,{method:'POST',headers:{'Content-Type':'application/json'},"
-    "body:JSON.stringify({order_id:Number(btn.dataset.order),confirm:true})});j=await r.json();}\n"
-    "  catch(e){btn.textContent='unknown';alert('No reply, so this may or may not have gone through. "
-    "Reload the list before trying again.');return;}\n"
+    "  try{j=await stepPost(btn,false);\n"
+    # A send within the last 15 minutes needs a second, explicit yes.
+    "    if(j&&j.recent){if(!confirm('This invoice was already emailed at '+j.sent_at+"
+    "'. Send it again to '+btn.dataset.recipient+'?')){btn.disabled=false;btn.textContent=t;return;}\n"
+    "      j=await stepPost(btn,true);}\n"
+    "  }catch(e){stepUnknown(btn);return;}\n"
     "  if(j&&j.ok){btn.parentNode.className='stepdone';btn.parentNode.innerHTML='&#10003; just now';return;}\n"
+    "  if(j&&j.unknown){stepUnknown(btn);return;}\n"
     "  btn.disabled=false;btn.textContent=t;alert((j&&j.error)||'It did not go through.');\n"
     "}\n</script>")
 

@@ -731,7 +731,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                ingredients_db=None,
                portal_link_fetch=None, auto_publish=None, fetch_fmp_history=None,
                client_gmail=None, records_reader=None,
-               progress_orders=None, invoice_publish=None, invoice_send=None):
+               progress_orders=None, invoice_publish=None, invoice_send=None,
+               order_fetch=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -935,6 +936,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     progress_orders = progress_orders or biofield_progress.fetch_orders
     invoice_publish = invoice_publish or biofield_invoice.default_publish_invoice
     invoice_send = invoice_send or biofield_invoice.default_send_invoice
+    order_fetch = order_fetch or biofield_progress.fetch_order
     def _default_portal_link_fetch(email, name):
         # Used only by "View Client Portal", which staff open. staff_open asks for a
         # one-time staff pass, so the portal shows the staff banner and asks before any
@@ -2277,10 +2279,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": created.get("error") or "Order creation failed."}, 502
         # Remember which order this test's invoice is, so the list never has to guess
         # it by email (Glen, 2026-10-23). Best-effort: the invoice already exists.
+        # Refused when another test holds the order (a household raise that updated the
+        # same open order); the page says so.
+        link_refused = ""
         try:
             if created.get("order_id"):
                 with sqlite3.connect(db_path) as cx:
-                    biofield_progress.link_order(cx, test_id, created["order_id"])
+                    _ok, _why = biofield_progress.link_order(cx, test_id, created["order_id"])
+                if not _ok:
+                    link_refused = _why
         except Exception as _le:
             print(f"[progress] {test_id}: order link not stored: {_le!r}", flush=True)
         link = invoice_link(created.get("order_id"))
@@ -2303,6 +2310,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         off = _rsplit.left_off_warning(left_off, fee_only=include_fee and not remedies)
         if off:
             warning = (warning + " " if warning else "") + _esc(off)
+        if link_refused:
+            warning = ((warning + " " if warning else "") + _esc(
+                f"Not stored against this test: {link_refused}. Its line in the list "
+                "shows this invoice as approximate."))
         return {"ok": True, "already_paid": bool(paid.get("paid")), "no_charge": no_charge,
                 "print_url": link.get("print_url") if link.get("ok") else "",
                 "order_id": created.get("order_id"),
@@ -2356,34 +2367,90 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": "no order_id"}, 400
         return invoice_publish(oid)
 
-    def _progress_action_order(test_id):
-        """The order a list button may act on, or an error response. Only a confirmed
-        click on a STORED link acts: an order matched by email may be the wrong
-        invoice, so its line only opens the order."""
+    _RESEND_WINDOW = datetime.timedelta(minutes=15)
+
+    def _progress_action_order(test_id, kind):
+        """The order a list button may act on, or an error response.
+
+        Acts only on a confirmed click, on the order STORED for this test (an order
+        matched by email may be the wrong invoice), never on one stored for two tests,
+        and only when prod's order, re-read now, still has the total and addressee the
+        confirm showed. A replaced stored order is followed to its replacement, and the
+        stored link moves to it."""
         body = request.get_json(silent=True) or {}
         if body.get("confirm") is not True:
             return None, ({"ok": False, "error": "Not done: this needs a confirm first."}, 400)
         try:
             oid = int(body.get("order_id"))
+            amount = int(body.get("amount_cents"))
         except (TypeError, ValueError):
-            return None, ({"ok": False, "error": "no order_id"}, 400)
+            return None, ({"ok": False, "error": "no order_id or amount_cents"}, 400)
+        recipient = str(body.get("recipient") or "").strip().lower()
+        if not recipient:
+            return None, ({"ok": False, "error": "no recipient"}, 400)
         with sqlite3.connect(db_path) as cx:
-            linked = biofield_progress.linked_order(cx, test_id)
-        if linked != oid:
+            links = biofield_progress.stored_links(cx)
+        linked = links.get(str(test_id))
+        if linked is None:
+            return None, ({"ok": False, "error": f"No invoice is stored for this test. Open "
+                           f"order #{oid} to act on it."}, 409)
+        orders, ferr = order_fetch(linked)
+        if ferr:
+            return None, ({"ok": False, "error": f"Not done: could not re-read the order "
+                           f"({ferr})."}, 502)
+        cur = biofield_progress.follow(linked, orders)
+        if not cur:
+            return None, ({"ok": False, "error": f"Not done: prod did not return order "
+                           f"#{linked}."}, 409)
+        cur_id = int(cur["id"])
+        others = sorted(t for t, o in links.items()
+                        if t != str(test_id) and int(o) in (int(linked), cur_id))
+        if others:
+            return None, ({"ok": False, "error": f"Not done: order #{cur_id} is also stored "
+                           f"for {', '.join(others)}. Open the order to act on it."}, 409)
+        if cur_id != oid:
             return None, ({"ok": False, "error": f"Order #{oid} is not the invoice stored for "
-                           "this test. Open the order to act on it."}, 409)
-        return oid, None
+                           "this test. Reload the list."}, 409)
+        if (cur.get("status") or "") == "cancelled":
+            return None, ({"ok": False, "error": f"Not done: order #{cur_id} is cancelled."}, 409)
+        now_total = int(cur.get("total_cents") or 0)
+        now_to = biofield_progress.send_to(cur)
+        if now_total != amount or now_to != recipient:
+            return None, ({"ok": False, "changed": True,
+                           "error": f"Not done: order #{cur_id} changed since this page "
+                                    f"loaded (now ${now_total / 100:,.2f} to {now_to}). "
+                                    "Reload the list."}, 409)
+        if kind == "email" and body.get("resend") is not True:
+            sent = str(cur.get("invoice_sent_at") or "").strip()
+            if sent:
+                try:
+                    at = datetime.datetime.fromisoformat(sent.replace("Z", "+00:00"))
+                    if at.tzinfo is None:
+                        at = at.replace(tzinfo=datetime.timezone.utc)
+                    recent = (datetime.datetime.now(datetime.timezone.utc) - at
+                              < _RESEND_WINDOW)
+                except ValueError:
+                    recent = True       # unreadable: ask rather than risk a second send
+                if recent:
+                    return None, ({"ok": False, "recent": True, "sent_at": sent,
+                                   "error": f"Invoice #{cur_id} was emailed at {sent}."}, 409)
+        if cur_id != int(linked):
+            with sqlite3.connect(db_path) as cx:
+                ok, why = biofield_progress.link_order(cx, test_id, cur_id, source="replaced")
+            if not ok:
+                return None, ({"ok": False, "error": f"Not done: {why}."}, 409)
+        return cur_id, None
 
     @app.route("/author/<test_id>/progress/invoice-publish", methods=["POST"])
     def progress_invoice_publish(test_id):
-        oid, err = _progress_action_order(test_id)
+        oid, err = _progress_action_order(test_id, "publish")
         if err:
             return err
         return invoice_publish(oid)
 
     @app.route("/author/<test_id>/progress/invoice-email", methods=["POST"])
     def progress_invoice_email(test_id):
-        oid, err = _progress_action_order(test_id)
+        oid, err = _progress_action_order(test_id, "email")
         if err:
             return err
         return invoice_send(oid)
