@@ -173,3 +173,40 @@ def test_a_line_added_before_the_cert_can_still_be_removed(tmp_path, monkeypatch
     assert client.get(f"/api/invoice/{token}").get_json()["order"].get("membership_offer") is not None
     assert client.post(f"/api/invoice/{token}/membership",
                        json={"action": "remove"}).status_code == 200
+
+
+def test_toggle_keeps_the_owners_discount_adjustment_and_shipping(tmp_path, monkeypatch):
+    # Glen, 2026-10-22: "keep them". Adding membership once dropped all three.
+    appmod, client, token = _client(tmp_path, monkeypatch)
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        # "in-house" is what every owner-built invoice stores (review round 3).
+        cx.execute("UPDATE orders SET source='in-house', discount_cents=1500, "
+                   "adjustment_cents=-700, shipping_cents=1234 WHERE id=1")
+        cx.commit()
+    for action in ("add", "remove"):
+        r = client.post(f"/api/invoice/{token}/membership",
+                        json={"action": action, "tier": "month"})
+        assert r.status_code == 200, r.data
+        with sqlite3.connect(db) as cx:
+            got = cx.execute("SELECT discount_cents, adjustment_cents, shipping_cents "
+                             "FROM orders WHERE id=1").fetchone()
+        assert tuple(got) == (1500, -700, 1234), (action, got)
+        # What the client sees adds up from those same three, and matches what is stored.
+        o = r.get_json()["order"]
+        assert (o["discount_cents"], o["adjustment_cents"], o["shipping_cents"]) == (1500, -700, 1234)
+        assert o["total_cents"] == o["subtotal_cents"] - 1500 - 700 + 1234, (action, o)
+        with sqlite3.connect(db) as cx:
+            assert cx.execute("SELECT total_cents FROM orders WHERE id=1").fetchone()[0] == o["total_cents"]
+
+
+
+def test_a_checkout_orders_engine_discount_is_not_applied_again(tmp_path, monkeypatch):
+    appmod, client, token = _client(tmp_path, monkeypatch)
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        cx.execute("UPDATE orders SET source='reorder', discount_cents=4200 WHERE id=1")
+        cx.commit()
+    r = client.post(f"/api/invoice/{token}/membership", json={"action": "add", "tier": "month"})
+    assert r.status_code == 200, r.data
+    assert r.get_json()["order"]["discount_cents"] == 0
