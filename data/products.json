@@ -3005,7 +3005,11 @@
    "ingredients_source": "db-formulations-2026-06-25",
    "description": "Clarity . Clarity Clarity This formulation is inspired by a study in which Rosmarinic Acid was remarkably powerful at clearing cloudy crystalline lens tissue in vitro. One to three capsules daily supplies a therapeutic dose of Rosmarinic acid concentrated as a standardized extract from Rosemary. Premium Organic Pullulan Vegicap Experience the power of nature with our pullulan vegicaps, formulated with high-quality botanicals, bioavailability boosters, and delivery drivers for optimal absorption and delivery to the crystalline lens of the eye. The eye's lens is avascular and has the densest...",
    "bottle_type": "30 Caps",
-   "fmp_id": "532"
+   "fmp_id": "532",
+   "intro": "Clarity supports both your eyes and your brain. Your retina grows from the same tissue as your brain. So your eyes and your brain share many of the same needs.\n\nRosmarinic acid is the heart of Clarity. It is concentrated from rosemary. In laboratory research, it helped restore transparency to clouded human lens protein. That study inspired this formula.\n\nPterostilbene is a natural polyphenol from blueberries, and a close relative of resveratrol. In studies of aging animals, it supported memory and healthy brain function. In laboratory studies, it also protected delicate eye tissues.\n\nPiperine, from black pepper, helps your body absorb polyphenols like these.",
+   "copy_pinned": [
+    "intro"
+   ]
   },
   "glutathione-syntropy": {
    "name": "Glutathione Syntropy",
