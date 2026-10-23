@@ -534,11 +534,14 @@ def test_a_flag_becomes_a_portal_request():
 def test_a_classifier_error_on_prod_is_flagged_possible_for_glens_yes(prod, monkeypatch,
                                                                        capsys):
     monkeypatch.setattr(prod, "_cl", _FakeCl("not json at all"))
-    assert prod._flag_biofield_request("c@x.com", "Cee", "Hello\nthere") is not None
-    assert "classifier failed for c@x.com" in capsys.readouterr().out
+    # No Biofield keyword: logged and dropped, so an outage does not flag every chat.
+    assert prod._flag_biofield_request("c@x.com", "Cee", "Hello\nthere") is None
+    assert "no Biofield keyword, not flagged" in capsys.readouterr().out
+    assert prod._flag_biofield_request("c@x.com", "Cee", "My biofield\nagain?") is not None
+    assert "classifier failed for c@x.com; flagged" in capsys.readouterr().out
     with sqlite3.connect(prod.LOG_DB) as cx:
         rows = cx.execute("SELECT certainty, note, quote FROM biofield_request_flags").fetchall()
-    assert rows == [("possible", "classifier failed", "Hello there")]
+    assert rows == [("possible", "classifier failed", "My biofield again?")]
     with sqlite3.connect(prod.LOG_DB) as cx:
         [f] = br.list_flags(cx, "2000-01-01")
     r = br.flag_to_request(f)
@@ -619,11 +622,12 @@ def test_the_classifier_returns_each_person_and_the_sender_among_them():
 def test_a_not_added_alert_is_not_repeated_within_seven_days(cx):
     br.record(cx, req("m1"))                                  # Jane's open line
     first = br.record(cx, req("m2"))
+    br.mark_alerted(cx, [r["id"] for r in br.unalerted(cx)])  # Glen was told about m2
     second = br.record(cx, req("m3"))
     other_source = br.record(cx, req("g1", source="ghl"))
     assert [first["kind"], second["kind"], other_source["kind"]] == ["duplicate"] * 3
     alerted = {r["source_ref"] for r in br.unalerted(cx)}
-    assert "m2" in alerted and "g1" in alerted and "m3" not in alerted
+    assert "g1" in alerted and "m3" not in alerted
     assert "not repeated" in br.get(cx, second["id"])["note"]
     assert "m3" not in {r["source_ref"] for r in br.unnoted(cx)}
 
@@ -639,3 +643,80 @@ def test_new_tables_are_listed_for_erasure_and_merge():
     for t in ("biofield_test_requests", "biofield_request_flags"):
         assert ce.HEALTH_TABLES[t] == "email"
         assert t in pmd.MOVE_TABLES
+
+
+# ── Verify round (2026-10-23) ───────────────────────────────────────────────
+
+def _cols(cx, table):
+    return [r[1] for r in cx.execute(f"PRAGMA table_info({table})")]
+
+
+def test_an_older_table_gains_every_later_column(cx):
+    # The first versions of both tables, before any later column.
+    cx.execute("""CREATE TABLE biofield_test_requests(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, name TEXT,
+        source TEXT NOT NULL, source_ref TEXT NOT NULL, requested_at TEXT, quote TEXT,
+        certainty TEXT NOT NULL, payer_email TEXT, status TEXT NOT NULL, test_id TEXT,
+        created_at TEXT NOT NULL)""")
+    cx.execute("""CREATE TABLE biofield_request_flags(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, name TEXT, certainty TEXT,
+        quote TEXT, for_name TEXT, for_email TEXT, message TEXT, created_at TEXT,
+        dedupe_key TEXT)""")
+    cx.execute("INSERT INTO biofield_test_requests(email, source, source_ref, certainty, "
+               "status, created_at) VALUES('old@x.com','email','m0','clear','requested','t')")
+    cx.commit()
+    for _ in range(2):                                   # idempotent
+        br.ensure_schema(cx)
+        br.init_flags_table(cx)
+    for table, later in br._LATER_COLUMNS.items():
+        assert {c for c, _ in later} <= set(_cols(cx, table)), table
+    assert cx.execute("SELECT quiet FROM biofield_test_requests").fetchone() == (0,)
+    # The full write path works on the migrated tables.
+    assert br.record(cx, req("m1", email="new@x.com"))["kind"] == "added"
+    br.add_flag(cx, "c@x.com", "Cee", {"certainty": "possible", "quote": "q"}, "q",
+                note="classifier failed")
+    assert br.list_flags(cx, "2000-01-01")[0]["note"] == "classifier failed"
+
+
+def test_every_later_column_is_in_the_create_statement_too(tmp_path):
+    c = sqlite3.connect(str(tmp_path / "fresh.db"))
+    br.ensure_schema(c)
+    br.init_flags_table(c)
+    for table, later in br._LATER_COLUMNS.items():
+        assert {col for col, _ in later} <= set(_cols(c, table)), table
+    c.close()
+
+
+def test_a_weekly_writer_is_alerted_at_most_once_every_seven_days(cx):
+    """Jane, with an open line, writes again every 4 days. Glen hears on day 0, 8 and
+    16: never twice inside 7 days, and never silenced for good by the quiet ones."""
+    import datetime as dt
+    br.record(cx, req("m1"))                                  # Jane's open line
+    quiet = []
+    for n in range(5):                                        # days 0, 4, 8, 12, 16
+        out = br.record(cx, req(f"m{n + 2}"))
+        quiet.append(br.get(cx, out["id"])["quiet"])
+        br.mark_alerted(cx, [r["id"] for r in br.unalerted(cx)])
+        for rid, at in cx.execute("SELECT id, alerted_at FROM biofield_test_requests "
+                                  "WHERE alerted_at IS NOT NULL").fetchall():
+            t = dt.datetime.strptime(at, "%Y-%m-%dT%H:%M:%SZ") - dt.timedelta(days=4)
+            cx.execute("UPDATE biofield_test_requests SET alerted_at=? WHERE id=?",
+                       (t.strftime("%Y-%m-%dT%H:%M:%SZ"), rid))
+        cx.commit()
+    assert quiet == [0, 1, 0, 1, 0]
+
+
+def test_quiet_rows_and_unalerted_duplicates_do_not_silence(cx):
+    br.record(cx, req("m1"))                                  # Jane's open line
+    first = br.record(cx, req("m2"))                          # not alerted yet
+    second = br.record(cx, req("m3"))
+    assert br.get(cx, second["id"])["quiet"] == 0             # an unalerted one counts not
+    br.mark_alerted(cx, [r["id"] for r in br.unalerted(cx)])
+    third = br.record(cx, req("m4"))
+    assert br.get(cx, third["id"])["quiet"] == 1              # within 7 days of an alert
+    # The alerted ones age out; only the quiet one is recent. It must not silence.
+    cx.execute("UPDATE biofield_test_requests SET alerted_at='2000-01-01T00:00:00Z' "
+               "WHERE id IN (?,?)", (first["id"], second["id"]))
+    cx.commit()
+    fourth = br.record(cx, req("m5"))
+    assert br.get(cx, fourth["id"])["quiet"] == 0

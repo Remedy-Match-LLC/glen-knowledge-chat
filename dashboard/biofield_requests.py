@@ -100,6 +100,11 @@ def one_line(s, cap=200):
     return s if len(s) <= cap else s[:cap - 1].rstrip() + "…"
 
 
+def mentions_biofield(text):
+    """True when the text names Biofield (the same pattern the clear guard uses)."""
+    return bool(_BIOFIELD.search(text or ""))
+
+
 def guard_certainty(certainty, text):
     """The model's verdict, held to Glen's naming rule in code, not only in the prompt.
 
@@ -218,13 +223,45 @@ def ensure_schema(cx):
         source TEXT NOT NULL, source_ref TEXT NOT NULL, requested_at TEXT, quote TEXT,
         certainty TEXT NOT NULL, payer_email TEXT, status TEXT NOT NULL, test_id TEXT,
         created_at TEXT NOT NULL, note TEXT, decided_at TEXT, alerted_at TEXT,
-        noted_at TEXT)""")
+        noted_at TEXT, quiet INTEGER NOT NULL DEFAULT 0)""")
+    cx.commit()
+    # A table made by an earlier version lacks the later columns: add each one missing.
+    for col, typ in _LATER_COLUMNS[TABLE]:
+        add_column(cx, TABLE, col, typ)
     cx.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_biofield_test_requests_source "
                "ON biofield_test_requests(source, source_ref)")
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_request_seen(
         source TEXT NOT NULL, source_ref TEXT NOT NULL, certainty TEXT, seen_at TEXT,
         PRIMARY KEY(source, source_ref))""")
     cx.commit()
+
+
+# Columns that were not in a table's first version. Each is nullable or defaulted, so
+# adding it to an existing table is safe. (2e1b328a's local table already has noted_at.)
+_LATER_COLUMNS = {
+    "biofield_test_requests": (("note", "TEXT"), ("decided_at", "TEXT"),
+                               ("alerted_at", "TEXT"), ("noted_at", "TEXT"),
+                               ("quiet", "INTEGER NOT NULL DEFAULT 0")),
+    "biofield_request_flags": (("note", "TEXT"),),
+}
+
+
+def add_column(cx, table, col, typ):
+    """Add one column if it is missing, on SQLite or Postgres (dashboard.db.column_exists;
+    pgcompat makes ADD COLUMN IF NOT EXISTS on Postgres). Race-safe like
+    portal_triage._add_column: the loser rolls back, re-checks and carries on."""
+    from dashboard import db as _db
+    if _db.column_exists(cx, table, col):
+        return False
+    try:
+        cx.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+        cx.commit()
+        return True
+    except Exception:
+        cx.rollback()
+        if not _db.column_exists(cx, table, col):
+            raise
+        return False
 
 
 def _has_table(cx, name):
@@ -383,13 +420,16 @@ def record(cx, req, unfinished=()):
         alerted = None
         if note:
             status, kind = "duplicate", "duplicate"
-            # Glen was told this person was not added, by this source, in the last
-            # DUP_QUIET_DAYS: file it already alerted, so the alert does not repeat.
+            # Glen was emailed that this person was not added, by this source, in the
+            # last DUP_QUIET_DAYS: file it quiet, so the alert does not repeat. Only a
+            # duplicate that was really alerted counts, never a quiet one, so a person
+            # who writes every week is alerted at most once in each DUP_QUIET_DAYS.
             since = (_dt.datetime.now(_dt.timezone.utc)
                      - _dt.timedelta(days=DUP_QUIET_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
             for oe, on, op in cx.execute(
                     f"SELECT email, name, payer_email FROM {TABLE} WHERE status='duplicate' "
-                    "AND source=? AND created_at>=?", (source, since)).fetchall():
+                    "AND source=? AND COALESCE(quiet,0)=0 AND alerted_at IS NOT NULL "
+                    "AND alerted_at>=?", (source, since)).fetchall():
                 if same_person(me, {"email": oe, "name": on, "payer_email": op}):
                     alerted = _now()
                     note += f"; alert not repeated within {DUP_QUIET_DAYS} days"
@@ -402,11 +442,12 @@ def record(cx, req, unfinished=()):
         new_id = dbwrite.insert_returning_id(
             cx,
             f"INSERT INTO {TABLE}(email, name, source, source_ref, requested_at, quote, "
-            "certainty, payer_email, status, created_at, note, alerted_at, noted_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "certainty, payer_email, status, created_at, note, alerted_at, noted_at, quiet) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (me["email"], me["name"], source, ref, req.get("requested_at") or _now(),
              one_line(req.get("quote")), req["certainty"], me["payer_email"] or None, status,
-             _now(), (note or req.get("note") or None), alerted, alerted))
+             _now(), (note or req.get("note") or None), alerted, alerted,
+             1 if alerted else 0))
         cx.commit()
         return {"kind": kind, "id": new_id, "note": note}
     except Exception:
@@ -614,6 +655,8 @@ def init_flags_table(cx):
         quote TEXT, for_name TEXT, for_email TEXT, message TEXT, created_at TEXT,
         dedupe_key TEXT, note TEXT)""")
     cx.commit()
+    for col, typ in _LATER_COLUMNS[FLAGS_TABLE]:
+        add_column(cx, FLAGS_TABLE, col, typ)
     try:
         cx.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_biofield_request_flags_dedupe "
                    "ON biofield_request_flags(dedupe_key)")

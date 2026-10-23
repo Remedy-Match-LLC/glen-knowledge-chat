@@ -34201,7 +34201,13 @@ def _flag_biofield_request(email, name, query):
         verdict = _br.classify(_br.haiku_complete(_cl), query, name, email)
         note = ""
         if verdict["certainty"] == "error":
-            # Never dropped: it reaches Glen's yes list as a possible request.
+            # A message that names Biofield reaches Glen's yes list as a possible
+            # request. Any other is logged and dropped, so a model outage does not turn
+            # every portal chat into a line.
+            if not _br.mentions_biofield(query):
+                print(f"[biofield-request] classifier failed for {email}; no Biofield "
+                      "keyword, not flagged", flush=True)
+                return None
             print(f"[biofield-request] classifier failed for {email}; flagged as possible",
                   flush=True)
             verdict = {"certainty": "possible", "quote": _br.one_line(query), "people": []}
