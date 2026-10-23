@@ -2261,9 +2261,15 @@ _ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 # ("Tell me about Clarity"); at the start of a sentence it needs a product cue ("Clarity
 # dose?"). Lowercase never counts. Review of the Clarity pin, 2026-10-23.
 _SENTENCE_START_CUE_NAMES = frozenset({"clarity"})
+# Pinned products that yield to any longer catalog name containing theirs, pinned or not:
+# "Crystalline Clarity" and the Clarity flower essences are other products. Opt-in, because
+# many pinned label names sit inside a longer unpinned FileMaker row ("Energessence
+# HomeoEnergetic Drops"), and those blocks must stay (review round 3, 2026-10-23).
+_YIELDS_TO_LONGER_NAMES = frozenset({"clarity"})
 # Closing quotes and brackets may sit between the full stop and the name: 'She said "I
-# feel tired." Clarity of mind ...' (review round 2), as may opening ones.
-_SENTENCE_START = re.compile(r"(?:^|[.!?:;])[\s\"'\u201c\u201d\u2018\u2019()]*$")
+# feel tired." Clarity of mind ...' (review round 2), as may opening ones. A colon or
+# semicolon does not end a sentence: "Products I take: Clarity, ..." (review round 3).
+_SENTENCE_START = re.compile(r"(?:^|[.!?])[\s\"'\u201c\u201d\u2018\u2019()]*$")
 _PRODUCT_CUE_BEFORE = re.compile(
     r"\b(?:what\s+is|what's|whats|what\u2019s|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
     r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of|"
@@ -2344,12 +2350,13 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             continue
         words = name.split()
         pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
-        # Any longer catalog name wins, eligible or not: "How much Crystalline Clarity
-        # should I take?" names Crystalline Clarity, not Clarity (review of the Clarity pin,
-        # 2026-10-23). Checked per occurrence, so a later standalone "Clarity" in the same
-        # question still counts (review round 2).
+        # For a name in _YIELDS_TO_LONGER_NAMES any longer catalog name wins, eligible or
+        # not: "How much Crystalline Clarity should I take?" names Crystalline Clarity, not
+        # Clarity (review of the Clarity pin, 2026-10-23). Checked per occurrence, so a later
+        # standalone "Clarity" in the same question still counts (review round 2).
         def _own(mi, slug=slug):
-            return not _inside_longer_catalog_name(query_text, slug, mi.span(), products)
+            return (slug not in _YIELDS_TO_LONGER_NAMES
+                    or not _inside_longer_catalog_name(query_text, slug, mi.span(), products))
         m = None if slug in _ALWAYS_CUE_NAMES else next(
             (mi for mi in re.finditer(pattern, query_text) if _own(mi)), None)
         if slug in _ALWAYS_CUE_NAMES:

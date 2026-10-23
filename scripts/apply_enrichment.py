@@ -68,8 +68,9 @@ def apply_corrections(products, corr):
             p["intro"] = c["intro"]
         # Pinned page texts and chat roles (Estro-Clear, spec 2026-10-10-estro-clear-roles).
         # Restored here so a writer that rebuilds the record cannot drop them silently.
+        # research_links and content_since: Clarity, 2026-10-23.
         for _pinned_field in ("how_it_works", "learn_markdown", "benefits", "ingredient_roles",
-                              "copy_pinned", "order_note"):
+                              "copy_pinned", "order_note", "research_links", "content_since"):
             if c.get(_pinned_field):
                 p[_pinned_field] = c[_pinned_field]
         # The chatbot's caution opt-in is a switch, so an explicit false is replayed too:

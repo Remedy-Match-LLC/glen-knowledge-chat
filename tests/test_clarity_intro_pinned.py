@@ -300,10 +300,14 @@ def test_the_bot_does_not_bring_clarity_for_other_wording(appmod, q):
     assert "### Clarity" not in appmod._named_product_facts(q)
 
 
-def test_any_longer_catalog_name_beats_a_pinned_shorter_one(appmod):
+def test_a_listed_name_yields_to_any_longer_catalog_name(appmod, monkeypatch):
     products = {"zorbex": {"name": "Zorbex", "copy_pinned": ["intro"]},
                 "zorbex-max": {"name": "Zorbex Max Drops"},
                 "other": {"name": "Other", "copy_pinned": ["intro"]}}
+    # Not listed: behaves as before, the unpinned longer name does not suppress it.
+    assert appmod._named_product_spans("How much Zorbex Max Drops?", products) == {
+        "zorbex": (9, 15)}
+    monkeypatch.setattr(appmod, "_YIELDS_TO_LONGER_NAMES", frozenset({"zorbex"}))
     assert appmod._named_product_spans("How much Zorbex Max Drops?", products) == {}
     q = "how much zorbex max drops? and Other"
     assert appmod._named_product_spans(q, products) == {"other": (q.index("Other"), len(q))}
@@ -326,3 +330,41 @@ def test_each_row_links_to_the_existing_page_for_its_ingredient(entry):
 ])
 def test_a_standalone_clarity_after_a_longer_name_still_counts(appmod, q):
     assert "### Clarity" in appmod._named_product_facts(q)
+
+
+@pytest.mark.parametrize("q,heading", [
+    ("How much Energessence HomeoEnergetic Drops should I take?", "### Energessence"),
+    ("Sanctuary C60 in Black Seed Oil Drops dose?", "### Sanctuary C60"),
+])
+def test_other_pinned_names_inside_a_longer_catalog_name_keep_their_block(appmod, q, heading):
+    assert heading in appmod._named_product_facts(q)
+
+
+def test_only_listed_slugs_yield_to_a_longer_catalog_name(appmod):
+    assert appmod._YIELDS_TO_LONGER_NAMES == frozenset({"clarity"})
+
+
+def test_a_colon_does_not_start_a_sentence(appmod):
+    assert "### Clarity" in appmod._named_product_facts("Products I take: Clarity, Brain Cleanse")
+    assert "### Clarity" in appmod._named_product_facts("Products I take; Clarity and more")
+
+
+def test_replaying_the_manual_corrections_keeps_clarity_pinned_copy(entry):
+    import copy
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "apply_enrichment", os.path.join(ROOT, "scripts", "apply_enrichment.py"))
+    ae = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ae)
+    corr = json.load(open(os.path.join(ROOT, "data", "products-manual-corrections.json")))
+    fields = ("intro", "description", "how_it_works", "research_links", "learn_markdown",
+              "ingredients", "panel_note", "directions", "copy_pinned", "content_since")
+    # A rebuilt record: the old scraped copy back, every pinned field gone.
+    bare = {k: v for k, v in copy.deepcopy(entry).items() if k not in fields}
+    bare.update(description="Clarity . One to three capsules daily", intro="",
+                ingredients=[{"name": "Black pepper extract in Trikatu", "dose": "5 mg"}])
+    products = {SLUG: bare}
+    assert ae.apply_corrections(products, {SLUG: corr[SLUG]}) == [SLUG]
+    for f in fields:
+        assert products[SLUG][f] == entry[f], f
+    assert products[SLUG]["ingredients_source"] == entry["ingredients_source"]
