@@ -17768,6 +17768,11 @@ def _grant_supply_membership_on_paid(cx, order):
     email = (order.get("email") or "").strip().lower()
     if not email:
         return "none"
+    # A caregiver-billed order is paid by the caregiver for another client. The
+    # order email is the payer, so a grant here would go to the wrong person.
+    # Left to the old path until per-client grants exist.
+    if any((it.get("billed_for") or "").strip() for it in (order.get("items") or [])):
+        return "none"
     ref = order.get("external_ref") or f"id:{order.get('id')}"
     _supply_init_table(cx)
     if cx.execute("SELECT 1 FROM order_supply_grants WHERE order_ref=?", (ref,)).fetchone():
@@ -17775,8 +17780,13 @@ def _grant_supply_membership_on_paid(cx, order):
     # A paid tier or lifetime member: refills must not push past their paid term.
     if _mp.owns_group(cx, email, include_bonus=False):
         return "member"
-    months = _order_supply_months(order)
     now = datetime.utcnow()
+    # A prepaid term is paid membership too, but owns_group does not count it.
+    if cx.execute("SELECT 1 FROM memberships WHERE lower(email)=lower(?) "
+                  "AND source LIKE 'prepay_%' AND expires_at > ? LIMIT 1",
+                  (email, now.isoformat())).fetchone():
+        return "member"
+    months = _order_supply_months(order)
     prior_end = _supply_prior_end(cx, email, now)
     start = max(now, prior_end) if prior_end else now
     end = start + timedelta(days=SUPPLY_PAID_DAYS + SUPPLY_MONTH_DAYS * (months - 1))

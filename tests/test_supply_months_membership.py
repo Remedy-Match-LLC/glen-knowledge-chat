@@ -517,3 +517,21 @@ def test_the_settlement_hub_dispatches_a_remedy_order_from_a_qualifying_source()
             kind="in-house", order={"id": 1, "email": EMAIL, "source": src, "items": REMEDY},
             md={"invoice_id": "x"}, pi_id="pi", sid="s", deps=_D())
         assert ("grant_membership_line" in called) is expect, src
+
+
+def test_a_prepaid_term_member_is_skipped(cx):
+    _biofield(cx)
+    appmod._grant_membership(cx, EMAIL, 300, "prepay_year_prepay")
+    cx.commit()
+    o = _order(cx, "INH-P", REMEDY, months=2)
+    assert appmod._grant_supply_membership_on_paid(cx, o) == "member"
+    assert _grant_row(cx, "INH-P") is None
+
+
+def test_a_caregiver_billed_order_grants_nobody(cx):
+    _biofield(cx)
+    items = [dict(it, billed_for="the.client@example.com") for it in REMEDY]
+    o = _order(cx, "INH-C", items, months=2)
+    assert appmod._grant_supply_membership_on_paid(cx, o) == "none"
+    assert cx.execute("SELECT COUNT(*) FROM memberships WHERE source=?",
+                      (appmod.SUPPLY_SOURCE,)).fetchone()[0] == 0
