@@ -34199,17 +34199,22 @@ def _flag_biofield_request(email, name, query):
     try:
         from dashboard import biofield_requests as _br
         verdict = _br.classify(_br.haiku_complete(_cl), query, name, email)
+        note = ""
         if verdict["certainty"] == "error":
-            # Not retried: this message is simply not flagged. The error is in the log,
-            # and Glen still sees the chat in the console.
-            print(f"[biofield-request] not flagged, the classifier failed for {email}",
+            # Never dropped: it reaches Glen's yes list as a possible request.
+            print(f"[biofield-request] classifier failed for {email}; flagged as possible",
                   flush=True)
-            return None
+            verdict = {"certainty": "possible", "quote": _br.one_line(query), "people": []}
+            note = "classifier failed"
         if verdict["certainty"] not in ("clear", "possible"):
             return None
+        ids = []
         with _db_lock, db.connect(LOG_DB) as cx:
-            flag_id, _created = _br.add_flag(cx, email, name, verdict, query)
-        return flag_id
+            for person in (verdict.get("people") or [None]):
+                flag_id, _created = _br.add_flag(cx, email, name, verdict, query,
+                                                 person=person, note=note)
+                ids.append(flag_id)
+        return ids
     except Exception as e:  # noqa: BLE001
         print(f"[biofield-request] {e!r}", flush=True)
         return None

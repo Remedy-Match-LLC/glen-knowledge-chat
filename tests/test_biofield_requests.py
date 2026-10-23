@@ -134,11 +134,11 @@ def test_a_caregiver_request_is_the_members_line_with_the_caregiver_as_payer(cx)
     v = br.classify(model("clear", "Can I book a Biofield Analysis for my son Sam?",
                           for_name="Sam Doe"),
                     "Can I book a Biofield Analysis for my son Sam?", "Jane Doe", "jane@x.com")
-    name, email, payer = br.request_for(v, "Jane Doe", "jane@x.com")
+    [(name, email, payer)] = br.requests_for(v, "Jane Doe", "jane@x.com")
     assert (name, email, payer) == ("Sam Doe", "jane@x.com", "jane@x.com")
-    v2 = dict(v, for_email="sam@x.com")
-    assert br.request_for(v2, "Jane Doe", "jane@x.com") == ("Sam Doe", "sam@x.com", "jane@x.com")
-    assert br.request_for({"for_name": ""}, "Jane", "JANE@x.com") == ("Jane", "jane@x.com", "")
+    v2 = {"people": [{"name": "Sam Doe", "email": "sam@x.com"}]}
+    assert br.requests_for(v2, "Jane Doe", "jane@x.com") == [("Sam Doe", "sam@x.com", "jane@x.com")]
+    assert br.requests_for({"people": []}, "Jane", "JANE@x.com") == [("Jane", "jane@x.com", "")]
     out = br.record(cx, req(name=name, email=email, payer=payer))
     row = br.get(cx, out["id"])
     assert row["name"] == "Sam Doe" and row["payer_email"] == "jane@x.com"
@@ -179,15 +179,28 @@ def test_unfinished_tests_on_a_household_address_match_by_name(cx):
                      plain)["kind"] == "added"
 
 
-def test_unfinished_tests_flag_a_household_address(cx, monkeypatch):
+def test_unfinished_tests_flag_a_household_address(cx):
     init_auth_tables(cx)
     create_test(cx, "Jane Doe", "jane@x.com", "2026-09-01")
     create_test(cx, "Sam Doe", "jane@x.com", "2026-09-02")
     create_test(cx, "Kim", "kim@x.com", "2026-09-03")
-    from dashboard import biofield_progress as bp
-    monkeypatch.setattr(bp, "is_done", lambda p: False)
-    got = {t["test_id"]: t["household"] for t in br.unfinished_tests(cx, lambda ids: ([], None))}
+    got = {t["test_id"]: t["household"] for t in br.unfinished_tests(cx)}
     assert sorted(got.values()) == [False, True, True]
+
+
+def test_a_members_started_test_does_not_block_the_caregivers_own_request(cx):
+    """Tom's test was started from Sue's request and filed at sue@x.com. Sue's own
+    request is hers, even with only one test on the address."""
+    tom = br.record(cx, req("m1", email="sue@x.com", name="Tom Poe", payer="sue@x.com"))
+    tid, _ = br.start(cx, tom["id"], date="2026-10-23")
+    got = br.unfinished_tests(cx)
+    assert [(t["test_id"], t["payer_email"], t["household"]) for t in got] == \
+        [(tid, "sue@x.com", False)]
+    out = br.record(cx, req("m2", email="sue@x.com", name="Sue Poe"), got)
+    assert out["kind"] == "added"
+    again = br.record(cx, req("m3", email="sue@x.com", name="Tom Poe", payer="sue@x.com"),
+                      got)
+    assert again["kind"] == "duplicate" and tid in again["note"]
 
 
 # ── Store: dedupe and one open line per person ──────────────────────────────
@@ -261,15 +274,35 @@ def test_one_open_line_per_person_unfinished_test(cx):
     assert br.list_open(cx) == []
 
 
-def test_a_finished_test_does_not_block_a_new_line(cx, monkeypatch):
+def _test_at(cx, name, email, created):
+    tid = create_test(cx, name, email, "2026-09-01")
+    cx.execute("UPDATE biofield_auth_tests SET created_at=? WHERE id=?", (created, int(tid[1:])))
+    cx.commit()
+    return tid
+
+
+def test_a_test_blocks_only_while_unreported_and_recent(cx):
+    import datetime as dt
+    from dashboard import biofield_test_notified as btn
     init_auth_tables(cx)
-    create_test(cx, "Jane Doe", "jane@x.com", "2026-09-01")
-    from dashboard import biofield_progress as bp
-    monkeypatch.setattr(bp, "is_done", lambda p: True)
-    assert br.unfinished_tests(cx, lambda ids: ([], None)) == []
-    monkeypatch.setattr(bp, "is_done", lambda p: False)
-    got = br.unfinished_tests(cx, lambda ids: ([], "down"))
-    assert [t["email"] for t in got] == ["jane@x.com"] and "down" in got[0]["note"]
+    now = dt.datetime(2026, 10, 23, 20, 0, tzinfo=dt.timezone.utc)
+    recent = _test_at(cx, "Jane", "jane@x.com", "2026-10-13T20:00:00Z")
+    old = _test_at(cx, "Bob", "bob@x.com", "2026-08-20T20:00:00Z")      # 64 days
+    sent = _test_at(cx, "Kim", "kim@x.com", "2026-10-20T20:00:00Z")
+    btn.mark(cx, sent)
+    assert [t["test_id"] for t in br.unfinished_tests(cx, now)] == [recent]
+    assert all("may be finished" not in t["note"] for t in br.unfinished_tests(cx, now))
+
+
+def test_unfinished_tests_need_no_orders_and_write_nothing(tmp_path):
+    db = str(tmp_path / "ro.db")
+    with sqlite3.connect(db) as c:
+        init_auth_tables(c)
+        create_test(c, "Jane", "jane@x.com", "2026-10-01")
+    ro = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    assert [t["email"] for t in br.unfinished_tests(ro)] == ["jane@x.com"]
+    import inspect
+    assert list(inspect.signature(br.unfinished_tests).parameters) == ["cx", "now"]
 
 
 # ── Yes, No and Start test ──────────────────────────────────────────────────
@@ -455,7 +488,8 @@ def test_a_portal_request_is_flagged_once_on_prod(prod, monkeypatch):
     assert rows == [("c@x.com", "clear", "Can I book a Biofield Analysis?")]
 
 
-def test_no_flag_for_an_ordinary_message_and_a_model_error_is_harmless(prod, monkeypatch):
+def test_no_flag_for_an_ordinary_message_and_a_model_error_is_kept_for_a_yes(prod,
+                                                                            monkeypatch):
     monkeypatch.setattr(prod, "_cl", _FakeCl({"certainty": "none"}))
     prod._triage_portal_message("c@x.com", "Cee", "When do I take the drops?", "ok")
 
@@ -469,8 +503,10 @@ def test_no_flag_for_an_ordinary_message_and_a_model_error_is_harmless(prod, mon
     with sqlite3.connect(prod.LOG_DB) as cx:
         has = cx.execute("SELECT 1 FROM sqlite_master WHERE name='biofield_request_flags'"
                          ).fetchone()
-        n = cx.execute("SELECT COUNT(*) FROM biofield_request_flags").fetchone()[0] if has else 0
-    assert n == 0
+        rows = cx.execute("SELECT quote, certainty, note FROM biofield_request_flags"
+                          ).fetchall() if has else []
+    # The ordinary message is not flagged; the one the model failed on is kept for a yes.
+    assert rows == [("Biofield please", "possible", "classifier failed")]
 
 
 def test_the_flags_endpoint_is_owner_only(prod, monkeypatch):
@@ -495,29 +531,107 @@ def test_a_flag_becomes_a_portal_request():
         ("portal", "12", "Sam", "jane@x.com", "jane@x.com")
 
 
-def test_a_classifier_error_on_prod_is_logged_and_not_flagged(prod, monkeypatch, capsys):
+def test_a_classifier_error_on_prod_is_flagged_possible_for_glens_yes(prod, monkeypatch,
+                                                                       capsys):
     monkeypatch.setattr(prod, "_cl", _FakeCl("not json at all"))
-    assert prod._flag_biofield_request("c@x.com", "Cee", "Biofield please") is None
-    assert "the classifier failed for c@x.com" in capsys.readouterr().out
+    assert prod._flag_biofield_request("c@x.com", "Cee", "Hello\nthere") is not None
+    assert "classifier failed for c@x.com" in capsys.readouterr().out
     with sqlite3.connect(prod.LOG_DB) as cx:
-        assert not cx.execute("SELECT 1 FROM sqlite_master WHERE name='biofield_request_flags'"
-                              ).fetchone()
+        rows = cx.execute("SELECT certainty, note, quote FROM biofield_request_flags").fetchall()
+    assert rows == [("possible", "classifier failed", "Hello there")]
+    with sqlite3.connect(prod.LOG_DB) as cx:
+        [f] = br.list_flags(cx, "2000-01-01")
+    r = br.flag_to_request(f)
+    assert r["certainty"] == "possible" and r["note"] == "classifier failed"
 
 
-def test_erasure_also_takes_the_payer_and_member_columns(tmp_path):
-    from dashboard import client_erasure as ce
+def test_a_portal_request_for_two_children_is_two_flags(prod, monkeypatch):
+    fake = _FakeCl({"certainty": "clear", "quote": "q", "people": [
+        {"name": "Tom Poe", "email": ""}, {"name": "Amy Poe", "email": "amy@x.com"}]})
+    monkeypatch.setattr(prod, "_cl", fake)
+    prod._flag_biofield_request("sue@x.com", "Sue Poe", "Biofield Analysis for Tom and Amy?")
+    with sqlite3.connect(prod.LOG_DB) as cx:
+        flags = br.list_flags(cx, "2000-01-01")
+    got = [(br.flag_to_request(f)["name"], br.flag_to_request(f)["email"]) for f in flags]
+    assert got == [("Tom Poe", "sue@x.com"), ("Amy Poe", "amy@x.com")]
+
+
+def _erasure_db(tmp_path):
     c = sqlite3.connect(str(tmp_path / "e.db"))
     br.ensure_schema(c)
     br.record(c, req("m1", email="sam@x.com", name="Sam", payer="jane@x.com"))
     br.record(c, req("m2", email="kim@x.com", name="Kim"))
-    br.add_flag(c, "jane@x.com", "Jane", {"certainty": "clear", "quote": "q", "for_email": "sam@x.com"}, "m")
+    br.record(c, req("m3", email="jane@x.com", name="Tom", payer="jane@x.com"))
+    br.add_flag(c, "jane@x.com", "Jane", {"certainty": "clear", "quote": "q"}, "m",
+                person={"name": "Sam", "email": "sam@x.com"})
     br.add_flag(c, "kim@x.com", "Kim", {"certainty": "clear", "quote": "q"}, "m")
-    assert ce.plan(c, "jane@x.com") == {"biofield_test_requests": 1, "biofield_request_flags": 1}
+    return c
+
+
+def test_erasing_a_member_keeps_the_caregivers_flag_without_the_members_address(tmp_path):
+    from dashboard import client_erasure as ce
+    c = _erasure_db(tmp_path)
     assert ce.plan(c, "sam@x.com") == {"biofield_test_requests": 1, "biofield_request_flags": 1}
     ce.erase(c, "sam@x.com", confirm="sam@x.com")
-    assert c.execute("SELECT email FROM biofield_test_requests").fetchall() == [("kim@x.com",)]
-    assert c.execute("SELECT email FROM biofield_request_flags ORDER BY id").fetchall() == \
-        [("kim@x.com",)]
+    assert [r[0] for r in c.execute("SELECT email FROM biofield_test_requests ORDER BY id")] \
+        == ["kim@x.com", "jane@x.com"]
+    assert c.execute("SELECT email, for_email FROM biofield_request_flags ORDER BY id"
+                     ).fetchall() == [("jane@x.com", None), ("kim@x.com", "")]
+
+
+def test_erasing_a_caregiver_keeps_a_members_own_row_and_drops_the_payer(tmp_path):
+    from dashboard import client_erasure as ce
+    c = _erasure_db(tmp_path)
+    ce.erase(c, "jane@x.com", confirm="jane@x.com")
+    rows = c.execute("SELECT email, payer_email FROM biofield_test_requests ORDER BY id"
+                     ).fetchall()
+    assert rows == [("sam@x.com", None), ("kim@x.com", None)]   # Tom, filed at jane@, is gone
+    assert c.execute("SELECT email FROM biofield_request_flags").fetchall() == [("kim@x.com",)]
+
+
+def test_two_children_make_two_lines_each_deduped(cx):
+    v = br.classify(model("clear", "for my son Tom and daughter Amy"),
+                    "Can I book a Biofield Analysis for my son Tom and daughter Amy?",
+                    "Sue Poe", "sue@x.com")
+    v = dict(v, people=[{"name": "Tom Poe", "email": ""}, {"name": "Amy Poe", "email": ""}])
+    lines = br.requests_for(v, "Sue Poe", "sue@x.com")
+    assert lines == [("Tom Poe", "sue@x.com", "sue@x.com"), ("Amy Poe", "sue@x.com", "sue@x.com")]
+    refs = br.source_refs("m1", len(lines))
+    assert refs == ["m1", "m1#2"]
+    kinds = [br.record(cx, req(r, email=e, name=n, payer=p))["kind"]
+             for r, (n, e, p) in zip(refs, lines)]
+    assert kinds == ["added", "added"]
+    # Tom asked again: his line is open, Amy's is too; no new lines.
+    assert br.record(cx, req("m2", email="sue@x.com", name="Tom Poe", payer="sue@x.com")
+                     )["kind"] == "duplicate"
+
+
+def test_the_classifier_returns_each_person_and_the_sender_among_them():
+    v = br.classify(model("clear", "q"), "Biofield Analysis for me and my son Tom",
+                    "Sue Poe", "sue@x.com")
+    v["people"] = br._people({"people": [{"name": "Sue Poe"}, {"name": "Tom Poe",
+                                                              "email": "not-an-address"}]})
+    assert br.requests_for(v, "Sue Poe", "sue@x.com") == [
+        ("Sue Poe", "sue@x.com", ""), ("Tom Poe", "sue@x.com", "sue@x.com")]
+    assert "\"people\"" in br.SYSTEM
+
+
+def test_a_not_added_alert_is_not_repeated_within_seven_days(cx):
+    br.record(cx, req("m1"))                                  # Jane's open line
+    first = br.record(cx, req("m2"))
+    second = br.record(cx, req("m3"))
+    other_source = br.record(cx, req("g1", source="ghl"))
+    assert [first["kind"], second["kind"], other_source["kind"]] == ["duplicate"] * 3
+    alerted = {r["source_ref"] for r in br.unalerted(cx)}
+    assert "m2" in alerted and "g1" in alerted and "m3" not in alerted
+    assert "not repeated" in br.get(cx, second["id"])["note"]
+    assert "m3" not in {r["source_ref"] for r in br.unnoted(cx)}
+
+
+def test_the_alert_link_names_the_client(cx):
+    a = br.record(cx, req("m1", name="Jane Doe"))
+    _, body = br.compose_alert(br.unalerted(cx), "http://127.0.0.1:8011")
+    assert f"Line: Jane Doe in Your authored tests, http://127.0.0.1:8011/#req-{a['id']}" in body
 
 
 def test_new_tables_are_listed_for_erasure_and_merge():

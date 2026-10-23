@@ -63,11 +63,14 @@ SYSTEM = (
     "Answer \"none\" for everything else. That includes a message about a Biofield "
     "Analysis they already had, its report, its invoice or its remedies, and mail that "
     "only mentions the word.\n"
-    "If they ask for someone else (a child, partner, parent or animal in their care), give "
-    "that person's name, and their email only if the message states it.\n"
+    "If they ask for anyone other than themself (a child, partner, parent or animal in "
+    "their care), list each of those people separately in \"people\", with their name, "
+    "and their email only if the message states it. If they also want one themself, list "
+    "themself too, with their own name. If the request is only for themself, leave "
+    "\"people\" empty.\n"
     "Return STRICT JSON only, no prose: {\"certainty\": \"clear\"|\"possible\"|\"none\", "
     "\"quote\": \"the person's own words that make the request, one line, at most 200 "
-    "characters\", \"for_name\": \"\", \"for_email\": \"\"}"
+    "characters\", \"people\": [{\"name\": \"\", \"email\": \"\"}]}"
 )
 
 _BIOFIELD = re.compile(r"\bbio[\s-]?field", re.I)
@@ -113,12 +116,32 @@ def guard_certainty(certainty, text):
     return "clear"
 
 
+def _people(data):
+    """The people a verdict names: [{name, email}], at most 10. Accepts the older
+    for_name/for_email shape too. An email that is not an address is dropped."""
+    raw = data.get("people")
+    if not isinstance(raw, list):
+        raw = ([{"name": data.get("for_name"), "email": data.get("for_email")}]
+               if (data.get("for_name") or data.get("for_email")) else [])
+    out = []
+    for p in raw[:10]:
+        if not isinstance(p, dict):
+            continue
+        name = one_line(p.get("name"), 120)
+        email = str(p.get("email") or "").strip().lower()
+        if not _EMAIL.match(email):
+            email = ""
+        if name or email:
+            out.append({"name": name, "email": email})
+    return out
+
+
 def classify(complete, text, sender_name="", sender_email=""):
-    """{certainty, quote, for_name, for_email}. Never raises.
+    """{certainty, quote, people}. Never raises.
 
     certainty is "error" when the model call failed or its reply was unreadable. An
     error is never filed or remembered, so the next run asks again."""
-    out = {"certainty": "none", "quote": "", "for_name": "", "for_email": ""}
+    out = {"certainty": "none", "quote": "", "people": []}
     err = dict(out, certainty="error")
     body = str(text or "").strip()
     if not body:
@@ -138,14 +161,10 @@ def classify(complete, text, sender_name="", sender_email=""):
     if c == "none":
         return out
     quote = one_line(data.get("quote")) or one_line(body)
-    for_email = str(data.get("for_email") or "").strip().lower()
-    if not _EMAIL.match(for_email):
-        for_email = ""
-    return {"certainty": c, "quote": quote,
-            "for_name": one_line(data.get("for_name"), 120), "for_email": for_email}
+    return {"certainty": c, "quote": quote, "people": _people(data)}
 
 
-def haiku_complete(client=None, max_tokens=200):
+def haiku_complete(client=None, max_tokens=300):
     """complete(system, user) through the anthropic SDK, as portal_triage does."""
     if client is None:
         import anthropic
@@ -158,18 +177,37 @@ def haiku_complete(client=None, max_tokens=200):
     return _complete
 
 
-def request_for(verdict, sender_name, sender_email):
-    """(name, email, payer_email) for the line. A caregiver asking for a household
-    member makes the line the member's, with the caregiver as payer. A member with no
-    email of their own is filed under the caregiver's address."""
+def requests_for(verdict, sender_name, sender_email):
+    """[(name, email, payer_email)], one per person the request is for.
+
+    No people named: the sender's own line. A caregiver asking for household members
+    gets one line per member, each with the caregiver as payer; a member with no email
+    of their own is filed under the caregiver's address. The sender listed among them
+    (same address, or same name with no address) is their own line, with no payer."""
     sender_email = (sender_email or "").strip().lower()
-    member = (verdict.get("for_name") or "").strip()
-    member_email = (verdict.get("for_email") or "").strip().lower()
-    if member_email == sender_email:
-        member_email = ""
-    if member or member_email:
-        return member, (member_email or sender_email), sender_email
-    return (sender_name or "").strip(), sender_email, ""
+    sender_name = (sender_name or "").strip()
+    people = verdict.get("people") or []
+    if not people:
+        return [(sender_name, sender_email, "")]
+    out, seen = [], set()
+    for p in people:
+        name, email = (p.get("name") or "").strip(), (p.get("email") or "").strip().lower()
+        if email == sender_email or (not email and name and
+                                     _norm_name(name) == _norm_name(sender_name)):
+            line = (sender_name or name, sender_email, "")
+        else:
+            line = (name, email or sender_email, sender_email)
+        key = (line[1], _norm_name(line[0]))
+        if key not in seen:
+            seen.add(key)
+            out.append(line)
+    return out
+
+
+def source_refs(ref, n):
+    """One source_ref per line made from one message: the message id for the first,
+    then id#2, id#3."""
+    return [str(ref)] + [f"{ref}#{i}" for i in range(2, n + 1)]
 
 
 # ── Local store ──────────────────────────────────────────────────────────────
@@ -179,7 +217,8 @@ def ensure_schema(cx):
         id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, name TEXT,
         source TEXT NOT NULL, source_ref TEXT NOT NULL, requested_at TEXT, quote TEXT,
         certainty TEXT NOT NULL, payer_email TEXT, status TEXT NOT NULL, test_id TEXT,
-        created_at TEXT NOT NULL, note TEXT, decided_at TEXT, alerted_at TEXT)""")
+        created_at TEXT NOT NULL, note TEXT, decided_at TEXT, alerted_at TEXT,
+        noted_at TEXT)""")
     cx.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_biofield_test_requests_source "
                "ON biofield_test_requests(source, source_ref)")
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_request_seen(
@@ -225,6 +264,7 @@ def _shared(person):
         e and (person.get("payer_email") or "").strip().lower() == e)
 
 
+
 def same_person(a, b):
     """Matched by address, in both directions. When either side sits on a shared
     address, the normalised names must be equal too ("Sam" is not "Samantha Doe"),
@@ -239,34 +279,44 @@ def same_person(a, b):
     return True
 
 
-def unfinished_tests(cx, fetch_orders):
-    """[{test_id, email, name, note}] for authored tests that are not done, as the list
-    decides it (biofield_progress.build, is_done). One orders call. When the orders
-    cannot be read, a test with an invoice step left counts as unfinished, and the note
-    says why."""
-    from dashboard import biofield_progress as bp
-    from dashboard.biofield_authoring import list_authored
-    authored = list_authored(cx)
-    cx.row_factory = None
-    if not authored:
+OPEN_TEST_DAYS = 60
+DUP_QUIET_DAYS = 7
+
+
+def unfinished_tests(cx, now=None):
+    """[{test_id, email, name, payer_email, household}] for authored tests that still
+    block a new line: the report has not been emailed (no biofield_test_notified row)
+    and the test was created in the last OPEN_TEST_DAYS days. Orders play no part.
+
+    payer_email comes from the request a test was started from, so a member's test
+    filed under the caregiver's address is compared by name. Reads only."""
+    if not _has_table(cx, "biofield_auth_tests"):
         return []
-    local, links = bp.local_steps(cx), bp.stored_links(cx)
-    orders, err = fetch_orders(sorted(set(links.values())))
-    # A household address: tests on it carry two or more different names.
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    since = (now - _dt.timedelta(days=OPEN_TEST_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
+    notified = _has_table(cx, "biofield_test_notified")
+    linked = _has_table(cx, TABLE)
+    rows = cx.execute(
+        "SELECT t.id, t.name, t.email, t.created_at, "
+        + ("(SELECT r.payer_email FROM biofield_test_requests r WHERE r.test_id='a'||t.id "
+           "AND COALESCE(r.payer_email,'')<>'' LIMIT 1) " if linked else "NULL ")
+        + "FROM biofield_auth_tests t WHERE TRIM(COALESCE(t.email,''))<>''"
+        + (" AND NOT EXISTS (SELECT 1 FROM biofield_test_notified n "
+           "WHERE n.test_id='a'||t.id)" if notified else "")).fetchall()
+    every = cx.execute("SELECT email, name FROM biofield_auth_tests").fetchall()
     names = {}
-    for t in authored:
-        n = _norm_name(t.get("name"))
-        if n:
-            names.setdefault((t.get("email") or "").strip().lower(), set()).add(n)
+    for e, n in every:
+        if _norm_name(n):
+            names.setdefault((e or "").strip().lower(), set()).add(_norm_name(n))
     out = []
-    for t, p in zip(authored, bp.build(authored, local, links, orders, err)):
-        if p.get("all_done") or not (t.get("email") or "").strip():
+    for tid, name, email, created, payer in rows:
+        if str(created or "")[:19] < since:
             continue
-        out.append({"test_id": t["test_id"], "email": t["email"],
-                    "household": len(names.get(t["email"].strip().lower(), ())) > 1,
-                    "name": "" if t.get("name") == "(unnamed)" else (t.get("name") or ""),
-                    "note": (f" (orders could not be read: {err}, so it may be finished)"
-                             if err else "")})
+        e = email.strip().lower()
+        out.append({"test_id": f"a{tid}", "email": e,
+                    "name": "" if name == "(unnamed)" else (name or ""),
+                    "payer_email": (payer or "").strip().lower(),
+                    "household": len(names.get(e, ())) > 1, "note": ""})
     return out
 
 
@@ -314,7 +364,7 @@ def record(cx, req, unfinished=()):
         if not note and waiting and clear:
             # A clear request lifts the waiting line: Glen's yes is not needed now.
             cx.execute(f"UPDATE {TABLE} SET status='requested', certainty='clear', quote=?, "
-                       "requested_at=?, alerted_at=NULL, decided_at=? "
+                       "requested_at=?, alerted_at=NULL, noted_at=NULL, decided_at=? "
                        "WHERE id=? AND status='pending_yes'",
                        (one_line(req.get("quote")), req.get("requested_at") or _now(), _now(),
                         waiting))
@@ -330,8 +380,20 @@ def record(cx, req, unfinished=()):
                     note = (f"already has test {t['test_id']}, not finished"
                             + (t.get("note") or ""))
                     break
+        alerted = None
         if note:
             status, kind = "duplicate", "duplicate"
+            # Glen was told this person was not added, by this source, in the last
+            # DUP_QUIET_DAYS: file it already alerted, so the alert does not repeat.
+            since = (_dt.datetime.now(_dt.timezone.utc)
+                     - _dt.timedelta(days=DUP_QUIET_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            for oe, on, op in cx.execute(
+                    f"SELECT email, name, payer_email FROM {TABLE} WHERE status='duplicate' "
+                    "AND source=? AND created_at>=?", (source, since)).fetchall():
+                if same_person(me, {"email": oe, "name": on, "payer_email": op}):
+                    alerted = _now()
+                    note += f"; alert not repeated within {DUP_QUIET_DAYS} days"
+                    break
         elif clear:
             status, kind = "requested", "added"
         else:
@@ -340,10 +402,11 @@ def record(cx, req, unfinished=()):
         new_id = dbwrite.insert_returning_id(
             cx,
             f"INSERT INTO {TABLE}(email, name, source, source_ref, requested_at, quote, "
-            "certainty, payer_email, status, created_at, note) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            "certainty, payer_email, status, created_at, note, alerted_at, noted_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (me["email"], me["name"], source, ref, req.get("requested_at") or _now(),
              one_line(req.get("quote")), req["certainty"], me["payer_email"] or None, status,
-             _now(), note or None))
+             _now(), (note or req.get("note") or None), alerted, alerted))
         cx.commit()
         return {"kind": kind, "id": new_id, "note": note}
     except Exception:
@@ -452,6 +515,24 @@ def unalerted(cx):
     return _rows(cx, f"SELECT * FROM {TABLE} WHERE alerted_at IS NULL ORDER BY id")
 
 
+def unnoted(cx):
+    """Rows not yet written to platform/alerts.md (written whatever the email does)."""
+    if not _has_table(cx, TABLE):
+        return []
+    return _rows(cx, f"SELECT * FROM {TABLE} WHERE noted_at IS NULL ORDER BY id")
+
+
+def mark_noted(cx, ids):
+    ids = [int(i) for i in ids]
+    if not ids:
+        return 0
+    ph = ",".join("?" * len(ids))
+    n = cx.execute(f"UPDATE {TABLE} SET noted_at=? WHERE id IN ({ph}) AND noted_at IS NULL",
+                   (_now(), *ids)).rowcount
+    cx.commit()
+    return n
+
+
 def mark_alerted(cx, ids):
     ids = [int(i) for i in ids]
     if not ids:
@@ -468,6 +549,13 @@ SOURCE_LABEL = {"email": "email", "portal": "portal chat", "ghl": "GoHighLevel"}
 
 def line_url(base_url, rid):
     return f"{base_url.rstrip('/')}/#req-{int(rid)}"
+
+
+def line_ref(base_url, row):
+    """Where the line is: the client's name in "Your authored tests", and the link on
+    this Mac. The name finds it from another Mac, where the link does not open."""
+    who = row.get("name") or row.get("email") or "the client"
+    return f"{who} in Your authored tests, {line_url(base_url, row['id'])}"
 
 
 def describe(row):
@@ -506,10 +594,11 @@ def compose_alert(rows, base_url):
             lines.append(tail(r))
         lines.append("")
 
-    block("Added to Your authored tests:", added,
-          lambda r: f"  Line: {line_url(base_url, r['id'])}")
-    block("Possible requests. Answer Yes or No on the line in the list:", pending,
-          lambda r: f"  Line: {line_url(base_url, r['id'])}")
+    def tail(r):
+        extra = f"\n  Note: {r['note']}." if r.get("note") else ""
+        return f"  Line: {line_ref(base_url, r)}{extra}"
+    block("Added to Your authored tests:", added, tail)
+    block("Possible requests. Answer Yes or No on the line in the list:", pending, tail)
     block("Not added, so there is no second line:", dup,
           lambda r: f"  Why: {r.get('note') or 'already open'}.")
     block("Other:", other, lambda r: f"  Status: {r['status']}.")
@@ -523,7 +612,7 @@ def init_flags_table(cx):
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_request_flags(
         id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, name TEXT, certainty TEXT,
         quote TEXT, for_name TEXT, for_email TEXT, message TEXT, created_at TEXT,
-        dedupe_key TEXT)""")
+        dedupe_key TEXT, note TEXT)""")
     cx.commit()
     try:
         cx.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_biofield_request_flags_dedupe "
@@ -535,15 +624,20 @@ def init_flags_table(cx):
               flush=True)
 
 
-def add_flag(cx, email, name, verdict, message, now=None):
-    """Store one flagged portal message, once per client, message and 10 minutes.
-    Returns (id, created). Portable: RETURNING on Postgres, never lastrowid."""
+def add_flag(cx, email, name, verdict, message, person=None, note="", now=None):
+    """Store one flagged portal message for one person, once per client, message,
+    person and 10 minutes. `person` is {name, email} when the request is for someone
+    other than the sender (one row each). Returns (id, created). Portable: RETURNING
+    on Postgres, never lastrowid."""
     from dashboard import db as _db, dbwrite
     from dashboard.portal_triage import dedupe_key, message_key
     init_flags_table(cx)
     e = (email or "").strip().lower()
     now_dt = now or _dt.datetime.now(_dt.timezone.utc)
+    person = person or {}
     dkey = dedupe_key(e, message_key(message), now_dt, 10)
+    if person:
+        dkey += "|" + _norm_name(person.get("name")) + "|" + (person.get("email") or "")
     row = cx.execute("SELECT id FROM biofield_request_flags WHERE dedupe_key=?",
                      (dkey,)).fetchone()
     if row:
@@ -552,10 +646,11 @@ def add_flag(cx, email, name, verdict, message, now=None):
         new_id = dbwrite.insert_returning_id(
             cx,
             "INSERT INTO biofield_request_flags(email, name, certainty, quote, for_name, "
-            "for_email, message, created_at, dedupe_key) VALUES(?,?,?,?,?,?,?,?,?)",
+            "for_email, message, created_at, dedupe_key, note) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (e, (name or "").strip(), verdict["certainty"], one_line(verdict.get("quote")),
-             verdict.get("for_name") or "", verdict.get("for_email") or "",
-             str(message or "")[:4000], now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"), dkey))
+             person.get("name") or "", (person.get("email") or "").strip().lower(),
+             str(message or "")[:4000], now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"), dkey,
+             note or None))
     except _db.IntegrityError:
         cx.rollback()
         row = cx.execute("SELECT id FROM biofield_request_flags WHERE dedupe_key=?",
@@ -580,7 +675,7 @@ def list_flags(cx, since, limit=500):
     if not exists:
         return []
     cols = ("id", "email", "name", "certainty", "quote", "for_name", "for_email",
-            "created_at")
+            "created_at", "note")
     rows = cx.execute(f"SELECT {', '.join(cols)} FROM biofield_request_flags "
                       "WHERE created_at>=? ORDER BY id LIMIT ?",
                       (since, int(limit))).fetchall()
@@ -589,7 +684,11 @@ def list_flags(cx, since, limit=500):
 
 def flag_to_request(flag):
     """A prod flag as a record() request (source portal, source_ref the flag id)."""
-    name, email, payer = request_for(flag, flag.get("name"), flag.get("email"))
+    people = ([{"name": flag.get("for_name") or "", "email": flag.get("for_email") or ""}]
+              if (flag.get("for_name") or flag.get("for_email")) else [])
+    name, email, payer = requests_for({"people": people}, flag.get("name"),
+                                      flag.get("email"))[0]
     return {"source": "portal", "source_ref": str(flag["id"]), "email": email,
             "name": name, "payer_email": payer, "requested_at": flag.get("created_at"),
-            "quote": flag.get("quote"), "certainty": flag.get("certainty")}
+            "quote": flag.get("quote"), "certainty": flag.get("certainty"),
+            "note": flag.get("note") or ""}

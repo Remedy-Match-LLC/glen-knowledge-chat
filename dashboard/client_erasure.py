@@ -64,7 +64,10 @@ HEALTH_TABLES = {
 }
 
 # A second address column on a health table, erased too. HEALTH_TABLES keeps one column
-# per table because callers and tests read it that way; these are OR-ed onto it.
+# per table because callers and tests read it that way; these are OR-ed onto it when
+# counting. erase() deletes a row only by its HEALTH_TABLES column. A row that holds the
+# address only in one of these belongs to someone else (a member with their own email
+# whose caregiver asked), so that column is set to NULL and the row stays.
 EXTRA_COLUMNS = {
     "biofield_test_requests": ("payer_email",),   # the caregiver who asked for a member
     "biofield_request_flags": ("for_email",),     # the member a portal message named
@@ -194,10 +197,15 @@ def erase(cx, email, *, confirm):
             raise AssertionError(f"{table} is protected; refusing to erase it")
         if not _table_exists(cx, table):
             continue
-        cur = cx.execute(f"DELETE FROM {table} WHERE {_where(table, col, len(addrs))}",
-                         list(addrs) * len(_columns(table, col)))
-        if cur.rowcount:
-            removed[table] = cur.rowcount
+        marks = ",".join("?" for _ in addrs)
+        cur = cx.execute(f"DELETE FROM {table} WHERE LOWER({col}) IN ({marks})", addrs)
+        n = cur.rowcount or 0
+        for extra in EXTRA_COLUMNS.get(table, ()):
+            cur = cx.execute(f"UPDATE {table} SET {extra}=NULL WHERE LOWER({extra}) IN ({marks})",
+                             addrs)
+            n += cur.rowcount or 0
+        if n:
+            removed[table] = n
     purged = _purge_merge_record(cx, addrs)
     if purged:
         removed["person_merge_changes"] = purged
