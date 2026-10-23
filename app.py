@@ -59112,20 +59112,15 @@ def _harvest_line_note_snippets(cx, items):
         print(f"[invoice-snippets] harvest skipped: {_e!r}", flush=True)
 
 
-def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_in=None,
-                                 adjustment_cents_in=None, invoice_note=None,
-                                 address_override=None, shipping_override_cents_in=None,
-                                 strict_packaging=False, points_redeem_cents_in=None,
-                                 allow_waitlist=False):
-    """Reprice an order's line items at the current pricing (membership-aware) and
-    persist the invoice. Shared by the manual invoice editor (/api/orders/<oid>/edit)
-    and the one-click grant-and-reprice button. Carries the order's existing points +
-    shipping-credit forward unchanged, preserves $0 review-gift lines, and honors the
-    same override precedence as the editor. Returns (priced, was_paid), or (None, None)
-    when no line resolves to a real product. Raises CheckoutError on a rejected ship-to.
-
-    invoice_note=None leaves the stored note untouched (upsert_order skips it on update);
-    pass a string to replace it."""
+def _reprice_invoice(order, lines_in, *, pickup, discount_cents_in=None,
+                     adjustment_cents_in=None, address_override=None,
+                     shipping_override_cents_in=None, strict_packaging=False,
+                     points_redeem_cents_in=None, allow_waitlist=False):
+    """The pricing half of _reprice_and_persist_invoice, with no write of its own.
+    Returns (priced, ship, existing_ship_credit): priced["total_cents"] is the total
+    the persist step stores. (None, None, None) when no line resolves. Split out so the
+    invoice's membership card can quote the total an add WOULD produce through the
+    very same code (2026-10-22). Raises CheckoutError on a rejected ship-to."""
     email = order.get("email") or ""
     # address_override (from the editor form) makes the editor authoritative for the
     # ship-to: reprice AND persist against it. None -> use the order's stored address
@@ -59153,7 +59148,7 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         # Passed only when set, so a caller or spy written before 2026-10-20 still fits.
         **({"allow_waitlist": True} if allow_waitlist else {}))
     if priced is None:
-        return None, None
+        return None, None, None
     existing_points = int(order.get("points_redeemed_cents") or 0)
     settled = False
     if points_redeem_cents_in not in (None, ""):
@@ -59192,6 +59187,32 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     for _g in (order.get("items") or []):
         if _g.get("gift"):
             priced["items_rec"].append(_g)
+    return priced, ship, existing_ship_credit
+
+
+def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_in=None,
+                                 adjustment_cents_in=None, invoice_note=None,
+                                 address_override=None, shipping_override_cents_in=None,
+                                 strict_packaging=False, points_redeem_cents_in=None,
+                                 allow_waitlist=False):
+    """Reprice an order's line items at the current pricing (membership-aware) and
+    persist the invoice. Shared by the manual invoice editor (/api/orders/<oid>/edit)
+    and the one-click grant-and-reprice button. Carries the order's existing points +
+    shipping-credit forward unchanged, preserves $0 review-gift lines, and honors the
+    same override precedence as the editor. Returns (priced, was_paid), or (None, None)
+    when no line resolves to a real product. Raises CheckoutError on a rejected ship-to.
+
+    invoice_note=None leaves the stored note untouched (upsert_order skips it on update);
+    pass a string to replace it."""
+    priced, ship, existing_ship_credit = _reprice_invoice(
+        order, lines_in, pickup=pickup, discount_cents_in=discount_cents_in,
+        adjustment_cents_in=adjustment_cents_in, address_override=address_override,
+        shipping_override_cents_in=shipping_override_cents_in,
+        strict_packaging=strict_packaging, points_redeem_cents_in=points_redeem_cents_in,
+        allow_waitlist=allow_waitlist)
+    if priced is None:
+        return None, None
+    email = order.get("email") or ""
     # Persist the ship-to ONLY when the caller supplied an override (upsert_order leaves
     # address_json untouched when address=None), so non-editor callers never touch it.
     _persist_addr = ({"name": ship["name"], "street": ship["street"],
@@ -61584,7 +61605,9 @@ def api_invoice_products(token):
 def _invoice_membership_offer(order):
     """Customer-facing join-and-save offer for an UNPAID invoice whose buyer is not
     already a paid member. Returns {tier, offered_tiers, gross_cents, savings_cents,
-    net_add_cents, net_savings_cents} for the default offered tier, or None when the
+    net_add_cents, net_savings_cents} for the default offered tier, plus
+    payg_total_cents and member_total_cents when those can be trusted (see
+    _membership_card_totals). The offer stands when membership saves nothing. None when the
     order is paid, the buyer already owns a membership, or no product line resolves.
     Uses the same _membership_offer_math helper as the OWNER offer endpoint (no owner
     auth, no HTTP round-trip). Never raises."""
@@ -61628,7 +61651,10 @@ def _invoice_membership_offer(order):
         if not product_lines:
             return None
         math = _membership_offer_math(email, product_lines, tier_key)
-        return {"tier": tier_key, "offered_tiers": tiers, **math}
+        # The two Total-row figures the card sets side by side (2026-10-22). Absent
+        # when they cannot be trusted; the card then keeps the savings wording.
+        return {"tier": tier_key, "offered_tiers": tiers, **math,
+                **_membership_card_totals(order, tier_key)}
     except Exception as _e:  # noqa: BLE001 — offer is cosmetic; never break the invoice
         print(f"[invoice] membership offer skipped: {_e!r}", flush=True)
         return None
@@ -61687,6 +61713,64 @@ def _included_membership_offer(order, has_line=False):
         return {"included": True, "savings_cents": 0, "has_line": bool(has_line)}
 
 
+def _membership_toggle_payload(order, tier_key=None):
+    """The reprice payload the membership toggle sends: the order's lines with any
+    membership line stripped, then (when tier_key is given) one line of that tier
+    appended, so add is idempotent and remove is clean. Shared by the toggle route and
+    the card's quoted totals, so the card prices exactly what a click would."""
+    from dashboard import membership_products as _mp
+    lines = [l for l in (order.get("items") or [])
+             if not str(l.get("slug") or "").startswith("membership:")]
+    if tier_key:
+        lines.append({"slug": _mp.line_slug(tier_key), "qty": 1})
+    # Rebuild the reprice payload: slug + qty, carrying an owner override forward.
+    # A zero-quantity line is a reorder reference and must stay zero; `or 1` turned
+    # each one into a charge (review round 3, 2026-10-13). Only a missing qty is 1.
+    return [{"slug": l["slug"], "qty": 1 if l.get("qty") is None else int(l.get("qty") or 0),
+             **({"unit_cents": l["unit_cents"]} if l.get("override") else {})}
+            for l in lines]
+
+
+def _membership_toggle_reprice_kw(order):
+    """The reprice options the membership toggle passes. One place, for the same reason
+    as _membership_toggle_payload."""
+    return {"pickup": (order.get("channel") == "pickup"),
+            # The order's own lines: a held not-ready line never blocks (2026-10-20).
+            "allow_waitlist": True}
+
+
+def _membership_card_totals(order, tier_key):
+    """What the Total row would read with and without the membership line, priced by
+    the toggle's own payload and options through _reprice_invoice, which writes
+    nothing. Returns {payg_total_cents, member_total_cents}, or {} when the figures
+    cannot be trusted.
+
+    They are trusted only when the side matching the invoice as it stands reproduces
+    the stored total. Otherwise a click would move the total for some reason besides
+    membership (a re-priced line, a recomputed shipping fee), and the card would quote
+    a difference the customer will not see. The card then falls back to its savings
+    wording. Never raises."""
+    try:
+        has_line = any(str(it.get("slug") or "").startswith("membership:")
+                       for it in (order.get("items") or []))
+        kw = _membership_toggle_reprice_kw(order)
+        payg, _s, _c = _reprice_invoice(order, _membership_toggle_payload(order), **kw)
+        member, _s, _c = _reprice_invoice(order, _membership_toggle_payload(order, tier_key), **kw)
+        if payg is None or member is None:
+            return {}
+        payg_total, member_total = int(payg["total_cents"]), int(member["total_cents"])
+        now_total = member_total if has_line else payg_total
+        if now_total != int(order.get("total_cents") or 0):
+            print(f"[invoice] membership totals withheld for {order.get('external_ref')}: "
+                  f"reprice gives {now_total}, invoice shows {order.get('total_cents')}",
+                  flush=True)
+            return {}
+        return {"payg_total_cents": payg_total, "member_total_cents": member_total}
+    except Exception as _e:  # noqa: BLE001 - the card is cosmetic; never break the invoice
+        print(f"[invoice] membership totals skipped: {_e!r}", flush=True)
+        return {}
+
+
 @app.route("/api/invoice/<token>/membership", methods=["POST"])
 def api_invoice_membership(token):
     """Customer-facing: add or remove the membership line on their own (unpaid) invoice
@@ -61704,8 +61788,7 @@ def api_invoice_membership(token):
         return jsonify({"ok": False, "error": "this invoice can no longer be changed"}), 409
     body = request.get_json(silent=True) or {}
     action = (body.get("action") or "").strip()
-    lines = [l for l in (order.get("items") or [])
-             if not str(l.get("slug") or "").startswith("membership:")]
+    tier_key = None
     if action == "add":
         tier_key = (body.get("tier") or "month").strip()
         if tier_key not in _mp.invoice_offer_tiers():
@@ -61716,21 +61799,13 @@ def api_invoice_membership(token):
         with db.connect(LOG_DB) as _mc:
             if _mp.owns_group(_mc, (order.get("email") or "").strip().lower()):
                 return jsonify({"ok": False, "error": "already a member"}), 409
-        lines.append({"slug": _mp.line_slug(tier_key), "qty": 1})
     elif action != "remove":
         return jsonify({"ok": False, "error": "action must be add or remove"}), 400
-    # Rebuild the reprice payload: slug + qty, carrying an owner override forward.
-    # A zero-quantity line is a reorder reference and must stay zero; `or 1` turned
-    # each one into a charge (review round 3, 2026-10-13). Only a missing qty is 1.
-    payload = [{"slug": l["slug"], "qty": 1 if l.get("qty") is None else int(l.get("qty") or 0),
-                **({"unit_cents": l["unit_cents"]} if l.get("override") else {})}
-               for l in lines]
+    payload = _membership_toggle_payload(order, tier_key)
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
         priced, _was_paid = _reprice_and_persist_invoice(
-            cx, order, payload, pickup=(order.get("channel") == "pickup"),
-            # The order's own lines: a held not-ready line never blocks (2026-10-20).
-            allow_waitlist=True)
+            cx, order, payload, **_membership_toggle_reprice_kw(order))
     except CheckoutError as e:
         return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     finally:
