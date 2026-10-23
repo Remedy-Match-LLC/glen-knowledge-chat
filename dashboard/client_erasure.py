@@ -43,6 +43,8 @@ HEALTH_TABLES = {
     "scan_analyses": "email",
     "scan_freshness": "email",
     "biofield_auth_tests": "email",
+    "biofield_test_requests": "email",     # local Biofield app: a request quote (2026-10-23)
+    "biofield_request_flags": "email",     # prod: the portal message behind a request
     "portal_chat_messages": "email",
     "portal_health_history": "email",
     "portal_extended_history": "email",
@@ -60,6 +62,26 @@ HEALTH_TABLES = {
     "triage_invites": "email",
     "repertoire": "email",
 }
+
+# A second address column on a health table, erased too. HEALTH_TABLES keeps one column
+# per table because callers and tests read it that way; these are OR-ed onto it when
+# counting. erase() deletes a row only by its HEALTH_TABLES column. A row that holds the
+# address only in one of these belongs to someone else (a member with their own email
+# whose caregiver asked), so that column is set to NULL and the row stays.
+EXTRA_COLUMNS = {
+    "biofield_test_requests": ("payer_email",),   # the caregiver who asked for a member
+    "biofield_request_flags": ("for_email",),     # the member a portal message named
+}
+
+
+def _columns(table, col):
+    return (col,) + tuple(EXTRA_COLUMNS.get(table, ()))
+
+
+def _where(table, col, n):
+    marks = ",".join("?" for _ in range(n))
+    return " OR ".join(f"LOWER({c}) IN ({marks})" for c in _columns(table, col))
+
 
 # Never deleted, whatever else happens. Enforced, not just documented.
 PROTECTED = frozenset({
@@ -109,9 +131,9 @@ def _addresses(cx, email):
 
 def _count(cx, table, col, email):
     addrs = _addresses(cx, email)
-    marks = ",".join("?" for _ in addrs)
-    return cx.execute(f"SELECT COUNT(*) FROM {table} WHERE LOWER({col}) IN ({marks})",
-                      addrs).fetchone()[0]
+    args = list(addrs) * len(_columns(table, col))
+    return cx.execute(f"SELECT COUNT(*) FROM {table} WHERE {_where(table, col, len(addrs))}",
+                      args).fetchone()[0]
 
 
 def _purge_merge_record(cx, addrs):
@@ -169,16 +191,21 @@ def erase(cx, email, *, confirm):
         raise ValueError("confirm must equal the email being erased; refusing")
 
     addrs = _addresses(cx, email)
-    marks = ",".join("?" for _ in addrs)
     removed = {}
     for table, col in HEALTH_TABLES.items():
         if table in PROTECTED:                     # cannot happen given the invariant, but
             raise AssertionError(f"{table} is protected; refusing to erase it")
         if not _table_exists(cx, table):
             continue
+        marks = ",".join("?" for _ in addrs)
         cur = cx.execute(f"DELETE FROM {table} WHERE LOWER({col}) IN ({marks})", addrs)
-        if cur.rowcount:
-            removed[table] = cur.rowcount
+        n = cur.rowcount or 0
+        for extra in EXTRA_COLUMNS.get(table, ()):
+            cur = cx.execute(f"UPDATE {table} SET {extra}=NULL WHERE LOWER({extra}) IN ({marks})",
+                             addrs)
+            n += cur.rowcount or 0
+        if n:
+            removed[table] = n
     purged = _purge_merge_record(cx, addrs)
     if purged:
         removed["person_merge_changes"] = purged

@@ -47,6 +47,7 @@ MOVE_TABLES = frozenset({
     "affiliate_conversions", "affiliate_earnings", "affiliate_signups", "affiliate_social_links",
     "analysis_quota", "analysis_requests", "appointment_proposals", "ash_ally_memory",
     "auth_tokens", "biofield_auth_tests", "biofield_corrections", "biofield_free_unlocks",
+    "biofield_test_requests", "biofield_request_flags",   # Biofield test requests (2026-10-23)
     "biofield_readiness", "biofield_reveals", "biofield_trial_grants", "body_map_photos", "carts",
     "cert_bonus_grants", "cert_commitments", "cert_submissions", "client_conditions",
     "client_document_extractions", "client_documents", "client_facts", "client_identity_photos",

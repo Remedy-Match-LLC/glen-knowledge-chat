@@ -33690,6 +33690,10 @@ def api_portal_chat(token):
                 email, portal.get("name") or "", query, _healing_keys, flag=_healing)
         else:
             _healing_keys = []
+    if _warning_keys or _healing_keys:
+        # These messages skip _triage_portal_message, so the Biofield request check
+        # starts here, after the warning delivery has already been handed off.
+        _start_biofield_request_flag(email, portal.get("name") or "", query)
 
     def generate():
         if cart_added:
@@ -34200,6 +34204,76 @@ def _triage_portal_message(email, name, query, answer, stored_item_id=None):
         _send_triage_item_email(item_id, email, name, res, query, answer)
     except Exception as e:
         print(f"[triage] {e!r}", flush=True)
+    finally:
+        # After the triage work, so a warning-sign email never waits on this call.
+        _flag_biofield_request(email, name, query)
+
+
+def _start_biofield_request_flag(email, name, query):
+    """_flag_biofield_request in a background thread. Starting it is all this does, so
+    a warning-sign delivery started before it is never delayed. Never raises."""
+    try:
+        import threading as _tb
+        _tb.Thread(target=_flag_biofield_request, args=(email, name, query),
+                   daemon=True).start()
+    except Exception as e:  # noqa: BLE001
+        print(f"[biofield-request] flag start failed: {e!r}", flush=True)
+
+
+def _flag_biofield_request(email, name, query):
+    """Store a portal message that asks for a Biofield Analysis (Glen, 2026-10-23).
+
+    The local Biofield app's job pulls these through /api/console/biofield-request-flags
+    and files them as "Requested" lines. Nothing is sent to anyone from here. Never
+    raises: the chat is never affected."""
+    try:
+        from dashboard import biofield_requests as _br
+        verdict = _br.classify(_br.haiku_complete(_cl), query, name, email)
+        note = ""
+        if verdict["certainty"] == "error":
+            # A message that names Biofield reaches Glen's yes list as a possible
+            # request. Any other is logged and dropped, so a model outage does not turn
+            # every portal chat into a line.
+            if not _br.mentions_biofield(query):
+                print(f"[biofield-request] classifier failed for {email}; no Biofield "
+                      "keyword, not flagged", flush=True)
+                return None
+            print(f"[biofield-request] classifier failed for {email}; flagged as possible",
+                  flush=True)
+            verdict = {"certainty": "possible", "quote": _br.one_line(query), "people": []}
+            note = "classifier failed"
+        if verdict["certainty"] not in ("clear", "possible"):
+            return None
+        ids = []
+        with _db_lock, db.connect(LOG_DB) as cx:
+            for person in (verdict.get("people") or [None]):
+                flag_id, _created = _br.add_flag(cx, email, name, verdict, query,
+                                                 person=person, note=note)
+                ids.append(flag_id)
+        return ids
+    except Exception as e:  # noqa: BLE001
+        print(f"[biofield-request] {e!r}", flush=True)
+        return None
+
+
+@app.route("/api/console/biofield-request-flags", methods=["GET"])
+def console_biofield_request_flags():
+    """Portal-chat messages flagged as Biofield test requests, for the local app.
+
+    Read-only, owner only. ?days=N (default 7, at most 30) of flags, oldest first.
+    The local job files each once, keyed by the flag id."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    try:
+        days = min(max(int(request.args.get("days") or 7), 1), 30)
+    except ValueError:
+        return jsonify({"ok": False, "error": "days must be a number"}), 400
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    from dashboard import biofield_requests as _br
+    with db.connect(LOG_DB) as cx:
+        flags = _br.list_flags(cx, since)
+    return jsonify({"ok": True, "flags": flags})
 
 
 @app.route("/api/console/triage")
