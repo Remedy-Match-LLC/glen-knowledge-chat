@@ -15,6 +15,10 @@ def client(tmp_path, monkeypatch):
     from flask import Flask
     app = Flask(__name__)
     app.register_blueprint(jb.journal_bp)
+    # Journal reads need a voice identity since 2026-10-22. These tests are about the
+    # store wiring, so they read as staff (every row), the way Glen's console does.
+    # The gate itself is tested in tests/test_voice_requires_sign_in.py.
+    app.extensions["voice_gate"] = {"identity": lambda: "glen", "staff": lambda: "glen"}
     # seed entries directly via the store into the same LOG_DB
     from dashboard import journal_store as js
     now = datetime.now(timezone.utc)

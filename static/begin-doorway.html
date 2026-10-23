@@ -123,6 +123,7 @@
 
 </div>
 <script src="/static/tts-output.js"></script>
+<script src="/static/voice-signin.js"></script>
 <script>
 const ANALYZE_URL = '/journal/analyze';
 const MATCH_URL   = '/journal/match';
@@ -131,7 +132,24 @@ const REF = new URLSearchParams(location.search).get('ref') || '';
 let stream, mediaRecorder, chunks = [], startedAt = 0, timer = null, analysis = null;
 const $ = id => document.getElementById(id);
 
+// Voice needs a signed-in visitor (Glen, 2026-10-22). Asked once on load, so the
+// recorder is never offered to someone the server will refuse. Unknown lets it try.
+let voiceSignedIn = null;
+if (window.VoiceSignIn) {
+  window.VoiceSignIn.check().then(s => { voiceSignedIn = s.signedIn; });
+}
+function showDoorwaySignIn(url) {
+  voiceSignedIn = false;
+  $('voiceConsent').style.display = 'none';
+  $('controls').style.display = 'none';
+  if (window.VoiceSignIn) window.VoiceSignIn.render($('status'), url);
+}
+
 async function record() {
+  if (voiceSignedIn === null && window.VoiceSignIn) {
+    voiceSignedIn = (await window.VoiceSignIn.check()).signedIn;
+  }
+  if (voiceSignedIn === false) { showDoorwaySignIn(); return; }
   // CONSENT BEFORE THE MICROPHONE. Until 2026-09-18 getUserMedia ran here while the only
   // consent checkbox on the page sat inside #optin, which is display:none at this point.
   // The client could not see it, let alone agree, before their voice was captured and
@@ -178,6 +196,11 @@ async function onStopped() {
   $('status').textContent = 'Hearing you...';
   try {
     const a = await fetch(ANALYZE_URL, { method: 'POST', body: form });
+    if (a.status === 401 && window.VoiceSignIn) {
+      await window.VoiceSignIn.handle(a, $('status'));
+      showDoorwaySignIn();
+      return;
+    }
     if (!a.ok) { $('status').textContent = 'Could not read that. Please try again.'; return; }
     analysis = await a.json();
     let remedy = null;
@@ -251,6 +274,7 @@ function beginExperience() {
     window.TTS.attachAndSpeak(introEl, spoken);
   }
   $('beginBtn').style.display = 'none';
+  if (voiceSignedIn === false) { showDoorwaySignIn(); return; }
   // The consent appears WITH the controls, so it is on screen before the mic can open.
   $('voiceConsent').style.display = '';
   $('controls').style.display = '';

@@ -111,11 +111,17 @@ def test_the_known_dangerous_tables_are_protected():
         assert t in CE.PROTECTED, f"{t} must never be erasable"
 
 
-def test_journal_entries_is_not_in_the_health_set():
-    """It keys on a hardcoded user_id, not the client's email, and is erased per-session
-    by the Delete-this-session box instead. Including it here would delete nothing (no
-    email match) while implying it was covered."""
-    assert "journal_entries" not in CE.HEALTH_TABLES
+def test_journal_entries_are_erased_by_the_signed_in_email():
+    """Since 2026-10-22 a journal entry's user_id is the signed-in email, so a forget-me
+    finds it. A legacy "glen" row never matches a client's address."""
+    import sqlite3
+    assert CE.HEALTH_TABLES.get("journal_entries") == "user_id"
+    cx = sqlite3.connect(":memory:")
+    cx.execute("CREATE TABLE journal_entries (id INTEGER PRIMARY KEY, user_id TEXT, transcript TEXT)")
+    cx.executemany("INSERT INTO journal_entries (user_id, transcript) VALUES (?,?)",
+                   [("a@example.com", "x"), ("glen", "y"), ("b@example.com", "z")])
+    CE.erase(cx, "A@Example.com", confirm="a@example.com")
+    assert sorted(r[0] for r in cx.execute("SELECT user_id FROM journal_entries")) == ["b@example.com", "glen"]
 
 
 def test_table_exists_is_backend_aware():

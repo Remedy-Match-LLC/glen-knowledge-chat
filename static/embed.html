@@ -340,6 +340,9 @@
     animation: mic-pulse 1s ease-in-out infinite;
   }
   #mic-btn.busy { opacity: 0.5; cursor: not-allowed; }
+  #mic-signin { display: none; padding: 0 12px 8px; font-size: 12.5px; color: var(--text-muted); background: var(--surface); }
+  #mic-signin.show { display: block; }
+  #mic-signin a { color: var(--accent); text-decoration: underline; margin-left: 4px; }
   @keyframes mic-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.55; }
@@ -567,6 +570,7 @@
   <button id="mic-btn" title="Record voice input" aria-label="Record voice input" onclick="toggleMic()">&#127908;</button>
   <button id="send-btn" onclick="sendQuery()">Send</button>
 </div>
+<div id="mic-signin" role="status" aria-live="polite"></div>
 
 <div id="optin-bar">
   <div class="optin-field">
@@ -595,6 +599,7 @@
   Powered by <a href="https://mentorshipu.com" target="_blank">Mentorship University</a><span id="explore-link-wrap"> &nbsp;·&nbsp; <a href="/begin/explore" target="_blank" rel="noopener">Explore everything</a></span>
 </div>
 
+<script src="/static/voice-signin.js"></script>
 <script>
   const history = [];
   let isLoading = false;
@@ -1423,6 +1428,35 @@
       return;
     }
 
+    // Voice needs a signed-in visitor (Glen, 2026-10-22). Asked once, so the mic
+    // shows a sign-in note instead of recording. Typed chat is unchanged.
+    var _micSignedIn = null;
+    // On another company's site the browser keeps our sign-in cookie out of this
+    // frame, so an email box here could never work. Send them to the full chat.
+    function _inOtherSite() {
+      try { return window.top !== window.self && !window.top.location.host; }
+      catch (e) { return true; }
+    }
+    function _showMicSignIn(url) {
+      _micSignedIn = false;
+      _micBtn.title = 'Sign in to use voice';
+      var note = document.getElementById('mic-signin');
+      if (!note) return;
+      if (_inOtherSite()) {
+        note.textContent = 'Voice needs sign-in.';
+        var a = document.createElement('a');
+        a.href = BASE + '/begin'; a.target = '_blank'; a.rel = 'noopener';
+        a.textContent = 'Open the full chat to sign in and talk';
+        note.appendChild(a);
+        note.classList.add('show');
+      } else if (window.VoiceSignIn) {
+        window.VoiceSignIn.render(note, url); note.classList.add('show');
+      }
+    }
+    if (window.VoiceSignIn) {
+      window.VoiceSignIn.check().then(function (s) { _micSignedIn = s.signedIn; });
+    }
+
     var _micRecorder   = null;
     var _micStream     = null;
     var _micChunks     = [];
@@ -1498,8 +1532,12 @@
       var fd = new FormData();
       fd.append('audio', blob, ext);
       try {
-        var r = await fetch(BASE + '/transcribe', { method: 'POST', body: fd, credentials: 'same-origin' });
-        if (r.ok) {
+        var r = await fetch(BASE + '/transcribe', { method: 'POST', body: fd, credentials: 'same-origin',
+          headers: window.VoiceSignIn ? window.VoiceSignIn.headers() : {} });
+        if (r.status === 401 && window.VoiceSignIn) {
+          await window.VoiceSignIn.handle(r, document.getElementById('mic-signin'));
+          _showMicSignIn();
+        } else if (r.ok) {
           var d = await r.json();
           var text = (d && d.text) ? d.text.trim() : '';
           if (text) {
@@ -1519,6 +1557,14 @@
       if (_micBtn.classList.contains('busy')) return;
       if (_micRecording) {
         _stopRecording();
+      } else if (_micSignedIn === false) {
+        _showMicSignIn();
+      } else if (_micSignedIn === null && window.VoiceSignIn) {
+        // Not answered yet: ask first, so a stranger's audio is never uploaded.
+        window.VoiceSignIn.check().then(function (s) {
+          _micSignedIn = s.signedIn;
+          if (_micSignedIn === false) _showMicSignIn(); else _startRecording();
+        });
       } else {
         _startRecording();
       }
