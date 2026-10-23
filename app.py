@@ -10234,6 +10234,40 @@ def _grant_membership_line_dep(order):
         # After the two above, so a membership bought on this order makes the buyer
         # a paid member first and the supply grant then stands aside.
         _grant_supply_membership_on_paid(_mcx, order)
+        if _has_biofield:
+            _grant_waiting_supply_orders(_mcx, order.get("email"))
+
+
+def _grant_waiting_supply_orders(cx, email):
+    """A Biofield just paid: grant the client's paid remedy orders that were paid
+    before it and so found no Biofield then. Only orders within the cap window
+    (paid in the last SUPPLY_CAP_DAYS) and without a claim. Best-effort."""
+    email = (email or "").strip().lower()
+    if not email:
+        return 0
+    try:
+        _supply_init_table(cx)
+        since = datetime.utcnow() - timedelta(days=SUPPLY_CAP_DAYS)
+        from dashboard import orders as _o
+        n = 0
+        for o in _o.list_orders_by_email(cx, email, limit=200):
+            paid = _supply_naive(o.get("paid_at"))
+            if (o.get("pay_status") or "") != "paid" or paid is None or paid < since:
+                continue
+            ref = o.get("external_ref") or f"id:{o.get('id')}"
+            if cx.execute("SELECT 1 FROM order_supply_grants WHERE order_ref=?",
+                          (ref,)).fetchone():
+                continue
+            if _grant_supply_membership_on_paid(cx, o) == "granted":
+                n += 1
+        return n
+    except Exception as e:
+        print(f"[supply-grant] waiting orders skipped for {email!r}: {e!r}", flush=True)
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        return 0
 
 
 def _append_paid_order_repertoire(order):
@@ -17632,7 +17666,9 @@ SUPPLY_MONTH_DAYS = 30         # each month, and every month once the parcel lan
 SUPPLY_CAP_DAYS = 90           # "up to 3 months per biofield"
 # A care taster or Biofield month is the Biofield's own 30 days. A supply grant
 # overlaps it instead of stacking after it.
-_SUPPLY_PRIOR_EXCLUDED = ("care_taster", "biofield_month_delivery")
+# The $1 Biofield trial is a 36,500-day unlock, not access to stack after: left
+# in, every supply and courtesy grant would start in the year 2126.
+_SUPPLY_PRIOR_EXCLUDED = ("care_taster", "biofield_month_delivery", "biofield_trial")
 
 
 def _supply_naive(ts):
@@ -17689,8 +17725,8 @@ def _supply_cap_end(cx, email):
     months per biofield." He has not yet said which date anchors the 3 months, so
     the choice lives here and nowhere else. Today it is the PAID date of the latest
     non-cancelled order carrying the biofield-analysis line. An order without a
-    paid_at counts by its created_at when it is marked paid or has moved past the
-    proposed/confirmed stage; an unpaid open invoice anchors nothing."""
+    paid_at counts by its created_at only when it is marked paid. An unpaid
+    Biofield anchors nothing, whatever its status."""
     if not email:
         return None
     rows = cx.execute(
@@ -17708,7 +17744,7 @@ def _supply_cap_end(cx, email):
             continue
         anchor = _supply_naive(paid_at)
         if anchor is None:
-            if pay_status != "paid" and status in ("proposed", "confirmed"):
+            if pay_status != "paid":
                 continue
             anchor = _supply_naive(created_at)
         if anchor is not None and (latest is None or anchor > latest):
@@ -17716,14 +17752,15 @@ def _supply_cap_end(cx, email):
     return latest + timedelta(days=SUPPLY_CAP_DAYS) if latest is not None else None
 
 
-def _supply_prior_end(cx, email, now):
+def _supply_prior_end(cx, email, now, exclude_id=None):
     """The furthest active expiry among the client's memberships, leaving out the
-    Biofield's own 30 days (care taster and Biofield month). None when none."""
+    Biofield's own 30 days (care taster and Biofield month) and, at delivery, the
+    order's own grant. None when none."""
     best = None
-    for exp, src in cx.execute(
-            "SELECT expires_at, source FROM memberships WHERE lower(email)=lower(?) "
+    for mid, exp, src in cx.execute(
+            "SELECT id, expires_at, source FROM memberships WHERE lower(email)=lower(?) "
             "AND expires_at IS NOT NULL", (email,)).fetchall():
-        if (src or "") in _SUPPLY_PRIOR_EXCLUDED:
+        if (src or "") in _SUPPLY_PRIOR_EXCLUDED or (exclude_id and mid == exclude_id):
             continue
         d = _supply_naive(exp)
         if d is not None and d > now and (best is None or d > best):
@@ -17734,8 +17771,8 @@ def _supply_prior_end(cx, email, now):
 def _supply_set_coaching(cx, email, order_id, start, end):
     """Make this order's coaching window run start..end. One window per order. It
     is written beside any other active window: its dates come from the membership
-    chain, so it does not overlap the supply window before it."""
-    _coaching.init_coaching_table(cx)
+    chain, so it does not overlap the supply window before it. The caller creates
+    the table first and commits after, so this can run inside a savepoint."""
     w = _coaching.window_for_order(cx, order_id)
     if w:
         cx.execute("UPDATE coaching_windows SET started_at=?, ends_at=? WHERE id=?",
@@ -17748,7 +17785,6 @@ def _supply_set_coaching(cx, email, order_id, start, end):
             "VALUES (?,?,?,?,?,?)",
             (email, order_id, _supply_iso(start), _supply_iso(end), "supply",
              _supply_iso(datetime.utcnow())))
-    cx.commit()
 
 
 def _grant_supply_membership_on_paid(cx, order):
@@ -17813,6 +17849,12 @@ def _grant_supply_membership_on_paid(cx, order):
          order.get("paid_at") or _supply_iso(now), None, _supply_iso(now)))
     if not claim.rowcount:
         return "already"
+    if reason == "no_biofield":
+        # Not final: the Biofield may be paid later on its own invoice. Drop the
+        # claim so _grant_waiting_supply_orders can grant this order then.
+        cx.execute("DELETE FROM order_supply_grants WHERE order_ref=?", (ref,))
+        cx.commit()
+        return reason
     if reason:
         cx.commit()
         return reason
@@ -17822,9 +17864,15 @@ def _grant_supply_membership_on_paid(cx, order):
     cx.commit()
     try:
         if order.get("id") is not None:
+            _coaching.init_coaching_table(cx)
             _supply_set_coaching(cx, email, order["id"], start, end)
+            cx.commit()
     except Exception as _ce:
         print(f"[supply-grant] coaching window skipped for {ref!r}: {_ce!r}", flush=True)
+        try:
+            cx.rollback()
+        except Exception:
+            pass
     return "granted"
 
 
@@ -17834,13 +17882,23 @@ def _adjust_supply_on_delivery(cx, order_id, delivered_at):
 
     Returns None when the order has no supply claim (old behaviour applies), else
     {"granted": bool, "ends_at": ...}. Never raises: a failure here must not block
-    marking a parcel delivered."""
+    marking a parcel delivered. Its writes sit in a savepoint, so a failed
+    statement on Postgres cannot leave the caller's transaction aborted. Both
+    tables are created first, because their setup commits."""
+    try:
+        _supply_init_table(cx)
+        _coaching.init_coaching_table(cx)
+        cx.execute("SAVEPOINT supply_delivery")
+    except Exception as e:
+        print(f"[supply-grant] savepoint failed for order {order_id!r}: {e!r}", flush=True)
+        return {"granted": False, "error": True}
     try:
         _supply_init_table(cx)
         row = cx.execute(
             "SELECT order_ref, email, months, membership_id, prior_end, ends_at, cap_end, "
             "delivered_at FROM order_supply_grants WHERE order_id=?", (order_id,)).fetchone()
         if not row:
+            cx.execute("RELEASE SAVEPOINT supply_delivery")
             return None
         ref, email, months, mid, prior_s, ends_s, cap_s, done = (
             row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
@@ -17848,27 +17906,50 @@ def _adjust_supply_on_delivery(cx, order_id, delivered_at):
             if not done:
                 cx.execute("UPDATE order_supply_grants SET delivered_at=? WHERE order_ref=?",
                            (delivered_at, ref))
-                cx.commit()
+            cx.execute("RELEASE SAVEPOINT supply_delivery")
+            cx.commit()
             return {"granted": False}
         if done:
+            cx.execute("RELEASE SAVEPOINT supply_delivery")
             return {"granted": True, "ends_at": ends_s, "already": True}
+        # A grant revoked since payment (a refund) stays revoked, and a cancelled or
+        # refunded order earns nothing. Mark it delivered so a re-run does not retry.
+        cur = cx.execute("SELECT expires_at FROM memberships WHERE id=?", (mid,)).fetchone()
+        ost = cx.execute("SELECT status, pay_status FROM orders WHERE id=?",
+                         (order_id,)).fetchone()
+        revoked = not cur or (_supply_naive(cur[0]) or datetime.min) <= datetime.utcnow()
+        void = bool(ost) and ((ost[0] or "") == "cancelled" or (ost[1] or "") == "refunded")
+        if revoked or void:
+            cx.execute("UPDATE order_supply_grants SET delivered_at=? WHERE order_ref=?",
+                       (delivered_at, ref))
+            cx.execute("RELEASE SAVEPOINT supply_delivery")
+            cx.commit()
+            return {"granted": False, "revoked": True}
         delivered = _supply_naive(delivered_at) or datetime.utcnow()
-        prior = _supply_naive(prior_s)
+        # Read the access before this order live: an earlier order re-timed at its
+        # own delivery has moved, and the stored value would overlap it.
+        prior = _supply_prior_end(cx, email, delivered, exclude_id=mid)
         start = max(delivered, prior) if prior else delivered
         end = start + timedelta(days=SUPPLY_MONTH_DAYS * int(months or 1))
         cap = _supply_cap_end(cx, email) or _supply_naive(cap_s)
         if cap is not None:
+            # A parcel that arrives after the cap never pushes past it.
             end = min(end, cap)
-        if end < start:
-            end = start
+        start = min(start, end)
         cx.execute("UPDATE memberships SET expires_at=? WHERE id=?", (_supply_iso(end), mid))
         cx.execute("UPDATE order_supply_grants SET starts_at=?, ends_at=?, delivered_at=? "
                    "WHERE order_ref=?", (_supply_iso(start), _supply_iso(end), delivered_at, ref))
-        cx.commit()
         _supply_set_coaching(cx, email, order_id, start, end)
+        cx.execute("RELEASE SAVEPOINT supply_delivery")
+        cx.commit()
         return {"granted": True, "ends_at": _supply_iso(end)}
     except Exception as e:
         print(f"[supply-grant] delivery adjust failed for order {order_id!r}: {e!r}", flush=True)
+        try:
+            cx.execute("ROLLBACK TO SAVEPOINT supply_delivery")
+            cx.execute("RELEASE SAVEPOINT supply_delivery")
+        except Exception:
+            pass
         return {"granted": False, "error": True}
 
 
@@ -58736,10 +58817,21 @@ def console_membership_courtesy():
             "CREATE TABLE IF NOT EXISTS membership_courtesy_log ("
             " id TEXT PRIMARY KEY, email TEXT, days INTEGER, note TEXT, actor TEXT,"
             " membership_id TEXT, starts_at TEXT, expires_at TEXT, created_at TEXT)")
+        # The same courtesy sent again within ten minutes is a retry (a lost
+        # response, a double click), not a second courtesy.
+        dup = cx.execute(
+            "SELECT membership_id, starts_at, expires_at FROM membership_courtesy_log "
+            "WHERE lower(email)=lower(?) AND days=? AND note=? AND created_at > ? LIMIT 1",
+            (email, days, note[:2000], _supply_iso(now - timedelta(minutes=10)))).fetchone()
+        if dup:
+            return jsonify({"ok": True, "email": email, "days": days, "duplicate": True,
+                            "membership_id": dup[0], "starts_at": dup[1], "expires_at": dup[2]})
         start = now
-        for (exp,) in cx.execute(
-                "SELECT expires_at FROM memberships WHERE lower(email)=lower(?) "
+        for (exp, src) in cx.execute(
+                "SELECT expires_at, source FROM memberships WHERE lower(email)=lower(?) "
                 "AND expires_at IS NOT NULL", (email,)).fetchall():
+            if (src or "") == "biofield_trial":
+                continue
             d = _supply_naive(exp)
             if d is not None and d > start:
                 start = d

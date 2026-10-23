@@ -535,3 +535,132 @@ def test_a_caregiver_billed_order_grants_nobody(cx):
     assert appmod._grant_supply_membership_on_paid(cx, o) == "none"
     assert cx.execute("SELECT COUNT(*) FROM memberships WHERE source=?",
                       (appmod.SUPPLY_SOURCE,)).fetchone()[0] == 0
+
+
+# ── Review round fixes ───────────────────────────────────────────────────────
+
+def test_an_unpaid_biofield_never_anchors_the_cap_whatever_its_status(cx):
+    oid = O.upsert_order(cx, source="in-house", external_ref="BF-DONE", email=EMAIL,
+                         items=BIOFIELD, total_cents=30000, status="done")
+    cx.execute("UPDATE orders SET pay_status='unpaid', paid_at=NULL WHERE id=?", (oid,))
+    cx.commit()
+    assert appmod._supply_cap_end(cx, EMAIL) is None
+    o = _order(cx, "INH-U", REMEDY, months=1)
+    assert appmod._grant_supply_membership_on_paid(cx, o) == "no_biofield"
+
+
+def test_a_parcel_after_the_cap_never_pushes_past_it(cx):
+    _biofield(cx, days_ago=80)            # cap = 10 days from now
+    o = _order(cx, "INH-LATE", REMEDY, months=1, paid_days_ago=1)
+    appmod._grant_supply_membership_on_paid(cx, o)
+    cap = appmod._supply_cap_end(cx, EMAIL)
+    res = appmod._adjust_supply_on_delivery(cx, o["id"], _iso(cap + timedelta(days=10)))
+    g = _grant_row(cx, "INH-LATE")
+    assert res["granted"] is True
+    assert _expiry(cx, g["membership_id"]) == cap
+
+
+def test_a_later_order_starts_after_the_earlier_one_as_re_timed(cx):
+    _biofield(cx)
+    a = _order(cx, "INH-A", REMEDY, months=1)
+    b = _order(cx, "INH-B", REMEDY, months=1)
+    appmod._grant_supply_membership_on_paid(cx, a)
+    appmod._grant_supply_membership_on_paid(cx, b)
+    # A arrives in 10 days, so it now ends 40 days out, past its paid 37.
+    appmod._adjust_supply_on_delivery(cx, a["id"], _iso(_ago(-10)))
+    a_end = _expiry(cx, _grant_row(cx, "INH-A")["membership_id"])
+    appmod._adjust_supply_on_delivery(cx, b["id"], _iso(_ago(-12)))
+    assert _grant_row(cx, "INH-B")["starts_at"] == _iso(a_end)
+
+
+def test_a_failed_statement_at_delivery_rolls_back_and_leaves_the_connection_usable(cx, monkeypatch):
+    _biofield(cx)
+    o = _order(cx, "INH-F", REMEDY, months=1)
+    appmod._grant_supply_membership_on_paid(cx, o)
+    mid = _grant_row(cx, "INH-F")["membership_id"]
+    before = _expiry(cx, mid)
+
+    def _fail(c, *a, **k):
+        c.execute("SELECT * FROM no_such_table")
+    monkeypatch.setattr(appmod, "_supply_set_coaching", _fail)
+    res = appmod._adjust_supply_on_delivery(cx, o["id"], _iso(_ago(-3)))
+    assert res == {"granted": False, "error": True}
+    assert _expiry(cx, mid) == before          # the membership update was rolled back
+    assert _grant_row(cx, "INH-F")["delivered_at"] is None
+    cx.execute("SELECT 1").fetchone()          # and the caller can carry on
+
+
+def test_the_same_courtesy_sent_twice_adds_it_once(console, cx):
+    body = {"email": EMAIL, "days": 30, "note": "parcel lost"}
+    first = _courtesy(console, body).get_json()
+    second = _courtesy(console, body).get_json()
+    assert second["duplicate"] is True
+    assert second["expires_at"] == first["expires_at"]
+    assert cx.execute("SELECT COUNT(*) FROM memberships WHERE source='courtesy'").fetchone()[0] == 1
+
+
+def test_a_membership_line_never_multiplies():
+    assert bi._multiplies("liver-support", set()) is True
+    assert bi._multiplies("membership:month", set()) is False
+    assert bi._multiplies("biofield-analysis", set()) is False
+
+
+# ── Second review round ──────────────────────────────────────────────────────
+
+def test_a_ledger_payment_fires_the_supply_grant(cx):
+    from dashboard import order_payments as OP
+    OP.ensure_table(cx)
+    _biofield(cx)
+    oid = O.upsert_order(cx, source="in-house", external_ref="INH-Z", email=EMAIL,
+                         items=REMEDY, total_cents=6997, status="new")
+    cx.commit()
+    OP.add_payment(cx, oid, 6997, "zelle", source="zelle_email", external_ref="z-1")
+    cx.commit()
+    assert _grant_row(cx, "INH-Z") is not None
+
+
+def test_the_one_dollar_trial_does_not_push_grants_to_2126(cx):
+    _biofield(cx)
+    appmod._grant_membership(cx, EMAIL, 36500, "biofield_trial")
+    cx.commit()
+    o = _order(cx, "INH-T", REMEDY, months=1)
+    assert appmod._grant_supply_membership_on_paid(cx, o) == "granted"
+    assert _days_from_now(_expiry(cx, _grant_row(cx, "INH-T")["membership_id"])) < 40
+
+
+def test_courtesy_ignores_the_one_dollar_trial(console, cx):
+    appmod._grant_membership(cx, EMAIL, 36500, "biofield_trial")
+    cx.commit()
+    j = _courtesy(console, {"email": EMAIL, "days": 10, "note": "warranted"}).get_json()
+    assert _days_from_now(datetime.fromisoformat(j["expires_at"].rstrip("Z"))) < 11
+
+
+def test_delivery_never_revives_a_revoked_grant(cx):
+    _biofield(cx)
+    o = _order(cx, "INH-R", REMEDY, months=1)
+    appmod._grant_supply_membership_on_paid(cx, o)
+    mid = _grant_row(cx, "INH-R")["membership_id"]
+    gone = datetime.utcnow() - timedelta(minutes=1)
+    cx.execute("UPDATE memberships SET expires_at=? WHERE id=?", (_iso(gone), mid))
+    cx.commit()
+    res = appmod._adjust_supply_on_delivery(cx, o["id"], _iso(_ago(0)))
+    assert res["granted"] is False
+    assert _expiry(cx, mid) == gone
+
+
+def test_a_remedy_order_paid_before_its_biofield_is_granted_when_the_biofield_is_paid(cx):
+    o = _order(cx, "INH-EARLY", REMEDY, months=1)
+    assert appmod._grant_supply_membership_on_paid(cx, o) == "no_biofield"
+    bf = _biofield(cx, ref="BF-LATE")
+    appmod._grant_membership_line_dep(bf)
+    g = _grant_row(cx, "INH-EARLY")
+    assert g is not None and g["membership_id"] and not g["reason"]
+
+
+def test_three_months_uncapped_is_97_days(cx, monkeypatch):
+    _biofield(cx)
+    monkeypatch.setattr(appmod, "_supply_cap_end",
+                        lambda c, e: datetime.utcnow() + timedelta(days=400))
+    o = _order(cx, "INH-97", REMEDY, months=3)
+    appmod._grant_supply_membership_on_paid(cx, o)
+    assert round(_days_from_now(_expiry(cx, _grant_row(cx, "INH-97")["membership_id"]))) == 97

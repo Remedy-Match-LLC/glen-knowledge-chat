@@ -174,6 +174,13 @@ def line_bottles(line):
 SUPPLY_MONTH_CHOICES = (1, 2, 3)
 
 
+def _multiplies(slug, services):
+    """True for a remedy line: never the Biofield, a service or a membership line."""
+    slug = slug or ""
+    return (slug != BIOFIELD_SLUG and slug not in services
+            and not slug.startswith("membership:"))
+
+
 def normalize_supply_months(value):
     """The 1 / 2 / 3 month supply choice (Glen, 2026-10-23). Anything else is 1."""
     try:
@@ -499,11 +506,11 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True, supply_mont
         slug, qty = item["slug"], item["qty"]
         seen = next((l for l in lines if l["slug"] == slug), None)
         if seen is not None:
-            if slug != BIOFIELD_SLUG and slug not in services:
+            if _multiplies(slug, services):
                 qty = qty * months
             seen["qty"] = max(seen["qty"], qty)
             continue
-        if slug != BIOFIELD_SLUG and slug not in services:
+        if _multiplies(slug, services):
             qty = qty * months
         # These remedies came from the practitioner's authored Biofield
         # analysis, so preserve that provenance through order creation and
