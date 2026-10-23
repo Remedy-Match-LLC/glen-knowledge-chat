@@ -57,14 +57,49 @@ def _key(text):
     return (text or "").strip().casefold()
 
 
+def typed_patterns(cx, tid):
+    """{selection key: pattern} typed into the field for this one test. Read only."""
+    if not _table_exists(cx, "biofield_clinical_selection"):
+        return {}
+    t = _num(tid)
+    return {k: (p or "").strip() for k, p in cx.execute(
+        "SELECT item_key, pattern FROM biofield_clinical_selection "
+        "WHERE test_id IN (?,?) AND TRIM(COALESCE(pattern,''))<>''", ("a" + str(t), str(t)))}
+
+
+def shown_pattern(cx, label, patterns, typed):
+    """The pattern the "Stress pattern (head & tail)" field shows for `label`, in the
+    page's own order: one typed for this test, then the stored one, then the drafted
+    suggestion, with any folded condition's function appended as build() does.
+
+    Agnes Verches (test 56, 2026-10-23): her field showed the suggestion "Macular
+    Vascular Containment" for Wet AMD, but only the stored table was read here, so the
+    program named layer 4 "Wet AMD", the diagnosis. Never falls back to the wording:
+    no pattern anywhere returns ""."""
+    from dashboard.biofield_clinical_checklist import (absorbed_patterns, combine_patterns,
+                                                       suggested_pattern)
+    from dashboard.biofield_clinical_proposals import _key as _skey
+    typed_p = typed.get(_skey(label), "")
+    if typed_p:
+        return typed_p                 # apply_selection puts it over everything
+    stored = pattern_of(label, patterns)
+    base = stored or suggested_pattern(label)
+    folded = []
+    if _table_exists(cx, "biofield_clinical_alias"):
+        folded = absorbed_patterns(cx, label, lambda l: pattern_of(l, patterns))
+    return (combine_patterns(base, folded) if folded else base).strip()
+
+
 def _resolve(cx, tid, patterns=None):
     """(conditions, cycles). `conditions` is {_key(wording): (wording, final pattern)}
-    for this client's conditions with a usable stored pattern. `cycles` is the set of
-    _key(wording) whose pattern chain loops back on itself."""
+    for this client's conditions with a usable pattern, the one the page shows
+    (shown_pattern). `cycles` is the set of _key(wording) whose pattern chain loops
+    back on itself."""
     patterns = stored_patterns(cx) if patterns is None else patterns
+    typed = typed_patterns(cx, tid)
     direct = {}
     for label in client_condition_labels(cx, tid):
-        p = pattern_of(label, patterns)
+        p = shown_pattern(cx, label, patterns, typed)
         if p:
             direct.setdefault(_key(label), (label, p))
     out, cycles = {}, set()
@@ -179,12 +214,12 @@ def card_rids(cx, tid, head):
 
 
 def no_pattern_heads(items):
-    """{normalised wording: wording} of the Clinical Summary rows with no stored
-    pattern, or whose pattern chain loops (`pattern_cycle`, set by the page). A card
+    """{normalised wording: wording} of the Clinical Summary rows whose field shows no
+    pattern (typed, stored or suggested), or whose pattern chain loops (`pattern_cycle`, set by the page). A card
     whose Head or any Tail item is one of these is flagged."""
     return {_cnorm(i.get("label")): str(i.get("label")).strip() for i in items or []
             if (i.get("label") or "").strip()
-            and (i.get("pattern_cycle") or not (i.get("remembered_pattern") or "").strip())}
+            and (i.get("pattern_cycle") or not (i.get("stress_pattern") or "").strip())}
 
 
 # ---- correcting an existing chain -------------------------------------------------
