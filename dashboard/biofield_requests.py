@@ -71,10 +71,13 @@ SYSTEM = (
 )
 
 _BIOFIELD = re.compile(r"\bbio[\s-]?field", re.I)
-_BIOFIELD_EXPLICIT = re.compile(
-    r"\bbio[\s-]?field\s+(?:analysis|analyses|consult\w*|session|appointment|test\w*|"
-    r"evaluation|assessment|reading)", re.I)
-_FREE_OR_SCAN = re.compile(r"\bfree\b|remedy\s*match|voice\s*scan|e4l", re.I)
+# Only these lift a message that also names a free or scan offer to "clear".
+_BIOFIELD_EXPLICIT = re.compile(r"\bbio[\s-]?field\s+analys[ie]s\b|\bconsult(?:ation)?s?\b",
+                                re.I)
+# The free and scan offers: a Biofield scan, a scan reading, anything free, Remedy Match,
+# the $100 program, the voice scan and E4L.
+_FREE_OR_SCAN = re.compile(r"\bbio[\s-]?field\s+scan|\bscan\s+reading|\bfree\b|"
+                           r"remedy\s*match|\$\s?100\b|voice\s*scan|\be4l\b", re.I)
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -97,9 +100,10 @@ def one_line(s, cap=200):
 def guard_certainty(certainty, text):
     """The model's verdict, held to Glen's naming rule in code, not only in the prompt.
 
-    "clear" needs the message to name Biofield. When it also mentions a free scan,
-    Remedy Match or a voice scan, it must name a Biofield Analysis, consultation,
-    session or test explicitly, or it is a possible request at most."""
+    "clear" needs the message to name Biofield. When it also names a free or scan offer
+    (a Biofield scan, a scan reading, "free", Remedy Match, $100, the voice scan, E4L),
+    it must say "Biofield Analysis" or "consultation"/"consult", or it is a possible
+    request at most."""
     if certainty != "clear":
         return certainty
     if not _BIOFIELD.search(text or ""):
@@ -110,8 +114,12 @@ def guard_certainty(certainty, text):
 
 
 def classify(complete, text, sender_name="", sender_email=""):
-    """{certainty, quote, for_name, for_email}. Never raises: any failure is "none"."""
+    """{certainty, quote, for_name, for_email}. Never raises.
+
+    certainty is "error" when the model call failed or its reply was unreadable. An
+    error is never filed or remembered, so the next run asks again."""
     out = {"certainty": "none", "quote": "", "for_name": "", "for_email": ""}
+    err = dict(out, certainty="error")
     body = str(text or "").strip()
     if not body:
         return out
@@ -121,10 +129,11 @@ def classify(complete, text, sender_name="", sender_email=""):
         data = _parse(complete(SYSTEM, user))
     except Exception as e:  # noqa: BLE001
         print(f"[biofield-requests] classify failed: {e!r}", flush=True)
-        return out
+        return err
     c = data.get("certainty")
     if c not in CERTAINTIES:
-        return out
+        print(f"[biofield-requests] unreadable verdict: {str(data)[:120]!r}", flush=True)
+        return err
     c = guard_certainty(c, body)
     if c == "none":
         return out
@@ -208,15 +217,24 @@ def _norm_name(s):
     return s
 
 
-def same_person(email, name, payer, other_email, other_name):
-    """Matched by address. When the line is a household member filed under the
-    caregiver's address, the names must agree too, or the caregiver's own line or test
-    would hide the member's."""
-    if (email or "").strip().lower() != (other_email or "").strip().lower():
+def _shared(person):
+    """True when this line or test sits on an address more than one person uses: a member
+    filed under the caregiver's address, or a household address."""
+    e = (person.get("email") or "").strip().lower()
+    return bool(person.get("household")) or bool(
+        e and (person.get("payer_email") or "").strip().lower() == e)
+
+
+def same_person(a, b):
+    """Matched by address, in both directions. When either side sits on a shared
+    address, the normalised names must be equal too ("Sam" is not "Samantha Doe"),
+    so a caregiver's own request and a member's line never hide each other. A side
+    with no name cannot be told apart, and counts as the same person."""
+    if (a.get("email") or "").strip().lower() != (b.get("email") or "").strip().lower():
         return False
-    if payer and (payer or "").strip().lower() == (email or "").strip().lower():
-        a, b = _norm_name(name), _norm_name(other_name)
-        if a and b and a not in b and b not in a:
+    if _shared(a) or _shared(b):
+        na, nb = _norm_name(a.get("name")), _norm_name(b.get("name"))
+        if na and nb and na != nb:
             return False
     return True
 
@@ -234,11 +252,18 @@ def unfinished_tests(cx, fetch_orders):
         return []
     local, links = bp.local_steps(cx), bp.stored_links(cx)
     orders, err = fetch_orders(sorted(set(links.values())))
+    # A household address: tests on it carry two or more different names.
+    names = {}
+    for t in authored:
+        n = _norm_name(t.get("name"))
+        if n:
+            names.setdefault((t.get("email") or "").strip().lower(), set()).add(n)
     out = []
     for t, p in zip(authored, bp.build(authored, local, links, orders, err)):
         if p.get("all_done") or not (t.get("email") or "").strip():
             continue
         out.append({"test_id": t["test_id"], "email": t["email"],
+                    "household": len(names.get(t["email"].strip().lower(), ())) > 1,
                     "name": "" if t.get("name") == "(unnamed)" else (t.get("name") or ""),
                     "note": (f" (orders could not be read: {err}, so it may be finished)"
                              if err else "")})
@@ -248,43 +273,66 @@ def unfinished_tests(cx, fetch_orders):
 def record(cx, req, unfinished=()):
     """File one classified message. Returns {"kind", "id", "note"}.
 
-    kind: "none" (not a request, remembered as seen), "seen" (this source_ref is already
-    filed), "added" (a Requested line), "pending" (waits for Glen's yes) or "duplicate"
-    (the person already has an open line or an unfinished test, so no second line).
-    The duplicate check and the insert run in one write transaction."""
-    ensure_schema(cx)
+    kind: "error" (the classifier failed: nothing is filed or remembered, so the next
+    run retries), "none" (not a request, remembered as seen), "seen" (this source_ref is
+    already filed), "added" (a Requested line), "pending" (waits for Glen's yes),
+    "upgraded" (a clear request lifted the person's waiting line to Requested) or
+    "duplicate" (the person already has an open line or an unfinished test, so no
+    second line). The checks and the write run in one write transaction."""
     source, ref = req["source"], str(req["source_ref"])
     if source not in SOURCES:
         raise ValueError(f"unknown source {source!r}")
+    if req.get("certainty") == "error":
+        return {"kind": "error", "id": None, "note": ""}
+    ensure_schema(cx)
     if req.get("certainty") not in ("clear", "possible"):
         mark_seen(cx, source, ref, "none")
         return {"kind": "none", "id": None, "note": ""}
-    email = (req.get("email") or "").strip().lower()
-    name = (req.get("name") or "").strip()
-    payer = (req.get("payer_email") or "").strip().lower()
+    me = {"email": (req.get("email") or "").strip().lower(),
+          "name": (req.get("name") or "").strip(),
+          "payer_email": (req.get("payer_email") or "").strip().lower()}
+    clear = req["certainty"] == "clear"
     cx.commit()
     cx.execute("BEGIN IMMEDIATE")
     try:
         if cx.execute(f"SELECT 1 FROM {TABLE} WHERE source=? AND source_ref=?",
-                      (source, ref)).fetchone():
+                      (source, ref)).fetchone() or cx.execute(
+                f"SELECT 1 FROM {SEEN_TABLE} WHERE source=? AND source_ref=?",
+                (source, ref)).fetchone():
             cx.rollback()
             return {"kind": "seen", "id": None, "note": ""}
-        note = ""
-        for rid, oe, on in cx.execute(
-                f"SELECT id, email, name FROM {TABLE} WHERE status IN (?,?)",
-                OPEN_STATUSES).fetchall():
-            if same_person(email, name, payer, oe, on):
-                note = f"already has an open request (line {rid})"
+        note, waiting = "", None
+        for rid, oe, on, op, st in cx.execute(
+                f"SELECT id, email, name, payer_email, status FROM {TABLE} "
+                "WHERE status IN (?,?) ORDER BY id", OPEN_STATUSES).fetchall():
+            if not same_person(me, {"email": oe, "name": on, "payer_email": op}):
+                continue
+            if st == "requested":
+                note = f"already has an open Requested line (line {rid})"
                 break
+            waiting = waiting or rid
+        if not note and waiting and clear:
+            # A clear request lifts the waiting line: Glen's yes is not needed now.
+            cx.execute(f"UPDATE {TABLE} SET status='requested', certainty='clear', quote=?, "
+                       "requested_at=?, alerted_at=NULL, decided_at=? "
+                       "WHERE id=? AND status='pending_yes'",
+                       (one_line(req.get("quote")), req.get("requested_at") or _now(), _now(),
+                        waiting))
+            cx.execute(f"INSERT OR IGNORE INTO {SEEN_TABLE}(source, source_ref, certainty, "
+                       "seen_at) VALUES(?,?,?,?)", (source, ref, "clear", _now()))
+            cx.commit()
+            return {"kind": "upgraded", "id": waiting, "note": ""}
+        if not note and waiting:
+            note = f"already has a possible request waiting for your yes (line {waiting})"
         if not note:
             for t in unfinished or ():
-                if same_person(email, name, payer, t.get("email"), t.get("name")):
+                if same_person(me, t):
                     note = (f"already has test {t['test_id']}, not finished"
                             + (t.get("note") or ""))
                     break
         if note:
             status, kind = "duplicate", "duplicate"
-        elif req["certainty"] == "clear":
+        elif clear:
             status, kind = "requested", "added"
         else:
             status, kind = "pending_yes", "pending"
@@ -293,9 +341,9 @@ def record(cx, req, unfinished=()):
             cx,
             f"INSERT INTO {TABLE}(email, name, source, source_ref, requested_at, quote, "
             "certainty, payer_email, status, created_at, note) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (email, name, source, ref, req.get("requested_at") or _now(),
-             one_line(req.get("quote")), req["certainty"], payer or None, status, _now(),
-             note or None))
+            (me["email"], me["name"], source, ref, req.get("requested_at") or _now(),
+             one_line(req.get("quote")), req["certainty"], me["payer_email"] or None, status,
+             _now(), note or None))
         cx.commit()
         return {"kind": kind, "id": new_id, "note": note}
     except Exception:
@@ -348,34 +396,43 @@ def today_hst():
     return _dt.datetime.now(HST).date().isoformat()
 
 
-def start(cx, rid, date=None):
+STUCK_AFTER = _dt.timedelta(minutes=5)
+
+
+def start(cx, rid, date=None, now=None):
     """Start test: create the authored test, link the request to it. (test_id, error).
 
     The request is claimed first with a conditional update, so two clicks make one
     test: the second gets the first one's test_id once it is stored, or an error while
-    it is being made. A failed create puts the request back."""
-    from dashboard.biofield_authoring import create_test, init_auth_tables, update_header
+    it is being made. The test is created with its name, email and date in one call,
+    so no blank test is left. A failed create puts the request back. A claim left at
+    started with no test for more than STUCK_AFTER (a crash mid-start) can be taken
+    again."""
+    from dashboard.biofield_authoring import create_test, init_auth_tables
     ensure_schema(cx)
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    cutoff = (now - STUCK_AFTER).strftime("%Y-%m-%dT%H:%M:%SZ")
     row = get(cx, rid)
     if not row:
         return None, "No such request."
-    if row["status"] == "started":
-        if row.get("test_id"):
-            return row["test_id"], None
+    if row["status"] == "started" and row.get("test_id"):
+        return row["test_id"], None
+    stuck = row["status"] == "started" and str(row.get("decided_at") or "") < cutoff
+    if row["status"] == "started" and not stuck:
         return None, "This test is being created. Reload the list."
-    if row["status"] != "requested":
+    if row["status"] != "requested" and not stuck:
         return None, "Only a Requested line can start a test."
     init_auth_tables(cx)
     n = cx.execute(f"UPDATE {TABLE} SET status='started', decided_at=? "
-                   "WHERE id=? AND status='requested' AND test_id IS NULL",
-                   (_now(), int(rid))).rowcount
+                   "WHERE id=? AND test_id IS NULL AND (status='requested' OR "
+                   "(status='started' AND COALESCE(decided_at,'')<?))",
+                   (now.strftime("%Y-%m-%dT%H:%M:%SZ"), int(rid), cutoff)).rowcount
     cx.commit()
     if n != 1:
         return None, "This request was started already. Reload the list."
     try:
-        tid = create_test(cx, "", "", "")
-        update_header(cx, tid, name=row.get("name") or "", email=row.get("email") or "",
-                      date=date or today_hst())
+        tid = create_test(cx, row.get("name") or "", row.get("email") or "",
+                          date or today_hst())
         cx.execute(f"UPDATE {TABLE} SET test_id=? WHERE id=?", (tid, int(rid)))
         cx.commit()
     except Exception:

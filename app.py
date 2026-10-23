@@ -33660,6 +33660,10 @@ def api_portal_chat(token):
                 email, portal.get("name") or "", query, _healing_keys, flag=_healing)
         else:
             _healing_keys = []
+    if _warning_keys or _healing_keys:
+        # These messages skip _triage_portal_message, so the Biofield request check
+        # starts here, after the warning delivery has already been handed off.
+        _start_biofield_request_flag(email, portal.get("name") or "", query)
 
     def generate():
         if cart_added:
@@ -34175,6 +34179,17 @@ def _triage_portal_message(email, name, query, answer, stored_item_id=None):
         _flag_biofield_request(email, name, query)
 
 
+def _start_biofield_request_flag(email, name, query):
+    """_flag_biofield_request in a background thread. Starting it is all this does, so
+    a warning-sign delivery started before it is never delayed. Never raises."""
+    try:
+        import threading as _tb
+        _tb.Thread(target=_flag_biofield_request, args=(email, name, query),
+                   daemon=True).start()
+    except Exception as e:  # noqa: BLE001
+        print(f"[biofield-request] flag start failed: {e!r}", flush=True)
+
+
 def _flag_biofield_request(email, name, query):
     """Store a portal message that asks for a Biofield Analysis (Glen, 2026-10-23).
 
@@ -34184,7 +34199,13 @@ def _flag_biofield_request(email, name, query):
     try:
         from dashboard import biofield_requests as _br
         verdict = _br.classify(_br.haiku_complete(_cl), query, name, email)
-        if verdict["certainty"] == "none":
+        if verdict["certainty"] == "error":
+            # Not retried: this message is simply not flagged. The error is in the log,
+            # and Glen still sees the chat in the console.
+            print(f"[biofield-request] not flagged, the classifier failed for {email}",
+                  flush=True)
+            return None
+        if verdict["certainty"] not in ("clear", "possible"):
             return None
         with _db_lock, db.connect(LOG_DB) as cx:
             flag_id, _created = _br.add_flag(cx, email, name, verdict, query)

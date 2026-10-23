@@ -367,3 +367,41 @@ def test_resend_sends_nothing_when_another_worker_claimed_it(env, monkeypatch):
     monkeypatch.setattr(pt, "claim_resend", lambda *a, **k: False)
     assert appmod._resend_unsent_triage_emails() == 0
     assert len(sent) == 1
+
+
+# --- Biofield request check on the warning paths (review, 2026-10-23) ----------
+
+def test_a_warning_sign_message_is_still_checked_for_a_biofield_request(env, monkeypatch):
+    """Warning-sign messages skip _triage_portal_message, so the chat route starts the
+    Biofield request flag itself, after the warning email is handed off."""
+    appmod, chat, sent = env
+    flagged = []
+    monkeypatch.setattr(appmod, "_flag_biofield_request",
+                        lambda e, n, q: flagged.append(q) or EVENTS.append("flag"))
+    chat("My lips are swelling. Can I book a Biofield Analysis?")
+    assert flagged == ["My lips are swelling. Can I book a Biofield Analysis?"]
+    assert len(sent) == 1
+    assert EVENTS.index("send") < EVENTS.index("flag")
+
+
+def test_a_healing_crisis_message_is_still_checked_for_a_biofield_request(env, monkeypatch):
+    appmod, chat, sent = env
+    flagged, delivered = [], []
+    monkeypatch.setattr(appmod, "_flag_biofield_request",
+                        lambda e, n, q: flagged.append(q))
+    monkeypatch.setattr(appmod, "_healing_crisis_check",
+                        lambda e, q: (["die-off"], {"category": "health-concern"}))
+    monkeypatch.setattr(appmod, "_start_warning_sign_delivery",
+                        lambda *a, **k: delivered.append(a) or None)
+    chat("Big die-off today. Can I book a Biofield Analysis?")
+    assert delivered and flagged == ["Big die-off today. Can I book a Biofield Analysis?"]
+
+
+def test_a_flag_that_fails_to_start_never_breaks_the_chat(env, monkeypatch):
+    appmod, chat, sent = env
+
+    def boom(*a, **k):
+        raise RuntimeError("no threads")
+    monkeypatch.setattr(appmod, "_flag_biofield_request", boom)
+    text = chat("My lips are swelling.")
+    assert LINE in text and len(sent) == 1

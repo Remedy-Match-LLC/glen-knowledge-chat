@@ -82,23 +82,45 @@ def test_the_classifier_is_told_the_rules_and_the_sender():
     "Please book my voice scan, biofield please",
     "I'd like to book a consultation with Dr Glen",
     "Can I get a free scan?",
+    "Can I book a Biofield scan?",
+    "I'd like my Biofield scan reading please",
+    "Is the biofield test free?",
+    "Can I sign up for the $100 biofield program?",
+    "A free Biofield assessment, please",
+    "Book me a Biofield reading, I did the E4L scan",
 ])
 def test_a_free_scan_or_remedy_match_is_never_clear(text):
     assert br.classify(model("clear"), text)["certainty"] == "possible"
 
 
-def test_an_explicit_biofield_analysis_stays_clear_beside_a_scan():
-    text = "I did the free scan and now I'd like to book a Biofield Analysis."
+@pytest.mark.parametrize("text", [
+    "I did the free scan and now I'd like to book a Biofield Analysis.",
+    "After my Biofield scan I'd like a consultation, please.",
+    "Remedy Match was great. Can I book a biofield consult?",
+])
+def test_an_explicit_biofield_analysis_or_consult_stays_clear_beside_a_scan(text):
     assert br.classify(model("clear"), text)["certainty"] == "clear"
 
 
+def test_a_plain_biofield_test_request_stays_clear():
+    assert br.classify(model("clear"), "Can I book a Biofield test?")["certainty"] == "clear"
+
+
 @pytest.mark.parametrize("reply", ["", "not json", '{"certainty": "maybe"}', "[1]"])
-def test_garbage_or_an_error_is_none(reply):
-    assert br.classify(lambda s, u: reply, "Biofield please")["certainty"] == "none"
+def test_garbage_or_a_model_error_is_an_error_verdict(reply):
+    assert br.classify(lambda s, u: reply, "Biofield please")["certainty"] == "error"
 
     def boom(s, u):
         raise RuntimeError("down")
-    assert br.classify(boom, "Biofield please")["certainty"] == "none"
+    assert br.classify(boom, "Biofield please")["certainty"] == "error"
+    assert br.classify(model("none"), "Biofield please")["certainty"] == "none"
+
+
+def test_an_error_is_not_remembered_so_the_next_run_retries(cx):
+    out = br.record(cx, req("m5", certainty="error"))
+    assert out["kind"] == "error"
+    assert not br.is_seen(cx, "email", "m5")
+    assert br.record(cx, req("m5"))["kind"] == "added"
 
 
 def test_the_quote_is_one_line():
@@ -128,6 +150,44 @@ def test_a_members_line_is_not_hidden_by_the_caregivers_own_open_line(cx):
     assert out["kind"] == "added"
     again = br.record(cx, req("m3", name="Sam Doe", payer="jane@x.com"))
     assert again["kind"] == "duplicate"
+
+
+def test_the_caregivers_own_request_is_not_hidden_by_a_members_line(cx):
+    br.record(cx, req("m1", name="Sam Doe", payer="jane@x.com"))
+    out = br.record(cx, req("m2", name="Jane Doe"))
+    assert out["kind"] == "added"
+    assert br.record(cx, req("m3", name="Jane Doe"))["kind"] == "duplicate"
+
+
+def test_names_on_a_shared_address_must_be_exactly_equal():
+    member = {"email": "jane@x.com", "name": "Sam", "payer_email": "jane@x.com"}
+    assert not br.same_person(member, {"email": "jane@x.com", "name": "Samantha Doe"})
+    assert not br.same_person({"email": "jane@x.com", "name": "Samantha Doe"}, member)
+    assert br.same_person(member, {"email": "JANE@x.com", "name": " sam "})
+    # Not a shared address: the address alone decides.
+    assert br.same_person({"email": "a@x.com", "name": "Al"}, {"email": "a@x.com", "name": "B"})
+
+
+def test_unfinished_tests_on_a_household_address_match_by_name(cx):
+    member_test = [{"test_id": "a7", "email": "jane@x.com", "name": "Sam Doe",
+                    "household": True, "note": ""}]
+    assert br.record(cx, req("m1", name="Jane Doe"), member_test)["kind"] == "added"
+    assert br.record(cx, req("m2", name="Sam Doe", payer="jane@x.com"),
+                     member_test)["kind"] == "duplicate"
+    plain = [{"test_id": "a8", "email": "kim@x.com", "name": "Kim", "note": ""}]
+    assert br.record(cx, req("m3", email="kim@x.com", name="Sam Doe", payer="kim@x.com"),
+                     plain)["kind"] == "added"
+
+
+def test_unfinished_tests_flag_a_household_address(cx, monkeypatch):
+    init_auth_tables(cx)
+    create_test(cx, "Jane Doe", "jane@x.com", "2026-09-01")
+    create_test(cx, "Sam Doe", "jane@x.com", "2026-09-02")
+    create_test(cx, "Kim", "kim@x.com", "2026-09-03")
+    from dashboard import biofield_progress as bp
+    monkeypatch.setattr(bp, "is_done", lambda p: False)
+    got = {t["test_id"]: t["household"] for t in br.unfinished_tests(cx, lambda ids: ([], None))}
+    assert sorted(got.values()) == [False, True, True]
 
 
 # ── Store: dedupe and one open line per person ──────────────────────────────
@@ -162,8 +222,36 @@ def test_none_is_remembered_so_it_is_not_classified_again(cx):
 def test_one_open_line_per_person_open_request(cx):
     br.record(cx, req("m1"))
     out = br.record(cx, req("m2", email="JANE@x.com"))
-    assert out["kind"] == "duplicate" and "open request" in out["note"]
+    assert out["kind"] == "duplicate" and "open Requested line" in out["note"]
     assert len(br.list_open(cx)) == 1
+
+
+def test_a_clear_request_upgrades_a_waiting_line(cx):
+    a = br.record(cx, req("m1", certainty="possible", quote="check me sometime"))
+    br.mark_alerted(cx, [a["id"]])
+    up = br.record(cx, dict(req("m2", quote="Can I book a Biofield Analysis?"),
+                            requested_at="2026-10-24T01:00:00Z"))
+    assert up == {"kind": "upgraded", "id": a["id"], "note": ""}
+    r = br.get(cx, a["id"])
+    assert (r["status"], r["certainty"], r["quote"], r["requested_at"]) == \
+        ("requested", "clear", "Can I book a Biofield Analysis?", "2026-10-24T01:00:00Z")
+    assert r["alerted_at"] is None                      # Glen hears it is now Requested
+    assert br.is_seen(cx, "email", "m2")
+    assert br.record(cx, req("m2"))["kind"] == "seen"
+    assert len(br.list_open(cx)) == 1
+
+
+def test_a_possible_request_beside_a_waiting_line_is_not_a_second_line(cx):
+    br.record(cx, req("m1", certainty="possible"))
+    out = br.record(cx, req("m2", certainty="possible"))
+    assert out["kind"] == "duplicate" and "waiting for your yes" in out["note"]
+    assert "open Requested line" not in out["note"]
+
+
+def test_a_waiting_line_is_not_an_open_requested_line_for_an_unfinished_check(cx):
+    br.record(cx, req("m1", certainty="possible"))
+    unfinished = [{"test_id": "a7", "email": "jane@x.com", "name": "Jane Doe", "note": ""}]
+    assert br.record(cx, req("m2"), unfinished)["kind"] == "upgraded"
 
 
 def test_one_open_line_per_person_unfinished_test(cx):
@@ -224,11 +312,40 @@ def test_start_refuses_a_line_waiting_for_yes(cx):
 def test_a_failed_create_puts_the_request_back(cx, monkeypatch):
     a = br.record(cx, req("m1"))
     import dashboard.biofield_authoring as ba
-    monkeypatch.setattr(ba, "update_header", lambda *a, **k: (_ for _ in ()).throw(
+    monkeypatch.setattr(ba, "create_test", lambda *a, **k: (_ for _ in ()).throw(
         RuntimeError("disk")))
     with pytest.raises(RuntimeError):
         br.start(cx, a["id"])
     assert br.get(cx, a["id"])["status"] == "requested"
+
+
+def test_start_creates_the_test_whole_in_one_call(cx, monkeypatch):
+    import dashboard.biofield_authoring as ba
+    calls, real = [], ba.create_test
+    monkeypatch.setattr(ba, "create_test", lambda c, n, e, d: calls.append((n, e, d)) or real(c, n, e, d))
+    monkeypatch.setattr(ba, "update_header", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("no second write")))
+    a = br.record(cx, req("m1", name="Jane Doe"))
+    tid, err = br.start(cx, a["id"], date="2026-10-24")
+    assert err is None and calls == [("Jane Doe", "jane@x.com", "2026-10-24")]
+    assert cx.execute("SELECT COUNT(*) FROM biofield_auth_tests WHERE COALESCE(name,'')=''"
+                      ).fetchone()[0] == 0
+
+
+def test_a_stuck_start_is_reclaimed_after_a_few_minutes(cx):
+    import datetime as dt
+    a = br.record(cx, req("m1"))
+    now = dt.datetime(2026, 10, 23, 20, 0, tzinfo=dt.timezone.utc)
+    cx.execute("UPDATE biofield_test_requests SET status='started', decided_at=? WHERE id=?",
+               ("2026-10-23T19:58:00Z", a["id"]))
+    cx.commit()
+    tid, err = br.start(cx, a["id"], now=now)
+    assert tid is None and "being created" in err
+    cx.execute("UPDATE biofield_test_requests SET decided_at=? WHERE id=?",
+               ("2026-10-23T19:50:00Z", a["id"]))
+    cx.commit()
+    tid, err = br.start(cx, a["id"], now=now)
+    assert err is None and br.get(cx, a["id"])["test_id"] == tid
 
 
 # ── The list and its routes ─────────────────────────────────────────────────
@@ -291,7 +408,7 @@ def test_the_alert_names_quotes_and_links_each_line(cx):
     assert "Jane Doe <jane@x.com>" in body and "\"Can I book a Biofield Analysis?\"" in body
     assert f"http://127.0.0.1:8011/#req-{a['id']}" in body
     assert f"http://127.0.0.1:8011/#req-{b['id']}" in body and "Yes or No" in body
-    assert f"#req-{d['id']}" not in body and "open request" in body
+    assert f"#req-{d['id']}" not in body and "open Requested line" in body
     assert br.mark_alerted(cx, [a["id"], b["id"], d["id"]]) == 3
     assert br.unalerted(cx) == [] and br.compose_alert([], "x") == (None, None)
 
@@ -306,6 +423,7 @@ class _Msg:
 class _FakeCl:
     def __init__(self, verdict):
         self.verdict, self.systems = verdict, []
+        self.raw = verdict if isinstance(verdict, str) else None
 
     @property
     def messages(self):
@@ -315,7 +433,7 @@ class _FakeCl:
         self.systems.append(kw["system"])
         assert kw["model"] == "claude-haiku-4-5-20251001"
         if kw["system"] == br.SYSTEM:
-            return _Msg(json.dumps(self.verdict))
+            return _Msg(self.raw if self.raw is not None else json.dumps(self.verdict))
         return _Msg('{"needs_attention": false}')
 
 
@@ -375,6 +493,31 @@ def test_a_flag_becomes_a_portal_request():
     r = br.flag_to_request(f)
     assert (r["source"], r["source_ref"], r["name"], r["email"], r["payer_email"]) == \
         ("portal", "12", "Sam", "jane@x.com", "jane@x.com")
+
+
+def test_a_classifier_error_on_prod_is_logged_and_not_flagged(prod, monkeypatch, capsys):
+    monkeypatch.setattr(prod, "_cl", _FakeCl("not json at all"))
+    assert prod._flag_biofield_request("c@x.com", "Cee", "Biofield please") is None
+    assert "the classifier failed for c@x.com" in capsys.readouterr().out
+    with sqlite3.connect(prod.LOG_DB) as cx:
+        assert not cx.execute("SELECT 1 FROM sqlite_master WHERE name='biofield_request_flags'"
+                              ).fetchone()
+
+
+def test_erasure_also_takes_the_payer_and_member_columns(tmp_path):
+    from dashboard import client_erasure as ce
+    c = sqlite3.connect(str(tmp_path / "e.db"))
+    br.ensure_schema(c)
+    br.record(c, req("m1", email="sam@x.com", name="Sam", payer="jane@x.com"))
+    br.record(c, req("m2", email="kim@x.com", name="Kim"))
+    br.add_flag(c, "jane@x.com", "Jane", {"certainty": "clear", "quote": "q", "for_email": "sam@x.com"}, "m")
+    br.add_flag(c, "kim@x.com", "Kim", {"certainty": "clear", "quote": "q"}, "m")
+    assert ce.plan(c, "jane@x.com") == {"biofield_test_requests": 1, "biofield_request_flags": 1}
+    assert ce.plan(c, "sam@x.com") == {"biofield_test_requests": 1, "biofield_request_flags": 1}
+    ce.erase(c, "sam@x.com", confirm="sam@x.com")
+    assert c.execute("SELECT email FROM biofield_test_requests").fetchall() == [("kim@x.com",)]
+    assert c.execute("SELECT email FROM biofield_request_flags ORDER BY id").fetchall() == \
+        [("kim@x.com",)]
 
 
 def test_new_tables_are_listed_for_erasure_and_merge():

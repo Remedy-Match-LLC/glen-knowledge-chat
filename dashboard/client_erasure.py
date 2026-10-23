@@ -63,6 +63,23 @@ HEALTH_TABLES = {
     "repertoire": "email",
 }
 
+# A second address column on a health table, erased too. HEALTH_TABLES keeps one column
+# per table because callers and tests read it that way; these are OR-ed onto it.
+EXTRA_COLUMNS = {
+    "biofield_test_requests": ("payer_email",),   # the caregiver who asked for a member
+    "biofield_request_flags": ("for_email",),     # the member a portal message named
+}
+
+
+def _columns(table, col):
+    return (col,) + tuple(EXTRA_COLUMNS.get(table, ()))
+
+
+def _where(table, col, n):
+    marks = ",".join("?" for _ in range(n))
+    return " OR ".join(f"LOWER({c}) IN ({marks})" for c in _columns(table, col))
+
+
 # Never deleted, whatever else happens. Enforced, not just documented.
 PROTECTED = frozenset({
     # safety: an opt-out erased is an opt-out ignored
@@ -111,9 +128,9 @@ def _addresses(cx, email):
 
 def _count(cx, table, col, email):
     addrs = _addresses(cx, email)
-    marks = ",".join("?" for _ in addrs)
-    return cx.execute(f"SELECT COUNT(*) FROM {table} WHERE LOWER({col}) IN ({marks})",
-                      addrs).fetchone()[0]
+    args = list(addrs) * len(_columns(table, col))
+    return cx.execute(f"SELECT COUNT(*) FROM {table} WHERE {_where(table, col, len(addrs))}",
+                      args).fetchone()[0]
 
 
 def _purge_merge_record(cx, addrs):
@@ -171,14 +188,14 @@ def erase(cx, email, *, confirm):
         raise ValueError("confirm must equal the email being erased; refusing")
 
     addrs = _addresses(cx, email)
-    marks = ",".join("?" for _ in addrs)
     removed = {}
     for table, col in HEALTH_TABLES.items():
         if table in PROTECTED:                     # cannot happen given the invariant, but
             raise AssertionError(f"{table} is protected; refusing to erase it")
         if not _table_exists(cx, table):
             continue
-        cur = cx.execute(f"DELETE FROM {table} WHERE LOWER({col}) IN ({marks})", addrs)
+        cur = cx.execute(f"DELETE FROM {table} WHERE {_where(table, col, len(addrs))}",
+                         list(addrs) * len(_columns(table, col)))
         if cur.rowcount:
             removed[table] = cur.rowcount
     purged = _purge_merge_record(cx, addrs)
