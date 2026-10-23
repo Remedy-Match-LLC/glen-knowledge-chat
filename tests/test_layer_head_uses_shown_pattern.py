@@ -171,3 +171,35 @@ def test_an_absorbed_condition_takes_its_survivors_combined_term(tmp_path):
         assert alias_condition(cx, low, "Dry AMD")
         assert ht.conditions(cx, tid)[ht._key(low)] == (
             low, "Macular Resilience & Dark Adaptation")
+
+
+def test_reading_conditions_never_creates_the_stress_table():
+    """conditions() is a read, used by dry runs on read-only copies (review round 3). An
+    absorbed condition with no stored pattern must not reach stress_pattern(), which
+    creates biofield_clinical_stress."""
+    from dashboard.biofield_clinical_checklist import alias_condition
+    from dashboard.biofield_stress import _table_exists
+    cx = sqlite3.connect(":memory:")
+    init_auth_tables(cx)
+    init_stress_tables(cx)
+    save_selection(cx, "a1", WET, ["AngiogenX"])
+    assert alias_condition(cx, "Some unseeded worry", WET)
+    cx.commit()
+    assert not _table_exists(cx, "biofield_clinical_stress")
+    assert ht.conditions(cx, "a1")[ht._key(WET)][1] == WET_TERM
+    assert not _table_exists(cx, "biofield_clinical_stress")
+
+
+def test_correct_chain_uses_the_pattern_typed_for_the_id_given(tmp_path):
+    """plan_correction must look typed patterns up by the id it was given, "a1", never
+    by its number (review round 3)."""
+    db, tid, _client = _setup(tmp_path, [WET], {WET: ["AngiogenX"]},
+                              typed={WET: "Macular Typed"})
+    assert tid == "a1"
+    with sqlite3.connect(db) as cx:
+        add_chain_row(cx, tid, 1, WET, WET, "AngiogenX", origin="program")
+        plan = ht.correct_chain(cx, tid)
+        assert [(r["new_head"], r["new_tail"]) for r in plan["rows"]] == [
+            ("Macular Typed", "Macular Typed")]
+        ht.correct_chain(cx, tid, dry_run=False)
+    assert [(h, t) for _, h, t in _rows(db, tid)] == [("Macular Typed", "Macular Typed")]

@@ -87,7 +87,7 @@ def shown_pattern(cx, label, patterns, typed):
     Vascular Containment" for Wet AMD, but only the stored table was read here, so the
     program named layer 4 "Wet AMD", the diagnosis. Never falls back to the wording:
     no pattern anywhere returns ""."""
-    from dashboard.biofield_clinical_checklist import (absorbed_patterns, combine_patterns,
+    from dashboard.biofield_clinical_checklist import (absorbed_by, combine_patterns,
                                                        suggested_pattern)
     from dashboard.biofield_clinical_proposals import _key as _skey
     typed_p = typed.get(_skey(label), "")
@@ -97,7 +97,10 @@ def shown_pattern(cx, label, patterns, typed):
     base = stored or suggested_pattern(label)
     folded = []
     if _table_exists(cx, "biofield_clinical_alias"):
-        folded = absorbed_patterns(cx, label, lambda l: pattern_of(l, patterns))
+        # absorbed_patterns() itself, as build() uses it, but with no stress_pattern()
+        # fallback: that creates biofield_clinical_stress, and this is a read.
+        folded = [x for x in (pattern_of(l, patterns) or suggested_pattern(l)
+                              for l in absorbed_by(cx, label)) if x]
     return (combine_patterns(base, folded) if folded else base).strip()
 
 
