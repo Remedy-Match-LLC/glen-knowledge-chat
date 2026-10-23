@@ -2987,15 +2987,21 @@
    "ingredients": [
     {
      "name": "Rosemary extract (Salvia rosmarinus), standardized to 50% rosmarinic acid",
-     "dose": "400 mg"
+     "dose": "400 mg",
+     "page_slug": "rosmarinic-acid",
+     "page_name": "Rosmarinic acid"
     },
     {
      "name": "Pterostilbene 98%",
-     "dose": "75 mg"
+     "dose": "75 mg",
+     "page_slug": "pterostilbene-98",
+     "page_name": "Pterostilbene 98%"
     },
     {
      "name": "Piperine 95%, from Piper nigrum (black pepper)",
-     "dose": "5 mg"
+     "dose": "5 mg",
+     "page_slug": "piperine-95-piper-nigrum",
+     "page_name": "Piperine 95% (Piper nigrum)"
     }
    ],
    "ingredients_source": "label-2026-08, Glen approved 2026-10-23",

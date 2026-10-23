@@ -81,6 +81,10 @@ INGREDIENTS = [
     {"name": "Pterostilbene 98%", "dose": "75 mg"},
     {"name": "Piperine 95%, from Piper nigrum (black pepper)", "dose": "5 mg"},
 ]
+# Each row links to the ingredient page that already exists for it, as Fibrolysis Factors'
+# renamed lines do (round 2): {page slug: the name that page goes by}.
+PAGES = {"rosmarinic-acid": "Rosmarinic acid", "pterostilbene-98": "Pterostilbene 98%",
+         "piperine-95-piper-nigrum": "Piperine 95% (Piper nigrum)"}
 OTHER = "Other ingredients: certified organic pullulan vegicap, Healing Energy, Love, and Prayer."
 DIRECTIONS = "Take 1 capsule daily with food, or as guided."
 
@@ -114,7 +118,7 @@ def test_the_learn_page_markdown_is_the_research_text_with_real_links(entry):
 
 
 def test_the_panel_is_the_approved_label(entry):
-    assert entry["ingredients"] == INGREDIENTS
+    assert [{"name": i["name"], "dose": i["dose"]} for i in entry["ingredients"]] == INGREDIENTS
     assert entry["panel_note"] == OTHER
     assert "Trikatu" not in json.dumps(entry)
     assert "One to three" not in json.dumps(entry)
@@ -170,6 +174,7 @@ def test_the_page_shows_every_approved_section_over_cached_ai_drafts(appmod, ent
         assert "ai" not in secs[sec], sec
     ing = secs["ingredients"]["body"]
     assert [{"name": i["name"], "dose": i["dose"]} for i in ing["ingredients"]] == INGREDIENTS
+    assert [i["slug"] for i in ing["ingredients"]] == list(PAGES)
     assert ing["note"] == OTHER
     assert ing["directions"] == DIRECTIONS
     whole = json.dumps(d)
@@ -282,6 +287,9 @@ def test_the_bot_gets_the_approved_overview_and_panel(appmod, q):
 @pytest.mark.parametrize("q", [
     "Clarity of mind is what I lack...",
     "Hi. Clarity of mind is what I lack",
+    "She said \u201cI feel tired.\u201d Clarity of mind is what I lack.",
+    "She said 'I feel tired.' Clarity of mind is what I lack.",
+    "I feel tired. (Very.) Clarity of mind is what I lack.",
     "tell me about clarity",
     "How much Crystalline Clarity should I take?",
     "Is Spiritual Clarity Flower Essence in Terrain Restore safe?",
@@ -300,3 +308,21 @@ def test_any_longer_catalog_name_beats_a_pinned_shorter_one(appmod):
     q = "how much zorbex max drops? and Other"
     assert appmod._named_product_spans(q, products) == {"other": (q.index("Other"), len(q))}
     assert "zorbex" in appmod._named_product_spans("How much Zorbex Max?", products)
+
+
+def test_each_row_links_to_the_existing_page_for_its_ingredient(entry):
+    from dashboard import ingredients as ing
+    assert [(i["page_slug"], i["page_name"]) for i in entry["ingredients"]] == list(PAGES.items())
+    for slug, name in PAGES.items():
+        assert ing.resolve(slug)["name"] == name
+    # The label names open no second, empty page of their own.
+    for i in entry["ingredients"]:
+        assert ing.resolve(ing.slugify(i["name"])) is None or ing.slugify(i["name"]) in PAGES
+
+
+@pytest.mark.parametrize("q", [
+    "How much Crystalline Clarity should I take, and what is Clarity?",
+    "Is Spiritual Clarity Flower Essence in Terrain Restore like Clarity?",
+])
+def test_a_standalone_clarity_after_a_longer_name_still_counts(appmod, q):
+    assert "### Clarity" in appmod._named_product_facts(q)

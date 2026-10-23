@@ -2261,7 +2261,9 @@ _ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 # ("Tell me about Clarity"); at the start of a sentence it needs a product cue ("Clarity
 # dose?"). Lowercase never counts. Review of the Clarity pin, 2026-10-23.
 _SENTENCE_START_CUE_NAMES = frozenset({"clarity"})
-_SENTENCE_START = re.compile(r"(?:^|[.!?:;])[\s\"'\u201c\u2018(]*$")
+# Closing quotes and brackets may sit between the full stop and the name: 'She said "I
+# feel tired." Clarity of mind ...' (review round 2), as may opening ones.
+_SENTENCE_START = re.compile(r"(?:^|[.!?:;])[\s\"'\u201c\u201d\u2018\u2019()]*$")
 _PRODUCT_CUE_BEFORE = re.compile(
     r"\b(?:what\s+is|what's|whats|what\u2019s|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
     r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of|"
@@ -2342,34 +2344,36 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             continue
         words = name.split()
         pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
-        m = None if slug in _ALWAYS_CUE_NAMES else re.search(pattern, query_text)
+        # Any longer catalog name wins, eligible or not: "How much Crystalline Clarity
+        # should I take?" names Crystalline Clarity, not Clarity (review of the Clarity pin,
+        # 2026-10-23). Checked per occurrence, so a later standalone "Clarity" in the same
+        # question still counts (review round 2).
+        def _own(mi, slug=slug):
+            return not _inside_longer_catalog_name(query_text, slug, mi.span(), products)
+        m = None if slug in _ALWAYS_CUE_NAMES else next(
+            (mi for mi in re.finditer(pattern, query_text) if _own(mi)), None)
         if slug in _ALWAYS_CUE_NAMES:
             m = next((mi for mi in re.finditer(pattern, query_text, re.IGNORECASE)
-                      if _has_product_cue(query_text, *mi.span(), strict=True)), None)
+                      if _own(mi) and _has_product_cue(query_text, *mi.span(), strict=True)), None)
         elif slug in _SENTENCE_START_CUE_NAMES:
             m = next((mi for mi in re.finditer(pattern, query_text)
-                      if not _SENTENCE_START.search(query_text[:mi.start()])
-                      or _has_product_cue(query_text, *mi.span())), None)
+                      if _own(mi) and (not _SENTENCE_START.search(query_text[:mi.start()])
+                                       or _has_product_cue(query_text, *mi.span()))), None)
         elif not m:
             # Any case: a coined name cannot occur in ordinary speech. A name that is also
             # an everyday phrase ("clear the way", "reverse age") needs a product cue
             # beside it (formulation-9d and Glen, 2026-10-09: clients type lowercase).
             for mi in re.finditer(pattern, query_text, re.IGNORECASE):
-                if slug in _CASE_FREE_NAMES or (slug in _CUE_NAMES
-                                                 and _has_product_cue(query_text, *mi.span())):
+                if _own(mi) and (slug in _CASE_FREE_NAMES or (
+                        slug in _CUE_NAMES and _has_product_cue(query_text, *mi.span()))):
                     m = mi
                     break
         if m:
             spans[slug] = m.span()
     # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."
-    spans = {s: sp for s, sp in spans.items()
-             if not any(o != s and o_sp[0] <= sp[0] and sp[1] <= o_sp[1] and o_sp != sp
-                        for o, o_sp in spans.items())}
-    # Any longer catalog name wins too, eligible or not: "How much Crystalline Clarity
-    # should I take?" names Crystalline Clarity, not Clarity (review of the Clarity pin,
-    # 2026-10-23). Matched in any case, because it only ever removes a block.
-    return {s: sp for s, sp in spans.items() if not _inside_longer_catalog_name(
-        query_text, s, sp, products)}
+    return {s: sp for s, sp in spans.items()
+            if not any(o != s and o_sp[0] <= sp[0] and sp[1] <= o_sp[1] and o_sp != sp
+                       for o, o_sp in spans.items())}
 
 
 def _inside_longer_catalog_name(query_text, slug, span, products):
