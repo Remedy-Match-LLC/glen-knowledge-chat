@@ -1318,7 +1318,12 @@ async function combineIntakeItems(btn){
  var li=btn.closest('li'),pick=li.querySelector('.intake-combine-pick');
  var survivor=btn.dataset.survivor, absorbed=(pick&&pick.value||'').trim();
  if(!absorbed){alert('Pick the intake item to fold into this one.');return}
- if(!confirm('Combine "'+absorbed+'" into "'+survivor+'"? They become one condition '
+ // Glen, 2026-10-22: a combine is for this client unless "for every client" is ticked.
+ // The intake list has no per-client combine: pull both in and use the row's own.
+ var every=li.querySelector('.combine-all-box');
+ if(!(every&&every.checked)){alert('This combine changes every client, so tick "for every client" first. '
+   +'For this client only, pull both into the Clinical Summary, then combine the rows there.');return}
+ if(!confirm('For every client: combine "'+absorbed+'" into "'+survivor+'"? They become one condition '
    +'on every client, and pull in as a single row. This can be undone.'))return;
  var shown=prompt('Name for the combined condition. This name is used for every client.',
                   survivor+' + '+absorbed);
@@ -1333,7 +1338,17 @@ async function combineClinicalItems(btn,into){
  var picked=(pick&&pick.value||'').trim();
  var survivor=into?picked:row.dataset.label, absorbed=into?row.dataset.label:picked;
  if(!picked){alert(into?'Pick the row to fold this one into.':'Pick the row to fold into this one.');return}
- if(!confirm('Combine "'+absorbed+'" into "'+survivor+'"? They become one condition '
+ // Glen, 2026-10-22: this client only unless "for every client" is ticked. For one
+ // client the absorbed row goes under the survivor as a detail; no alias is written.
+ var every=btn.parentNode.querySelector('.combine-all-box');
+ if(!(every&&every.checked)){
+  if(!confirm('For this client only: put "'+absorbed+'" under "'+survivor+'" as a detail? '
+    +'No other client changes. Taking it back out returns the row.'))return;
+  btn.disabled=true;
+  var d=await post('/author/__TID__/clinical-groups/place-row',{row:absorbed,topics:[survivor]});
+  if(d.ok)location.reload();else{btn.disabled=false;alert(d.error||'Not combined.')}
+  return}
+ if(!confirm('For every client: combine "'+absorbed+'" into "'+survivor+'"? They become one condition '
    +'on every client, and "'+absorbed+'" stops appearing on its own. Its remembered '
    +'remedies move across. This can be undone.'))return;
  // Glen, 2026-09-16: suggest a name he can edit. Cancel leaves the survivor's own name,
@@ -2584,12 +2599,14 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "aria-label='Condition to fold into this one'>"
             f"<option value=''>Combine another row&hellip;</option>{others}</select>"
             "<button type=button class='btn ghost' onclick=combineClinicalItems(this)>"
-            "Combine into this</button></span>"
+            "Combine into this</button>"
+            "<label class=combine-all title='Off: this client only. On: every client.'><input type=checkbox class=combine-all-box> for every client</label></span>"
             "<span class=clinical-combine><select class='clinical-combine-pick clinical-combine-into' "
             "aria-label='Condition to fold this one into'>"
             f"<option value=''>Combine this into another row&hellip;</option>{others}</select>"
             "<button type=button class='btn ghost' onclick=combineClinicalItems(this,true)>"
-            "Combine into that</button></span>") if others else ""
+            "Combine into that</button>"
+            "<label class=combine-all title='Off: this client only. On: every client.'><input type=checkbox class=combine-all-box> for every client</label></span>") if others else ""
         remedy = (f"<span class=clinical-remedy>Layer {_e(str(item.get('layer') or '?'))} · {_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
@@ -2747,7 +2764,8 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "<select class=intake-combine-pick aria-label='Intake item to fold into this one'>"
             f"<option value=''>Combine another&hellip;</option>{others}</select>"
             f"<button type=button class='btn ghost' data-survivor=\"{_e(group['label'])}\" "
-            "onclick=combineIntakeItems(this)>Combine into this</button></span>"
+            "onclick=combineIntakeItems(this)>Combine into this</button>"
+            "<label class=combine-all title='Off: this client only. On: every client.'><input type=checkbox class=combine-all-box> for every client</label></span>"
         ) if len(ordered) > 1 else ""
         chips.append(f"<li{' class=here' if here else ''}>{_e(concern)}{note}{combine}</li>")
     if chips:
@@ -2791,6 +2809,7 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-check{grid-row:1/3;width:18px;height:18px;margin:0;accent-color:var(--ok);cursor:pointer}"
             ".intake-combine{display:inline-flex;gap:5px;margin-left:8px;vertical-align:middle}"
             ".intake-combine select{font-size:11px;padding:1px 3px;max-width:190px}"
+            ".combine-all{font-size:11px;color:var(--muted);white-space:nowrap}"
             ".intake-combine .btn{font-size:11px;padding:2px 7px}"
             # Glen, 2026-10-16: the factor list overlapped the controls. It had no column,
             # so the grid put it in the 22px tick-box column and it ran over the rows below.

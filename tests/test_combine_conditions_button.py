@@ -55,7 +55,7 @@ def test_a_lone_row_offers_neither_direction():
     assert "Combine this into another row" not in render_clinical_checklist([_row("Cataracts")], [])
 
 
-def _combine(into):
+def _combine(into, every=True):
     import json
     import shutil
     import subprocess
@@ -74,10 +74,11 @@ function prompt(t,d){asked.push(d);return null}
 function alert(t){asked.push(t)}
 async function post(url,body){posted.push(body);return {ok:true}}
 var pick={value:'Dry eye'},row={dataset:{label:'Cataracts'}};
-var btn={closest:function(){return row},parentNode:{querySelector:function(){return pick}}};
+var every={checked:EVERY};
+var btn={closest:function(){return row},parentNode:{querySelector:function(q){return q.indexOf('combine-all')>=0?every:pick}}};
 FN
 combineClinicalItems(btn,INTO).then(function(){console.log(JSON.stringify({posted:posted,asked:asked}))});
-""".replace("FN", fn).replace("INTO", json.dumps(into))
+""".replace("FN", fn).replace("INTO", json.dumps(into)).replace("EVERY", json.dumps(every))
     out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=20)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout)
@@ -86,13 +87,13 @@ combineClinicalItems(btn,INTO).then(function(){console.log(JSON.stringify({poste
 def test_combine_into_this_keeps_this_row():
     got = _combine(False)
     assert got["posted"] == [{"absorbed": "Dry eye", "survivor": "Cataracts", "display": ""}]
-    assert got["asked"][0].startswith('Combine "Dry eye" into "Cataracts"?')
+    assert got["asked"][0].startswith('For every client: combine "Dry eye" into "Cataracts"?')
 
 
 def test_combine_into_that_keeps_the_picked_row():
     got = _combine(True)
     assert got["posted"] == [{"absorbed": "Cataracts", "survivor": "Dry eye", "display": ""}]
-    assert got["asked"][0].startswith('Combine "Cataracts" into "Dry eye"?')
+    assert got["asked"][0].startswith('For every client: combine "Cataracts" into "Dry eye"?')
     assert "every client" in got["asked"][0] and got["asked"][1] == "Dry eye + Cataracts"
 
 
@@ -106,3 +107,20 @@ def test_each_button_sits_with_its_own_picker_and_names_its_direction():
         assert s.count("<select") == 1 and s.count("<button") == 1
     assert "Combine another row" in spans[0] and ">Combine into this</button>" in spans[0]
     assert "Combine this into another row" in spans[1] and ">Combine into that</button>" in spans[1]
+
+
+
+def test_unticked_combine_is_for_this_client_only():
+    # Glen, 2026-10-22: a combine meant for one client changed every client.
+    got = _combine(True, every=False)
+    assert got["posted"] == [{"row": "Cataracts", "topics": ["Dry eye"]}]
+    assert got["asked"][0].startswith('For this client only: put "Cataracts" under "Dry eye"')
+    assert len(got["asked"]) == 1   # no shared display name is asked for
+
+
+def test_every_combine_control_carries_an_unticked_every_client_box():
+    h = render_clinical_checklist(ROWS, [])
+    block = h[h.index('data-label="Cataracts"'):h.index('data-label="Cataract"')]
+    for sp in re.findall(r"<span class=clinical-combine>(.*?)</span>", block):
+        assert "<input type=checkbox class=combine-all-box> for every client" in sp
+        assert "checked" not in sp

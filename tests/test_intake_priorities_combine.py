@@ -105,3 +105,14 @@ def test_no_maps_renders_exactly_as_before():
     """Every existing caller passed neither map. The default must change nothing."""
     assert html.render_clinical_checklist([], intake_priorities=[DRY, BURN]) == \
         _render([DRY, BURN])
+
+
+def test_the_intake_combine_needs_the_every_client_tick():
+    # Glen, 2026-10-22: the intake list's combine changes every client, so it never
+    # runs from an unticked box.
+    from dashboard import biofield_report_html as rh
+    src = rh._AUTHOR_JS
+    fn = src[src.index("async function combineIntakeItems("):]
+    fn = fn[:fn.index("\nasync function", 10)]
+    assert "if(!(every&&every.checked)){alert(" in fn
+    assert fn.index("every.checked") < fn.index("clinical-items/combine")
