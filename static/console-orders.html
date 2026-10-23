@@ -909,7 +909,12 @@
     if (ids.length<2){ alert('Select at least 2 orders to combine.'); return; }
     // Show the shared ship-to (the first order's address) and warn loudly if the
     // selected orders don't all share one address — this is the mis-ship guard.
-    var norm = function(a){ a=a||{}; return ((a.street||'')+'|'+(a.zip||'')).toLowerCase().trim(); };
+    // A 5-digit ZIP and the same ZIP+4 are one address, and a curly apostrophe matches
+    // a straight one (Glen, 2026-10-22). The same rule as combined_shipments._addr_key.
+    var norm = function(a){ a=a||{};
+      var st=String(a.street||'').replace(/[\u2018\u2019]/g,"'").toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+      var z=String(a.zip||'').trim().toLowerCase(), m=z.match(/^(\d{5})(?:-?\d{4})?$/);
+      return st+'|'+(m?m[1]:z); };
     var distinct = {}; ids.forEach(function(id){ var o=HH.byId[id]||{}; distinct[norm(o.address)]=1; });
     var shipTo = _addrStr((HH.byId[ids[0]]||{}).address);
     var warn = (Object.keys(distinct).length>1)

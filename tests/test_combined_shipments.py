@@ -458,3 +458,37 @@ def test_cancel_leaves_labeled_shipment_untouched():
     # still grouped; shipment not dissolved
     assert O.get_order(cx, b)["group_shipment_id"] == sh["id"]
     assert C.get_shipment(cx, sh["id"])["status"] != "cancelled"
+
+
+def test_a_zip_and_its_zip_plus_four_are_one_address():
+    # Glen, 2026-10-22: the Symons family, 83814 and 83814-5741 at one street.
+    from dashboard.combined_shipments import _addr_key
+    a = {"address": {"street": "1050 N 15th St", "zip": "83814"}}
+    b = {"address": {"street": "1050  n 15th st", "zip": "83814-5741"}}
+    c = {"address": {"street": "1050 N 15th St", "zip": "838145741"}}
+    assert _addr_key(a) == _addr_key(b) == _addr_key(c)
+    assert _addr_key({"address": {"street": "1050 N 15th St", "zip": "83815"}}) != _addr_key(a)
+
+
+def test_a_curly_apostrophe_matches_a_straight_one():
+    from dashboard.combined_shipments import _addr_key
+    assert (_addr_key({"address": {"street": "12 O’Neil Rd", "zip": "96720"}})
+            == _addr_key({"address": {"street": "12 O'Neil Rd", "zip": "96720"}}))
+
+
+def test_the_orders_page_combine_warning_uses_the_same_rule():
+    import json, re, shutil, subprocess
+    import pytest
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    src = open("static/console-orders.html", encoding="utf-8").read()
+    fn = re.search(r"var norm = function\(a\)\{.*?return st\+'\|'\+\(m\?m\[1\]:z\); \};", src, re.S).group(0)
+    cases = [{"street": "1050 N 15th St", "zip": "83814"},
+             {"street": "1050 n 15th  st", "zip": "83814-5741"},
+             {"street": "12 O’Neil Rd", "zip": "96720"},
+             {"street": "12 O'Neil Rd", "zip": "96720"}]
+    out = subprocess.run([node, "-e", fn + "\nconsole.log(JSON.stringify(" + json.dumps(cases) + ".map(norm)))"],
+                         capture_output=True, text=True, check=True).stdout
+    k = json.loads(out)
+    assert k[0] == k[1] and k[2] == k[3] and k[0] != k[2]

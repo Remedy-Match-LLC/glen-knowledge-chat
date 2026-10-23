@@ -13,6 +13,7 @@ Table name is `combined_shipments` — NOT `shipments`, which the tracking modul
 """
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 from dashboard import orders as _orders
@@ -302,12 +303,16 @@ def cancel_shipment(cx, sid):
 
 
 def _addr_key(order):
+    """One key per ship-to. A 5-digit ZIP and the same ZIP+4 are one address, and a
+    curly apostrophe matches a straight one (Glen, 2026-10-22, the Symons family)."""
     a = order.get("address") or {}
-    street = str(a.get("street") or "").strip().lower()
-    zc = str(a.get("zip") or "").strip().lower()
+    street = " ".join(str(a.get("street") or "").replace("\u2019", "'")
+                      .replace("\u2018", "'").lower().split())
     if not street:
         return None
-    return ("addr", street, zc)
+    zc = str(a.get("zip") or "").strip().lower()
+    m = re.match(r"(\d{5})(?:-?\d{4})?$", zc)
+    return ("addr", street, m.group(1) if m else zc)
 
 
 def suggest_combinable(cx, household_of=None):
