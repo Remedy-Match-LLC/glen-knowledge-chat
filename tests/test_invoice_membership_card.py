@@ -240,8 +240,7 @@ def test_the_card_sets_out_both_totals_benefits_terms_and_buttons():
     html = _render({**OFFER, "payg_total_cents": 41982, "member_total_cents": 46482})
     assert "Pay as you go: <b>$419.82</b>" in html
     assert "Member: <b>$464.82</b>, including $99 for one month of membership" in html
-    benefits = ["Weekly live group coaching", "Your protocol re-matched every month",
-                "Your AI ally", "Terrain Restore", "Biofield Analysis at $200 instead of $300"]
+    benefits = ["Live group coaching with Dr. Glen", "Biofield Analysis at $200 instead of $300"]
     at = [html.index("<li>" + b + "</li>") for b in benefits]
     assert at == sorted(at)
     terms = html.index("Membership is $99 for one month. It does not renew, so there is nothing to cancel.")

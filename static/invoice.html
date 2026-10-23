@@ -467,8 +467,8 @@ async function applyPlan(forever, btn){
 // The not-added card sets the two totals side by side, neither one preferred
 // (Glen, 2026-10-22). Both come from the server, priced the way an add would price
 // them; without them the card keeps its savings wording rather than guess.
-const MEM_BENEFITS=['Weekly live group coaching','Your protocol re-matched every month',
-  'Your AI ally','Terrain Restore','Biofield Analysis at $200 instead of $300'];
+// Glen, 2026-10-22: the one-month plan. Still open: the AI ally and Biofield lines.
+const MEM_BENEFITS=['Live group coaching with Dr. Glen','Biofield Analysis at $200 instead of $300'];
 let MEM_PAYG=false;   // "Keep pay as you go" folds the card for this page view only
 function keepPayAsYouGo(on){ MEM_PAYG=!!on; renderMembershipOffer(); }
 function membershipNetLine(payg, member){
