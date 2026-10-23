@@ -501,7 +501,7 @@ def test_a_confirmed_click_acts_on_the_stored_order_only(acting, path, kind):
     assert r.status_code == 409 and sent == []
     r = client.post(f"/author/{tid}/progress/{path}", json=_ok_body())
     assert r.get_json()["ok"] and sent == [(kind, 5)]
-    assert client._prod.reads == [5, 5]                    # re-read at each click
+    assert client._prod.reads == [[5], [5]]                # re-read at each click
 
 
 @pytest.mark.parametrize("path", ["invoice-publish", "invoice-email"])
@@ -684,7 +684,8 @@ def test_the_backfill_with_apply_writes_only_single_candidates(tmp_path):
     import backfill_biofield_test_orders as bf
     db = str(tmp_path / "t.db")
     a, b, c = _seed_backfill(db)
-    _, n = bf.run(db, apply=True, fetch=_fake_fetch, out=lambda s: None)
+    _, n = bf.run(db, apply=True, fetch=_fake_fetch, out=lambda s: None,
+                  chain_fetch=lambda ids: ([], None))
     assert n == 1
     with sqlite3.connect(db) as cx:
         assert bp.stored_links(cx) == {a: 31}
@@ -869,3 +870,199 @@ def test_no_reply_from_the_send_is_unknown_not_failed(monkeypatch):
     monkeypatch.setattr(bi.urllib.request, "urlopen", boom)
     res = bi.default_send_invoice(233)
     assert res["ok"] is False and res["unknown"] is True
+
+
+# ── Round 3 ──────────────────────────────────────────────────────────────────
+
+def _chain_100_101():
+    return [_order(100, superseded_by_order_id=101), _order(101)]
+
+
+def _like_prod(orders):
+    """The ?only=1 read: the named orders and whatever replaced them, nothing else."""
+    by_id = {o["id"]: o for o in orders}
+
+    def fetch(ids):
+        out, want = {}, [int(i) for i in ids]
+        while want:
+            o = by_id.get(want.pop())
+            if o and o["id"] not in out:
+                out[o["id"]] = o
+                if o.get("superseded_by_order_id"):
+                    want.append(int(o["superseded_by_order_id"]))
+        return list(out.values()), None
+    return fetch
+
+
+def test_two_tests_reaching_one_order_through_a_replacement_are_both_shared():
+    tA = {"test_id": "aA", "name": "A", "email": "d@x.com"}
+    tB = {"test_id": "aB", "name": "B", "email": "d@x.com"}
+    ps = bp.build([tA, tB], {}, {"aA": 100, "aB": 101}, _chain_100_101())
+    assert [p["basis"] for p in ps] == ["shared", "shared"]
+    tA["progress"], tB["progress"] = ps
+    html = render_list_html([], "", [tA, tB])
+    assert "stepAct(this)" not in _row(html, "aA") and "stepAct(this)" not in _row(html, "aB")
+
+
+def test_both_clicks_are_refused_when_two_tests_reach_one_order(tmp_path):
+    db = str(tmp_path / "t.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tA = create_test(cx, name="A", email="d@x.com", date="2026-10-17")
+        tB = create_test(cx, name="B", email="d@x.com", date="2026-10-17")
+        bp.link_order(cx, tA, 100)
+        bp.link_order(cx, tB, 101)
+    sent = []
+    client, _ = _app(db, invoice_publish=lambda oid: sent.append(oid) or {"ok": True},
+                     invoice_send=lambda oid: sent.append(oid) or {"ok": True},
+                     order_fetch=_like_prod(_chain_100_101()))
+    for tid in (tA, tB):
+        for path in ("invoice-publish", "invoice-email"):
+            r = client.post(f"/author/{tid}/progress/{path}", json=_ok_body(101))
+            assert r.status_code == 409, (tid, path, r.get_json())
+    assert sent == []
+
+
+def test_link_order_refuses_an_order_another_test_reaches_through_its_chain(tmp_path):
+    with sqlite3.connect(str(tmp_path / "t.db")) as cx:
+        resolve = bp.resolver(_chain_100_101())
+        assert bp.link_order(cx, "aA", 100, resolve=resolve)[0]
+        ok, why = bp.link_order(cx, "aB", 101, resolve=resolve)
+        assert not ok and "aA" in why and "#100" in why
+        assert bp.stored_links(cx) == {"aA": 100}
+
+
+def test_the_backfill_refuses_an_order_another_test_reaches(tmp_path):
+    props = [{"test_id": "aB", "status": "propose", "order_id": 101, "candidates": [101]}]
+    with sqlite3.connect(str(tmp_path / "t.db")) as cx:
+        bp.link_order(cx, "aA", 100)
+        n = bp.apply_links(cx, props, out=lambda s: None,
+                           resolve=bp.resolver(_chain_100_101()))
+        assert n == 0 and bp.stored_links(cx) == {"aA": 100}
+
+
+def test_the_backfill_writes_nothing_when_chains_cannot_be_read(tmp_path):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import backfill_biofield_test_orders as bf
+    db = str(tmp_path / "t.db")
+    _seed_backfill(db)
+    lines = []
+    _, n = bf.run(db, apply=True, fetch=_fake_fetch, out=lines.append,
+                  chain_fetch=lambda ids: ([], "timed out"))
+    assert n == 0 and any("NOT APPLIED" in ln for ln in lines)
+    with sqlite3.connect(db) as cx:
+        assert bp.stored_links(cx) == {}
+
+
+@pytest.mark.parametrize("path", ["invoice-publish", "invoice-email"])
+def test_a_test_with_no_stored_link_is_refused(tmp_path, path):
+    db = str(tmp_path / "t.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, name="D", email="d@x.com", date="2026-10-17")
+    sent = []
+    client, _ = _app(db, invoice_publish=lambda oid: sent.append(oid) or {"ok": True},
+                     invoice_send=lambda oid: sent.append(oid) or {"ok": True},
+                     order_fetch=lambda ids: ([_order(5)], None))
+    r = client.post(f"/author/{tid}/progress/{path}", json=_ok_body())
+    assert r.status_code == 409 and sent == []
+
+
+@pytest.mark.parametrize("orders", [
+    [_order(5, superseded_by_order_id=5)],
+    [_order(5, superseded_by_order_id=6), _order(6, superseded_by_order_id=5)],
+])
+def test_follow_returns_none_on_a_cycle(orders):
+    assert bp.follow(5, orders) is None
+    assert bp.resolver(orders)(5) == 5
+
+
+def test_an_unreadable_invoice_sent_at_counts_as_recent(acting):
+    client, tid, sent = acting
+    client._prod.orders[5]["invoice_sent_at"] = "sometime yesterday"
+    r = client.post(f"/author/{tid}/progress/invoice-email", json=_ok_body())
+    assert r.status_code == 409 and r.get_json()["recent"] and sent == []
+
+
+def test_the_email_confirm_says_it_also_publishes_to_the_portal():
+    html = _open_linked_row()
+    b = re.search(r"<button[^>]*invoice-email[^>]*>", html).group(0)
+    assert "puts the invoice on the client&#x27;s portal" in b
+
+
+def test_two_email_clicks_in_a_row_send_once(acting):
+    client, tid, sent = acting
+    r1 = client.post(f"/author/{tid}/progress/invoice-email", json=_ok_body())
+    r2 = client.post(f"/author/{tid}/progress/invoice-email", json=_ok_body())
+    assert r1.get_json()["ok"] and r2.status_code == 409 and r2.get_json()["recent"]
+    assert sent == [("email", 5)]           # prod never stamped invoice_sent_at here
+    r3 = client.post(f"/author/{tid}/progress/invoice-email", json=_ok_body(resend=True))
+    assert r3.get_json()["ok"] and sent == [("email", 5), ("email", 5)]
+
+
+def test_an_unknown_send_also_blocks_a_quick_second_click(tmp_path):
+    db = str(tmp_path / "t.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, name="D", email="d@x.com", date="2026-10-17")
+        bp.link_order(cx, tid, 5)
+    sent = []
+    client, _ = _app(db, invoice_send=lambda oid: sent.append(oid) or {"ok": False, "unknown": True},
+                     order_fetch=lambda ids: ([_order(5)], None))
+    client.post(f"/author/{tid}/progress/invoice-email", json=_ok_body())
+    r = client.post(f"/author/{tid}/progress/invoice-email", json=_ok_body())
+    assert r.status_code == 409 and sent == [5]
+
+
+def test_a_send_already_running_for_the_order_is_refused(acting):
+    client, tid, sent = acting
+    lock = client.application.progress_send_state["locks"].setdefault(5, __import__("threading").Lock())
+    lock.acquire()
+    try:
+        r = client.post(f"/author/{tid}/progress/invoice-email", json=_ok_body())
+    finally:
+        lock.release()
+    assert r.status_code == 409 and r.get_json()["in_progress"] and sent == []
+
+
+def test_a_refunded_order_shows_refunded_and_hides_email():
+    o = _order(5, pay_status="unpaid", ledger_paid_cents=0, ledger_refund_cents=50000)
+    assert bp.paid_state(o)[0] == "refunded"
+    assert bp.paid_state(dict(o, ledger_refund_cents=0))[0] == "open"
+    assert bp.paid_state(dict(o, pay_status="paid"))[0] == "full"
+    t = {"test_id": "a1", "name": "D", "email": "d@x.com"}
+    t["progress"] = bp.build([t], {}, {"a1": 5}, [o])[0]
+    row = _row(render_list_html([], "", [t]), "a1")
+    assert "Refunded" in row and "invoice-email" not in row
+    assert not t["progress"]["all_done"]
+
+
+def test_the_prod_endpoint_reports_the_refund_total(tmp_path, monkeypatch):
+    appmod, db, ids = _prod(tmp_path, monkeypatch)
+    from dashboard import order_payments as OP
+    with sqlite3.connect(db) as cx:
+        OP.ensure_table(cx)
+        for kind, amt in (("payment", 1000), ("refund", 1000)):
+            cx.execute("INSERT INTO order_payments (order_id, kind, amount_cents, status, "
+                       "created_at) VALUES (?,?,?,?,?)", (ids["A"], kind, amt, "active", "x"))
+        cx.commit()
+    _owner(appmod, monkeypatch)
+    got = {o["id"]: o for o in appmod.app.test_client().get(
+        "/api/console/biofield-progress-orders").get_json()["orders"]}
+    assert got[ids["A"]]["ledger_paid_cents"] == 0
+    assert got[ids["A"]]["ledger_refund_cents"] == 1000
+    assert got[ids["C"]]["ledger_refund_cents"] is None
+
+
+def test_the_prod_endpoint_drops_an_order_that_only_mentions_biofield(tmp_path, monkeypatch):
+    appmod, db, ids = _prod(tmp_path, monkeypatch)
+    from dashboard import orders as O
+    with sqlite3.connect(db) as cx:
+        gid = O.upsert_order(cx, source="manual", external_ref="G", email="g@x.com",
+                             items=[{"slug": "zinc", "qty": 1, "note": "after biofield"}],
+                             total_cents=1000)
+        cx.commit()
+    _owner(appmod, monkeypatch)
+    got = {o["id"] for o in appmod.app.test_client().get(
+        f"/api/console/biofield-progress-orders?ids={gid}").get_json()["orders"]}
+    assert gid not in got and ids["A"] in got

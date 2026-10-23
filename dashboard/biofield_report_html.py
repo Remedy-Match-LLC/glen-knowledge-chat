@@ -3536,18 +3536,23 @@ def _progress_cells(t):
         cells += _step_done(p["invoice_emailed"])
     elif paid == "full":
         cells += _step_none("n/a", "Paid, so no invoice email is needed")
+    elif paid == "refunded":
+        cells += _step_none("n/a", "Refunded, so no invoice email is sent from here")
     elif approx:
         cells += _step_open(order_url, "Open order", why)
     else:
         cells += _step_act(f"/author/{qt}/progress/invoice-email", oid, "Email",
                            f"Email invoice #{int(oid)} for {money} to {to} ({who})?{also} "
                            "This sends a real email, and any caregiver set to get copies "
-                           "is emailed too.", p.get("amount_cents"), to)
+                           "is emailed too. Sending also puts the invoice on the client's "
+                           "portal.", p.get("amount_cents"), to)
     if paid == "full":
         cells += _step_done(p.get("paid_at"))
     elif paid == "part":
         cells += _step_open(order_url, f"{_money(p.get('paid_cents'))} paid",
                             "Part paid. Opens the order, where a payment can be recorded")
+    elif paid == "refunded":
+        cells += _step_open(order_url, "Refunded", "Payments were refunded. Opens the order")
     elif paid == "claimed":
         cells += _step_open(order_url, "Claimed", "The client says they paid. Opens the order")
     else:

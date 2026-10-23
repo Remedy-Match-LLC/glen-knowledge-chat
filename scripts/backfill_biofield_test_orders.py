@@ -29,7 +29,7 @@ def _default_db():
     return os.environ.get("BIOFIELD_DB", str(ROOT / "chat_log.db"))
 
 
-def run(db_path, apply=False, fetch=None, out=print):
+def run(db_path, apply=False, fetch=None, out=print, chain_fetch=None):
     from dashboard import biofield_invoice, biofield_progress as bp
     fetch = fetch or biofield_invoice.client_orders_with_status
     # Read-only connection, and a plain SELECT: list_authored would create tables.
@@ -55,8 +55,18 @@ def run(db_path, apply=False, fetch=None, out=print):
     if not apply:
         out("DRY RUN: nothing written. Re-run with --apply to store the 'propose' rows.")
         return proposals, 0
+    # Replacement chains, so an order another test reaches through a replaced order is
+    # refused. No chains, no writes: a guess here would store a shared invoice.
+    chain_fetch = chain_fetch or bp.fetch_order
+    with bp.open_ro(db_path) as cx:
+        held = set(bp.stored_links(cx).values())
+    want = held | {p["order_id"] for p in proposals if p["status"] == "propose"}
+    chains, err = chain_fetch(sorted(want)) if want else ([], None)
+    if err:
+        out(f"NOT APPLIED: could not read replacement chains ({err}). Nothing written.")
+        return proposals, 0
     with sqlite3.connect(db_path) as cx:
-        n = bp.apply_links(cx, proposals, out=out)
+        n = bp.apply_links(cx, proposals, out=out, resolve=bp.resolver(chains))
     out(f"APPLIED: stored {n} link(s).")
     return proposals, n
 

@@ -2285,7 +2285,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         try:
             if created.get("order_id"):
                 with sqlite3.connect(db_path) as cx:
-                    _ok, _why = biofield_progress.link_order(cx, test_id, created["order_id"])
+                    _held = set(biofield_progress.stored_links(cx).values())
+                # Replacement chains, so an order another test reaches through a
+                # replaced order is refused too. Unreadable: only the same number
+                # counts here, and the list and the click guard still check chains.
+                _chains, _cerr = order_fetch(sorted(_held | {int(created["order_id"])}))
+                if _cerr:
+                    print(f"[progress] {test_id}: chains not read: {_cerr}", flush=True)
+                with sqlite3.connect(db_path) as cx:
+                    _ok, _why = biofield_progress.link_order(
+                        cx, test_id, created["order_id"],
+                        resolve=biofield_progress.resolver(_chains))
                 if not _ok:
                     link_refused = _why
         except Exception as _le:
@@ -2368,6 +2378,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return invoice_publish(oid)
 
     _RESEND_WINDOW = datetime.timedelta(minutes=15)
+    # Two quick clicks must not send twice, even before prod stamps invoice_sent_at:
+    # one lock per order around the send, and when this app last sent each order.
+    import threading as _threading
+    app.progress_send_state = {"guard": _threading.Lock(), "locks": {}, "sent": {}}
+
+    def _send_lock(oid):
+        st = app.progress_send_state
+        with st["guard"]:
+            return st["locks"].setdefault(int(oid), _threading.Lock())
+
+    def _is_recent(sent):
+        """True when `sent` is within the resend window. Unreadable counts as recent:
+        ask rather than risk a second send."""
+        try:
+            at = datetime.datetime.fromisoformat(str(sent).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=datetime.timezone.utc)
+        return datetime.datetime.now(datetime.timezone.utc) - at < _RESEND_WINDOW
 
     def _progress_action_order(test_id, kind):
         """The order a list button may act on, or an error response.
@@ -2394,7 +2424,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if linked is None:
             return None, ({"ok": False, "error": f"No invoice is stored for this test. Open "
                            f"order #{oid} to act on it."}, 409)
-        orders, ferr = order_fetch(linked)
+        # One re-read: every stored order, so another test that reaches the same
+        # invoice through a replaced order is seen too.
+        orders, ferr = order_fetch(sorted({int(o) for o in links.values()}))
         if ferr:
             return None, ({"ok": False, "error": f"Not done: could not re-read the order "
                            f"({ferr})."}, 502)
@@ -2403,8 +2435,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return None, ({"ok": False, "error": f"Not done: prod did not return order "
                            f"#{linked}."}, 409)
         cur_id = int(cur["id"])
+        resolve = biofield_progress.resolver(orders)
         others = sorted(t for t, o in links.items()
-                        if t != str(test_id) and int(o) in (int(linked), cur_id))
+                        if t != str(test_id)
+                        and (int(o) in (int(linked), cur_id) or resolve(o) == cur_id))
         if others:
             return None, ({"ok": False, "error": f"Not done: order #{cur_id} is also stored "
                            f"for {', '.join(others)}. Open the order to act on it."}, 409)
@@ -2423,20 +2457,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if kind == "email" and body.get("resend") is not True:
             sent = str(cur.get("invoice_sent_at") or "").strip()
             if sent:
-                try:
-                    at = datetime.datetime.fromisoformat(sent.replace("Z", "+00:00"))
-                    if at.tzinfo is None:
-                        at = at.replace(tzinfo=datetime.timezone.utc)
-                    recent = (datetime.datetime.now(datetime.timezone.utc) - at
-                              < _RESEND_WINDOW)
-                except ValueError:
-                    recent = True       # unreadable: ask rather than risk a second send
-                if recent:
+                if _is_recent(sent):
                     return None, ({"ok": False, "recent": True, "sent_at": sent,
                                    "error": f"Invoice #{cur_id} was emailed at {sent}."}, 409)
         if cur_id != int(linked):
             with sqlite3.connect(db_path) as cx:
-                ok, why = biofield_progress.link_order(cx, test_id, cur_id, source="replaced")
+                ok, why = biofield_progress.link_order(cx, test_id, cur_id, source="replaced",
+                                                       resolve=resolve)
             if not ok:
                 return None, ({"ok": False, "error": f"Not done: {why}."}, 409)
         return cur_id, None
@@ -2450,10 +2477,30 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     @app.route("/author/<test_id>/progress/invoice-email", methods=["POST"])
     def progress_invoice_email(test_id):
-        oid, err = _progress_action_order(test_id, "email")
-        if err:
-            return err
-        return invoice_send(oid)
+        body = request.get_json(silent=True) or {}
+        try:
+            posted = int(body.get("order_id"))
+        except (TypeError, ValueError):
+            return _progress_action_order(test_id, "email")[1]
+        lock = _send_lock(posted)
+        if not lock.acquire(blocking=False):
+            return {"ok": False, "in_progress": True,
+                    "error": f"A send of invoice #{posted} is already running."}, 409
+        try:
+            oid, err = _progress_action_order(test_id, "email")
+            if err:
+                return err
+            stamp = app.progress_send_state["sent"].get(oid)
+            if stamp and body.get("resend") is not True and _is_recent(stamp):
+                return {"ok": False, "recent": True, "sent_at": stamp,
+                        "error": f"Invoice #{oid} was emailed from here at {stamp}."}, 409
+            res = invoice_send(oid)
+            if isinstance(res, dict) and (res.get("ok") or res.get("unknown")):
+                app.progress_send_state["sent"][oid] = (
+                    datetime.datetime.now(datetime.timezone.utc).isoformat())
+            return res
+        finally:
+            lock.release()
 
     @app.route("/progress/order/<int:oid>")
     def progress_open_order(oid):

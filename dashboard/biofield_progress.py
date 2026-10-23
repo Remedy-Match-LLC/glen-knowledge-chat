@@ -42,23 +42,31 @@ def ensure_schema(cx):
                "source TEXT NOT NULL DEFAULT 'invoice', linked_at TEXT NOT NULL)")
 
 
-def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False):
+def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False,
+               resolve=None):
     """Remember that this test's invoice is this order. Returns (stored, reason).
 
     Refused when another test already holds this order: a household's second raise
     updates the same open order, and two tests trusting one order could each email it.
     With only_if_unlinked, refused when this test already has a link (the backfill
-    must never overwrite one). Both checks run inside the write transaction."""
+    must never overwrite one). Both checks run inside the write transaction.
+
+    resolve(order_id) -> the order that stands for it now (see resolver). Two tests
+    whose orders resolve to the same final order hold the same invoice, so the second
+    is refused. Without it, only the same order number counts."""
     oid, tid = int(order_id), str(test_id)
+    resolve = resolve or (lambda x: int(x))
     ensure_schema(cx)
     cx.commit()
     cx.execute("BEGIN IMMEDIATE")
     try:
-        other = cx.execute(f"SELECT test_id FROM {LINK_TABLE} WHERE order_id=? AND test_id<>?",
-                           (oid, tid)).fetchone()
-        if other:
-            cx.rollback()
-            return False, f"order #{oid} is already stored for test {other[0]}"
+        mine_final = resolve(oid)
+        for other, o in cx.execute(f"SELECT test_id, order_id FROM {LINK_TABLE} "
+                                   "WHERE test_id<>?", (tid,)).fetchall():
+            if int(o) == oid or resolve(int(o)) == mine_final:
+                cx.rollback()
+                return False, (f"order #{oid} is already stored for test {other}"
+                               + ("" if int(o) == oid else f" (through order #{int(o)})"))
         if only_if_unlinked:
             mine = cx.execute(f"SELECT order_id FROM {LINK_TABLE} WHERE test_id=?",
                               (tid,)).fetchone()
@@ -171,12 +179,17 @@ def fetch_orders(order_ids=()):
         return [], f"the order lookup failed ({type(e).__name__})"
 
 
-def fetch_order(order_id):
-    """(orders, error) for ONE order and whatever replaced it, re-read at click time."""
+def fetch_order(order_ids):
+    """(orders, error) for the named orders and whatever replaced them, re-read now.
+    One GET, whatever the count."""
     base, key = _console()
     if not base:
         return [], "no console key configured on this machine"
-    url = (f"{base}/api/console/biofield-progress-orders?only=1&ids={int(order_id)}")
+    if isinstance(order_ids, (int, str)):
+        order_ids = [order_ids]
+    ids = sorted({int(i) for i in order_ids if i})
+    url = (f"{base}/api/console/biofield-progress-orders?only=1&ids="
+           + urllib.parse.quote(",".join(str(i) for i in ids)))
     try:
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -199,6 +212,15 @@ def follow(order_id, orders):
         seen.add(int(o["id"]))
         o = by_id.get(int(o["superseded_by_order_id"]))
     return o
+
+
+def resolver(orders):
+    """resolve(order_id) -> the id that stands for it now, following replacements.
+    An order not in `orders`, or a broken chain, stands for itself."""
+    def resolve(oid):
+        o = follow(oid, orders)
+        return int(o["id"]) if o else int(oid)
+    return resolve
 
 
 def send_to(order):
@@ -255,7 +277,7 @@ def match_order(test, link_id, orders):
 
 
 def paid_state(order):
-    """("full"|"part"|"claimed"|"open", paid_cents), as prod decides it.
+    """("full"|"part"|"refunded"|"claimed"|"open", paid_cents), as prod decides it.
 
     Full is pay_status "paid". Part paid is the ledger's net payments (as the Orders
     board reads them) above zero and below the total, falling back to paid_cents for
@@ -267,6 +289,8 @@ def paid_state(order):
     got = int(ledger) if ledger is not None else paid
     if status == "paid":                    # prod's word, whatever the amounts say
         return "full", got
+    if ledger is not None and int(ledger) <= 0 and int(order.get("ledger_refund_cents") or 0) > 0:
+        return "refunded", 0
     if 0 < got < total:
         return "part", got
     if status == "claimed":
@@ -277,9 +301,12 @@ def paid_state(order):
 def build(authored, local, links, orders, orders_error=None):
     """One progress dict per authored test, in list order."""
     out = []
+    # Who holds each order, counted on the order each link resolves to now: a test
+    # stored on a replaced order and a test stored on its replacement hold one invoice.
+    resolve = resolver(orders)
     holders = {}
     for _tid, _oid in (links or {}).items():
-        holders.setdefault(int(_oid), []).append(_tid)
+        holders.setdefault(resolve(_oid), set()).add(_tid)
     for t in authored or []:
         tid = str(t.get("test_id") or "")
         loc = (local or {}).get(tid) or {}
@@ -302,8 +329,8 @@ def build(authored, local, links, orders, orders_error=None):
         if o:
             p["order_id"] = int(o["id"])
             # One order stored for two tests (a household): neither line may trust it.
-            shared = sorted({x for k in {int(link_id or 0), int(o["id"])}
-                             for x in holders.get(k, [])} - {tid}) if link_id else []
+            shared = (sorted(holders.get(resolve(link_id), set()) - {tid})
+                      if link_id else [])
             if shared:
                 basis = "shared"
                 p["shared_with"] = shared
@@ -461,17 +488,18 @@ def propose_links(authored, links, orders_by_email):
     return out
 
 
-def apply_links(cx, proposals, out=print):
+def apply_links(cx, proposals, out=print, resolve=None):
     """Write the 'propose' rows only, and only where the test still has no link and
     no other test holds the order: both re-checked inside the write transaction, so
-    a link made after the dry run is never overwritten. Returns how many were
-    stored, each read back."""
+    a link made after the dry run is never overwritten. resolve follows replaced
+    orders (see resolver), so an order another test reaches through its chain is
+    refused too. Returns how many were stored, each read back."""
     n = 0
     for p in proposals:
         if p["status"] != "propose":
             continue
         ok, why = link_order(cx, p["test_id"], p["order_id"], source="backfill",
-                             only_if_unlinked=True)
+                             only_if_unlinked=True, resolve=resolve)
         if not ok:
             out(f"skipped {p['test_id']}: {why}")
             continue

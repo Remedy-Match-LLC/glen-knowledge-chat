@@ -58392,7 +58392,7 @@ def _progress_order_row(r):
             "pay_status": r["pay_status"] or "", "paid_cents": int(r["paid_cents"] or 0),
             "paid_at": r["paid_at"] or "", "biofield": biofield,
             "superseded_by_order_id": r["superseded_by_order_id"],
-            "ledger_paid_cents": None}
+            "ledger_paid_cents": None, "ledger_refund_cents": None}
 
 
 @app.route("/api/console/biofield-progress-orders", methods=["GET"])
@@ -58457,6 +58457,8 @@ def console_biofield_progress_orders():
                         continue
                     sign = -1 if kind == "refund" else 1
                     row["ledger_paid_cents"] = (row["ledger_paid_cents"] or 0) + sign * int(amt or 0)
+                    row["ledger_refund_cents"] = ((row["ledger_refund_cents"] or 0)
+                                                  + (int(amt or 0) if kind == "refund" else 0))
             except Exception as _e:  # noqa: BLE001 - no ledger table here
                 try:
                     cx.rollback()
