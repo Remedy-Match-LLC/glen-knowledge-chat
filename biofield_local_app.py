@@ -29,7 +29,8 @@ import requests
 
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory
 
-from dashboard import biofield_fee, biofield_handoff, biofield_invoice, biofield_progress
+from dashboard import (biofield_fee, biofield_handoff, biofield_invoice, biofield_progress,
+                       biofield_requests)
 from dashboard.biofield_report import causal_chain_report, list_tests
 from dashboard.biofield_report_html import (
     render_author_html, render_e4l_panel, render_fee_panel, render_invoice_page,
@@ -1284,13 +1285,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             local = biofield_progress.local_steps(cx)
             links = biofield_progress.stored_links(cx)
             tests = list_tests(cx, q)
+            # Biofield test requests (Glen, 2026-10-23): open "Requested" lines.
+            requests_open = biofield_requests.list_open(cx)
         if authored:
             # ONE orders call for the whole list, never one per line.
             orders, orders_err = progress_orders(sorted(set(links.values())))
             progress = biofield_progress.build(authored, local, links, orders, orders_err)
             for t, p in zip(authored, progress):
                 t["progress"] = p
-        html = render_list_html(tests, q, authored)
+        html = render_list_html(tests, q, authored, requests_open)
         # Reachable link to the Practice Better intake importer (Task 5). Injected here
         # rather than in dashboard/biofield_report_html.py so this task stays confined to
         # this file, per the task brief.
@@ -1786,6 +1789,29 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return Response(f"PDF generation failed: {e}", status=500)
         return Response(data, mimetype="application/pdf", headers={
             "Content-Disposition": f'inline; filename="plan-{test_id}.pdf"'})
+
+    # --- Biofield test requests (Glen, 2026-10-23) ---
+    # Each acts on the local DB only. Start test creates the authored test, links the
+    # request to it and sends the browser to it. Yes and No answer a possible request.
+    @app.route("/request/<int:rid>/start", methods=["POST"])
+    def request_start(rid):
+        with sqlite3.connect(db_path) as cx:
+            tid, err = biofield_requests.start(cx, rid)
+        if err:
+            return {"ok": False, "error": err}, 409
+        return {"ok": True, "test_id": tid, "url": f"/author/{tid}"}
+
+    @app.route("/request/<int:rid>/yes", methods=["POST"])
+    def request_yes(rid):
+        with sqlite3.connect(db_path) as cx:
+            ok, err = biofield_requests.approve(cx, rid)
+        return ({"ok": True}, 200) if ok else ({"ok": False, "error": err}, 409)
+
+    @app.route("/request/<int:rid>/no", methods=["POST"])
+    def request_no(rid):
+        with sqlite3.connect(db_path) as cx:
+            ok, err = biofield_requests.decline(cx, rid)
+        return ({"ok": True}, 200) if ok else ({"ok": False, "error": err}, 409)
 
     # --- Authoring (Increment 4a) ---
     @app.route("/author/new", methods=["POST"])

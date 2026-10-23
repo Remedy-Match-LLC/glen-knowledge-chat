@@ -43,6 +43,8 @@ HEALTH_TABLES = {
     "scan_analyses": "email",
     "scan_freshness": "email",
     "biofield_auth_tests": "email",
+    "biofield_test_requests": "email",     # local Biofield app: a request quote (2026-10-23)
+    "biofield_request_flags": "email",     # prod: the portal message behind a request
     "portal_chat_messages": "email",
     "portal_health_history": "email",
     "portal_extended_history": "email",

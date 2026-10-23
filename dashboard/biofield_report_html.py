@@ -3594,9 +3594,55 @@ _STEP_CSS = ("<style>.progress td{white-space:nowrap}.progress .stepdone{color:#
              ".progress .approx a{font-style:italic}</style>")
 
 
-def render_list_html(tests, q="", authored=None):
+_REQ_SOURCE = {"email": "email", "portal": "portal chat", "ghl": "GoHighLevel"}
+
+
+def _request_row(r):
+    """One "Requested" line (Glen, 2026-10-23). Its first open step starts the test; a
+    possible request asks Glen for Yes or No first. The other step cells are empty."""
+    from dashboard.biofield_progress import short_date
+    rid = int(r["id"])
+    email = r.get("email") or ""
+    payer = r.get("payer_email") or ""
+    quote = r.get("quote") or ""
+    src = _REQ_SOURCE.get(r.get("source"), r.get("source") or "")
+    pill = "Possible" if r.get("status") == "pending_yes" else "Requested"
+    who = (f"<span class=pill>{pill}</span> {_e(r.get('name') or email or '(unnamed)')}"
+           + (f"<div class=food>{_e(email)}</div>" if email else "")
+           + (f"<div class=food>Asked by {_e(payer)}</div>" if payer and payer != email else "")
+           + (f"<div class=food title=\"{_e(quote)}\">&ldquo;{_e(quote[:90])}"
+              f"{'&hellip;' if len(quote) > 90 else ''}&rdquo;</div>" if quote else ""))
+    when = (f"{_e(short_date(r.get('requested_at')) or str(r.get('requested_at') or '')[:10])}"
+            f"<div class=food>by {_e(src)}</div>")
+    if r.get("status") == "pending_yes":
+        act = (f"<td><button type=button class=step data-url=\"/request/{rid}/yes\" "
+               f"onclick=\"reqAct(this)\">Yes</button> "
+               f"<button type=button class=step data-url=\"/request/{rid}/no\" "
+               f"onclick=\"reqAct(this)\">No</button></td>")
+    else:
+        act = (f"<td><button type=button class=step data-url=\"/request/{rid}/start\" "
+               f"onclick=\"reqAct(this)\">Start test</button></td>")
+    return (f"<tr id=req-{rid} class=requested><td>{who}</td><td>{when}</td>{act}"
+            + "".join(_step_none() for _ in range(6)) + "</tr>")
+
+
+_REQ_JS = (
+    "<script>\n"
+    "async function reqAct(btn){\n"
+    "  var t=btn.textContent;btn.disabled=true;btn.textContent='working...';\n"
+    "  var j=null;\n"
+    "  try{var r=await fetch(btn.dataset.url,{method:'POST',"
+    "headers:{'Content-Type':'application/json'},body:'{}'});j=await r.json();}\n"
+    "  catch(e){btn.textContent='result unknown, reload the list';return;}\n"
+    "  if(j&&j.ok&&j.url){location.href=j.url;return;}\n"
+    "  if(j&&j.ok){location.reload();return;}\n"
+    "  btn.disabled=false;btn.textContent=t;alert((j&&j.error)||'It did not go through.');\n"
+    "}\n</script>")
+
+
+def render_list_html(tests, q="", authored=None, requests=None):
     authored = authored or []
-    arows = ""
+    arows = "".join(_request_row(r) for r in requests or [])
     errs = set()
     for t in authored:
         atid = _e(str(t.get("test_id") or ""))
@@ -3617,7 +3663,8 @@ def render_list_html(tests, q="", authored=None):
                 "<tr><th>Done</th><th>Uploaded</th><th>Emailed</th>"
                 "<th>Amount</th><th>Uploaded</th><th>Emailed</th><th>Paid</th></tr>"
                 + (arows or "<tr><td colspan=9 class=food>None yet — click New test.</td></tr>")
-                + "</table>" + ((_STEP_CSS + _STEP_JS) if arows else ""))
+                + "</table>" + ((_STEP_CSS + _STEP_JS + (_REQ_JS if requests else ""))
+                                if arows else ""))
     rows = ""
     for t in tests or []:
         rows += (

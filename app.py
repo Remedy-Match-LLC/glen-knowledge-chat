@@ -34170,6 +34170,48 @@ def _triage_portal_message(email, name, query, answer, stored_item_id=None):
         _send_triage_item_email(item_id, email, name, res, query, answer)
     except Exception as e:
         print(f"[triage] {e!r}", flush=True)
+    finally:
+        # After the triage work, so a warning-sign email never waits on this call.
+        _flag_biofield_request(email, name, query)
+
+
+def _flag_biofield_request(email, name, query):
+    """Store a portal message that asks for a Biofield Analysis (Glen, 2026-10-23).
+
+    The local Biofield app's job pulls these through /api/console/biofield-request-flags
+    and files them as "Requested" lines. Nothing is sent to anyone from here. Never
+    raises: the chat is never affected."""
+    try:
+        from dashboard import biofield_requests as _br
+        verdict = _br.classify(_br.haiku_complete(_cl), query, name, email)
+        if verdict["certainty"] == "none":
+            return None
+        with _db_lock, db.connect(LOG_DB) as cx:
+            flag_id, _created = _br.add_flag(cx, email, name, verdict, query)
+        return flag_id
+    except Exception as e:  # noqa: BLE001
+        print(f"[biofield-request] {e!r}", flush=True)
+        return None
+
+
+@app.route("/api/console/biofield-request-flags", methods=["GET"])
+def console_biofield_request_flags():
+    """Portal-chat messages flagged as Biofield test requests, for the local app.
+
+    Read-only, owner only. ?days=N (default 7, at most 30) of flags, oldest first.
+    The local job files each once, keyed by the flag id."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    try:
+        days = min(max(int(request.args.get("days") or 7), 1), 30)
+    except ValueError:
+        return jsonify({"ok": False, "error": "days must be a number"}), 400
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    from dashboard import biofield_requests as _br
+    with db.connect(LOG_DB) as cx:
+        flags = _br.list_flags(cx, since)
+    return jsonify({"ok": True, "flags": flags})
 
 
 @app.route("/api/console/triage")
