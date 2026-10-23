@@ -6,21 +6,23 @@ which should go into the Balances list." And: "all the full wording data should 
 the list of what balances on that layer. Only the simple structure/function terms will
 then show on the report."
 
-His terms already exist. They are the "Stress pattern (head & tail)" field, stored in
-biofield_clinical_stress.pattern and read through stress_pattern(cx, label). No new map.
+His terms already exist. They are what the "Stress pattern (head & tail)" field shows
+(shown_pattern): one typed for this test, else the stored one
+(biofield_clinical_stress.pattern), else the seed's suggestion, with a folded
+condition's term appended. An absorbed condition takes its survivor's term. No new map.
 
 So, for every path that writes a layer from a condition:
-  - a condition WITH a stored pattern: Head and Tail carry the pattern, and the full
-    wording becomes a stress linked to the layer's rows (biofield_auth_layer_stress),
-    which is the card's "balances:" list;
-  - a condition with NO stored pattern keeps today's behaviour, and its card is
+  - a condition WITH a pattern in that field: Head and Tail carry the pattern, and the
+    full wording becomes a stress linked to the layer's rows
+    (biofield_auth_layer_stress), which is the card's "balances:" list;
+  - a condition with NO pattern anywhere keeps today's behaviour, and its card is
     flagged with NO_PATTERN_FLAG.
 
 A Head Glen typed is never rewritten. Nothing records who wrote a Head: updated_at is
 bumped by imports and moves too, and on a50 row 454 carried a bumped updated_at with
 the program's wording still in its Head. So the correction rewrites a Head or a Tail
 item only when it EQUALS the full wording of a condition this client has that has a
-stored pattern. "Green Jasper Gem Elixir" (a50, card 6) is no client's condition, so it
+pattern. "Green Jasper Gem Elixir" (a50, card 6) is no client's condition, so it
 always stays.
 """
 import re
@@ -30,7 +32,7 @@ from dashboard.biofield_stress import (_norm as _snorm, _num, _now, _table_exist
                                        client_condition_labels, move_links_off)
 
 # Shown on a layer card whose Head is a condition's full wording because the condition
-# has no stored pattern yet. Glen approves this text.
+# has no pattern yet. Glen approves this text.
 NO_PATTERN_FLAG = "No stress pattern yet for this condition"
 
 _SEP = re.compile(r"[,;\n]+")
@@ -57,14 +59,23 @@ def _key(text):
     return (text or "").strip().casefold()
 
 
-def typed_patterns(cx, tid):
-    """{selection key: pattern} typed into the field for this one test. Read only."""
+def typed_patterns(cx, test_id):
+    """{selection key: pattern} typed into the field for this one test. Read only.
+    The exact id only, as proposals.patterns() reads it for the page: intake "a1" and
+    numeric test "1" are different reports, so one never takes the other's pattern."""
     if not _table_exists(cx, "biofield_clinical_selection"):
         return {}
-    t = _num(tid)
     return {k: (p or "").strip() for k, p in cx.execute(
         "SELECT item_key, pattern FROM biofield_clinical_selection "
-        "WHERE test_id IN (?,?) AND TRIM(COALESCE(pattern,''))<>''", ("a" + str(t), str(t)))}
+        "WHERE test_id=? AND TRIM(COALESCE(pattern,''))<>''", (str(test_id),))}
+
+
+def _alias_map(cx):
+    """{absorbed key: survivor label}, read only: aliases() creates its table."""
+    if not _table_exists(cx, "biofield_clinical_alias"):
+        return {}
+    from dashboard.biofield_clinical_checklist import aliases
+    return aliases(cx)
 
 
 def shown_pattern(cx, label, patterns, typed):
@@ -95,11 +106,15 @@ def _resolve(cx, tid, patterns=None):
     for this client's conditions with a usable pattern, the one the page shows
     (shown_pattern). `cycles` is the set of _key(wording) whose pattern chain loops
     back on itself."""
+    from dashboard.biofield_clinical_checklist import resolve_alias
     patterns = stored_patterns(cx) if patterns is None else patterns
     typed = typed_patterns(cx, tid)
+    alias_map = _alias_map(cx)
     direct = {}
     for label in client_condition_labels(cx, tid):
-        p = shown_pattern(cx, label, patterns, typed)
+        # The page shows an absorbed condition as its survivor's row, so it takes the
+        # survivor's combined term, never its own alone (review round 1).
+        p = shown_pattern(cx, resolve_alias(label, alias_map), patterns, typed)
         if p:
             direct.setdefault(_key(label), (label, p))
     out, cycles = {}, set()
@@ -124,8 +139,8 @@ def _resolve(cx, tid, patterns=None):
 
 
 def conditions(cx, tid, patterns=None):
-    """This client's conditions that have a stored pattern: {_key(wording): (wording,
-    pattern)}. Wording comes from client_condition_labels, the same source set as
+    """This client's conditions that have a pattern (shown_pattern): {_key(wording):
+    (wording, pattern)}. Wording comes from client_condition_labels, the same source set as
     consolidate. The pattern is followed to a fixed point: when one condition's
     pattern is another condition's wording, the final term is used, so a second
     correction changes nothing (review round 1 F5). A condition whose chain loops is
@@ -283,7 +298,7 @@ def plan_correction(cx, test_id):
     tail, new_tail, wording}], "links": [{stress_id, label, to}], "dangling": [{stress_id,
     label, deleted_rid, to}], "unbalanced": [...], "fragments": [{stress_id, label}]}."""
     tid = _num(test_id)
-    conds = conditions(cx, tid)
+    conds = conditions(cx, test_id)     # the id as given: typed patterns are per id
     rows = cx.execute("SELECT id, head, most_affected FROM biofield_auth_chain WHERE test_id=? "
                       "ORDER BY layer, sort_seq, id", (tid,)).fetchall()
     plan = {"rows": [], "links": [], "dangling": [], "unbalanced": [], "fragments": []}

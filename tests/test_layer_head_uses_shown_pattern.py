@@ -135,3 +135,31 @@ def test_a_card_is_not_flagged_as_patternless_when_the_field_shows_a_pattern(tmp
         add_chain_row(cx, tid, 2, free, free, "Remedy A", origin="program")
     page = client.get(f"/author/{tid}").get_data(as_text=True)
     assert page.count(ht.NO_PATTERN_FLAG) == 1
+
+
+def test_a_pattern_typed_under_the_numeric_id_never_names_the_intakes_layer(tmp_path):
+    """Intake "a1" and numeric test "1" are different reports (review round 1). The page
+    reads typed patterns by the exact id, so the layer must too."""
+    db, tid, client = _setup(tmp_path, [WET], {WET: ["AngiogenX"]})
+    assert tid == "a1"
+    with sqlite3.connect(db) as cx:
+        save_pattern(cx, "1", WET, "Macular Numeric")
+        cx.commit()
+        assert ht.conditions(cx, "1")[ht._key(WET)][1] == "Macular Numeric"
+        assert ht.conditions(cx, tid)[ht._key(WET)][1] == WET_TERM
+    _program(client, tid)
+    (_rid, head, tail), = _rows(db, tid)
+    assert (head, tail) == (WET_TERM, WET_TERM)
+
+
+def test_an_absorbed_condition_takes_its_survivors_combined_term(tmp_path):
+    """The page folds "Difficulty seeing in low light" into "Dry AMD" and shows one row
+    with both functions. Its wording on a layer must take that term, not its own."""
+    from dashboard.biofield_clinical_checklist import alias_condition
+    low = "Difficulty seeing in low light"
+    db, tid, _client = _setup(tmp_path, [low], {low: ["Remedy A"]},
+                              stored={"Dry AMD": "Macular Resilience", low: "Dark Adaptation"})
+    with sqlite3.connect(db) as cx:
+        assert alias_condition(cx, low, "Dry AMD")
+        assert ht.conditions(cx, tid)[ht._key(low)] == (
+            low, "Macular Resilience & Dark Adaptation")
