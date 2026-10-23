@@ -58370,6 +58370,104 @@ def console_client_invoice():
         "edit_url": edit_url, "lines": lines}, **biofield_paid})
 
 
+_PROGRESS_ORDER_COLS = ("id, email, recipient_email, created_at, status, total_cents, "
+                        "portal_published, invoice_sent_at, pay_status, paid_cents, paid_at, "
+                        "items_json, superseded_by_order_id")
+
+
+def _progress_order_row(r):
+    try:
+        items = json.loads(r["items_json"] or "[]") or []
+    except Exception:
+        items = []
+    biofield = any(isinstance(it, dict) and (it.get("slug") == "biofield-analysis"
+                                             or it.get("source") == "biofield")
+                   for it in items)
+    return {"id": int(r["id"]), "email": (r["email"] or "").strip().lower(),
+            "recipient_email": (r["recipient_email"] or "").strip().lower(),
+            "created_at": r["created_at"] or "", "status": r["status"] or "",
+            "total_cents": int(r["total_cents"] or 0),
+            "portal_published": bool(r["portal_published"]),
+            "invoice_sent_at": r["invoice_sent_at"] or "",
+            "pay_status": r["pay_status"] or "", "paid_cents": int(r["paid_cents"] or 0),
+            "paid_at": r["paid_at"] or "", "biofield": biofield,
+            "superseded_by_order_id": r["superseded_by_order_id"],
+            "ledger_paid_cents": None, "ledger_refund_cents": None}
+
+
+@app.route("/api/console/biofield-progress-orders", methods=["GET"])
+def console_biofield_progress_orders():
+    """The local Biofield app's "Your authored tests" progress columns, in ONE call.
+
+    Read-only, owner only. Returns every order carrying a Biofield line (not replaced),
+    plus each order named in ?ids=1,2,3 that carries a Biofield line, and any order
+    that replaced one of those. ?only=1 returns just the named orders and their
+    replacements: the local app re-reads one order this way at click time. Only the
+    fields the list shows. Glen, 2026-10-23."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    try:
+        ids = sorted({int(x) for x in (request.args.get("ids") or "").split(",") if x.strip()})
+    except ValueError:
+        return jsonify({"ok": False, "error": "ids must be order numbers"}), 400
+    if len(ids) > 2000:
+        return jsonify({"ok": False, "error": "too many ids"}), 400
+    only = request.args.get("only") == "1"
+    out = {}
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        if not only:
+            for r in cx.execute(
+                    f"SELECT {_PROGRESS_ORDER_COLS} FROM orders "
+                    "WHERE superseded_by_order_id IS NULL AND COALESCE(items_json,'') LIKE ?",
+                    ("%biofield%",)).fetchall():
+                row = _progress_order_row(r)
+                if row["biofield"]:
+                    out[row["id"]] = row
+        # A named order is returned only when it carries a Biofield line; after that,
+        # whatever replaced it is returned too, as its replacement.
+        want, replacements = [i for i in ids if i not in out], set()
+        if only:
+            want = list(ids)
+        for _ in range(6):
+            if not want:
+                break
+            ph = ",".join("?" * len(want))
+            got = [_progress_order_row(r) for r in cx.execute(
+                f"SELECT {_PROGRESS_ORDER_COLS} FROM orders WHERE id IN ({ph})",
+                tuple(want)).fetchall()]
+            kept = [row for row in got if row["biofield"] or row["id"] in replacements]
+            for row in kept:
+                out[row["id"]] = row
+            nxt = {int(row["superseded_by_order_id"]) for row in kept
+                   if row["superseded_by_order_id"]}
+            replacements |= nxt
+            want = sorted(nxt - set(out))
+        # Ledger payments, as the Orders board reads them: active payments less refunds.
+        if out:
+            try:
+                ph = ",".join("?" * len(out))
+                for oid, kind, amt in cx.execute(
+                        "SELECT order_id, kind, COALESCE(SUM(amount_cents),0) FROM order_payments "
+                        f"WHERE status='active' AND order_id IN ({ph}) GROUP BY order_id, kind",
+                        tuple(out)).fetchall():
+                    row = out.get(int(oid))
+                    if row is None:
+                        continue
+                    sign = -1 if kind == "refund" else 1
+                    row["ledger_paid_cents"] = (row["ledger_paid_cents"] or 0) + sign * int(amt or 0)
+                    row["ledger_refund_cents"] = ((row["ledger_refund_cents"] or 0)
+                                                  + (int(amt or 0) if kind == "refund" else 0))
+            except Exception as _e:  # noqa: BLE001 - no ledger table here
+                try:
+                    cx.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                print(f"[progress-orders] ledger skipped: {_e!r}", flush=True)
+    return jsonify({"ok": True, "orders": sorted(out.values(), key=lambda o: o["id"])})
+
+
 @app.route("/api/console/client-recommended-products", methods=["GET"])
 def console_client_recommended_products():
     """Return the latest Biofield products as a read-only invoice-editor seed."""

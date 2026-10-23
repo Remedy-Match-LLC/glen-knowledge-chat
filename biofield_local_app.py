@@ -29,7 +29,7 @@ import requests
 
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory
 
-from dashboard import biofield_fee, biofield_handoff, biofield_invoice
+from dashboard import biofield_fee, biofield_handoff, biofield_invoice, biofield_progress
 from dashboard.biofield_report import causal_chain_report, list_tests
 from dashboard.biofield_report_html import (
     render_author_html, render_e4l_panel, render_fee_panel, render_invoice_page,
@@ -730,7 +730,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                caregiver_billing=None,
                ingredients_db=None,
                portal_link_fetch=None, auto_publish=None, fetch_fmp_history=None,
-               client_gmail=None, records_reader=None):
+               client_gmail=None, records_reader=None,
+               progress_orders=None, invoice_publish=None, invoice_send=None,
+               order_fetch=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -929,6 +931,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     invoice_paid_check = invoice_paid_check or biofield_invoice.default_biofield_paid
     invoice_latest = invoice_latest or biofield_invoice.default_latest_invoice
     client_orders = client_orders or biofield_invoice.default_client_orders
+    # The authored-tests progress columns (Glen, 2026-10-23): one orders call per list,
+    # and the two invoice actions its buttons run, each behind a confirm.
+    progress_orders = progress_orders or biofield_progress.fetch_orders
+    invoice_publish = invoice_publish or biofield_invoice.default_publish_invoice
+    invoice_send = invoice_send or biofield_invoice.default_send_invoice
+    order_fetch = order_fetch or biofield_progress.fetch_order
     def _default_portal_link_fetch(email, name):
         # Used only by "View Client Portal", which staff open. staff_open asks for a
         # one-time staff pass, so the portal shows the staff banner and asks before any
@@ -1272,7 +1280,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def index():
         q = request.args.get("q", "")
         with sqlite3.connect(db_path) as cx:
-            html = render_list_html(list_tests(cx, q), q, list_authored(cx))
+            authored = list_authored(cx)
+            local = biofield_progress.local_steps(cx)
+            links = biofield_progress.stored_links(cx)
+            tests = list_tests(cx, q)
+        if authored:
+            # ONE orders call for the whole list, never one per line.
+            orders, orders_err = progress_orders(sorted(set(links.values())))
+            progress = biofield_progress.build(authored, local, links, orders, orders_err)
+            for t, p in zip(authored, progress):
+                t["progress"] = p
+        html = render_list_html(tests, q, authored)
         # Reachable link to the Practice Better intake importer (Task 5). Injected here
         # rather than in dashboard/biofield_report_html.py so this task stays confined to
         # this file, per the task brief.
@@ -2259,6 +2277,29 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             {"name": client.get("name"), "email": email}, built["lines"], **create_kwargs)
         if not created.get("ok"):
             return {"ok": False, "error": created.get("error") or "Order creation failed."}, 502
+        # Remember which order this test's invoice is, so the list never has to guess
+        # it by email (Glen, 2026-10-23). Best-effort: the invoice already exists.
+        # Refused when another test holds the order (a household raise that updated the
+        # same open order); the page says so.
+        link_refused = ""
+        try:
+            if created.get("order_id"):
+                with sqlite3.connect(db_path) as cx:
+                    _held = set(biofield_progress.stored_links(cx).values())
+                # Replacement chains, so an order another test reaches through a
+                # replaced order is refused too. Unreadable: only the same number
+                # counts here, and the list and the click guard still check chains.
+                _chains, _cerr = order_fetch(sorted(_held | {int(created["order_id"])}))
+                if _cerr:
+                    print(f"[progress] {test_id}: chains not read: {_cerr}", flush=True)
+                with sqlite3.connect(db_path) as cx:
+                    _ok, _why = biofield_progress.link_order(
+                        cx, test_id, created["order_id"],
+                        resolve=biofield_progress.resolver(_chains))
+                if not _ok:
+                    link_refused = _why
+        except Exception as _le:
+            print(f"[progress] {test_id}: order link not stored: {_le!r}", flush=True)
         link = invoice_link(created.get("order_id"))
         total = created.get("total_cents")
         accepted = created.get("accepted_slugs") or []
@@ -2279,6 +2320,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         off = _rsplit.left_off_warning(left_off, fee_only=include_fee and not remedies)
         if off:
             warning = (warning + " " if warning else "") + _esc(off)
+        if link_refused:
+            warning = ((warning + " " if warning else "") + _esc(
+                f"Not stored against this test: {link_refused}. Its line in the list "
+                "shows this invoice as approximate."))
         return {"ok": True, "already_paid": bool(paid.get("paid")), "no_charge": no_charge,
                 "print_url": link.get("print_url") if link.get("ok") else "",
                 "order_id": created.get("order_id"),
@@ -2330,7 +2375,142 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         oid = (request.get_json(silent=True) or {}).get("order_id")
         if not oid:
             return {"ok": False, "error": "no order_id"}, 400
-        return biofield_invoice.default_publish_invoice(oid)
+        return invoice_publish(oid)
+
+    _RESEND_WINDOW = datetime.timedelta(minutes=15)
+    # Two quick clicks must not send twice, even before prod stamps invoice_sent_at:
+    # one lock per order around the send, and when this app last sent each order.
+    import threading as _threading
+    app.progress_send_state = {"guard": _threading.Lock(), "locks": {}, "sent": {}}
+
+    def _send_lock(oid):
+        st = app.progress_send_state
+        with st["guard"]:
+            return st["locks"].setdefault(int(oid), _threading.Lock())
+
+    def _is_recent(sent):
+        """True when `sent` is within the resend window. Unreadable counts as recent:
+        ask rather than risk a second send."""
+        try:
+            at = datetime.datetime.fromisoformat(str(sent).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=datetime.timezone.utc)
+        return datetime.datetime.now(datetime.timezone.utc) - at < _RESEND_WINDOW
+
+    def _progress_action_order(test_id, kind):
+        """The order a list button may act on, or an error response.
+
+        Acts only on a confirmed click, on the order STORED for this test (an order
+        matched by email may be the wrong invoice), never on one stored for two tests,
+        and only when prod's order, re-read now, still has the total and addressee the
+        confirm showed. A replaced stored order is followed to its replacement, and the
+        stored link moves to it."""
+        body = request.get_json(silent=True) or {}
+        if body.get("confirm") is not True:
+            return None, ({"ok": False, "error": "Not done: this needs a confirm first."}, 400)
+        try:
+            oid = int(body.get("order_id"))
+            amount = int(body.get("amount_cents"))
+        except (TypeError, ValueError):
+            return None, ({"ok": False, "error": "no order_id or amount_cents"}, 400)
+        recipient = str(body.get("recipient") or "").strip().lower()
+        if not recipient:
+            return None, ({"ok": False, "error": "no recipient"}, 400)
+        with sqlite3.connect(db_path) as cx:
+            links = biofield_progress.stored_links(cx)
+        linked = links.get(str(test_id))
+        if linked is None:
+            return None, ({"ok": False, "error": f"No invoice is stored for this test. Open "
+                           f"order #{oid} to act on it."}, 409)
+        # One re-read: every stored order, so another test that reaches the same
+        # invoice through a replaced order is seen too.
+        orders, ferr = order_fetch(sorted({int(o) for o in links.values()}))
+        if ferr:
+            return None, ({"ok": False, "error": f"Not done: could not re-read the order "
+                           f"({ferr})."}, 502)
+        cur = biofield_progress.follow(linked, orders)
+        if not cur:
+            return None, ({"ok": False, "error": f"Not done: prod did not return order "
+                           f"#{linked}."}, 409)
+        cur_id = int(cur["id"])
+        resolve = biofield_progress.resolver(orders)
+        others = sorted(t for t, o in links.items()
+                        if t != str(test_id)
+                        and (int(o) in (int(linked), cur_id) or resolve(o) == cur_id))
+        if others:
+            return None, ({"ok": False, "error": f"Not done: order #{cur_id} is also stored "
+                           f"for {', '.join(others)}. Open the order to act on it."}, 409)
+        if cur_id != oid:
+            return None, ({"ok": False, "error": f"Order #{oid} is not the invoice stored for "
+                           "this test. Reload the list."}, 409)
+        if (cur.get("status") or "") == "cancelled":
+            return None, ({"ok": False, "error": f"Not done: order #{cur_id} is cancelled."}, 409)
+        now_total = int(cur.get("total_cents") or 0)
+        now_to = biofield_progress.send_to(cur)
+        if now_total != amount or now_to != recipient:
+            return None, ({"ok": False, "changed": True,
+                           "error": f"Not done: order #{cur_id} changed since this page "
+                                    f"loaded (now ${now_total / 100:,.2f} to {now_to}). "
+                                    "Reload the list."}, 409)
+        if kind == "email" and body.get("resend") is not True:
+            sent = str(cur.get("invoice_sent_at") or "").strip()
+            if sent:
+                if _is_recent(sent):
+                    return None, ({"ok": False, "recent": True, "sent_at": sent,
+                                   "error": f"Invoice #{cur_id} was emailed at {sent}."}, 409)
+        if cur_id != int(linked):
+            with sqlite3.connect(db_path) as cx:
+                ok, why = biofield_progress.link_order(cx, test_id, cur_id, source="replaced",
+                                                       resolve=resolve)
+            if not ok:
+                return None, ({"ok": False, "error": f"Not done: {why}."}, 409)
+        return cur_id, None
+
+    @app.route("/author/<test_id>/progress/invoice-publish", methods=["POST"])
+    def progress_invoice_publish(test_id):
+        oid, err = _progress_action_order(test_id, "publish")
+        if err:
+            return err
+        return invoice_publish(oid)
+
+    @app.route("/author/<test_id>/progress/invoice-email", methods=["POST"])
+    def progress_invoice_email(test_id):
+        body = request.get_json(silent=True) or {}
+        try:
+            posted = int(body.get("order_id"))
+        except (TypeError, ValueError):
+            return _progress_action_order(test_id, "email")[1]
+        lock = _send_lock(posted)
+        if not lock.acquire(blocking=False):
+            return {"ok": False, "in_progress": True,
+                    "error": f"A send of invoice #{posted} is already running."}, 409
+        try:
+            oid, err = _progress_action_order(test_id, "email")
+            if err:
+                return err
+            stamp = app.progress_send_state["sent"].get(oid)
+            if stamp and body.get("resend") is not True and _is_recent(stamp):
+                return {"ok": False, "recent": True, "sent_at": stamp,
+                        "error": f"Invoice #{oid} was emailed from here at {stamp}."}, 409
+            res = invoice_send(oid)
+            if isinstance(res, dict) and (res.get("ok") or res.get("unknown")):
+                app.progress_send_state["sent"][oid] = (
+                    datetime.datetime.now(datetime.timezone.utc).isoformat())
+            return res
+        finally:
+            lock.release()
+
+    @app.route("/progress/order/<int:oid>")
+    def progress_open_order(oid):
+        """Open an order on prod's Orders board. A redirect, so the console key never
+        sits in the list page's HTML."""
+        url = biofield_invoice.default_orders_link(oid)
+        if not url:
+            return Response("No console key configured on this machine.", status=503,
+                            mimetype="text/plain")
+        return redirect(url)
 
     @app.route("/author/<test_id>/handoff", methods=["POST"])
     def author_handoff(test_id):
