@@ -193,7 +193,7 @@ def test_the_page_asks_for_the_balance():
     assert money, "money() not found"
     js = ("const els={};function $(id){return els[id]||(els[id]={style:{},textContent:'',"
           "innerHTML:'',disabled:false});}\n"
-          "const document={querySelectorAll:()=>[]};let curMethod='card';\n"
+          "const document={querySelectorAll:()=>[]};let curMethod='card',PAY_GEN=0;\n"
           + money.group(0) + "\n" + fn +
           "\nvar ORDER={payable:true,paylink_enabled:true,total_cents:47300,"
           "pay_amount_cents:4000,balance_due_cents:4000};setupPay();"

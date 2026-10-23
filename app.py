@@ -8504,6 +8504,36 @@ _ALT_PAY = {
                       "You earn extra loyalty points for choosing a fee-free method."},
 }
 
+# Who receives a Zelle payment, by name. Zelle shows the payee's registered name before
+# the client sends, so the invoice names her to match (Glen, 2026-10-23). Kept out of
+# _ALT_PAY, which other routes return whole: only the invoice's Zelle block carries it.
+_ZELLE_PAYEE_NAME = (os.environ.get("ZELLE_PAYEE_NAME") or "").strip() or "Susan Luscombe"
+
+
+def _invoice_zelle_memo(order, ref):
+    """The memo the client types into Zelle. An invoice number (INH-, DS-, an FMP ref)
+    reads "Invoice <ref>". A checkout uuid or a portal- ref means nothing to a person,
+    so those read "Order <id>", as the cart's Zelle memo does (review round 1/3)."""
+    if ref and not (_CHECKOUT_REF_RE.fullmatch(ref) or ref.startswith("portal-")):
+        return f"Invoice {ref}"
+    return f"Order {order.get('id')}"
+
+
+def _invoice_zelle_instructions(order, owed_cents):
+    """What a client needs to pay this invoice by Zelle: payee, address, the balance
+    still owed (never the original total), and the invoice number as the memo."""
+    z = _ALT_PAY["zelle"]
+    ref = str(order.get("external_ref") or "").strip()
+    link = str(z.get("pay_link") or "").strip()
+    return {"label": z["label"], "name": _ZELLE_PAYEE_NAME, "to": z["to"],
+            "amount_cents": int(owed_cents),
+            "memo": _invoice_zelle_memo(order, ref),
+            # An https link only: it is written into an href on the page.
+            "pay_link": link if link.startswith("https://") else "",
+            "note": "Put the memo above on your Zelle payment so we can match it "
+                    "to this invoice."}
+
+
 # The single-product buy page shows its own memo ("Order <id>"), so its note points at
 # that memo; the shared notes above speak of an invoice number the page does not have.
 _BUY_PAGE_ALT_PAY_NOTE = {
@@ -62194,6 +62224,9 @@ def _invoice_summary(order):
         _nr_pay_shown = None
     else:
         _nr_pay_shown = _nr_pay
+    _payable = (_invoice_payability.is_payable(order.get("status"),
+                                               order.get("pay_status"), owed)
+                and _nr_pay is None)
     return {
         "member_credit_cents": member_credit_cents,
         "points_balance_cents": _invoice_points_balance(order),
@@ -62227,9 +62260,11 @@ def _invoice_summary(order):
         # client still owe money on it. Two different questions; gating the pay
         # button on `editable` hid it on every shipped-but-unpaid order.
         "editable": order.get("status") in ("proposed", "confirmed"),
-        "payable": (_invoice_payability.is_payable(order.get("status"),
-                                                   order.get("pay_status"), owed)
-                    and _nr_pay is None),
+        "payable": _payable,
+        # Zelle payee, balance and memo: only when /pay would hand out the same.
+        "zelle_pay": (_invoice_zelle_instructions(order, owed)
+                      if (_payable and owed is not None and INVOICE_PAYLINK_ENABLED)
+                      else None),
         # Not ready to order (2026-10-20): the line and its product page, in place of Pay.
         "not_ready": ({"line": str(_nr_pay_shown), "url": _nr_pay_shown.url}
                       if _nr_pay_shown else None),
@@ -62808,8 +62843,12 @@ def api_invoice_pay(token):
     if method in ("zelle", "wise"):
         amt = "$%.2f" % (amount / 100)
         if method == "zelle":
-            to = os.environ.get("ZELLE_PAY_TO", "drglenswartwout@gmail.com")
-            instr = f"Send {amt} via Zelle to {to}, then tap “I’ve sent payment”."
+            zp = _invoice_zelle_instructions(order, amount)
+            instr = (f"Send {amt} via Zelle to {zp['name']} ({zp['to']}), with the memo "
+                     f"“{zp['memo']}”, then tap “I’ve sent payment”.")
+            return jsonify({"ok": True, "method": method, "instructions": instr,
+                            "pay_instructions": zp,
+                            "order_notes": _order_notes_for(order.get("items"))})
         else:
             link = os.environ.get("WISE_PAY_LINK", "")
             instr = (f"Pay {amt} via Wise" + (f": {link}" if link else " — we’ll email you Wise details")

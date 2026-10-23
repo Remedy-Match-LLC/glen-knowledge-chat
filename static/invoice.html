@@ -99,6 +99,7 @@
   #print-root .pd-tot .grand{ border-top:1.5px solid #3a5a40; margin-top:4px; padding-top:6px; font-weight:700; font-size:14px; }
   #print-root .pd-paid{ display:inline-block; margin-top:12px; padding:3px 10px; border:1.5px solid #3a5a40; color:#3a5a40; border-radius:6px; font-weight:700; font-size:12px; }
   #print-root .pd-note{ margin-top:16px; padding:10px 12px; background:#f7f6fb; border:1px solid #e2e2e2; border-radius:6px; font-size:12px; color:#1b1b1b; white-space:pre-wrap; }
+  #print-root .pd-pay{ margin-top:12px; font-size:12px; color:#1b1b1b; }
   #print-root .pd-note-k{ display:block; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#8a8a8a; margin-bottom:3px; }
   #print-root .pd-foot{ margin-top:20px; padding-top:10px; border-top:1px solid #e2e2e2; font-style:italic; color:#555; font-size:12px; }
 </style>
@@ -181,6 +182,10 @@
 const TOKEN = location.pathname.split('/').filter(Boolean).pop();
 const API = '/api/invoice/' + TOKEN;
 let ORDER = null, LINES = [], CATALOG = [], curMethod = 'card';
+// Every method selection and every pay() call takes a new generation. A /pay reply
+// from an older generation is dropped, so a slow earlier reply can never paint a
+// stale balance over a newer one (review round 2, 2026-10-23).
+let PAY_GEN = 0;
 const $ = id => document.getElementById(id);
 const money = c => '$' + (Number(c||0)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 // A service-fee line (e.g. Biofield Analysis) shows struck-through Value/Regular
@@ -324,10 +329,29 @@ function buildInvoicePrintHtml(o){
     <table class="pd-lines"><thead><tr><th>Item</th><th class="num">Value</th><th class="num">Regular</th><th class="num">Price</th><th class="num">Qty</th><th class="num">Amount</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6">No items.</td></tr>'}</tbody></table>
     <div class="pd-tot">${tot}</div>
+    ${zellePrintLine(o)}
     ${(o.pay_status==='paid' && Number(o.balance_due_cents||0)<=0) ? `<div class="pd-paid">Paid. Mahalo 🌿</div>` : ''}
     ${o.invoice_note ? `<div class="pd-note"><span class="pd-note-k">Notes</span>${esc(o.invoice_note)}</div>` : ''}
     <div class="pd-foot">Thank you. Questions? (808) 217-9647 · Remedy Match LLC, Hilo, Hawai‘i</div>
   </div>`;
+}
+// Zelle on the printed invoice: one line, only while a balance is owed (the server
+// sends zelle_pay only then). Glen, 2026-10-23.
+function zellePrintLine(o){
+  const p = o && o.zelle_pay;
+  if(!p || !p.to) return '';
+  return '<div class="pd-pay">Pay by Zelle to '+esc(p.name)+', '+esc(p.to)+', memo: '+esc(p.memo)+'</div>';
+}
+// The on-screen Zelle block: who to pay, the balance, and the memo.
+function zelleInstrHtml(p){
+  if(!p) return '';
+  let h = '<div><b>Pay by Zelle</b></div>'
+    + '<div>To: <b>'+esc(p.name)+'</b>, '+esc(p.to)+'</div>'
+    + '<div>Amount: <b>'+money(p.amount_cents)+'</b></div>'
+    + '<div>Memo: <b>'+esc(p.memo)+'</b></div>';
+  if(p.pay_link) h += '<div><a href="'+esc(p.pay_link)+'" target="_blank" rel="noopener">Open the Zelle QR code</a></div>';
+  if(p.note) h += '<div class="muted">'+esc(p.note)+'</div>';
+  return h + '<div class="muted">Then tap “I’ve sent payment”.</div>';
 }
 function printInvoice(){
   const root = document.getElementById('print-root');
@@ -420,7 +444,7 @@ async function applyPoints(){
   const cents = Math.max(0, Math.round(parseFloat(($('pts-in')||{}).value||'0')*100));
   const r = await fetch(API+'/apply-points', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cents})});
   const j = await r.json(); if(!j.ok){ alert(j.error||'could not apply points'); return; }
-  ORDER=j.order; renderTotals();
+  ORDER=j.order; renderTotals(); setupPay();   // the balance changed: redo the pay card
 }
 async function cancelOrder(){
   if(!confirm('Cancel this order? You can always reach out and we’ll be glad to help you reorder.')) return;
@@ -457,6 +481,7 @@ async function applyPlan(forever, btn){
     ORDER=j.order;
     LINES=linesFromOrder();
     renderLines(); renderTotals(); renderSavings();   // offer now absent -> banner hides
+    setupPay();   // the total changed: redo the pay card
   }catch(e){ $('savings-msg').textContent='Network error — please try again.'; if(btn) btn.disabled=false; }
 }
 // Join-and-save: offer the customer membership pricing on THIS order, self-served
@@ -561,6 +586,10 @@ function setupPay(){
   // Not ready to order (2026-10-20): no Pay button. The refusal line links to the
   // product page, where the waiting list is. Cancel stays.
   // Re-run after an edit (review round 3): undo what a not-ready pass hid.
+  // Any change to the order voids a Zelle block already on screen and any /pay reply
+  // still loading: both carry the old balance (review 2026-10-23).
+  PAY_GEN++;
+  $('pay-instr').style.display='none'; $('claim-btn').style.display='none'; $('order-notes').hidden=true;
   $('pay-card').style.display='';
   ['pay-methods','pay-btn'].forEach(id=>{ $(id).style.display=''; });
   $('pay-notice').innerHTML='';
@@ -586,19 +615,38 @@ function setupPay(){
   $('pay-due').style.display = '';
   $('pay-btn').textContent = 'Pay '+money(due);
   if (!ORDER.paylink_enabled){ $('pay-notice').innerHTML='<div class="notice">Online payment isn’t enabled yet — we’ll be in touch.</div>'; $('pay-btn').disabled=true; return; }
-  document.querySelectorAll('input[name=m]').forEach(el=>el.onchange=()=>{curMethod=el.value; $('claim-btn').style.display='none'; $('pay-instr').style.display='none'; $('order-notes').hidden=true;});
+  document.querySelectorAll('input[name=m]').forEach(el=>el.onchange=()=>{curMethod=el.value; PAY_GEN++; $('claim-btn').style.display='none'; $('pay-instr').style.display='none'; $('order-notes').hidden=true; $('pay-btn').style.display='';
+    // Choosing Zelle shows how to pay at once (Glen, 2026-10-23).
+    if (curMethod==='zelle') pay();});
+  // Zelle still chosen: fetch the new balance at once.
+  if (curMethod==='zelle') pay();
 }
 async function pay(){
+  const method = curMethod, gen = ++PAY_GEN;
   $('pay-msg').textContent='…';
-  const r = await fetch(API+'/pay', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({method:curMethod})});
-  const j = await r.json(); if(!j.ok){
+  let j;
+  try {
+    const r = await fetch(API+'/pay', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({method})});
+    j = await r.json();
+  } catch (e) {
+    // A network failure, or a non-JSON reply such as a 502 page: never leave "…".
+    if (gen !== PAY_GEN) return;
+    $('pay-msg').textContent='We could not reach the payment service. Please try again.';
+    $('pay-btn').style.display='';
+    return;
+  }
+  if (gen !== PAY_GEN) return;   // a newer selection or pay() superseded this reply
+  if(!j.ok){
     // A refusal carries its product page as `url`: the line links to it (2026-10-20).
     if (j.url) $('pay-msg').innerHTML='<a href="'+esc(j.url)+'">'+esc(j.error||'')+'</a>';
     else $('pay-msg').textContent=j.error||'payment unavailable';
     return; }
   $('pay-msg').textContent='';
   if (j.method==='card' && j.url){ location.href=j.url; return; }
-  if (j.instructions){ $('pay-instr').textContent=j.instructions; $('pay-instr').style.display='block'; $('claim-btn').style.display='inline-block'; }
+  if (j.method==='zelle' && j.pay_instructions){
+    $('pay-instr').innerHTML=zelleInstrHtml(j.pay_instructions); $('pay-instr').style.display='block';
+    $('claim-btn').style.display='inline-block'; $('pay-btn').style.display='none';
+  } else if (j.instructions){ $('pay-instr').textContent=j.instructions; $('pay-instr').style.display='block'; $('claim-btn').style.display='inline-block'; }
   if (window.renderOrderNotes) renderOrderNotes($('order-notes'), j.order_notes);   // Glen, 2026-10-13
 }
 async function claim(){
