@@ -42,7 +42,7 @@ PARAS = [
 OVERVIEW = [
     "Clarity is one capsule a day, for your eyes and your brain.",
     "Each capsule holds three ingredients.",
-    "Rosemary extract, standardized to 50% rosmarinic acid (400 mg), is the heart of the formula.",
+    "Rosemary extract (400 mg), standardized to 50% rosmarinic acid, is the heart of the formula.",
     "Pterostilbene 98% (75 mg), a polyphenol found in blueberries, joins it for the brain.",
     "Piperine 95% (5 mg), from black pepper, completes it.",
     "The capsule is certified organic pullulan, with zero fillers inside.",
