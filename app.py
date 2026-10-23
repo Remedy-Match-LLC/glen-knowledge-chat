@@ -61729,6 +61729,16 @@ def api_invoice_membership(token):
     try:
         priced, _was_paid = _reprice_and_persist_invoice(
             cx, order, payload, pickup=(order.get("channel") == "pickup"),
+            # Glen, 2026-10-22: adding or removing membership keeps the owner's
+            # discount, adjustment and quoted shipping, as a customer edit does. Only
+            # an in-house invoice's discount is the owner's: a checkout order stores
+            # the engine's volume discount, which member pricing would apply twice
+            # (review, 2026-10-22).
+            discount_cents_in=(order.get("discount_cents")
+                               if (order.get("source") or "") in ("in-house", "inhouse")
+                               else None),
+            adjustment_cents_in=order.get("adjustment_cents"),
+            shipping_override_cents_in=order.get("shipping_cents"),
             # The order's own lines: a held not-ready line never blocks (2026-10-20).
             allow_waitlist=True)
     except CheckoutError as e:
