@@ -182,6 +182,10 @@
 const TOKEN = location.pathname.split('/').filter(Boolean).pop();
 const API = '/api/invoice/' + TOKEN;
 let ORDER = null, LINES = [], CATALOG = [], curMethod = 'card';
+// Every method selection and every pay() call takes a new generation. A /pay reply
+// from an older generation is dropped, so a slow earlier reply can never paint a
+// stale balance over a newer one (review round 2, 2026-10-23).
+let PAY_GEN = 0;
 const $ = id => document.getElementById(id);
 const money = c => '$' + (Number(c||0)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 // A service-fee line (e.g. Biofield Analysis) shows struck-through Value/Regular
@@ -606,16 +610,16 @@ function setupPay(){
   $('pay-due').style.display = '';
   $('pay-btn').textContent = 'Pay '+money(due);
   if (!ORDER.paylink_enabled){ $('pay-notice').innerHTML='<div class="notice">Online payment isn’t enabled yet — we’ll be in touch.</div>'; $('pay-btn').disabled=true; return; }
-  document.querySelectorAll('input[name=m]').forEach(el=>el.onchange=()=>{curMethod=el.value; $('claim-btn').style.display='none'; $('pay-instr').style.display='none'; $('order-notes').hidden=true; $('pay-btn').style.display='';
+  document.querySelectorAll('input[name=m]').forEach(el=>el.onchange=()=>{curMethod=el.value; PAY_GEN++; $('claim-btn').style.display='none'; $('pay-instr').style.display='none'; $('order-notes').hidden=true; $('pay-btn').style.display='';
     // Choosing Zelle shows how to pay at once (Glen, 2026-10-23).
     if (curMethod==='zelle') pay();});
 }
 async function pay(){
-  const method = curMethod;
+  const method = curMethod, gen = ++PAY_GEN;
   $('pay-msg').textContent='…';
   const r = await fetch(API+'/pay', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({method})});
   const j = await r.json();
-  if (method !== curMethod) return;   // the client switched method while this loaded
+  if (gen !== PAY_GEN) return;   // a newer selection or pay() superseded this reply
   if(!j.ok){
     // A refusal carries its product page as `url`: the line links to it (2026-10-20).
     if (j.url) $('pay-msg').innerHTML='<a href="'+esc(j.url)+'">'+esc(j.error||'')+'</a>';

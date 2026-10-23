@@ -38,7 +38,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setitem(app_module._ALT_PAY["zelle"], "to", TO)
     monkeypatch.setitem(app_module._ALT_PAY["zelle"], "pay_link", "")
     from dashboard import inbox
-    monkeypatch.setattr(inbox, "send_email", lambda *a, **k: None)
+    sent = []
+    monkeypatch.setattr(inbox, "send_email", lambda *a, **k: sent.append((a, k)))
     from dashboard import orders as O, order_payments as OP
     cx = sqlite3.connect(db)
     cx.row_factory = sqlite3.Row
@@ -56,7 +57,7 @@ def env(tmp_path, monkeypatch):
         return oid, PP.create_order_invoice_token(oid, db_path=db)
 
     return dict(app=app_module, c=app_module.app.test_client(), cx=cx, OP=OP,
-                order=order, mp=monkeypatch)
+                order=order, mp=monkeypatch, sent=sent, db=db)
 
 
 def _part_paid(env):
@@ -192,10 +193,149 @@ def test_selecting_zelle_fetches_the_instructions_at_once():
       const els = {}; const $ = id => (els[id] = els[id] || {style:{}, hidden:false});
       const radios = ['card','zelle','wise'].map(v => ({value:v}));
       const document = {querySelectorAll: () => radios};
-      let curMethod = 'card', calls = [];
+      let curMethod = 'card', calls = [], PAY_GEN = 0;
       function pay(){ calls.push(curMethod); }
       %s
       radios[1].onchange(); radios[0].onchange(); radios[2].onchange();
       console.log(JSON.stringify(calls));
     """ % stmt)
     assert out == ["zelle"]
+
+
+
+# ── choosing Zelle records nothing and sends nothing (review round 2) ───────
+
+def _snapshot(db):
+    """Every row of every table in the test database."""
+    cx = sqlite3.connect(db)
+    try:
+        names = [r[0] for r in cx.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        return {n: sorted(map(repr, cx.execute(f'SELECT * FROM "{n}"').fetchall()))
+                for n in names}
+    finally:
+        cx.close()
+
+
+def _assert_zelle_is_inert(env, tok):
+    # The page load comes first: what the selection path starts from.
+    env["c"].get(f"/api/invoice/{tok}")
+    before = _snapshot(env["db"])
+    assert before["orders"] and before["order_payments"]   # the snapshot sees the rows
+    for _ in range(3):
+        j = env["c"].post(f"/api/invoice/{tok}/pay", json={"method": "zelle"}).get_json()
+        assert j["ok"] and j["pay_instructions"]
+        env["c"].get(f"/api/invoice/{tok}")
+    assert _snapshot(env["db"]) == before
+    assert env["sent"] == []
+
+
+def test_repeated_zelle_pay_calls_record_and_send_nothing(env):
+    _oid, tok = _part_paid(env)
+    _assert_zelle_is_inert(env, tok)
+
+
+def test_zelle_on_an_unpaid_invoice_records_and_sends_nothing(env):
+    """No claim row, no pay_status change: only "I've sent payment" does that."""
+    _oid, tok = env["order"](ref="DS-232", total=12000)
+    # A $1 payment so the ledger table has a row for the snapshot to watch.
+    env["OP"].add_payment(env["cx"], _oid, 100, "Zelle", source="manual")
+    _assert_zelle_is_inert(env, tok)
+
+
+def test_the_inert_check_can_fail(env):
+    """Guard on the guard: a claim does change the snapshot and does send mail."""
+    _oid, tok = _part_paid(env)
+    before = _snapshot(env["db"])
+    env["c"].post(f"/api/invoice/{tok}/claim-paid", json={"method": "zelle"})
+    assert env["sent"] != []
+    oid2, tok2 = env["order"](ref="DS-233", total=9000)
+    before2 = _snapshot(env["db"])
+    env["c"].post(f"/api/invoice/{tok2}/claim-paid", json={"method": "zelle"})
+    assert _snapshot(env["db"]) != before2
+
+
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_selecting_zelle_only_calls_pay_with_method_zelle():
+    """The selection path's only network call is POST /pay {method: zelle}, which the
+    tests above prove inert. Run the real onchange and the real pay() together."""
+    stmt = re.search(r"document\.querySelectorAll\('input\[name=m\]'\)\.forEach\(.*?\}\);",
+                     _src(), re.S).group(0)
+    out = _run("""
+      const els = {}; const $ = id => (els[id] = els[id] || {style:{}, hidden:false});
+      const radios = ['card','zelle','wise'].map(v => ({value:v}));
+      const document = {querySelectorAll: () => radios};
+      const window = {}; const API = '/api/invoice/T';
+      let curMethod = 'card', PAY_GEN = 0, posts = [];
+      const fetch = (url, opt) => { posts.push([url, opt.method, opt.body]);
+        return Promise.resolve({json: () => Promise.resolve({ok:true, method:'zelle',
+          pay_instructions:{name:'n', to:'t', amount_cents:1, memo:'m'}})}); };
+      %s
+      %s
+      %s
+      %s
+      %s
+      radios[1].onchange(); radios[0].onchange(); radios[2].onchange();
+      setTimeout(() => console.log(JSON.stringify(posts)), 20);
+    """ % (_const("money"), _fn("esc"), _fn("zelleInstrHtml"), "async " + _fn("pay"), stmt))
+    assert out == [["/api/invoice/T/pay", "POST", '{"method":"zelle"}']]
+
+
+# ── overlapping Zelle replies (review round 2) ──────────────────────────────
+
+def _overlap_js(script):
+    stmt = re.search(r"document\.querySelectorAll\('input\[name=m\]'\)\.forEach\(.*?\}\);",
+                     _src(), re.S).group(0)
+    return """
+      const els = {}; const $ = id => (els[id] = els[id] || {style:{}, hidden:false,
+                                                              textContent:'', innerHTML:''});
+      const radios = ['card','zelle','wise'].map(v => ({value:v}));
+      const document = {querySelectorAll: () => radios};
+      const window = {}; const API = '/api/invoice/T';
+      let curMethod = 'card', PAY_GEN = 0;
+      const pending = [];
+      const fetch = () => new Promise(res => pending.push(res));
+      const reply = cents => ({json: () => Promise.resolve({ok:true, method:'zelle',
+        pay_instructions:{name:'Susan Luscombe', to:'p@x', amount_cents:cents,
+                          memo:'Invoice DS-230'}})});
+      const tick = () => new Promise(r => setTimeout(r, 5));
+      %s
+      %s
+      %s
+      %s
+      %s
+      (async () => { %s
+        console.log(JSON.stringify(els['pay-instr'].innerHTML)); })();
+    """ % (_const("money"), _fn("esc"), _fn("zelleInstrHtml"), "async " + _fn("pay"), stmt, script)
+
+
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_an_older_zelle_reply_arriving_last_is_dropped():
+    """Zelle, card, Zelle again: the balance fell from $473 to $40 between the two
+    requests. The newer reply lands first, the older one last. $40 must stay."""
+    out = _run(_overlap_js("""
+        radios[1].onchange(); radios[0].onchange(); radios[1].onchange();
+        pending[1](reply(4000)); await tick();
+        pending[0](reply(47300)); await tick();
+    """))
+    assert "$40.00" in out and "$473.00" not in out
+
+
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_pay_now_during_a_zelle_fetch_supersedes_it():
+    """Zelle selected, then Pay now while the first fetch is in flight."""
+    out = _run(_overlap_js("""
+        curMethod = 'zelle'; radios[1].onchange(); pay();
+        pending[1](reply(4000)); await tick();
+        pending[0](reply(47300)); await tick();
+    """))
+    assert "$40.00" in out and "$473.00" not in out
+
+
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_a_zelle_reply_after_switching_to_card_paints_nothing():
+    out = _run(_overlap_js("""
+        radios[1].onchange(); radios[0].onchange();
+        pending[0](reply(47300)); await tick();
+    """))
+    assert out == ""
