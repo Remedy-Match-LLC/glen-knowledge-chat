@@ -258,3 +258,20 @@ def test_the_link_line_keeps_the_directions():
     "Is Vitamin D Syntropy a safe bet for winter energy?"])
 def test_a_safety_word_in_another_sense_is_not_linked(q):
     assert app._caution_link_slugs(q) == []
+
+
+# ---- review round 3 (2026-10-24) -------------------------------------------------------
+
+@pytest.mark.parametrize("q", ["Can I take Stress Release with my blood pressure pills?",
+                               "Can I take Stress Release with heart pills?",
+                               "Can I take Stress Release with my pills?"])
+def test_a_pill_named_as_medicine_is_a_prescription_question(q):
+    assert app._caution_subjects_asked(q) == ["prescription"]
+    assert app._caution_link_slugs(q) == ["stress-release"]
+
+
+@pytest.mark.parametrize("q", ["How many pills of Stress Release should I take a day?",
+                               "Stress Release: how many pills per day?"])
+def test_a_pill_count_is_a_dose_question(q):
+    assert app._caution_subjects_asked(q) == []
+    assert app._caution_link_slugs(q) == []

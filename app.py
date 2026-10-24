@@ -2986,11 +2986,27 @@ _CAUTION_SUBJECT_WORDS = {
                  "clotting disorder"),
     # Stress Release and Scar Silk name any prescription medication, and no list of drug
     # names is whole. These are the plain words and some common drugs (review round 2).
-    "prescription": ("prescription", "medicine", "medication", " meds ", " drugs ", " my drug", " a drug for", " my pill ", " my pills ", " other pill ", " other pills ",
+    "prescription": ("prescription", "medicine", "medication", " meds ", " drugs ", " my drug", " a drug for", " pill ", " pills ",
                      "statin", "aspirin", "ibuprofen", "lisinopril", "metoprolol",
                      "amlodipine", "losartan", "omeprazole", "prednisone", "gabapentin",
                      "chemo", "birth control", " hrt ", "hormone replacement", "ambien"),
 }
+
+# Dose wording that holds a subject word and asks nothing about the subject: "How many
+# pills of Stress Release a day?" is a dose question (review rounds 1 and 3, 2026-10-24).
+_CAUTION_SUBJECT_NOT = {
+    "prescription": (" how many pill", " pills of ", " pill of ", " pills a day",
+                     " pills per day", " pills daily", " pills should i take"),
+}
+
+
+def _asks_subject(key: str, words, q: str) -> bool:
+    """True when the padded question `q` uses one of the subject's words, outside the
+    dose wording above."""
+    for phrase in _CAUTION_SUBJECT_NOT.get(key, ()):
+        q = q.replace(phrase, " ")
+    return any(w in q for w in words)
+
 
 # A caution may name its subject in other words: Fibrosolve says anticoagulant and
 # antiplatelet, Estro-Clear says nursing (review round 1, 2026-10-21).
@@ -3037,7 +3053,7 @@ def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
     q = _subject_text(query_text)
     return [key for key, words in _CAUTION_SUBJECT_WORDS.items()
             if any(t in caution for t in (key,) + _CAUTION_SUBJECT_IN_CAUTION.get(key, ()))
-            and any(w in q for w in words)]
+            and _asks_subject(key, words, q)]
 
 
 # A question about safety touches every caution in the answer, whatever subject it names.
@@ -3063,7 +3079,7 @@ def _caution_link_slugs(query_text: str, prior_user_turns=None) -> list:
         _named_product_facts(_carried_query(query_text, prior_user_turns), given_out=given)
         q = _subject_text(query_text)
         asked = [key for key, words in _CAUTION_SUBJECT_WORDS.items()
-                 if any(w in q for w in words)]
+                 if _asks_subject(key, words, q)]
         q_safety = q
         for phrase in _CAUTION_SAFETY_NOT:
             q_safety = q_safety.replace(phrase, " ")
