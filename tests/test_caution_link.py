@@ -236,3 +236,25 @@ def test_my_pills_is_still_a_medicine_question():
 def test_the_embed_renders_every_caution_button():
     src = open("static/embed.html").read()
     assert src.count("(evt.extra_ctas || []).forEach") == 3
+
+
+# ---- review round 2 (2026-10-24) -------------------------------------------------------
+
+def test_a_linked_caution_only_answer_drops_the_repeat_it_note():
+    b = app.named_product_facts_block("Is Brain Program safe?")
+    assert app._CAUTION_ONLY_NOTE not in b and app._CAUTION_ONLY_NOTE_LINKED in b
+    plain = app.named_product_facts_block("Tell me about the Brain Program")
+    assert app._CAUTION_ONLY_NOTE in plain
+
+
+def test_the_link_line_keeps_the_directions():
+    line = app._CAUTION_LINK_LINE
+    assert "no dose change" in line and "directions still stand" in line
+    assert "no dose," not in line
+
+
+@pytest.mark.parametrize("q", [
+    "What are the warning signs of poor sleep, and does Sleep Syntropy help?",
+    "Is Vitamin D Syntropy a safe bet for winter energy?"])
+def test_a_safety_word_in_another_sense_is_not_linked(q):
+    assert app._caution_link_slugs(q) == []

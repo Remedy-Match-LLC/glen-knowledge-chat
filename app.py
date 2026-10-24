@@ -2460,8 +2460,9 @@ _CAUTION_LINK_LINE = (
     "not quote, summarise or paraphrase any of it, and do not say what else it covers. Say "
     "that this caution applies and that they should read it in full before taking {name}. "
     "{where} This replaces any rule here to repeat or copy its caution. On what the user "
-    "asks about, add nothing of your own: no time to stop, pause or restart, no dose, no "
-    "permission to use it, no monitoring and no one else to ask. " + _CAUTION_NO_ARGUMENT)
+    "asks about, add nothing of your own: no time to stop, pause or restart, no dose "
+    "change, no permission to use it, no monitoring and no one else to ask. Its approved "
+    "directions still stand: give them when asked. " + _CAUTION_NO_ARGUMENT)
 _CAUTION_LINK_WHERE = ("A link that opens it is added under your answer, so do not write "
                        "its address yourself.")
 _CAUTION_LINK_WHERE_LONG = "End your answer with this line: Read the full caution: {url}"
@@ -2535,6 +2536,10 @@ _CAUTION_COPY_REMINDER = ("Copy each caution below word for word, as its own par
                           "Do not merge them into one safety summary.")
 _CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
                       "For anything else, answer from the snippets as usual.")
+# The same note when that caution is linked, not given (review round 2, 2026-10-24).
+_CAUTION_ONLY_NOTE_LINKED = ("Only the caution below is approved text, and it is linked, "
+                             "not given. For anything else, answer from the snippets as "
+                             "usual.")
 
 
 def _caution_component_slugs(bundle, products):
@@ -2772,6 +2777,10 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                         part = _CAUTION_STAY_LINE
             if part:
                 lines.append(part)
+        if _CAUTION_ONLY_NOTE in lines and any(l.startswith(tuple(
+                html.unescape(products[k].get("name") or k).strip() + " has a caution on its"
+                for k in link_cautions if k in products)) for l in lines):
+            lines[lines.index(_CAUTION_ONLY_NOTE)] = _CAUTION_ONLY_NOTE_LINKED
         # The copy reminder stays only above a caution given in full here. Above a
         # pointer line alone it could make the bot print the pointer (review round 1).
         if _CAUTION_COPY_REMINDER in lines and not any(
@@ -3037,6 +3046,10 @@ _CAUTION_SAFETY_WORDS = (" safe ", " safely ", " safety ", " side effect", " cau
                          " warning", " contraindicat")
 
 
+# Phrases that hold a safety word and ask nothing about safety (review round 2).
+_CAUTION_SAFETY_NOT = (" warning sign", " safe bet")
+
+
 def _caution_link_slugs(query_text: str, prior_user_turns=None) -> list:
     """The products whose own opted-in caution the question touches, in slug order: it
     names a subject that caution names, or asks about safety. Their cautions are linked,
@@ -3051,7 +3064,10 @@ def _caution_link_slugs(query_text: str, prior_user_turns=None) -> list:
         q = _subject_text(query_text)
         asked = [key for key, words in _CAUTION_SUBJECT_WORDS.items()
                  if any(w in q for w in words)]
-        safety = any(w in q for w in _CAUTION_SAFETY_WORDS)
+        q_safety = q
+        for phrase in _CAUTION_SAFETY_NOT:
+            q_safety = q_safety.replace(phrase, " ")
+        safety = any(w in q_safety for w in _CAUTION_SAFETY_WORDS)
         out = []
         for slug in sorted(given):
             pr = products.get(slug) or {}
@@ -7231,7 +7247,12 @@ def chat():
         _caution_ctas = []
         try:
             _caution_ctas = _caution_link_ctas(query, _prior_user)
-            _cta = (_caution_ctas or [_cta])[0]
+            if _caution_ctas:
+                # The email step (the report, or the Terms invitation) still follows it
+                # (review round 2).
+                if (_cta or {}).get("type") == "email":
+                    _caution_ctas.append(_cta)
+                _cta = _caution_ctas[0]
         except Exception as _cle:  # noqa: BLE001 - never break chat
             print(f"[chat] caution link button skipped: {_cle!r}", flush=True)
         _rung = _CTA_RUNG.get((_cta or {}).get("type"))
