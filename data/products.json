@@ -2986,26 +2986,58 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "(formerly Rosmarinus officinalis)",
-     "dose": "400 mg"
+     "name": "Rosemary extract (Salvia rosmarinus), standardized to 50% rosmarinic acid",
+     "dose": "400 mg",
+     "page_slug": "rosmarinic-acid",
+     "page_name": "Rosmarinic acid"
     },
     {
-     "name": "Black pepper extract in Trikatu",
-     "dose": "5 mg"
+     "name": "Pterostilbene 98%",
+     "dose": "75 mg",
+     "page_slug": "pterostilbene-98",
+     "page_name": "Pterostilbene 98%"
     },
     {
-     "name": "Pterostilbene; Trans Pterostilbene",
-     "dose": "75 mg"
-    },
-    {
-     "name": "Rosmarinic acid",
-     "dose": ""
+     "name": "Piperine 95%, from Piper nigrum (black pepper)",
+     "dose": "5 mg",
+     "page_slug": "piperine-95-piper-nigrum",
+     "page_name": "Piperine 95% (Piper nigrum)"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Clarity . Clarity Clarity This formulation is inspired by a study in which Rosmarinic Acid was remarkably powerful at clearing cloudy crystalline lens tissue in vitro. One to three capsules daily supplies a therapeutic dose of Rosmarinic acid concentrated as a standardized extract from Rosemary. Premium Organic Pullulan Vegicap Experience the power of nature with our pullulan vegicaps, formulated with high-quality botanicals, bioavailability boosters, and delivery drivers for optimal absorption and delivery to the crystalline lens of the eye. The eye's lens is avascular and has the densest...",
+   "ingredients_source": "label-2026-08, Glen approved 2026-10-23",
+   "panel_note": "Other ingredients: certified organic pullulan vegicap, Healing Energy, Love, and Prayer.",
+   "description": "Clarity is one capsule a day, for your eyes and your brain.\n\nEach capsule holds three ingredients.\n\nRosemary extract (400 mg), standardized to 50% rosmarinic acid, is the heart of the formula.\n\nPterostilbene 98% (75 mg), a polyphenol found in blueberries, joins it for the brain.\n\nPiperine 95% (5 mg), from black pepper, completes it.\n\nThe capsule is certified organic pullulan, with zero fillers inside.\n\nTake 1 capsule daily with food, or as guided.",
    "bottle_type": "30 Caps",
-   "fmp_id": "532"
+   "fmp_id": "532",
+   "directions": "Take 1 capsule daily with food, or as guided.",
+   "intro": "Clarity supports both your eyes and your brain.\n\nYour retina develops from the same tissue as your brain.\n\nSo your retina and your brain share many of the same needs.\n\nRosmarinic acid, concentrated from rosemary, is the heart of Clarity.\n\nIn a laboratory study, it supported the clarity of human lens protein.\n\nThat study inspired this formula.\n\nPterostilbene is a natural polyphenol found in blueberries, and a close relative of resveratrol.\n\nIn studies of aging animals, it supported memory and healthy brain function.\n\nIn cell and animal studies, it also protected delicate eye tissues.\n\nA small amount of piperine, from black pepper, is included.",
+   "how_it_works": "One laboratory study inspired Clarity.\n\nIn it, rosmarinic acid supported the clarity of human lens protein in the laboratory.\n\nSource: Scientific Reports, 2018\n\nPterostilbene was studied in aging rats.\n\n\"Results indicated that pterostilbene was effective in reversing cognitive behavioral deficits ...\"\n\nSource: Cellular and behavioral effects of stilbene resveratrol analogues: implications for reducing the deleterious effects of aging (Journal of Agricultural and Food Chemistry, 2008)\n\nIn cell and animal studies, pterostilbene also protected delicate eye tissues.\n\nSources: Blueberry Component Pterostilbene Protects Corneal Epithelial Cells from Inflammation via Anti-oxidative Pathway (Scientific Reports, 2016), human corneal cells; Analysis of Lipid Peroxidation by UPLC-MS/MS and Retinoprotective Effects of the Natural Polyphenol Pterostilbene (Antioxidants, 2021), rabbit retina.\n\nThese findings come from laboratory and animal research.",
+   "research_links": [
+    {
+     "label": "Scientific Reports, 2018",
+     "url": "https://pubmed.ncbi.nlm.nih.gov/29921877/"
+    },
+    {
+     "label": "Cellular and behavioral effects of stilbene resveratrol analogues: implications for reducing the deleterious effects of aging",
+     "url": "https://pubmed.ncbi.nlm.nih.gov/18954071/"
+    },
+    {
+     "label": "Blueberry Component Pterostilbene Protects Corneal Epithelial Cells from Inflammation via Anti-oxidative Pathway",
+     "url": "https://pubmed.ncbi.nlm.nih.gov/26762881/"
+    },
+    {
+     "label": "Analysis of Lipid Peroxidation by UPLC-MS/MS and Retinoprotective Effects of the Natural Polyphenol Pterostilbene",
+     "url": "https://pubmed.ncbi.nlm.nih.gov/33498744/"
+    }
+   ],
+   "learn_markdown": "One laboratory study inspired Clarity.\n\nIn it, rosmarinic acid supported the clarity of human lens protein in the laboratory.\n\nSource: [Scientific Reports, 2018](https://pubmed.ncbi.nlm.nih.gov/29921877/)\n\nPterostilbene was studied in aging rats.\n\n\"Results indicated that pterostilbene was effective in reversing cognitive behavioral deficits ...\"\n\nSource: [Cellular and behavioral effects of stilbene resveratrol analogues: implications for reducing the deleterious effects of aging](https://pubmed.ncbi.nlm.nih.gov/18954071/) (Journal of Agricultural and Food Chemistry, 2008)\n\nIn cell and animal studies, pterostilbene also protected delicate eye tissues.\n\nSources: [Blueberry Component Pterostilbene Protects Corneal Epithelial Cells from Inflammation via Anti-oxidative Pathway](https://pubmed.ncbi.nlm.nih.gov/26762881/) (Scientific Reports, 2016), human corneal cells; [Analysis of Lipid Peroxidation by UPLC-MS/MS and Retinoprotective Effects of the Natural Polyphenol Pterostilbene](https://pubmed.ncbi.nlm.nih.gov/33498744/) (Antioxidants, 2021), rabbit retina.\n\nThese findings come from laboratory and animal research.",
+   "content_since": "2026-10-23",
+   "copy_pinned": [
+    "intro",
+    "description",
+    "research",
+    "ingredients"
+   ]
   },
   "glutathione-syntropy": {
    "name": "Glutathione Syntropy",

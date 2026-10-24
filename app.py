@@ -2256,6 +2256,20 @@ _CUE_NAMES = frozenset({
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
 # not (review round 1, 2026-10-13).
 _ALWAYS_CUE_NAMES = frozenset({"microbiome"})
+# Pinned products whose name is an everyday word that a client capitalises when it starts a
+# sentence ("Clarity of mind is what I lack"). Capitalised mid-sentence it names the product
+# ("Tell me about Clarity"); at the start of a sentence it needs a product cue ("Clarity
+# dose?"). Lowercase never counts. Review of the Clarity pin, 2026-10-23.
+_SENTENCE_START_CUE_NAMES = frozenset({"clarity"})
+# Pinned products that yield to any longer catalog name containing theirs, pinned or not:
+# "Crystalline Clarity" and the Clarity flower essences are other products. Opt-in, because
+# many pinned label names sit inside a longer unpinned FileMaker row ("Energessence
+# HomeoEnergetic Drops"), and those blocks must stay (review round 3, 2026-10-23).
+_YIELDS_TO_LONGER_NAMES = frozenset({"clarity"})
+# Closing quotes and brackets may sit between the full stop and the name: 'She said "I
+# feel tired." Clarity of mind ...' (review round 2), as may opening ones. A colon or
+# semicolon does not end a sentence: "Products I take: Clarity, ..." (review round 3).
+_SENTENCE_START = re.compile(r"(?:^|[.!?])[\s\"'\u201c\u201d\u2018\u2019()]*$")
 _PRODUCT_CUE_BEFORE = re.compile(
     r"\b(?:what\s+is|what's|whats|what\u2019s|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
     r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of|"
@@ -2336,17 +2350,29 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             continue
         words = name.split()
         pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
-        m = None if slug in _ALWAYS_CUE_NAMES else re.search(pattern, query_text)
+        # For a name in _YIELDS_TO_LONGER_NAMES any longer catalog name wins, eligible or
+        # not: "How much Crystalline Clarity should I take?" names Crystalline Clarity, not
+        # Clarity (review of the Clarity pin, 2026-10-23). Checked per occurrence, so a later
+        # standalone "Clarity" in the same question still counts (review round 2).
+        def _own(mi, slug=slug):
+            return (slug not in _YIELDS_TO_LONGER_NAMES
+                    or not _inside_longer_catalog_name(query_text, slug, mi.span(), products))
+        m = None if slug in _ALWAYS_CUE_NAMES else next(
+            (mi for mi in re.finditer(pattern, query_text) if _own(mi)), None)
         if slug in _ALWAYS_CUE_NAMES:
             m = next((mi for mi in re.finditer(pattern, query_text, re.IGNORECASE)
-                      if _has_product_cue(query_text, *mi.span(), strict=True)), None)
+                      if _own(mi) and _has_product_cue(query_text, *mi.span(), strict=True)), None)
+        elif slug in _SENTENCE_START_CUE_NAMES:
+            m = next((mi for mi in re.finditer(pattern, query_text)
+                      if _own(mi) and (not _SENTENCE_START.search(query_text[:mi.start()])
+                                       or _has_product_cue(query_text, *mi.span()))), None)
         elif not m:
             # Any case: a coined name cannot occur in ordinary speech. A name that is also
             # an everyday phrase ("clear the way", "reverse age") needs a product cue
             # beside it (formulation-9d and Glen, 2026-10-09: clients type lowercase).
             for mi in re.finditer(pattern, query_text, re.IGNORECASE):
-                if slug in _CASE_FREE_NAMES or (slug in _CUE_NAMES
-                                                 and _has_product_cue(query_text, *mi.span())):
+                if _own(mi) and (slug in _CASE_FREE_NAMES or (
+                        slug in _CUE_NAMES and _has_product_cue(query_text, *mi.span()))):
                     m = mi
                     break
         if m:
@@ -2355,6 +2381,23 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
     return {s: sp for s, sp in spans.items()
             if not any(o != s and o_sp[0] <= sp[0] and sp[1] <= o_sp[1] and o_sp != sp
                        for o, o_sp in spans.items())}
+
+
+def _inside_longer_catalog_name(query_text, slug, span, products):
+    """True when the matched name at `span` lies inside a longer catalog product name
+    that the question also contains."""
+    frag = " ".join(query_text[span[0]:span[1]].lower().split())
+    for o, op in products.items():
+        if o == slug or not isinstance(op, dict):
+            continue
+        oname = html.unescape(op.get("name") or "").replace("\u2122", "").strip()
+        if len(oname) <= len(frag) or frag not in " ".join(oname.lower().split()):
+            continue
+        pat = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in oname.split()) + r"(?![\w+])"
+        if any(mi.start() <= span[0] and span[1] <= mi.end() and mi.span() != span
+               for mi in re.finditer(pat, query_text, re.IGNORECASE)):
+            return True
+    return False
 
 
 from collections import namedtuple as _namedtuple  # noqa: E402
@@ -11054,6 +11097,22 @@ def _bundle_caution_sections(p):
     return sections
 
 
+def _research_body(p, pin, how, slug):
+    """The research section's body. Only an approved (pinned) research text carries
+    `links`: each is a label that appears in that text plus an https URL, and the page
+    turns the label into a link with text nodes only (Clarity, Glen 2026-10-23)."""
+    body = {"how_it_works": how, "learn_url": f"/begin/learn/{slug}"}
+    if "research" in pin:
+        links = [{"label": lk["label"], "url": lk["url"]}
+                 for lk in (p.get("research_links") or [])
+                 if isinstance(lk, dict) and isinstance(lk.get("label"), str)
+                 and isinstance(lk.get("url"), str) and lk["label"]
+                 and lk["url"].startswith("https://") and lk["label"] in (how or "")]
+        if links:
+            body["links"] = links
+    return body
+
+
 @app.route("/begin/product-page-data/<slug>")
 def begin_product_page_data(slug):
     p = _get_product(slug)
@@ -11132,7 +11191,7 @@ def begin_product_page_data(slug):
                   "note_link": p.get("panel_note_link") or None,
                   "capsule": _capsule_for(slug, p)}},
         {"id": "research",    "title": "The research",    "default_open": False,
-         "body": {"how_it_works": how, "learn_url": f"/begin/learn/{slug}"}},
+         "body": _research_body(p, _pin, how, slug)},
         {"id": "images",      "title": "Images",          "default_open": False, "body": {"images": p.get("page_images", [])}},
         # The bottle: Miron violet glass, packaging and microplastics. Glen moved it here on
         # 2026-09-08, after everything about what is in the formula and immediately before

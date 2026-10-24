@@ -79,6 +79,7 @@
     .sp-ing-note{ font-size:13px; color:var(--cream); opacity:0.75; margin:12px 0 0;
                   font-style:italic; }
     .sp-ing-note-link{ color:inherit; text-decoration:underline; }
+    .sp-how-source{ color:inherit; text-decoration:underline; }
     .sp-ing-directions{ font-size:13.5px; color:var(--cream); margin:14px 0 0; }
     .sp-ing-warning{ font-size:13.5px; color:var(--cream); margin:10px 0 0;
                      padding:9px 11px; border-radius:6px;
@@ -839,7 +840,25 @@
         var hw = document.createElement('p');
         hw.className = 'sp-how';
         hw.setAttribute('data-ai-text', '1');
-        hw.textContent = body.how_it_works;
+        // An approved research text may carry source links: each label, found in order
+        // in the text, becomes a link. Text nodes only, never HTML; https URLs only.
+        var text = String(body.how_it_works), pos = 0;
+        var links = Array.isArray(body.links) ? body.links : [];
+        links.forEach(function(lk){
+          if (!lk || !lk.label || !/^https:\/\//.test(String(lk.url || ''))) return;
+          var at = text.indexOf(lk.label, pos);
+          if (at < 0) return;
+          if (at > pos) hw.appendChild(document.createTextNode(text.slice(pos, at)));
+          var sa = document.createElement('a');
+          sa.className = 'sp-how-source';
+          sa.href = lk.url;
+          sa.target = '_blank';
+          sa.rel = 'noopener';
+          sa.textContent = lk.label;
+          hw.appendChild(sa);
+          pos = at + lk.label.length;
+        });
+        hw.appendChild(document.createTextNode(text.slice(pos)));
         frag.appendChild(hw);
       }
       var learnUrl = (body && body.learn_url) ? body.learn_url : ('/begin/learn/' + encodeURIComponent(slug));
