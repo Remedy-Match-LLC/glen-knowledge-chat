@@ -3594,7 +3594,8 @@ _STEP_CSS = ("<style>.progress td{white-space:nowrap}.progress .stepdone{color:#
              ".progress .approx a{font-style:italic}</style>")
 
 
-_REQ_SOURCE = {"email": "email", "portal": "portal chat", "ghl": "GoHighLevel"}
+_REQ_SOURCE = {"email": "email", "portal": "portal chat", "ghl": "GoHighLevel",
+               "order": "paid order"}
 
 
 def _request_row(r):
@@ -3610,8 +3611,11 @@ def _request_row(r):
     who = (f"<span class=pill>{pill}</span> {_e(r.get('name') or email or '(unnamed)')}"
            + (f"<div class=food>{_e(email)}</div>" if email else "")
            + (f"<div class=food>Asked by {_e(payer)}</div>" if payer and payer != email else "")
+           + (f"<div class=food>{_e(quote[:90])}{'&hellip;' if len(quote) > 90 else ''}</div>"
+              if quote and r.get("source") == "order" else "")
            + (f"<div class=food title=\"{_e(quote)}\">&ldquo;{_e(quote[:90])}"
-              f"{'&hellip;' if len(quote) > 90 else ''}&rdquo;</div>" if quote else ""))
+              f"{'&hellip;' if len(quote) > 90 else ''}&rdquo;</div>"
+              if quote and r.get("source") != "order" else ""))
     when = (f"{_e(short_date(r.get('requested_at')) or str(r.get('requested_at') or '')[:10])}"
             f"<div class=food>by {_e(src)}</div>")
     if r.get("status") == "pending_yes":
