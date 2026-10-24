@@ -2206,8 +2206,8 @@ _GATED_FACTS_NOTE = (
     "This user has not yet agreed to the Terms. The consent rule still holds: do not tailor "
     "anything to their body or condition, and do not recommend this product for a condition. "
     "You may read back this text: what the product is, and "
-    "\"The label directions are ...\" and \"The caution on the product page is ...\", in "
-    "this text's words. "
+    "\"The label directions are ...\" and, only where this text gives a caution, \"The "
+    "caution on the product page is ...\", in this text's words. "
     "This overrides the rule above about naming a condition from the user's question: even "
     "if they name their own condition, do not say this product is for, helps or suits it, "
     "and do not say the dose suits them. Then invite them to agree to the Terms for guidance "
@@ -2471,6 +2471,24 @@ _NO_DESCRIPTION = ("No description of {name} is approved here. If asked what it 
                    "not make. Its dose and caution come only from this text.")
 _NO_DESCRIPTION_GATED = ("No description of {name} is approved here. If asked what it is, "
                          "give its name and its Page, and describe it no further.")
+# A pinned product with no caution. Asked about medicines (knowledge read-back, 2026-10-23),
+# the bot quoted "The caution on the product page is: this product contains soy and hemp
+# ..." for Stress Release, which has no caution anywhere: the gated note offered that
+# sentence and the model filled it in. The answer is Glen's wording ("yes", 2026-10-23),
+# widened to safety, pregnancy, nursing and conditions (Glen "yes", review round 2).
+_NO_CAUTION = ("{name} has no caution on its product page. Never quote, invent or attribute "
+               "a caution to that page. If asked about taking {name} with a medicine, say: "
+               "\"The product page carries no caution for {name}. Please ask Dr. Glen before "
+               "combining it with any medicine.\" If asked whether {name} is safe, or about "
+               "taking it during pregnancy or nursing or with a health condition, say: \"The "
+               "product page carries no caution for {name}. Please ask Dr. Glen before taking "
+               "it.\" Never say or imply that no caution means it is safe. This line is about "
+               "{name} alone. Another "
+               "product's caution does not apply to {name}, and the rule to name no one else to "
+               "ask does not cover {name}: still give this answer for it.")
+# Only where the block carries directions. Where it has none, asking for them sent the
+# model to the snippets for a dose (review round 3).
+_NO_CAUTION_DIRECTIONS = " Its directions above still stand: repeat them as written."
 _CAUTION_COPY_REMINDER = ("Copy each caution below word for word, as its own paragraph. "
                           "Do not merge them into one safety summary.")
 _CAUTION_ONLY_NOTE = ("Only the caution below is approved text. Repeat it in full. "
@@ -2640,6 +2658,17 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None) -
                 # description now that only a pinned one reaches the bot (review round 3).
                 parts.insert(2, (_NO_DESCRIPTION_GATED if gated else _NO_DESCRIPTION)
                              .format(name=name))
+            # Only in a block that has approved text: a product with none brings no block.
+            # A bundle's components may carry cautions it does not show, so only a single
+            # product is said to have none. The medicine sentence does not fit a book or a
+            # boxed item with no ingredients, the Mithreal apparel (review round 2).
+            _not_taken = (product.get("bottle_type") == "book"
+                          or (product.get("bottle_type") == "own-box"
+                              and not product.get("ingredients")))
+            if pinned and not cautions and not product.get("bundle") and not _not_taken:
+                _dirs = (product.get("directions") or "").strip()
+                parts.append(_NO_CAUTION.format(name=name)
+                             + (_NO_CAUTION_DIRECTIONS if _dirs else ""))
             blocks.append(parts)
             all_caution_only = all_caution_only and caution_only
             any_caution_only = any_caution_only or caution_only
