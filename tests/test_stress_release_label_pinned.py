@@ -173,7 +173,9 @@ def test_replaying_the_manual_corrections_keeps_the_label(entry):
     spec.loader.exec_module(ae)
     corr = json.load(open(os.path.join(ROOT, "data", "products-manual-corrections.json")))
     fields = ("intro", "description", "ingredients", "panel_note",
-              "directions", "copy_pinned", "content_since")
+              "directions", "copy_pinned", "content_since",
+              # The caution, store spec 2026-10-24-stress-release-caution.
+              "warning", "chat_caution")
     # A rebuilt record: FileMaker's amounts and the old scraped copy back.
     bare = {k: v for k, v in copy.deepcopy(entry).items() if k not in fields}
     bare.update(description="Stress Release can be taken at whatever time of day", intro="",
