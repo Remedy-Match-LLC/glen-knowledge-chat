@@ -1,0 +1,106 @@
+"""The bot never argues with a caution, and a no-caution answer loses its interaction snippets.
+
+Production's after-deploy check, 2026-10-24: asked "Can I take Stress Release before
+surgery?", the bot called the caution one-size, said many supplements are safe to continue
+and offered a pause of days or weeks. Glen said "yes" in the production tab to two fixes for
+every opted-in caution: surgery and autoimmune subject words, and a rule against arguing
+with the caution or adding a time window. The same filter now drops interaction snippets
+where a product says it has no caution (knowledge read-back on Clarity, 2026-10-24).
+"""
+import importlib
+from types import SimpleNamespace
+
+import pytest
+
+NO_ARGUMENT = ("Do not argue with, qualify or weigh the caution, and give no time window it "
+               "does not state.")
+STARGROVE = {"book": "Herb, Nutrient, and Drug Interactions", "author": "Stargrove"}
+
+
+@pytest.fixture
+def appmod(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake")
+    import app as a
+    importlib.reload(a)
+    return a
+
+
+def _matches():
+    return [SimpleNamespace(metadata=dict(STARGROVE)),
+            SimpleNamespace(metadata={"source": "glen", "title": "Calm and the nervous system"})]
+
+
+def test_the_stay_line_and_the_closing_reminder_forbid_arguing(appmod):
+    assert appmod._CAUTION_STAY_LINE.endswith(" " + NO_ARGUMENT)
+    assert appmod._CAUTION_CLOSING_REMINDER.endswith(" " + NO_ARGUMENT)
+
+
+def test_the_surgery_answer_carries_the_rule_after_the_caution_and_at_the_end(appmod):
+    q = "Can I take Stress Release before surgery?"
+    b = appmod.named_product_facts_block(q)
+    warning = appmod._PRODUCTS["products"]["stress-release"]["warning"]
+    assert b.index(NO_ARGUMENT) > b.index(warning)
+    assert b.count(NO_ARGUMENT) == 2 and b.endswith(NO_ARGUMENT)
+
+
+@pytest.mark.parametrize("q, subject", [
+    ("Can I take Stress Release before surgery?", "surgery"),
+    ("I have an operation next week. Is Brain Cleanse ok?", "surgery"),
+    ("Is Angiostasis ok before anesthesia?", "surgery"),
+    ("Can I take Fibrosolve before my surgical procedure?", "surgery"),
+    ("I have lupus. Can I take Stress Release?", "autoimmune"),
+    ("Is Sleep Syntropy ok with rheumatoid arthritis?", "autoimmune"),
+    ("I have an autoimmune condition. Is Brain Cleanse safe?", "autoimmune"),
+])
+def test_surgery_and_autoimmune_questions_name_the_subject(appmod, q, subject):
+    assert subject in appmod._caution_subjects_asked(q)
+    ms = _matches()
+    assert appmod._drop_caution_subject_snippets(ms, q) == ms[1:]
+
+
+def test_a_caution_that_names_neither_takes_no_such_subject(appmod):
+    # Vitamin D Syntropy's caution names neither surgery nor an autoimmune condition.
+    assert appmod._caution_subjects_asked("Is Vitamin D Syntropy ok before surgery?") == []
+    assert appmod._caution_subjects_asked("Is Vitamin D Syntropy ok with lupus?") == []
+
+
+def test_operate_machinery_and_cooperation_are_not_surgery(appmod):
+    q = "Can I take Brain Cleanse for better cooperation at work?"
+    assert "surgery" not in appmod._caution_subjects_asked(q)
+
+
+@pytest.mark.parametrize("q", [
+    "Can I take Clarity with my blood pressure medicine?",
+    "Is Clarity safe while pregnant?",
+    "Does Clarity interact with sertraline?",
+    "Can I take Clarity before surgery?",
+])
+def test_a_no_caution_product_loses_the_interaction_snippets(appmod, q):
+    assert "Clarity has no caution on its product page." in appmod.named_product_facts_block(q)
+    assert appmod._no_caution_subject_asked(q)
+    ms = _matches()
+    assert appmod._drop_caution_subject_snippets(ms, q) == ms[1:]
+
+
+def test_a_no_caution_product_keeps_its_snippets_for_other_questions(appmod):
+    q = "What is in Clarity?"
+    assert not appmod._no_caution_subject_asked(q)
+    ms = _matches()
+    assert appmod._drop_caution_subject_snippets(ms, q) is ms
+
+
+def test_a_question_with_no_product_keeps_its_snippets(appmod):
+    q = "Does ashwagandha interact with my thyroid medicine?"
+    assert not appmod._no_caution_subject_asked(q)
+    ms = _matches()
+    assert appmod._drop_caution_subject_snippets(ms, q) is ms
+
+
+def test_a_follow_up_about_a_no_caution_product_loses_them_too(appmod):
+    prior = ["Tell me about Clarity."]
+    q = "Can I take it with my blood pressure medicine?"
+    assert appmod._no_caution_subject_asked(q, prior)
+    ms = _matches()
+    assert appmod._drop_caution_subject_snippets(ms, q, prior) == ms[1:]

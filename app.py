@@ -2431,10 +2431,16 @@ _CAUTION_NO_ADDITIONS = (
 # vitamin D3 without K2, taken from warfarin snippets (review round 2, variant a). "Give
 # only the caution's words" made 4 of 6 answers quote one sentence, so it asks for every
 # sentence first (variant d).
+# Production's after-deploy check (2026-10-24): asked "Can I take Stress Release before
+# surgery?", the bot called the caution one-size, said many supplements are safe to
+# continue and offered a pause of days or weeks. Glen "yes" to the no-argument sentence
+# for every opted-in caution (production tab, 2026-10-24).
+_CAUTION_NO_ARGUMENT = ("Do not argue with, qualify or weigh the caution, and give no "
+                        "time window it does not state.")
 _CAUTION_STAY_LINE = (
     "Copy every sentence of the caution above. Then add nothing of your own on any "
     "medicine, pregnancy or condition it names: no monitoring, dose, tolerance or "
-    "other-product advice, and no one else to ask.")
+    "other-product advice, and no one else to ask. " + _CAUTION_NO_ARGUMENT)
 # The last words of the user message when an opted-in caution is in the answer. The facts
 # block is already last, after the snippets; this closes it (review round 2, variants b and
 # c: the read-back answers took INR monitoring from a cited drug interaction book).
@@ -2443,7 +2449,7 @@ _CAUTION_CLOSING_REMINDER = (
     "that caution is the whole answer. Copy every sentence of it. Call it the caution on "
     "the product page, never the label. On that subject, skip the drug interaction text "
     "in the snippets: do not use it, quote it or cite it. Add no monitoring, INR, dose, "
-    "tolerance or other-product advice, and name no one else to ask.")
+    "tolerance or other-product advice, and name no one else to ask. " + _CAUTION_NO_ARGUMENT)
 _SEVERAL_CAUTIONS_RULE = (
     "There is more than one caution below. Copy each one word for word, as its own "
     "paragraph starting \"Caution for <product name>:\", every sentence of it, even where "
@@ -2528,7 +2534,8 @@ def _bundle_bot_cautions(bundle, products):
             if products[c].get("chat_caution") and (products[c].get("warning") or "").strip()]
 
 
-def _named_product_facts(query_text: str, gated: bool = False, given_out=None) -> str:
+def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
+                         no_caution_out=None) -> str:
     """Approved store text for the catalog products the user names in the question.
 
     The chat does not search `specific-formulations`, so a product whose facts live
@@ -2681,6 +2688,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None) -
                 _dirs = (product.get("directions") or "").strip()
                 parts.append(_NO_CAUTION.format(name=name)
                              + (_NO_CAUTION_DIRECTIONS if _dirs else ""))
+                if no_caution_out is not None:
+                    no_caution_out.add(slug)
             blocks.append(parts)
             all_caution_only = all_caution_only and caution_only
             any_caution_only = any_caution_only or caution_only
@@ -2894,7 +2903,21 @@ _CAUTION_SUBJECT_WORDS = {
     "seizure": ("seizure", "epilepsy"),
     "sedative": ("sedative",),
     "liver disease": ("liver disease",),
+    # Six opted-in cautions name surgery and three an autoimmune condition (Glen "yes",
+    # production tab, 2026-10-24). " operation" starts a word, so "cooperation" is no hit.
+    "surgery": ("surgery", "surgical", "surgeon", " operation", "anesthesia", "anaesthesia",
+                "pre op", "preop"),
+    "autoimmune": ("autoimmune", "auto immune", "lupus", "rheumatoid", "hashimoto", "graves",
+                   "multiple sclerosis", "celiac", "coeliac", "crohn", "ulcerative colitis",
+                   "psoriasis", "sjogren"),
 }
+# A product that says it has no caution asks the bot to add nothing from the snippets
+# about interactions or safety. Its question can name any medicine, pregnancy or condition,
+# so every subject word counts, and so do the plain words for medicine and safety.
+_NO_CAUTION_SUBJECT_WORDS = tuple(sorted(
+    {w for words in _CAUTION_SUBJECT_WORDS.values() for w in words}
+    | {"medicine", "medication", "meds", "drug", "prescription", "pill", "interact",
+       "safe", "condition"}))
 # A caution may name its subject in other words: Fibrosolve says anticoagulant and
 # antiplatelet, Estro-Clear says nursing (review round 1, 2026-10-21).
 _CAUTION_SUBJECT_IN_CAUTION = {
@@ -2932,14 +2955,32 @@ def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
         return []
     given = set()
     _named_product_facts(_carried_query(query_text, prior_user_turns), given_out=given)
-    # Punctuation becomes a space, so "St. John's" reads as "st john s" (review round 3).
-    norm = lambda t: " ".join(re.sub(r"[^a-z0-9]+", " ", t.lower()).split())
-    caution = norm(" ".join((products.get(k) or {}).get("warning") or "" for k in sorted(given)
-                            if (products.get(k) or {}).get("chat_caution")))
-    q = norm(query_text)
+    caution = _subject_text(" ".join((products.get(k) or {}).get("warning") or ""
+                                     for k in sorted(given)
+                                     if (products.get(k) or {}).get("chat_caution")))
+    q = _subject_text(query_text)
     return [key for key, words in _CAUTION_SUBJECT_WORDS.items()
             if any(t in caution for t in (key,) + _CAUTION_SUBJECT_IN_CAUTION.get(key, ()))
             and any(w in q for w in words)]
+
+
+def _subject_text(text: str) -> str:
+    """Lower case, punctuation as a space, padded so a word can be matched by its start.
+    "St. John's" reads as "st john s" (review round 3)."""
+    return " " + " ".join(re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).split()) + " "
+
+
+def _no_caution_subject_asked(query_text: str, prior_user_turns=None) -> bool:
+    """True when the answer carries a product's no-caution line and this message names a
+    medicine, pregnancy, a condition or safety. Knowledge read-back, 2026-10-24: asked
+    about Clarity with blood pressure medicine, the interaction snippets were still there
+    for the bot to draw a verdict from."""
+    if not query_text or not (_PRODUCTS or {}).get("products"):
+        return False
+    none = set()
+    _named_product_facts(_carried_query(query_text, prior_user_turns), no_caution_out=none)
+    q = _subject_text(query_text)
+    return bool(none) and any(w in q for w in _NO_CAUTION_SUBJECT_WORDS)
 
 
 def _chat_prior_user_turns(history, session_id) -> list:
@@ -2965,11 +3006,13 @@ def _chat_prior_user_turns(history, session_id) -> list:
 
 def _drop_caution_subject_snippets(matches, query_text: str, prior_user_turns=None):
     """Drug interaction snippets are dropped only when the answer carries an opted-in
-    caution and the question names a subject that caution names. Every other question
-    keeps its snippets unchanged."""
+    caution and the question names a subject that caution names, or when it carries a
+    no-caution line and the question names a medicine, a condition or safety. Every
+    other question keeps its snippets unchanged."""
     # Fails open: any error keeps every snippet, so the answer goes on (review round 3).
     try:
-        if not matches or not _caution_subjects_asked(query_text, prior_user_turns):
+        if not matches or not (_caution_subjects_asked(query_text, prior_user_turns)
+                               or _no_caution_subject_asked(query_text, prior_user_turns)):
             return matches
     except Exception as e:
         print(f"[chat] caution snippet filter failed, snippets kept: {e!r}", flush=True)
