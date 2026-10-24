@@ -69,6 +69,14 @@ def _chat(q, **extra):
     "Can I have wine with Brain Cleanse?",
     "I have fatty liver. Is Brain Cleanse ok?",
     "I have a bleeding disorder, is Fibrosolve ok?",
+    # Review round 2: misses.
+    "I have an op on Monday. Is Stress Release ok?",
+    "I take a drug for my heart. Can I take Stress Release?",
+    "Can my 12 yo take Sleep Syntropy?",
+    "Is Stress Release ok before my knee replacement?",
+    "I am getting my wisdom teeth out. Is Stress Release ok?",
+    "I have heavy periods. Can I use Angiostasis?",
+    "I cut my hand badly. Can I take AngiogenX?",
 ])
 def test_a_caution_question_gets_the_caution_answer(q):
     assert app._caution_synth_instr(q).startswith(RULES)
@@ -80,6 +88,14 @@ def test_a_caution_question_gets_the_caution_answer(q):
     "Is Vitamin D Syntropy ok before surgery?",               # its caution names no surgery
     "Can I buy Stress Release at the co-op?",                 # review round 1
     "Is Stress Release a drug?",                              # review round 1
+    # Review round 2: word parts of ordinary questions.
+    "Does Brain Cleanse help my kidneys?",
+    "Sleep Syntropy dosage for an eighteen stone man?",
+    "Is Sleep Syntropy good before a fifteen minute nap?",
+    "Can Brain Cleanse help after a childhood trauma?",
+    "Is Sleep Syntropy good for someone who babysits at night?",
+    "What procedure should I follow to take AngiogenX?",
+    "Is Stress Release a replacement for my sleeping aid?",
 ])
 def test_every_other_question_keeps_its_frame(q):
     assert app._caution_synth_instr(q) is None
@@ -90,7 +106,8 @@ def test_the_caution_answer_lifts_the_frame_and_forbids_windows_and_restarts():
                   "break-and-rebuild",
                   "1. Open with the caution, every sentence of it",
                   "Give no time to stop, pause or restart",
-                  "give it in full even when you may not give individual guidance"):
+                  "give it in full even when you may not give individual guidance",
+                  "that one next step is the invitation to agree to them"):
         assert words in RULES, words
 
 

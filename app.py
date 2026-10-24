@@ -2909,21 +2909,25 @@ _CAUTION_SUBJECT_WORDS = {
     # 1). A leading space starts a word, so "cooperation" is no hit, and "operate
     # machinery", which two cautions say, is not surgery either.
     "surgery": ("surger", "surgical", "surgeon", " operation", " operated on",
-                " operating room", "anesthe", "anaesthe", "pre op", "preop", "my op ", "procedure",
-                "teeth pulled", "tooth pulled", "tooth extraction", "dental work"),
+                " operating room", "anesthe", "anaesthe", "pre op", "preop", "my op ", " an op ", "my procedure", "a procedure",
+                "teeth pulled", "tooth pulled", "teeth out", "tooth extraction", "dental work",
+                "knee replacement", "hip replacement", "joint replacement"),
     "autoimmune": ("autoimmune", "auto immune", "lupus", "rheumatoid", "hashimoto", "graves",
                    "multiple sclerosis", "celiac", "coeliac", "crohn", "ulcerative colitis",
                    "psoria", "sjogren", "thyroiditis", "type 1 diabetes"),
     # Five cautions name these too (review round 1, 2026-10-24). "co op" is no surgery.
     "alcohol": ("alcohol", "wine", "beer", "liquor", "cocktail"),
-    "child": ("child", " kid", " son ", " daughter", "year old", "toddler", "baby", "teen"),
-    "injur": ("injur", "broke my", "broken", "fracture", "sprain", "wound"),
-    "menses": ("menses", "menstrua", "my period"),
+    # Whole words, so "kidneys", "eighteen", "childhood" and "babysits" are no hit
+    # (review round 2).
+    "child": (" child ", " children ", " kid ", " kids ", " son ", " daughter", "year old",
+              " yo ", "toddler", " baby ", " infant", " teen ", " teens ", "teenager"),
+    "injur": ("injur", "broke my", "broken", "fracture", "sprain", "wound", "cut my"),
+    "menses": ("menses", "menstrua", "my period", "heavy period"),
     "bleeding": ("bleeding", "hemophilia", "haemophilia", "bruise easily", "von willebrand",
                  "clotting disorder"),
     # Stress Release and Scar Silk name any prescription medication, and no list of drug
     # names is whole. These are the plain words and some common drugs (review round 2).
-    "prescription": ("prescription", "medicine", "medication", " meds ", " drugs ", " my drug", " pill ", " pills ",
+    "prescription": ("prescription", "medicine", "medication", " meds ", " drugs ", " my drug", " a drug for", " pill ", " pills ",
                      "statin", "aspirin", "ibuprofen", "lisinopril", "metoprolol",
                      "amlodipine", "losartan", "omeprazole", "prednisone", "gabapentin",
                      "chemo"),
@@ -3050,7 +3054,8 @@ _CAUTION_ANSWER_RULES = (
     "3. Close with one next step.\n"
     "Give no time to stop, pause or restart, no dose change, and no permission to use it "
     "that the caution does not state. The caution is the product page's own text, so give "
-    "it in full even when you may not give individual guidance. ")
+    "it in full even when you may not give individual guidance. If the user has not agreed "
+    "to the Terms, that one next step is the invitation to agree to them. ")
 
 
 def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False):
