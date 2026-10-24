@@ -3023,6 +3023,36 @@ def _drop_caution_subject_snippets(matches, query_text: str, prior_user_turns=No
     return [m for m in matches if not _is_drug_interaction_snippet(m.metadata)]
 
 
+# Ahead of the synthesis instruction when the question names a subject an opted-in
+# caution names. Production's check after #2127 (2026-10-24): asked "I have an operation
+# next week. Is Stress Release okay?", the brief's consensus, limitation and assumption
+# beats made the caution the consensus to question ("a blanket 'stop everything' approach
+# assumes ..."), and answers gave "5-7 days" and leave to restart. A lupus question behind
+# the consent gate gave no caution at all. Glen "yes" to never arguing with a caution
+# (production tab, 2026-10-24).
+_CAUTION_ANSWER_INSTR = (
+    "CAUTION ANSWER. The user asks about a medicine, pregnancy, surgery or condition that "
+    "a product caution below names. For this answer, do not use the consensus, limitation, "
+    "assumption and tease beats, or a break-and-rebuild arc: the caution is not a "
+    "consensus to question or improve on. Open with the caution, every sentence of it, in "
+    "the format the text below sets. Then add only approved text the user asked for, and "
+    "one next step. Give no time to stop, pause or restart, and no permission to use it "
+    "that the caution does not state. The caution is the product page's own text, so give "
+    "it in full even when you may not give individual guidance. Keep the word cap, the "
+    "Sources line and the CTA directive line of the instruction below.\n\n")
+
+
+def _caution_answer_instr(query_text: str, prior_user_turns=None) -> str:
+    """The caution answer instruction, when the question names a subject an opted-in
+    caution in this answer names. Fails open to "", so the answer goes on as before."""
+    try:
+        return _CAUTION_ANSWER_INSTR if _caution_subjects_asked(
+            query_text, prior_user_turns) else ""
+    except Exception as e:
+        print(f"[chat] caution answer instruction skipped: {e!r}", flush=True)
+        return ""
+
+
 def build_product_directive(snippets_text: str = "", query_text: str = ""):
     """Build the per-request product-routing directive injected into the
     synthesis prompt. Includes the alias map and today's coupon if any.
@@ -6938,7 +6968,7 @@ def chat():
             if turn.get("role") in ("user", "assistant") and turn.get("content"):
                 messages.append({"role": turn["role"], "content": turn["content"]})
 
-        synth_instr = (
+        synth_instr = _caution_answer_instr(query, _prior_user) + (
             _long_form_synth_instr(bool(auth_user))
             if mode == "full" else
             _brief_synth_instruction()
@@ -16060,7 +16090,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
     )
     product_block = f"{product_directive}\n\n" if product_directive else ""
 
-    synth_instr = _long_form_synth_instr(is_logged_in)
+    synth_instr = _caution_answer_instr(query, _prior_user) + _long_form_synth_instr(is_logged_in)
     user_msg = (
         f"USER QUESTION: {query}\n\n"
         f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
@@ -16245,7 +16275,8 @@ def _full_report_stream(log_id, query, level, session_id,
         )
         product_block = f"{product_directive}\n\n" if product_directive else ""
 
-        synth_instr = _long_form_synth_instr(is_logged_in)
+        synth_instr = (_caution_answer_instr(query, _prior_user)
+                       + _long_form_synth_instr(is_logged_in))
         user_msg = (
             f"USER QUESTION: {query}\n\n"
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
