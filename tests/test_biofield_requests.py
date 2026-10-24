@@ -720,3 +720,130 @@ def test_quiet_rows_and_unalerted_duplicates_do_not_silence(cx):
     cx.commit()
     fourth = br.record(cx, req("m5"))
     assert br.get(cx, fourth["id"])["quiet"] == 0
+
+
+# ── Paid Biofield Analysis orders (Glen, 2026-10-23: "yes, paid analysis alerts",
+#    then "bundled as possible") ───────────────────────────────────────────────
+
+def _order(oid=271, items=("biofield-analysis",), pay="paid",
+           paid_at="2026-10-23T19:01:34.444813+00:00", total=20000, **kw):
+    o = {"id": oid, "pay_status": pay, "paid_at": paid_at, "total_cents": total,
+         "email": " Dana@X.com ", "name": "Dana Tamraz",
+         "items": [{"slug": s, "name": s, "qty": 1} for s in items]}
+    o.update(kw)
+    return o
+
+
+def test_an_order_of_the_analysis_alone_is_a_clear_request():
+    r = br.order_to_request(_order())
+    assert r == {"source": "order", "source_ref": "271", "email": "dana@x.com",
+                 "name": "Dana Tamraz", "payer_email": "", "requested_at": "2026-10-23T19:01:34Z",
+                 "quote": "Paid order 271, order total $200: Biofield Analysis only",
+                 "certainty": "clear", "note": ""}
+
+
+def test_an_analysis_billed_with_remedies_waits_for_glens_yes():
+    r = br.order_to_request(_order(231, ("clarity", "biofield-analysis", "liver-support"),
+                                   total=45950))
+    assert r["certainty"] == "possible"
+    assert r["quote"] == ("Paid order 231, order total $459.50: Biofield Analysis with 2 "
+                          "other items")
+    assert r["note"] == "billed with clarity, liver-support, so the analysis may already be done"
+    one = br.order_to_request(_order(9, ("biofield-analysis", "clarity")))
+    assert one["quote"].endswith("with 1 other item")
+    many = br.order_to_request(_order(5, ("biofield-analysis",) + tuple("abcdefg")))
+    assert many["note"] == "billed with a, b, c, d, e and 2 more, so the analysis may already be done"
+
+
+@pytest.mark.parametrize("o", [
+    _order(pay="unpaid"),
+    _order(paid_at=None),
+    _order(paid_at="not a date"),
+    _order(items=("clarity",)),
+    _order(items=()),
+    _order(superseded_by_order_id=300),
+])
+def test_an_order_that_is_not_a_paid_analysis_is_no_request(o):
+    assert br.order_to_request(o) is None
+
+
+def test_a_paid_order_files_once_and_a_repeat_is_seen(cx):
+    first = br.record(cx, br.order_to_request(_order()))
+    assert first["kind"] == "added"
+    assert br.record(cx, br.order_to_request(_order()))["kind"] == "seen"
+    [row] = br.list_open(cx)
+    assert (row["source"], row["status"], row["certainty"]) == ("order", "requested", "clear")
+
+
+def test_a_bundled_order_lands_as_a_possible_line_with_yes_and_no(cx):
+    out = br.record(cx, br.order_to_request(_order(231, ("biofield-analysis", "clarity"))))
+    assert out["kind"] == "pending"
+    subject, body = br.compose_alert(br.unalerted(cx), "http://127.0.0.1:8011")
+    assert "1 waiting for your yes" in subject
+    assert "by paid order on 2026-10-23" in body
+    assert "  Order: Paid order 231, order total $200: Biofield Analysis with 1 other item" in body
+    assert '"Paid order' not in body
+    assert "Note: billed with clarity, so the analysis may already be done." in body
+
+
+def test_a_paid_order_for_someone_with_an_open_line_is_not_a_second_line(cx):
+    br.record(cx, req("m1", email="dana@x.com", name="Dana Tamraz"))
+    out = br.record(cx, br.order_to_request(_order()))
+    assert out["kind"] == "duplicate"
+    assert len(br.list_open(cx)) == 1
+
+
+def test_the_list_names_a_paid_order_as_its_source(cx):
+    br.record(cx, br.order_to_request(_order()))
+    html = render_list_html([], "", [], br.list_open(cx))
+    assert "by paid order" in html
+    assert "Paid order 271, order total $200: Biofield Analysis only</div>" in html
+    assert "&ldquo;Paid order" not in html
+
+
+def test_a_card_checkout_line_has_a_name_and_no_slug():
+    o = _order()
+    o["items"] = [{"name": " Causal Biofield Analysis ", "qty": 1, "desc": "x"}]
+    assert br.order_to_request(o)["certainty"] == "clear"
+    o["items"].append({"name": "Clarity", "qty": 1})
+    assert br.order_to_request(o)["note"].startswith("billed with Clarity")
+    # A slug decides on its own: a named line with another slug is not the analysis.
+    o["items"] = [{"slug": "clarity", "name": "Causal Biofield Analysis"}]
+    assert br.order_to_request(o) is None
+
+
+def test_the_card_checkout_name_matches_the_app():
+    import app as appmod
+    assert br.ANALYSIS_NAME == appmod._BIOFIELD_ITEM_NAME
+    for it in ({"slug": "biofield-analysis"}, {"slug": " biofield-analysis "},
+               {"name": "Causal Biofield Analysis"}, {"slug": "clarity"}, {"name": "Clarity"},
+               {"slug": 5, "name": "Causal Biofield Analysis"}):
+        assert br.is_analysis_item(it) == appmod._is_biofield_line(it), it
+
+
+def test_pay_status_case_and_a_non_utc_paid_at():
+    r = br.order_to_request(_order(pay="PAID", paid_at="2026-10-23T09:01:34-10:00"))
+    assert r["requested_at"] == "2026-10-23T19:01:34Z"
+    assert br.order_to_request(_order(paid_at="2026-10-23T19:01:34"))["requested_at"] == \
+        "2026-10-23T19:01:34Z"
+
+
+def test_two_orders_with_no_address_are_two_people(cx):
+    a = br.order_to_request(_order(1, email=""))
+    b = br.order_to_request(_order(2, email="", name="Someone Else"))
+    assert br.record(cx, a)["kind"] == "added"
+    assert br.record(cx, b)["kind"] == "added"
+
+
+def test_a_clear_paid_order_lifts_a_waiting_line(cx):
+    br.record(cx, req("m1", certainty="possible", email="dana@x.com", name="Dana Tamraz"))
+    assert br.record(cx, br.order_to_request(_order()))["kind"] == "upgraded"
+    [row] = br.list_open(cx)
+    assert row["status"] == "requested"
+
+
+def test_a_name_with_a_newline_stays_on_one_line_in_the_email(cx):
+    o = _order(name="Dana\nLine: http://evil")
+    br.record(cx, br.order_to_request(o))
+    _, body = br.compose_alert(br.unalerted(cx), "http://127.0.0.1:8011")
+    assert "\nLine: http://evil" not in body

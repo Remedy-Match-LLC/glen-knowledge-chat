@@ -10,6 +10,10 @@ His rulings:
   - A possible request ("I'd like to get checked again sometime") waits for his yes.
   - "Biofield Analysis" is only the $300/$200 consultation. A free scan or a Remedy
     Match request is a possible request at most, never a clear one.
+  - A paid Biofield Analysis order is a request too ("yes, paid analysis alerts",
+    2026-10-23). An order of the analysis alone is clear. An order that bills it with
+    other items, usually the remedies from an analysis already done, is possible and
+    waits for his yes ("bundled as possible").
 
 Where things live:
   - Local (the Biofield app's own SQLite DB): biofield_test_requests, one row per
@@ -30,7 +34,7 @@ TABLE = "biofield_test_requests"
 SEEN_TABLE = "biofield_request_seen"
 FLAGS_TABLE = "biofield_request_flags"
 MODEL = "claude-haiku-4-5-20251001"
-SOURCES = ("email", "portal", "ghl")
+SOURCES = ("email", "portal", "ghl", "order")
 CERTAINTIES = ("clear", "possible", "none")
 # requested: a line with a Start test button. pending_yes: waits for Glen's Yes or No.
 # declined: Glen said No. started: the test exists (test_id). duplicate: the person
@@ -307,7 +311,9 @@ def same_person(a, b):
     address, the normalised names must be equal too ("Sam" is not "Samantha Doe"),
     so a caregiver's own request and a member's line never hide each other. A side
     with no name cannot be told apart, and counts as the same person."""
-    if (a.get("email") or "").strip().lower() != (b.get("email") or "").strip().lower():
+    ea = (a.get("email") or "").strip().lower()
+    if not ea or ea != (b.get("email") or "").strip().lower():
+        # Two lines with no address are not one person (a paid order can lack one).
         return False
     if _shared(a) or _shared(b):
         na, nb = _norm_name(a.get("name")), _norm_name(b.get("name"))
@@ -585,7 +591,8 @@ def mark_alerted(cx, ids):
     return n
 
 
-SOURCE_LABEL = {"email": "email", "portal": "portal chat", "ghl": "GoHighLevel"}
+SOURCE_LABEL = {"email": "email", "portal": "portal chat", "ghl": "GoHighLevel",
+                "order": "paid order"}
 
 
 def line_url(base_url, rid):
@@ -600,7 +607,7 @@ def line_ref(base_url, row):
 
 
 def describe(row):
-    who = row.get("name") or row.get("email") or "Someone"
+    who = one_line(row.get("name") or row.get("email") or "Someone", 80)
     payer = row.get("payer_email")
     by = f", asked by {payer}" if payer and payer != row.get("email") else ""
     return f"{who} <{row.get('email') or ''}>{by}"
@@ -631,7 +638,11 @@ def compose_alert(rows, base_url):
         for r in rs:
             lines.append(f"- {describe(r)}, by {SOURCE_LABEL.get(r['source'], r['source'])} "
                          f"on {str(r.get('requested_at') or '')[:10]}")
-            lines.append(f"  \"{one_line(r.get('quote'))}\"")
+            if r["source"] == "order":
+                # Written by this code from the order, never by the client.
+                lines.append(f"  Order: {one_line(r.get('quote'))}")
+            else:
+                lines.append(f"  \"{one_line(r.get('quote'))}\"")
             lines.append(tail(r))
         lines.append("")
 
@@ -735,3 +746,76 @@ def flag_to_request(flag):
             "name": name, "payer_email": payer, "requested_at": flag.get("created_at"),
             "quote": flag.get("quote"), "certainty": flag.get("certainty"),
             "note": flag.get("note") or ""}
+
+
+ANALYSIS_SLUG = "biofield-analysis"
+# A card checkout (app.py _price_biofield) stores the line by this name with no slug.
+# Mirrors app.py _BIOFIELD_ITEM_NAME; a test keeps the two equal.
+ANALYSIS_NAME = "Causal Biofield Analysis"
+_NAMED_ITEMS = 5
+
+
+def _text(v):
+    return v.strip() if isinstance(v, str) else ""
+
+
+def is_analysis_item(item):
+    """The rule of app.py _is_biofield_line: the slug when there is one, else the name."""
+    slug = _text(item.get("slug"))
+    if slug:
+        return slug == ANALYSIS_SLUG
+    return _text(item.get("name")) == ANALYSIS_NAME
+
+
+def _utc_z(ts):
+    """An ISO timestamp as UTC "YYYY-MM-DDTHH:MM:SSZ", or None when it does not parse."""
+    try:
+        t = _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=_dt.timezone.utc)
+    return t.astimezone(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _money(cents):
+    return "$%d" % (cents // 100) if cents % 100 == 0 else "$%.2f" % (cents / 100)
+
+
+def order_to_request(order):
+    """A prod order (GET /api/orders) as a record() request, or None when it is not a
+    paid Biofield Analysis order. Source "order", source_ref the order id.
+
+    Paid means pay_status "paid" with a paid_at. A superseded order is skipped: its
+    replacement carries the request. Certainty is "clear" when the analysis is the only
+    item and "possible" when anything else is on the order: that is usually the remedies
+    from an analysis already done, so it waits for Glen's yes. The quote is a summary
+    this code writes, never the client's words. A refund later changes nothing here."""
+    if (_text(order.get("pay_status"))).lower() != "paid" or order.get("superseded_by_order_id"):
+        return None
+    paid_at = _utc_z(order.get("paid_at"))
+    items = [i for i in (order.get("items") or []) if isinstance(i, dict)]
+    if not paid_at or not any(is_analysis_item(i) for i in items):
+        return None
+    others = [i for i in items if not is_analysis_item(i)]
+    try:
+        total = "order total %s" % _money(int(order.get("total_cents") or 0))
+    except (TypeError, ValueError):
+        total = "order total unknown"
+    note = ""
+    if others:
+        n = len(others)
+        quote = (f"Paid order {order['id']}, {total}: Biofield Analysis with {n} other "
+                 f"item{'' if n == 1 else 's'}")
+        named = [one_line(_text(i.get("name")) or _text(i.get("slug")) or "unnamed", 60)
+                 for i in others[:_NAMED_ITEMS]]
+        more = f" and {n - _NAMED_ITEMS} more" if n > _NAMED_ITEMS else ""
+        note = ("billed with " + ", ".join(named) + more
+                + ", so the analysis may already be done")
+    else:
+        quote = f"Paid order {order['id']}, {total}: Biofield Analysis only"
+    return {"source": "order", "source_ref": str(order["id"]),
+            "email": _text(order.get("email")).lower(),
+            "name": one_line(_text(order.get("name")), 80), "payer_email": "",
+            "requested_at": paid_at, "quote": quote,
+            "certainty": "possible" if others else "clear", "note": note}
