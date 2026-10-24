@@ -79,7 +79,7 @@ def test_a_dose_question_keeps_the_approved_monitoring_line():
     b = app.named_product_facts_block("How much Vitamin D Syntropy should I take?")
     assert MONITORING in b and b.count(RULE) == 1
     assert "Repeat the approved description and directions below as written" in RULE
-    assert "When the user asks about a medicine, pregnancy or a condition that a caution names" in RULE
+    assert "When the user asks about a medicine, pregnancy, surgery or a condition that a caution names" in RULE
 
 
 def test_the_brain_program_note_and_the_rule_agree():
