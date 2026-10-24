@@ -2902,19 +2902,28 @@ _CAUTION_SUBJECT_WORDS = {
     "blood pressure": ("blood pressure", "hypertension"),
     "seizure": ("seizure", "epilepsy"),
     "sedative": ("sedative",),
-    "liver disease": ("liver disease",),
+    "liver disease": ("liver disease", "fatty liver", "hepatitis", "cirrhosis",
+                      "liver problem", "liver condition"),
     # Seven opted-in cautions name surgery and three an autoimmune condition (Glen "yes",
     # production tab, 2026-10-24). Stems catch "surgeries" and "anesthetic" (review round
     # 1). A leading space starts a word, so "cooperation" is no hit, and "operate
     # machinery", which two cautions say, is not surgery either.
     "surgery": ("surger", "surgical", "surgeon", " operation", " operated on",
-                " operating room", "anesthe", "anaesthe", "pre op", "preop", " op "),
+                " operating room", "anesthe", "anaesthe", "pre op", "preop", "my op ", "procedure",
+                "teeth pulled", "tooth pulled", "tooth extraction", "dental work"),
     "autoimmune": ("autoimmune", "auto immune", "lupus", "rheumatoid", "hashimoto", "graves",
                    "multiple sclerosis", "celiac", "coeliac", "crohn", "ulcerative colitis",
                    "psoria", "sjogren", "thyroiditis", "type 1 diabetes"),
+    # Five cautions name these too (review round 1, 2026-10-24). "co op" is no surgery.
+    "alcohol": ("alcohol", "wine", "beer", "liquor", "cocktail"),
+    "child": ("child", " kid", " son ", " daughter", "year old", "toddler", "baby", "teen"),
+    "injur": ("injur", "broke my", "broken", "fracture", "sprain", "wound"),
+    "menses": ("menses", "menstrua", "my period"),
+    "bleeding": ("bleeding", "hemophilia", "haemophilia", "bruise easily", "von willebrand",
+                 "clotting disorder"),
     # Stress Release and Scar Silk name any prescription medication, and no list of drug
     # names is whole. These are the plain words and some common drugs (review round 2).
-    "prescription": ("prescription", "medicine", "medication", " meds ", " drug", " pill ", " pills ",
+    "prescription": ("prescription", "medicine", "medication", " meds ", " drugs ", " my drug", " pill ", " pills ",
                      "statin", "aspirin", "ibuprofen", "lisinopril", "metoprolol",
                      "amlodipine", "losartan", "omeprazole", "prednisone", "gabapentin",
                      "chemo"),
@@ -3023,34 +3032,58 @@ def _drop_caution_subject_snippets(matches, query_text: str, prior_user_turns=No
     return [m for m in matches if not _is_drug_interaction_snippet(m.metadata)]
 
 
-# Ahead of the synthesis instruction when the question names a subject an opted-in
-# caution names. Production's check after #2127 (2026-10-24): asked "I have an operation
-# next week. Is Stress Release okay?", the brief's consensus, limitation and assumption
-# beats made the caution the consensus to question ("a blanket 'stop everything' approach
-# assumes ..."), and answers gave "5-7 days" and leave to restart. A lupus question behind
-# the consent gate gave no caution at all. Glen "yes" to never arguing with a caution
-# (production tab, 2026-10-24).
-_CAUTION_ANSWER_INSTR = (
+# In place of the synthesis instruction when the question names a subject an opted-in
+# caution in the answer names. Production's check after #2127 (2026-10-24): asked "I have
+# an operation next week. Is Stress Release okay?", the brief's beats made the caution the
+# consensus to question ("a blanket 'stop everything' approach assumes ..."), and answers
+# gave "5-7 days" and leave to restart. A lupus question behind the consent gate gave no
+# caution at all. A prefix left the 5-beat frame standing after it (review round 1), so
+# this replaces the frame. Glen "yes" to never arguing with a caution (production tab).
+_CAUTION_ANSWER_RULES = (
     "CAUTION ANSWER. The user asks about a medicine, pregnancy, surgery or condition that "
-    "a product caution below names. For this answer, do not use the consensus, limitation, "
-    "assumption and tease beats, or a break-and-rebuild arc: the caution is not a "
-    "consensus to question or improve on. Open with the caution, every sentence of it, in "
-    "the format the text below sets. Then add only approved text the user asked for, and "
-    "one next step. Give no time to stop, pause or restart, and no permission to use it "
+    "a product caution below names. This replaces the usual answer structure: no "
+    "consensus, no limitation, no hidden assumption, no tease, and no break-and-rebuild. "
+    "The caution is not a view to credit, question or improve on.\n"
+    "1. Open with the caution, every sentence of it, in the format the text below sets.\n"
+    "2. Then add only approved text from below that the user asked for, such as the "
+    "directions.\n"
+    "3. Close with one next step.\n"
+    "Give no time to stop, pause or restart, no dose change, and no permission to use it "
     "that the caution does not state. The caution is the product page's own text, so give "
-    "it in full even when you may not give individual guidance. Keep the word cap, the "
-    "Sources line and the CTA directive line of the instruction below.\n\n")
+    "it in full even when you may not give individual guidance. ")
 
 
-def _caution_answer_instr(query_text: str, prior_user_turns=None) -> str:
+def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False):
     """The caution answer instruction, when the question names a subject an opted-in
-    caution in this answer names. Fails open to "", so the answer goes on as before."""
+    caution in this answer names, else None. The brief form keeps a 200-word cap and the
+    CTA line; the long form lists sources as the long instruction does. Fails open to
+    None, so the answer goes on as before."""
     try:
-        return _CAUTION_ANSWER_INSTR if _caution_subjects_asked(
-            query_text, prior_user_turns) else ""
+        if not _caution_subjects_asked(query_text, prior_user_turns):
+            return None
     except Exception as e:
         print(f"[chat] caution answer instruction skipped: {e!r}", flush=True)
-        return ""
+        return None
+    # Read here: the note is imported further down the module.
+    rules = (_CAUTION_ANSWER_RULES + "Keep every other rule: product links only from the "
+             "injection table, and product claims only from sources ("
+             + _SOURCED_PRODUCT_NOTE + ").\n\n")
+    if long_form:
+        return rules + "List sources at the end.\n\n"
+    return (rules
+            + "Keep the answer to 200 words or fewer, not counting the Sources line and "
+              "the CTA directive line. For the next step, take the CURIOUS rung (`page`, "
+              "with the product's page URL from the injection table), or the ENGAGED rung "
+              "(`email`) if there is no URL.\n\n"
+            + _CTA_DIRECTIVE_SPEC + "\n\n")
+
+
+def _chat_synth_instr(query_text, prior_user_turns, mode, logged_in):
+    """chat()'s synthesis instruction: the caution answer when it applies, else the
+    long form in full mode and the brief otherwise."""
+    full = mode == "full"
+    return (_caution_synth_instr(query_text, prior_user_turns, long_form=full)
+            or (_long_form_synth_instr(logged_in) if full else _brief_synth_instruction()))
 
 
 def build_product_directive(snippets_text: str = "", query_text: str = ""):
@@ -3637,6 +3670,28 @@ def get_system_prompt(level: str) -> str:
 SYSTEM_PROMPT = get_system_prompt("self-healing")
 
 
+# The hidden last line the chat front end parses (dashboard/chat_cta.py). Shared by the
+# brief and the caution answer, so both emit the same format.
+_CTA_DIRECTIVE_SPEC = (
+    "END your response with the Sources line, then on a FINAL separate line emit a "
+    "machine directive the user will NOT see. "
+    "The directive format is exactly: `⟦CTA⟧ <type> | <target> | <label>` "
+    "where <type> is ONE of these four literal words — page, email, action, inline — "
+    "chosen by the readiness rung you selected: "
+    "CURIOUS rung -> write `page`, "
+    "ENGAGED rung -> write `email`, "
+    "READY rung -> write `action`, "
+    "COMMITTED rung -> write `inline`. "
+    "Do NOT write the rung name; write the mapped word (page/email/action/inline). "
+    "For page/action, <target> is the EXACT URL from the retrieved sources or the "
+    "product injection table — never invent one; if you have no real URL, use email "
+    "instead. For email, leave <target> empty and set <label> to a short report offer. "
+    "Examples: `⟦CTA⟧ page | https://truly.vip/e4l | Learn more` or "
+    "`⟦CTA⟧ email |  | Send my full report` or "
+    "`⟦CTA⟧ action | https://truly.vip/e4l | Start your scan`."
+)
+
+
 def _brief_synth_instruction() -> str:
     """Return the full brief synthesis instruction (5-beat include-and-transcend lead).
 
@@ -3749,22 +3804,7 @@ def _brief_synth_instruction() -> str:
         "  capture, or logistics, do NOT force the 5 beats — respond naturally and briefly.\n"
         "  The open loop is for answer and recommendation moments only.\n\n"
         "Do NOT print the beat labels — weave the 5 beats into natural prose.\n\n"
-        "END your response with the Sources line, then on a FINAL separate line emit a "
-        "machine directive the user will NOT see. "
-        "The directive format is exactly: `⟦CTA⟧ <type> | <target> | <label>` "
-        "where <type> is ONE of these four literal words — page, email, action, inline — "
-        "chosen by the readiness rung you selected: "
-        "CURIOUS rung -> write `page`, "
-        "ENGAGED rung -> write `email`, "
-        "READY rung -> write `action`, "
-        "COMMITTED rung -> write `inline`. "
-        "Do NOT write the rung name; write the mapped word (page/email/action/inline). "
-        "For page/action, <target> is the EXACT URL from the retrieved sources or the "
-        "product injection table — never invent one; if you have no real URL, use email "
-        "instead. For email, leave <target> empty and set <label> to a short report offer. "
-        "Examples: `⟦CTA⟧ page | https://truly.vip/e4l | Learn more` or "
-        "`⟦CTA⟧ email |  | Send my full report` or "
-        "`⟦CTA⟧ action | https://truly.vip/e4l | Start your scan`."
+        + _CTA_DIRECTIVE_SPEC
     )
 
 
@@ -6968,11 +7008,7 @@ def chat():
             if turn.get("role") in ("user", "assistant") and turn.get("content"):
                 messages.append({"role": turn["role"], "content": turn["content"]})
 
-        synth_instr = _caution_answer_instr(query, _prior_user) + (
-            _long_form_synth_instr(bool(auth_user))
-            if mode == "full" else
-            _brief_synth_instruction()
-        )
+        synth_instr = _chat_synth_instr(query, _prior_user, mode, bool(auth_user))
 
         attachment_context = ""
         if extracted_text:
@@ -16090,7 +16126,8 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
     )
     product_block = f"{product_directive}\n\n" if product_directive else ""
 
-    synth_instr = _caution_answer_instr(query, _prior_user) + _long_form_synth_instr(is_logged_in)
+    synth_instr = (_caution_synth_instr(query, _prior_user, long_form=True)
+                   or _long_form_synth_instr(is_logged_in))
     user_msg = (
         f"USER QUESTION: {query}\n\n"
         f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
@@ -16275,8 +16312,8 @@ def _full_report_stream(log_id, query, level, session_id,
         )
         product_block = f"{product_directive}\n\n" if product_directive else ""
 
-        synth_instr = (_caution_answer_instr(query, _prior_user)
-                       + _long_form_synth_instr(is_logged_in))
+        synth_instr = (_caution_synth_instr(query, _prior_user, long_form=True)
+                       or _long_form_synth_instr(is_logged_in))
         user_msg = (
             f"USER QUESTION: {query}\n\n"
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"

@@ -1,11 +1,12 @@
-"""A caution question gets no consensus-and-assumption frame.
+"""A caution question gets a caution answer in place of the consensus-and-assumption frame.
 
 Production's check after #2127 (2026-10-24): asked "I have an operation next week. Is Stress
 Release okay?", answers called stopping everything "a blanket approach" and asked whether
 timing "changes the answer entirely", because the brief's beats credit a consensus, name
 where it stops short and name its hidden assumption. Others gave "5-7 days" and leave to
-restart. A lupus question behind the consent gate gave no caution. Glen said "yes" to never
-arguing with a caution (production tab, 2026-10-24).
+restart. A lupus question behind the consent gate gave no caution. A prefix left the frame
+standing after it (review round 1), so the caution answer replaces it. Glen said "yes" to
+never arguing with a caution (production tab, 2026-10-24).
 """
 from types import SimpleNamespace
 
@@ -13,7 +14,10 @@ import pytest
 
 import app
 
-INSTR = app._CAUTION_ANSWER_INSTR
+BRIEF_FRAME = "BRIEF — INCLUDE-AND-TRANSCEND OPEN LOOP"
+LONG_FRAME = "make breaking THAT assumption the central belief"
+RULES = app._CAUTION_ANSWER_RULES
+SURGERY = "I have an operation next week. Is Stress Release okay?"
 
 
 class _Stop(Exception):
@@ -43,64 +47,113 @@ def prompt(monkeypatch):
     return sent
 
 
+def _chat(q, **extra):
+    try:
+        app.app.test_client().post("/chat", json={"query": q, "level": "executive", **extra},
+                                   buffered=True)
+    except _Stop:
+        pass
+
+
 @pytest.mark.parametrize("q", [
-    "I have an operation next week. Is Stress Release okay?",
+    SURGERY,
     "Can I take Stress Release before surgery?",
     "I have lupus. Can I take Stress Release?",
     "Can I take Vitamin D Syntropy if I am on warfarin?",
+    # Review round 1: other subjects five cautions name, and other words for surgery.
+    "I have a procedure next week, can I use Stress Release?",
+    "I am having my wisdom teeth pulled Friday. Stress Release ok?",
+    "I broke my wrist. Can I take AngiogenX?",
+    "Can I use Angiostasis during my period?",
+    "Can my 8 year old take Sleep Syntropy?",
+    "Can I have wine with Brain Cleanse?",
+    "I have fatty liver. Is Brain Cleanse ok?",
+    "I have a bleeding disorder, is Fibrosolve ok?",
 ])
-def test_a_caution_question_gets_the_caution_answer_instruction(q):
-    assert app._caution_answer_instr(q) == INSTR
+def test_a_caution_question_gets_the_caution_answer(q):
+    assert app._caution_synth_instr(q).startswith(RULES)
 
 
 @pytest.mark.parametrize("q", [
     "How much Stress Release should I take?",
     "Can I take Clarity with my blood pressure medicine?",   # no caution to give
     "Is Vitamin D Syntropy ok before surgery?",               # its caution names no surgery
+    "Can I buy Stress Release at the co-op?",                 # review round 1
+    "Is Stress Release a drug?",                              # review round 1
 ])
-def test_every_other_question_keeps_its_instruction(q):
-    assert app._caution_answer_instr(q) == ""
+def test_every_other_question_keeps_its_frame(q):
+    assert app._caution_synth_instr(q) is None
 
 
-def test_the_instruction_lifts_the_frame_and_forbids_windows_and_restarts():
-    for words in ("do not use the consensus, limitation, assumption and tease beats",
-                  "Open with the caution, every sentence of it",
+def test_the_caution_answer_lifts_the_frame_and_forbids_windows_and_restarts():
+    for words in ("no consensus, no limitation, no hidden assumption, no tease, and no "
+                  "break-and-rebuild",
+                  "1. Open with the caution, every sentence of it",
                   "Give no time to stop, pause or restart",
-                  "give it in full even when you may not give individual guidance",
-                  "Keep the word cap, the Sources line and the CTA directive line"):
-        assert words in INSTR, words
+                  "give it in full even when you may not give individual guidance"):
+        assert words in RULES, words
 
 
-def test_the_brief_chat_answer_carries_it_before_the_brief_instruction(prompt):
-    try:
-        app.app.test_client().post(
-            "/chat", json={"query": "I have an operation next week. Is Stress Release okay?",
-                           "level": "executive"}, buffered=True)
-    except _Stop:
-        pass
+def test_the_brief_form_keeps_the_cap_and_the_cta_line_and_the_long_form_neither():
+    brief = app._caution_synth_instr(SURGERY)
+    assert "200 words or fewer" in brief and brief.endswith(app._CTA_DIRECTIVE_SPEC + "\n\n")
+    long_ = app._caution_synth_instr(SURGERY, long_form=True)
+    assert "⟦CTA⟧" not in long_ and long_.endswith("List sources at the end.\n\n")
+    assert app._CTA_DIRECTIVE_SPEC in app._brief_synth_instruction()
+
+
+def test_the_brief_chat_answer_replaces_the_frame(prompt):
+    _chat(SURGERY)
     msg = prompt[-1]
-    assert msg.count(INSTR) == 1
-    assert msg.index(INSTR) < msg.index("BRIEF — INCLUDE-AND-TRANSCEND OPEN LOOP")
+    assert msg.count(RULES) == 1 and BRIEF_FRAME not in msg
 
 
-def test_a_dose_question_in_chat_does_not(prompt):
-    try:
-        app.app.test_client().post(
-            "/chat", json={"query": "How much Stress Release should I take?",
-                           "level": "executive"}, buffered=True)
-    except _Stop:
-        pass
-    assert INSTR not in prompt[-1]
+@pytest.mark.parametrize("logged_in", [False, True])
+def test_chat_s_full_mode_replaces_its_frame_too(logged_in):
+    # /chat's full mode sits behind the email gate, so its choice is tested directly.
+    got = app._chat_synth_instr(SURGERY, None, "full", logged_in)
+    assert got.startswith(RULES) and got.endswith("List sources at the end.\n\n")
+    assert app._chat_synth_instr("How much Stress Release should I take?", None, "full",
+                                 logged_in) == app._long_form_synth_instr(logged_in)
 
 
-def test_the_full_answer_carries_it_too(prompt):
+def test_a_dose_question_in_chat_keeps_the_frame(prompt):
+    _chat("How much Stress Release should I take?")
+    assert RULES not in prompt[-1] and BRIEF_FRAME in prompt[-1]
+
+
+def test_a_follow_up_in_chat_takes_the_product_from_its_history(prompt):
+    _chat("Can I take it before surgery?",
+          history=[{"role": "user", "content": "Tell me about Stress Release"}])
+    assert RULES in prompt[-1]
+
+
+def test_the_gated_chat_answer_keeps_the_caution_answer(prompt, monkeypatch):
+    monkeypatch.setattr(app, "_is_gated_question", lambda *a, **k: True)
+    monkeypatch.setattr(app, "is_member", lambda *a, **k: False)
+    _chat("I have lupus. Can I take Stress Release?")
+    msg = prompt[-1]
+    assert msg.count(RULES) == 1 and BRIEF_FRAME not in msg
+    assert app._PRODUCTS["products"]["stress-release"]["warning"] in msg
+
+
+def test_the_full_answer_replaces_its_frame(prompt):
     with pytest.raises(_Stop):
         app._generate_full_answer("Can I take Stress Release before surgery?", "executive")
-    assert prompt[-1].count(INSTR) == 1
+    assert prompt[-1].count(RULES) == 1 and LONG_FRAME not in prompt[-1]
 
 
-def test_a_failure_leaves_the_instruction_as_it_was(monkeypatch):
+def test_the_full_report_stream_replaces_its_frame(prompt):
+    # The stream reports a model error as an event, so drain it and read the prompt.
+    with app.app.test_request_context():
+        resp = app._full_report_stream(1, "Can I take Stress Release before surgery?",
+                                       "executive", "s1")
+        list(resp.response)
+    assert prompt[-1].count(RULES) == 1 and LONG_FRAME not in prompt[-1]
+
+
+def test_a_failure_leaves_the_frame_as_it_was(monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("facts builder broke")
     monkeypatch.setattr(app, "_caution_subjects_asked", _boom)
-    assert app._caution_answer_instr("Can I take Stress Release before surgery?") == ""
+    assert app._caution_synth_instr("Can I take Stress Release before surgery?") is None
