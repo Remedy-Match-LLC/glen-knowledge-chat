@@ -2903,13 +2903,15 @@ _CAUTION_SUBJECT_WORDS = {
     "seizure": ("seizure", "epilepsy"),
     "sedative": ("sedative",),
     "liver disease": ("liver disease",),
-    # Six opted-in cautions name surgery and three an autoimmune condition (Glen "yes",
-    # production tab, 2026-10-24). " operation" starts a word, so "cooperation" is no hit.
-    "surgery": ("surgery", "surgical", "surgeon", " operation", "anesthesia", "anaesthesia",
-                "pre op", "preop"),
+    # Seven opted-in cautions name surgery and three an autoimmune condition (Glen "yes",
+    # production tab, 2026-10-24). Stems catch "surgeries" and "anesthetic" (review round
+    # 1). A leading space starts a word, so "cooperation" is no hit, and "operate
+    # machinery", which two cautions say, is not surgery either.
+    "surgery": ("surger", "surgical", "surgeon", " operation", " operated on",
+                " operating room", "anesthe", "anaesthe", "pre op", "preop", " op "),
     "autoimmune": ("autoimmune", "auto immune", "lupus", "rheumatoid", "hashimoto", "graves",
                    "multiple sclerosis", "celiac", "coeliac", "crohn", "ulcerative colitis",
-                   "psoriasis", "sjogren"),
+                   "psoria", "sjogren", "thyroiditis", "type 1 diabetes"),
 }
 # A product that says it has no caution asks the bot to add nothing from the snippets
 # about interactions or safety. Its question can name any medicine, pregnancy or condition,

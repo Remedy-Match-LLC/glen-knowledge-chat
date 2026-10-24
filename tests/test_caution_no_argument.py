@@ -53,6 +53,26 @@ def test_the_surgery_answer_carries_the_rule_after_the_caution_and_at_the_end(ap
     ("I have lupus. Can I take Stress Release?", "autoimmune"),
     ("Is Sleep Syntropy ok with rheumatoid arthritis?", "autoimmune"),
     ("I have an autoimmune condition. Is Brain Cleanse safe?", "autoimmune"),
+    # Other word forms (review round 1).
+    ("Can I take Stress Release before my general anesthetic?", "surgery"),
+    ("Can I take Stress Release between my two surgeries?", "surgery"),
+    ("I am being operated on Friday. Is Stress Release ok?", "surgery"),
+    ("Can I take Stress Release before my op?", "surgery"),
+    ("Is Stress Release ok before an anaesthetic?", "surgery"),
+    ("Is Stress Release ok pre-op?", "surgery"),
+    ("Is Stress Release ok in the operating room recovery?", "surgery"),
+    ("I have psoriatic arthritis. Can I take Stress Release?", "autoimmune"),
+    ("I have Hashimoto's. Can I take Stress Release?", "autoimmune"),
+    ("I have Graves disease. Is Stress Release ok?", "autoimmune"),
+    ("I have celiac disease. Is Stress Release ok?", "autoimmune"),
+    ("Is Stress Release ok with coeliac disease?", "autoimmune"),
+    ("Is Stress Release ok with Crohn's?", "autoimmune"),
+    ("Is Stress Release ok with ulcerative colitis?", "autoimmune"),
+    ("Is Stress Release ok with multiple sclerosis?", "autoimmune"),
+    ("Is Stress Release ok with Sjogren's?", "autoimmune"),
+    ("Is Stress Release ok with type 1 diabetes?", "autoimmune"),
+    ("Is Stress Release ok with thyroiditis?", "autoimmune"),
+    ("Is Stress Release ok with an auto-immune disease?", "autoimmune"),
 ])
 def test_surgery_and_autoimmune_questions_name_the_subject(appmod, q, subject):
     assert subject in appmod._caution_subjects_asked(q)
@@ -66,8 +86,10 @@ def test_a_caution_that_names_neither_takes_no_such_subject(appmod):
     assert appmod._caution_subjects_asked("Is Vitamin D Syntropy ok with lupus?") == []
 
 
-def test_operate_machinery_and_cooperation_are_not_surgery(appmod):
-    q = "Can I take Brain Cleanse for better cooperation at work?"
+@pytest.mark.parametrize("q", ["Can I take Brain Cleanse for better cooperation at work?",
+                               "Can I operate machinery after Brain Cleanse?",
+                               "Can I take Brain Cleanse with an optician's advice?"])
+def test_operate_machinery_and_cooperation_are_not_surgery(appmod, q):
     assert "surgery" not in appmod._caution_subjects_asked(q)
 
 
