@@ -77,6 +77,10 @@ def _chat(q, **extra):
     "I am getting my wisdom teeth out. Is Stress Release ok?",
     "I have heavy periods. Can I use Angiostasis?",
     "I cut my hand badly. Can I take AngiogenX?",
+    # Review round 3: misses.
+    "I'm having a hysterectomy next month. Can I take Fibrosolve?",
+    "I'm on chemotherapy. Can I take Angiostasis?",
+    "Is Estro-Clear ok with birth control?",
 ])
 def test_a_caution_question_gets_the_caution_answer(q):
     assert app._caution_synth_instr(q).startswith(RULES)
@@ -96,6 +100,9 @@ def test_a_caution_question_gets_the_caution_answer(q):
     "Is Sleep Syntropy good for someone who babysits at night?",
     "What procedure should I follow to take AngiogenX?",
     "Is Stress Release a replacement for my sleeping aid?",
+    # Review round 3.
+    "Will AngiogenX help my broken capillaries?",
+    "Is there a procedure to follow with Fibrosolve?",
 ])
 def test_every_other_question_keeps_its_frame(q):
     assert app._caution_synth_instr(q) is None
@@ -104,8 +111,12 @@ def test_every_other_question_keeps_its_frame(q):
 def test_the_caution_answer_lifts_the_frame_and_forbids_windows_and_restarts():
     for words in ("no consensus, no limitation, no hidden assumption, no tease, and no "
                   "break-and-rebuild",
-                  "1. Open with the caution, every sentence of it",
-                  "Give no time to stop, pause or restart",
+                  "1. Open with each caution that names what the user asks about, every "
+                  "sentence of it",
+                  "A caution's own words do not count toward any word limit",
+                  "2. Then answer the rest of the question plainly",
+                  "Answer about any other product as usual",
+                  "give no time to stop, pause or restart",
                   "give it in full even when you may not give individual guidance",
                   "that one next step is the invitation to agree to them"):
         assert words in RULES, words

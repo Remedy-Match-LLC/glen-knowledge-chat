@@ -2909,7 +2909,9 @@ _CAUTION_SUBJECT_WORDS = {
     # 1). A leading space starts a word, so "cooperation" is no hit, and "operate
     # machinery", which two cautions say, is not surgery either.
     "surgery": ("surger", "surgical", "surgeon", " operation", " operated on",
-                " operating room", "anesthe", "anaesthe", "pre op", "preop", "my op ", " an op ", "my procedure", "a procedure",
+                " operating room", "anesthe", "anaesthe", "pre op", "preop", "my op ", " an op ", "my procedure", "procedure next", "procedure tomorrow", "procedure on ",
+                "hysterectomy", "colonoscopy",
+                "biopsy", "implant",
                 "teeth pulled", "tooth pulled", "teeth out", "tooth extraction", "dental work",
                 "knee replacement", "hip replacement", "joint replacement"),
     "autoimmune": ("autoimmune", "auto immune", "lupus", "rheumatoid", "hashimoto", "graves",
@@ -2921,7 +2923,8 @@ _CAUTION_SUBJECT_WORDS = {
     # (review round 2).
     "child": (" child ", " children ", " kid ", " kids ", " son ", " daughter", "year old",
               " yo ", "toddler", " baby ", " infant", " teen ", " teens ", "teenager"),
-    "injur": ("injur", "broke my", "broken", "fracture", "sprain", "wound", "cut my"),
+    "injur": ("injur", "broke my", "broken bone", "broken arm", "broken wrist", "broken leg",
+              "fracture", "sprain", "wound", "cut my"),
     "menses": ("menses", "menstrua", "my period", "heavy period"),
     "bleeding": ("bleeding", "hemophilia", "haemophilia", "bruise easily", "von willebrand",
                  "clotting disorder"),
@@ -2930,7 +2933,7 @@ _CAUTION_SUBJECT_WORDS = {
     "prescription": ("prescription", "medicine", "medication", " meds ", " drugs ", " my drug", " a drug for", " pill ", " pills ",
                      "statin", "aspirin", "ibuprofen", "lisinopril", "metoprolol",
                      "amlodipine", "losartan", "omeprazole", "prednisone", "gabapentin",
-                     "chemo"),
+                     "chemo", "birth control", " hrt ", "hormone replacement", "ambien"),
 }
 
 # A caution may name its subject in other words: Fibrosolve says anticoagulant and
@@ -2939,7 +2942,7 @@ _CAUTION_SUBJECT_IN_CAUTION = {
     "blood thinner": ("anticoagulant", "antiplatelet"),
     "breastfeeding": ("nursing",),
     # Estro-Clear says "medications" and Brain Cleanse "medicine" (review round 3).
-    "prescription": ("medication", "medicine"),
+    "prescription": ("medication", "medicine", "medical treatment"),
 }
 
 
@@ -3047,15 +3050,19 @@ _CAUTION_ANSWER_RULES = (
     "CAUTION ANSWER. The user asks about a medicine, pregnancy, surgery or condition that "
     "a product caution below names. This replaces the usual answer structure: no "
     "consensus, no limitation, no hidden assumption, no tease, and no break-and-rebuild. "
-    "The caution is not a view to credit, question or improve on.\n"
-    "1. Open with the caution, every sentence of it, in the format the text below sets.\n"
-    "2. Then add only approved text from below that the user asked for, such as the "
-    "directions.\n"
+    "A caution is not a view to credit, question or improve on.\n"
+    "1. Open with each caution that names what the user asks about, every sentence of it, "
+    "in the format the text below sets. A caution's own words do not count toward any word "
+    "limit.\n"
+    "2. Then answer the rest of the question plainly, from the approved text below and the "
+    "sources, as you would otherwise. Nothing in it may argue with, qualify or weigh a "
+    "caution.\n"
     "3. Close with one next step.\n"
-    "Give no time to stop, pause or restart, no dose change, and no permission to use it "
-    "that the caution does not state. The caution is the product page's own text, so give "
-    "it in full even when you may not give individual guidance. If the user has not agreed "
-    "to the Terms, that one next step is the invitation to agree to them. ")
+    "For a product whose caution you open with, give no time to stop, pause or restart, no "
+    "dose change, and no permission to use it that its caution does not state. Answer about "
+    "any other product as usual. A caution is the product page's own text, so give it in "
+    "full even when you may not give individual guidance. If the user has not agreed to the "
+    "Terms, that one next step is the invitation to agree to them. ")
 
 
 def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False):
