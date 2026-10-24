@@ -77,4 +77,4 @@ def test_page_data_serves_size_and_dose(monkeypatch, tmp_path):
     assert [(i["name"], i["dose"]) for i in body["ingredients"]] == INGREDIENTS
     assert body["directions"] == DIRECTIONS
     assert body["note"] == PANEL_NOTE
-    assert not body["warning"]
+    assert not any(s["id"] == "caution" for s in data["sections"])

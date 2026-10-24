@@ -213,12 +213,14 @@ def test_a_component_without_the_bot_opt_in_is_left_out(monkeypatch):
     products = copy.deepcopy(app._PRODUCTS)
     products["products"]["sleep-syntropy"].pop("chat_caution")
     monkeypatch.setattr(app, "_PRODUCTS", products)
-    b = _block("Is the Sleep Bundle safe?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = _block("What is in the Sleep Bundle?")
     assert BRAIN_CLEANSE in b and SLEEP_SYNTROPY not in b
 
 
 def test_a_product_and_its_bundle_together_send_each_caution_once():
-    b = _block("Is Brain Cleanse in the Sleep Bundle safe?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = _block("What does Brain Cleanse in the Sleep Bundle do?")
     assert b.count(BRAIN_CLEANSE) == 1 and b.count(SLEEP_SYNTROPY) == 1
     assert "Caution: the Brain Cleanse caution is given in full above and applies here too." in b
 
@@ -228,7 +230,8 @@ def test_four_names_keep_three_blocks_and_each_caution_once(monkeypatch):
     # round 3). The loop stops before building a fourth block, so this pins the outcome;
     # it cannot tell a dedupe before the cap from one after it (review round 1).
     assert app._NAMED_FACTS_MAX_PRODUCTS == 3
-    b = _block("Angiostasis, Fibrosolve, Sleep Bundle and Brain Cleanse: which is safe?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = _block("Angiostasis, Fibrosolve, Sleep Bundle and Brain Cleanse: which is best?")
     assert "### Brain Cleanse" not in b               # the fourth block is cut
     assert b.count(BRAIN_CLEANSE) == 1 and b.count(SLEEP_SYNTROPY) == 1
     assert "given in full above" not in b
@@ -242,7 +245,8 @@ def test_a_pinned_description_holding_its_caution_counts_as_given(monkeypatch):
     bc["copy_pinned"] = ["description"]
     bc["description"] = "Approved text. " + BRAIN_CLEANSE
     monkeypatch.setattr(app, "_PRODUCTS", products)
-    b = _block("Is Brain Cleanse in the Sleep Bundle safe?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = _block("What does Brain Cleanse in the Sleep Bundle do?")
     assert b.count(BRAIN_CLEANSE) == 1
 
 

@@ -146,7 +146,7 @@ def test_no_cached_ai_draft_replaces_the_pinned_copy(appmod):
     assert secs["research"]["body"]["how_it_works"] == ""
     body = secs["ingredients"]["body"]
     assert [(i["name"], i["dose"]) for i in body["ingredients"]] == [(ONE[0]["name"], ONE[0]["dose"])]
-    assert body["directions"] == DIRECTIONS and body["warning"] == WARNING
+    assert body["directions"] == DIRECTIONS and secs["caution"]["body"] == WARNING
     from dashboard.capsule_copy import CAPSULE_COPY
     assert body["capsule"] == CAPSULE_COPY["drcaps"]
     assert [i["src"] for i in d["images"]] == PHOTOS

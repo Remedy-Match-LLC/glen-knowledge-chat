@@ -183,8 +183,8 @@ def appmod(monkeypatch, tmp_path):
 def test_the_product_page_carries_its_caution_once(appmod, slug):
     d = appmod.app.test_client().get(f"/begin/product-page-data/{slug}").get_json()
     secs = {s["id"]: s for s in d["sections"]}
-    assert secs["ingredients"]["body"]["warning"] == APPROVED[slug]
-    assert not any(s["id"].startswith("caution") for s in d["sections"])
+    assert secs["caution"]["body"] == APPROVED[slug]
+    assert [s["id"] for s in d["sections"] if s["id"].startswith("caution")] == ["caution"]
     assert json.dumps(d).count(APPROVED[slug][:80]) == 1
     assert secs["ingredients"]["body"]["directions"] == COPY[slug]["directions"]
     assert secs["intro"]["body"] == COPY[slug]["intro"]
@@ -359,7 +359,8 @@ def test_the_gated_note_still_reaches_a_caution_only_answer():
 
 def test_a_mixed_answer_keeps_the_full_header():
     # A pinned product's dose still comes from its text.
-    b = _block("Is Brain Cleanse in the Sleep Bundle safe?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = _block("What does Brain Cleanse in the Sleep Bundle do?")
     assert "### Brain Cleanse" in b and "### Sleep Bundle" in b
     assert DOSE_RULE in b
     assert b.count(BRAIN_CLEANSE) == 1 and b.count(SLEEP_SYNTROPY) == 1

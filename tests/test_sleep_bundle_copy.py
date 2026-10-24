@@ -95,7 +95,8 @@ def _block(q, gated=False):
     return app.named_product_facts_block(q, gated=gated)
 
 
-@pytest.mark.parametrize("q", ["Is the Sleep Bundle safe?", "is sleep bundle safe with my meds?",
+# A caution question now gets the link (2026-10-24); the copy path runs on these.
+@pytest.mark.parametrize("q", ["What is the Sleep Bundle?", "what is in sleep bundle?",
                                "How should I take the Sleep Bundle?"])
 def test_the_block_carries_the_directions_description_and_both_cautions_once(q):
     b = _block(q)
@@ -106,6 +107,19 @@ def test_the_block_carries_the_directions_description_and_both_cautions_once(q):
     for slug, name in (("brain-cleanse", "Brain Cleanse"), ("sleep-syntropy", "Sleep Syntropy")):
         assert b.count(_warning(slug)) == 1
         assert f"Caution for {name}: {_warning(slug)}" in section
+
+
+@pytest.mark.parametrize("q", ["Is the Sleep Bundle safe?", "is sleep bundle safe with my meds?"])
+def test_a_caution_question_gets_both_links_and_no_caution_text(q):
+    # Glen, 2026-10-24: each component caution the question touches is linked, not copied.
+    b = _block(q)
+    section = b[b.index("### Sleep Bundle"):]
+    assert DESCRIPTION in section and f"Directions:\n{INTRO}" in section
+    for slug, name in (("brain-cleanse", "Brain Cleanse"), ("sleep-syntropy", "Sleep Syntropy")):
+        assert b.count(_warning(slug)) == 0
+        assert b.count(app._CAUTION_LINK_LINE.format(
+            name=name, where=app._CAUTION_LINK_WHERE)) == 1
+    assert app._CAUTION_STAY_LINE not in b
 
 
 def test_a_dose_question_gets_the_dose_rule_and_both_copy_rules():
@@ -227,7 +241,8 @@ def test_other_products_get_neither(q, monkeypatch):
 
 @pytest.mark.parametrize("q", ["Can I take Sleep Syntropy with the Sleep Bundle?",
                                "Can I take Brain Cleanse and the Sleep Bundle together?",
-                               "Is the Sleep Bundle safe with Brain Cleanse and Sleep Syntropy?"])
+                               # A caution question now gets the link (2026-10-24).
+                               "Tell me about the Sleep Bundle with Brain Cleanse and Sleep Syntropy."])
 def test_the_copy_reminder_sits_only_above_a_caution_given_in_full(q):
     # Review round 1: above a pointer line alone, the bot could print the pointer.
     checked = 0

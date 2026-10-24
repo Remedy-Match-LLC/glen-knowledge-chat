@@ -198,7 +198,8 @@ def test_fibrosolve_page_serves_the_label_panel_and_drcaps(fresh_app):
     data = fresh_app.app.test_client().get("/begin/product-page-data/fibrosolve").get_json()
     body = next(s for s in data["sections"] if s["id"] == "ingredients")["body"]
     assert [i["name"] for i in body["ingredients"]][-1] == "Protease (Aspergillus niger)"
-    assert body["directions"] == FS_DIR and body["warning"] == FS_WARN
+    assert body["directions"] == FS_DIR
+    assert next(s for s in data["sections"] if s["id"] == "caution")["body"] == FS_WARN
     from dashboard.capsule_copy import CAPSULE_COPY
     assert body["capsule"]["text"] == CAPSULE_COPY["drcaps"]["text"]
     assert "pullulan" not in json.dumps(body).lower()

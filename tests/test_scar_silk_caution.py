@@ -87,13 +87,17 @@ def appmod(monkeypatch, tmp_path):
 def test_the_page_carries_the_caution_once(appmod):
     d = appmod.app.test_client().get("/begin/product-page-data/scar-silk").get_json()
     secs = {s["id"]: s for s in d["sections"]}
-    assert secs["ingredients"]["body"]["warning"] == APPROVED
+    assert secs["caution"]["body"] == APPROVED
     assert json.dumps(d).count(APPROVED) == 1
 
 
-@pytest.mark.parametrize("q", ["Is Scar Silk safe?", "What is Scar Silk?",
-                               "How much Scar Silk should I take?",
-                               "Is Scar Silk safe if I take a blood thinner?"])
+def _link(name):
+    return app._CAUTION_LINK_LINE.format(name=name, where=app._CAUTION_LINK_WHERE)
+
+
+# A caution question now gets the link (2026-10-24); the copy path runs on these.
+@pytest.mark.parametrize("q", ["What is Scar Silk?", "How much Scar Silk should I take?",
+                               "Tell me about Scar Silk."])
 def test_the_chatbot_carries_the_directions_and_the_caution_once(q):
     b = app.named_product_facts_block(q)
     section = b[b.index("### Scar Silk"):]
@@ -112,6 +116,22 @@ def test_the_chatbot_carries_the_directions_and_the_caution_once(q):
     assert "two capsules at one time" not in b
 
 
+@pytest.mark.parametrize("q", ["Is Scar Silk safe?",
+                               "Is Scar Silk safe if I take a blood thinner?"])
+def test_a_caution_question_gets_the_directions_and_the_link(q):
+    # Glen, 2026-10-24: a question that touches the caution gets a link, never a copy.
+    b = app.named_product_facts_block(q)
+    section = b[b.index("### Scar Silk"):]
+    assert section.split("\n") == [
+        "### Scar Silk", f"Page: {app._catalog_page_url('scar-silk')}",
+        app._NO_DESCRIPTION.format(name="Scar Silk"),
+        f"Directions: {DIRECTIONS}",
+        app._PINNED_DOSE_RULE.format(name="Scar Silk", example=""),
+        _link("Scar Silk")]
+    assert b.count(APPROVED) == 0 and app._ONE_CAUTION_RULE not in b
+    assert app._CAUTION_STAY_LINE not in b and app._CAUTION_CLOSING_REMINDER not in b
+
+
 def test_the_gated_note_names_the_product_page_not_the_label():
     # Labels carry no cautions (Glen, 2026-10-15), so the caution is read back as the
     # product page's (Glen "yes", 2026-10-15). Directions keep the label wording.
@@ -121,9 +141,17 @@ def test_the_gated_note_names_the_product_page_not_the_label():
 
 
 def test_a_gated_answer_gets_the_product_page_wording():
-    b = app.named_product_facts_block("Is Scar Silk safe if I take a blood thinner?", gated=True)
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = app.named_product_facts_block("What is Scar Silk?", gated=True)
     assert app._GATED_FACTS_NOTE in b and b.count(APPROVED) == 1
     assert '"The caution on the product page for <product name> is:"' in b
+
+
+def test_a_gated_caution_question_gets_the_link():
+    # Glen, 2026-10-24: gated too, the caution question points to the caution.
+    b = app.named_product_facts_block("Is Scar Silk safe if I take a blood thinner?", gated=True)
+    assert app._GATED_FACTS_NOTE in b and b.count(APPROVED) == 0
+    assert b.count(_link("Scar Silk")) == 1
 
 
 def test_lowercase_scar_silk_without_a_cue_is_a_known_gap():
