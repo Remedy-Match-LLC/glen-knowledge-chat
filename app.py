@@ -2925,6 +2925,8 @@ _CAUTION_SUBJECT_WORDS = {
 _CAUTION_SUBJECT_IN_CAUTION = {
     "blood thinner": ("anticoagulant", "antiplatelet"),
     "breastfeeding": ("nursing",),
+    # Estro-Clear says "medications" and Brain Cleanse "medicine" (review round 3).
+    "prescription": ("medication", "medicine"),
 }
 
 

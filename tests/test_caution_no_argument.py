@@ -133,7 +133,9 @@ def test_a_follow_up_about_a_no_caution_product_loses_them_too(appmod):
 @pytest.mark.parametrize("q", ["Can I take Stress Release with lisinopril?",
                                "Is Stress Release ok with my statin?",
                                "Can I take Scar Silk with my medication?",
-                               "Can I take Stress Release with my pills?"])
+                               "Can I take Stress Release with my pills?",
+                               "Can I take Brain Cleanse with my statin?",
+                               "Can I take Estro-Clear with my statin?"])
 def test_a_caution_naming_prescription_medication_takes_any_medicine(appmod, q):
     assert "prescription" in appmod._caution_subjects_asked(q)
     ms = _matches()
