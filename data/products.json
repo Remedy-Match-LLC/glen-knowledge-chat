@@ -10649,89 +10649,113 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "CBD",
-     "dose": "8 mg"
+     "name": "GABA (gamma-aminobutyric acid)",
+     "dose": "30 mg",
+     "page_slug": "gaba",
+     "page_name": "GABA"
     },
     {
-     "name": "Ashwagandha root extract Ayurvedic Ginseng Withania somnifera Withanolides",
-     "dose": "25 mg"
+     "name": "Green tea L-theanine 99% (Camellia sinensis)",
+     "dose": "30 mg",
+     "page_slug": "l-theanine",
+     "page_name": "L-Theanine"
     },
     {
-     "name": "Salidrosides 98% (Rhodiola rosea)",
-     "dose": "5 mg"
+     "name": "Saffron safranal 3% (Crocus sativus)",
+     "dose": "5 mg",
+     "page_slug": "saffron",
+     "page_name": "Saffron"
     },
     {
-     "name": "Siberian Ginseng",
-     "dose": "80 mg"
+     "name": "Maca macamides 60% (Lepidium meyenii)",
+     "dose": "40 mg",
+     "page_slug": "maca-60-macamides-organic-extract",
+     "page_name": "Maca 60% Macamides Organic Extract"
     },
     {
-     "name": "Maca 60% Macamides Organic Extract",
-     "dose": "5 mg"
+     "name": "Phosphatidylserine 50%, from soy (Glycine max)",
+     "dose": "65 mg",
+     "page_slug": "phosphatidyl-serine",
+     "page_name": "Phosphatidyl Serine"
     },
     {
-     "name": "Holy Basil",
-     "dose": "100 mg"
+     "name": "Rhodiola salidrosides (Rhodiola rosea)",
+     "dose": "6 mg",
+     "page_slug": "salidrosides-98-rhodiola-rosea",
+     "page_name": "Salidrosides 98% (Rhodiola rosea)"
     },
     {
-     "name": "Honokiol",
-     "dose": "7 mg"
+     "name": "Siberian ginseng eleutherosides B and E 2% (Eleutherococcus senticosus)",
+     "dose": "80 mg",
+     "page_slug": "siberian-ginseng",
+     "page_name": "Siberian ginseng"
     },
     {
-     "name": "Honokiol",
-     "dose": "0 mg"
+     "name": "Celery seed apigenin 98% (Apium graveolens)",
+     "dose": "15 mg",
+     "page_slug": "apigenin",
+     "page_name": "Apigenin"
     },
     {
-     "name": "L-Theanine",
-     "dose": "30 mg"
+     "name": "Magnolia honokiol 50% (Magnolia officinalis)",
+     "dose": "7 mg",
+     "page_slug": "honokiol",
+     "page_name": "Honokiol"
     },
     {
-     "name": "Saffron",
-     "dose": "5 mg"
+     "name": "Passionflower flavones 10% (Passiflora incarnata)",
+     "dose": "80 mg",
+     "page_slug": "wild-passion-flower-maypop-apricot-vine-",
+     "page_name": "Wild passion flower, maypop, apricot vine, old field apricot, Holy-Trinity flower, molly-pop, passion vine, pop-apple, granadilla, maycock, white sarsaparilla"
     },
     {
-     "name": "Celery extract (seed specified by Geekee) Apium graveolens 4’,5,7-trihydroxyflavone",
-     "dose": "15 mg"
+     "name": "Rosemary rosmarinic acid 50% (Salvia rosmarinus)",
+     "dose": "10 mg",
+     "page_slug": "rosmarinic-acid",
+     "page_name": "Rosmarinic acid"
     },
     {
-     "name": "GABA",
-     "dose": "30 mg"
+     "name": "Ashwagandha withanolides 20% (Withania somnifera)",
+     "dose": "25 mg",
+     "page_slug": "ashwagandha-root-extract-ayurvedic-ginse",
+     "page_name": "Ashwagandha root extract Ayurvedic Ginseng Withania somnifera Withanolides"
     },
     {
-     "name": "Rosmarinic acid",
-     "dose": "0 mg"
+     "name": "CBD (cannabidiol, Cannabis spp.)",
+     "dose": "10 mg",
+     "page_slug": "cbd",
+     "page_name": "CBD"
     },
     {
-     "name": "(formerly Rosmarinus officinalis)",
-     "dose": "10 mg"
+     "name": "Holy basil ursolic acid 50% (Ocimum sanctum)",
+     "dose": "100 mg",
+     "page_slug": "holy-basil",
+     "page_name": "Holy Basil"
     },
     {
-     "name": "Wild passion flower, maypop, apricot vine, old field apricot, Holy-Trinity flower, molly-pop, passion vine, pop-apple, granadilla, maycock, white sarsaparilla",
-     "dose": "80 mg"
-    },
-    {
-     "name": "Phosphatidyl Serine",
-     "dose": "65 mg"
-    },
-    {
-     "name": "PS",
-     "dose": "0 mg"
-    },
-    {
-     "name": "Xanthan Gum is made by Xanthomonas campestris fermenting bacterium",
-     "dose": "12.5 mg"
-    },
-    {
-     "name": "Glucomannan Amorphophallus konjac",
-     "dose": "12.5 mg"
+     "name": "Slow release gel: konjac glucomannan (Amorphophallus konjac) and xanthan gum (Xanthomonas campestris)",
+     "dose": "25 mg",
+     "page_slug": "glucomannan-amorphophallus-konjac",
+     "page_name": "Glucomannan Amorphophallus konjac"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Stress Release . Stress Release - CBD Synergy Stress Release Stress Release - CBD Synergy provides a balance of quick release, slow release and sustained high bioavailability of CBD and synergistic botanical concentrates. Our slow release factors are all biocompatible botanicals, and our formulation is completely free of phthalates (plasticizers) used in most time-release supplements and pharmaceuticals. Phthalates wreak havoc with the immune system, so it is best to avoid them wherever possible. Stress Release can be taken at whatever time of day you find it helpful for stress management and...",
+   "ingredients_source": "label-2025-12, Glen confirmed 2026-10-23",
+   "description": "Stress Release pairs CBD with thirteen natural concentrates chosen to support calm and resilience.\n\nA gentle plant gel releases them slowly through the day.\n\nThe slow release comes from konjac root and xanthan gum.\n\nThe formula contains no phthalates, the plasticizers used in many time-release products.\n\nTake 1 capsule at bedtime, or up to 3 times a day as needed with food, or as guided.",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: CBD, Ursolic Acid, Honokiol, L-Theanine, Safranal, Apigenin, GABA, Rosmarinic Acid, Xanthan Gum, Glucomannan",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "442"
+   "fmp_id": "442",
+   "directions": "Take 1 capsule at bedtime, or up to 3 times a day as needed with food, or as guided.",
+   "panel_note": "Other ingredients: pullulan vegicap, Healing Energy, Love, and Prayer.",
+   "intro": "Stress Release pairs CBD with thirteen natural concentrates chosen to support calm and resilience.\n\nA gentle plant gel releases them slowly through the day.",
+   "content_since": "2026-10-24T07:27:00",
+   "copy_pinned": [
+    "intro",
+    "description",
+    "research",
+    "ingredients"
+   ]
   },
   "tmg-syntropy-powder-trimethylglycine": {
    "name": "TMG Powder (Trimethylglycine)",

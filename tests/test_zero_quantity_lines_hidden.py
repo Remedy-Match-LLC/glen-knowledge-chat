@@ -12,7 +12,8 @@ import pytest
 from dashboard.products import shown_ingredients
 
 SHOWN = {"brain-cleanse": 9, "glutathione-syntropy": 9, "neuroprotect": 8,
-         "stress-release": 16, "snake--dragon": 10, "soothe-powder": 14,
+         # Stress Release: the December 2025 label's 15 lines (Glen, 2026-10-23).
+         "stress-release": 15, "snake--dragon": 10, "soothe-powder": 14,
          "scar-soft-drink": 9}
 
 
