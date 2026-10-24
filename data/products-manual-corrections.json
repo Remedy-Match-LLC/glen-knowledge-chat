@@ -106,7 +106,9 @@
       "research",
       "ingredients"
     ],
-    "note": "December 2025 label (Stress_Release_1225_1.88x6in.ai). Glen confirmed CBD 10 mg, macamides 40 mg and salidrosides 6 mg on 2026-10-23. FileMaker 442 is stale on those three."
+    "note": "December 2025 label (Stress_Release_1225_1.88x6in.ai). Glen confirmed CBD 10 mg, macamides 40 mg and salidrosides 6 mg on 2026-10-23. FileMaker 442 is stale on those three.",
+    "warning": "May cause drowsiness. If you take a prescription medication, especially a blood thinner, a sedative or a thyroid medication, consult your physician before use. Also consult your physician first if you have an autoimmune or thyroid condition. Do not use if you are about to have surgery. Avoid use in pregnancy or while breastfeeding.",
+    "chat_caution": true
   },
   "tmg-syntropy-powder-trimethylglycine": {
     "ingredients": [

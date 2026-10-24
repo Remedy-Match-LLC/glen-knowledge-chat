@@ -2251,6 +2251,10 @@ _CUE_NAMES = frozenset({
     # 2026-10-18-iron-out-directions). A cue word is still needed, so "iron out the
     # details" gets no block.
     "iron-out",
+    # "is stress release safe with warfarin?" brings the caution (store spec
+    # 2026-10-24-stress-release-caution). Glen accepted the lowercase false positives the
+    # spec lists, such as "is tapping for stress release safe?" (production tab, "yes").
+    "stress-release",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
