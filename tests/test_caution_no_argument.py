@@ -98,31 +98,69 @@ def test_operate_machinery_and_cooperation_are_not_surgery(appmod, q):
     "Is Clarity safe while pregnant?",
     "Does Clarity interact with sertraline?",
     "Can I take Clarity before surgery?",
+    # No list of drug names is whole, so a named product drops them for any question
+    # (review round 2).
+    "Can I take Clarity with lisinopril?",
+    "Is Clarity ok during chemo?",
+    "What is in Clarity?",
 ])
 def test_a_no_caution_product_loses_the_interaction_snippets(appmod, q):
     assert "Clarity has no caution on its product page." in appmod.named_product_facts_block(q)
-    assert appmod._no_caution_subject_asked(q)
+    assert appmod._no_caution_product_named(q)
     ms = _matches()
     assert appmod._drop_caution_subject_snippets(ms, q) == ms[1:]
 
 
-def test_a_no_caution_product_keeps_its_snippets_for_other_questions(appmod):
-    q = "What is in Clarity?"
-    assert not appmod._no_caution_subject_asked(q)
-    ms = _matches()
-    assert appmod._drop_caution_subject_snippets(ms, q) is ms
-
-
 def test_a_question_with_no_product_keeps_its_snippets(appmod):
     q = "Does ashwagandha interact with my thyroid medicine?"
-    assert not appmod._no_caution_subject_asked(q)
+    assert not appmod._no_caution_product_named(q)
     ms = _matches()
     assert appmod._drop_caution_subject_snippets(ms, q) is ms
+
+
+def test_a_product_with_a_caution_is_not_a_no_caution_product(appmod):
+    assert not appmod._no_caution_product_named("Can I take Stress Release with lisinopril?")
 
 
 def test_a_follow_up_about_a_no_caution_product_loses_them_too(appmod):
     prior = ["Tell me about Clarity."]
     q = "Can I take it with my blood pressure medicine?"
-    assert appmod._no_caution_subject_asked(q, prior)
+    assert appmod._no_caution_product_named(q, prior)
     ms = _matches()
     assert appmod._drop_caution_subject_snippets(ms, q, prior) == ms[1:]
+
+
+@pytest.mark.parametrize("q", ["Can I take Stress Release with lisinopril?",
+                               "Is Stress Release ok with my statin?",
+                               "Can I take Scar Silk with my medication?",
+                               "Can I take Stress Release with my pills?"])
+def test_a_caution_naming_prescription_medication_takes_any_medicine(appmod, q):
+    assert "prescription" in appmod._caution_subjects_asked(q)
+    ms = _matches()
+    assert appmod._drop_caution_subject_snippets(ms, q) == ms[1:]
+
+
+@pytest.mark.parametrize("q", ["Can I take Stress Release on my pillow?",
+                               "Is Vitamin D Syntropy ok with my medication?"])
+def test_no_prescription_subject_without_its_word_or_its_caution(appmod, q):
+    # A pillow is not a pill, and Vitamin D Syntropy's caution names no prescription.
+    assert "prescription" not in appmod._caution_subjects_asked(q)
+
+
+def test_the_scope_of_the_rules_names_surgery(appmod):
+    for text in (appmod._CAUTION_NO_ADDITIONS, appmod._CAUTION_STAY_LINE,
+                 appmod._CAUTION_CLOSING_REMINDER):
+        assert "pregnancy, surgery or" in text
+
+
+def test_the_gated_surgery_answer_carries_the_rule_too(appmod):
+    b = appmod.named_product_facts_block("Can I take Stress Release before surgery?",
+                                         gated=True)
+    assert b.count(NO_ARGUMENT) == 2 and b.endswith(NO_ARGUMENT)
+
+
+def test_two_cautions_with_different_surgery_windows_each_keep_their_own(appmod):
+    b = appmod.named_product_facts_block("Can I take Brain Cleanse and Fibrosolve before surgery?")
+    assert "Stop a few days before surgery." in b
+    assert "within about two weeks of surgery" in b
+    assert b.count(NO_ARGUMENT) == 3 and b.endswith(NO_ARGUMENT)

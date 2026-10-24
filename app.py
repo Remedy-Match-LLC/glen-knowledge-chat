@@ -2420,7 +2420,7 @@ _CautionLine = _namedtuple("_CautionLine", "key text ref")
 # answer, after the copy rule in the header.
 _CAUTION_NO_ADDITIONS = (
     "Call a caution \"the caution on the product page\", never the label caution. When "
-    "the user asks about a medicine, pregnancy or a condition that a caution names, give "
+    "the user asks about a medicine, pregnancy, surgery or a condition that a caution names, give "
     "that caution's own advice and add none of your own. On that subject, do not say how "
     "well clients tolerate the product, and do not suggest monitoring or changing any "
     "medicine or dose. Name no other product or source in its place, and no one else to "
@@ -2439,13 +2439,13 @@ _CAUTION_NO_ARGUMENT = ("Do not argue with, qualify or weigh the caution, and gi
                         "time window it does not state.")
 _CAUTION_STAY_LINE = (
     "Copy every sentence of the caution above. Then add nothing of your own on any "
-    "medicine, pregnancy or condition it names: no monitoring, dose, tolerance or "
+    "medicine, pregnancy, surgery or condition it names: no monitoring, dose, tolerance or "
     "other-product advice, and no one else to ask. " + _CAUTION_NO_ARGUMENT)
 # The last words of the user message when an opted-in caution is in the answer. The facts
 # block is already last, after the snippets; this closes it (review round 2, variants b and
 # c: the read-back answers took INR monitoring from a cited drug interaction book).
 _CAUTION_CLOSING_REMINDER = (
-    "Caution reminder: for any medicine, pregnancy or condition a caution above names, "
+    "Caution reminder: for any medicine, pregnancy, surgery or condition a caution above names, "
     "that caution is the whole answer. Copy every sentence of it. Call it the caution on "
     "the product page, never the label. On that subject, skip the drug interaction text "
     "in the snippets: do not use it, quote it or cite it. Add no monitoring, INR, dose, "
@@ -2912,14 +2912,14 @@ _CAUTION_SUBJECT_WORDS = {
     "autoimmune": ("autoimmune", "auto immune", "lupus", "rheumatoid", "hashimoto", "graves",
                    "multiple sclerosis", "celiac", "coeliac", "crohn", "ulcerative colitis",
                    "psoria", "sjogren", "thyroiditis", "type 1 diabetes"),
+    # Stress Release and Scar Silk name any prescription medication, and no list of drug
+    # names is whole. These are the plain words and some common drugs (review round 2).
+    "prescription": ("prescription", "medicine", "medication", " meds ", " drug", " pill ", " pills ",
+                     "statin", "aspirin", "ibuprofen", "lisinopril", "metoprolol",
+                     "amlodipine", "losartan", "omeprazole", "prednisone", "gabapentin",
+                     "chemo"),
 }
-# A product that says it has no caution asks the bot to add nothing from the snippets
-# about interactions or safety. Its question can name any medicine, pregnancy or condition,
-# so every subject word counts, and so do the plain words for medicine and safety.
-_NO_CAUTION_SUBJECT_WORDS = tuple(sorted(
-    {w for words in _CAUTION_SUBJECT_WORDS.values() for w in words}
-    | {"medicine", "medication", "meds", "drug", "prescription", "pill", "interact",
-       "safe", "condition"}))
+
 # A caution may name its subject in other words: Fibrosolve says anticoagulant and
 # antiplatelet, Estro-Clear says nursing (review round 1, 2026-10-21).
 _CAUTION_SUBJECT_IN_CAUTION = {
@@ -2972,17 +2972,17 @@ def _subject_text(text: str) -> str:
     return " " + " ".join(re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).split()) + " "
 
 
-def _no_caution_subject_asked(query_text: str, prior_user_turns=None) -> bool:
-    """True when the answer carries a product's no-caution line and this message names a
-    medicine, pregnancy, a condition or safety. Knowledge read-back, 2026-10-24: asked
-    about Clarity with blood pressure medicine, the interaction snippets were still there
-    for the bot to draw a verdict from."""
+def _no_caution_product_named(query_text: str, prior_user_turns=None) -> bool:
+    """True when the answer carries a product's no-caution line. That line asks the bot to
+    add nothing from the snippets about interactions or safety, so the interaction snippets
+    go whatever the question says: no list of drug names is whole (review round 2).
+    Knowledge read-back, 2026-10-24: asked about Clarity with blood pressure medicine, the
+    bot drew a verdict from them."""
     if not query_text or not (_PRODUCTS or {}).get("products"):
         return False
     none = set()
     _named_product_facts(_carried_query(query_text, prior_user_turns), no_caution_out=none)
-    q = _subject_text(query_text)
-    return bool(none) and any(w in q for w in _NO_CAUTION_SUBJECT_WORDS)
+    return bool(none)
 
 
 def _chat_prior_user_turns(history, session_id) -> list:
@@ -3009,12 +3009,11 @@ def _chat_prior_user_turns(history, session_id) -> list:
 def _drop_caution_subject_snippets(matches, query_text: str, prior_user_turns=None):
     """Drug interaction snippets are dropped only when the answer carries an opted-in
     caution and the question names a subject that caution names, or when it carries a
-    no-caution line and the question names a medicine, a condition or safety. Every
-    other question keeps its snippets unchanged."""
+    no-caution line. Every other question keeps its snippets unchanged."""
     # Fails open: any error keeps every snippet, so the answer goes on (review round 3).
     try:
         if not matches or not (_caution_subjects_asked(query_text, prior_user_turns)
-                               or _no_caution_subject_asked(query_text, prior_user_turns)):
+                               or _no_caution_product_named(query_text, prior_user_turns)):
             return matches
     except Exception as e:
         print(f"[chat] caution snippet filter failed, snippets kept: {e!r}", flush=True)
