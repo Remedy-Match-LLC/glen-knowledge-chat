@@ -103,3 +103,14 @@ def test_safety_pregnancy_and_conditions_get_the_ask_dr_glen_answer(appmod, gate
             "nursing or with a health condition, say: \"The product page carries no caution "
             "for Clarity. Please ask Dr. Glen before taking it.\"") in block
     assert "Never say or imply that no caution means it is safe." in block
+
+
+def test_no_interaction_verdict_may_follow_the_line(appmod):
+    block = appmod._named_product_facts("Can I take Clarity with my blood pressure medicine?")
+    assert ("After either answer, add nothing of your own about Clarity with a medicine, "
+            "in pregnancy or nursing, or with a health condition. Give no verdict on whether "
+            "it interacts with or interferes with any medicine, no reassurance, no monitoring "
+            "or dose advice, and nothing "
+            "from the snippets about interactions or safety.") in block
+    assert ("This limits only what you add yourself: still give its approved description, "
+            "ingredients and directions when asked.") in block

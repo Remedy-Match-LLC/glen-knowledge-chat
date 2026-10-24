@@ -2480,14 +2480,22 @@ _NO_DESCRIPTION_GATED = ("No description of {name} is approved here. If asked wh
 # ..." for Stress Release, which has no caution anywhere: the gated note offered that
 # sentence and the model filled it in. The answer is Glen's wording ("yes", 2026-10-23),
 # widened to safety, pregnancy, nursing and conditions (Glen "yes", review round 2).
+# Read-back after deploy (knowledge, 2026-10-24): asked about Clarity with blood pressure
+# medicine, the bot gave the line and then "None of these are known to interfere with
+# blood pressure medications". Piperine, in Clarity, inhibits CYP3A4. So no verdict after it.
 _NO_CAUTION = ("{name} has no caution on its product page. Never quote, invent or attribute "
                "a caution to that page. If asked about taking {name} with a medicine, say: "
                "\"The product page carries no caution for {name}. Please ask Dr. Glen before "
                "combining it with any medicine.\" If asked whether {name} is safe, or about "
                "taking it during pregnancy or nursing or with a health condition, say: \"The "
                "product page carries no caution for {name}. Please ask Dr. Glen before taking "
-               "it.\" Never say or imply that no caution means it is safe. This line is about "
-               "{name} alone. Another "
+               "it.\" Never say or imply that no caution means it is safe. After either answer, add "
+               "nothing of your own about {name} with a medicine, in pregnancy or nursing, or "
+               "with a health condition. Give no verdict on whether it interacts with or "
+               "interferes with any medicine, no reassurance, no monitoring or dose advice, and "
+               "nothing from the snippets about interactions or safety. This limits only what "
+               "you add yourself: still give its approved description, ingredients and "
+               "directions when asked. This line is about {name} alone. Another "
                "product's caution does not apply to {name}, and the rule to name no one else to "
                "ask does not cover {name}: still give this answer for it.")
 # Only where the block carries directions. Where it has none, asking for them sent the
