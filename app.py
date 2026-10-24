@@ -2265,7 +2265,9 @@ _SENTENCE_START_CUE_NAMES = frozenset({"clarity"})
 # "Crystalline Clarity" and the Clarity flower essences are other products. Opt-in, because
 # many pinned label names sit inside a longer unpinned FileMaker row ("Energessence
 # HomeoEnergetic Drops"), and those blocks must stay (review round 3, 2026-10-23).
-_YIELDS_TO_LONGER_NAMES = frozenset({"clarity"})
+# Stress Release: "MB5 ESR Emotional Stress Release Infoceutical" is another product
+# (review of the Stress Release pin, round 1, 2026-10-23).
+_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release"})
 # Closing quotes and brackets may sit between the full stop and the name: 'She said "I
 # feel tired." Clarity of mind ...' (review round 2), as may opening ones. A colon or
 # semicolon does not end a sentence: "Products I take: Clarity, ..." (review round 3).
