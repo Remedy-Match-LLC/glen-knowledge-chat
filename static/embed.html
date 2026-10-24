@@ -1095,7 +1095,7 @@
               }
               // ── end member_mode hook ─────────────────────────────────────
               // ── Readiness-matched CTA ─────────────────────────────────────
-              if (evt.cta) { renderCta(evt.cta, evt.log_id); }
+              if (evt.cta) { renderCta(evt.cta, evt.log_id); } (evt.extra_ctas || []).forEach(function(c){ renderCta(c, evt.log_id); });
             }
           }
         }
@@ -1871,7 +1871,7 @@
                   appendMessage('assistant', accumulated || '(no response)', evt.sources, evt.chunks_retrieved, evt.log_id);
                   history.push({ role: 'user', content: query });
                   history.push({ role: 'assistant', content: accumulated });
-                  if (evt.cta) { renderCta(evt.cta, evt.log_id); }
+                  if (evt.cta) { renderCta(evt.cta, evt.log_id); } (evt.extra_ctas || []).forEach(function(c){ renderCta(c, evt.log_id); });
                 }
                 isLoading = false;
                 if (sb) sb.disabled = false;
@@ -2017,7 +2017,7 @@
                 history.push({ role: 'user', content: query });
                 history.push({ role: 'assistant', content: accumulated });
                 // Readiness-matched CTA
-                if (evt.cta) { renderCta(evt.cta, evt.log_id); }
+                if (evt.cta) { renderCta(evt.cta, evt.log_id); } (evt.extra_ctas || []).forEach(function(c){ renderCta(c, evt.log_id); });
                 // Surfaced cards
                 if (evt.surfaced_cards && evt.surfaced_cards.length) {
                   var _assist = msgs.querySelectorAll('.message.assistant');

@@ -2465,6 +2465,15 @@ _CAUTION_LINK_LINE = (
 _CAUTION_LINK_WHERE = ("A link that opens it is added under your answer, so do not write "
                        "its address yourself.")
 _CAUTION_LINK_WHERE_LONG = "End your answer with this line: Read the full caution: {url}"
+# Beside the gated note, which offers "The caution on the product page is ..." only where
+# the text gives one; a linked caution is not given (review round 1).
+_GATED_LINK_NOTE = ("Where this text only links a caution, say that the product page "
+                    "carries a caution on this and to read it in full, and quote none of "
+                    "it.\n")
+# The header's own copy sentences, as they read when a caution in the block is linked.
+_HEADER_REPEAT = "repeat its full caution, every sentence of it, in its own words."
+_HEADER_REPEAT_LINKED = ("repeat any caution given here in full, every sentence of it, in "
+                         "its own words. A caution this text only links is not repeated.")
 _SEVERAL_CAUTIONS_RULE = (
     "There is more than one caution below. Copy each one word for word, as its own "
     "paragraph starting \"Caution for <product name>:\", every sentence of it, even where "
@@ -2649,8 +2658,13 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         if copy_block and ((val and val not in desc and "directions" in _pinned_copy(product))
                            or (product.get("bundle") and intro and "intro" in _pinned_copy(product)
                                and not val)):
-            parts.append(_PINNED_DOSE_RULE.format(
-                name=name, example=_WITHDRAWN_DOSE_EXAMPLE.get(slug, "")))
+            _dose_rule = _PINNED_DOSE_RULE.format(
+                name=name, example=_WITHDRAWN_DOSE_EXAMPLE.get(slug, ""))
+            if link_cautions:
+                # Its caution may be linked, not given (review round 1).
+                _dose_rule = _dose_rule.replace(
+                    "copy every caution in full.", "copy in full every caution given here.")
+            parts.append(_dose_rule)
         # The caution also from a chat_caution product: an opt-in for the warning alone,
         # so its scraped description, directions and components stay out (Brain Cleanse,
         # 2026-10-15). A caution is held as an entry and written after the product cap,
@@ -2730,6 +2744,7 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
     given = set()
     written = 0
     held = 0
+    linked = False
     for i, parts in enumerate(blocks):
         lines = []
         for part in parts:
@@ -2741,6 +2756,7 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                 where = (_CAUTION_LINK_WHERE_LONG.format(url=_caution_link_url(part.key))
                          if long_form else _CAUTION_LINK_WHERE)
                 part = _CAUTION_LINK_LINE.format(name=cname, where=where)
+                linked = True
             elif isinstance(part, _CautionLine):
                 if part.key in given:
                     part = f"Caution: {part.ref} is given in full above and applies here too."
@@ -2788,6 +2804,7 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         # Once per answer, beside the copy rule, and only where an opted-in caution set it
         # (review round 1, F5). Answers without the opt-in keep the header they had.
         several += _CAUTION_NO_ADDITIONS + "\n"
+    gated_note = (_GATED_FACTS_NOTE + (_GATED_LINK_NOTE if linked else "")) if gated else ""
     if all_caution_only:
         # Only cautions are approved for these products, so the header asks for no dose and
         # no description from this text: those come from the snippets, as they did before
@@ -2796,12 +2813,13 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             "PRODUCT FACTS FOR THE PRODUCT(S) THE USER NAMED. This is the approved store "
             "text for each product's caution and it outranks every snippet about that "
             "caution. Each product here exists under the name the user used, so never tell "
-            "them they meant a different product. Repeat its full caution, every sentence of "
-            "it, in its own words. Do not attach to it any condition, mechanism, pairing or "
+            "them they meant a different product. "
+            + "R" + (_HEADER_REPEAT_LINKED if linked else _HEADER_REPEAT)[1:]
+            + " Do not attach to it any condition, mechanism, pairing or "
             "dose that the snippets give for a different product, even one with a similar "
             "name.\n"
             + several
-            + (_GATED_FACTS_NOTE if gated else "") + "\n"
+            + gated_note + "\n"
             + "\n\n".join(blocks)
         )
     return (
@@ -2810,8 +2828,9 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         "under the name the user used, so never tell them they meant a different product. "
         "Describe it only by what this text says. Add no mechanism, origin story or action "
         "verb (dissolve, break down, remove, reduce, shrink) that this text does not use. "
-        "Give its dose from this text and repeat "
-        "its full caution, every sentence of it, in its own words. Do not attach to it any condition, mechanism, pairing or dose "
+        "Give its dose from this text and "
+        + (_HEADER_REPEAT_LINKED if linked else _HEADER_REPEAT)
+        + " Do not attach to it any condition, mechanism, pairing or dose "
         "that the snippets give for a different product, even one with a similar name. "
         "Name no disease or condition it is for unless this text or the user's question "
         "names it. Pair or compare it only with products this text names. In such an "
@@ -2823,7 +2842,7 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         "diseases or conditions as examples of where it helps, even in passing. The Sources "
         "line names this product text only, and a page CTA links this product's Page.\n"
         + several
-        + (_GATED_FACTS_NOTE if gated else "") + "\n"
+        + gated_note + "\n"
         + "\n\n".join(blocks)
     )
 
@@ -2958,7 +2977,7 @@ _CAUTION_SUBJECT_WORDS = {
                  "clotting disorder"),
     # Stress Release and Scar Silk name any prescription medication, and no list of drug
     # names is whole. These are the plain words and some common drugs (review round 2).
-    "prescription": ("prescription", "medicine", "medication", " meds ", " drugs ", " my drug", " a drug for", " pill ", " pills ",
+    "prescription": ("prescription", "medicine", "medication", " meds ", " drugs ", " my drug", " a drug for", " my pill ", " my pills ", " other pill ", " other pills ",
                      "statin", "aspirin", "ibuprofen", "lisinopril", "metoprolol",
                      "amlodipine", "losartan", "omeprazole", "prednisone", "gabapentin",
                      "chemo", "birth control", " hrt ", "hormone replacement", "ambien"),
@@ -3015,7 +3034,7 @@ def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
 # A question about safety touches every caution in the answer, whatever subject it names.
 # Whole words: "safeguard" and "unsafe" are no hit, and the text is padded (_subject_text).
 _CAUTION_SAFETY_WORDS = (" safe ", " safely ", " safety ", " side effect", " caution",
-                         " warning", " contraindicat", " interact")
+                         " warning", " contraindicat")
 
 
 def _caution_link_slugs(query_text: str, prior_user_turns=None) -> list:
@@ -3052,16 +3071,22 @@ def _caution_link_url(slug: str) -> str:
     return _catalog_page_url(slug) + "#caution"
 
 
+def _caution_link_ctas(query_text: str, prior_user_turns=None) -> list:
+    """The answer's buttons when its question touches a caution: one per linked caution,
+    each opening it on its product page. Empty otherwise."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    out = []
+    for slug in _caution_link_slugs(query_text, prior_user_turns):
+        name = html.unescape((products.get(slug) or {}).get("name") or slug).strip()
+        out.append({"type": "page", "target": _caution_link_url(slug),
+                    "label": f"Read the full caution for {name}"})
+    return out
+
+
 def _caution_link_cta(query_text: str, prior_user_turns=None):
-    """The answer's button when its question touches a caution: it opens that caution on
-    the product page. One button, so the first product's. None otherwise."""
-    slugs = _caution_link_slugs(query_text, prior_user_turns)
-    if not slugs:
-        return None
-    pr = ((_PRODUCTS or {}).get("products", {}) or {}).get(slugs[0]) or {}
-    name = html.unescape(pr.get("name") or slugs[0]).strip()
-    return {"type": "page", "target": _caution_link_url(slugs[0]),
-            "label": f"Read the full caution for {name}"}
+    """The first caution button, or None."""
+    ctas = _caution_link_ctas(query_text, prior_user_turns)
+    return ctas[0] if ctas else None
 
 
 def _subject_text(text: str) -> str:
@@ -3109,13 +3134,26 @@ def _drop_caution_subject_snippets(matches, query_text: str, prior_user_turns=No
     caution and the question names a subject that caution names, or when it carries a
     no-caution line. Every other question keeps its snippets unchanged."""
     # Fails open: any error keeps every snippet, so the answer goes on (review round 3).
+    original = matches
     try:
+        if not matches:
+            return matches
+        # A snippet holding a linked caution's words would let the bot quote part of it
+        # (review round 1, 2026-10-24). Matched on its opening words, whitespace-free.
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        heads = [re.sub(r"\s+", "", ((products.get(k) or {}).get("warning") or "").lower())[:60]
+                 for k in _caution_link_slugs(query_text, prior_user_turns)]
+        heads = [h for h in heads if len(h) >= 30]
+        if heads:
+            matches = [m for m in matches if not any(
+                h in re.sub(r"\s+", "", str((m.metadata or {}).get("text") or "").lower())
+                for h in heads)]
         if not matches or not (_caution_subjects_asked(query_text, prior_user_turns)
                                or _no_caution_product_named(query_text, prior_user_turns)):
             return matches
     except Exception as e:
         print(f"[chat] caution snippet filter failed, snippets kept: {e!r}", flush=True)
-        return matches
+        return original
     return [m for m in matches if not _is_drug_interaction_snippet(m.metadata)]
 
 
@@ -7190,8 +7228,10 @@ def chat():
         _clean = _store_links_text(_clean)  # log and downstream use what the client saw
         # A question that touches a caution ends with the link that opens it (Glen,
         # 2026-10-24). It replaces the model's button: the answer only points to it.
+        _caution_ctas = []
         try:
-            _cta = _caution_link_cta(query, _prior_user) or _cta
+            _caution_ctas = _caution_link_ctas(query, _prior_user)
+            _cta = (_caution_ctas or [_cta])[0]
         except Exception as _cle:  # noqa: BLE001 - never break chat
             print(f"[chat] caution link button skipped: {_cle!r}", flush=True)
         _rung = _CTA_RUNG.get((_cta or {}).get("type"))
@@ -7327,6 +7367,8 @@ def chat():
             "surfaced_cards": surfaced_cards,
             "member_mode": bool(_member_active),
             "cta": _cta,
+            # A second caution's button, and on (review round 1: a bundle's two).
+            "extra_ctas": _caution_ctas[1:],
         }
         if _member_active:
             _done_payload["days_remaining"] = _member_active.get("days_remaining", 0)

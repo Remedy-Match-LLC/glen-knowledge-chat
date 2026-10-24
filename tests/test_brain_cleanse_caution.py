@@ -349,7 +349,13 @@ def test_a_caution_only_answer_asks_for_no_dose_or_description_from_the_text(q):
     assert "Describe it only by what this text says" not in b
     assert "Answer directly from this text" not in b and "directly from this text" not in b
     assert "outranks every snippet about that caution" in b
-    assert "Repeat its full caution, every sentence of it" in b
+    # A safety question links the caution, so the header says a linked one is not
+    # repeated (review round 1, 2026-10-24).
+    linked = "safe" in q.lower()
+    assert ("Repeat any caution given here in full" if linked
+            else "Repeat its full caution, every sentence of it") in b
+    if linked:
+        assert "A caution this text only links is not repeated." in b
 
 
 def test_the_gated_note_still_reaches_a_caution_only_answer():

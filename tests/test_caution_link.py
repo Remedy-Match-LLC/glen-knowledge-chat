@@ -188,3 +188,51 @@ def test_the_page_opens_the_caution_from_the_link():
     assert "openSectionFromHash" in src
     assert "/^caution(-[a-z0-9-]+)?$/" in src
     assert re.search(r"renderProduct\(data\);\s*openSectionFromHash\(\);", src)
+
+
+# ---- review round 1 (2026-10-24) -------------------------------------------------------
+
+def test_a_bundle_question_gets_a_button_for_each_linked_caution():
+    ctas = app._caution_link_ctas("Is Sleep Bundle safe in pregnancy?")
+    assert [c["target"].rsplit("/", 1)[1] for c in ctas] == [
+        "brain-cleanse#caution", "sleep-syntropy#caution"]
+    assert app._caution_link_cta("Is Sleep Bundle safe in pregnancy?") == ctas[0]
+
+
+def test_no_copy_order_is_left_beside_a_linked_caution():
+    b = app.named_product_facts_block("Is Brain Cleanse OK before surgery?", gated=True)
+    assert "repeat its full caution" not in b.lower()
+    assert "copy every caution in full" not in b
+    assert app._GATED_LINK_NOTE in b
+    assert "A caution this text only links is not repeated." in b
+    # A question touching no caution keeps the copy orders as they were.
+    plain = app.named_product_facts_block("Tell me about Brain Cleanse", gated=True)
+    assert app._GATED_LINK_NOTE not in plain
+    assert "A caution this text only links is not repeated." not in plain
+
+
+def test_a_snippet_holding_a_linked_caution_is_dropped():
+    from types import SimpleNamespace as NS
+    warning = app._PRODUCTS["products"]["stress-release"]["warning"]
+    held = NS(id="a", score=0.9, metadata={"text": "Stress Release.  " + warning})
+    other = NS(id="b", score=0.8, metadata={"text": "Ashwagandha calms the nerves."})
+    q = "Can I take Stress Release before surgery?"
+    assert app._drop_caution_subject_snippets([held, other], q) == [other]
+    # Not linked: both kept.
+    assert app._drop_caution_subject_snippets(
+        [held, other], "Tell me about Stress Release") == [held, other]
+
+
+@pytest.mark.parametrize("q", ["How many pills of Stress Release should I take a day?",
+                               "How do the ingredients in AngiogenX interact with each other?"])
+def test_a_dose_or_ingredient_question_is_not_linked(q):
+    assert app._caution_link_slugs(q) == []
+
+
+def test_my_pills_is_still_a_medicine_question():
+    assert app._caution_link_slugs("Can I take Stress Release with my pills?") == ["stress-release"]
+
+
+def test_the_embed_renders_every_caution_button():
+    src = open("static/embed.html").read()
+    assert src.count("(evt.extra_ctas || []).forEach") == 3
