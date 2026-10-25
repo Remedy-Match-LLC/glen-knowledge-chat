@@ -2117,6 +2117,8 @@
    ]
   },
   "vitality": {
+   "warning": "Do not use if you are pregnant or breastfeeding. Consult your health professional before use if you take prescription medications, especially blood thinners or hormone therapies. Also consult first if you have a bleeding disorder, liver concerns or a hormone-sensitive condition, or are planning surgery. Stop use and consult your physician if you notice yellowing of the skin or eyes, or dark urine.",
+   "chat_caution": true,
    "name": "Vitality",
    "price_cents": 7000,
    "pinecone_title": "Vitality",
@@ -4946,6 +4948,8 @@
    "learn_markdown": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 3 capsules a day with food, or as guided.\n\n- Vitamin A (Retinyl Palmitate) 5000 IU\n- Vitamin C (Ascorbyl Palmitate) 50 mg\n- Vitamin D3 (Cholecalciferol) 400 IU\n- Vitamin E (D-Alpha Tocopheryl Succinate) 15 IU\n- Coenzyme Q10 (Ubiquinone) 5 mg\n- Magnesium (Mg Acetyl Taurate) 3 mg\n- Zinc (Zinc Carnosine) 5 mg\n- Iodine (Laminaria digitata) 150 mcg\n- Selenium (Methylselenocysteine) 70 mcg\n- Carnosine (Zinc Carnosine) 17 mg\n- Acetyl Taurate (Mg Acetyl Taurate) 47 mg\n- NAC (N-Acetyl L-Cysteine) 90 mg\n- GSH (Reduced & S-Acetyl Glutathione) 5 mg\n- Rutin (Sophora japonica) 10 mg\n- Luteolin (Reseda spp.) 10 mg\n- Apigenin (Apium graveolens) 10 mg\n- Quercetin Dihydrate (Sophora japonica) 10 mg\n- Silymarin 80% (Silybum marianum) 10 mg\n- Ellagic Acid (Rubus spp.) 10 mg\n- Polyphenols (Camellia sinensis) 10 mg\n- Oat Straw 100:1 (Avena sativa) 15 mg\n- Mistletoe 4:1 (Viscum album) 5 mg\n- Withanolides 10% (Withania somnifera) 10 mg\n- Ginsenosides 80% (Panax ginseng) 7 mg\n- Noni (Morinda citrifolia) (fructus) 20 mg\n- AHCC 50% (Lentinula edodes) (mycelia) 20 mg\n- Berberine (Coptis chinensis) 15 mg\n- Curcumin (Curcuma longa) 10 mg\n- Chlorella (Chlorella spp.) (broken cell wall) 10 mg\n- Allicin 25% (Allium sativum) 10 mg\n- Phytoceramides (Amorphophallus konjac) 25 mg\n- Bioavailability Blend 34.5 mg\n\nBioavailability Blend (34.5 mg): Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS)."
   },
   "immune-modulation": {
+   "warning": "Do not use if you are pregnant or breastfeeding. Consult your health professional before use if you take prescription medications, especially blood thinners, blood pressure or blood sugar medicines, or immune-suppressing medicines. Also consult first if you have a bleeding disorder, low blood pressure, or liver or gallbladder concerns, or are planning surgery. Stop use and consult your physician if you notice a rash, yellowing of the skin or eyes, or dark urine. This formula may affect bleeding, blood pressure, blood sugar and how some medications are processed.",
+   "chat_caution": true,
    "name": "Immune Modulation",
    "price_cents": 7000,
    "pinecone_title": "Immune Modulation",
@@ -5691,6 +5695,8 @@
    "qty_pricing": true
   },
   "ocuflow-bedtime": {
+   "warning": "Contains melatonin and may cause drowsiness. Do not drive or operate machinery after use, and avoid alcohol and other melatonin products. Not for children or adolescents. Consult your health professional before use if you take prescription medications, especially blood thinners, blood pressure or blood sugar medicines, or sedatives. Also consult first if you have a bleeding disorder, low blood pressure or a hormone-sensitive condition, or are pregnant, breastfeeding, or planning surgery. This formula may affect bleeding, blood pressure, blood sugar and how some medications are processed.",
+   "chat_caution": true,
    "name": "OcuFlow Bedtime",
    "price_cents": 7000,
    "pinecone_title": "OcuFlow Bedtime",
@@ -5983,6 +5989,8 @@
    "content_since": "2026-10-09T23:04:21Z"
   },
   "ocuflow-daytime": {
+   "warning": "Consult your health professional before use if you take prescription medications, especially blood thinners, blood pressure or blood sugar medicines. Also consult first if you have a bleeding disorder, low blood pressure or a hormone-sensitive condition, or are pregnant, breastfeeding, or planning surgery. This formula may affect bleeding, blood pressure, blood sugar and how some medications are processed.",
+   "chat_caution": true,
    "name": "OcuFlow Daytime",
    "price_cents": 7000,
    "pinecone_title": "OcuFlow Daytime",
@@ -6250,6 +6258,8 @@
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising"
   },
   "lymph-flow": {
+   "warning": "Consult your health professional before use if you take prescription medications, have liver concerns or high blood pressure, or are pregnant or breastfeeding. Stop use and consult your physician if you notice yellowing of the skin or eyes, or dark urine. Each capsule supplies 100 mcg of selenium, so count any other selenium you take.",
+   "chat_caution": true,
    "name": "Lymph Flow",
    "price_cents": 7000,
    "pinecone_title": "Lymph Flow",
@@ -7916,6 +7926,8 @@
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising"
   },
   "psc-protect": {
+   "warning": "Consult your health professional before use if you take prescription medications, have a hormone-sensitive condition, or are pregnant, breastfeeding, or planning surgery. This formula may affect bleeding, blood sugar and calcium levels. Each capsule supplies 5,000 IU of vitamin D3, so count any other vitamin D you take.",
+   "chat_caution": true,
    "name": "PSC Protect",
    "price_cents": 7000,
    "pinecone_title": "PSC Protect",
@@ -8385,6 +8397,8 @@
    "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "macular-wellness-lycopene": {
+   "warning": "Contains vitamin B6. Stop use and consult your physician if you notice tingling or numbness. If you take a blood thinner, consult your physician before use.",
+   "chat_caution": true,
    "name": "Macular Wellness Lycopene",
    "price_cents": 7000,
    "pinecone_title": "Macular Wellness Lycopene",
@@ -8844,6 +8858,8 @@
    "fmp_id": "461"
   },
   "virex": {
+   "warning": "Do not use if you are pregnant or breastfeeding. Consult your health professional before use if you take prescription medications, especially blood thinners, blood pressure or blood sugar medicines, or immune-suppressing medicines. Also consult first if you have high blood pressure, low potassium, or a milk allergy, or are planning surgery. This formula may affect bleeding, blood pressure, blood sugar and potassium.",
+   "chat_caution": true,
    "name": "VirEx",
    "price_cents": 7000,
    "pinecone_title": "VirEx",
@@ -9374,6 +9390,8 @@
    ]
   },
   "spike-shield": {
+   "warning": "Consult your health professional before use if you take prescription medications, have gallbladder concerns, or are pregnant, breastfeeding, or planning surgery. This formula may affect bleeding, blood sugar and blood pressure.",
+   "chat_caution": true,
    "name": "Spike Shield",
    "price_cents": 7000,
    "pinecone_title": "Spike Shield",
@@ -9440,6 +9458,8 @@
    "bottle_type": "Small powder jar"
   },
   "mercury-detox-syntropy-powder": {
+   "warning": "Do not use if you are pregnant or breastfeeding. It is not for children. Take it at least two hours apart from medications and other supplements, because some ingredients bind other substances. Consult your health professional before use if you take prescription medications, especially blood thinners, blood sugar medicines, nitrate heart medicines or immune-suppressing medicines. Also consult first if you have a ragweed, mushroom or mould allergy. Two scoops supply 100 mcg of selenium a day, so count any other selenium you take.",
+   "chat_caution": true,
    "name": "Mercury Detox Syntropy Powder",
    "price_cents": 7000,
    "pinecone_title": "Mercury Detox Syntropy Powder",
@@ -10830,6 +10850,8 @@
    "legacy_store_url": "https://remedymatch.com/remedies/478-phosphatides"
   },
   "macular-wellness-astaxanthin": {
+   "warning": "Consult your health professional before use if you take prescription medications, especially blood thinners. Also consult first if you have a bleeding disorder, or are pregnant, breastfeeding, or planning surgery. This formula may affect bleeding and how some blood thinners work.",
+   "chat_caution": true,
    "name": "Macular Wellness Astaxanthin",
    "price_cents": 7000,
    "pinecone_title": "Macular Wellness Astaxanthin",
@@ -12019,6 +12041,8 @@
    "legacy_store_url": "https://remedymatch.com/remedies/518-proteoglycans"
   },
   "liver-support": {
+   "warning": "Consult your health professional before use if you take prescription medications, have gallbladder or bile duct concerns, or are pregnant or breastfeeding. This formula may affect blood sugar and how some medications are processed.",
+   "chat_caution": true,
    "name": "Liver Support",
    "price_cents": 7000,
    "pinecone_title": "Liver Support",
