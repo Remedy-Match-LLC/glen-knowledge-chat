@@ -3382,9 +3382,9 @@
     ],
     "ingredients_source": "label-2026-10-16",
     "intro": "Vitamin D Syntropy supplies 5000 IU of vitamin D3 with the cofactors that help the body use it. Vitamin K2 as MK-7 helps direct calcium into bone. Magnesium and vitamin A support vitamin D's activation and its receptor. Boron, iodine, selenium and three botanicals complete the formula: Butea, Eucommia and hops. Take 1 capsule daily with a meal, or as guided.",
-    "description": "Vitamin D is formed in the skin when sunlight transforms cholesterol made by enzymatic activity in the liver. Vitamin D is not only the vitamin of light, it is also a hormone, like the other hormones the body makes from cholesterol as a precursor. Vitamin D is crucial for many functions including calcium metabolism, immunity and nerve function. Individuals who take more than 2,000 IU per day of vitamin D should have their vitamin D levels monitored.\n\nEach capsule pairs 5000 IU of D3 with 180 mcg of vitamin K2 as MK-7, vitamin A, vitamin C, vitamin E, boron, iodine, magnesium as L-threonate and selenium. Three botanicals round it out: Butea, Eucommia and xanthohumol from hops. The capsule is Certified Organic Pullulan, with no fillers or excipients.\n\nTake 1 capsule daily with a meal, or as guided.\n\nCaution: If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it. Consult your physician before use if you are pregnant or have a thyroid condition.",
+    "description": "Vitamin D is formed in the skin when sunlight transforms cholesterol made by enzymatic activity in the liver. Vitamin D is not only the vitamin of light, it is also a hormone, like the other hormones the body makes from cholesterol as a precursor. Vitamin D is crucial for many functions including calcium metabolism, immunity and nerve function. Individuals who take more than 2,000 IU per day of vitamin D should have their vitamin D levels monitored.\n\nEach capsule pairs 5000 IU of D3 with 180 mcg of vitamin K2 as MK-7, vitamin A, vitamin C, vitamin E, boron, iodine, magnesium as L-threonate and selenium. Three botanicals round it out: Butea, Eucommia and xanthohumol from hops. The capsule is Certified Organic Pullulan, with no fillers or excipients.\n\nTake 1 capsule daily with a meal, or as guided.\n\nCaution: If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it. Consult your physician before use if you are pregnant or have a thyroid condition. Consult your physician first if you have high blood calcium, kidney stones or kidney disease, or take thiazide diuretics or digoxin. It is not for children, or for use while breastfeeding.",
     "directions": "Take 1 capsule daily with a meal, or as guided.",
-    "warning": "If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it. Consult your physician before use if you are pregnant or have a thyroid condition.",
+    "warning": "If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it. Consult your physician before use if you are pregnant or have a thyroid condition. Consult your physician first if you have high blood calcium, kidney stones or kidney disease, or take thiazide diuretics or digoxin. It is not for children, or for use while breastfeeding.",
     "chat_caution": true,
     "bottle_type": "30 Caps",
     "note": "New formula, back in stock 2026-10-19, one capsule a day with a meal; FileMaker 395 (Glen approved the copy 2026-10-17, via formulation). Spec: production/05 Formulations/_store-updates/2026-10-16-vitamin-d-syntropy.md."
@@ -3535,5 +3535,22 @@
     ],
     "content_since": "2026-10-25T21:58:56+00:00",
     "note": "Glen, 2026-10-25: warning, dose and the run 188 vitamin A line (retinyl acetate, 56,800 IU). Source: production/05 Formulations/b17-syntropy/2026-10-25/b17-syntropy-warning-and-dose.md Description and full panel: b17-syntropy-store-page.md (Glen \"yes\", 2026-10-25)."
+  },
+  "b17-max": {
+    "ingredients": [
+      {
+        "name": "Amygdalin 98% (Prunus armeniaca) (semen)",
+        "dose": "450 mg"
+      },
+      {
+        "name": "Pangamic Acid 99%",
+        "dose": "50 mg"
+      }
+    ],
+    "ingredients_source": "label-2026-09-27",
+    "description": "Each level 500 mg scoop supplies 450 mg amygdalin 98% and 50 mg pangamic acid 99%. There are no fillers or excipients.\n\nOther ingredients: Healing Energy, Love, and Prayer. 30 g jar, 60 servings. Store tightly closed, cool and dry.\n\nCaution: amygdalin can release cyanide in the body. Read the full warning on the label and the product page before use, and do not combine with apricot kernels, fruit pits or high-dose vitamin C.",
+    "directions": "Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 2 level scoops a day in divided doses. Do not exceed 2 level scoops a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 2-scoop limit.",
+    "warning": "Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment. Keep out of reach of children.",
+    "bottle_type": "30 g"
   }
 }

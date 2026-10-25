@@ -2124,12 +2124,20 @@ def _alias_price_hint(name: str, slug: str = "") -> str:
     """
     products = (_PRODUCTS or {}).get("products", {}) or {}
     p = products.get(slug) if slug else None
+    resolved = slug
     if p is None:
         target = _ALIAS_SLUG_CACHE.get(_alias_key(name)) \
             if _ALIAS_SLUG_CACHE else None
         p = products.get(target) if target else None
+        resolved = target
     if not p:
         return ""
+    # An out-of-stock or waiting-list product shows why, never a price. Listed at $70.00
+    # with no flag, Night Vision was answered "Yes, ... available to order" (review round
+    # 3 on #2139, 2026-10-25).
+    refusal = _waitlist_refusal(resolved) if resolved else None
+    if refusal:
+        return f" — cannot be ordered now: {refusal} Give no price and no order step."
     cents = p.get("price_cents")
     if not cents:
         return ""
@@ -2146,6 +2154,9 @@ def _product_guidance_hint(slug: str) -> str:
     """
     product = ((_PRODUCTS or {}).get("products") or {}).get((slug or "").strip())
     if not product:
+        return ""
+    # Its purpose text can carry an old dose; the price hint says why it is unavailable.
+    if _waitlist_refusal((slug or "").strip()):
         return ""
     from dashboard import sales_copy as _sales_copy
     name = (product.get("name") or "").lower()
@@ -2236,6 +2247,9 @@ _CASE_FREE_NAMES = frozenset({
     "sleep-syntropy",
     # Its warning names Poison Control; any casing must bring it (2026-10-25).
     "b17-syntropy",
+    # A coined name, and its warning names Poison Control: "i feel lightheaded on b17
+    # max" got no block (B17 Max powder, review round 2, 2026-10-25).
+    "b17-max",
 })
 # Pinned products whose name a client may type in lowercase, beside a product cue. Every
 # other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
@@ -2349,7 +2363,10 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         # A chat_caution product qualifies unpinned too: its block carries only its
         # caution, which Glen approved word for word (Brain Cleanse, 2026-10-15). So does a
         # bundle that lists caution_components: its block carries only those cautions.
+        # An out-of-stock product qualifies like a waiting-list one: Night Vision, unpinned,
+        # was otherwise never named out of stock to the bot (review round 1, 2026-10-25).
         if (not (p.get("copy_pinned") or p.get("waitlist_only") or p.get("chat_caution")
+                 or str(p.get("out_of_stock") or "").strip()
                  or _bundle_bot_cautions(p, products))
                 or p.get("inactive")
                 or p.get("info_only")
@@ -2731,6 +2748,12 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         refusal = _waitlist_refusal(slug)
         if refusal:
             parts.append(f"Availability: {refusal}")
+            # Live read-back, 2026-10-25: "Yes, Night Vision is available to order —
+            # however, it is currently out of stock".
+            # Named, so a bundle holding the product reads as unorderable too (review
+            # round 1).
+            parts.append(f"{name} cannot be ordered now. Never say it is available to "
+                         "order or in stock.")
             if not pinned:
                 parts.append("No dose or ingredient text is approved for it yet. Give none, "
                              "and do not take one from the snippets.")
@@ -3016,6 +3039,17 @@ _CAUTION_SUBJECT_WORDS = {
                      "statin", "aspirin", "ibuprofen", "lisinopril", "metoprolol",
                      "amlodipine", "losartan", "omeprazole", "prednisone", "gabapentin",
                      "chemo", "birth control", " hrt ", "hormone replacement", "ambien"),
+    # Vitamin D Syntropy's caution names these, PSC Protect's calcium (2026-10-25,
+    # review round 1). " renal" starts a word, so "adrenal" is no hit. Calcium needs a
+    # level, so "a high calcium formula" stays an ingredient question, and a bare
+    # "diuretic" is no thiazide: furosemide and dandelion are not named (review round 4).
+    "kidney": ("kidney", " renal", "nephropathy", "nephritis", "nephrotic", "dialysis"),
+    "calcium": ("blood calcium", "calcium level", "calcium is high", "calcium was high",
+                "calcium runs high", "calcium is elevated", "elevated calcium",
+                "hypercalc"),
+    "thiazide": ("thiazide", "hctz", "chlorthalidone", "indapamide", "metolazone",
+                 "water pill"),
+    "digoxin": ("digoxin", "lanoxin", "digitalis"),
 }
 
 # Dose wording that holds a subject word and asks nothing about the subject: "How many
