@@ -3454,73 +3454,86 @@
         "dose": "56,800 IU"
       },
       {
-        "name": "Vitamin B6 (Pyridoxal-5-Phosphate, P5P)",
+        "name": "Vitamin B6 (as P5P, pyridoxal 5-phosphate)",
         "dose": "2 mg"
       },
       {
-        "name": "Vitamin B9 (5-MTHF)",
+        "name": "Vitamin B9 (as 5-MTHF, methyl folate)",
         "dose": "100 mcg"
       },
       {
-        "name": "Vitamin B12 (Adenosyl & Methyl Cobalamins)",
+        "name": "Vitamin B12 (as adenosyl and methyl cobalamin)",
         "dose": "6 mcg"
       },
       {
-        "name": "Vitamin B15 (Pangamic Acid)",
+        "name": "Vitamin B15 (as pangamic acid)",
         "dose": "40 mg"
       },
       {
-        "name": "Vitamin B15 (Trimethylglycine, from Beta spp.)",
+        "name": "Vitamin B15 (as trimethylglycine, from Beta spp.)",
         "dose": "10 mg"
       },
       {
-        "name": "Vitamin B17 (Amygdalin, from Prunus spp.)",
+        "name": "Vitamin B17 (amygdalin, from Prunus spp.)",
         "dose": "200 mg"
       },
       {
-        "name": "Vitamin D3 (Cholecalciferol)",
-        "dose": "20 mcg (400 IU)"
+        "name": "Vitamin C (as magnesium ascorbate)",
+        "dose": "60 mg"
       },
       {
-        "name": "Vitamin E (D-alpha Tocopherol Succinate)",
+        "name": "Vitamin D3 (as cholecalciferol)",
+        "dose": "46 mcg (1,840 IU)"
+      },
+      {
+        "name": "Vitamin E (as d-alpha tocopherol succinate)",
         "dose": "30 IU"
       },
       {
-        "name": "Zinc (Zinc Orotate)",
-        "dose": "3 mg"
-      },
-      {
-        "name": "Magnesium (Magnesium Ascorbate)",
+        "name": "Magnesium (as magnesium ascorbate and threonate)",
         "dose": "4 mg"
       },
       {
-        "name": "Manganese (Manganese Aspartate)",
-        "dose": "1 mg"
+        "name": "Manganese (as manganese aspartate)",
+        "dose": "0.56 mg"
       },
       {
-        "name": "Selenium (Methylselenocysteine, MSC)",
+        "name": "Selenium (as methylselenocysteine)",
         "dose": "70 mcg"
       },
       {
-        "name": "Blushwood 100:1 (Fontainea spp.) (seed)",
+        "name": "Zinc (as zinc orotate)",
+        "dose": "3 mg"
+      },
+      {
+        "name": "Blushwood 100:1 (Fontainea spp.)",
         "dose": "50 mg"
+      },
+      {
+        "name": "French lilac 20:1 (Galega officinalis)",
+        "dose": "30 mg"
       },
       {
         "name": "Mistletoe 4:1 (Viscum album)",
         "dose": "10 mg"
-      },
-      {
-        "name": "French Lilac (Galega officinalis)",
-        "dose": "30 mg"
       }
     ],
-    "ingredients_source": "t33",
+    "ingredients_source": "label-2026-06-run-188",
+    "intro": "Amygdalin (vitamin B17) from apricot kernels, with both forms of vitamin B15 and a group of vitamin, mineral and botanical synergists.",
+    "description": "A Healing Sacrament, handcrafted with Aloha on the Healing Island of Hawaiʻi.\n\nOther ingredients: pullulan vegicaps, Healing Energy, Love and Prayer.\n\n30 vegicaps. Vegetarian.\n\nCaution: Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy, if you may become pregnant, or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment, especially diabetes medicines or blood thinners. Consult first if you have liver disease or drink alcohol regularly. Do not take other vitamin A supplements with this product. Use for longer than 3 months only under a practitioner's guidance. Keep out of reach of children.",
     "directions": "1 capsule a day with food, or as guided.",
-    "warning": "Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment, especially diabetes medicines or blood thinners. Do not take other vitamin A supplements with this product. Keep out of reach of children.",
+    "warning": "Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy, if you may become pregnant, or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment, especially diabetes medicines or blood thinners. Consult first if you have liver disease or drink alcohol regularly. Do not take other vitamin A supplements with this product. Use for longer than 3 months only under a practitioner's guidance. Keep out of reach of children.",
+    "benefits": [],
+    "how_it_works": "",
     "copy_pinned": [
-      "directions"
+      "directions",
+      "ingredients",
+      "intro",
+      "description",
+      "benefits",
+      "research"
     ],
     "content_since": "2026-10-25T21:58:56+00:00",
-    "note": "Glen, 2026-10-25: warning, dose and the run 188 vitamin A line (retinyl acetate, 56,800 IU). Source: production/05 Formulations/b17-syntropy/2026-10-25/b17-syntropy-warning-and-dose.md"
+    "note": "Glen, 2026-10-25: warning, dose and the run 188 vitamin A line (retinyl acetate, 56,800 IU). Source: production/05 Formulations/b17-syntropy/2026-10-25/b17-syntropy-warning-and-dose.md Description and full panel: b17-syntropy-store-page.md (Glen \"yes\", 2026-10-25)."
   }
 }

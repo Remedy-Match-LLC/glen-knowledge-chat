@@ -2722,7 +2722,9 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         if copy_block and any(c.text for c in cautions):
             parts.append(_CAUTION_COPY_REMINDER)
         parts.extend(cautions)
-        if any("Poison Control" in c.text for c in cautions):
+        # Its own warning may sit inside the description and so write no line (B17
+        # Syntropy's pinned description, 2026-10-25); the rule still follows it.
+        if "Poison Control" in val or any("Poison Control" in c.text for c in cautions):
             parts.append(_STOP_AT_SYMPTOM_RULE)
         # A waiting-list product: the same sentence checkout gives. Unpinned, it has no
         # approved dose, so the block says so rather than ask for one it lacks.

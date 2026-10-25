@@ -15,25 +15,29 @@ import app
 
 SLUG = "b17-syntropy"
 DIRECTIONS = "1 capsule a day with food, or as guided."
-WARNING = (
-    "Amygdalin can release cyanide in the body. Stop at the first sign of headache, "
-    "dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or "
-    "unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing "
-    "difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine "
-    "with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose "
-    "vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to "
-    "children. Consult a physician and pharmacist before use with any medication or medical treatment, especially "
-    "diabetes medicines or blood thinners. Do not take other vitamin A supplements with "
-    "this product. Keep out of reach of children.")
+# Glen added three vitamin A sentences, 2026-10-25 (b17-syntropy-warning-and-dose.md).
+WARNING = "Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy, if you may become pregnant, or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment, especially diabetes medicines or blood thinners. Consult first if you have liver disease or drink alcohol regularly. Do not take other vitamin A supplements with this product. Use for longer than 3 months only under a practitioner's guidance. Keep out of reach of children."
+
+INTRO = ("Amygdalin (vitamin B17) from apricot kernels, with both forms of vitamin B15 and "
+         "a group of vitamin, mineral and botanical synergists.")
+DESCRIPTION = ("A Healing Sacrament, handcrafted with Aloha on the Healing Island of "
+               "Hawai\u02bbi.\n\nOther ingredients: pullulan vegicaps, Healing Energy, Love "
+               "and Prayer.\n\n30 vegicaps. Vegetarian.\n\nCaution: " + WARNING)
 
 
 def test_the_record_carries_the_approved_warning_and_pinned_dose():
     p = json.load(open(os.path.join(os.path.dirname(__file__), "..", "data",
                                     "products.json")))["products"][SLUG]
     assert p["warning"] == WARNING and p["directions"] == DIRECTIONS
-    assert p["copy_pinned"] == ["directions"]
+    assert p["copy_pinned"] == ["directions", "ingredients", "intro", "description",
+                                "benefits", "research"]
     # Run 188 is retinyl acetate, as the printed label says (formulation, 2026-10-25).
     assert p["ingredients"][0] == {"name": "Vitamin A (as retinyl acetate)", "dose": "56,800 IU"}
+    # The approved store page (b17-syntropy-store-page.md): 17 lines, no blend.
+    assert len(p["ingredients"]) == 17
+    assert not any("Bioavailability" in i["name"] for i in p["ingredients"])
+    assert p["description"] == DESCRIPTION and p["intro"] == INTRO
+    assert p["benefits"] == [] and p["how_it_works"] == ""
 
 
 @pytest.mark.parametrize("q", ["How much B17 Syntropy should I take?",
@@ -80,8 +84,9 @@ def test_the_corrections_replay_keeps_the_approved_record():
     assert p[SLUG]["ingredients"][0] == {"name": "Vitamin A (as retinyl acetate)",
                                          "dose": "56,800 IU"}
     assert p[SLUG]["warning"] == WARNING and p[SLUG]["directions"] == DIRECTIONS
-    assert p[SLUG]["copy_pinned"] == ["directions"] and p[SLUG]["content_since"] == products[SLUG]["content_since"]
-    assert p[SLUG]["ingredients_source"] == "t33"
+    assert p[SLUG]["copy_pinned"][0] == "directions" and p[SLUG]["content_since"] == products[SLUG]["content_since"]
+    assert p[SLUG]["ingredients_source"] == "label-2026-06-run-188"
+    assert p[SLUG]["description"] == DESCRIPTION and p[SLUG]["intro"] == INTRO
 
 
 def test_the_chat_gets_the_only_dose_rule():
@@ -96,3 +101,21 @@ def test_a_symptom_is_answered_with_stop_and_call():
     # A caution without Poison Control gets no such rule.
     assert app._STOP_AT_SYMPTOM_RULE not in app._named_product_facts(
         "How much Vitamin D Syntropy should I take?")
+
+
+def test_the_learn_page_is_the_approved_description(monkeypatch, tmp_path):
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
+    md = app.app.test_client().get(f"/begin/learn-data/{SLUG}").get_json()["markdown"]
+    assert md == DESCRIPTION
+    for old in ("5000 IU", "Retinyl Palmitate", "ten capsules", "titrat"):
+        assert old.lower() not in md.lower()
+
+
+def test_the_page_has_no_generated_copy(monkeypatch, tmp_path):
+    monkeypatch.setattr(app, "_SALES_AI_COPY_ENABLED", True)
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
+    d = app.app.test_client().get(f"/begin/product-page-data/{SLUG}").get_json()
+    sec = {s["id"]: s for s in d["sections"]}
+    for key in ("intro", "description", "research"):
+        assert "ai" not in sec[key], key
+    assert sec["description"]["body"] == DESCRIPTION and sec["intro"]["body"] == INTRO
