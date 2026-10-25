@@ -15,15 +15,16 @@ def _client(monkeypatch, tmp_path):
                         lambda items, email=None: ([], [], 0))
     with sqlite3.connect(db) as cx:
         w.init_wishlist_table(cx)
-        w.toggle(cx, "email:buyer@x.com", "night-vision")
+        w.toggle(cx, "email:buyer@x.com", "scar-silk")
     return appmod.app.test_client()
 
 
 def test_wishlist_slug_passes_entitlement(monkeypatch, tmp_path):
     c = _client(monkeypatch, tmp_path)
-    r = c.post("/api/portal/tok/checkout", json={"items": [{"slug": "night-vision", "qty": 2}]})
+    r = c.post("/api/portal/tok/checkout", json={"items": [{"slug": "scar-silk", "qty": 2}]})
     body = r.get_json()
-    assert "isn't available to reorder" not in (body.get("error") or "")
+    # The refusal a slug off the wishlist gets (test below); this one is on it.
+    assert "isn't available to order" not in (body.get("error") or ""), body
 
 
 def test_non_wishlist_slug_still_rejected(monkeypatch, tmp_path):

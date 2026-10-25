@@ -208,3 +208,12 @@ def test_the_two_client_pages_print_the_line_when_it_is_given():
     portal = open(os.path.join(root, "client-portal.html")).read()
     assert "if (n.line) return '<div class=\"r-line\"><span><a href=\"'+esc(n.url)+'\">'+esc(n.line)+'</a>" in bio
     assert '${esc(it.not_ready.line || "Not ready to order yet")}' in portal
+
+
+def test_the_chat_is_told_night_vision_is_out_of_stock():
+    """Unpinned, Night Vision brought no facts block, so the bot answered from old store
+    snippets (review round 1, 2026-10-25). It now gets the refusal line and no dose."""
+    b = app._named_product_facts("Can I order Night Vision?")
+    assert "### Night Vision" in b
+    assert "Availability: Night Vision is out of stock." in b
+    assert "Give none, and do not take one from the snippets." in b
