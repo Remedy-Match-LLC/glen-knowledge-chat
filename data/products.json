@@ -11067,6 +11067,11 @@
    "bottle_type": "Dropper 50 mL"
   },
   "b17-syntropy": {
+   "warning": "Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or cancer treatment, especially diabetes medicines or blood thinners. Do not take other vitamin A supplements with this product. Keep out of reach of children.",
+   "directions": "1 capsule a day with food, or as guided.",
+   "copy_pinned": [
+    "directions"
+   ],
    "name": "B17 Syntropy",
    "price_cents": 7000,
    "pinecone_title": "Blushwood B17 Complex",
@@ -11075,8 +11080,8 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Vitamin A (Retinyl Palmitate)",
-     "dose": "5000 IU"
+     "name": "Vitamin A (as retinyl acetate)",
+     "dose": "56,800 IU"
     },
     {
      "name": "Vitamin B6 (Pyridoxal-5-Phosphate, P5P)",
