@@ -3237,6 +3237,13 @@ function goTo(s){var top=find('fold-top',s.k)[0]||s.h;
  var gap=top.getBoundingClientRect().top-navBottom()-8;if(gap<0)window.scrollBy(0,gap)}
 function firstVisibleTop(){var nb=navBottom();
  return [].filter.call(wrap.querySelectorAll('.fold-top'),function(t){return t.getBoundingClientRect().top>=nb})[0]}
+function isOpen(s){if(!s.disp)return openIn(s.k);var db=document.getElementById('dispbody');
+ return !!(db&&db.style.display!=='none')}
+// Glen, 2026-10-24: a bar item opens a closed section and scrolls to it. On an open
+// section it only closes it, and the reader's place on the page stays still.
+function navClick(s){if(!isOpen(s)){goTo(s);return}
+ steady(firstVisibleTop(),function(){if(s.disp){if(window.toggleDispensed)window.toggleDispensed();apply()}
+  else set(s.k,false)})}
 function all(open,list){steady(firstVisibleTop(),function(){
  list.forEach(function(s){if(!s.disp)store(s.k,open)});apply()})}
 function renderNav(list){var nav=document.getElementById('intakeNav');
@@ -3247,14 +3254,14 @@ function renderNav(list){var nav=document.getElementById('intakeNav');
  if(nav.dataset.sig!==sig){nav.dataset.sig=sig;nav.innerHTML='';
   list.forEach(function(s){var b=document.createElement('button');b.type='button';b.className='btn ghost';
    b.dataset.foldFor=s.k;b.title=s.label;b.textContent=s.label.length>28?s.label.slice(0,27)+'…':s.label;
-   b.addEventListener('click',function(){var cur=sections().filter(function(x){return x.k===s.k})[0];if(cur)goTo(cur)});
+   b.addEventListener('click',function(){var cur=sections().filter(function(x){return x.k===s.k})[0];if(cur)navClick(cur)});
    nav.appendChild(b)});
   var sep=document.createElement('span');sep.className='nav-sep';nav.appendChild(sep);
   [['Open all',true],['Close all',false]].forEach(function(p){var b=document.createElement('button');
    b.type='button';b.className='btn ghost';b.textContent=p[0];
    b.addEventListener('click',function(){all(p[1],sections())});nav.appendChild(b)})}
  list.forEach(function(s){var b=[].filter.call(nav.children,function(x){return x.dataset.foldFor===s.k})[0];
-  var open=s.disp?!!(document.getElementById('dispbody')&&document.getElementById('dispbody').style.display!=='none'):openIn(s.k);
+  var open=isOpen(s);
   if(b&&b.classList.contains('nav-open')!==open)b.classList.toggle('nav-open',open)});
  var hpx=nav.offsetHeight+'px';
  if(document.documentElement.style.getPropertyValue('--intake-nav-h')!==hpx)

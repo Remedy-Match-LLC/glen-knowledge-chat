@@ -49,7 +49,7 @@ def test_a_pinned_bar_lists_every_section_with_open_and_close_all():
     js = brh._FOLD_JS
     assert "#intakeNav{position:sticky;top:40px;" in js
     assert "[['Open all',true],['Close all',false]]" in js
-    assert "if(cur)goTo(cur)" in js
+    assert "if(cur)navClick(cur)" in js
 
 
 def test_each_section_has_a_bar_above_and_below():
@@ -130,3 +130,12 @@ def test_the_title_is_the_top_bar():
     js = brh._FOLD_JS
     assert "h.classList.add('fold-top','fold-head')" in js
     assert "if(c&&c!==h&&h.contains(c))return;toggle()" in js
+
+
+def test_a_bar_item_opens_a_closed_section_and_closes_an_open_one():
+    # Glen, 2026-10-24: a closed item opens and scrolls to it; an open one only closes.
+    js = brh._FOLD_JS
+    assert "if(cur)navClick(cur)" in js and "if(cur)goTo(cur)" not in js
+    assert "function navClick(s){if(!isOpen(s)){goTo(s);return}" in js
+    assert "steady(firstVisibleTop(),function(){if(s.disp)" in js
+    assert "else set(s.k,false)})}" in js
