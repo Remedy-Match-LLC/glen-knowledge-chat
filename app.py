@@ -2505,6 +2505,19 @@ _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The sni
 _WITHDRAWN_DOSE_EXAMPLE = {
     slug: ", such as two capsules at one time or extra capsules in the first week"
     for slug in ("brain-cleanse", "sleep-syntropy", "sleep-bundle")}
+# B17 Syntropy's store copy said up to 10 a day; each capsule holds about 57,000 IU of
+# vitamin A (formulation, 2026-10-25).
+_WITHDRAWN_DOSE_EXAMPLE["b17-syntropy"] = ", such as up to 10 capsules a day"
+# Pinned directions with no chat_caution still get the dose rule here: B17 Syntropy's
+# warning must reach the answer in full, so it is written, never linked (review round 2,
+# 2026-10-25).
+_DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy"})
+# A caution that names Poison Control is the whole answer to a symptom it lists. The
+# B17 store copy said to lower the dose if lightheaded, an early sign of cyanide
+# toxicity (formulation, 2026-10-25), and that copy may still be in the snippets.
+_STOP_AT_SYMPTOM_RULE = ("If the user describes any symptom this caution names, answer with "
+                         "its instruction to stop and call Poison Control or 911. Suggest "
+                         "no dose change for it: never a lower dose, a pause or a restart.")
 _NO_DESCRIPTION = ("No description of {name} is approved here. If asked what it is, describe "
                    "it briefly from the snippets about {name} itself, adding no claim they do "
                    "not make. Its dose and caution come only from this text.")
@@ -2665,9 +2678,10 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             parts.append(f"Directions: {val}")
         bundle_cautions = bool(product.get("bundle") and _bundle_bot_cautions(product, products))
         copy_block = pinned and bool(product.get("chat_caution") or bundle_cautions)
-        if copy_block and ((val and val not in desc and "directions" in _pinned_copy(product))
-                           or (product.get("bundle") and intro and "intro" in _pinned_copy(product)
-                               and not val)):
+        if ((copy_block or (pinned and slug in _DOSE_RULE_WITHOUT_CAUTION))
+                and ((val and val not in desc and "directions" in _pinned_copy(product))
+                     or (product.get("bundle") and intro and "intro" in _pinned_copy(product)
+                         and not val))):
             _dose_rule = _PINNED_DOSE_RULE.format(
                 name=name, example=_WITHDRAWN_DOSE_EXAMPLE.get(slug, ""))
             if link_cautions:
@@ -2707,6 +2721,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         if copy_block and any(c.text for c in cautions):
             parts.append(_CAUTION_COPY_REMINDER)
         parts.extend(cautions)
+        if any("Poison Control" in c.text for c in cautions):
+            parts.append(_STOP_AT_SYMPTOM_RULE)
         # A waiting-list product: the same sentence checkout gives. Unpinned, it has no
         # approved dose, so the block says so rather than ask for one it lacks.
         refusal = _waitlist_refusal(slug)

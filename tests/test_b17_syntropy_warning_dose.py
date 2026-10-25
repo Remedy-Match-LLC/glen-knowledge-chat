@@ -52,3 +52,39 @@ def test_the_page_shows_the_dose_and_the_caution(monkeypatch, tmp_path):
     sec = {s["id"]: s for s in d["sections"]}
     assert sec["caution"]["body"] == WARNING
     assert sec["ingredients"]["body"]["directions"] == DIRECTIONS
+
+
+def test_the_corrections_replay_keeps_the_approved_record():
+    import importlib
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+    ae = importlib.import_module("apply_enrichment")
+    data = os.path.join(os.path.dirname(__file__), "..", "data")
+    products = json.load(open(os.path.join(data, "products.json")))["products"]
+    corr = json.load(open(os.path.join(data, "products-manual-corrections.json")))
+    rec = dict(products[SLUG])
+    # What an enrichment run writes back first: the old store panel, no warning or dose.
+    rec.update(ingredients=[{"name": "Vitamin A (Retinyl Palmitate)", "dose": "5000 IU"}])
+    for k in ("warning", "directions", "copy_pinned", "content_since"):
+        rec.pop(k, None)
+    p = {SLUG: rec}
+    ae.apply_corrections(p, {SLUG: corr[SLUG]})
+    assert p[SLUG]["ingredients"][0] == {"name": "Vitamin A (as retinyl acetate)",
+                                         "dose": "56,800 IU"}
+    assert p[SLUG]["warning"] == WARNING and p[SLUG]["directions"] == DIRECTIONS
+    assert p[SLUG]["copy_pinned"] == ["directions"] and p[SLUG]["content_since"] == "2026-10-25"
+    assert p[SLUG]["ingredients_source"] == "t33"
+
+
+def test_the_chat_gets_the_only_dose_rule():
+    b = app._named_product_facts("Can I take 10 B17 Syntropy a day?")
+    assert "The Directions above are the only dose for B17 Syntropy." in b
+    assert "such as up to 10 capsules a day" in b
+
+
+def test_a_symptom_is_answered_with_stop_and_call():
+    b = app._named_product_facts("I feel lightheaded on B17 Syntropy, should I take less?")
+    assert app._STOP_AT_SYMPTOM_RULE in b
+    # A caution without Poison Control gets no such rule.
+    assert app._STOP_AT_SYMPTOM_RULE not in app._named_product_facts(
+        "How much Vitamin D Syntropy should I take?")

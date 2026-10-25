@@ -3446,5 +3446,81 @@
     ],
     "content_since": "2026-10-23",
     "note": "Clarity page copy, Glen approved 2026-10-23 in the marketing tab: intro, Overview, The research, learn page and the August 2026 label panel. Source: marketing/04 Copy/clarity-store-page-2026-10-23/clarity-app-sections.md."
+  },
+  "b17-syntropy": {
+    "ingredients": [
+      {
+        "name": "Vitamin A (as retinyl acetate)",
+        "dose": "56,800 IU"
+      },
+      {
+        "name": "Vitamin B6 (Pyridoxal-5-Phosphate, P5P)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Vitamin B9 (5-MTHF)",
+        "dose": "100 mcg"
+      },
+      {
+        "name": "Vitamin B12 (Adenosyl & Methyl Cobalamins)",
+        "dose": "6 mcg"
+      },
+      {
+        "name": "Vitamin B15 (Pangamic Acid)",
+        "dose": "40 mg"
+      },
+      {
+        "name": "Vitamin B15 (Trimethylglycine, from Beta spp.)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Vitamin B17 (Amygdalin, from Prunus spp.)",
+        "dose": "200 mg"
+      },
+      {
+        "name": "Vitamin D3 (Cholecalciferol)",
+        "dose": "20 mcg (400 IU)"
+      },
+      {
+        "name": "Vitamin E (D-alpha Tocopherol Succinate)",
+        "dose": "30 IU"
+      },
+      {
+        "name": "Zinc (Zinc Orotate)",
+        "dose": "3 mg"
+      },
+      {
+        "name": "Magnesium (Magnesium Ascorbate)",
+        "dose": "4 mg"
+      },
+      {
+        "name": "Manganese (Manganese Aspartate)",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Selenium (Methylselenocysteine, MSC)",
+        "dose": "70 mcg"
+      },
+      {
+        "name": "Blushwood 100:1 (Fontainea spp.) (seed)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Mistletoe 4:1 (Viscum album)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "French Lilac (Galega officinalis)",
+        "dose": "30 mg"
+      }
+    ],
+    "ingredients_source": "t33",
+    "directions": "1 capsule a day with food, or as guided.",
+    "warning": "Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment, especially diabetes medicines or blood thinners. Do not take other vitamin A supplements with this product. Keep out of reach of children.",
+    "copy_pinned": [
+      "directions"
+    ],
+    "content_since": "2026-10-25",
+    "note": "Glen, 2026-10-25: warning, dose and the run 188 vitamin A line (retinyl acetate, 56,800 IU). Source: production/05 Formulations/b17-syntropy/2026-10-25/b17-syntropy-warning-and-dose.md"
   }
 }
