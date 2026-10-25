@@ -22,7 +22,7 @@ WARNING = (
     "difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine "
     "with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose "
     "vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to "
-    "children. Consult a physician and pharmacist before use with any medication or cancer treatment, especially "
+    "children. Consult a physician and pharmacist before use with any medication or medical treatment, especially "
     "diabetes medicines or blood thinners. Do not take other vitamin A supplements with "
     "this product. Keep out of reach of children.")
 
