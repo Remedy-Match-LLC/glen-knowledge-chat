@@ -197,3 +197,19 @@ def test_two_cautions_asked_about_surgery_each_get_their_own_link(appmod):
     assert b.count(_link(appmod, "Brain Cleanse")) == 1
     assert b.count(_link(appmod, "Fibrosolve")) == 1
     assert b.count(NO_ARGUMENT) == 2
+
+
+# Review of Clarity's caution, round 2 (2026-10-25): a drug no subject list names kept the
+# interaction snippets once Clarity's no-caution line gave way to its caution.
+@pytest.mark.parametrize("q,prior", [
+    ("Can I take Clarity with sertraline?", None),
+    ("Does Clarity interact with Zoloft?", None),
+    ("Can I take Clarity with levothyroxine?", None),
+    ("Does Clarity interact with anything?", None),
+    ("Can I take it with sertraline?", ["Tell me about Clarity."]),
+    ("Can I take Stress Release with sertraline?", None),
+])
+def test_a_carried_caution_loses_the_interaction_snippets_too(appmod, q, prior):
+    assert appmod._caution_product_named(q, prior)
+    ms = _matches()
+    assert appmod._drop_caution_subject_snippets(ms, q, prior) == ms[1:]
