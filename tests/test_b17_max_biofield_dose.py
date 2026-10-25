@@ -11,7 +11,7 @@ from dashboard.biofield_schedule import build_schedule
 
 TIMING = ("with cooked food. Increase slowly, as guided, up to 2 level scoops a day in "
           "divided doses. Do not exceed 2 level scoops a day. If you also take B17 "
-          "Syntropy, take no more than 1 capsule a day, and count it as half a scoop.")
+          "Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 2-scoop limit.")
 B17_MAX = {"dosage": "1/4 level scoop", "frequency": "once a day", "timing": TIMING}
 
 

@@ -744,7 +744,7 @@ def is_infoceutical_code(code):
 _B17_MAX_STEPS = ("Increase slowly, as guided, up to 2 level scoops a day in divided "
                   "doses. Do not exceed 2 level scoops a day. If you also take B17 "
                   "Syntropy, take no more than 1 capsule a day, and count it as half a "
-                  "scoop.")
+                  "scoop toward the 2-scoop limit.")
 _DOSE_OVERRIDES = {
     "b17 max": {"dosage": "1/4 level scoop", "frequency": "once a day",
                 "timing": "with cooked food. " + _B17_MAX_STEPS},
