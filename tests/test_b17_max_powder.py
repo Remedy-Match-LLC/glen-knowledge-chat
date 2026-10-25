@@ -97,12 +97,24 @@ def test_the_product_page_shows_the_pinned_powder_copy(client, monkeypatch, tmp_
         assert "ai" not in sec[key], key
 
 
-def test_product_data_pins_an_empty_benefits_list(client):
+def test_product_data_pins_an_empty_benefits_list(client, monkeypatch, tmp_path):
+    # A generated card would carry benefits; the pin must keep them off.
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
+    monkeypatch.setattr(app, "_product_card",
+                        lambda p: {"benefits": ["Generated benefit"], "description": "x"})
     d = client.get(f"/begin/product-data/{SLUG}").get_json()
     assert "benefits" in d and d["benefits"] == []
 
 
-def test_the_learn_page_is_the_powder_description(client):
+def test_the_learn_page_is_the_powder_description(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
     md = client.get(f"/begin/learn-data/{SLUG}").get_json()["markdown"]
     assert md == DESCRIPTION
     assert "capsule" not in md.lower() and "lightheaded" not in md.lower()
+
+
+@pytest.mark.parametrize("q", ["i feel lightheaded on b17 max, what should i do?",
+                               "how much b17 max should i take?", "B17 max dose?"])
+def test_any_casing_brings_the_warning(q):
+    b = app._named_product_facts(q)
+    assert "### B17 Max" in b and "Poison Control, 1-800-222-1222" in b
