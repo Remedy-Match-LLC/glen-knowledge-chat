@@ -25,17 +25,9 @@ DESCRIPTION = (
     "Caution: amygdalin can release cyanide in the body. Read the full warning on the label "
     "and the product page before use, and do not combine with apricot kernels, fruit pits "
     "or high-dose vitamin C.")
-DIRECTIONS = ("Start with a partial scoop and increase slowly, up to 2 level scoops daily in "
-              "divided doses with food, with B17 Syntropy, or as guided.")
-WARNING = (
-    "Amygdalin can release cyanide in the body. Stop at the first sign of headache, "
-    "dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or "
-    "unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing "
-    "difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine "
-    "with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose "
-    "vitamin C. Not for use in pregnancy, breastfeeding or children. Consult a physician "
-    "and pharmacist before use with any medication or cancer treatment. Keep out of reach "
-    "of children.")
+DIRECTIONS = 'Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 2 level scoops a day in divided doses. Do not exceed 2 level scoops a day. If you also take B17 Syntropy, count each capsule as half a scoop.'
+# Revised by Glen, 2026-10-25 (b17-max/2026-10-25/b17-max-dose-and-caution-revision.md).
+WARNING = 'Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment. Keep out of reach of children.'
 
 
 def _load(name):
@@ -73,7 +65,10 @@ def test_no_capsule_dosing_survives_anywhere_in_its_data():
                 for n in ("atlas-concepts.json", "atlas-seed-input.json")]
     for text in records:
         assert "decrease the dosage if lightheaded" not in text
-    assert all("Laetrile" not in t and "capsule" not in t.lower() for t in records[:2])
+    assert all("Laetrile" not in t for t in records[:2])
+    # Only the dose names a capsule, B17 Syntropy's (revision of 2026-10-25).
+    r = _load("products.json")["products"][SLUG]
+    assert "capsule" not in json.dumps([r["description"], r["ingredients"], r["intro"]]).lower()
     for name in ("atlas-concepts.json", "atlas-seed-input.json"):
         assert "B17 Max is a proprietary formulation" not in open(os.path.join(DATA, name)).read()
 
