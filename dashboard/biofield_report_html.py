@@ -1394,17 +1394,27 @@ async function balanceAllApply(existing){
    +'still pick remedies afterwards.'))return;
  var j=await post('/author/__TID__/balance-all',{apply:true,force:true});
  if(j.ok){location.reload()}else{alert(j.error||'Could not add them.')}}
-async function program(mode){
+// Glen, 2026-10-24: include or leave out Spirit, Mind and Body before adding. All
+// start included, except Body when the client's latest scan is not fresh.
+var _progInc=null;
+async function program(mode,inc){
  var s=document.getElementById('progstat'),out=document.getElementById('progresult');
  s.textContent=' building…';out.innerHTML='';
- var j=await post('/author/__TID__/program',{mode:mode});
+ var j=await post('/author/__TID__/program',inc?{mode:mode,include:inc}:{mode:mode});
  if(!j.ok){s.textContent=j.error||'Could not build it.';return}
+ if(!inc&&j.body_fresh===false)return program(mode,{spirit:true,mind:true,body:false});
+ _progInc=j.include||{spirit:true,mind:true,body:true};
  var n=j.remedies.length;
  s.textContent=' '+mode+': '+n+' remed'+(n===1?'y':'ies')+
    (j.transcript_layers?', '+j.transcript_layers+' from the transcript':'');
  var h='';
  j.stages.forEach(function(st){
-  h+='<div style="margin-top:6px"><b>'+_esc(st.stage)+'</b><br>';
+  var on=_progInc[st.stage]!==false;
+  h+='<div style="margin-top:6px"><label class=prog-inc><input type=checkbox data-stage="'+
+     _esc(st.stage)+'" data-mode="'+_esc(mode)+'"'+(on?' checked':'')+
+     ' onchange="programToggle(this)"> <b>'+_esc(st.stage)+'</b></label>'+
+     (st.stage==='body'&&j.body_fresh===false?' <span class=food>'+_esc(j.scan_note||'No fresh scan')+'</span>':'')+'<br>';
+  if(!on){h+='&nbsp;&nbsp;<span class=food>left out</span><br></div>';return}
   // Spirit leads with the layers already in the causal chain (Glen 2026-10-03).
   var ex=(st.stage==='spirit')?(j.existing||[]):[];
   ex.forEach(function(e){
@@ -1424,9 +1434,13 @@ async function program(mode){
     _esc(mode)+'" onclick="programApply(this.dataset.mode)">Add this '+_esc(mode)+
     ' program</button></div>';
  out.innerHTML=h}
+function programToggle(box){var inc={};
+ document.querySelectorAll('#progresult input[data-stage]').forEach(function(b){inc[b.dataset.stage]=b.checked});
+ program(box.dataset.mode,inc)}
 async function programApply(mode){
  if(!confirm('Add this '+mode+' program to the causal chain?'))return;
- var j=await post('/author/__TID__/program',{mode:mode,apply:true,force:true});
+ var j=await post('/author/__TID__/program',{mode:mode,apply:true,force:true,
+   include:_progInc||{spirit:true,mind:true,body:true}});
  if(j.ok){location.reload()}else{alert(j.error||'Could not add it.')}}
 var _cluDigest='';
 async function clinicalLayersUpdate(){
