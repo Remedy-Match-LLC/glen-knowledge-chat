@@ -2566,7 +2566,8 @@ def _bundle_bot_cautions(bundle, products):
 
 
 def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
-                         no_caution_out=None, link_cautions=(), long_form=False) -> str:
+                         no_caution_out=None, link_cautions=(), long_form=False,
+                         caution_out=None) -> str:
     """Approved store text for the catalog products the user names in the question.
 
     The chat does not search `specific-formulations`, so a product whose facts live
@@ -2679,6 +2680,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         cautions = []
         val = ((product.get("warning") or "").strip()
                if pinned or product.get("chat_caution") else "")
+        if val and caution_out is not None:
+            caution_out.add(slug)
         if val and val not in desc:
             cautions.append(_CautionLine(slug, f"Caution: {val}", f"the {name} caution"))
         elif val:
@@ -3142,6 +3145,29 @@ def _no_caution_product_named(query_text: str, prior_user_turns=None) -> bool:
     return bool(none)
 
 
+_ASKS_WITH_SOMETHING = re.compile(
+    r"\b(?:with|and|on|mix|mixing|interacts?|interactions?|combine|together)\b", re.I)
+
+
+def _caution_product_named(query_text: str, prior_user_turns=None) -> bool:
+    """True when the answer carries a product's own caution that covers every prescription
+    medicine, and the question asks about taking it with something. No list of drug names
+    is whole, so the interaction snippets go whatever drug is named. Review of Clarity's
+    caution, round 2 (2026-10-25): "Can I take Clarity with sertraline?" lost the
+    no-caution line and kept the Stargrove snippet. Other questions keep their snippets,
+    as before."""
+    if not query_text or not (_PRODUCTS or {}).get("products"):
+        return False
+    if not _ASKS_WITH_SOMETHING.search(query_text):
+        return False
+    carried = set()
+    _named_product_facts(_carried_query(query_text, prior_user_turns), caution_out=carried)
+    products = _PRODUCTS["products"]
+    # "prescription medicine" too: Sleep Syntropy words it that way (review round 4).
+    return any("prescription medic" in ((products.get(k) or {}).get("warning") or "").lower()
+               for k in carried)
+
+
 def _chat_prior_user_turns(history, session_id) -> list:
     """The earlier user turns of a chat() request, built once and given to both the
     snippet filter and the facts block (review round 3). It mirrors how chat() builds
@@ -3183,7 +3209,8 @@ def _drop_caution_subject_snippets(matches, query_text: str, prior_user_turns=No
                 h in re.sub(r"\s+", "", str((m.metadata or {}).get("text") or "").lower())
                 for h in heads)]
         if not matches or not (_caution_subjects_asked(query_text, prior_user_turns)
-                               or _no_caution_product_named(query_text, prior_user_turns)):
+                               or _no_caution_product_named(query_text, prior_user_turns)
+                               or _caution_product_named(query_text, prior_user_turns)):
             return matches
     except Exception as e:
         print(f"[chat] caution snippet filter failed, snippets kept: {e!r}", flush=True)

@@ -3390,6 +3390,8 @@
     "note": "New formula, back in stock 2026-10-19, one capsule a day with a meal; FileMaker 395 (Glen approved the copy 2026-10-17, via formulation). Spec: production/05 Formulations/_store-updates/2026-10-16-vitamin-d-syntropy.md."
   },
   "clarity": {
+    "warning": "Do not use if you are pregnant or breastfeeding. It is not for children. Consult your health professional before use if you take prescription medications, especially blood thinners or blood sugar medicines. Also consult first if you are planning surgery. This formula may change how some medications are processed.",
+    "chat_caution": true,
     "ingredients": [
       {
         "name": "Rosemary extract (Salvia rosmarinus), standardized to 50% rosmarinic acid",

@@ -7,6 +7,8 @@ every opted-in caution: surgery and autoimmune subject words, and a rule against
 with the caution or adding a time window. The same filter now drops interaction snippets
 where a product says it has no caution (knowledge read-back on Clarity, 2026-10-24).
 """
+# Clarity carries its own caution since 2026-10-25 (Glen, platform tab), so these tests
+# use Vitamin C Syntropy, a pinned product that still has none.
 import importlib
 from types import SimpleNamespace
 
@@ -108,18 +110,18 @@ def test_operate_machinery_and_cooperation_are_not_surgery(appmod, q):
 
 
 @pytest.mark.parametrize("q", [
-    "Can I take Clarity with my blood pressure medicine?",
-    "Is Clarity safe while pregnant?",
-    "Does Clarity interact with sertraline?",
-    "Can I take Clarity before surgery?",
+    "Can I take Vitamin C Syntropy with my blood pressure medicine?",
+    "Is Vitamin C Syntropy safe while pregnant?",
+    "Does Vitamin C Syntropy interact with sertraline?",
+    "Can I take Vitamin C Syntropy before surgery?",
     # No list of drug names is whole, so a named product drops them for any question
     # (review round 2).
-    "Can I take Clarity with lisinopril?",
-    "Is Clarity ok during chemo?",
-    "What is in Clarity?",
+    "Can I take Vitamin C Syntropy with lisinopril?",
+    "Is Vitamin C Syntropy ok during chemo?",
+    "What is in Vitamin C Syntropy?",
 ])
 def test_a_no_caution_product_loses_the_interaction_snippets(appmod, q):
-    assert "Clarity has no caution on its product page." in appmod.named_product_facts_block(q)
+    assert "Vitamin C Syntropy has no caution on its product page." in appmod.named_product_facts_block(q)
     assert appmod._no_caution_product_named(q)
     ms = _matches()
     assert appmod._drop_caution_subject_snippets(ms, q) == ms[1:]
@@ -137,7 +139,7 @@ def test_a_product_with_a_caution_is_not_a_no_caution_product(appmod):
 
 
 def test_a_follow_up_about_a_no_caution_product_loses_them_too(appmod):
-    prior = ["Tell me about Clarity."]
+    prior = ["Tell me about Vitamin C Syntropy."]
     q = "Can I take it with my blood pressure medicine?"
     assert appmod._no_caution_product_named(q, prior)
     ms = _matches()
@@ -195,3 +197,24 @@ def test_two_cautions_asked_about_surgery_each_get_their_own_link(appmod):
     assert b.count(_link(appmod, "Brain Cleanse")) == 1
     assert b.count(_link(appmod, "Fibrosolve")) == 1
     assert b.count(NO_ARGUMENT) == 2
+
+
+# Review of Clarity's caution, round 2 (2026-10-25): a drug no subject list names kept the
+# interaction snippets once Clarity's no-caution line gave way to its caution.
+@pytest.mark.parametrize("q,prior", [
+    ("Can I take Clarity with sertraline?", None),
+    ("Does Clarity interact with Zoloft?", None),
+    ("Can I take Clarity with levothyroxine?", None),
+    ("Does Clarity interact with anything?", None),
+    ("Can I take it with sertraline?", ["Tell me about Clarity."]),
+    ("Can I take Stress Release with sertraline?", None),
+    # Review round 4: other phrasings, and a caution worded "prescription medicine".
+    ("Can I take Clarity and sertraline?", None),
+    ("Is Clarity ok if I am on sertraline?", None),
+    ("Can I mix Clarity and Prozac?", None),
+    ("Can I take Sleep Syntropy with Adderall?", None),
+])
+def test_a_carried_caution_loses_the_interaction_snippets_too(appmod, q, prior):
+    assert appmod._caution_product_named(q, prior)
+    ms = _matches()
+    assert appmod._drop_caution_subject_snippets(ms, q, prior) == ms[1:]

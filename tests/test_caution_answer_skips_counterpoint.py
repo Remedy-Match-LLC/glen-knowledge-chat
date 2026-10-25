@@ -88,7 +88,7 @@ def test_a_caution_question_gets_the_caution_answer(q):
 
 @pytest.mark.parametrize("q", [
     "How much Stress Release should I take?",
-    "Can I take Clarity with my blood pressure medicine?",   # no caution to give
+    "Can I take Vitamin C Syntropy with my blood pressure medicine?",   # no caution
     "Is Vitamin D Syntropy ok before surgery?",               # its caution names no surgery
     "Can I buy Stress Release at the co-op?",                 # review round 1
     "Is Stress Release a drug?",                              # review round 1
