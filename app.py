@@ -2713,6 +2713,10 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         refusal = _waitlist_refusal(slug)
         if refusal:
             parts.append(f"Availability: {refusal}")
+            # Live read-back, 2026-10-25: "Yes, Night Vision is available to order —
+            # however, it is currently out of stock".
+            parts.append("It cannot be ordered now. Never say it is available to order "
+                         "or in stock.")
             if not pinned:
                 parts.append("No dose or ingredient text is approved for it yet. Give none, "
                              "and do not take one from the snippets.")
