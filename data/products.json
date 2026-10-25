@@ -8173,6 +8173,7 @@
   },
   "night-vision": {
    "name": "Night Vision",
+   "out_of_stock": true,
    "price_cents": 7000,
    "pinecone_title": "Night Vision",
    "url": "https://myhealingoasis.com/begin/product/night-vision",

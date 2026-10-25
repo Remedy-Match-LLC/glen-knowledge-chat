@@ -71,12 +71,27 @@ def _refused(r):
     assert body.get("url") == URL, body
 
 
-def test_the_catalog_file_marks_no_product_out_of_stock():
+def test_the_catalog_file_marks_only_night_vision_out_of_stock():
     """Vitamin D Syntropy's new formula is back in stock (spec 2026-10-16-vitamin-d-syntropy)."""
     p = _real()[VD]
     assert "out_of_stock" not in p
     assert not p.get("inactive") and not p.get("waitlist_only")
-    assert [s for s, q in _real().items() if isinstance(q, dict) and "out_of_stock" in q] == []
+    assert [s for s, q in _real().items()
+            if isinstance(q, dict) and "out_of_stock" in q] == ["night-vision"]
+
+
+def test_night_vision_is_out_of_stock_with_no_date(client):
+    """Glen, 2026-10-25, in the formulation tab: "Zero on shelf", and "yes" to marking it
+    out of stock until the next batch. No restock date is known, so the line names none."""
+    nv = _real()["night-vision"]
+    assert nv["out_of_stock"] is True
+    products = app._PRODUCTS["products"]
+    assert pp.is_orderable("night-vision", products) is False
+    line = "Night Vision is out of stock."
+    assert pp.waitlist_refusal(pp.waitlist_block("night-vision", products)) == line
+    d = client.get("/begin/product-page-data/night-vision").get_json()
+    assert d["out_of_stock_line"] == line
+    assert d["price_cents"] is None and "cta_url" not in d
 
 
 def test_the_predicate_refuses_it_with_the_one_line(catalog):
@@ -193,3 +208,12 @@ def test_the_two_client_pages_print_the_line_when_it_is_given():
     portal = open(os.path.join(root, "client-portal.html")).read()
     assert "if (n.line) return '<div class=\"r-line\"><span><a href=\"'+esc(n.url)+'\">'+esc(n.line)+'</a>" in bio
     assert '${esc(it.not_ready.line || "Not ready to order yet")}' in portal
+
+
+def test_the_chat_is_told_night_vision_is_out_of_stock():
+    """Unpinned, Night Vision brought no facts block, so the bot answered from old store
+    snippets (review round 1, 2026-10-25). It now gets the refusal line and no dose."""
+    b = app._named_product_facts("Can I order Night Vision?")
+    assert "### Night Vision" in b
+    assert "Availability: Night Vision is out of stock." in b
+    assert "Give none, and do not take one from the snippets." in b

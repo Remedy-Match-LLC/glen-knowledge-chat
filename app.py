@@ -2347,7 +2347,10 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         # A chat_caution product qualifies unpinned too: its block carries only its
         # caution, which Glen approved word for word (Brain Cleanse, 2026-10-15). So does a
         # bundle that lists caution_components: its block carries only those cautions.
+        # An out-of-stock product qualifies like a waiting-list one: Night Vision, unpinned,
+        # was otherwise never named out of stock to the bot (review round 1, 2026-10-25).
         if (not (p.get("copy_pinned") or p.get("waitlist_only") or p.get("chat_caution")
+                 or str(p.get("out_of_stock") or "").strip()
                  or _bundle_bot_cautions(p, products))
                 or p.get("inactive")
                 or p.get("info_only")
