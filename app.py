@@ -2227,6 +2227,9 @@ _PRICE_SENTENCE = re.compile(r"\s*Price:\s*\$[\d,.]+\.?")
 # matches in any case. Angiostasis, Apoptogenesis and Appestat are NOT here: each is also
 # a biology term ("angiostasis in tumours"), so in lowercase they need a cue (review 2026-10-09).
 _CASE_FREE_NAMES = frozenset({
+    # VirEx is coined, and its own description spells it "Virex" (review of the twelve
+    # cautions, round 2, 2026-10-25).
+    "virex",
     "angiogenx", "migrafree", "energessence",
     "ocuheal-eye-drops", "ocuheal-plus-eye-drops", "lens-zyme", "curcu-guard",
     "iron-syntropy", "zinc-syntropy", "vitamin-a-syntropy", "vitamin-c-syntropy",
@@ -2264,14 +2267,19 @@ _ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 # sentence ("Clarity of mind is what I lack"). Capitalised mid-sentence it names the product
 # ("Tell me about Clarity"); at the start of a sentence it needs a product cue ("Clarity
 # dose?"). Lowercase never counts. Review of the Clarity pin, 2026-10-23.
-_SENTENCE_START_CUE_NAMES = frozenset({"clarity"})
+# Vitality, Liver Support and Immune Modulation joined with their cautions: "Liver Support
+# is what I need" asks for a product, it does not name one (review round 1, 2026-10-25).
+_SENTENCE_START_CUE_NAMES = frozenset({"clarity", "vitality", "liver-support",
+                                       "immune-modulation"})
 # Pinned products that yield to any longer catalog name containing theirs, pinned or not:
 # "Crystalline Clarity" and the Clarity flower essences are other products. Opt-in, because
 # many pinned label names sit inside a longer unpinned FileMaker row ("Energessence
 # HomeoEnergetic Drops"), and those blocks must stay (review round 3, 2026-10-23).
 # Stress Release: "MB5 ESR Emotional Stress Release Infoceutical" is another product
 # (review of the Stress Release pin, round 1, 2026-10-23).
-_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release"})
+# Vitality: "Vitreous Vitality" and "Vitality Boost Essence in Terrain Restore" are other
+# products (review of the twelve cautions, round 1, 2026-10-25).
+_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality"})
 # Closing quotes and brackets may sit between the full stop and the name: 'She said "I
 # feel tired." Clarity of mind ...' (review round 2), as may opening ones. A colon or
 # semicolon does not end a sentence: "Products I take: Clarity, ..." (review round 3).

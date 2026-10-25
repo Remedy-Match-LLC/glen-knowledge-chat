@@ -341,7 +341,8 @@ def test_other_pinned_names_inside_a_longer_catalog_name_keep_their_block(appmod
 
 
 def test_only_listed_slugs_yield_to_a_longer_catalog_name(appmod):
-    assert appmod._YIELDS_TO_LONGER_NAMES == frozenset({"clarity", "stress-release"})
+    assert appmod._YIELDS_TO_LONGER_NAMES == frozenset({"clarity", "stress-release",
+                                                         "vitality"})
 
 
 def test_a_colon_does_not_start_a_sentence(appmod):
