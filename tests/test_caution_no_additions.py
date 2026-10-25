@@ -20,7 +20,10 @@ import app
 SLUG = "vitamin-d-syntropy"
 WARNING = ("If you take a blood thinner such as warfarin, consult your physician before "
            "use, because vitamin K affects it. Consult your physician before use if you "
-           "are pregnant or have a thyroid condition.")
+           "are pregnant or have a thyroid condition. Consult your physician first if you "
+           "have high blood calcium, kidney stones or kidney disease, or take thiazide "
+           "diuretics or digoxin. It is not for children, or for use while breastfeeding.")
+# Revised 2026-10-25: Glen "yes" in the formulation tab, last sentence in the marketing tab.
 PRODUCTS = json.load(open("data/products.json"))["products"]
 CORRECTIONS = json.load(open("data/products-manual-corrections.json"))
 DESCRIPTION_LEAD = "Vitamin D is formed in the skin when sunlight transforms cholesterol"
