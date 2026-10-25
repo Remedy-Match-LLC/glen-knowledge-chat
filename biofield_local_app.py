@@ -4546,6 +4546,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # The shared source, not a private copy of the table: it carries the animal
             # rule, so Full and Minimum propose infoceuticals for an animal's scan.
             coverage = _st.scan_coverage(cx, test_id)
+            # Every code in it is a scan finding, so it is Body data. Left out, it must
+            # reach no stage: a Mind remedy took its codes in through covers_of, and an
+            # old scan's ED8 became that layer's head (Glen, 2026-10-24, Judith Ann Tom:
+            # "I unchecked body. Fix the programming that made that error.").
+            if not include["body"]:
+                coverage = {}
 
             # token -> label, so a suppression can be reported in his words and a
             # token can be looked up as a tissue for the function test.
