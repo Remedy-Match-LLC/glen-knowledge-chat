@@ -43,7 +43,7 @@ INTRO = ("Amygdalin (vitamin B17) from apricot kernels, with both forms of vitam
          "a group of vitamin, mineral and botanical synergists.")
 DESCRIPTION = ("A Healing Sacrament, handcrafted with Aloha on the Healing Island of "
                "Hawai\u02bbi.\n\nOther ingredients: pullulan vegicaps, Healing Energy, Love "
-               "and Prayer.\n\n30 vegicaps. Vegetarian.\n\nCaution: " + WARNING)
+               "and Prayer.\n\n30 vegicaps.\n\nCaution: " + WARNING)
 
 
 def test_the_record_carries_the_approved_warning_and_pinned_dose():
@@ -128,7 +128,8 @@ def test_the_learn_page_is_the_approved_description(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
     md = app.app.test_client().get(f"/begin/learn-data/{SLUG}").get_json()["markdown"]
     assert md == DESCRIPTION
-    for old in ("5000 IU", "Retinyl Palmitate", "ten capsules", "titrat"):
+    # No diet claim while its D3 source is unknown (Glen, 2026-10-25).
+    for old in ("5000 IU", "Retinyl Palmitate", "ten capsules", "titrat", "vegetarian", "vegan"):
         assert old.lower() not in md.lower()
 
 
