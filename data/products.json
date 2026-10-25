@@ -2980,6 +2980,8 @@
    ]
   },
   "clarity": {
+   "warning": "Do not use if you are pregnant or breastfeeding. It is not for children. Consult your health professional before use if you take prescription medications, especially blood thinners or blood sugar medicines. Also consult first if you are planning surgery. This formula may change how some medications are processed.",
+   "chat_caution": true,
    "name": "Clarity",
    "price_cents": 7000,
    "pinecone_title": "Clarity",
