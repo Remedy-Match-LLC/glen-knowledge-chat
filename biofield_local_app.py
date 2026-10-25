@@ -4546,6 +4546,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # The shared source, not a private copy of the table: it carries the animal
             # rule, so Full and Minimum propose infoceuticals for an animal's scan.
             coverage = _st.scan_coverage(cx, test_id)
+            # Body left out: its scan codes must reach no stage. A Mind remedy took them
+            # in through covers_of, and an old scan's ED8 became that layer's head (Glen,
+            # 2026-10-24, Judith Ann Tom: "I unchecked body. Fix the programming that
+            # made that error."). Only the scan codes go: the same table also holds the
+            # normalised labels cover_stress writes for Spirit and Mind stresses.
+            if not include["body"]:
+                scan_codes = {c for (c,) in cx.execute(
+                    "SELECT DISTINCT code FROM biofield_auth_stress "
+                    "WHERE test_id=? AND source='scan'",
+                    (int(str(test_id).lstrip("a") or 0),))}
+                coverage = {r: toks - scan_codes for r, toks in coverage.items()
+                            if toks - scan_codes}
 
             # token -> label, so a suppression can be reported in his words and a
             # token can be looked up as a tissue for the function test.
