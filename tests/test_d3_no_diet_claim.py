@@ -18,7 +18,7 @@ DATA = os.path.join(os.path.dirname(__file__), "..", "data")
 FMP_IDS = {"327", "337", "366", "367", "378", "395", "429", "431", "449", "469", "1104",
            "1190", "1196"}
 SLUGS = {"b17-syntropy"}
-CLAIM = re.compile(r"(?i)\b(vegan|vegetarian)\b")
+CLAIM = re.compile(r"(?i)\b(vegan|vegetarian|plant[- ]based)\b")
 
 
 def _load(name):
@@ -34,7 +34,10 @@ def test_every_listed_product_is_found():
     assert len(_d3_slugs()) == 14
 
 
-@pytest.mark.parametrize("name", ["products.json", "products-manual-corrections.json"])
+# The enrich files feed apply_enrichment.py, which would copy a claim back (review, #2140).
+@pytest.mark.parametrize("name", ["products.json", "products-manual-corrections.json",
+                                  "products-enrich-clean.json",
+                                  "products-enrich-candidate.json"])
 def test_no_record_claims_a_diet(name):
     doc = _load(name)
     records = doc.get("products", doc)
