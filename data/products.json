@@ -3612,6 +3612,7 @@
   },
   "seaamino-syntropy": {
    "name": "SeaAmino Syntropy",
+   "out_of_stock": true,
    "price_cents": 7000,
    "bottle_type": "30 Caps",
    "pinecone_title": "SeaAmino Syntropy",
