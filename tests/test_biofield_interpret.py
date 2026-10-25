@@ -148,3 +148,21 @@ def test_interpret_expands_remedies_array_of_plain_strings():
              "remedies": ["Sterol Max", "Bile Flow"]}]})
     out = interpret_transcript("acid balanced by sterol max and bile flow", fake)
     assert [(l["layer"], l["remedy"]) for l in out["layers"]] == [(1, "Sterol Max"), (1, "Bile Flow")]
+
+
+def test_a_layer_with_no_named_remedy_is_kept_with_the_remedy_blank():
+    # Glen, 2026-10-24: "keep layers without a named remedy." Judith Ann Tom's first
+    # two spoken layers named none and were dropped.
+    from dashboard.biofield_interpret import interpret_transcript
+    out = {"layers": [{"layer": 1, "head": "ES three nerve", "remedy": ""},
+                      {"layer": 2, "head": "BSH", "remedies": []},
+                      {"layer": 4, "head": "Kunzite", "remedy": "Green Bog Orchid"}]}
+    got = interpret_transcript("x", lambda s, u: json.dumps(out))["layers"]
+    assert [(l["layer"], l["head"], l["remedy"]) for l in got] == [
+        (1, "ES three nerve", ""), (2, "BSH", ""), (4, "Kunzite", "Green Bog Orchid")]
+
+
+def test_the_prompt_asks_for_every_layer_with_a_stress():
+    from dashboard.biofield_interpret import _SYSTEM
+    assert "Emit every layer that has a stress (head)" in _SYSTEM
+    assert "Emit a layer when it has a stress (head) and a remedy" not in _SYSTEM

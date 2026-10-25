@@ -127,8 +127,88 @@ def test_the_page_lists_existing_layers_under_spirit():
     from dashboard import biofield_report_html as R
     import inspect
     src = inspect.getsource(R)
-    i = src.index("async function program(mode)")
+    i = src.index("async function program(mode,inc)")
     body = src[i:src.index("\n}", i)]
     assert "already in the chain" in body
     assert "st.stage==='spirit'" in body
     assert "if(!ex.length&&!st.picks.length&&!st.suppressed.length)" in body
+
+
+# Glen, 2026-10-24: include or leave out Spirit, Mind and Body before adding the
+# program. Default include, except Body when the client's scan is not fresh.
+def test_every_section_is_included_unless_told_otherwise(tmp_path):
+    client = _app(str(tmp_path / "c.db")).test_client()
+    tid = _new(client)
+    j = client.post(f"/author/{tid}/program", json={"mode": "minimum"}).get_json()
+    assert j["include"] == {"spirit": True, "mind": True, "body": True}
+
+
+def test_body_reads_not_fresh_without_a_recent_scan(tmp_path):
+    client = _app(str(tmp_path / "c.db")).test_client()
+    tid = _new(client)
+    assert client.post(f"/author/{tid}/program",
+                       json={"mode": "minimum"}).get_json()["body_fresh"] is False
+
+
+def test_body_reads_fresh_with_a_recent_scan(tmp_path):
+    fresh = dict(_NO_SCAN, status="fresh", found=True, fresh=True, days_ago=3)
+    client = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: fresh,
+                        fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: {},
+                        interpret_complete=lambda s, u: json.dumps(_SPIRIT)).test_client()
+    tid = _new(client)
+    assert client.post(f"/author/{tid}/program",
+                       json={"mode": "minimum"}).get_json()["body_fresh"] is True
+
+
+def test_spirit_left_out_proposes_and_writes_none_of_it(tmp_path):
+    db = str(tmp_path / "c.db")
+    client = _app(db).test_client()
+    tid = _new(client)
+    _add_stress(client, tid, "Fatigue")          # a manual stress is a Spirit source
+    off = {"spirit": False, "mind": True, "body": True}
+    j = client.post(f"/author/{tid}/program",
+                    json={"mode": "minimum", "include": off}).get_json()
+    assert j["transcript_layers"] == 0 and "Heart Health" not in j["remedies"]
+    assert not [s for s in j["stages"] if s["stage"] == "spirit"][0]["picks"]
+    client.post(f"/author/{tid}/program",
+                json={"mode": "minimum", "apply": True, "force": True, "include": off})
+    assert _chain_len(db, tid) == 0
+
+
+def test_spirit_included_still_writes_the_transcript_layer(tmp_path):
+    db = str(tmp_path / "c.db")
+    client = _app(db).test_client()
+    tid = _new(client)
+    client.post(f"/author/{tid}/program",
+                json={"mode": "minimum", "apply": True,
+                      "include": {"spirit": True, "mind": False, "body": False}})
+    assert _chain_len(db, tid) == 1
+
+
+def test_the_page_has_a_box_per_section_and_sends_the_choice():
+    from dashboard import biofield_report_html as R
+    import inspect
+    src = inspect.getsource(R)
+    assert "if(!inc&&j.body_fresh===false)return program(mode,{spirit:true,mind:true,body:false});" in src
+    assert "onchange=\\\"programToggle(this)\\\"" in src or "programToggle(this)" in src
+    assert "include:_progInc||{spirit:true,mind:true,body:true}});" in src
+    assert "if(!on){h+='&nbsp;&nbsp;<span class=food>left out</span><br></div>';return}" in src
+
+
+def test_a_left_out_sections_stresses_never_reach_the_builder(tmp_path, monkeypatch):
+    from dashboard import biofield_program as bp
+    seen = []
+    real = bp.build_program
+
+    def spy(**kw):
+        seen.append(kw)
+        return real(**kw)
+    monkeypatch.setattr(bp, "build_program", spy)
+    client = _app(str(tmp_path / "c.db")).test_client()
+    tid = _new(client)
+    _add_stress(client, tid, "Fatigue")          # manual: a Spirit source
+    client.post(f"/author/{tid}/program", json={"mode": "minimum"})
+    assert [s.get("label") for s in seen[-1]["stresses"]] == ["Fatigue"]
+    client.post(f"/author/{tid}/program", json={
+        "mode": "minimum", "include": {"spirit": False, "mind": False, "body": True}})
+    assert seen[-1]["stresses"] == [] and seen[-1]["mind_items"] == []

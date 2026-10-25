@@ -4513,13 +4513,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         PROPOSES by default; writes only on {"apply": true}, the rule #1717 set.
         """
         from dashboard import biofield_stress as _st
-        from dashboard.biofield_program import build_program, token_of, FULL, MINIMUM
+        from dashboard.biofield_program import (build_program, token_of, FULL, MINIMUM,
+                                                STAGES)
         from dashboard.tissue_function import functions_for
 
         body = request.get_json(silent=True) or {}
         mode = (body.get("mode") or FULL).strip().lower()
         if mode not in (FULL, MINIMUM):
             return {"ok": False, "error": "mode must be 'full' or 'minimum'"}, 400
+        # Glen, 2026-10-24: "a button next to each section: spirit, mind, and body to
+        # select to include or leave out the section ... The default can be include,
+        # unless the body section is not fresh." A section left out adds nothing and
+        # suppresses nothing. A missing key means include, so older callers are unchanged.
+        asked = body.get("include") if isinstance(body.get("include"), dict) else {}
+        include = {name: asked.get(name) is not False for name, _src in STAGES}
+        left_out = tuple(src for name, srcs in STAGES if not include[name] for src in srcs)
 
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
@@ -4530,7 +4538,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             for bucket in ("active", "unassigned"):
                 for st in data.get(bucket) or []:
                     key = (st.get("source"), st.get("code") or st.get("label"))
-                    if key in seen:
+                    if key in seen or st.get("source") in left_out:
                         continue
                     seen.add(key)
                     stresses.append(st)
@@ -4552,12 +4560,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # Spirit: the transcript's own layers, computed but NOT written.
             spirit_meta, interpreted = {}, []
             try:
-                interpreted, spirit_meta = _interpreted_layers(cx, test_id)
+                if include["spirit"]:
+                    interpreted, spirit_meta = _interpreted_layers(cx, test_id)
             except LookupError:
                 interpreted = []       # no transcript: the program starts at Mind
             except Exception as e:
                 return {"ok": False, "error": str(e)[:200]}, 400
 
+            if not include["spirit"]:
+                # Left out, often because he already added the transcript's layers. The
+                # chain's own remedies still count as placed, so Mind and Body do not
+                # repeat them; the transcript's layers are not written again.
+                interpreted = [{"head": r.get("head") or "", "most_affected": r.get("head") or "",
+                                "remedy": r.get("remedy") or ""} for r in chain]
             seed = []
             for l in interpreted:
                 toks = {token_of({"label": l["head"], "source": "voice"}),
@@ -4577,6 +4592,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             except Exception as _me:
                 print(f"[program] clinical selections skipped: {_me!r}", flush=True)
                 mind_items = []
+            if not include["mind"]:
+                mind_items = []
+            if not include["spirit"]:
+                interpreted = []
 
             prog = build_program(
                 stresses=stresses, spirit_layers=seed,
@@ -4585,7 +4604,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 covers_of=lambda r: coverage.get((r or '').strip().lower(), set()))
 
             if not body.get("apply"):
+                # Body starts left out when the client's latest scan is not fresh, by
+                # the scan panel's own 14-day rule. Unknown reads as fresh, so a lookup
+                # failure never hides a section.
+                try:
+                    _email = ((rep.get("client") or {}).get("email") or "").strip()
+                    scan = scan_lookup(_email) or {}
+                    body_fresh = bool(scan.get("fresh")) if _email else True
+                    scan_note = scan.get("message") or ""
+                except Exception:
+                    body_fresh, scan_note = True, ""
                 return {"ok": True, "proposed": True, "mode": mode,
+                        "include": include, "body_fresh": body_fresh,
+                        "scan_note": scan_note,
                         "existing_layers": existing,
                         # The layers already in the causal chain, shown under Spirit
                         # (Glen 2026-10-03: two layers he had entered from the

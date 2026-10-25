@@ -58,7 +58,8 @@ _SYSTEM = (
     "vague (e.g. 'the essence') or the remedy is unusual or imperfectly transcribed. Do not skip a layer "
     "just because it is short or oddly worded.\n"
     "- 'that also balances Y' is a cross-link for context -> do NOT make it its own layer.\n"
-    "- Emit a layer when it has a stress (head) and a remedy. Order layers by number. "
+    "- Emit every layer that has a stress (head). When no remedy is named for it, set its "
+    "`remedy` to an empty string; never invent one. Order layers by number. "
     "If nothing is parseable, return an empty layers array."
 )
 
@@ -119,10 +120,12 @@ def interpret_transcript(transcript, complete, glossary=""):
         # A layer can carry several remedies. Accept both forms: a `remedies` array
         # (items are strings or {remedy,dosage,frequency,timing} dicts) and the plain
         # single `remedy`. Emit one chain entry per remedy, sharing layer/head.
-        for spec in _layer_remedies(l):
+        # Glen, 2026-10-24: "keep layers without a named remedy. I can add a remedy or
+        # delete the layer." Judith Ann Tom's first two spoken layers named none and
+        # were dropped. A layer with no remedy is kept once, with the remedy blank.
+        specs = [sp for sp in _layer_remedies(l) if (sp.get("remedy") or "").strip()]
+        for spec in specs or [{"remedy": ""}]:
             remedy = (spec.get("remedy") or "").strip()
-            if not remedy:
-                continue
             layers.append({"layer": layer, "head": head, "most_affected": most_affected,
                            "remedy": remedy,
                            "dosage": (spec.get("dosage") or "").strip(),
