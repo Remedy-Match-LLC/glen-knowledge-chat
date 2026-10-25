@@ -111,13 +111,14 @@ def test_every_other_question_keeps_its_frame(q):
 def test_the_caution_answer_lifts_the_frame_and_forbids_windows_and_restarts():
     for words in ("no consensus, no limitation, no hidden assumption, no tease, and no "
                   "break-and-rebuild",
-                  "1. Open with each caution that names what the user asks about, every "
-                  "sentence of it",
-                  "A caution's own words do not count toward any word limit",
+                  # Glen, 2026-10-24: the answer points to the caution and never copies it.
+                  "1. Open by saying, for each product whose caution names what the user "
+                  "asks about, that its product page carries a caution on this",
+                  "Do not quote or summarise the caution",
                   "2. Then answer the rest of the question plainly",
                   "Answer about any other product as usual",
                   "give no time to stop, pause or restart",
-                  "give it in full even when you may not give individual guidance",
+                  "Point to the caution even when you may not give individual guidance",
                   "that one next step is the invitation to agree to them"):
         assert words in RULES, words
 
@@ -162,7 +163,10 @@ def test_the_gated_chat_answer_keeps_the_caution_answer(prompt, monkeypatch):
     _chat("I have lupus. Can I take Stress Release?")
     msg = prompt[-1]
     assert msg.count(RULES) == 1 and BRIEF_FRAME not in msg
-    assert app._PRODUCTS["products"]["stress-release"]["warning"] in msg
+    # Glen, 2026-10-24: the gated caution answer points to the caution, never copies it.
+    assert app._PRODUCTS["products"]["stress-release"]["warning"] not in msg
+    assert app._CAUTION_LINK_LINE.format(name="Stress Release",
+                                         where=app._CAUTION_LINK_WHERE) in msg
 
 
 def test_the_full_answer_replaces_its_frame(prompt):

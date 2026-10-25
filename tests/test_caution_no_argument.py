@@ -37,12 +37,26 @@ def test_the_stay_line_and_the_closing_reminder_forbid_arguing(appmod):
     assert appmod._CAUTION_CLOSING_REMINDER.endswith(" " + NO_ARGUMENT)
 
 
+def _link(appmod, name):
+    return appmod._CAUTION_LINK_LINE.format(name=name, where=appmod._CAUTION_LINK_WHERE)
+
+
 def test_the_surgery_answer_carries_the_rule_after_the_caution_and_at_the_end(appmod):
-    q = "Can I take Stress Release before surgery?"
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    q = "Tell me about Stress Release."
     b = appmod.named_product_facts_block(q)
     warning = appmod._PRODUCTS["products"]["stress-release"]["warning"]
     assert b.index(NO_ARGUMENT) > b.index(warning)
     assert b.count(NO_ARGUMENT) == 2 and b.endswith(NO_ARGUMENT)
+
+
+def test_the_surgery_question_gets_the_link_and_its_rule(appmod):
+    # Glen, 2026-10-24: the caution question points to the caution and never copies it.
+    b = appmod.named_product_facts_block("Can I take Stress Release before surgery?")
+    warning = appmod._PRODUCTS["products"]["stress-release"]["warning"]
+    assert b.count(warning) == 0 and b.count(_link(appmod, "Stress Release")) == 1
+    assert appmod._CAUTION_LINK_LINE.endswith(NO_ARGUMENT)
+    assert b.count(NO_ARGUMENT) == 1 and appmod._CAUTION_STAY_LINE not in b
 
 
 @pytest.mark.parametrize("q, subject", [
@@ -156,13 +170,28 @@ def test_the_scope_of_the_rules_names_surgery(appmod):
 
 
 def test_the_gated_surgery_answer_carries_the_rule_too(appmod):
+    # Glen, 2026-10-24: the gated caution question gets the link and its rule, no copy.
     b = appmod.named_product_facts_block("Can I take Stress Release before surgery?",
                                          gated=True)
-    assert b.count(NO_ARGUMENT) == 2 and b.endswith(NO_ARGUMENT)
+    warning = appmod._PRODUCTS["products"]["stress-release"]["warning"]
+    assert b.count(warning) == 0 and b.count(_link(appmod, "Stress Release")) == 1
+    assert b.count(NO_ARGUMENT) == 1
 
 
 def test_two_cautions_with_different_surgery_windows_each_keep_their_own(appmod):
-    b = appmod.named_product_facts_block("Can I take Brain Cleanse and Fibrosolve before surgery?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = appmod.named_product_facts_block("Tell me about Brain Cleanse and Fibrosolve.")
     assert "Stop a few days before surgery." in b
     assert "within about two weeks of surgery" in b
     assert b.count(NO_ARGUMENT) == 3 and b.endswith(NO_ARGUMENT)
+
+
+def test_two_cautions_asked_about_surgery_each_get_their_own_link(appmod):
+    # Glen, 2026-10-24: each caution the question touches is linked, and neither window is
+    # given in the bot's text.
+    b = appmod.named_product_facts_block("Can I take Brain Cleanse and Fibrosolve before surgery?")
+    assert "Stop a few days before surgery." not in b
+    assert "within about two weeks of surgery" not in b
+    assert b.count(_link(appmod, "Brain Cleanse")) == 1
+    assert b.count(_link(appmod, "Fibrosolve")) == 1
+    assert b.count(NO_ARGUMENT) == 2

@@ -122,6 +122,6 @@ def appmod(monkeypatch, tmp_path):
 
 def test_the_page_gives_the_directions_and_the_caution(appmod):
     d = appmod.app.test_client().get("/begin/product-page-data/iron-out").get_json()
-    body = {s["id"]: s for s in d["sections"]}["ingredients"]["body"]
-    assert body["directions"] == DIRECTIONS
-    assert body["warning"] == CAUTION
+    secs = {s["id"]: s for s in d["sections"]}
+    assert secs["ingredients"]["body"]["directions"] == DIRECTIONS
+    assert secs["caution"]["body"] == CAUTION

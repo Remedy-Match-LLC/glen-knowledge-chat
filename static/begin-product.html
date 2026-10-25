@@ -556,16 +556,6 @@
         }
         wrapEl.appendChild(np);
       }
-      if (body && body.warning){
-        var wp = document.createElement('p');
-        wp.className = 'sp-ing-warning';
-        var wh = document.createElement('span');
-        wh.className = 'sp-ing-label';
-        wh.textContent = 'Caution: ';
-        wp.appendChild(wh);
-        wp.appendChild(document.createTextNode(body.warning));
-        wrapEl.appendChild(wp);
-      }
       return wrapEl;
     }
 
@@ -1410,7 +1400,8 @@
         case 'cta':         return renderCtaBody(ctaUrl);
         default:
           var p = document.createElement('p');
-          p.className = 'sp-text';
+          // A caution section keeps the boxed look it had inside "What's inside".
+          p.className = sec.id.indexOf('caution') === 0 ? 'sp-text sp-ing-warning' : 'sp-text';
           p.textContent = typeof sec.body === 'string' ? sec.body : '';
           return p;
       }
@@ -1803,6 +1794,21 @@
       show('sp-back');
     }
 
+    // A link ending #caution (or #caution-<component> on a bundle) scrolls to that
+    // section and opens it. The chat's caution answers end with one (Glen, 2026-10-24).
+    function openSectionFromHash(){
+      var id = (location.hash || '').slice(1);
+      if (!/^caution(-[a-z0-9-]+)?$/.test(id)) return;
+      var el = document.getElementById('sp-acc-' + id);
+      if (!el) return;
+      if (!el.classList.contains('open')){
+        var head = el.querySelector('.acc-head');
+        if (head) head.click();
+      }
+      el.scrollIntoView({ block: 'start' });
+    }
+    window.addEventListener('hashchange', openSectionFromHash);
+
     // ── Fetch and boot ────────────────────────────────────────────────────────
     fetch(BASE + '/begin/product-page-data/' + encodeURIComponent(slug), { credentials: 'same-origin' })
       .then(function(resp){
@@ -1814,6 +1820,7 @@
       .then(function(data){
         if (!data) return;
         renderProduct(data);
+        openSectionFromHash();
         // Bind the shared entity-ref hover pop-up once, at the document level, so
         // ingredient links revealed later (accordion expand) are covered too.
         if (window.wireEntityRefs) wireEntityRefs(document);

@@ -240,10 +240,13 @@ def test_page_data_serves_the_panel(monkeypatch, tmp_path):
     # Dosing and the contraindication must survive the AI draft, which replaces the
     # description section wholesale. Serving them here is what makes that true.
     assert body["directions"] == "Take 1 to 3 capsules a day with food, or as guided."
-    assert not body["warning"]
+    assert "warning" not in body
+    assert not any(s["id"] == "caution" for s in ff["sections"])
     assert fsb["directions"] == "Take 1 to 2 capsules a day between meals, or as guided."
+    # The caution has its own section, so a chat link can open it (2026-10-24).
+    fsw = next(s for s in fs["sections"] if s["id"] == "caution")["body"]
     for term in ("anticoagulant", "bleeding", "pregnancy", "surgery"):
-        assert term in fsb["warning"].lower(), term
+        assert term in fsw.lower(), term
 
 
 def test_label_lines_are_not_left_to_the_generated_copy(products):
@@ -257,5 +260,5 @@ def test_label_lines_are_not_left_to_the_generated_copy(products):
     assert "between meals" in fs["directions"]
     assert "anticoagulant" in fs["warning"].lower()
     src = open(os.path.join(ROOT, "static", "begin-product.html")).read()
-    for token in ("body.directions", "body.warning", "Suggested use: ", "Caution: "):
+    for token in ("body.directions", "Suggested use: ", "openSectionFromHash"):
         assert token in src, token

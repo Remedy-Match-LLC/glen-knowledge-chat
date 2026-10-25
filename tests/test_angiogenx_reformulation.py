@@ -161,7 +161,7 @@ def test_no_cached_ai_draft_replaces_the_pinned_copy(appmod):
     assert secs["research"]["body"]["how_it_works"] == HOW
     body = secs["ingredients"]["body"]
     assert [(i["name"], i["dose"]) for i in body["ingredients"]] == FIVE
-    assert body["directions"] == DIRECTIONS and body["warning"] == WARNING
+    assert body["directions"] == DIRECTIONS and secs["caution"]["body"] == WARNING
     assert [i["src"] for i in d["images"]] == PHOTOS
 
 

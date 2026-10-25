@@ -115,7 +115,8 @@ def test_every_answer_path_appends_the_block_after_the_instruction():
 
 def test_a_gated_turn_keeps_the_label_text_as_label_information():
     # Glen, 2026-10-09: a non-member who names a product gets its label dose and caution.
-    q = "How much Angiostasis should I take, and are there any cautions?"
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    q = "How much Angiostasis should I take, and what is in it?"
     open_, gated = app.named_product_facts_block(q), app.named_product_facts_block(q, gated=True)
     assert app._GATED_FACTS_NOTE not in open_
     assert app._GATED_FACTS_NOTE in gated
@@ -175,7 +176,8 @@ def test_the_chat_route_sends_the_gated_variant_on_a_gated_turn(monkeypatch, tmp
     monkeypatch.setattr(app, "is_member", lambda *a, **k: False)
     monkeypatch.setattr(app, "_is_gated_question", lambda *a, **k: gated)
     monkeypatch.setattr(app._cl.messages, "stream", lambda **kw: _FakeStream(sent, **kw))
-    q = "How much Angiostasis should I take, and are there any cautions?"
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    q = "How much Angiostasis should I take, and what is in it?"
     r = app.app.test_client().post("/chat", json={"query": q, "level": "self-healing",
                                                   "mode": "brief"}, buffered=True)
     assert sent, r.get_data(as_text=True)[:500]

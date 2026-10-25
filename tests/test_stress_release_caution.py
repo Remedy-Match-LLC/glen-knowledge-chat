@@ -41,12 +41,11 @@ def test_the_record_carries_the_approved_caution(entry):
     assert entry["chat_caution"] is True
 
 
+# A caution question now gets the link (2026-10-24); the copy path runs on these.
 @pytest.mark.parametrize("q", [
-    "is stress release safe with warfarin?",
-    "is stress release safe in pregnancy?",
+    "what is stress release?",
     "stress release dose?",
     "how many stress release capsules can I take a day?",
-    "Can I take Stress Release before surgery?",
 ])
 def test_the_block_quotes_the_caution_once_with_its_rules(appmod, q):
     block = appmod.named_product_facts_block(q)
@@ -55,6 +54,26 @@ def test_the_block_quotes_the_caution_once_with_its_rules(appmod, q):
     assert "Caution: Caution:" not in block
     assert appmod._CAUTION_STAY_LINE in block
     assert appmod._CAUTION_CLOSING_REMINDER in block
+    assert "has no caution on its product page" not in block
+
+
+def _link(appmod):
+    return appmod._CAUTION_LINK_LINE.format(name="Stress Release",
+                                            where=appmod._CAUTION_LINK_WHERE)
+
+
+@pytest.mark.parametrize("q", [
+    "is stress release safe with warfarin?",
+    "is stress release safe in pregnancy?",
+    "Can I take Stress Release before surgery?",
+])
+def test_a_caution_question_links_the_caution_and_never_quotes_it(appmod, q):
+    # Glen, 2026-10-24: "Chat doesn't duplicate the caution."
+    block = appmod.named_product_facts_block(q)
+    assert "### Stress Release" in block
+    assert WARNING not in block and block.count(_link(appmod)) == 1
+    assert appmod._CAUTION_STAY_LINE not in block
+    assert appmod._CAUTION_CLOSING_REMINDER not in block
     assert "has no caution on its product page" not in block
 
 
@@ -89,15 +108,17 @@ def test_iron_out_keeps_its_own_block(appmod):
 # Accepted matches: Glen accepted these lowercase false positives in exchange for
 # lowercase coverage (production tab, 2026-10-24, "yes"). Pinned here so a later change
 # to the matcher sees them.
-@pytest.mark.parametrize("q", [
-    "is tapping for stress release safe?",
-    "how much stress release do I need from exercise?",
-    "is emotional stress release safe?",
-    "what is stress release?",
+@pytest.mark.parametrize("q, linked", [
+    ("is tapping for stress release safe?", True),
+    ("how much stress release do I need from exercise?", False),
+    ("is emotional stress release safe?", True),
+    ("what is stress release?", False),
 ])
-def test_accepted_false_positives_bring_the_block(appmod, q):
+def test_accepted_false_positives_bring_the_block(appmod, q, linked):
+    # A safety question now gets the link in place of the caution (2026-10-24).
     block = appmod.named_product_facts_block(q)
-    assert "### Stress Release" in block and LINE in block
+    assert "### Stress Release" in block
+    assert (_link(appmod) in block and LINE not in block) if linked else (LINE in block)
 
 
 def test_the_store_page_shows_the_caution(appmod, monkeypatch):
@@ -106,5 +127,4 @@ def test_the_store_page_shows_the_caution(appmod, monkeypatch):
                                                            "benefits": []})
     monkeypatch.setattr(appmod, "_product_how", lambda p: "")
     d = appmod.app.test_client().get("/begin/product-page-data/stress-release").get_json()
-    ing = next(s for s in d["sections"] if s["id"] == "ingredients")
-    assert ing["body"]["warning"] == WARNING
+    assert next(s for s in d["sections"] if s["id"] == "caution")["body"] == WARNING

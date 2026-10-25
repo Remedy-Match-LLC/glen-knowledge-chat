@@ -183,8 +183,8 @@ def appmod(monkeypatch, tmp_path):
 def test_the_product_page_carries_its_caution_once(appmod, slug):
     d = appmod.app.test_client().get(f"/begin/product-page-data/{slug}").get_json()
     secs = {s["id"]: s for s in d["sections"]}
-    assert secs["ingredients"]["body"]["warning"] == APPROVED[slug]
-    assert not any(s["id"].startswith("caution") for s in d["sections"])
+    assert secs["caution"]["body"] == APPROVED[slug]
+    assert [s["id"] for s in d["sections"] if s["id"].startswith("caution")] == ["caution"]
     assert json.dumps(d).count(APPROVED[slug][:80]) == 1
     assert secs["ingredients"]["body"]["directions"] == COPY[slug]["directions"]
     assert secs["intro"]["body"] == COPY[slug]["intro"]
@@ -349,7 +349,13 @@ def test_a_caution_only_answer_asks_for_no_dose_or_description_from_the_text(q):
     assert "Describe it only by what this text says" not in b
     assert "Answer directly from this text" not in b and "directly from this text" not in b
     assert "outranks every snippet about that caution" in b
-    assert "Repeat its full caution, every sentence of it" in b
+    # A safety question links the caution, so the header says a linked one is not
+    # repeated (review round 1, 2026-10-24).
+    linked = "safe" in q.lower()
+    assert ("Repeat any caution given here in full" if linked
+            else "Repeat its full caution, every sentence of it") in b
+    if linked:
+        assert "A caution this text only links is not repeated." in b
 
 
 def test_the_gated_note_still_reaches_a_caution_only_answer():
@@ -359,7 +365,8 @@ def test_the_gated_note_still_reaches_a_caution_only_answer():
 
 def test_a_mixed_answer_keeps_the_full_header():
     # A pinned product's dose still comes from its text.
-    b = _block("Is Brain Cleanse in the Sleep Bundle safe?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = _block("What does Brain Cleanse in the Sleep Bundle do?")
     assert "### Brain Cleanse" in b and "### Sleep Bundle" in b
     assert DOSE_RULE in b
     assert b.count(BRAIN_CLEANSE) == 1 and b.count(SLEEP_SYNTROPY) == 1

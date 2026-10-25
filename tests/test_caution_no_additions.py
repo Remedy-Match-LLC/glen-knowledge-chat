@@ -54,9 +54,23 @@ def test_a_rebuild_keeps_the_opt_in():
     assert products[SLUG]["chat_caution"] is True
 
 
+def _link(name):
+    return app._CAUTION_LINK_LINE.format(name=name, where=app._CAUTION_LINK_WHERE)
+
+
 @pytest.mark.parametrize("q", ["Can I take Vitamin D Syntropy if I am on warfarin?",
                                "Is Vitamin D Syntropy safe with a blood thinner?"])
+def test_a_warfarin_question_gets_the_link_and_no_caution_text(q):
+    # Glen, 2026-10-24: a question that touches a caution gets a link to it, never a copy.
+    b = app.named_product_facts_block(q)
+    assert b.count(WARNING) == 0 and b.count(_link("Vitamin D Syntropy")) == 1
+    assert STAY not in b and CLOSING not in b and DESCRIPTION_LEAD in b
+
+
+@pytest.mark.parametrize("q", ["Tell me about Vitamin D Syntropy.",
+                               "What is Vitamin D Syntropy?"])
 def test_a_warfarin_question_gets_the_full_caution_and_the_rules_once(q):
+    # A caution question now gets the link (2026-10-24); the copy path runs on these.
     b = app.named_product_facts_block(q)
     assert "### Vitamin D Syntropy" in b
     # Both sentences, once: the second one was dropped live. The caution is held inside
@@ -85,8 +99,9 @@ def test_a_dose_question_keeps_the_approved_monitoring_line():
 def test_the_brain_program_note_and_the_rule_agree():
     # Review round 1, F2: the caution-only note says to answer from the snippets. The rule
     # limits only the caution's subject, so it leaves other questions to that note.
+    # A caution question now gets the link (2026-10-24), so this one asks no safety.
     b = app.named_product_facts_block(
-        "What is the Brain Program and is it safe with my antidepressant?")
+        "What is the Brain Program and what is in it?")
     assert app._CAUTION_ONLY_NOTE in b and b.count(RULE) == 1
     assert "answer other questions as before" in RULE
     assert "This limits only what you add yourself." in RULE
@@ -94,7 +109,8 @@ def test_the_brain_program_note_and_the_rule_agree():
 
 def test_two_opted_in_cautions_still_carry_the_rule_once():
     # Review round 1, F5: each pinned block keeps its own reminder, the rule is not repeated.
-    b = app.named_product_facts_block("Is Brain Cleanse safe with Sleep Syntropy?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = app.named_product_facts_block("Tell me about Brain Cleanse and Sleep Syntropy.")
     assert app._SEVERAL_CAUTIONS_RULE in b and b.count(RULE) == 1
     assert b.count(app._CAUTION_COPY_REMINDER) == 2
     assert RULE not in app._CAUTION_COPY_REMINDER
@@ -109,8 +125,8 @@ def test_a_product_without_the_opt_in_keeps_its_header(monkeypatch):
 
 def test_the_gated_rewording_still_finds_its_target():
     # The gated answer swaps the paragraph start; the added sentences must not break it.
-    b = app.named_product_facts_block("Can I take Vitamin D Syntropy if I am on warfarin?",
-                                      gated=True)
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = app.named_product_facts_block("What is Vitamin D Syntropy?", gated=True)
     assert '"The caution on the product page for <product name> is:"' in b
     assert b.count(WARNING) == 1 and b.count(RULE) == 1
 
@@ -121,7 +137,8 @@ CLOSING = app._CAUTION_CLOSING_REMINDER
 
 def test_the_warfarin_block_has_the_stay_line_after_the_caution_and_closes_on_the_reminder():
     # Review round 2, variants a to c: the header rule alone let warfarin snippets through.
-    b = app.named_product_facts_block("Can I take Vitamin D Syntropy if I am on warfarin?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = app.named_product_facts_block("What is Vitamin D Syntropy?")
     assert b.count(STAY) == 1 and b.index(STAY) > b.index(WARNING)
     # "Give only the caution's words" made answers quote one sentence (variant d).
     assert STAY.startswith("Copy every sentence of the caution above.")
@@ -132,7 +149,8 @@ def test_the_warfarin_block_has_the_stay_line_after_the_caution_and_closes_on_th
 
 
 def test_each_opted_in_caution_gets_one_stay_line_and_the_answer_one_reminder():
-    b = app.named_product_facts_block("Is Brain Cleanse safe with Sleep Syntropy?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = app.named_product_facts_block("Tell me about Brain Cleanse and Sleep Syntropy.")
     assert b.count(STAY) == 2 and b.count(CLOSING) == 1
 
 
@@ -418,18 +436,29 @@ def test_the_seven_cautions_opt_in_where_each_is_recorded():
         assert CORRECTIONS[slug]["chat_caution"] is True, slug
 
 
-def test_the_angiostasis_blood_thinner_answer_carries_the_whole_caution_and_its_rules():
+def test_the_angiostasis_blood_thinner_answer_links_its_caution():
+    # Glen, 2026-10-24: the caution question gets the link, never the caution text.
     q = "I'm on a blood thinner. Can I take Angiostasis?"
     b = app.named_product_facts_block(q)
+    warning = PRODUCTS["angiostasis"]["warning"]
+    assert b.count(warning) == 0 and b.count(_link("Angiostasis")) == 1
+    assert STAY not in b and CLOSING not in b
+    assert "blood thinner" in app._caution_subjects_asked(q)
+    assert app._caution_link_slugs(q) == ["angiostasis"]
+
+
+def test_the_angiostasis_answer_carries_the_whole_caution_and_its_rules():
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = app.named_product_facts_block("Tell me about Angiostasis.")
     warning = PRODUCTS["angiostasis"]["warning"]
     assert b.count(warning) == 1
     assert b.count(STAY) == 1 and b.index(STAY) > b.index(warning)
     assert b.count(RULE) == 1 and b.endswith("\n\n" + CLOSING)
-    assert "blood thinner" in app._caution_subjects_asked(q)
 
 
 def test_fibrosolve_s_unlabelled_caution_is_marked_once_in_its_description():
-    b = app.named_product_facts_block("Can I take Fibrosolve with warfarin?")
+    # A caution question now gets the link (2026-10-24); the copy path runs on this one.
+    b = app.named_product_facts_block("Tell me about Fibrosolve.")
     warning = PRODUCTS["fibrosolve"]["warning"]
     assert "Caution: " + warning in b and b.count(warning) == 1
     assert b.count(STAY) == 1 and b.index(STAY) > b.index(warning)
