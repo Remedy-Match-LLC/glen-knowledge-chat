@@ -8519,21 +8519,29 @@
    "legacy_store_url": "https://remedymatch.com/remedies/540-b17-max",
    "ingredients": [
     {
-     "name": "Amygdalin, [Laetrile: drug name], B17",
-     "dose": "400 mg"
+     "name": "Amygdalin 98% (Prunus armeniaca) (semen)",
+     "dose": "450 mg"
     },
     {
-     "name": "Pangamic Acid",
-     "dose": "55 mg"
-    },
-    {
-     "name": "Bioavailability Blend",
-     "dose": "34.5 mg"
+     "name": "Pangamic Acid 99%",
+     "dose": "50 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "B17 Max . B17 Max B17 Max Take up to two capsules a day of B17 Max together with up to two capsules a day of B17 Syntropy. Titrate the dosage by adding one capsule a day and decrease the dosage if lightheaded. B17 Max . Each organic pullulan capsule of B17 Max supplies: Vitamin B17: Amygdalin 98% 400 mg Vitamin B15: Pangamic Acid 99% 55 mg Bioavailability Factors: 34.5 mg Vitamin B13: Phosphatides 50% (Helianthus annua) EGb 761 (Ginkgo biloba) (24% Flavone Glycosides, 6% Lactones, <0.0005% Ginkgolic Acid) Vitamin B3 (as Niacin) 5 mg 25% Miracle Tree 100:1 (Moringa oleifera) Licorice...",
-   "bottle_type": "30 Caps",
+   "ingredients_source": "label-2026-09-27",
+   "intro": "B17 Max is a vegan two-ingredient powder, amygdalin from apricot seed with pangamic acid, and nothing else.",
+   "description": "Each level 500 mg scoop supplies 450 mg amygdalin 98% and 50 mg pangamic acid 99%. There are no fillers or excipients.\n\nOther ingredients: Healing Energy, Love, and Prayer. 30 g jar, 60 servings. Store tightly closed, cool and dry.\n\nCaution: amygdalin can release cyanide in the body. Read the full warning on the label and the product page before use, and do not combine with apricot kernels, fruit pits or high-dose vitamin C.",
+   "directions": "Start with a partial scoop and increase slowly, up to 2 level scoops daily in divided doses with food, with B17 Syntropy, or as guided.",
+   "warning": "Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Not for use in pregnancy, breastfeeding or children. Consult a physician and pharmacist before use with any medication or cancer treatment. Keep out of reach of children.",
+   "benefits": [],
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "benefits",
+    "research"
+   ],
+   "bottle_type": "30 g",
    "fmp_id": "890",
    "qty_pricing": true
   },
