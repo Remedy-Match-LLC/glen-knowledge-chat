@@ -217,4 +217,4 @@ def test_the_chat_is_told_night_vision_is_out_of_stock():
     assert "### Night Vision" in b
     assert "Availability: Night Vision is out of stock." in b
     assert "Give none, and do not take one from the snippets." in b
-    assert "It cannot be ordered now. Never say it is available to order or in stock." in b
+    assert "Night Vision cannot be ordered now. Never say it is available to order or in stock." in b
