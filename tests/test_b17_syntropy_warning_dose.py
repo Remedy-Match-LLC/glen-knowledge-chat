@@ -54,6 +54,14 @@ def test_the_page_shows_the_dose_and_the_caution(monkeypatch, tmp_path):
     assert sec["ingredients"]["body"]["directions"] == DIRECTIONS
 
 
+def test_content_since_is_a_full_timestamp():
+    # Caches store UTC times, and "2026-10-25T21:50Z" sorts after a bare "2026-10-25",
+    # so a date alone kept that day's drafts (review round 1, 2026-10-25).
+    p = json.load(open(os.path.join(os.path.dirname(__file__), "..", "data",
+                                    "products.json")))["products"][SLUG]
+    assert len(p["content_since"]) > 10 and p["content_since"] > "2026-10-25T21:50:00"
+
+
 def test_the_corrections_replay_keeps_the_approved_record():
     import importlib
     import sys
@@ -72,7 +80,7 @@ def test_the_corrections_replay_keeps_the_approved_record():
     assert p[SLUG]["ingredients"][0] == {"name": "Vitamin A (as retinyl acetate)",
                                          "dose": "56,800 IU"}
     assert p[SLUG]["warning"] == WARNING and p[SLUG]["directions"] == DIRECTIONS
-    assert p[SLUG]["copy_pinned"] == ["directions"] and p[SLUG]["content_since"] == "2026-10-25"
+    assert p[SLUG]["copy_pinned"] == ["directions"] and p[SLUG]["content_since"] == products[SLUG]["content_since"]
     assert p[SLUG]["ingredients_source"] == "t33"
 
 

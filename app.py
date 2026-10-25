@@ -2516,8 +2516,9 @@ _DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy"})
 # B17 store copy said to lower the dose if lightheaded, an early sign of cyanide
 # toxicity (formulation, 2026-10-25), and that copy may still be in the snippets.
 _STOP_AT_SYMPTOM_RULE = ("If the user describes any symptom this caution names, answer with "
-                         "its instruction to stop and call Poison Control or 911. Suggest "
-                         "no dose change for it: never a lower dose, a pause or a restart.")
+                         "its instruction to stop and call Poison Control, or 911 for the "
+                         "signs it gives for 911. Suggest no dose change for it: never a "
+                         "lower dose, a pause or a restart.")
 _NO_DESCRIPTION = ("No description of {name} is approved here. If asked what it is, describe "
                    "it briefly from the snippets about {name} itself, adding no claim they do "
                    "not make. Its dose and caution come only from this text.")
