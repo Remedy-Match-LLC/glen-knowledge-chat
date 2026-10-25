@@ -25,7 +25,7 @@ DESCRIPTION = (
     "Caution: amygdalin can release cyanide in the body. Read the full warning on the label "
     "and the product page before use, and do not combine with apricot kernels, fruit pits "
     "or high-dose vitamin C.")
-DIRECTIONS = 'Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 2 level scoops a day in divided doses. Do not exceed 2 level scoops a day. If you also take B17 Syntropy, count each capsule as half a scoop.'
+DIRECTIONS = 'Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 2 level scoops a day in divided doses. Do not exceed 2 level scoops a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop.'
 # Revised by Glen, 2026-10-25 (b17-max/2026-10-25/b17-max-dose-and-caution-revision.md).
 WARNING = 'Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment. Keep out of reach of children.'
 

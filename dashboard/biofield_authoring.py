@@ -738,6 +738,19 @@ def is_infoceutical_code(code):
     return bool(m) and m.group(1) in INFOCEUTICAL_FAMILIES
 
 
+# Doses Glen set in code, ahead of the FileMaker snapshot, so a fresh snapshot cannot
+# overwrite them (Glen, 2026-10-25, formulation tab: "code"). B17 Max became a powder and
+# FileMaker 890 still says 1 capsule; the three-field split is his ("yes", same day).
+_B17_MAX_STEPS = ("Increase slowly, as guided, up to 2 level scoops a day in divided "
+                  "doses. Do not exceed 2 level scoops a day. If you also take B17 "
+                  "Syntropy, take no more than 1 capsule a day, and count it as half a "
+                  "scoop.")
+_DOSE_OVERRIDES = {
+    "b17 max": {"dosage": "1/4 level scoop", "frequency": "once a day",
+                "timing": "with cooked food. " + _B17_MAX_STEPS},
+}
+
+
 # Reveal remedy names diverge from FMP product names in ways a suffix match can't
 # bridge. Glen-confirmed aliases (reveal name lowercased -> FMP product name).
 # Extend as new divergences surface. See reference_reveal_dose_backfill.
@@ -822,6 +835,8 @@ def remedy_dosing(cx, name):
     for remedy in _CUSTOM_REMEDIES:
         if clean_name == remedy["name"].lower():
             return {k: remedy[k] for k in blank}
+    if clean_name in _DOSE_OVERRIDES:
+        return dict(_DOSE_OVERRIDES[clean_name])
     if not _has(cx, "fmp_snap_products"):
         return blank
     # "Seacure" is two products; the prefix match would pick one of them.
