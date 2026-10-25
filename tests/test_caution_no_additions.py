@@ -20,7 +20,10 @@ import app
 SLUG = "vitamin-d-syntropy"
 WARNING = ("If you take a blood thinner such as warfarin, consult your physician before "
            "use, because vitamin K affects it. Consult your physician before use if you "
-           "are pregnant or have a thyroid condition.")
+           "are pregnant or have a thyroid condition. Consult your physician first if you "
+           "have high blood calcium, kidney stones or kidney disease, or take thiazide "
+           "diuretics or digoxin. It is not for children, or for use while breastfeeding.")
+# Revised 2026-10-25: Glen "yes" in the formulation tab, last sentence in the marketing tab.
 PRODUCTS = json.load(open("data/products.json"))["products"]
 CORRECTIONS = json.load(open("data/products-manual-corrections.json"))
 DESCRIPTION_LEAD = "Vitamin D is formed in the skin when sunlight transforms cholesterol"
@@ -73,7 +76,7 @@ def test_a_warfarin_question_gets_the_full_caution_and_the_rules_once(q):
     # A caution question now gets the link (2026-10-24); the copy path runs on these.
     b = app.named_product_facts_block(q)
     assert "### Vitamin D Syntropy" in b
-    # Both sentences, once: the second one was dropped live. The caution is held inside
+    # The whole caution, once: a sentence was dropped live before. The caution is held inside
     # the pinned description, so that paragraph must be there to carry it.
     assert b.count(WARNING) == 1 and DESCRIPTION_LEAD in b
     assert app._ONE_CAUTION_RULE in _header(b) and app._SEVERAL_CAUTIONS_RULE not in b
@@ -410,6 +413,42 @@ def test_the_filter_fails_open(monkeypatch, spy):
 ])
 def test_more_spellings_match(q, subject):
     assert subject in app._caution_subjects_asked(q)
+
+
+# The revised caution (2026-10-25) names kidney, blood calcium, thiazide and digoxin.
+@pytest.mark.parametrize("q, subject", [
+    ("I have kidney stones. Can I take Vitamin D Syntropy?", "kidney"),
+    ("Is Vitamin D Syntropy ok with renal disease?", "kidney"),
+    ("Can I take Vitamin D Syntropy if I am on dialysis?", "kidney"),
+    ("My blood calcium is high. Is Vitamin D Syntropy ok?", "calcium"),
+    ("Can I take Vitamin D Syntropy with hypercalcemia?", "calcium"),
+    ("My calcium is elevated. Is Vitamin D Syntropy ok?", "calcium"),
+    ("Can I take Vitamin D Syntropy with hydrochlorothiazide?", "thiazide"),
+    ("Is Vitamin D Syntropy ok with HCTZ?", "thiazide"),
+    ("Can I take Vitamin D Syntropy with chlorthalidone?", "thiazide"),
+    ("Can I take Vitamin D Syntropy with a water pill?", "thiazide"),
+    ("Can I take Vitamin D Syntropy with digoxin?", "digoxin"),
+    ("I take Lanoxin. Is Vitamin D Syntropy safe?", "digoxin"),
+])
+def test_the_revised_vitamin_d_subjects_match(q, subject):
+    assert subject in app._caution_subjects_asked(q)
+    assert app._caution_link_slugs(q) == ["vitamin-d-syntropy"]
+
+
+@pytest.mark.parametrize("q", [
+    "Does Vitamin D Syntropy contain calcium?",
+    "Is Vitamin D Syntropy good for adrenal fatigue?",
+    "How much Vitamin D Syntropy should I take?",
+    "Is PSC Protect a high calcium formula?",
+    "I take furosemide, a loop diuretic. Can I take Vitamin D Syntropy?",
+    "Is dandelion a diuretic? Can I take it with Vitamin D Syntropy?",
+])
+def test_an_ingredient_or_dose_question_is_no_new_subject(q):
+    assert not {"kidney", "calcium", "thiazide", "digoxin"} & set(app._caution_subjects_asked(q))
+
+
+def test_psc_protect_calcium_caution_answers_a_calcium_question():
+    assert "calcium" in app._caution_subjects_asked("Is PSC Protect ok if my calcium is high?")
 
 
 def test_subject_words_come_from_this_message_only():
