@@ -126,7 +126,9 @@ def _placement(freq, timing, dosage):
     elif any(k in t for k in ("between meal", "empty stomach", "away from food", "on an empty")):
         food, table = "between meals", _BETWEEN
     elif any(k in t for k in ("with food", "with meal", "with a meal", "with meals",
-                              "with heavier", "with a heavier")):
+                              "with heavier", "with a heavier",
+                              # B17 Max powder (Glen, 2026-10-25)
+                              "with cooked food")):
         food, table = "with food", _MEAL
     else:
         food, table = "", _SPREAD       # no timing given -> neutral spread across the day

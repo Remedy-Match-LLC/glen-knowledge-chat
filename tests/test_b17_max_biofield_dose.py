@@ -45,3 +45,4 @@ def test_the_schedule_places_it_once_with_food_and_shows_the_steps():
     e = s["entries"][0]
     assert len(e["slots"]) == 1, e
     assert e["per_slot"] == "1/4 level scoop" and e["timing"] == TIMING
+    assert e["food"] == "with food", e
