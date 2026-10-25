@@ -359,7 +359,8 @@ def test_replaying_the_manual_corrections_keeps_clarity_pinned_copy(entry):
     spec.loader.exec_module(ae)
     corr = json.load(open(os.path.join(ROOT, "data", "products-manual-corrections.json")))
     fields = ("intro", "description", "how_it_works", "research_links", "learn_markdown",
-              "ingredients", "panel_note", "directions", "copy_pinned", "content_since")
+              "ingredients", "panel_note", "directions", "copy_pinned", "content_since",
+              "warning", "chat_caution")
     # A rebuilt record: the old scraped copy back, every pinned field gone.
     bare = {k: v for k, v in copy.deepcopy(entry).items() if k not in fields}
     bare.update(description="Clarity . One to three capsules daily", intro="",

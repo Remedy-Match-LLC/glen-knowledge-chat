@@ -5,7 +5,7 @@ medications?", the bot said "The caution on the product page is: this product co
 soy and hemp ...". Stress Release had no caution in the catalog, the code or Pinecone.
 The gated note offered "The caution on the product page is ..." for every product, and
 the model filled it in. Glen approved the answer to give instead ("yes", 2026-10-23).
-Stress Release has its own caution since 2026-10-24, so these tests use Clarity.
+Stress Release has its own caution since 2026-10-24, and Clarity since 2026-10-25.
 """
 # Clarity carries its own caution since 2026-10-25 (Glen, platform tab), so these tests
 # use Vitamin C Syntropy, a pinned product that still has none.
