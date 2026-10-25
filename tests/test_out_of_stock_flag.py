@@ -217,3 +217,28 @@ def test_the_chat_is_told_night_vision_is_out_of_stock():
     assert "### Night Vision" in b
     assert "Availability: Night Vision is out of stock." in b
     assert "Give none, and do not take one from the snippets." in b
+    assert "Night Vision cannot be ordered now. Never say it is available to order or in stock." in b
+
+
+def test_only_the_unavailable_product_gets_the_line(monkeypatch):
+    # The catalog fixture flags Vitamin D Syntropy; drop that so only Night Vision is out.
+    real = _real()
+    monkeypatch.setitem(app._PRODUCTS["products"], VD, dict(real[VD]))
+    b = app._named_product_facts("Can I order Night Vision and Vitamin D Syntropy?")
+    assert "\nNight Vision cannot be ordered now." in b
+    assert "Vitamin D Syntropy cannot be ordered now." not in b
+    assert b.count("cannot be ordered now.") == 1
+
+
+def test_a_bundle_holding_it_carries_its_own_name(catalog, monkeypatch):
+    monkeypatch.setitem(catalog, BUNDLE, dict(catalog[BUNDLE], copy_pinned=["intro"],
+                                              intro="A test bundle."))
+    b = app._named_product_facts("Can I order the Test VD Bundle?")
+    assert "\nTest VD Bundle cannot be ordered now." in b
+
+
+def test_the_product_table_gives_no_price_for_it():
+    hint = app._alias_price_hint("Night Vision", "night-vision")
+    assert "$" not in hint and "cannot be ordered now: Night Vision is out of stock." in hint
+    assert app._product_guidance_hint("night-vision") == ""
+    assert app._alias_price_hint("Scar Silk", "scar-silk").startswith(" — $")
