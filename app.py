@@ -2234,6 +2234,9 @@ _CASE_FREE_NAMES = frozenset({
     "fibrosolve", "estro-clear",
     # Caution-only (chat_caution), Sleep Syntropy spec 2026-10-15.
     "sleep-syntropy",
+    # A coined name, and its warning names Poison Control: "i feel lightheaded on b17
+    # max" got no block (B17 Max powder, review round 2, 2026-10-25).
+    "b17-max",
 })
 # Pinned products whose name a client may type in lowercase, beside a product cue. Every
 # other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
