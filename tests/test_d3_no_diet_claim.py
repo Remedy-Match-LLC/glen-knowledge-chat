@@ -11,10 +11,12 @@ import re
 import pytest
 
 DATA = os.path.join(os.path.dirname(__file__), "..", "data")
-# The FileMaker ids whose recipe uses raw 5313 (extract of 2026-10-19). B17 Syntropy (317)
+# The FileMaker ids whose recipe uses raw 5313 (extract of 2026-10-19), plus 327. B17 Syntropy (317)
 # carries no fmp_id here, so it is named by slug.
-FMP_IDS = {"337", "366", "367", "378", "395", "429", "431", "449", "469", "1104", "1190",
-           "1196"}
+# Dental Powder (327) has no recipe lines; its July 2026 batch used D3 of the same
+# 500,000 IU/g strength (formulation, 2026-10-25).
+FMP_IDS = {"327", "337", "366", "367", "378", "395", "429", "431", "449", "469", "1104",
+           "1190", "1196"}
 SLUGS = {"b17-syntropy"}
 CLAIM = re.compile(r"(?i)\b(vegan|vegetarian)\b")
 
@@ -29,7 +31,7 @@ def _d3_slugs():
 
 
 def test_every_listed_product_is_found():
-    assert len(_d3_slugs()) == 13
+    assert len(_d3_slugs()) == 14
 
 
 @pytest.mark.parametrize("name", ["products.json", "products-manual-corrections.json"])
