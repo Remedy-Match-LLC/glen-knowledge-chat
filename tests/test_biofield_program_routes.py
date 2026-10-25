@@ -227,9 +227,13 @@ def _mind_with_scan_codes(tmp_path, monkeypatch, include):
     n = int(str(tid).lstrip("a"))
     with sqlite3.connect(db) as cx:
         st.init_stress_tables(cx)
-        for code in ("ED8", "ER58"):
+        for code, label in (("ED8", "Stomach Driver"), ("ER58", "Stomach")):
             cx.execute("INSERT INTO biofield_auth_remedy_coverage (test_id, remedy, code) "
                        "VALUES (?,?,?)", (n, "gastrozyme", code))
+            # The scan finding itself, so a leak shows as its label as well as its code.
+            cx.execute("INSERT INTO biofield_auth_stress (test_id, code, label, source, "
+                       "balance, created_at, updated_at) VALUES (?,?,?,'scan','required',"
+                       "'2026-10-25T01:49:24Z','2026-10-25T01:49:24Z')", (n, code, label))
         cx.commit()
     j = client.post(f"/author/{tid}/program",
                     json={"mode": "minimum", "include": include}).get_json()
@@ -246,11 +250,28 @@ def test_body_left_out_lets_no_scan_code_in_through_a_mind_remedy(tmp_path, monk
     off = {"spirit": False, "mind": True, "body": False}
     proposed, rows = _mind_with_scan_codes(tmp_path, monkeypatch, off)
     assert rows == [("digestive system issues", "digestive system issues", "GastroZyme")]
-    assert "ED8" not in proposed and "ER58" not in proposed
+    assert not {"ED8", "ER58", "Stomach Driver", "Stomach"} & set(proposed)
 
 
 def test_body_included_still_carries_the_scan_codes(tmp_path, monkeypatch):
     # The fixture's control: with Body in, the same remedy brings its codes along.
     on = {"spirit": False, "mind": True, "body": True}
     proposed, rows = _mind_with_scan_codes(tmp_path, monkeypatch, on)
-    assert "ED8" in proposed and "ED8" in rows[0][1]
+    assert "Stomach Driver" in proposed and "Stomach Driver" in rows[0][1]
+
+
+def test_body_left_out_keeps_a_spoken_stresses_own_coverage(tmp_path):
+    # Review of #2132: the coverage table also holds normalised labels written for
+    # Spirit and Mind stresses. Leaving Body out drops only the scan codes.
+    db = str(tmp_path / "c.db")
+    client = _app(db).test_client()
+    tid = _new(client)
+    _add_stress(client, tid, "Fatigue")
+    with sqlite3.connect(db) as cx:
+        cx.execute("INSERT INTO biofield_auth_remedy_coverage (test_id, remedy, code) "
+                   "VALUES (?,?,?)", (int(tid.lstrip("a")), "ignatia", "fatigue"))
+        cx.commit()
+    j = client.post(f"/author/{tid}/program", json={
+        "mode": "full", "include": {"spirit": True, "mind": True, "body": False}}).get_json()
+    spirit = next(s for s in j["stages"] if s["stage"] == "spirit")
+    assert [p["remedy"] for p in spirit["picks"]] == ["ignatia"]
