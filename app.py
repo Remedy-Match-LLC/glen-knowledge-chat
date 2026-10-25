@@ -2997,12 +2997,14 @@ _CAUTION_SUBJECT_WORDS = {
                      "chemo", "birth control", " hrt ", "hormone replacement", "ambien"),
     # Vitamin D Syntropy's caution names these, PSC Protect's calcium (2026-10-25,
     # review round 1). " renal" starts a word, so "adrenal" is no hit. Calcium needs a
-    # level, so "Does it contain calcium?" stays an ingredient question.
-    "kidney": ("kidney", " renal", "nephr", "dialysis"),
-    "calcium": ("blood calcium", "calcium level", "high calcium", "calcium is high",
-                "calcium was high", "calcium runs high", "hypercalc"),
+    # level, so "a high calcium formula" stays an ingredient question, and a bare
+    # "diuretic" is no thiazide: furosemide and dandelion are not named (review round 4).
+    "kidney": ("kidney", " renal", "nephropathy", "nephritis", "nephrotic", "dialysis"),
+    "calcium": ("blood calcium", "calcium level", "calcium is high", "calcium was high",
+                "calcium runs high", "calcium is elevated", "elevated calcium",
+                "hypercalc"),
     "thiazide": ("thiazide", "hctz", "chlorthalidone", "indapamide", "metolazone",
-                 "diuretic", "water pill"),
+                 "water pill"),
     "digoxin": ("digoxin", "lanoxin", "digitalis"),
 }
 

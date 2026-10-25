@@ -422,6 +422,7 @@ def test_more_spellings_match(q, subject):
     ("Can I take Vitamin D Syntropy if I am on dialysis?", "kidney"),
     ("My blood calcium is high. Is Vitamin D Syntropy ok?", "calcium"),
     ("Can I take Vitamin D Syntropy with hypercalcemia?", "calcium"),
+    ("My calcium is elevated. Is Vitamin D Syntropy ok?", "calcium"),
     ("Can I take Vitamin D Syntropy with hydrochlorothiazide?", "thiazide"),
     ("Is Vitamin D Syntropy ok with HCTZ?", "thiazide"),
     ("Can I take Vitamin D Syntropy with chlorthalidone?", "thiazide"),
@@ -438,6 +439,9 @@ def test_the_revised_vitamin_d_subjects_match(q, subject):
     "Does Vitamin D Syntropy contain calcium?",
     "Is Vitamin D Syntropy good for adrenal fatigue?",
     "How much Vitamin D Syntropy should I take?",
+    "Is PSC Protect a high calcium formula?",
+    "I take furosemide, a loop diuretic. Can I take Vitamin D Syntropy?",
+    "Is dandelion a diuretic? Can I take it with Vitamin D Syntropy?",
 ])
 def test_an_ingredient_or_dose_question_is_no_new_subject(q):
     assert not {"kidney", "calcium", "thiazide", "digoxin"} & set(app._caution_subjects_asked(q))
