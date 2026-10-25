@@ -3145,8 +3145,8 @@ def _no_caution_product_named(query_text: str, prior_user_turns=None) -> bool:
     return bool(none)
 
 
-_ASKS_WITH_SOMETHING = re.compile(r"\b(?:with|interacts?|interactions?|combine|together)\b",
-                                  re.I)
+_ASKS_WITH_SOMETHING = re.compile(
+    r"\b(?:with|and|on|mix|mixing|interacts?|interactions?|combine|together)\b", re.I)
 
 
 def _caution_product_named(query_text: str, prior_user_turns=None) -> bool:
@@ -3163,7 +3163,8 @@ def _caution_product_named(query_text: str, prior_user_turns=None) -> bool:
     carried = set()
     _named_product_facts(_carried_query(query_text, prior_user_turns), caution_out=carried)
     products = _PRODUCTS["products"]
-    return any("prescription medication" in ((products.get(k) or {}).get("warning") or "").lower()
+    # "prescription medicine" too: Sleep Syntropy words it that way (review round 4).
+    return any("prescription medic" in ((products.get(k) or {}).get("warning") or "").lower()
                for k in carried)
 
 

@@ -208,6 +208,11 @@ def test_two_cautions_asked_about_surgery_each_get_their_own_link(appmod):
     ("Does Clarity interact with anything?", None),
     ("Can I take it with sertraline?", ["Tell me about Clarity."]),
     ("Can I take Stress Release with sertraline?", None),
+    # Review round 4: other phrasings, and a caution worded "prescription medicine".
+    ("Can I take Clarity and sertraline?", None),
+    ("Is Clarity ok if I am on sertraline?", None),
+    ("Can I mix Clarity and Prozac?", None),
+    ("Can I take Sleep Syntropy with Adderall?", None),
 ])
 def test_a_carried_caution_loses_the_interaction_snippets_too(appmod, q, prior):
     assert appmod._caution_product_named(q, prior)
