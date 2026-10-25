@@ -2995,6 +2995,15 @@ _CAUTION_SUBJECT_WORDS = {
                      "statin", "aspirin", "ibuprofen", "lisinopril", "metoprolol",
                      "amlodipine", "losartan", "omeprazole", "prednisone", "gabapentin",
                      "chemo", "birth control", " hrt ", "hormone replacement", "ambien"),
+    # Vitamin D Syntropy's caution names these, PSC Protect's calcium (2026-10-25,
+    # review round 1). " renal" starts a word, so "adrenal" is no hit. Calcium needs a
+    # level, so "Does it contain calcium?" stays an ingredient question.
+    "kidney": ("kidney", " renal", "nephr", "dialysis"),
+    "calcium": ("blood calcium", "calcium level", "high calcium", "calcium is high",
+                "calcium was high", "calcium runs high", "hypercalc"),
+    "thiazide": ("thiazide", "hctz", "chlorthalidone", "indapamide", "metolazone",
+                 "diuretic", "water pill"),
+    "digoxin": ("digoxin", "lanoxin", "digitalis"),
 }
 
 # Dose wording that holds a subject word and asks nothing about the subject: "How many
