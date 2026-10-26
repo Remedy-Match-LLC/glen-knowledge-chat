@@ -2254,6 +2254,9 @@ _CASE_FREE_NAMES = frozenset({
     # A coined name, and its warning names Poison Control: "i feel lightheaded on b17
     # max" got no block (B17 Max powder, review round 2, 2026-10-25).
     "b17-max",
+    # About 28,400 IU of vitamin A a capsule: "vitreous vitality dose?" must bring its
+    # caution (Glen "yes", 2026-10-26).
+    "vitreous-vitality",
 })
 # Pinned products whose name a client may type in lowercase, beside a product cue. Every
 # other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
@@ -2647,19 +2650,26 @@ _WITHDRAWN_DOSE_EXAMPLE["b17-syntropy"] = ", such as up to 10 capsules a day"
 # Pinned directions with no chat_caution still get the dose rule here: B17 Syntropy's
 # warning must reach the answer in full, so it is written, never linked (review round 2,
 # 2026-10-25).
+# Moisturize now has a caution too (Glen "yes", 2026-10-26). It stays here for the
+# Directions line, which its description repeats word for word.
 _DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy", "moisturize"})
 # Live with 9,400 IU in the knowledge base, the bot invented "188% of the daily value"
 # (about 313% is right), called one capsule "not excessive" though it is 94% of the adult
 # upper limit, and added "Most clients find one daily adequate" (knowledge, log 2373,
 # 2026-10-26).
-_AMOUNT_RULE = {"moisturize": (
-    "Give each amount for {name} exactly as listed above. Give no percent Daily Value and "
-    "no other figure worked out from it. Do not call any amount high, low, moderate, "
-    "excessive or safe, and do not say what most clients take.")}
+# The store panels now carry a percent Daily Value on some rows (Glen "yes", 2026-10-26),
+# so only one listed above may be given. Vitreous Vitality holds about 28,400 IU a capsule.
+_AMOUNT_RULE = {slug: (
+    "Give each amount for {name} exactly as listed above. Give no percent Daily Value "
+    "that is not listed above, and no other figure worked out from one. Do not call any "
+    "amount high, low, moderate, excessive or safe, and do not say what most clients take.")
+    for slug in ("moisturize", "vitreous-vitality")}
 # Moisturize's shelf batch holds about 9,400 IU of vitamin A a capsule. Its store copy said
 # up to 3 a day, and live the bot added a second capsule (log 2370, 2026-10-26).
 _WITHDRAWN_DOSE_EXAMPLE["moisturize"] = (", such as up to 3 capsules a day, or a second "
                                          "capsule for very dry skin or eyes")
+# Vitreous Vitality's jar label says up to 3 a day (formulation spec, 2026-10-26).
+_WITHDRAWN_DOSE_EXAMPLE["vitreous-vitality"] = ", such as up to 3 capsules a day"
 # A caution that names Poison Control is the whole answer to a symptom it lists. The
 # B17 store copy said to lower the dose if lightheaded, an early sign of cyanide
 # toxicity (formulation, 2026-10-25), and that copy may still be in the snippets.
