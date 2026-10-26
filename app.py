@@ -2348,11 +2348,12 @@ def _TITLE_CASED(text: str) -> bool:
     return len(words) >= 3 and sum(w[0].isupper() for w in words) >= 0.6 * len(words)
 _AFTER_NAME_OK = re.compile(
     r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
-    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each|daily|a\s+day|per\s+day)\b)",
-    re.IGNORECASE)
-# "a day", "per day" and "daily" joined the list for the dose batch: "how much apoptogenesis
-# a day?" got no block (review round 1, 2026-10-26). A bare "per" stays out, so "reverse age
-# per year" is still an ordinary phrase.
+    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b"
+    r"|(?:daily|a\s+day|per\s+day)\s*(?:$|[?.!,;:)]))", re.IGNORECASE)
+# "a day", "per day" and "daily" count only where they end the clause: "how much
+# apoptogenesis a day?" got no block (review round 1, 2026-10-26), while "how much
+# apoptogenesis per day in healthy tissue" asks about biology (round 3). A bare "per" stays
+# out, so "reverse age per year" is still an ordinary phrase.
 
 
 def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> bool:

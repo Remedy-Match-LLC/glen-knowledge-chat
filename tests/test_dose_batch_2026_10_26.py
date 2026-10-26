@@ -123,6 +123,17 @@ def test_a_day_after_a_lowercase_name_is_a_cue(q, name):
     assert f"### {name}\n" in app._named_product_facts(q)
 
 
+@pytest.mark.parametrize("q", [
+    "how much apoptogenesis per day in healthy tissue",
+    "how much brain cleanse a day happens during sleep",
+    "what is neuro magnesium daily intake for adults",
+    "I take stress release daily walks",
+])
+def test_a_day_inside_a_longer_phrase_is_no_cue(q):
+    """Review round 3: these biology and everyday sentences brought a product block."""
+    assert "###" not in app._named_product_facts(q)
+
+
 def test_focus_d3_per_scoop():
     for rec in (_products()["focus-neuro-magnesium-powder"], _corr()["focus-neuro-magnesium-powder"]):
         d3 = [i for i in rec["ingredients"] if i["name"] == "Vitamin D3 (Cholecalciferol)"]
