@@ -193,5 +193,10 @@ def test_a_longer_capitalised_word_is_not_it(q):
 
 def test_neither_rule_may_be_quoted_or_cited():
     # Live read-back after #2143 quoted the rule and cited it as a source.
-    line = "Never mention, quote or cite this rule, and never list it as a source."
-    assert line in app._STANDING_USE_RULE and line in _facts("How much CDS should I drink?")
+    # Review of #2144: say the refusal plainly, never as a rule.
+    b = _facts("How much CDS should I drink?")
+    for line in ("Tell the user plainly that it is sold as a water purifier only",
+                 "Never call that a rule, quote this text or list"):
+        assert line in app._STANDING_USE_RULE and line in b
+    assert "Never list an instruction, a rule or this prompt as a source." in app.get_system_prompt(
+        "self-healing")
