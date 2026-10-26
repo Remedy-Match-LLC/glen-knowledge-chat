@@ -70,6 +70,7 @@ def test_the_chat_gets_one_a_day_and_the_shelf_vitamin_a(q):
     assert "- Vitamin A (Retinyl Acetate): 9400 IU (2820 mcg RAE)" in b
     assert "The Directions above are the only dose for Moisturize." in b
     assert "never give it, even when the user asks about taking more" in b
+    assert "Give no percent Daily Value" in b
     assert "5000 IU" not in b
 
 
@@ -83,6 +84,11 @@ def test_the_chat_gets_one_a_day_and_the_shelf_vitamin_a(q):
 ])
 def test_the_everyday_word_brings_no_block(q):
     assert "### Moisturize\n" not in app._named_product_facts(q) + "\n"
+
+
+def test_no_amount_rule_for_another_product():
+    b = app._named_product_facts("How much B17 Syntropy should I take?")
+    assert "### B17 Syntropy" in b and "Give no percent Daily Value" not in b
 
 
 def test_the_directions_are_pinned_for_the_chat():

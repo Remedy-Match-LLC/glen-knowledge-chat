@@ -2629,6 +2629,14 @@ _WITHDRAWN_DOSE_EXAMPLE["b17-syntropy"] = ", such as up to 10 capsules a day"
 # warning must reach the answer in full, so it is written, never linked (review round 2,
 # 2026-10-25).
 _DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy", "moisturize"})
+# Live with 9,400 IU in the knowledge base, the bot invented "188% of the daily value"
+# (about 313% is right), called one capsule "not excessive" though it is 94% of the adult
+# upper limit, and added "Most clients find one daily adequate" (knowledge, log 2373,
+# 2026-10-26).
+_AMOUNT_RULE = {"moisturize": (
+    "Give each amount for {name} exactly as listed above. Give no percent Daily Value and "
+    "no other figure worked out from it. Do not call any amount high, low, moderate, "
+    "excessive or safe, and do not say what most clients take.")}
 # Moisturize's shelf batch holds about 9,400 IU of vitamin A a capsule. Its store copy said
 # up to 3 a day, and live the bot added a second capsule (log 2370, 2026-10-26).
 _WITHDRAWN_DOSE_EXAMPLE["moisturize"] = (", such as up to 3 capsules a day, or a second "
@@ -2854,6 +2862,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                 _dose_rule = _dose_rule.replace(
                     "copy every caution in full.", "copy in full every caution given here.")
             parts.append(_dose_rule)
+            if slug in _AMOUNT_RULE:
+                parts.append(_AMOUNT_RULE[slug].format(name=name))
         # The caution also from a chat_caution product: an opt-in for the warning alone,
         # so its scraped description, directions and components stay out (Brain Cleanse,
         # 2026-10-15). A caution is held as an entry and written after the product cap,
