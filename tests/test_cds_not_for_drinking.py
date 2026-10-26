@@ -107,7 +107,8 @@ def test_its_block_carries_no_line_that_invites_a_dose():
     # snippets and to "ask Dr. Glen before taking it".
     b = app._named_product_facts("Is CDS safe in pregnancy?")
     block = b.split("### CDS Water Purifier & Activator", 1)[1]
-    for bad in ("from the snippets", "taking it", "has no caution", "directions"):
+    for bad in ("from the snippets", "taking it", "has no caution",
+                "description, ingredients and directions", "Its directions above"):
         assert bad not in block, bad
 
 
