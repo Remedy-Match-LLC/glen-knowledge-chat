@@ -196,7 +196,7 @@ def test_neither_rule_may_be_quoted_or_cited():
     # Review of #2144: say the refusal plainly, never as a rule.
     b = _facts("How much CDS should I drink?")
     for text in (app._STANDING_USE_RULE, b):
-        assert "If the user asks about drinking, dosing or taking it, tell them plainly" in text
+        assert "If the user asks about drinking or dosing it, tell them plainly" in text
         assert "Do not bring up drinking or this refusal otherwise." in text
         assert "Tell the user plainly" not in text and "never raise it yourself" not in text
     for text in (app._STANDING_USE_RULE, b):
