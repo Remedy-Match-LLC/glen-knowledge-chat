@@ -511,3 +511,34 @@ def test_a_console_order_with_a_mat_is_refused():
         app._price_inhouse_invoice([{"slug": MAXI, "qty": 1}], email="c@x.com",
                                    pickup=False, ship={"country": "US"})
     assert _line(MAXI) in str(e.value)
+
+
+# ── Review round 3 ────────────────────────────────────────────────────────────
+
+def test_after_a_failed_send_the_next_enquiry_sends(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    cx = sqlite3.connect(str(tmp_path / "k.db"))
+    now = datetime(2026, 10, 26, tzinfo=timezone.utc)
+    eid, held, _n = KE.record(cx, email="a@x.com", name="A", now=now)
+    assert held is None
+    KE.unmark_reply(cx, eid)
+    assert KE.record(cx, email="a@x.com", name="A", now=now + timedelta(minutes=5))[1] is None
+
+
+def test_the_hold_on_a_repeat_ends_after_a_day(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    cx = sqlite3.connect(str(tmp_path / "k.db"))
+    now = datetime(2026, 10, 26, tzinfo=timezone.utc)
+    KE.record(cx, email="a@x.com", name="A", now=now)
+    assert KE.record(cx, email="a@x.com", name="A", now=now + timedelta(hours=23))[1] == "recent"
+    assert KE.record(cx, email="a@x.com", name="A", now=now + timedelta(hours=49))[1] is None
+
+
+def test_the_daily_cap_counts_only_emails_that_went(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    monkeypatch.setattr(KE, "DAILY_REPLY_CAP", 1)
+    cx = sqlite3.connect(str(tmp_path / "k.db"))
+    now = datetime(2026, 10, 26, tzinfo=timezone.utc)
+    eid, _h, _n = KE.record(cx, email="a@x.com", name="A", now=now)
+    KE.unmark_reply(cx, eid)
+    assert KE.record(cx, email="b@x.com", name="B", now=now)[1] is None
