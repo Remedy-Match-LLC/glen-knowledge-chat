@@ -2591,10 +2591,13 @@ _DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy"})
 # A caution that names Poison Control is the whole answer to a symptom it lists. The
 # B17 store copy said to lower the dose if lightheaded, an early sign of cyanide
 # toxicity (formulation, 2026-10-25), and that copy may still be in the snippets.
+# Read-back after #2138 (knowledge, 2026-10-25): asked about dizziness on B17 Syntropy,
+# the bot sent the caution's Poison Control symptoms to 911.
 _STOP_AT_SYMPTOM_RULE = ("If the user describes any symptom this caution names, answer with "
                          "its instruction to stop and call Poison Control, or 911 for the "
-                         "signs it gives for 911. Suggest no dose change for it: never a "
-                         "lower dose, a pause or a restart.")
+                         "signs it gives for 911. Keep each symptom with the number this "
+                         "caution gives it, and never move one to the other number. Suggest "
+                         "no dose change for it: never a lower dose, a pause or a restart.")
 _NO_DESCRIPTION = ("No description of {name} is approved here. If asked what it is, describe "
                    "it briefly from the snippets about {name} itself, adding no claim they do "
                    "not make. Its dose and caution come only from this text.")
@@ -2951,7 +2954,11 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         "that the snippets give for a different product, even one with a similar name. "
         "Name no disease or condition it is for unless this text or the user's question "
         "names it. Pair or compare it only with products this text names. In such an "
-        "answer, name no other product at all unless this text or the user names it.\n"
+        "answer, name no other product at all unless this text or the user names it. "
+        # Read-back after #2138: asked about B17 Syntropy with B17 Max, the bot said they
+        # were "designed to work as a pair" and named "the safe total daily ceiling".
+        "Never say two products are designed or made to work together, and never call a "
+        "dose or a combined amount safe, unless this text says so.\n"
         "When the question asks what the product is, what is in it, how to take it or "
         "whether it is safe, skip any consensus or mainstream-view structure. Answer "
         "directly from this text, briefly, then the Sources line and the CTA line. Do not "
