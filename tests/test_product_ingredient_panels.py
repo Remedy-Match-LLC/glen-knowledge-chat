@@ -56,14 +56,14 @@ def test_the_product_page_hides_zero_dose_rows(appmod):
     d = appmod.app.test_client().get("/begin/product-page-data/vitreous-vitality").get_json()
     ings = next(s for s in d["sections"] if s["id"] == "ingredients")["body"]["ingredients"]
     shown = _doses(ings)
-    assert "Goji" not in shown and "Black Goji" in shown
+    assert "Goji" not in shown and "Anthocyanins 25% (Lycium barbarum)" in shown
     assert not [n for n, v in shown.items() if ZERO.match(str(v or ""))]
 
 
 def test_the_product_data_route_hides_zero_dose_rows(appmod):
     d = appmod.app.test_client().get("/begin/product-data/vitreous-vitality").get_json()
     shown = _doses(d["ingredients"])
-    assert "Goji" not in shown and "Black Goji" in shown
+    assert "Goji" not in shown and "Anthocyanins 25% (Lycium barbarum)" in shown
 
 
 def test_ai_copy_grounding_leaves_out_zero_dose_rows():
@@ -82,8 +82,9 @@ def test_no_placeholder_names(fname):
 def test_vitreous_vitality_chromium_is_micrograms():
     doses = {i["name"]: i["dose"] for s, i in _panels("products.json")
              if s == "vitreous-vitality"}
-    assert doses["Chromium Polynicotinate"] == "483.5 mcg"
-    assert doses["MSC"] == "85 mcg"
+    # The store panel of 2026-10-26 gives the elements, in micrograms.
+    assert doses["Chromium (chromium polynicotinate)"] == "59 mcg, 169% of the Daily Value"
+    assert doses["Selenium (methylselenocysteine)"] == "34 mcg, 62% of the Daily Value"
 
 
 def _gen():

@@ -57,7 +57,10 @@ def test_the_record_carries_the_store_text():
     p = _record()
     assert p["directions"] == DIRECTIONS
     assert p["ingredients"][0] == VITAMIN_A
-    assert len(p["ingredients"]) == 34
+    from dashboard.products import shown_ingredients
+    assert len(shown_ingredients(p["ingredients"])) == 34
+    # The 0 mg rows stay as Glen's formulation notes, hidden on the page.
+    assert {"name": "Goji", "dose": "0 mg"} in p["ingredients"]
     assert p["chat_caution"] is True
     assert p["warning"] == CAUTION
     assert json.load(open(os.path.join(DATA, "products-manual-corrections.json")))[SLUG][
