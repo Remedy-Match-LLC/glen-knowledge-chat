@@ -454,6 +454,8 @@ def _ends_inside_a_word(pn, text):
 def waitlist_block(slug, catalog=None) -> Optional[dict]:
     """The `waitlist_only` product that stops `slug` being ordered, or None.
 
+    `enquiry_only` (Kloud mats, 2026-10-25) and `out_of_stock` block the same way.
+
     A product that is made but not yet ready to sell (Scar Soft Drink, 2026-10-09) carries
     `waitlist_only`; its page takes waiting-list sign-ups instead. The slug itself follows
     `superseded_by` past a retired duplicate, as checkout does. A bundle is blocked when an
@@ -486,7 +488,7 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
             cp = cat.get(cs) if cs else None
             if not cp or cp.get("inactive") or cs in seen:
                 continue
-            if cp.get("waitlist_only") or _stock_note(cp):
+            if cp.get("waitlist_only") or cp.get("enquiry_only") or _stock_note(cp):
                 return _block(cs, cp)
             hit = _components(cp, seen | {cs})
             if hit:
@@ -496,7 +498,7 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
     s, p = _resolve(slug)
     if not p:
         return None
-    if p.get("waitlist_only") or _stock_note(p):
+    if p.get("waitlist_only") or p.get("enquiry_only") or _stock_note(p):
         return _block(s, p)
     return _components(p, {s})
 
@@ -517,9 +519,18 @@ def _stock_note(p):
 def _block(slug, p):
     b = {"slug": slug, "name": p.get("name") or slug}
     note = _stock_note(p)
-    if note and not p.get("waitlist_only"):
+    if p.get("enquiry_only") and not p.get("waitlist_only"):
+        b["enquiry_only"] = True
+    elif note and not p.get("waitlist_only"):
         b["out_of_stock"] = note
     return b
+
+
+def enquiry_line(name):
+    """The one line a buyer sees for an `enquiry_only` product, on the page and in every
+    refusal. Glen, 2026-10-25: the Kloud mats are "enquiry-only. they must be purchased on
+    our distributor store site with Centropix." Nothing here takes payment for one."""
+    return f"{name} is ordered from our Centropix store. Ask about it on its page."
 
 
 def out_of_stock_line(name, note):
@@ -537,7 +548,9 @@ def waitlist_refusal(block) -> "WaitlistRefusal":
     """The refusal a buyer sees for a waitlist_only product (spec 2026-10-09):
     "{name} is not ready to order yet. Join the waiting list on its page." The page
     rides as `.url`."""
-    if block.get("out_of_stock"):
+    if block.get("enquiry_only"):
+        r = WaitlistRefusal(enquiry_line(block["name"]))
+    elif block.get("out_of_stock"):
         r = WaitlistRefusal(out_of_stock_line(block["name"], block["out_of_stock"]))
     else:
         r = WaitlistRefusal(f"{block['name']} is not ready to order yet. "

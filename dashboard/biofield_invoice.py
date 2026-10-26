@@ -209,7 +209,8 @@ def bottles_needed(freq_text, doses_per_bottle, program_days=30):
 # that Import Reveal adds to Rejuvenator layers does not go on the invoice or the portal cart
 # ("no"); the client buys it from its product page. It is a $997 device, and the portal applied
 # the report's supplement special price to it (review round 1 found $50).
-RECOMMEND_ONLY_SLUGS = frozenset({"harmony-laser"})
+# The Kloud mats join it (Glen, 2026-10-25): "enquiry-only", bought on our Centropix store.
+RECOMMEND_ONLY_SLUGS = frozenset({"harmony-laser", "kloud-pemf-mini", "kloud-pemf-maxi"})
 
 
 # Glen, 2026-10-19: "When more than one ingredient is listed "in Terrain Restore" in a

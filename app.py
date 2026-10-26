@@ -11688,7 +11688,15 @@ def _apply_waitlist_page_data(data, slug, p):
     # Out of stock (Glen, 2026-10-16): the page stays, nothing on it sells. A bundle
     # holding an out-of-stock product shows that product's line (review round 2).
     _oos = None if p.get("waitlist_only") else _waitlist_block(slug)
-    if _oos and _oos.get("out_of_stock"):
+    if _oos and _oos.get("enquiry_only"):
+        # Enquiry only (Kloud, Glen 2026-10-25): bought on our Centropix store. The page
+        # takes an enquiry in place of everything that sells it.
+        from dashboard import kloud_enquiry as _ke
+        from dashboard import practitioner_portal as _ppw
+        data["enquiry"] = {"line": _ppw.enquiry_line(_oos["name"]),
+                           "model": _ke.model_for_slug(_oos["slug"]),
+                           "guide_url": _ke.GUIDE_URL}
+    elif _oos and _oos.get("out_of_stock"):
         from dashboard import practitioner_portal as _ppw
         data["out_of_stock_line"] = _ppw.out_of_stock_line(_oos["name"], _oos["out_of_stock"])
     elif not p.get("waitlist_only"):
@@ -44363,6 +44371,75 @@ def product_waitlist_sign_up(slug):
                               _waitlist_confirm_body(first, token, slug))
         except Exception as e:  # noqa: BLE001 - the sign-up stands; they can sign up again
             print(f"[waitlist] confirmation send failed: {type(e).__name__}", flush=True)
+    return jsonify({"ok": True})
+
+
+_kloud_enquiry_velocity = VelocityLimiter()
+
+
+@app.route("/api/enquiry/<slug>", methods=["POST"])
+def product_enquiry(slug):
+    """An enquiry about an `enquiry_only` product (Kloud mats, Glen 2026-10-25). Kept in
+    house, Glen and Rae are told, and the enquirer is emailed how to order on our
+    Centropix store. Nothing here takes payment. A filled hidden field is a bot and is
+    dropped quietly; each visitor is rate limited."""
+    from dashboard import kloud_enquiry as _ke
+    from dashboard import sequences as _seq
+    p = (_PRODUCTS.get("products") or {}).get(slug) or {}
+    if not p.get("enquiry_only") or p.get("inactive"):
+        return jsonify({"error": "not_found"}), 404
+    body = request.get_json(silent=True) or {}
+    if (body.get("company") or "").strip():          # honeypot -> silently drop bots
+        return jsonify({"ok": True})
+    email = (body.get("email") or "").strip().lower()
+    if len(email) > 254 or not _WAITLIST_EMAIL.fullmatch(email):
+        return jsonify({"error": "email_required"}), 400
+    name = _ke.clean(body.get("name"), _ke.MAX_NAME)
+    if not name:
+        return jsonify({"error": "name_required"}), 400
+    ip = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))[0]
+    allowed, retry = _kloud_enquiry_velocity.check("enquiry:" + ip, 3, 20)
+    if not allowed:
+        return jsonify({"error": "rate_limited", "retry_after": retry}), 429
+    model = (body.get("model") or "").strip().lower()
+    if model not in _ke.MODELS:
+        model = _ke.model_for_slug(slug)
+    fields = {"email": email, "name": name,
+              "phone": _ke.clean(body.get("phone"), _ke.MAX_PHONE), "model": model,
+              "distributor": body.get("distributor") is True,
+              "message": _ke.clean_message(body.get("message")), "page_slug": slug}
+    with _db_lock, db.connect(LOG_DB) as cx:
+        enquiry_id, send_reply = _ke.record(cx, **fields)
+        _seq.init_tables(cx)
+        seq = _seq.get(cx, _ke.SEQUENCE_SLUG)
+        follow_ups_on = bool(seq and seq.get("active"))
+        if follow_ups_on:
+            _seq.enroll(cx, _ke.SEQUENCE_SLUG, email)
+            cx.commit()
+    cat = _PRODUCTS.get("products") or {}
+    replied = False
+    if send_reply:
+        subject, text = _ke.reply_text(
+            first_name=name.split()[0], model=model, distributor=fields["distributor"],
+            mini_cents=(cat.get("kloud-pemf-mini") or {}).get("price_cents") or 0,
+            maxi_cents=(cat.get("kloud-pemf-maxi") or {}).get("price_cents") or 0)
+        try:
+            _inbox.send_email(email, subject, text)
+            replied = True
+        except Exception as e:  # noqa: BLE001 - the enquiry stands; Glen is told below
+            print(f"[enquiry] ordering email failed: {type(e).__name__}", flush=True)
+            with _db_lock, db.connect(LOG_DB) as cx:
+                _ke.unmark_reply(cx, enquiry_id)
+    status = "recent" if not send_reply else ("sent" if replied else "failed")
+    subject, text = _ke.notice_text(enquiry_id=enquiry_id, reply_status=status,
+                                    follow_ups_on=follow_ups_on, **fields)
+    for to in _ke.NOTIFY:
+        try:
+            _inbox.send_email(to, subject, text)
+        except Exception as e:  # noqa: BLE001
+            print(f"[enquiry] notice to staff failed: {type(e).__name__}", flush=True)
     return jsonify({"ok": True})
 
 
