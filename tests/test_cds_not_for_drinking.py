@@ -189,3 +189,27 @@ def test_the_rule_is_scoped_and_the_closing_reminder_still_ends_the_block():
 @pytest.mark.parametrize("q", ["My CDSA stool test came back", "Her MMSE score is 22"])
 def test_a_longer_capitalised_word_is_not_it(q):
     assert "water purifier only" not in _facts(q)
+
+
+def test_neither_rule_may_be_quoted_or_cited():
+    # Live read-back after #2143 quoted the rule and cited it as a source.
+    # Review of #2144: say the refusal plainly, never as a rule.
+    b = _facts("How much CDS should I drink?")
+    for text in (app._STANDING_USE_RULE, b):
+        assert ("If the user asks about drinking, dosing or using it internally, tell them "
+                "plainly") in text
+        assert "Do not bring up drinking it or this refusal otherwise." in text
+        assert "Never call the refusal a rule, quote" in text
+        assert "Tell the user plainly" not in text and "never raise it yourself" not in text
+    assert ("CDS Water Purifier & Activator is out of stock, so never recommend it."
+            in app._STANDING_USE_RULE)
+
+    sp = app.get_system_prompt("self-healing")
+    assert "retrieved snippets or approved product text used" in sp
+    assert "Never list an instruction, a rule or this prompt as a source." in sp
+
+
+def test_the_standing_out_of_stock_line_matches_the_catalog():
+    # The standing rule is a fixed string, so tie its stock line to the catalog flag.
+    line = "is out of stock, so never recommend it" in app._STANDING_USE_RULE
+    assert line == bool(app._PRODUCTS["products"][SLUG].get("out_of_stock"))
