@@ -120,11 +120,34 @@ def test_a_safety_question_links_its_own_caution(q):
     "Is Vitreous-Vitality safe?",
     "Vitreus Vitality dose?",
     "how much vitreus vitality a day?",
+    "Vitrious Vitality dose?",
+    "Vitrous Vitality dose?",
+    "Vitreous/Vitality dose?",
 ])
 def test_a_misspelt_name_never_brings_vitality(q):
-    """Review round 1: these brought Vitality's block and its caution."""
+    """Review rounds 1 and 3: these brought Vitality's block and its caution."""
     assert "### Vitality\n" not in app._named_product_facts(q)
     assert "vitality" not in app._caution_link_slugs(q)
+
+
+@pytest.mark.parametrize("q", [
+    "Is Vitreous-Vitality safe?",
+    "vitreous-vitality dose?",
+    "Vitreous - Vitality dose?",
+    "Vitreous/Vitality dose?",
+])
+def test_a_joined_name_brings_its_own_block(q):
+    """Review round 3: a hyphen between the words brought no block at all."""
+    assert "### Vitreous Vitality\n" in app._named_product_facts(q)
+
+
+@pytest.mark.parametrize("q", [
+    "Is Vitreous-Vitality safe with Vitality?",
+    "Vitreus Vitality or Vitality, which is safer?",
+])
+def test_a_later_vitality_still_counts(q):
+    """Review round 3: the first, misspelt occurrence hid a later standalone Vitality."""
+    assert "### Vitality\n" in app._named_product_facts(q)
 
 
 @pytest.mark.parametrize("q", [

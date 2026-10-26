@@ -2311,9 +2311,16 @@ _YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality"})
 # A name that another product's name holds after a word the catalog spells with a hyphen,
 # so _YIELDS_TO_LONGER_NAMES cannot see it: "Focus Neuro-Magnesium Powder" holds "Neuro
 # Magnesium" only when typed with a space.
-# "Is Vitreous-Vitality safe?" and "Vitreus Vitality dose?" brought Vitality's block and
-# its caution (review round 1, 2026-10-26). The prefix is a pattern for those spellings.
-_YIELDS_TO_PREFIX = {"neuro-magnesium": "focus", "vitality": r"vitre\w*"}
+_YIELDS_TO_PREFIX = {"neuro-magnesium": "focus"}
+# An occurrence of these names that follows the pattern names another product, however it
+# is spelt: "Is Vitreous-Vitality safe?" and "Vitrious Vitality dose?" brought Vitality's
+# block and its caution (review rounds 1 and 3, 2026-10-26). Checked per occurrence, so a
+# later standalone "Vitality" still counts.
+_YIELDS_AFTER = {"vitality": re.compile(r"\bvitr\w*[\s/_-]*$", re.IGNORECASE)}
+# Names a client may join with a hyphen or slash: "Is Vitreous-Vitality safe?" must still
+# bring its caution (review round 3). Not Neuro Magnesium, whose hyphenated form names
+# both of its products.
+_JOINED_NAMES = frozenset({"vitreous-vitality"})
 # Closing quotes and brackets may sit between the full stop and the name: 'She said "I
 # feel tired." Clarity of mind ...' (review round 2), as may opening ones. A colon or
 # semicolon does not end a sentence: "Products I take: Clarity, ..." (review round 3).
@@ -2468,12 +2475,16 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         if not name:
             continue
         words = name.split()
-        pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
+        joiner = r"(?:\s*[-/_]\s*|\s+)" if slug in _JOINED_NAMES else r"\s+"
+        pattern = r"(?<![\w+])" + joiner.join(re.escape(w) for w in words) + r"(?![\w+])"
         # For a name in _YIELDS_TO_LONGER_NAMES any longer catalog name wins, eligible or
         # not: "How much Crystalline Clarity should I take?" names Crystalline Clarity, not
         # Clarity (review of the Clarity pin, 2026-10-23). Checked per occurrence, so a later
         # standalone "Clarity" in the same question still counts (review round 2).
         def _own(mi, slug=slug):
+            if slug in _YIELDS_AFTER and _YIELDS_AFTER[slug].search(
+                    query_text[max(0, mi.start() - 40):mi.start()]):
+                return False
             return (slug not in _YIELDS_TO_LONGER_NAMES
                     or not _inside_longer_catalog_name(query_text, slug, mi.span(), products))
         m = None if slug in _ALWAYS_CUE_NAMES else next(
