@@ -2079,34 +2079,37 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Vitamin A (Retinyl Acetate)",
-     "dose": "9400 IU (2820 mcg RAE)"
+     "name": "Vitamin A (retinyl acetate)",
+     "dose": "2,820 mcg RAE (9,400 IU), 313% of the Daily Value"
     },
     {
-     "name": "Vitamin E (as Mixed Tocopherols)",
-     "dose": "20 IU"
+     "name": "Vitamin E (mixed tocopherols 30%)",
+     "dose": "150 mg, supplying 45 mg mixed tocopherols"
     },
     {
-     "name": "Astaxanthin (Haematococcus pluvialis)",
-     "dose": "4 mg"
+     "name": "Astaxanthin 96% (Haematococcus pluvialis)",
+     "dose": "4 mg, supplying 3.8 mg astaxanthin"
     },
     {
      "name": "Phytoceramides 1% (Amorphophallus konjac)",
      "dose": "150 mg"
     },
     {
-     "name": "Polyphenols",
-     "dose": "300 mg"
+     "name": "Green tea extract, polyphenols 98%, EGCG 50% (Camellia sinensis)",
+     "dose": "150 mg"
+    },
+    {
+     "name": "Maqui anthocyanidins 25% (Aristotelia chilensis)",
+     "dose": "30 mg"
     }
    ],
-   "ingredients_source": "label-read-2026-09-26; vitamin A 9400 IU from run 176, 3.3 mg retinyl acetate 98% (Glen, 2026-10-25)",
-   "description": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac) and a 300 mg polyphenol formula of catechins 80% and anthocyanidins 25%. Take 1 capsule daily with food, or as guided.\n\nOther ingredients: Organic Pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
+   "ingredients_source": "store page remedymatch.com 76, run 176 (Glen, 2026-10-25); vitamin A 9,400 IU from 3.3 mg retinyl acetate 98%",
+   "description": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac), green tea extract (polyphenols 98%, EGCG 50%) and maqui anthocyanidins 25%. Take 1 capsule daily with food, or as guided.\n\nOther ingredients: Organic Pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
    "bottle_type": "30 Caps",
    "fmp_id": "364",
-   "intro": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac) and a 300 mg polyphenol formula of catechins 80% and anthocyanidins 25%. Take 1 capsule daily with food, or as guided.",
-   "learn_markdown": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac) and a 300 mg polyphenol formula of catechins 80% and anthocyanidins 25%. Take 1 capsule daily with food, or as guided.\n\nEach vegicap contains: Vitamin A (Retinyl Acetate) 9400 IU (2820 mcg RAE); Vitamin E (as Mixed Tocopherols) 20 IU; Astaxanthin (Haematococcus pluvialis) 4 mg; Phytoceramides 1% (Amorphophallus konjac) 150 mg; Polyphenols (300 mg): Catechins 80% (Camellia sinensis), Anthocyanidins 25% (Aristotelia chilensis).",
+   "intro": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac), green tea extract (polyphenols 98%, EGCG 50%) and maqui anthocyanidins 25%. Take 1 capsule daily with food, or as guided.",
+   "learn_markdown": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac), green tea extract (polyphenols 98%, EGCG 50%) and maqui anthocyanidins 25%. Take 1 capsule daily with food, or as guided.\n\nEach vegicap contains: Vitamin A (retinyl acetate) 2,820 mcg RAE (9,400 IU), 313% of the Daily Value; Vitamin E (mixed tocopherols 30%) 150 mg, supplying 45 mg mixed tocopherols; Astaxanthin 96% (Haematococcus pluvialis) 4 mg, supplying 3.8 mg astaxanthin; Phytoceramides 1% (Amorphophallus konjac) 150 mg; Green tea extract, polyphenols 98%, EGCG 50% (Camellia sinensis) 150 mg; Maqui anthocyanidins 25% (Aristotelia chilensis) 30 mg.",
    "how_it_works": "",
-   "panel_note": "Polyphenols (Proprietary Formula) contains: Catechins 80% (Camellia sinensis), Anthocyanidins 25% (Aristotelia chilensis).",
    "directions": "1 capsule daily with food, or as guided.",
    "content_since": "2026-10-26T07:38:00+00:00",
    "copy_pinned": [
@@ -2116,7 +2119,9 @@
     "description",
     "research",
     "benefits"
-   ]
+   ],
+   "warning": "Each capsule supplies about 9,400 IU (2,820 mcg RAE) of preformed vitamin A. That is close to the adult daily upper limit of 10,000 IU. The limit counts preformed vitamin A from food and supplements together. The label on current jars says 5,000 IU and up to 3 a day. That label is out of date. Take no more than 1 capsule a day unless your health professional advises it. Do not add other sources of preformed vitamin A unless your health professional advises it. These include multivitamins, cod liver oil, liver and other formulas that list vitamin A. Do not use with retinoid medicines such as isotretinoin or acitretin. Do not use if you are pregnant, may become pregnant or are breastfeeding. Do not give it to anyone under 18. Do not use if you have Stargardt disease or another ABCA4 retinal condition. Consult your health professional before use if you have liver or kidney disease or drink alcohol daily. Also consult first if you take blood-thinning medicines. Keep out of reach of children.",
+   "chat_caution": true
   },
   "vitality": {
    "warning": "Do not use if you are pregnant or breastfeeding. Consult your health professional before use if you take prescription medications, especially blood thinners or hormone therapies. Also consult first if you have a bleeding disorder, liver concerns or a hormone-sensitive condition, or are planning surgery. Stop use and consult your physician if you notice yellowing of the skin or eyes, or dark urine.",
@@ -3483,120 +3488,162 @@
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/315-vitreous-vitality",
    "ingredients": [
     {
-     "name": "Retinyl Acetate",
+     "name": "Vitamin A (retinyl acetate)",
+     "dose": "8,520 mcg RAE (28,400 IU), 947% of the Daily Value"
+    },
+    {
+     "name": "Vitamin C (manganese ascorbate)",
+     "dose": "12.8 mg, 14% of the Daily Value"
+    },
+    {
+     "name": "Chromium (chromium polynicotinate)",
+     "dose": "59 mcg, 169% of the Daily Value"
+    },
+    {
+     "name": "Magnesium (magnesium L-threonate and magnesium taurate)",
+     "dose": "4.7 mg, 1% of the Daily Value"
+    },
+    {
+     "name": "Manganese (manganese ascorbate)",
+     "dose": "2 mg, 87% of the Daily Value"
+    },
+    {
+     "name": "Selenium (methylselenocysteine)",
+     "dose": "34 mcg, 62% of the Daily Value"
+    },
+    {
+     "name": "Organic sulfur (MSM, methylsulfonylmethane)",
+     "dose": "20 mg"
+    },
+    {
+     "name": "Zinc (zinc carnosine)",
+     "dose": "7.4 mg, 67% of the Daily Value"
+    },
+    {
+     "name": "Carnosine (zinc carnosine)",
+     "dose": "25 mg"
+    },
+    {
+     "name": "L-lysine",
+     "dose": "20 mg"
+    },
+    {
+     "name": "Taurine (magnesium taurate)",
+     "dose": "27 mg"
+    },
+    {
+     "name": "Anthocyanins 25% (Lycium barbarum)",
+     "dose": "20 mg"
+    },
+    {
+     "name": "Bromelain (Ananas comosus)",
+     "dose": "80 mg"
+    },
+    {
+     "name": "Cinnamon (Cinnamomum cassia)",
+     "dose": "15 mg"
+    },
+    {
+     "name": "Crocin 45% (Gardenia jasminoides)",
+     "dose": "20 mg"
+    },
+    {
+     "name": "Hesperidin methyl chalcone",
+     "dose": "20 mg"
+    },
+    {
+     "name": "Hyaluronic acid (high molecular weight)",
+     "dose": "15 mg"
+    },
+    {
+     "name": "Luteolin (Sophora japonica)",
+     "dose": "20 mg"
+    },
+    {
+     "name": "Naringenin 98%",
+     "dose": "20 mg"
+    },
+    {
+     "name": "Notoginsenosides 80% (Panax notoginseng)",
      "dose": "10 mg"
     },
     {
-     "name": "Chromium Polynicotinate",
-     "dose": "483.5 mcg"
+     "name": "Phytoceramides 10% (Oryza sativa)",
+     "dose": "15 mg"
     },
     {
-     "name": "Manganese Ascorbate",
-     "dose": "15.4 mg"
+     "name": "Polysaccharide 50% (Polyporus umbellatus)",
+     "dose": "20 mg"
+    },
+    {
+     "name": "Proanthocyanidins (Vitis vinifera)",
+     "dose": "20 mg"
+    },
+    {
+     "name": "Sumac bran (Cotinus coggygria)",
+     "dose": "15 mg"
+    },
+    {
+     "name": "Trans-resveratrol 98% (Polygonum cuspidatum)",
+     "dose": "15 mg"
+    },
+    {
+     "name": "Phosphatides 50% (Helianthus annuus)",
+     "dose": "13 mg"
+    },
+    {
+     "name": "EGb 761 (Ginkgo biloba) (24% flavone glycosides, 6% lactones, under 0.0005% ginkgolic acid)",
+     "dose": "8 mg"
+    },
+    {
+     "name": "Vitamin B3 (niacin and chromium polynicotinate)",
+     "dose": "5.4 mg, 34% of the Daily Value"
+    },
+    {
+     "name": "Moringa 100:1 (Moringa oleifera)",
+     "dose": "3 mg"
+    },
+    {
+     "name": "Licorice Omnipotent (Glycyrrhiza glabra)",
+     "dose": "2 mg"
+    },
+    {
+     "name": "Vinpocetine (Vinca minor)",
+     "dose": "1 mg"
+    },
+    {
+     "name": "Gingerol 40% (Zingiber officinale)",
+     "dose": "0.5 mg"
+    },
+    {
+     "name": "Piperine (Piper nigrum)",
+     "dose": "0.5 mg"
+    },
+    {
+     "name": "Humic acid and fulvic acid",
+     "dose": "0.5 mg each"
     },
     {
      "name": "Tauromag® ATA Mg® patented by Synapharm, distributed by AIDP",
      "dose": "0 mg"
     },
     {
-     "name": "Magnesium L-Threonate",
-     "dose": "30 mg"
-    },
-    {
-     "name": "MSC",
-     "dose": "85 mcg"
-    },
-    {
-     "name": "MSM Methylsulfonylmethane",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Zinc Carnosine",
-     "dose": "32.5 mg"
-    },
-    {
-     "name": "Lysine L-Lysine",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Magnesium",
-     "dose": "30 mg"
-    },
-    {
-     "name": "Black Goji",
-     "dose": "20 mg"
-    },
-    {
      "name": "Goji",
      "dose": "0 mg"
     },
     {
-     "name": "Pineapple proteolytic enzyme",
-     "dose": "80 mg"
-    },
-    {
-     "name": "Saigon Cinnamon",
-     "dose": "15 mg"
-    },
-    {
-     "name": "Crocin",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Hesperidin Methyl Chalcone HMC 5, 7, 3'-trihydroxy-4'-methoxyflavanone hesperitin-7-O-rutinoside Hesperitin glycoside glucosyl hesperidin Vitamin P hesperitin G-hesperidin Diosmin",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Hyaluronic Acid; high molecular weight (vegan) - WHC",
-     "dose": "15 mg"
-    },
-    {
-     "name": "Luteolin",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Tienchi Ginseng",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Rice Ceramides",
-     "dose": "15 mg"
-    },
-    {
-     "name": "extract ~8:1; Umbrella",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Grape Seed PCO Procyanidolic oligomers Vitis vinifera",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Sumac Bran 50:1",
-     "dose": "15 mg"
-    },
-    {
      "name": "Sumac",
      "dose": "0 mg"
     },
     {
      "name": "Sumac",
      "dose": "0 mg"
-    },
-    {
-     "name": "Trans-Resveratrol",
-     "dose": "15 mg"
-    },
-    {
-     "name": "Bioavailability Blend",
-     "dose": "34.5 mg"
-    },
-    {
-     "name": "Naringenin",
-     "dose": "20 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Vitreous Vitality is an Energetically Correct™ Functional Formulation that supports the health and structural integrity of the vitreous body, the clear, gel-like connective tissue that fills the back of the eye and helps it hold its shape. It brings together antioxidant botanicals such as grape seed proanthocyanidins, trans-resveratrol, luteolin, crocin, and black goji; structural building blocks including high-molecular-weight hyaluronic acid, L-lysine, and rice ceramides; and targeted minerals such as zinc, manganese, and chromium, alongside magnesium and taurine. These are chosen to support connective-tissue resilience and the body's own defenses against everyday oxidative stress. Working WITH your body, the way nature intended. No fillers, no preservatives.",
+   "ingredients_source": "store page remedymatch.com 315, run 99 and the v2 label (Glen, 2026-10-26)",
+   "gk_stale": true,
+   "gk_stale_reason": "GK page missing: Retinyl Acetate (GK has Retinyl Palmitate instead), Fisetin, Naringenin",
+   "description": "Vitreous Vitality is an Energetically Correct™ Functional Formulation designed to support the health and structural integrity of the vitreous body, the clear gel-like tissue that fills the back of your eye and helps it maintain its shape. This formulation works with your body's natural systems to promote resilience in the connective tissues of the eye while helping defend against everyday oxidative stress.\n\nThe formula brings together three complementary layers of support. Antioxidant botanicals including grape seed proanthocyanidins, trans-resveratrol, luteolin, crocin, and black goji help protect against free radical damage. Structural building blocks like high-molecular-weight hyaluronic acid, L-lysine, and rice ceramides provide the raw materials your body needs to maintain connective tissue integrity. Targeted minerals including zinc, manganese, chromium, and magnesium, along with taurine, work synergistically to support the tissues that keep your eye functioning optimally. The formula contains no fillers or preservatives, only what your eye health needs.\n\nVitreous Vitality is for anyone looking to proactively support their eye health and maintain clear vision as they age. Whether you want to support vitreous structure or give your eyes comprehensive nutritional support, this formulation provides clinically selected nutrients in the specific forms and amounts your body can use most effectively.",
    "benefits": [
     "Supports the structural integrity of the vitreous body, the eye's clear gel",
     "Supports connective-tissue resilience with hyaluronic acid, L-lysine, and ceramides",
@@ -3605,12 +3652,20 @@
     "Provides magnesium and taurine to support eye and nerve tissue",
     "Energetically Correct™, with no fillers or preservatives"
    ],
-   "gk_stale": true,
-   "gk_stale_reason": "GK page missing: Retinyl Acetate (GK has Retinyl Palmitate instead), Fisetin, Naringenin",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
    "fmp_id": "594",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "directions": "1 capsule daily with food, as guided.",
+   "warning": "Each capsule supplies 8,520 mcg RAE (28,400 IU) of preformed vitamin A. That is nearly 3 times the adult daily upper limit of 3,000 mcg RAE (10,000 IU). The limit counts preformed vitamin A from food and supplements together. The jar label says retinyl palmitate 2,500 IU and up to 3 capsules a day. That label is wrong for this batch. Follow this page instead. Take no more than 1 capsule a day, and only as guided by your health professional. Do not take it for longer than 6 months unless your health professional advises it. Do not add other sources of preformed vitamin A. These include multivitamins, cod liver oil, liver and other formulas that list vitamin A, including our own. Do not use with retinoid medicines such as isotretinoin or acitretin. Do not use with tetracycline antibiotics such as doxycycline or minocycline. Do not use if you are pregnant, may become pregnant or are breastfeeding. Do not give it to anyone under 18. Stop and seek advice if you notice headache, blurred vision, nausea, dizziness, bone or joint pain, or dry, peeling skin. Do not use if you have Stargardt disease or another ABCA4 retinal condition. Do not use if you are allergic to pineapple. Consult your health professional before use if you have liver or kidney disease or drink alcohol daily. Consult your health professional before long-term use if you have osteoporosis or low bone density. Also consult first if you take any medicine, especially blood-thinning or blood-sugar medicines. This includes aspirin and ibuprofen. Consult first too if you have a bleeding disorder, or before planned surgery. Keep out of reach of children.",
+   "chat_caution": true,
+   "intro": "Vitreous Vitality combines nutrients that support the structural and functional integrity of your eyes, from the retina to the lens to the vitreous fluid itself. Retinyl acetate, zinc carnosine and crocin work together to help maintain visual clarity and comfort, while magnesium threonate and taurine support the neural pathways that let you see and process what you're looking at. The formula also includes proteolytic enzymes and compounds like hyaluronic acid and rice ceramides that help maintain tissue hydration and flexibility, which matters because your eyes need fluidity and elasticity to function well. This is the kind of targeted, multi-system support your vision deserves as you age.",
+   "copy_pinned": [
+    "directions",
+    "ingredients",
+    "intro",
+    "description"
+   ]
   },
   "seaamino-syntropy": {
    "name": "SeaAmino Syntropy",
