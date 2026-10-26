@@ -91,7 +91,6 @@ def _has_rule(b):
 @pytest.mark.parametrize("q,prior", [
     ("Can I order CDS Water Purifier & Activator?", []),
     ("How much CDS should I drink?", []), ("how much cds should i drink", []),
-    ("is cds good for candida", []), ("What is Cds", []),
     ("what is chlorine dioxide used for", []), ("Is MMS safe to drink?", []),
     ("chlorine dioxide drops for parasites?", []),
     ("What is Chlorine Dioxide Solution?", []), ("sodium chlorite drops?", []),
@@ -134,14 +133,20 @@ def test_it_never_takes_a_product_block():
     # Review round 3: these blocks must equal main's, CDS rule apart.
     ("How much Liver Support should I take with MMS?", []),
     ("Is it safe to take it with MMS?", ["What is Brain Cleanse?"]),
-    ("I listen to meditation CDs at night. How much Sleep Syntropy should I take?", []),
     ("How much Brain Cleanse, Sleep Syntropy and AngiogenX and CDS should I take?", []),
+    ("How much Sleep Syntropy should I take with MMS?", []),
 ])
 def test_other_products_keep_their_own_blocks(q, prior, monkeypatch):
     with_rule = _facts(q, prior)
+    use = app._use_rule_block(q, prior)
+    assert _has_rule(use)
     monkeypatch.setattr(app, "_USE_RULE_NAMES", {})
+    monkeypatch.setattr(app, "_USE_RULE_LOWER", {})
     without = _facts(q, prior)
-    assert with_rule.startswith(without) and _has_rule(with_rule[len(without):])
+    if not without:
+        assert with_rule == "\n\n" + use
+    else:
+        assert with_rule.replace("\n\n" + use, "", 1) == without
 
 
 def test_the_rule_does_not_depend_on_stock(monkeypatch):
@@ -159,3 +164,21 @@ def test_a_conversation_that_never_names_it_gets_nothing():
                                "Is the Living Water ionizer a good water purifier?"])
 def test_a_water_purifier_question_does_not_bring_it(q):
     assert "water purifier only" not in _facts(q)
+
+
+@pytest.mark.parametrize("q", ["Do you sell your talks on CDs?", "I listen to healing CDs",
+                               "Can I eat mms while taking Sleep Syntropy?",
+                               "is cds good for candida"])
+def test_lowercase_without_a_use_word_gets_no_message_rule(q):
+    # Ordinary words (review of 8919bc6a). The standing rule in every system prompt
+    # still covers a real question phrased this way.
+    assert "water purifier only" not in _facts(q)
+    assert "water purifier only" in app.get_system_prompt("self-healing")
+
+
+def test_the_rule_is_scoped_and_the_closing_reminder_still_ends_the_block():
+    b = _facts("How much Sleep Syntropy should I take with MMS?")
+    assert "It changes nothing about any other product." in b
+    assert "This conversation may name it" not in b
+    if app._CAUTION_STAY_LINE in b:
+        assert b.rstrip().endswith(app._CAUTION_CLOSING_REMINDER.strip())

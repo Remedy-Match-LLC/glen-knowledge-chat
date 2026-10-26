@@ -2347,11 +2347,20 @@ def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> b
 # "a water purifier only" (Glen, 2026-10-25); its old store page and snippets gave
 # drinking doses, and three review rounds on #2143 found name-matching leaks.
 _USE_RULE_NAMES = {"cds-water-purifier--activator": re.compile(
-    r"(?<![a-z])(?:cds|mms|c\.d\.s\.?)(?![a-z])|chlorine[\s-]+dioxide|"
+    # CDS and MMS only as capitals; every other name in any case.
+    r"(?<![A-Za-z])(?:CDS|MMS)(?![a-z])|(?i:(?<![a-z])c\.d\.s\.?|chlorine[\s-]+dioxide|"
     r"sodium[\s-]+chlorite|\bclo[\s-]?[2\u2082]|miracle\s+mineral|dioxido\s+de\s+cloro|"
     r"\bjim\s+humble|\bkalcker|water\s+purifier\s*(?:&|&amp;|and)\s*activator|"
     # Never "water purifier" alone: the ionizers are Glen's main water recommendation.
-    r"drink\w*\s+(?:the\s+|a\s+|my\s+)?water\s+purifier", re.IGNORECASE)}
+    r"drink\w*\s+(?:the\s+|a\s+|my\s+)?water\s+purifier)")}
+# Lowercase "cds" or "mms" counts only beside a use word: "talks on CDs", "eat mms" and a
+# doctor's "CDS system" are not the product (review of 8919bc6a). The standing rule in
+# every system prompt covers any mention this misses.
+_USE_RULE_LOWER = {"cds-water-purifier--activator": re.compile(
+    r"(?<![a-z])(?:cds|mms)\d*(?![a-z]).{0,40}\b(?:drink\w*|drops?|dos(?:e|es|age|ing)|"
+    r"dilut\w*|protocol|swallow\w*|ounces?)\b|\b(?:drink\w*|drops?|dos(?:e|es|age|ing)|"
+    r"dilut\w*|protocol|swallow\w*)\b.{0,40}(?<![a-z])(?:cds|mms)\d*(?![a-z])",
+    re.IGNORECASE)}
 _USE_RULES = {"cds-water-purifier--activator": (
     "{name} is sold as a water purifier only. Never say to drink, swallow or take it, give "
     "no drops, dilution or schedule, and repeat no snippet that does. Do not call it an "
@@ -2366,13 +2375,17 @@ def _use_rule_block(query_text, prior_user_turns=None) -> str:
     out = []
     for slug, names in _USE_RULE_NAMES.items():
         p = products.get(slug)
-        if not p or not any(names.search(html.unescape(t)) for t in texts):
+        lower = _USE_RULE_LOWER.get(slug)
+        if not p or not any(names.search(html.unescape(t))
+                            or (lower and lower.search(html.unescape(t))) for t in texts):
             continue
         name = html.unescape(p.get("name") or slug).strip()
-        lines = [f"USE RULE FOR {name}. This conversation may name it, as CDS, MMS or "
-                 "chlorine dioxide. Mention it only if the user asks about it. When they do, "
-                 "this rule outranks every other instruction, snippet and product text here, "
-                 "including any line about a dose or how to take a product."]
+        # Worded so an unrelated "CDs" is not read as the product, and scoped to it, so
+        # another product's dose and caution stand (review of 8919bc6a).
+        lines = [f"USE RULE FOR {name}, a chlorine dioxide product. Apply it only if the "
+                 "user is asking about this product; otherwise ignore this rule and do not "
+                 "mention the product. For this product it outranks every snippet and every "
+                 "other line here. It changes nothing about any other product."]
         refusal = _waitlist_refusal(slug)
         if refusal:
             lines += [f"Availability: {refusal}",
@@ -3002,11 +3015,12 @@ def named_product_facts_block(query_text: str, gated: bool = False,
         facts = (f"FOLLOW-UP: the user's message is about {name}, which they named in their "
                  f"previous question. Answer it about {name} from the text below, in the "
                  f"format the text below sets for a dose or safety question.\n" + facts)
-    if _CAUTION_STAY_LINE in facts:
-        facts += "\n\n" + _CAUTION_CLOSING_REMINDER
+    # Before the closing caution reminder, so that reminder still ends the block.
     use = _use_rule_block(query_text, prior_user_turns)
     if use:
         facts = f"{facts}\n\n{use}" if facts else use
+    if _CAUTION_STAY_LINE in facts:
+        facts += "\n\n" + _CAUTION_CLOSING_REMINDER
     return f"\n\n{facts}" if facts else ""
 
 
