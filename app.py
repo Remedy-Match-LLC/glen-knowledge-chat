@@ -2349,12 +2349,20 @@ def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> b
 # old store snippets that give drinking doses (CDS, Glen 2026-10-25: "a water purifier
 # only"). Kept to products whose block refuses them; never an ordinary alias.
 _REFUSED_SHORT_NAMES = {"cds-water-purifier--activator": ("CDS", "MMS", "chlorine dioxide")}
+# An all-capitals short name matches as written. In any other casing, or for a phrase, it
+# needs a use word beside it: "healing CDs" and "Does my city water use chlorine
+# dioxide?" are not about the product (review round 2, #2143). The same words carry the
+# product into a follow-up such as "Can I drink it?".
+_USE_CUE = re.compile(r"\b(?:drink\w*|drops?|dos(?:e|es|age|ing)|dilut\w*|mix\w*|swallow\w*|"
+                      r"ounces?|oz|how\s+(?:much|often|many)|safe\w*|take|taking|"
+                      r"protocol|parasit\w*)\b", re.IGNORECASE)
 # A use Glen has ruled out, told to the bot after the availability line. Old store
 # snippets tell readers to drink CDS (Glen 2026-10-25: "a water purifier only").
 _USE_RULES = {"cds-water-purifier--activator": (
     "CDS Water Purifier & Activator is sold as a water purifier only. Never say to drink, "
     "swallow or take it, give no drops, dilution or schedule, and repeat no snippet that "
-    "does. Do not call it an oxygen source. This outranks every other line here, "
+    "does. Do not call it an oxygen source or name a health use for it. Give no price, and "
+    "do not say its page has directions. This outranks every other line here, "
     "including any line about its dose or how to take it.")}
 
 
@@ -2417,10 +2425,13 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                         slug in _CUE_NAMES and _has_product_cue(query_text, *mi.span()))):
                     m = mi
                     break
-        if not m and slug in _REFUSED_SHORT_NAMES and _waitlist_refusal(slug):
+        # Not tied to stock: the use rule stands when it is back (review round 2).
+        if not m and slug in _REFUSED_SHORT_NAMES:
+            _cue = bool(_USE_CUE.search(query_text))
             m = next((mi for short in _REFUSED_SHORT_NAMES[slug] for mi in re.finditer(
                 r"(?<![\w+])" + re.escape(short) + r"(?![\w+])", query_text,
-                re.IGNORECASE)), None)
+                0 if (short.isupper() and not _cue) else re.IGNORECASE)
+                if _cue or (short.isupper() and mi.group(0) == short)), None)
         if m:
             spans[slug] = m.span()
     # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."
@@ -2625,7 +2636,9 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
     all_caution_only = True
     any_caution_only = False
     any_copy_rule = False
-    for slug in sorted(spans, key=lambda s: spans[s][0]):
+    # A product with a use rule comes first, so the product cap never drops it (review
+    # round 2, #2143); the rest keep the order the question names them in.
+    for slug in sorted(spans, key=lambda s: (s not in _USE_RULES, spans[s][0])):
         product = products[slug]
         name = html.unescape(product.get("name") or slug).strip()
         desc = _PRICE_SENTENCE.sub("", html.unescape(product.get("description") or ""))
@@ -2656,6 +2669,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                           "order or in stock."]
             parts.append(_USE_RULES[slug])
             blocks.append(parts)
+            # It carries no caution, so the caution-only header must not frame it.
+            all_caution_only = False
             if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
                 break
             continue
@@ -2963,15 +2978,25 @@ def _carried_query(query_text: str, prior_user_turns) -> str:
     products = (_PRODUCTS or {}).get("products", {}) or {}
     if not query_text or not prior_user_turns or _named_product_spans(query_text, products):
         return query_text
-    if not _is_follow_up(query_text):
+    # A use question ("Can I drink it?", "how many drops?") carries only a product with a
+    # use rule (review round 2, #2143); every other product keeps the narrow test.
+    def _use_follow_up(t):
+        return isinstance(t, str) and len(t.split()) <= 15 and bool(_USE_CUE.search(t))
+    narrow = _is_follow_up(query_text)
+    if not (narrow or _use_follow_up(query_text)):
         return query_text
     turns = [t for t in prior_user_turns if isinstance(t, str) and t.strip()]
     for turn in reversed(turns[-_FOLLOW_UP_LOOKBACK:]):
         named = _named_product_spans(turn, products)
         if named:
-            return turn if len(named) == 1 else query_text
-        if not _is_follow_up(turn):
+            if len(named) != 1:
+                return query_text
+            return turn if (narrow or next(iter(named)) in _USE_RULES) else query_text
+        if _is_follow_up(turn):
+            continue
+        if not _use_follow_up(turn):
             return query_text
+        narrow = False  # a wide turn in between: only a use-rule product carries
     return query_text
 
 
