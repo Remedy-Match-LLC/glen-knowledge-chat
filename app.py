@@ -2472,11 +2472,12 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         if m and slug in _YIELDS_TO_PREFIX:
             word = _YIELDS_TO_PREFIX[slug]
             # "Focus Neuro Magnesium Powder" is the stocked jar, not the presale, and a
-            # lowercase name beside "focus" anywhere may mean it too (review round 1,
-            # 2026-10-25). "Does Neuro Magnesium help focus?" keeps its block.
+            # lowercase name in a question naming "Focus" may mean it too (review round 1,
+            # 2026-10-25). Only a capitalised Focus names the jar: "does neuro magnesium
+            # help focus?" keeps its block (review round 3).
             if (re.search(rf"\b{word}[\s-]*$", query_text[:m.start()], re.IGNORECASE)
                     or (query_text[m.start():m.end()] != name
-                        and re.search(rf"\b{word}\b", query_text, re.IGNORECASE))):
+                        and re.search(rf"\b{word.capitalize()}\b", query_text))):
                 m = None
         if m:
             spans[slug] = m.span()
@@ -2686,6 +2687,11 @@ def _founding_availability(slug, name):
     launch = _fd.get_launch(slug)
     if not launch:
         return ""
+    # One read a minute, the page counter's own poll: one message built this block and
+    # its caution helpers seven times, each a COUNT on a pooled connection (round 3).
+    hit = _FOUNDING_AVAILABILITY_CACHE.get(slug)
+    if hit and time.monotonic() - hit[0] < 60:
+        return hit[1].format(name=name)
     batch = (launch.get("batch_label") or "the founding batch").strip()
     try:
         with db.connect(LOG_DB) as cx:
@@ -2694,12 +2700,18 @@ def _founding_availability(slug, name):
                 cx, slug, now_iso=_now_utc().strftime("%Y-%m-%d"))
     except Exception:  # noqa: BLE001
         is_open = False
-    if is_open:
-        return (f"{name} is not made yet. It can be reserved on its page as {batch}, and "
-                "the card is charged when it ships. Never say it is in stock or ready to "
-                "ship.")
-    return (f"{name} cannot be ordered now. Its page has a waiting list. Never say it is "
-            "available to order or in stock.")
+    # A closed presale names no waiting list: with the founding flag off the list is
+    # shut too (_waitlist_open, review round 3).
+    text = ("{name} is not made yet. It can be reserved on its page as "
+            + batch.replace("{", "{{").replace("}", "}}")
+            + ", and the card is charged when it ships. Never say it is in stock or ready "
+            "to ship." if is_open else
+            "{name} cannot be ordered now. Never say it is available to order or in stock.")
+    _FOUNDING_AVAILABILITY_CACHE[slug] = (time.monotonic(), text)
+    return text.format(name=name)
+
+
+_FOUNDING_AVAILABILITY_CACHE = {}
 
 
 def _named_product_facts(query_text: str, gated: bool = False, given_out=None,

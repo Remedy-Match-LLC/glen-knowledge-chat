@@ -35,6 +35,13 @@ PANEL = [
 # Focus Neuro-Magnesium Powder's panel lines, which the chat gave for this product.
 FOCUS_ONLY = ("Threonate", "Zinc", "23.1 mg", "375 IU", "Lithium Orotate: 9 mg")
 DATA = os.path.join(os.path.dirname(__file__), "..", "data")
+CLOSED = ("Availability: Neuro Magnesium cannot be ordered now. Never say it is available "
+          "to order or in stock.")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_founding_cache(monkeypatch):
+    monkeypatch.setattr(app, "_FOUNDING_AVAILABILITY_CACHE", {})
 
 
 def _record():
@@ -85,6 +92,7 @@ def test_the_chat_path_carries_the_block():
     "How much Focus Neuro Magnesium Powder should I take?",
     "I bought the Focus jar. What is the neuro magnesium dose?",
     "I take Focus Neuro-Magnesium Powder. How much neuro magnesium should I take?",
+    "How much Focus-Neuro Magnesium Powder should I take?",
     # The hyphenated name is both products (production, 2026-09-28): no block guesses.
     "What is in Neuro-Magnesium?",
 ])
@@ -92,9 +100,14 @@ def test_no_block_for_a_phrase_or_the_other_product(q):
     assert "### Neuro Magnesium\n" not in app._named_product_facts(q) + "\n"
 
 
-def test_the_catalog_name_beside_an_everyday_focus_keeps_its_block():
-    assert "### Neuro Magnesium\n" in app._named_product_facts(
-        "Does Neuro Magnesium help focus?")
+@pytest.mark.parametrize("q", [
+    "Does Neuro Magnesium help focus?",
+    # An everyday lowercase "focus" is no jar (review round 3, 2026-10-25).
+    "how much neuro magnesium should I take for focus?",
+    "I lose focus. how do I take neuro magnesium?",
+])
+def test_an_everyday_focus_keeps_the_block(q):
+    assert "### Neuro Magnesium\n" in app._named_product_facts(q)
 
 
 def _founding(monkeypatch, enabled, is_open):
@@ -117,8 +130,8 @@ def test_a_closed_presale_cannot_be_ordered(monkeypatch, tmp_path, enabled, is_o
     monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
     _founding(monkeypatch, enabled, is_open)
     b = app._named_product_facts("Is Neuro Magnesium available to order?")
-    assert "Availability: Neuro Magnesium cannot be ordered now." in b
-    assert "reserved" not in b
+    assert CLOSED in b
+    assert "reserved" not in b and "waiting list" not in b
 
 
 def test_a_failed_read_says_it_cannot_be_ordered(monkeypatch, tmp_path):
@@ -130,7 +143,22 @@ def test_a_failed_read_says_it_cannot_be_ordered(monkeypatch, tmp_path):
         raise RuntimeError("db down")
     monkeypatch.setattr(fd, "is_open", boom)
     b = app._named_product_facts("Is Neuro Magnesium available to order?")
-    assert "Availability: Neuro Magnesium cannot be ordered now." in b
+    assert CLOSED in b
+
+
+def test_the_presale_state_is_read_once_a_minute(monkeypatch, tmp_path):
+    from dashboard import founding as fd
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
+    monkeypatch.setattr(app, "_founding_enabled", lambda: True)
+    calls = []
+    monkeypatch.setattr(fd, "is_open", lambda *a, **k: calls.append(1) or True)
+    for _ in range(3):
+        app.named_product_facts_block("Is Neuro Magnesium safe to take?")
+    assert len(calls) == 1
+    clock = [app.time.monotonic() + 61]
+    monkeypatch.setattr(app.time, "monotonic", lambda: clock[0])
+    app._named_product_facts("Is Neuro Magnesium available to order?")
+    assert len(calls) == 2
 
 
 def test_no_founding_line_for_another_product():
