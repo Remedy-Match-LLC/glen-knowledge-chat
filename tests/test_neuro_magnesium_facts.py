@@ -71,18 +71,90 @@ def test_the_chat_gets_its_own_panel_dose_and_caution(q):
     assert "blood-eye barrier" not in b
 
 
+def test_the_chat_path_carries_the_block():
+    """named_product_facts_block is what chat() appends to the user message."""
+    b = app.named_product_facts_block("What is in Neuro Magnesium?")
+    assert "### Neuro Magnesium" in b and "- Vitamin D3 (Cholecalciferol): 650 IU" in b
+
+
 @pytest.mark.parametrize("q", [
     "Do neuro magnesium forms like threonate help memory?",
     "Tell me about Focus Neuro-Magnesium Powder",
+    # The stocked jar typed with a space, or a lowercase name beside "Focus" (review
+    # round 1, 2026-10-25).
+    "How much Focus Neuro Magnesium Powder should I take?",
+    "I bought the Focus jar. What is the neuro magnesium dose?",
+    "I take Focus Neuro-Magnesium Powder. How much neuro magnesium should I take?",
+    # The hyphenated name is both products (production, 2026-09-28): no block guesses.
+    "What is in Neuro-Magnesium?",
 ])
 def test_no_block_for_a_phrase_or_the_other_product(q):
     assert "### Neuro Magnesium\n" not in app._named_product_facts(q) + "\n"
 
 
+def test_the_catalog_name_beside_an_everyday_focus_keeps_its_block():
+    assert "### Neuro Magnesium\n" in app._named_product_facts(
+        "Does Neuro Magnesium help focus?")
+
+
+def _founding(monkeypatch, enabled, is_open):
+    from dashboard import founding as fd
+    monkeypatch.setattr(app, "_founding_enabled", lambda: enabled)
+    monkeypatch.setattr(fd, "is_open", lambda cx, slug, now_iso=None: is_open)
+
+
+def test_an_open_presale_is_never_called_in_stock(monkeypatch, tmp_path):
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
+    _founding(monkeypatch, True, True)
+    b = app._named_product_facts("Is Neuro Magnesium available to order?")
+    assert ("Availability: Neuro Magnesium is not made yet. It can be reserved on its page "
+            "as Founding Batch No. 1, and the card is charged when it ships. Never say it is "
+            "in stock or ready to ship.") in b
+
+
+@pytest.mark.parametrize("enabled,is_open", [(True, False), (False, True)])
+def test_a_closed_presale_cannot_be_ordered(monkeypatch, tmp_path, enabled, is_open):
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
+    _founding(monkeypatch, enabled, is_open)
+    b = app._named_product_facts("Is Neuro Magnesium available to order?")
+    assert "Availability: Neuro Magnesium cannot be ordered now." in b
+    assert "reserved" not in b
+
+
+def test_a_failed_read_says_it_cannot_be_ordered(monkeypatch, tmp_path):
+    from dashboard import founding as fd
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
+    monkeypatch.setattr(app, "_founding_enabled", lambda: True)
+
+    def boom(*a, **k):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(fd, "is_open", boom)
+    b = app._named_product_facts("Is Neuro Magnesium available to order?")
+    assert "Availability: Neuro Magnesium cannot be ordered now." in b
+
+
+def test_no_founding_line_for_another_product():
+    b = app._named_product_facts("How much B17 Syntropy should I take?")
+    assert "Availability:" not in b
+
+
 def test_the_corrections_replay_keeps_the_approved_record():
-    c = json.load(open(os.path.join(DATA, "products-manual-corrections.json")))[SLUG]
-    assert c["ingredients"] == PANEL
-    assert c["directions"] == DIRECTIONS and c["warning"] == WARNING
-    assert c["chat_caution"] is True
-    assert c["copy_pinned"] == ["directions", "ingredients"]
-    assert c["content_since"] == _record()["content_since"]
+    import importlib
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+    ae = importlib.import_module("apply_enrichment")
+    corr = json.load(open(os.path.join(DATA, "products-manual-corrections.json")))
+    approved = _record()
+    rec = dict(approved)
+    # What a re-import writes back first: the old 750 IU panel and none of the approval.
+    rec.update(ingredients=[dict(i) for i in PANEL[:-1]]
+               + [{"name": "Vitamin D3 (Cholecalciferol)", "dose": "750 IU"}],
+               ingredients_source="vault-locked-panel-2026-05-31")
+    for k in ("warning", "directions", "copy_pinned", "content_since", "chat_caution"):
+        rec.pop(k, None)
+    p = {SLUG: rec}
+    ae.apply_corrections(p, {SLUG: corr[SLUG]})
+    for k in ("ingredients", "directions", "warning", "chat_caution", "copy_pinned",
+              "content_since", "ingredients_source"):
+        assert p[SLUG][k] == approved[k], k
+    assert p[SLUG]["ingredients"] == PANEL

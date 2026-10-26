@@ -3596,6 +3596,7 @@
         "dose": "650 IU"
       }
     ],
+    "ingredients_source": "vault-locked-panel-2026-05-31 (HydroCurc switch 2026-06-25); doses per daily dose (2 scoops); D3 650 IU from FileMaker 1196 (Glen, 2026-10-25)",
     "directions": "2 scoops a day in water, or as guided.",
     "warning": "Consult your health professional before use if you are pregnant or breastfeeding, take lithium or other prescription medications, or have kidney or thyroid disease.",
     "chat_caution": true,
@@ -3603,7 +3604,7 @@
       "directions",
       "ingredients"
     ],
-    "content_since": "2026-10-26T05:30:00+00:00",
+    "content_since": "2026-10-26T05:10:00+00:00",
     "note": "Glen, 2026-10-25, platform tab: \"yes\" to the directions, caution and store panel for Neuro Magnesium (FileMaker 1196, the Retina Renew presale), then \"650\" for D3. FileMaker holds 0.65 mg a scoop of 500,000 IU/g material: 325 IU a scoop, 650 IU a day. Directions and caution were approved in the formulation tab the same day."
   }
 }
