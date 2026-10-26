@@ -71,13 +71,14 @@ def _refused(r):
     assert body.get("url") == URL, body
 
 
-def test_the_catalog_file_marks_only_night_vision_out_of_stock():
+def test_the_catalog_file_marks_only_the_three_out_of_stock():
     """Vitamin D Syntropy's new formula is back in stock (spec 2026-10-16-vitamin-d-syntropy)."""
     p = _real()[VD]
     assert "out_of_stock" not in p
     assert not p.get("inactive") and not p.get("waitlist_only")
     assert [s for s, q in _real().items()
-            if isinstance(q, dict) and "out_of_stock" in q] == ["night-vision"]
+            if isinstance(q, dict) and "out_of_stock" in q] == [
+                "seaamino-syntropy", "night-vision", "cds-water-purifier--activator"]
 
 
 def test_night_vision_is_out_of_stock_with_no_date(client):
@@ -242,3 +243,24 @@ def test_the_product_table_gives_no_price_for_it():
     assert "$" not in hint and "cannot be ordered now: Night Vision is out of stock." in hint
     assert app._product_guidance_hint("night-vision") == ""
     assert app._alias_price_hint("Scar Silk", "scar-silk").startswith(" — $")
+
+
+def test_seaamino_is_out_of_stock_with_no_date(client):
+    """Glen, 2026-10-25, formulation tab: "zero in stock", then "yes" to marking it out of
+    stock as with Night Vision. No restock date is known."""
+    assert _real()["seaamino-syntropy"]["out_of_stock"] is True
+    products = app._PRODUCTS["products"]
+    assert pp.is_orderable("seaamino-syntropy", products) is False
+    line = "SeaAmino Syntropy is out of stock."
+    assert pp.waitlist_refusal(pp.waitlist_block("seaamino-syntropy", products)) == line
+    d = client.get("/begin/product-page-data/seaamino-syntropy").get_json()
+    assert d["out_of_stock_line"] == line
+    assert d["price_cents"] is None and "cta_url" not in d
+
+
+def test_the_chat_is_told_seaamino_is_out_of_stock():
+    b = app._named_product_facts("Can I order SeaAmino Syntropy?")
+    assert "### SeaAmino Syntropy" in b
+    assert "Availability: SeaAmino Syntropy is out of stock." in b
+    assert "SeaAmino Syntropy cannot be ordered now." in b
+    assert "$" not in app._alias_price_hint("SeaAmino Syntropy", "seaamino-syntropy")

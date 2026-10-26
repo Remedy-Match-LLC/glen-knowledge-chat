@@ -3612,6 +3612,7 @@
   },
   "seaamino-syntropy": {
    "name": "SeaAmino Syntropy",
+   "out_of_stock": true,
    "price_cents": 7000,
    "bottle_type": "30 Caps",
    "pinecone_title": "SeaAmino Syntropy",
@@ -10819,6 +10820,7 @@
   },
   "cds-water-purifier--activator": {
    "name": "CDS Water Purifier & Activator",
+   "out_of_stock": true,
    "price_cents": 7000,
    "pinecone_title": "CDS Water Purifier &amp; Activator",
    "url": "https://myhealingoasis.com/begin/product/cds-water-purifier--activator",
@@ -10851,7 +10853,18 @@
     "CDS",
     "CDS Activator"
    ],
-   "report_aliases": true
+   "report_aliases": true,
+   "no_generated_copy": true,
+   "intro": "",
+   "description": "",
+   "benefits": [],
+   "how_it_works": "",
+   "copy_pinned": [
+    "intro",
+    "description",
+    "benefits",
+    "research"
+   ]
   },
   "phosphatides": {
    "name": "Phosphatides",
@@ -12048,7 +12061,7 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Dental Regen Powder . Dental Regen Powder Dental Regen Powder Vegan friendly Nano Crystalline Hydroxyapatite Calcium for topical remineralization of the teeth. Meta‑analyses of randomized trials in generally healthy postmenopausal women show calcium supplements (mostly carbonate and citrate, often without vitamin D) increase cardiovascular disease (CVD) risk by about 15% and coronary heart disease (CHD) risk by about 16%. Source: Calcium supplementation and cardiovascular risk: A rising concern In a British Journal of Nutrition randomized trial comparing 1,000 mg/day calcium as MCHA versus...",
+   "description": "Dental Regen Powder . Dental Regen Powder Dental Regen Powder Nano Crystalline Hydroxyapatite Calcium for topical remineralization of the teeth. Meta‑analyses of randomized trials in generally healthy postmenopausal women show calcium supplements (mostly carbonate and citrate, often without vitamin D) increase cardiovascular disease (CVD) risk by about 15% and coronary heart disease (CHD) risk by about 16%. Source: Calcium supplementation and cardiovascular risk: A rising concern In a British Journal of Nutrition randomized trial comparing 1,000 mg/day calcium as MCHA versus...",
    "gk_extra_accepted": true,
    "bottle_type": "30 g",
    "fmp_id": "449",
@@ -14733,6 +14746,7 @@
    "price_cents": 7000,
    "pinecone_title": "Focus Neuro-Magnesium Powder",
    "qty_pricing": true,
+   "legacy_store_url": "https://remedymatch.com/remedies/syntropy/80-neuromagnesium",
    "fmp_id": "431",
    "ingredients_source": "label-read-2026-09-28 (Neuro-Magnesium 0526.ai, (c) May 2026)",
    "no_groovekart": true,
