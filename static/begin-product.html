@@ -343,7 +343,7 @@
         </select>
         <textarea name="message" rows="3" placeholder="Your question (optional)" aria-label="Your question (optional)" style="width:100%;margin:0 0 0.5rem;padding:10px;border-radius:8px;border:1px solid var(--line,#ccc);font:inherit"></textarea>
         <label style="display:flex;gap:8px;align-items:flex-start;margin:0 0 0.8rem;"><input name="distributor" type="checkbox" style="margin-top:0.3rem"> <span>I would also like to hear about becoming a Centropix distributor.</span></label>
-        <input name="company" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
+        <input name="hp_extra" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
         <button type="submit" class="cta-btn">Send my enquiry</button>
         <p id="product-enquiry-msg" role="status" aria-live="polite" style="margin:0.6rem 0 0;font-weight:600;"></p>
       </form>
@@ -1705,11 +1705,11 @@
             body: JSON.stringify({name: name, email: email, phone: (f.phone.value || '').trim(),
                                   model: f.model.value, message: f.message.value || '',
                                   distributor: !!f.distributor.checked,
-                                  company: f.company.value || ''})});
+                                  hp_extra: f.hp_extra.value || ''})});
           if (r.ok) {
             Array.prototype.forEach.call(f.querySelectorAll('input,select,textarea,button,label'),
               function(el){ el.style.display = 'none'; });
-            msg.textContent = 'Thank you. We have emailed you how to order, and Dr. Glen will follow up with you.';
+            msg.textContent = 'Thank you, we have your enquiry. Dr. Glen will follow up with you.';
             return;
           }
           msg.textContent = r.status === 429 ? 'Please try again in a minute.' : 'That did not go through. Please check your name and email and try again.';

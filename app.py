@@ -2137,6 +2137,14 @@ def _alias_price_hint(name: str, slug: str = "") -> str:
     # with no flag, Night Vision was answered "Yes, ... available to order" (review round
     # 3 on #2139, 2026-10-25).
     refusal = _waitlist_refusal(resolved) if resolved else None
+    if refusal and (_waitlist_block(resolved) or {}).get("enquiry_only"):
+        # Enquiry only (Kloud, Glen 2026-10-25): bought on our Centropix store. The chat
+        # gives the ordering steps, never takes the order (review round 1).
+        from dashboard import kloud_enquiry as _ke
+        cents = p.get("price_cents")
+        price = f"${int(cents) / 100:,.0f} at our Centropix store, " if cents else ""
+        return (f" — {price}not sold on this site: give the ordering steps at "
+                f"{_ke.GUIDE_URL} or the enquiry form on its page.")
     if refusal:
         return f" — cannot be ordered now: {refusal} Give no price and no order step."
     cents = p.get("price_cents")
@@ -9901,7 +9909,7 @@ def _split_not_ready(items):
         b = _waitlist_block(slug)
         if b:
             nr = {"name": b["name"], "url": f"/begin/product/{b['slug']}"}
-            if b.get("out_of_stock"):   # its own line, not "not ready" (2026-10-16)
+            if b.get("out_of_stock") or b.get("enquiry_only"):   # its own line (2026-10-16)
                 nr["line"] = str(_waitlist_refusal(slug))
             not_ready.append(nr)
         else:
@@ -29442,7 +29450,8 @@ def api_client_portal(token):
                             "refill_eligible": False, "available": False,
                             "not_ready": {"url": f"/begin/product/{p.get('slug') or slug}",
                                           **({"line": str(_waitlist_refusal(slug))}
-                                             if _nr.get("out_of_stock") else {})}})
+                                             if (_nr.get("out_of_stock")
+                                                 or _nr.get("enquiry_only")) else {})}})
             continue
         display.append({
             "slug": slug, "qty": int(it.get("qty", 1) or 1),
@@ -44389,7 +44398,8 @@ def product_enquiry(slug):
     if not p.get("enquiry_only") or p.get("inactive"):
         return jsonify({"error": "not_found"}), 404
     body = request.get_json(silent=True) or {}
-    if (body.get("company") or "").strip():          # honeypot -> silently drop bots
+    # Honeypot -> silently drop bots. Not named "company", which autofill can fill.
+    if (body.get("hp_extra") or "").strip():
         return jsonify({"ok": True})
     email = (body.get("email") or "").strip().lower()
     if len(email) > 254 or not _WAITLIST_EMAIL.fullmatch(email):
@@ -44411,7 +44421,7 @@ def product_enquiry(slug):
               "distributor": body.get("distributor") is True,
               "message": _ke.clean_message(body.get("message")), "page_slug": slug}
     with _db_lock, db.connect(LOG_DB) as cx:
-        enquiry_id, send_reply = _ke.record(cx, **fields)
+        enquiry_id, held = _ke.record(cx, **fields)
         _seq.init_tables(cx)
         seq = _seq.get(cx, _ke.SEQUENCE_SLUG)
         follow_ups_on = bool(seq and seq.get("active"))
@@ -44420,19 +44430,21 @@ def product_enquiry(slug):
             cx.commit()
     cat = _PRODUCTS.get("products") or {}
     replied = False
-    if send_reply:
+    if not held:
         subject, text = _ke.reply_text(
-            first_name=name.split()[0], model=model, distributor=fields["distributor"],
+            first_name=_ke.greeting_name(name), model=model, distributor=fields["distributor"],
             mini_cents=(cat.get("kloud-pemf-mini") or {}).get("price_cents") or 0,
             maxi_cents=(cat.get("kloud-pemf-maxi") or {}).get("price_cents") or 0)
         try:
-            _inbox.send_email(email, subject, text)
-            replied = True
+            # A suppressed or undeliverable address returns {"skipped": ...}, not an
+            # error; only a message id counts as sent (review round 1).
+            replied = bool((_inbox.send_email(email, subject, text) or {}).get("id"))
         except Exception as e:  # noqa: BLE001 - the enquiry stands; Glen is told below
             print(f"[enquiry] ordering email failed: {type(e).__name__}", flush=True)
+        if not replied:
             with _db_lock, db.connect(LOG_DB) as cx:
                 _ke.unmark_reply(cx, enquiry_id)
-    status = "recent" if not send_reply else ("sent" if replied else "failed")
+    status = held or ("sent" if replied else "failed")
     subject, text = _ke.notice_text(enquiry_id=enquiry_id, reply_status=status,
                                     follow_ups_on=follow_ups_on, **fields)
     for to in _ke.NOTIFY:

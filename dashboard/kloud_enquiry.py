@@ -12,6 +12,7 @@ follow-ups on days 3 and 10 are the `kloud-enquiry` sequence, authored in the va
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 GUIDE_URL = "https://illtowell.com/kloud"
@@ -28,6 +29,18 @@ MODELS = {"mini": "Kloud Mini", "maxi": "Kloud Maxi", "unsure": "Kloud"}
 SLUG_MODELS = {"kloud-pemf-mini": "mini", "kloud-pemf-maxi": "maxi"}
 
 MAX_NAME, MAX_PHONE, MAX_MESSAGE = 120, 40, 2000
+# Ordering emails sent to any address in one day. The form takes any address, so this
+# caps what a script could send from Glen's mailbox (review round 1). Past it the
+# enquiry is still kept and Glen and Rae are still told.
+DAILY_REPLY_CAP = 40
+_GREETING_NAME = re.compile(r"[^\W\d_][^\W\d_'’-]*(?:['’-][^\W\d_]+)*")
+
+
+def greeting_name(name):
+    """The first word of the name when it is a plain name of 30 letters or fewer, else "".
+    A typed web address or sentence must never be echoed in the greeting."""
+    first = (name or "").split()[0] if (name or "").split() else ""
+    return first if len(first) <= 30 and _GREETING_NAME.fullmatch(first) else ""
 
 
 def init_table(cx):
@@ -64,14 +77,18 @@ def clean_message(value):
 
 def record(cx, *, email, name="", phone="", model="unsure", distributor=False,
            message="", page_slug="", now=None):
-    """Keep one enquiry. Returns (id, send_reply): send_reply is False when this address
-    was already sent the ordering email within REPLY_WINDOW."""
+    """Keep one enquiry. Returns (id, held): held is None when the ordering email should
+    go, "recent" when this address was sent it within REPLY_WINDOW, and "capped" when
+    DAILY_REPLY_CAP ordering emails went out in that window."""
     init_table(cx)
     now = now or datetime.now(timezone.utc)
     since = (now - REPLY_WINDOW).isoformat()
     recent = cx.execute("SELECT 1 FROM kloud_enquiries WHERE email=? AND replied=1 "
                         "AND created_at>=? LIMIT 1", (email, since)).fetchone()
-    send_reply = recent is None
+    today = cx.execute("SELECT COUNT(*) FROM kloud_enquiries WHERE replied=1 "
+                       "AND created_at>=?", (since,)).fetchone()[0]
+    held = "recent" if recent else ("capped" if today >= DAILY_REPLY_CAP else None)
+    send_reply = held is None
     cur = cx.execute(
         "INSERT INTO kloud_enquiries(email,name,phone,model,distributor,message,page_slug,"
         "replied,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -79,7 +96,7 @@ def record(cx, *, email, name="", phone="", model="unsure", distributor=False,
          1 if distributor else 0, message, page_slug, 1 if send_reply else 0,
          now.isoformat()))
     cx.commit()
-    return cur.lastrowid, send_reply
+    return cur.lastrowid, held
 
 
 def unmark_reply(cx, enquiry_id):
@@ -127,7 +144,8 @@ def reply_text(*, first_name, model, distributor, mini_cents, maxi_cents):
 
 REPLY_LINES = {
     "sent": "They were emailed the ordering steps.",
-    "failed": "The ordering email to them failed. Please write to them.",
+    "failed": "The ordering email to them was not sent. Please write to them.",
+    "capped": "They were not emailed: today's limit on ordering emails was reached. Please write to them.",
     "recent": "They were not emailed again: they were sent the ordering steps in the last day.",
 }
 

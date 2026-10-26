@@ -174,7 +174,7 @@ def test_the_page_shows_the_form_and_points_every_buy_link_at_it():
     assert "fetch('/api/enquiry/' + encodeURIComponent(slug)" in PAGE
     i = PAGE.index('<form id="product-enquiry"')
     form = PAGE[i:PAGE.index("</form>", i)]
-    for field in ("name", "email", "phone", "model", "message", "distributor", "company"):
+    for field in ("name", "email", "phone", "model", "message", "distributor", "hp_extra"):
         assert f'name="{field}"' in form
     assert "—" not in form
 
@@ -185,7 +185,8 @@ def test_the_page_shows_the_form_and_points_every_buy_link_at_it():
 def sent(monkeypatch, logdb):
     out = []
     monkeypatch.setattr(app._inbox, "send_email",
-                        lambda to, subject, body, **k: out.append((to, subject, body)))
+                        lambda to, subject, body, **k: out.append((to, subject, body))
+                        or {"id": "m1"})
     app._kloud_enquiry_velocity = app.VelocityLimiter()
     return out
 
@@ -255,10 +256,12 @@ def test_a_failed_ordering_email_is_reported_and_can_be_sent_later(client, logdb
         if to == "pat@example.com":
             raise RuntimeError("gmail down")
         out.append((to, body))
+        return {"id": "m1"}
     monkeypatch.setattr(app._inbox, "send_email", send)
     app._kloud_enquiry_velocity = app.VelocityLimiter()
     assert _post(client).status_code == 200
-    assert all("The ordering email to them failed." in b for _t, b in out) and len(out) == 2
+    assert all("The ordering email to them was not sent." in b for _t, b in out)
+    assert len(out) == 2
     assert _rows(logdb)[0]["replied"] == 0
 
 
@@ -289,7 +292,7 @@ def test_a_bad_enquiry_is_refused_and_sends_nothing(client, sent, logdb, kw, cod
 
 
 def test_a_bot_is_dropped_quietly(client, sent, logdb):
-    assert _post(client, company="Acme").status_code == 200
+    assert _post(client, hp_extra="Acme").status_code == 200
     assert sent == [] and _rows(logdb) == []
 
 
@@ -316,3 +319,92 @@ def test_the_emails_have_no_dashes_or_capitals():
                               model="unsure", distributor=False, message="", page_slug=MINI,
                               reply_status="failed", follow_ups_on=False)
     assert "—" not in body and "FAILED" not in body and "Not sure yet" in body
+
+
+# ── Review round 1 ────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("slug", KLOUD)
+def test_the_chat_gives_the_ordering_steps_not_a_refusal(slug):
+    hint = app._alias_price_hint(_real()[slug]["name"], slug)
+    assert KE.GUIDE_URL in hint and "Centropix" in hint
+    assert "cannot be ordered" not in hint and "no order step" not in hint
+
+
+def test_the_chat_still_refuses_an_out_of_stock_product(catalog, monkeypatch):
+    monkeypatch.setitem(catalog, CONTROL, dict(catalog[CONTROL], out_of_stock="Soon."))
+    assert "cannot be ordered now" in app._alias_price_hint("Scar Silk", CONTROL)
+
+
+@pytest.mark.parametrize("name,first", [
+    ("Pat Example", "Pat"), ("José", "José"), ("Mary-Kay O'Neil", "Mary-Kay"),
+    ("www.scam.example/claim", ""), ("http://x.y", ""), ("Pat123", ""),
+    ("A" * 31, ""), ("", "")])
+def test_the_greeting_echoes_only_a_plain_first_name(name, first):
+    assert KE.greeting_name(name) == first
+
+
+def test_a_web_address_as_a_name_is_not_echoed(client, sent):
+    _post(client, name="www.scam.example/claim now")
+    assert sent[0][2].startswith("Aloha,\n")
+    assert "scam" not in sent[0][2]
+
+
+def test_a_daily_cap_stops_ordering_emails_but_still_tells_staff(client, sent, logdb,
+                                                                  monkeypatch):
+    monkeypatch.setattr(KE, "DAILY_REPLY_CAP", 2)
+    monkeypatch.setattr(app, "_kloud_enquiry_velocity", app.VelocityLimiter())
+    _post(client, email="a1@example.com")
+    _post(client, email="a2@example.com")
+    sent.clear()
+    monkeypatch.setattr(app, "_kloud_enquiry_velocity", app.VelocityLimiter())
+    _post(client, email="a3@example.com")
+    assert [t for t, _s, _b in sent] == list(KE.NOTIFY)
+    assert "today's limit on ordering emails was reached" in sent[0][2]
+
+
+def test_a_skipped_send_is_not_reported_as_sent(client, logdb, monkeypatch):
+    out = []
+    monkeypatch.setattr(app._inbox, "send_email", lambda to, s, b, **k: (
+        out.append((to, b)) or ({"skipped": "suppressed"} if to == "pat@example.com"
+                                else {"id": "m1"})))
+    monkeypatch.setattr(app, "_kloud_enquiry_velocity", app.VelocityLimiter())
+    _post(client)
+    assert "was not sent" in out[1][1] and _rows(logdb)[0]["replied"] == 0
+
+
+@pytest.mark.parametrize("slug", KLOUD)
+def test_a_recommendation_list_shows_the_centropix_line_not_not_ready(slug):
+    _keep, nr = app._split_not_ready([{"slug": slug, "qty": 1}])
+    assert nr == [{"name": _real()[slug]["name"], "url": f"/begin/product/{slug}",
+                   "line": _line(slug)}]
+
+
+@pytest.mark.parametrize("kw", [{"email": "a" * 250 + "@x.co"}])
+def test_an_overlong_email_is_refused(client, sent, kw):
+    assert _post(client, **kw).status_code == 400 and sent == []
+
+
+def test_an_inactive_mat_takes_no_enquiry(client, sent, catalog, monkeypatch):
+    monkeypatch.setitem(catalog, MINI, dict(catalog[MINI], inactive=True))
+    assert _post(client).status_code == 404 and sent == []
+
+
+def test_an_unknown_model_falls_back_to_the_page_model(client, sent, logdb):
+    _post(client, slug=MAXI, model="<script>")
+    assert _rows(logdb)[0]["model"] == "maxi"
+
+
+def test_only_a_true_distributor_tick_counts(client, sent, logdb):
+    _post(client, distributor="yes")
+    assert _rows(logdb)[0]["distributor"] == 0
+
+
+def test_the_message_is_capped_and_stripped(client, sent, logdb):
+    _post(client, message="hi\x00there" + "x" * 3000)
+    m = _rows(logdb)[0]["message"]
+    assert len(m) == KE.MAX_MESSAGE and "\x00" not in m
+
+
+def test_the_name_is_cleaned_in_the_route(client, sent, logdb):
+    _post(client, name="Pat\r\nBcc: x@y.com")
+    assert _rows(logdb)[0]["name"] == "Pat Bcc: x@y.com"
