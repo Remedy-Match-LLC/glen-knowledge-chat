@@ -2271,6 +2271,10 @@ _CUE_NAMES = frozenset({
     # 2026-10-24-stress-release-caution). Glen accepted the lowercase false positives the
     # spec lists, such as "is tapping for stress release safe?" (production tab, "yes").
     "stress-release",
+    # "what is in neuro magnesium?" got Focus Neuro-Magnesium Powder's panel from the
+    # snippets (knowledge read-back, 2026-10-25). A cue keeps "neuro magnesium forms
+    # like threonate" an ordinary phrase.
+    "neuro-magnesium",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
@@ -2290,6 +2294,10 @@ _SENTENCE_START_CUE_NAMES = frozenset({"clarity"})
 # Vitality: "Vitreous Vitality" and "Vitality Boost Essence in Terrain Restore" are other
 # products (review of the twelve cautions, round 1, 2026-10-25).
 _YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality"})
+# A name that another product's name holds after a word the catalog spells with a hyphen,
+# so _YIELDS_TO_LONGER_NAMES cannot see it: "Focus Neuro-Magnesium Powder" holds "Neuro
+# Magnesium" only when typed with a space.
+_YIELDS_TO_PREFIX = {"neuro-magnesium": "focus"}
 # Closing quotes and brackets may sit between the full stop and the name: 'She said "I
 # feel tired." Clarity of mind ...' (review round 2), as may opening ones. A colon or
 # semicolon does not end a sentence: "Products I take: Clarity, ..." (review round 3).
@@ -2461,6 +2469,16 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                         slug in _CUE_NAMES and _has_product_cue(query_text, *mi.span()))):
                     m = mi
                     break
+        if m and slug in _YIELDS_TO_PREFIX:
+            word = _YIELDS_TO_PREFIX[slug]
+            # "Focus Neuro Magnesium Powder" is the stocked jar, not the presale, and a
+            # lowercase name in a question naming "Focus" may mean it too (review round 1,
+            # 2026-10-25). Only a capitalised Focus names the jar: "does neuro magnesium
+            # help focus?" keeps its block (review round 3).
+            if (re.search(rf"\b{word}[\s-]*$", query_text[:m.start()], re.IGNORECASE)
+                    or (query_text[m.start():m.end()] != name
+                        and re.search(rf"\b{word.capitalize()}\b", query_text))):
+                m = None
         if m:
             spans[slug] = m.span()
     # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."
@@ -2657,6 +2675,45 @@ def _bundle_bot_cautions(bundle, products):
             if products[c].get("chat_caution") and (products[c].get("warning") or "").strip()]
 
 
+def _founding_availability(slug, name):
+    """What the chat may say about ordering a founding-presale product, or "".
+
+    Neuro Magnesium is Founding Batch No. 1: reserved on its page and charged when it
+    ships. Its block carried directions and a page link, and nothing stopped the bot
+    calling it in stock (review round 1, 2026-10-25). Read the way the page's counter
+    reads it (begin_founding_status). A failed read says it cannot be ordered, the
+    safe side."""
+    from dashboard import founding as _fd
+    launch = _fd.get_launch(slug)
+    if not launch:
+        return ""
+    # One read a minute, the page counter's own poll: one message built this block and
+    # its caution helpers seven times, each a COUNT on a pooled connection (round 3).
+    hit = _FOUNDING_AVAILABILITY_CACHE.get(slug)
+    if hit and time.monotonic() - hit[0] < 60:
+        return hit[1].format(name=name)
+    batch = (launch.get("batch_label") or "the founding batch").strip()
+    try:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            is_open = _founding_enabled() and _fd.is_open(
+                cx, slug, now_iso=_now_utc().strftime("%Y-%m-%d"))
+    except Exception:  # noqa: BLE001
+        is_open = False
+    # A closed presale names no waiting list: with the founding flag off the list is
+    # shut too (_waitlist_open, review round 3).
+    text = ("{name} is not made yet. It can be reserved on its page as "
+            + batch.replace("{", "{{").replace("}", "}}")
+            + ", and the card is charged when it ships. Never say it is in stock or ready "
+            "to ship." if is_open else
+            "{name} cannot be ordered now. Never say it is available to order or in stock.")
+    _FOUNDING_AVAILABILITY_CACHE[slug] = (time.monotonic(), text)
+    return text.format(name=name)
+
+
+_FOUNDING_AVAILABILITY_CACHE = {}
+
+
 def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                          no_caution_out=None, link_cautions=(), long_form=False,
                          caution_out=None) -> str:
@@ -2816,6 +2873,10 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             if not pinned:
                 parts.append("No dose or ingredient text is approved for it yet. Give none, "
                              "and do not take one from the snippets.")
+        else:
+            founding = _founding_availability(slug, name)
+            if founding:
+                parts.append(f"Availability: {founding}")
         if len(parts) > 2:
             if not desc and product.get("copy_pinned") and not product.get("bundle"):
                 # The header says to describe it only by this text, which holds no

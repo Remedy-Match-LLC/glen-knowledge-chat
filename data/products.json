@@ -13923,11 +13923,19 @@
     },
     {
      "name": "Vitamin D3 (Cholecalciferol)",
-     "dose": "750 IU"
+     "dose": "650 IU"
     }
    ],
-   "ingredients_source": "vault-locked-panel-2026-05-31 (HydroCurc switch 2026-06-25); doses per daily dose (2 scoops)",
-   "qty_pricing": true
+   "ingredients_source": "vault-locked-panel-2026-05-31 (HydroCurc switch 2026-06-25); doses per daily dose (2 scoops); D3 650 IU from FileMaker 1196 (Glen, 2026-10-25)",
+   "qty_pricing": true,
+   "directions": "2 scoops a day in water, or as guided.",
+   "warning": "Consult your health professional before use if you are pregnant or breastfeeding, take lithium or other prescription medications, or have kidney or thyroid disease.",
+   "chat_caution": true,
+   "copy_pinned": [
+    "directions",
+    "ingredients"
+   ],
+   "content_since": "2026-10-26T05:44:00+00:00"
   },
   "digestzymes-homeoenergetic-drops": {
    "name": "Digestzymes HomeoEnergetic Drops",

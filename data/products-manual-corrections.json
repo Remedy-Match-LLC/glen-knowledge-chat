@@ -3552,5 +3552,59 @@
     "directions": "Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 2 level scoops a day in divided doses. Do not exceed 2 level scoops a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 2-scoop limit.",
     "warning": "Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment. Keep out of reach of children.",
     "bottle_type": "30 g"
+  },
+  "neuro-magnesium": {
+    "ingredients": [
+      {
+        "name": "Magnesium N-Acetyl-Taurate (ATA Mg)",
+        "dose": "770 mg"
+      },
+      {
+        "name": "L-Theanine",
+        "dose": "100 mg"
+      },
+      {
+        "name": "HydroCurc (cold-water-dispersible curcumin)",
+        "dose": "49.8 mg"
+      },
+      {
+        "name": "Apigenin",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Mogroside V 50%",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Lithium Orotate",
+        "dose": "18 mg"
+      },
+      {
+        "name": "Vitamin B6 (Pyridoxal-5-Phosphate)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Methylcobalamin (Vitamin B12)",
+        "dose": "500 mcg"
+      },
+      {
+        "name": "L-Methylfolate",
+        "dose": "400 mcg"
+      },
+      {
+        "name": "Vitamin D3 (Cholecalciferol)",
+        "dose": "650 IU"
+      }
+    ],
+    "ingredients_source": "vault-locked-panel-2026-05-31 (HydroCurc switch 2026-06-25); doses per daily dose (2 scoops); D3 650 IU from FileMaker 1196 (Glen, 2026-10-25)",
+    "directions": "2 scoops a day in water, or as guided.",
+    "warning": "Consult your health professional before use if you are pregnant or breastfeeding, take lithium or other prescription medications, or have kidney or thyroid disease.",
+    "chat_caution": true,
+    "copy_pinned": [
+      "directions",
+      "ingredients"
+    ],
+    "content_since": "2026-10-26T05:44:00+00:00",
+    "note": "Glen, 2026-10-25, platform tab: \"yes\" to the directions, caution and store panel for Neuro Magnesium (FileMaker 1196, the Retina Renew presale), then \"650\" for D3. FileMaker holds 0.65 mg a scoop of 500,000 IU/g material: 325 IU a scoop, 650 IU a day. Directions and caution were approved in the formulation tab the same day."
   }
 }
