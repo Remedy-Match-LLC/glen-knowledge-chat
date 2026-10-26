@@ -24,7 +24,7 @@ DOSES = {
     "breast-support": "1 capsule up to 6 times a day with food, or as guided.",
 }
 OLD = ("1 to 4 capsules", "1 to 3 capsules", "1 to 3 times", "one month", "Phase 1 terrain",
-       "1667 IU", "Pueraria mirifica")
+       "1667 IU", "Pueraria mirifica", "up to 10", "before every meal", "starts low")
 QUESTIONS = {
     "vitamin-c-syntropy": ("How many Vitamin C Syntropy capsules a day?", "Vitamin C Syntropy"),
     "vitamin-a-syntropy": ("how much vitamin a syntropy should I take?", "Vitamin A Syntropy"),
@@ -136,12 +136,18 @@ def test_the_corrections_replay_restores_the_approved_record(slug):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
     ae = importlib.import_module("apply_enrichment")
     approved = _products()[slug]
+    # What a re-import writes back: the old dose in every text field.
     rec = dict(approved, directions="1 to 4 capsules daily or as guided.", copy_pinned=[],
                ingredients=[{"name": "Crocin", "dose": "48 mg"}])
+    texts = [k for k in ("description", "intro", "learn_markdown") if approved.get(k)
+             and slug in DOSES and slug != "breast-support"]
+    for k in texts:
+        rec[k] = "Take 1 to 4 capsules daily or as guided."
     rec.pop("content_since", None)
     p = {slug: rec}
     ae.apply_corrections(p, {slug: _corr()[slug]})
-    keys = ["ingredients"] + (["directions", "copy_pinned"] if slug in DOSES else [])
+    ae.apply_corrections(p, {slug: _corr()[slug]})
+    keys = ["ingredients"] + (["directions", "copy_pinned"] if slug in DOSES else []) + texts
     keys += ["content_since"] if "content_since" in approved else []
     for k in keys:
         assert p[slug][k] == approved[k], k
