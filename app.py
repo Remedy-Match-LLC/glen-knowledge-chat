@@ -2623,7 +2623,8 @@ _CAUTION_LINK_LINE = (
     "that this caution applies and that they should read it in full before taking {name}. "
     "{where} This replaces any rule here to repeat or copy its caution. On what the user "
     "asks about, add nothing of your own: no time to stop, pause or restart, no dose "
-    "change, no permission to use it, no monitoring and no one else to ask. Never say "
+    "change, no permission to use it, no monitoring and no one else to ask, except that "
+    "an amount beyond its directions still goes to Dr. Glen. Never say "
     "{name} is safe, and never answer yes or no to whether it is safe. Its approved "
     "directions still stand: give them when asked. " + _CAUTION_NO_ARGUMENT)
 # Live read-back, 2026-10-26: "Is Vitreous Vitality safe?" got "Yes, Vitreous Vitality is
