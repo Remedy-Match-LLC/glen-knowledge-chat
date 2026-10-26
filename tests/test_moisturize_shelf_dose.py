@@ -9,6 +9,8 @@ for the May bottles. The next batch is 1.75 mg (5,000 IU): this file changes whe
 import json
 import os
 
+import pytest
+
 import app
 
 SLUG = "moisturize"
@@ -45,12 +47,38 @@ def test_the_page_data_shows_one_a_day_and_the_shelf_vitamin_a():
     assert "3 times" not in s and "5000 IU" not in s
 
 
-def test_the_chat_brings_no_moisturize_block():
-    """Moisturize is an everyday word, so no facts block is built and the chat's dose comes
-    from Pinecone alone. This test does not check what the chat says: the Pinecone records
-    belong to the knowledge pillar. It pins the routing, so a future block cannot appear
-    unreviewed."""
-    assert app._named_product_facts("How many Moisturize capsules should I take?") == ""
+@pytest.mark.parametrize("q", [
+    "How many Moisturize capsules a day?",
+    "How much vitamin A is in Moisturize?",
+    "Can I take 2 Moisturize a day?",
+    "Moisturize dose?",
+])
+def test_the_chat_gets_one_a_day_and_the_shelf_vitamin_a(q):
+    """With no block the bot found no dose, and live it added a second capsule, about
+    18,800 IU of vitamin A (log 2370, 2026-10-26)."""
+    b = app._named_product_facts(q)
+    assert "### Moisturize\n" in b
+    assert f"Directions: {DIRECTIONS}" in b
+    assert "- Vitamin A (Retinyl Acetate): 9400 IU (2820 mcg RAE)" in b
+    assert "The Directions above are the only dose for Moisturize." in b
+    assert "never give it, even when the user asks about taking more" in b
+    assert "5000 IU" not in b
+
+
+@pytest.mark.parametrize("q", [
+    "Moisturize my skin. What helps?",
+    "how do I moisturize dry skin?",
+    "What helps me moisturize my eyes?",
+])
+def test_the_everyday_word_brings_no_block(q):
+    assert "### Moisturize\n" not in app._named_product_facts(q) + "\n"
+
+
+def test_the_directions_are_pinned_for_the_chat():
+    p = _record()
+    assert "directions" in p["copy_pinned"]
+    corr = json.load(open(os.path.join(DATA, "products-manual-corrections.json")))[SLUG]
+    assert corr["copy_pinned"] == p["copy_pinned"]
 
 
 def test_the_corrections_replay_keeps_the_shelf_record():
@@ -72,7 +100,8 @@ def test_the_corrections_replay_keeps_the_shelf_record():
     assert "5000 IU" in rec["learn_markdown"]
     rec["directions"] = "1 capsule up to 3 times daily with food or as guided."
     rec.pop("content_since", None)
+    rec["copy_pinned"] = [k for k in approved["copy_pinned"] if k != "directions"]
     p = {SLUG: rec}
     ae.apply_corrections(p, {SLUG: corr[SLUG]})
-    for k in TEXT_FIELDS + ("ingredients", "content_since"):
+    for k in TEXT_FIELDS + ("ingredients", "content_since", "copy_pinned"):
         assert p[SLUG][k] == approved[k], k

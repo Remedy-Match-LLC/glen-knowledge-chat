@@ -2227,7 +2227,10 @@ _GATED_FACTS_NOTE = (
     "next step for their condition.\n")
 _NAMED_FACTS_MAX_CHARS = 1600
 # Pinned products whose name is an everyday word, so a sentence can start with it.
-_COMMON_WORD_NAMES = frozenset({"moisturize"})
+# Moisturize moved to _SENTENCE_START_CUE_NAMES: with no block the bot found no dose, and
+# live it told a client to scale up to 2 a day, about 18,800 IU of vitamin A (log 2370,
+# 2026-10-26).
+_COMMON_WORD_NAMES = frozenset()
 # A facts block tells the model the product exists and to give its dose, which would
 # recommend a product Glen ruled must never be recommended.
 from dashboard.related_products import DO_NOT_RECOMMEND as _DO_NOT_RECOMMEND_FACTS  # noqa: E402
@@ -2284,7 +2287,9 @@ _ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 # sentence ("Clarity of mind is what I lack"). Capitalised mid-sentence it names the product
 # ("Tell me about Clarity"); at the start of a sentence it needs a product cue ("Clarity
 # dose?"). Lowercase never counts. Review of the Clarity pin, 2026-10-23.
-_SENTENCE_START_CUE_NAMES = frozenset({"clarity"})
+# Moisturize the same way: "How many Moisturize capsules a day?" names it, and "Moisturize
+# my skin. What helps?" and "how do I moisturize dry skin?" do not (2026-10-26).
+_SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"})
 # Pinned products that yield to any longer catalog name containing theirs, pinned or not:
 # "Crystalline Clarity" and the Clarity flower essences are other products. Opt-in, because
 # many pinned label names sit inside a longer unpinned FileMaker row ("Energessence
@@ -2605,7 +2610,11 @@ _WITHDRAWN_DOSE_EXAMPLE["b17-syntropy"] = ", such as up to 10 capsules a day"
 # Pinned directions with no chat_caution still get the dose rule here: B17 Syntropy's
 # warning must reach the answer in full, so it is written, never linked (review round 2,
 # 2026-10-25).
-_DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy"})
+_DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy", "moisturize"})
+# Moisturize's shelf batch holds about 9,400 IU of vitamin A a capsule. Its store copy said
+# up to 3 a day, and live the bot added a second capsule (log 2370, 2026-10-26).
+_WITHDRAWN_DOSE_EXAMPLE["moisturize"] = (", such as up to 3 capsules a day, or a second "
+                                         "capsule for very dry skin or eyes")
 # A caution that names Poison Control is the whole answer to a symptom it lists. The
 # B17 store copy said to lower the dose if lightheaded, an early sign of cyanide
 # toxicity (formulation, 2026-10-25), and that copy may still be in the snippets.
@@ -2808,12 +2817,15 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         # Directions only from a product whose copy Glen pinned. Eleven unpinned products
         # carry directions that are not approved for the bot.
         val = (product.get("directions") or "").strip() if pinned else ""
-        if val and val not in desc:
+        # A product under the dose rule always gets its Directions line, which the rule
+        # names, even when its description holds the same words (Moisturize, 2026-10-26).
+        _dirs_line = bool(val and (val not in desc or slug in _DOSE_RULE_WITHOUT_CAUTION))
+        if _dirs_line:
             parts.append(f"Directions: {val}")
         bundle_cautions = bool(product.get("bundle") and _bundle_bot_cautions(product, products))
         copy_block = pinned and bool(product.get("chat_caution") or bundle_cautions)
         if ((copy_block or (pinned and slug in _DOSE_RULE_WITHOUT_CAUTION))
-                and ((val and val not in desc and "directions" in _pinned_copy(product))
+                and ((_dirs_line and "directions" in _pinned_copy(product))
                      or (product.get("bundle") and intro and "intro" in _pinned_copy(product)
                          and not val))):
             _dose_rule = _PINNED_DOSE_RULE.format(
