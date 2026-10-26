@@ -2278,6 +2278,10 @@ _CUE_NAMES = frozenset({
     # snippets (knowledge read-back, 2026-10-25). A cue keeps "neuro magnesium forms
     # like threonate" an ordinary phrase.
     "neuro-magnesium",
+    # "how many moisturize capsules a day?" in lowercase still needs the dose: one capsule
+    # is near the vitamin A upper limit (review round 2, 2026-10-26). "how do I moisturize
+    # dry skin?" has no cue.
+    "moisturize",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
@@ -2319,6 +2323,9 @@ _PRODUCT_CUE_AFTER = re.compile(
     re.IGNORECASE)
 # What may follow a lowercase name: the end of a clause or a word that cannot extend the
 # name into a longer noun phrase ("reverse age discrimination").
+_SENTENCE_START_NAME_OK = re.compile(
+    r"^(?:['\u2019]s\b|\s*(?:supplements?|products?|formula|vegicaps?)\b|[\s?.!]*$)",
+    re.IGNORECASE)
 _AFTER_NAME_OK = re.compile(
     r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
     r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
@@ -2421,7 +2428,7 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
     or consolidated product, and the block tells the model the name is real. The whole
     name must stand as words, cased as in the catalog: "clear the way for my lymph" and
     "reverse age naturally" are not product names (review round 3). A product whose name
-    is an everyday word (Moisturize) never qualifies, and neither does one Glen has
+    is an everyday word in _COMMON_WORD_NAMES never qualifies, and neither does one Glen has
     ruled must never be recommended. Only products with
     `copy_pinned` qualify: their store text is Glen-approved, and older descriptions
     carry claims and price lines (review round 1, 2026-10-09).
@@ -2465,6 +2472,17 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             m = next((mi for mi in re.finditer(pattern, query_text)
                       if _own(mi) and (not _SENTENCE_START.search(query_text[:mi.start()])
                                        or _has_product_cue(query_text, *mi.span()))), None)
+            # For those also in _CUE_NAMES (Moisturize): a sentence-start name followed by
+            # "'s", a product word or nothing at all ("Moisturize's dose?", "Moisturize
+            # supplement?", "Moisturize?"), and lowercase beside a cue (review round 1,
+            # 2026-10-26).
+            if not m and slug in _CUE_NAMES:
+                m = next((mi for mi in re.finditer(pattern, query_text)
+                          if _own(mi) and _SENTENCE_START_NAME_OK.match(query_text[mi.end():])),
+                         None)
+            if not m and slug in _CUE_NAMES:
+                m = next((mi for mi in re.finditer(pattern, query_text, re.IGNORECASE)
+                          if _own(mi) and _has_product_cue(query_text, *mi.span())), None)
         elif not m:
             # Any case: a coined name cannot occur in ordinary speech. A name that is also
             # an everyday phrase ("clear the way", "reverse age") needs a product cue
@@ -2817,8 +2835,9 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         # Directions only from a product whose copy Glen pinned. Eleven unpinned products
         # carry directions that are not approved for the bot.
         val = (product.get("directions") or "").strip() if pinned else ""
-        # A product under the dose rule always gets its Directions line, which the rule
-        # names, even when its description holds the same words (Moisturize, 2026-10-26).
+        # A product in _DOSE_RULE_WITHOUT_CAUTION always gets its Directions line, which the
+        # rule names, even when its description holds the same words (Moisturize,
+        # 2026-10-26). Other products keep the line only when the description lacks it.
         _dirs_line = bool(val and (val not in desc or slug in _DOSE_RULE_WITHOUT_CAUTION))
         if _dirs_line:
             parts.append(f"Directions: {val}")

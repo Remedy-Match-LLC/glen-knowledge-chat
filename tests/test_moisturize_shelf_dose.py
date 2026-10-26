@@ -52,6 +52,14 @@ def test_the_page_data_shows_one_a_day_and_the_shelf_vitamin_a():
     "How much vitamin A is in Moisturize?",
     "Can I take 2 Moisturize a day?",
     "Moisturize dose?",
+    # Lowercase beside a product cue (review round 2, 2026-10-26).
+    "moisturize dose?",
+    "how many moisturize capsules can I take?",
+    "is moisturize safe?",
+    # A sentence-start name with "'s", a product word or alone (review round 1).
+    "Moisturize's dose?",
+    "Moisturize supplement?",
+    "Moisturize?",
 ])
 def test_the_chat_gets_one_a_day_and_the_shelf_vitamin_a(q):
     """With no block the bot found no dose, and live it added a second capsule, about
@@ -69,6 +77,9 @@ def test_the_chat_gets_one_a_day_and_the_shelf_vitamin_a(q):
     "Moisturize my skin. What helps?",
     "how do I moisturize dry skin?",
     "What helps me moisturize my eyes?",
+    "how much water should I drink to moisturize my skin?",
+    "what oils moisturize skin best?",
+    "How do I moisturize my eyes? Is it safe?",
 ])
 def test_the_everyday_word_brings_no_block(q):
     assert "### Moisturize\n" not in app._named_product_facts(q) + "\n"
