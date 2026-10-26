@@ -71,6 +71,9 @@ def test_mapping_marks_a_retired_record_with_no_successor_as_unmapped():
 def test_the_real_catalog_named_cases():
     m = lsl.build_map(_repo_catalog())
     assert m["85"] == "/begin/product/nous-energy"
+    # Old page 80 sold the stocked Focus jar, not the neuro-magnesium presale (Glen,
+    # 2026-09-28: "Both listings stay"). Knowledge matched page 80's panel to FMP 431.
+    assert m["80"] == "/begin/product/focus-neuro-magnesium-powder"
     assert m["378"] is None          # molecular-hydrogen-tablets, retired
     assert m["542"] is None          # electrolyte-mineral-manna, do not recommend
     assert sum(1 for v in m.values() if v) >= 290
@@ -239,7 +242,10 @@ def test_the_real_catalog_slug_fallback_and_near_misses():
     out = lsl.rewrite_text("https://remedymatch.com/remedies/syntropy/73-microbiome "
                            "http://remedymatch.com/remedies/syntropy/250-free-easy "
                            "https://remedymatch.com/remedies/80-neuromagnesium", BASE, products=cat)
-    assert out.split(" ") == [f"{BASE}/begin/product/microbiome", ENTRY, ENTRY]
+    # Page 80 joins by id since Focus carries it (2026-10-25), so its near-miss slug
+    # "neuromagnesium" no longer decides where it goes.
+    assert out.split(" ") == [f"{BASE}/begin/product/microbiome", ENTRY,
+                              f"{BASE}/begin/product/focus-neuro-magnesium-powder"]
 
 
 # ── the URL classifier the match card uses ───────────────────────────────────
