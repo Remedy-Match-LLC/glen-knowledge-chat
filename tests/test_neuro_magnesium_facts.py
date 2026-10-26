@@ -33,7 +33,7 @@ PANEL = [
     {"name": "Vitamin D3 (Cholecalciferol)", "dose": "650 IU"},
 ]
 # Focus Neuro-Magnesium Powder's panel lines, which the chat gave for this product.
-FOCUS_ONLY = ("Threonate", "Zinc", "23.1 mg", "375 IU", "Lithium Orotate: 9 mg")
+FOCUS_ONLY = ("Threonate", "Zinc", "23.1 mg", "325 IU", "Lithium Orotate: 9 mg")
 DATA = os.path.join(os.path.dirname(__file__), "..", "data")
 CLOSED = ("Availability: Neuro Magnesium cannot be ordered now. Never say it is available "
           "to order or in stock.")

@@ -30,7 +30,7 @@ QUESTIONS = {
     "vitamin-a-syntropy": ("how much vitamin a syntropy should I take?", "Vitamin A Syntropy"),
     "apoptogenesis": ("apoptogenesis dose?", "Apoptogenesis"),
     "appestat": ("How do I take Appestat?", "Appestat"),
-    "breast-support": ("how many breast support capsules a day?", "Breast Support"),
+    "breast-support": ("How many Breast Support capsules a day?", "Breast Support"),
 }
 
 
@@ -99,12 +99,28 @@ def test_breast_support_as_a_phrase_brings_no_block(q):
     assert "### Breast Support\n" not in app._named_product_facts(q) + "\n"
 
 
+def test_breast_support_by_its_catalog_name_brings_the_block():
+    assert "### Breast Support\n" in app._named_product_facts("Is Breast Support safe while nursing?")
+
+
 @pytest.mark.parametrize("q", [
-    "Is Breast Support safe while nursing?",
+    "how much breast support does a sports bra give?",
     "breast support dose?",
 ])
-def test_breast_support_by_name_or_cue_brings_the_block(q):
-    assert "### Breast Support\n" in app._named_product_facts(q)
+def test_breast_support_in_lowercase_brings_no_block(q):
+    """Review round 1: lowercase over-matched an everyday phrase, so only the catalog
+    casing names it."""
+    assert "### Breast Support\n" not in app._named_product_facts(q) + "\n"
+
+
+@pytest.mark.parametrize("q, name", [
+    ("how much apoptogenesis a day?", "Apoptogenesis"),
+    ("how many appestat per day", "Appestat"),
+    ("how many appestat daily?", "Appestat"),
+])
+def test_a_day_after_a_lowercase_name_is_a_cue(q, name):
+    """Review round 1: these dose questions got no block."""
+    assert f"### {name}\n" in app._named_product_facts(q)
 
 
 def test_focus_d3_per_scoop():

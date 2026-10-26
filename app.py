@@ -2287,9 +2287,6 @@ _CUE_NAMES = frozenset({
     # caution (Glen "yes", 2026-10-26). A cue keeps "how do I keep my vitreous vitality?"
     # an ordinary phrase (review round 1).
     "vitreous-vitality",
-    # "how many breast support capsules a day?" (Glen "yes", 2026-10-26). "what gives
-    # breast support while nursing?" has no cue.
-    "breast-support",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
@@ -2351,7 +2348,11 @@ def _TITLE_CASED(text: str) -> bool:
     return len(words) >= 3 and sum(w[0].isupper() for w in words) >= 0.6 * len(words)
 _AFTER_NAME_OK = re.compile(
     r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
-    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
+    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each|daily|a\s+day|per\s+day)\b)",
+    re.IGNORECASE)
+# "a day", "per day" and "daily" joined the list for the dose batch: "how much apoptogenesis
+# a day?" got no block (review round 1, 2026-10-26). A bare "per" stays out, so "reverse age
+# per year" is still an ordinary phrase.
 
 
 def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> bool:
@@ -2700,7 +2701,7 @@ _WITHDRAWN_DOSE_EXAMPLE.update({
     "vitamin-a-syntropy": (", such as 1 to 3 capsules a day, or up to 3 a day for a short "
                            "time"),
     "apoptogenesis": ", such as up to 3 capsules a day",
-    "appestat": ", such as 1 capsule before every meal",
+    "appestat": ", such as 3 capsules a day, or more than 2 a day",
     "breast-support": (", such as up to 10 capsules a day, or a dose that starts low and "
                        "rises"),
 })
