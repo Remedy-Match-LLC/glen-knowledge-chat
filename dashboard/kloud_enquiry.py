@@ -109,7 +109,7 @@ def reply_text(*, first_name, model, distributor, mini_cents, maxi_cents):
         greeting,
         f"Thank you for asking about the {label} PEMF mat.",
         "The Kloud is ordered directly from our Centropix distributor store.",
-        f"This page walks through both models, how to order, and financing:\n{GUIDE_URL}",
+        f"This page covers both models, how to order, and financing:\n{GUIDE_URL}",
         f"The Kloud Mini is {_dollars(mini_cents)} and the Kloud Maxi is "
         f"{_dollars(maxi_cents)}, plus shipping and tax.",
         "Order at our Centropix store by choosing your model and completing checkout "
@@ -117,7 +117,7 @@ def reply_text(*, first_name, model, distributor, mini_cents, maxi_cents):
         "If you would like to spread the cost over time, you can apply for financing "
         f"through FlexxBuy:\n{FINANCING_URL}",
         *dist,
-        "I will follow up with you as you decide.",
+        "I will follow up as you decide.",
         "Reply here with any questions about the Kloud.",
         "With aloha,",
         "Dr. Glen",
