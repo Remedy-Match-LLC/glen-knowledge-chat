@@ -14,6 +14,7 @@ except ImportError:
 import os
 import sys
 import html
+import itertools
 import re
 import json
 import uuid
@@ -2324,8 +2325,14 @@ _PRODUCT_CUE_AFTER = re.compile(
 # What may follow a lowercase name: the end of a clause or a word that cannot extend the
 # name into a longer noun phrase ("reverse age discrimination").
 _SENTENCE_START_NAME_OK = re.compile(
-    r"^(?:['\u2019]s\b|\s*(?:supplements?|products?|formula|vegicaps?)\b|[\s?.!]*$)",
+    r"(?:['\u2019]s\b|\s*(?:supplements?|products?|formula|vegicaps?)\s*(?:[?.!,;:]|$))",
     re.IGNORECASE)
+
+
+def _TITLE_CASED(text: str) -> bool:
+    """Most words capitalised, so a capital says nothing about a name."""
+    words = re.findall(r"[A-Za-z]{2,}", text)
+    return len(words) >= 3 and sum(w[0].isupper() for w in words) >= 0.6 * len(words)
 _AFTER_NAME_OK = re.compile(
     r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
     r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
@@ -2469,19 +2476,31 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             m = next((mi for mi in re.finditer(pattern, query_text, re.IGNORECASE)
                       if _own(mi) and _has_product_cue(query_text, *mi.span(), strict=True)), None)
         elif slug in _SENTENCE_START_CUE_NAMES:
-            m = next((mi for mi in re.finditer(pattern, query_text)
-                      if _own(mi) and (not _SENTENCE_START.search(query_text[:mi.start()])
+            # Only the first matches are read: each one slices the text, and "Clarity? "
+            # 5,000 times took 17 s (review round 3, 2026-10-26).
+            _cased = list(itertools.islice(re.finditer(pattern, query_text), 40))
+            # A Title Cased Question capitalises the verb too: "How Do I Moisturize Dry
+            # Skin?" needs a cue, as at a sentence start (review round 3). Clarity keeps
+            # the rule it had.
+            _title = slug in _CUE_NAMES and _TITLE_CASED(query_text)
+            m = next((mi for mi in _cased
+                      if _own(mi) and ((not _title
+                                        and not _SENTENCE_START.search(query_text[:mi.start()]))
                                        or _has_product_cue(query_text, *mi.span()))), None)
             # For those also in _CUE_NAMES (Moisturize): a sentence-start name followed by
-            # "'s", a product word or nothing at all ("Moisturize's dose?", "Moisturize
-            # supplement?", "Moisturize?"), and lowercase beside a cue (review round 1,
-            # 2026-10-26).
+            # "'s" or by a product word that ends the clause ("Moisturize's dose?",
+            # "Moisturize supplement?"), the name as the whole message ("Moisturize?"), and
+            # lowercase beside a cue (review rounds 1 and 3, 2026-10-26).
             if not m and slug in _CUE_NAMES:
-                m = next((mi for mi in re.finditer(pattern, query_text)
-                          if _own(mi) and _SENTENCE_START_NAME_OK.match(query_text[mi.end():])),
+                m = next((mi for mi in _cased
+                          if _own(mi) and _SENTENCE_START_NAME_OK.match(query_text, mi.end())),
                          None)
+                if not m and re.fullmatch(r"[\s\"'(\u201c]*" + pattern + r"[\s?.!\"')\u201d]*",
+                                          query_text):
+                    m = _cased[0]
             if not m and slug in _CUE_NAMES:
-                m = next((mi for mi in re.finditer(pattern, query_text, re.IGNORECASE)
+                m = next((mi for mi in itertools.islice(
+                              re.finditer(pattern, query_text, re.IGNORECASE), 40)
                           if _own(mi) and _has_product_cue(query_text, *mi.span())), None)
         elif not m:
             # Any case: a coined name cannot occur in ordinary speech. A name that is also

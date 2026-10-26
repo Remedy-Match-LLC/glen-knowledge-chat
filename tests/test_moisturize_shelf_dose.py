@@ -60,6 +60,7 @@ def test_the_page_data_shows_one_a_day_and_the_shelf_vitamin_a():
     "Moisturize's dose?",
     "Moisturize supplement?",
     "Moisturize?",
+    "How Many Moisturize Capsules A Day?",
 ])
 def test_the_chat_gets_one_a_day_and_the_shelf_vitamin_a(q):
     """With no block the bot found no dose, and live it added a second capsule, about
@@ -81,6 +82,14 @@ def test_the_chat_gets_one_a_day_and_the_shelf_vitamin_a(q):
     "how much water should I drink to moisturize my skin?",
     "what oils moisturize skin best?",
     "How do I moisturize my eyes? Is it safe?",
+    # Title case, a later one-word sentence, and a product word that runs on (review
+    # round 3, 2026-10-26).
+    "How Do I Moisturize Dry Skin?",
+    "Should I Moisturize Twice A Day?",
+    "My skin is so dry. Moisturize?",
+    "Dry skin. Moisturize!",
+    "Moisturize products for my face?",
+    "Moisturize supplements that work?",
 ])
 def test_the_everyday_word_brings_no_block(q):
     assert "### Moisturize\n" not in app._named_product_facts(q) + "\n"
@@ -89,6 +98,14 @@ def test_the_everyday_word_brings_no_block(q):
 def test_no_amount_rule_for_another_product():
     b = app._named_product_facts("How much B17 Syntropy should I take?")
     assert "### B17 Syntropy" in b and "Give no percent Daily Value" not in b
+
+
+def test_a_long_message_is_read_quickly():
+    import time
+    t = time.monotonic()
+    app._named_product_facts("Moisturize? " * 20000)
+    app._named_product_facts("Clarity? " * 20000)
+    assert time.monotonic() - t < 5
 
 
 def test_the_directions_are_pinned_for_the_chat():
