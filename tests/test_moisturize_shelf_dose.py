@@ -20,6 +20,23 @@ VITAMIN_A = {"name": "Vitamin A (retinyl acetate)",
              "dose": "2,820 mcg RAE (9,400 IU), 313% of the Daily Value"}
 CAUTION_START = "Each capsule supplies about 9,400 IU (2,820 mcg RAE) of preformed vitamin A."
 CAUTION_END = "Also consult first if you take blood-thinning medicines. Keep out of reach of children."
+# Word for word from remedymatch.com 76 (marketing apply-long.html, 2026-10-25).
+CAUTION = (
+    "Each capsule supplies about 9,400 IU (2,820 mcg RAE) of preformed vitamin A. "
+    "That is close to the adult daily upper limit of 10,000 IU. "
+    "The limit counts preformed vitamin A from food and supplements together. "
+    "The label on current jars says 5,000 IU and up to 3 a day. "
+    "That label is out of date. "
+    "Take no more than 1 capsule a day unless your health professional advises it. "
+    "Do not add other sources of preformed vitamin A unless your health professional advises it. "
+    "These include multivitamins, cod liver oil, liver and other formulas that list vitamin A. "
+    "Do not use with retinoid medicines such as isotretinoin or acitretin. "
+    "Do not use if you are pregnant, may become pregnant or are breastfeeding. "
+    "Do not give it to anyone under 18. "
+    "Do not use if you have Stargardt disease or another ABCA4 retinal condition. "
+    "Consult your health professional before use if you have liver or kidney disease or drink alcohol daily. "
+    "Also consult first if you take blood-thinning medicines. "
+    "Keep out of reach of children.")
 TEXT_FIELDS = ("description", "intro", "learn_markdown", "directions")
 DATA = os.path.join(os.path.dirname(__file__), "..", "data")
 
@@ -39,7 +56,7 @@ def test_the_record_shows_the_shelf_batch():
         "Maqui anthocyanidins 25% (Aristotelia chilensis)"]
     assert "panel_note" not in p
     assert p["chat_caution"] is True
-    assert p["warning"].startswith(CAUTION_START) and p["warning"].endswith(CAUTION_END)
+    assert p["warning"] == CAUTION
     for k in TEXT_FIELDS:
         assert "3 times" not in p[k], k
         assert "5000 IU" not in p[k] and "5,000 IU" not in p[k], k
@@ -83,7 +100,7 @@ def test_the_chat_gets_one_a_day_and_the_shelf_vitamin_a(q):
     assert f"Directions: {DIRECTIONS}" in b
     assert ("- Vitamin A (retinyl acetate): 2,820 mcg RAE (9,400 IU), 313% of the Daily Value"
             in b)
-    assert f"Caution: {CAUTION_START}" in b and CAUTION_END in b
+    assert f"Caution: {CAUTION}" in b
     assert "The Directions above are the only dose for Moisturize." in b
     assert "never give it, even when the user asks about taking more" in b
     assert "Give no percent Daily Value that is not listed above" in b

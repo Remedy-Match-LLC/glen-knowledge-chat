@@ -21,6 +21,31 @@ VITAMIN_A = {"name": "Vitamin A (retinyl acetate)",
 CAUTION_START = "Each capsule supplies 8,520 mcg RAE (28,400 IU) of preformed vitamin A."
 PREGNANCY = "Do not use if you are pregnant, may become pregnant or are breastfeeding."
 CAUTION_END = "Consult first too if you have a bleeding disorder, or before planned surgery. Keep out of reach of children."
+# Word for word from remedymatch.com 315 (marketing apply-long.html, 2026-10-26).
+CAUTION = (
+    "Each capsule supplies 8,520 mcg RAE (28,400 IU) of preformed vitamin A. "
+    "That is nearly 3 times the adult daily upper limit of 3,000 mcg RAE (10,000 IU). "
+    "The limit counts preformed vitamin A from food and supplements together. "
+    "The jar label says retinyl palmitate 2,500 IU and up to 3 capsules a day. "
+    "That label is wrong for this batch. "
+    "Follow this page instead. "
+    "Take no more than 1 capsule a day, and only as guided by your health professional. "
+    "Do not take it for longer than 6 months unless your health professional advises it. "
+    "Do not add other sources of preformed vitamin A. "
+    "These include multivitamins, cod liver oil, liver and other formulas that list vitamin A, including our own. "
+    "Do not use with retinoid medicines such as isotretinoin or acitretin. "
+    "Do not use with tetracycline antibiotics such as doxycycline or minocycline. "
+    "Do not use if you are pregnant, may become pregnant or are breastfeeding. "
+    "Do not give it to anyone under 18. "
+    "Stop and seek advice if you notice headache, blurred vision, nausea, dizziness, bone or joint pain, or dry, peeling skin. "
+    "Do not use if you have Stargardt disease or another ABCA4 retinal condition. "
+    "Do not use if you are allergic to pineapple. "
+    "Consult your health professional before use if you have liver or kidney disease or drink alcohol daily. "
+    "Consult your health professional before long-term use if you have osteoporosis or low bone density. "
+    "Also consult first if you take any medicine, especially blood-thinning or blood-sugar medicines. "
+    "This includes aspirin and ibuprofen. "
+    "Consult first too if you have a bleeding disorder, or before planned surgery. "
+    "Keep out of reach of children.")
 DATA = os.path.join(os.path.dirname(__file__), "..", "data")
 
 
@@ -34,8 +59,9 @@ def test_the_record_carries_the_store_text():
     assert p["ingredients"][0] == VITAMIN_A
     assert len(p["ingredients"]) == 34
     assert p["chat_caution"] is True
-    w = p["warning"]
-    assert w.startswith(CAUTION_START) and PREGNANCY in w and w.endswith(CAUTION_END)
+    assert p["warning"] == CAUTION
+    assert json.load(open(os.path.join(DATA, "products-manual-corrections.json")))[SLUG][
+        "warning"] == CAUTION
     assert "28,500" not in json.dumps(p)
     for k in ("intro", "description"):
         assert "lutein" not in p[k].lower() and "floater" not in p[k].lower(), k
@@ -62,7 +88,7 @@ def test_the_page_data_shows_the_caution_and_directions():
     "How many Vitreous Vitality capsules a day?",
     "How much vitamin A is in Vitreous Vitality?",
     "vitreous vitality dose?",
-    "Can I take Vitreous Vitality while pregnant?",
+    "how many vitreous vitality capsules can I take?",
 ])
 def test_the_chat_gets_the_dose_and_the_caution(q):
     b = app._named_product_facts(q)
@@ -72,8 +98,45 @@ def test_the_chat_gets_the_dose_and_the_caution(q):
     assert "The Directions above are the only dose for Vitreous Vitality." in b
     assert "such as up to 3 capsules a day" in b
     assert "Give no percent Daily Value that is not listed above" in b
-    assert f"Caution: {CAUTION_START}" in b and PREGNANCY in b and CAUTION_END in b
+    assert f"Caution: {CAUTION}" in b
     assert "has no caution on its product page" not in b
+    assert "### Vitality\n" not in b
+
+
+@pytest.mark.parametrize("q", [
+    "Can I take Vitreous Vitality while pregnant?",
+    "Is Vitreous Vitality safe with warfarin?",
+    "is vitreous vitality safe?",
+])
+def test_a_safety_question_links_its_own_caution(q):
+    """Glen, 2026-10-24: a question that touches a caution gets it linked, not written."""
+    links = app._caution_link_slugs(q)
+    assert SLUG in links and "vitality" not in links
+    b = app.named_product_facts_block(q)
+    assert "### Vitreous Vitality\n" in b and "### Vitality\n" not in b
+
+
+@pytest.mark.parametrize("q", [
+    "Is Vitreous-Vitality safe?",
+    "Vitreus Vitality dose?",
+    "how much vitreus vitality a day?",
+])
+def test_a_misspelt_name_never_brings_vitality(q):
+    """Review round 1: these brought Vitality's block and its caution."""
+    assert "### Vitality\n" not in app._named_product_facts(q)
+    assert "vitality" not in app._caution_link_slugs(q)
+
+
+@pytest.mark.parametrize("q", [
+    "How do I keep my vitreous vitality as I age?",
+    "what supports vitreous vitality naturally",
+])
+def test_the_lowercase_phrase_brings_no_block(q):
+    assert "### Vitreous Vitality\n" not in app._named_product_facts(q) + "\n"
+
+
+def test_vitality_itself_keeps_its_block():
+    assert "### Vitality\n" in app._named_product_facts("Is Vitality safe with my blood thinner?")
 
 
 def test_the_corrections_replay_restores_the_store_text():

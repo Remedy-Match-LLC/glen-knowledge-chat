@@ -2254,9 +2254,6 @@ _CASE_FREE_NAMES = frozenset({
     # A coined name, and its warning names Poison Control: "i feel lightheaded on b17
     # max" got no block (B17 Max powder, review round 2, 2026-10-25).
     "b17-max",
-    # About 28,400 IU of vitamin A a capsule: "vitreous vitality dose?" must bring its
-    # caution (Glen "yes", 2026-10-26).
-    "vitreous-vitality",
 })
 # Pinned products whose name a client may type in lowercase, beside a product cue. Every
 # other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
@@ -2286,6 +2283,10 @@ _CUE_NAMES = frozenset({
     # is near the vitamin A upper limit (review round 2, 2026-10-26). "how do I moisturize
     # dry skin?" has no cue.
     "moisturize",
+    # About 28,400 IU of vitamin A a capsule: "vitreous vitality dose?" must bring its
+    # caution (Glen "yes", 2026-10-26). A cue keeps "how do I keep my vitreous vitality?"
+    # an ordinary phrase (review round 1).
+    "vitreous-vitality",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
@@ -2310,7 +2311,9 @@ _YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality"})
 # A name that another product's name holds after a word the catalog spells with a hyphen,
 # so _YIELDS_TO_LONGER_NAMES cannot see it: "Focus Neuro-Magnesium Powder" holds "Neuro
 # Magnesium" only when typed with a space.
-_YIELDS_TO_PREFIX = {"neuro-magnesium": "focus"}
+# "Is Vitreous-Vitality safe?" and "Vitreus Vitality dose?" brought Vitality's block and
+# its caution (review round 1, 2026-10-26). The prefix is a pattern for those spellings.
+_YIELDS_TO_PREFIX = {"neuro-magnesium": "focus", "vitality": r"vitre\w*"}
 # Closing quotes and brackets may sit between the full stop and the name: 'She said "I
 # feel tired." Clarity of mind ...' (review round 2), as may opening ones. A colon or
 # semicolon does not end a sentence: "Products I take: Clarity, ..." (review round 3).
