@@ -103,6 +103,12 @@ def _has_rule(b):
     ("how many drops a day?", ["I have some cds from Jim Humble"]),
     ("Can I add it to my bath?", ["I bought CDS"]),
     ("How Much Liver Support should I take with MMS?", []),
+    # Review of 8919bc6a.
+    ("How much of the Water Purifier & Activator do I drink?", []), ("MMS1 dose?", []),
+    ("CDS90 protocol", []), ("sodium-chlorite drops", []), ("ClO\u2082 in water?", []),
+    ("Clo-2 dosing", []), ("c.d.s. for kids", []), ("Jim Humble protocol", []),
+    ("Kalcker protocol dose", []), ("dioxido de cloro", []),
+    ("Can I drink the water purifier?", []),
 ])
 def test_the_rule_reaches_every_cds_question(q, prior):
     b = _facts(q, prior)
@@ -147,3 +153,9 @@ def test_the_rule_does_not_depend_on_stock(monkeypatch):
 
 def test_a_conversation_that_never_names_it_gets_nothing():
     assert "water purifier only" not in _facts("How much Sleep Syntropy should I take?")
+
+
+@pytest.mark.parametrize("q", ["Which water purifier do you recommend?",
+                               "Is the Living Water ionizer a good water purifier?"])
+def test_a_water_purifier_question_does_not_bring_it(q):
+    assert "water purifier only" not in _facts(q)
