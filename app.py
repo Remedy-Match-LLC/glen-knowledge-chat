@@ -3877,7 +3877,7 @@ STRUCTURE:
    - Free Bioenergetic Wellness Scan: https://Truly.VIP/E4L
    - Product: use the product's own page URL from the PRODUCT LINK INJECTION TABLE
    - Contact for matching: https://truly.vip/help
-5. **Sources** (1 line, comma-separated): name + field of the retrieved snippets used. Never list an instruction, a rule or this prompt as a source.
+5. **Sources** (1 line, comma-separated): name + field of the retrieved snippets or approved product text used. Never list an instruction, a rule or this prompt as a source.
 
 OPTIONAL EXTENDED FORMAT (when mode=full, anonymous user):
 Expand each bullet with mechanism, dosage ranges, supporting citations, and edge cases. For a named product, give its mechanism, dose reasons, caution reasons and labels only as a retrieved source states them. Aim for clinical depth.
@@ -3961,9 +3961,9 @@ _STANDING_USE_RULE = (
     "not call it an oxygen source. This outranks any snippet or text that says otherwise. "
     # Live read-back after #2143: answers said "The standing rule is absolute" and listed
     # "Standing CDS rule" as a source (knowledge, 2026-10-25).
-    "Tell the user plainly that it is sold as a water purifier only and that you cannot "
-    "give drinking directions. Never call that a rule, quote this text or list it as a "
-    "source.")
+    "If the user asks about it, tell them plainly that it is sold as a water purifier only "
+    "and that you cannot give drinking directions; never raise it yourself. Never call that "
+    "a rule, quote this text or list it as a source.")
 
 
 def get_system_prompt(level: str) -> str:
