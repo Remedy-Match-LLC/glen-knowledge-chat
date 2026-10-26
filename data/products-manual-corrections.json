@@ -1434,10 +1434,18 @@
       }
     ],
     "ingredients_source": "label-read-2026-09-26",
-    "description": "Each Appestat vegicap combines vitamins B6, B12, C and D3, GTF chromium and magnesium with DMAE, GLA, CLA, caprylic acid, ALCAR, NALT, PEA, 5-HTP, L-theanine, hordenine, synephrine, lipase and protease. Botanical extracts include green tea and cinnamon polyphenols, quercetin, sumac bran, OPCs, gymnemic acid, phaseolamin, hydroxycitric acid, charantin, myrrh, withanolides, ginsenosides and capsicum, with a blend that aids absorption. Take 1 capsule 30 to 45 minutes before meals, or as guided. Fiber Cleanse and Thermogenesis are synergistic.\n\nOther ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
-    "directions": "1 capsule 30 to 45 minutes before meals, or as guided. Fiber Cleanse and Thermogenesis are synergistic.",
+    "description": "Each Appestat vegicap combines vitamins B6, B12, C and D3, GTF chromium and magnesium with DMAE, GLA, CLA, caprylic acid, ALCAR, NALT, PEA, 5-HTP, L-theanine, hordenine, synephrine, lipase and protease. Botanical extracts include green tea and cinnamon polyphenols, quercetin, sumac bran, OPCs, gymnemic acid, phaseolamin, hydroxycitric acid, charantin, myrrh, withanolides, ginsenosides and capsicum, with a blend that aids absorption. Take 1 capsule 30 to 45 minutes before meals, up to 2 a day, or as guided. Fiber Cleanse and Thermogenesis are synergistic.\n\nOther ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
+    "directions": "1 capsule 30 to 45 minutes before meals, up to 2 a day, or as guided.",
     "panel_note": "Bioavailability Blend contains: EGb 761 (Ginkgo biloba), Niacin 8 mg, Moringa oleifera 100:1, Licorice Omnipotent (Glycyrrhiza glabra), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), Vinpocetine (Vinca minor).",
-    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows. Glen 2026-10-26, platform tab: \"yes\" to \"1 capsule 30 to 45 minutes before meals, up to 2 a day, or as guided.\"",
+    "copy_pinned": [
+      "directions",
+      "ingredients",
+      "intro",
+      "description",
+      "research",
+      "benefits"
+    ]
   },
   "curcu-guard": {
     "ingredients": [
@@ -2412,10 +2420,18 @@
       }
     ],
     "ingredients_source": "label-read-2026-09-26",
-    "description": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 3 capsules a day with food, or as guided.\n\nOther ingredients: organic pullulan vegicaps, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.",
-    "directions": "1 to 3 capsules a day with food, or as guided.",
+    "description": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 2 capsules a day with food, or as guided.\n\nOther ingredients: organic pullulan vegicaps, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.",
+    "directions": "1 to 2 capsules a day with food, or as guided.",
     "panel_note": "Bioavailability Blend (34.5 mg): Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
-    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows. Glen 2026-10-26, platform tab: \"yes\" to \"1 to 2 capsules a day with food, or as guided.\"",
+    "copy_pinned": [
+      "directions",
+      "ingredients",
+      "intro",
+      "description",
+      "research",
+      "benefits"
+    ]
   },
   "pure--natural-msm-lotion": {
     "ingredients": [
@@ -2879,8 +2895,8 @@
     "note": "Held by Glen 2026-09-26; unverified for the letter writer until he decides."
   },
   "vitamin-c-syntropy": {
-    "description": "Each Vitamin C Syntropy vegicap gives you vitamin C as magnesium ascorbate and ascorbyl palmitate. Alongside it you get natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, and glutathione in two forms, S-acetyl and reduced GSH. You also get coenzyme Q10 as ubiquinone, plus superoxide dismutase and catalase. Rounding it out are vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate, and vitamin B6 as pyridoxal 5'-phosphate. Then come the polyphenols: quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac. Magnesium threonate and magnesium ascorbate finish the formula, joined by a blend that aids absorption. Take 1 to 4 capsules a day before food, or as guided.\n\nOther ingredients: Phthalate-free enteric vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
-    "directions": "1 to 4 capsules daily before food or as guided.",
+    "description": "Each Vitamin C Syntropy vegicap gives you vitamin C as magnesium ascorbate and ascorbyl palmitate. Alongside it you get natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, and glutathione in two forms, S-acetyl and reduced GSH. You also get coenzyme Q10 as ubiquinone, plus superoxide dismutase and catalase. Rounding it out are vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate, and vitamin B6 as pyridoxal 5'-phosphate. Then come the polyphenols: quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac. Magnesium threonate and magnesium ascorbate finish the formula, joined by a blend that aids absorption. Take 1 capsule daily before food, as guided.\n\nOther ingredients: Phthalate-free enteric vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
+    "directions": "1 capsule daily before food, as guided.",
     "ingredients": [
       {
         "name": "Vitamin C (Mg Ascorbate & Ascorbyl Palmitate)",
@@ -2911,8 +2927,8 @@
         "dose": "1,000 FIP 10 mg"
       },
       {
-        "name": "Vitamin A (Retinyl Palmitate)",
-        "dose": "1667 IU"
+        "name": "Vitamin A (retinyl palmitate)",
+        "dose": "3,660 mcg RAE (12,200 IU)"
       },
       {
         "name": "Vitamin B5 (Calcium Pantothenate)",
@@ -2959,9 +2975,17 @@
         "dose": "34.5 mg"
       }
     ],
-    "ingredients_source": "label-read-2026-09-27",
+    "ingredients_source": "label-read-2026-09-27; vitamin A 12,200 IU from the 2026-10-26 reprint (Glen, 2026-10-26)",
     "panel_note": "Bioavailability Blend contains: Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
-    "note": "Label-read 2026-09-27 by production, approved by Glen 2026-09-28 ('approve'); renamed to the label name; replaces the old store list."
+    "note": "Label-read 2026-09-27 by production, approved by Glen 2026-09-28 ('approve'); renamed to the label name; replaces the old store list. Glen 2026-10-26, platform tab: \"yes\" to \"1 capsule daily before food, as guided.\" and vitamin A 3,660 mcg RAE (12,200 IU).",
+    "copy_pinned": [
+      "directions",
+      "ingredients",
+      "intro",
+      "description",
+      "research",
+      "benefits"
+    ]
   },
   "focus-neuro-magnesium-powder": {
     "description": "Focus Neuro-Magnesium is a drink mix built on three brain minerals together: lithium as lithium orotate, magnesium as magnesium threonate, and zinc as zinc bisglycinate. Around them, green tea L-theanine backs a polyphenol blend of celery seed apigenin and turmeric curcumin. Vitamin B6 as pyridoxal 5'-phosphate and vitamin D3 as cholecalciferol round out the formula, sweetened with monk fruit mogroside V. Take 2 scoops a day in water, or as guided.\n\nOther ingredients: Healing Energy, Love and Prayer. Contents: 30 grams, 60 scoops.",
@@ -2997,12 +3021,12 @@
       },
       {
         "name": "Vitamin D3 (Cholecalciferol)",
-        "dose": "375 IU"
+        "dose": "325 IU"
       }
     ],
-    "ingredients_source": "label-read-2026-09-28 (Neuro-Magnesium 0526.ai, (c) May 2026)",
+    "ingredients_source": "label-read-2026-09-28 (Neuro-Magnesium 0526.ai, (c) May 2026); D3 325 IU a scoop (Glen, 2026-10-26)",
     "panel_note": "Amounts are per 500 mg scoop. Polyphenols (Proprietary Formula) contains: Celery Seed Apigenin (Apium graveolens), Turmeric Curcumin (Curcuma longa).",
-    "note": "Label-read 2026-09-28 by production, approved by Glen 2026-09-28 ('approve'); replaces the old store list. The neuro-magnesium presale listing is separate."
+    "note": "Label-read 2026-09-28 by production, approved by Glen 2026-09-28 ('approve'); replaces the old store list. The neuro-magnesium presale listing is separate. Glen 2026-10-26, platform tab: \"yes\" to D3 325 IU a scoop."
   },
   "vitamin-a-syntropy": {
     "ingredients": [
@@ -3112,11 +3136,19 @@
       }
     ],
     "ingredients_source": "label-read-2026-09-30",
-    "description": "Each Vitamin A Syntropy vegicap gives you 25,000 IU of vitamin A as retinyl acetate/palmitate, plus beta carotene from Dunaliella salina carotenoids. You're also getting vitamins B1, B2, B5 and B6, phosphatidyl choline from egg, vitamin C as zinc ascorbate and vitamin E as mixed tocopherols. The minerals are magnesium as threonate, manganese as glycinate, phosphorus as ATP, potassium as orotate, selenium as methylselenocysteine and zinc as ascorbate. Then aloe vera inner-leaf polysaccharides, humic and fulvic acids and cilantro juice powder work alongside a group of bioavailability factors. Take 1 capsule 1 to 3 times a day with food, or as guided.\n\nOther ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
-    "directions": "1 capsule 1 to 3 times daily with food, or as guided. 1 a day for one month for low Vitamin A. Up to 3 a day short term for Phase 1 terrain.",
+    "description": "Each Vitamin A Syntropy vegicap gives you 25,000 IU of vitamin A as retinyl acetate/palmitate, plus beta carotene from Dunaliella salina carotenoids. You're also getting vitamins B1, B2, B5 and B6, phosphatidyl choline from egg, vitamin C as zinc ascorbate and vitamin E as mixed tocopherols. The minerals are magnesium as threonate, manganese as glycinate, phosphorus as ATP, potassium as orotate, selenium as methylselenocysteine and zinc as ascorbate. Then aloe vera inner-leaf polysaccharides, humic and fulvic acids and cilantro juice powder work alongside a group of bioavailability factors. Take 1 capsule daily with food, as guided.\n\nOther ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
+    "directions": "1 capsule daily with food, as guided.",
     "warning": "Avoid during pregnancy or when planning a pregnancy.",
     "chat_caution": true,
-    "note": "Replaces a 21-line gut and H. pylori formula matched from the old Formulations table row 'Vitamin U Complex'. Source: Vitamin_A_Syntropy_0124_1.88x6in_30v.ai, (c) January 2024, named by Glen 2026-09-30. Zingiber officinalis corrected to Zingiber officinale; Vinpocetin to Vinpocetine."
+    "note": "Replaces a 21-line gut and H. pylori formula matched from the old Formulations table row 'Vitamin U Complex'. Source: Vitamin_A_Syntropy_0124_1.88x6in_30v.ai, (c) January 2024, named by Glen 2026-09-30. Zingiber officinalis corrected to Zingiber officinale; Vinpocetin to Vinpocetine. Glen 2026-10-26, platform tab: \"yes\" to \"1 capsule daily with food, as guided.\", dropping the one-month and Phase 1 terrain lines.",
+    "copy_pinned": [
+      "directions",
+      "ingredients",
+      "intro",
+      "description",
+      "research",
+      "benefits"
+    ]
   },
   "spike-shield": {
     "ingredients": [
@@ -3791,5 +3823,108 @@
       "description"
     ],
     "note": "Glen 2026-10-26, platform tab: \"yes\" to the store page 315 caution, directions and 34-row panel (formulation spec production/05 Formulations/vitreous-vitality/2026-10-26/app-store-spec.md), with lutein out of the intro and floaters out of the overview."
+  },
+  "breast-support": {
+    "ingredients": [
+      {
+        "name": "Vitamin B15: Pangamic Acid",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Vitamin B17: Amygdalin",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Selenium (Methylselenocysteine)",
+        "dose": "35 mcg"
+      },
+      {
+        "name": "Oxindole Alkaloids 5% (Uncaria tomentosa) (bark)",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Curcumin & Tetrahydrocurcumin (Curcuma longa)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Xanthohumol 10% (Humulus lupulus)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Artemisinin (Artemesia annua)",
+        "dose": "40 mg"
+      },
+      {
+        "name": "Bitters 10% (Momordica charantia) (seed)",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Puerarin 98% (Pueraria lobata)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Suma 10:1 (Pfaffia paniculata) (root)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Ginsenosides 80% (Panax ginseng)",
+        "dose": "7 mg"
+      },
+      {
+        "name": "Mistletoe 4:1 (Viscum album)",
+        "dose": "1 mg"
+      }
+    ],
+    "ingredients_source": "t33; puerarin 98% (Pueraria lobata), raw 5207 (Glen, 2026-10-25)",
+    "description": "Breast Support . Breast Support Breast Support Breast Support supplies nutrients and botanicals for breast wellness. Breast Support . Each chlorophyl vegicap of Breast Support supplies: Vitamin Factors: Vitamin B15: Pangamic Acid 5 mg * Vitamin B17: Amygdalin 100 mg * Mineral Factors: Selenium (Methylselenocysteine) 35 mcg 50% Botanical Factors: Oxindole Alkaloids 5% ( Uncaria tomentosa ) (bark) 50 mg * Curcumin ( Curcuma longa ) 50 mg * Xanthohumol 10% (Humulus lupulus) 50 mg * Artemisinin ( Artemesia annua ) 40 mg * Bitters 10% ( Momordica charantia ) (seed) 30 mg * Puerarin 98% (Pueraria lobata)...",
+    "directions": "1 capsule up to 6 times a day with food, or as guided.",
+    "copy_pinned": [
+      "directions"
+    ],
+    "content_since": "2026-10-26T22:25:00+00:00",
+    "note": "Glen 2026-10-26, platform tab: \"yes\" to \"1 capsule up to 6 times a day with food, or as guided.\" (store spec production/05 Formulations/breast-support/2026-10-25) and \"Puerarin 98% (Pueraria lobata)\". Only the directions are pinned; no caution is approved yet."
+  },
+  "free-and-easy": {
+    "ingredients": [
+      {
+        "name": "Paeoniflorin",
+        "dose": "159 mg"
+      },
+      {
+        "name": "Fu Ling, Hoelen (from Dutch trade with Japan)",
+        "dose": "127 mg"
+      },
+      {
+        "name": "Atractylodes macrocephala 30:1 Rhizoma Atractylodis large-headed atractylodes, white atractylodes",
+        "dose": "8 mg"
+      },
+      {
+        "name": "Crocin 45% (Gardenia jasminoides)",
+        "dose": "48 mg"
+      },
+      {
+        "name": "Saikosaponin 50% (Bupleurum chinense)",
+        "dose": "9.5 mg"
+      },
+      {
+        "name": "Ashitaba",
+        "dose": "24 mg"
+      },
+      {
+        "name": "Gingerols",
+        "dose": "12.7 mg"
+      },
+      {
+        "name": "total acid (Glycyrrhizic acid, Glycyrrhizinic acid)",
+        "dose": "9.5 mg"
+      },
+      {
+        "name": "Peppermint",
+        "dose": "4.8 mg"
+      }
+    ],
+    "ingredients_source": "db-formulations-2026-06-25; crocin from gardenia, FileMaker 470 run 44 (Glen, 2026-10-26)",
+    "content_since": "2026-10-26T22:25:00+00:00",
+    "note": "Glen 2026-10-26, platform tab: \"yes\" to crocin from gardenia (FileMaker 470, run 44, Crocin 45% Gardenia jasminoides). content_since drops the drafts that said saffron."
   }
 }
