@@ -2348,7 +2348,7 @@ def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> b
 # drinking doses, and three review rounds on #2143 found name-matching leaks.
 _USE_RULE_NAMES = {"cds-water-purifier--activator": re.compile(
     # CDS and MMS only as capitals; every other name in any case.
-    r"(?<![A-Za-z])(?:CDS|MMS)(?![a-z])|(?i:(?<![a-z])c\.d\.s\.?|chlorine[\s-]+dioxide|"
+    r"(?<![A-Za-z])(?:CDS|MMS)(?![A-Za-z])|(?i:(?<![a-z])c\.d\.s\.?|chlorine[\s-]+dioxide|"
     r"sodium[\s-]+chlorite|\bclo[\s-]?[2\u2082]|miracle\s+mineral|dioxido\s+de\s+cloro|"
     r"\bjim\s+humble|\bkalcker|water\s+purifier\s*(?:&|&amp;|and)\s*activator|"
     # Never "water purifier" alone: the ionizers are Glen's main water recommendation.
@@ -34466,7 +34466,8 @@ def api_console_portal_draft_reply(email):
     except Exception:
         orders = []
     ctx = _pcz.build_context(rec.get("content") or {}, orders)
-    sys = _pcz.system_prompt(ctx) + (
+    # Glen's drafted reply follows the same CDS rule as the portal chat (review, #2143).
+    sys = _pcz.system_prompt(ctx) + _STANDING_USE_RULE + (
         "\n\nYou are drafting DR. GLEN'S OWN personal reply to this client (first person, warm, "
         "signed 'Dr. Glen'), to address their most recent message in the thread below. Keep it "
         "concise and grounded in their data. If it needs a consultation, a custom Terrain "

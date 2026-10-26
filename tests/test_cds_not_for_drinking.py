@@ -130,7 +130,9 @@ def test_it_never_takes_a_product_block():
 
 
 @pytest.mark.parametrize("q,prior", [
-    # Review round 3: these blocks must equal main's, CDS rule apart.
+    # Review round 3: other products' blocks are unchanged by the rule. This compares
+    # with the rule switched off on this branch, not with main; review of a1fb2699
+    # compared 2,037 queries against main by hand.
     ("How much Liver Support should I take with MMS?", []),
     ("Is it safe to take it with MMS?", ["What is Brain Cleanse?"]),
     ("How much Brain Cleanse, Sleep Syntropy and AngiogenX and CDS should I take?", []),
@@ -182,3 +184,8 @@ def test_the_rule_is_scoped_and_the_closing_reminder_still_ends_the_block():
     assert "This conversation may name it" not in b
     if app._CAUTION_STAY_LINE in b:
         assert b.rstrip().endswith(app._CAUTION_CLOSING_REMINDER.strip())
+
+
+@pytest.mark.parametrize("q", ["My CDSA stool test came back", "Her MMSE score is 22"])
+def test_a_longer_capitalised_word_is_not_it(q):
+    assert "water purifier only" not in _facts(q)
