@@ -89,6 +89,17 @@ def test_the_chat_is_told_it_cannot_be_ordered(q):
     assert app._USE_RULES[SLUG] in b and "water purifier only" in app._USE_RULES[SLUG]
 
 
-def test_lowercase_cds_is_not_taken_for_the_product():
-    # "cds" is also compact discs; only the capitalised short name counts.
-    assert app._named_product_facts("I burned two cds of music") == ""
+@pytest.mark.parametrize("q", ["how much cds should i drink", "Is MMS safe to drink?",
+                               "chlorine dioxide drops for parasites?"])
+def test_short_names_in_any_case_bring_the_rule(q):
+    b = app._named_product_facts(q)
+    assert app._USE_RULES[SLUG] in b
+
+
+def test_its_block_carries_no_line_that_invites_a_dose():
+    # Review round 1, #2143: the generic lines told the bot to describe it from the
+    # snippets and to "ask Dr. Glen before taking it".
+    b = app._named_product_facts("Is CDS safe in pregnancy?")
+    block = b.split("### CDS Water Purifier & Activator", 1)[1]
+    for bad in ("from the snippets", "taking it", "has no caution", "directions"):
+        assert bad not in block, bad

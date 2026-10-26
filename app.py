@@ -2248,6 +2248,9 @@ _CASE_FREE_NAMES = frozenset({
     # A coined name, and its warning names Poison Control: "i feel lightheaded on b17
     # max" got no block (B17 Max powder, review round 2, 2026-10-25).
     "b17-max",
+    # A coined name the bot must refuse in any casing: "a water purifier only" (Glen,
+    # 2026-10-25), and its short names match in any case too.
+    "cds-water-purifier--activator",
 })
 # Pinned products whose name a client may type in lowercase, beside a product cue. Every
 # other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
@@ -2341,17 +2344,18 @@ def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> b
     return bool(before or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
 
 
-# Short names a client types for a product the bot must refuse, matched as capitalised
-# words only. "How much CDS should I drink?" named no product, so the bot answered from
+# Short names a client types for a product the bot must refuse, matched as whole words
+# in any case. "How much CDS should I drink?" named no product, so the bot answered from
 # old store snippets that give drinking doses (CDS, Glen 2026-10-25: "a water purifier
 # only"). Kept to products whose block refuses them; never an ordinary alias.
-_REFUSED_SHORT_NAMES = {"cds-water-purifier--activator": ("CDS",)}
+_REFUSED_SHORT_NAMES = {"cds-water-purifier--activator": ("CDS", "MMS", "chlorine dioxide")}
 # A use Glen has ruled out, told to the bot after the availability line. Old store
 # snippets tell readers to drink CDS (Glen 2026-10-25: "a water purifier only").
 _USE_RULES = {"cds-water-purifier--activator": (
     "CDS Water Purifier & Activator is sold as a water purifier only. Never say to drink, "
     "swallow or take it, give no drops, dilution or schedule, and repeat no snippet that "
-    "does. Do not call it an oxygen source.")}
+    "does. Do not call it an oxygen source. This outranks every other line here, "
+    "including any line about its dose or how to take it.")}
 
 
 def _named_product_spans(query_text: str, products: dict) -> dict:
@@ -2415,7 +2419,8 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                     break
         if not m and slug in _REFUSED_SHORT_NAMES and _waitlist_refusal(slug):
             m = next((mi for short in _REFUSED_SHORT_NAMES[slug] for mi in re.finditer(
-                r"(?<![\w+])" + re.escape(short) + r"(?![\w+])", query_text)), None)
+                r"(?<![\w+])" + re.escape(short) + r"(?![\w+])", query_text,
+                re.IGNORECASE)), None)
         if m:
             spans[slug] = m.span()
     # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."
@@ -2640,6 +2645,20 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                 and f"Caution: {_warn}" not in desc):
             desc = desc.replace(_warn, f"Caution: {_warn}", 1)
         parts = [f"### {name}", f"Page: {_catalog_page_url(slug)}"]
+        if slug in _USE_RULES:
+            # Its own block, with none of the description, dose or caution lines: those
+            # told the bot to describe it from the snippets and to "ask before taking
+            # it" (review round 1, #2143).
+            _refusal = _waitlist_refusal(slug)
+            if _refusal:
+                parts += [f"Availability: {_refusal}",
+                          f"{name} cannot be ordered now. Never say it is available to "
+                          "order or in stock."]
+            parts.append(_USE_RULES[slug])
+            blocks.append(parts)
+            if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
+                break
+            continue
         if desc:
             parts.append(desc)
         # A bundle has no directions or warning of its own: its approved intro carries
@@ -2752,8 +2771,6 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             if not pinned:
                 parts.append("No dose or ingredient text is approved for it yet. Give none, "
                              "and do not take one from the snippets.")
-        if slug in _USE_RULES:
-            parts.append(_USE_RULES[slug])
         if len(parts) > 2:
             if not desc and product.get("copy_pinned") and not product.get("bundle"):
                 # The header says to describe it only by this text, which holds no
