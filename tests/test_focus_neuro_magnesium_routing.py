@@ -35,6 +35,17 @@ def test_the_catalog_carries_the_label_and_leaves_the_presale_alone():
     # The presale gained one field, fmp_id 1196 (Retina Renew, Glen 2026-10-07); nothing else moved.
     presale = dict(prods[PRESALE])
     assert presale.pop("fmp_id") == "1196"
+    # Then its approved directions, caution and panel, with D3 650 IU (Glen, 2026-10-25;
+    # tests/test_neuro_magnesium_facts.py checks the values). Undone here, so every other
+    # field is still held to the hash.
+    for k in ("directions", "warning", "chat_caution", "copy_pinned", "content_since"):
+        assert presale.pop(k)
+    presale["ingredients"] = [dict(i) for i in presale["ingredients"]]
+    assert presale["ingredients"][-1] == {"name": "Vitamin D3 (Cholecalciferol)", "dose": "650 IU"}
+    presale["ingredients"][-1]["dose"] = "750 IU"
+    suffix = "; D3 650 IU from FileMaker 1196 (Glen, 2026-10-25)"
+    assert presale["ingredients_source"].endswith(suffix)
+    presale["ingredients_source"] = presale["ingredients_source"][:-len(suffix)]
     assert hashlib.sha256(json.dumps(presale, sort_keys=True).encode()).hexdigest() == PRESALE_SHA
     assert {k: p.get(k) for k in KEPT} == KEPT
     assert json.load(open("data/products-manual-corrections.json"))[FOCUS]["ingredients"] == p["ingredients"]

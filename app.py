@@ -2271,6 +2271,10 @@ _CUE_NAMES = frozenset({
     # 2026-10-24-stress-release-caution). Glen accepted the lowercase false positives the
     # spec lists, such as "is tapping for stress release safe?" (production tab, "yes").
     "stress-release",
+    # "what is in neuro magnesium?" got Focus Neuro-Magnesium Powder's panel from the
+    # snippets (knowledge read-back, 2026-10-25). A cue keeps "neuro magnesium forms
+    # like threonate" an ordinary phrase.
+    "neuro-magnesium",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
