@@ -46,8 +46,10 @@ def test_the_page_data_shows_one_a_day_and_the_shelf_vitamin_a():
 
 
 def test_the_chat_brings_no_moisturize_block():
-    """Moisturize is an everyday word, so the chat's dose comes from the knowledge base
-    (knowledge-69 carries it). This pins that, so a future block cannot quietly differ."""
+    """Moisturize is an everyday word, so no facts block is built and the chat's dose comes
+    from Pinecone alone. This test does not check what the chat says: the Pinecone records
+    belong to the knowledge pillar. It pins the routing, so a future block cannot appear
+    unreviewed."""
     assert app._named_product_facts("How many Moisturize capsules should I take?") == ""
 
 
@@ -65,6 +67,9 @@ def test_the_corrections_replay_keeps_the_shelf_record():
         dict(i) for i in approved["ingredients"][1:]]
     for k in ("description", "intro", "learn_markdown"):
         rec[k] = approved[k].replace("Take 1 capsule daily with food, or as guided.", old)
+    rec["learn_markdown"] = rec["learn_markdown"].replace(
+        "Vitamin A (Retinyl Acetate) 9400 IU (2820 mcg RAE);", "Vitamin A (Retinyl Acetate) 5000 IU;")
+    assert "5000 IU" in rec["learn_markdown"]
     rec["directions"] = "1 capsule up to 3 times daily with food or as guided."
     rec.pop("content_since", None)
     p = {SLUG: rec}
