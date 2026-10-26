@@ -2596,8 +2596,14 @@ _DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy"})
 _STOP_AT_SYMPTOM_RULE = ("If the user describes any symptom this caution names, answer with "
                          "its instruction to stop and call Poison Control, or 911 for the "
                          "signs it gives for 911. Keep each symptom with the number this "
-                         "caution gives it, and never move one to the other number. Suggest "
-                         "no dose change for it: never a lower dose, a pause or a restart.")
+                         "caution gives it. If the user may be in danger now, or a symptom "
+                         "could fit either list, give 911 first. Suggest no dose change for "
+                         "it: never a lower dose, a pause or a restart.")
+# Read-back after #2138: asked about B17 Syntropy with B17 Max, the bot said they were
+# "designed to work as a pair" and named "the safe total daily ceiling". In both headers,
+# since caution-only blocks send everything else to the snippets (review of 8cd9325c).
+_NO_PAIRING_CLAIM = (" Never say two products are designed or made to work together, and "
+                     "never call a dose or a combined amount safe, unless this text says so.")
 _NO_DESCRIPTION = ("No description of {name} is approved here. If asked what it is, describe "
                    "it briefly from the snippets about {name} itself, adding no claim they do "
                    "not make. Its dose and caution come only from this text.")
@@ -2937,7 +2943,7 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             + "R" + (_HEADER_REPEAT_LINKED if linked else _HEADER_REPEAT)[1:]
             + " Do not attach to it any condition, mechanism, pairing or "
             "dose that the snippets give for a different product, even one with a similar "
-            "name.\n"
+            "name." + _NO_PAIRING_CLAIM + "\n"
             + several
             + gated_note + "\n"
             + "\n\n".join(blocks)
@@ -2954,11 +2960,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         "that the snippets give for a different product, even one with a similar name. "
         "Name no disease or condition it is for unless this text or the user's question "
         "names it. Pair or compare it only with products this text names. In such an "
-        "answer, name no other product at all unless this text or the user names it. "
-        # Read-back after #2138: asked about B17 Syntropy with B17 Max, the bot said they
-        # were "designed to work as a pair" and named "the safe total daily ceiling".
-        "Never say two products are designed or made to work together, and never call a "
-        "dose or a combined amount safe, unless this text says so.\n"
+        "answer, name no other product at all unless this text or the user names it."
+        + _NO_PAIRING_CLAIM + "\n"
         "When the question asks what the product is, what is in it, how to take it or "
         "whether it is safe, skip any consensus or mainstream-view structure. Answer "
         "directly from this text, briefly, then the Sources line and the CTA line. Do not "

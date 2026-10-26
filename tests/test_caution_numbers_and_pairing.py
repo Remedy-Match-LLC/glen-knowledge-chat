@@ -23,6 +23,20 @@ def test_a_pairing_question_gets_no_invented_pairing_or_safety():
     assert PAIR in b
 
 
-def test_both_rules_are_in_their_source_strings():
-    assert KEEP in app._STOP_AT_SYMPTOM_RULE
-    assert "never move one to the other number" in app._STOP_AT_SYMPTOM_RULE
+def test_a_present_or_unclear_danger_still_goes_to_911_first():
+    # Review of 8cd9325c: "unusual breathing" (Poison Control) and "breathing difficulty"
+    # (911) sit close together, so the doubtful case must still reach 911.
+    assert ("If the user may be in danger now, or a symptom could fit either list, give "
+            "911 first.") in app._STOP_AT_SYMPTOM_RULE
+
+
+def test_a_caution_only_pair_gets_the_same_rule():
+    # Caution-only blocks send everything but the caution to the snippets, which say
+    # "synergistic with" freely (review of 8cd9325c).
+    products = app._PRODUCTS["products"]
+    names = [p["name"] for p in products.values()
+             if p.get("chat_caution") and not p.get("copy_pinned") and not p.get("inactive")]
+    q = f"Can I take {names[0]} with {names[1]}?"
+    b = app._named_product_facts(q)
+    assert "approved store text for each product's caution" in b, q
+    assert PAIR in b
