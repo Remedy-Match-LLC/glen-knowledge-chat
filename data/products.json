@@ -10819,6 +10819,7 @@
   },
   "cds-water-purifier--activator": {
    "name": "CDS Water Purifier & Activator",
+   "out_of_stock": true,
    "price_cents": 7000,
    "pinecone_title": "CDS Water Purifier &amp; Activator",
    "url": "https://myhealingoasis.com/begin/product/cds-water-purifier--activator",
@@ -10851,7 +10852,18 @@
     "CDS",
     "CDS Activator"
    ],
-   "report_aliases": true
+   "report_aliases": true,
+   "no_generated_copy": true,
+   "intro": "",
+   "description": "",
+   "benefits": [],
+   "how_it_works": "",
+   "copy_pinned": [
+    "intro",
+    "description",
+    "benefits",
+    "research"
+   ]
   },
   "phosphatides": {
    "name": "Phosphatides",

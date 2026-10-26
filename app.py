@@ -2341,6 +2341,19 @@ def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> b
     return bool(before or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
 
 
+# Short names a client types for a product the bot must refuse, matched as capitalised
+# words only. "How much CDS should I drink?" named no product, so the bot answered from
+# old store snippets that give drinking doses (CDS, Glen 2026-10-25: "a water purifier
+# only"). Kept to products whose block refuses them; never an ordinary alias.
+_REFUSED_SHORT_NAMES = {"cds-water-purifier--activator": ("CDS",)}
+# A use Glen has ruled out, told to the bot after the availability line. Old store
+# snippets tell readers to drink CDS (Glen 2026-10-25: "a water purifier only").
+_USE_RULES = {"cds-water-purifier--activator": (
+    "CDS Water Purifier & Activator is sold as a water purifier only. Never say to drink, "
+    "swallow or take it, give no drops, dilution or schedule, and repeat no snippet that "
+    "does. Do not call it an oxygen source.")}
+
+
 def _named_product_spans(query_text: str, products: dict) -> dict:
     """{slug: (start, end)} for each pinned, active product named in the question.
 
@@ -2400,6 +2413,9 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                         slug in _CUE_NAMES and _has_product_cue(query_text, *mi.span()))):
                     m = mi
                     break
+        if not m and slug in _REFUSED_SHORT_NAMES and _waitlist_refusal(slug):
+            m = next((mi for short in _REFUSED_SHORT_NAMES[slug] for mi in re.finditer(
+                r"(?<![\w+])" + re.escape(short) + r"(?![\w+])", query_text)), None)
         if m:
             spans[slug] = m.span()
     # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."
@@ -2736,6 +2752,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             if not pinned:
                 parts.append("No dose or ingredient text is approved for it yet. Give none, "
                              "and do not take one from the snippets.")
+        if slug in _USE_RULES:
+            parts.append(_USE_RULES[slug])
         if len(parts) > 2:
             if not desc and product.get("copy_pinned") and not product.get("bundle"):
                 # The header says to describe it only by this text, which holds no
@@ -11280,7 +11298,9 @@ def begin_product_data(slug):
         return jsonify({"error": "not found"}), 404
     # Generated content (ingredients + benefits + short description). Static JSON
     # values override the generated card when present (lets Glen pin copy).
-    card = _product_card(p) if not p.get("info_only") else {}
+    # no_generated_copy: no card at all, so an empty pinned field cannot fall back to
+    # generated text (CDS, "a water purifier only", Glen 2026-10-25).
+    card = _product_card(p) if not (p.get("info_only") or p.get("no_generated_copy")) else {}
     _pin = _pinned_copy(p)
     how = ("" if p.get("info_only") else
            (p.get("how_it_works") or "") if "research" in _pin else _product_how(p))
@@ -11514,7 +11534,9 @@ def begin_product_page_data(slug):
     if not p:
         return jsonify({"error": "not found"}), 404
     slug = p["slug"]  # a superseded slug runs on its survivor from here on
-    card = _product_card(p) if not p.get("info_only") else {}
+    # no_generated_copy: no card at all, so an empty pinned field cannot fall back to
+    # generated text (CDS, "a water purifier only", Glen 2026-10-25).
+    card = _product_card(p) if not (p.get("info_only") or p.get("no_generated_copy")) else {}
     _pin = _pinned_copy(p)
     how = ("" if p.get("info_only") else
            (p.get("how_it_works") or "") if "research" in _pin else _product_how(p))
