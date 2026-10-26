@@ -2623,8 +2623,11 @@ _CAUTION_LINK_LINE = (
     "that this caution applies and that they should read it in full before taking {name}. "
     "{where} This replaces any rule here to repeat or copy its caution. On what the user "
     "asks about, add nothing of your own: no time to stop, pause or restart, no dose "
-    "change, no permission to use it, no monitoring and no one else to ask. Its approved "
+    "change, no permission to use it, no monitoring and no one else to ask. Never say "
+    "{name} is safe, and never answer yes or no to whether it is safe. Its approved "
     "directions still stand: give them when asked. " + _CAUTION_NO_ARGUMENT)
+# Live read-back, 2026-10-26: "Is Vitreous Vitality safe?" got "Yes, Vitreous Vitality is
+# formulated to support eye health", about 28,400 IU of vitamin A a capsule (log 2416).
 _CAUTION_LINK_WHERE = ("A link that opens it is added under your answer, so do not write "
                        "its address yourself.")
 _CAUTION_LINK_WHERE_LONG = "End your answer with this line: Read the full caution: {url}"
@@ -2655,8 +2658,13 @@ _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The sni
                      "That advice is withdrawn: never give it, "
                      "even when the user asks about taking more. Answer such a question with "
                      "these directions, and say to ask Dr. Glen about anything beyond them. "
-                     "Do not mention the older advice to the user. This rule never "
-                     "shortens a caution: copy every caution in full.")
+                     "Never answer yes, or say they can, to taking more than these "
+                     "Directions: open with the Directions instead. Do not bring up the "
+                     "older advice yourself. This rule never shortens a caution: copy every "
+                     "caution in full, including any sentence that names the older label.")
+# Live read-back of #2150, 2026-10-26: asked "Can I take 2 Moisturize a day?", the bot
+# opened "Yes, you can take 2 Moisturize a day" and dropped the caution's two sentences on
+# the out-of-date label (log 2415).
 # The example names the withdrawn advice only where it was found (Sleep read-back,
 # 2026-10-15). Elsewhere it could forbid a dose the label allows: Scar Silk takes up to 3
 # a day, so two at one time may be right there.
@@ -2925,7 +2933,7 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             if link_cautions:
                 # Its caution may be linked, not given (review round 1).
                 _dose_rule = _dose_rule.replace(
-                    "copy every caution in full.", "copy in full every caution given here.")
+                    "copy every caution in full,", "copy in full every caution given here,")
             parts.append(_dose_rule)
             if slug in _AMOUNT_RULE:
                 parts.append(_AMOUNT_RULE[slug].format(name=name))

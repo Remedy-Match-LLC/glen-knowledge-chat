@@ -182,3 +182,11 @@ def test_the_corrections_replay_restores_the_store_text():
     for k in ("ingredients", "directions", "warning", "chat_caution", "copy_pinned",
               "intro", "description"):
         assert p[SLUG][k] == approved[k], k
+
+
+def test_a_safety_question_never_gets_a_yes():
+    """Live, log 2416: "Is Vitreous Vitality safe?" got "Yes, Vitreous Vitality is
+    formulated to support eye health"."""
+    b = app.named_product_facts_block("Is Vitreous Vitality safe?")
+    assert ("Never say Vitreous Vitality is safe, and never answer yes or no to whether it "
+            "is safe.") in b

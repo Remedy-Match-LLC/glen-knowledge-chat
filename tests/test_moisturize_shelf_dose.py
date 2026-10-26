@@ -176,3 +176,12 @@ def test_the_corrections_replay_keeps_the_shelf_record():
     for k in TEXT_FIELDS + ("ingredients", "content_since", "copy_pinned", "warning",
                             "chat_caution"):
         assert p[SLUG][k] == approved[k], k
+
+
+def test_more_than_the_directions_never_gets_a_yes():
+    """Live, log 2415: "Yes, you can take 2 Moisturize a day", and the caution lost its
+    sentences on the out-of-date label."""
+    b = app._named_product_facts("Can I take 2 Moisturize a day?")
+    assert "Never answer yes, or say they can, to taking more than these Directions" in b
+    assert "including any sentence that names the older label" in b
+    assert "Do not mention the older advice to the user" not in b
