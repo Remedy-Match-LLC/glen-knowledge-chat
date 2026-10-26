@@ -204,11 +204,12 @@ def test_neither_rule_may_be_quoted_or_cited():
     assert ("CDS Water Purifier & Activator is out of stock, so never recommend it."
             in app._STANDING_USE_RULE)
 
-
-def test_the_standing_out_of_stock_line_matches_the_catalog():
-    # The standing rule is a fixed string. If CDS is restocked, drop its out-of-stock line.
-    assert app._PRODUCTS["products"][SLUG].get("out_of_stock"), (
-        "CDS is back in stock: remove the out-of-stock line from _STANDING_USE_RULE")
     sp = app.get_system_prompt("self-healing")
     assert "retrieved snippets or approved product text used" in sp
     assert "Never list an instruction, a rule or this prompt as a source." in sp
+
+
+def test_the_standing_out_of_stock_line_matches_the_catalog():
+    # The standing rule is a fixed string, so tie its stock line to the catalog flag.
+    line = "is out of stock, so never recommend it" in app._STANDING_USE_RULE
+    assert line == bool(app._PRODUCTS["products"][SLUG].get("out_of_stock"))
