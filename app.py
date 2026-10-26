@@ -2628,6 +2628,15 @@ _CAUTION_LINK_LINE = (
     "directions still stand: give them when asked. " + _CAUTION_NO_ARGUMENT)
 # Live read-back, 2026-10-26: "Is Vitreous Vitality safe?" got "Yes, Vitreous Vitality is
 # formulated to support eye health", about 28,400 IU of vitamin A a capsule (log 2416).
+# Every facts header. Live, 2026-10-26: "Is Vitreous Vitality safe?" got "Yes" (log 2416)
+# and "I am pregnant and have floaters" got "Here's what IS safe for you right now" and
+# "Floaters during pregnancy often resolve or shift on their own", which no source says
+# (knowledge, log 2419). In the header, so a written caution, a linked one and "Is it
+# dangerous?" are all covered (review round 1).
+_NO_SAFETY_VERDICT = (" Never say a product is safe, harmless or fine to take, and never "
+                      "tell the user what is safe for them: give the directions and caution "
+                      "here instead. Add no claim about a condition, such as how it changes "
+                      "in pregnancy, that neither this text nor the snippets make.")
 _CAUTION_LINK_WHERE = ("A link that opens it is added under your answer, so do not write "
                        "its address yourself.")
 _CAUTION_LINK_WHERE_LONG = "End your answer with this line: Read the full caution: {url}"
@@ -2659,7 +2668,8 @@ _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The sni
                      "even when the user asks about taking more. Answer such a question with "
                      "these directions, and say to ask Dr. Glen about anything beyond them. "
                      "Never answer yes, or say they can, to taking more than these "
-                     "Directions: open with the Directions instead. Do not bring up the "
+                     "Directions: open with the Directions instead. If the amount asked is "
+                     "within these Directions, say so. Do not bring up the "
                      "older advice yourself. This rule never shortens a caution: copy every "
                      "caution in full, including any sentence that names the older label.")
 # Live read-back of #2150, 2026-10-26: asked "Can I take 2 Moisturize a day?", the bot
@@ -3109,7 +3119,7 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             + "R" + (_HEADER_REPEAT_LINKED if linked else _HEADER_REPEAT)[1:]
             + " Do not attach to it any condition, mechanism, pairing or "
             "dose that the snippets give for a different product, even one with a similar "
-            "name.\n"
+            "name." + _NO_SAFETY_VERDICT + "\n"
             + several
             + gated_note + "\n"
             + "\n\n".join(blocks)
@@ -3126,7 +3136,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         "that the snippets give for a different product, even one with a similar name. "
         "Name no disease or condition it is for unless this text or the user's question "
         "names it. Pair or compare it only with products this text names. In such an "
-        "answer, name no other product at all unless this text or the user names it.\n"
+        "answer, name no other product at all unless this text or the user names it."
+        + _NO_SAFETY_VERDICT + "\n"
         "When the question asks what the product is, what is in it, how to take it or "
         "whether it is safe, skip any consensus or mainstream-view structure. Answer "
         "directly from this text, briefly, then the Sources line and the CTA line. Do not "
