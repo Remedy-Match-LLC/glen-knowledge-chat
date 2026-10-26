@@ -2341,6 +2341,61 @@ def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> b
     return bool(before or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
 
 
+# A product whose use Glen has ruled out, kept out of the product blocks entirely. Its
+# own rule goes after them whenever the conversation names it, in any words a client
+# uses, so no follow-up pattern, product cap or header can drop or contradict it. CDS:
+# "a water purifier only" (Glen, 2026-10-25); its old store page and snippets gave
+# drinking doses, and three review rounds on #2143 found name-matching leaks.
+_USE_RULE_NAMES = {"cds-water-purifier--activator": re.compile(
+    # CDS and MMS only as capitals; every other name in any case.
+    r"(?<![A-Za-z])(?:CDS|MMS)(?![A-Za-z])|(?i:(?<![a-z])c\.d\.s\.?|chlorine[\s-]+dioxide|"
+    r"sodium[\s-]+chlorite|\bclo[\s-]?[2\u2082]|miracle\s+mineral|dioxido\s+de\s+cloro|"
+    r"\bjim\s+humble|\bkalcker|water\s+purifier\s*(?:&|&amp;|and)\s*activator|"
+    # Never "water purifier" alone: the ionizers are Glen's main water recommendation.
+    r"drink\w*\s+(?:the\s+|a\s+|my\s+)?water\s+purifier)")}
+# Lowercase "cds" or "mms" counts only beside a use word: "talks on CDs", "eat mms" and a
+# doctor's "CDS system" are not the product (review of 8919bc6a). The standing rule in
+# every system prompt covers any mention this misses.
+_USE_RULE_LOWER = {"cds-water-purifier--activator": re.compile(
+    r"(?<![a-z])(?:cds|mms)\d*(?![a-z]).{0,40}\b(?:drink\w*|drops?|dos(?:e|es|age|ing)|"
+    r"dilut\w*|protocol|swallow\w*|ounces?)\b|\b(?:drink\w*|drops?|dos(?:e|es|age|ing)|"
+    r"dilut\w*|protocol|swallow\w*)\b.{0,40}(?<![a-z])(?:cds|mms)\d*(?![a-z])",
+    re.IGNORECASE)}
+_USE_RULES = {"cds-water-purifier--activator": (
+    "{name} is sold as a water purifier only. Never say to drink, swallow or take it, give "
+    "no drops, dilution or schedule, and repeat no snippet that does. Do not call it an "
+    "oxygen source or name a health use for it. Give no price, and do not say its page has "
+    "directions.")}
+
+
+def _use_rule_block(query_text, prior_user_turns=None) -> str:
+    """The use rule for each ruled-out product the conversation names, or ""."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    texts = [t for t in [query_text, *(prior_user_turns or [])] if isinstance(t, str)]
+    out = []
+    for slug, names in _USE_RULE_NAMES.items():
+        p = products.get(slug)
+        lower = _USE_RULE_LOWER.get(slug)
+        if not p or not any(names.search(html.unescape(t))
+                            or (lower and lower.search(html.unescape(t))) for t in texts):
+            continue
+        name = html.unescape(p.get("name") or slug).strip()
+        # Worded so an unrelated "CDs" is not read as the product, and scoped to it, so
+        # another product's dose and caution stand (review of 8919bc6a).
+        lines = [f"USE RULE FOR {name}, a chlorine dioxide product. Apply it only if the "
+                 "user is asking about this product; otherwise ignore this rule and do not "
+                 "mention the product. For this product it outranks every snippet and every "
+                 "other line here. It changes nothing about any other product."]
+        refusal = _waitlist_refusal(slug)
+        if refusal:
+            lines += [f"Availability: {refusal}",
+                      f"{name} cannot be ordered now. Never say it is available to order or "
+                      "in stock."]
+        lines += [_USE_RULES[slug].format(name=name), f"Page: {_catalog_page_url(slug)}"]
+        out.append("\n".join(lines))
+    return "\n\n".join(out)
+
+
 def _named_product_spans(query_text: str, products: dict) -> dict:
     """{slug: (start, end)} for each pinned, active product named in the question.
 
@@ -2368,7 +2423,8 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                  or _bundle_bot_cautions(p, products))
                 or p.get("inactive")
                 or p.get("info_only")
-                or slug in _DO_NOT_RECOMMEND_FACTS or slug in _COMMON_WORD_NAMES):
+                or slug in _DO_NOT_RECOMMEND_FACTS or slug in _COMMON_WORD_NAMES
+                or slug in _USE_RULES):
             continue
         name = html.unescape(p.get("name") or "").replace("\u2122", "").strip()
         if not name:
@@ -2959,6 +3015,10 @@ def named_product_facts_block(query_text: str, gated: bool = False,
         facts = (f"FOLLOW-UP: the user's message is about {name}, which they named in their "
                  f"previous question. Answer it about {name} from the text below, in the "
                  f"format the text below sets for a dose or safety question.\n" + facts)
+    # Before the closing caution reminder, so that reminder still ends the block.
+    use = _use_rule_block(query_text, prior_user_turns)
+    if use:
+        facts = f"{facts}\n\n{use}" if facts else use
     if _CAUTION_STAY_LINE in facts:
         facts += "\n\n" + _CAUTION_CLOSING_REMINDER
     return f"\n\n{facts}" if facts else ""
@@ -3887,9 +3947,21 @@ Write at a scientific research level. Use precise biochemical and biophysical te
 }
 
 
+# In every chat route's system prompt, so no route, phrasing or old snippet can bring the
+# product up without it. The per-message rule (_use_rule_block) repeats it beside the
+# facts. Review on #2143: only /chat carried a rule, and only when the user's own words
+# named CDS (Glen, 2026-10-25: "a water purifier only").
+_STANDING_USE_RULE = (
+    "\n\nSTANDING PRODUCT RULE. CDS Water Purifier & Activator (also called CDS, MMS, "
+    "chlorine dioxide or sodium chlorite solution) is sold as a water purifier only. If it "
+    "comes up, from the user or from any snippet, never say to drink, swallow or take it. "
+    "Give no drops, dilution, schedule or price for it, name no health use for it, and do "
+    "not call it an oxygen source. This outranks any snippet or text that says otherwise.")
+
+
 def get_system_prompt(level: str) -> str:
     instruction = _LEVEL_INSTRUCTIONS.get(level, _LEVEL_INSTRUCTIONS["self-healing"])
-    return _SYSTEM_BASE + "\n" + instruction
+    return _SYSTEM_BASE + "\n" + instruction + _STANDING_USE_RULE
 
 
 SYSTEM_PROMPT = get_system_prompt("self-healing")
@@ -7938,6 +8010,7 @@ def begin_match_chat():
         _ally_ov = ash_ally.ally_overlay(LOG_DB, _ally_subject)
         if _ally_ov:
             _match_system = _ally_ov + "\n\n" + _match_system
+        _match_system += _STANDING_USE_RULE
 
         full = []
         try:
@@ -11280,7 +11353,9 @@ def begin_product_data(slug):
         return jsonify({"error": "not found"}), 404
     # Generated content (ingredients + benefits + short description). Static JSON
     # values override the generated card when present (lets Glen pin copy).
-    card = _product_card(p) if not p.get("info_only") else {}
+    # no_generated_copy: no card at all, so an empty pinned field cannot fall back to
+    # generated text (CDS, "a water purifier only", Glen 2026-10-25).
+    card = _product_card(p) if not (p.get("info_only") or p.get("no_generated_copy")) else {}
     _pin = _pinned_copy(p)
     how = ("" if p.get("info_only") else
            (p.get("how_it_works") or "") if "research" in _pin else _product_how(p))
@@ -11514,7 +11589,9 @@ def begin_product_page_data(slug):
     if not p:
         return jsonify({"error": "not found"}), 404
     slug = p["slug"]  # a superseded slug runs on its survivor from here on
-    card = _product_card(p) if not p.get("info_only") else {}
+    # no_generated_copy: no card at all, so an empty pinned field cannot fall back to
+    # generated text (CDS, "a water purifier only", Glen 2026-10-25).
+    card = _product_card(p) if not (p.get("info_only") or p.get("no_generated_copy")) else {}
     _pin = _pinned_copy(p)
     how = ("" if p.get("info_only") else
            (p.get("how_it_works") or "") if "research" in _pin else _product_how(p))
@@ -16117,6 +16194,7 @@ def begin_concierge_chat():
 
     _ally_ov = ash_ally.ally_overlay(LOG_DB, email)
     _sys_concierge = (_ally_ov + "\n\n" + _CONCIERGE_SYSTEM) if _ally_ov else _CONCIERGE_SYSTEM
+    _sys_concierge += _STANDING_USE_RULE
 
     def generate():
         if not is_member(session_id, email):
@@ -21915,7 +21993,8 @@ def api_practitioner_assist():
         full = []
         try:
             with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=900,
-                                     system=_PRACTITIONER_ASSIST_SYSTEM, messages=messages) as stream:
+                                     system=_PRACTITIONER_ASSIST_SYSTEM + _STANDING_USE_RULE,
+                                     messages=messages) as stream:
                 for tok in stream.text_stream:
                     tok = _strip_dash(tok); full.append(tok)
         except Exception as e:
@@ -34086,7 +34165,7 @@ def api_portal_chat(token):
         client_orders = []
     from dashboard import portal_concierge as _pcz
     ctx = _pcz.build_context(content, client_orders)
-    _sys = _pcz.system_prompt(ctx)
+    _sys = _pcz.system_prompt(ctx) + _STANDING_USE_RULE
     if page_context:
         page_lines = [f"Current portal panel: {page_context.get('panel', 'unknown')}."]
         if page_context.get("title"):
@@ -34387,7 +34466,8 @@ def api_console_portal_draft_reply(email):
     except Exception:
         orders = []
     ctx = _pcz.build_context(rec.get("content") or {}, orders)
-    sys = _pcz.system_prompt(ctx) + (
+    # Glen's drafted reply follows the same CDS rule as the portal chat (review, #2143).
+    sys = _pcz.system_prompt(ctx) + _STANDING_USE_RULE + (
         "\n\nYou are drafting DR. GLEN'S OWN personal reply to this client (first person, warm, "
         "signed 'Dr. Glen'), to address their most recent message in the thread below. Keep it "
         "concise and grounded in their data. If it needs a consultation, a custom Terrain "

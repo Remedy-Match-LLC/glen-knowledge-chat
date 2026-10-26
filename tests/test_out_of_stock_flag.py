@@ -71,14 +71,14 @@ def _refused(r):
     assert body.get("url") == URL, body
 
 
-def test_the_catalog_file_marks_only_night_vision_and_seaamino_out_of_stock():
+def test_the_catalog_file_marks_only_the_three_out_of_stock():
     """Vitamin D Syntropy's new formula is back in stock (spec 2026-10-16-vitamin-d-syntropy)."""
     p = _real()[VD]
     assert "out_of_stock" not in p
     assert not p.get("inactive") and not p.get("waitlist_only")
     assert [s for s, q in _real().items()
-            if isinstance(q, dict) and "out_of_stock" in q] == ["seaamino-syntropy",
-                                                                 "night-vision"]
+            if isinstance(q, dict) and "out_of_stock" in q] == [
+                "seaamino-syntropy", "night-vision", "cds-water-purifier--activator"]
 
 
 def test_night_vision_is_out_of_stock_with_no_date(client):
