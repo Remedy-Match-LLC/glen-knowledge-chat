@@ -79,74 +79,71 @@ def test_product_data_carries_no_drinking_text(client, generated):
     assert d["benefits"] == [] and generated not in json.dumps(d)
 
 
-@pytest.mark.parametrize("q", ["Can I order CDS Water Purifier & Activator?",
-                               "How much CDS should I drink?"])
-def test_the_chat_is_told_it_cannot_be_ordered(q):
-    b = app._named_product_facts(q)
-    assert "### CDS Water Purifier & Activator" in b
+def _facts(q, prior=None):
+    return app.named_product_facts_block(q, prior_user_turns=prior or [])
+
+
+def _has_rule(b):
+    return "is sold as a water purifier only. Never say to drink, swallow or take it" in b
+
+
+# Every miss the three review rounds on #2143 found, single questions and follow-ups.
+@pytest.mark.parametrize("q,prior", [
+    ("Can I order CDS Water Purifier & Activator?", []),
+    ("How much CDS should I drink?", []), ("how much cds should i drink", []),
+    ("is cds good for candida", []), ("What is Cds", []),
+    ("what is chlorine dioxide used for", []), ("Is MMS safe to drink?", []),
+    ("chlorine dioxide drops for parasites?", []),
+    ("What is Chlorine Dioxide Solution?", []), ("sodium chlorite drops?", []),
+    ("Can I drink it?", ["How much CDS should I drink?"]),
+    ("how long do I keep going with it", ["How much CDS should I drink?"]),
+    ("and for kids?", ["How many drops of CDS for adults?"]),
+    ("Does it oxygenate the blood?", ["What is CDS?"]),
+    ("What is the price?", ["What is CDS?"]),
+    ("how many drops a day?", ["I have some cds from Jim Humble"]),
+    ("Can I add it to my bath?", ["I bought CDS"]),
+    ("How Much Liver Support should I take with MMS?", []),
+])
+def test_the_rule_reaches_every_cds_question(q, prior):
+    b = _facts(q, prior)
+    assert _has_rule(b), (q, prior)
+    assert "Give no price" in b and "do not say its page has directions" in b
     assert f"Availability: {LINE}" in b
-    assert "CDS Water Purifier & Activator cannot be ordered now." in b
-    assert app._USE_RULES[SLUG] in b and "water purifier only" in app._USE_RULES[SLUG]
-    # Live read-back before #2143: "Before taking this product", "the list price is $70"
-    # and "full directions" on its page (knowledge, 2026-10-25).
-    for must in ("Never say to drink, swallow or take it", "Give no price",
-                 "do not say its page has directions"):
-        assert must in app._USE_RULES[SLUG]
-    assert "$" not in b.split("### CDS Water Purifier & Activator", 1)[1]
 
 
-@pytest.mark.parametrize("q", ["how much cds should i drink", "Is MMS safe to drink?",
-                               "chlorine dioxide drops for parasites?"])
-def test_short_names_in_any_case_bring_the_rule(q):
-    b = app._named_product_facts(q)
-    assert app._USE_RULES[SLUG] in b
-
-
-def test_its_block_carries_no_line_that_invites_a_dose():
-    # Review round 1, #2143: the generic lines told the bot to describe it from the
-    # snippets and to "ask Dr. Glen before taking it".
-    b = app._named_product_facts("Is CDS safe in pregnancy?")
-    block = b.split("### CDS Water Purifier & Activator", 1)[1]
-    for bad in ("from the snippets", "taking it", "has no caution",
+def test_its_rule_carries_no_line_that_invites_a_dose():
+    b = _facts("Is CDS safe in pregnancy?")
+    for bad in ("from the snippets", "taking it", "has no caution", "$",
                 "description, ingredients and directions", "Its directions above"):
-        assert bad not in block, bad
+        assert bad not in b, bad
 
 
-@pytest.mark.parametrize("follow", ["Can I drink it?", "Is it safe to drink?", "how many drops?",
-                                    "How do I drink it?", "How often?",
-                                    "What dilution do I use for parasites?"])
-def test_a_use_follow_up_carries_the_rule(follow):
-    for prior in ("How much CDS should I drink?", "Tell me about MMS"):
-        b = app.named_product_facts_block(follow, prior_user_turns=[prior])
-        assert app._USE_RULES[SLUG] in b, (prior, follow)
+def test_it_never_takes_a_product_block():
+    # Kept out of the shared blocks, so no header, cap or follow-up rule touches it.
+    assert SLUG not in app._named_product_spans(
+        "How much CDS Water Purifier & Activator should I drink?", app._PRODUCTS["products"])
 
 
-def test_a_use_follow_up_does_not_carry_another_product():
-    # Only a use-rule product is carried by the wide test; Night Vision keeps the narrow one.
-    assert app.named_product_facts_block(
-        "Can I drink it?", prior_user_turns=["Can I order Night Vision?"]) == ""
+@pytest.mark.parametrize("q,prior", [
+    # Review round 3: these blocks must equal main's, CDS rule apart.
+    ("How much Liver Support should I take with MMS?", []),
+    ("Is it safe to take it with MMS?", ["What is Brain Cleanse?"]),
+    ("I listen to meditation CDs at night. How much Sleep Syntropy should I take?", []),
+    ("How much Brain Cleanse, Sleep Syntropy and AngiogenX and CDS should I take?", []),
+])
+def test_other_products_keep_their_own_blocks(q, prior, monkeypatch):
+    with_rule = _facts(q, prior)
+    monkeypatch.setattr(app, "_USE_RULE_NAMES", {})
+    without = _facts(q, prior)
+    assert with_rule.startswith(without) and _has_rule(with_rule[len(without):])
 
 
 def test_the_rule_does_not_depend_on_stock(monkeypatch):
     rec = dict(app._PRODUCTS["products"][SLUG]); rec.pop("out_of_stock")
     monkeypatch.setitem(app._PRODUCTS["products"], SLUG, rec)
-    b = app._named_product_facts("how much CDS should I drink")
-    assert app._USE_RULES[SLUG] in b and "out of stock" not in b
+    b = _facts("how much CDS should I drink")
+    assert _has_rule(b) and "out of stock" not in b
 
 
-def test_the_product_cap_keeps_it():
-    b = app._named_product_facts(
-        "How much Brain Cleanse, Sleep Syntropy and AngiogenX and CDS should I take?")
-    assert app._USE_RULES[SLUG] in b
-
-
-@pytest.mark.parametrize("q", ["Do you sell meditation CDs?", "I listen to healing CDs",
-                               "Does my city water use chlorine dioxide?",
-                               "I burned two cds of music"])
-def test_ordinary_words_are_not_taken_for_it(q):
-    assert SLUG not in app._named_product_spans(q, app._PRODUCTS["products"])
-
-
-def test_a_cds_only_answer_does_not_get_the_caution_only_header():
-    b = app._named_product_facts("How much CDS should I drink?")
-    assert "Repeat its full caution" not in b
+def test_a_conversation_that_never_names_it_gets_nothing():
+    assert "water purifier only" not in _facts("How much Sleep Syntropy should I take?")
