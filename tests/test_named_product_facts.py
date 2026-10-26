@@ -59,7 +59,7 @@ def test_names_clients_actually_type(question, name):
     "Tell me about Dental Regen Powder",    # an old name: aliases never count
     "reverse age naturally",                # review round 3
     "I have acetaldehyde detox issues after drinking",
-    "Moisturize my skin. What helps?",      # an everyday word never qualifies
+    "Moisturize my skin. What helps?",      # the verb at a sentence start, no cue
     "Is Electrolyte Mineral Manna good?",   # never recommended (Glen)
     "Dose of Aller-Free HomeoEnergetic Drops?",
 ])

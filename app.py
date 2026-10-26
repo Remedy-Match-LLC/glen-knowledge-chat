@@ -14,6 +14,7 @@ except ImportError:
 import os
 import sys
 import html
+import itertools
 import re
 import json
 import uuid
@@ -2227,7 +2228,10 @@ _GATED_FACTS_NOTE = (
     "next step for their condition.\n")
 _NAMED_FACTS_MAX_CHARS = 1600
 # Pinned products whose name is an everyday word, so a sentence can start with it.
-_COMMON_WORD_NAMES = frozenset({"moisturize"})
+# Moisturize moved to _SENTENCE_START_CUE_NAMES: with no block the bot found no dose, and
+# live it told a client to scale up to 2 a day, about 18,800 IU of vitamin A (log 2370,
+# 2026-10-26).
+_COMMON_WORD_NAMES = frozenset()
 # A facts block tells the model the product exists and to give its dose, which would
 # recommend a product Glen ruled must never be recommended.
 from dashboard.related_products import DO_NOT_RECOMMEND as _DO_NOT_RECOMMEND_FACTS  # noqa: E402
@@ -2275,6 +2279,10 @@ _CUE_NAMES = frozenset({
     # snippets (knowledge read-back, 2026-10-25). A cue keeps "neuro magnesium forms
     # like threonate" an ordinary phrase.
     "neuro-magnesium",
+    # "how many moisturize capsules a day?" in lowercase still needs the dose: one capsule
+    # is near the vitamin A upper limit (review round 2, 2026-10-26). "how do I moisturize
+    # dry skin?" has no cue.
+    "moisturize",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
@@ -2284,7 +2292,9 @@ _ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 # sentence ("Clarity of mind is what I lack"). Capitalised mid-sentence it names the product
 # ("Tell me about Clarity"); at the start of a sentence it needs a product cue ("Clarity
 # dose?"). Lowercase never counts. Review of the Clarity pin, 2026-10-23.
-_SENTENCE_START_CUE_NAMES = frozenset({"clarity"})
+# Moisturize the same way: "How many Moisturize capsules a day?" names it, and "Moisturize
+# my skin. What helps?" and "how do I moisturize dry skin?" do not (2026-10-26).
+_SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"})
 # Pinned products that yield to any longer catalog name containing theirs, pinned or not:
 # "Crystalline Clarity" and the Clarity flower essences are other products. Opt-in, because
 # many pinned label names sit inside a longer unpinned FileMaker row ("Energessence
@@ -2314,6 +2324,15 @@ _PRODUCT_CUE_AFTER = re.compile(
     re.IGNORECASE)
 # What may follow a lowercase name: the end of a clause or a word that cannot extend the
 # name into a longer noun phrase ("reverse age discrimination").
+_SENTENCE_START_NAME_OK = re.compile(
+    r"(?:['\u2019]s\b|\s*(?:supplements?|products?|formula|vegicaps?)\s*(?:[?.!,;:]|$))",
+    re.IGNORECASE)
+
+
+def _TITLE_CASED(text: str) -> bool:
+    """Most words capitalised, so a capital says nothing about a name."""
+    words = re.findall(r"[A-Za-z]{2,}", text)
+    return len(words) >= 3 and sum(w[0].isupper() for w in words) >= 0.6 * len(words)
 _AFTER_NAME_OK = re.compile(
     r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
     r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
@@ -2416,7 +2435,7 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
     or consolidated product, and the block tells the model the name is real. The whole
     name must stand as words, cased as in the catalog: "clear the way for my lymph" and
     "reverse age naturally" are not product names (review round 3). A product whose name
-    is an everyday word (Moisturize) never qualifies, and neither does one Glen has
+    is an everyday word in _COMMON_WORD_NAMES never qualifies, and neither does one Glen has
     ruled must never be recommended. Only products with
     `copy_pinned` qualify: their store text is Glen-approved, and older descriptions
     carry claims and price lines (review round 1, 2026-10-09).
@@ -2457,9 +2476,32 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             m = next((mi for mi in re.finditer(pattern, query_text, re.IGNORECASE)
                       if _own(mi) and _has_product_cue(query_text, *mi.span(), strict=True)), None)
         elif slug in _SENTENCE_START_CUE_NAMES:
-            m = next((mi for mi in re.finditer(pattern, query_text)
-                      if _own(mi) and (not _SENTENCE_START.search(query_text[:mi.start()])
+            # Only the first matches are read: each one slices the text, and "Clarity? "
+            # 5,000 times took 17 s (review round 3, 2026-10-26).
+            _cased = list(itertools.islice(re.finditer(pattern, query_text), 40))
+            # A Title Cased Question capitalises the verb too: "How Do I Moisturize Dry
+            # Skin?" needs a cue, as at a sentence start (review round 3). Clarity keeps
+            # the rule it had.
+            _title = slug in _CUE_NAMES and _TITLE_CASED(query_text)
+            m = next((mi for mi in _cased
+                      if _own(mi) and ((not _title
+                                        and not _SENTENCE_START.search(query_text[:mi.start()]))
                                        or _has_product_cue(query_text, *mi.span()))), None)
+            # For those also in _CUE_NAMES (Moisturize): a sentence-start name followed by
+            # "'s" or by a product word that ends the clause ("Moisturize's dose?",
+            # "Moisturize supplement?"), the name as the whole message ("Moisturize?"), and
+            # lowercase beside a cue (review rounds 1 and 3, 2026-10-26).
+            if not m and slug in _CUE_NAMES:
+                m = next((mi for mi in _cased
+                          if _own(mi) and _SENTENCE_START_NAME_OK.match(query_text, mi.end())),
+                         None)
+                if not m and re.fullmatch(r"[\s\"'(\u201c]*" + pattern + r"[\s?.!\"')\u201d]*",
+                                          query_text):
+                    m = _cased[0]
+            if not m and slug in _CUE_NAMES:
+                m = next((mi for mi in itertools.islice(
+                              re.finditer(pattern, query_text, re.IGNORECASE), 40)
+                          if _own(mi) and _has_product_cue(query_text, *mi.span())), None)
         elif not m:
             # Any case: a coined name cannot occur in ordinary speech. A name that is also
             # an everyday phrase ("clear the way", "reverse age") needs a product cue
@@ -2605,7 +2647,19 @@ _WITHDRAWN_DOSE_EXAMPLE["b17-syntropy"] = ", such as up to 10 capsules a day"
 # Pinned directions with no chat_caution still get the dose rule here: B17 Syntropy's
 # warning must reach the answer in full, so it is written, never linked (review round 2,
 # 2026-10-25).
-_DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy"})
+_DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy", "moisturize"})
+# Live with 9,400 IU in the knowledge base, the bot invented "188% of the daily value"
+# (about 313% is right), called one capsule "not excessive" though it is 94% of the adult
+# upper limit, and added "Most clients find one daily adequate" (knowledge, log 2373,
+# 2026-10-26).
+_AMOUNT_RULE = {"moisturize": (
+    "Give each amount for {name} exactly as listed above. Give no percent Daily Value and "
+    "no other figure worked out from it. Do not call any amount high, low, moderate, "
+    "excessive or safe, and do not say what most clients take.")}
+# Moisturize's shelf batch holds about 9,400 IU of vitamin A a capsule. Its store copy said
+# up to 3 a day, and live the bot added a second capsule (log 2370, 2026-10-26).
+_WITHDRAWN_DOSE_EXAMPLE["moisturize"] = (", such as up to 3 capsules a day, or a second "
+                                         "capsule for very dry skin or eyes")
 # A caution that names Poison Control is the whole answer to a symptom it lists. The
 # B17 store copy said to lower the dose if lightheaded, an early sign of cyanide
 # toxicity (formulation, 2026-10-25), and that copy may still be in the snippets.
@@ -2808,12 +2862,16 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         # Directions only from a product whose copy Glen pinned. Eleven unpinned products
         # carry directions that are not approved for the bot.
         val = (product.get("directions") or "").strip() if pinned else ""
-        if val and val not in desc:
+        # A product in _DOSE_RULE_WITHOUT_CAUTION always gets its Directions line, which the
+        # rule names, even when its description holds the same words (Moisturize,
+        # 2026-10-26). Other products keep the line only when the description lacks it.
+        _dirs_line = bool(val and (val not in desc or slug in _DOSE_RULE_WITHOUT_CAUTION))
+        if _dirs_line:
             parts.append(f"Directions: {val}")
         bundle_cautions = bool(product.get("bundle") and _bundle_bot_cautions(product, products))
         copy_block = pinned and bool(product.get("chat_caution") or bundle_cautions)
         if ((copy_block or (pinned and slug in _DOSE_RULE_WITHOUT_CAUTION))
-                and ((val and val not in desc and "directions" in _pinned_copy(product))
+                and ((_dirs_line and "directions" in _pinned_copy(product))
                      or (product.get("bundle") and intro and "intro" in _pinned_copy(product)
                          and not val))):
             _dose_rule = _PINNED_DOSE_RULE.format(
@@ -2823,6 +2881,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                 _dose_rule = _dose_rule.replace(
                     "copy every caution in full.", "copy in full every caution given here.")
             parts.append(_dose_rule)
+            if slug in _AMOUNT_RULE:
+                parts.append(_AMOUNT_RULE[slug].format(name=name))
         # The caution also from a chat_caution product: an opt-in for the warning alone,
         # so its scraped description, directions and components stay out (Brain Cleanse,
         # 2026-10-15). A caution is held as an entry and written after the product cap,

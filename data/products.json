@@ -2110,6 +2110,7 @@
    "directions": "1 capsule daily with food, or as guided.",
    "content_since": "2026-10-26T07:38:00+00:00",
    "copy_pinned": [
+    "directions",
     "ingredients",
     "intro",
     "description",
