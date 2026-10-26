@@ -1998,7 +1998,7 @@
     "ingredients": [
       {
         "name": "Vitamin A (Retinyl Acetate)",
-        "dose": "5000 IU"
+        "dose": "9400 IU (2820 mcg RAE)"
       },
       {
         "name": "Vitamin E (as Mixed Tocopherols)",
@@ -2017,11 +2017,14 @@
         "dose": "300 mg"
       }
     ],
-    "ingredients_source": "label-read-2026-09-26",
-    "description": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac) and a 300 mg polyphenol formula of catechins 80% and anthocyanidins 25%. Take 1 capsule up to 3 times daily with food or as guided.\n\nOther ingredients: Organic Pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
-    "directions": "1 capsule up to 3 times daily with food or as guided.",
+    "ingredients_source": "label-read-2026-09-26; vitamin A 9400 IU from run 176, 3.3 mg retinyl acetate 98% (Glen, 2026-10-25)",
+    "description": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac) and a 300 mg polyphenol formula of catechins 80% and anthocyanidins 25%. Take 1 capsule daily with food, or as guided.\n\nOther ingredients: Organic Pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
+    "intro": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac) and a 300 mg polyphenol formula of catechins 80% and anthocyanidins 25%. Take 1 capsule daily with food, or as guided.",
+    "learn_markdown": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac) and a 300 mg polyphenol formula of catechins 80% and anthocyanidins 25%. Take 1 capsule daily with food, or as guided.\n\nEach vegicap contains: Vitamin A (Retinyl Acetate) 9400 IU (2820 mcg RAE); Vitamin E (as Mixed Tocopherols) 20 IU; Astaxanthin (Haematococcus pluvialis) 4 mg; Phytoceramides 1% (Amorphophallus konjac) 150 mg; Polyphenols (300 mg): Catechins 80% (Camellia sinensis), Anthocyanidins 25% (Aristotelia chilensis).",
+    "directions": "1 capsule daily with food, or as guided.",
+    "content_since": "2026-10-26T07:38:00+00:00",
     "panel_note": "Polyphenols (Proprietary Formula) contains: Catechins 80% (Camellia sinensis), Anthocyanidins 25% (Aristotelia chilensis).",
-    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows. Glen 2026-10-25: 1 capsule daily while run 176 sells, and show its vitamin A, 9400 IU (3.3 mg retinyl acetate 98%)."
   },
   "natural-resource-az": {
     "ingredients": [
