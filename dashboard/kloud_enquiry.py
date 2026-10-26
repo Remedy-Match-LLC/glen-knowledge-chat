@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta, timezone
 
+from dashboard import db
+
 GUIDE_URL = "https://illtowell.com/kloud"
 STORE_URL = "https://centropix.us/remedy/products"
 FINANCING_URL = "https://flexxbuy.com/remedy-match/"
@@ -33,6 +35,11 @@ MAX_NAME, MAX_PHONE, MAX_MESSAGE = 120, 40, 2000
 # caps what a script could send from Glen's mailbox (review round 1). Past it the
 # enquiry is still kept and Glen and Rae are still told.
 DAILY_REPLY_CAP = 40
+_LOCK_KEY = 0x6B6C6F75  # "klou": the advisory lock for record() on Postgres
+# Staff notices: at most this many per address, and in all, per REPLY_WINDOW. Past
+# either, the enquiry is kept but nobody is emailed (review round 2: the form must not
+# relay unlimited mail to Glen and Rae).
+NOTICE_CAP_PER_ADDRESS, NOTICE_CAP_TOTAL = 3, 100
 _GREETING_NAME = re.compile(r"[^\W\d_][^\W\d_'’-]*(?:['’-][^\W\d_]+)*")
 
 
@@ -77,26 +84,40 @@ def clean_message(value):
 
 def record(cx, *, email, name="", phone="", model="unsure", distributor=False,
            message="", page_slug="", now=None):
-    """Keep one enquiry. Returns (id, held): held is None when the ordering email should
-    go, "recent" when this address was sent it within REPLY_WINDOW, and "capped" when
-    DAILY_REPLY_CAP ordering emails went out in that window."""
+    """Keep one enquiry. Returns (id, held, notify). held is None when the ordering email
+    should go, "recent" when this address was sent it within REPLY_WINDOW, and "capped"
+    when DAILY_REPLY_CAP ordering emails went out in that window. notify is False past
+    the staff notice caps."""
     init_table(cx)
+    cx.commit()
     now = now or datetime.now(timezone.utc)
     since = (now - REPLY_WINDOW).isoformat()
+    # The check and the insert are one write transaction, so two server workers cannot
+    # both pass the limits before either records (review round 2). Production is
+    # Postgres, where a transaction-scoped advisory lock does what BEGIN IMMEDIATE does.
+    if db.backend_of(cx) == "postgres":
+        cx.execute("SELECT pg_advisory_xact_lock(?)", (_LOCK_KEY,))
+    else:
+        cx.execute("BEGIN IMMEDIATE")
     recent = cx.execute("SELECT 1 FROM kloud_enquiries WHERE email=? AND replied=1 "
                         "AND created_at>=? LIMIT 1", (email, since)).fetchone()
     today = cx.execute("SELECT COUNT(*) FROM kloud_enquiries WHERE replied=1 "
                        "AND created_at>=?", (since,)).fetchone()[0]
     held = "recent" if recent else ("capped" if today >= DAILY_REPLY_CAP else None)
+    mine, total = cx.execute(
+        "SELECT SUM(CASE WHEN email=? THEN 1 ELSE 0 END), COUNT(*) FROM kloud_enquiries "
+        "WHERE created_at>=?", (email, since)).fetchone()
+    notify = (mine or 0) < NOTICE_CAP_PER_ADDRESS and (total or 0) < NOTICE_CAP_TOTAL
     send_reply = held is None
-    cur = cx.execute(
+    # RETURNING, not lastrowid: the Postgres backend has no lastrowid.
+    row = cx.execute(
         "INSERT INTO kloud_enquiries(email,name,phone,model,distributor,message,page_slug,"
-        "replied,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        "replied,created_at) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
         (email, name, phone, model if model in MODELS else "unsure",
          1 if distributor else 0, message, page_slug, 1 if send_reply else 0,
-         now.isoformat()))
+         now.isoformat())).fetchone()
     cx.commit()
-    return cur.lastrowid, held
+    return row[0], held, notify
 
 
 def unmark_reply(cx, enquiry_id):

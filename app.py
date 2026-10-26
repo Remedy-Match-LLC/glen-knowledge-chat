@@ -11696,7 +11696,11 @@ def _apply_waitlist_page_data(data, slug, p):
     # Out of stock (Glen, 2026-10-16): the page stays, nothing on it sells. A bundle
     # holding an out-of-stock product shows that product's line (review round 2).
     _oos = None if p.get("waitlist_only") else _waitlist_block(slug)
-    if _oos and _oos.get("enquiry_only"):
+    if _oos and _oos.get("enquiry_only") and _oos["slug"] != slug:
+        # A bundle holding a mat: the mat's own page takes the enquiry (review round 2).
+        from dashboard import practitioner_portal as _ppw
+        data["out_of_stock_line"] = _ppw.enquiry_line(_oos["name"])
+    elif _oos and _oos.get("enquiry_only"):
         # Enquiry only (Kloud, Glen 2026-10-25): bought on our Centropix store. The page
         # takes an enquiry in place of everything that sells it.
         from dashboard import kloud_enquiry as _ke
@@ -44421,13 +44425,10 @@ def product_enquiry(slug):
               "distributor": body.get("distributor") is True,
               "message": _ke.clean_message(body.get("message")), "page_slug": slug}
     with _db_lock, db.connect(LOG_DB) as cx:
-        enquiry_id, held = _ke.record(cx, **fields)
+        enquiry_id, held, notify = _ke.record(cx, **fields)
         _seq.init_tables(cx)
         seq = _seq.get(cx, _ke.SEQUENCE_SLUG)
         follow_ups_on = bool(seq and seq.get("active"))
-        if follow_ups_on:
-            _seq.enroll(cx, _ke.SEQUENCE_SLUG, email)
-            cx.commit()
     cat = _PRODUCTS.get("products") or {}
     replied = False
     if not held:
@@ -44444,6 +44445,15 @@ def product_enquiry(slug):
         if not replied:
             with _db_lock, db.connect(LOG_DB) as cx:
                 _ke.unmark_reply(cx, enquiry_id)
+    # Follow-ups only to an address that was just sent the ordering email, so the form
+    # cannot queue mail past its own limits (review round 2).
+    if follow_ups_on and replied:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _seq.enroll(cx, _ke.SEQUENCE_SLUG, email)
+            cx.commit()
+    if not notify:
+        print(f"[enquiry] {enquiry_id} kept; staff notice cap reached", flush=True)
+        return jsonify({"ok": True})
     status = held or ("sent" if replied else "failed")
     subject, text = _ke.notice_text(enquiry_id=enquiry_id, reply_status=status,
                                     follow_ups_on=follow_ups_on, **fields)

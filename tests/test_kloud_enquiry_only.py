@@ -408,3 +408,106 @@ def test_the_message_is_capped_and_stripped(client, sent, logdb):
 def test_the_name_is_cleaned_in_the_route(client, sent, logdb):
     _post(client, name="Pat\r\nBcc: x@y.com")
     assert _rows(logdb)[0]["name"] == "Pat Bcc: x@y.com"
+
+
+# ── Review round 2 ────────────────────────────────────────────────────────────
+
+def test_follow_ups_skip_an_address_whose_ordering_email_did_not_go(client, logdb,
+                                                                     monkeypatch):
+    cx = sqlite3.connect(logdb)
+    SEQ.init_tables(cx)
+    cx.execute("INSERT INTO sequences(slug,name,trigger_kind,active) VALUES (?,?,?,1)",
+               (KE.SEQUENCE_SLUG, "Kloud Enquiry Follow-Up", "manual"))
+    cx.commit()
+    monkeypatch.setattr(app._inbox, "send_email", lambda to, s, b, **k: (
+        {"skipped": "suppressed"} if to == "pat@example.com" else {"id": "m1"}))
+    monkeypatch.setattr(app, "_kloud_enquiry_velocity", app.VelocityLimiter())
+    _post(client)
+    assert cx.execute("SELECT COUNT(*) FROM sequence_enrollments").fetchone()[0] == 0
+    cx.close()
+
+
+def test_staff_notices_stop_after_three_from_one_address(client, sent, logdb, monkeypatch):
+    for _ in range(4):
+        monkeypatch.setattr(app, "_kloud_enquiry_velocity", app.VelocityLimiter())
+        _post(client)
+    notices = [t for t, _s, _b in sent if t in KE.NOTIFY]
+    assert len(notices) == 3 * len(KE.NOTIFY)
+    assert len(_rows(logdb)) == 4
+
+
+def test_staff_notices_stop_at_the_total_cap(client, sent, logdb, monkeypatch):
+    monkeypatch.setattr(KE, "NOTICE_CAP_TOTAL", 2)
+    for i in range(3):
+        monkeypatch.setattr(app, "_kloud_enquiry_velocity", app.VelocityLimiter())
+        _post(client, email=f"t{i}@example.com")
+    assert len([t for t, _s, _b in sent if t in KE.NOTIFY]) == 2 * len(KE.NOTIFY)
+
+
+def test_a_bundle_holding_a_mat_shows_the_line_not_a_form(client, catalog):
+    d = client.get(f"/begin/product-page-data/{BUNDLE}").get_json()
+    assert "enquiry" not in d and d["out_of_stock_line"] == _line(MINI)
+    assert d["price_cents"] is None and "cta_url" not in d
+
+
+def test_the_record_check_runs_in_one_write_transaction(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "k.db"))
+    seen = []
+    cx.set_trace_callback(seen.append)
+    KE.record(cx, email="a@x.com", name="A")
+    begin = next(i for i, q in enumerate(seen) if q.startswith("BEGIN IMMEDIATE"))
+    first_select = next(i for i, q in enumerate(seen)
+                        if q.startswith("SELECT") and "kloud_enquiries" in q)
+    assert begin < first_select
+
+
+def test_a_biofield_invoice_never_bills_a_mat():
+    from dashboard.biofield_invoice import build_invoice_lines
+    cat = [{"slug": MAXI, "name": "Kloud PEMF Mat (Maxi)", "price_cents": 359000},
+           {"slug": CONTROL, "name": "Scar Silk", "price_cents": 7000}]
+    out = build_invoice_lines({"email": "d@x.com"}, ["Kloud PEMF Mat (Maxi)", "Scar Silk"],
+                              cat, include_fee=False)
+    slugs = [ln.get("slug") or ln.get("item_slug") or ln.get("name") for ln in out["lines"]]
+    assert not any("kloud" in str(s).lower() for s in slugs) and len(out["lines"]) == 1
+
+
+@pytest.fixture
+def inv(tmp_path, monkeypatch):
+    from pathlib import Path
+    db = str(tmp_path / "pay.db")
+    monkeypatch.setattr(app, "LOG_DB", db)
+    monkeypatch.setattr(pp, "_LOG_DB", Path(db))
+    monkeypatch.setattr(app, "INVOICE_PAYLINK_ENABLED", True)
+    monkeypatch.setattr(app, "_STRIPE_ACTIVE", True)
+    from dashboard import stripe_pay
+    made = []
+    monkeypatch.setattr(stripe_pay, "create_checkout_session",
+                        lambda amount, **k: made.append(amount) or {"url": "https://stripe.test/s"})
+    from dashboard import orders as O, order_payments as OP
+    cx = sqlite3.connect(db)
+    cx.row_factory = sqlite3.Row
+    O.init_orders_table(cx)
+    OP.ensure_table(cx)
+
+    def order(ref, items):
+        oid = O.upsert_order(cx, source="dropship", external_ref=ref, email="t@example.com",
+                             items=items, total_cents=359000, status="proposed")
+        cx.commit()
+        return pp.create_order_invoice_token(oid, db_path=db)
+
+    return {"c": app.app.test_client(), "order": order, "made": made}
+
+
+@pytest.mark.parametrize("method", ["card", "zelle"])
+def test_an_invoice_made_before_the_flag_cannot_be_paid(inv, method):
+    tok = inv["order"]("DS-kloud", [{"slug": MAXI, "qty": 1}])
+    r = inv["c"].post(f"/api/invoice/{tok}/pay", json={"method": method})
+    assert r.status_code == 400, r.get_json()
+    assert r.get_json()["error"] == _line(MAXI) and inv["made"] == []
+
+
+def test_a_console_order_with_a_mat_is_refused():
+    with pytest.raises(Exception) as e:
+        app._price_inhouse_invoice([{"slug": MAXI, "qty": 1}], email="c@x.com",
+                                   pickup=False, ship={"country": "US"})
+    assert _line(MAXI) in str(e.value)
