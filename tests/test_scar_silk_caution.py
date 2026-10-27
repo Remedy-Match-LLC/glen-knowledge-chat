@@ -128,8 +128,11 @@ def test_a_caution_question_gets_the_directions_and_the_link(q):
         f"Directions: {DIRECTIONS}",
         # A linked caution is not given, so the dose rule asks only for those given here.
         app._PINNED_DOSE_RULE.format(name="Scar Silk", example="").replace(
-            "copy every caution in full.", "copy in full every caution given here."),
+            "copy every caution in full,", "copy in full every caution given here,"),
         _link("Scar Silk")]
+    # Checked apart from the constant, so a replace that stops matching fails here.
+    assert "copy in full every caution given here," in section
+    assert "copy every caution in full" not in section
     assert b.count(APPROVED) == 0 and app._ONE_CAUTION_RULE not in b
     assert app._CAUTION_STAY_LINE not in b and app._CAUTION_CLOSING_REMINDER not in b
 

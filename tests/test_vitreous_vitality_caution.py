@@ -182,3 +182,28 @@ def test_the_corrections_replay_restores_the_store_text():
     for k in ("ingredients", "directions", "warning", "chat_caution", "copy_pinned",
               "intro", "description"):
         assert p[SLUG][k] == approved[k], k
+
+
+def test_a_safety_question_never_gets_a_yes():
+    """Live, log 2416: "Is Vitreous Vitality safe?" got "Yes, Vitreous Vitality is
+    formulated to support eye health"."""
+    b = app.named_product_facts_block("Is Vitreous Vitality safe?")
+    assert ("Never say Vitreous Vitality is safe, and never answer yes or no to whether it "
+            "is safe.") in b
+
+
+@pytest.mark.parametrize("q", [
+    "Is Vitreous Vitality dangerous?",
+    "Any risks with Vitreous Vitality?",
+    "Is Vitreous Vitality OK for me?",
+])
+def test_every_wording_gets_the_no_safety_verdict_line(q):
+    """Review round 1: only "safe" and its kin brought the linked line's ban."""
+    b = app.named_product_facts_block(q)
+    assert "### Vitreous Vitality\n" in b
+    assert app._NO_SAFETY_VERDICT.strip() in b
+
+
+def test_the_caution_only_header_carries_it_too():
+    b = app.named_product_facts_block("Is Brain Cleanse safe?")
+    assert "### Brain Cleanse" in b and app._NO_SAFETY_VERDICT.strip() in b

@@ -176,3 +176,30 @@ def test_the_corrections_replay_keeps_the_shelf_record():
     for k in TEXT_FIELDS + ("ingredients", "content_since", "copy_pinned", "warning",
                             "chat_caution"):
         assert p[SLUG][k] == approved[k], k
+
+
+def test_more_than_the_directions_never_gets_a_yes():
+    """Live, log 2415: "Yes, you can take 2 Moisturize a day", and the caution lost its
+    sentences on the out-of-date label."""
+    b = app._named_product_facts("Can I take 2 Moisturize a day?")
+    assert "Never answer yes, or say they can, to taking more than these Directions" in b
+    assert "including any sentence that names the older label" in b
+    assert "Do not mention the older advice to the user" not in b
+
+
+def test_a_named_pregnancy_gets_no_within_the_directions_yes():
+    """Review round 3: the caution is linked, so "within these Directions, say so" alone
+    read as a yes to a pregnant user, though the caution says not to use it."""
+    b = app._named_product_facts("I am pregnant. Can I take 1 Moisturize a day?")
+    assert ("say so, unless the user names a medicine, pregnancy, surgery or condition: "
+            "then never answer whether they may take it.") in b
+
+
+def test_a_message_naming_no_product_still_gets_no_safety_verdict():
+    """Live, log 2419: "I am pregnant and have floaters" named no product, so no facts
+    block, and the bot said "Here's what IS safe for you right now"."""
+    assert app._named_product_facts("I am pregnant and have floaters") == ""
+    for level in app._LEVEL_INSTRUCTIONS:
+        p = app.get_system_prompt(level)
+        assert "Never tell the user that something is safe for them" in p
+        assert "such as floaters in pregnancy, unless a retrieved source states it" in p
