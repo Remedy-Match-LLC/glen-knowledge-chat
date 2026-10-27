@@ -32,13 +32,42 @@ def init_table(cx):
     cx.commit()
 
 
-def has_consent(cx, email):
+def agreed_at(cx, email):
+    """When the client's current opt-in was given, or None when there is none. A new
+    tick after an untick gets a new time, so this names one opt-in, not just a yes."""
     email = _norm(email)
     if not email:
-        return False
+        return None
     init_table(cx)
-    return cx.execute("SELECT 1 FROM voice_analysis_consent WHERE email=?",
-                      (email,)).fetchone() is not None
+    row = cx.execute("SELECT agreed_at FROM voice_analysis_consent WHERE email=?",
+                     (email,)).fetchone()
+    return row[0] if row else None
+
+
+def has_consent(cx, email):
+    return agreed_at(cx, email) is not None
+
+
+def save_if_still_agreed(cx, email, since, element_scores):
+    """Keep a voice pattern only if the opt-in in force when the recording started is
+    still the one in force now. Returns the saved state, or None when it was not saved.
+
+    A recording takes seconds to analyse, and the client can untick, or untick and tick
+    again, meanwhile. Comparing agreed_at refuses both. On Postgres the opt-in row is
+    locked FOR UPDATE until the pattern commits, and withdraw() deletes that row first,
+    so an untick from another worker waits for this save and then deletes it too."""
+    from dashboard import db
+    from dashboard import member_element_state as _mes
+    email = _norm(email)
+    if not email or not since:
+        return None
+    lock = " FOR UPDATE" if db.backend_of(cx) == "postgres" else ""
+    row = cx.execute("SELECT agreed_at FROM voice_analysis_consent WHERE email=?" + lock,
+                     (email,)).fetchone()
+    if not row or row[0] != since:
+        cx.rollback()
+        return None
+    return _mes.upsert(cx, email, element_scores, source=VOICE_SOURCE)   # commits
 
 
 def agree(cx, email):
@@ -75,6 +104,8 @@ def withdraw(cx, email):
         raise ValueError("no email")
     init_table(cx)
     try:
+        # The opt-in row goes first: on Postgres this waits for any save holding it
+        # (save_if_still_agreed), so the pattern that save commits is deleted below.
         cx.execute("DELETE FROM voice_analysis_consent WHERE email=?", (email,))
         n = delete_voice_pattern(cx, email)
         cx.commit()

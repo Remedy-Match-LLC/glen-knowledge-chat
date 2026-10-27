@@ -4500,8 +4500,18 @@ function initFiveVoiceConsent(agreed){
       }
       fiveVoiceSetStatus("", false);
     }catch(error){
-      box.checked = !want;
-      fiveVoiceSetStatus(error.message || "Your choice could not be saved. Please try again.", true);
+      // A lost response does not mean the choice was not saved: ask the server.
+      let saved = !want;
+      try{
+        const check = await fetch(`/api/portal/${encodeURIComponent(seg)}/five-element-voice/consent`, {credentials:"same-origin"});
+        if(check.ok) saved = !!(await check.json()).agreed;
+      }catch(e){}
+      box.checked = saved;
+      if(!saved){
+        const host = document.getElementById("fiveVoiceResult");
+        if(host) host.innerHTML = "";
+      }
+      if(saved !== want) fiveVoiceSetStatus(error.message || "Your choice could not be saved. Please try again.", true);
     }finally{
       box.disabled = false;
       if(start) start.disabled = !box.checked;

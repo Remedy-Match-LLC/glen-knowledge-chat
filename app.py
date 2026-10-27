@@ -32797,11 +32797,14 @@ def api_portal_five_element_voice(token):
     with db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx)
         portal = _portal_record_for(cx, token)
-        consented = bool(portal) and _vc.has_consent(cx, portal.get("email"))
+        since = _vc.agreed_at(cx, portal.get("email")) if portal else None
     if not portal:
         return jsonify({"error": "not found"}), 404
+    # A staff voice must never become the client's kept pattern.
+    if _staff_touch():
+        return jsonify({"error": "Only the client can record their own analysis."}), 403
     # Glen, 2026-10-27: the analysis runs only after the client ticks the opt-in box.
-    if not consented:
+    if not since:
         return jsonify({"error": "Tick the box to agree before you record."}), 403
 
     audio = request.files.get("audio")
@@ -32851,10 +32854,10 @@ def api_portal_five_element_voice(token):
         return jsonify({"error": "The analysis did not return an element pattern."}), 502
     email = (portal.get("email") or "").strip().lower()
     with _db_lock, db.connect(LOG_DB) as cx:
-        # The client may have unticked while the recording was analysed.
-        if not _vc.has_consent(cx, email):
-            return jsonify({"error": "Tick the box to agree before you record."}), 403
-        state = _mes.upsert(cx, email, elements, source=_vc.VOICE_SOURCE)
+        # The client may have unticked, or unticked and ticked again, meanwhile.
+        state = _vc.save_if_still_agreed(cx, email, since, elements)
+    if state is None:
+        return jsonify({"error": "Tick the box to agree before you record."}), 403
     return jsonify({
         "ok": True,
         "element_scores": elements,
@@ -32868,19 +32871,27 @@ def api_portal_five_element_voice(token):
     })
 
 
-@app.route("/api/portal/<token>/five-element-voice/consent", methods=["POST"])
+@app.route("/api/portal/<token>/five-element-voice/consent", methods=["GET", "POST"])
 def api_portal_five_element_voice_consent(token):
     """The client ticks or unticks the voice analysis opt-in. Unticking deletes the
     opt-in and the voice pattern it kept (Glen, 2026-10-27). Only the client can
     choose: a request carrying the console or an owner key is refused, so a portal
-    opened from the console never agrees on a client's behalf."""
+    opened from the console never agrees on a client's behalf. _staff_touch() covers
+    the master key, owner and VA tokens, and a staff-view cookie, live or lapsed."""
     from dashboard import client_portal as _cp
     from dashboard import voice_consent as _vc
+    if request.method == "GET":
+        with db.connect(LOG_DB) as cx:
+            _cp.init_client_portal_table(cx)
+            portal = _portal_record_for(cx, token)
+            if not portal:
+                return jsonify({"error": "not found"}), 404
+            return jsonify({"ok": True, "agreed": _vc.has_consent(cx, portal.get("email"))})
     body = request.get_json(silent=True) or {}
     agree = body.get("agree")
     if not isinstance(agree, bool):
         return jsonify({"error": "agree must be true or false"}), 400
-    if _portal_open_is_owner():
+    if _staff_touch():
         return jsonify({"error": "Only the client can make this choice."}), 403
     with _db_lock, db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx)
