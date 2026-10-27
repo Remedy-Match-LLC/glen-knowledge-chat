@@ -38,11 +38,6 @@ def _clip(cx, assets, pid, *, days_ago, text="see clip", sender="client", name=N
     return name
 
 
-def _row(cx, name):
-    return cx.execute("SELECT text, audio_filename FROM appointment_proposal_messages "
-                      "WHERE audio_filename=? OR text=?", (name, name)).fetchone()
-
-
 # ---- 90 days ---------------------------------------------------------------------------
 
 def test_a_clip_older_than_90_days_is_deleted_and_its_text_stays(tmp_path):
@@ -136,19 +131,41 @@ def test_a_file_that_will_not_delete_keeps_its_row(tmp_path, monkeypatch):
                       ).fetchone()[0] == name
 
 
-def test_an_unreadable_date_is_left_alone(tmp_path):
+def test_an_unreadable_date_falls_back_to_the_files_own_date(tmp_path):
+    import os
     cx = _cx(tmp_path)
     assets = tmp_path / "assets"
     assets.mkdir()
     pid = _proposal(cx)
-    name = f"appt-{pid}-{'a' * 24}.webm"
-    (assets / name).write_bytes(b"a")
+    old, young = f"appt-{pid}-{'a' * 24}.webm", f"appt-{pid}-{'c' * 24}.webm"
+    for name, days in ((old, 100), (young, 10)):
+        (assets / name).write_bytes(b"a")
+        t = (NOW - timedelta(days=days)).timestamp()
+        os.utime(assets / name, (t, t))
+        cx.execute("INSERT INTO appointment_proposal_messages "
+                   "(proposal_id,sender,text,audio_filename,created_at) VALUES (?,?,?,?,?)",
+                   (pid, "client", "", name, "not a date"))
+    cx.commit()
+    assert ap.expire_clips(cx, assets, now=NOW) == 1
+    assert not (assets / old).exists()
+    assert (assets / young).exists()
+
+
+def test_a_name_from_another_proposal_is_never_deleted(tmp_path):
+    """A row on proposal A naming proposal B's clip must not delete B's file."""
+    cx = _cx(tmp_path)
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    a = _proposal(cx)
+    b = _proposal(cx, OTHER)
+    b_clip = _clip(cx, assets, b, days_ago=1)
     cx.execute("INSERT INTO appointment_proposal_messages "
                "(proposal_id,sender,text,audio_filename,created_at) VALUES (?,?,?,?,?)",
-               (pid, "client", "", name, "not a date"))
+               (a, "client", "", b_clip, (NOW - timedelta(days=200)).isoformat()))
     cx.commit()
     assert ap.expire_clips(cx, assets, now=NOW) == 0
-    assert (assets / name).exists()
+    assert ap.erase_client_clips(cx, assets, [CLIENT]) == 0
+    assert (assets / b_clip).exists()
 
 
 def test_a_second_run_finds_nothing_more(tmp_path):
@@ -276,6 +293,34 @@ def test_the_daily_job_expires_old_clips(monkeypatch, tmp_path):
         cx.commit()
     appmod._expire_appointment_clips()
     assert not (assets / old).exists()
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cx.execute("SELECT audio_filename FROM appointment_proposal_messages"
+                          ).fetchone()[0] == ""
+
+
+def test_an_erasure_stops_when_a_clip_will_not_delete(monkeypatch, tmp_path):
+    appmod = _reload(monkeypatch, tmp_path)
+    assets = appmod._PORTAL_ASSETS_DIR
+    assets.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        a = _clip(cx, assets, _proposal(cx), days_ago=1)
+        cx.execute("CREATE TABLE IF NOT EXISTS intake_responses (email TEXT, answers_json TEXT)")
+        cx.execute("INSERT INTO intake_responses (email, answers_json) VALUES (?, '{}')", (CLIENT,))
+        cx.commit()
+
+    def refuse(self, *a, **k):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    r = appmod.app.test_client().post("/api/console/client-erasure/erase",
+                                      json={"email": CLIENT, "confirm": CLIENT},
+                                      headers={"X-Console-Key": KEY})
+    assert r.status_code == 500
+    assert r.get_json()["ok"] is False
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cx.execute("SELECT COUNT(*) FROM intake_responses WHERE email=?",
+                          (CLIENT,)).fetchone()[0] == 1
 
 
 def test_the_daily_job_is_scheduled():
@@ -283,3 +328,39 @@ def test_the_daily_job_is_scheduled():
     start = src[src.index("def _start_scheduler"):]
     start = start[:start.index("scheduler.start()")]
     assert 'scheduler.add_job(_expire_appointment_clips, "cron"' in start
+
+
+def test_a_clip_another_run_already_cleared_is_not_counted_twice(tmp_path):
+    cx = _cx(tmp_path)
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    pid = _proposal(cx)
+    name = _clip(cx, assets, pid, days_ago=95)
+    mid = cx.execute("SELECT id FROM appointment_proposal_messages").fetchone()[0]
+    cx.execute("UPDATE appointment_proposal_messages SET audio_filename='' WHERE id=?", (mid,))
+    cx.commit()
+    assert ap._delete_clip(cx, assets, mid, pid, name) is False
+
+
+def test_an_erasure_that_fails_after_the_clips_still_records_them(monkeypatch, tmp_path):
+    appmod = _reload(monkeypatch, tmp_path)
+    assets = appmod._PORTAL_ASSETS_DIR
+    assets.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        a = _clip(cx, assets, _proposal(cx), days_ago=1)
+    from dashboard import client_erasure as _ce
+
+    def boom(*a, **k):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(_ce, "erase", boom)
+    appmod.app.config["PROPAGATE_EXCEPTIONS"] = False
+    r = appmod.app.test_client().post("/api/console/client-erasure/erase",
+                                      json={"email": CLIENT, "confirm": CLIENT},
+                                      headers={"X-Console-Key": KEY})
+    assert r.status_code == 500
+    assert not (assets / a).exists()
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        prior = _ce.erasures_for(cx, CLIENT)
+    assert prior and "appointment_voice_clips" in str(prior)

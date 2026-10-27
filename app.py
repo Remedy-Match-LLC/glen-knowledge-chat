@@ -59690,9 +59690,26 @@ def api_console_client_erasure_erase():
     from dashboard import appointment_proposals as _ap
     with _db_lock, db.connect(LOG_DB) as cx:
         # Glen, 2026-10-27: erasure deletes the client's appointment voice clips too.
-        clips = _ap.erase_client_clips(cx, _PORTAL_ASSETS_DIR, _ce.addresses_for(cx, email))
+        addrs = _ce.addresses_for(cx, email)
+        clips = _ap.erase_client_clips(cx, _PORTAL_ASSETS_DIR, addrs)
         cx.commit()
-        removed = _ce.erase(cx, email, confirm=email)
+        left = _ap.count_client_clips(cx, addrs)
+        if left:
+            # Never report an erasure while a clip is still on disk. The rest waits.
+            return jsonify({"ok": False, "error": f"{left} voice clip(s) could not be "
+                            "deleted. Nothing else was erased. See the server log.",
+                            "clips_deleted": clips}), 500
+        try:
+            removed = _ce.erase(cx, email, confirm=email)
+        except Exception:
+            # The clips are already gone: the erasure log must still say so.
+            if clips:
+                cx.rollback()
+                _ce.record_erasure(cx, email, actor=(actor.name or "owner"),
+                                   removed={"appointment_voice_clips": clips},
+                                   note="clips deleted; table erasure failed",
+                                   suppressed=_es.is_suppressed(cx, email))
+            raise
         if clips:
             removed["appointment_voice_clips"] = clips
         _es.init_table(cx)
