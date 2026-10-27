@@ -327,6 +327,26 @@
       <!-- Out of stock (Glen, 2026-10-16): one line, from page-data `out_of_stock_line`,
            in place of every buy link until the flag is removed. -->
       <p id="product-out-of-stock" role="status" style="display:none;margin:1rem 0;padding:1rem;background:var(--surface,#f5f5f5);border-radius:12px;font-weight:700;"></p>
+      <!-- Enquiry only (Kloud mats, Glen 2026-10-25): bought on our Centropix store. Shown
+           only when page-data carries `enquiry`; takes the place of every buy link. -->
+      <form id="product-enquiry" style="display:none;margin:1rem 0;padding:1rem;background:var(--surface,#f5f5f5);border-radius:12px;" novalidate>
+        <p style="font-weight:700;margin:0 0 0.4rem;">The Kloud is ordered from our Centropix store.</p>
+        <p style="margin:0 0 0.4rem;color:var(--muted,#666);">Leave your details and we will email you how to order.</p>
+        <p style="margin:0 0 0.8rem;color:var(--muted,#666);">Both models, ordering, and financing are on <a id="enquiry-guide" href="https://illtowell.com/kloud">the Kloud page</a>.</p>
+        <input name="name" type="text" required autocomplete="name" placeholder="Name" aria-label="Name" style="width:100%;margin:0 0 0.5rem;padding:10px;border-radius:8px;border:1px solid var(--line,#ccc);font:inherit">
+        <input name="email" type="email" required autocomplete="email" placeholder="Email" aria-label="Email" style="width:100%;margin:0 0 0.5rem;padding:10px;border-radius:8px;border:1px solid var(--line,#ccc);font:inherit">
+        <input name="phone" type="tel" autocomplete="tel" placeholder="Phone (optional)" aria-label="Phone (optional)" style="width:100%;margin:0 0 0.5rem;padding:10px;border-radius:8px;border:1px solid var(--line,#ccc);font:inherit">
+        <select name="model" aria-label="Which mat" style="width:100%;margin:0 0 0.5rem;padding:10px;border-radius:8px;border:1px solid var(--line,#ccc);font:inherit">
+          <option value="mini">Kloud Mini</option>
+          <option value="maxi">Kloud Maxi</option>
+          <option value="unsure">Not sure yet</option>
+        </select>
+        <textarea name="message" rows="3" placeholder="Your question (optional)" aria-label="Your question (optional)" style="width:100%;margin:0 0 0.5rem;padding:10px;border-radius:8px;border:1px solid var(--line,#ccc);font:inherit"></textarea>
+        <label style="display:flex;gap:8px;align-items:flex-start;margin:0 0 0.8rem;"><input name="distributor" type="checkbox" style="margin-top:0.3rem"> <span>I would also like to hear about becoming a Centropix distributor.</span></label>
+        <input name="hp_extra" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
+        <button type="submit" class="cta-btn">Send my enquiry</button>
+        <p id="product-enquiry-msg" role="status" aria-live="polite" style="margin:0.6rem 0 0;font-weight:600;"></p>
+      </form>
 
       <div id="sp-sections" class="sections"></div>
     </div>
@@ -1663,6 +1683,41 @@
       };
     }
 
+    function renderEnquiry(data){
+      var f = document.getElementById('product-enquiry');
+      if (!f) return;
+      var q = data.enquiry || null;
+      if (!q) { f.style.display = 'none'; f.onsubmit = null; return; }
+      if (q.model) { f.model.value = q.model; }
+      if (q.guide_url) { document.getElementById('enquiry-guide').setAttribute('href', q.guide_url); }
+      f.style.display = 'block';
+      f.onsubmit = async function(e){
+        e.preventDefault();
+        var msg = document.getElementById('product-enquiry-msg');
+        var name = (f.name.value || '').trim();
+        var email = (f.email.value || '').trim();
+        if (!name) { msg.textContent = 'Please enter your name.'; return; }
+        if (!email || email.indexOf('@') < 0) { msg.textContent = 'Please enter your email.'; return; }
+        var btn = f.querySelector('button'); btn.disabled = true;
+        try {
+          var r = await fetch('/api/enquiry/' + encodeURIComponent(slug), {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin',
+            body: JSON.stringify({name: name, email: email, phone: (f.phone.value || '').trim(),
+                                  model: f.model.value, message: f.message.value || '',
+                                  distributor: !!f.distributor.checked,
+                                  hp_extra: f.hp_extra.value || ''})});
+          if (r.ok) {
+            Array.prototype.forEach.call(f.querySelectorAll('input,select,textarea,button,label'),
+              function(el){ el.style.display = 'none'; });
+            msg.textContent = 'Thank you, we have your enquiry. Dr. Glen will follow up with you.';
+            return;
+          }
+          msg.textContent = r.status === 429 ? 'Please try again in a minute.' : 'That did not go through. Please check your name and email and try again.';
+        } catch(_){ msg.textContent = 'That did not go through. Please try again.'; }
+        btn.disabled = false;
+      };
+    }
+
     function renderFounding(data){
       if (data.founding_video_url){
         var fv = document.getElementById('founding-video');
@@ -1758,7 +1813,9 @@
       var openSet = Array.isArray(data.open_sections) ? data.open_sections : [];
       // Not ready to order (waitlist_only, 2026-10-09): every buy link points at the form.
       // Out of stock (2026-10-16): every buy link points at the one line instead.
-      var ctaUrl = data.out_of_stock_line ? '#product-out-of-stock'
+      // Enquiry only (Kloud, 2026-10-25): every buy link points at the enquiry form.
+      var ctaUrl = data.enquiry ? '#product-enquiry'
+        : data.out_of_stock_line ? '#product-out-of-stock'
         : data.waitlist_only ? '#product-waitlist'
         : (data.cta_url || ('/begin/buy/' + encodeURIComponent(slug)));
       var oos = document.getElementById('product-out-of-stock');
@@ -1789,7 +1846,8 @@
 
       renderFounding(data);
       renderWaitlist(data);
-      /*__CART_CONTROL_CALL_START__*/if (!data.waitlist_only && !data.out_of_stock_line) { renderCartControl(slug); }/*__CART_CONTROL_CALL_END__*/
+      renderEnquiry(data);
+      /*__CART_CONTROL_CALL_START__*/if (!data.waitlist_only && !data.out_of_stock_line && !data.enquiry) { renderCartControl(slug); }/*__CART_CONTROL_CALL_END__*/
       show('sp-product');
       show('sp-back');
     }

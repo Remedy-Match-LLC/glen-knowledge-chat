@@ -6828,6 +6828,7 @@
    "_note": "Ships direct from NES (E4L) — we never pack it, so it must not enter the box packer."
   },
   "kloud-pemf-mini": {
+   "enquiry_only": true,
    "name": "Kloud PEMF Mat (Mini)",
    "price_cents": 289000,
    "bottle_type": "own-box",
@@ -6837,6 +6838,7 @@
    "_note": "Ships direct from Centropix — we never pack it, so it must not enter the box packer."
   },
   "kloud-pemf-maxi": {
+   "enquiry_only": true,
    "name": "Kloud PEMF Mat (Maxi)",
    "price_cents": 359000,
    "bottle_type": "own-box",
