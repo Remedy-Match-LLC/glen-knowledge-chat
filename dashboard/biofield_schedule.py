@@ -93,7 +93,71 @@ def _split_n(times, dose):
     return None, None
 
 
+# A clause of the timing that sets a condition, not a time. The slot and food phrase
+# drop it, so the schedule showed Scar Silk "between meals" without "once the bleeding
+# has stopped" (Judy Tom, a58, Glen "fix the schedule", 2026-10-26).
+_CONDITION_START = re.compile(
+    r"^(?:once|until|unless|only|if|when|except|but|not until|do not|never|avoid|stop)\b",
+    re.I)
+# A frequency, not a condition: "once daily", "once a day", "once or twice". "Once a rash
+# clears" is a condition, so the period must follow (review round 3).
+_FREQUENCY_ONCE = re.compile(
+    r"^once\s+(?:daily|weekly|monthly|or\s+twice|(?:a|an|per|every|each)\s+"
+    r"(?:day|week|month|morning|evening|night)\b)", re.I)
+# A fallback names another time, which the slot already follows: "with food; if not,
+# between meals" sits between meals, so "with food" first would contradict it.
+_FALLBACK_START = re.compile(r"^(?:if not|otherwise|or else)\b", re.I)
+_ABBREV = ("Dr", "Mr", "Mrs", "Ms", "St", "approx", "e.g", "i.e", "vs")
+
+
+def _first_sentence(timing):
+    """The timing up to its first full stop. Later sentences are instructions the
+    schedule shows elsewhere, such as B17 Max's steps up to 2 scoops. "Dr." does not
+    end a sentence (review round 3)."""
+    t = (timing or "").strip()
+    for m in re.finditer(r"\.\s+(?=[A-Z])", t):
+        if not t[:m.start()].endswith(_ABBREV):
+            return t[:m.start()].strip()
+    return t.rstrip(".").strip()
+
+
+def _conditions(sentence):
+    """The clauses of `sentence` from the first that sets a condition to its end, each
+    once. The rest is kept because a condition can govern the next clause: "if
+    bleeding resumes, stop taking" (review round 2). A fallback keeps none. A comma
+    inside a number ("1,000 mg") does not end a clause."""
+    parts = [p.strip() for p in re.split(r";|,(?!\d)", sentence or "")]
+    parts = [p for p in parts if p]
+    if any(_FALLBACK_START.match(p) for p in parts):
+        return []
+    first = next((i for i, p in enumerate(parts)
+                  if _CONDITION_START.match(p) and not _FREQUENCY_ONCE.match(p)), None)
+    out = []
+    for p in parts[first:] if first is not None else []:
+        if p.lower() not in (o.lower() for o in out):
+            out.append(p)
+    return out
+
+
+def _lower_first(clause):
+    """"Once the bleeding has stopped" reads mid-phrase as "once the bleeding ..."."""
+    if len(clause) > 1 and clause[0].isupper() and clause[1].islower():
+        return clause[0].lower() + clause[1:]
+    return clause
+
+
 def _placement(freq, timing, dosage):
+    """Return (slots, food, per_slot). Any condition in the timing's first sentence
+    follows the food phrase, so it can never contradict the slot. Slots still come from
+    the whole timing."""
+    slots, food, per_slot = _placement_core(freq, timing, dosage)
+    extra = [_lower_first(c) for c in _conditions(_first_sentence(timing))]
+    if food and any(food.lower() in c.lower() for c in extra):
+        return slots, ", ".join(extra), per_slot     # "only with food"
+    return slots, ", ".join([f for f in [food] if f] + extra), per_slot
+
+
+def _placement_core(freq, timing, dosage):
     """Return (slots, food, per_slot). slots == [] means it could not be placed
     (as directed). per_slot is capsules-per-slot (int) or None (show raw dosage)."""
     t = (timing or "").lower().strip()
