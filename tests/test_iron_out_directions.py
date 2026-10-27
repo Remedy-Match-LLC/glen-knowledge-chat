@@ -78,13 +78,18 @@ def test_the_everyday_phrase_gets_no_block():
 @pytest.mark.parametrize("question", ["can I take more iron out?",
                                       "How many Iron-Out capsules can I take?",
                                       "iron-out dose?",
-                                      "how much iron out per day",
                                       "ironout dose",
                                       "what dose of ironout",
                                       "iron out for hemochromatosis"])
 def test_known_gaps_get_no_block(question):
     """Listed in the PR, not widened here (spec). A change that closes one fails this."""
     assert "### Iron Out" not in app.named_product_facts_block(question)
+
+
+def test_a_closing_per_day_now_gets_the_block():
+    """Closed by the dose batch, 2026-10-26: "per day" ending the clause now counts as a
+    product cue, so this known gap gets the Iron Out block."""
+    assert "### Iron Out" in app.named_product_facts_block("how much iron out per day")
 
 
 def test_a_rebuild_keeps_the_old_provenance_note():
