@@ -46267,14 +46267,51 @@ def _alias_tags_to_survivor(cx, canon, person, ts):
     return "updated"
 
 
-def _upsert_person_additive(cx, person, ts=None):
+# Tags GHL owns outright (Glen, 2026-10-27, platform tab). GHL keeps one "email engage"
+# window per contact and moves it as the last engagement ages; the tag union below kept
+# every window ever set (people-b3: 4,981 of 7,678 stale tags). With ghl_owned, a tag
+# on this list leaves the hub when GHL's payload no longer has it. Never add a tag the
+# hub or another feeder writes: consent:*, type:*, source:*, bounces stay additive.
+# (The consent precedence in _upsert_person_additive still applies to the result.)
+_GHL_OWNED_TAGS = frozenset({
+    "email engage 0-7 days", "email engage 8-14 days",
+    "email engage 15-21 days", "email engage 22-28 days",
+})
+
+
+def _tag_key(t):
+    return " ".join(str(t).lower().split())
+
+
+def _ghl_stale_tags(cx, email, person, stored, stored_ghl_id):
+    """The stored tags GHL owns, to be replaced by the ones GHL sends. Empty when the
+    payload carries no tag list or no GHL contact id, when the id differs from the
+    stored one, or when the person is a merge survivor. The last two mean two GHL
+    contacts for one person: each would send its own window, flipping it every hour."""
+    incoming = person.get("tags")
+    if not isinstance(incoming, list):
+        return set()
+    gid = str(person.get("ghl_id") or "").strip()
+    if not gid or str(stored_ghl_id or "").strip() not in ("", gid):
+        return set()
+    # No alias table means no merge has ever run. Checked first, because a failed
+    # SELECT on Postgres aborts the caller's whole transaction.
+    if db.column_exists(cx, "email_aliases", "canonical_email") and cx.execute(
+            "SELECT 1 FROM email_aliases WHERE canonical_email=? LIMIT 1", (email,)).fetchone():
+        return set()
+    # Every listed tag is dropped from the stored set; the union with the incoming
+    # tags puts back the window GHL still has, in GHL's own spelling.
+    return {t for t in stored if _tag_key(t) in _GHL_OWNED_TAGS}
+
+
+def _upsert_person_additive(cx, person, ts=None, ghl_owned=False):
     """Idempotent, additive upsert of one person into the people table, matching
     by email. JSON-array fields (tags, roles, …) are UNIONED with existing;
     scalar fields only overwrite when the incoming value is non-empty (never
     clobbered with blanks); counts take the max. This is what feeders use so
     re-running is safe and a person who appears in several sources keeps every
     tag. Returns "inserted" | "updated" | None (no email). Caller holds the
-    transaction (commits)."""
+    transaction (commits). ghl_owned=True is the GHL sync only: see _GHL_OWNED_TAGS."""
     ts = ts or datetime.now(timezone.utc).isoformat()
     email = (person.get("email") or "").strip().lower()
     if not email:
@@ -46422,6 +46459,12 @@ def _upsert_person_additive(cx, person, ts=None):
                 del upd["name"]
         if "name" not in upd and effective and effective != stored:
             upd["name"] = effective
+        try:
+            _stored_tags = set(json.loads(existing["tags"] or "[]"))
+        except Exception:
+            _stored_tags = set()
+        _stale = _ghl_stale_tags(cx, email, person, _stored_tags,
+                                 existing["ghl_id"] if "ghl_id" in cols else "") if ghl_owned else set()
         for jf in _PERSON_UPSERT_JSON:
             if jf not in cols:
                 continue
@@ -46429,14 +46472,15 @@ def _upsert_person_additive(cx, person, ts=None):
                 ex = set(json.loads(existing[jf] or "[]"))
             except Exception:
                 ex = set()
-            merged = sorted(ex | set(arrays[jf]))
+            kept = ex - _stale if jf == "tags" else ex
+            merged = sorted(kept | set(arrays[jf]))
             if jf == "tags":
                 merged = dedupe_tags_ci(sorted(_collapse_consent(merged)))  # case twins + consent
             if merged != sorted(ex):
                 upd[jf] = json.dumps(merged)
         if dnd:  # force the consent flip on the tags column (a removal, so the union check above misses it)
             try:
-                ex_tags = set(json.loads(existing["tags"] or "[]"))
+                ex_tags = set(json.loads(existing["tags"] or "[]")) - _stale
             except Exception:
                 ex_tags = set()
             upd["tags"] = json.dumps(dedupe_tags_ci(sorted(_collapse_consent(_apply_dnd(ex_tags | set(arrays.get("tags", [])))))))
@@ -49908,6 +49952,9 @@ def upsert_people():
     # Feeders pass ?merge_tags=1 for additive, idempotent upserts (union tags,
     # never clobber scalars with blanks). The console editor omits it (overwrite).
     merge_tags = request.args.get("merge_tags", "").lower() in ("1", "true", "yes")
+    # The GHL sync only: GHL-owned tags it no longer sends leave the hub. It implies the
+    # additive path, never the editor's overwrite.
+    ghl_owned = request.args.get("ghl_owned", "").lower() in ("1", "true", "yes")
     ts = datetime.now(timezone.utc).isoformat()
     inserted = updated = 0
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -49915,8 +49962,8 @@ def upsert_people():
             email = (p.get("email") or "").strip().lower()
             if not email:
                 continue
-            if merge_tags or _canonical_email(email) != email:
-                res = _upsert_person_additive(cx, p, ts)
+            if merge_tags or ghl_owned or _canonical_email(email) != email:
+                res = _upsert_person_additive(cx, p, ts, ghl_owned=ghl_owned)
                 if res == "inserted":
                     inserted += 1
                 elif res == "updated":
