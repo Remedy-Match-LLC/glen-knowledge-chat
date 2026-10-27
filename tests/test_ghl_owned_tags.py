@@ -112,10 +112,14 @@ def test_a_tags_field_that_is_not_a_list_drops_nothing(app_db):
 
 def test_case_and_spacing_do_not_matter(app_db):
     app, db = app_db
-    _seed(db, "e@x.com", ["Email Engage 0-7 Days", "email  engage 8-14 days"])
+    _seed(db, "e@x.com", ["Email Engage 0-7 Days", "email  engage 15-21 days",
+                          "email  engage 8-14 days"])
     _upsert(app, db, {"email": "e@x.com", "ghl_id": "g1", "tags": ["EMAIL ENGAGE 8-14 DAYS"]}, ghl_owned=True)
     t = {x.lower() for x in _tags(db, "e@x.com")}
     assert W0 not in t
+    # The double-spaced stale window is dropped too, spelled as it was stored.
+    assert "email  engage 15-21 days" not in t
+    assert not any(" ".join(x.split()) == W15 for x in t)
     assert any(" ".join(x.split()) == W8 for x in t)
 
 
@@ -172,8 +176,11 @@ def test_the_stored_contact_id_matches_and_windows_drop(app_db):
 
 
 def test_two_ghl_contacts_for_one_address_never_flip_the_window(app_db):
-    """Two GHL contacts share the address and sync one after the other. Each differs
-    from the id stored by the other, so neither drops a window: the tags only grow."""
+    """Two GHL contacts share the address and sync one after the other. In this order
+    each differs from the id stored by the other, so neither drops a window. In another
+    order (the stored id matching the contact that syncs first) the first drops the
+    other's window and the second adds it back in the same run: the end state is both
+    contacts' windows either way, and only consent-free window tags are ever touched."""
     app, db = app_db
     _seed(db, "k@x.com", [W0], ghl_id="gA")
     for _ in range(2):
