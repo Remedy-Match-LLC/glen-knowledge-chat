@@ -99,3 +99,12 @@ def test_the_new_name_opens_no_second_page():
     ingredients._name_index.cache_clear()
     assert ingredients.slugify(NEW) not in ingredients._name_index()
     assert ingredients.resolve(ingredients.slugify(NEW)) is None
+
+
+def test_the_black_goji_ingredient_record_names_ruthenicum():
+    """FileMaker raw 5130 was corrected on 2026-10-27 (production, Glen's yes). The page's
+    copy prompt reads scientific and label_form from this file, which no job refreshes."""
+    rec = _data("fmp-ingredient-content.json")["ingredients"]["black goji"]
+    assert rec["scientific"] == "Lycium ruthenicum"
+    assert rec["label_form"] == "Black Goji Anthocyanin 25% (Lycium ruthenicum)"
+    assert rec["name"] == "Black Goji"
