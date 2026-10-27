@@ -15,8 +15,8 @@ GUT = ("mastic", "bismuth", "berberine", "slippery elm", "vitamin u", "intestina
 # Glen, 2026-10-21: the caution is the pregnancy sentence only, and the two dose lines
 # move to the directions, since the chat now copies the caution word for word.
 WARNING = "Avoid during pregnancy or when planning a pregnancy."
-DIRECTIONS = ("1 capsule 1 to 3 times daily with food, or as guided. 1 a day for one month "
-              "for low Vitamin A. Up to 3 a day short term for Phase 1 terrain.")
+# Glen, 2026-10-26 (platform tab, "yes"): 1 capsule daily, and the two dose lines go.
+DIRECTIONS = "1 capsule daily with food, as guided."
 
 
 @pytest.fixture(scope="module")
@@ -47,7 +47,8 @@ def test_directions_and_warning_are_glens_words(catalog):
 
 def test_the_copy_is_pinned_and_the_ai_explainer_emptied(catalog):
     p = catalog[SLUG]
-    assert set(p["copy_pinned"]) == {"ingredients", "intro", "description", "research", "benefits"}
+    assert set(p["copy_pinned"]) == {"directions", "ingredients", "intro", "description",
+                                     "research", "benefits"}
     assert p["how_it_works"] == ""
     assert "note" not in p
 

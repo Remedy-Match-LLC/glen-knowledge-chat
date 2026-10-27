@@ -2348,7 +2348,12 @@ def _TITLE_CASED(text: str) -> bool:
     return len(words) >= 3 and sum(w[0].isupper() for w in words) >= 0.6 * len(words)
 _AFTER_NAME_OK = re.compile(
     r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
-    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
+    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b"
+    r"|(?:daily|a\s+day|per\s+day)\s*(?:$|[?.!,;:)]))", re.IGNORECASE)
+# "a day", "per day" and "daily" count only where they end the clause: "how much
+# apoptogenesis a day?" got no block (review round 1, 2026-10-26), while "how much
+# apoptogenesis per day in healthy tissue" asks about biology (round 3). A bare "per" stays
+# out, so "reverse age per year" is still an ordinary phrase.
 
 
 def _has_product_cue(text: str, start: int, end: int, strict: bool = False) -> bool:
@@ -2665,8 +2670,12 @@ _WITHDRAWN_DOSE_EXAMPLE["b17-syntropy"] = ", such as up to 10 capsules a day"
 # warning must reach the answer in full, so it is written, never linked (review round 2,
 # 2026-10-25).
 # Moisturize now has a caution too (Glen "yes", 2026-10-26). It stays here for the
-# Directions line, which its description repeats word for word.
-_DOSE_RULE_WITHOUT_CAUTION = frozenset({"b17-syntropy", "moisturize"})
+# Directions line, which its description repeats word for word. So do the five whose
+# dose Glen lowered or capped on 2026-10-26 ("yes", platform tab): each description
+# repeats the new directions, which would otherwise drop the line and its rule.
+_DOSE_RULE_WITHOUT_CAUTION = frozenset({
+    "b17-syntropy", "moisturize", "vitamin-c-syntropy", "vitamin-a-syntropy",
+    "apoptogenesis", "appestat", "breast-support"})
 # Live with 9,400 IU in the knowledge base, the bot invented "188% of the daily value"
 # (about 313% is right), called one capsule "not excessive" though it is 94% of the adult
 # upper limit, and added "Most clients find one daily adequate" (knowledge, log 2373,
@@ -2677,13 +2686,26 @@ _AMOUNT_RULE = {slug: (
     "Give each amount for {name} exactly as listed above. Give no percent Daily Value "
     "that is not listed above, and no other figure worked out from one. Do not call any "
     "amount high, low, moderate, excessive or safe, and do not say what most clients take.")
-    for slug in ("moisturize", "vitreous-vitality")}
+    for slug in ("moisturize", "vitreous-vitality", "vitamin-c-syntropy",
+                 "vitamin-a-syntropy", "apoptogenesis")}
 # Moisturize's shelf batch holds about 9,400 IU of vitamin A a capsule. Its store copy said
 # up to 3 a day, and live the bot added a second capsule (log 2370, 2026-10-26).
 _WITHDRAWN_DOSE_EXAMPLE["moisturize"] = (", such as up to 3 capsules a day, or a second "
                                          "capsule for very dry skin or eyes")
 # Vitreous Vitality's jar label says up to 3 a day (formulation spec, 2026-10-26).
 _WITHDRAWN_DOSE_EXAMPLE["vitreous-vitality"] = ", such as up to 3 capsules a day"
+# The doses these replaced (Glen "yes", 2026-10-26). Vitamin C Syntropy holds about 12,200
+# IU of vitamin A a capsule, Vitamin A Syntropy 25,000 IU and Apoptogenesis 5,000 IU.
+# Live, the bot invented a rising Breast Support dose (knowledge, logs 2375 and 2376).
+_WITHDRAWN_DOSE_EXAMPLE.update({
+    "vitamin-c-syntropy": ", such as 1 to 4 capsules a day, or more than 1 capsule",
+    "vitamin-a-syntropy": (", such as 1 to 3 capsules a day, or up to 3 a day for a short "
+                           "time"),
+    "apoptogenesis": ", such as up to 3 capsules a day",
+    "appestat": ", such as 3 capsules a day, or more than 2 a day",
+    "breast-support": (", such as up to 10 capsules a day, or a dose that starts low and "
+                       "rises"),
+})
 # A caution that names Poison Control is the whole answer to a symptom it lists. The
 # B17 store copy said to lower the dose if lightheaded, an early sign of cyanide
 # toxicity (formulation, 2026-10-25), and that copy may still be in the snippets.
