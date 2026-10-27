@@ -129,6 +129,12 @@ def _addresses(cx, email):
     return sorted(out)
 
 
+def addresses_for(cx, email):
+    """Every address an erasure of `email` covers. For erasures that are not table rows,
+    such as the appointment voice clip files."""
+    return _addresses(cx, email)
+
+
 def _count(cx, table, col, email):
     addrs = _addresses(cx, email)
     args = list(addrs) * len(_columns(table, col))
