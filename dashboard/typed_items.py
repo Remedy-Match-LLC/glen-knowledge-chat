@@ -51,6 +51,9 @@ def clean(name, price_cents):
         raise ValueError("The name is longer than %d characters." % MAX_NAME)
     if not slugify(n):
         raise ValueError("The name needs at least one letter or number.")
+    if isinstance(price_cents, bool) or (isinstance(price_cents, float)
+                                         and not price_cents.is_integer()):
+        raise ValueError("Type the item's price.")
     try:
         cents = int(price_cents)
     except (TypeError, ValueError):
@@ -79,19 +82,36 @@ def list_all(cx):
         "ORDER BY name").fetchall()]
 
 
+def _same_or_refuse(have, name, cents, bottle_type):
+    """A repeat of the same item (a retry, a double click) returns it. A different
+    price or package for the same name is refused: a price never changes silently,
+    and the line price can be edited on the order instead."""
+    if (have["name"] == name and have["price_cents"] == cents
+            and (have["bottle_type"] or None) == bottle_type):
+        return have
+    raise ValueError("%s is already in the list at $%.2f." % (have["name"],
+                                                             have["price_cents"] / 100))
+
+
 def add(cx, name, price_cents, *, created_by=None, bottle_type=None):
-    """Insert one typed item. Returns it. Raises ValueError when the name is invalid
-    or a typed item with the same slug already exists (its price is never changed
-    silently; the form says what it costs and the line price can be edited)."""
+    """Insert one typed item and return it. Raises ValueError when the input is
+    invalid or the slug is already taken by a different item."""
     n, cents = clean(name, price_cents)
     slug = slugify(n)
+    bt = (bottle_type or "").strip() or None
     have = get(cx, slug)
     if have:
-        raise ValueError("%s is already in the list at $%.2f." % (have["name"],
-                                                                 have["price_cents"] / 100))
-    cx.execute("INSERT INTO typed_order_items (slug, name, price_cents, bottle_type, "
-               "created_by, created_at) VALUES (?,?,?,?,?,?)",
-               (slug, n, cents, (bottle_type or "").strip() or None,
-                created_by, _now()))
-    cx.commit()
+        return _same_or_refuse(have, n, cents, bt)
+    try:
+        cx.execute("INSERT INTO typed_order_items (slug, name, price_cents, bottle_type, "
+                   "created_by, created_at) VALUES (?,?,?,?,?,?)",
+                   (slug, n, cents, bt, created_by, _now()))
+        cx.commit()
+    except Exception:
+        # Two adds of one name at once: the primary key refuses the second insert.
+        cx.rollback()
+        have = get(cx, slug)
+        if not have:
+            raise
+        return _same_or_refuse(have, n, cents, bt)
     return get(cx, slug)

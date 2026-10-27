@@ -365,18 +365,21 @@ async function addNewItem(btn){
   const price=parseFloat($("new-item-price").value);
   if(!name){ toast("Type the new item's name","error"); return; }
   if(!(price>0)){ toast("Type the new item's price","error"); return; }
+  const qty=Math.max(1, parseInt($("prod-qty").value,10)||1);   // read now, not after the wait
   btn.disabled=true;
   try{
     const r=await fetch("/api/orders/typed-items",{method:"POST",headers:HEADERS,
       body:JSON.stringify({name, price_cents:Math.round(price*100), bottle_type:$("new-item-bt").value})});
     const j=await r.json();
     if(!j.ok){ toast(j.error||"Could not add the item","error"); return; }
-    await loadCatalog();
-    const it=j.item, qty=Math.max(1, parseInt($("prod-qty").value,10)||1);
+    const it=j.item;
     LINES.push({slug:it.slug, name:it.name, qty, unit_cents:it.price_cents, edited:false, note:"", format:'bottle', source:'self'});
-    $("new-item-name").value=""; $("new-item-price").value=""; $("prod-qty").value=1;
+    $("new-item-name").value=""; $("new-item-price").value="";
     renderLines();
     toast(it.name+" added to the list");
+    try{ await loadCatalog(); }catch(e){ /* the line is on the order; the picker refreshes on reload */ }
+  } catch(e){
+    toast("Could not reach the server. Press Add new item again; a repeat is safe.","error");
   } finally { btn.disabled=false; }
 }
 

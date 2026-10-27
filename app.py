@@ -9871,22 +9871,33 @@ def _typed_item_product(slug):
     if not slug or slug in (_PRODUCTS.get("products") or {}):
         return None
     from dashboard import typed_items as _ti
+    # A failed lookup RAISES. Returning None would read as "no such product", and the
+    # invoice pricer skips such a line: a re-priced invoice would quietly lose it.
+    cx = db.connect(LOG_DB)
     try:
-        cx = db.connect(LOG_DB)
-        try:
-            _ti.init_table(cx)
-            t = _ti.get(cx, slug)
-        finally:
-            cx.close()
-    except Exception as e:
-        print(f"[typed-items] lookup failed for {slug!r}: {e!r}", flush=True)
-        return None
+        _ti.init_table(cx)
+        t = _ti.get(cx, slug)
+    finally:
+        cx.close()
     if not t:
         return None
     out = {"slug": t["slug"], "name": t["name"], "price_cents": t["price_cents"],
            "typed": True, "volume_eligible": False}
     if t.get("bottle_type"):
         out["bottle_type"] = t["bottle_type"]
+    return out
+
+
+def _typed_products_in(lines):
+    """{slug: product} for the typed New Order items among these lines, for
+    _price_cart(extra_products=...) when re-quoting an owner invoice's shipping."""
+    out = {}
+    for ln in (lines or []):
+        slug = (ln.get("slug") or "").strip() if isinstance(ln, dict) else ""
+        if slug and slug not in out:
+            p = _typed_item_product(slug)
+            if p:
+                out[slug] = p
     return out
 
 
@@ -60095,7 +60106,8 @@ def _recompute_combined_shipping(cx, sid):
         try:
             # Orders already placed: re-quote their shipping even if a line has since
             # become waitlist_only, or a failure here would bill $0 shipping.
-            return int((_price_cart(cart, ship=ship_addr, channel="retail", allow_waitlist=True)
+            return int((_price_cart(cart, ship=ship_addr, channel="retail", allow_waitlist=True,
+                                    extra_products=_typed_products_in(cart))
                         or {}).get("shipping_cents") or 0)
         except Exception as e:
             print(f"[combined-ship] price failed: {e!r}", flush=True)
@@ -62112,10 +62124,8 @@ def api_orders_shipping_preview():
     if not cart:
         return jsonify({"ok": False, "error": "add a product first"}), 400
     try:
-        _typed = {c["slug"]: _tp for c in cart
-                  for _tp in [_typed_item_product(c["slug"])] if _tp}
         pc = _price_cart(cart, ship=ship, channel="retail", email=(body.get("email") or None),
-                         extra_products=_typed)
+                         extra_products=_typed_products_in(cart))
         shipping_cents = _bos_orders.effective_shipping_cents(False, pc.get("shipping_cents"))
         get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
     except CheckoutError as e:
@@ -63560,6 +63570,9 @@ def api_invoice_update(token):
     # because a slug can appear twice on a household invoice, once for the caregiver
     # and once for a member.
     existing = list(order.get("items") or [])
+    # A typed New Order item stays known only where the owner already put it on this
+    # invoice. A customer cannot add one, and an edit never drops one.
+    _stored_slugs = {(it.get("slug") or "").strip() for it in existing if isinstance(it, dict)}
     from dashboard import client_invoice_lines as _cil
     # Adding a not-ready product, or raising its quantity, is refused; removing or
     # lowering one already on the invoice is allowed (review round 1, 2026-10-20).
@@ -63568,7 +63581,9 @@ def api_invoice_update(token):
     if _wl:
         return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     lines_in = _cil.rebuild(body.get("lines"), existing,
-                            known=lambda _s: _get_product(_s) is not None,
+                            known=lambda _s: (_get_product(_s) is not None
+                                              or (_s in _stored_slugs
+                                                  and _typed_item_product(_s) is not None)),
                             refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}))
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
@@ -64658,15 +64673,20 @@ def api_orders_typed_items():
         name = " ".join(str(body.get("name") or "").split())
         slug = _ti.slugify(name)
         _cat = _PRODUCTS.get("products") or {}
-        if slug and slug in _cat:
-            _c = _cat[slug]
+        # A catalog product matches by slug OR by name: 102 catalog names slugify to
+        # something other than their slug (Myelin Syntropy Powder is myelin-syntropy).
+        _hit = slug if slug in _cat else next(
+            (s for s, p in sorted(_cat.items(), key=lambda kv: bool(kv[1].get("inactive")))
+             if slug and _ti.slugify(p.get("name")) == slug), None)
+        if _hit:
+            _c = _cat[_hit]
             if _c.get("inactive"):
                 return jsonify({"ok": False, "error":
                                 "%s is a retired product. It cannot be typed back in."
-                                % (_c.get("name") or slug)}), 409
+                                % (_c.get("name") or _hit)}), 409
             return jsonify({"ok": False, "error":
                             "%s is already in the list. Pick it from the list."
-                            % (_c.get("name") or slug)}), 409
+                            % (_c.get("name") or _hit)}), 409
         bt = str(body.get("bottle_type") or "").strip()
         if bt not in types:
             return jsonify({"ok": False, "error": "Choose the item's package."}), 400

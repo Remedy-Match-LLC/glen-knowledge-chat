@@ -118,6 +118,45 @@ def test_a_typed_item_is_packed_like_a_catalog_item_of_its_package():
     catalog = app_mod._price_inhouse_invoice(
         [{"slug": "pterostilbene-pure-powder", "qty": 1}], **kw)
     assert typed["shipping_cents"] == catalog["shipping_cents"] > 0
+    # Many jars need a bigger box. Equal at 12 as well, and dearer than one jar, so the
+    # typed item is really packed at its own package and count.
+    typed12 = app_mod._price_inhouse_invoice([{"slug": it["slug"], "qty": 12}], **kw)
+    catalog12 = app_mod._price_inhouse_invoice(
+        [{"slug": "pterostilbene-pure-powder", "qty": 12}], **kw)
+    assert typed12["shipping_cents"] == catalog12["shipping_cents"] > typed["shipping_cents"]
+
+
+def test_a_failed_typed_lookup_raises_rather_than_dropping_the_line(monkeypatch):
+    it = _new("Typed Outage")
+    from dashboard import typed_items as ti
+
+    def boom(*a, **k):
+        raise RuntimeError("database down")
+    monkeypatch.setattr(ti, "get", boom)
+    with pytest.raises(RuntimeError):
+        _priced({"slug": it["slug"], "qty": 1})
+
+
+def test_a_repeat_of_the_same_item_returns_it():
+    it = _new("Typed Retry")
+    r = _add(it["name"], cents=2500, bt="30 g")
+    assert r.status_code == 200 and r.get_json()["item"]["slug"] == it["slug"]
+
+
+def test_two_adds_at_once_do_not_error(monkeypatch):
+    from dashboard import typed_items as ti
+    name = "Typed Race %s" % uuid.uuid4().hex[:8]
+    assert _add(name).status_code == 200
+    real_get, calls = ti.get, []
+
+    def first_miss(cx, slug):   # the second request read before the first one wrote
+        calls.append(slug)
+        return None if len(calls) == 1 else real_get(cx, slug)
+    monkeypatch.setattr(ti, "get", first_miss)
+    r = _add(name)
+    assert r.status_code == 200, r.data
+    r = _add(name, cents=9900)
+    assert r.status_code == 400
 
 
 def test_a_catalog_name_and_a_retired_name_are_refused():
@@ -161,3 +200,70 @@ def test_only_the_owner_can_type_an_item():
     r = _client().post("/api/orders/typed-items",
                        json={"name": "x", "price_cents": 100, "bottle_type": "30 g"})
     assert r.status_code == 401
+
+
+def test_a_catalog_name_whose_slug_differs_is_refused():
+    r = _add("Myelin Syntropy Powder")
+    assert r.status_code == 409 and "already in the list" in r.get_json()["error"]
+    r = _add("emotional stress release (MB5)")
+    assert r.status_code == 409 and "retired" in r.get_json()["error"]
+
+
+def test_a_true_or_fractional_price_is_refused():
+    assert _add("Typed Bool %s" % uuid.uuid4().hex[:6], cents=True).status_code == 400
+    assert _add("Typed Frac %s" % uuid.uuid4().hex[:6], cents=2599.9).status_code == 400
+
+
+def test_a_customer_edit_keeps_the_typed_line_and_cannot_add_one(monkeypatch):
+    it = _new("Typed On Invoice")
+    other = _new("Typed Not On Invoice")
+    order = {"id": 990001, "source": "in-house", "external_ref": "INH-TYPED",
+             "email": EMAIL, "name": "T", "status": "proposed", "channel": "pickup",
+             "items": [{"slug": "paracleanse", "qty": 1, "unit_cents": 7000},
+                       {"slug": it["slug"], "qty": 1, "unit_cents": 2500}]}
+    captured = {}
+    monkeypatch.setattr(app_mod, "_invoice_order_for_token", lambda _t: order)
+
+    def fake_reprice(_cx, _order, lines, **kwargs):
+        captured["lines"] = lines
+        return ({"items_rec": lines, "subtotal_cents": 0, "discount_cents": 0,
+                 "adjustment_cents": 0, "shipping_cents": 0, "get_cents": 0,
+                 "points_redeemed_cents": 0, "total_cents": 0}, False)
+    monkeypatch.setattr(app_mod, "_reprice_and_persist_invoice", fake_reprice)
+    monkeypatch.setattr(app_mod._bos_orders, "get_order", lambda _cx, _oid: order)
+    monkeypatch.setattr(app_mod, "_invoice_summary", lambda _o: {"total_cents": 0})
+    monkeypatch.setattr(app_mod._inbox, "send_email", lambda *a, **k: None)
+    r = _client().post("/api/invoice/tok/update", json={"lines": [
+        {"slug": "paracleanse", "qty": 2, "i": 0}, {"slug": it["slug"], "qty": 3, "i": 1},
+        {"slug": other["slug"], "qty": 1}]})
+    assert r.status_code == 200, r.data
+    slugs = {l["slug"]: l["qty"] for l in captured["lines"]}
+    assert slugs == {"paracleanse": 2, it["slug"]: 3}
+
+
+def test_combining_shipments_packs_the_typed_items(monkeypatch):
+    it = _new("Typed Combined", cents=4000)
+    members = [
+        {"id": 1, "email": "a@example.com", "pay_status": "unpaid", "status": "proposed",
+         "items": [{"slug": it["slug"], "qty": 2}], "shipping_cents": 0, "total_cents": 8000},
+        {"id": 2, "email": "b@example.com", "pay_status": "unpaid", "status": "proposed",
+         "items": [{"slug": "paracleanse", "qty": 1}], "shipping_cents": 0,
+         "total_cents": 7000},
+    ]
+    monkeypatch.setattr(app_mod, "_family_plan_enabled", lambda: False)
+    monkeypatch.setattr(app_mod._bos_orders, "orders_in_group", lambda _cx, _sid: members)
+    monkeypatch.setattr(app_mod._bos_combined_shipments, "get_shipment",
+                        lambda _cx, _sid: {"ship_to": SHIP})
+    monkeypatch.setattr(app_mod._bos_orders, "set_order_shipping", lambda *a, **k: None)
+    monkeypatch.setattr(app_mod._bos_orders, "set_order_overpay_credit", lambda *a, **k: None)
+    seen = []
+    real = app_mod._price_cart
+
+    def spy(cart, **kw):
+        out = real(cart, **kw)
+        seen.append(({c["slug"] for c in cart}, out["shipping_cents"]))
+        return out
+    monkeypatch.setattr(app_mod, "_price_cart", spy)
+    app_mod._recompute_combined_shipping(None, 1)
+    alone = [ship for slugs, ship in seen if slugs == {it["slug"]}]
+    assert alone and alone[0] > 0
