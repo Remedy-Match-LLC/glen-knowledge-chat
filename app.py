@@ -46272,6 +46272,7 @@ def _alias_tags_to_survivor(cx, canon, person, ts):
 # every window ever set (people-b3: 4,981 of 7,678 stale tags). With ghl_owned, a tag
 # on this list leaves the hub when GHL's payload no longer has it. Never add a tag the
 # hub or another feeder writes: consent:*, type:*, source:*, bounces stay additive.
+# (The consent precedence in _upsert_person_additive still applies to the result.)
 _GHL_OWNED_TAGS = frozenset({
     "email engage 0-7 days", "email engage 8-14 days",
     "email engage 15-21 days", "email engage 22-28 days",
@@ -46282,12 +46283,16 @@ def _tag_key(t):
     return " ".join(str(t).lower().split())
 
 
-def _ghl_stale_tags(cx, email, person, stored):
+def _ghl_stale_tags(cx, email, person, stored, stored_ghl_id):
     """The stored tags GHL owns, to be replaced by the ones GHL sends. Empty when the
-    payload carries no tag list, or when the person is a merge survivor: two GHL
-    contacts would each send their own window and the tag would flip every hour."""
+    payload carries no tag list or no GHL contact id, when the id differs from the
+    stored one, or when the person is a merge survivor. The last two mean two GHL
+    contacts for one person: each would send its own window, flipping it every hour."""
     incoming = person.get("tags")
     if not isinstance(incoming, list):
+        return set()
+    gid = str(person.get("ghl_id") or "").strip()
+    if not gid or str(stored_ghl_id or "").strip() not in ("", gid):
         return set()
     # No alias table means no merge has ever run. Checked first, because a failed
     # SELECT on Postgres aborts the caller's whole transaction.
@@ -46458,7 +46463,8 @@ def _upsert_person_additive(cx, person, ts=None, ghl_owned=False):
             _stored_tags = set(json.loads(existing["tags"] or "[]"))
         except Exception:
             _stored_tags = set()
-        _stale = _ghl_stale_tags(cx, email, person, _stored_tags) if ghl_owned else set()
+        _stale = _ghl_stale_tags(cx, email, person, _stored_tags,
+                                 existing["ghl_id"] if "ghl_id" in cols else "") if ghl_owned else set()
         for jf in _PERSON_UPSERT_JSON:
             if jf not in cols:
                 continue

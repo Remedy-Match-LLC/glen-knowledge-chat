@@ -42,10 +42,10 @@ def app_db(monkeypatch, tmp_path):
     return app, db
 
 
-def _seed(db, email, tags):
+def _seed(db, email, tags, ghl_id=""):
     with sqlite3.connect(db) as cx:
-        cx.execute("INSERT INTO people (email, tags, created_at, updated_at) VALUES (?,?,?,?)",
-                   (email, json.dumps(tags), "", ""))
+        cx.execute("INSERT INTO people (email, tags, ghl_id, created_at, updated_at) VALUES (?,?,?,?,?)",
+                   (email, json.dumps(tags), ghl_id, "", ""))
         cx.commit()
 
 
@@ -69,7 +69,7 @@ def test_the_list_is_exactly_the_four_email_engage_windows(app_db):
 def test_a_window_ghl_dropped_leaves_and_the_current_one_stays(app_db):
     app, db = app_db
     _seed(db, "a@x.com", [W0, W8, W22, "type:client"])
-    _upsert(app, db, {"email": "a@x.com", "tags": [W15]}, ghl_owned=True)
+    _upsert(app, db, {"email": "a@x.com", "ghl_id": "g1", "tags": [W15]}, ghl_owned=True)
     assert _tags(db, "a@x.com") == {W15, "type:client"}
 
 
@@ -88,7 +88,7 @@ def test_tags_off_the_list_never_drop(app_db):
             "email bounced", "client", "e4l account", "state:has-scanned",
             "email engage 29-35 days", "email engage"]
     _seed(db, "c@x.com", keep + [W0])
-    _upsert(app, db, {"email": "c@x.com", "tags": []}, ghl_owned=True)
+    _upsert(app, db, {"email": "c@x.com", "ghl_id": "g1", "tags": []}, ghl_owned=True)
     t = _tags(db, "c@x.com")
     assert W0 not in t
     # consent:opted-in loses to unsubscribed by the existing precedence rule, not this one
@@ -99,21 +99,21 @@ def test_a_payload_with_no_tags_field_drops_nothing(app_db):
     """No tags field means GHL did not say; an empty list means GHL holds none."""
     app, db = app_db
     _seed(db, "d@x.com", [W0])
-    _upsert(app, db, {"email": "d@x.com", "phone": "555"}, ghl_owned=True)
+    _upsert(app, db, {"email": "d@x.com", "ghl_id": "g1", "phone": "555"}, ghl_owned=True)
     assert _tags(db, "d@x.com") == {W0}
 
 
 def test_a_tags_field_that_is_not_a_list_drops_nothing(app_db):
     app, db = app_db
     _seed(db, "d2@x.com", [W0])
-    _upsert(app, db, {"email": "d2@x.com", "tags": None}, ghl_owned=True)
+    _upsert(app, db, {"email": "d2@x.com", "ghl_id": "g1", "tags": None}, ghl_owned=True)
     assert _tags(db, "d2@x.com") == {W0}
 
 
 def test_case_and_spacing_do_not_matter(app_db):
     app, db = app_db
     _seed(db, "e@x.com", ["Email Engage 0-7 Days", "email  engage 8-14 days"])
-    _upsert(app, db, {"email": "e@x.com", "tags": ["EMAIL ENGAGE 8-14 DAYS"]}, ghl_owned=True)
+    _upsert(app, db, {"email": "e@x.com", "ghl_id": "g1", "tags": ["EMAIL ENGAGE 8-14 DAYS"]}, ghl_owned=True)
     t = {x.lower() for x in _tags(db, "e@x.com")}
     assert W0 not in t
     assert any(" ".join(x.split()) == W8 for x in t)
@@ -124,7 +124,7 @@ def test_a_refusal_in_the_same_payload_still_drops_stale_windows(app_db):
     pruned set, or an unsubscribe would put every old window back."""
     app, db = app_db
     _seed(db, "f@x.com", [W0, W8, "consent:opted-in"])
-    _upsert(app, db, {"email": "f@x.com", "tags": [W22], "dnd": True}, ghl_owned=True)
+    _upsert(app, db, {"email": "f@x.com", "ghl_id": "g1", "tags": [W22], "dnd": True}, ghl_owned=True)
     assert _tags(db, "f@x.com") == {W22, "consent:unsubscribed"}
 
 
@@ -138,7 +138,7 @@ def test_a_merged_survivor_keeps_its_windows(app_db):
         pal.init_tables(cx)
         pal.add_alias(cx, "old-g@x.com", "g@x.com", 1)
         cx.commit()
-    _upsert(app, db, {"email": "g@x.com", "tags": [W15]}, ghl_owned=True)
+    _upsert(app, db, {"email": "g@x.com", "ghl_id": "g1", "tags": [W15]}, ghl_owned=True)
     assert _tags(db, "g@x.com") == {W0, W8, W15}
 
 
@@ -150,13 +150,41 @@ def test_an_alias_address_drops_nothing_on_the_survivor(app_db):
         pal.init_tables(cx)
         pal.add_alias(cx, "old-h@x.com", "h@x.com", 1)
         cx.commit()
-    _upsert(app, db, {"email": "old-h@x.com", "tags": [W8]}, ghl_owned=True)
+    _upsert(app, db, {"email": "old-h@x.com", "ghl_id": "g1", "tags": [W8]}, ghl_owned=True)
     assert _tags(db, "h@x.com") == {W0, W8}
+
+
+def test_a_payload_with_no_ghl_contact_id_drops_nothing(app_db):
+    """Only the GHL sync sends a contact id. Another caller with the flag and the
+    console key still cannot clear a window without one."""
+    app, db = app_db
+    _seed(db, "i@x.com", [W0])
+    _upsert(app, db, {"email": "i@x.com", "tags": []}, ghl_owned=True)
+    _upsert(app, db, {"email": "i@x.com", "ghl_id": "  ", "tags": []}, ghl_owned=True)
+    assert _tags(db, "i@x.com") == {W0}
+
+
+def test_the_stored_contact_id_matches_and_windows_drop(app_db):
+    app, db = app_db
+    _seed(db, "j@x.com", [W0], ghl_id="g1")
+    _upsert(app, db, {"email": "j@x.com", "ghl_id": "g1", "tags": [W8]}, ghl_owned=True)
+    assert _tags(db, "j@x.com") == {W8}
+
+
+def test_two_ghl_contacts_for_one_address_never_flip_the_window(app_db):
+    """Two GHL contacts share the address and sync one after the other. Each differs
+    from the id stored by the other, so neither drops a window: the tags only grow."""
+    app, db = app_db
+    _seed(db, "k@x.com", [W0], ghl_id="gA")
+    for _ in range(2):
+        _upsert(app, db, {"email": "k@x.com", "ghl_id": "gB", "tags": [W8]}, ghl_owned=True)
+        _upsert(app, db, {"email": "k@x.com", "ghl_id": "gA", "tags": [W15]}, ghl_owned=True)
+    assert _tags(db, "k@x.com") == {W0, W8, W15}
 
 
 def test_a_new_person_gets_only_the_incoming_tags(app_db):
     app, db = app_db
-    assert _upsert(app, db, {"email": "n@x.com", "tags": [W0]}, ghl_owned=True) == "inserted"
+    assert _upsert(app, db, {"email": "n@x.com", "ghl_id": "g1", "tags": [W0]}, ghl_owned=True) == "inserted"
     assert _tags(db, "n@x.com") == {W0}
 
 
@@ -168,9 +196,9 @@ def test_the_route_drops_only_with_ghl_owned(app_db):
     app, db = app_db
     _seed(db, "r@x.com", [W0])
     _seed(db, "s@x.com", [W0])
-    assert _post(app, "/api/people?merge_tags=1", [{"email": "r@x.com", "tags": [W8]}]).status_code == 200
+    assert _post(app, "/api/people?merge_tags=1", [{"email": "r@x.com", "ghl_id": "g1", "tags": [W8]}]).status_code == 200
     assert _post(app, "/api/people?merge_tags=1&ghl_owned=1",
-                 [{"email": "s@x.com", "tags": [W8]}]).status_code == 200
+                 [{"email": "s@x.com", "ghl_id": "g1", "tags": [W8]}]).status_code == 200
     assert _tags(db, "r@x.com") == {W0, W8}
     assert _tags(db, "s@x.com") == {W8}
 
@@ -181,7 +209,7 @@ def test_ghl_owned_without_merge_tags_is_still_additive(app_db):
     app, db = app_db
     _seed(db, "t@x.com", [W0, "type:client"])
     assert _post(app, "/api/people?ghl_owned=1",
-                 [{"email": "t@x.com", "tags": [W8]}]).status_code == 200
+                 [{"email": "t@x.com", "ghl_id": "g1", "tags": [W8]}]).status_code == 200
     assert _tags(db, "t@x.com") == {W8, "type:client"}
 
 
