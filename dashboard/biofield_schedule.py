@@ -93,7 +93,26 @@ def _split_n(times, dose):
     return None, None
 
 
+# A clause of the timing that sets a condition, not a time. The slot and food phrase
+# drop it, so the schedule showed Scar Silk "between meals" without "once the bleeding
+# has stopped" (Judy Tom, a58, Glen "fix the schedule", 2026-10-26).
+_CONDITION_START = re.compile(r"^(?:once|until|unless|only|if|when|except|but)\b", re.I)
+
+
+def _conditions(timing):
+    """The comma- or semicolon-separated clauses of `timing` that set a condition."""
+    parts = [p.strip().rstrip(".").strip() for p in re.split(r"[,;]", timing or "")]
+    return [p for p in parts if p and _CONDITION_START.match(p)]
+
+
 def _placement(freq, timing, dosage):
+    """Return (slots, food, per_slot), with any condition in the timing kept on food."""
+    slots, food, per_slot = _placement_core(freq, timing, dosage)
+    extra = [c for c in _conditions(timing) if c.lower() not in (food or "").lower()]
+    return slots, ", ".join([f for f in [food] if f] + extra), per_slot
+
+
+def _placement_core(freq, timing, dosage):
     """Return (slots, food, per_slot). slots == [] means it could not be placed
     (as directed). per_slot is capsules-per-slot (int) or None (show raw dosage)."""
     t = (timing or "").lower().strip()
