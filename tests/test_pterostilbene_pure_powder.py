@@ -2,7 +2,7 @@
 
 Glen, 2026-10-26, production tab: "add it to the list while you work on the sales page
 in parallel ... or after it's on the list for me now." He was invoicing a jar that day.
-The intro and description wait for his copy approval, so the entry carries neither.
+He approved the intro and description the same day ("approve"), as a follow-up.
 Spec: production/05 Formulations/_store-updates/2026-10-26-pterostilbene-pure-powder.md.
 """
 import importlib
@@ -16,6 +16,9 @@ from dashboard.pure_powders import PURE_POWDER_NAMES
 REPO = pathlib.Path(__file__).resolve().parent.parent
 KEY = "pterostilbene-pure-powder"
 NAME = "Pterostilbene Pure Powder"
+INTRO = "Pterostilbene Pure Powder is trans-pterostilbene at 98% purity."
+DESCRIPTION = ("Pterostilbene is a polyphenol of the stilbene family, the same family as "
+               "resveratrol.\n\nFour orange scoops hold 48 mg.")
 
 
 def _product():
@@ -28,7 +31,7 @@ def test_the_key_is_what_the_store_makes_from_the_name():
     assert a._slugify_product(NAME) == KEY
 
 
-def test_the_entry_carries_the_label_fields_and_no_prose():
+def test_the_entry_carries_the_label_fields_and_the_approved_copy():
     p = _product()
     assert (p["name"], p["price_cents"], p["fmp_id"], p["bottle_type"]) == (
         NAME, 4000, "1204", "30 g")
@@ -37,8 +40,10 @@ def test_the_entry_carries_the_label_fields_and_no_prose():
                                  "dose": "48 mg"}]
     assert p["directions"] == "Take 4 orange scoops 1 to 2 times daily, or as guided."
     assert p["miron_glass"] is False
-    assert p["copy_pinned"] == ["ingredients", "research", "directions", "benefits"]
-    for left_out in ("intro", "description", "how_it_works", "regular_cents", "qbo_item_id"):
+    assert p["copy_pinned"] == ["ingredients", "intro", "description", "research",
+                                "directions", "benefits"]
+    assert p["intro"] == INTRO and p["description"] == DESCRIPTION
+    for left_out in ("how_it_works", "regular_cents", "qbo_item_id"):
         assert left_out not in p, left_out
 
 
@@ -103,3 +108,20 @@ def test_the_order_forms_product_list_offers_it_at_forty_dollars(appmod, monkeyp
     by = {p["slug"]: p for p in r.get_json()["products"]}
     assert by[KEY]["name"] == NAME
     assert by[KEY]["price_cents"] == 4000
+
+
+def test_the_page_shows_the_approved_copy_and_never_the_card(appmod, monkeypatch):
+    """Production checks both texts word for word after deploy."""
+    monkeypatch.setattr(appmod, "_product_card",
+                        lambda p: {"description": "AI CARD MARKER supports the nervous system",
+                                   "ingredients": [], "benefits": []})
+    monkeypatch.setattr(appmod, "_product_how", lambda p: "AI HOW MARKER")
+    monkeypatch.setattr(appmod, "_SALES_AI_COPY_ENABLED", True)
+    c = appmod.app.test_client()
+    d = c.get(f"/begin/product-page-data/{KEY}").get_json()
+    secs = {s["id"]: s for s in d["sections"]}
+    assert secs["intro"]["body"] == INTRO
+    assert secs["description"]["body"] == DESCRIPTION
+    for url in (f"/begin/product-page-data/{KEY}", f"/begin/product-data/{KEY}"):
+        dump = json.dumps(c.get(url).get_json())
+        assert "AI CARD MARKER" not in dump and "AI HOW MARKER" not in dump, url
