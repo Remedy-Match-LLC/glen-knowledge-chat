@@ -96,20 +96,34 @@ def _split_n(times, dose):
 # A clause of the timing that sets a condition, not a time. The slot and food phrase
 # drop it, so the schedule showed Scar Silk "between meals" without "once the bleeding
 # has stopped" (Judy Tom, a58, Glen "fix the schedule", 2026-10-26).
-_CONDITION_START = re.compile(r"^(?:once|until|unless|only|if|when|except|but)\b", re.I)
+_CONDITION_START = re.compile(r"^(?:once|until|unless|only|if|when|except|but|otherwise)\b", re.I)
+# "Once daily" and "once a day" are a frequency, not a condition (review round 1).
+_FREQUENCY_ONCE = re.compile(r"^once\s+(?:a|an|daily|per|every|each|weekly|or)\b", re.I)
 
 
-def _conditions(timing):
-    """The comma- or semicolon-separated clauses of `timing` that set a condition."""
-    parts = [p.strip().rstrip(".").strip() for p in re.split(r"[,;]", timing or "")]
-    return [p for p in parts if p and _CONDITION_START.match(p)]
+def _first_sentence(timing):
+    """The timing up to its first full stop. Later sentences are instructions the
+    schedule shows elsewhere, such as B17 Max's steps up to 2 scoops."""
+    return re.split(r"\.\s+(?=[A-Z])", (timing or "").strip())[0].strip().rstrip(".").strip()
+
+
+def _has_condition(sentence):
+    """True when a clause of `sentence` sets a condition. A comma inside a number
+    ("1,000 mg") does not end a clause."""
+    parts = [p.strip() for p in re.split(r";|,(?!\d)", sentence or "")]
+    return any(_CONDITION_START.match(p) and not _FREQUENCY_ONCE.match(p) for p in parts)
 
 
 def _placement(freq, timing, dosage):
-    """Return (slots, food, per_slot), with any condition in the timing kept on food."""
+    """Return (slots, food, per_slot). When the timing's first sentence sets a
+    condition, food is that sentence as written. Cutting it to clauses dropped or reversed what a condition
+    governs: "if bleeding resumes, stop taking", "with food; if not, between meals"
+    (review rounds 1 and 2). Slots still come from the whole timing."""
     slots, food, per_slot = _placement_core(freq, timing, dosage)
-    extra = [c for c in _conditions(timing) if c.lower() not in (food or "").lower()]
-    return slots, ", ".join([f for f in [food] if f] + extra), per_slot
+    first = _first_sentence(timing)
+    if _has_condition(first):
+        food = first
+    return slots, food, per_slot
 
 
 def _placement_core(freq, timing, dosage):

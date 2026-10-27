@@ -21,7 +21,8 @@ def test_a_condition_with_no_food_phrase_still_shows():
 
 def test_a_meal_slot_keeps_its_condition():
     e = build_schedule([{**ROW, "timing": "with breakfast; until the bottle is done."}])["entries"][0]
-    assert e["food"].endswith(", until the bottle is done")
+    assert e["food"] == "with breakfast; until the bottle is done"
+    assert e["slots"] == ["Breakfast"]
 
 
 def test_plain_timings_are_unchanged():
@@ -33,3 +34,24 @@ def test_plain_timings_are_unchanged():
 def test_the_printed_schedule_shows_the_condition():
     html = _schedule({"schedule": build_schedule([ROW])})
     assert "(1 capsule, between meals, once the bleeding has stopped)" in html
+
+
+def test_a_condition_keeps_the_instruction_it_governs():
+    e = build_schedule([{**ROW, "timing": "between meals, if bleeding resumes, stop taking"}])["entries"][0]
+    assert e["food"] == "between meals, if bleeding resumes, stop taking"
+
+
+def test_a_frequency_once_is_not_a_condition():
+    for t in ("Once daily with food", "once a day, with food"):
+        assert build_schedule([{**ROW, "timing": t}])["entries"][0]["food"] == "with food", t
+
+
+def test_round_1_cases_print_as_written():
+    for t in ("only with food", "between meals, once 1,000 mg is reached",
+              "with food; if not, between meals"):
+        assert build_schedule([{**ROW, "timing": t}])["entries"][0]["food"] == t.rstrip("."), t
+
+
+def test_only_the_first_sentence_is_read():
+    e = build_schedule([{**ROW, "timing": "with food. If you also take B17 Syntropy, count it."}])["entries"][0]
+    assert e["food"] == "with food"
