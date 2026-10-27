@@ -534,3 +534,44 @@ def test_message_erasure_with_no_addresses_touches_nothing(tmp_path):
     assert ap.erase_client_messages(cx, ["", None]) == 0
     assert ap.count_client_messages(cx, []) == 0
     assert cx.execute("SELECT COUNT(*) FROM appointment_proposal_messages").fetchone()[0] == 1
+
+
+def test_a_failure_inside_the_real_erasure_keeps_the_message_text(monkeypatch, tmp_path):
+    """The failure comes from inside erase(), after its health-table deletes ran, so a
+    commit hidden anywhere before erase()'s own would leave the text deleted."""
+    appmod = _reload(monkeypatch, tmp_path)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        _msg(cx, _proposal(cx), "keep me")
+        cx.execute("CREATE TABLE IF NOT EXISTS intake_responses (email TEXT, answers_json TEXT)")
+        cx.execute("INSERT INTO intake_responses (email, answers_json) VALUES (?, '{}')", (CLIENT,))
+        cx.commit()
+    from dashboard import client_erasure as _ce
+
+    def boom(cx, addrs):
+        raise RuntimeError("late failure")
+
+    monkeypatch.setattr(_ce, "_purge_merge_record", boom)
+    appmod.app.config["PROPAGATE_EXCEPTIONS"] = False
+    r = appmod.app.test_client().post("/api/console/client-erasure/erase",
+                                      json={"email": CLIENT, "confirm": CLIENT},
+                                      headers={"X-Console-Key": KEY})
+    assert r.status_code == 500
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert [t for (t,) in cx.execute("SELECT text FROM appointment_proposal_messages")] \
+            == ["keep me"]
+        assert cx.execute("SELECT COUNT(*) FROM intake_responses").fetchone()[0] == 1
+
+
+def test_a_row_still_holding_a_clip_is_never_deleted_without_its_file(tmp_path):
+    cx = _cx(tmp_path)
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    pid = _proposal(cx)
+    _msg(cx, pid, "text only")
+    name = _clip(cx, assets, pid, days_ago=1)       # arrived after the clip pass
+    assert ap.erase_client_messages(cx, [CLIENT]) == 1
+    cx.commit()
+    assert cx.execute("SELECT audio_filename FROM appointment_proposal_messages"
+                      ).fetchall() == [(name,)]
+    assert ap.count_client_messages(cx, [CLIENT]) == 1

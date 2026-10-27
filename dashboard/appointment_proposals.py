@@ -260,5 +260,7 @@ def erase_client_messages(cx, addresses):
     if not addrs:
         return 0
     init_tables(cx)
-    return cx.execute(f"DELETE FROM appointment_proposal_messages WHERE {where}",
-                      addrs).rowcount or 0
+    # A row still holding a clip is kept: a clip sent while the erasure ran must stay
+    # findable, or its file would be orphaned. The route reports it; a rerun takes it.
+    return cx.execute(f"DELETE FROM appointment_proposal_messages WHERE {where} "
+                      "AND audio_filename=''", addrs).rowcount or 0

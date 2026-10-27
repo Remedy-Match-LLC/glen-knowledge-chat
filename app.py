@@ -59774,6 +59774,11 @@ def api_console_client_erasure_erase():
             removed["appointment_voice_clips"] = clips
         if msgs:
             removed["appointment_messages"] = msgs
+        late = _ap.count_client_messages(cx, addrs)
+        if late:
+            print(f"[client-erasure] {late} appointment message(s) arrived during the "
+                  "erasure and remain; run it again", flush=True)
+            removed["appointment_messages_remaining"] = late
         _es.init_table(cx)
         if body.get("also_suppress"):
             # overwrite=False: a hard bounce already recorded is the stronger fact.
