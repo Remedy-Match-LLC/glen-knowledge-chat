@@ -20,15 +20,16 @@ def _norm(t):
     return re.sub(r"\s+", " ", (t or "").strip().lower())
 
 
-def test_every_slug_is_in_the_catalog_and_68_are_live():
+def test_every_slug_is_in_the_catalog_and_69_are_live():
     missing = sorted(s for s in PURE_POWDER_SLUGS if s not in CATALOG)
     assert not missing, missing
     live = [s for s in PURE_POWDER_SLUGS if not CATALOG[s].get("inactive")]
     # 19 first batch, 48 second, less serrapeptase: off sale 2026-10-07, because Glen
     # ruled it is never sold as a powder (it needs an enteric capsule). Plus Melissa
     # 20:1 Extract Powder, listed 2026-10-18 on Glen's approval, and Silymarin the same
-    # day, missed from the October batch.
-    assert len(live) == 68, sorted(live)
+    # day, missed from the October batch. Pterostilbene Pure Powder, listed 2026-10-26
+    # for a jar Glen invoiced that day.
+    assert len(live) == 69, sorted(live)
 
 
 def test_names_are_exactly_the_catalog_names_of_the_slugs():

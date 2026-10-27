@@ -38,6 +38,8 @@ PURE_POWDER_SLUGS = frozenset({
     "hydrolized-pea-protein-aminos--pure--predigested", "hydrolyzed-whey",
     # Production 2026-10-18, Glen approved: FileMaker types it "Pure Powder"
     "melissa-20-1-extract-powder",
+    # Production 2026-10-26, Glen asked for it on the order list: FileMaker 1204
+    "pterostilbene-pure-powder",
     # Production 2026-10-18, Glen approved: a single ingredient, missed from the October batch
     "silymarin",
 })
@@ -66,6 +68,7 @@ PURE_POWDER_NAMES = frozenset({
     "centrophenoxine", "coluracetam", "vinpocetine", "licorice omnipotent",
     "pea protein aminos", "hydrolyzed whey",
     "melissa 20:1 extract powder",
+    "pterostilbene pure powder",
     "silymarin",
 })
 
