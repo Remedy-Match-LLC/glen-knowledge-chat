@@ -575,3 +575,50 @@ def test_a_row_still_holding_a_clip_is_never_deleted_without_its_file(tmp_path):
     assert cx.execute("SELECT audio_filename FROM appointment_proposal_messages"
                       ).fetchall() == [(name,)]
     assert ap.count_client_messages(cx, [CLIENT]) == 1
+
+
+def test_a_clip_that_arrives_mid_erasure_is_reported_not_counted(monkeypatch, tmp_path):
+    appmod = _reload(monkeypatch, tmp_path)
+    assets = appmod._PORTAL_ASSETS_DIR
+    assets.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        pid = _proposal(cx)
+        _msg(cx, pid, "gone")
+        late = _clip(cx, assets, pid, days_ago=0)
+    # The clip pass ran before this clip existed.
+    monkeypatch.setattr(ap, "erase_client_clips", lambda cx, d, a: 0)
+    monkeypatch.setattr(ap, "count_client_clips",
+                        lambda cx, a: 0)
+    r = appmod.app.test_client().post("/api/console/client-erasure/erase",
+                                      json={"email": CLIENT, "confirm": CLIENT},
+                                      headers={"X-Console-Key": KEY})
+    j = r.get_json()
+    assert r.status_code == 200
+    assert j["appointment_messages_remaining"] == 1
+    assert j["removed"]["appointment_messages"] == 1
+    assert "appointment_messages_remaining" not in j["removed"]
+    assert j["total"] == sum(j["removed"].values())
+    assert (assets / late).exists()
+
+
+def test_the_console_page_says_when_messages_remain():
+    html = (Path(__file__).resolve().parent.parent / "static" / "console-client.html").read_text()
+    assert "x.j.appointment_messages_remaining" in html
+    assert "arrived during the erasure. Run it again." in html
+
+
+def test_an_older_mixed_case_address_is_still_erased(tmp_path):
+    cx = _cx(tmp_path)
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    pid = _proposal(cx)
+    cx.execute("UPDATE appointment_proposals SET client_email=? WHERE id=?",
+               ("  Client@X.com ", pid))
+    cx.commit()
+    _msg(cx, pid, "old row")
+    name = _clip(cx, assets, pid, days_ago=1)
+    assert ap.count_client_clips(cx, [CLIENT]) == 1
+    assert ap.erase_client_clips(cx, assets, [CLIENT]) == 1
+    assert ap.erase_client_messages(cx, [CLIENT]) == 2
+    assert not (assets / name).exists()

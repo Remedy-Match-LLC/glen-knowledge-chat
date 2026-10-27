@@ -216,7 +216,7 @@ def _client_clip_rows(cx, addresses):
     return cx.execute(
         "SELECT m.id, m.proposal_id, m.audio_filename FROM appointment_proposal_messages m "
         "JOIN appointment_proposals p ON p.id=m.proposal_id "
-        f"WHERE LOWER(p.client_email) IN ({marks}) AND m.audio_filename<>''", addrs).fetchall()
+        f"WHERE LOWER(TRIM(p.client_email)) IN ({marks}) AND m.audio_filename<>''", addrs).fetchall()
 
 
 def count_client_clips(cx, addresses):
@@ -239,7 +239,7 @@ def _client_thread_clause(addresses):
     addrs = sorted({(a or "").strip().lower() for a in addresses if (a or "").strip()})
     marks = ",".join("?" for _ in addrs)
     return addrs, (f"proposal_id IN (SELECT id FROM appointment_proposals "
-                   f"WHERE LOWER(client_email) IN ({marks}))")
+                   f"WHERE LOWER(TRIM(client_email)) IN ({marks}))")
 
 
 def count_client_messages(cx, addresses):

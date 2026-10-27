@@ -598,8 +598,11 @@ function renderErasure(d){
       .then(function(r){ return r.json().then(function(j){ return {r:r,j:j}; }); })
       .then(function(x){
         if(!x.r.ok) throw new Error(x.j.error||"Could not erase");
+        var late = x.j.appointment_messages_remaining || 0;
         erasureMsg("Erased "+x.j.total+" rows. "+
-          (x.j.suppressed?"This address is now suppressed.":"Still emailable."));
+          (x.j.suppressed?"This address is now suppressed.":"Still emailable.")+
+          (late ? " "+late+" appointment message(s) arrived during the erasure. Run it again." : ""),
+          !!late);
         loadErasure();
       })
       .catch(function(e){ erasureMsg(e.message,true); go.disabled=false; });

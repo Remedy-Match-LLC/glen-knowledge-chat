@@ -59778,7 +59778,6 @@ def api_console_client_erasure_erase():
         if late:
             print(f"[client-erasure] {late} appointment message(s) arrived during the "
                   "erasure and remain; run it again", flush=True)
-            removed["appointment_messages_remaining"] = late
         _es.init_table(cx)
         if body.get("also_suppress"):
             # overwrite=False: a hard bounce already recorded is the stronger fact.
@@ -59788,7 +59787,8 @@ def api_console_client_erasure_erase():
         _ce.record_erasure(cx, email, actor=(actor.name or "owner"), removed=removed,
                            note=(body.get("note") or ""), suppressed=suppressed)
     return jsonify({"ok": True, "email": email, "removed": removed,
-                    "total": sum(removed.values()), "suppressed": suppressed})
+                    "total": sum(removed.values()), "suppressed": suppressed,
+                    "appointment_messages_remaining": late})
 
 
 @app.route("/api/console/client-commerce-status", methods=["GET"])
