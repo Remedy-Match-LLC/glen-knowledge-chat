@@ -65,6 +65,20 @@ def _products_path():
     return os.path.join(here, "data", "products.json")
 
 
+def _manual_slugs():
+    """Slugs whose ingredients Glen pinned in products-manual-corrections.json. A rebuild
+    from the database would put the FileMaker raw names back over them (Free & Easy store
+    spec, 2026-10-27), so --write leaves them alone."""
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(here, "data", "products-manual-corrections.json")
+    try:
+        corr = json.load(open(path))
+    except FileNotFoundError:
+        return set()
+    return {k for k, v in corr.items()
+            if not k.startswith("_") and isinstance(v, dict) and v.get("ingredients")}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--write", action="store_true")
@@ -86,8 +100,14 @@ def main(argv=None):
     print(f"{len(m['panels'])} panels to write; {len(m['review'])} in review")
     for r in m["review"][:40]:
         print(f"  REVIEW {r.get('slug') or r.get('fmp_id')}: {r['name']!r} ({r['reason']})")
+    manual = _manual_slugs()
+    kept = sorted(set(m["panels"]) & manual)
+    if kept:
+        print(f"  SKIP {len(kept)} with pinned manual ingredients: {', '.join(kept)}")
     if args.write:
         for slug, panel in m["panels"].items():
+            if slug in manual:
+                continue
             products[slug]["ingredients"] = panel
             products[slug]["ingredients_source"] = f"db-formulations-{args.source_date}"
         with open(path, "w") as f:

@@ -143,7 +143,9 @@ def test_focus_d3_per_scoop():
 def test_free_and_easy_crocin_is_from_gardenia():
     p = _products()["free-and-easy"]
     names = [i["name"] for i in p["ingredients"]]
-    assert "Crocin 45% (Gardenia jasminoides)" in names and "Crocin" not in names
+    # Named as the gardenia extract since 2026-10-27 (store spec free-and-easy/2026-10-27).
+    assert "Gardenia extract (Gardenia jasminoides), standardized to 45% crocin" in names
+    assert "Crocin" not in names and not any("saffron" in n.lower() for n in names)
     assert _corr()["free-and-easy"]["ingredients"] == p["ingredients"]
 
 
