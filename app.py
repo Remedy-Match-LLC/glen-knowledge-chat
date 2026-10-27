@@ -59695,7 +59695,13 @@ def api_console_client_erasure_erase():
         cx.commit()
         left = _ap.count_client_clips(cx, addrs)
         if left:
-            # Never report an erasure while a clip is still on disk. The rest waits.
+            # Never report an erasure while a clip is still on disk. The rest waits,
+            # but the clips that did go are recorded.
+            if clips:
+                _ce.record_erasure(cx, email, actor=(actor.name or "owner"),
+                                   removed={"appointment_voice_clips": clips},
+                                   note=f"{left} clip(s) would not delete; stopped",
+                                   suppressed=_es.is_suppressed(cx, email))
             return jsonify({"ok": False, "error": f"{left} voice clip(s) could not be "
                             "deleted. Nothing else was erased. See the server log.",
                             "clips_deleted": clips}), 500

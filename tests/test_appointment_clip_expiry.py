@@ -324,10 +324,84 @@ def test_an_erasure_stops_when_a_clip_will_not_delete(monkeypatch, tmp_path):
 
 
 def test_the_daily_job_is_scheduled():
+    import ast
     src = (Path(__file__).resolve().parent.parent / "app.py").read_text()
-    start = src[src.index("def _start_scheduler"):]
-    start = start[:start.index("scheduler.start()")]
-    assert 'scheduler.add_job(_expire_appointment_clips, "cron"' in start
+    fn = next(n for n in ast.walk(ast.parse(src))
+              if isinstance(n, ast.FunctionDef) and n.name == "_start_scheduler")
+    calls = [c for c in ast.walk(fn) if isinstance(c, ast.Call)
+             and getattr(c.func, "attr", "") == "add_job" and c.args
+             and getattr(c.args[0], "id", "") == "_expire_appointment_clips"]
+    assert len(calls) == 1
+    kw = {k.arg: getattr(k.value, "value", None) for k in calls[0].keywords}
+    assert calls[0].args[1].value == "cron"
+    assert kw["hour"] == 14 and kw["minute"] == 0
+
+
+import pytest
+
+
+@pytest.mark.parametrize("bad", ["appt-{pid}-../../precious.txt",
+                                 "appt-{pid}-aaaaaaaaaaaaaaaaaaaaaaaa.webm/../../precious.txt",
+                                 "appt-{pid}-aaaaaaaaaaaaaaaaaaaaaaaa.webm.txt",
+                                 "appt-{pid}-aaaaaaaaaaaa/aaaaaaaaaaa.webm"])
+def test_a_lookalike_name_is_never_deleted(tmp_path, bad):
+    cx = _cx(tmp_path)
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    pid = _proposal(cx)
+    name = bad.format(pid=pid)
+    cx.execute("INSERT INTO appointment_proposal_messages "
+               "(proposal_id,sender,text,audio_filename,created_at) VALUES (?,?,?,?,?)",
+               (pid, "client", "", name, (NOW - timedelta(days=200)).isoformat()))
+    cx.commit()
+    assert ap.expire_clips(cx, assets, now=NOW) == 0
+    assert cx.execute("SELECT audio_filename FROM appointment_proposal_messages"
+                      ).fetchone()[0] == name
+
+
+def test_the_console_erasure_covers_a_merged_address(monkeypatch, tmp_path):
+    appmod = _reload(monkeypatch, tmp_path)
+    assets = appmod._PORTAL_ASSETS_DIR
+    assets.mkdir(parents=True, exist_ok=True)
+    from dashboard import person_aliases as pal
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        pal.init_tables(cx)
+        pal.add_alias(cx, "old@x.com", CLIENT, 1)
+        cx.commit()
+        a = _clip(cx, assets, _proposal(cx, "old@x.com"), days_ago=1)
+    r = appmod.app.test_client().post("/api/console/client-erasure/erase",
+                                      json={"email": CLIENT, "confirm": CLIENT},
+                                      headers={"X-Console-Key": KEY})
+    assert r.status_code == 200
+    assert not (assets / a).exists()
+
+
+def test_a_partial_clip_failure_still_records_the_clips_that_went(monkeypatch, tmp_path):
+    appmod = _reload(monkeypatch, tmp_path)
+    assets = appmod._PORTAL_ASSETS_DIR
+    assets.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        pid = _proposal(cx)
+        good = _clip(cx, assets, pid, days_ago=1)
+        stuck = _clip(cx, assets, pid, days_ago=2)
+    real_unlink = Path.unlink
+
+    def unlink(self, *a, **k):
+        if self.name == stuck:
+            raise PermissionError("read-only")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    r = appmod.app.test_client().post("/api/console/client-erasure/erase",
+                                      json={"email": CLIENT, "confirm": CLIENT},
+                                      headers={"X-Console-Key": KEY})
+    assert r.status_code == 500
+    assert not (assets / good).exists() and (assets / stuck).exists()
+    from dashboard import client_erasure as _ce
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert "appointment_voice_clips" in str(_ce.erasures_for(cx, CLIENT))
 
 
 def test_a_clip_another_run_already_cleared_is_not_counted_twice(tmp_path):
