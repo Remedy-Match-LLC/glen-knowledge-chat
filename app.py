@@ -9860,6 +9860,36 @@ def _get_product(slug):
     return out
 
 
+def _live_catalog_claim(slug):
+    """The live catalog slug that owns this slug, by slug or by a name that slugifies
+    to it, or None. 109 catalog names slugify to something other than their slug. A
+    retired record claims nothing here: retired names are refused when an item is
+    typed, and a typed line already on an invoice must not drop out because one later
+    appears (review round 3)."""
+    cat = _PRODUCTS.get("products") or {}
+    p = cat.get(slug)
+    if p and not p.get("inactive"):
+        return slug
+    return _live_names_by_slug(cat).get(slug)
+
+
+_LIVE_NAMES_CACHE = {"key": None, "map": {}}
+
+
+def _live_names_by_slug(cat):
+    """{slugified name: slug} for live catalog products, rebuilt when the catalog
+    dict is replaced or resized."""
+    key = (id(cat), len(cat))
+    if _LIVE_NAMES_CACHE["key"] != key:
+        from dashboard.typed_items import slugify
+        m = {}
+        for s, q in cat.items():
+            if not q.get("inactive") and q.get("name"):
+                m.setdefault(slugify(q["name"]), s)
+        _LIVE_NAMES_CACHE.update(key=key, map=m)
+    return _LIVE_NAMES_CACHE["map"]
+
+
 def _typed_item_product(slug):
     """A typed New Order item (dashboard.typed_items) as a product dict, or None.
 
@@ -9868,7 +9898,7 @@ def _typed_item_product(slug):
     slug, live or retired, owns it: the catalog supersedes a typed item, and a retired
     product is not revived by typing its name."""
     slug = (slug or "").strip()
-    if not slug or slug in (_PRODUCTS.get("products") or {}):
+    if not slug or _live_catalog_claim(slug):
         return None
     from dashboard import typed_items as _ti
     # A failed lookup RAISES. Returning None would read as "no such product", and the
@@ -9902,8 +9932,16 @@ def _typed_products_in(lines):
 
 
 def _invoice_product(slug):
-    """The in-house invoice pricer's product lookup: the catalog first, then a typed item."""
-    return _get_product(slug) or _typed_item_product(slug)
+    """The in-house invoice pricer's product lookup: the catalog first, then a typed
+    item. A typed item whose name a live catalog product later takes is priced as that
+    product, so the catalog supersedes it without dropping the line."""
+    p = _get_product(slug)
+    if p:
+        return p
+    claim = _live_catalog_claim((slug or "").strip())
+    if claim:
+        return _get_product(claim)
+    return _typed_item_product(slug)
 
 
 def _typed_fixed_price(p):
@@ -64622,10 +64660,11 @@ def bos_products_list():
     for _x in _prods:   # the order form offers "Cello refill" only where it applies
         if isinstance(_x, dict) and _x.get("slug"):
             _x["refill_eligible"] = _capsule_formats_ok(_get_product(_x["slug"]) or {})
-    if all_skus:
-        # Typed New Order items, for the order picker only (dashboard.typed_items).
-        # A catalog record with the same slug supersedes one, so it is not listed twice.
-        _cat = _PRODUCTS.get("products") or {}
+    if all_skus and request.args.get("typed") == "1":
+        # Typed New Order items, only for the order picker, which asks with typed=1.
+        # Other callers of this list (rewards, related products) save what they pick
+        # as a catalog slug, so they must never see one (review round 3). A live
+        # catalog record with the same slug or name supersedes it.
         try:
             from dashboard import typed_items as _ti
             _tcx = db.connect(LOG_DB)
@@ -64638,7 +64677,7 @@ def bos_products_list():
             print(f"[typed-items] list skipped: {_e!r}", flush=True)
             _typed = []
         for _t in _typed:
-            if _t["slug"] not in _cat:
+            if not _live_catalog_claim(_t["slug"]):
                 _prods.append({"slug": _t["slug"], "name": _t["name"],
                                "price_cents": _t["price_cents"], "typed": True,
                                "refill_eligible": False})
@@ -64646,10 +64685,11 @@ def bos_products_list():
 
 
 def _typed_item_bottle_types():
-    """Package types a typed item may carry: the ones catalog products already use."""
+    """Package types a typed item may carry: the ones catalog products already use,
+    except own-box, which ships at a flat rate a typed item does not carry."""
     return sorted({(p.get("bottle_type") or "").strip()
                    for p in (_PRODUCTS.get("products") or {}).values()
-                   if (p.get("bottle_type") or "").strip()})
+                   if (p.get("bottle_type") or "").strip()} - {"own-box"})
 
 
 @app.route("/api/orders/typed-items", methods=["GET", "POST"])

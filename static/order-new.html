@@ -285,7 +285,7 @@ function refillOk(slug){
   return p ? !!p.refill_eligible : null;
 }
 async function loadCatalog(){
-  const r = await fetch("/api/products?all=1", { headers:HEADERS });
+  const r = await fetch("/api/products?all=1&typed=1", { headers:HEADERS });
   if (r.status===401){ $("auth-warn").style.display="block"; throw new Error("unauthorized"); }
   CATALOG = ((await r.json()).products)||[];
   renderProdPick();

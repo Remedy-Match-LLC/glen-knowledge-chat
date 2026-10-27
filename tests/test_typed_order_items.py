@@ -100,9 +100,13 @@ def test_the_preview_shows_the_typed_price(monkeypatch):
 
 def test_the_order_list_offers_it_and_the_store_does_not():
     it = _new("Typed Listed")
-    r = _client().get("/api/products?all=1", headers=HDR)
+    r = _client().get("/api/products?all=1&typed=1", headers=HDR)
     row = next(p for p in r.get_json()["products"] if p["slug"] == it["slug"])
     assert row["typed"] is True and row["price_cents"] == 2500
+    # Rewards and related products read the list without typed=1 and save a catalog slug.
+    for url in ("/api/products?all=1", "/api/products"):
+        rows = _client().get(url, headers=HDR).get_json()["products"]
+        assert not any(p["slug"] == it["slug"] for p in rows), url
     # Everything the store, cart and chat use reads the catalog only.
     assert app_mod._get_product(it["slug"]) is None
     out = app_mod._price_cart([{"slug": it["slug"], "qty": 1}], ship=SHIP)
@@ -175,16 +179,27 @@ def test_the_catalog_supersedes_a_typed_item(monkeypatch):
     cat[it["slug"]] = {"name": it["name"] + " (catalog)", "price_cents": 5500}
     monkeypatch.setitem(app_mod._PRODUCTS, "products", cat)
     assert app_mod._invoice_product(it["slug"])["price_cents"] == 5500
-    rows = _client().get("/api/products?all=1", headers=HDR).get_json()["products"]
+    rows = _client().get("/api/products?all=1&typed=1", headers=HDR).get_json()["products"]
     assert not any(p["slug"] == it["slug"] and p.get("typed") for p in rows)
 
 
-def test_retiring_that_catalog_record_does_not_bring_the_typed_item_back(monkeypatch):
+def test_a_retired_catalog_record_does_not_drop_a_typed_line(monkeypatch):
     it = _new("Typed Then Retired")
     cat = dict(app_mod._PRODUCTS["products"])
     cat[it["slug"]] = {"name": it["name"], "price_cents": 5500, "inactive": True}
     monkeypatch.setitem(app_mod._PRODUCTS, "products", cat)
-    assert app_mod._invoice_product(it["slug"]) is None
+    recs = _recs(_priced({"slug": it["slug"], "qty": 2}))
+    assert recs[it["slug"]]["unit_cents"] == 2500
+
+
+def test_a_live_catalog_product_of_the_same_name_supersedes_it(monkeypatch):
+    it = _new("Typed Named Later")
+    cat = dict(app_mod._PRODUCTS["products"])
+    cat["some-other-slug-" + it["slug"][-8:]] = {"name": it["name"], "price_cents": 5500}
+    monkeypatch.setitem(app_mod._PRODUCTS, "products", cat)
+    assert _recs(_priced({"slug": it["slug"], "qty": 1}))[it["slug"]]["unit_cents"] == 5500
+    rows = _client().get("/api/products?all=1&typed=1", headers=HDR).get_json()["products"]
+    assert not any(p["slug"] == it["slug"] for p in rows)
 
 
 def test_a_repeat_name_and_bad_input_are_refused():
@@ -267,3 +282,53 @@ def test_combining_shipments_packs_the_typed_items(monkeypatch):
     app_mod._recompute_combined_shipping(None, 1)
     alone = [ship for slugs, ship in seen if slugs == {it["slug"]}]
     assert alone and alone[0] > 0
+
+
+def test_package_must_be_a_known_container():
+    assert _add("Typed Odd %s" % uuid.uuid4().hex[:6], bt="Weird Box").status_code == 400
+    assert _add("Typed Own %s" % uuid.uuid4().hex[:6], bt="own-box").status_code == 400
+    types = _client().get("/api/orders/typed-items", headers=HDR).get_json()["bottle_types"]
+    assert "30 g" in types and "own-box" not in types
+
+
+def test_name_and_price_limits():
+    assert _add("x" * 121, cents=100).status_code == 400
+    assert _add("!!!", cents=100).status_code == 400
+    assert _add("Typed Dear %s" % uuid.uuid4().hex[:6], cents=1_000_001).status_code == 400
+    assert _add("Typed Top %s" % uuid.uuid4().hex[:6], cents=1_000_000).status_code == 200
+
+
+def test_a_repeat_with_a_different_package_or_spelling_is_refused():
+    it = _new("Typed Package")
+    assert _add(it["name"], cents=2500, bt="30 Caps").status_code == 400
+    assert _add(it["name"].upper(), cents=2500, bt="30 g").status_code == 400
+
+
+def test_a_non_owner_cannot_type_an_item(monkeypatch):
+    from dashboard import rbac
+    monkeypatch.setattr(app_mod, "_bos_actor", lambda: rbac.Actor(role="va"))
+    r = _client().post("/api/orders/typed-items",
+                       json={"name": "Typed VA", "price_cents": 100, "bottle_type": "30 g"})
+    assert r.status_code == 401
+
+
+def test_an_edited_typed_price_is_not_capped_by_a_client_special(monkeypatch):
+    it = _new("Typed Edit Special")
+    monkeypatch.setattr(app_mod, "_client_special_for", lambda *a, **k: 100)
+    rec = _recs(_priced({"slug": it["slug"], "qty": 1, "unit_cents": 3000}))[it["slug"]]
+    assert rec["unit_cents"] == 3000
+    r = _client().post("/api/orders/price-preview", headers=HDR, json={
+        "email": EMAIL, "lines": [{"slug": it["slug"], "qty": 1, "unit_cents": 3000}]})
+    line = next(l for l in r.get_json()["lines"] if l["slug"] == it["slug"])
+    assert line["effective_unit_cents"] == 3000
+
+
+def test_the_shipping_preview_packs_a_typed_item():
+    it = _new("Typed Ship Preview", cents=4000)
+
+    def quote(slug):
+        r = _client().post("/api/orders/shipping-preview", headers=HDR, json={
+            "lines": [{"slug": slug, "qty": 12}], "address": SHIP, "name": "T"})
+        assert r.status_code == 200, r.data
+        return r.get_json()["shipping_cents"]
+    assert quote(it["slug"]) == quote("pterostilbene-pure-powder") > 0
