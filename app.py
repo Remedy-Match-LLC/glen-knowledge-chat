@@ -43906,6 +43906,17 @@ def api_console_care_share_reverse():
     return jsonify({"ok": True, "reversed_cents": reversed_cents})
 
 
+def _expire_appointment_clips():
+    """Daily: delete appointment voice clips sent more than 90 days ago (Glen, 2026-10-27)."""
+    try:
+        from dashboard import appointment_proposals as _ap
+        with _db_lock, db.connect(LOG_DB) as cx:
+            n = _ap.expire_clips(cx, _PORTAL_ASSETS_DIR)
+        print(f"[appt-clips] expired={n}", flush=True)
+    except Exception as e:
+        print(f"[appt-clips] failed: {e!r}", flush=True)
+
+
 def _run_biofield_bonuses(dry_run=False):
     """Sweep active certification commitments and grant due bonus Biofields concierge-style
     (one todos task + idempotent ledger row per grant). Flag-gated (CERT_BONUS_ENABLED) — a
@@ -53513,6 +53524,9 @@ def _start_scheduler():
         # (CERT_BONUS_ENABLED) inside _run_biofield_bonuses, so this is a safe no-op until on.
         scheduler.add_job(_run_biofield_bonuses, "cron", hour=15, minute=0,
                           id="biofield_bonuses")
+        # Appointment voice clips older than 90 days: daily at 14:00 UTC (4am HST).
+        scheduler.add_job(_expire_appointment_clips, "cron", hour=14, minute=0,
+                          id="appointment_clip_expiry")
         scheduler.add_job(_drain_sales_image_queue, "interval", minutes=1, id="sales_image_gen")
         scheduler.add_job(_drain_review_videos, "interval", minutes=1, id="review_videos")
         # Portal triage: retry any high-urgency email that did not deliver. Rows are
@@ -59638,8 +59652,12 @@ def api_console_client_erasure_preview():
     if not email:
         return jsonify({"ok": False, "error": "email required"}), 400
     from dashboard import client_erasure as _ce, email_suppression as _es
+    from dashboard import appointment_proposals as _ap
     with _db_lock, db.connect(LOG_DB) as cx:
         tables = _ce.plan(cx, email)
+        clips = _ap.count_client_clips(cx, _ce.addresses_for(cx, email))
+        if clips:
+            tables["appointment_voice_clips"] = clips
         _es.init_table(cx)
         suppressed = _es.is_suppressed(cx, email)
         prior = _ce.erasures_for(cx, email)
@@ -59669,8 +59687,14 @@ def api_console_client_erasure_erase():
         return jsonify({"ok": False,
                         "error": "the address you typed does not match this client"}), 400
     from dashboard import client_erasure as _ce, email_suppression as _es
+    from dashboard import appointment_proposals as _ap
     with _db_lock, db.connect(LOG_DB) as cx:
+        # Glen, 2026-10-27: erasure deletes the client's appointment voice clips too.
+        clips = _ap.erase_client_clips(cx, _PORTAL_ASSETS_DIR, _ce.addresses_for(cx, email))
+        cx.commit()
         removed = _ce.erase(cx, email, confirm=email)
+        if clips:
+            removed["appointment_voice_clips"] = clips
         _es.init_table(cx)
         if body.get("also_suppress"):
             # overwrite=False: a hard bounce already recorded is the stronger fact.

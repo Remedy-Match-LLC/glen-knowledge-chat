@@ -1,5 +1,7 @@
 """Two-party appointment proposals and their private message threads."""
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from dashboard import db
 
@@ -132,3 +134,83 @@ def messages(cx, proposal_id):
     rows = cx.execute("SELECT * FROM appointment_proposal_messages "
                       "WHERE proposal_id=? ORDER BY id", (proposal_id,)).fetchall()
     return [dict(row) for row in rows]
+
+
+# --- voice clips --------------------------------------------------------------------
+# Glen, 2026-10-27 (sales tab): a voice clip on an appointment message is deleted 90
+# days after it was sent, and client erasure deletes that client's clips. The file goes
+# and audio_filename is cleared. The message text stays.
+
+CLIP_KEEP_DAYS = 90
+# Only a name _save_appointment_audio could have written is ever deleted.
+_CLIP_NAME = re.compile(r"^appt-\d+-[0-9a-f]{24}\.(mp3|m4a|webm|wav)$")
+
+
+def _parse_ts(ts):
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _delete_clip(cx, assets_dir, message_id, name):
+    """Remove one clip's file, then clear its row. Returns True when the clip is gone.
+    A name this code did not write, or a file that will not delete, leaves the row as
+    it is and is logged, so the clip stays visible rather than silently orphaned."""
+    if not _CLIP_NAME.match(name or ""):
+        print(f"[appt-clips] message {message_id}: unexpected file name, left in place",
+              flush=True)
+        return False
+    try:
+        (Path(assets_dir) / name).unlink()
+    except FileNotFoundError:
+        pass                      # already gone: the row still needs clearing
+    except OSError as e:
+        print(f"[appt-clips] message {message_id}: delete failed: {e!r}", flush=True)
+        return False
+    cx.execute("UPDATE appointment_proposal_messages SET audio_filename='' "
+               "WHERE id=? AND audio_filename=?", (message_id, name))
+    return True
+
+
+def expire_clips(cx, assets_dir, *, now=None, keep_days=CLIP_KEEP_DAYS):
+    """Delete every clip sent more than keep_days ago. Returns how many went. Safe to
+    run twice at once: a second run finds the file gone and the row already clear."""
+    init_tables(cx)
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=keep_days)
+    rows = cx.execute("SELECT id, audio_filename, created_at FROM appointment_proposal_messages "
+                      "WHERE audio_filename<>''").fetchall()
+    n = 0
+    for mid, name, created in rows:
+        sent = _parse_ts(created)
+        if sent is None:
+            print(f"[appt-clips] message {mid}: unreadable created_at, left in place", flush=True)
+            continue
+        if sent <= cutoff and _delete_clip(cx, assets_dir, mid, name):
+            n += 1
+    cx.commit()
+    return n
+
+
+def _client_clip_rows(cx, addresses):
+    addrs = sorted({(a or "").strip().lower() for a in addresses if (a or "").strip()})
+    if not addrs:
+        return []
+    init_tables(cx)
+    marks = ",".join("?" for _ in addrs)
+    return cx.execute(
+        "SELECT m.id, m.audio_filename FROM appointment_proposal_messages m "
+        "JOIN appointment_proposals p ON p.id=m.proposal_id "
+        f"WHERE LOWER(p.client_email) IN ({marks}) AND m.audio_filename<>''", addrs).fetchall()
+
+
+def count_client_clips(cx, addresses):
+    return len(_client_clip_rows(cx, addresses))
+
+
+def erase_client_clips(cx, assets_dir, addresses):
+    """Client erasure: delete every clip on this client's appointment threads, sent by
+    either side. Returns how many went. Does not commit."""
+    return sum(1 for mid, name in _client_clip_rows(cx, addresses)
+               if _delete_clip(cx, assets_dir, mid, name))
