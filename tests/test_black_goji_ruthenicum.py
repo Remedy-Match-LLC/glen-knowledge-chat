@@ -90,3 +90,12 @@ def test_the_page_shows_the_new_row(appmod, slug):
 def test_the_old_barbarum_pages_are_gone(appmod, old):
     r = appmod.app.test_client().get(f"/begin/ingredient-page-data/{old}")
     assert r.status_code == 404 and r.get_json() == {"state": "unknown"}
+
+
+def test_the_new_name_opens_no_second_page():
+    """page_slug indexes the row under black-goji only; the new label text must not
+    open a page of its own."""
+    from dashboard import ingredients
+    ingredients._name_index.cache_clear()
+    assert ingredients.slugify(NEW) not in ingredients._name_index()
+    assert ingredients.resolve(ingredients.slugify(NEW)) is None
