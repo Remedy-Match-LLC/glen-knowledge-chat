@@ -65,16 +65,21 @@ def _products_path():
     return os.path.join(here, "data", "products.json")
 
 
-def _manual_slugs():
+def _corrections_path(products_path):
+    """The corrections file beside the catalogue being rebuilt, else the repository's."""
+    beside = os.path.join(os.path.dirname(products_path), "products-manual-corrections.json")
+    if os.path.exists(beside):
+        return beside
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(here, "data", "products-manual-corrections.json")
+
+
+def _manual_slugs(products_path):
     """Slugs whose ingredients Glen pinned in products-manual-corrections.json. A rebuild
     from the database would put the FileMaker raw names back over them (Free & Easy store
-    spec, 2026-10-27), so --write leaves them alone."""
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    path = os.path.join(here, "data", "products-manual-corrections.json")
-    try:
-        corr = json.load(open(path))
-    except FileNotFoundError:
-        return set()
+    spec, 2026-10-27), so --write leaves them alone. A missing or unreadable file raises:
+    no file is not the same as nothing pinned."""
+    corr = json.load(open(_corrections_path(products_path)))
     return {k for k, v in corr.items()
             if not k.startswith("_") and isinstance(v, dict) and v.get("ingredients")}
 
@@ -100,7 +105,7 @@ def main(argv=None):
     print(f"{len(m['panels'])} panels to write; {len(m['review'])} in review")
     for r in m["review"][:40]:
         print(f"  REVIEW {r.get('slug') or r.get('fmp_id')}: {r['name']!r} ({r['reason']})")
-    manual = _manual_slugs()
+    manual = _manual_slugs(path)
     kept = sorted(set(m["panels"]) & manual)
     if kept:
         print(f"  SKIP {len(kept)} with pinned manual ingredients: {', '.join(kept)}")
@@ -112,7 +117,7 @@ def main(argv=None):
             products[slug]["ingredients_source"] = f"db-formulations-{args.source_date}"
         with open(path, "w") as f:
             json.dump(doc, f, indent=2, ensure_ascii=False)
-        print(f"wrote {len(m['panels'])} panels")
+        print(f"wrote {len(set(m['panels']) - manual)} panels")
     else:
         print("(dry run — pass --write)")
     return 0

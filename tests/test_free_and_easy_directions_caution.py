@@ -1,6 +1,6 @@
 """Free & Easy: directions, a caution and extract names for its nine ingredients.
 
-Spec: production/05 Formulations/free-and-easy/2026-10-27/store-spec.md (sha256 00a29de5...).
+Spec: production/05 Formulations/free-and-easy/2026-10-27/store-spec.md (sha256 9516058cf75d4e56).
 Glen approved the directions and caution in the formulation tab on 2026-10-27. The floaters
 ebook links buyers here and carries no caution, so this page is their only one.
 Amounts are unchanged (FileMaker 470, run 44). Each row keeps its existing ingredient page.
@@ -156,12 +156,38 @@ def test_a_panel_rebuild_from_the_database_leaves_the_pinned_rows(tmp_path, monk
                  and ids.count(str(p["fmp_id"]).strip()) == 1)
     fmp = {SLUG: _data("products.json")["products"][SLUG]["fmp_id"],
            other: _data("products.json")["products"][other]["fmp_id"]}
-    forms = [{"id": i, "fmp_id": f, "name": s} for i, (s, f) in enumerate(fmp.items())]
     monkeypatch.setattr(formulations, "search_formulations", lambda *a, **k: forms)
     monkeypatch.setattr(formulations, "list_items_for_formulation",
                         lambda fid, **k: [{"ingredient_name": "Paeoniflorin", "dose": 159,
                                            "dose_unit": "mg"}])
+    # A third product has a correction entry with no pinned ingredients: it is rebuilt.
+    unpinned = next(s for s, c in corr.items() if not s.startswith("_") and isinstance(c, dict)
+                    and not c.get("ingredients") and prods.get(s, {}).get("fmp_id")
+                    and ids.count(str(prods[s]["fmp_id"]).strip()) == 1)
+    fmp[unpinned] = prods[unpinned]["fmp_id"]
+    forms = [{"id": i, "fmp_id": f, "name": s} for i, (s, f) in enumerate(fmp.items())]
+    # The corrections file beside the catalogue is the one obeyed.
+    shutil.copy(os.path.join(ROOT, "data", "products-manual-corrections.json"),
+                tmp_path / "products-manual-corrections.json")
     assert gp.main(["--write", "--db", str(tmp_path / "none.db")]) == 0
     out = json.load(open(tmp_path / "products.json"))["products"]
     assert _rows(out[SLUG]) == NINE
-    assert out[other]["ingredients"] == [{"name": "Paeoniflorin", "dose": "159 mg"}]
+    rebuilt = [{"name": "Paeoniflorin", "dose": "159 mg"}]
+    assert out[other]["ingredients"] == rebuilt
+    assert out[unpinned]["ingredients"] == rebuilt
+
+
+def test_a_rebuild_obeys_the_corrections_beside_its_catalogue(tmp_path, monkeypatch):
+    import scripts.generate_panels_from_db as gp
+    (tmp_path / "products.json").write_text("{}")
+    (tmp_path / "products-manual-corrections.json").write_text(
+        json.dumps({"_comment": "x", "only-here": {"ingredients": [{"name": "A", "dose": "1 mg"}]}}))
+    assert gp._manual_slugs(str(tmp_path / "products.json")) == {"only-here"}
+
+
+def test_a_rebuild_refuses_when_no_corrections_file_can_be_read(tmp_path, monkeypatch):
+    import scripts.generate_panels_from_db as gp
+    (tmp_path / "products.json").write_text("{}")
+    monkeypatch.setattr(gp, "_corrections_path", lambda p: str(tmp_path / "missing.json"))
+    with pytest.raises(FileNotFoundError):
+        gp._manual_slugs(str(tmp_path / "products.json"))
