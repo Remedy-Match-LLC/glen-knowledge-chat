@@ -59784,8 +59784,12 @@ def api_console_client_erasure_erase():
             _es.add(cx, email, "optout", "client erasure request",
                     "console:client-erasure", overwrite=False)
         suppressed = _es.is_suppressed(cx, email)
+        note = body.get("note") or ""
+        if late:
+            note = (note + " " if note else "") + (
+                f"{late} appointment message(s) arrived during the erasure and remain.")
         _ce.record_erasure(cx, email, actor=(actor.name or "owner"), removed=removed,
-                           note=(body.get("note") or ""), suppressed=suppressed)
+                           note=note, suppressed=suppressed)
     return jsonify({"ok": True, "email": email, "removed": removed,
                     "total": sum(removed.values()), "suppressed": suppressed,
                     "appointment_messages_remaining": late})

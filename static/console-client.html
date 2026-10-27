@@ -552,7 +552,8 @@ function erasureBody(){
       headers:Object.assign({"Content-Type":"application/json"},hdr()),
       body:JSON.stringify({email:qsEmail()})});
 }
-function loadErasure(){
+function loadErasure(after){
+  // after: the result of an erasure, shown once the refreshed plan is drawn.
   if(!qsEmail()){ erasureMsg("Load a client first."); return; }
   erasureMsg("Reading\u2026");
   erasureBody().then(function(r){
@@ -563,7 +564,10 @@ function loadErasure(){
     if(r.status===401){ showGate(); return null; }
     if(!r.ok) throw new Error("Could not read the plan");
     return r.json();
-  }).then(function(d){ if(d) renderErasure(d); })
+  }).then(function(d){
+    if(d) renderErasure(d);
+    erasureMsg(after ? after.t : "", after && after.bad);
+  })
     .catch(function(e){ erasureMsg(e.message,true); });
 }
 function renderErasure(d){
@@ -599,11 +603,10 @@ function renderErasure(d){
       .then(function(x){
         if(!x.r.ok) throw new Error(x.j.error||"Could not erase");
         var late = x.j.appointment_messages_remaining || 0;
-        erasureMsg("Erased "+x.j.total+" rows. "+
+        loadErasure({t: "Erased "+x.j.total+" rows. "+
           (x.j.suppressed?"This address is now suppressed.":"Still emailable.")+
           (late ? " "+late+" appointment message(s) arrived during the erasure. Run it again." : ""),
-          !!late);
-        loadErasure();
+          bad: !!late});
       })
       .catch(function(e){ erasureMsg(e.message,true); go.disabled=false; });
   };

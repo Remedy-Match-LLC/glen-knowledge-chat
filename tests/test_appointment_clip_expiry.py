@@ -600,12 +600,20 @@ def test_a_clip_that_arrives_mid_erasure_is_reported_not_counted(monkeypatch, tm
     assert "appointment_messages_remaining" not in j["removed"]
     assert j["total"] == sum(j["removed"].values())
     assert (assets / late).exists()
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        notes = [r[0] for r in cx.execute("SELECT note FROM client_erasures")]
+    assert any("1 appointment message(s) arrived during the erasure" in (n or "")
+               for n in notes)
 
 
 def test_the_console_page_says_when_messages_remain():
     html = (Path(__file__).resolve().parent.parent / "static" / "console-client.html").read_text()
     assert "x.j.appointment_messages_remaining" in html
     assert "arrived during the erasure. Run it again." in html
+    # The message is shown after the plan is redrawn, so the redraw cannot wipe it.
+    load = html[html.index("function loadErasure(after)"):html.index("function renderErasure(")]
+    assert load.index("renderErasure(d)") < load.index("erasureMsg(after ? after.t")
+    assert "loadErasure({t:" in html
 
 
 def test_an_older_mixed_case_address_is_still_erased(tmp_path):
