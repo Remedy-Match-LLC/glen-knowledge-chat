@@ -58,7 +58,11 @@ def test_the_matcher_exclusion_rests_on_the_name_list(monkeypatch):
 
 def test_checkout_gives_no_volume_curve_and_the_pure_powder_floor():
     import app as a
-    item = a._engine_item(_product(), 3)
+    p = _product()
+    # The name alone also triggers these, so the stored fields are checked first.
+    assert (p["volume_eligible"], p["sku_discount_floor_pct"], p["sku_points_floor_pct"]) == (
+        False, 0.75, 0.75)
+    item = a._engine_item(p, 3)
     assert item["volume_eligible"] is False
     assert item["product"]["sku_discount_floor_pct"] == 0.75
     assert item["product"]["sku_points_floor_pct"] == 0.75
