@@ -9878,9 +9878,10 @@ _LIVE_NAMES_CACHE = {"key": None, "map": {}}
 
 def _live_names_by_slug(cat):
     """{slugified name: slug} for live catalog products, rebuilt when the catalog
-    dict is replaced or resized."""
-    key = (id(cat), len(cat))
-    if _LIVE_NAMES_CACHE["key"] != key:
+    dict is replaced or resized. _PRODUCTS loads once at import."""
+    key = (cat, len(cat))   # holds the dict itself, so a freed id cannot be reused
+    if _LIVE_NAMES_CACHE["key"] is None or _LIVE_NAMES_CACHE["key"][0] is not cat \
+            or _LIVE_NAMES_CACHE["key"][1] != len(cat):
         from dashboard.typed_items import slugify
         m = {}
         for s, q in cat.items():
@@ -9888,6 +9889,19 @@ def _live_names_by_slug(cat):
                 m.setdefault(slugify(q["name"]), s)
         _LIVE_NAMES_CACHE.update(key=key, map=m)
     return _LIVE_NAMES_CACHE["map"]
+
+
+def _typed_row(slug):
+    """The stored typed item for this slug, or None. A failed lookup RAISES. Returning
+    None would read as "no such product", and the invoice pricer skips such a line: a
+    re-priced invoice would quietly lose it."""
+    from dashboard import typed_items as _ti
+    cx = db.connect(LOG_DB)
+    try:
+        _ti.init_table(cx)
+        return _ti.get(cx, slug)
+    finally:
+        cx.close()
 
 
 def _typed_item_product(slug):
@@ -9900,15 +9914,7 @@ def _typed_item_product(slug):
     slug = (slug or "").strip()
     if not slug or _live_catalog_claim(slug):
         return None
-    from dashboard import typed_items as _ti
-    # A failed lookup RAISES. Returning None would read as "no such product", and the
-    # invoice pricer skips such a line: a re-priced invoice would quietly lose it.
-    cx = db.connect(LOG_DB)
-    try:
-        _ti.init_table(cx)
-        t = _ti.get(cx, slug)
-    finally:
-        cx.close()
+    t = _typed_row(slug)
     if not t:
         return None
     out = {"slug": t["slug"], "name": t["name"], "price_cents": t["price_cents"],
@@ -9924,8 +9930,8 @@ def _typed_products_in(lines):
     out = {}
     for ln in (lines or []):
         slug = (ln.get("slug") or "").strip() if isinstance(ln, dict) else ""
-        if slug and slug not in out:
-            p = _typed_item_product(slug)
+        if slug and slug not in out and not _get_product(slug):
+            p = _invoice_product(slug)   # a typed item, or the catalog product claiming it
             if p:
                 out[slug] = p
     return out
@@ -9938,8 +9944,12 @@ def _invoice_product(slug):
     p = _get_product(slug)
     if p:
         return p
-    claim = _live_catalog_claim((slug or "").strip())
+    slug = (slug or "").strip()
+    claim = _live_catalog_claim(slug)
     if claim:
+        # Only a typed item is mapped by name; any other unknown slug stays unknown.
+        if not _typed_row(slug):
+            return None
         return _get_product(claim)
     return _typed_item_product(slug)
 
@@ -60655,6 +60665,10 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             continue
         if p.get("typed"):
             typed_products[slug] = p
+        elif p.get("slug") and p["slug"] != slug and not _get_product(slug):
+            # A typed item a live catalog product has since taken by name: the line
+            # becomes that product, so every later lookup by slug finds it.
+            slug = p["slug"]
         p = _member_priced_product(p, email)
         qty = _line_qty(ln)
         # Precedence: explicit per-line edit > per-SKU client price > client's flat
@@ -63621,7 +63635,7 @@ def api_invoice_update(token):
     lines_in = _cil.rebuild(body.get("lines"), existing,
                             known=lambda _s: (_get_product(_s) is not None
                                               or (_s in _stored_slugs
-                                                  and _typed_item_product(_s) is not None)),
+                                                  and _invoice_product(_s) is not None)),
                             refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}))
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400

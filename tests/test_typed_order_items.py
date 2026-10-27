@@ -197,9 +197,41 @@ def test_a_live_catalog_product_of_the_same_name_supersedes_it(monkeypatch):
     cat = dict(app_mod._PRODUCTS["products"])
     cat["some-other-slug-" + it["slug"][-8:]] = {"name": it["name"], "price_cents": 5500}
     monkeypatch.setitem(app_mod._PRODUCTS, "products", cat)
-    assert _recs(_priced({"slug": it["slug"], "qty": 1}))[it["slug"]]["unit_cents"] == 5500
+    other = "some-other-slug-" + it["slug"][-8:]
+    recs = _recs(_priced({"slug": it["slug"], "qty": 1}))
+    # The line becomes the catalog product, so every later lookup by slug finds it.
+    assert it["slug"] not in recs and recs[other]["unit_cents"] == 5500
     rows = _client().get("/api/products?all=1&typed=1", headers=HDR).get_json()["products"]
     assert not any(p["slug"] == it["slug"] for p in rows)
+
+
+def _claim_by_name(monkeypatch, it, **extra):
+    other = "claimed-" + it["slug"][-8:]
+    cat = dict(app_mod._PRODUCTS["products"])
+    cat[other] = {"name": it["name"], "price_cents": 4000, "bottle_type": "30 g", **extra}
+    monkeypatch.setitem(app_mod._PRODUCTS, "products", cat)
+    return other
+
+
+def test_a_line_superseded_by_name_still_ships(monkeypatch):
+    it = _new("Typed Claimed Ship", cents=4000)
+    _claim_by_name(monkeypatch, it)
+    kw = dict(email=EMAIL, pickup=False, ship=SHIP, strict_packaging=True)
+    claimed = app_mod._price_inhouse_invoice([{"slug": it["slug"], "qty": 12}], **kw)
+    catalog = app_mod._price_inhouse_invoice(
+        [{"slug": "pterostilbene-pure-powder", "qty": 12}], **kw)
+    assert claimed["shipping_cents"] == catalog["shipping_cents"] > 0
+    assert app_mod._typed_products_in([{"slug": it["slug"]}])
+
+
+def test_an_unknown_slug_is_not_mapped_by_name(monkeypatch):
+    # Only a typed item is mapped to the catalog product that took its name.
+    cat = dict(app_mod._PRODUCTS["products"])
+    cat["claim-x"] = {"name": "Never Typed Thing %s" % uuid.uuid4().hex[:6],
+                      "price_cents": 4000}
+    monkeypatch.setitem(app_mod._PRODUCTS, "products", cat)
+    from dashboard.typed_items import slugify
+    assert app_mod._invoice_product(slugify(cat["claim-x"]["name"])) is None
 
 
 def test_a_repeat_name_and_bad_input_are_refused():
@@ -254,6 +286,30 @@ def test_a_customer_edit_keeps_the_typed_line_and_cannot_add_one(monkeypatch):
     assert r.status_code == 200, r.data
     slugs = {l["slug"]: l["qty"] for l in captured["lines"]}
     assert slugs == {"paracleanse": 2, it["slug"]: 3}
+
+
+def test_a_customer_edit_keeps_a_line_superseded_by_name(monkeypatch):
+    it = _new("Typed Claimed Edit")
+    _claim_by_name(monkeypatch, it)
+    order = {"id": 990002, "source": "in-house", "external_ref": "INH-TYPED2",
+             "email": EMAIL, "name": "T", "status": "proposed", "channel": "pickup",
+             "items": [{"slug": it["slug"], "qty": 1, "unit_cents": 2500}]}
+    captured = {}
+    monkeypatch.setattr(app_mod, "_invoice_order_for_token", lambda _t: order)
+
+    def fake_reprice(_cx, _order, lines, **kwargs):
+        captured["lines"] = lines
+        return ({"items_rec": lines, "subtotal_cents": 0, "discount_cents": 0,
+                 "adjustment_cents": 0, "shipping_cents": 0, "get_cents": 0,
+                 "points_redeemed_cents": 0, "total_cents": 0}, False)
+    monkeypatch.setattr(app_mod, "_reprice_and_persist_invoice", fake_reprice)
+    monkeypatch.setattr(app_mod._bos_orders, "get_order", lambda _cx, _oid: order)
+    monkeypatch.setattr(app_mod, "_invoice_summary", lambda _o: {"total_cents": 0})
+    monkeypatch.setattr(app_mod._inbox, "send_email", lambda *a, **k: None)
+    r = _client().post("/api/invoice/tok/update",
+                       json={"lines": [{"slug": it["slug"], "qty": 2, "i": 0}]})
+    assert r.status_code == 200, r.data
+    assert [(l["slug"], l["qty"]) for l in captured["lines"]] == [(it["slug"], 2)]
 
 
 def test_combining_shipments_packs_the_typed_items(monkeypatch):
