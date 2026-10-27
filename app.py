@@ -9868,6 +9868,107 @@ def _get_product(slug):
     return out
 
 
+def _live_catalog_claim(slug):
+    """The live catalog slug that owns this slug, by slug or by a name that slugifies
+    to it, or None. 109 catalog names slugify to something other than their slug. A
+    retired record claims nothing here: retired names are refused when an item is
+    typed, and a typed line already on an invoice must not drop out because one later
+    appears (review round 3)."""
+    cat = _PRODUCTS.get("products") or {}
+    p = cat.get(slug)
+    if p and not p.get("inactive"):
+        return slug
+    return _live_names_by_slug(cat).get(slug)
+
+
+_LIVE_NAMES_CACHE = {"key": None, "map": {}}
+
+
+def _live_names_by_slug(cat):
+    """{slugified name: slug} for live catalog products, rebuilt when the catalog
+    dict is replaced or resized. _PRODUCTS loads once at import."""
+    key = (cat, len(cat))   # holds the dict itself, so a freed id cannot be reused
+    if _LIVE_NAMES_CACHE["key"] is None or _LIVE_NAMES_CACHE["key"][0] is not cat \
+            or _LIVE_NAMES_CACHE["key"][1] != len(cat):
+        from dashboard.typed_items import slugify
+        m = {}
+        for s, q in cat.items():
+            if not q.get("inactive") and q.get("name"):
+                m.setdefault(slugify(q["name"]), s)
+        _LIVE_NAMES_CACHE.update(key=key, map=m)
+    return _LIVE_NAMES_CACHE["map"]
+
+
+def _typed_row(slug):
+    """The stored typed item for this slug, or None. A failed lookup RAISES. Returning
+    None would read as "no such product", and the invoice pricer skips such a line: a
+    re-priced invoice would quietly lose it."""
+    from dashboard import typed_items as _ti
+    cx = db.connect(LOG_DB)
+    try:
+        _ti.init_table(cx)
+        return _ti.get(cx, slug)
+    finally:
+        cx.close()
+
+
+def _typed_item_product(slug):
+    """A typed New Order item (dashboard.typed_items) as a product dict, or None.
+
+    Only the console order list and the in-house invoice pricer call this, so a typed
+    item never reaches the store, cart, chat or dispensary. Any catalog record with the
+    slug, live or retired, owns it: the catalog supersedes a typed item, and a retired
+    product is not revived by typing its name."""
+    slug = (slug or "").strip()
+    if not slug or _live_catalog_claim(slug):
+        return None
+    t = _typed_row(slug)
+    if not t:
+        return None
+    out = {"slug": t["slug"], "name": t["name"], "price_cents": t["price_cents"],
+           "typed": True, "volume_eligible": False}
+    if t.get("bottle_type"):
+        out["bottle_type"] = t["bottle_type"]
+    return out
+
+
+def _typed_products_in(lines):
+    """{slug: product} for the typed New Order items among these lines, for
+    _price_cart(extra_products=...) when re-quoting an owner invoice's shipping."""
+    out = {}
+    for ln in (lines or []):
+        slug = (ln.get("slug") or "").strip() if isinstance(ln, dict) else ""
+        if slug and slug not in out and not _get_product(slug):
+            p = _invoice_product(slug)   # a typed item, or the catalog product claiming it
+            if p:
+                out[slug] = p
+    return out
+
+
+def _invoice_product(slug):
+    """The in-house invoice pricer's product lookup: the catalog first, then a typed
+    item. A typed item whose name a live catalog product later takes is priced as that
+    product, so the catalog supersedes it without dropping the line."""
+    p = _get_product(slug)
+    if p:
+        return p
+    slug = (slug or "").strip()
+    claim = _live_catalog_claim(slug)
+    if claim:
+        # Only a typed item is mapped by name; any other unknown slug stays unknown.
+        if not _typed_row(slug):
+            return None
+        return _get_product(claim)
+    return _typed_item_product(slug)
+
+
+def _typed_fixed_price(p):
+    """True when this line invoices at its typed price with no automatic pricing.
+    Glen, 2026-10-27: a typed item always invoices at the typed price, and Pure
+    Powder rules apply when its name says Pure Powder."""
+    return bool(p.get("typed")) and not _is_pure_powder(p)
+
+
 def _waitlist_block(slug):
     """The waitlist_only product (itself or a bundle component) that stops `slug` being
     ordered, or None. The one predicate is practitioner_portal.is_orderable; this hands
@@ -10174,8 +10275,11 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                 subscriber_order_count=None, subscriber_active=True,
                 points_to_redeem_cents=0, channel="retail", program_member=False,
                 email=None, allow_unknown_packaging=False, strict_packaging=False,
-                allow_waitlist=False, product_points_cents=0):
+                allow_waitlist=False, product_points_cents=0, extra_products=None):
     """Price a reorder/checkout cart through the pricing engine + shipping.
+
+    extra_products ({slug: product}): typed New Order items, passed only by the in-house
+    invoice pricer so they are packed for shipping. Customer carts never pass it.
     Returns {priced, qbo_lines, discount_cents, points_redeemed_cents, shipping_cents,
     items_rec, subtotal_list_cents}. Raises CheckoutError for non-US ship-to.
 
@@ -10213,7 +10317,8 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     # unspecified. Returned so an operator surface can list what needs measuring.
     packaging_review = []
     for c in (cart or []):
-        p = _get_product((c.get("slug") or "").strip())
+        _cslug = (c.get("slug") or "").strip()
+        p = _get_product(_cslug) or (extra_products or {}).get(_cslug)
         if not p:
             continue
         # Full-member SKU price (Biofield $200 vs $300). Keyed off the REAL
@@ -60148,7 +60253,8 @@ def _recompute_combined_shipping(cx, sid):
         try:
             # Orders already placed: re-quote their shipping even if a line has since
             # become waitlist_only, or a failure here would bill $0 shipping.
-            return int((_price_cart(cart, ship=ship_addr, channel="retail", allow_waitlist=True)
+            return int((_price_cart(cart, ship=ship_addr, channel="retail", allow_waitlist=True,
+                                    extra_products=_typed_products_in(cart))
                         or {}).get("shipping_cents") or 0)
         except Exception as e:
             print(f"[combined-ship] price failed: {e!r}", flush=True)
@@ -60637,6 +60743,7 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     except Exception as _cpe:
         print(f"[inhouse-price] client-price lookup skipped: {_cpe!r}", flush=True)
     cart, items_rec, subtotal_list = [], [], 0
+    typed_products = {}   # typed New Order items, so _price_cart can pack them
     price_caps = []   # lines held down to this client's saved rate; reported, not silent
     for ln in lines_in:
         slug = (ln.get("slug") or "").strip()
@@ -60652,9 +60759,15 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             items_rec.append(_mrec)
             subtotal_list += t["price_cents"]
             continue
-        p = _get_product(slug)
+        p = _invoice_product(slug)
         if not p:
             continue
+        if p.get("typed"):
+            typed_products[slug] = p
+        elif p.get("slug") and p["slug"] != slug and not _get_product(slug):
+            # A typed item a live catalog product has since taken by name: the line
+            # becomes that product, so every later lookup by slug finds it.
+            slug = p["slug"]
         p = _member_priced_product(p, email)
         qty = _line_qty(ln)
         # Precedence: explicit per-line edit > per-SKU client price > client's flat
@@ -60662,7 +60775,10 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
         # policies, earned reorder-loyalty}. Per-client rates are the floor.
         _explicit = ln.get("unit_cents")
         _is_override = _explicit not in (None, "")
-        if _is_override:
+        if _typed_fixed_price(p):
+            # A typed item: the typed price, or this line's own edit. Nothing automatic.
+            unit_cents = int(_explicit) if _is_override else int(p["price_cents"])
+        elif _is_override:
             unit_cents = _inhouse_line_unit_cents(p, _explicit, total_ff_qty, settings,
                                                   program_member=program_member, line_qty=qty)
             # A saved special price is a CEILING, not a suggestion. Order #165 was
@@ -60743,7 +60859,8 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             strict_packaging=strict_packaging,
             # True only when the caller already refused any ADDED not-ready line, so a
             # line already on the order can be kept (2026-10-20).
-            allow_waitlist=allow_waitlist)
+            allow_waitlist=allow_waitlist,
+            extra_products=typed_products)
         shipping_cents = _bos_orders.effective_shipping_cents(pickup, pc.get("shipping_cents"))
         get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
     except CheckoutError:
@@ -62082,7 +62199,7 @@ def api_orders_price_preview():
                               "line_cents": t["price_cents"], "vol_pct": 0, "savings_cents": 0})
             subtotal += t["price_cents"]
             continue
-        p = _get_product(slug)
+        p = _invoice_product(slug)
         if not p:
             continue
         p = _member_priced_product(p, _pemail)
@@ -62093,7 +62210,9 @@ def api_orders_price_preview():
         _eff_ov = ov if ov not in (None, "") else None
         unit = _inhouse_line_unit_cents(p, _eff_ov, total_ff_qty, settings,
                                         program_member=_ppm, line_qty=qty)
-        if _eff_ov is None:   # cohort + earned loyalty compete with volume/list (lowest wins)
+        if _typed_fixed_price(p):
+            pass   # the typed price or this line's edit, as the invoice pricer does
+        elif _eff_ov is None:   # cohort + earned loyalty compete with volume/list (lowest wins)
             for _cand in (_cohort_best_price(_cohorts, slug, list_cents, is_ff),
                           _cohort_loyalty_price(_loyalty, slug, is_ff, _earned)):
                 if _cand is not None:
@@ -62101,7 +62220,7 @@ def api_orders_price_preview():
             # A saved client special only ever lowers the line (Glen, 2026-10-04).
             unit = _special_lowers_only(_client_special_for(slug, p, _cprices, _ff_flat), unit)
         overridden = ov not in (None, "")
-        if overridden:
+        if overridden and not _typed_fixed_price(p):
             unit, _ = _capped_override_unit(
                 unit, product=p, slug=slug, cprices=_cprices, ff_flat=_ff_flat,
                 price_at=lambda c: _inhouse_line_unit_cents(
@@ -62156,7 +62275,8 @@ def api_orders_shipping_preview():
     if not cart:
         return jsonify({"ok": False, "error": "add a product first"}), 400
     try:
-        pc = _price_cart(cart, ship=ship, channel="retail", email=(body.get("email") or None))
+        pc = _price_cart(cart, ship=ship, channel="retail", email=(body.get("email") or None),
+                         extra_products=_typed_products_in(cart))
         shipping_cents = _bos_orders.effective_shipping_cents(False, pc.get("shipping_cents"))
         get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
     except CheckoutError as e:
@@ -63601,6 +63721,9 @@ def api_invoice_update(token):
     # because a slug can appear twice on a household invoice, once for the caregiver
     # and once for a member.
     existing = list(order.get("items") or [])
+    # A typed New Order item stays known only where the owner already put it on this
+    # invoice. A customer cannot add one, and an edit never drops one.
+    _stored_slugs = {(it.get("slug") or "").strip() for it in existing if isinstance(it, dict)}
     from dashboard import client_invoice_lines as _cil
     # Adding a not-ready product, or raising its quantity, is refused; removing or
     # lowering one already on the invoice is allowed (review round 1, 2026-10-20).
@@ -63609,7 +63732,9 @@ def api_invoice_update(token):
     if _wl:
         return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     lines_in = _cil.rebuild(body.get("lines"), existing,
-                            known=lambda _s: _get_product(_s) is not None,
+                            known=lambda _s: (_get_product(_s) is not None
+                                              or (_s in _stored_slugs
+                                                  and _invoice_product(_s) is not None)),
                             refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}))
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
@@ -64648,7 +64773,84 @@ def bos_products_list():
     for _x in _prods:   # the order form offers "Cello refill" only where it applies
         if isinstance(_x, dict) and _x.get("slug"):
             _x["refill_eligible"] = _capsule_formats_ok(_get_product(_x["slug"]) or {})
+    if all_skus and request.args.get("typed") == "1":
+        # Typed New Order items, only for the order picker, which asks with typed=1.
+        # Other callers of this list (rewards, related products) save what they pick
+        # as a catalog slug, so they must never see one (review round 3). A live
+        # catalog record with the same slug or name supersedes it.
+        try:
+            from dashboard import typed_items as _ti
+            _tcx = db.connect(LOG_DB)
+            try:
+                _ti.init_table(_tcx)
+                _typed = _ti.list_all(_tcx)
+            finally:
+                _tcx.close()
+        except Exception as _e:
+            print(f"[typed-items] list skipped: {_e!r}", flush=True)
+            _typed = []
+        for _t in _typed:
+            if not _live_catalog_claim(_t["slug"]):
+                _prods.append({"slug": _t["slug"], "name": _t["name"],
+                               "price_cents": _t["price_cents"], "typed": True,
+                               "refill_eligible": False})
     return jsonify({"products": _prods})
+
+
+def _typed_item_bottle_types():
+    """Package types a typed item may carry: the ones catalog products already use,
+    except own-box, which ships at a flat rate a typed item does not carry."""
+    return sorted({(p.get("bottle_type") or "").strip()
+                   for p in (_PRODUCTS.get("products") or {}).values()
+                   if (p.get("bottle_type") or "").strip()} - {"own-box"})
+
+
+@app.route("/api/orders/typed-items", methods=["GET", "POST"])
+def api_orders_typed_items():
+    """OWNER: type a new item into the New Order list (dashboard.typed_items).
+
+    POST {name, price_cents, bottle_type}. The item invoices at the typed price, with
+    Pure Powder rules when its name says Pure Powder (Glen, 2026-10-27). It never
+    reaches the store. GET lists the typed items and the package types allowed."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import typed_items as _ti
+    types = _typed_item_bottle_types()
+    cx = db.connect(LOG_DB)
+    try:
+        _ti.init_table(cx)
+        if request.method == "GET":
+            return jsonify({"ok": True, "items": _ti.list_all(cx), "bottle_types": types})
+        body = request.get_json(silent=True) or {}
+        name = " ".join(str(body.get("name") or "").split())
+        slug = _ti.slugify(name)
+        _cat = _PRODUCTS.get("products") or {}
+        # A catalog product matches by slug OR by name: 102 catalog names slugify to
+        # something other than their slug (Myelin Syntropy Powder is myelin-syntropy).
+        _hit = slug if slug in _cat else next(
+            (s for s, p in sorted(_cat.items(), key=lambda kv: bool(kv[1].get("inactive")))
+             if slug and _ti.slugify(p.get("name")) == slug), None)
+        if _hit:
+            _c = _cat[_hit]
+            if _c.get("inactive"):
+                return jsonify({"ok": False, "error":
+                                "%s is a retired product. It cannot be typed back in."
+                                % (_c.get("name") or _hit)}), 409
+            return jsonify({"ok": False, "error":
+                            "%s is already in the list. Pick it from the list."
+                            % (_c.get("name") or _hit)}), 409
+        bt = str(body.get("bottle_type") or "").strip()
+        if bt not in types:
+            return jsonify({"ok": False, "error": "Choose the item's package."}), 400
+        try:
+            item = _ti.add(cx, name, body.get("price_cents"), bottle_type=bt,
+                           created_by=getattr(actor, "name", None) or None)
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": True, "item": item})
+    finally:
+        cx.close()
 
 
 @app.route("/api/products/stale")

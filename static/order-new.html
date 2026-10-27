@@ -141,6 +141,13 @@
       <div><label>Unit $ (override)</label><input id="prod-unit" type="number" step="0.01" placeholder="catalog"></div>
       <div><button class="ghost" onclick="addLine()">Add</button></div>
     </div>
+    <div class="addline newitem">
+      <div><label>New item (not in the list yet)</label><input id="new-item-name" type="text" placeholder="name, e.g. Quercetin Pure Powder" autocomplete="off" style="width:100%"></div>
+      <div><label>Package</label><select id="new-item-bt"></select></div>
+      <div><label>Price $</label><input id="new-item-price" type="number" step="0.01" min="0.01" placeholder="40.00"></div>
+      <div><button class="ghost" id="new-item-btn" onclick="addNewItem(this)">Add new item</button></div>
+    </div>
+    <p style="margin-top:4px;font-size:12px;opacity:.75">A new item stays on the order list for every invoice, at the price typed here. It is not on the store. A name with "Pure Powder" in it follows the Pure Powder pricing rules.</p>
   </div>
 
   <div class="section">
@@ -278,17 +285,17 @@ function refillOk(slug){
   return p ? !!p.refill_eligible : null;
 }
 async function loadCatalog(){
-  const r = await fetch("/api/products?all=1", { headers:HEADERS });
+  const r = await fetch("/api/products?all=1&typed=1", { headers:HEADERS });
   if (r.status===401){ $("auth-warn").style.display="block"; throw new Error("unauthorized"); }
   CATALOG = ((await r.json()).products)||[];
   renderProdPick();
-  $("prod-search").addEventListener("input", renderProdPick);
+  if (!loadCatalog.wired){ $("prod-search").addEventListener("input", renderProdPick); loadCatalog.wired=true; }
 }
 function renderProdPick(){
   const q = ($("prod-search").value||"").trim().toLowerCase();
   const list = q ? CATALOG.filter(p => ((p.name||"")+" "+(p.slug||"")).toLowerCase().includes(q)) : CATALOG;
   $("prod-pick").innerHTML = list.map(p=>
-    `<option value="${esc(p.slug)}">${esc(p.name)} — ${dollars(p.price_cents)}</option>`).join("");
+    `<option value="${esc(p.slug)}">${esc(p.name)} — ${dollars(p.price_cents)}${p.typed?" (new item)":""}</option>`).join("");
 }
 
 // ── customer search ──
@@ -342,6 +349,38 @@ function openCustomerEmail(){
   const params = new URLSearchParams({q:gmailQuery});
   if (KEY) params.set("key", KEY);
   window.open("/console/inbox?"+params.toString(), "_blank", "noopener");
+}
+
+// ── typed new items (Glen, 2026-10-27): kept on the order list, never on the store ──
+async function loadTypedBottleTypes(){
+  try{
+    const r=await fetch("/api/orders/typed-items",{headers:HEADERS}); const j=await r.json();
+    if(!j.ok) return;
+    $("new-item-bt").innerHTML=(j.bottle_types||[]).map(t=>
+      `<option value="${esc(t)}"${t==="30 g"?" selected":""}>${esc(t)}</option>`).join("");
+  }catch(e){ /* the box just has no packages; the server refuses an add without one */ }
+}
+async function addNewItem(btn){
+  const name=($("new-item-name").value||"").trim();
+  const price=parseFloat($("new-item-price").value);
+  if(!name){ toast("Type the new item's name","error"); return; }
+  if(!(price>0)){ toast("Type the new item's price","error"); return; }
+  const qty=Math.max(1, parseInt($("prod-qty").value,10)||1);   // read now, not after the wait
+  btn.disabled=true;
+  try{
+    const r=await fetch("/api/orders/typed-items",{method:"POST",headers:HEADERS,
+      body:JSON.stringify({name, price_cents:Math.round(price*100), bottle_type:$("new-item-bt").value})});
+    const j=await r.json();
+    if(!j.ok){ toast(j.error||"Could not add the item","error"); return; }
+    const it=j.item;
+    LINES.push({slug:it.slug, name:it.name, qty, unit_cents:it.price_cents, edited:false, note:"", format:'bottle', source:'self'});
+    $("new-item-name").value=""; $("new-item-price").value="";
+    renderLines();
+    toast(it.name+" added to the list");
+    try{ await loadCatalog(); }catch(e){ /* the line is on the order; the picker refreshes on reload */ }
+  } catch(e){
+    toast("Could not reach the server. Press Add new item again; a repeat is safe.","error");
+  } finally { btn.disabled=false; }
 }
 
 // ── line items ──
@@ -1333,6 +1372,7 @@ async function init(){
   // A signed-in owner's login cookie is enough; a 401 from the first request shows the
   // warning (2026-09-25: Rae was refused here with no stored key).
   try{ await loadCatalog(); }catch(e){ if(e.message!=="unauthorized") toast(e.message,"error"); return; }
+  loadTypedBottleTypes();
   loadSnippets();   // populate the shared per-line note dropdown (non-blocking)
   $("o-method").addEventListener("change", refreshInvMethod);   // keep the card's method line live
   if (EDIT_OID){ try{ await loadOrderForEdit(EDIT_OID); markSaved(); }catch(e){ toast(e.message,"error"); } }
