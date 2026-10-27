@@ -108,3 +108,11 @@ def test_the_black_goji_ingredient_record_names_ruthenicum():
     assert rec["scientific"] == "Lycium ruthenicum"
     assert rec["label_form"] == "Black Goji Anthocyanin 25% (Lycium ruthenicum)"
     assert rec["name"] == "Black Goji"
+
+
+def test_the_black_goji_page_prompt_says_ruthenicum():
+    """What the page's AI copy is written from."""
+    from dashboard import ingredient_copy, ingredients
+    ingredients._name_index.cache_clear()
+    lines = ingredient_copy._fmp_lines(ingredients.resolve("black-goji"))
+    assert "Lycium ruthenicum" in lines and "barbarum" not in lines
