@@ -464,3 +464,53 @@ def test_the_console_key_cannot_record_for_the_client(monkeypatch, tmp_db):
         content_type="multipart/form-data", headers={"X-Console-Key": app.CONSOLE_SECRET})
     assert r.status_code == 403
     assert _row(tmp_db) is None
+
+
+def test_a_lapsed_staff_view_cannot_tick_or_untick(monkeypatch, tmp_db):
+    app = _app(monkeypatch, tmp_db)
+    token = _seed_portal(tmp_db)
+    monkeypatch.setattr(app, "_staff_lapsed", lambda: True)
+    assert _consent(app, token, True).status_code == 403
+    assert not _has_consent(tmp_db)
+    from dashboard import voice_consent
+    with sqlite3.connect(str(tmp_db)) as cx:
+        voice_consent.agree(cx, EMAIL)
+    assert _consent(app, token, False).status_code == 403
+    assert _has_consent(tmp_db)
+
+
+def test_a_portal_with_no_email_is_not_found(monkeypatch, tmp_db):
+    app = _app(monkeypatch, tmp_db)
+    token = _seed_portal(tmp_db)
+    monkeypatch.setattr(app, "_portal_record_for", lambda cx, t: {"email": "", "name": "x"})
+    assert _consent(app, token, True).status_code == 404
+
+
+def test_the_opt_in_ignores_letter_case(tmp_db):
+    from dashboard import voice_consent
+    with sqlite3.connect(str(tmp_db)) as cx:
+        voice_consent.agree(cx, "Voice@Example.COM ")
+        assert voice_consent.has_consent(cx, "voice@example.com")
+        assert voice_consent.agreed_at(cx, "VOICE@example.com")
+
+
+def test_ticking_again_keeps_the_first_opt_in_time(tmp_db):
+    """A second tab ticking again must not refuse a recording already being analysed."""
+    from dashboard import voice_consent
+    with sqlite3.connect(str(tmp_db)) as cx:
+        voice_consent.agree(cx, EMAIL)
+        first = voice_consent.agreed_at(cx, EMAIL)
+        voice_consent.agree(cx, EMAIL)
+        assert voice_consent.agreed_at(cx, EMAIL) == first
+
+
+def test_the_page_script_details():
+    html, _ = _card()
+    fn = html[html.index("function initFiveVoiceConsent"):][:3200]
+    assert "box.checked = agreed;" in fn
+    assert "box.disabled = true;" in fn            # no second click while one is in flight
+    body = fn[fn.index("try{"):fn.index("}catch(error){")]
+    assert "if(!want){" in body and 'host.innerHTML = ""' in body
+    catch = fn[fn.index("}catch(error){"):]
+    assert "let saved = !want;" in catch
+    assert "saved = !!(await check.json()).agreed;" in catch
