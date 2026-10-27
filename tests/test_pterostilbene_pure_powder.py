@@ -5,7 +5,6 @@ in parallel ... or after it's on the list for me now." He was invoicing a jar th
 The intro and description wait for his copy approval, so the entry carries neither.
 Spec: production/05 Formulations/_store-updates/2026-10-26-pterostilbene-pure-powder.md.
 """
-import importlib
 import json
 import pathlib
 
@@ -76,13 +75,10 @@ def test_the_chat_can_link_it_but_is_told_not_to_volunteer_it():
 
 
 @pytest.fixture
-def appmod(monkeypatch, tmp_path):
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
-    monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake")
+def appmod(monkeypatch):
+    # No reload: the route reads only the catalog, and a reload would leak into later tests.
     import app as a
-    importlib.reload(a)
-    a.app.config["TESTING"] = True
+    monkeypatch.setitem(a.app.config, "TESTING", True)
     return a
 
 
