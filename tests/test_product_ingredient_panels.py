@@ -56,14 +56,14 @@ def test_the_product_page_hides_zero_dose_rows(appmod):
     d = appmod.app.test_client().get("/begin/product-page-data/vitreous-vitality").get_json()
     ings = next(s for s in d["sections"] if s["id"] == "ingredients")["body"]["ingredients"]
     shown = _doses(ings)
-    assert "Goji" not in shown and "Anthocyanins 25% (Lycium barbarum)" in shown
+    assert "Goji" not in shown and "Black goji anthocyanins 25% (Lycium ruthenicum)" in shown
     assert not [n for n, v in shown.items() if ZERO.match(str(v or ""))]
 
 
 def test_the_product_data_route_hides_zero_dose_rows(appmod):
     d = appmod.app.test_client().get("/begin/product-data/vitreous-vitality").get_json()
     shown = _doses(d["ingredients"])
-    assert "Goji" not in shown and "Anthocyanins 25% (Lycium barbarum)" in shown
+    assert "Goji" not in shown and "Black goji anthocyanins 25% (Lycium ruthenicum)" in shown
 
 
 def test_ai_copy_grounding_leaves_out_zero_dose_rows():

@@ -34,7 +34,7 @@ NE_INGREDIENTS = [
     "Graminex G63 Rye Pollen (Secale cereale)",
     "Noni 200:1 (Morinda citrifolia) (fructus)",
     "Green Tea EGCG 50% (Camellia sinensis) (folium)",
-    "Black Goji Anthocyanins 25% (Lycium barbarum)",
+    "Black goji anthocyanins 25% (Lycium ruthenicum)",   # species corrected 2026-10-27 (black-goji spec)
     "Monatomic Rose Gold ORMUS",
 ]
 GARLIC = ["sulfur-syntropy", "chelation", "ocuflow-daytime", "nerve-pulse", "vein-support",
