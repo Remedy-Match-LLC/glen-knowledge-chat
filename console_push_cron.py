@@ -833,8 +833,10 @@ def sync_people_from_ghl(batch_size=100):
             # feeders (type:*, consent:*, source:practitioner-finder, …) survive
             # this GHL->people sync. GHL is not yet the source of those tags
             # (Phase 2), so a plain overwrite here would wipe them every run.
+            # ghl_owned=1: the few tags GHL owns outright (its "email engage"
+            # windows) leave the hub when GHL drops them (app._GHL_OWNED_TAGS).
             r2 = requests.post(
-                f'{RENDER_BASE}/api/people?merge_tags=1',
+                f'{RENDER_BASE}/api/people?merge_tags=1&ghl_owned=1',
                 headers=HEADERS, json=people, timeout=20
             )
             try:
