@@ -117,6 +117,12 @@ def test_the_page_shows_the_approved_copy_and_never_the_card(appmod, monkeypatch
                                    "ingredients": [], "benefits": []})
     monkeypatch.setattr(appmod, "_product_how", lambda p: "AI HOW MARKER")
     monkeypatch.setattr(appmod, "_SALES_AI_COPY_ENABLED", True)
+    # A cached AI draft for every section: only the pin keeps it off the page.
+    import contextlib
+    from dashboard import sales_pages
+    monkeypatch.setattr(appmod.db, "connect", lambda *a, **k: contextlib.nullcontext(None))
+    monkeypatch.setattr(sales_pages, "reset_if_older", lambda *a, **k: None)
+    monkeypatch.setattr(sales_pages, "get_section", lambda cx, slug, section: "AI DRAFT MARKER")
     c = appmod.app.test_client()
     d = c.get(f"/begin/product-page-data/{KEY}").get_json()
     secs = {s["id"]: s for s in d["sections"]}
@@ -124,4 +130,5 @@ def test_the_page_shows_the_approved_copy_and_never_the_card(appmod, monkeypatch
     assert secs["description"]["body"] == DESCRIPTION
     for url in (f"/begin/product-page-data/{KEY}", f"/begin/product-data/{KEY}"):
         dump = json.dumps(c.get(url).get_json())
-        assert "AI CARD MARKER" not in dump and "AI HOW MARKER" not in dump, url
+        for marker in ("AI CARD MARKER", "AI HOW MARKER", "AI DRAFT MARKER"):
+            assert marker not in dump, (url, marker)
