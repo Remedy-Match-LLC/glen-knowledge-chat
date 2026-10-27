@@ -13413,6 +13413,29 @@
     "benefits"
    ]
   },
+  "pterostilbene-pure-powder": {
+   "name": "Pterostilbene Pure Powder",
+   "price_cents": 4000,
+   "fmp_id": "1204",
+   "bottle_type": "30 g",
+   "ingredients": [
+    {
+     "name": "Pterostilbene 98% (trans-Pterostilbene)",
+     "dose": "48 mg"
+    }
+   ],
+   "directions": "Take 4 orange scoops 1 to 2 times daily, or as guided.",
+   "miron_glass": false,
+   "volume_eligible": false,
+   "sku_discount_floor_pct": 0.75,
+   "sku_points_floor_pct": 0.75,
+   "copy_pinned": [
+    "ingredients",
+    "research",
+    "directions",
+    "benefits"
+   ]
+  },
   "ed7-lung-driver": {
    "name": "ED7 Lung Energetic Driver Infoceutical",
    "price_cents": 4000,
