@@ -64,6 +64,7 @@ MOVE_TABLES = frozenset({
     "intake_responses", "intake_sessions", "life_stress_curations", "life_stress_selections",
     "live_event_attendance", "live_event_series_registrations", "masterclass_registrations",
     "member_data_sharing", "member_data_sharing_grants", "member_element_state",
+    "voice_analysis_consent",          # the voice analysis opt-in (2026-10-27)
     "member_reward_grants", "membership_comps", "mentor_page_requests", "module_certifications",
     "orders", "owned_tools", "peer_optin", "people", "person_attributes", "points_ledger",
     "portal_biofield_reports", "portal_card_state", "portal_cart_seeded", "portal_chat_messages",

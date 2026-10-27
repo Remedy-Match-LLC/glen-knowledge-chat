@@ -40,6 +40,7 @@ HEALTH_TABLES = {
     "intake_responses": "email",
     "historical_intake_snapshots": "email",
     "member_element_state": "email",
+    "voice_analysis_consent": "email",   # the voice analysis opt-in (2026-10-27)
     "scan_analyses": "email",
     "scan_freshness": "email",
     "biofield_auth_tests": "email",

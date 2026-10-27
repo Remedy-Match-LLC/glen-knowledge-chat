@@ -28617,6 +28617,18 @@ def _portal_chat_thread(email, limit=100):
         return []
 
 
+def _five_voice_consent_for(email):
+    """Has this portal's client ticked the voice analysis opt-in? False on any error,
+    so a lookup failure keeps the recorder off rather than on."""
+    try:
+        from dashboard import voice_consent as _vc
+        with db.connect(LOG_DB) as cx:
+            return _vc.has_consent(cx, email)
+    except Exception as e:
+        print(f"[five-voice-consent] lookup failed: {e!r}", flush=True)
+        return False
+
+
 def _portal_record_for(cx, token):
     """A portal content record by path token, OR — when client login is live —
     by the rm_portal_session cookie (the tokenless /portal/me logged-in home).
@@ -29641,6 +29653,7 @@ def api_client_portal(token):
         "tos_covers_dependents": _dependent_tos_enabled(),
         "messages": _portal_chat_thread(email_for_reports),
         "element_state": element_state,
+        "five_voice_consent": _five_voice_consent_for(portal.get("email")),
         "element_backdrop_enabled": ELEMENT_BACKDROP_ENABLED,
     }
     _request_timing_checkpoint("account_core")
@@ -32780,11 +32793,16 @@ def api_portal_five_element_voice(token):
     from journal_blueprint import _lexical_features, _whisper_transcribe
     import tempfile as _tempfile
 
+    from dashboard import voice_consent as _vc
     with db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx)
         portal = _portal_record_for(cx, token)
+        consented = bool(portal) and _vc.has_consent(cx, portal.get("email"))
     if not portal:
         return jsonify({"error": "not found"}), 404
+    # Glen, 2026-10-27: the analysis runs only after the client ticks the opt-in box.
+    if not consented:
+        return jsonify({"error": "Tick the box to agree before you record."}), 403
 
     audio = request.files.get("audio")
     if not audio:
@@ -32833,7 +32851,10 @@ def api_portal_five_element_voice(token):
         return jsonify({"error": "The analysis did not return an element pattern."}), 502
     email = (portal.get("email") or "").strip().lower()
     with _db_lock, db.connect(LOG_DB) as cx:
-        state = _mes.upsert(cx, email, elements, source="portal_voice")
+        # The client may have unticked while the recording was analysed.
+        if not _vc.has_consent(cx, email):
+            return jsonify({"error": "Tick the box to agree before you record."}), 403
+        state = _mes.upsert(cx, email, elements, source=_vc.VOICE_SOURCE)
     return jsonify({
         "ok": True,
         "element_scores": elements,
@@ -32845,6 +32866,35 @@ def api_portal_five_element_voice(token):
         "top_themes": analysis.get("top_themes") or [],
         "transcript": transcript,
     })
+
+
+@app.route("/api/portal/<token>/five-element-voice/consent", methods=["POST"])
+def api_portal_five_element_voice_consent(token):
+    """The client ticks or unticks the voice analysis opt-in. Unticking deletes the
+    opt-in and the voice pattern it kept (Glen, 2026-10-27). Only the client can
+    choose: a request carrying the console or an owner key is refused, so a portal
+    opened from the console never agrees on a client's behalf."""
+    from dashboard import client_portal as _cp
+    from dashboard import voice_consent as _vc
+    body = request.get_json(silent=True) or {}
+    agree = body.get("agree")
+    if not isinstance(agree, bool):
+        return jsonify({"error": "agree must be true or false"}), 400
+    if _portal_open_is_owner():
+        return jsonify({"error": "Only the client can make this choice."}), 403
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        email = (portal.get("email") or "").strip().lower()
+        if not email:
+            return jsonify({"error": "not found"}), 404
+        if agree:
+            _vc.agree(cx, email)
+            return jsonify({"ok": True, "agreed": True})
+        deleted = _vc.withdraw(cx, email)
+    return jsonify({"ok": True, "agreed": False, "patterns_deleted": deleted})
 
 
 @app.route("/api/portal/<token>/open", methods=["POST"])
