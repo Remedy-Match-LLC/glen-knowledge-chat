@@ -2327,12 +2327,13 @@ _YIELDS_TO_PREFIX = {"neuro-magnesium": "focus"}
 # is spelt: "Is Vitreous-Vitality safe?" and "Vitrious Vitality dose?" brought Vitality's
 # block and its caution (review rounds 1 and 3, 2026-10-26). Checked per occurrence, so a
 # later standalone "Vitality" still counts.
-_YIELDS_AFTER = {"vitality": re.compile(r"\bvitr\w*[\s/_\u2010-\u2015-]*$", re.IGNORECASE),
+_YIELDS_AFTER = {"vitality": re.compile(r"\bvitr[^\W_]*[\s/_\u2010-\u2015-]*$", re.IGNORECASE),
                  # "Is Crystalline-Clarity safe in pregnancy?" and "Crystaline Clarity dose?"
                  # brought Clarity's block and its caution (Crystalline Clarity review round 1,
-                 # 2026-10-28). Any spelling of "crystalline", or "crystal" itself, but not
-                 # "crystals" in a list: "vitamin C crystals / Clarity" names Clarity (round 2).
-                 "clarity": re.compile(r"\b(?:cryst\w*l[iy]n\w*|crystal)[\s/_\u2010-\u2015-]*$",
+                 # 2026-10-28). Any word starting "cryst" but "crystals", so "vitamin C
+                 # crystals / Clarity" names Clarity (round 2). No "_" in the word, so the
+                 # lookback never crosses a joined name ("Crystalline_Clarity / Clarity").
+                 "clarity": re.compile(r"\bcryst(?!als\b)[^\W_]*[\s/_\u2010-\u2015-]*$",
                                        re.IGNORECASE)}
 # Names a client may join with a hyphen or slash: "Is Vitreous-Vitality safe?" must still
 # bring its caution (review round 3). Not Neuro Magnesium, whose hyphenated form names

@@ -226,6 +226,22 @@ def test_a_plain_dose_question_gets_the_caution_written():
     ("Crystline Clarity dose?", set()),
     ("Crystal Clarity dose?", set()),
     ("Crystaline Clarity dose? I have cataracts in both of my eyes.", set()),
+    ("Crystallene Clarity dose?", set()),
+    ("Crystallne-Clarity safe in pregnancy?", set()),
+    ("Crystalyne Clarity dose?", set()),
+    ("Crystallin Clarity dose?", set()),
+    ("Crystaalline Clarity dose?", set()),
+    ("Crystallized Clarity dose?", set()),
+    ("Crystalsine Clarity dose?", set()),
+    ("Crystallinnnnnnnnnnnnnnnnnnne Clarity dose?", set()),
+    ("Monocrystalline Clarity dose?", {"clarity"}),
+    ("Crystaline\tClarity dose?", set()),
+    ("Crystaline _ Clarity dose?", set()),
+    ("Crystalline  Clarity dose?", {SLUG}),
+    ("Crystalline  -  Clarity dose?", {SLUG}),
+    ("Crystalline---Clarity dose?", {SLUG}),
+    ("Crystalline_Clarity / Clarity dose?", {SLUG, "clarity"}),
+    ("Vitreous_Vitality / Vitality dose?", {"vitreous-vitality", "vitality"}),
     # Clarity itself, beside other crystal words (review round 2).
     ("How much Clarity should I take?", {"clarity"}),
     ("crystal clear. Clarity dose?", {"clarity"}),
@@ -242,3 +258,21 @@ def test_a_joined_or_misspelt_name_never_brings_clarity(q, want):
     """Clarity is a different product with its own caution (review round 1)."""
     import app
     assert set(app._named_product_spans(q, app._PRODUCTS["products"])) == want
+
+
+@pytest.mark.parametrize("dash", ["\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2015"])
+def test_every_dash_joins_and_yields(dash):
+    import app
+    P = app._PRODUCTS["products"]
+    assert set(app._named_product_spans(f"Crystalline{dash}Clarity dose?", P)) == {SLUG}
+    assert set(app._named_product_spans(f"Crystaline{dash}Clarity dose?", P)) == set()
+    assert set(app._named_product_spans(f"Vitreous{dash}Vitality dose?", P)) == \
+        {"vitreous-vitality"}
+    assert set(app._named_product_spans(f"Vitreus{dash}Vitality dose?", P)) == set()
+
+
+def test_a_safety_question_never_links_clarity_for_crystalline_clarity():
+    import app
+    for q in ["Is Crystalline-Clarity safe in pregnancy?", "Is Crystalline\u2014Clarity safe?",
+              "Can I take Crystalline Clarity while pregnant?"]:
+        assert "clarity" not in app._caution_link_slugs(q), q
