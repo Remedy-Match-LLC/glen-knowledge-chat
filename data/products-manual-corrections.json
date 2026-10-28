@@ -3944,8 +3944,11 @@
     ],
     "ingredients_source": "FileMaker 470 run 44; names per store spec production/05 Formulations/free-and-easy/2026-10-27 (Glen 2026-10-27)",
     "content_since": "2026-10-26T22:25:00+00:00",
-    "note": "Glen 2026-10-26, platform tab: \"yes\" to crocin from gardenia (FileMaker 470, run 44, Crocin 45% Gardenia jasminoides). content_since drops the drafts that said saffron. Glen 2026-10-27, formulation tab: \"yes\" to the directions, the caution and the extract names (store spec production/05 Formulations/free-and-easy/2026-10-27). page_slug keeps each ingredient's existing page.",
+    "note": "Glen 2026-10-26, platform tab: \"yes\" to crocin from gardenia (FileMaker 470, run 44, Crocin 45% Gardenia jasminoides). content_since drops the drafts that said saffron. Glen 2026-10-27, formulation tab: \"yes\" to the directions, the caution and the extract names (store spec production/05 Formulations/free-and-easy/2026-10-27). page_slug keeps each ingredient's existing page. Glen 2026-10-28, platform tab: \"yes\" to the chat quoting these directions word for word (copy_pinned).",
     "directions": "Take 1 capsule daily with dinner or an evening snack, or as guided.",
+    "copy_pinned": [
+      "directions"
+    ],
     "warning": "Not for use in pregnancy or while breastfeeding. If you are under medical treatment, consult your physician before use.",
     "chat_caution": true
   }

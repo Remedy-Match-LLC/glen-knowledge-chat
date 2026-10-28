@@ -814,6 +814,9 @@
    "fmp_id": "470",
    "content_since": "2026-10-26T22:25:00+00:00",
    "directions": "Take 1 capsule daily with dinner or an evening snack, or as guided.",
+   "copy_pinned": [
+    "directions"
+   ],
    "warning": "Not for use in pregnancy or while breastfeeding. If you are under medical treatment, consult your physician before use.",
    "chat_caution": true
   },
