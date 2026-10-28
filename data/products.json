@@ -3546,8 +3546,9 @@
      "dose": "27 mg"
     },
     {
-     "name": "Anthocyanins 25% (Lycium barbarum)",
-     "dose": "20 mg"
+     "name": "Black goji anthocyanins 25% (Lycium ruthenicum)",
+     "dose": "20 mg",
+     "page_slug": "black-goji"
     },
     {
      "name": "Bromelain (Ananas comosus)",
@@ -9453,8 +9454,9 @@
      "dose": "57 mg"
     },
     {
-     "name": "Black Goji Anthocyanins 25% (Lycium barbarum)",
-     "dose": "48 mg"
+     "name": "Black goji anthocyanins 25% (Lycium ruthenicum)",
+     "dose": "48 mg",
+     "page_slug": "black-goji"
     },
     {
      "name": "Monatomic Rose Gold ORMUS",
@@ -11900,8 +11902,9 @@
      "dose": "20 mg"
     },
     {
-     "name": "Black Goji",
-     "dose": "10 mg"
+     "name": "Black goji anthocyanins 25% (Lycium ruthenicum)",
+     "dose": "10 mg",
+     "page_slug": "black-goji"
     },
     {
      "name": "Cat's Claw Alkaloids Uncaria Tomentosa",
