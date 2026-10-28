@@ -81,7 +81,6 @@ def test_a_question_on_the_caution_still_gets_the_directions():
 @pytest.mark.parametrize("question", ["how do I take free & easy",
                                       "how much free & easy should I take",
                                       "How do I take Free and Easy?",
-                                      "What are the directions for Free and Easy?",
                                       "how many free and easy capsules a day",
                                       "free and easy dose?",
                                       "How Do I Take Free And Easy?"])
@@ -94,9 +93,25 @@ def test_lowercase_and_the_and_spelling_get_the_directions(question):
 
 @pytest.mark.parametrize("question", ["I feel free and easy today",
                                       "we kept it free and easy",
-                                      "free & easy"])
+                                      "free & easy",
+                                      "Have you read Zhuangzi's Free and Easy Wandering?",
+                                      "I love the song Free and Easy by Ayumi Hamasaki",
+                                      "Life is Free and Easy now",
+                                      "we were Free And Easy all summer",
+                                      # Not the name: each pins one part of the pattern
+                                      # (review round 3, 2026-10-28).
+                                      "Free n Easy dose?",
+                                      "Free answer Easy dose?",
+                                      "CareFree & Easy dose?",
+                                      "Free & Easygoing dose?",
+                                      "+Free & Easy dose?",
+                                      "Free & Easy+ dose?",
+                                      "FreeandEasy dose?",
+                                      "Free-&-Easy dose?",
+                                      "Free/&/Easy dose?"])
 def test_an_everyday_phrase_gets_no_block(question):
-    """Lowercase needs a product cue beside it, as for Iron Out."""
+    """Lowercase needs a product cue beside it, as for Iron Out. So does "and" in any
+    casing, since "Free and Easy" is a common title (review round 1, 2026-10-28)."""
     assert "### Free & Easy" not in app.named_product_facts_block(question)
 
 
@@ -110,11 +125,20 @@ def test_the_and_spelling_is_only_for_free_and_easy():
     assert "wash--rinse" not in app._named_product_spans("Wash and Rinse dose?", products)
 
 
-@pytest.mark.parametrize("question", ["free & easy directions"])
+@pytest.mark.parametrize("question", ["free & easy directions",
+                                      "What are the directions for Free and Easy?",
+                                      "Free&Easy dose?",
+                                      "Free + Easy dose?"])
 def test_known_gaps_get_no_block(question):
     """"directions" after a name is not a product cue for any product. Listed in the PR,
     not widened here. A change that closes one fails this."""
     assert "### Free & Easy" not in app.named_product_facts_block(question)
+
+
+def test_a_cue_word_beside_the_everyday_phrase_still_brings_the_block():
+    """A known false positive, the same trade every lowercase cue name makes ("is clear
+    the way safe"). Listed in the PR (review round 2, 2026-10-28)."""
+    assert "### Free & Easy" in app.named_product_facts_block("Is being free and easy safe?")
 
 
 def test_a_rebuild_keeps_the_four_fields():
