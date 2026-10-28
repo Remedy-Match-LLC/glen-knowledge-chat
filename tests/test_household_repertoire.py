@@ -202,3 +202,46 @@ def test_a_household_link_alone_never_groups_shipping(appmod):
     sug = C.suggest_combinable(cx, household_of=lambda pid: appmod._person_household_slug(cx, pid))
     assert not any(set(ids) <= {o["id"] for o in s["orders"]} for s in sug)
     cx.close()
+
+
+# ── display equals charge, at the member's own rate (review rounds 1 and 2) ─
+def _portal_charge_unit(appmod, email):
+    _lines, items_rec, _sub = appmod._portal_priced_lines([{"slug": SLUG, "qty": 1}], email=email)
+    return items_rec[0]["unit_cents"]
+
+
+def test_the_household_rate_is_the_members_own_rate_on_every_path(appmod):
+    _link(appmod, STEVE, MICHAEL)
+    _member(appmod, STEVE)
+    _member(appmod, MICHAEL)
+    _rep(appmod, MICHAEL, [SLUG])
+    own = _invoice_unit(appmod, MICHAEL)
+    assert own < _regular(appmod)
+    assert _invoice_unit(appmod, STEVE) == own
+    assert _cart_unit(appmod, STEVE) == own
+    assert _portal_charge_unit(appmod, STEVE) == own
+
+
+def test_the_reorder_list_shows_what_checkout_charges_and_only_own_purchases(appmod):
+    from dashboard import client_portal as cp
+    from dashboard.orders import init_orders_table
+    _link(appmod, STEVE, MICHAEL)
+    _member(appmod, STEVE)
+    _rep(appmod, MICHAEL, [SLUG, "spike-shield"])
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cp.init_client_portal_table(cx)
+        tok, _ = cp.upsert_portal(cx, STEVE, "Steve", {"greeting": "hi", "video": {}, "layers": []})
+        init_orders_table(cx)
+        created = (datetime.utcnow() - timedelta(days=5)).isoformat() + "+00:00"
+        for ref, email, slug in (("s1", STEVE, SLUG), ("m1", MICHAEL, "spike-shield")):
+            cx.execute("INSERT INTO orders (created_at, source, external_ref, channel, email, "
+                       "items_json, total_cents, status) VALUES (?,?,?,?,?,?,?,?)",
+                       (created, "reorder", ref, "retail", email,
+                        json.dumps([{"slug": slug, "qty": 1, "name": slug, "unit_cents": 6997}]),
+                        6997, "done"))
+        cx.commit()
+    j = appmod.app.test_client().get(f"/api/portal/{tok}").get_json()
+    rows = {r["slug"]: r for r in j["reorder"]}
+    assert "spike-shield" not in rows  # Michael's purchase is never listed to Steve
+    assert rows[SLUG]["in_repertoire"] is True
+    assert rows[SLUG]["your_cents"] == _portal_charge_unit(appmod, STEVE) < _regular(appmod)

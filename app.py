@@ -28338,7 +28338,9 @@ def _portal_reorder_module(email):
             print(f"[portal-reorder] client-price read failed for {email!r}: {e!r}", flush=True)
         try:
             repertoire.init_repertoire_table(cx)  # fresh-DB guard
-            rep_slugs = repertoire.repertoire_slugs(cx, email)
+            # The household's repertoire, as checkout prices it (review round 1): rows
+            # stay this buyer's own purchases, so no member's products are listed.
+            rep_slugs = _household_repertoire_slugs(cx, email)
         except Exception as e:
             print(f"[portal-reorder] repertoire read failed for {email!r}: {e!r}", flush=True)
             rep_slugs = set()
