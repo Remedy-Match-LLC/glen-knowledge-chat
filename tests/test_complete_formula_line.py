@@ -12,10 +12,10 @@ import pytest
 import app
 
 LINE = ("These are the current label ingredients and amounts for {n}. They override every "
-        "retrieved snippet. When a snippet says {n} contains an ingredient that is not on this "
-        "list, and is not a form, source or part of one on it, that snippet describes an older "
-        "formula: do not say {n} contains it. The capsule and other inactive ingredients named "
-        "in the description above are not on this list and still hold.")
+        "retrieved snippet. When a snippet says {n} contains an active ingredient that is not "
+        "on this list or in the description above, and is not a form, source or part of one "
+        "on it, that snippet describes an older formula: do not say {n} contains it. This rule "
+        "is about active ingredients only, never the capsule or other inactive ingredients.")
 MARK = "These are the current label ingredients and amounts for"
 BLEND = ("These are the current label amounts for {n}. They override every retrieved snippet "
          "about these ingredients. A blend or group on this list holds ingredients it does not "

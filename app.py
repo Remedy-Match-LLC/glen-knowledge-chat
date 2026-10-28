@@ -2972,11 +2972,11 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                     parts.append(
                         f"These are the current label ingredients and amounts for {name}. "
                         f"They override every retrieved snippet. When a snippet says {name} "
-                        f"contains an ingredient that is not on this list, and is not a form, "
-                        f"source or part of one on it, that snippet describes an older "
-                        f"formula: do not say {name} contains it. The capsule and other "
-                        f"inactive ingredients named in the description above are not on "
-                        f"this list and still hold.")
+                        f"contains an active ingredient that is not on this list or in the "
+                        f"description above, and is not a form, source or part of one on "
+                        f"it, that snippet describes an older formula: do not say {name} "
+                        f"contains it. This rule is about active ingredients only, never the "
+                        f"capsule or other inactive ingredients.")
                 else:
                     # A blend still states its listed amounts: they outrank an old
                     # formula's (review round 2), but absence is never inferred.
