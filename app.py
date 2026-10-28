@@ -2279,6 +2279,9 @@ _CUE_NAMES = frozenset({
     # 2026-10-18-iron-out-directions). A cue word is still needed, so "iron out the
     # details" gets no block.
     "iron-out",
+    # "how do i take free & easy?" (formulation read-back, 2026-10-28). A cue word is
+    # still needed, so "feeling free and easy" gets no block.
+    "free-and-easy",
     # "is stress release safe with warfarin?" brings the caution (store spec
     # 2026-10-24-stress-release-caution). Glen accepted the lowercase false positives the
     # spec lists, such as "is tapping for stress release safe?" (production tab, "yes").
@@ -2329,6 +2332,9 @@ _YIELDS_AFTER = {"vitality": re.compile(r"\bvitr\w*[\s/_-]*$", re.IGNORECASE)}
 # bring its caution (review round 3). Not Neuro Magnesium, whose hyphenated form names
 # both of its products.
 _JOINED_NAMES = frozenset({"vitreous-vitality"})
+# Names whose "&" a client may spell "and": "How do I take Free and Easy?" got no block
+# and an invented dose (formulation read-back, review round 2, 2026-10-28).
+_AND_NAMES = frozenset({"free-and-easy"})
 # Closing quotes and brackets may sit between the full stop and the name: 'She said "I
 # feel tired." Clarity of mind ...' (review round 2), as may opening ones. A colon or
 # semicolon does not end a sentence: "Products I take: Clarity, ..." (review round 3).
@@ -2490,6 +2496,11 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         words = name.split()
         joiner = r"(?:\s*[-/_]\s*|\s+)" if slug in _JOINED_NAMES else r"\s+"
         pattern = r"(?<![\w+])" + joiner.join(re.escape(w) for w in words) + r"(?![\w+])"
+        # The "and" spelling counts only beside a product cue, in any casing: "Free and
+        # Easy Wandering" is Zhuangzi (review round 1, 2026-10-28).
+        cue_pattern = pattern if slug not in _AND_NAMES else (
+            r"(?<![\w+])" + joiner.join(r"(?:&|and)" if w == "&" else re.escape(w)
+                                       for w in words) + r"(?![\w+])")
         # For a name in _YIELDS_TO_LONGER_NAMES any longer catalog name wins, eligible or
         # not: "How much Crystalline Clarity should I take?" names Crystalline Clarity, not
         # Clarity (review of the Clarity pin, 2026-10-23). Checked per occurrence, so a later
@@ -2536,7 +2547,7 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             # Any case: a coined name cannot occur in ordinary speech. A name that is also
             # an everyday phrase ("clear the way", "reverse age") needs a product cue
             # beside it (formulation-9d and Glen, 2026-10-09: clients type lowercase).
-            for mi in re.finditer(pattern, query_text, re.IGNORECASE):
+            for mi in re.finditer(cue_pattern, query_text, re.IGNORECASE):
                 if _own(mi) and (slug in _CASE_FREE_NAMES or (
                         slug in _CUE_NAMES and _has_product_cue(query_text, *mi.span()))):
                     m = mi
