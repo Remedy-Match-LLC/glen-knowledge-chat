@@ -230,15 +230,15 @@ def test_a_failed_household_lookup_keeps_the_buyers_own_history(logdb, monkeypat
 
     def boom(*a, **k):
         raise RuntimeError("household table unreadable")
-    monkeypatch.setattr(household, "household_emails", boom)
+    monkeypatch.setattr(household, "pricing_household_emails", boom)
     assert _earned(logdb, STEVE) == {SLUG}
 
 
 def test_the_household_lookup_leaves_the_callers_connection_alone(logdb, monkeypatch):
     """Postgres aborts a transaction on a failed read, and apply-plan saves on cx."""
     seen = []
-    real = household.household_emails
-    monkeypatch.setattr(household, "household_emails",
+    real = household.pricing_household_emails
+    monkeypatch.setattr(household, "pricing_household_emails",
                         lambda cx, e: (seen.append(cx), real(cx, e))[1])
     _link(logdb, STEVE, MICHAEL)
     _paid_biofield(logdb, STEVE)

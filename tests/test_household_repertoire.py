@@ -148,7 +148,7 @@ def test_a_failed_household_lookup_keeps_the_buyers_own_repertoire(appmod, monke
 
     def boom(*a, **k):
         raise RuntimeError("household table unreadable")
-    monkeypatch.setattr(household, "household_emails", boom)
+    monkeypatch.setattr(household, "pricing_household_emails", boom)
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert appmod._household_repertoire_slugs(cx, STEVE) == {SLUG}
     assert _invoice_unit(appmod, STEVE) < _regular(appmod)
@@ -157,8 +157,8 @@ def test_a_failed_household_lookup_keeps_the_buyers_own_repertoire(appmod, monke
 def test_the_household_lookup_uses_its_own_connection_and_closes_it(appmod, monkeypatch):
     """Postgres aborts a transaction on a failed read; a leak drains the pool."""
     seen = []
-    real = household.household_emails
-    monkeypatch.setattr(household, "household_emails",
+    real = household.pricing_household_emails
+    monkeypatch.setattr(household, "pricing_household_emails",
                         lambda cx, e: (seen.append(cx), real(cx, e))[1])
     _link(appmod, STEVE, MICHAEL)
     with sqlite3.connect(appmod.LOG_DB) as cx:

@@ -273,31 +273,41 @@ def pricing_household_emails(cx, email):
 
     Glen, 2026-10-28, sales tab, "yes" to this rule:
     1. A caregiving link (DEPENDENT_RELATIONSHIPS) counts wherever the member lives.
-    2. Any other link counts only when someone in the household holds an active
-       Family Plan.
+    2. Any other link counts only when someone in that household holds an active
+       Family Plan. A household is one primary and its members, so a plan in one
+       household never opens another that shares a member (review round 2).
     3. A person-based household (a "household:<slug>" people tag) counts only when one
        of its people holds an active Family Plan.
     household_members stores no address, so no rule reads one. Shipping never reads
     this. Links are read one hop, as household_emails reads them; a sibling counts
-    only when both links on its path count. Empty for a blank email."""
+    only when both links on its path count. Empty for a blank email.
+
+    A failed read raises, except the person groups (read last, logged and skipped).
+    On Postgres either leaves cx aborted, so callers pass a connection of their own."""
     from dashboard import family_plan as _fp
     e = _norm(email)
     if not e:
         return set()
-    plan = any(_fp.is_active(cx, x) for x in sorted(household_emails(cx, e)))
-    out = {e}
+
+    def members(p):
+        return [(_norm(r[0]), r[1]) for r in cx.execute(
+            "SELECT member_email, relationship FROM household_members "
+            "WHERE lower(trim(primary_email))=?", (p,)).fetchall() if _norm(r[0])]
+
+    def has_plan(p, ms):
+        return any(_fp.is_active(cx, x) for x in sorted({p} | {m for m, _ in ms}))
+
     ups = [(_norm(r[0]), r[1]) for r in cx.execute(
         "SELECT primary_email, relationship FROM household_members "
-        "WHERE lower(trim(member_email))=?", (e,)).fetchall()]
-    for p, ok in [(e, True)] + [(p, plan or is_dependent(rel)) for p, rel in ups]:
-        if not ok or not p:
+        "WHERE lower(trim(member_email))=?", (e,)).fetchall() if _norm(r[0])]
+    out = {e}
+    for p, rel in [(e, None)] + ups:
+        ms = members(p)
+        plan = has_plan(p, ms)
+        if p != e and not (plan or is_dependent(rel)):
             continue
         out.add(p)
-        for m, rel in cx.execute(
-                "SELECT member_email, relationship FROM household_members "
-                "WHERE lower(trim(primary_email))=?", (p,)).fetchall():
-            if plan or is_dependent(rel):
-                out.add(_norm(m))
+        out.update(m for m, mrel in ms if plan or is_dependent(mrel))
     # Last, so a failed read here (no people table) cannot abort the reads above on
     # Postgres; the household links still price.
     try:
@@ -310,23 +320,25 @@ def pricing_household_emails(cx, email):
 
 def _person_group_with_plan(cx, email):
     """The people in this email's person-based households that have an active Family
-    Plan holder among them (rule 3 above). Empty when none does."""
+    Plan holder among them (rule 3 above). Empty when none does. Tags are matched
+    exactly in Python: a LIKE on the slug would treat "_" and "%" as wildcards and
+    differs in case between SQLite and Postgres (review round 2)."""
     from dashboard import family_plan as _fp
-    slugs = set()
-    for (tags,) in cx.execute("SELECT tags FROM people WHERE lower(trim(email))=?",
-                              (email,)).fetchall():
+
+    def slugs_of(tags):
         try:
             tl = json.loads(tags or "[]")
         except (TypeError, ValueError):
-            continue
-        slugs |= {t.split(":", 1)[1] for t in tl if isinstance(t, str)
-                  and t.startswith("household:")}
+            return set()
+        return {t.split(":", 1)[1] for t in tl if isinstance(t, str)
+                and t.startswith("household:")} if isinstance(tl, list) else set()
+
+    tagged = [(_norm(r[0]), slugs_of(r[1])) for r in cx.execute(
+        "SELECT email, tags FROM people WHERE tags LIKE '%household:%'").fetchall()]
+    mine = set().union(*[sl for em, sl in tagged if em == email]) if tagged else set()
     out = set()
-    for slug in sorted(slugs):
-        tag = json.dumps(f"household:{slug}")
-        group = {_norm(r[0]) for r in cx.execute(
-            "SELECT email FROM people WHERE tags LIKE ?", (f"%{tag}%",)).fetchall()}
-        group.discard("")
+    for slug in sorted(mine):
+        group = {em for em, sl in tagged if slug in sl and em}
         if any(_fp.is_active(cx, x) for x in sorted(group)):
             out |= group
     return out

@@ -164,3 +164,76 @@ def test_it_never_reaches_beyond_household_emails(cx):
     _link(cx, STEVE, KID, "child")
     for e in (STEVE, MICHAEL, KID, CAL):
         assert H(cx, e) <= household.household_emails(cx, e), e
+
+
+# ── review round 2 ──────────────────────────────────────────────────────────
+def test_a_plan_in_one_household_never_opens_another(cx):
+    """P cares for E (child) and holds a plan. Q is E's partner, with no plan."""
+    _plan(cx, STEVE)
+    _link(cx, STEVE, KID, "child")
+    _link(cx, ADULT, KID, "partner")
+    _link(cx, ADULT, MICHAEL, "partner")
+    assert H(cx, KID) == {STEVE, KID}
+    assert H(cx, MICHAEL) == {MICHAEL}
+
+
+def test_wildcards_in_a_slug_match_nothing_else(cx):
+    _person(cx, ANN, "team_a")
+    _person(cx, BEN, "teamxa")
+    _person(cx, CAL, "team%")
+    _plan(cx, BEN)
+    assert H(cx, ANN) == {ANN}
+    assert H(cx, CAL) == {CAL}
+
+
+def test_slug_case_is_exact(cx):
+    _person(cx, ANN, "Team")
+    _person(cx, BEN, "team")
+    _plan(cx, BEN)
+    assert H(cx, ANN) == {ANN}
+    assert H(cx, BEN) == {BEN}
+
+
+def test_a_messy_people_email_still_finds_its_group(cx):
+    _person(cx, " Ann@X.com ", "ann-ben")
+    _person(cx, BEN, "ann-ben")
+    _plan(cx, BEN)
+    assert H(cx, ANN) == {ANN, BEN}
+
+
+def test_pricing_is_symmetric_across_two_households(cx):
+    """E and Q are each X's primary, as partners; only Q holds a plan (review round 1)."""
+    _link(cx, ADULT, MICHAEL, "partner")     # E=ADULT, X=MICHAEL
+    _link(cx, STEVE, MICHAEL, "partner")     # Q=STEVE
+    _plan(cx, STEVE)
+    assert H(cx, MICHAEL) == {STEVE, MICHAEL}
+    assert H(cx, STEVE) == {STEVE, MICHAEL}
+    assert H(cx, ADULT) == {ADULT}
+    for a in (STEVE, MICHAEL, ADULT):
+        for b in (STEVE, MICHAEL, ADULT):
+            assert (b in H(cx, a)) == (a in H(cx, b)), (a, b)
+
+
+# ── messy rows (review round 3) ─────────────────────────────────────────────
+def test_a_legacy_messy_link_row_still_counts(cx):
+    cx.execute("INSERT INTO household_members (primary_email, member_email, relationship) "
+               "VALUES (?, ?, 'child')", (" Steve@X.com", "Kid@X.com "))
+    cx.commit()
+    assert H(cx, KID) == {STEVE, KID}
+    assert H(cx, STEVE) == {STEVE, KID}
+
+
+def test_a_corrupt_tags_row_does_not_hide_a_good_one(cx):
+    cx.execute("INSERT INTO people (email, tags) VALUES (?, ?)", (ANN, '["household:x'))
+    _person(cx, ANN, "ann-ben")
+    _person(cx, BEN, "ann-ben")
+    _plan(cx, BEN)
+    assert H(cx, ANN) == {ANN, BEN}
+
+
+def test_a_blank_people_email_never_joins_or_answers(cx):
+    _person(cx, "", "ann-ben")
+    _person(cx, BEN, "ann-ben")
+    _plan(cx, BEN)
+    assert H(cx, BEN) == {BEN}
+    assert H(cx, "") == set()
