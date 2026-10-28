@@ -11,6 +11,7 @@ import importlib
 import json
 import os
 import shutil
+import sqlite3
 
 import pytest
 
@@ -90,13 +91,20 @@ def test_a_full_enrichment_run_twice_on_a_copy_keeps_every_field(tmp_path, monke
     monkeypatch.setattr(ae, "CLEAN", str(tmp_path / "products-enrich-clean.json"))
     monkeypatch.setattr(ae, "PRODUCTS", str(tmp_path / "products.json"))
     monkeypatch.setattr(ae, "CORRECTIONS", str(tmp_path / "products-manual-corrections.json"))
+    repo_bytes = open(os.path.join(ROOT, "data", "products.json"), "rb").read()
+    # Strip the fields from the copy, so only main() can put them back (review round 3).
+    cat = json.load(open(tmp_path / "products.json"))
+    for k in ("directions", "warning", "intro", "panel_note", "copy_pinned", "chat_caution"):
+        cat["products"][SLUG].pop(k)
+    cat["products"][SLUG]["description"] = "Crystalline Clarity . selenium vegitarian"
+    json.dump(cat, open(tmp_path / "products.json", "w"))
     for _ in range(2):
         ae.main()
         out = json.load(open(tmp_path / "products.json"))["products"][SLUG]
         _check(out)
         assert "selenium" not in out["description"].lower()
         assert "vegitarian" not in out["description"]
-    _check(_data("products.json")["products"][SLUG])
+    assert open(os.path.join(ROOT, "data", "products.json"), "rb").read() == repo_bytes
 
 
 def test_a_damaged_record_is_restored_by_the_replay():
@@ -117,6 +125,22 @@ def appmod(monkeypatch, tmp_path):
     import app as a
     importlib.reload(a)
     a.app.config["TESTING"] = True
+    # Old-formula text from every AI source, so only the pins can keep it off the page
+    # (review rounds 2 and 3).
+    monkeypatch.setattr(a, "_product_card", lambda p: {
+        "description": "AI CARD selenium", "benefits": [],
+        "ingredients": [{"name": "Lutein", "dose": "10 mg"}]})
+    monkeypatch.setattr(a, "_product_how", lambda p: "AI HOW lutein curcumin")
+    monkeypatch.setattr(a, "_SALES_AI_COPY_ENABLED", True)
+    from dashboard import sales_pages as sp
+    with sqlite3.connect(a.LOG_DB) as cx:
+        sp.init_table(cx)
+        for sec in ("intro", "description", "research"):
+            sp.upsert_section(cx, SLUG, sec, "AI DRAFT selenium lutein")
+        # Dated after content_since, so the reset cannot remove them: only the pins can.
+        cx.execute("UPDATE sales_pages SET generated_at='2099-01-01T00:00:00' "
+                   "WHERE product_slug=?", (SLUG,))
+        cx.commit()
     return a
 
 
@@ -130,8 +154,10 @@ def test_the_page_shows_the_approved_text(appmod):
     assert [(i["name"], i["dose"], i["slug"]) for i in body["ingredients"]] == EIGHT
     assert PANEL_NOTE in json.dumps(body)
     assert secs["caution"]["body"] == WARNING
-    # Research is pinned with no text: no generated how-it-works or research draft.
-    assert secs["research"]["body"].get("how_it_works", "") == ""
+    assert "AI " not in json.dumps(d)
+    # Research is pinned with no text: only the link to the learn page.
+    assert secs["research"]["body"] == {"how_it_works": "",
+                                        "learn_url": f"/begin/learn/{SLUG}"}
     for sid in ("intro", "description", "ingredients", "research", "caution"):
         text = json.dumps(secs[sid]["body"]).lower()
         for word in REMOVED:
@@ -149,6 +175,7 @@ def test_the_chat_block_holds_the_eight_rows_and_the_directions(q):
     section = block[block.index("### Crystalline Clarity"):].split("\n### ")[0]
     assert f"Directions: {DIRECTIONS}" in section
     assert "The Directions above are the only dose for Crystalline Clarity." in section
+    assert DESCRIPTION in section
     for name, dose, _ in EIGHT:
         assert f"- {name}: {dose}" in section
     for word in REMOVED:
@@ -156,7 +183,10 @@ def test_the_chat_block_holds_the_eight_rows_and_the_directions(q):
 
 
 @pytest.mark.parametrize("q", ["Can I take Crystalline Clarity while pregnant?",
-                               "Is Crystalline Clarity safe with my thyroid medicine?"])
+                               "Is Crystalline Clarity safe with my thyroid medicine?",
+                               "Is Crystalline Clarity safe?",
+                               "Are there side effects with Crystalline Clarity?",
+                               "Is Crystalline-Clarity safe in pregnancy?"])
 def test_a_safety_question_links_its_caution(q):
     import app
     assert SLUG in app._caution_link_slugs(q)
@@ -166,6 +196,27 @@ def test_the_learn_page_shows_the_pinned_description(appmod):
     r = appmod.app.test_client().get(f"/begin/learn-data/{SLUG}")
     assert r.status_code == 200
     text = r.get_data(as_text=True)
-    assert "We use no unwanted excipients" in text
+    assert json.loads(text)["markdown"] == DESCRIPTION
     for word in REMOVED:
         assert word not in text.lower(), word
+
+
+def test_a_plain_dose_question_gets_the_caution_written():
+    import app
+    block = app.named_product_facts_block("How do I take Crystalline Clarity?")
+    section = block[block.index("### Crystalline Clarity"):].split("\n### ")[0]
+    assert f"Caution: {WARNING}" in section
+
+
+@pytest.mark.parametrize("q,want", [
+    ("Is Crystalline-Clarity safe in pregnancy?", {SLUG}),
+    ("Crystalline/Clarity dose?", {SLUG}),
+    # A misspelling names neither product, rather than Clarity and its caution.
+    ("Crystaline Clarity dose?", set()),
+    ("How much Clarity should I take?", {"clarity"}),
+    ("crystal clear. Clarity dose?", {"clarity"}),
+    ("Crystalline Clarity and Clarity dose?", {SLUG, "clarity"})])
+def test_a_joined_or_misspelt_name_never_brings_clarity(q, want):
+    """Clarity is a different product with its own caution (review round 1)."""
+    import app
+    assert set(app._named_product_spans(q, app._PRODUCTS["products"])) == want

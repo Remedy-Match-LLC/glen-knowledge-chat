@@ -2327,11 +2327,15 @@ _YIELDS_TO_PREFIX = {"neuro-magnesium": "focus"}
 # is spelt: "Is Vitreous-Vitality safe?" and "Vitrious Vitality dose?" brought Vitality's
 # block and its caution (review rounds 1 and 3, 2026-10-26). Checked per occurrence, so a
 # later standalone "Vitality" still counts.
-_YIELDS_AFTER = {"vitality": re.compile(r"\bvitr\w*[\s/_-]*$", re.IGNORECASE)}
+_YIELDS_AFTER = {"vitality": re.compile(r"\bvitr\w*[\s/_-]*$", re.IGNORECASE),
+                 # "Is Crystalline-Clarity safe in pregnancy?" and "Crystaline Clarity dose?"
+                 # brought Clarity's block and its caution (Crystalline Clarity review round 1,
+                 # 2026-10-28).
+                 "clarity": re.compile(r"\bcrysta\w*[\s/_-]*$", re.IGNORECASE)}
 # Names a client may join with a hyphen or slash: "Is Vitreous-Vitality safe?" must still
 # bring its caution (review round 3). Not Neuro Magnesium, whose hyphenated form names
 # both of its products.
-_JOINED_NAMES = frozenset({"vitreous-vitality"})
+_JOINED_NAMES = frozenset({"vitreous-vitality", "crystalline-clarity"})
 # Names whose "&" a client may spell "and": "How do I take Free and Easy?" got no block
 # and an invented dose (formulation read-back, review round 2, 2026-10-28).
 _AND_NAMES = frozenset({"free-and-easy"})
