@@ -2327,11 +2327,13 @@ _YIELDS_TO_PREFIX = {"neuro-magnesium": "focus"}
 # is spelt: "Is Vitreous-Vitality safe?" and "Vitrious Vitality dose?" brought Vitality's
 # block and its caution (review rounds 1 and 3, 2026-10-26). Checked per occurrence, so a
 # later standalone "Vitality" still counts.
-_YIELDS_AFTER = {"vitality": re.compile(r"\bvitr\w*[\s/_-]*$", re.IGNORECASE),
+_YIELDS_AFTER = {"vitality": re.compile(r"\bvitr\w*[\s/_\u2010-\u2015-]*$", re.IGNORECASE),
                  # "Is Crystalline-Clarity safe in pregnancy?" and "Crystaline Clarity dose?"
                  # brought Clarity's block and its caution (Crystalline Clarity review round 1,
-                 # 2026-10-28).
-                 "clarity": re.compile(r"\bcrysta\w*[\s/_-]*$", re.IGNORECASE)}
+                 # 2026-10-28). Any spelling of "crystalline", or "crystal" itself, but not
+                 # "crystals" in a list: "vitamin C crystals / Clarity" names Clarity (round 2).
+                 "clarity": re.compile(r"\b(?:cryst\w*l[iy]n\w*|crystal)[\s/_\u2010-\u2015-]*$",
+                                       re.IGNORECASE)}
 # Names a client may join with a hyphen or slash: "Is Vitreous-Vitality safe?" must still
 # bring its caution (review round 3). Not Neuro Magnesium, whose hyphenated form names
 # both of its products.
@@ -2498,7 +2500,8 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         if not name:
             continue
         words = name.split()
-        joiner = r"(?:\s*[-/_]\s*|\s+)" if slug in _JOINED_NAMES else r"\s+"
+        # Smart punctuation types an en or em dash, and "--" for one (review round 1).
+        joiner = r"(?:\s*[-/_\u2010-\u2015]+\s*|\s+)" if slug in _JOINED_NAMES else r"\s+"
         pattern = r"(?<![\w+])" + joiner.join(re.escape(w) for w in words) + r"(?![\w+])"
         # The "and" spelling counts only beside a product cue, in any casing: "Free and
         # Easy Wandering" is Zhuangzi (review round 1, 2026-10-28).

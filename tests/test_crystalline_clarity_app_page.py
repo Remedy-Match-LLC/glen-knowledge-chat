@@ -211,11 +211,33 @@ def test_a_plain_dose_question_gets_the_caution_written():
 @pytest.mark.parametrize("q,want", [
     ("Is Crystalline-Clarity safe in pregnancy?", {SLUG}),
     ("Crystalline/Clarity dose?", {SLUG}),
+    ("Is Crystalline\u2013Clarity safe?", {SLUG}),
+    ("Is Crystalline\u2014Clarity safe?", {SLUG}),
+    ("Crystalline -- Clarity dose?", {SLUG}),
+    ("Crystalline - Clarity dose?", {SLUG}),
+    ("Crystalline_Clarity dose?", {SLUG}),
     # A misspelling names neither product, rather than Clarity and its caution.
     ("Crystaline Clarity dose?", set()),
+    ("Crystaline-Clarity dose?", set()),
+    ("Crystaline/Clarity dose?", set()),
+    ("Crystaline - Clarity dose?", set()),
+    ("Crystaline\u2013Clarity dose?", set()),
+    ("Crystallinne Clarity dose?", set()),
+    ("Crystline Clarity dose?", set()),
+    ("Crystal Clarity dose?", set()),
+    ("Crystaline Clarity dose? I have cataracts in both of my eyes.", set()),
+    # Clarity itself, beside other crystal words (review round 2).
     ("How much Clarity should I take?", {"clarity"}),
     ("crystal clear. Clarity dose?", {"clarity"}),
-    ("Crystalline Clarity and Clarity dose?", {SLUG, "clarity"})])
+    ("I love crystal. Clarity dose?", {"clarity"}),
+    ("Can I take vitamin C crystals / Clarity during pregnancy?", {"clarity"}),
+    ("I like crystals. Clarity dose?", {"clarity"}),
+    ("I bought crystals and Clarity, dose?", {"clarity"}),
+    ("Crystal clear vision, Clarity dose?", {"clarity"}),
+    ("Crystalline Clarity and Clarity dose?", {SLUG, "clarity"}),
+    # The joiner stays with the joined names (round 3).
+    ("Is Vitreous\u2014Vitality safe?", {"vitreous-vitality"}),
+    ("Neuro-Magnesium dose?", set())])
 def test_a_joined_or_misspelt_name_never_brings_clarity(q, want):
     """Clarity is a different product with its own caution (review round 1)."""
     import app
