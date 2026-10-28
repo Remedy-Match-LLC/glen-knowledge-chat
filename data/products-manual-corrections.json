@@ -4009,7 +4009,7 @@
       "research",
       "ingredients"
     ],
-    "content_since": "2026-10-28T00:00:00+00:00",
+    "content_since": "2026-10-28T22:15:00+00:00",
     "note": "Glen 2026-10-28, formulation tab: \"yes\" to the store text and caution; marketing tab: \"No added fillers or excipients\". Glen 2026-10-28, platform tab: \"yes\" to writing it to the catalogue (formulation spec production/05 Formulations/crystalline-clarity/2026-10-28/app-spec.md). Batch CC-20261027-40 bottled 2026-10-28. Every field is here because apply_enrichment.main() would restore the old scraped description, which names selenium."
   }
 }

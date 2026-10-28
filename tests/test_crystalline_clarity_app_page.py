@@ -253,6 +253,7 @@ def test_a_plain_dose_question_gets_the_caution_written():
     ("Crystalline Clarity and Clarity dose?", {SLUG, "clarity"}),
     # The joiner stays with the joined names (round 3).
     ("Is Vitreous\u2014Vitality safe?", {"vitreous-vitality"}),
+    ("Vitrious/Vitality dose?", set()),
     ("Neuro-Magnesium dose?", set())])
 def test_a_joined_or_misspelt_name_never_brings_clarity(q, want):
     """Clarity is a different product with its own caution (review round 1)."""
@@ -275,4 +276,5 @@ def test_a_safety_question_never_links_clarity_for_crystalline_clarity():
     import app
     for q in ["Is Crystalline-Clarity safe in pregnancy?", "Is Crystalline\u2014Clarity safe?",
               "Can I take Crystalline Clarity while pregnant?"]:
-        assert "clarity" not in app._caution_link_slugs(q), q
+        links = app._caution_link_slugs(q)
+        assert "clarity" not in links and SLUG in links, (q, links)
