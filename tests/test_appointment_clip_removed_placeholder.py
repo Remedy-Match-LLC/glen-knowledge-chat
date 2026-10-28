@@ -119,3 +119,36 @@ def test_the_column_is_added_to_an_existing_table(tmp_path):
     ap.init_tables(cx)
     ap.init_tables(cx)
     assert cx.execute("SELECT clip_expired_at FROM appointment_proposal_messages").fetchone() == ("",)
+
+
+def _render_messages(page, msgs):
+    """Cut the page's own message template out and run it under node."""
+    import json
+    import shutil
+    import subprocess
+    html = (ROOT / "static" / page).read_text()
+    start = html.index("(p.messages||[]).map(m=>")
+    end = html.index(".join('')", start) + len(".join('')")
+    js = ("const esc=s=>String(s==null?'':s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;',"
+          "'>':'&gt;','\"':'&quot;'}[c]));const seg='tok';"
+          f"const p={json.dumps({'id': 7, 'messages': msgs})};"
+          f"process.stdout.write({html[start:end]});")
+    r = subprocess.run([shutil.which("node"), "-e", js], capture_output=True, text=True,
+                       timeout=30)
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None, reason="node not installed")
+@pytest.mark.parametrize("page,cls", [("client-portal.html", "appt-clip-removed"),
+                                      ("appointment-proposals.html", "clip-removed")])
+def test_each_page_renders_the_placeholder_only_where_marked(page, cls):
+    gone = {"id": 1, "sender": "client", "text": "", "audio_filename": "",
+            "clip_removed": True}
+    kept = {"id": 2, "sender": "glen", "text": "hello", "audio_filename": "",
+            "clip_removed": False}
+    out = _render_messages(page, [gone])
+    assert f'<div class="{cls}">{TEXT}</div>' in out
+    assert "hidden" not in out
+    out = _render_messages(page, [kept])
+    assert TEXT not in out and "hello" in out
