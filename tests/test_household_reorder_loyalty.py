@@ -137,10 +137,11 @@ def test_no_paid_biofield_anywhere_earns_nothing(logdb):
     assert _earned(logdb, STEVE) == set()
 
 
-def test_an_unpaid_order_earns_nothing(logdb):
+@pytest.mark.parametrize("status", ["proposed", "pending", "new", "confirmed"])
+def test_an_unpaid_order_earns_nothing(logdb, status):
     _link(logdb, STEVE, MICHAEL)
     _paid_biofield(logdb, STEVE)
-    _order(logdb, MICHAEL, SLUG, pay_status="unpaid", status="proposed")
+    _order(logdb, MICHAEL, SLUG, pay_status="unpaid", status=status)
     assert _earned(logdb, STEVE) == set()
 
 
@@ -207,7 +208,8 @@ def test_a_paid_or_fulfilled_order_earns(logdb, pay_status, status):
 
 
 @pytest.mark.parametrize("pay_status,status", [("paid", "cancelled"), ("paid", "canceled"),
-                                               ("paid", "refunded"), ("refunded", "done")])
+                                               ("paid", "refunded"), ("refunded", "done"),
+                                               ("paid", "Cancelled"), ("Refunded", "shipped")])
 def test_a_cancelled_or_refunded_order_earns_nothing(logdb, pay_status, status):
     """It bought nothing (review round 2). Prod held 3 paid, cancelled orders."""
     _link(logdb, STEVE, MICHAEL)
@@ -238,11 +240,24 @@ def test_the_household_lookup_leaves_the_callers_connection_alone(logdb, monkeyp
     _paid_biofield(logdb, STEVE)
     _earned(logdb, STEVE)
     assert seen and all(c is not logdb for c in seen)
+    for c in seen:  # a leaked connection drains the Postgres pool
+        with pytest.raises(sqlite3.ProgrammingError):
+            c.execute("SELECT 1")
+
+
+def test_a_blank_email_has_no_household(logdb):
+    logdb.execute("INSERT INTO household_members(primary_email, member_email, relationship) "
+                  "VALUES('', ?, 'partner')", (MICHAEL,))
+    logdb.commit()
+    assert household.household_emails(logdb, "") == set()
+    assert household.household_emails(logdb, "  ") == set()
 
 
 def test_any_other_failure_earns_nothing(logdb, monkeypatch):
     _link(logdb, STEVE, MICHAEL)
+    _paid_biofield(logdb, STEVE)
     _order(logdb, STEVE, SLUG)
+    assert _earned(logdb, STEVE) == {SLUG}  # it earns until the store fails
 
     def boom(e):
         raise RuntimeError("biofield store unreadable")
