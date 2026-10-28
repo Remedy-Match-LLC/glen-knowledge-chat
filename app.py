@@ -2866,7 +2866,8 @@ _FOUNDING_AVAILABILITY_CACHE = {}
 # ingredient is absent from such a panel (complete-formula line, review round 1).
 _UMBRELLA_ROW = re.compile(
     r"\bblend\b|\(all\)|proprietary|\bcomplex\b|^- polyphenols\b|\bormus\b|trace mineral"
-    r"|\bocean\b|\bscents?\b|full spectrum|\besters?\b|\bwhey\b|\bcollagen\b",
+    r"|\bocean\b|\bscents?\b|full spectrum|\besters?\b|\bwhey\b|\bcollagen\b|seawater"
+    r"|quinton|bioterrain|\bhumic\b|\bfulvic\b|polysaccharide|phosphatide|\bcbd\b|cannabis",
     re.IGNORECASE)
 
 
@@ -2970,19 +2971,18 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                     # refuses another source's claim of an unlisted ingredient.
                     parts.append(
                         f"These are the current label ingredients and amounts for {name}. "
-                        f"They override any other source, including the reference text "
-                        f"above. When another source says {name} contains an ingredient "
-                        f"that is not on this list, and is not a form, source or part of one "
-                        f"on it, that source describes an older formula: do not say {name} "
-                        f"contains it. The capsule and other inactive ingredients named in "
-                        f"the description above are not on this list and still hold.")
+                        f"They override every retrieved snippet. When a snippet says {name} "
+                        f"contains an ingredient that is not on this list, and is not a form, "
+                        f"source or part of one on it, that snippet describes an older "
+                        f"formula: do not say {name} contains it. The capsule and other "
+                        f"inactive ingredients named in the description above are not on "
+                        f"this list and still hold.")
                 else:
                     # A blend still states its listed amounts: they outrank an old
                     # formula's (review round 2), but absence is never inferred.
                     parts.append(
                         f"These are the current label amounts for {name}. They override "
-                        f"any other source about these ingredients, including the reference "
-                        f"text above. A blend or group on this list holds ingredients it "
+                        f"every retrieved snippet about these ingredients. A blend or group on this list holds ingredients it "
                         f"does not name, so never say {name} lacks an ingredient because "
                         f"it is not listed.")
                 if roles:

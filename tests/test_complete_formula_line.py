@@ -7,27 +7,26 @@ after d92fc4e2: asked "Does Crystalline Clarity contain selenium?", the bot said
 text did. The block now says the panel overrides other sources and an unlisted
 ingredient gets a "no".
 """
+import pytest
+
 import app
 
-LINE = ("These are the current label ingredients and amounts for {n}. They override any "
-        "other source, including the reference text above. When another source says {n} "
-        "contains an ingredient that is not on this list, and is not a form, source or part of "
-        "one on it, that source describes an older formula: do not say {n} contains it. The "
-        "capsule and other inactive ingredients named in the description above are not on this "
-        "list and still hold.")
+LINE = ("These are the current label ingredients and amounts for {n}. They override every "
+        "retrieved snippet. When a snippet says {n} contains an ingredient that is not on this "
+        "list, and is not a form, source or part of one on it, that snippet describes an older "
+        "formula: do not say {n} contains it. The capsule and other inactive ingredients named "
+        "in the description above are not on this list and still hold.")
+MARK = "These are the current label ingredients and amounts for"
+BLEND = ("These are the current label amounts for {n}. They override every retrieved snippet "
+         "about these ingredients. A blend or group on this list holds ingredients it does not "
+         "name, so never say {n} lacks an ingredient because it is not listed.")
 # Pinned by hand, so a change to _UMBRELLA_ROW or the catalog shows up here (round 1).
 WITH_LINE = sorted([
     "adrenal-syntropy", "angiogenx", "angiostasis", "b17-max", "b17-syntropy", "clarity",
-    "clear-the-way", "crystalline-clarity", "estro-clear", "fibrolysis-factors",
-    "iron-syntropy", "lcarnosine", "melissa-20-1-extract-powder", "moisture-eyes-night-oil",
-    "moisturize", "n-acetyl-l-carnosine", "neuro-magnesium", "pterostilbene-pure-powder",
-    "stress-release", "vitamin-a-syntropy", "vitamin-d-syntropy", "vitreous-vitality",
-    "wash--rinse", "zinc-taste-test", "zinc-taste-test-drops"])
-MARK = "These are the current label ingredients and amounts for"
-BLEND = ("These are the current label amounts for {n}. They override any other source about "
-         "these ingredients, including the reference text above. A blend or group on this list "
-         "holds ingredients it does not name, so never say {n} lacks an ingredient because it "
-         "is not listed.")
+    "clear-the-way", "crystalline-clarity", "estro-clear", "fibrolysis-factors", "lcarnosine",
+    "melissa-20-1-extract-powder", "moisture-eyes-night-oil", "moisturize",
+    "n-acetyl-l-carnosine", "neuro-magnesium", "pterostilbene-pure-powder",
+    "vitamin-d-syntropy", "wash--rinse", "zinc-taste-test", "zinc-taste-test-drops"])
 
 
 def _products():
@@ -127,3 +126,28 @@ def test_a_role_naming_a_group_does_not_make_a_catch_all(monkeypatch):
     block = app._named_product_facts(f"What is in {name}?")
     assert "Role: supports collagen" in block
     assert block.count(LINE.format(n=name)) == 1
+
+
+
+@pytest.mark.parametrize("row", [
+    "- Bioavailability Blend: 34.5 mg", "- Amino Acids (all)", "- Polyphenols (Proprietary Formula)",
+    "- Vitamin E Complex", "- Polyphenols: 260 mg", "- Pacific Ocean ORMUS",
+    "- Quinton Ocean ORMUS & Trace Mineral Source", "- Natural Scents",
+    "- CBD Full Spectrum (Cannabis spp.): 1 mg", "- Fatty Acid Esters (plant derived emulsifier)",
+    "- Hydrolyzed Whey (Bos taurus)", "- Hydrolyzed Collagen (grass-fed bovine)",
+    "- Quinton (Micro-filtered Seawater)", "- Quintessential Bioterrain Restore",
+    "- Humic Acid", "- Fulvic Acid", "- Polysaccharides (Aloe vera)", "- Phosphatides 50%",
+    "- CBD (cannabidiol, Cannabis spp.)", "- Bromelain: 350 mg proprietary blend with protease",
+])
+def test_each_catch_all_form_is_caught(row):
+    """One row per alternative, so a narrowed regex fails here before a new product
+    ships with that row (review round 3)."""
+    assert app._UMBRELLA_ROW.search(row), row
+
+
+@pytest.mark.parametrize("row", [
+    "- Zinc (as zinc L-carnosine, 109 mg): 25 mg", "- L-ergothioneine 98%: 25 mg",
+    "- Green tea extract, polyphenols 98%, EGCG 50% (Camellia sinensis)", "- Mogroside V 50%",
+])
+def test_a_named_ingredient_is_not_a_catch_all(row):
+    assert not app._UMBRELLA_ROW.search(row), row
