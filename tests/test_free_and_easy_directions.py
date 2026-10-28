@@ -60,6 +60,12 @@ def test_the_section_is_exactly_the_approved_lines(question):
         app._CAUTION_COPY_REMINDER,
         f"Caution: {CAUTION}",
         app._CAUTION_STAY_LINE, "", app._CAUTION_CLOSING_REMINDER])
+    # The safety wording itself, so emptying a constant cannot pass (review round 2).
+    for line in ["The Directions above are the only dose for Free & Easy.",
+                 "That advice is withdrawn: never give it",
+                 "say to ask Dr. Glen about anything beyond them",
+                 "Copy each caution below word for word"]:
+        assert line in section, line
 
 
 def test_a_question_on_the_caution_still_gets_the_directions():
@@ -73,12 +79,41 @@ def test_a_question_on_the_caution_still_gets_the_directions():
 
 
 @pytest.mark.parametrize("question", ["how do I take free & easy",
-                                      "free & easy directions",
+                                      "how much free & easy should I take",
                                       "How do I take Free and Easy?",
-                                      "What are the directions for Free and Easy?"])
+                                      "What are the directions for Free and Easy?",
+                                      "how many free and easy capsules a day",
+                                      "free and easy dose?",
+                                      "How Do I Take Free And Easy?"])
+def test_lowercase_and_the_and_spelling_get_the_directions(question):
+    """Clients type lowercase and spell "&" as "and" (review round 2, 2026-10-28)."""
+    block = app.named_product_facts_block(question)
+    assert "### Free & Easy" in block, question
+    assert f"Directions: {DIRECTIONS}" in block
+
+
+@pytest.mark.parametrize("question", ["I feel free and easy today",
+                                      "we kept it free and easy",
+                                      "free & easy"])
+def test_an_everyday_phrase_gets_no_block(question):
+    """Lowercase needs a product cue beside it, as for Iron Out."""
+    assert "### Free & Easy" not in app.named_product_facts_block(question)
+
+
+def test_the_and_spelling_is_only_for_free_and_easy():
+    """Other "&" names keep their catalog spelling."""
+    assert "free-and-easy" in app._AND_NAMES
+    assert app._AND_NAMES == frozenset({"free-and-easy"})
+    products = _repo("data/products.json")["products"]
+    # Wash & Rinse gets a block in catalog spelling, and none spelt with "and".
+    assert "wash--rinse" in app._named_product_spans("Wash & Rinse dose?", products)
+    assert "wash--rinse" not in app._named_product_spans("Wash and Rinse dose?", products)
+
+
+@pytest.mark.parametrize("question", ["free & easy directions"])
 def test_known_gaps_get_no_block(question):
-    """Lowercase, or "and" for "&", is not the catalog name, so no block is sent. Listed
-    in the PR, not widened here. A change that closes one fails this."""
+    """"directions" after a name is not a product cue for any product. Listed in the PR,
+    not widened here. A change that closes one fails this."""
     assert "### Free & Easy" not in app.named_product_facts_block(question)
 
 
