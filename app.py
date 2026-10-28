@@ -60804,18 +60804,31 @@ def _earned_reorder_slugs(cx, email):
     """FF slugs this client has EARNED the reorder-loyalty price on: a paid Biofield
     Analysis on record AND a prior purchase of that SKU (paid or fulfilled order).
     Reorders of those SKUs then qualify for the loyalty rate. Best-effort; empty on
-    any gap. cx.row_factory should be sqlite3.Row (caller sets it)."""
+    any gap. cx.row_factory should be sqlite3.Row (caller sets it).
+
+    A household is one buyer (Glen, 2026-10-28, sales tab): anyone linked in
+    household_members counts, both ways. A paid Biofield or a purchase by any member
+    earns the price for all of them. Steve Fox paid $63 for Spike Shield that his
+    partner had bought three times."""
     email = (email or "").strip().lower()
     if not email:
         return set()
     try:
-        if not _has_paid_biofield(email):
+        emails = {email}
+        try:
+            from dashboard import household as _hh
+            _hh.init_household_tables(cx)
+            emails = _hh.household_emails(cx, email) or {email}
+        except Exception as _he:
+            print(f"[reorder-loyalty] household lookup skipped: {_he!r}", flush=True)
+        if not any(_has_paid_biofield(e) for e in sorted(emails)):
             return set()
         earned = set()
+        _ph = ",".join("?" * len(emails))
         for r in cx.execute(
-                "SELECT items_json FROM orders WHERE lower(email)=? AND "
+                f"SELECT items_json FROM orders WHERE lower(trim(email)) IN ({_ph}) AND "
                 "(pay_status='paid' OR status IN ('shipped','delivered','done'))",
-                (email,)).fetchall():
+                tuple(sorted(emails))).fetchall():
             try:
                 items = json.loads((r["items_json"] if isinstance(r, _sqlite3.Row) else r[0]) or "[]")
             except Exception:
@@ -62370,6 +62383,10 @@ def api_orders_price_preview():
     # non-member's per-line vol_pct is computed inside the loop below, off that
     # line's own qty (same-SKU rate), since it isn't a single order-wide number.
     vol_pct = round(float(_pricing.volume_pct(total_ff_qty, settings) or 0), 2) if _ppm else 0
+    # A paid member's repertoire reorder rate, as the invoice pricer applies it. The
+    # preview left it out, so it read $63 where the invoice charged $50 (sales,
+    # 2026-10-28: Glen saw a $328 quote for a $289 invoice).
+    _prep = _resolve_repertoire_slugs(_pemail)
     # Reflect this client's saved special prices in the live preview too (same
     # precedence as the pricer: explicit line edit > client price > volume/list).
     _cprices, _ff_flat, _cohorts, _loyalty, _earned = {}, None, [], [], set()
@@ -62391,7 +62408,8 @@ def api_orders_price_preview():
                         _earned = _earned_reorder_slugs(_cpx, _pemail)
             finally:
                 _cpx.close()
-        except Exception:
+        except Exception as _cpe:
+            print(f"[price-preview] client-price lookup skipped: {_cpe!r}", flush=True)
             _cprices, _ff_flat, _cohorts, _loyalty, _earned = {}, None, [], [], set()
     out_lines, subtotal = [], 0
     for ln in lines_in:
@@ -62414,6 +62432,7 @@ def api_orders_price_preview():
         list_cents = int(p.get("price_cents") or 0)
         _eff_ov = ov if ov not in (None, "") else None
         unit = _inhouse_line_unit_cents(p, _eff_ov, total_ff_qty, settings,
+                                        repertoire_slugs=_prep,
                                         program_member=_ppm, line_qty=qty)
         if _typed_fixed_price(p):
             pass   # the typed price or this line's edit, as the invoice pricer does

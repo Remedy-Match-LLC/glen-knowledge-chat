@@ -247,6 +247,26 @@ def same_household(cx, a, b):
         "WHERE h1.member_email=? AND h2.member_email=? LIMIT 1", (a, b)).fetchone() is not None
 
 
+def household_emails(cx, email):
+    """Every email same_household() pairs with this one, itself included: its own
+    members, the primaries it is a member of, and their other members. One hop, as
+    same_household reads. Empty for a blank email."""
+    e = _norm(email)
+    if not e:
+        return set()
+    out = {e}
+    primaries = {_norm(r[0]) for r in cx.execute(
+        "SELECT primary_email FROM household_members WHERE lower(trim(member_email))=?",
+        (e,)).fetchall()}
+    for p in primaries | {e}:
+        out.add(p)
+        out.update(_norm(r[0]) for r in cx.execute(
+            "SELECT member_email FROM household_members WHERE lower(trim(primary_email))=?",
+            (p,)).fetchall())
+    out.discard("")
+    return out
+
+
 def reassign_report(cx, scan_date, from_email, to_email, *, by="console"):
     """Move a portal_biofield_reports row from one household member to another.
     Refuses cross-household moves and refuses to overwrite an existing report on the
