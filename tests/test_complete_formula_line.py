@@ -9,13 +9,23 @@ ingredient gets a "no".
 """
 import app
 
-LINE = ("These are all the active ingredients in the current formula of {n}. They override "
-        "any other source about what {n} contains, including the reference text above. "
-        "Asked about an ingredient that is not on this list, and is not a form or part of one "
-        "on it, say the current formula of {n} does not contain it. The capsule and other "
-        "inactive ingredients are not on this list: answer about those only from the "
-        "description.")
-MARK = "These are all the active ingredients in the current formula of"
+LINE = ("These are the current label ingredients and amounts for {n}. They override any "
+        "other source, including the reference text above. When another source says {n} "
+        "contains an ingredient that is not on this list, and is not a form, source or part of "
+        "one on it, that source describes an older formula: do not say {n} contains it.")
+# Pinned by hand, so a change to _UMBRELLA_ROW or the catalog shows up here (round 1).
+WITH_LINE = sorted([
+    "adrenal-syntropy", "angiogenx", "angiostasis", "b17-max", "b17-syntropy", "clarity",
+    "clear-the-way", "crystalline-clarity", "estro-clear", "fibrolysis-factors",
+    "iron-syntropy", "lcarnosine", "melissa-20-1-extract-powder", "moisture-eyes-night-oil",
+    "moisturize", "n-acetyl-l-carnosine", "neuro-magnesium", "pterostilbene-pure-powder",
+    "stress-release", "vitamin-a-syntropy", "vitamin-d-syntropy", "vitreous-vitality",
+    "wash--rinse", "zinc-taste-test", "zinc-taste-test-drops"])
+MARK = "These are the current label ingredients and amounts for"
+BLEND = ("These are the current label amounts for {n}. They override any other source about "
+         "these ingredients, including the reference text above. A blend or group on this list "
+         "holds ingredients it does not name, so never say {n} lacks an ingredient because it "
+         "is not listed.")
 
 
 def _products():
@@ -75,13 +85,16 @@ def test_a_blend_or_catch_all_panel_gets_no_line():
         if "Ingredients from the label:" not in (block or ""):
             continue
         assert MARK not in block, slug
+        assert block.count(BLEND.format(n=name)) == 1, slug
         checked += 1
-    assert checked >= 8, checked
+    # Every listed slug that has a pinned panel today is checked, none skipped quietly.
+    pinned = [s for s in UMBRELLA if "ingredients" in app._pinned_copy(products.get(s, {}))]
+    assert checked == len(pinned) and checked >= 8, (checked, pinned)
 
 
 def test_the_capsule_is_left_to_the_description():
     block = app.named_product_facts_block("Does Crystalline Clarity contain pullulan?")
-    assert "The capsule and other inactive ingredients are not on this list" in block
+    assert "does not contain" not in block   # absence is never inferred from the list
     assert "Pullulan" in block   # the approved description names the capsule
 
 
@@ -92,3 +105,9 @@ def test_two_products_each_get_their_own_line():
         if f"### {n}" in block and "Ingredients from the label:" in block.split(f"### {n}", 1)[1]:
             assert block.count(LINE.format(n=n)) == 1, n
     assert block.count(MARK) == 2
+
+
+def test_exactly_these_products_get_the_line():
+    got = sorted(s for s, p in _products().items() if (p.get("name") or "").strip()
+                 and MARK in (app._named_product_facts(f"What is in {p['name'].strip()}?") or ""))
+    assert got == WITH_LINE

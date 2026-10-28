@@ -2864,8 +2864,10 @@ _FOUNDING_AVAILABILITY_CACHE = {}
 
 # A panel row that names a group rather than what is in it: the bot cannot say an
 # ingredient is absent from such a panel (complete-formula line, review round 1).
-_UMBRELLA_ROW = re.compile(r"\bblend\b|\(all\)|proprietary|\bcomplex\b|^- polyphenols\b",
-                           re.IGNORECASE)
+_UMBRELLA_ROW = re.compile(
+    r"\bblend\b|\(all\)|proprietary|\bcomplex\b|^- polyphenols\b|\bormus\b|trace mineral"
+    r"|\bocean\b|\bscents?\b|full spectrum|\besters?\b|\bwhey\b|\bcollagen\b",
+    re.IGNORECASE)
 
 
 def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
@@ -2953,20 +2955,32 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                 ings.append(line + (f". Role: {role}" if role else ""))
             if ings:
                 parts.append("Ingredients from the label:\n" + "\n".join(ings))
-                # Glen, 2026-10-28: the approved panel is the whole formula. Read-back of
+                # Glen, 2026-10-28: the approved panel outranks old formulas. Read-back of
                 # Crystalline Clarity: retrieved old-formula text made the bot say "yes,
                 # 86 mcg of selenium" in 3 of 3 tries, though the panel has none. Left off
                 # a panel with a blend or catch-all row, which hides what it holds: "Does
                 # Curcu Guard contain ginkgo?" would get a false no (review round 1).
                 if not any(_UMBRELLA_ROW.search(ln) for ln in ings):
+                    # It never infers absence from the list: rows name sources, not what
+                    # they hold (whey can carry lactose, full-spectrum CBD trace THC,
+                    # ocean minerals magnesium; review round 1 of the follow-up). It only
+                    # refuses another source's claim of an unlisted ingredient.
                     parts.append(
-                        f"These are all the active ingredients in the current formula of "
-                        f"{name}. They override any other source about what {name} "
-                        f"contains, including the reference text above. Asked about an "
-                        f"ingredient that is not on this list, and is not a form or part of "
-                        f"one on it, say the current formula of {name} does not contain it. "
-                        f"The capsule and other inactive ingredients are not on this list: "
-                        f"answer about those only from the description.")
+                        f"These are the current label ingredients and amounts for {name}. "
+                        f"They override any other source, including the reference text "
+                        f"above. When another source says {name} contains an ingredient "
+                        f"that is not on this list, and is not a form, source or part of one "
+                        f"on it, that source describes an older formula: do not say {name} "
+                        f"contains it.")
+                else:
+                    # A blend still states its listed amounts: they outrank an old
+                    # formula's (review round 2), but absence is never inferred.
+                    parts.append(
+                        f"These are the current label amounts for {name}. They override "
+                        f"any other source about these ingredients, including the reference "
+                        f"text above. A blend or group on this list holds ingredients it "
+                        f"does not name, so never say {name} lacks an ingredient because "
+                        f"it is not listed.")
                 if roles:
                     parts.append(
                         f"Ingredient roles for {name}: when you say what an ingredient in "
