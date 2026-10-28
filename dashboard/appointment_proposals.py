@@ -216,7 +216,7 @@ def _client_clip_rows(cx, addresses):
     return cx.execute(
         "SELECT m.id, m.proposal_id, m.audio_filename FROM appointment_proposal_messages m "
         "JOIN appointment_proposals p ON p.id=m.proposal_id "
-        f"WHERE LOWER(p.client_email) IN ({marks}) AND m.audio_filename<>''", addrs).fetchall()
+        f"WHERE LOWER(TRIM(p.client_email)) IN ({marks}) AND m.audio_filename<>''", addrs).fetchall()
 
 
 def count_client_clips(cx, addresses):
@@ -229,3 +229,38 @@ def erase_client_clips(cx, assets_dir, addresses):
     clip that would not delete must stop the erasure from reporting success."""
     return sum(1 for mid, pid, name in _client_clip_rows(cx, addresses)
                if _delete_clip(cx, assets_dir, mid, pid, name))
+
+
+# Glen, 2026-10-27 (sales tab): client erasure deletes the text of the client's
+# appointment messages too, on every thread of theirs, merged addresses included. The
+# message rows go; the appointments themselves (times, status, booking) stay.
+
+def _client_thread_clause(addresses):
+    addrs = sorted({(a or "").strip().lower() for a in addresses if (a or "").strip()})
+    marks = ",".join("?" for _ in addrs)
+    return addrs, (f"proposal_id IN (SELECT id FROM appointment_proposals "
+                   f"WHERE LOWER(TRIM(client_email)) IN ({marks}))")
+
+
+def count_client_messages(cx, addresses):
+    addrs, where = _client_thread_clause(addresses)
+    if not addrs:
+        return 0
+    init_tables(cx)
+    return cx.execute(f"SELECT COUNT(*) FROM appointment_proposal_messages WHERE {where}",
+                      addrs).fetchone()[0]
+
+
+def erase_client_messages(cx, addresses):
+    """Delete every message on this client's appointment threads, sent by either side.
+    Returns how many went. Does not commit: the caller's erasure commits it, so a failed
+    erasure rolls it back. Delete the clips first (erase_client_clips), which need these
+    rows to find their files."""
+    addrs, where = _client_thread_clause(addresses)
+    if not addrs:
+        return 0
+    init_tables(cx)
+    # A row still holding a clip is kept: a clip sent while the erasure ran must stay
+    # findable, or its file would be orphaned. The route reports it; a rerun takes it.
+    return cx.execute(f"DELETE FROM appointment_proposal_messages WHERE {where} "
+                      "AND audio_filename=''", addrs).rowcount or 0

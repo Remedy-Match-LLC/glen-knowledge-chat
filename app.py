@@ -59702,9 +59702,13 @@ def api_console_client_erasure_preview():
     from dashboard import appointment_proposals as _ap
     with _db_lock, db.connect(LOG_DB) as cx:
         tables = _ce.plan(cx, email)
-        clips = _ap.count_client_clips(cx, _ce.addresses_for(cx, email))
+        _addrs = _ce.addresses_for(cx, email)
+        clips = _ap.count_client_clips(cx, _addrs)
         if clips:
             tables["appointment_voice_clips"] = clips
+        msgs = _ap.count_client_messages(cx, _addrs)
+        if msgs:
+            tables["appointment_messages"] = msgs
         _es.init_table(cx)
         suppressed = _es.is_suppressed(cx, email)
         prior = _ce.erasures_for(cx, email)
@@ -59753,6 +59757,9 @@ def api_console_client_erasure_erase():
                             "deleted. Nothing else was erased. See the server log.",
                             "clips_deleted": clips}), 500
         try:
+            # Glen, 2026-10-27: the message text goes too. Not committed here: erase()
+            # commits it with the health tables, or the rollback below restores it.
+            msgs = _ap.erase_client_messages(cx, addrs)
             removed = _ce.erase(cx, email, confirm=email)
         except Exception:
             # The clips are already gone: the erasure log must still say so.
@@ -59765,16 +59772,27 @@ def api_console_client_erasure_erase():
             raise
         if clips:
             removed["appointment_voice_clips"] = clips
+        if msgs:
+            removed["appointment_messages"] = msgs
+        late = _ap.count_client_messages(cx, addrs)
+        if late:
+            print(f"[client-erasure] {late} appointment message(s) arrived during the "
+                  "erasure and remain; run it again", flush=True)
         _es.init_table(cx)
         if body.get("also_suppress"):
             # overwrite=False: a hard bounce already recorded is the stronger fact.
             _es.add(cx, email, "optout", "client erasure request",
                     "console:client-erasure", overwrite=False)
         suppressed = _es.is_suppressed(cx, email)
+        note = body.get("note") or ""
+        if late:
+            note = (note + " " if note else "") + (
+                f"{late} appointment message(s) arrived during the erasure and remain.")
         _ce.record_erasure(cx, email, actor=(actor.name or "owner"), removed=removed,
-                           note=(body.get("note") or ""), suppressed=suppressed)
+                           note=note, suppressed=suppressed)
     return jsonify({"ok": True, "email": email, "removed": removed,
-                    "total": sum(removed.values()), "suppressed": suppressed})
+                    "total": sum(removed.values()), "suppressed": suppressed,
+                    "appointment_messages_remaining": late})
 
 
 @app.route("/api/console/client-commerce-status", methods=["GET"])

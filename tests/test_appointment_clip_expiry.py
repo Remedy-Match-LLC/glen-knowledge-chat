@@ -438,3 +438,195 @@ def test_an_erasure_that_fails_after_the_clips_still_records_them(monkeypatch, t
     with sqlite3.connect(appmod.LOG_DB) as cx:
         prior = _ce.erasures_for(cx, CLIENT)
     assert prior and "appointment_voice_clips" in str(prior)
+
+
+# ---- erasure deletes the message text too (Glen, 2026-10-27, sales tab) ---------------
+
+def _msg(cx, pid, text, sender="client"):
+    cx.execute("INSERT INTO appointment_proposal_messages "
+               "(proposal_id,sender,text,audio_filename,created_at) VALUES (?,?,?,?,?)",
+               (pid, sender, text, "", NOW.isoformat()))
+    cx.commit()
+
+
+def test_the_console_erasure_deletes_the_message_text(monkeypatch, tmp_path):
+    appmod = _reload(monkeypatch, tmp_path)
+    assets = appmod._PORTAL_ASSETS_DIR
+    assets.mkdir(parents=True, exist_ok=True)
+    from dashboard import person_aliases as pal
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        pal.init_tables(cx)
+        pal.add_alias(cx, "old@x.com", CLIENT, 1)
+        cx.commit()
+        mine, alias, theirs = _proposal(cx), _proposal(cx, "old@x.com"), _proposal(cx, OTHER)
+        _msg(cx, mine, "my knee hurts")
+        _msg(cx, mine, "Rae here", sender="rae")
+        _msg(cx, alias, "from my old address")
+        _msg(cx, theirs, "someone else")
+        clip = _clip(cx, assets, mine, days_ago=1)
+    client = appmod.app.test_client()
+    h = {"X-Console-Key": KEY}
+    pv = client.post("/api/console/client-erasure/preview", json={"email": CLIENT},
+                     headers=h).get_json()
+    assert pv["tables"]["appointment_messages"] == 4
+    r = client.post("/api/console/client-erasure/erase",
+                    json={"email": CLIENT, "confirm": CLIENT}, headers=h)
+    assert r.status_code == 200
+    assert r.get_json()["removed"]["appointment_messages"] == 4
+    assert r.get_json()["removed"]["appointment_voice_clips"] == 1
+    assert not (assets / clip).exists()
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        texts = [t for (t,) in cx.execute("SELECT text FROM appointment_proposal_messages")]
+        assert texts == ["someone else"]
+        # The appointments themselves stay.
+        assert cx.execute("SELECT COUNT(*) FROM appointment_proposals").fetchone()[0] == 3
+        from dashboard import client_erasure as _ce
+        assert "appointment_messages" in str(_ce.erasures_for(cx, CLIENT))
+
+
+def test_a_failed_erasure_keeps_the_message_text(monkeypatch, tmp_path):
+    appmod = _reload(monkeypatch, tmp_path)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        _msg(cx, _proposal(cx), "keep me")
+    from dashboard import client_erasure as _ce
+
+    def boom(*a, **k):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(_ce, "erase", boom)
+    appmod.app.config["PROPAGATE_EXCEPTIONS"] = False
+    r = appmod.app.test_client().post("/api/console/client-erasure/erase",
+                                      json={"email": CLIENT, "confirm": CLIENT},
+                                      headers={"X-Console-Key": KEY})
+    assert r.status_code == 500
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert [t for (t,) in cx.execute("SELECT text FROM appointment_proposal_messages")] \
+            == ["keep me"]
+
+
+def test_a_clip_that_will_not_delete_keeps_the_message_text(monkeypatch, tmp_path):
+    appmod = _reload(monkeypatch, tmp_path)
+    assets = appmod._PORTAL_ASSETS_DIR
+    assets.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        pid = _proposal(cx)
+        _msg(cx, pid, "keep me")
+        _clip(cx, assets, pid, days_ago=1)
+
+    def refuse(self, *a, **k):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    r = appmod.app.test_client().post("/api/console/client-erasure/erase",
+                                      json={"email": CLIENT, "confirm": CLIENT},
+                                      headers={"X-Console-Key": KEY})
+    assert r.status_code == 500
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cx.execute("SELECT COUNT(*) FROM appointment_proposal_messages").fetchone()[0] == 2
+
+
+def test_message_erasure_with_no_addresses_touches_nothing(tmp_path):
+    cx = _cx(tmp_path)
+    _msg(cx, _proposal(cx), "x")
+    assert ap.erase_client_messages(cx, ["", None]) == 0
+    assert ap.count_client_messages(cx, []) == 0
+    assert cx.execute("SELECT COUNT(*) FROM appointment_proposal_messages").fetchone()[0] == 1
+
+
+def test_a_failure_inside_the_real_erasure_keeps_the_message_text(monkeypatch, tmp_path):
+    """The failure comes from inside erase(), after its health-table deletes ran, so a
+    commit hidden anywhere before erase()'s own would leave the text deleted."""
+    appmod = _reload(monkeypatch, tmp_path)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        _msg(cx, _proposal(cx), "keep me")
+        cx.execute("CREATE TABLE IF NOT EXISTS intake_responses (email TEXT, answers_json TEXT)")
+        cx.execute("INSERT INTO intake_responses (email, answers_json) VALUES (?, '{}')", (CLIENT,))
+        cx.commit()
+    from dashboard import client_erasure as _ce
+
+    def boom(cx, addrs):
+        raise RuntimeError("late failure")
+
+    monkeypatch.setattr(_ce, "_purge_merge_record", boom)
+    appmod.app.config["PROPAGATE_EXCEPTIONS"] = False
+    r = appmod.app.test_client().post("/api/console/client-erasure/erase",
+                                      json={"email": CLIENT, "confirm": CLIENT},
+                                      headers={"X-Console-Key": KEY})
+    assert r.status_code == 500
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert [t for (t,) in cx.execute("SELECT text FROM appointment_proposal_messages")] \
+            == ["keep me"]
+        assert cx.execute("SELECT COUNT(*) FROM intake_responses").fetchone()[0] == 1
+
+
+def test_a_row_still_holding_a_clip_is_never_deleted_without_its_file(tmp_path):
+    cx = _cx(tmp_path)
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    pid = _proposal(cx)
+    _msg(cx, pid, "text only")
+    name = _clip(cx, assets, pid, days_ago=1)       # arrived after the clip pass
+    assert ap.erase_client_messages(cx, [CLIENT]) == 1
+    cx.commit()
+    assert cx.execute("SELECT audio_filename FROM appointment_proposal_messages"
+                      ).fetchall() == [(name,)]
+    assert ap.count_client_messages(cx, [CLIENT]) == 1
+
+
+def test_a_clip_that_arrives_mid_erasure_is_reported_not_counted(monkeypatch, tmp_path):
+    appmod = _reload(monkeypatch, tmp_path)
+    assets = appmod._PORTAL_ASSETS_DIR
+    assets.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ap.init_tables(cx)
+        pid = _proposal(cx)
+        _msg(cx, pid, "gone")
+        late = _clip(cx, assets, pid, days_ago=0)
+    # The clip pass ran before this clip existed.
+    monkeypatch.setattr(ap, "erase_client_clips", lambda cx, d, a: 0)
+    monkeypatch.setattr(ap, "count_client_clips",
+                        lambda cx, a: 0)
+    r = appmod.app.test_client().post("/api/console/client-erasure/erase",
+                                      json={"email": CLIENT, "confirm": CLIENT},
+                                      headers={"X-Console-Key": KEY})
+    j = r.get_json()
+    assert r.status_code == 200
+    assert j["appointment_messages_remaining"] == 1
+    assert j["removed"]["appointment_messages"] == 1
+    assert "appointment_messages_remaining" not in j["removed"]
+    assert j["total"] == sum(j["removed"].values())
+    assert (assets / late).exists()
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        notes = [r[0] for r in cx.execute("SELECT note FROM client_erasures")]
+    assert any("1 appointment message(s) arrived during the erasure" in (n or "")
+               for n in notes)
+
+
+def test_the_console_page_says_when_messages_remain():
+    html = (Path(__file__).resolve().parent.parent / "static" / "console-client.html").read_text()
+    assert "x.j.appointment_messages_remaining" in html
+    assert "arrived during the erasure. Run it again." in html
+    # The message is shown after the plan is redrawn, so the redraw cannot wipe it.
+    load = html[html.index("function loadErasure(after)"):html.index("function renderErasure(")]
+    assert load.index("renderErasure(d)") < load.index("erasureMsg(after ? after.t")
+    assert "loadErasure({t:" in html
+
+
+def test_an_older_mixed_case_address_is_still_erased(tmp_path):
+    cx = _cx(tmp_path)
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    pid = _proposal(cx)
+    cx.execute("UPDATE appointment_proposals SET client_email=? WHERE id=?",
+               ("  Client@X.com ", pid))
+    cx.commit()
+    _msg(cx, pid, "old row")
+    name = _clip(cx, assets, pid, days_ago=1)
+    assert ap.count_client_clips(cx, [CLIENT]) == 1
+    assert ap.erase_client_clips(cx, assets, [CLIENT]) == 1
+    assert ap.erase_client_messages(cx, [CLIENT]) == 2
+    assert not (assets / name).exists()
