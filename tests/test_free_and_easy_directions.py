@@ -108,7 +108,9 @@ def test_lowercase_and_the_and_spelling_get_the_directions(question):
                                       "Free & Easy+ dose?",
                                       "FreeandEasy dose?",
                                       "Free-&-Easy dose?",
-                                      "Free/&/Easy dose?"])
+                                      "Free/&/Easy dose?",
+                                      "free an easy dose?",
+                                      "how much free and easyi take?"])
 def test_an_everyday_phrase_gets_no_block(question):
     """Lowercase needs a product cue beside it, as for Iron Out. So does "and" in any
     casing, since "Free and Easy" is a common title (review round 1, 2026-10-28)."""
@@ -130,8 +132,9 @@ def test_the_and_spelling_is_only_for_free_and_easy():
                                       "Free&Easy dose?",
                                       "Free + Easy dose?"])
 def test_known_gaps_get_no_block(question):
-    """"directions" after a name is not a product cue for any product. Listed in the PR,
-    not widened here. A change that closes one fails this."""
+    """"directions" is not a product cue for any product, before or after the name, and
+    the name pattern needs spaces round "&". Listed in the PR, not widened here. A change
+    that closes one fails this."""
     assert "### Free & Easy" not in app.named_product_facts_block(question)
 
 
