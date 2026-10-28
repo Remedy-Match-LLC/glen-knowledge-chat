@@ -3951,5 +3951,65 @@
     ],
     "warning": "Not for use in pregnancy or while breastfeeding. If you are under medical treatment, consult your physician before use.",
     "chat_caution": true
+  },
+  "crystalline-clarity": {
+    "ingredients": [
+      {
+        "name": "Zinc (as zinc L-carnosine, 109 mg)",
+        "dose": "25 mg",
+        "page_slug": "zinc-carnosine"
+      },
+      {
+        "name": "Copper (as copper glycinate)",
+        "dose": "2 mg",
+        "page_slug": "copper-glycinate"
+      },
+      {
+        "name": "Chromium (as chromium polynicotinate)",
+        "dose": "198 mcg",
+        "page_slug": "chromium-polynicotinate"
+      },
+      {
+        "name": "Rosemary carnosic acid 90% (Salvia rosmarinus) (leaf)",
+        "dose": "100 mg",
+        "page_slug": "carnosic-acid"
+      },
+      {
+        "name": "Chinese skullcap baicalein 98% (Scutellaria baicalensis) (root)",
+        "dose": "100 mg",
+        "page_slug": "baicalein"
+      },
+      {
+        "name": "Scholar tree quercetin dihydrate (Sophora japonica) (flower)",
+        "dose": "57.5 mg",
+        "page_slug": "quercetin-dihydrate-sophora-japonica"
+      },
+      {
+        "name": "L-ergothioneine 98%",
+        "dose": "25 mg",
+        "page_slug": "ergothioneine"
+      },
+      {
+        "name": "R-lipoic acid (as stabilized sodium R-lipoate)",
+        "dose": "10 mg",
+        "page_slug": "r-lipoic-acid"
+      }
+    ],
+    "ingredients_source": "FileMaker 314, batch CC-20261027-40, label 2026-10-25",
+    "description": "Our Crystalline Clarity formula is supplied in organic Pullulan vegetarian capsules.\n\nWe use no unwanted excipients in order to achieve optimum bioavailability and health effects.",
+    "directions": "Take 1 capsule daily with food, or as guided.",
+    "warning": "If you are pregnant or breastfeeding, or giving it to a child, use it only on your practitioner's advice. Take it at least two hours before or six hours after antibiotics. Take it four hours apart from thyroid medicine. Consult your practitioner before use if you take prescription medications, especially blood sugar or blood thinning medicines. Also consult first if you have liver disease or Wilson's disease, or are planning surgery. Each capsule supplies 25 mg of zinc, so adults should keep total zinc from all sources under 40 mg a day. Stop use and consult your practitioner if you notice yellowing of the skin or eyes, or dark urine.",
+    "chat_caution": true,
+    "intro": "Crystalline Clarity supplies a broad range of nutrients and botanical extracts to support and activate pathways related to crystalline lens health and clarity.",
+    "panel_note": "Other ingredients: certified organic pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps. Vegan. No added fillers or excipients.",
+    "copy_pinned": [
+      "intro",
+      "description",
+      "directions",
+      "research",
+      "ingredients"
+    ],
+    "content_since": "2026-10-28T00:00:00+00:00",
+    "note": "Glen 2026-10-28, formulation tab: \"yes\" to the store text and caution; marketing tab: \"No added fillers or excipients\". Glen 2026-10-28, platform tab: \"yes\" to writing it to the catalogue (formulation spec production/05 Formulations/crystalline-clarity/2026-10-28/app-spec.md). Batch CC-20261027-40 bottled 2026-10-28. Every field is here because apply_enrichment.main() would restore the old scraped description, which names selenium."
   }
 }
