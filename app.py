@@ -2947,6 +2947,13 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                 ings.append(line + (f". Role: {role}" if role else ""))
             if ings:
                 parts.append("Ingredients from the label:\n" + "\n".join(ings))
+                # Glen, 2026-10-28: the approved panel is the whole formula. Read-back of
+                # Crystalline Clarity: retrieved old-formula text made the bot say "yes,
+                # 86 mcg of selenium" in 3 of 3 tries, though the panel has none.
+                parts.append(
+                    f"This is the complete current formula of {name}. It overrides any "
+                    f"other source, including the reference text above. An ingredient not "
+                    f"on this list is not in {name}, so answer no.")
                 if roles:
                     parts.append(
                         f"Ingredient roles for {name}: when you say what an ingredient in "
