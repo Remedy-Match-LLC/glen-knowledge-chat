@@ -85,16 +85,22 @@ def test_staff_clips_expire_too(tmp_path):
     assert not (assets / name).exists()
 
 
-def test_a_missing_file_still_clears_the_row(tmp_path):
+def test_a_missing_file_keeps_its_row(tmp_path):
+    # A missing file looks the same as a wrong folder, so its row is never cleared.
     cx = _cx(tmp_path)
     assets = tmp_path / "assets"
     assets.mkdir()
     pid = _proposal(cx)
     name = _clip(cx, assets, pid, days_ago=100)
+    other = _clip(cx, assets, pid, days_ago=110, name=f"appt-{pid}-{'d' * 24}.webm")
     (assets / name).unlink()
     assert ap.expire_clips(cx, assets, now=NOW) == 1
-    assert cx.execute("SELECT audio_filename FROM appointment_proposal_messages"
-                      ).fetchone()[0] == ""
+    assert sorted(r[0] for r in cx.execute(
+        "SELECT audio_filename FROM appointment_proposal_messages")) == ["", name]
+    assert not (assets / other).exists()
+    # Erasure is the client's own request: a row whose file is gone must not block it.
+    assert ap.erase_client_clips(cx, assets, [CLIENT]) == 1
+    assert ap.count_client_clips(cx, [CLIENT]) == 0
 
 
 def test_a_name_this_code_did_not_write_is_never_deleted(tmp_path):
@@ -331,10 +337,19 @@ def test_the_daily_job_is_scheduled():
     calls = [c for c in ast.walk(fn) if isinstance(c, ast.Call)
              and getattr(c.func, "attr", "") == "add_job" and c.args
              and getattr(c.args[0], "id", "") == "_expire_appointment_clips"]
-    assert len(calls) == 1
-    kw = {k.arg: getattr(k.value, "value", None) for k in calls[0].keywords}
-    assert calls[0].args[1].value == "cron"
+    assert len(calls) == 2
+    by_kind = {c.args[1].value: c for c in calls}
+    kw = {k.arg: getattr(k.value, "value", None) for k in by_kind["cron"].keywords}
     assert kw["hour"] == 14 and kw["minute"] == 0
+    # A boot run too, so a deploy over 14:00 does not skip a day.
+    boot = {k.arg: k.value for k in by_kind["date"].keywords}
+    assert ast.unparse(boot["run_date"]) == \
+        "datetime.now(timezone.utc) + timedelta(minutes=10)"
+    assert set(boot) == {"id", "run_date"} and len(by_kind["date"].args) == 2
+    # A repeated id makes scheduler.start() raise, which stops every job in the app.
+    ids = [k.value.value for c in ast.walk(fn) if isinstance(c, ast.Call)
+           and getattr(c.func, "attr", "") == "add_job" for k in c.keywords if k.arg == "id"]
+    assert len(ids) == len(set(ids)), sorted(i for i in ids if ids.count(i) > 1)
 
 
 import pytest
@@ -630,3 +645,61 @@ def test_an_older_mixed_case_address_is_still_erased(tmp_path):
     assert ap.erase_client_clips(cx, assets, [CLIENT]) == 1
     assert ap.erase_client_messages(cx, [CLIENT]) == 2
     assert not (assets / name).exists()
+
+
+# ---- sales review, 2026-10-27: a wrong folder, and a clip left without a row ----------
+
+def test_a_missing_assets_folder_clears_no_row(tmp_path, capsys):
+    cx = _cx(tmp_path)
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    pid = _proposal(cx)
+    name = _clip(cx, assets, pid, days_ago=120)
+    gone = tmp_path / "not-here"
+    assert ap.expire_clips(cx, gone, now=NOW) == 0
+    assert "assets folder missing, nothing expired" in capsys.readouterr().out
+    # Erasure clears rows whose file is gone, so only the folder check saves this one.
+    assert ap.erase_client_clips(cx, gone, [CLIENT]) == 0
+    assert cx.execute("SELECT audio_filename FROM appointment_proposal_messages"
+                      ).fetchone()[0] == name
+
+
+def test_a_wrong_folder_clears_no_row_and_leaves_the_real_files(tmp_path):
+    cx = _cx(tmp_path)
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    pid = _proposal(cx)
+    a = _clip(cx, assets, pid, days_ago=120, name=f"appt-{pid}-{'a' * 24}.webm")
+    b = _clip(cx, assets, pid, days_ago=100, name=f"appt-{pid}-{'b' * 24}.webm")
+    wrong = tmp_path / "empty"
+    wrong.mkdir()
+    (wrong / a).write_bytes(b"copy")          # a partly filled wrong folder
+    # The daily job cannot tell a wrong folder from the right one. It deletes what is
+    # there and keeps every row whose file is not.
+    assert ap.expire_clips(cx, wrong, now=NOW) == 1
+    rows = sorted(r[0] for r in cx.execute(
+        "SELECT audio_filename FROM appointment_proposal_messages"))
+    assert rows == ["", b]                    # only the copy that was there went
+    assert (assets / a).exists() and (assets / b).exists()
+
+
+def test_a_clip_whose_row_fails_to_save_is_deleted(monkeypatch, tmp_path):
+    appmod = _reload(monkeypatch, tmp_path)
+    assets = appmod._PORTAL_ASSETS_DIR
+    assets.mkdir(parents=True, exist_ok=True)
+    name = "appt-1-" + "c" * 24 + ".webm"
+    (assets / name).write_bytes(b"audio")
+
+    def boom(*a, **k):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(ap, "add_message", boom)
+    with pytest.raises(RuntimeError):
+        appmod._add_appointment_message(None, 1, "client", "", name)
+    assert not (assets / name).exists()
+
+
+def test_both_message_routes_save_through_the_cleanup():
+    src = (Path(__file__).resolve().parent.parent / "app.py").read_text()
+    assert src.count('_add_appointment_message(cx, proposal_id, "client",') == 1
+    assert src.count("_add_appointment_message(cx, proposal_id, actor,") == 1
+    assert src.count("_ap.add_message(") == 1        # only inside the cleanup helper

@@ -168,11 +168,16 @@ def _parse_ts(ts):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-def _delete_clip(cx, assets_dir, message_id, proposal_id, name, *, expired=False):
+def _delete_clip(cx, assets_dir, message_id, proposal_id, name, *, expired=False,
+                 missing_ok=False):
     """Remove one clip's file, then clear its row and commit. Returns True when the clip
-    is gone. A name this code did not write for this proposal, or a file that will not
-    delete, leaves the row as it is and is logged, so the clip stays visible rather than
-    silently orphaned."""
+    is gone. A name this code did not write for this proposal, a file that will not
+    delete, or a file that is not there, leaves the row as it is and is logged, so the
+    clip stays visible rather than silently orphaned. A missing file keeps its row
+    because a missing or wrong folder looks the same, and clearing the row would lose
+    the only pointer to the real file (sales review, 2026-10-27). Erasure passes
+    missing_ok: the client asked for removal, and a row kept there would block their
+    erasure for good."""
     m = _CLIP_NAME.match(name or "")
     if not m or int(m.group(1)) != int(proposal_id):
         print(f"[appt-clips] message {message_id}: unexpected file name, left in place",
@@ -181,7 +186,11 @@ def _delete_clip(cx, assets_dir, message_id, proposal_id, name, *, expired=False
     try:
         (Path(assets_dir) / name).unlink()
     except FileNotFoundError:
-        pass                      # already gone: the row still needs clearing
+        if not missing_ok:
+            print(f"[appt-clips] message {message_id}: file not found, row kept", flush=True)
+            return False
+        print(f"[appt-clips] message {message_id}: file not found, row cleared for erasure",
+              flush=True)
     except OSError as e:
         print(f"[appt-clips] message {message_id}: delete failed: {e!r}", flush=True)
         return False
@@ -200,7 +209,12 @@ def expire_clips(cx, assets_dir, *, now=None, keep_days=CLIP_KEEP_DAYS):
     cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=keep_days)
     rows = cx.execute("SELECT id, proposal_id, audio_filename, created_at "
                       "FROM appointment_proposal_messages WHERE audio_filename<>''").fetchall()
-    n = 0
+    if not Path(assets_dir).is_dir():
+        # A missing or mis-pointed folder would make every file look already gone, and
+        # each row would be cleared while the real file survives somewhere else.
+        print(f"[appt-clips] assets folder missing, nothing expired", flush=True)
+        return 0
+    due = []
     for mid, pid, name, created in rows:
         sent = _parse_ts(created)
         if sent is None:
@@ -214,8 +228,10 @@ def expire_clips(cx, assets_dir, *, now=None, keep_days=CLIP_KEEP_DAYS):
         if sent is None:
             print(f"[appt-clips] message {mid}: no readable date, left in place", flush=True)
             continue
-        if sent <= cutoff and _delete_clip(cx, assets_dir, mid, pid, name, expired=True):
-            n += 1
+        if sent <= cutoff:
+            due.append((mid, pid, name))
+    n = sum(1 for mid, pid, name in due
+            if _delete_clip(cx, assets_dir, mid, pid, name, expired=True))
     cx.commit()
     return n
 
@@ -240,8 +256,11 @@ def erase_client_clips(cx, assets_dir, addresses):
     """Client erasure: delete every clip on this client's appointment threads, sent by
     either side. Returns how many went. Callers check count_client_clips afterwards: a
     clip that would not delete must stop the erasure from reporting success."""
+    if not Path(assets_dir).is_dir():
+        print("[appt-clips] assets folder missing, no clip erased", flush=True)
+        return 0
     return sum(1 for mid, pid, name in _client_clip_rows(cx, addresses)
-               if _delete_clip(cx, assets_dir, mid, pid, name))
+               if _delete_clip(cx, assets_dir, mid, pid, name, missing_ok=True))
 
 
 # Glen, 2026-10-27 (sales tab): client erasure deletes the text of the client's
