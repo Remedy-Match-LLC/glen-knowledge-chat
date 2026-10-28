@@ -4442,7 +4442,8 @@ function fiveVoiceRenderResult(result){
 function fiveVoiceResetControls(){
   const start = document.getElementById("fiveVoiceRecord");
   const stop = document.getElementById("fiveVoiceStop");
-  if(start){ start.hidden = false; start.disabled = false; start.textContent = "Record again"; }
+  const agreed = !!(document.getElementById("fiveVoiceConsent") || {}).checked;
+  if(start){ start.hidden = false; start.disabled = !agreed; start.textContent = "Record again"; }
   if(stop){ stop.hidden = true; stop.disabled = false; }
   if(_fiveVoiceTimerId){ clearInterval(_fiveVoiceTimerId); _fiveVoiceTimerId = null; }
   if(_fiveVoiceStream){ _fiveVoiceStream.getTracks().forEach(track=>track.stop()); _fiveVoiceStream = null; }
@@ -4471,6 +4472,51 @@ async function fiveVoiceSubmit(blob, duration){
     if(stop) stop.textContent = "Finish & analyze";
     fiveVoiceResetControls();
   }
+}
+
+// Glen, 2026-10-27: the recorder stays off until the client ticks the opt-in box.
+// The server refuses the analysis without it too. Unticking deletes the kept pattern.
+function initFiveVoiceConsent(agreed){
+  const box = document.getElementById("fiveVoiceConsent");
+  const start = document.getElementById("fiveVoiceRecord");
+  if(!box || box.dataset.ready) return;
+  box.dataset.ready = "1";
+  box.checked = agreed;
+  if(start) start.disabled = !agreed;
+  box.addEventListener("change", async ()=>{
+    const want = box.checked;
+    box.disabled = true;
+    if(start) start.disabled = true;
+    try{
+      const response = await fetch(`/api/portal/${encodeURIComponent(seg)}/five-element-voice/consent`, {
+        method:"POST", credentials:"same-origin",
+        headers:{"Content-Type":"application/json"}, body:JSON.stringify({agree:want})
+      });
+      const result = await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(result.error || "Your choice could not be saved. Please try again.");
+      if(!want){
+        const host = document.getElementById("fiveVoiceResult");
+        if(host) host.innerHTML = "";
+      }
+      fiveVoiceSetStatus("", false);
+    }catch(error){
+      // A lost response does not mean the choice was not saved: ask the server.
+      let saved = !want;
+      try{
+        const check = await fetch(`/api/portal/${encodeURIComponent(seg)}/five-element-voice/consent`, {credentials:"same-origin"});
+        if(check.ok) saved = !!(await check.json()).agreed;
+      }catch(e){}
+      box.checked = saved;
+      if(!saved){
+        const host = document.getElementById("fiveVoiceResult");
+        if(host) host.innerHTML = "";
+      }
+      if(saved !== want) fiveVoiceSetStatus(error.message || "Your choice could not be saved. Please try again.", true);
+    }finally{
+      box.disabled = false;
+      if(start) start.disabled = !box.checked;
+    }
+  });
 }
 
 function initFiveElementVoice(){
@@ -4880,14 +4926,25 @@ function render(d, v){
     <h2>Your Five Element Voice Analysis</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Speak naturally for about a minute about how you have been feeling. Your words, pacing, and pauses are mapped across Wood, Fire, Earth, Metal, and Water.</p>
     <p class="small"><strong>Try this:</strong> “What has been taking most of my energy lately, and how does that feel in my body?”</p>
+    <div class="muted small" id="fiveVoiceNotice">
+      <p style="margin:.3rem 0">Your audio is deleted as soon as it is analysed.</p>
+      <p style="margin:.3rem 0">When you tick the box below, we keep your five element pattern and a few measurements of how your voice sounds, such as pitch and loudness.</p>
+      <p style="margin:.3rem 0">Your portal uses them to show how your voice changes over time.</p>
+      <p style="margin:.3rem 0">These numbers cannot be played back as your voice, and we never use them to identify you.</p>
+      <p style="margin:.3rem 0">You can untick the box at any time, and we delete what we kept.</p>
+      <p style="margin:.3rem 0">This reflective wellness analysis is not a medical diagnosis.</p>
+    </div>
+    <label class="small" style="display:flex;gap:.5rem;align-items:flex-start;margin:.6rem 0">
+      <input type="checkbox" id="fiveVoiceConsent">
+      <span>I agree to the Five Element Voice Analysis and to keeping my results for future comparison.</span>
+    </label>
     <div class="five-voice-actions">
-      <button class="btn" type="button" id="fiveVoiceRecord">Start recording</button>
+      <button class="btn" type="button" id="fiveVoiceRecord" disabled>Start recording</button>
       <button class="btn secondary" type="button" id="fiveVoiceStop" hidden>Finish &amp; analyze</button>
       <span class="five-voice-timer" id="fiveVoiceTimer">Up to 90 seconds</span>
     </div>
     <div class="muted small" id="fiveVoiceStatus" role="status"></div>
     <div id="fiveVoiceResult"></div>
-    <p class="muted small" style="margin-top:.8rem">Your audio is deleted after transcription. This reflective wellness analysis is not a medical diagnosis.</p>
   </div>`;
   if (_hub) { _voiceHtml += _fiveVoiceCard; } else { part(null, _fiveVoiceCard); }
 
@@ -6196,7 +6253,8 @@ function render(d, v){
   initOnboardingCard();
   fillTimeZoneCard();
   initFiveElementVoice();
-  if(d.element_state && d.element_state.source === "portal_voice" && d.element_state.element_scores){
+  initFiveVoiceConsent(!!d.five_voice_consent);
+  if(d.five_voice_consent && d.element_state && d.element_state.source === "portal_voice" && d.element_state.element_scores){
     fiveVoiceRenderResult({
       element_scores:d.element_state.element_scores,
       dominant_element:d.element_state.dominant_element,

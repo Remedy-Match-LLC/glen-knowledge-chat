@@ -33,6 +33,9 @@ def _seed_portal(tmp_db):
 def test_voice_analysis_is_token_scoped_and_persists_member_state(monkeypatch, tmp_db):
     app = _app(monkeypatch, tmp_db)
     token = _seed_portal(tmp_db)
+    from dashboard import voice_consent
+    with sqlite3.connect(str(tmp_db)) as cx:
+        voice_consent.agree(cx, "voice@example.com")
     import journal_blueprint
     from dashboard import tcm_analysis
 
@@ -92,6 +95,9 @@ def test_voice_analysis_rejects_bad_token_before_processing_audio(monkeypatch, t
 def test_voice_analysis_rejects_invalid_duration(monkeypatch, tmp_db):
     app = _app(monkeypatch, tmp_db)
     token = _seed_portal(tmp_db)
+    from dashboard import voice_consent
+    with sqlite3.connect(str(tmp_db)) as cx:
+        voice_consent.agree(cx, "voice@example.com")
     response = app.app.test_client().post(
         f"/api/portal/{token}/five-element-voice",
         data={"duration_seconds": "forever", "audio": (io.BytesIO(b"x"), "voice.webm")},
