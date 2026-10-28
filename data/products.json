@@ -763,47 +763,59 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Paeoniflorin",
-     "dose": "159 mg"
+     "name": "Peony extract (Paeonia albiflora), standardized to 50% paeoniflorin",
+     "dose": "159 mg",
+     "page_slug": "paeoniflorin"
     },
     {
-     "name": "Fu Ling, Hoelen (from Dutch trade with Japan)",
-     "dose": "127 mg"
+     "name": "Poria (Fu Ling) extract (Poria cocos), 50% polysaccharides",
+     "dose": "127 mg",
+     "page_slug": "fu-ling-hoelen-from-dutch-trade-with-jap"
     },
     {
-     "name": "Atractylodes macrocephala 30:1 Rhizoma Atractylodis large-headed atractylodes, white atractylodes",
-     "dose": "8 mg"
+     "name": "Atractylodes extract 30:1 (Atractylodes macrocephala)",
+     "dose": "8 mg",
+     "page_slug": "atractylodes-macrocephala-30-1-rhizoma-a"
     },
     {
-     "name": "Crocin 45% (Gardenia jasminoides)",
-     "dose": "48 mg"
+     "name": "Gardenia extract (Gardenia jasminoides), standardized to 45% crocin",
+     "dose": "48 mg",
+     "page_slug": "crocin-45-gardenia-jasminoides"
     },
     {
-     "name": "Saikosaponin 50% (Bupleurum chinense)",
-     "dose": "9.5 mg"
+     "name": "Bupleurum extract (Bupleurum chinense), standardized to 50% saikosaponins",
+     "dose": "9.5 mg",
+     "page_slug": "saikosaponin-50-bupleurum-chinense"
     },
     {
-     "name": "Ashitaba",
-     "dose": "24 mg"
+     "name": "Ashitaba extract 20:1 (Angelica keiskei)",
+     "dose": "24 mg",
+     "page_slug": "ashitaba"
     },
     {
-     "name": "Gingerols",
-     "dose": "12.7 mg"
+     "name": "Ginger extract (Zingiber officinale), standardized to 10% gingerols",
+     "dose": "12.7 mg",
+     "page_slug": "gingerols"
     },
     {
-     "name": "total acid (Glycyrrhizic acid, Glycyrrhizinic acid)",
-     "dose": "9.5 mg"
+     "name": "Licorice (Glycyrrhiza glabra), 5% total acids",
+     "dose": "9.5 mg",
+     "page_slug": "total-acid-glycyrrhizic-acid-glycyrrhizi"
     },
     {
-     "name": "Peppermint",
-     "dose": "4.8 mg"
+     "name": "Peppermint extract 10:1 (Mentha piperita)",
+     "dose": "4.8 mg",
+     "page_slug": "peppermint"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25; crocin from gardenia, FileMaker 470 run 44 (Glen, 2026-10-26)",
+   "ingredients_source": "FileMaker 470 run 44; names per store spec production/05 Formulations/free-and-easy/2026-10-27 (Glen 2026-10-27)",
    "description": "Free &amp; Easy . Price: $70.",
    "bottle_type": "30 Caps",
    "fmp_id": "470",
-   "content_since": "2026-10-26T22:25:00+00:00"
+   "content_since": "2026-10-26T22:25:00+00:00",
+   "directions": "Take 1 capsule daily with dinner or an evening snack, or as guided.",
+   "warning": "Not for use in pregnancy or while breastfeeding. If you are under medical treatment, consult your physician before use.",
+   "chat_caution": true
   },
   "gastrozyme": {
    "name": "GastroZyme",
