@@ -190,8 +190,103 @@ def test_a_messy_primary_still_links_its_other_members(logdb):
     assert household.household_emails(logdb, KID) == {STEVE, MICHAEL, KID}
 
 
-def test_an_order_stored_with_a_messy_email_still_earns(logdb):
+def test_an_order_stored_with_capitals_still_earns(logdb):
     _link(logdb, STEVE, MICHAEL)
     _paid_biofield(logdb, STEVE)
-    _order(logdb, " Michael@Example.com ", SLUG)
+    _order(logdb, "Michael@Example.com", SLUG)
     assert SLUG in _earned(logdb, STEVE)
+
+
+@pytest.mark.parametrize("pay_status,status", [("paid", "confirmed"), ("unpaid", "shipped"),
+                                               ("unpaid", "delivered"), ("unpaid", "done")])
+def test_a_paid_or_fulfilled_order_earns(logdb, pay_status, status):
+    _link(logdb, STEVE, MICHAEL)
+    _paid_biofield(logdb, STEVE)
+    _order(logdb, MICHAEL, SLUG, pay_status=pay_status, status=status)
+    assert SLUG in _earned(logdb, STEVE)
+
+
+@pytest.mark.parametrize("pay_status,status", [("paid", "cancelled"), ("paid", "canceled"),
+                                               ("paid", "refunded"), ("refunded", "done")])
+def test_a_cancelled_or_refunded_order_earns_nothing(logdb, pay_status, status):
+    """It bought nothing (review round 2). Prod held 3 paid, cancelled orders."""
+    _link(logdb, STEVE, MICHAEL)
+    _paid_biofield(logdb, STEVE)
+    _order(logdb, MICHAEL, SLUG, pay_status=pay_status, status=status)
+    assert _earned(logdb, STEVE) == set()
+
+
+def test_a_failed_household_lookup_keeps_the_buyers_own_history(logdb, monkeypatch):
+    _link(logdb, STEVE, MICHAEL)
+    _paid_biofield(logdb, STEVE)
+    _order(logdb, STEVE, SLUG)
+    _order(logdb, MICHAEL, "microbiome")
+
+    def boom(*a, **k):
+        raise RuntimeError("household table unreadable")
+    monkeypatch.setattr(household, "household_emails", boom)
+    assert _earned(logdb, STEVE) == {SLUG}
+
+
+def test_the_household_lookup_leaves_the_callers_connection_alone(logdb, monkeypatch):
+    """Postgres aborts a transaction on a failed read, and apply-plan saves on cx."""
+    seen = []
+    real = household.household_emails
+    monkeypatch.setattr(household, "household_emails",
+                        lambda cx, e: (seen.append(cx), real(cx, e))[1])
+    _link(logdb, STEVE, MICHAEL)
+    _paid_biofield(logdb, STEVE)
+    _earned(logdb, STEVE)
+    assert seen and all(c is not logdb for c in seen)
+
+
+def test_any_other_failure_earns_nothing(logdb, monkeypatch):
+    _link(logdb, STEVE, MICHAEL)
+    _order(logdb, STEVE, SLUG)
+
+    def boom(e):
+        raise RuntimeError("biofield store unreadable")
+    monkeypatch.setattr(app_mod, "_has_paid_biofield", boom)
+    assert _earned(logdb, STEVE) == set()
+
+
+def test_a_member_with_spaces_still_links(logdb):
+    logdb.execute("INSERT INTO household_members(primary_email, member_email, relationship) "
+                  "VALUES(?, ?, 'partner')", (STEVE, " michael@example.com "))
+    logdb.commit()
+    assert household.household_emails(logdb, MICHAEL) == {STEVE, MICHAEL}
+
+
+def test_a_blank_member_row_never_matches_blank_email_orders(logdb):
+    logdb.execute("INSERT INTO household_members(primary_email, member_email, relationship) "
+                  "VALUES(?, '  ', 'partner')", (STEVE,))
+    logdb.commit()
+    _paid_biofield(logdb, STEVE)
+    _order(logdb, "", SLUG)
+    assert household.household_emails(logdb, STEVE) == {STEVE}
+    assert _earned(logdb, STEVE) == set()
+
+
+def test_the_preview_normalises_the_email_for_the_repertoire(logdb, monkeypatch):
+    lines = [{"slug": SLUG, "qty": 1}]
+    monkeypatch.setattr(app_mod, "_resolve_repertoire_slugs",
+                        lambda email: {SLUG} if email == OUTSIDER else None)
+    assert _preview(" Outsider@Example.com ", lines) == _preview(OUTSIDER, lines)
+
+
+def test_no_loyalty_when_cohort_pricing_is_off(logdb, monkeypatch):
+    _link(logdb, STEVE, MICHAEL)
+    _paid_biofield(logdb, STEVE)
+    _order(logdb, MICHAEL, SLUG)
+    monkeypatch.delenv("COHORT_PRICING_ENABLED")
+    assert _preview(STEVE, [{"slug": SLUG, "qty": 1}])[SLUG] > LOYALTY_CENTS
+
+
+def test_a_failed_client_price_lookup_is_logged_not_fatal(logdb, monkeypatch, capsys):
+    from dashboard import client_prices
+
+    def boom(*a, **k):
+        raise RuntimeError("client prices unreadable")
+    monkeypatch.setattr(client_prices, "price_map", boom)
+    _preview(STEVE, [{"slug": SLUG, "qty": 1}])
+    assert "[price-preview] client-price lookup skipped" in capsys.readouterr().out

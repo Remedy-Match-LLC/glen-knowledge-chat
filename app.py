@@ -60815,19 +60815,28 @@ def _earned_reorder_slugs(cx, email):
         return set()
     try:
         emails = {email}
+        # Its own connection and no table set-up: a failed read on Postgres would abort
+        # the caller's transaction (apply-plan saves on cx), and set-up on every price
+        # check re-runs the cc backfill (review rounds 1 and 2).
         try:
             from dashboard import household as _hh
-            _hh.init_household_tables(cx)
-            emails = _hh.household_emails(cx, email) or {email}
+            _hcx = db.connect(LOG_DB)
+            try:
+                emails = _hh.household_emails(_hcx, email) or {email}
+            finally:
+                _hcx.close()
         except Exception as _he:
             print(f"[reorder-loyalty] household lookup skipped: {_he!r}", flush=True)
         if not any(_has_paid_biofield(e) for e in sorted(emails)):
             return set()
         earned = set()
         _ph = ",".join("?" * len(emails))
+        # A cancelled or refunded order bought nothing (review round 2).
         for r in cx.execute(
-                f"SELECT items_json FROM orders WHERE lower(trim(email)) IN ({_ph}) AND "
-                "(pay_status='paid' OR status IN ('shipped','delivered','done'))",
+                f"SELECT items_json FROM orders WHERE lower(email) IN ({_ph}) AND "
+                "(pay_status='paid' OR status IN ('shipped','delivered','done')) AND "
+                "lower(coalesce(status,'')) NOT IN ('cancelled','canceled','refunded') AND "
+                "lower(coalesce(pay_status,'')) <> 'refunded'",
                 tuple(sorted(emails))).fetchall():
             try:
                 items = json.loads((r["items_json"] if isinstance(r, _sqlite3.Row) else r[0]) or "[]")
