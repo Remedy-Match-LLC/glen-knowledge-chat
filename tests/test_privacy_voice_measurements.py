@@ -16,10 +16,16 @@ SENTENCES = [
     "We never use these measurements to identify you.",
 ]
 
+# Voice clips, approved by Glen on 2026-10-27. Describes PR 2160 (deleted 90 days after
+# sending). The erasure sentence is held until client erasure is switched on (Glen 10-27).
+CLIP_SENTENCES = [
+    "We delete a voice clip you attach to an appointment message 90 days after you send it.",
+]
+
 
 def _paragraphs():
     html = re.sub(r"<!--.*?-->", "", PRIVACY.read_text(), flags=re.S)
-    return re.findall(r"<p[^>]*>(.*?)</p>", html, flags=re.S)
+    return re.findall(r"<p>(.*?)</p>", html, flags=re.S)
 
 
 def test_three_sentences_each_own_paragraph_in_place():
@@ -28,10 +34,11 @@ def test_three_sentences_each_own_paragraph_in_place():
     assert paras[pay + 1] == "<strong>Voice measurements.</strong> " + SENTENCES[0]
     assert paras[pay + 2] == SENTENCES[1]
     assert paras[pay + 3] == SENTENCES[2]
-    assert paras[pay + 4].startswith("All personal information that you provide to us")
+    assert paras[pay + 4] == "<strong>Voice clips.</strong> " + CLIP_SENTENCES[0]
+    assert paras[pay + 5].startswith("All personal information that you provide to us")
 
 
 def test_heading_and_each_sentence_appear_once():
     html = re.sub(r"<!--.*?-->", "", PRIVACY.read_text(), flags=re.S)
-    for text in ["Voice measurements."] + SENTENCES:
+    for text in ["Voice measurements.", "Voice clips."] + SENTENCES + CLIP_SENTENCES:
         assert html.count(text) == 1, text
