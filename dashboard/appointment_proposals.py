@@ -29,6 +29,10 @@ def init_tables(cx):
       id INTEGER PRIMARY KEY AUTOINCREMENT, proposal_id INTEGER NOT NULL,
       sender TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', audio_filename TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL, FOREIGN KEY(proposal_id) REFERENCES appointment_proposals(id))""")
+    if not db.column_exists(cx, "appointment_proposal_messages", "clip_expired_at"):
+        # Set only by the 90-day job, so the placeholder never claims an erasure was one.
+        cx.execute("ALTER TABLE appointment_proposal_messages ADD COLUMN clip_expired_at "
+                   "TEXT NOT NULL DEFAULT ''")
     if not db.column_exists(cx, "appointment_proposals", "proposed_timezone"):
         cx.execute("ALTER TABLE appointment_proposals ADD COLUMN proposed_timezone "
                    "TEXT NOT NULL DEFAULT 'Pacific/Honolulu'")
@@ -137,9 +141,10 @@ def messages(cx, proposal_id):
                       "WHERE proposal_id=? ORDER BY id", (proposal_id,)).fetchall()
     out = [dict(row) for row in rows]
     for m in out:
-        # add_message refuses an empty message, so nothing here means the clip was deleted.
-        # Glen, 2026-10-27 via sales: show "Voice clip removed after 90 days." in its place.
-        m["clip_removed"] = not (m.get("text") or m.get("audio_filename"))
+        # Glen, 2026-10-27 via sales: where the 90-day job deleted a clip-only message's
+        # clip, show "Voice clip removed after 90 days." in place of the empty bubble.
+        m["clip_removed"] = bool(m.get("clip_expired_at")) and not (
+            m.get("text") or m.get("audio_filename"))
     return out
 
 
@@ -163,7 +168,7 @@ def _parse_ts(ts):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-def _delete_clip(cx, assets_dir, message_id, proposal_id, name):
+def _delete_clip(cx, assets_dir, message_id, proposal_id, name, *, expired=False):
     """Remove one clip's file, then clear its row and commit. Returns True when the clip
     is gone. A name this code did not write for this proposal, or a file that will not
     delete, leaves the row as it is and is logged, so the clip stays visible rather than
@@ -180,8 +185,9 @@ def _delete_clip(cx, assets_dir, message_id, proposal_id, name):
     except OSError as e:
         print(f"[appt-clips] message {message_id}: delete failed: {e!r}", flush=True)
         return False
-    cur = cx.execute("UPDATE appointment_proposal_messages SET audio_filename='' "
-                     "WHERE id=? AND audio_filename=?", (message_id, name))
+    cur = cx.execute("UPDATE appointment_proposal_messages SET audio_filename='', "
+                     "clip_expired_at=? WHERE id=? AND audio_filename=?",
+                     (_now() if expired else "", message_id, name))
     cx.commit()                   # one clip at a time: a later failure undoes none of it
     # A second worker's run finds the row already clear: gone, but not counted twice.
     return (cur.rowcount or 0) == 1
@@ -208,7 +214,7 @@ def expire_clips(cx, assets_dir, *, now=None, keep_days=CLIP_KEEP_DAYS):
         if sent is None:
             print(f"[appt-clips] message {mid}: no readable date, left in place", flush=True)
             continue
-        if sent <= cutoff and _delete_clip(cx, assets_dir, mid, pid, name):
+        if sent <= cutoff and _delete_clip(cx, assets_dir, mid, pid, name, expired=True):
             n += 1
     cx.commit()
     return n

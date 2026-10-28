@@ -44,6 +44,7 @@ def test_an_expired_clip_only_message_is_marked_removed(tmp_path):
     assert [m["clip_removed"] for m in ap.messages(cx, pid)] == [False]
     assert ap.expire_clips(cx, tmp_path / "a", now=NOW) == 1
     assert [m["clip_removed"] for m in ap.messages(cx, pid)] == [True]
+    assert ap.messages(cx, pid)[0]["clip_expired_at"]
     assert ap.list_for_client(cx, "client@x.com")[0]["messages"][0]["clip_removed"] is True
 
 
@@ -80,3 +81,41 @@ def test_both_pages_show_the_exact_words(page):
     assert f"${{m.clip_removed?`<div class=\"" in html
     i = html.index("${m.clip_removed?")
     assert TEXT in html[i:i + 120]
+
+
+def test_a_clip_erased_with_the_client_is_not_called_expired(tmp_path):
+    # An erasure that stops after the clips (a clip that will not delete, or a failure)
+    # leaves blank rows. They must not claim the 90-day job removed them.
+    cx = _cx(tmp_path)
+    (tmp_path / "a").mkdir()
+    pid = _pid(cx)
+    _clip(cx, tmp_path / "a", pid, "")
+    assert ap.erase_client_clips(cx, tmp_path / "a", ["client@x.com"]) == 1
+    (m,) = ap.messages(cx, pid)
+    assert m["audio_filename"] == "" and m["clip_removed"] is False
+
+
+def test_an_older_blank_row_is_not_called_expired(tmp_path):
+    # Before this change add_message stored "   " as a blank row.
+    cx = _cx(tmp_path)
+    pid = _pid(cx)
+    cx.execute("INSERT INTO appointment_proposal_messages "
+               "(proposal_id,sender,text,audio_filename,created_at) VALUES (?,?,?,?,?)",
+               (pid, "client", "", "", "2026-07-01T00:00:00+00:00"))
+    cx.commit()
+    assert ap.messages(cx, pid)[0]["clip_removed"] is False
+
+
+def test_the_column_is_added_to_an_existing_table(tmp_path):
+    import sqlite3
+    cx = sqlite3.connect(str(tmp_path / "old.db"))
+    cx.execute("CREATE TABLE appointment_proposal_messages (id INTEGER PRIMARY KEY "
+               "AUTOINCREMENT, proposal_id INTEGER NOT NULL, sender TEXT NOT NULL, text TEXT "
+               "NOT NULL DEFAULT '', audio_filename TEXT NOT NULL DEFAULT '', created_at TEXT "
+               "NOT NULL)")
+    cx.execute("INSERT INTO appointment_proposal_messages (proposal_id,sender,text,"
+               "audio_filename,created_at) VALUES (1,'client','hi','','x')")
+    cx.commit()
+    ap.init_tables(cx)
+    ap.init_tables(cx)
+    assert cx.execute("SELECT clip_expired_at FROM appointment_proposal_messages").fetchone() == ("",)
