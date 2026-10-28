@@ -25,7 +25,7 @@ CLIP_SENTENCES = [
 
 def _paragraphs():
     html = re.sub(r"<!--.*?-->", "", PRIVACY.read_text(), flags=re.S)
-    return re.findall(r"<p[^>]*>(.*?)</p>", html, flags=re.S)
+    return re.findall(r"<p>(.*?)</p>", html, flags=re.S)
 
 
 def test_three_sentences_each_own_paragraph_in_place():
