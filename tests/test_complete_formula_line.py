@@ -42,9 +42,15 @@ def test_every_pinned_panel_carries_it_and_no_other_block_does():
         if not block or f"### {name}" not in block:
             continue
         if "Ingredients from the label:" in block:
-            panel = block.split("Ingredients from the label:\n", 1)[1].split("\n\n", 1)[0]
-            umbrella = any(app._UMBRELLA_ROW.search(ln) for ln in panel.splitlines())
+            after = block.split("Ingredients from the label:\n", 1)[1].split("\n")
+            n_rows = next(i for i, ln in enumerate(after + [""]) if not ln.startswith("- "))
+            panel = after[:n_rows]
+            umbrella = any(app._UMBRELLA_ROW.search(ln) for ln in panel)
             assert (MARK in block) == (not umbrella), slug
+            if not umbrella:
+                assert block.count(LINE.format(n=name)) == 1, slug
+                # Directly after the panel, before anything else in the block.
+                assert after[n_rows].startswith(MARK), slug
             seen_with += not umbrella
         else:
             assert MARK not in block, slug
@@ -77,3 +83,12 @@ def test_the_capsule_is_left_to_the_description():
     block = app.named_product_facts_block("Does Crystalline Clarity contain pullulan?")
     assert "The capsule and other inactive ingredients are not on this list" in block
     assert "Pullulan" in block   # the approved description names the capsule
+
+
+def test_two_products_each_get_their_own_line():
+    block = app.named_product_facts_block(
+        "Does Estro-Clear or Crystalline Clarity contain selenium?")
+    for n in ("Estro-Clear", "Crystalline Clarity"):
+        if f"### {n}" in block and "Ingredients from the label:" in block.split(f"### {n}", 1)[1]:
+            assert block.count(LINE.format(n=n)) == 1, n
+    assert block.count(MARK) == 2
