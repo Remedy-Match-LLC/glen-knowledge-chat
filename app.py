@@ -9543,7 +9543,9 @@ def _household_repertoire_slugs(cx, email):
 
     Glen, 2026-10-28, sales tab: a household is one buyer, and "Steve has the
     household/family membership, and that will extend to his elderly father even though
-    he lives in a different house." Michael Hill had Spike Shield in his repertoire and
+    he lives in a different house." Who counts is household.pricing_household_emails:
+    caregiving links anywhere, other links and person-based households only with an
+    active Family Plan. Michael Hill had Spike Shield in his repertoire and
     Steve Fox did not, so Steve paid $63 where the household rate was $50. The buyer must
     still be a paid member: callers check that first. The household is read on its own
     connection, as _earned_reorder_slugs does, so a failed read cannot abort cx on
@@ -9554,7 +9556,7 @@ def _household_repertoire_slugs(cx, email):
         from dashboard import household as _hh
         _hcx = db.connect(LOG_DB)
         try:
-            emails = _hh.household_emails(_hcx, email) or emails
+            emails = _hh.pricing_household_emails(_hcx, email) or emails
         finally:
             _hcx.close()
     except Exception as _he:
@@ -60843,9 +60845,10 @@ def _earned_reorder_slugs(cx, email):
     Reorders of those SKUs then qualify for the loyalty rate. Best-effort; empty on
     any gap. cx.row_factory should be sqlite3.Row (caller sets it).
 
-    A household is one buyer (Glen, 2026-10-28, sales tab): anyone linked in
-    household_members counts, both ways. A paid Biofield or a purchase by any member
-    earns the price for all of them. Steve Fox paid $63 for Spike Shield that his
+    A household is one buyer (Glen, 2026-10-28, sales tab), as
+    household.pricing_household_emails defines it: caregiving links anywhere, other
+    links and person-based households only with an active Family Plan. A paid Biofield
+    or a purchase by any of them earns the price for all of them. Steve Fox paid $63 for Spike Shield that his
     partner had bought three times."""
     email = (email or "").strip().lower()
     if not email:
@@ -60859,7 +60862,7 @@ def _earned_reorder_slugs(cx, email):
             from dashboard import household as _hh
             _hcx = db.connect(LOG_DB)
             try:
-                emails = _hh.household_emails(_hcx, email) or {email}
+                emails = _hh.pricing_household_emails(_hcx, email) or {email}
             finally:
                 _hcx.close()
         except Exception as _he:

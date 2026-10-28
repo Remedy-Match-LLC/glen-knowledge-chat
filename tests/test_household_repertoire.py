@@ -20,6 +20,7 @@ from dashboard import household
 SLUG = "neuro-magnesium"
 STEVE, MICHAEL, FATHER = "steve@example.com", "michael@example.com", "father@example.com"
 OUTSIDER = "outsider@example.com"
+KIDDO = "kiddo@example.com"
 
 
 @pytest.fixture
@@ -33,6 +34,11 @@ def appmod(monkeypatch, tmp_path):
         household.init_household_tables(cx)
         appmod.repertoire.init_repertoire_table(cx)
         appmod.init_membership_tables(cx)
+        # As in prod: Steve holds an active Family Plan, so his partner link counts.
+        # It is not FAMILY_PLAN_ENABLED coverage: membership still comes from _member.
+        from dashboard import family_plan
+        family_plan.init_family_plan_table(cx)
+        family_plan.activate(cx, STEVE, next_charge_at=None, source="comp")
     return appmod
 
 
@@ -245,3 +251,19 @@ def test_the_reorder_list_shows_what_checkout_charges_and_only_own_purchases(app
     assert "spike-shield" not in rows  # Michael's purchase is never listed to Steve
     assert rows[SLUG]["in_repertoire"] is True
     assert rows[SLUG]["your_cents"] == _portal_charge_unit(appmod, STEVE) < _regular(appmod)
+
+
+def test_an_independent_link_without_a_plan_prices_alone(appmod):
+    """Glen's rule 2: a partner counts only with an active Family Plan in the household."""
+    from dashboard import family_plan
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        family_plan.set_status(cx, STEVE, "cancelled")
+        cx.commit()
+    _link(appmod, STEVE, MICHAEL)
+    _member(appmod, STEVE)
+    _rep(appmod, MICHAEL, [SLUG])
+    assert SLUG not in (appmod._resolve_repertoire_slugs(STEVE) or set())
+    assert _invoice_unit(appmod, STEVE) == _regular(appmod)
+    _link(appmod, STEVE, KIDDO, relationship="child")   # rule 1: a caregiving link counts
+    _rep(appmod, KIDDO, ["spike-shield"])
+    assert "spike-shield" in appmod._resolve_repertoire_slugs(STEVE)
