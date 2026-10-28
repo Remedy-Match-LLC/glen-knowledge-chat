@@ -120,11 +120,13 @@ def confirm(cx, proposal_id, side):
 
 
 def add_message(cx, proposal_id, sender, text="", audio_filename=""):
+    # Stripped first: a row with no text and no clip must only ever mean a deleted clip.
+    text = (text or "").strip()
     if not (text or audio_filename):
         raise ValueError("message_required")
     cx.execute("INSERT INTO appointment_proposal_messages "
                "(proposal_id,sender,text,audio_filename,created_at) VALUES (?,?,?,?,?)",
-               (proposal_id, sender, (text or "").strip(), audio_filename or "", _now()))
+               (proposal_id, sender, text, audio_filename or "", _now()))
     cx.execute("UPDATE appointment_proposals SET updated_at=? WHERE id=?", (_now(), proposal_id))
     cx.commit()
 
@@ -133,7 +135,12 @@ def messages(cx, proposal_id):
     cx.row_factory = __import__("sqlite3").Row
     rows = cx.execute("SELECT * FROM appointment_proposal_messages "
                       "WHERE proposal_id=? ORDER BY id", (proposal_id,)).fetchall()
-    return [dict(row) for row in rows]
+    out = [dict(row) for row in rows]
+    for m in out:
+        # add_message refuses an empty message, so nothing here means the clip was deleted.
+        # Glen, 2026-10-27 via sales: show "Voice clip removed after 90 days." in its place.
+        m["clip_removed"] = not (m.get("text") or m.get("audio_filename"))
+    return out
 
 
 # --- voice clips --------------------------------------------------------------------
