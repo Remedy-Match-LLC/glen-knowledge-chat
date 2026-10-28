@@ -1,0 +1,154 @@
+"""An expired clip-only appointment message shows a placeholder, to client and staff.
+
+Glen, 2026-10-27, sales tab: show exactly "Voice clip removed after 90 days." where a
+message held only a clip that the 90-day job deleted.
+"""
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+
+from dashboard import appointment_proposals as ap
+
+NOW = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+TEXT = "Voice clip removed after 90 days."
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _cx(tmp_path):
+    import sqlite3
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    ap.init_tables(cx)
+    return cx
+
+
+def _pid(cx):
+    return ap.create(cx, email="client@x.com", session_type="evox",
+                     start="2026-11-01T09:00:00", proposed_by="client")
+
+
+def _clip(cx, assets, pid, text):
+    name = f"appt-{pid}-{'a' * 24}.webm"
+    (assets / name).write_bytes(b"audio")
+    cx.execute("INSERT INTO appointment_proposal_messages "
+               "(proposal_id,sender,text,audio_filename,created_at) VALUES (?,?,?,?,?)",
+               (pid, "client", text, name, "2026-07-01T00:00:00+00:00"))
+    cx.commit()
+
+
+def test_an_expired_clip_only_message_is_marked_removed(tmp_path):
+    cx = _cx(tmp_path)
+    (tmp_path / "a").mkdir()
+    pid = _pid(cx)
+    _clip(cx, tmp_path / "a", pid, "")
+    assert [m["clip_removed"] for m in ap.messages(cx, pid)] == [False]
+    assert ap.expire_clips(cx, tmp_path / "a", now=NOW) == 1
+    assert [m["clip_removed"] for m in ap.messages(cx, pid)] == [True]
+    assert ap.messages(cx, pid)[0]["clip_expired_at"]
+    assert ap.list_for_client(cx, "client@x.com")[0]["messages"][0]["clip_removed"] is True
+
+
+def test_an_expired_clip_with_text_keeps_its_text_and_no_placeholder(tmp_path):
+    cx = _cx(tmp_path)
+    (tmp_path / "a").mkdir()
+    pid = _pid(cx)
+    _clip(cx, tmp_path / "a", pid, "see clip")
+    ap.expire_clips(cx, tmp_path / "a", now=NOW)
+    (m,) = ap.messages(cx, pid)
+    assert m["text"] == "see clip" and m["clip_removed"] is False
+
+
+def test_a_text_message_is_not_marked_removed(tmp_path):
+    cx = _cx(tmp_path)
+    pid = _pid(cx)
+    ap.add_message(cx, pid, "glen", text="hello")
+    assert ap.messages(cx, pid)[0]["clip_removed"] is False
+
+
+@pytest.mark.parametrize("text", ["", "   ", "\n\t"])
+def test_a_blank_message_is_refused(tmp_path, text):
+    # A blank row must only ever mean a deleted clip, so a blank send never lands.
+    cx = _cx(tmp_path)
+    pid = _pid(cx)
+    with pytest.raises(ValueError):
+        ap.add_message(cx, pid, "client", text=text)
+    assert ap.messages(cx, pid) == []
+
+
+@pytest.mark.parametrize("page", ["client-portal.html", "appointment-proposals.html"])
+def test_both_pages_show_the_exact_words(page):
+    html = (ROOT / "static" / page).read_text()
+    assert f"${{m.clip_removed?`<div class=\"" in html
+    i = html.index("${m.clip_removed?")
+    assert TEXT in html[i:i + 120]
+
+
+def test_a_clip_erased_with_the_client_is_not_called_expired(tmp_path):
+    # An erasure that stops after the clips (a clip that will not delete, or a failure)
+    # leaves blank rows. They must not claim the 90-day job removed them.
+    cx = _cx(tmp_path)
+    (tmp_path / "a").mkdir()
+    pid = _pid(cx)
+    _clip(cx, tmp_path / "a", pid, "")
+    assert ap.erase_client_clips(cx, tmp_path / "a", ["client@x.com"]) == 1
+    (m,) = ap.messages(cx, pid)
+    assert m["audio_filename"] == "" and m["clip_removed"] is False
+
+
+def test_an_older_blank_row_is_not_called_expired(tmp_path):
+    # Before this change add_message stored "   " as a blank row.
+    cx = _cx(tmp_path)
+    pid = _pid(cx)
+    cx.execute("INSERT INTO appointment_proposal_messages "
+               "(proposal_id,sender,text,audio_filename,created_at) VALUES (?,?,?,?,?)",
+               (pid, "client", "", "", "2026-07-01T00:00:00+00:00"))
+    cx.commit()
+    assert ap.messages(cx, pid)[0]["clip_removed"] is False
+
+
+def test_the_column_is_added_to_an_existing_table(tmp_path):
+    import sqlite3
+    cx = sqlite3.connect(str(tmp_path / "old.db"))
+    cx.execute("CREATE TABLE appointment_proposal_messages (id INTEGER PRIMARY KEY "
+               "AUTOINCREMENT, proposal_id INTEGER NOT NULL, sender TEXT NOT NULL, text TEXT "
+               "NOT NULL DEFAULT '', audio_filename TEXT NOT NULL DEFAULT '', created_at TEXT "
+               "NOT NULL)")
+    cx.execute("INSERT INTO appointment_proposal_messages (proposal_id,sender,text,"
+               "audio_filename,created_at) VALUES (1,'client','hi','','x')")
+    cx.commit()
+    ap.init_tables(cx)
+    ap.init_tables(cx)
+    assert cx.execute("SELECT clip_expired_at FROM appointment_proposal_messages").fetchone() == ("",)
+
+
+def _render_messages(page, msgs):
+    """Cut the page's own message template out and run it under node."""
+    import json
+    import shutil
+    import subprocess
+    html = (ROOT / "static" / page).read_text()
+    start = html.index("(p.messages||[]).map(m=>")
+    end = html.index(".join('')", start) + len(".join('')")
+    js = ("const esc=s=>String(s==null?'':s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;',"
+          "'>':'&gt;','\"':'&quot;'}[c]));const seg='tok';"
+          f"const p={json.dumps({'id': 7, 'messages': msgs})};"
+          f"process.stdout.write({html[start:end]});")
+    r = subprocess.run([shutil.which("node"), "-e", js], capture_output=True, text=True,
+                       timeout=30)
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None, reason="node not installed")
+@pytest.mark.parametrize("page,cls", [("client-portal.html", "appt-clip-removed"),
+                                      ("appointment-proposals.html", "clip-removed")])
+def test_each_page_renders_the_placeholder_only_where_marked(page, cls):
+    gone = {"id": 1, "sender": "client", "text": "", "audio_filename": "",
+            "clip_removed": True}
+    kept = {"id": 2, "sender": "glen", "text": "hello", "audio_filename": "",
+            "clip_removed": False}
+    out = _render_messages(page, [gone])
+    assert f'<div class="{cls}">{TEXT}</div>' in out
+    assert "hidden" not in out
+    out = _render_messages(page, [kept])
+    assert TEXT not in out and "hello" in out
