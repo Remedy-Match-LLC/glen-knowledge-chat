@@ -9,9 +9,13 @@ ingredient gets a "no".
 """
 import app
 
-LINE = ("This is the complete current formula of {n}. It overrides any other source, "
-        "including the reference text above. An ingredient not on this list is not in {n}, "
-        "so answer no.")
+LINE = ("These are all the active ingredients in the current formula of {n}. They override "
+        "any other source about what {n} contains, including the reference text above. "
+        "Asked about an ingredient that is not on this list, and is not a form or part of one "
+        "on it, say the current formula of {n} does not contain it. The capsule and other "
+        "inactive ingredients are not on this list: answer about those only from the "
+        "description.")
+MARK = "These are all the active ingredients in the current formula of"
 
 
 def _products():
@@ -38,10 +42,38 @@ def test_every_pinned_panel_carries_it_and_no_other_block_does():
         if not block or f"### {name}" not in block:
             continue
         if "Ingredients from the label:" in block:
-            assert "This is the complete current formula of" in block, slug
-            seen_with += 1
+            panel = block.split("Ingredients from the label:\n", 1)[1].split("\n\n", 1)[0]
+            umbrella = any(app._UMBRELLA_ROW.search(ln) for ln in panel.splitlines())
+            assert (MARK in block) == (not umbrella), slug
+            seen_with += not umbrella
         else:
-            assert "This is the complete current formula of" not in block, slug
+            assert MARK not in block, slug
             seen_without += 1
     assert seen_with >= 10, seen_with   # the check reached real pinned panels
     assert seen_without >= 1, seen_without
+
+
+UMBRELLA = ["curcu-guard", "lens-zyme", "vitamin-c-syntropy", "apoptogenesis", "dht-blocker",
+            "acetaldehyde-detox", "appestat", "natural-resource-az", "reverse-age",
+            "focus-neuro-magnesium-powder", "aces-eye-drops"]
+
+
+def test_a_blend_or_catch_all_panel_gets_no_line():
+    """Bioavailability Blend holds ginkgo and licorice; "Amino Acids (all)" holds glycine.
+    A "not on this list" rule would turn a true yes into a no (review round 1)."""
+    products = _products()
+    checked = 0
+    for slug in UMBRELLA:
+        name = (products.get(slug, {}).get("name") or "").strip()
+        block = app._named_product_facts(f"Does {name} contain ginkgo?") if name else ""
+        if "Ingredients from the label:" not in (block or ""):
+            continue
+        assert MARK not in block, slug
+        checked += 1
+    assert checked >= 8, checked
+
+
+def test_the_capsule_is_left_to_the_description():
+    block = app.named_product_facts_block("Does Crystalline Clarity contain pullulan?")
+    assert "The capsule and other inactive ingredients are not on this list" in block
+    assert "Pullulan" in block   # the approved description names the capsule

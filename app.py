@@ -2862,6 +2862,12 @@ def _founding_availability(slug, name):
 _FOUNDING_AVAILABILITY_CACHE = {}
 
 
+# A panel row that names a group rather than what is in it: the bot cannot say an
+# ingredient is absent from such a panel (complete-formula line, review round 1).
+_UMBRELLA_ROW = re.compile(r"\bblend\b|\(all\)|proprietary|\bcomplex\b|^- polyphenols\b",
+                           re.IGNORECASE)
+
+
 def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                          no_caution_out=None, link_cautions=(), long_form=False,
                          caution_out=None) -> str:
@@ -2949,11 +2955,18 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                 parts.append("Ingredients from the label:\n" + "\n".join(ings))
                 # Glen, 2026-10-28: the approved panel is the whole formula. Read-back of
                 # Crystalline Clarity: retrieved old-formula text made the bot say "yes,
-                # 86 mcg of selenium" in 3 of 3 tries, though the panel has none.
-                parts.append(
-                    f"This is the complete current formula of {name}. It overrides any "
-                    f"other source, including the reference text above. An ingredient not "
-                    f"on this list is not in {name}, so answer no.")
+                # 86 mcg of selenium" in 3 of 3 tries, though the panel has none. Left off
+                # a panel with a blend or catch-all row, which hides what it holds: "Does
+                # Curcu Guard contain ginkgo?" would get a false no (review round 1).
+                if not any(_UMBRELLA_ROW.search(ln) for ln in ings):
+                    parts.append(
+                        f"These are all the active ingredients in the current formula of "
+                        f"{name}. They override any other source about what {name} "
+                        f"contains, including the reference text above. Asked about an "
+                        f"ingredient that is not on this list, and is not a form or part of "
+                        f"one on it, say the current formula of {name} does not contain it. "
+                        f"The capsule and other inactive ingredients are not on this list: "
+                        f"answer about those only from the description.")
                 if roles:
                     parts.append(
                         f"Ingredient roles for {name}: when you say what an ingredient in "
