@@ -12,7 +12,9 @@ import app
 LINE = ("These are the current label ingredients and amounts for {n}. They override any "
         "other source, including the reference text above. When another source says {n} "
         "contains an ingredient that is not on this list, and is not a form, source or part of "
-        "one on it, that source describes an older formula: do not say {n} contains it.")
+        "one on it, that source describes an older formula: do not say {n} contains it. The "
+        "capsule and other inactive ingredients named in the description above are not on this "
+        "list and still hold.")
 # Pinned by hand, so a change to _UMBRELLA_ROW or the catalog shows up here (round 1).
 WITH_LINE = sorted([
     "adrenal-syntropy", "angiogenx", "angiostasis", "b17-max", "b17-syntropy", "clarity",
@@ -55,7 +57,7 @@ def test_every_pinned_panel_carries_it_and_no_other_block_does():
             after = block.split("Ingredients from the label:\n", 1)[1].split("\n")
             n_rows = next(i for i, ln in enumerate(after + [""]) if not ln.startswith("- "))
             panel = after[:n_rows]
-            umbrella = any(app._UMBRELLA_ROW.search(ln) for ln in panel)
+            umbrella = any(app._UMBRELLA_ROW.search(ln.split(". Role: ")[0]) for ln in panel)
             assert (MARK in block) == (not umbrella), slug
             if not umbrella:
                 assert block.count(LINE.format(n=name)) == 1, slug
@@ -111,3 +113,17 @@ def test_exactly_these_products_get_the_line():
     got = sorted(s for s, p in _products().items() if (p.get("name") or "").strip()
                  and MARK in (app._named_product_facts(f"What is in {p['name'].strip()}?") or ""))
     assert got == WITH_LINE
+
+
+def test_a_role_naming_a_group_does_not_make_a_catch_all(monkeypatch):
+    """Only the row name counts, never its Role text (review round 2)."""
+    slug = "estro-clear"
+    p = _products()[slug]
+    name = p["name"].strip()
+    roles = dict(p.get("ingredient_roles") or {})
+    first = next(i["name"] for i in p["ingredients"] if isinstance(i, dict) and i.get("name"))
+    roles[first] = "supports collagen in a proprietary complex blend"
+    monkeypatch.setitem(p, "ingredient_roles", roles)
+    block = app._named_product_facts(f"What is in {name}?")
+    assert "Role: supports collagen" in block
+    assert block.count(LINE.format(n=name)) == 1

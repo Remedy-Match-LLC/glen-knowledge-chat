@@ -2946,13 +2946,14 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             # block is unchanged.
             roles = product.get("ingredient_roles") if "roles" in _pinned_copy(product) else None
             roles = roles if isinstance(roles, dict) else {}
-            ings = []
+            ings, names = [], []
             for i in (_shown_ings(product.get("ingredients") or []) or []):
                 if not (isinstance(i, dict) and (i.get("name") or "").strip()):
                     continue
                 line = f"- {i['name']}" + (f": {i['dose']}" if i.get("dose") else "")
                 role = (roles.get(i["name"]) or "").strip() if isinstance(roles.get(i["name"]), str) else ""
                 ings.append(line + (f". Role: {role}" if role else ""))
+                names.append(line)
             if ings:
                 parts.append("Ingredients from the label:\n" + "\n".join(ings))
                 # Glen, 2026-10-28: the approved panel outranks old formulas. Read-back of
@@ -2960,7 +2961,9 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                 # 86 mcg of selenium" in 3 of 3 tries, though the panel has none. Left off
                 # a panel with a blend or catch-all row, which hides what it holds: "Does
                 # Curcu Guard contain ginkgo?" would get a false no (review round 1).
-                if not any(_UMBRELLA_ROW.search(ln) for ln in ings):
+                # Row name and dose only: a Role such as "supports collagen" names no group
+                # (review round 2).
+                if not any(_UMBRELLA_ROW.search(n) for n in names):
                     # It never infers absence from the list: rows name sources, not what
                     # they hold (whey can carry lactose, full-spectrum CBD trace THC,
                     # ocean minerals magnesium; review round 1 of the follow-up). It only
@@ -2971,7 +2974,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                         f"above. When another source says {name} contains an ingredient "
                         f"that is not on this list, and is not a form, source or part of one "
                         f"on it, that source describes an older formula: do not say {name} "
-                        f"contains it.")
+                        f"contains it. The capsule and other inactive ingredients named in "
+                        f"the description above are not on this list and still hold.")
                 else:
                     # A blend still states its listed amounts: they outrank an old
                     # formula's (review round 2), but absence is never inferred.
