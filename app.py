@@ -2327,11 +2327,18 @@ _YIELDS_TO_PREFIX = {"neuro-magnesium": "focus"}
 # is spelt: "Is Vitreous-Vitality safe?" and "Vitrious Vitality dose?" brought Vitality's
 # block and its caution (review rounds 1 and 3, 2026-10-26). Checked per occurrence, so a
 # later standalone "Vitality" still counts.
-_YIELDS_AFTER = {"vitality": re.compile(r"\bvitr\w*[\s/_-]*$", re.IGNORECASE)}
+_YIELDS_AFTER = {"vitality": re.compile(r"\bvitr[^\W_]*[\s/_\u2010-\u2015-]*$", re.IGNORECASE),
+                 # "Is Crystalline-Clarity safe in pregnancy?" and "Crystaline Clarity dose?"
+                 # brought Clarity's block and its caution (Crystalline Clarity review round 1,
+                 # 2026-10-28). Any word starting "cryst" but "crystals", so "vitamin C
+                 # crystals / Clarity" names Clarity (round 2). No "_" in the word, so the
+                 # lookback never crosses a joined name ("Crystalline_Clarity / Clarity").
+                 "clarity": re.compile(r"\bcryst(?!als\b)[^\W_]*[\s/_\u2010-\u2015-]*$",
+                                       re.IGNORECASE)}
 # Names a client may join with a hyphen or slash: "Is Vitreous-Vitality safe?" must still
 # bring its caution (review round 3). Not Neuro Magnesium, whose hyphenated form names
 # both of its products.
-_JOINED_NAMES = frozenset({"vitreous-vitality"})
+_JOINED_NAMES = frozenset({"vitreous-vitality", "crystalline-clarity"})
 # Names whose "&" a client may spell "and": "How do I take Free and Easy?" got no block
 # and an invented dose (formulation read-back, review round 2, 2026-10-28).
 _AND_NAMES = frozenset({"free-and-easy"})
@@ -2494,7 +2501,8 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         if not name:
             continue
         words = name.split()
-        joiner = r"(?:\s*[-/_]\s*|\s+)" if slug in _JOINED_NAMES else r"\s+"
+        # Smart punctuation types an en or em dash, and "--" for one (review round 1).
+        joiner = r"(?:\s*[-/_\u2010-\u2015]+\s*|\s+)" if slug in _JOINED_NAMES else r"\s+"
         pattern = r"(?<![\w+])" + joiner.join(re.escape(w) for w in words) + r"(?![\w+])"
         # The "and" spelling counts only beside a product cue, in any casing: "Free and
         # Easy Wandering" is Zhuangzi (review round 1, 2026-10-28).
