@@ -16,6 +16,13 @@ SENTENCES = [
     "We never use these measurements to identify you.",
 ]
 
+# Voice clips, approved by Glen on 2026-10-27. They describe PR 2160 (deleted 90 days
+# after sending) and PR 2163 (erasure deletes clips and message text).
+CLIP_SENTENCES = [
+    "We delete a voice clip you attach to an appointment message 90 days after you send it.",
+    "We also delete it, and the message text, when you ask us to erase your information.",
+]
+
 
 def _paragraphs():
     html = re.sub(r"<!--.*?-->", "", PRIVACY.read_text(), flags=re.S)
@@ -28,10 +35,12 @@ def test_three_sentences_each_own_paragraph_in_place():
     assert paras[pay + 1] == "<strong>Voice measurements.</strong> " + SENTENCES[0]
     assert paras[pay + 2] == SENTENCES[1]
     assert paras[pay + 3] == SENTENCES[2]
-    assert paras[pay + 4].startswith("All personal information that you provide to us")
+    assert paras[pay + 4] == "<strong>Voice clips.</strong> " + CLIP_SENTENCES[0]
+    assert paras[pay + 5] == CLIP_SENTENCES[1]
+    assert paras[pay + 6].startswith("All personal information that you provide to us")
 
 
 def test_heading_and_each_sentence_appear_once():
     html = re.sub(r"<!--.*?-->", "", PRIVACY.read_text(), flags=re.S)
-    for text in ["Voice measurements."] + SENTENCES:
+    for text in ["Voice measurements.", "Voice clips."] + SENTENCES + CLIP_SENTENCES:
         assert html.count(text) == 1, text
