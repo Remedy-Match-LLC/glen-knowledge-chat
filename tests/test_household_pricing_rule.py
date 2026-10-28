@@ -237,3 +237,10 @@ def test_a_blank_people_email_never_joins_or_answers(cx):
     _plan(cx, BEN)
     assert H(cx, BEN) == {BEN}
     assert H(cx, "") == set()
+
+
+def test_a_blank_primary_row_joins_no_one(cx):
+    cx.execute("INSERT INTO household_members (primary_email, member_email, relationship) "
+               "VALUES ('', ?, 'child'), ('', ?, 'child')", (KID, KID2))
+    cx.commit()
+    assert H(cx, KID) == {KID}
