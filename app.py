@@ -39706,6 +39706,21 @@ def _save_appointment_audio(file_obj, proposal_id):
     return name
 
 
+def _add_appointment_message(cx, proposal_id, sender, text, audio):
+    """Save the message row; if that fails, delete the clip just written, so no file is
+    left without a row (the 90-day job and erasure find clips only through rows)."""
+    from dashboard import appointment_proposals as _ap
+    try:
+        _ap.add_message(cx, proposal_id, sender, text, audio)
+    except Exception:
+        if audio:
+            try:
+                (_PORTAL_ASSETS_DIR / audio).unlink()
+            except OSError as e:
+                print(f"[appt-clips] orphan clip {audio} not deleted: {e!r}", flush=True)
+        raise
+
+
 def _appointment_audio_from_request(proposal_id):
     """Persist the optional appointment audio attachment, if one was selected.
 
@@ -39732,7 +39747,8 @@ def api_portal_appointment_message(token, proposal_id):
             return jsonify({"error": "not_found"}), 404
         try:
             audio = _appointment_audio_from_request(proposal_id)
-            _ap.add_message(cx, proposal_id, "client", request.form.get("text", ""), audio)
+            _add_appointment_message(cx, proposal_id, "client", request.form.get("text", ""),
+                                     audio)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify({"ok": True})
@@ -39827,7 +39843,8 @@ def api_console_appointment_message(proposal_id):
             return jsonify({"error": "not_found"}), 404
         try:
             audio = _appointment_audio_from_request(proposal_id)
-            _ap.add_message(cx, proposal_id, actor, request.form.get("text", ""), audio)
+            _add_appointment_message(cx, proposal_id, actor, request.form.get("text", ""),
+                                     audio)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify({"ok": True})
@@ -53574,6 +53591,10 @@ def _start_scheduler():
         # Appointment voice clips older than 90 days: daily at 14:00 UTC (4am HST).
         scheduler.add_job(_expire_appointment_clips, "cron", hour=14, minute=0,
                           id="appointment_clip_expiry")
+        # And once ten minutes after boot: a deploy over 14:00 would otherwise skip a day.
+        # Safe to repeat, the job deletes only what is already due.
+        scheduler.add_job(_expire_appointment_clips, "date", id="appointment_clip_expiry_boot",
+                          run_date=datetime.now(timezone.utc) + timedelta(minutes=10))
         scheduler.add_job(_drain_sales_image_queue, "interval", minutes=1, id="sales_image_gen")
         scheduler.add_job(_drain_review_videos, "interval", minutes=1, id="review_videos")
         # Portal triage: retry any high-urgency email that did not deliver. Rows are
