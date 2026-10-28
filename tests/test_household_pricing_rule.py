@@ -244,3 +244,12 @@ def test_a_blank_primary_row_joins_no_one(cx):
                "VALUES ('', ?, 'child'), ('', ?, 'child')", (KID, KID2))
     cx.commit()
     assert H(cx, KID) == {KID}
+
+
+def test_a_person_in_two_planned_groups_gets_both(cx):
+    _person(cx, ANN, "g-one", "g-two")
+    _person(cx, BEN, "g-one")
+    _person(cx, CAL, "g-two")
+    _plan(cx, BEN)
+    _plan(cx, CAL)
+    assert H(cx, ANN) == {ANN, BEN, CAL}
