@@ -1208,8 +1208,10 @@ def _send_library_ready(email, name, token, ebook_title, slug):
                 f"{url}\n\nYou can read it or listen to it right inside, whenever it suits you. "
                 f"Reply anytime with questions.\n\nWith aloha,\nDr. Glen & Rae")
         import threading
+        # bulk: never from Glen's Gmail. log_body=False: the body holds a live portal link.
         threading.Thread(target=_send_full_report_email,
                          args=(em, name, f"Your {title} is ready \U0001f33a", body),
+                         kwargs={"bulk": True, "log_body": False},
                          daemon=True).start()
     except Exception as e:
         print(f"[library-ready] {em}/{slug}: {e!r}", flush=True)
@@ -16910,7 +16912,8 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
 def _send_full_report_email(to_email: str, name: str,
                             subject: str, body: str, *,
                             respect_suppression: bool = True,
-                            log_body: bool = True):
+                            log_body: bool = True,
+                            bulk: bool = False):
     """Send the full report — tries Gmail API → SMTP → GHL/Mailgun → console log.
     Returns (sent_via, error_or_none).
 
@@ -16918,6 +16921,10 @@ def _send_full_report_email(to_email: str, name: str,
     the inbox feature (no extra SMTP_USER/PASS to manage). The GHL/Mailgun
     fallback matters when consumer Gmail hits its daily cap: without it a real
     client report (invoice/portal link) silently console-logs and never arrives.
+
+    bulk=True sends through GHL/Mailgun only, never Glen's own Gmail (API or SMTP).
+    For mail sent to strangers who typed an address into a public form: on 2026-10-29
+    those sends filled his Gmail's daily cap and drew "Message blocked" bounces.
     """
     # Suppression is for proactive mail, never user-requested authentication.
     # Callers sending a sign-in/recovery link must pass respect_suppression=False
@@ -16934,19 +16941,20 @@ def _send_full_report_email(to_email: str, name: str,
             print(f"[suppress-check] full-report skipped: {_e!r}", flush=True)
 
     # Path 1: Gmail API (preferred — reuses inbox auth)
-    try:
-        from dashboard.inbox import send_email as _gmail_send
-        _gmail_send(to_email, subject, body)
-        return ("gmail-api", None)
-    except Exception as e:
-        print(f"[full-report] Gmail API send failed: {e}", flush=True)
+    if not bulk:
+        try:
+            from dashboard.inbox import send_email as _gmail_send
+            _gmail_send(to_email, subject, body)
+            return ("gmail-api", None)
+        except Exception as e:
+            print(f"[full-report] Gmail API send failed: {e}", flush=True)
 
     # Path 2: SMTP (fallback — only if env vars set)
     smtp_host = os.environ.get("SMTP_HOST")
     smtp_user = os.environ.get("SMTP_USER")
     smtp_pass = os.environ.get("SMTP_PASS")
     smtp_from = os.environ.get("SMTP_FROM", smtp_user)
-    if smtp_host and smtp_user and smtp_pass:
+    if smtp_host and smtp_user and smtp_pass and not bulk:
         try:
             import smtplib
             from email.mime.text import MIMEText
