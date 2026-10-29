@@ -60,7 +60,7 @@ CONFIRM_HTML = ('<div style="font-family: \'arial black\', sans-serif; font-size
 
 
 # Sent at Terms time, before the chat has found any remedy (Glen, 2026-10-29: "yes" to
-# confirming then). DRAFT wording, awaiting his approval.
+# confirming then). Wording approved by Glen the same day ("yes").
 SIGNUP_CONFIRM_SUBJECT = "Confirm your email for your remedy links"
 SIGNUP_CONFIRM_TEXT = ("Aloha,\n\n"
                        "Please confirm this is your email. Then, when our chat finds a remedy "
