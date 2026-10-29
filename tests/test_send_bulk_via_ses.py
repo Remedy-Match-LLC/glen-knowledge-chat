@@ -142,3 +142,17 @@ def test_ses_own_suppression_answer_is_final(rig, monkeypatch):
     monkeypatch.setattr(es, "is_suppressed", lambda *a, **k: False)   # the earlier check missed it
     assert inbox.send_bulk("a@b.co", "s", "b") == {"skipped": "suppressed"}
     assert rig["ses"].calls == [] and rig["other"] == []
+
+
+def test_a_value_error_after_the_call_is_unknown_not_a_resend(rig):
+    rig["ses"].fail = lambda: ValueError("after-call hook")
+    r = inbox.send_bulk("a@b.co", "s", "b")
+    assert r.get("unknown") and rig["other"] == []
+
+
+def test_a_failed_suppression_check_logs_no_address(rig, monkeypatch, capsys):
+    def boom(*a, **k):
+        raise RuntimeError("row for leak.person@b.co")
+    monkeypatch.setattr(es, "is_suppressed", boom)
+    inbox.send_bulk("x@b.co", "s", "b")
+    assert "leak.person" not in capsys.readouterr().out

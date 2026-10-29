@@ -687,7 +687,7 @@ def send_bulk(to_email: str, subject: str, body: str, from_name: Optional[str] =
                 print(f"[send_bulk] suppressed, skip {to_email}", flush=True)
                 return {"skipped": "suppressed"}
     except Exception as _e:  # noqa: BLE001 — never block a send on a check failure
-        print(f"[send_bulk] suppress-check skipped: {_e!r}", flush=True)
+        print(f"[send_bulk] suppress-check skipped: {type(_e).__name__}", flush=True)
     # Amazon SES first: the replacement for GoHighLevel (Glen, 2026-10-29). SES builds
     # its own footer and one-click headers for a scoped (marketing) send, so it runs
     # before the footer below is appended.

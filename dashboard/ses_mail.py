@@ -161,9 +161,9 @@ def deliver(connect, to, subject, text, html=None, *, marketing: bool, scope: st
         return "suppressed", None
     try:
         from botocore.exceptions import ClientError, EndpointConnectionError
-        sure_not_sent = (ClientError, EndpointConnectionError, ValueError)
+        sure_not_sent = (ClientError, EndpointConnectionError)   # never ValueError: it can follow acceptance (round 2)
     except Exception:
-        sure_not_sent = (ValueError,)
+        sure_not_sent = (ImportError,)   # no SDK: nothing can have gone out
     from_addr = None
     if from_name:
         from email.utils import formataddr, parseaddr
