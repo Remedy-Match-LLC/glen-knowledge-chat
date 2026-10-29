@@ -173,7 +173,8 @@ def test_ses_off_falls_back_to_ghl(appmod, transports, ses, monkeypatch):
 def test_an_ses_failure_falls_back_to_ghl_and_never_logs_the_link(appmod, transports, ses,
                                                                   monkeypatch, capsys):
     from botocore.exceptions import ClientError
-    ses.fail = lambda raw: ClientError({"Error": {"Code": "MessageRejected", "Message": raw}},
+    ses.fail = lambda raw: ClientError({"Error": {"Code": "MessageRejected", "Message": raw},
+                                             "ResponseMetadata": {"HTTPStatusCode": 400}},
                                        "SendEmail")
     monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-9")
     assert _optin(appmod).status_code == 200
@@ -299,3 +300,20 @@ def test_a_raising_fallback_frees_the_guard_and_logs_no_link(appmod, monkeypatch
                                     "healing-glaucoma-starter")
     got = capsys.readouterr()
     assert "SECRET-LINK-7" not in got.out + got.err and _guard_rows(appmod) == 0
+
+
+def test_a_marketing_optout_still_gets_the_book_they_asked_for(appmod, transports, ses):
+    """The library mail is transactional: a marketing opt-out does not block it (round 3)."""
+    from dashboard import db, email_suppression as es
+    with db.connect(appmod.LOG_DB) as cx:
+        es.init_table(cx)
+        es.add_optout(cx, "lead@x.com", "test")
+    appmod._send_library_ready_mail("lead@x.com", "", "s", "b", "healing-glaucoma-starter")
+    assert len(ses.calls) == 1 and transports == []
+
+
+def test_a_fault_in_the_ses_helper_falls_back_to_ghl(appmod, transports, ses, monkeypatch):
+    from dashboard import ses_mail
+    monkeypatch.setattr(ses_mail, "deliver", lambda *a, **k: 1 / 0)
+    appmod._send_library_ready_mail("lead@x.com", "", "s", "b", "healing-glaucoma-starter")
+    assert transports == ["ghl"]
