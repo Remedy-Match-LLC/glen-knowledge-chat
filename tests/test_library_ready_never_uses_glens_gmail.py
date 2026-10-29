@@ -56,6 +56,27 @@ def test_other_mail_still_prefers_gmail(appmod, transports):
     assert transports == ["gmail"]
 
 
+def _now_threads(monkeypatch):
+    real = threading.Thread
+
+    class Now(real):
+        def start(self):
+            self.run()
+    monkeypatch.setattr(threading, "Thread", Now)
+
+
+def _optin(appmod, email="lead@x.com"):
+    return appmod.app.test_client().post("/api/ebook/optin", json={
+        "email": email, "ebook_slug": "healing-glaucoma-starter",
+        "source_site": "healingglaucoma.com"})
+
+
+def _guard_rows(appmod):
+    import sqlite3
+    cx = sqlite3.connect(appmod.LOG_DB)
+    return cx.execute("SELECT COUNT(*) FROM ebook_library_welcome_sent").fetchone()[0]
+
+
 def test_the_optin_sends_bulk_without_logging_the_link(appmod, monkeypatch):
     calls = []
     monkeypatch.setattr(appmod, "_send_full_report_email",
@@ -71,3 +92,30 @@ def test_the_optin_sends_bulk_without_logging_the_link(appmod, monkeypatch):
         "source_site": "healingglaucoma.com"})
     assert r.status_code == 200
     assert calls == [{"bulk": True, "log_body": False}]
+
+
+def test_a_failed_send_never_logs_the_link_and_frees_the_guard(appmod, transports,
+                                                                monkeypatch, capsys):
+    """Review round 2: run the REAL sender with GHL failing, and read the logs."""
+    from dashboard import ghl_email
+    monkeypatch.setattr(ghl_email, "send_via_ghl", lambda *a, **k: 1 / 0)
+    monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-123")
+    _now_threads(monkeypatch)
+    assert _optin(appmod).status_code == 200
+    assert "SECRET-LINK-123" not in capsys.readouterr().out
+    assert transports == []
+    assert _guard_rows(appmod) == 0          # the next opt-in tries again
+
+
+def test_a_sent_email_keeps_the_guard(appmod, transports, monkeypatch):
+    _now_threads(monkeypatch)
+    assert _optin(appmod).status_code == 200
+    assert transports == ["ghl"] and _guard_rows(appmod) == 1
+    assert _optin(appmod).status_code == 200
+    assert transports == ["ghl"]             # once per address and ebook
+
+
+def test_a_junk_address_never_reaches_ghl(appmod, transports, monkeypatch):
+    _now_threads(monkeypatch)
+    assert _optin(appmod, "someone@example.com").status_code == 200
+    assert transports == [] and _guard_rows(appmod) == 1

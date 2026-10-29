@@ -1208,13 +1208,30 @@ def _send_library_ready(email, name, token, ebook_title, slug):
                 f"{url}\n\nYou can read it or listen to it right inside, whenever it suits you. "
                 f"Reply anytime with questions.\n\nWith aloha,\nDr. Glen & Rae")
         import threading
-        # bulk: never from Glen's Gmail. log_body=False: the body holds a live portal link.
-        threading.Thread(target=_send_full_report_email,
-                         args=(em, name, f"Your {title} is ready \U0001f33a", body),
-                         kwargs={"bulk": True, "log_body": False},
+        threading.Thread(target=_send_library_ready_mail,
+                         args=(em, name, f"Your {title} is ready \U0001f33a", body, slug),
                          daemon=True).start()
     except Exception as e:
         print(f"[library-ready] {em}/{slug}: {e!r}", flush=True)
+
+
+def _send_library_ready_mail(em, name, subject, body, slug):
+    """The send behind _send_library_ready. bulk: never from Glen's Gmail. log_body=False:
+    the body holds a live portal link. A send that did not go out frees its once-guard,
+    so the lead's next opt-in tries again: GHL is now the only transport (review round 1)."""
+    via = None
+    try:
+        via, _ = _send_full_report_email(em, name, subject, body, bulk=True, log_body=False)
+    except Exception as e:
+        print(f"[library-ready] send raised: {type(e).__name__}", flush=True)
+    if via in ("ghl", "suppressed", "undeliverable"):
+        return
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.execute("DELETE FROM ebook_library_welcome_sent WHERE email=? AND ebook_slug=?",
+                       (em, slug))
+    except Exception as e:
+        print(f"[library-ready] guard release failed: {type(e).__name__}", flush=True)
 
 
 def _link_resend_generic(purpose, url_template, ttl):
@@ -16970,6 +16987,14 @@ def _send_full_report_email(to_email: str, name: str,
             return ("smtp", None)
         except Exception as e:
             print(f"[full-report] SMTP fallback also failed: {e}", flush=True)
+
+    # A bulk send skips Gmail, and with it the reserved-domain and seed-address check
+    # inbox.send_email applies. Apply it here so a typed junk address never reaches GHL.
+    if bulk:
+        from dashboard.inbox import _is_undeliverable
+        if _is_undeliverable(to_email):
+            print("[full-report] bulk skip: undeliverable address", flush=True)
+            return ("undeliverable", None)
 
     # Path 3: GHL v2 → Mailgun (fallback when Gmail is capped/unavailable). GHL refuses
     # UNSUBSCRIBED contacts, so an unsubscribed client still falls through to console-log

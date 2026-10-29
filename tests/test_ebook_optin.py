@@ -13,6 +13,8 @@ def _app(tmp_path, monkeypatch):
 
 def test_optin_provisions_portal_and_grants(tmp_path, monkeypatch):
     appmod = _app(tmp_path, monkeypatch)
+    # A send that did not go out frees its guard row, so stub a delivered one.
+    monkeypatch.setattr(appmod, "_send_full_report_email", lambda *a, **k: ("ghl", None))
     c = appmod.app.test_client()
     r = c.post("/api/ebook/optin", json={
         "email": "Lead@x.com", "ebook_slug": "healing-glaucoma-starter",
