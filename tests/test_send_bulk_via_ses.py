@@ -163,6 +163,7 @@ def test_a_failed_suppression_check_logs_no_address(rig, monkeypatch, capsys):
     lambda b: b.NoCredentialsError(),
     lambda b: b.ConnectTimeoutError(endpoint_url="https://x"),
     lambda b: b.ParamValidationError(report="bad"),
+    lambda b: b.PartialCredentialsError(provider="env", cred_var="secret"),
 ])
 def test_an_error_before_aws_saw_it_falls_back(rig, make):
     import botocore.exceptions as b
@@ -205,3 +206,15 @@ def test_a_client_error_with_no_status_is_unknown(rig):
     from botocore.exceptions import ClientError
     rig["ses"].fail = lambda: ClientError({"Error": {"Code": "InternalFailure"}}, "SendEmail")
     assert inbox.send_bulk("a@b.co", "s", "b").get("unknown") and rig["other"] == []
+
+
+def test_a_fault_in_the_ses_helper_falls_back(rig, monkeypatch):
+    monkeypatch.setattr(ses_mail, "deliver", lambda *a, **k: 1 / 0)
+    inbox.send_bulk("a@b.co", "s", "b")
+    assert rig["other"] == ["ghl"]
+
+
+def test_an_undeliverable_address_is_not_logged(rig, monkeypatch, capsys):
+    monkeypatch.setattr(inbox, "_is_undeliverable", lambda e: True)
+    assert inbox.send_bulk("hidden.two@b.co", "s", "b") == {"skipped": "undeliverable"}
+    assert "hidden.two" not in capsys.readouterr().out
