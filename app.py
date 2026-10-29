@@ -5153,6 +5153,7 @@ def begin_quiz_optin():
             cx, session_id=session_id, trigger="tos", email=email,
             first_name=first_name, tos=True, ref_slug=ref_slug,
             tos_version=BEGIN_TOS_VERSION)
+        _want_remedy_confirm(cx, email)
         begin_funnel.record_unlock(
             cx, session_id=session_id, trigger="quiz", email=email,
             detail=f"quiz:{quiz_id}", ref_slug=ref_slug)
@@ -5380,6 +5381,7 @@ def begin_fireside_optin():
             cx, session_id=session_id, trigger="tos", email=email,
             first_name=first_name, tos=True, ref_slug=ref_slug,
             tos_version=BEGIN_TOS_VERSION)
+        _want_remedy_confirm(cx, email)
         begin_funnel.record_unlock(
             cx, session_id=session_id, trigger="quiz", email=email,
             detail="fireside", ref_slug=ref_slug)
@@ -5435,6 +5437,7 @@ def begin_doorway_optin():
             cx, session_id=session_id, trigger="tos", email=email,
             first_name=first_name, tos=True, ref_slug=ref_slug,
             tos_version=BEGIN_TOS_VERSION)
+        _want_remedy_confirm(cx, email)
         begin_funnel.record_unlock(
             cx, session_id=session_id, trigger="quiz", email=email,
             detail="doorway:voice", ref_slug=ref_slug)
@@ -7159,6 +7162,8 @@ def begin_unlock():
                 tos_version=BEGIN_TOS_VERSION if (tos or trigger == "tos") else "",
                 want=want, query_texts=query_texts, path=path,
             )
+            if tos or trigger == "tos":
+                _want_remedy_confirm(cx, email)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -8048,6 +8053,28 @@ def _email_remedy_match_once(email, name, session_id, match, proven=False):
             product_name=p.get("name") or product,
             page_url=PUBLIC_BASE_URL.rstrip("/") + "/begin/product/" + p["slug"],
             proven=proven)
+
+
+def _want_remedy_confirm(cx, email):
+    """At Terms time, ask for the remedy-match confirmation link (Glen, 2026-10-29). It
+    used to wait for the chat to find a remedy, so most sign-ups never saw one. Never
+    breaks the opt-in that calls it."""
+    if not _remedy_match_email_on():
+        return
+    try:
+        from dashboard import email_suppression as _es, remedy_match_email as _rme
+        _es.init_table(cx)
+        if _es.is_suppressed(cx, (email or "").strip().lower()):
+            return
+        _rme.request_confirm(cx, email)
+    except Exception as e:
+        print(f"[remedy-match-email] confirm request skipped: {type(e).__name__}", flush=True)
+        # On Postgres a failed statement aborts the transaction, and the opt-in's next
+        # write would then fail. The Terms write before this call is already committed.
+        try:
+            cx.rollback()
+        except Exception:
+            pass
 
 
 def _remedy_match_email_on():
