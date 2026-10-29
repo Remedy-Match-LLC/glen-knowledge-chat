@@ -8050,6 +8050,12 @@ def _want_remedy_confirm(cx, email):
         _rme.request_confirm(cx, email)
     except Exception as e:
         print(f"[remedy-match-email] confirm request skipped: {type(e).__name__}", flush=True)
+        # On Postgres a failed statement aborts the transaction, and the opt-in's next
+        # write would then fail. The Terms write before this call is already committed.
+        try:
+            cx.rollback()
+        except Exception:
+            pass
 
 
 def _remedy_match_email_on():

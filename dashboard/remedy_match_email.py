@@ -28,6 +28,7 @@ QUIET_MINUTES = 30
 CAP_DAYS = 7
 CONFIRM_DAYS = 7
 CONFIRM_RESEND_HOURS = 24 * CONFIRM_DAYS     # one confirmation per address per window
+SIGNUP_CONFIRM_BATCH = 50    # Terms-time requests mailed per drain run; the rest wait
 
 # Wording: Glen, 2026-09-23. Not "remedy match": that is the free scan report's name.
 SUBJECT = "The remedy you found in our chat: {product}"
@@ -126,17 +127,23 @@ def mark_confirmed(cx, email, now=None):
     cx.commit()
 
 
-def request_confirm(cx, email):
+def request_confirm(cx, email, now=None):
     """Ask for a confirmation link for an address that just agreed to the Terms, before
     any remedy is found. The drain sends it once: a row with neither sent_at nor
-    confirmed_at is a request. A known address, confirmed or already mailed, is left
-    alone. Returns True when a request was recorded."""
+    confirmed_at is a request. A confirmed address is left alone, and so is one mailed
+    inside CONFIRM_RESEND_HOURS. One mailed before that is asked again, so a lost or
+    expired link can be replaced by signing up again (review rounds 1-2).
+    Returns True when a request was recorded."""
     email = (email or "").strip().lower()
     if "@" not in email:
         return False
     init(cx)
+    resend = _iso((now or _now()) - timedelta(hours=CONFIRM_RESEND_HOURS))
     cur = cx.execute("INSERT INTO remedy_match_email_confirm (email) VALUES (?) "
-                     "ON CONFLICT(email) DO NOTHING", (email,))
+                     "ON CONFLICT(email) DO UPDATE SET sent_at=NULL "
+                     "WHERE remedy_match_email_confirm.confirmed_at IS NULL "
+                     "AND remedy_match_email_confirm.sent_at IS NOT NULL "
+                     "AND remedy_match_email_confirm.sent_at <= ?", (email, resend))
     cx.commit()
     return (cur.rowcount or 0) == 1
 
@@ -245,7 +252,8 @@ def _confirmations(cx, send_fn, confirm_url, now):
     # A Terms-time request (request_confirm): never sent, never confirmed, no match yet.
     asked = {r["email"] for r in _rows(cx.execute(
         "SELECT email FROM remedy_match_email_confirm "
-        "WHERE confirmed_at IS NULL AND sent_at IS NULL"))}
+        "WHERE confirmed_at IS NULL AND sent_at IS NULL ORDER BY email LIMIT ?",
+        (SIGNUP_CONFIRM_BATCH,)))}
     for row in [{"email": e} for e in sorted(waiting | asked)]:
         import secrets
         token = secrets.token_urlsafe(24)
