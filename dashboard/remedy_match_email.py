@@ -58,6 +58,23 @@ CONFIRM_HTML = ('<div style="font-family: \'arial black\', sans-serif; font-size
                 "<p>Aloha,<br>Dr. Glen</p></div>")
 
 
+# Sent at Terms time, before the chat has found any remedy (Glen, 2026-10-29: "yes" to
+# confirming then). DRAFT wording, awaiting his approval.
+SIGNUP_CONFIRM_SUBJECT = "Confirm your email for your remedy links"
+SIGNUP_CONFIRM_TEXT = ("Aloha,\n\n"
+                       "Please confirm this is your email. Then, when our chat finds a remedy "
+                       "for you, I'll send you its link:\n{url}\n\n"
+                       "If you didn't sign up with us, you can ignore this message.\n\n"
+                       "Aloha,\nDr. Glen")
+SIGNUP_CONFIRM_HTML = ('<div style="font-family: \'arial black\', sans-serif; font-size: large">'
+                       "<p>Aloha,</p>"
+                       "<p>Please confirm this is your email. Then, when our chat finds a remedy "
+                       "for you, I'll send you its link.</p>"
+                       '<p><a href="{url}">Confirm my email</a></p>'
+                       "<p>If you didn't sign up with us, you can ignore this message.</p>"
+                       "<p>Aloha,<br>Dr. Glen</p></div>")
+
+
 def _now():
     return datetime.now(timezone.utc)
 
@@ -107,6 +124,21 @@ def mark_confirmed(cx, email, now=None):
                (email, stamp))
     _release(cx, now or _now(), email)
     cx.commit()
+
+
+def request_confirm(cx, email):
+    """Ask for a confirmation link for an address that just agreed to the Terms, before
+    any remedy is found. The drain sends it once: a row with neither sent_at nor
+    confirmed_at is a request. A known address, confirmed or already mailed, is left
+    alone. Returns True when a request was recorded."""
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        return False
+    init(cx)
+    cur = cx.execute("INSERT INTO remedy_match_email_confirm (email) VALUES (?) "
+                     "ON CONFLICT(email) DO NOTHING", (email,))
+    cx.commit()
+    return (cur.rowcount or 0) == 1
 
 
 def _release(cx, now, email=None):
@@ -175,6 +207,13 @@ def enqueue(cx, *, email, name, session_id, product_slug, product_name, page_url
     return bool(cur.rowcount)
 
 
+def render_signup_confirm(url):
+    esc = lambda s: (str(s).replace("&", "&amp;").replace("<", "&lt;")
+                     .replace(">", "&gt;").replace('"', "&quot;"))
+    return (SIGNUP_CONFIRM_SUBJECT, SIGNUP_CONFIRM_HTML.format(url=esc(url)),
+            SIGNUP_CONFIRM_TEXT.format(url=url))
+
+
 def render_confirm(url):
     """Glen's wording exactly. No name: it would come from whoever typed it, and go to
     an inbox that has not confirmed anything yet."""
@@ -198,11 +237,16 @@ def _confirmations(cx, send_fn, confirm_url, now):
     if confirm_url is None:
         return out
     resend = _iso(now - timedelta(hours=CONFIRM_RESEND_HOURS))
-    for row in _rows(cx.execute(
-            "SELECT q.email, MAX(q.name) AS name FROM remedy_match_email_queue q "
-            "LEFT JOIN remedy_match_email_confirm c ON c.email = q.email "
-            "WHERE q.status='awaiting_confirm' AND c.confirmed_at IS NULL "
-            "AND (c.sent_at IS NULL OR c.sent_at <= ?) GROUP BY q.email", (resend,))):
+    waiting = {r["email"] for r in _rows(cx.execute(
+        "SELECT q.email FROM remedy_match_email_queue q "
+        "LEFT JOIN remedy_match_email_confirm c ON c.email = q.email "
+        "WHERE q.status='awaiting_confirm' AND c.confirmed_at IS NULL "
+        "AND (c.sent_at IS NULL OR c.sent_at <= ?) GROUP BY q.email", (resend,)))}
+    # A Terms-time request (request_confirm): never sent, never confirmed, no match yet.
+    asked = {r["email"] for r in _rows(cx.execute(
+        "SELECT email FROM remedy_match_email_confirm "
+        "WHERE confirmed_at IS NULL AND sent_at IS NULL"))}
+    for row in [{"email": e} for e in sorted(waiting | asked)]:
         import secrets
         token = secrets.token_urlsafe(24)
         claim = cx.execute(
@@ -218,7 +262,8 @@ def _confirmations(cx, send_fn, confirm_url, now):
         cx.execute("INSERT INTO remedy_match_email_confirm_tokens (token_hash, email, sent_at) "
                    "VALUES (?,?,?)", (_hash(token), row["email"], _iso(now)))
         cx.commit()
-        subject, html, text = render_confirm(confirm_url(token))
+        subject, html, text = (render_confirm if row["email"] in waiting
+                               else render_signup_confirm)(confirm_url(token))
         try:
             send_fn(row["email"], "", subject, html, text)
             out["confirm_sent"] += 1
