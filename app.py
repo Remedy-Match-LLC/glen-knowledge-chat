@@ -2862,6 +2862,15 @@ def _founding_availability(slug, name):
 _FOUNDING_AVAILABILITY_CACHE = {}
 
 
+# A panel row that names a group rather than what is in it: the bot cannot say an
+# ingredient is absent from such a panel (complete-formula line, review round 1).
+_UMBRELLA_ROW = re.compile(
+    r"\bblend\b|\(all\)|proprietary|\bcomplex\b|^- polyphenols\b|\bormus\b|trace mineral"
+    r"|\bocean\b|\bscents?\b|full spectrum|\besters?\b|\bwhey\b|\bcollagen\b|seawater"
+    r"|quinton|bioterrain|\bhumic\b|\bfulvic\b|polysaccharide|phosphatide|\bcbd\b|cannabis",
+    re.IGNORECASE)
+
+
 def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                          no_caution_out=None, link_cautions=(), long_form=False,
                          caution_out=None) -> str:
@@ -2938,15 +2947,44 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             # block is unchanged.
             roles = product.get("ingredient_roles") if "roles" in _pinned_copy(product) else None
             roles = roles if isinstance(roles, dict) else {}
-            ings = []
+            ings, names = [], []
             for i in (_shown_ings(product.get("ingredients") or []) or []):
                 if not (isinstance(i, dict) and (i.get("name") or "").strip()):
                     continue
                 line = f"- {i['name']}" + (f": {i['dose']}" if i.get("dose") else "")
                 role = (roles.get(i["name"]) or "").strip() if isinstance(roles.get(i["name"]), str) else ""
                 ings.append(line + (f". Role: {role}" if role else ""))
+                names.append(line)
             if ings:
                 parts.append("Ingredients from the label:\n" + "\n".join(ings))
+                # Glen, 2026-10-28: the approved panel outranks old formulas. Read-back of
+                # Crystalline Clarity: retrieved old-formula text made the bot say "yes,
+                # 86 mcg of selenium" in 3 of 3 tries, though the panel has none. Left off
+                # a panel with a blend or catch-all row, which hides what it holds: "Does
+                # Curcu Guard contain ginkgo?" would get a false no (review round 1).
+                # Row name and dose only: a Role such as "supports collagen" names no group
+                # (review round 2).
+                if not any(_UMBRELLA_ROW.search(n) for n in names):
+                    # It never infers absence from the list: rows name sources, not what
+                    # they hold (whey can carry lactose, full-spectrum CBD trace THC,
+                    # ocean minerals magnesium; review round 1 of the follow-up). It only
+                    # refuses another source's claim of an unlisted ingredient.
+                    parts.append(
+                        f"These are the current label ingredients and amounts for {name}. "
+                        f"They override every retrieved snippet. When a snippet says {name} "
+                        f"contains an active ingredient that is not on this list or in the "
+                        f"description above, and is not a form, source or part of one on "
+                        f"it, that snippet describes an older formula: do not say {name} "
+                        f"contains it. This rule is about active ingredients only, never the "
+                        f"capsule or other inactive ingredients.")
+                else:
+                    # A blend still states its listed amounts: they outrank an old
+                    # formula's (review round 2), but absence is never inferred.
+                    parts.append(
+                        f"These are the current label amounts for {name}. They override "
+                        f"every retrieved snippet about these ingredients. A blend or group on this list holds ingredients it "
+                        f"does not name, so never say {name} lacks an ingredient because "
+                        f"it is not listed.")
                 if roles:
                     parts.append(
                         f"Ingredient roles for {name}: when you say what an ingredient in "
