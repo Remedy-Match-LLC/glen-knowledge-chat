@@ -156,3 +156,23 @@ def test_a_failed_suppression_check_logs_no_address(rig, monkeypatch, capsys):
     monkeypatch.setattr(es, "is_suppressed", boom)
     inbox.send_bulk("x@b.co", "s", "b")
     assert "leak.person" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("make", [
+    lambda b: b.NoCredentialsError(),
+    lambda b: b.ConnectTimeoutError(endpoint_url="https://x"),
+    lambda b: b.ParamValidationError(report="bad"),
+])
+def test_an_error_before_aws_saw_it_falls_back(rig, make):
+    import botocore.exceptions as b
+    rig["ses"].fail = lambda: make(b)
+    inbox.send_bulk("a@b.co", "s", "b")
+    assert rig["other"] == ["ghl"]
+
+
+def test_an_ses_5xx_is_unknown_not_a_resend(rig):
+    from botocore.exceptions import ClientError
+    rig["ses"].fail = lambda: ClientError(
+        {"Error": {"Code": "InternalFailure"}, "ResponseMetadata": {"HTTPStatusCode": 500}},
+        "SendEmail")
+    assert inbox.send_bulk("a@b.co", "s", "b").get("unknown") and rig["other"] == []

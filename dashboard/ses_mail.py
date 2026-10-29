@@ -160,8 +160,13 @@ def deliver(connect, to, subject, text, html=None, *, marketing: bool, scope: st
     if reason:
         return "suppressed", None
     try:
-        from botocore.exceptions import ClientError, EndpointConnectionError
-        sure_not_sent = (ClientError, EndpointConnectionError)   # never ValueError: it can follow acceptance (round 2)
+        from botocore.exceptions import (ClientError, ConnectTimeoutError, EndpointConnectionError,
+                                         NoCredentialsError, ParamValidationError,
+                                         PartialCredentialsError)
+        # Each of these is raised before AWS accepts anything (round 1). Never ValueError:
+        # it can follow acceptance (round 2).
+        sure_not_sent = (ClientError, ConnectTimeoutError, EndpointConnectionError,
+                         NoCredentialsError, ParamValidationError, PartialCredentialsError)
     except Exception:
         sure_not_sent = (ImportError,)   # no SDK: nothing can have gone out
     from_addr = None
@@ -176,7 +181,11 @@ def deliver(connect, to, subject, text, html=None, *, marketing: bool, scope: st
     except Exception as e:
         print(f"[ses] send failed: {type(e).__name__}", flush=True)
         if r is None:
-            return (None if isinstance(e, sure_not_sent) else "unknown"), None
+            # A 5xx may follow acceptance, so only a 4xx refusal counts as sure (round 1).
+            status = getattr(e, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode") \
+                if isinstance(e, ClientError) else None
+            sure = isinstance(e, sure_not_sent) and not (status and status >= 500)
+            return (None if sure else "unknown"), None
     if r.get("sent"):
         try:
             print(f"[ses] sent {r.get('message_id')}", flush=True)
