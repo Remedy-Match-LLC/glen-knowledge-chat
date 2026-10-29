@@ -182,8 +182,9 @@ def deliver(connect, to, subject, text, html=None, *, marketing: bool, scope: st
         print(f"[ses] send failed: {type(e).__name__}", flush=True)
         if r is None:
             # A 5xx may follow acceptance, so only a 4xx refusal counts as sure (round 1).
-            status = getattr(e, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode") \
-                if isinstance(e, ClientError) else None
+            resp = getattr(e, "response", None)
+            status = (resp.get("ResponseMetadata") or {}).get("HTTPStatusCode") \
+                if isinstance(resp, dict) else None
             sure = isinstance(e, sure_not_sent) and not (status and status >= 500)
             return (None if sure else "unknown"), None
     if r.get("sent"):

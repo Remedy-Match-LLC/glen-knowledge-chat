@@ -176,3 +176,25 @@ def test_an_ses_5xx_is_unknown_not_a_resend(rig):
         {"Error": {"Code": "InternalFailure"}, "ResponseMetadata": {"HTTPStatusCode": 500}},
         "SendEmail")
     assert inbox.send_bulk("a@b.co", "s", "b").get("unknown") and rig["other"] == []
+
+
+def test_no_sdk_still_falls_back(rig, monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def no_botocore(name, *a, **k):
+        if name.startswith("botocore"):
+            raise ImportError(name)
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(ses_mail, "send", lambda *a, **k: (_ for _ in ()).throw(ImportError("boto3")))
+    monkeypatch.setattr(builtins, "__import__", no_botocore)
+    assert ses_mail.deliver(lambda: sqlite3.connect(rig["path"]), "a@b.co", "s", "b",
+                            marketing=False) == (None, None)
+
+
+def test_a_skipped_address_is_not_logged(rig, capsys):
+    cx = sqlite3.connect(rig["path"])
+    es.add(cx, "hidden.one@b.co", "hard", "bounce", "test")
+    cx.close()
+    inbox.send_bulk("hidden.one@b.co", "s", "b")
+    assert "hidden.one" not in capsys.readouterr().out

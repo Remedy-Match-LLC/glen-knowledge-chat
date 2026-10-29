@@ -677,14 +677,14 @@ def send_bulk(to_email: str, subject: str, body: str, from_name: Optional[str] =
     but transactional sends (invoices, magic links, portal-ready notices) must
     NOT carry one, so the caller decides."""
     if _is_undeliverable(to_email):
-        print(f"[send_bulk] skip undeliverable {to_email!r}", flush=True)
+        print("[send_bulk] skip undeliverable", flush=True)
         return {"skipped": "undeliverable"}
     try:
         with db.connect(_db_path()) as _cx:
             from dashboard import email_suppression as _es
             _es.init_table(_cx)
             if _es.is_suppressed(_cx, to_email):
-                print(f"[send_bulk] suppressed, skip {to_email}", flush=True)
+                print("[send_bulk] suppressed, skip", flush=True)
                 return {"skipped": "suppressed"}
     except Exception as _e:  # noqa: BLE001 — never block a send on a check failure
         print(f"[send_bulk] suppress-check skipped: {type(_e).__name__}", flush=True)
