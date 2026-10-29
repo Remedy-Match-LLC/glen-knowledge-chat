@@ -132,3 +132,55 @@ def send(cx, to, subject, text, html=None, *, marketing: bool, from_addr=None,
         kwargs["ConfigurationSetName"] = config_set
     resp = (client or _client()).send_email(**kwargs)
     return {"sent": True, "message_id": resp.get("MessageId")}
+
+
+# Reply-To for app mail sent through SES: Glen's inbox, where replies went on Gmail.
+REPLY_TO = "drglenswartwout@gmail.com"
+
+
+def deliver(connect, to, subject, text, html=None, *, marketing: bool, scope: str = un.GLOBAL,
+            from_name=None, reply_to=REPLY_TO):
+    """Try one message through SES, for a caller that has another transport to fall back
+    to. Returns (outcome, message_id). outcome is:
+      "ses"         sent
+      "suppressed"  this address must not get this mail; send it nowhere
+      "unknown"     SES may have taken it (a timeout after the request went out); do NOT
+                    fall back, or the person can get two copies
+      None          SES surely sent nothing (switched off, refused, unreachable): fall back
+    connect() opens a database connection. It is held only for the suppression check,
+    never across the network call. Never logs the body or the address."""
+    if not enabled():
+        return None, None
+    try:
+        with connect() as cx:
+            reason = block_reason(cx, to, marketing=marketing)
+    except Exception as e:
+        print(f"[ses] suppression check failed: {type(e).__name__}", flush=True)
+        return None, None
+    if reason:
+        return "suppressed", None
+    try:
+        from botocore.exceptions import ClientError, EndpointConnectionError
+        sure_not_sent = (ClientError, EndpointConnectionError, ValueError)
+    except Exception:
+        sure_not_sent = (ValueError,)
+    from_addr = None
+    if from_name:
+        from email.utils import formataddr, parseaddr
+        from_addr = formataddr((from_name, parseaddr(os.environ.get("SES_FROM")
+                                                     or DEFAULT_FROM)[1]))
+    r = None
+    try:
+        r = send(None, to, subject, text, html, marketing=marketing, scope=scope,
+                 from_addr=from_addr, reply_to=reply_to, prechecked=True)
+    except Exception as e:
+        print(f"[ses] send failed: {type(e).__name__}", flush=True)
+        if r is None:
+            return (None if isinstance(e, sure_not_sent) else "unknown"), None
+    if r.get("sent"):
+        try:
+            print(f"[ses] sent {r.get('message_id')}", flush=True)
+        except Exception:
+            pass
+        return "ses", r.get("message_id")
+    return None, None

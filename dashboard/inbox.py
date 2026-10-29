@@ -665,7 +665,8 @@ def send_email(to_email: str, subject: str, body: str, from_name: Optional[str] 
 def send_bulk(to_email: str, subject: str, body: str, from_name: Optional[str] = None,
               html: Optional[str] = None,
               unsubscribe_scope: Optional[str] = None) -> dict:
-    """Bulk / onboarding email (portal welcome, campaigns). Routes via GHL v2
+    """Bulk / onboarding email (portal welcome, campaigns). Amazon SES first when
+    SES_SEND_ENABLED is on (see ses_mail.deliver), else routes via GHL v2
     (Mailgun-backed sending domain) when BULK_VIA_GHL is set and GHL is configured, to
     keep the consumer-Gmail daily quota for transactional mail (invoices, replies).
     Falls back to Gmail send_email on any GHL failure so nothing is lost. Honors the
@@ -687,6 +688,24 @@ def send_bulk(to_email: str, subject: str, body: str, from_name: Optional[str] =
                 return {"skipped": "suppressed"}
     except Exception as _e:  # noqa: BLE001 — never block a send on a check failure
         print(f"[send_bulk] suppress-check skipped: {_e!r}", flush=True)
+    # Amazon SES first: the replacement for GoHighLevel (Glen, 2026-10-29). SES builds
+    # its own footer and one-click headers for a scoped (marketing) send, so it runs
+    # before the footer below is appended.
+    try:
+        from dashboard import ses_mail as _ses
+        outcome, mid = _ses.deliver(lambda: db.connect(_db_path()), to_email, subject,
+                                    body or "", html, marketing=bool(unsubscribe_scope),
+                                    scope=unsubscribe_scope or _ses.un.GLOBAL,
+                                    from_name=from_name)
+    except Exception as e:  # noqa: BLE001 - never lose the send to a helper fault
+        print(f"[send_bulk] SES skipped: {type(e).__name__}", flush=True)
+        outcome, mid = None, None
+    if outcome == "ses":
+        return {"id": mid, "via": "ses"}
+    if outcome == "suppressed":
+        return {"skipped": "suppressed"}
+    if outcome == "unknown":
+        return {"id": None, "via": "ses", "unknown": True}
     if unsubscribe_scope:
         from dashboard import unsubscribe as _un
         body = (body or "") + _un.footer_text(to_email, unsubscribe_scope)
