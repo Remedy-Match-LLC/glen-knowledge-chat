@@ -123,11 +123,13 @@ def test_nothing_else_in_the_embed_sends_on_an_email_cta():
     assert len(calls) == 2, [lines[i] for i in calls]
     guards = []
     for i in calls:
-        prev = [l.strip() for l in lines[max(0, i - 6):i]]
-        guards.append(next((p for p in reversed(prev)
-                            if p.startswith(("if (evt.gated === 'email_required')",
-                                             "Promise.resolve(", "ebtn.addEventListener('click'"))),
-                           None))
+        g = next((k for k in range(i - 1, max(-1, i - 7), -1)
+                  if lines[k].strip().startswith(("if (evt.gated === 'email_required')",
+                                                  "ebtn.addEventListener('click'"))), None)
+        # The call must sit inside the guard's block: braces opened since it, still open
+        # (follow-up review: a call moved after the closing brace passed before).
+        between = "\n".join(lines[g:i]) if g is not None else ""
+        guards.append(g is not None and between.count("{") > between.count("}"))
     assert all(guards), list(zip([lines[i] for i in calls], guards))
     # An alias would hide a call from the scan above (round 3 review).
     assert SRC.count("handleGatedFullReport") == 3
