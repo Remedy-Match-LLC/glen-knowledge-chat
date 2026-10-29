@@ -76,7 +76,8 @@ def test_ses_off_keeps_the_ghl_path(rig, monkeypatch):
 
 def test_a_refusal_falls_back_to_ghl(rig):
     from botocore.exceptions import ClientError
-    rig["ses"].fail = lambda: ClientError({"Error": {"Code": "MessageRejected"}}, "SendEmail")
+    rig["ses"].fail = lambda: ClientError(
+        {"Error": {"Code": "MessageRejected"}, "ResponseMetadata": {"HTTPStatusCode": 400}}, "SendEmail")
     inbox.send_bulk("a@b.co", "s", "b")
     assert len(rig["ses"].calls) == 1 and rig["other"] == ["ghl"]
 
@@ -198,3 +199,9 @@ def test_a_skipped_address_is_not_logged(rig, capsys):
     cx.close()
     inbox.send_bulk("hidden.one@b.co", "s", "b")
     assert "hidden.one" not in capsys.readouterr().out
+
+
+def test_a_client_error_with_no_status_is_unknown(rig):
+    from botocore.exceptions import ClientError
+    rig["ses"].fail = lambda: ClientError({"Error": {"Code": "InternalFailure"}}, "SendEmail")
+    assert inbox.send_bulk("a@b.co", "s", "b").get("unknown") and rig["other"] == []

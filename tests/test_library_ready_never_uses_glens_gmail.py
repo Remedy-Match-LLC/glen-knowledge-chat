@@ -173,7 +173,8 @@ def test_ses_off_falls_back_to_ghl(appmod, transports, ses, monkeypatch):
 def test_an_ses_failure_falls_back_to_ghl_and_never_logs_the_link(appmod, transports, ses,
                                                                   monkeypatch, capsys):
     from botocore.exceptions import ClientError
-    ses.fail = lambda raw: ClientError({"Error": {"Code": "MessageRejected", "Message": raw}},
+    ses.fail = lambda raw: ClientError({"Error": {"Code": "MessageRejected", "Message": raw},
+                                             "ResponseMetadata": {"HTTPStatusCode": 400}},
                                        "SendEmail")
     monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-9")
     assert _optin(appmod).status_code == 200
