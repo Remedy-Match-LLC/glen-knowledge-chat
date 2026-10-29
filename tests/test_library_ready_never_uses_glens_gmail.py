@@ -242,3 +242,60 @@ def test_ses_unreachable_falls_back_to_ghl(appmod, transports, ses):
     ses.fail = lambda raw: EndpointConnectionError(endpoint_url="https://x")
     assert _optin(appmod).status_code == 200
     assert transports == ["ghl"]
+
+
+# ── round 3: each settled branch, on its own ─────────────────────────────────
+def _seed_guard(appmod, email="lead@x.com", slug="healing-glaucoma-starter"):
+    import sqlite3
+    cx = sqlite3.connect(appmod.LOG_DB)
+    cx.execute("CREATE TABLE IF NOT EXISTS ebook_library_welcome_sent (email TEXT, "
+               "ebook_slug TEXT, sent_at TEXT, PRIMARY KEY(email, ebook_slug))")
+    cx.execute("INSERT OR IGNORE INTO ebook_library_welcome_sent VALUES (?,?,'x')", (email, slug))
+    cx.commit()
+
+
+@pytest.fixture
+def fallback_spy(appmod, monkeypatch):
+    calls = []
+    real = appmod._send_full_report_email
+    monkeypatch.setattr(appmod, "_send_full_report_email",
+                        lambda *a, **k: calls.append(1) or real(*a, **k))
+    return calls
+
+
+def test_ses_suppressed_settles_without_the_fallback(appmod, transports, ses, fallback_spy):
+    from dashboard import db, email_suppression as es
+    with db.connect(appmod.LOG_DB) as cx:
+        es.init_table(cx)
+        es.add(cx, "lead@x.com", "hard", "bounce", "test")
+    _seed_guard(appmod)
+    appmod._send_library_ready_mail("lead@x.com", "", "s", "b", "healing-glaucoma-starter")
+    assert fallback_spy == [] and transports == [] and _guard_rows(appmod) == 1
+
+
+def test_ses_junk_settles_without_the_fallback(appmod, transports, ses, fallback_spy):
+    _seed_guard(appmod, "someone@example.com")
+    appmod._send_library_ready_mail("someone@example.com", "", "s", "b",
+                                    "healing-glaucoma-starter")
+    assert fallback_spy == [] and _guard_rows(appmod) == 1
+
+
+def test_a_successful_ses_send_logs_neither_address_nor_link(appmod, transports, ses,
+                                                              monkeypatch, capsys):
+    monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-9")
+    _optin(appmod, "unique.lead@x.com")
+    got = capsys.readouterr()
+    assert len(ses.calls) == 1
+    assert "SECRET-LINK-9" not in got.out + got.err
+    assert "unique.lead" not in got.out + got.err
+
+
+def test_a_raising_fallback_frees_the_guard_and_logs_no_link(appmod, monkeypatch, capsys):
+    monkeypatch.setenv("SES_SEND_ENABLED", "")
+    monkeypatch.setattr(appmod, "_send_full_report_email",
+                        lambda em, n, s, body, **k: (_ for _ in ()).throw(RuntimeError(body)))
+    _seed_guard(appmod)
+    appmod._send_library_ready_mail("lead@x.com", "", "s", "SECRET-LINK-7",
+                                    "healing-glaucoma-starter")
+    got = capsys.readouterr()
+    assert "SECRET-LINK-7" not in got.out + got.err and _guard_rows(appmod) == 0
