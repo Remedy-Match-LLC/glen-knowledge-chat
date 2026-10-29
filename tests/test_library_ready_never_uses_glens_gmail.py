@@ -126,3 +126,67 @@ def test_a_junk_address_never_reaches_ghl(appmod, transports, monkeypatch):
     _now_threads(monkeypatch)
     assert _optin(appmod, "someone@example.com").status_code == 200
     assert transports == [] and _guard_rows(appmod) == 1
+
+
+# ── Amazon SES first (Glen, 2026-10-29: "yes") ───────────────────────────────
+class _FakeSES:
+    def __init__(self, fail=False):
+        self.calls, self.fail = [], fail
+
+    def send_email(self, **kw):
+        if self.fail:
+            raise RuntimeError("ses down: " + kw["Content"]["Raw"]["Data"].decode())
+        self.calls.append(kw)
+        return {"MessageId": "m-1"}
+
+
+@pytest.fixture
+def ses(appmod, transports, monkeypatch):
+    from dashboard import ses_mail
+    fake = _FakeSES()
+    real = ses_mail.send
+    monkeypatch.setattr(ses_mail, "send", lambda *a, **k: real(*a, client=fake, **k))
+    monkeypatch.setenv("SES_SEND_ENABLED", "1")
+    _now_threads(monkeypatch)
+    return fake
+
+
+def test_ses_sends_it_and_nothing_else_does(appmod, transports, ses, monkeypatch):
+    monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-9")
+    assert _optin(appmod).status_code == 200
+    assert len(ses.calls) == 1 and transports == []
+    raw = ses.calls[0]["Content"]["Raw"]["Data"].decode()
+    assert "To: lead@x.com" in raw and "Reply-To: drglenswartwout@gmail.com" in raw
+    assert "SECRET-LINK-9" in raw
+    assert "List-Unsubscribe" not in raw       # a requested delivery, not marketing
+    assert _guard_rows(appmod) == 1
+
+
+def test_ses_off_falls_back_to_ghl(appmod, transports, ses, monkeypatch):
+    monkeypatch.setenv("SES_SEND_ENABLED", "")
+    assert _optin(appmod).status_code == 200
+    assert ses.calls == [] and transports == ["ghl"]
+
+
+def test_an_ses_failure_falls_back_to_ghl_and_never_logs_the_link(appmod, transports, ses,
+                                                                  monkeypatch, capsys):
+    ses.fail = True
+    monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-9")
+    assert _optin(appmod).status_code == 200
+    assert transports == ["ghl"]
+    got = capsys.readouterr()
+    assert "SECRET-LINK-9" not in got.out + got.err
+
+
+def test_a_suppressed_lead_gets_nothing_from_either(appmod, transports, ses):
+    from dashboard import db, email_suppression as es
+    with db.connect(appmod.LOG_DB) as cx:
+        es.init_table(cx)
+        es.add(cx, "lead@x.com", "hard", "bounce", "test")
+    assert _optin(appmod).status_code == 200
+    assert ses.calls == [] and transports == []
+
+
+def test_a_junk_address_never_reaches_ses(appmod, transports, ses):
+    assert _optin(appmod, "someone@example.com").status_code == 200
+    assert ses.calls == [] and transports == []
