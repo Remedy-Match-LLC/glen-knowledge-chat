@@ -1221,8 +1221,11 @@ LIBRARY_REPLY_TO = "drglenswartwout@gmail.com"
 
 def _library_ready_via_ses(em, subject, body):
     """Amazon SES, the first sender off GoHighLevel (Glen, 2026-10-29: "yes"). Returns
-    "ses", "suppressed" or "undeliverable" when settled, else None for the GHL path:
-    SES switched off (SES_SEND_ENABLED) or failing. Never logs the body."""
+    "ses", "suppressed" or "undeliverable" when settled, "unknown" when SES may have taken
+    it, else None for the GHL path. None only when SES surely sent nothing: switched off
+    (SES_SEND_ENABLED), it refused the request, or it could not be reached. A timeout
+    after AWS accepted would otherwise send a second copy through GHL (review round 2).
+    Never logs the body."""
     try:
         from dashboard import ses_mail as _ses
         from dashboard.inbox import _is_undeliverable
@@ -1230,15 +1233,30 @@ def _library_ready_via_ses(em, subject, body):
             return None
         if _is_undeliverable(em):
             return "undeliverable"
+    except Exception as e:
+        print(f"[library-ready] SES check failed: {type(e).__name__}", flush=True)
+        return None
+    r = None
+    try:
+        from botocore.exceptions import ClientError, EndpointConnectionError
+        sure_not_sent = (ClientError, EndpointConnectionError)
+    except Exception:
+        sure_not_sent = ()
+    try:
         with db.connect(LOG_DB) as cx:
             r = _ses.send(cx, em, subject, body, marketing=False, reply_to=LIBRARY_REPLY_TO)
-        if r.get("sent"):
-            print(f"[library-ready] sent via ses {r.get('message_id')}", flush=True)
-            return "ses"
-        if r.get("skipped") == "suppressed":
-            return "suppressed"
     except Exception as e:
         print(f"[library-ready] SES send failed: {type(e).__name__}", flush=True)
+        if r is None:
+            return None if isinstance(e, sure_not_sent) else "unknown"
+    if r.get("sent"):
+        try:
+            print(f"[library-ready] sent via ses {r.get('message_id')}", flush=True)
+        except Exception:
+            pass
+        return "ses"
+    if r.get("skipped") == "suppressed":
+        return "suppressed"
     return None
 
 
@@ -1253,7 +1271,7 @@ def _send_library_ready_mail(em, name, subject, body, slug):
                                              log_body=False)
         except Exception as e:
             print(f"[library-ready] send raised: {type(e).__name__}", flush=True)
-    if via in ("ses", "ghl", "suppressed", "undeliverable"):
+    if via in ("ses", "unknown", "ghl", "suppressed", "undeliverable"):
         return
     try:
         with _db_lock, db.connect(LOG_DB) as cx:

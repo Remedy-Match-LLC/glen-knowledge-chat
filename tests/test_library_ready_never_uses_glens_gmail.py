@@ -130,12 +130,12 @@ def test_a_junk_address_never_reaches_ghl(appmod, transports, monkeypatch):
 
 # ── Amazon SES first (Glen, 2026-10-29: "yes") ───────────────────────────────
 class _FakeSES:
-    def __init__(self, fail=False):
+    def __init__(self, fail=None):
         self.calls, self.fail = [], fail
 
     def send_email(self, **kw):
         if self.fail:
-            raise RuntimeError("ses down: " + kw["Content"]["Raw"]["Data"].decode())
+            raise self.fail(kw["Content"]["Raw"]["Data"].decode())
         self.calls.append(kw)
         return {"MessageId": "m-1"}
 
@@ -170,7 +170,9 @@ def test_ses_off_falls_back_to_ghl(appmod, transports, ses, monkeypatch):
 
 def test_an_ses_failure_falls_back_to_ghl_and_never_logs_the_link(appmod, transports, ses,
                                                                   monkeypatch, capsys):
-    ses.fail = True
+    from botocore.exceptions import ClientError
+    ses.fail = lambda raw: ClientError({"Error": {"Code": "MessageRejected", "Message": raw}},
+                                       "SendEmail")
     monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-9")
     assert _optin(appmod).status_code == 200
     assert transports == ["ghl"]
@@ -190,3 +192,18 @@ def test_a_suppressed_lead_gets_nothing_from_either(appmod, transports, ses):
 def test_a_junk_address_never_reaches_ses(appmod, transports, ses):
     assert _optin(appmod, "someone@example.com").status_code == 200
     assert ses.calls == [] and transports == []
+
+
+def test_an_unclear_ses_failure_never_sends_a_second_copy(appmod, transports, ses):
+    """A timeout after AWS accepted it: GHL must not send again (review round 2)."""
+    from botocore.exceptions import ReadTimeoutError
+    ses.fail = lambda raw: ReadTimeoutError(endpoint_url="https://email.us-west-2.amazonaws.com")
+    assert _optin(appmod).status_code == 200
+    assert transports == [] and _guard_rows(appmod) == 1
+
+
+def test_ses_unreachable_falls_back_to_ghl(appmod, transports, ses):
+    from botocore.exceptions import EndpointConnectionError
+    ses.fail = lambda raw: EndpointConnectionError(endpoint_url="https://x")
+    assert _optin(appmod).status_code == 200
+    assert transports == ["ghl"]
