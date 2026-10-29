@@ -17007,7 +17007,10 @@ def _send_full_report_email(to_email: str, name: str,
             _ghl.send_via_ghl(to_email, subject, html=_html, text=body)
             return ("ghl", None)
     except Exception as e:
-        print(f"[full-report] GHL/Mailgun fallback failed: {e}", flush=True)
+        # An error can quote the request body, so a caller withholding the body gets the
+        # error type alone.
+        print(f"[full-report] GHL/Mailgun fallback failed: "
+              f"{e if log_body else type(e).__name__}", flush=True)
 
     # Path 4: console log (last resort — dev / nothing configured). A caller whose
     # body holds client health text passes log_body=False: only the header is logged.

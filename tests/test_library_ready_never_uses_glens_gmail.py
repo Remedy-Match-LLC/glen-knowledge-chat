@@ -98,11 +98,14 @@ def test_a_failed_send_never_logs_the_link_and_frees_the_guard(appmod, transport
                                                                 monkeypatch, capsys):
     """Review round 2: run the REAL sender with GHL failing, and read the logs."""
     from dashboard import ghl_email
-    monkeypatch.setattr(ghl_email, "send_via_ghl", lambda *a, **k: 1 / 0)
+    def boom(to, subject, *, html=None, text=None, **k):
+        raise RuntimeError("GHL rejected: " + (text or ""))   # an error that quotes the body
+    monkeypatch.setattr(ghl_email, "send_via_ghl", boom)
     monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-123")
     _now_threads(monkeypatch)
     assert _optin(appmod).status_code == 200
-    assert "SECRET-LINK-123" not in capsys.readouterr().out
+    got = capsys.readouterr()
+    assert "SECRET-LINK-123" not in got.out + got.err
     assert transports == []
     assert _guard_rows(appmod) == 0          # the next opt-in tries again
 
