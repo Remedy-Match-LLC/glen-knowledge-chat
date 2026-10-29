@@ -134,6 +134,7 @@ class _FakeSES:
         self.calls, self.fail = [], fail
 
     def send_email(self, **kw):
+        self.attempts = getattr(self, "attempts", 0) + 1
         if self.fail:
             raise self.fail(kw["Content"]["Raw"]["Data"].decode())
         self.calls.append(kw)
@@ -147,6 +148,7 @@ def ses(appmod, transports, monkeypatch):
     real = ses_mail.send
     monkeypatch.setattr(ses_mail, "send", lambda *a, **k: real(*a, client=fake, **k))
     monkeypatch.setenv("SES_SEND_ENABLED", "1")
+    monkeypatch.setenv("SES_CONFIGURATION_SET", "remedymatch-events")
     _now_threads(monkeypatch)
     return fake
 
@@ -175,23 +177,56 @@ def test_an_ses_failure_falls_back_to_ghl_and_never_logs_the_link(appmod, transp
                                        "SendEmail")
     monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-9")
     assert _optin(appmod).status_code == 200
-    assert transports == ["ghl"]
+    assert ses.attempts == 1 and transports == ["ghl"]
     got = capsys.readouterr()
     assert "SECRET-LINK-9" not in got.out + got.err
 
 
 def test_a_suppressed_lead_gets_nothing_from_either(appmod, transports, ses):
+    """Called directly: the opt-in route's own check would stop it first (round 1)."""
     from dashboard import db, email_suppression as es
     with db.connect(appmod.LOG_DB) as cx:
         es.init_table(cx)
         es.add(cx, "lead@x.com", "hard", "bounce", "test")
+    appmod._send_library_ready_mail("lead@x.com", "", "s", "b", "healing-glaucoma-starter")
+    assert not getattr(ses, "attempts", 0) and transports == []
+
+
+def test_ses_without_its_configuration_set_stays_off(appmod, transports, ses, monkeypatch):
+    monkeypatch.setenv("SES_CONFIGURATION_SET", "")
     assert _optin(appmod).status_code == 200
-    assert ses.calls == [] and transports == []
+    assert not getattr(ses, "attempts", 0) and transports == ["ghl"]
+
+
+def test_no_connection_is_held_across_the_ses_call(appmod, transports, ses, monkeypatch):
+    from dashboard import db
+    open_now = []
+    real_connect = db.connect
+
+    class Tracked:
+        def __init__(self, *a, **k):
+            self.c = real_connect(*a, **k)
+
+        def __enter__(self):
+            open_now.append(1)
+            return self.c.__enter__()
+
+        def __exit__(self, *e):
+            open_now.pop()
+            return self.c.__exit__(*e)
+    monkeypatch.setattr(db, "connect", Tracked)
+    seen = []
+    from dashboard import ses_mail
+    real_send = ses_mail.send
+    monkeypatch.setattr(ses_mail, "send",
+                        lambda *a, **k: seen.append(len(open_now)) or real_send(*a, **k))
+    appmod._send_library_ready_mail("lead@x.com", "", "s", "b", "healing-glaucoma-starter")
+    assert seen == [0] and len(ses.calls) == 1
 
 
 def test_a_junk_address_never_reaches_ses(appmod, transports, ses):
     assert _optin(appmod, "someone@example.com").status_code == 200
-    assert ses.calls == [] and transports == []
+    assert ses.calls == [] and transports == [] and _guard_rows(appmod) == 1
 
 
 def test_an_unclear_ses_failure_never_sends_a_second_copy(appmod, transports, ses):

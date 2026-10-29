@@ -1243,8 +1243,18 @@ def _library_ready_via_ses(em, subject, body):
     except Exception:
         sure_not_sent = ()
     try:
+        # The suppression check holds a connection briefly, never across the network call
+        # (review round 1: the Postgres pool has 10).
         with db.connect(LOG_DB) as cx:
-            r = _ses.send(cx, em, subject, body, marketing=False, reply_to=LIBRARY_REPLY_TO)
+            reason = _ses.block_reason(cx, em, marketing=False)
+        if reason:
+            return "suppressed"
+    except Exception as e:
+        print(f"[library-ready] SES check failed: {type(e).__name__}", flush=True)
+        return None
+    try:
+        r = _ses.send(None, em, subject, body, marketing=False, reply_to=LIBRARY_REPLY_TO,
+                      prechecked=True)
     except Exception as e:
         print(f"[library-ready] SES send failed: {type(e).__name__}", flush=True)
         if r is None:

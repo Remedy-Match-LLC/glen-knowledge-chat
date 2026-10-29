@@ -5,7 +5,7 @@ Account and identity: `mail.remedymatch.com`, verified in SES us-west-2 on
 Production access was requested the same day. Until AWS grants it, SES accepts
 mail only to verified addresses and to its mailbox simulator.
 
-Nothing calls this yet. Each GoHighLevel send moves over one at a time, per the
+The free-ebook library email is the first caller (2026-10-29). Each GoHighLevel send moves over one at a time, per the
 replacement plan, and only after bounce and complaint events reach the
 suppression list through `dashboard/ses_events.py`.
 
@@ -43,7 +43,10 @@ TRANSACTIONAL_BLOCKS = frozenset({"hard", "complaint"})
 
 
 def enabled() -> bool:
-    return os.environ.get(ENABLED_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+    """On only with the configuration set too: without it, bounces and complaints never
+    reach the suppression list, and dead addresses would keep being mailed."""
+    return (os.environ.get(ENABLED_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+            and bool(os.environ.get("SES_CONFIGURATION_SET", "").strip()))
 
 
 def region() -> str:
@@ -87,17 +90,29 @@ def build_message(to, subject, text, html=None, *, from_addr=None, reply_to=None
 
 
 def _client():
+    # One attempt, short timeouts: SendEmail has no idempotency key, so a retry after a
+    # lost reply can deliver a second copy.
     import boto3
-    return boto3.client("sesv2", region_name=region())
+    from botocore.config import Config
+    return boto3.client("sesv2", region_name=region(),
+                        config=Config(retries={"max_attempts": 1}, connect_timeout=5,
+                                      read_timeout=15))
 
 
 def send(cx, to, subject, text, html=None, *, marketing: bool, from_addr=None,
-         reply_to=None, scope: str = un.GLOBAL, client=None) -> dict:
+         reply_to=None, scope: str = un.GLOBAL, client=None,
+         prechecked: bool = False) -> dict:
     """Send one message through SES. Returns what happened, never raises on a skip.
 
+    prechecked=True, with cx None, says the caller already ran block_reason and closed
+    its connection, so no database connection is held across the network call.
     `client` is for tests. Without one, a pytest run never reaches AWS."""
     to = es.normalize(to)
-    reason = block_reason(cx, to, marketing=marketing)
+    if prechecked and cx is not None:
+        raise ValueError("prechecked sends take no connection")
+    if not prechecked and cx is None:
+        raise ValueError("a send needs a connection for the suppression check")
+    reason = None if prechecked else block_reason(cx, to, marketing=marketing)
     if reason:
         return {"skipped": "suppressed", "reason": reason}
     if not enabled():

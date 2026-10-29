@@ -22,6 +22,8 @@ class FakeSES:
 @pytest.fixture(autouse=True)
 def secret(monkeypatch):
     monkeypatch.setattr(un, "_SECRET", "test-secret-abc", raising=False)
+    # enabled() also needs the configuration set that routes bounces (2026-10-29).
+    monkeypatch.setenv("SES_CONFIGURATION_SET", "remedymatch-events")
 
 
 def _db():
@@ -113,3 +115,16 @@ def test_blank_address_sends_nothing(monkeypatch):
     fake = FakeSES()
     assert sm.send(_db(), "  ", "s", "t", marketing=False, client=fake)["skipped"] == "suppressed"
     assert fake.calls == []
+
+
+def test_no_configuration_set_means_off(monkeypatch):
+    monkeypatch.setenv(sm.ENABLED_ENV, "1")
+    monkeypatch.setenv("SES_CONFIGURATION_SET", "")
+    assert not sm.enabled()
+
+
+def test_a_prechecked_send_takes_no_connection_and_a_plain_one_needs_it():
+    with pytest.raises(ValueError):
+        sm.send(_db(), "a@b.co", "s", "t", marketing=False, prechecked=True, client=FakeSES())
+    with pytest.raises(ValueError):
+        sm.send(None, "a@b.co", "s", "t", marketing=False, client=FakeSES())
