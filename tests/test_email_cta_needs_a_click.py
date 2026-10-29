@@ -30,7 +30,7 @@ def _function(name):
 
 HARNESS = r"""
 let sends = 0, appended = [], ids = [];
-const RESULT = %s;
+const RESULT = %s, NOCLICK = %s;
 function handleGatedFullReport(id) { sends++; ids.push(id); return Promise.resolve(RESULT); }
 function mk(tag) {
   const el = { tag, style: {}, disabled: false, listeners: {}, textContent: '',
@@ -44,7 +44,9 @@ const document = { createElement: mk, getElementById: () => msgs };
 function fetch() {}
 %s
 renderCta(%s, 7);
-(async () => {
+// The count at exit sees a send scheduled for any later time (round 2 review).
+process.on('exit', () => console.log(JSON.stringify({total: sends})));
+if (!NOCLICK) (async () => {
   // Let any timer or promise queued on arrival run before counting (round 3 review).
   await new Promise(r => setTimeout(r, 20));
   const before = sends;
@@ -59,12 +61,13 @@ renderCta(%s, 7);
 """
 
 
-def _run(cta, result=True):
-    out = subprocess.run([NODE, "-e", HARNESS % (json.dumps(result), _function("renderCta"),
-                                                 json.dumps(cta))],
+def _run(cta, result=True, noclick=False):
+    out = subprocess.run([NODE, "-e", HARNESS % (json.dumps(result), json.dumps(noclick),
+                                                 _function("renderCta"), json.dumps(cta))],
                          capture_output=True, text=True, timeout=20)
     assert out.returncode == 0, out.stderr
-    return json.loads(out.stdout.strip().splitlines()[-1])
+    lines = [json.loads(x) for x in out.stdout.strip().splitlines()]
+    return {**(lines[0] if noclick else lines[-2]), "total": lines[-1]["total"]}
 
 
 needs_node = pytest.mark.skipif(not NODE, reason="node not installed")
@@ -75,6 +78,7 @@ def test_an_email_cta_sends_nothing_until_clicked():
     r = _run({"type": "email"})
     assert r["before"] == 0
     assert r["tag"] == "button"
+    assert _run({"type": "email"}, noclick=True)["total"] == 0
 
 
 @needs_node
