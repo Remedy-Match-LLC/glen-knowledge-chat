@@ -128,7 +128,8 @@ def test_nothing_else_in_the_embed_sends_on_an_email_cta():
                                                   "ebtn.addEventListener('click'"))), None)
         # The call must sit inside the guard's block: braces opened since it, still open
         # (follow-up review: a call moved after the closing brace passed before).
-        between = "\n".join(lines[g:i]) if g is not None else ""
+        between = ("\n".join(lines[g:i] + [lines[i].split("handleGatedFullReport(")[0]])
+                   if g is not None else "")
         guards.append(g is not None and between.count("{") > between.count("}"))
     assert all(guards), list(zip([lines[i] for i in calls], guards))
     # An alias would hide a call from the scan above (round 3 review).
