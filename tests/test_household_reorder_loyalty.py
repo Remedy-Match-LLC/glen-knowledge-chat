@@ -36,8 +36,12 @@ def logdb(tmp_path, monkeypatch):
                           policy={"type": "reorder_loyalty", "ff_cents": LOYALTY_CENTS})
     biofield_store.init_table(cx)
     household.init_household_tables(cx)
-    from dashboard import orders
+    from dashboard import family_plan, orders
     orders.init_orders_table(cx)
+    # As in prod: Steve holds an active Family Plan, so his partner link counts
+    # (Glen's household rule, 2026-10-28; test_household_pricing_rule.py covers the rest).
+    family_plan.init_family_plan_table(cx)
+    family_plan.activate(cx, STEVE, next_charge_at=None, source="comp")
     cx.commit()
     yield cx
     cx.close()
@@ -226,15 +230,15 @@ def test_a_failed_household_lookup_keeps_the_buyers_own_history(logdb, monkeypat
 
     def boom(*a, **k):
         raise RuntimeError("household table unreadable")
-    monkeypatch.setattr(household, "household_emails", boom)
+    monkeypatch.setattr(household, "pricing_household_emails", boom)
     assert _earned(logdb, STEVE) == {SLUG}
 
 
 def test_the_household_lookup_leaves_the_callers_connection_alone(logdb, monkeypatch):
     """Postgres aborts a transaction on a failed read, and apply-plan saves on cx."""
     seen = []
-    real = household.household_emails
-    monkeypatch.setattr(household, "household_emails",
+    real = household.pricing_household_emails
+    monkeypatch.setattr(household, "pricing_household_emails",
                         lambda cx, e: (seen.append(cx), real(cx, e))[1])
     _link(logdb, STEVE, MICHAEL)
     _paid_biofield(logdb, STEVE)
@@ -305,3 +309,17 @@ def test_a_failed_client_price_lookup_is_logged_not_fatal(logdb, monkeypatch, ca
     monkeypatch.setattr(client_prices, "price_map", boom)
     _preview(STEVE, [{"slug": SLUG, "qty": 1}])
     assert "[price-preview] client-price lookup skipped" in capsys.readouterr().out
+
+
+def test_an_independent_link_without_a_plan_earns_alone(logdb):
+    """Glen's rule 2 (2026-10-28): a partner counts only with an active Family Plan."""
+    from dashboard import family_plan
+    family_plan.set_status(logdb, STEVE, "cancelled")
+    logdb.commit()
+    _link(logdb, STEVE, MICHAEL)
+    _paid_biofield(logdb, STEVE)
+    _order(logdb, MICHAEL, SLUG)
+    assert _earned(logdb, STEVE) == set()
+    _link(logdb, STEVE, KID, "child")
+    _order(logdb, KID, SLUG)
+    assert _earned(logdb, STEVE) == {SLUG}

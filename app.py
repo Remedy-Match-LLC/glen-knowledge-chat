@@ -9532,10 +9532,39 @@ def _resolve_repertoire_slugs(email):
     try:
         with db.connect(LOG_DB) as _rep_cx:
             repertoire.init_repertoire_table(_rep_cx)  # defensive: fresh-DB guard
-            return _ff_filter_slugs(repertoire.repertoire_slugs(_rep_cx, email))
+            return _ff_filter_slugs(_household_repertoire_slugs(_rep_cx, email))
     except Exception as e:
         print(f"[repertoire] inhouse lookup failed for {email!r}: {e!r}", flush=True)
         return None
+
+
+def _household_repertoire_slugs(cx, email):
+    """The repertoire of everyone in the buyer's household, for pricing only.
+
+    Glen, 2026-10-28, sales tab: a household is one buyer, and "Steve has the
+    household/family membership, and that will extend to his elderly father even though
+    he lives in a different house." Who counts is household.pricing_household_emails:
+    caregiving links anywhere, other links and person-based households only with an
+    active Family Plan. Michael Hill had Spike Shield in his repertoire and
+    Steve Fox did not, so Steve paid $63 where the household rate was $50. The buyer must
+    still be a paid member: callers check that first. The household is read on its own
+    connection, as _earned_reorder_slugs does, so a failed read cannot abort cx on
+    Postgres. On failure the buyer's own repertoire still prices. Shipping never reads
+    this: combined shipments group by the person households and by address."""
+    emails = {(email or "").strip().lower()}
+    try:
+        from dashboard import household as _hh
+        _hcx = db.connect(LOG_DB)
+        try:
+            emails = _hh.pricing_household_emails(_hcx, email) or emails
+        finally:
+            _hcx.close()
+    except Exception as _he:
+        print(f"[repertoire] household lookup skipped: {_he!r}", flush=True)
+    out = set()
+    for e in sorted(emails):
+        out |= set(repertoire.repertoire_slugs(cx, e) or ())
+    return out
 
 
 def _is_paid_member(email):
@@ -10323,7 +10352,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                 repertoire.init_repertoire_table(_rep_cx)  # defensive: fresh-DB guard
                 # FF-only (Glen 2026-07, margin): non-FF repertoire SKUs never reach
                 # the discount engine, matching _resolve_repertoire_slugs.
-                rep_slugs = _ff_filter_slugs(repertoire.repertoire_slugs(_rep_cx, email))
+                rep_slugs = _ff_filter_slugs(_household_repertoire_slugs(_rep_cx, email))
         except Exception as e:
             print(f"[repertoire] lookup failed for {email!r}: {e!r}", flush=True)
             rep_slugs = None
@@ -28311,7 +28340,9 @@ def _portal_reorder_module(email):
             print(f"[portal-reorder] client-price read failed for {email!r}: {e!r}", flush=True)
         try:
             repertoire.init_repertoire_table(cx)  # fresh-DB guard
-            rep_slugs = repertoire.repertoire_slugs(cx, email)
+            # The household's repertoire, as checkout prices it (review round 1): rows
+            # stay this buyer's own purchases, so no member's products are listed.
+            rep_slugs = _household_repertoire_slugs(cx, email)
         except Exception as e:
             print(f"[portal-reorder] repertoire read failed for {email!r}: {e!r}", flush=True)
             rep_slugs = set()
@@ -60814,9 +60845,10 @@ def _earned_reorder_slugs(cx, email):
     Reorders of those SKUs then qualify for the loyalty rate. Best-effort; empty on
     any gap. cx.row_factory should be sqlite3.Row (caller sets it).
 
-    A household is one buyer (Glen, 2026-10-28, sales tab): anyone linked in
-    household_members counts, both ways. A paid Biofield or a purchase by any member
-    earns the price for all of them. Steve Fox paid $63 for Spike Shield that his
+    A household is one buyer (Glen, 2026-10-28, sales tab), as
+    household.pricing_household_emails defines it: caregiving links anywhere, other
+    links and person-based households only with an active Family Plan. A paid Biofield
+    or a purchase by any of them earns the price for all of them. Steve Fox paid $63 for Spike Shield that his
     partner had bought three times."""
     email = (email or "").strip().lower()
     if not email:
@@ -60830,7 +60862,7 @@ def _earned_reorder_slugs(cx, email):
             from dashboard import household as _hh
             _hcx = db.connect(LOG_DB)
             try:
-                emails = _hh.household_emails(_hcx, email) or {email}
+                emails = _hh.pricing_household_emails(_hcx, email) or {email}
             finally:
                 _hcx.close()
         except Exception as _he:

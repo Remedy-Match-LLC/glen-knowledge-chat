@@ -5,6 +5,7 @@ primary may VIEW any linked member's portal; the owner may REASSIGN a mis-attrib
 portal report among the members of one household. Lives in LOG_DB (SQLite). Every
 scan-subject already has its own E4L email, so members are ordinary email accounts."""
 import datetime
+import json
 
 
 def _now():
@@ -264,6 +265,82 @@ def household_emails(cx, email):
             "SELECT member_email FROM household_members WHERE lower(trim(primary_email))=?",
             (p,)).fetchall())
     out.discard("")
+    return out
+
+
+def pricing_household_emails(cx, email):
+    """Every email that prices as one buyer with this one, itself included.
+
+    Glen, 2026-10-28, sales tab, "yes" to this rule:
+    1. A caregiving link (DEPENDENT_RELATIONSHIPS) counts wherever the member lives.
+    2. Any other link counts only when someone in that household holds an active
+       Family Plan. A household is one primary and its members, so a plan in one
+       household never opens another that shares a member (review round 2).
+    3. A person-based household (a "household:<slug>" people tag) counts only when one
+       of its people holds an active Family Plan.
+    household_members stores no address, so no rule reads one. Shipping never reads
+    this. Links are read one hop, as household_emails reads them; a sibling counts
+    only when both links on its path count. Empty for a blank email.
+
+    A failed read raises, except the person groups (read last, logged and skipped).
+    On Postgres either leaves cx aborted, so callers pass a connection of their own."""
+    from dashboard import family_plan as _fp
+    e = _norm(email)
+    if not e:
+        return set()
+
+    def members(p):
+        return [(_norm(r[0]), r[1]) for r in cx.execute(
+            "SELECT member_email, relationship FROM household_members "
+            "WHERE lower(trim(primary_email))=?", (p,)).fetchall() if _norm(r[0])]
+
+    def has_plan(p, ms):
+        return any(_fp.is_active(cx, x) for x in sorted({p} | {m for m, _ in ms}))
+
+    ups = [(_norm(r[0]), r[1]) for r in cx.execute(
+        "SELECT primary_email, relationship FROM household_members "
+        "WHERE lower(trim(member_email))=?", (e,)).fetchall() if _norm(r[0])]
+    out = {e}
+    for p, rel in [(e, None)] + ups:
+        ms = members(p)
+        plan = has_plan(p, ms)
+        if p != e and not (plan or is_dependent(rel)):
+            continue
+        out.add(p)
+        out.update(m for m, mrel in ms if plan or is_dependent(mrel))
+    # Last, so a failed read here (no people table) cannot abort the reads above on
+    # Postgres; the household links still price.
+    try:
+        out |= _person_group_with_plan(cx, e)
+    except Exception as ex:
+        print(f"[household] person group skipped: {ex!r}", flush=True)
+    out.discard("")
+    return out
+
+
+def _person_group_with_plan(cx, email):
+    """The people in this email's person-based households that have an active Family
+    Plan holder among them (rule 3 above). Empty when none does. Tags are matched
+    exactly in Python: a LIKE on the slug would treat "_" and "%" as wildcards and
+    differs in case between SQLite and Postgres (review round 2)."""
+    from dashboard import family_plan as _fp
+
+    def slugs_of(tags):
+        try:
+            tl = json.loads(tags or "[]")
+        except (TypeError, ValueError):
+            return set()
+        return {t.split(":", 1)[1] for t in tl if isinstance(t, str)
+                and t.startswith("household:")} if isinstance(tl, list) else set()
+
+    tagged = [(_norm(r[0]), slugs_of(r[1])) for r in cx.execute(
+        "SELECT email, tags FROM people WHERE tags LIKE '%household:%'").fetchall()]
+    mine = set().union(*[sl for em, sl in tagged if em == email]) if tagged else set()
+    out = set()
+    for slug in sorted(mine):
+        group = {em for em, sl in tagged if slug in sl and em}
+        if any(_fp.is_active(cx, x) for x in sorted(group)):
+            out |= group
     return out
 
 
