@@ -95,7 +95,8 @@ def _client():
     import boto3
     from botocore.config import Config
     return boto3.client("sesv2", region_name=region(),
-                        config=Config(retries={"max_attempts": 1}, connect_timeout=5,
+                        config=Config(retries={"total_max_attempts": 1, "mode": "standard"},
+                                      connect_timeout=5,
                                       read_timeout=15))
 
 
