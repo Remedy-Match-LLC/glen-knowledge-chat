@@ -899,8 +899,21 @@
       if (!lastMsg) return;
 
       if (type === 'email') {
-        // Reuse existing email-capture flow (defined below)
-        handleGatedFullReport(logId);
+        // A button, never an automatic send: the model offers the report on many
+        // answers, and sending on arrival mailed one client 9 reports in a day
+        // (2026-10-28). Reuses the email-capture flow (defined below) on click.
+        var ebtn = document.createElement('button');
+        ebtn.type = 'button';
+        ebtn.className = 'action-btn';
+        ebtn.textContent = (cta.label || '').toString().trim() || 'Email me the full report';
+        ebtn.style.cssText = 'display:inline-block;margin-top:10px;padding:8px 16px;background:#3d8a52;color:#fdf4d8;border:0;border-radius:6px;font-size:14px;cursor:pointer;';
+        ebtn.addEventListener('click', function() {
+          if (ebtn.disabled) return;
+          ebtn.disabled = true;
+          handleGatedFullReport(logId);
+        });
+        lastMsg.appendChild(ebtn);
+        msgs.scrollTop = msgs.scrollHeight;
         return;
       }
 
