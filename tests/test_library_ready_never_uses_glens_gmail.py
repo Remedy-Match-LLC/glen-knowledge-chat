@@ -126,3 +126,176 @@ def test_a_junk_address_never_reaches_ghl(appmod, transports, monkeypatch):
     _now_threads(monkeypatch)
     assert _optin(appmod, "someone@example.com").status_code == 200
     assert transports == [] and _guard_rows(appmod) == 1
+
+
+# ── Amazon SES first (Glen, 2026-10-29: "yes") ───────────────────────────────
+class _FakeSES:
+    def __init__(self, fail=None):
+        self.calls, self.fail = [], fail
+
+    def send_email(self, **kw):
+        self.attempts = getattr(self, "attempts", 0) + 1
+        if self.fail:
+            raise self.fail(kw["Content"]["Raw"]["Data"].decode())
+        self.calls.append(kw)
+        return {"MessageId": "m-1"}
+
+
+@pytest.fixture
+def ses(appmod, transports, monkeypatch):
+    from dashboard import ses_mail
+    fake = _FakeSES()
+    real = ses_mail.send
+    monkeypatch.setattr(ses_mail, "send", lambda *a, **k: real(*a, client=fake, **k))
+    monkeypatch.setenv("SES_SEND_ENABLED", "1")
+    monkeypatch.setenv("SES_CONFIGURATION_SET", "remedymatch-events")
+    _now_threads(monkeypatch)
+    return fake
+
+
+def test_ses_sends_it_and_nothing_else_does(appmod, transports, ses, monkeypatch):
+    monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-9")
+    assert _optin(appmod).status_code == 200
+    assert len(ses.calls) == 1 and transports == []
+    raw = ses.calls[0]["Content"]["Raw"]["Data"].decode()
+    assert "To: lead@x.com" in raw and "Reply-To: drglenswartwout@gmail.com" in raw
+    assert "SECRET-LINK-9" in raw
+    assert "List-Unsubscribe" not in raw       # a requested delivery, not marketing
+    assert _guard_rows(appmod) == 1
+
+
+def test_ses_off_falls_back_to_ghl(appmod, transports, ses, monkeypatch):
+    monkeypatch.setenv("SES_SEND_ENABLED", "")
+    assert _optin(appmod).status_code == 200
+    assert ses.calls == [] and transports == ["ghl"]
+
+
+def test_an_ses_failure_falls_back_to_ghl_and_never_logs_the_link(appmod, transports, ses,
+                                                                  monkeypatch, capsys):
+    from botocore.exceptions import ClientError
+    ses.fail = lambda raw: ClientError({"Error": {"Code": "MessageRejected", "Message": raw}},
+                                       "SendEmail")
+    monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-9")
+    assert _optin(appmod).status_code == 200
+    assert ses.attempts == 1 and transports == ["ghl"]
+    got = capsys.readouterr()
+    assert "SECRET-LINK-9" not in got.out + got.err
+
+
+def test_a_suppressed_lead_gets_nothing_from_either(appmod, transports, ses):
+    """Called directly: the opt-in route's own check would stop it first (round 1)."""
+    from dashboard import db, email_suppression as es
+    with db.connect(appmod.LOG_DB) as cx:
+        es.init_table(cx)
+        es.add(cx, "lead@x.com", "hard", "bounce", "test")
+    appmod._send_library_ready_mail("lead@x.com", "", "s", "b", "healing-glaucoma-starter")
+    assert not getattr(ses, "attempts", 0) and transports == []
+
+
+def test_ses_without_its_configuration_set_stays_off(appmod, transports, ses, monkeypatch):
+    monkeypatch.setenv("SES_CONFIGURATION_SET", "")
+    assert _optin(appmod).status_code == 200
+    assert not getattr(ses, "attempts", 0) and transports == ["ghl"]
+
+
+def test_no_connection_is_held_across_the_ses_call(appmod, transports, ses, monkeypatch):
+    from dashboard import db
+    open_now = []
+    real_connect = db.connect
+
+    class Tracked:
+        def __init__(self, *a, **k):
+            self.c = real_connect(*a, **k)
+
+        def __enter__(self):
+            open_now.append(1)
+            return self.c.__enter__()
+
+        def __exit__(self, *e):
+            open_now.pop()
+            return self.c.__exit__(*e)
+    monkeypatch.setattr(db, "connect", Tracked)
+    seen = []
+    from dashboard import ses_mail
+    real_send = ses_mail.send
+    monkeypatch.setattr(ses_mail, "send",
+                        lambda *a, **k: seen.append(len(open_now)) or real_send(*a, **k))
+    appmod._send_library_ready_mail("lead@x.com", "", "s", "b", "healing-glaucoma-starter")
+    assert seen == [0] and len(ses.calls) == 1
+
+
+def test_a_junk_address_never_reaches_ses(appmod, transports, ses):
+    assert _optin(appmod, "someone@example.com").status_code == 200
+    assert ses.calls == [] and transports == [] and _guard_rows(appmod) == 1
+
+
+def test_an_unclear_ses_failure_never_sends_a_second_copy(appmod, transports, ses):
+    """A timeout after AWS accepted it: GHL must not send again (review round 2)."""
+    from botocore.exceptions import ReadTimeoutError
+    ses.fail = lambda raw: ReadTimeoutError(endpoint_url="https://email.us-west-2.amazonaws.com")
+    assert _optin(appmod).status_code == 200
+    assert transports == [] and _guard_rows(appmod) == 1
+
+
+def test_ses_unreachable_falls_back_to_ghl(appmod, transports, ses):
+    from botocore.exceptions import EndpointConnectionError
+    ses.fail = lambda raw: EndpointConnectionError(endpoint_url="https://x")
+    assert _optin(appmod).status_code == 200
+    assert transports == ["ghl"]
+
+
+# ── round 3: each settled branch, on its own ─────────────────────────────────
+def _seed_guard(appmod, email="lead@x.com", slug="healing-glaucoma-starter"):
+    import sqlite3
+    cx = sqlite3.connect(appmod.LOG_DB)
+    cx.execute("CREATE TABLE IF NOT EXISTS ebook_library_welcome_sent (email TEXT, "
+               "ebook_slug TEXT, sent_at TEXT, PRIMARY KEY(email, ebook_slug))")
+    cx.execute("INSERT OR IGNORE INTO ebook_library_welcome_sent VALUES (?,?,'x')", (email, slug))
+    cx.commit()
+
+
+@pytest.fixture
+def fallback_spy(appmod, monkeypatch):
+    calls = []
+    real = appmod._send_full_report_email
+    monkeypatch.setattr(appmod, "_send_full_report_email",
+                        lambda *a, **k: calls.append(1) or real(*a, **k))
+    return calls
+
+
+def test_ses_suppressed_settles_without_the_fallback(appmod, transports, ses, fallback_spy):
+    from dashboard import db, email_suppression as es
+    with db.connect(appmod.LOG_DB) as cx:
+        es.init_table(cx)
+        es.add(cx, "lead@x.com", "hard", "bounce", "test")
+    _seed_guard(appmod)
+    appmod._send_library_ready_mail("lead@x.com", "", "s", "b", "healing-glaucoma-starter")
+    assert fallback_spy == [] and transports == [] and _guard_rows(appmod) == 1
+
+
+def test_ses_junk_settles_without_the_fallback(appmod, transports, ses, fallback_spy):
+    _seed_guard(appmod, "someone@example.com")
+    appmod._send_library_ready_mail("someone@example.com", "", "s", "b",
+                                    "healing-glaucoma-starter")
+    assert fallback_spy == [] and _guard_rows(appmod) == 1
+
+
+def test_a_successful_ses_send_logs_neither_address_nor_link(appmod, transports, ses,
+                                                              monkeypatch, capsys):
+    monkeypatch.setattr(appmod, "portal_link", lambda t: "https://x.test/p/SECRET-LINK-9")
+    _optin(appmod, "unique.lead@x.com")
+    got = capsys.readouterr()
+    assert len(ses.calls) == 1
+    assert "SECRET-LINK-9" not in got.out + got.err
+    assert "unique.lead" not in got.out + got.err
+
+
+def test_a_raising_fallback_frees_the_guard_and_logs_no_link(appmod, monkeypatch, capsys):
+    monkeypatch.setenv("SES_SEND_ENABLED", "")
+    monkeypatch.setattr(appmod, "_send_full_report_email",
+                        lambda em, n, s, body, **k: (_ for _ in ()).throw(RuntimeError(body)))
+    _seed_guard(appmod)
+    appmod._send_library_ready_mail("lead@x.com", "", "s", "SECRET-LINK-7",
+                                    "healing-glaucoma-starter")
+    got = capsys.readouterr()
+    assert "SECRET-LINK-7" not in got.out + got.err and _guard_rows(appmod) == 0

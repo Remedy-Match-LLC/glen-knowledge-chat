@@ -22,6 +22,8 @@ class FakeSES:
 @pytest.fixture(autouse=True)
 def secret(monkeypatch):
     monkeypatch.setattr(un, "_SECRET", "test-secret-abc", raising=False)
+    # enabled() also needs the configuration set that routes bounces (2026-10-29).
+    monkeypatch.setenv("SES_CONFIGURATION_SET", "remedymatch-events")
 
 
 def _db():
@@ -113,3 +115,25 @@ def test_blank_address_sends_nothing(monkeypatch):
     fake = FakeSES()
     assert sm.send(_db(), "  ", "s", "t", marketing=False, client=fake)["skipped"] == "suppressed"
     assert fake.calls == []
+
+
+def test_no_configuration_set_means_off(monkeypatch):
+    monkeypatch.setenv(sm.ENABLED_ENV, "1")
+    monkeypatch.setenv("SES_CONFIGURATION_SET", "")
+    assert not sm.enabled()
+
+
+def test_a_prechecked_send_takes_no_connection_and_a_plain_one_needs_it():
+    with pytest.raises(ValueError):
+        sm.send(_db(), "a@b.co", "s", "t", marketing=False, prechecked=True, client=FakeSES())
+    with pytest.raises(ValueError):
+        sm.send(None, "a@b.co", "s", "t", marketing=False, client=FakeSES())
+
+
+def test_the_real_client_makes_exactly_one_attempt(monkeypatch):
+    """max_attempts counts retries in botocore; total_max_attempts counts tries (round 2)."""
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "fake")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "fake")
+    c = sm._client()
+    assert c.meta.config.retries.get("total_max_attempts") == 1
+    assert c.meta.config.read_timeout == 15 and c.meta.config.connect_timeout == 5

@@ -1215,16 +1215,73 @@ def _send_library_ready(email, name, token, ebook_title, slug):
         print(f"[library-ready] {em}/{slug}: {e!r}", flush=True)
 
 
-def _send_library_ready_mail(em, name, subject, body, slug):
-    """The send behind _send_library_ready. bulk: never from Glen's Gmail. log_body=False:
-    the body holds a live portal link. A send that did not go out frees its once-guard,
-    so the lead's next opt-in tries again: GHL is now the only transport (review round 1)."""
-    via = None
+# Replies to the library email reach Glen's inbox, as they did before it left Gmail.
+LIBRARY_REPLY_TO = "drglenswartwout@gmail.com"
+
+
+def _library_ready_via_ses(em, subject, body):
+    """Amazon SES, the first sender off GoHighLevel (Glen, 2026-10-29: "yes"). Returns
+    "ses", "suppressed" or "undeliverable" when settled, "unknown" when SES may have taken
+    it, else None for the GHL path. None only when SES surely sent nothing: switched off
+    (SES_SEND_ENABLED), it refused the request, or it could not be reached. A timeout
+    after AWS accepted would otherwise send a second copy through GHL (review round 2).
+    Never logs the body."""
     try:
-        via, _ = _send_full_report_email(em, name, subject, body, bulk=True, log_body=False)
+        from dashboard import ses_mail as _ses
+        from dashboard.inbox import _is_undeliverable
+        if not _ses.enabled():
+            return None
+        if _is_undeliverable(em):
+            return "undeliverable"
     except Exception as e:
-        print(f"[library-ready] send raised: {type(e).__name__}", flush=True)
-    if via in ("ghl", "suppressed", "undeliverable"):
+        print(f"[library-ready] SES check failed: {type(e).__name__}", flush=True)
+        return None
+    r = None
+    try:
+        from botocore.exceptions import ClientError, EndpointConnectionError
+        sure_not_sent = (ClientError, EndpointConnectionError)
+    except Exception:
+        sure_not_sent = ()
+    try:
+        # The suppression check holds a connection briefly, never across the network call
+        # (review round 1: the Postgres pool has 10).
+        with db.connect(LOG_DB) as cx:
+            reason = _ses.block_reason(cx, em, marketing=False)
+        if reason:
+            return "suppressed"
+    except Exception as e:
+        print(f"[library-ready] SES check failed: {type(e).__name__}", flush=True)
+        return None
+    try:
+        r = _ses.send(None, em, subject, body, marketing=False, reply_to=LIBRARY_REPLY_TO,
+                      prechecked=True)
+    except Exception as e:
+        print(f"[library-ready] SES send failed: {type(e).__name__}", flush=True)
+        if r is None:
+            return None if isinstance(e, sure_not_sent) else "unknown"
+    if r.get("sent"):
+        try:
+            print(f"[library-ready] sent via ses {r.get('message_id')}", flush=True)
+        except Exception:
+            pass
+        return "ses"
+    if r.get("skipped") == "suppressed":
+        return "suppressed"
+    return None
+
+
+def _send_library_ready_mail(em, name, subject, body, slug):
+    """The send behind _send_library_ready: Amazon SES, else GHL/Mailgun, never Glen's
+    Gmail. log_body=False: the body holds a live portal link. A send that did not go out
+    frees its once-guard, so the lead's next opt-in tries again (review round 1)."""
+    via = _library_ready_via_ses(em, subject, body)
+    if via is None:
+        try:
+            via, _ = _send_full_report_email(em, name, subject, body, bulk=True,
+                                             log_body=False)
+        except Exception as e:
+            print(f"[library-ready] send raised: {type(e).__name__}", flush=True)
+    if via in ("ses", "unknown", "ghl", "suppressed", "undeliverable"):
         return
     try:
         with _db_lock, db.connect(LOG_DB) as cx:
