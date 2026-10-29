@@ -910,7 +910,10 @@
         ebtn.addEventListener('click', function() {
           if (ebtn.disabled) return;
           ebtn.disabled = true;
-          handleGatedFullReport(logId);
+          // Re-enabled when nothing was sent, so a failed or cancelled try can retry.
+          Promise.resolve(handleGatedFullReport(logId)).then(
+            function(ok) { if (ok !== true) ebtn.disabled = false; },
+            function() { ebtn.disabled = false; });
         });
         lastMsg.appendChild(ebtn);
         msgs.scrollTop = msgs.scrollHeight;
@@ -1389,6 +1392,7 @@
       const d = await r.json();
       if (r.ok && d.ok) {
         appendMessage('assistant', '✓ I\'ll email your full report to ' + email, null, null);
+        return true;
       } else {
         appendMessage('assistant', '**Error:** ' + (d && d.error ? d.error : r.status), null, null);
       }
