@@ -2643,9 +2643,13 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         if (not m and slug not in _ALWAYS_CUE_NAMES
                 and _VINPOCETINE_LINE in (p.get("warning") or "")
                 and _PREGNANCY_OR_SAFETY_CUE.search(query_text)):
+            # After "a" or "an" the name is a kind of thing, not the product: "Is a DHT
+            # blocker safe for women" names nothing (test_named_product_facts).
             m = next((mi for mi in itertools.islice(
                           re.finditer(cue_pattern, query_text, re.IGNORECASE), 40)
-                      if _own(mi)), None)
+                      if _own(mi) and not re.search(r"\ban?\s+$",
+                                                     query_text[max(0, mi.start() - 4):mi.start()],
+                                                     re.IGNORECASE)), None)
         if m and slug in _YIELDS_TO_PREFIX:
             word = _YIELDS_TO_PREFIX[slug]
             # "Focus Neuro Magnesium Powder" is the stocked jar, not the presale, and a
