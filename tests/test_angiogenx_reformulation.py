@@ -26,9 +26,9 @@ FIVE = [
 INTRO = ("AngiogenX supports the health of the small blood vessels in your eyes. It combines pine "
          "bark OPCs, trans-resveratrol, curcumin, notoginseng and crocin from gardenia fruit.")
 WARNING = ("Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, "
-           "sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before "
-           "surgery. Resume once healing is complete. If you take a blood thinner, consult your "
-           "physician before use.")
+           "sprain or burn. Also avoid use during menses or in pregnancy. Stop 1 to 2 weeks before "
+           "surgery or dental work. Resume only when your surgeon approves. If you take a blood "
+           "thinner, consult your physician before use.")  # surgery lines: Glen, 2026-10-30
 DESCRIPTION = "\n\n".join([
     "Each vegicap supplies 158 mg pine bark OPCs 95%, 100 mg trans-resveratrol 98%, 100 mg "
     "curcumin 95%, 75 mg notoginsenosides 80% and 33 mg crocin 45%. There are no fillers or "

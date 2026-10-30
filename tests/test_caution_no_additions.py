@@ -207,7 +207,8 @@ def test_a_caution_subject_question_drops_only_the_drug_interaction_snippets(q):
     "Can I take warfarin with vitamin K?",          # control: no product named
     "Is Estro-Clear safe with warfarin?",           # pinned caution, switched off here
     "Is Clear the Way safe with my blood thinner?", # names the subject, switched off here
-    "Can I take Scar Silk while pregnant?",         # opted in, but its caution has no pregnancy
+    # Scar Silk's caution names pregnancy since 2026-10-30, so the opted-in example moved.
+    "Can I use Phytolacca americana Oil Roll-On while pregnant?",  # opted in, no pregnancy
 ])
 def test_every_other_question_keeps_its_snippets(q, monkeypatch):
     _opt_out(monkeypatch, "estro-clear", "clear-the-way")

@@ -13,8 +13,19 @@ import pytest
 
 import app
 
-APPROVED = ("Ask your practitioner before use if you take a blood thinner or prescription "
-            "medication, or before surgery.")
+# Glen "approve", communication tab, 2026-10-30 (communication/drafts/
+# 2026-10-30-product-cautions/cautions.md). It replaced the 2026-10-21 caution.
+APPROVED = (
+    "This formula contains enzymes that may increase the risk of bleeding. Do not use if you "
+    "have a bleeding disorder or a history of bleeding. Avoid use with a fresh or bleeding "
+    "wound. Also avoid use during menses or pregnancy, or while nursing. Stop 1 to 2 weeks "
+    "before surgery or dental work. Resume only when your surgeon approves. Do not combine "
+    "with a blood thinner or daily aspirin unless your physician approves. Do not take with "
+    "Lipid Zyme unless your physician approves. Avoid use if you are allergic to pineapple. "
+    "Ask your pharmacist if you take any prescription medicine. If you receive eye "
+    "injections, tell your eye doctor that you take this. Stop use and seek care at once if "
+    "you notice unusual bleeding or black stools. Stop use and seek care if you notice dark "
+    "urine or yellow skin.")
 DIRECTIONS = "Up to 3 capsules a day between meals."
 PRODUCTS = json.load(open("data/products.json"))["products"]
 CORRECTIONS = json.load(open("data/products-manual-corrections.json"))
