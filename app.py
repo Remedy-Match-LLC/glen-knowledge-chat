@@ -2366,6 +2366,14 @@ _VINPOCETINE_EVERYDAY_NAMES = frozenset({
     "night-vision", "perfect-skin", "vein-support", "three-treasures", "thermogenesis",
     "rise--shine", "mitochondrial-biogenesis", "vital-energy-be"})
 _SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"}) | _VINPOCETINE_EVERYDAY_NAMES
+# A name typed in any case counts for a product that carries the vinpocetine line when the
+# question asks about pregnancy or safety: "can i take heart health while pregnant?" and
+# "is brain boost safe while pregnant?" got no caution (review rounds 1 and 2), while "what
+# is longevity?" still names nothing (formulation, 2026-10-30).
+_VINPOCETINE_LINE = "contains vinpocetine, so do not use it if you are pregnant"
+_PREGNANCY_OR_SAFETY_CUE = re.compile(
+    r"pregnan|breast\s*-?\s*feed|nursing|conceiv|trying\s+for\s+a\s+baby|\bsafe|"
+    r"caution|side[\s-]+effect", re.IGNORECASE)
 # Pinned products that yield to any longer catalog name containing theirs, pinned or not:
 # "Crystalline Clarity" and the Clarity flower essences are other products. Opt-in, because
 # many pinned label names sit inside a longer unpinned FileMaker row ("Energessence
@@ -2598,7 +2606,10 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             # A Title Cased Question capitalises the verb too: "How Do I Moisturize Dry
             # Skin?" needs a cue, as at a sentence start (review round 3). Clarity keeps
             # the rule it had.
-            _title = slug in _CUE_NAMES and _TITLE_CASED(query_text)
+            # The vinpocetine names too: "What Foods Support Heart Health?" names nothing
+            # (review round 1). A pregnancy or safety question still matches below.
+            _title = ((slug in _CUE_NAMES or slug in _VINPOCETINE_EVERYDAY_NAMES)
+                      and _TITLE_CASED(query_text))
             m = next((mi for mi in _cased
                       if _own(mi) and ((not _title
                                         and not _SENTENCE_START.search(query_text[:mi.start()]))
@@ -2627,6 +2638,12 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                         slug in _CUE_NAMES and _has_product_cue(query_text, *mi.span()))):
                     m = mi
                     break
+        if (not m and slug not in _ALWAYS_CUE_NAMES
+                and _VINPOCETINE_LINE in (p.get("warning") or "")
+                and _PREGNANCY_OR_SAFETY_CUE.search(query_text)):
+            m = next((mi for mi in itertools.islice(
+                          re.finditer(cue_pattern, query_text, re.IGNORECASE), 40)
+                      if _own(mi)), None)
         if m and slug in _YIELDS_TO_PREFIX:
             word = _YIELDS_TO_PREFIX[slug]
             # "Focus Neuro Magnesium Powder" is the stocked jar, not the presale, and a

@@ -72,7 +72,8 @@ def test_each_record_and_its_correction_carry_the_line(slug):
 
 def test_a_new_correction_keeps_the_record_source():
     """apply_corrections() writes "manual" when an entry has no source, and that clears
-    gk_stale: sustain would lose it (spec, Catalogue fields)."""
+    gk_stale: sustain would lose it (spec, Catalogue fields). Every other new entry is
+    checked against main() in the full enrichment run below."""
     corr, products = _data("products-manual-corrections.json"), _products()
     assert corr["sustain"]["ingredients_source"] == products["sustain"]["ingredients_source"]
     assert products["sustain"]["gk_stale"] is True
@@ -146,6 +147,40 @@ def test_a_capitalised_sentence_start_needs_a_product_cue(slug, name):
               f"{name} dose?"):
         assert slug in _named(q), q
     assert slug in app._caution_link_slugs(f"Can I take {name} while pregnant?")
+
+
+@pytest.mark.parametrize("q,slug", [
+    ("can i take heart health while pregnant?", "heart-health"),
+    ("is sustain safe in pregnancy?", "sustain"),
+    ("is brain boost safe while pregnant?", "brain-boost"),
+    ("is c15 syntropy safe while pregnant?", "c15-syntropy"),
+    ("can i take iron out if i might become pregnant", "iron-out"),
+    ("is vitality ok while breastfeeding?", "vitality"),
+    ("longevity side effects when trying to conceive?", "longevity"),
+    ("Heart Health while pregnant?", "heart-health"),
+])
+def test_a_pregnancy_or_safety_question_counts_in_any_case(q, slug):
+    """Review rounds 1 and 2: lowercase pregnancy questions got no caution. Formulation,
+    2026-10-30: any case counts beside a pregnancy or safety cue."""
+    assert slug in _named(q), q
+    assert slug in app._caution_link_slugs(q), q
+
+
+@pytest.mark.parametrize("q", [
+    "what is longevity?", "how much muscle mass should I have?", "longevity tips?",
+    "heart health tips for seniors", "how do i sustain energy all day?",
+    "one step at a time", "rescue remedy safe in pregnancy?",
+    "What Foods Support Heart Health?",
+])
+def test_a_lowercase_or_title_cased_everyday_phrase_brings_no_product(q):
+    assert not (_named(q) & set(ALL)), q
+
+
+def test_rescue_yields_to_the_flower_essence_by_its_full_name(monkeypatch):
+    """Round 3: with _YIELDS_BEFORE in place this cannot tell which guard held, so it is
+    switched off here."""
+    monkeypatch.setattr(app, "_YIELDS_BEFORE", {})
+    assert "rescue" not in _named("Is Rescue Remedy Flower Essence in Terrain Restore safe?")
 
 
 def test_brain_boost_yields_to_the_nootropic():
