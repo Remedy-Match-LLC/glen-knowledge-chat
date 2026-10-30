@@ -71,28 +71,26 @@ def _refused(r):
     assert body.get("url") == URL, body
 
 
-def test_the_catalog_file_marks_only_the_three_out_of_stock():
+def test_the_catalog_file_marks_only_the_two_out_of_stock():
     """Vitamin D Syntropy's new formula is back in stock (spec 2026-10-16-vitamin-d-syntropy)."""
     p = _real()[VD]
     assert "out_of_stock" not in p
     assert not p.get("inactive") and not p.get("waitlist_only")
     assert [s for s, q in _real().items()
             if isinstance(q, dict) and "out_of_stock" in q] == [
-                "seaamino-syntropy", "night-vision", "cds-water-purifier--activator"]
+                "seaamino-syntropy", "cds-water-purifier--activator"]
 
 
-def test_night_vision_is_out_of_stock_with_no_date(client):
-    """Glen, 2026-10-25, in the formulation tab: "Zero on shelf", and "yes" to marking it
-    out of stock until the next batch. No restock date is known, so the line names none."""
-    nv = _real()["night-vision"]
-    assert nv["out_of_stock"] is True
+def test_night_vision_is_orderable_again(client):
+    """Out of stock 2026-10-25 (#2136). Glen, 2026-10-29, money tab: "Keep Night Vision on
+    the invoice. It should ship in the last box on Monday", and "yes" to clearing the flag,
+    accepting that store buyers can order it before the new batch is made."""
+    assert "out_of_stock" not in _real()["night-vision"]
     products = app._PRODUCTS["products"]
-    assert pp.is_orderable("night-vision", products) is False
-    line = "Night Vision is out of stock."
-    assert pp.waitlist_refusal(pp.waitlist_block("night-vision", products)) == line
+    assert pp.is_orderable("night-vision", products) is True
+    assert pp.waitlist_block("night-vision", products) is None
     d = client.get("/begin/product-page-data/night-vision").get_json()
-    assert d["out_of_stock_line"] == line
-    assert d["price_cents"] is None and "cta_url" not in d
+    assert not d.get("out_of_stock_line") and d["price_cents"] == 7000
 
 
 def test_the_predicate_refuses_it_with_the_one_line(catalog):
@@ -212,22 +210,26 @@ def test_the_two_client_pages_print_the_line_when_it_is_given():
     assert '${esc(it.not_ready.line || "Not ready to order yet")}' in portal
 
 
-def test_the_chat_is_told_night_vision_is_out_of_stock():
-    """Unpinned, Night Vision brought no facts block, so the bot answered from old store
-    snippets (review round 1, 2026-10-25). It now gets the refusal line and no dose."""
-    b = app._named_product_facts("Can I order Night Vision?")
-    assert "### Night Vision" in b
-    assert "Availability: Night Vision is out of stock." in b
-    assert "Give none, and do not take one from the snippets." in b
-    assert "Night Vision cannot be ordered now. Never say it is available to order or in stock." in b
+def test_an_unpinned_out_of_stock_product_gets_the_never_available_line():
+    """An unpinned out-of-stock product brings the refusal line and no dose (review round 1
+    on #2136, 2026-10-25, found with Night Vision)."""
+    b = app._named_product_facts("Can I order SeaAmino Syntropy?")
+    assert "### SeaAmino Syntropy" in b
+    assert "Availability: SeaAmino Syntropy is out of stock." in b
+    assert "SeaAmino Syntropy cannot be ordered now. Never say it is available to order or in stock." in b
+
+
+def test_the_chat_is_not_told_night_vision_is_out_of_stock():
+    assert "Night Vision cannot be ordered now" not in app._named_product_facts(
+        "Can I order Night Vision?")
 
 
 def test_only_the_unavailable_product_gets_the_line(monkeypatch):
-    # The catalog fixture flags Vitamin D Syntropy; drop that so only Night Vision is out.
+    # The catalog fixture flags Vitamin D Syntropy; drop that so only SeaAmino is out.
     real = _real()
     monkeypatch.setitem(app._PRODUCTS["products"], VD, dict(real[VD]))
-    b = app._named_product_facts("Can I order Night Vision and Vitamin D Syntropy?")
-    assert "\nNight Vision cannot be ordered now." in b
+    b = app._named_product_facts("Can I order SeaAmino Syntropy and Vitamin D Syntropy?")
+    assert "\nSeaAmino Syntropy cannot be ordered now." in b
     assert "Vitamin D Syntropy cannot be ordered now." not in b
     assert b.count("cannot be ordered now.") == 1
 
@@ -240,15 +242,16 @@ def test_a_bundle_holding_it_carries_its_own_name(catalog, monkeypatch):
 
 
 def test_the_product_table_gives_no_price_for_it():
-    hint = app._alias_price_hint("Night Vision", "night-vision")
-    assert "$" not in hint and "cannot be ordered now: Night Vision is out of stock." in hint
-    assert app._product_guidance_hint("night-vision") == ""
+    hint = app._alias_price_hint("SeaAmino Syntropy", "seaamino-syntropy")
+    assert "$" not in hint and "cannot be ordered now: SeaAmino Syntropy is out of stock." in hint
+    assert app._product_guidance_hint("seaamino-syntropy") == ""
+    assert app._alias_price_hint("Night Vision", "night-vision").startswith(" — $")
     assert app._alias_price_hint("Scar Silk", "scar-silk").startswith(" — $")
 
 
 def test_seaamino_is_out_of_stock_with_no_date(client):
     """Glen, 2026-10-25, formulation tab: "zero in stock", then "yes" to marking it out of
-    stock as with Night Vision. No restock date is known."""
+    stock as with Night Vision (since back in stock). No restock date is known."""
     assert _real()["seaamino-syntropy"]["out_of_stock"] is True
     products = app._PRODUCTS["products"]
     assert pp.is_orderable("seaamino-syntropy", products) is False
