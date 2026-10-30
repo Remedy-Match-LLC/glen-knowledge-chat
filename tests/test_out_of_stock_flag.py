@@ -220,8 +220,11 @@ def test_an_unpinned_out_of_stock_product_gets_the_never_available_line():
 
 
 def test_the_chat_is_not_told_night_vision_is_out_of_stock():
-    assert "Night Vision cannot be ordered now" not in app._named_product_facts(
-        "Can I order Night Vision?")
+    """An empty facts block would pass the first check alone, so the price the bot's
+    product table carries is checked too (round 2)."""
+    assert "cannot be ordered now" not in app._named_product_facts("Can I order Night Vision?")
+    hint = app._alias_price_hint("Night Vision", "night-vision")
+    assert "$70" in hint and "out of stock" not in hint
 
 
 def test_only_the_unavailable_product_gets_the_line(monkeypatch):
