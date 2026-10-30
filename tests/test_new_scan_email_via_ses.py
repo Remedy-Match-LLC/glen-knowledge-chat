@@ -55,6 +55,11 @@ def test_ses_sends_it_and_ghl_does_not(rig):
     assert "To: client@x.com" in raw and TOKEN in raw
     assert "Reply-To: drglenswartwout@gmail.com" in raw
     assert "List-Unsubscribe" not in raw          # a notice about their own scan, as on GHL
+    import email
+    msg = email.message_from_string(raw)
+    parts = {p.get_content_type(): p.get_payload(decode=True).decode() for p in msg.walk()
+             if not p.is_multipart()}
+    assert TOKEN in parts["text/plain"] and TOKEN in parts["text/html"]
 
 
 def test_ses_off_keeps_ghl(rig, monkeypatch):
@@ -113,6 +118,35 @@ def test_no_log_line_carries_the_link_or_the_address(rig, monkeypatch, capsys):
     monkeypatch.setattr(ghl_email, "send_via_ghl",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError(TOKEN)))
     _send(rig, "hidden.three@x.com")
+    from dashboard import ses_mail
+    monkeypatch.setattr(ses_mail, "deliver",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError(TOKEN + " hidden.three")))
+    _send(rig, "hidden.three@x.com")
     got = capsys.readouterr()
     assert TOKEN not in got.out + got.err and "hidden.three" not in got.out + got.err
     assert "is on file for you" not in got.out + got.err     # no body text either
+
+
+@pytest.mark.parametrize("where", ["row", "outer"])
+def test_the_sync_route_logs_no_address(tmp_path, monkeypatch, capsys, where):
+    """Both handlers around the notice in api_console_client_scans_sync (round 3)."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SCAN_LIST_ENABLED", "1")
+    monkeypatch.setenv("SCAN_REQUEST_ENABLED", "1")
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import app as a
+    importlib.reload(a)
+    import dashboard as d
+    monkeypatch.setattr(d, "CONSOLE_SECRET", "", raising=False)
+    boom = lambda *x, **k: (_ for _ in ()).throw(RuntimeError("hidden.four@x.com"))
+    if where == "row":
+        monkeypatch.setattr(a, "_is_paid_member", boom)
+    else:
+        from dashboard import analysis_quota
+        monkeypatch.setattr(analysis_quota, "init_analysis_quota_table", boom)
+    capsys.readouterr()
+    r = a.app.test_client().post("/api/console/client-scans/sync", json={
+        "email": "hidden.four@x.com", "scans": [{"scan_date": "2026-10-29", "scan_id": 5}]})
+    assert r.status_code == 200
+    out = capsys.readouterr().out
+    assert "[new-scan-email]" in out and "hidden.four" not in out

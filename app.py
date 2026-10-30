@@ -19568,7 +19568,7 @@ def api_console_client_scans_sync():
                         print(f"[new-scan-email] notice failed: {type(_e).__name__}", flush=True)
                     _cs.mark_notified(cx, em, sd)   # mark regardless, so we never re-nag
         except Exception as _e:
-            print(f"[new-scan-email] {_e!r}", flush=True)
+            print(f"[new-scan-email] sync failed: {type(_e).__name__}", flush=True)
     return jsonify({"ok": True, "upserted": total})
 
 
