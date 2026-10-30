@@ -1373,7 +1373,8 @@
    "gk_stale_reason": "GK page missing: Dihydroberberine (GlucoVantage)",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "579"
+   "fmp_id": "579",
+   "warning": "Avoid use in pregnancy or while nursing. Avoid use if you have liver disease. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. This formula may lower blood sugar. Consult your physician if you take medicine for diabetes. It can also change how the body clears some prescription drugs. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin. It may cause stomach upset or trouble sleeping."
   },
   "iop-syntropy": {
    "name": "IOP Syntropy",
@@ -3206,7 +3207,8 @@
    "description": "Scar Solve . Price: $70.",
    "bottle_type": "30 Caps",
    "fmp_id": "1074",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "warning": "Avoid use in pregnancy or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. If you have an autoimmune condition, consult your physician before use. Also consult your physician if you take medicine that suppresses the immune system. Ask your physician first if you have or have had cancer. This formula contains zinc. If you take an eye vitamin with zinc, consult your physician before adding this. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin."
   },
   "es5-autoimmune": {
    "name": "ES5 Auto-Immune Energetic Star Infoceutical",
@@ -3874,7 +3876,8 @@
    "description": "Lipid Zyme . Lipid Zyme Lipid Zyme Fatty deposits in the eye called Drusen are metabolic wastes that build up and can distort the vision, damage the macula, and lead to blindness… The recommended dosage range is 1 capsule up to 3 times daily between meals, as guided and according to tolerance. Each phthalate-free enteric vegicap of Lipid Zyme supplies: Alkaloid: Black Pepper: Piperine ( Piper nigrum ) 3 mg “Piper nigrum, significantly enhances the bioavailability of various nutrients through increased absorption. Lipid Zyme . Piperine does this by inhibiting enzymes that metabolize drugs and...",
    "bottle_type": "30 Caps",
    "fmp_id": "467",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "warning": "This formula contains enzymes that may increase the risk of bleeding. Do not use if you have a bleeding disorder or a history of bleeding. Avoid use with a fresh or bleeding wound. Also avoid use during menses or pregnancy, or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. Do not combine with a blood thinner or daily aspirin unless your physician approves. Do not take with Scar Silk unless your physician approves. Avoid use if you are allergic to pineapple. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care at once if you notice unusual bleeding or black stools."
   },
   "neuroprotect": {
    "name": "Neuroprotect",
@@ -7489,7 +7492,7 @@
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising"
   },
   "scar-silk": {
-   "warning": "Ask your practitioner before use if you take a blood thinner or prescription medication, or before surgery.",
+   "warning": "This formula contains enzymes that may increase the risk of bleeding. Do not use if you have a bleeding disorder or a history of bleeding. Avoid use with a fresh or bleeding wound. Also avoid use during menses or pregnancy, or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. Do not combine with a blood thinner or daily aspirin unless your physician approves. Do not take with Lipid Zyme unless your physician approves. Avoid use if you are allergic to pineapple. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care at once if you notice unusual bleeding or black stools. Stop use and seek care if you notice dark urine or yellow skin.",
    "chat_caution": true,
    "directions": "Up to 3 capsules a day between meals.",
    "copy_pinned": [
@@ -8545,7 +8548,7 @@
    "chat_caution": true
   },
   "macular-wellness-lycopene": {
-   "warning": "Contains vitamin B6. Stop use and consult your physician if you notice tingling or numbness. If you take a blood thinner, consult your physician before use.",
+   "warning": "Avoid use in pregnancy or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. The danshen in this formula can strengthen the effect of warfarin. Ask your pharmacist if you take any prescription medicine. Avoid use if you have gallstones or a bile duct problem. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin.",
    "chat_caution": true,
    "name": "Macular Wellness Lycopene",
    "price_cents": 7000,
@@ -10712,9 +10715,9 @@
    ],
    "ingredients_source": "label-2026-10-05",
    "intro": "AngiogenX supports the health of the small blood vessels in your eyes. It combines pine bark OPCs, trans-resveratrol, curcumin, notoginseng and crocin from gardenia fruit.",
-   "description": "Each vegicap supplies 158 mg pine bark OPCs 95%, 100 mg trans-resveratrol 98%, 100 mg curcumin 95%, 75 mg notoginsenosides 80% and 33 mg crocin 45%. There are no fillers or excipients.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
+   "description": "Each vegicap supplies 158 mg pine bark OPCs 95%, 100 mg trans-resveratrol 98%, 100 mg curcumin 95%, 75 mg notoginsenosides 80% and 33 mg crocin 45%. There are no fillers or excipients.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner, consult your physician before use.",
    "directions": "Take 1 capsule daily with food, or as guided.",
-   "warning": "Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
+   "warning": "Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner, consult your physician before use.",
    "chat_caution": true,
    "benefits": [
     "Helps small blood vessels keep fluid where it belongs",

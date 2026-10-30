@@ -3241,9 +3241,9 @@
       }
     ],
     "ingredients_source": "label-2026-10-05",
-    "description": "Each vegicap supplies 158 mg pine bark OPCs 95%, 100 mg trans-resveratrol 98%, 100 mg curcumin 95%, 75 mg notoginsenosides 80% and 33 mg crocin 45%. There are no fillers or excipients.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
+    "description": "Each vegicap supplies 158 mg pine bark OPCs 95%, 100 mg trans-resveratrol 98%, 100 mg curcumin 95%, 75 mg notoginsenosides 80% and 33 mg crocin 45%. There are no fillers or excipients.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner, consult your physician before use.",
     "directions": "Take 1 capsule daily with food, or as guided.",
-    "warning": "Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
+    "warning": "Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner, consult your physician before use.",
     "chat_caution": true,
     "bottle_type": "30 Caps",
     "intro": "AngiogenX supports the health of the small blood vessels in your eyes. It combines pine bark OPCs, trans-resveratrol, curcumin, notoginseng and crocin from gardenia fruit.",
@@ -3406,7 +3406,7 @@
   },
   "scar-silk": {
     "ingredients_source": "db-formulations-2026-06-25",
-    "warning": "Ask your practitioner before use if you take a blood thinner or prescription medication, or before surgery.",
+    "warning": "This formula contains enzymes that may increase the risk of bleeding. Do not use if you have a bleeding disorder or a history of bleeding. Avoid use with a fresh or bleeding wound. Also avoid use during menses or pregnancy, or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. Do not combine with a blood thinner or daily aspirin unless your physician approves. Do not take with Lipid Zyme unless your physician approves. Avoid use if you are allergic to pineapple. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care at once if you notice unusual bleeding or black stools. Stop use and seek care if you notice dark urine or yellow skin.",
     "chat_caution": true,
     "directions": "Up to 3 capsules a day between meals.",
     "copy_pinned": [
@@ -4172,5 +4172,21 @@
     "ingredients_source": "fmp_new",
     "warning": "Do not use if you are pregnant or breastfeeding. Consult your health professional before use if you take prescription medications, especially blood thinners or hormone therapies. Also consult first if you have a bleeding disorder, liver concerns or a hormone-sensitive condition, or are planning surgery. Stop use and consult your physician if you notice yellowing of the skin or eyes, or dark urine. This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
     "chat_caution": true
+  },
+  "macular-wellness-lycopene": {
+    "ingredients_source": "fmp_new",
+    "warning": "Avoid use in pregnancy or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. The danshen in this formula can strengthen the effect of warfarin. Ask your pharmacist if you take any prescription medicine. Avoid use if you have gallstones or a bile duct problem. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin."
+  },
+  "lipid-zyme": {
+    "ingredients_source": "fmp_new",
+    "warning": "This formula contains enzymes that may increase the risk of bleeding. Do not use if you have a bleeding disorder or a history of bleeding. Avoid use with a fresh or bleeding wound. Also avoid use during menses or pregnancy, or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. Do not combine with a blood thinner or daily aspirin unless your physician approves. Do not take with Scar Silk unless your physician approves. Avoid use if you are allergic to pineapple. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care at once if you notice unusual bleeding or black stools."
+  },
+  "lipid-cleanse": {
+    "ingredients_source": "fmp_new",
+    "warning": "Avoid use in pregnancy or while nursing. Avoid use if you have liver disease. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. This formula may lower blood sugar. Consult your physician if you take medicine for diabetes. It can also change how the body clears some prescription drugs. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin. It may cause stomach upset or trouble sleeping."
+  },
+  "scar-solve": {
+    "ingredients_source": "fmp_new",
+    "warning": "Avoid use in pregnancy or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. If you have an autoimmune condition, consult your physician before use. Also consult your physician if you take medicine that suppresses the immune system. Ask your physician first if you have or have had cancer. This formula contains zinc. If you take an eye vitamin with zinc, consult your physician before adding this. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin."
   }
 }
