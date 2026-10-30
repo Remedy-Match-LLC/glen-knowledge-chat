@@ -341,8 +341,9 @@ def test_other_pinned_names_inside_a_longer_catalog_name_keep_their_block(appmod
 
 
 def test_only_listed_slugs_yield_to_a_longer_catalog_name(appmod):
+    # Brain Boost and Rescue: the vinpocetine pregnancy line, 2026-10-30.
     assert appmod._YIELDS_TO_LONGER_NAMES == frozenset({"clarity", "stress-release",
-                                                         "vitality"})
+                                                         "vitality", "brain-boost", "rescue"})
 
 
 def test_a_colon_does_not_start_a_sentence(appmod):

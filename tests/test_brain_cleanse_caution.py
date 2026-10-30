@@ -33,6 +33,9 @@ BRAIN_CLEANSE = (
     "days before surgery. If you are under medical treatment, consult your "
     "physician before use.")
 
+# The vinpocetine pregnancy line follows Sleep Syntropy's own caution (Glen, 2026-10-30).
+VINPOCETINE = ("This formula contains vinpocetine, so do not use it if you are pregnant or "
+               "could become pregnant.")
 SLEEP_SYNTROPY = (
     "May cause drowsiness. Take at bedtime, when wakeful during the night, or both, "
     "as desired or guided. Do not drive or operate machinery "
@@ -49,7 +52,7 @@ SLEEP_SYNTROPY = (
     "contains CBD, which can change how the body processes some medicines. If you "
     "take a seizure medicine or any prescription medicine, consult your physician "
     "before use. Stop a few days before surgery. If you are under medical "
-    "treatment, consult your physician before use.")
+    "treatment, consult your physician before use. " + VINPOCETINE)
 
 COPY = {
     "brain-cleanse": {

@@ -8,7 +8,8 @@ with the caution or adding a time window. The same filter now drops interaction 
 where a product says it has no caution (knowledge read-back on Clarity, 2026-10-24).
 """
 # Clarity carries its own caution since 2026-10-25 (Glen, platform tab), so these tests
-# use Vitamin C Syntropy, a pinned product that still has none.
+# used Vitamin C Syntropy until it took the vinpocetine pregnancy line (2026-10-30). They
+# now use Pterostilbene Pure Powder, a pinned product that still has none.
 import importlib
 from types import SimpleNamespace
 
@@ -110,18 +111,18 @@ def test_operate_machinery_and_cooperation_are_not_surgery(appmod, q):
 
 
 @pytest.mark.parametrize("q", [
-    "Can I take Vitamin C Syntropy with my blood pressure medicine?",
-    "Is Vitamin C Syntropy safe while pregnant?",
-    "Does Vitamin C Syntropy interact with sertraline?",
-    "Can I take Vitamin C Syntropy before surgery?",
+    "Can I take Pterostilbene Pure Powder with my blood pressure medicine?",
+    "Is Pterostilbene Pure Powder safe while pregnant?",
+    "Does Pterostilbene Pure Powder interact with sertraline?",
+    "Can I take Pterostilbene Pure Powder before surgery?",
     # No list of drug names is whole, so a named product drops them for any question
     # (review round 2).
-    "Can I take Vitamin C Syntropy with lisinopril?",
-    "Is Vitamin C Syntropy ok during chemo?",
-    "What is in Vitamin C Syntropy?",
+    "Can I take Pterostilbene Pure Powder with lisinopril?",
+    "Is Pterostilbene Pure Powder ok during chemo?",
+    "What is in Pterostilbene Pure Powder?",
 ])
 def test_a_no_caution_product_loses_the_interaction_snippets(appmod, q):
-    assert "Vitamin C Syntropy has no caution on its product page." in appmod.named_product_facts_block(q)
+    assert "Pterostilbene Pure Powder has no caution on its product page." in appmod.named_product_facts_block(q)
     assert appmod._no_caution_product_named(q)
     ms = _matches()
     assert appmod._drop_caution_subject_snippets(ms, q) == ms[1:]
@@ -139,7 +140,7 @@ def test_a_product_with_a_caution_is_not_a_no_caution_product(appmod):
 
 
 def test_a_follow_up_about_a_no_caution_product_loses_them_too(appmod):
-    prior = ["Tell me about Vitamin C Syntropy."]
+    prior = ["Tell me about Pterostilbene Pure Powder."]
     q = "Can I take it with my blood pressure medicine?"
     assert appmod._no_caution_product_named(q, prior)
     ms = _matches()

@@ -2308,6 +2308,9 @@ _CASE_FREE_NAMES = frozenset({
     # A coined name, and its warning names Poison Control: "i feel lightheaded on b17
     # max" got no block (B17 Max powder, review round 2, 2026-10-25).
     "b17-max",
+    # The standalone ingredient: "is vinpocetine safe when pregnant?" must bring its
+    # pregnancy line (formulation spec 2026-10-28-vinpocetine-pregnancy-caution).
+    "vinpocetine",
 })
 # Pinned products whose name a client may type in lowercase, beside a product cue. Every
 # other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
@@ -2355,7 +2358,14 @@ _ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 # dose?"). Lowercase never counts. Review of the Clarity pin, 2026-10-23.
 # Moisturize the same way: "How many Moisturize capsules a day?" names it, and "Moisturize
 # my skin. What helps?" and "how do I moisturize dry skin?" do not (2026-10-26).
-_SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"})
+# The vinpocetine pregnancy line made fourteen everyday names chat-eligible: "Longevity
+# tips?" and "Heart Health tips?" must bring no caution, while "Is Heart Health safe in
+# pregnancy?" brings its own (formulation spec 2026-10-28-vinpocetine-pregnancy-caution).
+_VINPOCETINE_EVERYDAY_NAMES = frozenset({
+    "longevity", "heart-health", "muscle-mass", "sustain", "one-step", "rescue",
+    "night-vision", "perfect-skin", "vein-support", "three-treasures", "thermogenesis",
+    "rise--shine", "mitochondrial-biogenesis", "vital-energy-be"})
+_SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"}) | _VINPOCETINE_EVERYDAY_NAMES
 # Pinned products that yield to any longer catalog name containing theirs, pinned or not:
 # "Crystalline Clarity" and the Clarity flower essences are other products. Opt-in, because
 # many pinned label names sit inside a longer unpinned FileMaker row ("Energessence
@@ -2364,7 +2374,15 @@ _SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"})
 # (review of the Stress Release pin, round 1, 2026-10-23).
 # Vitality: "Vitreous Vitality" and "Vitality Boost Essence in Terrain Restore" are other
 # products (review of the twelve cautions, round 1, 2026-10-25).
-_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality"})
+# Brain Boost: "Brain Boost Nootropic" is a separate record whose formula formulation has
+# not confirmed. Rescue: "Rescue Remedy Flower Essence in Terrain Restore" (vinpocetine
+# spec, 2026-10-28).
+_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality", "brain-boost",
+                                     "rescue"})
+# An occurrence of these names followed by the pattern names another product the client
+# shortens: "Is Rescue Remedy safe for my dog?" is the flower essence, whose catalog name is
+# longer than what they type, so _YIELDS_TO_LONGER_NAMES cannot see it (vinpocetine spec).
+_YIELDS_BEFORE = {"rescue": re.compile(r"^[\s/_\u2010-\u2015-]*remed", re.IGNORECASE)}
 # A name that another product's name holds after a word the catalog spells with a hyphen,
 # so _YIELDS_TO_LONGER_NAMES cannot see it: "Focus Neuro-Magnesium Powder" holds "Neuro
 # Magnesium" only when typed with a space.
@@ -2562,6 +2580,9 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         def _own(mi, slug=slug):
             if slug in _YIELDS_AFTER and _YIELDS_AFTER[slug].search(
                     query_text[max(0, mi.start() - 40):mi.start()]):
+                return False
+            if slug in _YIELDS_BEFORE and _YIELDS_BEFORE[slug].search(
+                    query_text[mi.end():mi.end() + 20]):
                 return False
             return (slug not in _YIELDS_TO_LONGER_NAMES
                     or not _inside_longer_catalog_name(query_text, slug, mi.span(), products))

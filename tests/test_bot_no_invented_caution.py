@@ -8,14 +8,15 @@ the model filled it in. Glen approved the answer to give instead ("yes", 2026-10
 Stress Release has its own caution since 2026-10-24, and Clarity since 2026-10-25.
 """
 # Clarity carries its own caution since 2026-10-25 (Glen, platform tab), so these tests
-# use Vitamin C Syntropy, a pinned product that still has none.
+# used Vitamin C Syntropy until it took the vinpocetine pregnancy line (2026-10-30). They
+# now use Pterostilbene Pure Powder, a pinned product that still has none.
 import importlib
 
 import pytest
 
-ANSWER = ("The product page carries no caution for Vitamin C Syntropy. Please ask Dr. Glen "
+ANSWER = ("The product page carries no caution for Pterostilbene Pure Powder. Please ask Dr. Glen "
           "before combining it with any medicine.")
-Q = "Is Vitamin C Syntropy safe to take with my medications?"
+Q = "Is Pterostilbene Pure Powder safe to take with my medications?"
 
 
 @pytest.fixture
@@ -31,8 +32,8 @@ def appmod(monkeypatch, tmp_path):
 @pytest.mark.parametrize("gated", [False, True])
 def test_a_product_with_no_caution_says_so_and_gives_the_medicine_answer(appmod, gated):
     block = appmod._named_product_facts(Q, gated=gated)
-    assert "### Vitamin C Syntropy" in block
-    assert "Vitamin C Syntropy has no caution on its product page." in block
+    assert "### Pterostilbene Pure Powder" in block
+    assert "Pterostilbene Pure Powder has no caution on its product page." in block
     assert "Never quote, invent or attribute a caution to that page." in block
     assert f'say: "{ANSWER}"' in block
     assert "Caution:" not in block
@@ -58,8 +59,8 @@ def test_a_bundle_is_never_said_to_have_no_caution(appmod):
 
 
 def test_each_product_in_one_answer_gets_its_own_line(appmod):
-    block = appmod._named_product_facts("Can I take Vitamin C Syntropy and Stamina Plus with my pills?")
-    assert "Vitamin C Syntropy has no caution on its product page." in block
+    block = appmod._named_product_facts("Can I take Pterostilbene Pure Powder and Stamina Plus with my pills?")
+    assert "Pterostilbene Pure Powder has no caution on its product page." in block
     assert "Stamina Plus has no caution on its product page." in block
 
 
@@ -91,25 +92,25 @@ def test_a_product_with_no_directions_is_not_asked_to_repeat_them(appmod):
 
 
 def test_beside_another_products_caution_the_line_keeps_its_own_answer(appmod):
-    block = appmod._named_product_facts("Can I take Brain Cleanse and Vitamin C Syntropy with sertraline?")
+    block = appmod._named_product_facts("Can I take Brain Cleanse and Pterostilbene Pure Powder with sertraline?")
     assert "### Brain Cleanse" in block and "Caution:" in block
-    assert ("This line is about Vitamin C Syntropy alone. Another product's caution does not "
-            "apply to Vitamin C Syntropy, and the rule to name no one else to ask does not cover "
-            "Vitamin C Syntropy: still give this answer for it.") in block
+    assert ("This line is about Pterostilbene Pure Powder alone. Another product's caution does not "
+            "apply to Pterostilbene Pure Powder, and the rule to name no one else to ask does not cover "
+            "Pterostilbene Pure Powder: still give this answer for it.") in block
 
 
 @pytest.mark.parametrize("gated", [False, True])
 def test_safety_pregnancy_and_conditions_get_the_ask_dr_glen_answer(appmod, gated):
-    block = appmod._named_product_facts("Is Vitamin C Syntropy safe while pregnant?", gated=gated)
-    assert ("If asked whether Vitamin C Syntropy is safe, or about taking it during pregnancy or "
+    block = appmod._named_product_facts("Is Pterostilbene Pure Powder safe while pregnant?", gated=gated)
+    assert ("If asked whether Pterostilbene Pure Powder is safe, or about taking it during pregnancy or "
             "nursing or with a health condition, say: \"The product page carries no caution "
-            "for Vitamin C Syntropy. Please ask Dr. Glen before taking it.\"") in block
+            "for Pterostilbene Pure Powder. Please ask Dr. Glen before taking it.\"") in block
     assert "Never say or imply that no caution means it is safe." in block
 
 
 def test_no_interaction_verdict_may_follow_the_line(appmod):
-    block = appmod._named_product_facts("Can I take Vitamin C Syntropy with my blood pressure medicine?")
-    assert ("After either answer, add nothing of your own about Vitamin C Syntropy with a medicine, "
+    block = appmod._named_product_facts("Can I take Pterostilbene Pure Powder with my blood pressure medicine?")
+    assert ("After either answer, add nothing of your own about Pterostilbene Pure Powder with a medicine, "
             "in pregnancy or nursing, or with a health condition. Give no verdict on whether "
             "it interacts with or interferes with any medicine, no reassurance, no monitoring "
             "or dose advice, and nothing "
