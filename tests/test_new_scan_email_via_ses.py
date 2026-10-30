@@ -115,3 +115,4 @@ def test_no_log_line_carries_the_link_or_the_address(rig, monkeypatch, capsys):
     _send(rig, "hidden.three@x.com")
     got = capsys.readouterr()
     assert TOKEN not in got.out + got.err and "hidden.three" not in got.out + got.err
+    assert "is on file for you" not in got.out + got.err     # no body text either
