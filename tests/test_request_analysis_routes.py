@@ -181,7 +181,9 @@ def test_new_scan_email_uses_ghl_without_gmail_fallback(tmp_path, monkeypatch, c
     appmod._send_new_scan_email("k@x.com", "2026-08-08", 9, "portal-token")
 
     assert gmail_calls == []
-    assert "GHL send to k@x.com failed" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "[new-scan-email] GHL send failed: RuntimeError" in out
+    assert "k@x.com" not in out                  # no address in the logs (2026-10-29)
 
 
 def test_worker_endpoints_require_console_key(tmp_path, monkeypatch):
