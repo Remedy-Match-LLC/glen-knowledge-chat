@@ -2369,10 +2369,12 @@ _SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"}) | _VINPOCETINE_
 # A name typed in any case counts for a product that carries the vinpocetine line when the
 # question asks about pregnancy or safety: "can i take heart health while pregnant?" and
 # "is brain boost safe while pregnant?" got no caution (review rounds 1 and 2), while "what
-# is longevity?" still names nothing (formulation, 2026-10-30).
+# is longevity?" still names nothing (formulation, 2026-10-30). Formulation accepted the
+# cost: "how much muscle mass is safe while pregnant?" brings Muscle Mass's caution, because
+# a missed pregnancy line costs more than an extra caution block (review round 2).
 _VINPOCETINE_LINE = "contains vinpocetine, so do not use it if you are pregnant"
 _PREGNANCY_OR_SAFETY_CUE = re.compile(
-    r"pregnan|breast\s*-?\s*feed|nursing|conceiv|trying\s+for\s+a\s+baby|\bsafe|"
+    r"pregnan|breast[\s-]*feed|nursing|conceiv|trying\s+for\s+a\s+baby|\bsafe|"
     r"caution|side[\s-]+effect", re.IGNORECASE)
 # Pinned products that yield to any longer catalog name containing theirs, pinned or not:
 # "Crystalline Clarity" and the Clarity flower essences are other products. Opt-in, because

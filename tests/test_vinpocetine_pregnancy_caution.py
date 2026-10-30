@@ -176,6 +176,20 @@ def test_a_lowercase_or_title_cased_everyday_phrase_brings_no_product(q):
     assert not (_named(q) & set(ALL)), q
 
 
+def test_a_safety_phrase_with_an_everyday_name_is_recorded():
+    """Accepted by formulation, 2026-10-30: the extra caution block is the cheaper error."""
+    assert "muscle-mass" in _named("how much muscle mass is safe while pregnant?")
+
+
+def test_a_long_near_miss_returns_quickly():
+    """Review round 2: an overlapping whitespace pattern backtracked quadratically."""
+    import time
+    t = time.monotonic()
+    app._named_product_spans("heart health breast" + " " * 60000 + "x",
+                             app._PRODUCTS["products"])
+    assert time.monotonic() - t < 1.5
+
+
 def test_rescue_yields_to_the_flower_essence_by_its_full_name(monkeypatch):
     """Round 3: with _YIELDS_BEFORE in place this cannot tell which guard held, so it is
     switched off here."""
