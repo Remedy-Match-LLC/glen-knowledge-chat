@@ -24,7 +24,7 @@ def init_tables(cx):
 # 2026-10-10-estro-clear-roles). Vitamin D Syntropy carries three approved photos, one of
 # them the label's (spec 2026-10-16-vitamin-d-syntropy).
 NO_AI_IMAGES = frozenset({"angiostasis", "clear-the-way", "estrogen-fibrin-balance-program",
-                          "estro-clear", "vitamin-d-syntropy"})
+                          "estro-clear", "vitamin-d-syntropy", "moisture-eyes-night-oil"})
 
 def ai_images_off(slug):
     return slug in NO_AI_IMAGES
