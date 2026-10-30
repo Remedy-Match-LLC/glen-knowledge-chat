@@ -41,6 +41,16 @@ def test_the_four_photos_in_order_with_their_alt_text():
         assert open(path, "rb").read(12)[8:12] == b"WEBP", path
 
 
+def test_each_file_is_its_own_photo():
+    """Review round 2: names and alts alone pass with swapped or repeated files. The bottle is
+    the only portrait photo; the three label options are 1344 by 768, and all four differ."""
+    import hashlib
+    from PIL import Image
+    paths = [os.path.join(ROOT, src.lstrip("/")) for src, _ in IMAGES]
+    assert [Image.open(p).size for p in paths] == [(1200, 1600)] + [(1344, 768)] * 3
+    assert len({hashlib.sha256(open(p, "rb").read()).hexdigest() for p in paths}) == 4
+
+
 def test_no_alt_names_a_plant():
     for _, alt in IMAGES:
         for word in ("buckthorn", "kukui", "hippophae", "aleurites", "emu"):
