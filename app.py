@@ -20143,10 +20143,21 @@ def _send_new_scan_email(email, scan_date, scan_id, token, *,
                     if _es.is_suppressed(_cxsup, to):
                         continue
             except Exception as _se:
-                print(f"[new-scan-email] suppression check failed for {to}: {_se!r}", flush=True)
+                print(f"[new-scan-email] suppression check failed: {type(_se).__name__}", flush=True)
+            # Amazon SES first, off GoHighLevel (Glen, 2026-10-29). GHL runs only when
+            # SES surely sent nothing; "unknown" may have gone out, so it sends no copy.
+            outcome = None
+            try:
+                from dashboard import ses_mail as _ses
+                outcome, _mid = _ses.deliver(lambda: db.connect(LOG_DB), to, subj, body, html,
+                                             marketing=False)
+            except Exception as _xe:
+                print(f"[new-scan-email] SES skipped: {type(_xe).__name__}", flush=True)
+            if outcome:
+                continue
             _ghl.send_via_ghl(to, subj, html=html, text=body)
         except Exception as _e:
-            print(f"[new-scan-email] GHL send to {to} failed: {_e!r}", flush=True)
+            print(f"[new-scan-email] GHL send failed: {type(_e).__name__}", flush=True)
 
 
 def membership_category(email):
