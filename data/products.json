@@ -487,7 +487,9 @@
    "ingredients_source": "manual",
    "description": "Brain Boost Nootropic . Brain Boost Nootropic Brain Boost Brain Boost is a nootropic formulation that includes Coluracetam, which enhances color vision and other brain functions. Vision provides 2/3 of all the nerve current entering the brain, so increasing vision helps energize many other brain, endocrine and immune functions as well. The pathways from the eyes to the biological clock in the hypothalamus that regulates these other systemic functions are specifically color sensitive, so enhancing color vision can light up your life and your wellness in surprising ways. Brain Boost Nootropic ....",
    "enrichment_note": "Section A: appended confirmed Bioavailability-Factors extras (Centrophenoxine, Citicoline, Fulvic Acid, 11 Spirit Minerals); removed Coluracetam per Glen; DHA intentionally NOT added. Source: Glen's Products-Worklist.md.",
-   "bottle_type": "30 Caps"
+   "bottle_type": "30 Caps",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "brain-cleanse": {
    "warning": "Causes drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sedatives, or sleep aids other than Brain Cleanse and Sleep Syntropy. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
@@ -1099,7 +1101,9 @@
     "description",
     "research",
     "benefits"
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "medicinal-mushrooms": {
    "name": "Medicinal Mushrooms",
@@ -1306,7 +1310,9 @@
    "description": "Rescue . Rescue Rescue Rescue powder is a symptom relieving naturally blue colored phytochromotherapy drink mix. The 30 gram bottle supplies 60 doses. Rescue . Each 500 mg scoop supplies: Vitamin C 50% (Phyllanthus emblica) 120 mg 100% Magnesium (Magnesium Threonate) 4 mg 1% Threonate (Magnesium Threonate) 57 mg * MSM (Methylsulfonylmethane) 280 mg * Phycocyanin (Spirulina platensis) 50 mg * Mogroside V 80% (Siraitia grosvenorii) 20 mg * L-Theanine (Camelia sinensis) 7 mg * Bioavailability Blend 17 mg Vitamin B13: Phosphatides 50% ( Helianthus annua ) EGb 761 ( Ginkgo biloba ) (24% Flavone...",
    "bottle_type": "30 g",
    "fmp_id": "394",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "lipid-cleanse": {
    "name": "Lipid Cleanse",
@@ -1561,7 +1567,9 @@
    "description": "Stone Solvent . Stone Solvent - Kidney & Gall Bladder Stone Solvent Stone Solvent combines botanical and nutritional synergists for dissolving hard deposits such as kidney stones and gall stones. Stone Solvent is synergistic with Potassium Citrate for kidney stones. Gallstones are typically composed mainly of cholesterol, so in that case Stone Solvent is synergistic with Binder Complex, Fiber Cleanse, or Soothe all of which pull cholesterol from the body by reducing the recycling of bile. Stone Solvent is taken with food up to three times a day. Each chlorophyll vegicap supplies: Vitamins:...",
    "enrichment_note": "Section A: appended all GK extras per Glen (Bioavailability Factors + Magnesium/Dandelion/Cynarin/Curcumin/Silymarin). Source: Glen's Products-Worklist.md.",
    "bottle_type": "30 Caps",
-   "fmp_id": "118"
+   "fmp_id": "118",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "sustain": {
    "name": "Sustain",
@@ -1661,7 +1669,9 @@
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Vitamin C (Manganese Ascorbate), Manganese (Manganese Ascorbate), Chromium (as GTF Chromium Polynicotinate), Microbiome (25 probiotic species), Rhodiola rosea (Rosavins 10% Salidroside 5%), EGb 761 (Ginkgo biloba, 24% Flavone Glycosides / 6% Lactones), Moringa 100:1 (Moringa oleifera), Licorice Omnipotent (Glycyrrhiza glabra), Gingerol 40% (Zingiber officinalis), Piperine (Piper nigrum)",
    "bottle_type": "30 Caps",
-   "fmp_id": "342"
+   "fmp_id": "342",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "soothe": {
    "name": "Soothe",
@@ -2057,7 +2067,9 @@
    "ingredients_source": "db-formulations-2026-06-25",
    "description": "Thermogenesis . Price: $70.",
    "bottle_type": "30 Caps",
-   "fmp_id": "383"
+   "fmp_id": "383",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "vitamin-e-spectrum": {
    "name": "Vitamin E Spectrum",
@@ -2153,7 +2165,7 @@
    "chat_caution": true
   },
   "vitality": {
-   "warning": "Do not use if you are pregnant or breastfeeding. Consult your health professional before use if you take prescription medications, especially blood thinners or hormone therapies. Also consult first if you have a bleeding disorder, liver concerns or a hormone-sensitive condition, or are planning surgery. Stop use and consult your physician if you notice yellowing of the skin or eyes, or dark urine.",
+   "warning": "Do not use if you are pregnant or breastfeeding. Consult your health professional before use if you take prescription medications, especially blood thinners or hormone therapies. Also consult first if you have a bleeding disorder, liver concerns or a hormone-sensitive condition, or are planning surgery. Stop use and consult your physician if you notice yellowing of the skin or eyes, or dark urine. This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
    "chat_caution": true,
    "name": "Vitality",
    "price_cents": 7000,
@@ -3290,7 +3302,9 @@
    "ingredients_source": "db-formulations-2026-06-25",
    "description": "Perfect Skin . Perfect Skin Perfect Skin Enhance the barrier function of your skin to build a healthier, glowing, youthful look... from the inside out. Perfect Skin . Concentrated Traditional Herbal Health Food Source Restores Skin Hydration and Barrier Function: Hydrates skin from inside for soft, smooth, supple feel, often starting in days - Babies are born with 75% water protected by a coating of ceramides, both of which are lost as you age Starts restoring visible glow and improves complexion in as little as 2-5 weeks - Our unique botanical source is a traditional health food in the...",
    "bottle_type": "30 Caps",
-   "fmp_id": "195"
+   "fmp_id": "195",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "phytolacca-oil": {
    "name": "Phytolacca Oil",
@@ -3450,7 +3464,9 @@
    "description": "Vital Energy Be . Vital Energy Be Vital Energy Be Lunch-time B Complex There are many nutrients that are or have been classified at one time as B Vitamins. Only those that you cannot survive without are now considered in most B Complex supplements. We consider all of them, because of their important functions and benefits beyond stark survival and prevention of consensus deficiency diseases. We also go the extra distance to consider that different nutrients, including the various B Vitamins are processed optimally at different times during the day and night. Hence, while this is our...",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "326"
+   "fmp_id": "326",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "mold-spray": {
    "name": "Mold Spray",
@@ -3772,7 +3788,9 @@
    ],
    "ingredients_source": "manual",
    "description": "SeaAmino Syntropy is based on a traditional Nordic remedy of amino acids from enzymatically pre-digested white fish protein with added synergists for enhanced bioavailability. This combination of botanical and nutritional synergists boosts the already high healing benefits of hydrolyzed peptides from white fish, which include: 1. High Bioavailability and Digestibility Smaller peptide size : The hydrolysis process breaks down protein into smaller peptides, making them easier to digest and absorb. Efficient nutrient uptake : Helps ensure the...",
-   "enrichment_note": "Section A: appended Bioavailability-Factors extras per Glen. Source: Glen's Products-Worklist.md."
+   "enrichment_note": "Section A: appended Bioavailability-Factors extras per Glen. Source: Glen's Products-Worklist.md.",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "es3-nerve": {
    "name": "ES3 Nerve Function Energetic Star Infoceutical",
@@ -4247,7 +4265,7 @@
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising"
   },
   "sleep-syntropy": {
-   "warning": "May cause drowsiness. Take at bedtime, when wakeful during the night, or both, as desired or guided. Do not drive or operate machinery after taking. Do not combine with alcohol, sedatives, or sleep aids other than Brain Cleanse and Sleep Syntropy. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. This product contains CBD, which can change how the body processes some medicines. If you take a seizure medicine or any prescription medicine, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
+   "warning": "May cause drowsiness. Take at bedtime, when wakeful during the night, or both, as desired or guided. Do not drive or operate machinery after taking. Do not combine with alcohol, sedatives, or sleep aids other than Brain Cleanse and Sleep Syntropy. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. This product contains CBD, which can change how the body processes some medicines. If you take a seizure medicine or any prescription medicine, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use. This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
    "chat_caution": true,
    "name": "Sleep Syntropy",
    "aliases": ["Sleep Synergy"],
@@ -4455,7 +4473,9 @@
    "how_it_works": "",
    "aliases": [
     "Synergy C"
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "potassium-citrate": {
    "name": "Potassium Citrate",
@@ -4721,7 +4741,9 @@
    "description": "Bioavailability Blend . Bioavailability Blend Bioavailability Blend Our Bioavailability Blend is an important part of many of our Functional Formulations™ . One 500 mg scoop of Bioavailability Blend supplies enough for about 15 servings. Bioavailability Factors 1 scoop supplies: Vitamin B13: Phosphatides 50% ( Helianthus annua ) EGb 761 ( Ginkgo biloba ) (24% Flavone Glycosides, 6% Lactones, <0.0005% Ginkgolic Acid) Vitamin B3 (as Niacin) 75 mg 375% Miracle Tree 100:1 ( Moringa oleifera ) Licorice Omnipotent ( Glycyrrhiza glabra ) Vinpocetine ( Vinca minor ) Gingerol 10% ( Zingiber...",
    "bottle_type": "30 g",
    "fmp_id": "879",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "dry-eye-relief-program": {
    "name": "Dry Eye Relief Program",
@@ -5038,7 +5060,9 @@
     "research",
     "benefits"
    ],
-   "learn_markdown": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 2 capsules a day with food, or as guided.\n\n- Vitamin A (Retinyl Palmitate) 5000 IU\n- Vitamin C (Ascorbyl Palmitate) 50 mg\n- Vitamin D3 (Cholecalciferol) 400 IU\n- Vitamin E (D-Alpha Tocopheryl Succinate) 15 IU\n- Coenzyme Q10 (Ubiquinone) 5 mg\n- Magnesium (Mg Acetyl Taurate) 3 mg\n- Zinc (Zinc Carnosine) 5 mg\n- Iodine (Laminaria digitata) 150 mcg\n- Selenium (Methylselenocysteine) 70 mcg\n- Carnosine (Zinc Carnosine) 17 mg\n- Acetyl Taurate (Mg Acetyl Taurate) 47 mg\n- NAC (N-Acetyl L-Cysteine) 90 mg\n- GSH (Reduced & S-Acetyl Glutathione) 5 mg\n- Rutin (Sophora japonica) 10 mg\n- Luteolin (Reseda spp.) 10 mg\n- Apigenin (Apium graveolens) 10 mg\n- Quercetin Dihydrate (Sophora japonica) 10 mg\n- Silymarin 80% (Silybum marianum) 10 mg\n- Ellagic Acid (Rubus spp.) 10 mg\n- Polyphenols (Camellia sinensis) 10 mg\n- Oat Straw 100:1 (Avena sativa) 15 mg\n- Mistletoe 4:1 (Viscum album) 5 mg\n- Withanolides 10% (Withania somnifera) 10 mg\n- Ginsenosides 80% (Panax ginseng) 7 mg\n- Noni (Morinda citrifolia) (fructus) 20 mg\n- AHCC 50% (Lentinula edodes) (mycelia) 20 mg\n- Berberine (Coptis chinensis) 15 mg\n- Curcumin (Curcuma longa) 10 mg\n- Chlorella (Chlorella spp.) (broken cell wall) 10 mg\n- Allicin 25% (Allium sativum) 10 mg\n- Phytoceramides (Amorphophallus konjac) 25 mg\n- Bioavailability Blend 34.5 mg\n\nBioavailability Blend (34.5 mg): Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS)."
+   "learn_markdown": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 2 capsules a day with food, or as guided.\n\n- Vitamin A (Retinyl Palmitate) 5000 IU\n- Vitamin C (Ascorbyl Palmitate) 50 mg\n- Vitamin D3 (Cholecalciferol) 400 IU\n- Vitamin E (D-Alpha Tocopheryl Succinate) 15 IU\n- Coenzyme Q10 (Ubiquinone) 5 mg\n- Magnesium (Mg Acetyl Taurate) 3 mg\n- Zinc (Zinc Carnosine) 5 mg\n- Iodine (Laminaria digitata) 150 mcg\n- Selenium (Methylselenocysteine) 70 mcg\n- Carnosine (Zinc Carnosine) 17 mg\n- Acetyl Taurate (Mg Acetyl Taurate) 47 mg\n- NAC (N-Acetyl L-Cysteine) 90 mg\n- GSH (Reduced & S-Acetyl Glutathione) 5 mg\n- Rutin (Sophora japonica) 10 mg\n- Luteolin (Reseda spp.) 10 mg\n- Apigenin (Apium graveolens) 10 mg\n- Quercetin Dihydrate (Sophora japonica) 10 mg\n- Silymarin 80% (Silybum marianum) 10 mg\n- Ellagic Acid (Rubus spp.) 10 mg\n- Polyphenols (Camellia sinensis) 10 mg\n- Oat Straw 100:1 (Avena sativa) 15 mg\n- Mistletoe 4:1 (Viscum album) 5 mg\n- Withanolides 10% (Withania somnifera) 10 mg\n- Ginsenosides 80% (Panax ginseng) 7 mg\n- Noni (Morinda citrifolia) (fructus) 20 mg\n- AHCC 50% (Lentinula edodes) (mycelia) 20 mg\n- Berberine (Coptis chinensis) 15 mg\n- Curcumin (Curcuma longa) 10 mg\n- Chlorella (Chlorella spp.) (broken cell wall) 10 mg\n- Allicin 25% (Allium sativum) 10 mg\n- Phytoceramides (Amorphophallus konjac) 25 mg\n- Bioavailability Blend 34.5 mg\n\nBioavailability Blend (34.5 mg): Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "immune-modulation": {
    "warning": "Do not use if you are pregnant or breastfeeding. Consult your health professional before use if you take prescription medications, especially blood thinners, blood pressure or blood sugar medicines, or immune-suppressing medicines. Also consult first if you have a bleeding disorder, low blood pressure, or liver or gallbladder concerns, or are planning surgery. Stop use and consult your physician if you notice a rash, yellowing of the skin or eyes, or dark urine. This formula may affect bleeding, blood pressure, blood sugar and how some medications are processed.",
@@ -5254,7 +5278,9 @@
     "description",
     "research",
     "benefits"
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "macular-wellness-safranal": {
    "name": "Macular Wellness Safranal",
@@ -5654,7 +5680,9 @@
     "description",
     "research",
     "benefits"
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "longevity": {
    "name": "Longevity",
@@ -5785,7 +5813,9 @@
    "enrichment_note": "Section A: appended the 10 Bioavailability-Factors ingredients per Glen. Source: Glen's Products-Worklist.md.",
    "bottle_type": "30 Caps",
    "fmp_id": "570",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "ocuflow-bedtime": {
    "warning": "Contains melatonin and may cause drowsiness. Do not drive or operate machinery after use, and avoid alcohol and other melatonin products. Not for children or adolescents. Consult your health professional before use if you take prescription medications, especially blood thinners, blood pressure or blood sugar medicines, or sedatives. Also consult first if you have a bleeding disorder, low blood pressure or a hormone-sensitive condition, or are pregnant, breastfeeding, or planning surgery. This formula may affect bleeding, blood pressure, blood sugar and how some medications are processed.",
@@ -6274,7 +6304,9 @@
    "ingredients_source": "t33",
    "description": "Melatonin Max . Price: $70.",
    "bottle_type": "30 Caps",
-   "fmp_id": "487"
+   "fmp_id": "487",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "sweet-life": {
    "name": "Sweet Life",
@@ -6533,7 +6565,7 @@
    "copy_pinned": [
     "directions"
    ],
-   "warning": "Take up to 4 capsules a day.",
+   "warning": "Take up to 4 capsules a day. This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
    "chat_caution": true,
    "url": "https://myhealingoasis.com/begin/product/iron-out",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/318-iron-out",
@@ -6728,7 +6760,9 @@
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
    "fmp_id": "1104",
-   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "hydrolyzed-collagen": {
    "name": "Hydrolyzed Collagen Powder",
@@ -7149,7 +7183,9 @@
    "ingredients_source": "manual",
    "enrichment_note": "Section B: replaced with Glen's authoritative 'Heart Health 4' formula (Formulations DB 6/14/23). NOTE: Rhythm Restore (TCM Wenxin Keli) is a SEPARATE product needing its own catalog entry - ingredients: Codonopsis pilosula, Polygonatum sibiricum, Panax notoginseng (Notoginsenosides 80%), Amber (Succinic Acid), Nardostachys jatamansi (Spikenard). Those are NOT included here. Source: Glen's Products-Worklist.md.",
    "bottle_type": "30 Caps",
-   "fmp_id": "363"
+   "fmp_id": "363",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "rise--shine": {
    "name": "Rise & Shine",
@@ -7290,7 +7326,9 @@
    "gk_stale_reason": "GK page missing: Chromium, Centrophenoxine",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "325"
+   "fmp_id": "325",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "es9-audio": {
    "name": "ES9 Shock - Auditory Processing Energetic Star Infoceutical",
@@ -7844,7 +7882,9 @@
     }
    ],
    "ingredients_source": "t33",
-   "description": "One Step . One Step One Step Complete nutrition in a convenient and good-tasting powder... Mix with your favorite seed or nut milk, goat's milk, fresh juice, or healing water... Use daily in your morning cereal... Makes a very healthy and sustaining smoothy for fasting... up to 6 times a day whenever you feel hungry... Add to normal diet to support healthy weight gain, or use alone for fasting or weight loss... The protein is predigested and ready to absorb without putting any demands on the stomach or pancreas... Supports cellular cleansing and enzyme production... The perfect fasting for..."
+   "description": "One Step . One Step One Step Complete nutrition in a convenient and good-tasting powder... Mix with your favorite seed or nut milk, goat's milk, fresh juice, or healing water... Use daily in your morning cereal... Makes a very healthy and sustaining smoothy for fasting... up to 6 times a day whenever you feel hungry... Add to normal diet to support healthy weight gain, or use alone for fasting or weight loss... The protein is predigested and ready to absorb without putting any demands on the stomach or pancreas... Supports cellular cleansing and enzyme production... The perfect fasting for...",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "curcu-guard": {
    "name": "Curcu Guard",
@@ -7882,7 +7922,9 @@
     "description",
     "research",
     "benefits"
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "vitamin-p-polyphenols": {
    "name": "Vascular Integrity: Vitamin P Plus TECA",
@@ -8253,7 +8295,9 @@
     "description",
     "research",
     "benefits"
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "sleep": {
    "name": "Sleep Infoceutical",
@@ -8316,7 +8360,9 @@
    "gk_stale_reason": "GK page missing: Schisandrins, Zinc Glycinate (GK uses Zinc Picolinate instead)",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "351"
+   "fmp_id": "351",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "et12-liver-3": {
    "name": "ET12 Liv-3 Liver Energetic Terrain Infoceutical",
@@ -8494,7 +8540,9 @@
    "bottle_type": "30 Caps",
    "fmp_id": "923",
    "qty_pricing": true,
-   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "macular-wellness-lycopene": {
    "warning": "Contains vitamin B6. Stop use and consult your physician if you notice tingling or numbness. If you take a blood thinner, consult your physician before use.",
@@ -9159,7 +9207,9 @@
     "description",
     "research",
     "benefits"
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "nerve-repair": {
    "name": "Nerve Repair",
@@ -9222,7 +9272,9 @@
    "enrichment_note": "Recovered from FMP (Glen 2026-06-05); label-formatted (FDA DVs).",
    "bottle_type": "30 Caps",
    "fmp_id": "491",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "transresveratrol": {
    "name": "Trans-Resveratrol",
@@ -9431,7 +9483,9 @@
     "description",
     "research",
     "benefits"
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "emf": {
    "name": "EMF",
@@ -10235,7 +10289,9 @@
    "description": "Muscle Mass . Muscle Mass Muscle Mass Muscle Mass supports increased growth and restoration of muscle tissue. This supports healthy weight gain, increased BMI, and increased basal metabolism. Muscle Mass is synergistic with predigested proteins such as One Step, SeaAminos, Hydrolyzed Collagen, Hydrolyzed Whey, and Hydrolyzed Pea Protein as sources of dipeptides and tripeptides that are the same size poly amino acid as those that result from our digestion in the stomach and small intestine from gastric and pancreatic proteolytic enzymes. The best time to take Muscle Mass is 30 to 60 minutes...",
    "enrichment_note": "Section A: appended Bioavailability-Factors extras per Glen. Source: Glen's Products-Worklist.md.",
    "bottle_type": "30 Caps",
-   "fmp_id": "483"
+   "fmp_id": "483",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "et7-cfs": {
    "name": "ET7 CFS Fatigue Energetic Terrain Infoceutical",
@@ -11041,7 +11097,7 @@
    "fmp_id": "370"
   },
   "brain-program": {
-   "caution_components": ["brain-cleanse"],
+   "caution_components": ["brain-cleanse", "brain-boost"],
    "ingredients_source": "none",
    "name": "Brain Program",
    "price_cents": 31500,
@@ -11675,7 +11731,9 @@
    ],
    "ingredients_source": "manual",
    "enrichment_note": "Section B: replaced with Glen's authoritative C15 formula. Dose-to-ingredient pairing is best-effort (Glen pasted doses and names in separate columns) - awaiting Glen's confirmation. Source: Glen's Products-Worklist.md.",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "ei1-neurosensorycolon-meridian": {
    "name": "EI1 Neurosensory/Colon Meridian Energetic Integrator Infoceutical",
@@ -11937,7 +11995,9 @@
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
    "fmp_id": "429",
-   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "reverse-age": {
    "name": "Reverse AGE",
@@ -12085,7 +12145,9 @@
    "gk_stale_reason": "GK page missing: Trans-Resveratrol, Nicotinamide Riboside",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "309"
+   "fmp_id": "309",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "night": {
    "name": "Night Infoceutical",
@@ -12374,7 +12436,9 @@
    "ingredients_source": "db-formulations-2026-06-25",
    "description": "Magnesium Syntropy includes a full spectrum of special purpose and highly bioavailable forms of Magnesium. Magnesium Syntropy includes Magnesium Threonate, the only form to cross the blood-brain barrier. Also included are ingredients to boost intestinal and cellular absorption. Synergistic Coenzymes (the active form of vitamins) and Minerals are now included as well. And as always, our formula doesn't include anything you don't want, like excipients, binders, fillers, stearates, phthalates, etc. Because of soil depletion, the American...",
    "bottle_type": "30 Caps",
-   "fmp_id": "355"
+   "fmp_id": "355",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "coluracetam": {
    "name": "Coluracetam",
@@ -12732,7 +12796,9 @@
    "enrichment_note": "Glen 2026-09-14: this slug is Vagus Nerve Support Drops (FMP 460). The T33 amounts are per-bottle batch figures, so they are not shown as doses. Directions wait for Glen. Glen answered the directions on 2026-09-30: \"10 drops up to 3 times a day before meals.\"",
    "bottle_type": "Dropper 50 mL",
    "fmp_id": "460",
-   "directions": "10 drops up to 3 times a day before meals."
+   "directions": "10 drops up to 3 times a day before meals.",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "pl-polarity": {
    "name": "PL Polarity Infoceutical",
@@ -13112,7 +13178,9 @@
    "price_cents": 4000,
    "pinecone_title": "Vinpocetine",
    "url": "https://myhealingoasis.com/begin/product/vinpocetine",
-   "legacy_store_url": "https://remedymatch.com/remedies/476-vinpocetine"
+   "legacy_store_url": "https://remedymatch.com/remedies/476-vinpocetine",
+   "warning": "Do not use vinpocetine if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "ed2-imprinter-driver": {
    "name": "ED2 Heart Imprinter Energetic Driver Infoceutical",
@@ -14822,7 +14890,9 @@
    ],
    "url": "https://myhealingoasis.com/begin/product/tmg-syntropy-powder",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/228-tmg-syntropy-powder-trimethylglycine",
-   "enrichment_note": "TMG Syntropy Powder includes Vitamin B15 & B16 (Glen 2026-06-05)"
+   "enrichment_note": "TMG Syntropy Powder includes Vitamin B15 & B16 (Glen 2026-06-05)",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "neuro-eye-drops": {
    "name": "Neuro+ Eye Drops",
@@ -15022,7 +15092,9 @@
      "compound_mg": 120.0,
      "active_mg": 7.8
     }
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "soothe-powder": {
    "name": "Soothe Powder",
@@ -19606,7 +19678,9 @@
      "dose": "",
      "purity_pct": 98.0
     }
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "c15-syntropy": {
    "name": "C15 Syntropy",
@@ -19666,7 +19740,9 @@
      "dose": "65 mg",
      "compound_mg": 65.0
     }
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "cds": {
    "name": "CDS",
@@ -19898,7 +19974,9 @@
      "dose": "150 mg",
      "compound_mg": 150.0
     }
-   ]
+   ],
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true
   },
   "spirit-mineral-gold-in-terrain-restore": {
    "name": "Spirit Mineral Gold in Terrain Restore",

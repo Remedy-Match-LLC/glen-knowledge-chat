@@ -2308,6 +2308,9 @@ _CASE_FREE_NAMES = frozenset({
     # A coined name, and its warning names Poison Control: "i feel lightheaded on b17
     # max" got no block (B17 Max powder, review round 2, 2026-10-25).
     "b17-max",
+    # The standalone ingredient: "is vinpocetine safe when pregnant?" must bring its
+    # pregnancy line (formulation spec 2026-10-28-vinpocetine-pregnancy-caution).
+    "vinpocetine",
 })
 # Pinned products whose name a client may type in lowercase, beside a product cue. Every
 # other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
@@ -2355,7 +2358,24 @@ _ALWAYS_CUE_NAMES = frozenset({"microbiome"})
 # dose?"). Lowercase never counts. Review of the Clarity pin, 2026-10-23.
 # Moisturize the same way: "How many Moisturize capsules a day?" names it, and "Moisturize
 # my skin. What helps?" and "how do I moisturize dry skin?" do not (2026-10-26).
-_SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"})
+# The vinpocetine pregnancy line made fourteen everyday names chat-eligible: "Longevity
+# tips?" and "Heart Health tips?" must bring no caution, while "Is Heart Health safe in
+# pregnancy?" brings its own (formulation spec 2026-10-28-vinpocetine-pregnancy-caution).
+_VINPOCETINE_EVERYDAY_NAMES = frozenset({
+    "longevity", "heart-health", "muscle-mass", "sustain", "one-step", "rescue",
+    "night-vision", "perfect-skin", "vein-support", "three-treasures", "thermogenesis",
+    "rise--shine", "mitochondrial-biogenesis", "vital-energy-be"})
+_SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"}) | _VINPOCETINE_EVERYDAY_NAMES
+# A name typed in any case counts for a product that carries the vinpocetine line when the
+# question asks about pregnancy or safety: "can i take heart health while pregnant?" and
+# "is brain boost safe while pregnant?" got no caution (review rounds 1 and 2), while "what
+# is longevity?" still names nothing (formulation, 2026-10-30). Formulation accepted the
+# cost: "how much muscle mass is safe while pregnant?" brings Muscle Mass's caution, because
+# a missed pregnancy line costs more than an extra caution block (review round 2).
+_VINPOCETINE_LINE = "contains vinpocetine, so do not use it if you are pregnant"
+_PREGNANCY_OR_SAFETY_CUE = re.compile(
+    r"pregnan|breast[\s-]*feed|nursing|conceiv|trying\s+for\s+a\s+baby|\bsafe|"
+    r"caution|side[\s-]+effect", re.IGNORECASE)
 # Pinned products that yield to any longer catalog name containing theirs, pinned or not:
 # "Crystalline Clarity" and the Clarity flower essences are other products. Opt-in, because
 # many pinned label names sit inside a longer unpinned FileMaker row ("Energessence
@@ -2364,7 +2384,15 @@ _SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"})
 # (review of the Stress Release pin, round 1, 2026-10-23).
 # Vitality: "Vitreous Vitality" and "Vitality Boost Essence in Terrain Restore" are other
 # products (review of the twelve cautions, round 1, 2026-10-25).
-_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality"})
+# Brain Boost: "Brain Boost Nootropic" is a separate record whose formula formulation has
+# not confirmed. Rescue: "Rescue Remedy Flower Essence in Terrain Restore" (vinpocetine
+# spec, 2026-10-28).
+_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality", "brain-boost",
+                                     "rescue"})
+# An occurrence of these names followed by the pattern names another product the client
+# shortens: "Is Rescue Remedy safe for my dog?" is the flower essence, whose catalog name is
+# longer than what they type, so _YIELDS_TO_LONGER_NAMES cannot see it (vinpocetine spec).
+_YIELDS_BEFORE = {"rescue": re.compile(r"^[\s/_\u2010-\u2015-]*remed", re.IGNORECASE)}
 # A name that another product's name holds after a word the catalog spells with a hyphen,
 # so _YIELDS_TO_LONGER_NAMES cannot see it: "Focus Neuro-Magnesium Powder" holds "Neuro
 # Magnesium" only when typed with a space.
@@ -2563,6 +2591,9 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             if slug in _YIELDS_AFTER and _YIELDS_AFTER[slug].search(
                     query_text[max(0, mi.start() - 40):mi.start()]):
                 return False
+            if slug in _YIELDS_BEFORE and _YIELDS_BEFORE[slug].search(
+                    query_text[mi.end():mi.end() + 20]):
+                return False
             return (slug not in _YIELDS_TO_LONGER_NAMES
                     or not _inside_longer_catalog_name(query_text, slug, mi.span(), products))
         m = None if slug in _ALWAYS_CUE_NAMES else next(
@@ -2577,7 +2608,10 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             # A Title Cased Question capitalises the verb too: "How Do I Moisturize Dry
             # Skin?" needs a cue, as at a sentence start (review round 3). Clarity keeps
             # the rule it had.
-            _title = slug in _CUE_NAMES and _TITLE_CASED(query_text)
+            # The vinpocetine names too: "What Foods Support Heart Health?" names nothing
+            # (review round 1). A pregnancy or safety question still matches below.
+            _title = ((slug in _CUE_NAMES or slug in _VINPOCETINE_EVERYDAY_NAMES)
+                      and _TITLE_CASED(query_text))
             m = next((mi for mi in _cased
                       if _own(mi) and ((not _title
                                         and not _SENTENCE_START.search(query_text[:mi.start()]))
@@ -2606,6 +2640,16 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                         slug in _CUE_NAMES and _has_product_cue(query_text, *mi.span()))):
                     m = mi
                     break
+        if (not m and slug not in _ALWAYS_CUE_NAMES
+                and _VINPOCETINE_LINE in (p.get("warning") or "")
+                and _PREGNANCY_OR_SAFETY_CUE.search(query_text)):
+            # After "a" or "an" the name is a kind of thing, not the product: "Is a DHT
+            # blocker safe for women" names nothing (test_named_product_facts).
+            m = next((mi for mi in itertools.islice(
+                          re.finditer(cue_pattern, query_text, re.IGNORECASE), 40)
+                      if _own(mi) and not re.search(
+                          r"(?:^|\W)an?$", query_text[:mi.start()].rstrip()[-3:],
+                          re.IGNORECASE)), None)
         if m and slug in _YIELDS_TO_PREFIX:
             word = _YIELDS_TO_PREFIX[slug]
             # "Focus Neuro Magnesium Powder" is the stocked jar, not the presale, and a

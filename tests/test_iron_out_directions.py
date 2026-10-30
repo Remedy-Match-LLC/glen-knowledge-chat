@@ -15,7 +15,9 @@ import pytest
 import app
 
 DIRECTIONS = "1 to 4 capsules daily with food, or as guided."
-CAUTION = "Take up to 4 capsules a day."
+# The vinpocetine pregnancy line follows Glen's caution (2026-10-30).
+CAUTION = ("Take up to 4 capsules a day. This formula contains vinpocetine, so do not use it "
+           "if you are pregnant or could become pregnant.")
 FIELDS = {"directions": DIRECTIONS, "copy_pinned": ["directions"], "warning": CAUTION,
           "chat_caution": True}
 QUESTIONS = ["How many Iron Out capsules can I take a day?",
