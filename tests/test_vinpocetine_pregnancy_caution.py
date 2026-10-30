@@ -172,6 +172,7 @@ def test_a_pregnancy_or_safety_question_counts_in_any_case(q, slug):
     "one step at a time", "rescue remedy safe in pregnancy?",
     "What Foods Support Heart Health?",
     "is a blood cleanse safe in pregnancy?", "is a heart health diet safe when pregnant?",
+    "is a      heart health diet safe when pregnant?", "an\n\nheart health plan, safe?",
 ])
 def test_a_lowercase_or_title_cased_everyday_phrase_brings_no_product(q):
     assert not (_named(q) & set(ALL)), q
