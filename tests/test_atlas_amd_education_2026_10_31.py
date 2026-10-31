@@ -54,7 +54,9 @@ def test_the_neighbors_are_conditions_and_education_only():
 def test_the_link_titles_and_urls():
     c = _concepts()
     for cid, want in TITLES.items():
-        assert [(l["url"], l["title"]) for l in c[cid]["links"]] == want, cid
+        # The curcumin trial (2026-10-31) adds a study link to drusen; videos are unchanged.
+        assert [(l["url"], l["title"]) for l in c[cid]["links"]
+                if l.get("type") != "article"] == want, cid
 
 
 def test_the_heal_amd_link_is_off_these_entries():
@@ -67,6 +69,11 @@ def test_the_heal_amd_link_is_off_these_entries():
 # exact URLs (27 more), and the Heal AMD link nowhere. Other timestamps of the same videos
 # are other clips with their own titles, so they are left alone.
 EVERYWHERE = dict(pair for pairs in TITLES.values() for pair in pairs)
+# Glen's rule of 2026-10-31 (teaching tab): an ingredient entry that links products names no
+# disease, so curcumin's copies of two of these videos say "on eye health" instead
+# (tests/test_atlas_curcumin_trial_2026_10_31.py).
+OVERRIDE = {("curcumin", "https://youtu.be/BmoP8F5e_Bg?t=264s"): "Dr. Glen Swartwout on eye health",
+            ("curcumin", "https://youtu.be/FoRE1QhSaLE?t=391s"): "Dr. Glen Swartwout on eye health"}
 
 
 def test_every_entry_with_these_urls_carries_the_new_title():
@@ -74,7 +81,8 @@ def test_every_entry_with_these_urls_carries_the_new_title():
     for c in _concepts().values():
         for link in c.get("links", []):
             if link.get("url") in EVERYWHERE:
-                assert link["title"] == EVERYWHERE[link["url"]], (c["id"], link["url"])
+                want = OVERRIDE.get((c["id"], link["url"]), EVERYWHERE[link["url"]])
+                assert link["title"] == want, (c["id"], link["url"])
                 seen += 1
             assert link.get("url") != REMOVED, c["id"]
     assert seen == 38
