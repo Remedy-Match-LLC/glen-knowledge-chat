@@ -138,7 +138,11 @@ def test_a_rebuild_from_the_old_record_restores_the_replayed_fields(tmp_path, mo
     path = tmp_path / "d" / "products.json"
     doc = json.load(open(path))
     s = doc["products"][KEEP]
+    # Review round 2: the old vinpocetine warning goes in too. A rebuild merges onto the
+    # existing record and cannot delete a warning, so removing it is a hand edit to
+    # products.json. This records that limit; test_both_files... checks the hand edit.
     s.update(chat_caution=True, description="Brain Boost ... includes Coluracetam",
+             warning="This formula contains vinpocetine, so do not use it if you are pregnant.",
              ingredients=[{"name": "Vinpocetine (Vinca minor)", "dose": "1 mg"}])
     for k in ("directions", "panel_note", "copy_pinned", "content_since"):
         s.pop(k)
@@ -146,17 +150,19 @@ def test_a_rebuild_from_the_old_record_restores_the_replayed_fields(tmp_path, mo
     json.dump(doc, open(path, "w"))
     ae.main()
     ae.main()
-    _assert_merged(json.load(open(path))["products"])
+    products = json.load(open(path))["products"]
+    assert "vinpocetine" in products[KEEP].pop("warning")
+    _assert_merged(products)
 
 
-def test_the_replay_flags_the_store_page_as_stale(tmp_path, monkeypatch):
-    """Spec step 10, recorded: the replay copies gk_stale from products-enrich-clean.json,
-    and the store page 14-brain-boost does still sell the old formula. Sales is told."""
+def test_a_rebuild_does_not_flag_the_store_page_as_stale(tmp_path, monkeypatch):
+    """Spec step 10: the store page 14-brain-boost carries the label (read 31 October
+    18:58 UTC), so the gk_stale flag was removed from products-enrich-clean.json."""
     from scripts import apply_enrichment as ae
     _copy_data(tmp_path / "d", monkeypatch, ae)
     ae.main()
     s = json.load(open(tmp_path / "d" / "products.json"))["products"][KEEP]
-    assert s["gk_stale"] is True
+    assert "gk_stale" not in s and "stale_reason" not in s
 
 
 # ---- the atlas -----------------------------------------------------------------------

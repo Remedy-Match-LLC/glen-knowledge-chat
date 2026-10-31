@@ -2372,9 +2372,10 @@ _VINPOCETINE_EVERYDAY_NAMES = frozenset({
     "rise--shine", "mitochondrial-biogenesis", "vital-energy-be"})
 _SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"}) | _VINPOCETINE_EVERYDAY_NAMES
 # A name typed in any case counts for a product that carries the vinpocetine line when the
-# question asks about pregnancy or safety: "can i take heart health while pregnant?" and
-# "is brain boost safe while pregnant?" got no caution (review rounds 1 and 2), while "what
-# is longevity?" still names nothing (formulation, 2026-10-30). Formulation accepted the
+# question asks about pregnancy or safety: "can i take heart health while pregnant?" got no
+# caution (review rounds 1 and 2), while "what is longevity?" still names nothing
+# (formulation, 2026-10-30). Brain Boost left this list with its 2026-10-30 label and is
+# named through _CUE_NAMES above. Formulation accepted the
 # cost: "how much muscle mass is safe while pregnant?" brings Muscle Mass's caution, because
 # a missed pregnancy line costs more than an extra caution block (review round 2).
 _VINPOCETINE_LINE = "contains vinpocetine, so do not use it if you are pregnant"
