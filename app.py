@@ -56749,7 +56749,12 @@ def _finder_without_product_branding(html: str) -> str:
     # tests/test_practitioner_finder_mentorship_host.py fails if the template drops one.
     for old, new in _FINDER_BRANDING:
         html = html.replace(old, new)
-    return html
+    # The embedded chat can answer with product buttons (/begin/product, /begin/buy), so it
+    # is left off this host (review round 1, 2026-10-31).
+    return _FINDER_CHAT_SECTION.sub("", html)
+
+
+_FINDER_CHAT_SECTION = re.compile(r'\n[ \t]*<section class="chat-section">.*?</section>', re.S)
 
 
 def _fetch_practitioners_by_ids(ids: list) -> list:

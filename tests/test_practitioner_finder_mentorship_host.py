@@ -8,7 +8,8 @@ import re
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BRANDS = ("Functional Formulations", "Remedy&nbsp;Match", "Remedy Match", "Healing&nbsp;Oasis</span>")
+BRANDS = ("Functional Formulations", "Remedy&nbsp;Match", "Remedy Match",
+          "Healing&nbsp;Oasis</span>")
 
 
 @pytest.fixture
@@ -41,6 +42,11 @@ def test_mentorshipu_shows_a_plain_finder(client):
                          r"https://api\.mapbox\.com/|/static/favicon\.png$|/privacy$|/terms$|"
                          r"mailto:|tel:|\$\{escapeHtml\()")
     assert hrefs and not [h for h in hrefs if not allowed.match(h)], hrefs
+    # Review round 1: the embedded chat (src="/embed") can answer with product buttons.
+    srcs = set(re.findall(r'\bsrc=\\?"([^"\\]*)', html))
+    assert "/embed" not in srcs and 'class="chat-section"' not in html, srcs
+    fixed = ("https://api.mapbox.com/", "/static/", "/ref-capture.js")
+    assert not [u for u in srcs if not u.startswith(fixed)], srcs
 
 
 @pytest.mark.parametrize("host", ["illtowell.com", "myhealingoasis.com"])
@@ -48,6 +54,7 @@ def test_other_hosts_keep_the_branding(client, host):
     html = _page(client, host)
     assert "<title>Find a Practitioner · Functional Formulations™</title>" in html
     assert "Remedy&nbsp;Match" in html
+    assert 'class="chat-section"' in html and 'src="/embed"' in html
 
 
 def test_the_template_still_holds_every_string_replaced():
@@ -56,3 +63,4 @@ def test_the_template_still_holds_every_string_replaced():
     html = open(os.path.join(ROOT, "static", "practitioner-finder.html"), encoding="utf-8").read()
     for old, _new in a._FINDER_BRANDING:
         assert html.count(old) == 1, old
+    assert len(a._FINDER_CHAT_SECTION.findall(html)) == 1
