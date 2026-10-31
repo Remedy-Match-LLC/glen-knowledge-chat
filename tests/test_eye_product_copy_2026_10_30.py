@@ -22,14 +22,16 @@ FIELDS = ("intro", "description", "how_it_works", "learn_markdown", "benefits")
 # The old copy's disease claims and scraped junk ("Scar Solve . Price: $70.").
 # sha256 of the four approved fields as parsed from copy.md on 2026-10-30, the first 16 hex
 # digits; Scar Solve's dose and zinc lines were added the same day (Glen "approve").
+# Re-taken 2026-10-31 for the page fixes (communication/drafts/2026-10-31-page-fixes/
+# changes.md, Glen "approve"): ", or as guided" on four dose lines, and the zinc lines.
 # Review round 2: comparing the two data files with each other cannot catch the
 # same edit made to both.
 APPROVED_SHA = {
-    "macular-wellness-lycopene": "7ee97d06b0d8c288",
+    "macular-wellness-lycopene": "382ada39512fd472",
     "lipid-zyme": "b04d956c9fa7b923",
-    "lipid-cleanse": "a5b16159edfde43f",
-    "scar-solve": "96ee2e19d8db4578",
-    "scar-silk": "97e0eb0b1c18be7e"
+    "lipid-cleanse": "3864eee461f432b8",
+    "scar-solve": "af49ad74dca8b6d8",
+    "scar-silk": "e9623b9cdf44c03f"
 }
 BANNED = re.compile(r"drusen|dissolv|revers|blindness|\bAMD\b|Price:|\s\.\s", re.IGNORECASE)
 
@@ -75,9 +77,11 @@ def test_scar_solve_gives_its_dose_and_the_zinc_limits():
     """Glen, production tab: Scar Solve stays at 1 to 2 a day, with the zinc arithmetic."""
     for name in ("products.json", "products-manual-corrections.json"):
         paras = _data(name)["scar-solve"]["description"].split("\n\n")
-        assert "Take 1 to 2 vegicaps a day with food." in paras
-        assert "Take 1 vegicap a day with food." not in paras
-        assert "Two vegicaps taken with an eye vitamin that contains zinc go over that limit." in paras
+        assert "Take 1 to 2 vegicaps a day with food, or as guided." in paras
+        assert "Take 1 vegicap a day with food, or as guided." not in paras
+        assert ("Even one vegicap taken with an AREDS or AREDS2 eye vitamin can go over that "
+                "limit.") in paras
+        assert "Other eye vitamins vary, so check the zinc on the label." in paras
         assert "Each vegicap supplies 100 mg zinc ascorbate." in paras
 
 
