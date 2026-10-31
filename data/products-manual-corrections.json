@@ -4437,5 +4437,51 @@
     "directions": "1 to 3 capsules daily with food, or as guided.",
     "description": "Each vegicap of Comfort Synovial Syntropy combines frankincense boswellic acid, MSM, ginger, cat's claw, black seed, notoginseng and vegan hyaluronic acid. It adds a 135 mg polyphenol complex of tetrahydrocurcumin, pine OPCs, EMIQ, pterostilbene and trans-resveratrol, and hemp CBD.",
     "note": "Label-read 2026-10-31 by formulation from Comfort_0126_1.88x6in.ai (January 2026). Glen 2026-10-30, formulation tab: comfort and comfort-synovial-syntropy are one product (\"yes\"); directions and description \"approve\". Spec production/05 Formulations/_store-updates/2026-10-31-comfort-merge.md. CBD leaves at the next batch."
+  },
+  "gastrozyme": {
+    "ingredients": [
+      {
+        "name": "Zinc (as Zinc Carnosine)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Iodine 10% (in Kelp spp.)",
+        "dose": "100 mcg"
+      },
+      {
+        "name": "Protease (600,000 units)",
+        "dose": "150 mg"
+      },
+      {
+        "name": "Lipase (1,000 FIP units)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Betaine HCl (Beta vulgaris)",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Gentian (Gentiana lutea)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "L-Carnosine (as Zinc Carnosine)",
+        "dose": "16.7 mg"
+      },
+      {
+        "name": "Gingerol 40% (Zingiber officinale)",
+        "dose": "10 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-10-31",
+    "directions": "1 capsule with each heavier meal, or as guided.",
+    "warning": "Each capsule contains about 100 mcg of iodine, two thirds of the adult daily requirement. If you have a thyroid condition or take other iodine products, consult your health professional before use.",
+    "chat_caution": true,
+    "copy_pinned": [
+      "ingredients",
+      "directions"
+    ],
+    "content_since": "2026-10-31T20:36:29+00:00",
+    "note": "December 2024 label (Glen read the bottle 31 Oct 2026). FileMaker 322 aligned 31 Oct. Protease 150 mg per Glen 31 Oct; label misprints 444 mg."
   }
 }
