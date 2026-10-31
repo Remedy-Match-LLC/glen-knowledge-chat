@@ -5,7 +5,7 @@
 Thermogenesis gets the line after its vinpocetine line. Estro-Clear and Vitamin D Syntropy
 already named thyroid, so marketing merged the line into their cautions and Glen said yes in
 the marketing tab on 2026-10-31 (marketing/04 Copy/iodine-caution-merge-2026-10-31/).
-GastroZyme is held until Glen reads a shelf bottle, because its 100 mcg is unconfirmed.
+GastroZyme was held until Glen read a shelf bottle. Its line now ships with its label rows.
 Thyroid Support is held while sales asks Glen about its panel's 182 mcg. The Estrogen and
 Fibrin Balance Program's intro repeats Estro-Clear's caution, so it carries the same lines
 (Glen "yes", marketing tab, 2026-10-31); tests/test_estrogen_fibrin_balance_program.py pins it.
@@ -53,7 +53,7 @@ def test_the_caution_carries_the_iodine_line(slug):
 
 
 def test_the_held_products_are_unchanged():
-    # Review round 2: neither held product had a caution, and neither has a corrections
+    # Review round 2: the held product had no caution, and it has no corrections
     # entry, so a hold that slips shows here as any warning at all.
     p, c = _load("products.json"), _load("products-manual-corrections.json")
     for slug in HELD:

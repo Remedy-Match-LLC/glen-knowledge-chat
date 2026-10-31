@@ -24,6 +24,8 @@ DIRECTIONS = "1 capsule with each heavier meal, or as guided."
 WARNING = ("Each capsule contains about 100 mcg of iodine, two thirds of the adult daily "
            "requirement. If you have a thyroid condition or take other iodine products, "
            "consult your health professional before use.")
+NOTE = ("December 2024 label (Glen read the bottle 31 Oct 2026). FileMaker 322 aligned "
+        "31 Oct. Protease 150 mg per Glen 31 Oct; label misprints 444 mg.")
 DROPPED = ("Butyrate", "Berberine", "Dandelion", "Artichoke", "Lemon Balm", "Adenosine")
 
 
@@ -46,17 +48,24 @@ def test_both_files_carry_the_label(name):
     _check(_load(name)[SLUG])
 
 
+def test_the_note_records_the_label_read():
+    assert _load("products-manual-corrections.json")[SLUG]["note"] == NOTE
+    assert _load("products.json")[SLUG]["enrichment_note"] == NOTE
+
+
 def test_the_replay_restores_it_onto_the_old_record():
     # Start from the 2023 rows with no flags, as the spec asks.
     from scripts.apply_enrichment import apply_corrections
     old = copy.deepcopy(_load("products.json")[SLUG])
     old["ingredients"] = [{"name": "Iodine", "dose": "1 mg"}, {"name": "Berberine", "dose": "20 mg"}]
     old["ingredients_source"] = "db-formulations-2026-06-25"
-    for k in ("directions", "warning", "chat_caution", "copy_pinned", "content_since"):
+    for k in ("directions", "warning", "chat_caution", "copy_pinned", "content_since",
+              "enrichment_note"):
         old.pop(k, None)
     products = {SLUG: old}
     apply_corrections(products, {SLUG: _load("products-manual-corrections.json")[SLUG]})
     _check(products[SLUG])
+    assert products[SLUG]["enrichment_note"] == NOTE
 
 
 def test_a_full_rebuild_keeps_it(tmp_path, monkeypatch):
@@ -94,6 +103,7 @@ def test_the_page_shows_the_rows_directions_and_caution(appmod):
 def test_the_chat_facts_carry_the_rows_and_the_caution(appmod):
     block = appmod._named_product_facts("What is in GastroZyme?") or ""
     for n, dose in ROWS:
-        assert n in block, n
+        assert f"{n} {dose}" in block or f"{n}: {dose}" in block or f"{n} ({dose})" in block, n
+    assert DIRECTIONS in block
     assert WARNING in block
     assert not any(w in block for w in DROPPED)
