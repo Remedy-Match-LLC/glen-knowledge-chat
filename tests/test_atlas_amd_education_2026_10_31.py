@@ -78,3 +78,11 @@ def test_every_entry_with_these_urls_carries_the_new_title():
                 seen += 1
             assert link.get("url") != REMOVED, c["id"]
     assert seen == 38
+
+
+def test_dry_armd_summary_names_no_product():
+    # Glen "yes", marketing tab, 2026-10-31: it said "managed with six specialized Macular
+    # Wellness formulas".
+    assert _concepts()["dry-armd"]["summary"] == (
+        "The most common form of macular degeneration, in which drusen collect under the "
+        "retina.")
