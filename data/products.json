@@ -5866,7 +5866,7 @@
    "chat_caution": true
   },
   "ocuflow-bedtime": {
-   "warning": "Contains melatonin and may cause drowsiness. Do not drive or operate machinery after use, and avoid alcohol and other melatonin products. Not for children or adolescents. Consult your health professional before use if you take prescription medications, especially blood thinners, blood pressure or blood sugar medicines, or sedatives. Also consult first if you have a bleeding disorder, low blood pressure or a hormone-sensitive condition, or are pregnant, breastfeeding, or planning surgery. This formula may affect bleeding, blood pressure, blood sugar and how some medications are processed.",
+   "warning": "Contains melatonin and may cause drowsiness. Do not drive or operate machinery after use, and avoid alcohol and other melatonin products. Not for children or adolescents. Consult your health professional before use if you take prescription medications, especially blood thinners, blood pressure or blood sugar medicines, sedatives, or the antidepressant fluvoxamine (Luvox). Also consult first if you have a bleeding disorder, low blood pressure or a hormone-sensitive condition, or are pregnant, breastfeeding, or planning surgery. This formula may affect bleeding, blood pressure, blood sugar and how some medications are processed.",
    "chat_caution": true,
    "name": "OcuFlow Bedtime",
    "price_cents": 7000,
