@@ -7503,7 +7503,7 @@
    "description": "Breast Support . Breast Support Breast Support Breast Support supplies nutrients and botanicals for breast wellness. Breast Support . Each chlorophyl vegicap of Breast Support supplies: Vitamin Factors: Vitamin B15: Pangamic Acid 5 mg * Vitamin B17: Amygdalin 100 mg * Mineral Factors: Selenium (Methylselenocysteine) 35 mcg 50% Botanical Factors: Oxindole Alkaloids 5% ( Uncaria tomentosa ) (bark) 50 mg * Curcumin ( Curcuma longa ) 50 mg * Xanthohumol 10% (Humulus lupulus) 50 mg * Artemisinin ( Artemesia annua ) 40 mg * Bitters 10% ( Momordica charantia ) (seed) 30 mg * Puerarin 98% (Pueraria lobata)...",
    "bottle_type": "30 Caps",
    "fmp_id": "451",
-   "directions": "1 capsule up to 6 times a day with food, or as guided.",
+   "directions": "Take 1 capsule once a day with food, or as guided.",
    "copy_pinned": [
     "directions"
    ],
@@ -8747,7 +8747,7 @@
    "ingredients_source": "label-2026-09-27",
    "intro": "B17 Max is a vegan two-ingredient powder, amygdalin from apricot seed with pangamic acid, and nothing else.",
    "description": "Each level 500 mg scoop supplies 450 mg amygdalin 98% and 50 mg pangamic acid 99%. There are no fillers or excipients.\n\nOther ingredients: Healing Energy, Love, and Prayer. 30 g jar, 60 servings. Store tightly closed, cool and dry.\n\nCaution: amygdalin can release cyanide in the body. Read the full warning on the label and the product page before use, and do not combine with apricot kernels, fruit pits or high-dose vitamin C.",
-   "directions": "Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 2 level scoops a day in divided doses. Do not exceed 2 level scoops a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 2-scoop limit.",
+   "directions": "Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 1 level scoop once a day. Do not exceed 1 level scoop a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 1-scoop limit.",
    "warning": "Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment. Keep out of reach of children.",
    "benefits": [],
    "how_it_works": "",
@@ -8756,7 +8756,8 @@
     "intro",
     "description",
     "benefits",
-    "research"
+    "research",
+    "directions"
    ],
    "bottle_type": "30 g",
    "fmp_id": "890",

@@ -2811,9 +2811,11 @@ _WITHDRAWN_DOSE_EXAMPLE["b17-syntropy"] = ", such as up to 10 capsules a day"
 # Directions line, which its description repeats word for word. So do the five whose
 # dose Glen lowered or capped on 2026-10-26 ("yes", platform tab): each description
 # repeats the new directions, which would otherwise drop the line and its rule.
+# B17 Max joins them with one dose a day (Glen, 2026-10-31, production tab): it has no
+# chat_caution, so without this its withdrawn 2-scoop dose had no rule against it.
 _DOSE_RULE_WITHOUT_CAUTION = frozenset({
     "b17-syntropy", "moisturize", "vitamin-c-syntropy", "vitamin-a-syntropy",
-    "apoptogenesis", "appestat", "breast-support"})
+    "apoptogenesis", "appestat", "breast-support", "b17-max"})
 # Live with 9,400 IU in the knowledge base, the bot invented "188% of the daily value"
 # (about 313% is right), called one capsule "not excessive" though it is 94% of the adult
 # upper limit, and added "Most clients find one daily adequate" (knowledge, log 2373,
@@ -2844,6 +2846,12 @@ _WITHDRAWN_DOSE_EXAMPLE.update({
     "breast-support": (", such as up to 10 capsules a day, or a dose that starts low and "
                        "rises"),
 })
+# Amygdalin products take one dose a day (Glen, 2026-10-31, production tab). Breast Support
+# had said up to 6 capsules a day and B17 Max up to 2 level scoops in divided doses.
+_WITHDRAWN_DOSE_EXAMPLE["breast-support"] = (", such as up to 6 or 10 capsules a day, or a "
+                                             "dose that starts low and rises")
+_WITHDRAWN_DOSE_EXAMPLE["b17-max"] = (", such as up to 2 level scoops a day, or a dose "
+                                      "split through the day")
 # A caution that names Poison Control is the whole answer to a symptom it lists. The
 # B17 store copy said to lower the dose if lightheaded, an early sign of cyanide
 # toxicity (formulation, 2026-10-25), and that copy may still be in the snippets.

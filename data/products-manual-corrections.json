@@ -3647,7 +3647,15 @@
     ],
     "ingredients_source": "label-2026-09-27",
     "description": "Each level 500 mg scoop supplies 450 mg amygdalin 98% and 50 mg pangamic acid 99%. There are no fillers or excipients.\n\nOther ingredients: Healing Energy, Love, and Prayer. 30 g jar, 60 servings. Store tightly closed, cool and dry.\n\nCaution: amygdalin can release cyanide in the body. Read the full warning on the label and the product page before use, and do not combine with apricot kernels, fruit pits or high-dose vitamin C.",
-    "directions": "Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 2 level scoops a day in divided doses. Do not exceed 2 level scoops a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 2-scoop limit.",
+    "directions": "Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 1 level scoop once a day. Do not exceed 1 level scoop a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 1-scoop limit.",
+    "copy_pinned": [
+      "ingredients",
+      "intro",
+      "description",
+      "benefits",
+      "research",
+      "directions"
+    ],
     "warning": "Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment. Keep out of reach of children.",
     "bottle_type": "30 g"
   },
@@ -3927,12 +3935,12 @@
       }
     ],
     "ingredients_source": "t33; puerarin 98% (Pueraria lobata), raw 5207 (Glen, 2026-10-25)",
-    "directions": "1 capsule up to 6 times a day with food, or as guided.",
+    "directions": "Take 1 capsule once a day with food, or as guided.",
     "copy_pinned": [
       "directions"
     ],
     "content_since": "2026-10-26T22:25:00+00:00",
-    "note": "Glen 2026-10-26, platform tab: \"yes\" to \"1 capsule up to 6 times a day with food, or as guided.\" (store spec production/05 Formulations/breast-support/2026-10-25) and \"Puerarin 98% (Pueraria lobata)\". Only the directions are pinned; no caution is approved yet."
+    "note": "Glen 2026-10-26, platform tab: \"yes\" to \"1 capsule up to 6 times a day with food, or as guided.\" (store spec production/05 Formulations/breast-support/2026-10-25) and \"Puerarin 98% (Pueraria lobata)\". Only the directions are pinned; no caution is approved yet. Glen 2026-10-31, production tab: one dose a day for amygdalin products (production/05 Formulations/b17-max/2026-10-31/one-dose-a-day.md)."
   },
   "free-and-easy": {
     "ingredients": [

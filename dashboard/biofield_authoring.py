@@ -741,13 +741,18 @@ def is_infoceutical_code(code):
 # Doses Glen set in code, ahead of the FileMaker snapshot, so a fresh snapshot cannot
 # overwrite them (Glen, 2026-10-25, formulation tab: "code"). B17 Max became a powder and
 # FileMaker 890 still says 1 capsule; the three-field split is his ("yes", same day).
-_B17_MAX_STEPS = ("Increase slowly, as guided, up to 2 level scoops a day in divided "
-                  "doses. Do not exceed 2 level scoops a day. If you also take B17 "
-                  "Syntropy, take no more than 1 capsule a day, and count it as half a "
-                  "scoop toward the 2-scoop limit.")
+# Amygdalin products take one dose a day (Glen, 2026-10-31, production tab). B17 Max went
+# from up to 2 level scoops to 1, and Breast Support from up to 6 capsules to 1. Splits from
+# production/05 Formulations/b17-max/2026-10-31/one-dose-a-day.md.
+_B17_MAX_STEPS = ("Increase slowly, as guided, up to 1 level scoop once a day. Do not "
+                  "exceed 1 level scoop a day. If you also take B17 Syntropy, take no more "
+                  "than 1 capsule a day, and count it as half a scoop toward the 1-scoop "
+                  "limit.")
 _DOSE_OVERRIDES = {
     "b17 max": {"dosage": "1/4 level scoop", "frequency": "once a day",
                 "timing": "with cooked food. " + _B17_MAX_STEPS},
+    "breast support": {"dosage": "1 capsule", "frequency": "once a day",
+                       "timing": "with food, or as guided."},
 }
 
 
