@@ -36,7 +36,8 @@ WARNING = {
         "pregnancy, or nursing. Each capsule contains about 150 mcg of iodine, the adult daily "
         "requirement. At 2 capsules daily this is about 300 mcg." + TAIL),
 }
-HELD = ("gastrozyme", "thyroid-support")
+# GastroZyme's line came with its label rows (tests/test_gastrozyme_label_rows_2026_10_31.py).
+HELD = ("thyroid-support",)
 
 
 def _load(name):

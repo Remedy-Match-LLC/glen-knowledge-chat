@@ -777,62 +777,51 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Zinc Carnosine",
-     "dose": "21.7 mg"
+     "name": "Zinc (as Zinc Carnosine)",
+     "dose": "5 mg"
     },
     {
-     "name": "Magnesium (as Butyrate)",
-     "dose": "36.7 mg"
+     "name": "Iodine 10% (in Kelp spp.)",
+     "dose": "100 mcg"
     },
     {
-     "name": "Iodine",
-     "dose": "1 mg"
-    },
-    {
-     "name": "Protease (acid)",
+     "name": "Protease (600,000 units)",
      "dose": "150 mg"
     },
     {
-     "name": "Lipase Enzyme",
+     "name": "Lipase (1,000 FIP units)",
      "dose": "50 mg"
     },
     {
-     "name": "Betaine HCl Betaine Hydrochloride Hydrochloric Acid Stomach Acid",
-     "dose": "45 mg"
-    },
-    {
-     "name": "Gentian 4:1",
+     "name": "Betaine HCl (Beta vulgaris)",
      "dose": "30 mg"
     },
     {
-     "name": "Gingerols",
+     "name": "Gentian (Gentiana lutea)",
      "dose": "20 mg"
     },
     {
-     "name": "Berberine",
-     "dose": "20 mg"
+     "name": "L-Carnosine (as Zinc Carnosine)",
+     "dose": "16.7 mg"
     },
     {
-     "name": "Dandelion Root extract",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Artichoke",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Lemon Balm",
-     "dose": "20 mg"
-    },
-    {
-     "name": "AMP Adenosine Monophosphate",
-     "dose": "20 mg"
+     "name": "Gingerol 40% (Zingiber officinale)",
+     "dose": "10 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
+   "ingredients_source": "label-read-2026-10-31",
    "description": "GastroZyme . Price: $70.",
    "bottle_type": "30 Caps",
-   "fmp_id": "322"
+   "fmp_id": "322",
+   "directions": "1 capsule with each heavier meal, or as guided.",
+   "warning": "Each capsule contains about 100 mcg of iodine, two thirds of the adult daily requirement. If you have a thyroid condition or take other iodine products, consult your health professional before use.",
+   "chat_caution": true,
+   "copy_pinned": [
+    "ingredients",
+    "directions"
+   ],
+   "content_since": "2026-10-31T18:47:47+00:00",
+   "enrichment_note": "December 2024 label (Glen read the bottle 31 Oct 2026). FileMaker 322 aligned 31 Oct. Protease 150 mg per Glen 31 Oct; label misprints 444 mg."
   },
   "gi-repair": {
    "name": "GI Repair Helicobacter Pylori Terrain Support",
