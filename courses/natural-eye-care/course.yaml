@@ -1,0 +1,9 @@
+title: Natural Eye Care
+description: Education on eye conditions from Dr. Glen, with the published research behind it.
+homework: false
+certifiable: false
+modules:
+  - slug: 01-conditions
+    title: Conditions
+    lessons:
+      - drusen
