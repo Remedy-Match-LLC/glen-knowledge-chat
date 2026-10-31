@@ -5309,7 +5309,14 @@
    "gk_stale_reason": "GK page missing: Tetrahydrocurcumin, Astaxanthin",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "371"
+   "fmp_id": "371",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true,
+   "directions": "1 to 3 capsules daily with meals away from other carotenoids, or as guided.",
+   "copy_pinned": [
+    "directions"
+   ],
+   "content_since": "2026-10-31T21:54:01+00:00"
   },
   "macular-wellness-mesozeaxanthin": {
    "name": "Macular Wellness Meso-Zeaxanthin",
