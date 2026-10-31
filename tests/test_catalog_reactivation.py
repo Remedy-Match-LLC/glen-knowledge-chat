@@ -17,6 +17,11 @@ repertoire entries all survive (see reference_bundle_packing_and_superseded).
 
 Ordering matters here: Connective Tissue Support points at Comfort, so Comfort has
 to be active or the redirect lands on another 404.
+
+Superseded on 2026-10-30. Glen, formulation tab: comfort and comfort-synovial-syntropy are
+one product ("yes"). comfort-synovial-syntropy (FileMaker 586, the label's name) stays live;
+comfort retires onto it, and Connective Tissue Support now points at it directly so it does
+not rely on a chain. Spec: production/05 Formulations/_store-updates/2026-10-31-comfort-merge.md.
 """
 
 import json
@@ -35,13 +40,16 @@ def _catalog():
 # The two that were mis-flagged
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("slug", ["comfort", "endocrine-restore"])
+CURRENT = ["comfort-synovial-syntropy", "endocrine-restore"]
+
+
+@pytest.mark.parametrize("slug", CURRENT)
 def test_current_products_are_not_flagged_inactive(slug):
     """Glen: these are current products. Inactive with no successor => 404."""
     assert _catalog()[slug].get("inactive") is not True
 
 
-@pytest.mark.parametrize("slug", ["comfort", "endocrine-restore"])
+@pytest.mark.parametrize("slug", CURRENT)
 def test_current_products_are_sellable(slug):
     p = _catalog()[slug]
     assert p.get("price_cents"), f"{slug} has no price"
@@ -55,7 +63,8 @@ def test_current_products_are_sellable(slug):
 RETIRED = {
     "dental-regen-powder": "dental-powder",
     "relax": "stress-release",
-    "connective-tissue-support": "comfort",
+    "connective-tissue-support": "comfort-synovial-syntropy",
+    "comfort": "comfort-synovial-syntropy",
 }
 
 
@@ -67,8 +76,7 @@ def test_retired_slugs_point_at_their_successor(old, new):
 @pytest.mark.parametrize("old,new", sorted(RETIRED.items()))
 def test_every_successor_is_itself_live(old, new):
     """A redirect to another retired SKU is still a 404. Connective Tissue
-    Support -> Comfort only works because Comfort was reactivated in the same
-    change."""
+    Support pointed at Comfort; since Comfort retired too, it points at the survivor."""
     succ = _catalog()[new]
     assert succ.get("inactive") is not True, f"{old} -> {new}, but {new} is inactive"
     assert succ.get("superseded_by") in (None, ""), f"{old} -> {new} -> chained again"
@@ -100,7 +108,8 @@ def _app():
 
 @pytest.mark.parametrize("slug", ["comfort", "endocrine-restore",
                                   "dental-regen-powder", "relax",
-                                  "connective-tissue-support"])
+                                  "connective-tissue-support",
+                                  "comfort-synovial-syntropy"])
 def test_get_product_resolves_all_five(slug):
     """The end the client actually hits: /begin/product/<slug> 404s when
     _get_product returns None."""
