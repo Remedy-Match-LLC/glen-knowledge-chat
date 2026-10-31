@@ -1,6 +1,7 @@
-"""Natural Eye Care: public education on eye conditions, starting with drusen.
+"""Natural Eye Care: public education on eye conditions.
 
-Glen approved the drusen text on 2026-10-30 and named the course. The lesson is education
+Glen approved the drusen text on 2026-10-30 and named the course. He approved the macular
+degeneration text on 2026-10-31. The lesson is education
 only. A product link, product name or price beside drusen or AMD would be a drug claim, so
 these tests hold the lesson to PubMed links and no product language.
 """
@@ -15,6 +16,8 @@ from dashboard import courses_content as cc
 _MHOST = "http://mentorshipu.test"
 REPO_COURSES = os.path.join(os.path.dirname(os.path.dirname(__file__)), "courses")
 SLUG = "natural-eye-care"
+# PubMed links per lesson, as approved. A change here means the approved text changed.
+PUBMED_LINKS = {"macular-degeneration": 21, "drusen": 13}
 PRODUCT_WORDS = re.compile(
     r"remedy ?match|healing oasis|macular wellness|lipid[- ]?(cleanse|zyme)|ocuheal|curcu-guard"
     r"|neuro ?magnesium|\bbuy\b|add to cart|\$\d", re.I)
@@ -25,9 +28,9 @@ def _lessons():
     return [l for m in course.modules for l in m.lessons]
 
 
-def test_drusen_is_the_one_public_lesson():
+def test_lessons_are_the_approved_ones_and_all_public():
     lessons = _lessons()
-    assert [l.slug for l in lessons] == ["drusen"]
+    assert [l.slug for l in lessons] == list(PUBMED_LINKS)
     assert {l.access for l in lessons} == {"public"}
 
 
@@ -56,7 +59,7 @@ def test_lesson_opens_for_a_signed_out_visitor_with_its_sources(client):
         r = client.get(f"/learn/{SLUG}/{l.module_slug}/{l.slug}", base_url=_MHOST)
         assert r.status_code == 200, l.slug
         html = r.get_data(as_text=True)
-        assert html.count('href="https://pubmed.ncbi.nlm.nih.gov/') == l.body_md.count('href="https://pubmed') == 13
+        assert html.count('href="https://pubmed.ncbi.nlm.nih.gov/') == l.body_md.count('href="https://pubmed') == PUBMED_LINKS[l.slug]
         assert "Keep working with your own eye doctor throughout." in html
 
 

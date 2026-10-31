@@ -6,4 +6,5 @@ modules:
   - slug: 01-conditions
     title: Conditions
     lessons:
+      - macular-degeneration
       - drusen
