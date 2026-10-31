@@ -30,7 +30,8 @@ INTRO = ("Angiostasis supports healthy, orderly blood vessel growth throughout t
 DIRECTIONS = "Take 1 capsule daily with the evening meal, or as guided."
 WARNING = ("May cause drowsiness. Avoid use while healing a wound or any other tissue injury, such "
            "as a cut, fracture, sprain or burn. Also avoid use during menses, in pregnancy or while "
-           "breastfeeding. Stop a few days before surgery. Resume once healing is complete. If you "
+           "breastfeeding. Stop 1 to 2 weeks before surgery or dental work. Resume only when your "
+           "surgeon approves. If you "
            "take a blood thinner, consult your physician before use. If you are under medical "
            "treatment, consult your physician before use.")
 DESCRIPTION = "\n\n".join([
