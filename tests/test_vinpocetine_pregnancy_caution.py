@@ -31,6 +31,11 @@ DESCRIPTION_ONLY = ["nerve-repair", "nerve-pulse"]
 # Their earlier warning stays first, then one space and the line.
 APPENDED = {"iron-out": "Take up to 4 capsules a day.",
             "sleep-syntropy": None, "vitality": None}
+# A later caution line follows the vinpocetine line (iodine, Glen "yes" 2026-10-31).
+FOLLOWED = {"thermogenesis": (
+    "Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have a "
+    "thyroid condition or take other iodine products, consult your health professional before "
+    "use.")}
 ALL = OWN_ROW + BLEND_ROW + ["vinpocetine"] + DESCRIPTION_ONLY + ["sleep-syntropy", "vitality"]
 EVERYDAY = {"longevity": "Longevity", "heart-health": "Heart Health",
             "muscle-mass": "Muscle Mass", "sustain": "Sustain", "one-step": "One Step",
@@ -66,6 +71,8 @@ def test_each_record_and_its_correction_carry_the_line(slug):
     if slug in APPENDED:
         before = APPENDED[slug] or p["warning"][:-len(LINE) - 1]
         assert before and p["warning"] == _expected(slug, before)
+    elif slug in FOLLOWED:
+        assert p["warning"] == _expected(slug) + " " + FOLLOWED[slug]
     else:
         assert p["warning"] == _expected(slug)
 

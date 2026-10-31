@@ -18,12 +18,16 @@ import pytest
 import app
 
 SLUG = "vitamin-d-syntropy"
-WARNING = ("If you take a blood thinner such as warfarin, consult your physician before "
-           "use, because vitamin K affects it. Consult your physician before use if you "
-           "are pregnant or have a thyroid condition. Consult your physician first if you "
-           "have high blood calcium, kidney stones or kidney disease, or take thiazide "
-           "diuretics or digoxin. It is not for children, or for use while breastfeeding.")
+WARNING = ("If you take a blood thinner such as warfarin, consult your physician before use, "
+           "because vitamin K affects it. Consult your physician before use if you are pregnant. "
+           "Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you "
+           "have a thyroid condition or take other iodine products, consult your health "
+           "professional before use. Consult your physician first if you have high blood "
+           "calcium, kidney stones or kidney disease, or take thiazide diuretics or digoxin. It "
+           "is not for children, or for use while breastfeeding.")
 # Revised 2026-10-25: Glen "yes" in the formulation tab, last sentence in the marketing tab.
+# Iodine line merged 2026-10-31: Glen "yes" in the marketing tab
+# (marketing/04 Copy/iodine-caution-merge-2026-10-31/).
 PRODUCTS = json.load(open("data/products.json"))["products"]
 CORRECTIONS = json.load(open("data/products-manual-corrections.json"))
 DESCRIPTION_LEAD = "Vitamin D is formed in the skin when sunlight transforms cholesterol"
