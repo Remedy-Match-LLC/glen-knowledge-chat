@@ -13,7 +13,9 @@ import app
 MARKER = "Unapproved marker sentence for the description test."
 
 
-@pytest.mark.parametrize("slug", ["zinc-syntropy", "clear-lens-eye-drops", "scar-silk",
+# Scar Silk's description is pinned since 2026-10-30 (Glen "approve"); Iron Out takes its
+# place as the product whose directions alone are pinned.
+@pytest.mark.parametrize("slug", ["zinc-syntropy", "clear-lens-eye-drops", "iron-out",
                                   "microbiome"])
 def test_a_description_that_is_not_pinned_stays_out(monkeypatch, slug):
     # Review round 2: a marker, so a truncated leak or a missing block cannot pass quietly.

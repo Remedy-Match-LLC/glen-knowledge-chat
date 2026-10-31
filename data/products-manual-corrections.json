@@ -3410,9 +3410,22 @@
     "chat_caution": true,
     "directions": "Up to 3 capsules a day between meals.",
     "copy_pinned": [
-      "directions"
+      "directions",
+      "intro",
+      "description",
+      "research",
+      "benefits"
     ],
-    "note": "Scar Silk caution moved from the label to the store page, Glen 2026-10-09 and 2026-10-15 (production spec 2026-10-15-scar-silk-caution)."
+    "note": "Scar Silk caution moved from the label to the store page, Glen 2026-10-09 and 2026-10-15 (production spec 2026-10-15-scar-silk-caution).",
+    "intro": "Scar Silk supplies enzymes that support your body's normal breakdown of fibrin. It combines serrapeptase, nattokinase and lumbrokinase with pineapple enzymes. It also contains gotu kola and isoquercetin. Fulvic acid and sodium caprylate are included. Piperine from black pepper completes the formula.",
+    "description": "Each delayed-release vegicap supplies 150 mg serrapeptase.\n\nIt has 100 mg nattokinase from Bacillus subtilis.\n\nThat is 2,000 fibrinolytic units.\n\nIt has 50 mg pineapple proteolytic enzyme and 10 mg lumbrokinase.\n\nIt also has 50 mg isoquercetin as EMIQ and 35 mg gotu kola.\n\nFulvic acid and sodium caprylate supply 50 mg each.\n\nPiperine from black pepper supplies 5 mg.\n\nTake 1 vegicap a day between meals.\n\nUp to 3 a day may be used.",
+    "how_it_works": "Scar Silk combines enzymes with plant compounds that support connective tissue. Here is what each ingredient does.\n\nNattokinase comes from fermented soybeans.\n\nIn a human trial, one dose raised blood markers of fibrin breakdown for several hours.\n\nThat trial used 2,000 fibrinolytic units in 12 healthy men.\n\nOne capsule supplies the same amount.\n\nSerrapeptase comes from a bacterium first found in the silkworm gut.\n\nHuman studies of serrapeptase are few and small.\n\nLumbrokinase is an enzyme from earthworms.\n\nIn rat gut tissue, some lumbrokinase crossed the intestinal wall still active.\n\nBromelain is the main enzyme in pineapple.\n\nIn a human study, some bromelain reached the blood intact and still active.\n\nThat study used 3 grams a day.\n\nOne capsule holds far less.\n\nIn cell studies, triterpenes from gotu kola increased collagen production by skin cells.\n\nEMIQ is a form of quercetin.\n\nIn a human study, it was absorbed better than isoquercitrin or rutin.",
+    "benefits": [
+      "Supplies proteolytic enzymes in a delayed-release capsule.",
+      "Includes nattokinase to support normal fibrin balance.",
+      "Includes gotu kola, which supports collagen production in lab studies."
+    ],
+    "learn_markdown": "Scar Silk combines enzymes with plant compounds that support connective tissue. Here is what each ingredient does.\n\nNattokinase comes from fermented soybeans.\n\nIn a human trial, one dose raised blood markers of fibrin breakdown for several hours.\n\nThat trial used 2,000 fibrinolytic units in 12 healthy men.\n\nOne capsule supplies the same amount.\n\nSerrapeptase comes from a bacterium first found in the silkworm gut.\n\nHuman studies of serrapeptase are few and small.\n\nLumbrokinase is an enzyme from earthworms.\n\nIn rat gut tissue, some lumbrokinase crossed the intestinal wall still active.\n\nBromelain is the main enzyme in pineapple.\n\nIn a human study, some bromelain reached the blood intact and still active.\n\nThat study used 3 grams a day.\n\nOne capsule holds far less.\n\nIn cell studies, triterpenes from gotu kola increased collagen production by skin cells.\n\nEMIQ is a form of quercetin.\n\nIn a human study, it was absorbed better than isoquercitrin or rutin."
   },
   "vitamin-d-syntropy": {
     "ingredients": [
@@ -4174,19 +4187,179 @@
     "chat_caution": true
   },
   "macular-wellness-lycopene": {
-    "ingredients_source": "fmp_new",
-    "warning": "Avoid use in pregnancy or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. The danshen in this formula can strengthen the effect of warfarin. Ask your pharmacist if you take any prescription medicine. Avoid use if you have gallstones or a bile duct problem. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin."
+    "ingredients_source": "db-formulations-2026-06-25; lycopene 30 mg from the 2026-10-30 label read (production)",
+    "warning": "Avoid use in pregnancy or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. The danshen in this formula can strengthen the effect of warfarin. Ask your pharmacist if you take any prescription medicine. Avoid use if you have gallstones or a bile duct problem. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin.",
+    "intro": "Macular Wellness Lycopene supports the health of the macula. It combines lycopene with CoQ10 and NAC. It also contains curcumin, resveratrol and pterostilbene. Salvianolic acid B and black rice C3G add more plant compounds. Folate as 5-MTHF and vitamin B12 complete the formula.",
+    "description": "Each vegicap supplies 30 mg lycopene and 50 mg CoQ10.\n\nIt also supplies 100 mg NAC and 100 mg curcumin 95%.\n\nResveratrol and pterostilbene are present at 50 mg each.\n\nIt has 50 mg salvianolic acid B 20% and 25 mg black rice C3G 40%.\n\nThe B vitamins are 200 mcg 5-MTHF and 1 mg cobalamin.\n\nThe cobalamin is 90% adenosyl and 10% methyl.\n\nTake 1 vegicap a day with food.",
+    "how_it_works": "Lycopene is one of the main carotenoids in human blood. Here is what the research says about each ingredient.\n\nNAC helps the body make glutathione, a natural antioxidant.\n\nIn a rat study, curcumin in the diet helped calm inflammatory signals in the retina.\n\nIn people having eye surgery, resveratrol breakdown products were found in eye fluids after oral doses.\n\nPterostilbene is a close relative of resveratrol.\n\nIn rats, it was absorbed about four times better than resveratrol.\n\nIn a human retinal cell study, salvianolic acid B helped protect against oxidative stress.\n\nIn one retinal cell study, pure C3G helped calm inflammatory signals.\n\n5-MTHF is the active form of folate.\n\nFolate and vitamin B12 work together to keep homocysteine in a normal range.",
+    "benefits": [
+      "Supplies 30 mg of lycopene in each vegicap.",
+      "Includes CoQ10 to support cellular energy.",
+      "Provides antioxidants studied for retinal cell support.",
+      "Includes 5-MTHF and B12 for normal homocysteine metabolism."
+    ],
+    "learn_markdown": "Lycopene is one of the main carotenoids in human blood. Here is what the research says about each ingredient.\n\nNAC helps the body make glutathione, a natural antioxidant.\n\nIn a rat study, curcumin in the diet helped calm inflammatory signals in the retina.\n\nIn people having eye surgery, resveratrol breakdown products were found in eye fluids after oral doses.\n\nPterostilbene is a close relative of resveratrol.\n\nIn rats, it was absorbed about four times better than resveratrol.\n\nIn a human retinal cell study, salvianolic acid B helped protect against oxidative stress.\n\nIn one retinal cell study, pure C3G helped calm inflammatory signals.\n\n5-MTHF is the active form of folate.\n\nFolate and vitamin B12 work together to keep homocysteine in a normal range.",
+    "copy_pinned": [
+      "intro",
+      "description",
+      "research",
+      "benefits"
+    ],
+    "ingredients": [
+      {
+        "name": "5-MTHF",
+        "dose": "200 mcg"
+      },
+      {
+        "name": "Adenosyl 90% & Methyl 10% Cobalamin",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Coenzyme Q10, CoQ10, Ubiquinone",
+        "dose": "50 mg"
+      },
+      {
+        "name": "NAC",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Tetrahydrocurcumin, water soluble Curcuminoid",
+        "dose": "0 mg"
+      },
+      {
+        "name": "C3G 40% Black Rice Cyanidin-3-glucosides Oryza sativa",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Trans-Resveratrol",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Lycopene",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Salvianolic Acid B",
+        "dose": ""
+      },
+      {
+        "name": "Pterostilbene; Trans Pterostilbene",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Curcumin 95% HPLC",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Salvianolic Acid B 20%",
+        "dose": "50 mg"
+      }
+    ]
   },
   "lipid-zyme": {
     "ingredients_source": "fmp_new",
-    "warning": "This formula contains enzymes that may increase the risk of bleeding. Do not use if you have a bleeding disorder or a history of bleeding. Avoid use with a fresh or bleeding wound. Also avoid use during menses or pregnancy, or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. Do not combine with a blood thinner or daily aspirin unless your physician approves. Do not take with Scar Silk unless your physician approves. Avoid use if you are allergic to pineapple. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care at once if you notice unusual bleeding or black stools."
+    "warning": "This formula contains enzymes that may increase the risk of bleeding. Do not use if you have a bleeding disorder or a history of bleeding. Avoid use with a fresh or bleeding wound. Also avoid use during menses or pregnancy, or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. Do not combine with a blood thinner or daily aspirin unless your physician approves. Do not take with Scar Silk unless your physician approves. Avoid use if you are allergic to pineapple. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care at once if you notice unusual bleeding or black stools.",
+    "intro": "Lipid Zyme supplies enzymes to take between meals, away from food. It combines lipase and protease with pineapple enzymes. It also contains serrapeptase and nattokinase. Piperine from black pepper and kelp complete the formula.",
+    "description": "Each delayed-release vegicap supplies 165 mg lipase and 125 mg protease.\n\nIt also supplies 150 mg pineapple proteolytic enzyme.\n\nIt has 17 mg serrapeptase.\n\nIt has 33 mg nattokinase from Bacillus subtilis.\n\nThat is 660 fibrinolytic units.\n\nPiperine from black pepper supplies 3 mg.\n\nKelp supplies 3.1 mg.\n\nTake 1 capsule 1 to 3 times daily between meals, or as guided.",
+    "how_it_works": "Here is what the research says about each ingredient.\n\nLipase breaks down fats.\n\nProtease breaks down proteins.\n\nBromelain is the main enzyme in pineapple.\n\nIn a human study, some bromelain reached the blood intact and still active.\n\nThat study used 3 grams a day.\n\nOne capsule holds far less.\n\nNattokinase comes from fermented soybeans.\n\nIn a human trial, one dose raised blood markers of fibrin breakdown for several hours.\n\nThat trial used 2,000 fibrinolytic units in 12 healthy men.\n\nOne capsule supplies 660 units.\n\nSerrapeptase comes from a bacterium first found in the silkworm gut.\n\nHuman studies of serrapeptase are few and small.\n\nBlack pepper contains piperine, which can change how the body absorbs other compounds.",
+    "benefits": [
+      "Supplies lipase and protease enzymes.",
+      "Includes nattokinase to support normal fibrin balance.",
+      "Includes bromelain, a pineapple enzyme."
+    ],
+    "learn_markdown": "Here is what the research says about each ingredient.\n\nLipase breaks down fats.\n\nProtease breaks down proteins.\n\nBromelain is the main enzyme in pineapple.\n\nIn a human study, some bromelain reached the blood intact and still active.\n\nThat study used 3 grams a day.\n\nOne capsule holds far less.\n\nNattokinase comes from fermented soybeans.\n\nIn a human trial, one dose raised blood markers of fibrin breakdown for several hours.\n\nThat trial used 2,000 fibrinolytic units in 12 healthy men.\n\nOne capsule supplies 660 units.\n\nSerrapeptase comes from a bacterium first found in the silkworm gut.\n\nHuman studies of serrapeptase are few and small.\n\nBlack pepper contains piperine, which can change how the body absorbs other compounds.",
+    "copy_pinned": [
+      "intro",
+      "description",
+      "research",
+      "benefits"
+    ],
+    "directions": "1 capsule 1 to 3 times daily between meals, or as guided."
   },
   "lipid-cleanse": {
-    "ingredients_source": "fmp_new",
-    "warning": "Avoid use in pregnancy or while nursing. Avoid use if you have liver disease. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. This formula may lower blood sugar. Consult your physician if you take medicine for diabetes. It can also change how the body clears some prescription drugs. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin. It may cause stomach upset or trouble sleeping."
+    "ingredients_source": "db-formulations-2026-06-25; methylselenocysteine 0.05 mg from the printed label (production, 2026-10-30)",
+    "warning": "Avoid use in pregnancy or while nursing. Avoid use if you have liver disease. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. This formula may lower blood sugar. Consult your physician if you take medicine for diabetes. It can also change how the body clears some prescription drugs. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin. It may cause stomach upset or trouble sleeping.",
+    "intro": "Lipid Cleanse supports the retina's antioxidant defenses and cellular energy. It combines green tea polyphenols with CoQ10 and PQQ. It also contains dihydroberberine, tocotrienols and fucoxanthin. Ascorbyl palmitate supplies vitamin C in a fat-soluble form.",
+    "description": "Each vegicap supplies 165 mg ascorbyl palmitate.\n\nThis is a fat-soluble form of vitamin C.\n\nIt supplies 130 mg green tea polyphenols 98%.\n\nAbout 65 mg of those polyphenols is EGCG.\n\nIt has 35 mg CoQ10 and 3 mg PQQ.\n\nDihydroberberine, tocotrienols and ginsenosides are present at 35 mg each.\n\nIt also supplies 0.8 mg fucoxanthin.\n\nIts 50 mcg methylselenocysteine supplies about 20 mcg selenium.\n\nColuracetam supplies 7 mg.\n\nTake 1 vegicap a day with food.",
+    "how_it_works": "Lipid Cleanse combines nutrients that support the retina. Here is what each ingredient does.\n\nIn a rat study, green tea catechins reached the retina and lowered a marker of oxidative damage there.\n\nPQQ supports the mitochondria that make cellular energy.\n\nIn a small human study, PQQ at about 15 to 20 mg a day changed markers of mitochondrial function.\n\nOne capsule holds 3 mg.\n\nDihydroberberine is a form of berberine.\n\nIn a pilot study of five men, 100 mg doses raised blood berberine more than 500 mg of berberine.\n\nOne capsule holds 35 mg.\n\nFucoxanthin is a pigment from brown seaweed.\n\nAscorbyl palmitate is vitamin C bound to a fat.\n\nTocotrienols are members of the vitamin E family.\n\nGinsenosides come from ginseng root.\n\nMethylselenocysteine is a food form of selenium.",
+    "benefits": [
+      "Supplies green tea polyphenols.",
+      "Includes CoQ10 and PQQ to support cellular energy.",
+      "Uses dihydroberberine, a well-absorbed form of berberine.",
+      "Provides vitamin C in a fat-soluble form."
+    ],
+    "learn_markdown": "Lipid Cleanse combines nutrients that support the retina. Here is what each ingredient does.\n\nIn a rat study, green tea catechins reached the retina and lowered a marker of oxidative damage there.\n\nPQQ supports the mitochondria that make cellular energy.\n\nIn a small human study, PQQ at about 15 to 20 mg a day changed markers of mitochondrial function.\n\nOne capsule holds 3 mg.\n\nDihydroberberine is a form of berberine.\n\nIn a pilot study of five men, 100 mg doses raised blood berberine more than 500 mg of berberine.\n\nOne capsule holds 35 mg.\n\nFucoxanthin is a pigment from brown seaweed.\n\nAscorbyl palmitate is vitamin C bound to a fat.\n\nTocotrienols are members of the vitamin E family.\n\nGinsenosides come from ginseng root.\n\nMethylselenocysteine is a food form of selenium.",
+    "copy_pinned": [
+      "intro",
+      "description",
+      "research",
+      "benefits"
+    ],
+    "ingredients": [
+      {
+        "name": "Coluracetam",
+        "dose": "7 mg"
+      },
+      {
+        "name": "MSC",
+        "dose": "0.05 mg"
+      },
+      {
+        "name": "Gensenosides",
+        "dose": "35 mg"
+      },
+      {
+        "name": "Green Tea; Organic; 98% Polyphenols/50% EGCG Standardized Extract",
+        "dose": "130 mg"
+      },
+      {
+        "name": "Kelp",
+        "dose": "8 mg"
+      },
+      {
+        "name": "Rice bran oil",
+        "dose": "35 mg"
+      },
+      {
+        "name": "Ascorbyl Palmitate, fat soluble Vitamin C",
+        "dose": "165 mg"
+      },
+      {
+        "name": "Coenzyme Q10, CoQ10, Ubiquinone",
+        "dose": "35 mg"
+      },
+      {
+        "name": "Pyrroloquinoline Quinone PQQ",
+        "dose": "3 mg"
+      },
+      {
+        "name": "5x more bioavailable active berberine metabolite; 2x longer lasting; 20x greater area under the curve (AUC) DHB",
+        "dose": "35 mg"
+      },
+      {
+        "name": "Camellia sinensis",
+        "dose": ""
+      }
+    ]
   },
   "scar-solve": {
     "ingredients_source": "fmp_new",
-    "warning": "Avoid use in pregnancy or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. If you have an autoimmune condition, consult your physician before use. Also consult your physician if you take medicine that suppresses the immune system. Ask your physician first if you have or have had cancer. This formula contains zinc. If you take an eye vitamin with zinc, consult your physician before adding this. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin."
+    "warning": "Avoid use in pregnancy or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. If you take a blood thinner or daily aspirin, consult your physician before use. If you have an autoimmune condition, consult your physician before use. Also consult your physician if you take medicine that suppresses the immune system. Ask your physician first if you have or have had cancer. This formula contains zinc. If you take an eye vitamin with zinc, consult your physician before adding this. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care if you notice dark urine or yellow skin.",
+    "intro": "Scar Solve supports your skin's normal collagen and connective tissue. It combines vitamin C and zinc with pine bark OPCs. It also contains gotu kola, isoquercetin and pterostilbene. Tienchi ginseng and astragalus are included. Fulvic acid and piperine from black pepper complete the formula.",
+    "description": "Each vegicap supplies 100 mg zinc ascorbate, which gives 15 mg zinc.\n\nIt also supplies 80 mg pine bark OPCs 95%.\n\nIt has 50 mg isoquercetin as EMIQ and 50 mg pterostilbene.\n\nIt also has 50 mg tienchi ginseng and 35 mg gotu kola.\n\nRice bran oil supplies 100 mg.\n\nFulvic acid supplies 25 mg.\n\nPiperine from black pepper supplies 5 mg.\n\nAstragalus extract standardized to cycloastragenol is included.\n\nNo amount is listed for it.\n\nTake 1 vegicap a day with food.",
+    "how_it_works": "Scar Solve combines nutrients that support normal collagen and connective tissue. Here is what each ingredient does.\n\nVitamin C is a cofactor the body needs to form collagen.\n\nZinc supports normal immune function and skin.\n\nIn a study of 20 women, a branded pine bark extract was linked with better skin hydration and elasticity.\n\nThat study had no placebo group.\n\nIn cell studies, triterpenes from gotu kola increased collagen production by skin cells.\n\nEMIQ is a form of quercetin.\n\nIn a human study, it was absorbed better than isoquercitrin or rutin.\n\nPterostilbene is a close relative of resveratrol.\n\nIn rats, it was absorbed about four times better than resveratrol.",
+    "benefits": [
+      "Supplies vitamin C, needed for normal collagen formation.",
+      "Supplies zinc for normal immune function and skin.",
+      "Includes pine bark OPCs.",
+      "Includes gotu kola, which supports collagen production in lab studies."
+    ],
+    "learn_markdown": "Scar Solve combines nutrients that support normal collagen and connective tissue. Here is what each ingredient does.\n\nVitamin C is a cofactor the body needs to form collagen.\n\nZinc supports normal immune function and skin.\n\nIn a study of 20 women, a branded pine bark extract was linked with better skin hydration and elasticity.\n\nThat study had no placebo group.\n\nIn cell studies, triterpenes from gotu kola increased collagen production by skin cells.\n\nEMIQ is a form of quercetin.\n\nIn a human study, it was absorbed better than isoquercitrin or rutin.\n\nPterostilbene is a close relative of resveratrol.\n\nIn rats, it was absorbed about four times better than resveratrol.",
+    "copy_pinned": [
+      "intro",
+      "description",
+      "research",
+      "benefits"
+    ]
   }
 }

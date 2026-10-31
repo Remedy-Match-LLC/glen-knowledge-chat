@@ -60,7 +60,9 @@ def test_only_the_caution_and_the_directions_reach_the_chatbot():
     for record in (PRODUCTS["scar-silk"], CORRECTIONS["scar-silk"]):
         assert record["chat_caution"] is True
         assert record["directions"] == DIRECTIONS
-        assert record["copy_pinned"] == ["directions"]
+        # The page copy is pinned too since 2026-10-30 (Glen "approve", communication tab).
+        assert record["copy_pinned"] == ["directions", "intro", "description", "research",
+                                         "benefits"]
 
 
 def test_the_page_gives_the_directions(appmod):
@@ -112,10 +114,10 @@ def _link(name):
 def test_the_chatbot_carries_the_directions_and_the_caution_once(q):
     b = app.named_product_facts_block(q)
     section = b[b.index("### Scar Silk"):]
-    # No description: it is not approved, and only a pinned description reaches the bot.
+    # The approved description since 2026-10-30; before it the block said none was approved.
     assert section.split("\n") == [
         "### Scar Silk", f"Page: {app._catalog_page_url('scar-silk')}",
-        app._NO_DESCRIPTION.format(name="Scar Silk"),
+        *PRODUCTS["scar-silk"]["description"].split("\n"),
         f"Directions: {DIRECTIONS}",
         app._PINNED_DOSE_RULE.format(name="Scar Silk", example=""),
         app._CAUTION_COPY_REMINDER, f"Caution: {APPROVED}",
@@ -135,7 +137,7 @@ def test_a_caution_question_gets_the_directions_and_the_link(q):
     section = b[b.index("### Scar Silk"):]
     assert section.split("\n") == [
         "### Scar Silk", f"Page: {app._catalog_page_url('scar-silk')}",
-        app._NO_DESCRIPTION.format(name="Scar Silk"),
+        *PRODUCTS["scar-silk"]["description"].split("\n"),
         f"Directions: {DIRECTIONS}",
         # A linked caution is not given, so the dose rule asks only for those given here.
         app._PINNED_DOSE_RULE.format(name="Scar Silk", example="").replace(
@@ -178,7 +180,9 @@ def test_lowercase_scar_silk_without_a_cue_is_a_known_gap():
 
 
 def test_a_gated_answer_does_not_describe_it_from_the_snippets():
-    # Review round 3: no approved description, and a gated answer reads back this text only.
+    # Review round 3: a gated answer reads back this text only. Since 2026-10-30 that text is
+    # the approved description, so neither "no description" line appears.
     b = app.named_product_facts_block("What is Scar Silk?", gated=True)
-    assert app._NO_DESCRIPTION_GATED.format(name="Scar Silk") in b
+    assert PRODUCTS["scar-silk"]["description"] in b
+    assert app._NO_DESCRIPTION_GATED.format(name="Scar Silk") not in b
     assert app._NO_DESCRIPTION.format(name="Scar Silk") not in b
