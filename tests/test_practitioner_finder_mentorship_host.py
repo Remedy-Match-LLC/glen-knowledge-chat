@@ -3,6 +3,7 @@ teaching tab, 2026-10-31). The cataract education page links to it there, and an
 page does not lead to a page that names his product line. Other hosts keep the branding.
 """
 import os
+import re
 
 import pytest
 
@@ -33,7 +34,13 @@ def test_mentorshipu_shows_a_plain_finder(client):
     assert ("<p>Practitioners across functional eye care, biological dentistry and integrative "
             "health.</p>") in html
     assert not [b for b in BRANDS if b in html]
-    assert "/begin/product" not in html
+    # Review round 2: every fixed link is checked, not one URL pattern. Practitioner cards
+    # link each practitioner's own site, phone and email from the listing data.
+    hrefs = set(re.findall(r'href=\\?"([^"\\]*)', html))
+    allowed = re.compile(r"^(?:https://fonts\.(?:googleapis|gstatic)\.com|"
+                         r"https://api\.mapbox\.com/|/static/favicon\.png$|/privacy$|/terms$|"
+                         r"mailto:|tel:|\$\{escapeHtml\()")
+    assert hrefs and not [h for h in hrefs if not allowed.match(h)], hrefs
 
 
 @pytest.mark.parametrize("host", ["illtowell.com", "myhealingoasis.com"])
