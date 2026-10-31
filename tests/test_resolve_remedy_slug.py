@@ -8,7 +8,7 @@ r = app._resolve_remedy_slug
 
 
 def test_resolves_when_pinecone_title_differs_from_name():
-    assert r({"name": "Brain Boost"}) == "brain-boost"                 # title 'Brain Boost Nootropic'
+    assert r({"name": "Brain Boost"}) == "brain-boost"   # title matches since 2026-10-30
     assert r({"name": "Lens-Zyme Brunescense Buster"}) == "lens-zyme"  # title 'Lens-Zyme'
     assert r({"name": "GI Repair Helicobacter Pylori Terrain Support"}) == "gi-repair"
 

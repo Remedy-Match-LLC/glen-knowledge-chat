@@ -3911,39 +3911,25 @@
     "y": 0.1826
    },
    "id": "brain-boost-nootropic",
-   "label": "Brain Boost Nootropic",
+   "label": "Brain Boost",
    "links": [
     {
      "source": "remedymatch",
-     "title": "Brain Boost Nootropic",
+     "title": "Brain Boost",
      "type": "product",
      "url": "https://myhealingoasis.com/begin/product/brain-boost"
-    },
-    {
-     "source": "youtube",
-     "title": "Functional Formulations Bioavailability Blend",
-     "type": "video",
-     "url": "https://youtu.be/ShCAvissXq0"
-    },
-    {
-     "source": "clip",
-     "title": "Technicolor Walk: First Dose of Endocrine Restore",
-     "type": "video",
-     "url": "https://youtu.be/LXl_7m7FsQY?t=210s"
     }
    ],
    "namespaces": [
     "specific-formulations"
    ],
    "neighbors": [
-    "coluracetam",
-    "coluracetam-bci-540-mkc-231",
     "brain-program",
     "brain-cleanse"
    ],
    "parent": "brain-nervous",
    "status": "live",
-   "summary": "A nootropic formulation containing Coluracetam to enhance color vision and brain function."
+   "summary": "Each serving of Brain Boost, 2 vegicaps, combines citicoline 500 mg, L-theanine 200 mg and phosphatidylserine 100 mg."
   },
   {
    "aliases": [
@@ -6090,7 +6076,6 @@
     "specific-formulations"
    ],
    "neighbors": [
-    "brain-boost-nootropic",
     "coluracetam-bci-540-mkc-231",
     "centrophenoxine",
     "curcumin"
@@ -6131,7 +6116,6 @@
    ],
    "neighbors": [
     "coluracetam",
-    "brain-boost-nootropic",
     "alcar",
     "alpha-gpc"
    ],

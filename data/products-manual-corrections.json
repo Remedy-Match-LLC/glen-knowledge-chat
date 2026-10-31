@@ -3376,8 +3376,7 @@
   "brain-program": {
     "ingredients_source": "none",
     "caution_components": [
-      "brain-cleanse",
-      "brain-boost"
+      "brain-cleanse"
     ],
     "note": "Bundle cautions by component, Glen 2026-10-15 (formulation spec 2026-10-15-sleep-syntropy-caution)."
   },
@@ -4071,9 +4070,32 @@
     "chat_caution": true
   },
   "brain-boost": {
-    "ingredients_source": "t33",
-    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "ingredients": [
+      {
+        "name": "Citicoline (CDP-Choline)",
+        "dose": "500 mg"
+      },
+      {
+        "name": "L-Theanine",
+        "dose": "200 mg"
+      },
+      {
+        "name": "Phosphatidylserine (from soy)",
+        "dose": "100 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-10-30",
+    "panel_note": "Contains: Soy.",
+    "directions": "1 to 2 capsules daily with breakfast and/or lunch, or as guided.",
+    "description": "Each serving of Brain Boost, 2 vegicaps, combines citicoline 500 mg, L-theanine 200 mg and phosphatidylserine 100 mg.",
+    "copy_pinned": [
+      "ingredients",
+      "directions",
+      "description"
+    ],
+    "content_since": "2026-10-31T20:07:18+00:00",
+    "chat_caution": false,
+    "note": "Label-read 2026-10-30 by formulation from brain-boost-label-selected-draft.pdf (July 2026), rows per 2-capsule serving. Glen 2026-10-30: Brain Boost and Brain Boost Nootropic are \"one product\"; the shelf bottle lists \"citicoline, L-theanine, PS\" (\"July label\"); no older bottle is for sale (\"no\"), so the vinpocetine line is removed; \"pin\". PS is from soy (Glen 2026-09-21). Directions per Glen 2026-10-31 (production tab; \"yes\" for app and store, formulation tab). Spec production/05 Formulations/_store-updates/2026-10-30-brain-boost-one-record.md."
   },
   "heart-health": {
     "ingredients_source": "manual",

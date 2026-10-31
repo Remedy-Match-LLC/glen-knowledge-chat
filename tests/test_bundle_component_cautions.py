@@ -29,7 +29,8 @@ BRAIN_CLEANSE = (
     "physician before use.")
 
 # Every formula with vinpocetine takes this line (Glen, 2026-10-30): Sleep Syntropy after its
-# own caution, Brain Boost as its whole caution, which the Brain Program now lists.
+# own caution. Brain Boost no longer carries it and the Brain Program no longer lists it: no
+# older Brain Boost bottle is for sale (Glen, 30 October, "no").
 VINPOCETINE = ("This formula contains vinpocetine, so do not use it if you are pregnant or "
                "could become pregnant.")
 SLEEP_SYNTROPY = (
@@ -52,13 +53,11 @@ SLEEP_SYNTROPY = (
 
 PRODUCTS = json.load(open("data/products.json"))["products"]
 CORRECTIONS = json.load(open("data/products-manual-corrections.json"))
-APPROVED = {"brain-cleanse": BRAIN_CLEANSE, "sleep-syntropy": SLEEP_SYNTROPY,
-            "brain-boost": VINPOCETINE}
-NAMES = {"brain-cleanse": "Brain Cleanse", "sleep-syntropy": "Sleep Syntropy",
-         "brain-boost": "Brain Boost"}
+APPROVED = {"brain-cleanse": BRAIN_CLEANSE, "sleep-syntropy": SLEEP_SYNTROPY}
+NAMES = {"brain-cleanse": "Brain Cleanse", "sleep-syntropy": "Sleep Syntropy"}
 
 EXPECTED = {"sleep-bundle": ["brain-cleanse", "sleep-syntropy"],
-            "brain-program": ["brain-cleanse", "brain-boost"]}
+            "brain-program": ["brain-cleanse"]}
 UNLISTED = "estrogen-fibrin-balance-program"
 
 
@@ -270,7 +269,6 @@ def test_a_listed_bundle_with_no_opted_in_component_is_not_admitted(monkeypatch)
     # The Brain Program: a pinned Sleep Bundle is admitted on copy_pinned instead.
     products = copy.deepcopy(app._PRODUCTS)
     products["products"]["brain-cleanse"].pop("chat_caution")
-    products["products"]["brain-boost"].pop("chat_caution")
     monkeypatch.setattr(app, "_PRODUCTS", products)
     assert "### Brain Program" not in _block("Is the Brain Program safe?")
     # The empty block is dropped anyway; the match itself is what must not happen.
@@ -283,7 +281,6 @@ def test_a_listed_component_with_no_warning_does_not_admit_the_bundle(monkeypatc
     # empty block.
     products = copy.deepcopy(app._PRODUCTS)
     products["products"]["brain-cleanse"]["warning"] = ""
-    products["products"]["brain-boost"]["warning"] = ""
     monkeypatch.setattr(app, "_PRODUCTS", products)
     assert "brain-program" not in app._named_product_spans(
         "Is the Brain Program safe?", products["products"])
@@ -327,6 +324,7 @@ def test_two_cautions_get_the_keep_them_separate_rule(q):
 
 
 @pytest.mark.parametrize("q", [
+    "What should I know before taking the Brain Program?",
     "What should I know before taking Brain Cleanse?",
     "what should i know before taking brain cleanse?",
     "What should I know before taking Sleep Syntropy?",
@@ -340,11 +338,10 @@ def test_one_opted_in_caution_gets_the_word_for_word_rule(q):
     assert app._SEVERAL_CAUTIONS_RULE not in b
 
 
-def test_the_brain_program_now_gets_the_several_cautions_rule():
-    # Brain Boost's vinpocetine line is its second listed caution (2026-10-30).
+def test_the_brain_program_shows_only_brain_cleanses_caution():
+    # Brain Boost left the list (spec 2026-10-30-brain-boost-one-record, step 5).
     b = _block("What should I know before taking the Brain Program?")
-    assert app._SEVERAL_CAUTIONS_RULE in b and app._ONE_CAUTION_RULE not in b
-    assert BRAIN_CLEANSE in b and VINPOCETINE in b
+    assert BRAIN_CLEANSE in b and VINPOCETINE not in b
 
 
 @pytest.mark.parametrize("q", [

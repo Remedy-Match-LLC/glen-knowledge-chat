@@ -392,104 +392,38 @@
    "name": "Brain Boost",
    "qbo_item_id": "27",
    "price_cents": 7000,
-   "pinecone_title": "Brain Boost Nootropic",
+   "pinecone_title": "Brain Boost",
    "qty_pricing": true,
+   "fmp_id": "365",
    "ingredients": [
     {
-     "name": "Vitamin B6 as P5P (Pyridoxal 5-Phosphate)",
-     "dose": "2 mg"
+     "name": "Citicoline (CDP-Choline)",
+     "dose": "500 mg"
     },
     {
-     "name": "Choline Complex",
-     "dose": "150 mg"
+     "name": "L-Theanine",
+     "dose": "200 mg"
     },
     {
-     "name": "NALT (N-Acetyl L-Tyrosine)",
-     "dose": "70 mg"
-    },
-    {
-     "name": "ALCAR (Acetyl L-Carnitine)",
-     "dose": "50 mg"
-    },
-    {
-     "name": "Phosphatidylserine (Glycine max)",
-     "dose": "50 mg"
-    },
-    {
-     "name": "Cynarin 10% (Cynara scolymus)",
-     "dose": "50 mg"
-    },
-    {
-     "name": "Bacosides 20% (Bacopa monnieri)",
-     "dose": "70 mg"
-    },
-    {
-     "name": "L-Theanine (Camellia sinensis)",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Oatstraw 100:1 (Avena sativa)",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Trans-Pterostilbene (Vaccinium cyanococcus)",
-     "dose": "1 mg"
-    },
-    {
-     "name": "Humic Acid",
-     "dose": "1 mg"
-    },
-    {
-     "name": "EGb 761 (Ginkgo biloba)",
-     "dose": "21 mg"
-    },
-    {
-     "name": "Vitamin B3 (as Niacin)",
-     "dose": "8 mg"
-    },
-    {
-     "name": "Moringa 100:1 (Moringa oleifera)",
-     "dose": "5 mg"
-    },
-    {
-     "name": "Licorice Omnipotent (Glycyrrhiza glabra)",
-     "dose": "3 mg"
-    },
-    {
-     "name": "Gingerol 40% (Zingiber officinalis)",
-     "dose": "2 mg"
-    },
-    {
-     "name": "Piperine (Piper nigrum)",
-     "dose": "1 mg"
-    },
-    {
-     "name": "Vinpocetine (Vinca minor)",
-     "dose": "1 mg"
-    },
-    {
-     "name": "Centrophenoxine",
-     "dose": ""
-    },
-    {
-     "name": "Citicoline",
-     "dose": ""
-    },
-    {
-     "name": "Fulvic Acid",
-     "dose": ""
-    },
-    {
-     "name": "11 Spirit Minerals",
-     "dose": ""
+     "name": "Phosphatidylserine (from soy)",
+     "dose": "100 mg"
     }
    ],
-   "ingredients_source": "manual",
-   "description": "Brain Boost Nootropic . Brain Boost Nootropic Brain Boost Brain Boost is a nootropic formulation that includes Coluracetam, which enhances color vision and other brain functions. Vision provides 2/3 of all the nerve current entering the brain, so increasing vision helps energize many other brain, endocrine and immune functions as well. The pathways from the eyes to the biological clock in the hypothalamus that regulates these other systemic functions are specifically color sensitive, so enhancing color vision can light up your life and your wellness in surprising ways. Brain Boost Nootropic ....",
-   "enrichment_note": "Section A: appended confirmed Bioavailability-Factors extras (Centrophenoxine, Citicoline, Fulvic Acid, 11 Spirit Minerals); removed Coluracetam per Glen; DHA intentionally NOT added. Source: Glen's Products-Worklist.md.",
+   "ingredients_source": "label-read-2026-10-30",
+   "regular_cents": 8000,
+   "description": "Each serving of Brain Boost, 2 vegicaps, combines citicoline 500 mg, L-theanine 200 mg and phosphatidylserine 100 mg.",
+   "enrichment_note": "Label-read 2026-10-30 by formulation from brain-boost-label-selected-draft.pdf (July 2026), rows per 2-capsule serving. Glen 2026-10-30: Brain Boost and Brain Boost Nootropic are \"one product\"; the shelf bottle lists \"citicoline, L-theanine, PS\" (\"July label\"); no older bottle is for sale (\"no\"), so the vinpocetine line is removed; \"pin\". PS is from soy (Glen 2026-09-21). Directions per Glen 2026-10-31 (production tab; \"yes\" for app and store, formulation tab). Spec production/05 Formulations/_store-updates/2026-10-30-brain-boost-one-record.md.",
    "bottle_type": "30 Caps",
-   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": false,
+   "directions": "1 to 2 capsules daily with breakfast and/or lunch, or as guided.",
+   "panel_note": "Contains: Soy.",
+   "copy_pinned": [
+    "ingredients",
+    "directions",
+    "description"
+   ],
+   "content_since": "2026-10-31T20:07:18+00:00",
+   "legacy_store_url": "https://remedymatch.com/remedies/syntropy/14-brain-boost"
   },
   "brain-cleanse": {
    "warning": "Causes drowsiness. Take only at bedtime. Do not drive or operate machinery after taking. Do not combine with alcohol, sedatives, or sleep aids other than Brain Cleanse and Sleep Syntropy. Avoid in pregnancy or while breastfeeding. Not for children. Do not use if you have liver disease. Stop use if you notice yellowing skin or eyes, or dark urine. If you take an antidepressant, a migraine medicine, tramadol, St John's wort or the cough suppressant dextromethorphan, consult your physician before use. If you have a thyroid condition, or take thyroid medicine, a blood thinner or blood sugar medicine, consult your physician before use. If you take blood pressure medicine or an immune-suppressing medicine, or have an autoimmune or hormone-sensitive condition, consult your physician before use. Stop a few days before surgery. If you are under medical treatment, consult your physician before use.",
@@ -11188,7 +11122,7 @@
    "fmp_id": "370"
   },
   "brain-program": {
-   "caution_components": ["brain-cleanse", "brain-boost"],
+   "caution_components": ["brain-cleanse"],
    "ingredients_source": "none",
    "name": "Brain Program",
    "price_cents": 31500,
@@ -14934,12 +14868,13 @@
    "price_cents": 7000,
    "pinecone_title": "Brain Boost Nootropic",
    "qty_pricing": true,
-   "fmp_id": "365",
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
    "regular_cents": 8000,
    "description": "1 capsule daily with food",
-   "bottle_type": "30 Caps"
+   "bottle_type": "30 Caps",
+   "inactive": true,
+   "superseded_by": "brain-boost"
   },
   "tmg-syntropy-powder": {
    "name": "TMG Syntropy Powder",

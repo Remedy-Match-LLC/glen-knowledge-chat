@@ -2347,6 +2347,11 @@ _CUE_NAMES = frozenset({
     # caution (Glen "yes", 2026-10-26). A cue keeps "how do I keep my vitreous vitality?"
     # an ordinary phrase (review round 1).
     "vitreous-vitality",
+    # Pinned since its label read (2026-10-30) and no longer cautioned, so the vinpocetine
+    # any-case fallback no longer reaches it: "is brain boost safe while pregnant?" and
+    # "what is in brain boost?" still bring the label facts (spec
+    # 2026-10-30-brain-boost-one-record, step 9).
+    "brain-boost",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
@@ -2367,9 +2372,10 @@ _VINPOCETINE_EVERYDAY_NAMES = frozenset({
     "rise--shine", "mitochondrial-biogenesis", "vital-energy-be"})
 _SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"}) | _VINPOCETINE_EVERYDAY_NAMES
 # A name typed in any case counts for a product that carries the vinpocetine line when the
-# question asks about pregnancy or safety: "can i take heart health while pregnant?" and
-# "is brain boost safe while pregnant?" got no caution (review rounds 1 and 2), while "what
-# is longevity?" still names nothing (formulation, 2026-10-30). Formulation accepted the
+# question asks about pregnancy or safety: "can i take heart health while pregnant?" got no
+# caution (review rounds 1 and 2), while "what is longevity?" still names nothing
+# (formulation, 2026-10-30). Brain Boost left this list with its 2026-10-30 label and is
+# named through _CUE_NAMES above. Formulation accepted the
 # cost: "how much muscle mass is safe while pregnant?" brings Muscle Mass's caution, because
 # a missed pregnancy line costs more than an extra caution block (review round 2).
 _VINPOCETINE_LINE = "contains vinpocetine, so do not use it if you are pregnant"
@@ -2384,11 +2390,11 @@ _PREGNANCY_OR_SAFETY_CUE = re.compile(
 # (review of the Stress Release pin, round 1, 2026-10-23).
 # Vitality: "Vitreous Vitality" and "Vitality Boost Essence in Terrain Restore" are other
 # products (review of the twelve cautions, round 1, 2026-10-25).
-# Brain Boost: "Brain Boost Nootropic" is a separate record whose formula formulation has
-# not confirmed. Rescue: "Rescue Remedy Flower Essence in Terrain Restore" (vinpocetine
-# spec, 2026-10-28).
-_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality", "brain-boost",
-                                     "rescue"})
+# Rescue: "Rescue Remedy Flower Essence in Terrain Restore" (vinpocetine spec, 2026-10-28).
+# Brain Boost no longer yields: "Brain Boost Nootropic" is its retired name, superseded by
+# brain-boost, and the yield check does not skip inactive records (spec
+# 2026-10-30-brain-boost-one-record, step 9).
+_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality", "rescue"})
 # An occurrence of these names followed by the pattern names another product the client
 # shortens: "Is Rescue Remedy safe for my dog?" is the flower essence, whose catalog name is
 # longer than what they type, so _YIELDS_TO_LONGER_NAMES cannot see it (vinpocetine spec).
