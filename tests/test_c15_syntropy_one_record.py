@@ -70,3 +70,12 @@ def test_the_old_page_redirects_and_keeps_its_query(client):
     assert r.status_code == 302
     assert r.headers["Location"].endswith(f"/begin/product/{KEEP}?utm_source=x")
     assert client.get(f"/begin/product/{KEEP}").status_code == 200
+
+
+def test_filemaker_880_and_the_related_list_name_the_kept_slug():
+    """Round 1: an order-history line copies the map's slug, and the page looks up its
+    related list by its own slug, so both must name the kept record (as wholomega did)."""
+    resolved = json.loads((ROOT / "data" / "fmp_slug_map.json").read_text())["resolved"]
+    assert resolved["880"] == KEEP
+    related = json.loads((ROOT / "data" / "related-harvested.json").read_text())
+    assert related.get(KEEP) == ["wholomega"] and RETIRE not in related
