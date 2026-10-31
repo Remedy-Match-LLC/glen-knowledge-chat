@@ -32,13 +32,16 @@ def _concepts():
 def test_drusen_carries_the_trial_and_its_source():
     c = _concepts()["drusen"]
     assert c["summary"] == DRUSEN
-    assert {"source": "pubmed", "title": TITLE, "type": "article", "url": URL} in c["links"]
+    assert c["links"].count({"source": "pubmed", "title": TITLE, "type": "article",
+                             "url": URL}) == 1
+    assert [l["type"] for l in c["links"]].count("article") == 1
     assert "\n" not in c["summary"] and "](" not in c["summary"]
 
 
 def test_curcumin_has_only_the_plain_reference():
     c = _concepts()["curcumin"]
-    assert {"source": "pubmed", "title": REF, "type": "article", "url": URL} in c["links"]
+    assert c["links"].count({"source": "pubmed", "title": REF, "type": "article",
+                             "url": URL}) == 1
     assert "drusen volume changed" not in json.dumps(c).lower()
     # Its own text names no disease. The citation is the trial's title, as the rule allows.
     own = [c["summary"]] + [l["title"] for l in c["links"] if l["url"] != URL]
