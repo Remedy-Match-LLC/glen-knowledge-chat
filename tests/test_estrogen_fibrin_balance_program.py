@@ -32,9 +32,13 @@ EC_DESC = ("Estrogen metabolism and clearance support, nine actives at about 497
            "Third SKU of the Fibrolysis line, alongside Fibrosolve and Fibrolysis Factors.")
 EC_DIR = ("Take 1 capsule 1 to 2 times daily with oils or a fatty meal. Keep the bottle tightly "
           "closed and dry.")
+# Iodine line merged 2026-10-31: Glen "yes" in the marketing tab
+# (marketing/04 Copy/iodine-caution-merge-2026-10-31/).
 EC_WARN = ("Contains piperine, which can raise blood levels of some medications. Consult your "
-           "health professional before use with medications, thyroid or hormone-sensitive "
-           "conditions, pregnancy, or nursing.")
+           "health professional before use with medications, hormone-sensitive conditions, "
+           "pregnancy, or nursing. Each capsule contains about 150 mcg of iodine, the adult "
+           "daily requirement. At 2 capsules daily this is about 300 mcg. If you have a thyroid "
+           "condition or take other iodine products, consult your health professional before use.")
 BUNDLE_INTRO = (
     "The Estrogen and Fibrin Balance Program includes Fibrosolve, Fibrolysis Factors and "
     "Estro-Clear. Take Fibrosolve 1 to 2 capsules a day between meals. Take Fibrolysis Factors 1 "
