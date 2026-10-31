@@ -8765,7 +8765,7 @@
    "fmp_id": "312",
    "qty_pricing": true,
    "intro": "Moisture-Eyes Night Oil is a topical oil for use around the eyes. It blends sea buckthorn berry oil 40%, medium chain triglycerides 30%, kukui nut oil 20% and emu oil 10%. Shake well, then apply topically around eyes.",
-   "description": "Moisture-Eyes Night Oil is a topical oil for use around the eyes. It blends sea buckthorn berry oil 40%, medium chain triglycerides 30%, kukui nut oil 20% and emu oil 10%. Shake well, then apply topically around eyes.\n\nOther ingredients: 172 Hz Healing Energy, Love & Prayer. 5 mL per bottle.",
+   "description": "Moisture-Eyes Night Oil is a topical oil for use around the eyes. It blends sea buckthorn berry oil 40%, medium chain triglycerides 30%, kukui nut oil 20% and emu oil 10%. Shake well, then apply topically around eyes.\n\nOther ingredients: 172 Hz Healing Energy, Love & Prayer. 15 mL per bottle.",
    "learn_markdown": "Moisture-Eyes Night Oil is a topical oil for use around the eyes. It blends sea buckthorn berry oil 40%, medium chain triglycerides 30%, kukui nut oil 20% and emu oil 10%. Shake well, then apply topically around eyes.\n\nIngredients: Sea Buckthorn Berry Oil (Hippophae rhamnoides) 40%; Medium Chain Triglycerides (Cocos nucifera) 30%; Kukui Nut Oil (Aleurites moluccanus) 20%; Emu Oil (Dromaius novaehollandiae) 10%.",
    "how_it_works": "",
    "directions": "Shake well, then apply topically around eyes.",
@@ -8775,6 +8775,24 @@
     "description",
     "research",
     "benefits"
+   ],
+   "images": [
+    {
+     "src": "/static/product-photos/moisture-eyes-night-oil-1.webp",
+     "alt": "A 15 mL bottle of Moisture-Eyes Night Oil held in a hand"
+    },
+    {
+     "src": "/static/product-photos/moisture-eyes-night-oil-2.webp",
+     "alt": "Orange berries, cracked nuts and a dish of golden oil under a night sky"
+    },
+    {
+     "src": "/static/product-photos/moisture-eyes-night-oil-3.webp",
+     "alt": "A woman resting with her eyes closed in soft evening light"
+    },
+    {
+     "src": "/static/product-photos/moisture-eyes-night-oil-4.webp",
+     "alt": "Moonlight on the ocean, framed by leafy trees"
+    }
    ]
   },
   "mb3-cbh": {
