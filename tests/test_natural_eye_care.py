@@ -17,7 +17,7 @@ _MHOST = "http://mentorshipu.test"
 REPO_COURSES = os.path.join(os.path.dirname(os.path.dirname(__file__)), "courses")
 SLUG = "natural-eye-care"
 # PubMed links per lesson, as approved. A change here means the approved text changed.
-PUBMED_LINKS = {"macular-degeneration": 21, "drusen": 22, "diabetic-retinopathy": 23, "dry-eye": 36}
+PUBMED_LINKS = {"macular-degeneration": 21, "drusen": 22, "diabetic-retinopathy": 23, "dry-eye": 36, "retinitis-pigmentosa": 28}
 # The only non-PubMed link allowed: the practitioner finder, which carries no products.
 OTHER_LINKS = {
     "cataract": ["https://courses.mentorshipu.com/practitioner-finder"],
@@ -26,7 +26,7 @@ OTHER_LINKS = {
 CLOSING_LINE = "Keep working with your own eye doctor throughout."
 CLOSING = {"diabetic-retinopathy": "Keep working with your own eye doctor and diabetes doctor throughout."}
 PRODUCT_WORDS = re.compile(
-    r"remedy ?match|healing oasis|macular wellness|lipid[- ]?(cleanse|zyme)|ocuheal|ocuflow|iop program|lens-?zyme|curcu-guard"
+    r"remedy ?match|healing oasis|macular wellness|lipid[- ]?(cleanse|zyme)|ocuheal|ocuflow|iop program|lens-?zyme|curcu-guard|iron ?out|retina renew|blood cleanse|aces eye|wholomega|nerve pulse|moisture eyes"
     r"|neuro ?magnesium|\bbuy\b|add to cart|\$\d", re.I)
 
 
