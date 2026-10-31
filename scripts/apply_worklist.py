@@ -18,15 +18,9 @@ PRODUCTS_PATH = os.path.join(REPO, "data", "products.json")
 # blend + a few others Glen confirmed belong). Doses unknown for the appended
 # extras -> dose "". Existing ingredients preserved except explicit removals.
 # ---------------------------------------------------------------------------
+# brain-boost left Section A when its rows came from the July 2026 label (spec
+# 2026-10-30-brain-boost-one-record, step 12): one run would add centrophenoxine back.
 SECTION_A = {
-    "brain-boost": {
-        "add": ["Centrophenoxine", "Citicoline", "Fulvic Acid", "11 Spirit Minerals"],
-        "remove": ["Coluracetam"],  # Glen: keep all except DHA and Coluracetam; DHA not added.
-        "note": ("Section A: appended confirmed Bioavailability-Factors extras "
-                 "(Centrophenoxine, Citicoline, Fulvic Acid, 11 Spirit Minerals); "
-                 "removed Coluracetam per Glen; DHA intentionally NOT added. "
-                 "Source: Glen's Products-Worklist.md."),
-    },
     "longevity": {
         "add": [
             "EGb 761 (Ginkgo biloba)", "Vitamin B3 (Niacin)",

@@ -2347,6 +2347,11 @@ _CUE_NAMES = frozenset({
     # caution (Glen "yes", 2026-10-26). A cue keeps "how do I keep my vitreous vitality?"
     # an ordinary phrase (review round 1).
     "vitreous-vitality",
+    # Pinned since its label read (2026-10-30) and no longer cautioned, so the vinpocetine
+    # any-case fallback no longer reaches it: "is brain boost safe while pregnant?" and
+    # "what is in brain boost?" still bring the label facts (spec
+    # 2026-10-30-brain-boost-one-record, step 9).
+    "brain-boost",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or
@@ -2384,11 +2389,11 @@ _PREGNANCY_OR_SAFETY_CUE = re.compile(
 # (review of the Stress Release pin, round 1, 2026-10-23).
 # Vitality: "Vitreous Vitality" and "Vitality Boost Essence in Terrain Restore" are other
 # products (review of the twelve cautions, round 1, 2026-10-25).
-# Brain Boost: "Brain Boost Nootropic" is a separate record whose formula formulation has
-# not confirmed. Rescue: "Rescue Remedy Flower Essence in Terrain Restore" (vinpocetine
-# spec, 2026-10-28).
-_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality", "brain-boost",
-                                     "rescue"})
+# Rescue: "Rescue Remedy Flower Essence in Terrain Restore" (vinpocetine spec, 2026-10-28).
+# Brain Boost no longer yields: "Brain Boost Nootropic" is its retired name, superseded by
+# brain-boost, and the yield check does not skip inactive records (spec
+# 2026-10-30-brain-boost-one-record, step 9).
+_YIELDS_TO_LONGER_NAMES = frozenset({"clarity", "stress-release", "vitality", "rescue"})
 # An occurrence of these names followed by the pattern names another product the client
 # shortens: "Is Rescue Remedy safe for my dog?" is the flower essence, whose catalog name is
 # longer than what they type, so _YIELDS_TO_LONGER_NAMES cannot see it (vinpocetine spec).

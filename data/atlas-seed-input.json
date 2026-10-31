@@ -1067,12 +1067,12 @@
     },
     {
       "id": "brain-boost-nootropic",
-      "label": "Brain Boost Nootropic",
+      "label": "Brain Boost",
       "aliases": [
         "brain boost",
         "nootropic formula"
       ],
-      "summary": "A nootropic formulation containing Coluracetam to enhance color vision and brain function.",
+      "summary": "Each serving of Brain Boost, 2 vegicaps, combines citicoline 500 mg, L-theanine 200 mg and phosphatidylserine 100 mg.",
       "cluster": "brain-nervous",
       "parent": "brain-nervous",
       "namespaces": [
@@ -1084,7 +1084,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/brain-boost",
-          "title": "Brain Boost Nootropic"
+          "title": "Brain Boost"
         }
       ]
     },

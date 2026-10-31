@@ -17,7 +17,9 @@ ROOT = os.path.join(os.path.dirname(__file__), "..")
 LINE = ("This formula contains vinpocetine, so do not use it if you are pregnant or could "
         "become pregnant.")
 SOLO = "Do not use vinpocetine if you are pregnant or could become pregnant."
-OWN_ROW = ["bioavailability-blend", "bioavailability-blend-powder", "brain-boost",
+# Brain Boost left the list: its July 2026 label has no vinpocetine, and no older bottle is
+# for sale (Glen, 30 October, "no"; spec 2026-10-30-brain-boost-one-record).
+OWN_ROW = ["bioavailability-blend", "bioavailability-blend-powder",
            "heart-health", "iron-out", "iron-syntropy", "longevity", "melatonin-max",
            "migrafree", "muscle-mass", "one-step", "seaamino-syntropy", "stone-solvent",
            "sustain", "vagus-nerve-support"]
@@ -60,7 +62,7 @@ def _products():
 
 
 def test_the_list_is_the_spec_list():
-    assert len(ALL) == len(set(ALL)) == 42
+    assert len(ALL) == len(set(ALL)) == 41
 
 
 @pytest.mark.parametrize("slug", ALL)
@@ -92,9 +94,11 @@ def test_the_two_that_already_cover_pregnancy_are_unchanged(slug):
     assert "vinpocetine" not in _products()[slug]["warning"]
 
 
-def test_brain_program_shows_brain_boost_caution():
+def test_brain_program_no_longer_lists_brain_boost():
+    # Glen, 30 October: no older Brain Boost bottle is for sale ("no").
     for d in (_products(), _data("products-manual-corrections.json")):
-        assert d["brain-program"]["caution_components"] == ["brain-cleanse", "brain-boost"]
+        assert d["brain-program"]["caution_components"] == ["brain-cleanse"]
+        assert "warning" not in d["brain-boost"] and d["brain-boost"]["chat_caution"] is False
 
 
 @pytest.mark.parametrize("slug", ["bioavailability-blend", "curcu-guard", "migrafree",
@@ -105,8 +109,7 @@ def test_the_page_data_shows_the_line(slug):
     assert secs["caution"]["body"] == _products()[slug]["warning"]
 
 
-@pytest.mark.parametrize("slug,component", [("brain-program", "brain-boost"),
-                                            ("sleep-bundle", "sleep-syntropy")])
+@pytest.mark.parametrize("slug,component", [("sleep-bundle", "sleep-syntropy")])
 def test_a_bundle_shows_its_component_line(slug, component):
     d = app.app.test_client().get(f"/begin/product-page-data/{slug}").get_json()
     secs = {s["id"]: s for s in d["sections"]}
@@ -119,7 +122,6 @@ def _named(q):
 
 
 @pytest.mark.parametrize("q,slug", [
-    ("Can I take Brain Boost while pregnant?", "brain-boost"),
     ("Is Curcu Guard safe in pregnancy?", "curcu-guard"),
     ("Can I take Bioavailability Blend while pregnant?", "bioavailability-blend"),
     ("Is vinpocetine safe when pregnant?", "vinpocetine"),
@@ -159,7 +161,6 @@ def test_a_capitalised_sentence_start_needs_a_product_cue(slug, name):
 @pytest.mark.parametrize("q,slug", [
     ("can i take heart health while pregnant?", "heart-health"),
     ("is sustain safe in pregnancy?", "sustain"),
-    ("is brain boost safe while pregnant?", "brain-boost"),
     ("is c15 syntropy safe while pregnant?", "c15-syntropy"),
     ("can i take iron out if i might become pregnant", "iron-out"),
     ("is vitality ok while breastfeeding?", "vitality"),
@@ -206,9 +207,20 @@ def test_rescue_yields_to_the_flower_essence_by_its_full_name(monkeypatch):
     assert "rescue" not in _named("Is Rescue Remedy Flower Essence in Terrain Restore safe?")
 
 
-def test_brain_boost_yields_to_the_nootropic():
-    assert "brain-boost" not in _named("What is Brain Boost Nootropic?")
-    # Recorded, per the spec: the bare name is the vinpocetine formula.
+@pytest.mark.parametrize("q", ["Can I take Brain Boost while pregnant?",
+                               "is brain boost safe while pregnant?"])
+def test_brain_boost_brings_its_facts_and_no_vinpocetine_line(q):
+    # Glen, 30 October: no older bottle is for sale ("no"). The pinned label facts and the
+    # no-caution text answer instead (spec 2026-10-30-brain-boost-one-record).
+    assert _named(q) == {"brain-boost"}
+    assert "brain-boost" not in app._caution_link_slugs(q)
+    b = app.named_product_facts_block(q)
+    assert "### Brain Boost" in b and "vinpocetine" not in b.lower()
+
+
+def test_brain_boost_nootropic_is_brain_boost():
+    # "Brain Boost Nootropic" is the retired name of the same product (Glen, 30 October).
+    assert _named("What is Brain Boost Nootropic?") == {"brain-boost"}
     assert _named("What is Brain Boost?") == {"brain-boost"}
 
 
