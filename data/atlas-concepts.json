@@ -7971,8 +7971,6 @@
     "case-studies"
    ],
    "neighbors": [
-    "lipid-zyme",
-    "lipid-cleanse",
     "dry-armd",
     "macular-wellness-program"
    ],
@@ -8005,6 +8003,18 @@
      "title": "Over 90 Percent of Macular Degeneration Patients Actually Improve",
      "type": "video",
      "url": "https://youtu.be/FoRE1QhSaLE?t=391s"
+    },
+    {
+     "source": "youtube",
+     "title": "Heal AMD Announcement",
+     "type": "video",
+     "url": "https://youtu.be/90jArwgmOhE"
+    },
+    {
+     "source": "clip",
+     "title": "Why Macular Degeneration Is an Epidemic and the Government Ignores the Vitamins That Prevent It",
+     "type": "video",
+     "url": "https://youtu.be/BmoP8F5e_Bg?t=264s"
     }
    ],
    "namespaces": [
@@ -16379,12 +16389,6 @@
      "title": "Biofield Consultation Scene 1",
      "type": "video",
      "url": "https://youtu.be/D9jJ31-lbeU"
-    },
-    {
-     "source": "youtube",
-     "title": "Heal AMD Announcement",
-     "type": "video",
-     "url": "https://youtu.be/90jArwgmOhE"
     }
    ],
    "namespaces": [
@@ -16393,12 +16397,11 @@
    "neighbors": [
     "lipid-zyme",
     "fiber-cleanse",
-    "drusen",
     "polyphenols-camellia-sinensis"
    ],
    "parent": "detox-drainage",
    "status": "live",
-   "summary": "Lipid Cleanse is a syntropy formulation featuring green tea polyphenols EGCG to support retinal health and counter AMD-related drusen progression."
+   "summary": "Lipid Cleanse is a Syntropy formulation with green tea polyphenols, dihydroberberine and CoQ10 to support healthy lipid metabolism."
   },
   {
    "aliases": [
@@ -16420,12 +16423,6 @@
      "url": "https://myhealingoasis.com/begin/product/lipid-zyme"
     },
     {
-     "source": "clip",
-     "title": "Retinologist Shocked as Wet Converts to Dry Macular Degeneration",
-     "type": "video",
-     "url": "https://youtu.be/z0bkpSNttOs?t=2924s"
-    },
-    {
      "source": "youtube",
      "title": "Phytoceramides Exploration",
      "type": "video",
@@ -16436,14 +16433,13 @@
     "specific-formulations"
    ],
    "neighbors": [
-    "drusen",
     "lipid-cleanse",
     "lens-zyme",
     "lipase"
    ],
    "parent": "retina-macula",
    "status": "live",
-   "summary": "An enzyme-based syntropy formulation targeting proteolytic activity relevant to drusen degradation in macular degeneration."
+   "summary": "Lipid Zyme is a Syntropy enzyme formulation with lipase, protease and nattokinase among its enzymes."
   },
   {
    "aliases": [
@@ -17143,12 +17139,6 @@
      "url": "https://myhealingoasis.com/begin/product/macular-wellness-lycopene"
     },
     {
-     "source": "clip",
-     "title": "Why Macular Degeneration Is an Epidemic and the Government Ignores the Vitamins That Prevent It",
-     "type": "video",
-     "url": "https://youtu.be/BmoP8F5e_Bg?t=264s"
-    },
-    {
      "source": "youtube",
      "title": "Restore Executive Health Naturally Without Taking More Time Out of Your Busy Schedule...",
      "type": "video",
@@ -17166,7 +17156,7 @@
    ],
    "parent": "retina-macula",
    "status": "live",
-   "summary": "Macular Wellness Lycopene is a syntropy formulation with quercetin and lycopene targeting retinal protection and choroidal blood flow in AMD."
+   "summary": "Macular Wellness Lycopene is a Syntropy formulation pairing 30 mg lycopene with CoQ10 and NAC to support macular health."
   },
   {
    "aliases": [
