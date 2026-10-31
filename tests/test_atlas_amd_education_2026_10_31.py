@@ -61,3 +61,20 @@ def test_the_heal_amd_link_is_off_these_entries():
     c = _concepts()
     for cid in TITLES:
         assert REMOVED not in json.dumps(c[cid]["links"]), cid
+
+
+# Glen "yes", marketing tab, 2026-10-31: the same titles on every entry that carries these
+# exact URLs (27 more), and the Heal AMD link nowhere. Other timestamps of the same videos
+# are other clips with their own titles, so they are left alone.
+EVERYWHERE = dict(pair for pairs in TITLES.values() for pair in pairs)
+
+
+def test_every_entry_with_these_urls_carries_the_new_title():
+    seen = 0
+    for c in _concepts().values():
+        for link in c.get("links", []):
+            if link.get("url") in EVERYWHERE:
+                assert link["title"] == EVERYWHERE[link["url"]], (c["id"], link["url"])
+                seen += 1
+            assert link.get("url") != REMOVED, c["id"]
+    assert seen == 38
