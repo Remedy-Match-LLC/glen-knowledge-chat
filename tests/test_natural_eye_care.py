@@ -17,7 +17,7 @@ _MHOST = "http://mentorshipu.test"
 REPO_COURSES = os.path.join(os.path.dirname(os.path.dirname(__file__)), "courses")
 SLUG = "natural-eye-care"
 # PubMed links per lesson, as approved. A change here means the approved text changed.
-PUBMED_LINKS = {"macular-degeneration": 21, "drusen": 22, "diabetic-retinopathy": 23, "dry-eye": 36, "retinitis-pigmentosa": 28, "night-vision": 24}
+PUBMED_LINKS = {"macular-degeneration": 21, "drusen": 22, "cataract": 22, "diabetic-retinopathy": 23, "dry-eye": 36, "retinitis-pigmentosa": 28, "night-vision": 24}
 # Non-PubMed links allowed: the practitioner finder, and a symptom page's links to its
 # condition pages. Neither carries products.
 OTHER_LINKS = {

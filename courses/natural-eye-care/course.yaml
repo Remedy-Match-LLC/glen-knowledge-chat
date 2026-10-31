@@ -8,6 +8,7 @@ modules:
     lessons:
       - macular-degeneration
       - drusen
+      - cataract
       - diabetic-retinopathy
       - dry-eye
       - retinitis-pigmentosa
