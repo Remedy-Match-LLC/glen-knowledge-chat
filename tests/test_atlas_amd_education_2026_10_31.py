@@ -4,8 +4,9 @@ Communication's drusen brief (communication/handoffs/2026-10-31-drusen-education
 keeps products off education entries about these conditions. Glen said yes in the marketing
 tab to the drusen and AMD neighbors and the new link titles
 (marketing/04 Copy/atlas-amd-video-titles-2026-10-31/), and in the teaching tab to the
-curcumin neighbors. Only neighbors and link titles change, and one link is removed until
-someone confirms it does not promote a paid program. The live graph is on Render's disk;
+curcumin neighbors, and in the platform tab to Curcu Guard's. Only neighbors and link
+titles change, and one link is removed until someone confirms it does not promote a paid
+program. The live graph is on Render's disk;
 `00 System/scripts/atlas-patch-from-branch.py` writes the same values there.
 """
 import json
@@ -17,6 +18,9 @@ NEIGHBORS = {
     "dry-armd": ["wet-armd", "drusen"],
     "wet-armd": ["dry-armd", "dry-eye", "golden-book"],
     "curcumin": ["tetrahydrocurcumin", "curcumin-meriva"],
+    # The map draws an edge from either end, so the product's own link goes too (Glen
+    # "yes", platform tab, 2026-10-31).
+    "curcu-guard": ["vitamin-p", "ocuflow-bedtime", "macular-wellness-lutein"],
 }
 TITLES = {
     "drusen": [("https://youtu.be/z0bkpSNttOs?t=152s",
