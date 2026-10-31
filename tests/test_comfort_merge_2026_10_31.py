@@ -47,6 +47,7 @@ def _load(name):
 def _assert_merged(products):
     assert products["comfort"]["inactive"] is True
     assert products["comfort"]["superseded_by"] == KEEP
+    assert "legacy_store_url" not in products["comfort"]   # moved, not copied (round 2)
     assert products["connective-tissue-support"]["superseded_by"] == KEEP
     s = products[KEEP]
     assert not s.get("inactive") and not s.get("superseded_by")
@@ -133,3 +134,33 @@ def test_the_survivor_page_shows_the_label_rows_and_new_directions(client, monke
     assert "1 capsule daily with food" not in page
     for word in GONE:
         assert word not in page, word
+
+
+OLD_DRAFT = "2026-10-30T12:00:00+00:00"   # before the merge: describes the old rows
+
+
+@pytest.mark.parametrize("generated_at,kept", [(OLD_DRAFT, False), ("2099-01-01T00:00:00+00:00", True)])
+def test_the_cutoff_drops_a_cached_draft_written_before_it(monkeypatch, generated_at, kept):
+    """Round 2: the cache must really discard text written before content_since."""
+    from dashboard import product_content as pc
+    product = dict(_load("products.json")[KEEP], slug=KEEP)
+    assert OLD_DRAFT < product["content_since"]
+    hit = {"content": {"text": "OLD: collagen and eggshell"}, "sources": [],
+           "generated_at": generated_at, "cached": True}
+    monkeypatch.setattr(pc, "_cache_get", lambda slug, ctype: hit)
+    monkeypatch.setattr(pc, "_cache_put", lambda *a: None)
+    monkeypatch.setattr(pc, "_page_text", lambda p: None)
+    monkeypatch.setattr(pc, "_page_text_from_product", lambda p: None)
+    monkeypatch.setattr(pc, "_generate_how_it_works", lambda p, page: {"text": "NEW"})
+    got = pc.get_or_generate(product, "how_it_works")
+    assert (got is hit) is kept
+
+
+def test_the_sales_page_drafts_written_before_the_cutoff_are_reset():
+    import sqlite3
+    from dashboard import sales_pages as sp
+    cx = sqlite3.connect(":memory:")
+    sp.upsert_section(cx, KEEP, "how", "OLD: collagen and eggshell")
+    cx.execute("UPDATE sales_pages SET generated_at=? WHERE product_slug=?", (OLD_DRAFT, KEEP))
+    assert sp.reset_if_older(cx, KEEP, _load("products.json")[KEEP]["content_since"]) is True
+    assert sp.get_page(cx, KEEP)["content"] == {}
