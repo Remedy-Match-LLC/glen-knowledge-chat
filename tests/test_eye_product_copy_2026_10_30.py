@@ -21,13 +21,14 @@ SLUGS = ["macular-wellness-lycopene", "lipid-zyme", "lipid-cleanse", "scar-solve
 FIELDS = ("intro", "description", "how_it_works", "learn_markdown", "benefits")
 # The old copy's disease claims and scraped junk ("Scar Solve . Price: $70.").
 # sha256 of the four approved fields as parsed from copy.md on 2026-10-30, the first 16 hex
-# digits. Review round 2: comparing the two data files with each other cannot catch the
+# digits; Scar Solve's dose and zinc lines were added the same day (Glen "approve").
+# Review round 2: comparing the two data files with each other cannot catch the
 # same edit made to both.
 APPROVED_SHA = {
     "macular-wellness-lycopene": "7ee97d06b0d8c288",
     "lipid-zyme": "b04d956c9fa7b923",
     "lipid-cleanse": "a5b16159edfde43f",
-    "scar-solve": "12647f0ef6ceb076",
+    "scar-solve": "96ee2e19d8db4578",
     "scar-silk": "97e0eb0b1c18be7e"
 }
 BANNED = re.compile(r"drusen|dissolv|revers|blindness|\bAMD\b|Price:|\s\.\s", re.IGNORECASE)
@@ -68,6 +69,16 @@ def test_no_disease_claim_or_junk_remains(slug):
         assert not BANNED.search(json.dumps(p[k], ensure_ascii=False)), (k, BANNED.search(
             json.dumps(p[k], ensure_ascii=False)))
     assert "Sources:" not in p["how_it_works"]
+
+
+def test_scar_solve_gives_its_dose_and_the_zinc_limits():
+    """Glen, production tab: Scar Solve stays at 1 to 2 a day, with the zinc arithmetic."""
+    for name in ("products.json", "products-manual-corrections.json"):
+        paras = _data(name)["scar-solve"]["description"].split("\n\n")
+        assert "Take 1 to 2 vegicaps a day with food." in paras
+        assert "Take 1 vegicap a day with food." not in paras
+        assert "Two vegicaps taken with an eye vitamin that contains zinc go over that limit." in paras
+        assert "Each vegicap supplies 100 mg zinc ascorbate." in paras
 
 
 def test_the_label_corrections():
