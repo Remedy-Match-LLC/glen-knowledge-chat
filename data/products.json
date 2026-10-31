@@ -1368,7 +1368,7 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25; methylselenocysteine 0.05 mg from the printed label (production, 2026-10-30)",
-   "description": "Each vegicap supplies 165 mg ascorbyl palmitate.\n\nThis is a fat-soluble form of vitamin C.\n\nIt supplies 130 mg green tea polyphenols 98%.\n\nAbout 65 mg of those polyphenols is EGCG.\n\nIt has 35 mg CoQ10 and 3 mg PQQ.\n\nDihydroberberine, tocotrienols and ginsenosides are present at 35 mg each.\n\nIt also supplies 0.8 mg fucoxanthin.\n\nIts 50 mcg methylselenocysteine supplies about 20 mcg selenium.\n\nColuracetam supplies 7 mg.\n\nTake 1 vegicap a day with food.",
+   "description": "Each vegicap supplies 165 mg ascorbyl palmitate.\n\nThis is a fat-soluble form of vitamin C.\n\nIt supplies 130 mg green tea polyphenols 98%.\n\nAbout 65 mg of those polyphenols is EGCG.\n\nIt has 35 mg CoQ10 and 3 mg PQQ.\n\nDihydroberberine, tocotrienols and ginsenosides are present at 35 mg each.\n\nIt also supplies 0.8 mg fucoxanthin.\n\nIts 50 mcg methylselenocysteine supplies about 20 mcg selenium.\n\nColuracetam supplies 7 mg.\n\nTake 1 vegicap a day with food, or as guided.",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Dihydroberberine (GlucoVantage)",
    "gk_extra_accepted": true,
@@ -3219,7 +3219,7 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Each vegicap supplies 100 mg zinc ascorbate.\n\nIt also supplies 80 mg pine bark OPCs 95%.\n\nIt has 50 mg isoquercetin as EMIQ and 50 mg pterostilbene.\n\nIt also has 50 mg tienchi ginseng and 35 mg gotu kola.\n\nRice bran oil supplies 100 mg.\n\nFulvic acid supplies 25 mg.\n\nPiperine from black pepper supplies 5 mg.\n\nAstragalus extract standardized to cycloastragenol is included.\n\nNo amount is listed for it.\n\nTake 1 to 2 vegicaps a day with food.\n\nOne vegicap supplies about 15 mg of elemental zinc.\n\nTwo vegicaps supply about 30 mg.\n\nThe US upper limit for adults is 40 mg a day from food and supplements together.\n\nTwo vegicaps taken with an eye vitamin that contains zinc go over that limit.\n\nEurope sets a lower limit of 25 mg a day.",
+   "description": "Each vegicap supplies 100 mg zinc ascorbate.\n\nIt also supplies 80 mg pine bark OPCs 95%.\n\nIt has 50 mg isoquercetin as EMIQ and 50 mg pterostilbene.\n\nIt also has 50 mg tienchi ginseng and 35 mg gotu kola.\n\nRice bran oil supplies 100 mg.\n\nFulvic acid supplies 25 mg.\n\nPiperine from black pepper supplies 5 mg.\n\nAstragalus extract standardized to cycloastragenol is included.\n\nNo amount is listed for it.\n\nTake 1 to 2 vegicaps a day with food, or as guided.\n\nOne vegicap supplies about 15 mg of elemental zinc.\n\nTwo vegicaps supply about 30 mg.\n\nThe US upper limit for adults is 40 mg a day from food and supplements together.\n\nEven one vegicap taken with an AREDS or AREDS2 eye vitamin can go over that limit.\n\nOther eye vitamins vary, so check the zinc on the label.\n\nEurope sets a lower limit of 25 mg a day.",
    "bottle_type": "30 Caps",
    "fmp_id": "1074",
    "qty_pricing": true,
@@ -7540,7 +7540,7 @@
   "scar-silk": {
    "warning": "This formula contains enzymes that may increase the risk of bleeding. Do not use if you have a bleeding disorder or a history of bleeding. Avoid use with a fresh or bleeding wound. Also avoid use during menses or pregnancy, or while nursing. Stop 1 to 2 weeks before surgery or dental work. Resume only when your surgeon approves. Do not combine with a blood thinner or daily aspirin unless your physician approves. Do not take with Lipid Zyme unless your physician approves. Avoid use if you are allergic to pineapple. Ask your pharmacist if you take any prescription medicine. If you receive eye injections, tell your eye doctor that you take this. Stop use and seek care at once if you notice unusual bleeding or black stools. Stop use and seek care if you notice dark urine or yellow skin.",
    "chat_caution": true,
-   "directions": "Up to 3 capsules a day between meals.",
+   "directions": "Take 1 vegicap a day between meals, or as guided. Up to 3 vegicaps a day may be used, or as guided.",
    "copy_pinned": [
     "directions",
     "intro",
@@ -7608,7 +7608,7 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Each delayed-release vegicap supplies 150 mg serrapeptase.\n\nIt has 100 mg nattokinase from Bacillus subtilis.\n\nThat is 2,000 fibrinolytic units.\n\nIt has 50 mg pineapple proteolytic enzyme and 10 mg lumbrokinase.\n\nIt also has 50 mg isoquercetin as EMIQ and 35 mg gotu kola.\n\nFulvic acid and sodium caprylate supply 50 mg each.\n\nPiperine from black pepper supplies 5 mg.\n\nTake 1 vegicap a day between meals.\n\nUp to 3 a day may be used.",
+   "description": "Each delayed-release vegicap supplies 150 mg serrapeptase.\n\nIt has 100 mg nattokinase from Bacillus subtilis.\n\nThat is 2,000 fibrinolytic units.\n\nIt has 50 mg pineapple proteolytic enzyme and 10 mg lumbrokinase.\n\nIt also has 50 mg isoquercetin as EMIQ and 35 mg gotu kola.\n\nFulvic acid and sodium caprylate supply 50 mg each.\n\nPiperine from black pepper supplies 5 mg.\n\nTake 1 vegicap a day between meals, or as guided.\n\nUp to 3 vegicaps a day may be used, or as guided.",
    "bottle_type": "30 Caps",
    "fmp_id": "324",
    "qty_pricing": true,
@@ -8665,7 +8665,7 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25; lycopene 30 mg from the 2026-10-30 label read (production)",
-   "description": "Each vegicap supplies 30 mg lycopene and 50 mg CoQ10.\n\nIt also supplies 100 mg NAC and 100 mg curcumin 95%.\n\nResveratrol and pterostilbene are present at 50 mg each.\n\nIt has 50 mg salvianolic acid B 20% and 25 mg black rice C3G 40%.\n\nThe B vitamins are 200 mcg 5-MTHF and 1 mg cobalamin.\n\nThe cobalamin is 90% adenosyl and 10% methyl.\n\nTake 1 vegicap a day with food.",
+   "description": "Each vegicap supplies 30 mg lycopene and 50 mg CoQ10.\n\nIt also supplies 100 mg NAC and 100 mg curcumin 95%.\n\nResveratrol and pterostilbene are present at 50 mg each.\n\nIt has 50 mg salvianolic acid B 20% and 25 mg black rice C3G 40%.\n\nThe B vitamins are 200 mcg 5-MTHF and 1 mg cobalamin.\n\nThe cobalamin is 90% adenosyl and 10% methyl.\n\nTake 1 vegicap a day with food, or as guided.",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Tetrahydrocurcumin, Pterostilbene",
    "gk_extra_accepted": true,

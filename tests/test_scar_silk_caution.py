@@ -26,7 +26,10 @@ APPROVED = (
     "injections, tell your eye doctor that you take this. Stop use and seek care at once if "
     "you notice unusual bleeding or black stools. Stop use and seek care if you notice dark "
     "urine or yellow skin.")
-DIRECTIONS = "Up to 3 capsules a day between meals."
+# Glen "approve", communication tab, 2026-10-31 (communication/drafts/2026-10-31-page-fixes/
+# changes.md): the same two sentences as the description, which match the label.
+DIRECTIONS = ("Take 1 vegicap a day between meals, or as guided. Up to 3 vegicaps a day may "
+              "be used, or as guided.")
 PRODUCTS = json.load(open("data/products.json"))["products"]
 CORRECTIONS = json.load(open("data/products-manual-corrections.json"))
 
