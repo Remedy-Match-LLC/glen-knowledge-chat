@@ -18,7 +18,7 @@ KEEP = "comfort-synovial-syntropy"
 LEGACY = "https://remedymatch.com/remedies/syntropy/428-comfort"
 ROWS = [
     ("Oxindole Alkaloids 5% (Uncaria tomentosa)", "33 mg"),
-    ("Ginger Gingerols 10% (Zingiber officinalis)", "33 mg"),
+    ("Ginger Gingerols 10% (Zingiber officinale)", "33 mg"),
     ("MSM (Methylsulfonylmethane)", "65 mg"),
     ("Polyphenol Complex: Proprietary Formula", "135 mg"),
     ("Hyaluronic Acid (Vegan)", "33 mg"),
@@ -27,10 +27,12 @@ ROWS = [
     ("Hemp CBD (Cannabidiol) (Cannabis sativa)", "7 mg"),
     ("Frankincense Boswellic Acid (Boswellia serrata)", "100 mg"),
 ]
-PANEL = ("Polyphenol Complex: Proprietary Formula contains: Turmeric Tetrahydrocurcumin "
-         "(Curcuma longa), Pine OPCs (Oligomeric Proanthocyanidins) (Pinus pinaster), Scholar "
-         "Tree EMIQ (Enzymatically Modified Isoquercetin) (Sophora japonica), Pterostilbene, "
-         "Trans-Resveratrol (Polygonum cuspidatum).")
+# By weight, heaviest first, and the ginger name "officinale" (spec updated 2026-10-31;
+# Glen approved both for the store in the marketing tab).
+PANEL = ("Polyphenol Complex: Proprietary Formula contains: Pine OPCs (Oligomeric "
+         "Proanthocyanidins) (Pinus pinaster), Turmeric Tetrahydrocurcumin (Curcuma longa), "
+         "Trans-Resveratrol (Polygonum cuspidatum), Pterostilbene, Scholar Tree EMIQ "
+         "(Enzymatically Modified Isoquercetin) (Sophora japonica).")
 DIRECTIONS = "1 to 3 capsules daily with food, or as guided."
 DESCRIPTION = ("Each vegicap of Comfort Synovial Syntropy combines frankincense boswellic acid, "
                "MSM, ginger, cat's claw, black seed, notoginseng and vegan hyaluronic acid. It "
