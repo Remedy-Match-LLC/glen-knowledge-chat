@@ -9,6 +9,7 @@ modules:
       - macular-degeneration
       - drusen
       - cataract
+      - glaucoma
       - diabetic-retinopathy
       - dry-eye
       - retinitis-pigmentosa
