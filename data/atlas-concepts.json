@@ -6689,9 +6689,7 @@
    ],
    "neighbors": [
     "tetrahydrocurcumin",
-    "curcu-guard",
-    "curcumin-meriva",
-    "macular-wellness-lutein"
+    "curcumin-meriva"
    ],
    "parent": "antioxidants",
    "status": "live",
@@ -7956,13 +7954,13 @@
    "links": [
     {
      "source": "clip",
-     "title": "Blindness from Wet Macular Degeneration Reversed in Months",
+     "title": "Dr. Glen Swartwout discusses wet macular degeneration",
      "type": "video",
      "url": "https://youtu.be/z0bkpSNttOs?t=152s"
     },
     {
      "source": "clip",
-     "title": "Harvard Retinologist Says I Have Never Seen This Before",
+     "title": "Dr. Glen Swartwout discusses drusen",
      "type": "video",
      "url": "https://youtu.be/vZFm8uruXEE?t=1006s"
     }
@@ -7971,8 +7969,7 @@
     "case-studies"
    ],
    "neighbors": [
-    "dry-armd",
-    "macular-wellness-program"
+    "dry-armd"
    ],
    "parent": "retina-macula",
    "status": "live",
@@ -7994,25 +7991,19 @@
    "links": [
     {
      "source": "clip",
-     "title": "Retinologist Shocked as Wet Converts to Dry Macular Degeneration",
+     "title": "Dr. Glen Swartwout discusses wet and dry macular degeneration",
      "type": "video",
      "url": "https://youtu.be/z0bkpSNttOs?t=2924s"
     },
     {
      "source": "clip",
-     "title": "Over 90 Percent of Macular Degeneration Patients Actually Improve",
+     "title": "Dr. Glen Swartwout discusses macular degeneration",
      "type": "video",
      "url": "https://youtu.be/FoRE1QhSaLE?t=391s"
     },
     {
-     "source": "youtube",
-     "title": "Heal AMD Announcement",
-     "type": "video",
-     "url": "https://youtu.be/90jArwgmOhE"
-    },
-    {
      "source": "clip",
-     "title": "Why Macular Degeneration Is an Epidemic and the Government Ignores the Vitamins That Prevent It",
+     "title": "Dr. Glen Swartwout discusses macular degeneration",
      "type": "video",
      "url": "https://youtu.be/BmoP8F5e_Bg?t=264s"
     }
@@ -8022,9 +8013,7 @@
    ],
    "neighbors": [
     "wet-armd",
-    "drusen",
-    "macular-wellness-program",
-    "macular-wellness-astaxanthin"
+    "drusen"
    ],
    "parent": "retina-macula",
    "status": "live",
@@ -28912,13 +28901,13 @@
    "links": [
     {
      "source": "clip",
-     "title": "Blindness from Wet Macular Degeneration Reversed in Months",
+     "title": "Dr. Glen Swartwout discusses wet macular degeneration",
      "type": "video",
      "url": "https://youtu.be/z0bkpSNttOs?t=152s"
     },
     {
      "source": "clip",
-     "title": "Retinologist Shocked as Wet Converts to Dry Macular Degeneration",
+     "title": "Dr. Glen Swartwout discusses wet and dry macular degeneration",
      "type": "video",
      "url": "https://youtu.be/z0bkpSNttOs?t=2924s"
     }
@@ -28929,8 +28918,7 @@
    "neighbors": [
     "dry-armd",
     "dry-eye",
-    "golden-book",
-    "macular-wellness-astaxanthin"
+    "golden-book"
    ],
    "parent": "retina-macula",
    "status": "live",
