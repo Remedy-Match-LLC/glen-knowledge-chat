@@ -47,8 +47,12 @@ BUNDLE_INTRO = (
     "Cautions: Fibrosolve is not for use with anticoagulant or antiplatelet medication, with a "
     "bleeding disorder, during pregnancy, or within about two weeks of surgery. Estro-Clear "
     "contains piperine, which can raise blood levels of some medications. Consult your health "
-    "professional before use with medications, thyroid or hormone-sensitive conditions, "
-    "pregnancy, or nursing.")
+    "professional before use with medications, hormone-sensitive conditions, pregnancy, or "
+    "nursing. Each Estro-Clear capsule contains about 150 mcg of iodine, the adult daily "
+    "requirement. At 2 capsules daily this is about 300 mcg. If you have a thyroid condition "
+    "or take other iodine products, consult your health professional before use.")
+# The Estro-Clear part revised 2026-10-31: Glen "yes", marketing tab
+# (marketing/04 Copy/iodine-caution-merge-2026-10-31/program-intro.md).
 BUNDLE_DESC = ("Fibrosolve, Fibrolysis Factors and Estro-Clear together, for 10% less than the "
                "three bought separately.")
 SERVED_ALLOWLIST = {"intro", "description", "reviews", "cta", "related"}

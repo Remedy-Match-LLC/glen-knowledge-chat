@@ -6,7 +6,9 @@ Thermogenesis gets the line after its vinpocetine line. Estro-Clear and Vitamin 
 already named thyroid, so marketing merged the line into their cautions and Glen said yes in
 the marketing tab on 2026-10-31 (marketing/04 Copy/iodine-caution-merge-2026-10-31/).
 GastroZyme is held until Glen reads a shelf bottle, because its 100 mcg is unconfirmed.
-Thyroid Support is held while sales asks Glen about its panel's 182 mcg.
+Thyroid Support is held while sales asks Glen about its panel's 182 mcg. The Estrogen and
+Fibrin Balance Program's intro repeats Estro-Clear's caution, so it carries the same lines
+(Glen "yes", marketing tab, 2026-10-31); tests/test_estrogen_fibrin_balance_program.py pins it.
 """
 import importlib
 import json
