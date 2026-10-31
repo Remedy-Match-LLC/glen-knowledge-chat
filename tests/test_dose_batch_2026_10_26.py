@@ -21,7 +21,8 @@ DOSES = {
     "vitamin-a-syntropy": "1 capsule daily with food, as guided.",
     "apoptogenesis": "1 to 2 capsules a day with food, or as guided.",
     "appestat": "1 capsule 30 to 45 minutes before meals, up to 2 a day, or as guided.",
-    "breast-support": "1 capsule up to 6 times a day with food, or as guided.",
+    # One dose a day from 2026-10-31 (Glen, production tab).
+    "breast-support": "Take 1 capsule once a day with food, or as guided.",
 }
 OLD = ("1 to 4 capsules", "1 to 3 capsules", "1 to 3 times", "one month", "Phase 1 terrain",
        "1667 IU", "Pueraria mirifica", "up to 10", "before every meal", "starts low")

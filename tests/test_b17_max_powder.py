@@ -25,7 +25,9 @@ DESCRIPTION = (
     "Caution: amygdalin can release cyanide in the body. Read the full warning on the label "
     "and the product page before use, and do not combine with apricot kernels, fruit pits "
     "or high-dose vitamin C.")
-DIRECTIONS = 'Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 2 level scoops a day in divided doses. Do not exceed 2 level scoops a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 2-scoop limit.'
+# One dose a day from 2026-10-31 (Glen, production tab); it had allowed 2 scoops.
+DIRECTIONS = 'Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 1 level scoop once a day. Do not exceed 1 level scoop a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 1-scoop limit.'
+PINNED = ["ingredients", "intro", "description", "benefits", "research", "directions"]
 # Revised by Glen, 2026-10-25 (b17-max/2026-10-25/b17-max-dose-and-caution-revision.md).
 WARNING = 'Amygdalin can release cyanide in the body. Stop at the first sign of headache, dizziness, lightheadedness, weakness, nausea, vomiting, confusion, chest tightness or unusual breathing, and call Poison Control, 1-800-222-1222. Call 911 for breathing difficulty, fainting, seizure, bluish lips or loss of consciousness. Do not combine with apricot kernels, bitter almonds, fruit pits, beta-glucosidase or high-dose vitamin C. Do not use it in pregnancy or while breastfeeding, or give it to children. Consult a physician and pharmacist before use with any medication or medical treatment. Keep out of reach of children.'
 
@@ -47,7 +49,7 @@ def test_the_catalog_record_is_the_powder():
         INTRO, DESCRIPTION, DIRECTIONS, WARNING)
     assert p["bottle_type"] == "30 g" and p["ingredients_source"] == "label-2026-09-27"
     assert p["benefits"] == [] and p["how_it_works"] == ""
-    assert p["copy_pinned"] == ["ingredients", "intro", "description", "benefits", "research"]
+    assert p["copy_pinned"] == PINNED
     assert (p["name"], p["fmp_id"], p["price_cents"]) == ("B17 Max", "890", 7000)
 
 
@@ -55,7 +57,7 @@ def test_the_correction_carries_the_powder_so_enrichment_cannot_restore_capsules
     c = _load("products-manual-corrections.json")[SLUG]
     assert c == {"ingredients": INGREDIENTS, "ingredients_source": "label-2026-09-27",
                  "description": DESCRIPTION, "directions": DIRECTIONS, "warning": WARNING,
-                 "bottle_type": "30 g"}
+                 "bottle_type": "30 g", "copy_pinned": PINNED}
 
 
 def test_no_capsule_dosing_survives_anywhere_in_its_data():
