@@ -11775,6 +11775,8 @@
    ]
   },
   "c15-syntropy-pentadecanoic-acid": {
+   "inactive": true,
+   "superseded_by": "c15-syntropy",
    "name": "C15 Syntropy: Pentadecanoic Acid",
    "price_cents": 7000,
    "bottle_type": "30 Caps",
