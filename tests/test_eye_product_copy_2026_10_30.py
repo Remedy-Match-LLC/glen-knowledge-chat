@@ -20,6 +20,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SLUGS = ["macular-wellness-lycopene", "lipid-zyme", "lipid-cleanse", "scar-solve", "scar-silk"]
 FIELDS = ("intro", "description", "how_it_works", "learn_markdown", "benefits")
 # The old copy's disease claims and scraped junk ("Scar Solve . Price: $70.").
+# sha256 of the four approved fields as parsed from copy.md on 2026-10-30, the first 16 hex
+# digits. Review round 2: comparing the two data files with each other cannot catch the
+# same edit made to both.
+APPROVED_SHA = {
+    "macular-wellness-lycopene": "7ee97d06b0d8c288",
+    "lipid-zyme": "b04d956c9fa7b923",
+    "lipid-cleanse": "a5b16159edfde43f",
+    "scar-solve": "12647f0ef6ceb076",
+    "scar-silk": "97e0eb0b1c18be7e"
+}
 BANNED = re.compile(r"drusen|dissolv|revers|blindness|\bAMD\b|Price:|\s\.\s", re.IGNORECASE)
 
 
@@ -40,6 +50,15 @@ def test_the_copy_is_pinned_in_both_files(slug):
     # Scar Silk keeps its directions pin.
     if slug == "scar-silk":
         assert "directions" in p["copy_pinned"]
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_the_copy_is_the_approved_text(slug):
+    import hashlib
+    p = _data("products.json")[slug]
+    four = {k: p[k] for k in ("intro", "description", "how_it_works", "benefits")}
+    digest = hashlib.sha256(json.dumps(four, sort_keys=True, ensure_ascii=False).encode())
+    assert digest.hexdigest()[:16] == APPROVED_SHA[slug]
 
 
 @pytest.mark.parametrize("slug", SLUGS)
@@ -88,10 +107,16 @@ def test_the_page_and_learn_page_show_only_the_approved_copy(appmod, slug):
     secs = {s["id"]: s for s in d["sections"]}
     assert secs["intro"]["body"] == p["intro"]
     assert secs["research"]["body"]["how_it_works"] == p["how_it_works"]
+    assert secs["description"]["body"] == p["description"]
+    # Benefits come from the product-data route, pinned (review round 2).
+    assert c.get(f"/begin/product-data/{slug}").get_json()["benefits"] == p["benefits"]
     assert not BANNED.search(dump.replace(" . ", "."))
     learn = c.get(f"/begin/learn/{slug}")
     assert learn.status_code == 200
     page = learn.get_data(as_text=True)
+    # Review round 2: the learn page must carry the approved text, not only lack the claims.
+    # The page shell loads its text from learn-data.
+    assert c.get(f"/begin/learn-data/{slug}").get_json()["markdown"] == p["how_it_works"]
     assert not re.search(r"drusen|dissolv|blindness|\bAMD\b", page, re.IGNORECASE)
 
 
