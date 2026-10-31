@@ -4369,5 +4369,51 @@
       "research",
       "benefits"
     ]
+  },
+  "comfort-synovial-syntropy": {
+    "ingredients": [
+      {
+        "name": "Oxindole Alkaloids 5% (Uncaria tomentosa)",
+        "dose": "33 mg"
+      },
+      {
+        "name": "Ginger Gingerols 10% (Zingiber officinalis)",
+        "dose": "33 mg"
+      },
+      {
+        "name": "MSM (Methylsulfonylmethane)",
+        "dose": "65 mg"
+      },
+      {
+        "name": "Polyphenol Complex: Proprietary Formula",
+        "dose": "135 mg"
+      },
+      {
+        "name": "Hyaluronic Acid (Vegan)",
+        "dose": "33 mg"
+      },
+      {
+        "name": "Black Seed Thymoquinone 20% (Nigella sativa)",
+        "dose": "33 mg"
+      },
+      {
+        "name": "Notoginsenosides 80% (Panax notoginseng)",
+        "dose": "33 mg"
+      },
+      {
+        "name": "Hemp CBD (Cannabidiol) (Cannabis sativa)",
+        "dose": "7 mg"
+      },
+      {
+        "name": "Frankincense Boswellic Acid (Boswellia serrata)",
+        "dose": "100 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-10-31",
+    "panel_note": "Polyphenol Complex: Proprietary Formula contains: Turmeric Tetrahydrocurcumin (Curcuma longa), Pine OPCs (Oligomeric Proanthocyanidins) (Pinus pinaster), Scholar Tree EMIQ (Enzymatically Modified Isoquercetin) (Sophora japonica), Pterostilbene, Trans-Resveratrol (Polygonum cuspidatum).",
+    "content_since": "2026-10-31T04:06:00+00:00",
+    "directions": "1 to 3 capsules daily with food, or as guided.",
+    "description": "Each vegicap of Comfort Synovial Syntropy combines frankincense boswellic acid, MSM, ginger, cat's claw, black seed, notoginseng and vegan hyaluronic acid. It adds a 135 mg polyphenol complex of tetrahydrocurcumin, pine OPCs, EMIQ, pterostilbene and trans-resveratrol, and hemp CBD.",
+    "note": "Label-read 2026-10-31 by formulation from Comfort_0126_1.88x6in.ai (January 2026). Glen 2026-10-30, formulation tab: comfort and comfort-synovial-syntropy are one product (\"yes\"); directions and description \"approve\". Spec production/05 Formulations/_store-updates/2026-10-31-comfort-merge.md. CBD leaves at the next batch."
   }
 }

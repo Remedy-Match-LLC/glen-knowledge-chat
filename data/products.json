@@ -4607,7 +4607,9 @@
    ],
    "ingredients_source": "fmp_new",
    "description": "Comfort . Comfort Comfort Comfort: Synovial Syntropy includes an unparalleled array of key coenzymes, minerals, accessory nutrients and phytonutrients to support joint health, repair, and comfort. Vitamins and Coenzymes: Vitamin B9 (5-MTHF - Methyl Folate) 200 mcg 50%: This biologically active form of Folate supports overall joint health by aiding in the reduction of inflammation. Ascorbyl Palmitate (Supplies Vitamin C) 20 mg 33%: Vitamin C is an antioxidant that can help reduce oxidative stress in joints. As the fat-soluble form, it supplies a reservoir of Vitamin C in the cell membranes...",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "inactive": true,
+   "superseded_by": "comfort-synovial-syntropy"
   },
   "food-tolerance": {
    "name": "Food Tolerance",
@@ -10517,7 +10519,7 @@
    "inactive": true,
    "bottle_type": "30 Caps",
    "fmp_id": "402",
-   "superseded_by": "comfort"
+   "superseded_by": "comfort-synovial-syntropy"
   },
   "wash--rinse": {
    "name": "Wash & Rinse",
@@ -15546,121 +15548,53 @@
    "pinecone_title": "Comfort Synovial Syntropy",
    "qty_pricing": true,
    "fmp_id": "586",
-   "ingredients_source": "fmp-bom-2026-05-23",
+   "ingredients_source": "label-read-2026-10-31",
    "no_groovekart": true,
    "regular_cents": 8000,
-   "description": "1 capsule daily with food",
+   "description": "Each vegicap of Comfort Synovial Syntropy combines frankincense boswellic acid, MSM, ginger, cat's claw, black seed, notoginseng and vegan hyaluronic acid. It adds a 135 mg polyphenol complex of tetrahydrocurcumin, pine OPCs, EMIQ, pterostilbene and trans-resveratrol, and hemp CBD.",
    "bottle_type": "30 Caps",
    "ingredients": [
     {
-     "name": "Turmeric Tetrahydrocurcumin 99% (Curcuma longa)",
-     "dose": "33 mg",
-     "purity_pct": 99.0,
-     "compound_mg": 33.0
-    },
-    {
-     "name": "Pine OPCs 95% (Oligomeric Proanthocyanidins) (Pinus pinaster)",
-     "dose": "35 mg",
-     "purity_pct": 95.0,
-     "compound_mg": 35.0
-    },
-    {
-     "name": "Trans-Resveratrol 98% (Polygonum cuspidatum)",
-     "dose": "33 mg",
-     "purity_pct": 98.0,
-     "compound_mg": 33.0
-    },
-    {
-     "name": "Notoginsenosides 80% (Panax notoginseng)",
-     "dose": "33 mg",
-     "purity_pct": 80.0,
-     "compound_mg": 33.0
-    },
-    {
-     "name": "Thymoquinone 20% (Nigella sativa)",
-     "dose": "33 mg",
-     "purity_pct": 20.0,
-     "compound_mg": 33.0
-    },
-    {
-     "name": "*Paeoniflorin 50% (Paeonia spp.) ~1.5:1",
-     "dose": "0 mg",
-     "purity_pct": 50.0,
-     "compound_mg": 0.0
-    },
-    {
      "name": "Oxindole Alkaloids 5% (Uncaria tomentosa)",
-     "dose": "33 mg",
-     "compound_mg": 33.0
+     "dose": "33 mg"
     },
     {
-     "name": "CBD 99% (Cannabidiol) (Cannabis sativa)",
-     "dose": "7 mg",
-     "purity_pct": 99.0,
-     "compound_mg": 7.0
-    },
-    {
-     "name": "*Boswellic Acid 95% (Boswellia serrata)",
-     "dose": "100 mg",
-     "purity_pct": 95.0,
-     "compound_mg": 100.0
-    },
-    {
-     "name": "Collagen - Undenatured Type II (UC-II)",
-     "dose": ""
-    },
-    {
-     "name": "Micro-encapsulated Gingerols 20% (Zingiber officinalis)",
-     "dose": "",
-     "purity_pct": 20.0
-    },
-    {
-     "name": "*Gingerols 10% (Zingiber officinalis)",
-     "dose": "33 mg",
-     "purity_pct": 10.0,
-     "compound_mg": 33.0
-    },
-    {
-     "name": "Gingerols 20% (Zingiber officinalis)",
-     "dose": "",
-     "purity_pct": 20.0
-    },
-    {
-     "name": "NEM (Eggshell Membrane)",
-     "dose": ""
-    },
-    {
-     "name": "Avocado-Soybean Unsaponifiables (ASU)",
-     "dose": ""
-    },
-    {
-     "name": "Hyaluronic Acid (Vegan)",
-     "dose": "33 mg",
-     "compound_mg": 33.0
-    },
-    {
-     "name": "High AKBA Boswellic Acid 90% (Boswellia serrata)",
-     "dose": "",
-     "purity_pct": 90.0
-    },
-    {
-     "name": "Pterostilbene 98%",
-     "dose": "17 mg",
-     "purity_pct": 98.0,
-     "compound_mg": 17.0
-    },
-    {
-     "name": "EMIQ 98% (Enzymatical ly Modified Isoquercetrin) (Sophorae japonica)",
-     "dose": "17 mg",
-     "purity_pct": 98.0,
-     "compound_mg": 17.0
+     "name": "Ginger Gingerols 10% (Zingiber officinalis)",
+     "dose": "33 mg"
     },
     {
      "name": "MSM (Methylsulfonylmethane)",
-     "dose": "65 mg",
-     "compound_mg": 65.0
+     "dose": "65 mg"
+    },
+    {
+     "name": "Polyphenol Complex: Proprietary Formula",
+     "dose": "135 mg"
+    },
+    {
+     "name": "Hyaluronic Acid (Vegan)",
+     "dose": "33 mg"
+    },
+    {
+     "name": "Black Seed Thymoquinone 20% (Nigella sativa)",
+     "dose": "33 mg"
+    },
+    {
+     "name": "Notoginsenosides 80% (Panax notoginseng)",
+     "dose": "33 mg"
+    },
+    {
+     "name": "Hemp CBD (Cannabidiol) (Cannabis sativa)",
+     "dose": "7 mg"
+    },
+    {
+     "name": "Frankincense Boswellic Acid (Boswellia serrata)",
+     "dose": "100 mg"
     }
-   ]
+   ],
+   "directions": "1 to 3 capsules daily with food, or as guided.",
+   "panel_note": "Polyphenol Complex: Proprietary Formula contains: Turmeric Tetrahydrocurcumin (Curcuma longa), Pine OPCs (Oligomeric Proanthocyanidins) (Pinus pinaster), Scholar Tree EMIQ (Enzymatically Modified Isoquercetin) (Sophora japonica), Pterostilbene, Trans-Resveratrol (Polygonum cuspidatum).",
+   "content_since": "2026-10-31T04:06:00+00:00",
+   "legacy_store_url": "https://remedymatch.com/remedies/syntropy/428-comfort"
   },
   "msm-syntropy-powder": {
    "name": "MSM Syntropy Powder",
