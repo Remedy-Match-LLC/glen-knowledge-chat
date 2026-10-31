@@ -56727,7 +56727,29 @@ def practitioner_finder_page():
     # Token is a Mapbox public pk.* — safe to expose to browser
     injection = f"<script>window.__MAPBOX_TOKEN__ = {token!r};</script>"
     html = html.replace("</head>", injection + "\n</head>")
+    if _on_mentorship_host():
+        html = _finder_without_product_branding(html)
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+# An education page on MentorshipU links here, so on that host the finder names no product
+# line (Glen "retitle the finder", teaching tab, 2026-10-31). Other hosts are unchanged.
+_FINDER_BRANDING = (
+    ("<title>Find a Practitioner · Functional Formulations™</title>",
+     "<title>Find a Practitioner</title>"),
+    ('<span class="brand-name">Remedy&nbsp;Match &nbsp;·&nbsp; Healing&nbsp;Oasis</span>', ""),
+    ("<p>Practitioners aligned with Functional Formulations™ across functional eye care, "
+     "biological dentistry, and integrative health.</p>",
+     "<p>Practitioners across functional eye care, biological dentistry and integrative "
+     "health.</p>"),
+)
+
+
+def _finder_without_product_branding(html: str) -> str:
+    # tests/test_practitioner_finder_mentorship_host.py fails if the template drops one.
+    for old, new in _FINDER_BRANDING:
+        html = html.replace(old, new)
+    return html
 
 
 def _fetch_practitioners_by_ids(ids: list) -> list:
