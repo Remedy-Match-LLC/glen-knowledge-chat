@@ -17,9 +17,11 @@ _MHOST = "http://mentorshipu.test"
 REPO_COURSES = os.path.join(os.path.dirname(os.path.dirname(__file__)), "courses")
 SLUG = "natural-eye-care"
 # PubMed links per lesson, as approved. A change here means the approved text changed.
-PUBMED_LINKS = {"macular-degeneration": 21, "drusen": 22, "diabetic-retinopathy": 23, "dry-eye": 36, "retinitis-pigmentosa": 28}
-# The only non-PubMed link allowed: the practitioner finder, which carries no products.
+PUBMED_LINKS = {"macular-degeneration": 21, "drusen": 22, "diabetic-retinopathy": 23, "dry-eye": 36, "retinitis-pigmentosa": 28, "night-vision": 24}
+# Non-PubMed links allowed: the practitioner finder, and a symptom page's links to its
+# condition pages. Neither carries products.
 OTHER_LINKS = {
+    "night-vision": ["https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/cataract", "https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/macular-degeneration", "https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/retinitis-pigmentosa", "https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/diabetic-retinopathy", "https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/glaucoma", "https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/dry-eye"],
     "cataract": ["https://courses.mentorshipu.com/practitioner-finder"],
     "glaucoma": ["https://courses.mentorshipu.com/practitioner-finder"],
 }

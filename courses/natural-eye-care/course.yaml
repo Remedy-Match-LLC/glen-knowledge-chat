@@ -11,3 +11,7 @@ modules:
       - diabetic-retinopathy
       - dry-eye
       - retinitis-pigmentosa
+  - slug: 02-symptoms
+    title: Symptoms
+    lessons:
+      - night-vision
