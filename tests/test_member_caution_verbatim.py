@@ -216,3 +216,83 @@ def test_no_product_name_alone_takes_the_caution_path(post):
         q = f"How much {name} should I take?"
         assert app._caution_link_slugs(q) == [], q
         assert app._caution_subjects_asked(q) == [], q
+
+
+# Review round 2, 2026-11-01.
+@pytest.fixture
+def thyroid(monkeypatch):
+    rec = app._PRODUCTS["products"]["thyroid-support"]
+    monkeypatch.setitem(rec, "warning", THYROID_V7)
+    monkeypatch.setitem(rec, "chat_caution", True)
+    return rec
+
+
+def test_pregnancy_in_an_earlier_turn_withholds_the_dose(thyroid):
+    q = "How much Thyroid Support should I take?"
+    assert app._caution_link_slugs(q, ["I'm pregnant."]) == []
+    reply = app._do_not_use_caution_reply(q, ["I'm pregnant."])
+    assert THYROID_V7 in reply and "capsule daily" not in reply
+    assert app._do_not_use_caution_reply(q, []) == ""
+
+
+def test_pre_terms_reply_also_covers_an_earlier_stated_situation(thyroid):
+    reply = app._pre_terms_caution_reply("How much Thyroid Support should I take?",
+                                         ["I'm pregnant."])
+    assert THYROID_V7 in reply and reply.endswith(app._PRE_TERMS_CAUTION_INVITE)
+
+
+@pytest.mark.parametrize("age,hit", [(12, True), (17, True), (18, True), (19, False)])
+def test_age_18_or_under_is_inclusive(thyroid, age, hit):
+    q = f"I am {age} years old. Is Thyroid Support safe?"
+    assert bool(app._do_not_use_caution_reply(q, [])) is hit
+
+
+def test_under_18_wording_excludes_18():
+    assert app._stated_do_not_use("Not for children under 18.", "I am 17 years old")
+    assert not app._stated_do_not_use("Not for children under 18.", "I am 18 years old")
+
+
+@pytest.mark.parametrize("warning", ["Not for people with epilepsy.",
+                                     "Do not use if you have asthma.",
+                                     "Not for anyone with kidney stones."])
+def test_named_condition_matches(warning):
+    cond = warning.split(" with ")[-1].split(" have ")[-1].rstrip(".")
+    assert app._stated_do_not_use(warning, f"Is it safe if I have {cond}?")
+    assert not app._stated_do_not_use(warning, "Is it safe with coffee?")
+
+
+def test_member_quote_is_outside_the_word_cap(thyroid):
+    q = "Is Thyroid Support safe with my thyroid medication?"
+    member = app._caution_synth_instr(q, [], member=True)
+    visitor = app._caution_synth_instr(q, [], member=False)
+    assert member and "the quoted caution" in member
+    assert visitor and "the quoted caution" not in visitor
+
+
+# Review round 1, 2026-11-01: live caution wording the matcher must read.
+@pytest.mark.parametrize("slug,said", [
+    ("brain-cleanse", "I am pregnant."),
+    ("vitamin-a-syntropy", "I am pregnant."),
+    ("angiogenx", "I am on my period."),
+    ("scar-silk", "I am on my period."),
+    ("angiogenx", "I have a sprain."),
+    ("macular-wellness-lycopene", "I have gallstones."),
+    ("fibrosolve", "I take Eliquis."),
+])
+def test_live_do_not_use_wording_matches(slug, said):
+    warning = app._PRODUCTS["products"][slug]["warning"]
+    assert app._stated_do_not_use(warning, said)
+    assert not app._stated_do_not_use(warning, "I have dry eyes.")
+
+
+def test_member_quote_keeps_the_stay_line_and_reminder(thyroid):
+    q = "Is Thyroid Support safe with my thyroid medication?"
+    block = app.named_product_facts_block(q, member=True)
+    assert THYROID_V7 in block and app._CAUTION_STAY_LINE in block
+    assert block.rstrip().endswith(app._CAUTION_CLOSING_REMINDER)
+    assert "add your own comments" not in block
+
+
+def test_a_shop_question_is_no_caution_question(thyroid):
+    q = "Is it safe to order Thyroid Support with a credit card on your site?"
+    assert app._pre_terms_caution_reply(q, []) == ""
