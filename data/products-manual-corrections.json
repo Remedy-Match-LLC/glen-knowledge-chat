@@ -865,8 +865,13 @@
     ],
     "ingredients_source": "db-formulations-2026-06-25",
     "note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
-    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "warning": "This formula contains vinpocetine. Do not use if you are pregnant, could become pregnant, or are breastfeeding. It is not for children. Consult your physician before use if you take any medicine, including aspirin or other pain relievers. This matters most with blood pressure, heart, blood thinning, blood sugar, cholesterol or immune-suppressing medicines. Also consult first if you have liver disease, gout, a stomach ulcer, low blood pressure, a bleeding disorder, an autoimmune condition or a seizure disorder, or are planning surgery. Niacin may cause a temporary flush. Stop use and consult your physician if you notice yellowing of the skin or eyes, or dark urine. This formula may change blood pressure and blood sugar, affect bleeding, and change how some medications are processed.",
+    "chat_caution": true,
+    "directions": "1 to 4 capsules daily in divided doses with food, or as guided.",
+    "copy_pinned": [
+      "directions"
+    ],
+    "content_since": "2026-11-01T07:50:13+00:00"
   },
   "shields-up-cold-flu-formula": {
     "ingredients": [
