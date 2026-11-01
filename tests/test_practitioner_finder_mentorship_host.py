@@ -8,6 +8,8 @@ import re
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HEADING = ("<h1>A Wellness Commons for Finding Holistic Healers &amp; Farm Fresh Food"
+           "</h1>")
 BRANDS = ("Functional Formulations", "Remedy&nbsp;Match", "Remedy Match",
           "Healing&nbsp;Oasis</span>")
 
@@ -31,7 +33,8 @@ def _page(client, host):
 
 def test_mentorshipu_shows_a_plain_finder(client):
     html = _page(client, "courses.mentorshipu.com")
-    assert "<title>Find a Practitioner</title>" in html
+    assert "<title>Wellness Commons Resource Finder</title>" in html
+    assert HEADING in html
     assert ("<p>Practitioners across functional eye care, biological dentistry and integrative "
             "health.</p>") in html
     assert not [b for b in BRANDS if b in html]
@@ -52,7 +55,9 @@ def test_mentorshipu_shows_a_plain_finder(client):
 @pytest.mark.parametrize("host", ["illtowell.com", "myhealingoasis.com"])
 def test_other_hosts_keep_the_branding(client, host):
     html = _page(client, host)
-    assert "<title>Find a Practitioner · Functional Formulations™</title>" in html
+    # Glen, 2026-11-01: the same title and heading on all three domains.
+    assert "<title>Wellness Commons Resource Finder</title>" in html
+    assert HEADING in html
     assert "Remedy&nbsp;Match" in html
     assert 'class="chat-section"' in html and 'src="/embed"' in html
 

@@ -56735,8 +56735,6 @@ def practitioner_finder_page():
 # An education page on MentorshipU links here, so on that host the finder names no product
 # line (Glen "retitle the finder", teaching tab, 2026-10-31). Other hosts are unchanged.
 _FINDER_BRANDING = (
-    ("<title>Find a Practitioner · Functional Formulations™</title>",
-     "<title>Find a Practitioner</title>"),
     ('<span class="brand-name">Remedy&nbsp;Match &nbsp;·&nbsp; Healing&nbsp;Oasis</span>', ""),
     ("<p>Practitioners aligned with Functional Formulations™ across functional eye care, "
      "biological dentistry, and integrative health.</p>",
