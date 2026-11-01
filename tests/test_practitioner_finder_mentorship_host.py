@@ -8,8 +8,7 @@ import re
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HEADING = ("<h1>A Wellness Commons for Finding Holistic Healers &amp; Farm Fresh Food"
-           "</h1>")
+HEADING = "<h1>A Wellness Commons: Find Holistic Healers &amp; Farm Fresh Food</h1>"
 BRANDS = ("Functional Formulations", "Remedy&nbsp;Match", "Remedy Match",
           "Healing&nbsp;Oasis</span>")
 
