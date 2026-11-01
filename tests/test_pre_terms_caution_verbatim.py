@@ -123,3 +123,11 @@ def test_anonymous_pregnancy_question_gets_the_caution_and_no_dose(post):
     assert directions not in answer
     assert not any(w in answer.lower() for w in ("capsule", "daily"))
     assert not streamed
+
+
+def test_lines_are_the_approved_wording():
+    # Glen approved these two lines verbatim on 2026-11-01. A reword needs his yes.
+    assert app._PRE_TERMS_CAUTION_LEAD == "The caution on the product page for {name} is:"
+    assert app._PRE_TERMS_CAUTION_INVITE == (
+        "If you'd like guidance for your own situation, please share your first and "
+        "last name and agree to the Terms.")

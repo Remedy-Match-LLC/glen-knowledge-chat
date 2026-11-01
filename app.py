@@ -3635,8 +3635,9 @@ def _caution_link_ctas(query_text: str, prior_user_turns=None) -> list:
 # breastfeeding?", anonymous) only said a caution applied; log 2615 quoted one and added
 # an invented mechanism. So before the Terms the reply is written here, not by the model.
 _PRE_TERMS_CAUTION_LEAD = "The caution on the product page for {name} is:"
-_PRE_TERMS_CAUTION_INVITE = ("For guidance specific to you, add your first and last name "
-                             "and agree to the Terms.")
+# Both lines approved by Glen in the platform tab, 2026-11-01.
+_PRE_TERMS_CAUTION_INVITE = ("If you'd like guidance for your own situation, please share "
+                             "your first and last name and agree to the Terms.")
 
 
 def _verbatim_caution_paras(query_text: str, prior_user_turns=None) -> list:
