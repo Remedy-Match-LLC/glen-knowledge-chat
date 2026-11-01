@@ -3724,7 +3724,8 @@ _DO_NOT_USE_SITUATIONS = (
     (_MINOR_SENTENCE_WORDS,
      (" child ", " children ", " kid ", " kids ", "under 18", " my son ", " my daughter",
       "toddler", " infant", " teenager", " my teen ", " a teen ", " teen son",
-      " teen daughter", " a minor "), (" a minor sleep", " a minor issue", " a minor problem")),
+      " teen daughter", " in my teens", " a minor "),
+     (" a minor sleep", " a minor issue", " a minor problem", " since my teens")),
     (("liver disease",), _CAUTION_SUBJECT_WORDS["liver disease"], ()),
     (("surgery",), _CAUTION_SUBJECT_WORDS["surgery"], ()),
     (("bleeding",), _CAUTION_SUBJECT_WORDS["bleeding"], ()),
@@ -3739,10 +3740,11 @@ _DO_NOT_USE_SITUATIONS = (
     # burned my arm years ago" must not match (review round 3, _INJURY_PAST).
     (_INJURY_SENTENCE_WORDS,
      (" fresh wound", " open wound", " a wound ", " healing wound", " wound is healing",
-      " healing from", " i broke ", " broke my", " fractured my", " recent fracture",
+      " healing from", " i broke ", " broke my", " broken ", " fractured my", " recent fracture",
       " sprained", " i have a sprain", " recent injury", " injured my", " i injured",
       " burned my", " i burned ", " got burned", " burned myself", " a fresh burn",
-      " cut myself", " cut my "), ()),
+      " cut myself", " cut my "),
+     (" broken blood vessel", " broken capillar", " broken vessel")),
     (("anticoagulant", "antiplatelet", "blood thinner", "aspirin"),
      _CAUTION_SUBJECT_WORDS["blood thinner"] + ("antiplatelet", "clopidogrel", "plavix",
                                                 "aspirin", "ticagrelor", "brilinta",
@@ -3781,8 +3783,12 @@ def _stated_do_not_use(warning: str, visitor_text: str, minor_text=None) -> bool
             qq = q
             if in_sentence is _MINOR_SENTENCE_WORDS and minor_text is not None:
                 qq = _subject_text(minor_text)
-            if in_sentence is _INJURY_SENTENCE_WORDS and any(p in qq for p in _INJURY_PAST):
-                continue
+            if in_sentence is _INJURY_SENTENCE_WORDS:
+                # A past injury is skipped only in its own sentence, so "My old scar has
+                # healed. I burned my hand this morning." still matches.
+                qq = " ".join(" " + x + " " for x in re.split(r"(?<=[.!?])\s+", visitor_text or "")
+                              if not any(p in _subject_text(x) for p in _INJURY_PAST))
+                qq = _subject_text(qq)
             for phrase in ignore:
                 qq = qq.replace(phrase, " ")
             if any(w in sent for w in in_sentence) and (

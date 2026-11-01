@@ -337,10 +337,22 @@ def test_an_own_condition_carries_across_products():
 
 
 @pytest.mark.parametrize("said", ["I burned my arm this morning.", "I sprained my ankle.",
-                                  "I cut my hand yesterday.",
-                                  "I burned my arm and it hasn't healed."])
-def test_a_current_injury_matches(said):
-    assert app._stated_do_not_use(_w("scar-silk") + " " + _w("angiogenx"), said)
+                                  "I cut my hand yesterday.", "I have a broken leg.",
+                                  "I burned my arm and it hasn't healed.",
+                                  "My old scar has healed. I burned my hand this morning."])
+def test_a_current_injury_matches_angiogenx(said):
+    assert app._stated_do_not_use(_w("angiogenx"), said)
+
+
+@pytest.mark.parametrize("said", ["I burned my arm this morning.", "I cut my hand yesterday.",
+                                  "My old scar has healed. I have a fresh wound."])
+def test_a_current_wound_matches_scar_silk(said):
+    assert app._stated_do_not_use(_w("scar-silk"), said)
+
+
+def test_a_teen_stating_it_matches():
+    assert app._do_not_use_slugs("I'm in my teens. How much OcuFlow Bedtime should I take?",
+                                 []) == ["ocuflow-bedtime"]
 
 
 def test_two_quoted_cautions_get_the_several_rule():
