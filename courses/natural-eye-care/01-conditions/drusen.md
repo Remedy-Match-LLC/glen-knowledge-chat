@@ -3,7 +3,6 @@ access: public
 downloads: []
 title: "Drusen: what they are, and when they can clear"
 ---
-
 <p>By Dr. Glen Swartwout, Naturopathic Optometrist</p>
 <p>I am retired from licensed practice, and I now write and teach about natural eye care.</p>
 <p>This page is education, not a diagnosis or a treatment plan.</p>
@@ -22,6 +21,43 @@ title: "Drusen: what they are, and when they can clear"
 <p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/30357336/">Soft Drusen in Age-Related Macular Degeneration: Biology and Targeting Via the Oil Spill Strategies</a></p>
 <p>Another team proposed that cell debris seeds a deposit and inflammation then builds around it.</p>
 <p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/12208254/">A role for local inflammation in the formation of drusen in the aging eye</a></p>
+<h2>Drusen and Alzheimer's disease</h2>
+<p>Amyloid beta is a protein fragment best known from the brain plaques of Alzheimer's disease.</p>
+<p>It has also been found in some drusen.</p>
+<p>One team found it "associated with a substructural vesicular component within drusen."</p>
+<p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/12189211/">The Alzheimer's A beta -peptide is deposited at sites of complement activation in pathologic deposits associated with aging and age-related macular degeneration</a></p>
+<p>A small study of donor eyes found it in "4 of 9 AMD eyes."</p>
+<p>It was found in "None of the 9 normal eyes surveyed."</p>
+<p>Some of those normal eyes had small drusen without it.</p>
+<p>The authors said more work is needed to know whether it causes damage or results from it.</p>
+<p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/12764254/">Amyloid-beta is found in drusen from some age-related macular degeneration retinas, but not in drusen from normal retinas</a></p>
+<p>Another team found "nonfibrillar, toxic oligomers in drusen."</p>
+<p>These are small clumps of misfolded protein, like those studied in Alzheimer's disease.</p>
+<p>The test detects a shared shape and did not identify the protein.</p>
+<p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/16453022/">Drusen deposits associated with aging and age-related macular degeneration contain nonfibrillar amyloid oligomers</a></p>
+<p>One review says the deposits in the two diseases have "many similarities."</p>
+<p>It adds that "it seems that these diseases have a different genetic background."</p>
+<p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/21297256/">Age-related macular degeneration (AMD): Alzheimer's disease in the eye?</a></p>
+<p>Some studies asked whether macular degeneration predicts dementia.</p>
+<p>They did not ask this of ordinary drusen that come with age.</p>
+<p>Their results disagree.</p>
+<p>A Dutch study of 1438 people aged 75 or older saw raised Alzheimer's risk with advanced disease.</p>
+<p>That link weakened and lost significance after allowing for smoking and hardened arteries.</p>
+<p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/10547142/">Is age-related maculopathy associated with Alzheimer's Disease? The Rotterdam Study</a></p>
+<p>English hospital records of 65894 people found the risk of dementia after macular degeneration "was not elevated."</p>
+<p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/24232933/">Associations between age-related macular degeneration, Alzheimer disease, and dementia: record linkage study of hospital admissions</a></p>
+<p>A 2023 review of eight studies found about a 22 percent higher dementia risk.</p>
+<p>The link was stronger in dry macular degeneration.</p>
+<p>A link like this cannot show that one disease causes the other.</p>
+<p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/36375591/">Macular degeneration and later dementia or Alzheimer disease, a meta-analysis, American Journal of Ophthalmology, 2023</a></p>
+<p>A drug that targets amyloid has been tested in late dry macular degeneration.</p>
+<p>In 191 people, it "did not reduce the rate of GA enlargement relative to placebo."</p>
+<p>GA stands for geographic atrophy, the late dry stage.</p>
+<p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/31047490/">A Randomized Phase 2 Study of an Anti-Amyloid β Monoclonal Antibody in Geographic Atrophy Secondary to Age-Related Macular Degeneration</a></p>
+<p>One carnosine study used only retinal cells grown in a dish.</p>
+<p>In retinal cells exposed to amyloid, it countered "most of the molecular alterations."</p>
+<p>I found no human study of carnosine for drusen.</p>
+<p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/37110558/">Carnosine Counteracts the Molecular Alterations Aβ Oligomers-Induced in Human Retinal Pigment Epithelial Cells</a></p>
 <h2>Drusen can shrink</h2>
 <p>Eye scans that measure drusen over time show they do not only grow.</p>
 <p>One study measured drusen volume over a year.</p>
@@ -74,6 +110,9 @@ title: "Drusen: what they are, and when they can clear"
 <p>Researchers have compared the inflammation in drusen to that in Alzheimer's disease and atherosclerosis.</p>
 <p>Source: <a href="https://pubmed.ncbi.nlm.nih.gov/12208254/">A role for local inflammation in the formation of drusen in the aging eye</a></p>
 <p>I see a parallel there too.</p>
+<p>I see amyloid in drusen as very similar to amyloid in the brain.</p>
+<p>The studies above show some shared proteins in the deposits.</p>
+<p>They do not show a shared disease.</p>
 <p>I believe sugar damage to proteins plays a large part.</p>
 <p>That damage is called glycation.</p>
 <p>I have nicknamed macular degeneration "diabetes type four" to make that point.</p>
