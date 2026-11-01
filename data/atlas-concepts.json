@@ -6656,15 +6656,21 @@
     },
     {
      "source": "clip",
-     "title": "Dr. Glen Swartwout discusses macular degeneration",
+     "title": "Dr. Glen Swartwout on eye health",
      "type": "video",
      "url": "https://youtu.be/BmoP8F5e_Bg?t=264s"
     },
     {
      "source": "clip",
-     "title": "Dr. Glen Swartwout discusses macular degeneration",
+     "title": "Dr. Glen Swartwout on eye health",
      "type": "video",
      "url": "https://youtu.be/FoRE1QhSaLE?t=391s"
+    },
+    {
+     "source": "pubmed",
+     "title": "Pfahler NM, et al. 2026. The Effect of Resveratrol, Quercetin, and Curcumin on Drusen Volume in Age-Related Macular Degeneration: A Randomized Clinical Trial. Transl Vis Sci Technol. https://pubmed.ncbi.nlm.nih.gov/42954735/",
+     "type": "article",
+     "url": "https://pubmed.ncbi.nlm.nih.gov/42954735/"
     }
    ],
    "namespaces": [
@@ -7946,6 +7952,12 @@
      "title": "Dr. Glen Swartwout discusses drusen",
      "type": "video",
      "url": "https://youtu.be/vZFm8uruXEE?t=1006s"
+    },
+    {
+     "source": "pubmed",
+     "title": "The Effect of Resveratrol, Quercetin, and Curcumin on Drusen Volume in Age-Related Macular Degeneration: A Randomized Clinical Trial",
+     "type": "article",
+     "url": "https://pubmed.ncbi.nlm.nih.gov/42954735/"
     }
    ],
    "namespaces": [
@@ -7956,7 +7968,7 @@
    ],
    "parent": "retina-macula",
    "status": "live",
-   "summary": "Retinal deposits linked to macular degeneration, addressed via lipase, protease, and anti-glycation strategies."
+   "summary": "Retinal deposits linked to macular degeneration, addressed via lipase, protease, and anti-glycation strategies. A 2026 trial of 38 people compared resveratrol, quercetin and curcumin together against curcumin alone. Central drusen volume changed \"-13.4% vs. +6.9%\" over two years. The trial was small and open-label, and it had no placebo group."
   },
   {
    "aliases": [
