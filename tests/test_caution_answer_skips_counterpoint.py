@@ -17,6 +17,7 @@ import app
 BRIEF_FRAME = "BRIEF — INCLUDE-AND-TRANSCEND OPEN LOOP"
 LONG_FRAME = "make breaking THAT assumption the central belief"
 RULES = app._CAUTION_ANSWER_RULES
+MEMBER_RULES = RULES.replace(app._CAUTION_ANSWER_POINT, app._CAUTION_ANSWER_QUOTE)
 SURGERY = "I have an operation next week. Is Stress Release okay?"
 
 
@@ -132,11 +133,13 @@ def test_the_brief_form_keeps_the_cap_and_the_cta_line_and_the_long_form_neither
 
 
 def test_the_brief_chat_answer_replaces_the_frame(prompt, monkeypatch):
-    # After the Terms. Before them the reply is written by code (Glen, 2026-10-31).
+    # After the Terms. Before them, or when the visitor states a do-not-use situation such
+    # as surgery, code writes the reply (Glen, 2026-10-31; knowledge tab, 2026-11-01).
+    # A member gets the caution quoted, not pointed to (Glen, 2026-11-01).
     monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
-    _chat(SURGERY)
+    _chat("I take a thyroid medication. Is Stress Release okay?")
     msg = prompt[-1]
-    assert msg.count(RULES) == 1 and BRIEF_FRAME not in msg
+    assert msg.count(MEMBER_RULES) == 1 and BRIEF_FRAME not in msg
 
 
 @pytest.mark.parametrize("logged_in", [False, True])
@@ -155,9 +158,9 @@ def test_a_dose_question_in_chat_keeps_the_frame(prompt):
 
 def test_a_follow_up_in_chat_takes_the_product_from_its_history(prompt, monkeypatch):
     monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
-    _chat("Can I take it before surgery?",
+    _chat("Can I take it with my thyroid medication?",
           history=[{"role": "user", "content": "Tell me about Stress Release"}])
-    assert RULES in prompt[-1]
+    assert MEMBER_RULES in prompt[-1]
 
 
 def test_the_gated_chat_answer_keeps_the_caution_answer(prompt, monkeypatch):
