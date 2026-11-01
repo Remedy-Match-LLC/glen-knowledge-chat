@@ -168,3 +168,51 @@ def test_an_avoid_use_line_counts_as_do_not_use():
     # Stress Release: "Avoid use in pregnancy or while breastfeeding."
     assert app._stated_do_not_use(_warning("stress-release"), "I am breastfeeding")
     assert not app._stated_do_not_use(_warning("stress-release"), "I take warfarin")
+
+
+# ---- a word in the product's own name is no caution subject ---------------------------
+
+HOW_MUCH = "How much Thyroid Support should I take?"
+
+
+@pytest.mark.parametrize("member", [False, True])
+def test_a_dose_question_about_thyroid_support_takes_no_caution_path(post, member):
+    answer, sent, _ = post(HOW_MUCH, member=member)
+    assert answer == MODEL_TEXT and len(sent) == 1
+    assert THYROID_V7 not in answer
+    assert app._CAUTION_QUOTE_LINE.format(name="Thyroid Support") not in sent[0]
+    assert app._caution_link_slugs(HOW_MUCH) == []
+    assert app._caution_subjects_asked(HOW_MUCH) == []
+
+
+def test_the_graves_question_still_takes_the_caution_path(post):
+    assert app._caution_link_slugs(GRAVES) == ["thyroid-support"]
+
+
+def _name_subject_products():
+    """chat_caution products whose own name holds a word for a subject their caution
+    names."""
+    out = []
+    for slug, pr in sorted(app._PRODUCTS["products"].items()):
+        warn = (pr.get("warning") or "").strip()
+        if not (pr.get("chat_caution") and warn):
+            continue
+        caution = app._subject_text(warn)
+        for label in [pr.get("name"), pr.get("display_name")] + list(pr.get("aliases") or []):
+            name = app._subject_text(label or "")
+            for key, words in app._CAUTION_SUBJECT_WORDS.items():
+                if (any(t in caution
+                        for t in (key,) + app._CAUTION_SUBJECT_IN_CAUTION.get(key, ()))
+                        and any(w in name for w in words)):
+                    out.append((slug, pr.get("name"), key))
+    return out
+
+
+def test_no_product_name_alone_takes_the_caution_path(post):
+    hits = _name_subject_products()
+    print("name-subject products:", hits)
+    assert ("thyroid-support", "Thyroid Support", "thyroid") in hits
+    for slug, name, _ in hits:
+        q = f"How much {name} should I take?"
+        assert app._caution_link_slugs(q) == [], q
+        assert app._caution_subjects_asked(q) == [], q

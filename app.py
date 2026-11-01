@@ -3533,6 +3533,23 @@ def _is_drug_interaction_snippet(meta) -> bool:
             and " interactions " in str(meta.get("title") or "").lower())
 
 
+def _without_product_names(text: str, slugs, products) -> str:
+    """The text with each listed product's own name, display name and aliases removed,
+    as whole words in any case. A word in a product's name is no subject its caution
+    names: "How much Thyroid Support should I take?" asks no thyroid question
+    (coordinator, 2026-11-01)."""
+    names = set()
+    for slug in slugs:
+        pr = products.get(slug) or {}
+        for n in [pr.get("name"), pr.get("display_name")] + list(pr.get("aliases") or []):
+            if isinstance(n, str) and html.unescape(n).strip():
+                names.add(html.unescape(n).replace("\u2122", "").strip())
+    text = html.unescape(text or "").replace("\u2122", "")
+    for n in sorted(names, key=len, reverse=True):
+        text = re.sub(r"(?<!\w)" + re.escape(n) + r"(?!\w)", " ", text, flags=re.IGNORECASE)
+    return text
+
+
 def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
     """The caution subjects the question names, for the opted-in cautions its facts block
     carries. The products come from the facts builder itself, so a follow-up resolves
@@ -3547,7 +3564,7 @@ def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
     caution = _subject_text(" ".join((products.get(k) or {}).get("warning") or ""
                                      for k in sorted(given)
                                      if (products.get(k) or {}).get("chat_caution")))
-    q = _subject_text(query_text)
+    q = _subject_text(_without_product_names(query_text, given, products))
     return [key for key, words in _CAUTION_SUBJECT_WORDS.items()
             if any(t in caution for t in (key,) + _CAUTION_SUBJECT_IN_CAUTION.get(key, ()))
             and _asks_subject(key, words, q)]
@@ -3574,7 +3591,7 @@ def _caution_link_slugs(query_text: str, prior_user_turns=None) -> list:
             return []
         given = set()
         _named_product_facts(_carried_query(query_text, prior_user_turns), given_out=given)
-        q = _subject_text(query_text)
+        q = _subject_text(_without_product_names(query_text, given, products))
         asked = [key for key, words in _CAUTION_SUBJECT_WORDS.items()
                  if _asks_subject(key, words, q)]
         q_safety = q
@@ -3724,6 +3741,7 @@ def _do_not_use_caution_reply(query_text: str, prior_user_turns=None) -> str:
         paras = _verbatim_caution_paras(query_text, prior_user_turns)
         said = " ".join([query_text or ""] + [t for t in (prior_user_turns or [])
                                               if isinstance(t, str)][-_FOLLOW_UP_LOOKBACK:])
+        said = _without_product_names(said, [s for s, _ in paras], products)
         if any(_stated_do_not_use((products.get(s) or {}).get("warning") or "", said)
                for s, _ in paras):
             return "\n\n".join(p for _, p in paras)
