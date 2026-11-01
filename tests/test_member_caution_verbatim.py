@@ -323,20 +323,32 @@ def test_round3_ordinary_questions_do_not_match(slug, said):
     assert not app._stated_do_not_use(_w(slug), said)
 
 
-def test_an_old_turn_about_another_product_does_not_carry():
+def test_an_old_turn_about_another_product_does_not_carry_a_minor():
     products = app._PRODUCTS["products"]
-    if not (products.get("clarity", {}).get("chat_caution")
-            and products.get("ocuflow-bedtime", {}).get("chat_caution")):
-        pytest.skip("needs both cautions opted in")
+    assert products["clarity"]["chat_caution"] and products["ocuflow-bedtime"]["chat_caution"]
     q = "Thanks. What is the dose of OcuFlow Bedtime for me?"
     assert app._do_not_use_slugs(q, ["Can my daughter take Clarity?"]) == []
     assert app._do_not_use_slugs(q, ["My daughter is 12."]) == ["ocuflow-bedtime"]
 
 
+def test_an_own_condition_carries_across_products():
+    q = "Is Scar Silk safe for me, and how much should I use?"
+    assert app._do_not_use_slugs(q, ["I take warfarin. Can I use Fibrosolve?"]) == ["scar-silk"]
+
+
+@pytest.mark.parametrize("said", ["I burned my arm this morning.", "I sprained my ankle.",
+                                  "I cut my hand yesterday.",
+                                  "I burned my arm and it hasn't healed."])
+def test_a_current_injury_matches(said):
+    assert app._stated_do_not_use(_w("scar-silk") + " " + _w("angiogenx"), said)
+
+
 def test_two_quoted_cautions_get_the_several_rule():
+    products = app._PRODUCTS["products"]
+    assert products["clarity"]["chat_caution"] and products["stress-release"]["chat_caution"]
     q = "Is it safe to take Clarity with Stress Release?"
     block = app.named_product_facts_block(q, member=True)
-    if block.count("Caution: ") < 2:
-        pytest.skip("needs two opted-in cautions")
+    assert products["clarity"]["warning"].strip() in block
+    assert products["stress-release"]["warning"].strip() in block
     assert "There is more than one caution below" in block
     assert '"The caution on the product page for <product name> is:"' in block

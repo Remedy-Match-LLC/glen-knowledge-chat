@@ -3705,6 +3705,14 @@ def _pre_terms_caution_reply(query_text: str, prior_user_turns=None) -> str:
 # "Do not give it to anyone under 18" and "Do not combine with a blood thinner" (round 3).
 _DO_NOT_USE_SENTENCE = re.compile(r"\bdo not (?:use|give|combine)\b|\bavoid\b|\bnot for\b",
                                   re.IGNORECASE)
+_INJURY_SENTENCE_WORDS = ("wound", "tissue injury", "fracture", "sprain", " burn ")
+_INJURY_PAST = (" years ago", " months ago", " long ago", " last year", " old scar",
+                " old injury", " old burn", " an old ", " has healed", " fully healed")
+# Situations about the visitor's own body carry from an earlier turn about any product.
+# This one can be about someone else, so it carries only from a turn naming the same
+# product or none: "Can my daughter take Clarity?" says nothing about OcuFlow Bedtime
+# asked next (review round 3).
+_MINOR_SENTENCE_WORDS = ("18 or under", "under 18", "children", " child ")
 _DO_NOT_USE_SITUATIONS = (
     # (words in the do-not-use sentence, words in the visitor's message, words to ignore)
     (("pregnan",), (" pregnan", "expecting a baby", "trying to conceive"), ()),
@@ -3713,7 +3721,7 @@ _DO_NOT_USE_SITUATIONS = (
      (" nursing home", " nursing school", " nursing student")),
     (("hyperthyroid", "graves", "overactive thyroid"),
      ("hyperthyroid", " graves ", "overactive thyroid", "thyroid is overactive"), ()),
-    (("18 or under", "under 18", "children", " child "),
+    (_MINOR_SENTENCE_WORDS,
      (" child ", " children ", " kid ", " kids ", "under 18", " my son ", " my daughter",
       "toddler", " infant", " teenager", " my teen ", " a teen ", " teen son",
       " teen daughter", " a minor "), (" a minor sleep", " a minor issue", " a minor problem")),
@@ -3728,12 +3736,13 @@ _DO_NOT_USE_SITUATIONS = (
     (("menses", "menstrua"), (" menses", " menstrua", " my period", " on my period",
                               " having my period"), ()),
     # Current injuries only: Scar Silk is for old scars, so "an old injury scar" and "I
-    # burned my arm years ago" must not match (review round 3).
-    (("wound", "tissue injury", "fracture", "sprain", " burn "),
+    # burned my arm years ago" must not match (review round 3, _INJURY_PAST).
+    (_INJURY_SENTENCE_WORDS,
      (" fresh wound", " open wound", " a wound ", " healing wound", " wound is healing",
-      " healing from", " just broke", " broke my", " fractured my", " recent fracture",
-      " sprained my", " i have a sprain", " recent injury", " just injured",
-      " burned myself", " a fresh burn", " cut myself"), ()),
+      " healing from", " i broke ", " broke my", " fractured my", " recent fracture",
+      " sprained", " i have a sprain", " recent injury", " injured my", " i injured",
+      " burned my", " i burned ", " got burned", " burned myself", " a fresh burn",
+      " cut myself", " cut my "), ()),
     (("anticoagulant", "antiplatelet", "blood thinner", "aspirin"),
      _CAUTION_SUBJECT_WORDS["blood thinner"] + ("antiplatelet", "clopidogrel", "plavix",
                                                 "aspirin", "ticagrelor", "brilinta",
@@ -3763,12 +3772,17 @@ def _under_age_stated(sentence: str, visitor: str) -> bool:
     return any(1 <= int(n) <= top for n in _STATED_AGE.findall(visitor))
 
 
-def _stated_do_not_use(warning: str, visitor_text: str) -> bool:
-    """True when the visitor's text states a situation a do-not-use sentence names."""
+def _stated_do_not_use(warning: str, visitor_text: str, minor_text=None) -> bool:
+    """True when the visitor's text states a situation a do-not-use sentence names. A
+    minor is read from minor_text when it is given, else from visitor_text."""
     q = _subject_text(visitor_text)
     for sent in _do_not_use_sentences(warning):
         for in_sentence, visitor, ignore in _DO_NOT_USE_SITUATIONS:
             qq = q
+            if in_sentence is _MINOR_SENTENCE_WORDS and minor_text is not None:
+                qq = _subject_text(minor_text)
+            if in_sentence is _INJURY_SENTENCE_WORDS and any(p in qq for p in _INJURY_PAST):
+                continue
             for phrase in ignore:
                 qq = qq.replace(phrase, " ")
             if any(w in sent for w in in_sentence) and (
@@ -3800,12 +3814,11 @@ def _do_not_use_slugs(query_text: str, prior_user_turns=None) -> list:
         pr = products.get(slug) or {}
         if not pr.get("chat_caution"):
             continue
-        # An earlier turn counts when it names this product or none: "Can my daughter
-        # take Clarity?" says nothing about OcuFlow Bedtime asked next (review round 3).
-        said = " ".join([query_text] + [t for t, n in zip(earlier, named)
-                                        if not n or slug in n])
-        said = _without_product_names(said, given, products)
-        if _stated_do_not_use(pr.get("warning") or "", said):
+        said = _without_product_names(" ".join([query_text] + earlier), given, products)
+        minor = _without_product_names(" ".join(
+            [query_text] + [t for t, n in zip(earlier, named) if not n or slug in n]),
+            given, products)
+        if _stated_do_not_use(pr.get("warning") or "", said, minor_text=minor):
             out.append(slug)
     return out
 
