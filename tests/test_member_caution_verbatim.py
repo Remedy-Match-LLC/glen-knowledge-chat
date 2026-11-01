@@ -296,3 +296,47 @@ def test_member_quote_keeps_the_stay_line_and_reminder(thyroid):
 def test_a_shop_question_is_no_caution_question(thyroid):
     q = "Is it safe to order Thyroid Support with a credit card on your site?"
     assert app._pre_terms_caution_reply(q, []) == ""
+
+
+# Review round 3, 2026-11-01.
+def _w(slug):
+    return app._PRODUCTS["products"][slug]["warning"]
+
+
+@pytest.mark.parametrize("slug,said", [
+    ("vitreous-vitality", "How much should my 15 year old daughter take?"),
+    ("fibrosolve", "I take a baby aspirin every day."),
+    ("scar-silk", "I take warfarin."),
+])
+def test_round3_prohibitions_match(slug, said):
+    assert app._stated_do_not_use(_w(slug), said)
+
+
+@pytest.mark.parametrize("slug,said", [
+    ("sleep-syntropy", "I have a minor sleep problem. Would it help?"),
+    ("angiogenx", "Will it help broken blood vessels in my eye?"),
+    ("scar-silk", "I burned my arm years ago. Will it soften the old scar?"),
+    ("scar-silk", "Can it help an old injury scar?"),
+    ("sleep-syntropy", "I have had insomnia since my teens."),
+])
+def test_round3_ordinary_questions_do_not_match(slug, said):
+    assert not app._stated_do_not_use(_w(slug), said)
+
+
+def test_an_old_turn_about_another_product_does_not_carry():
+    products = app._PRODUCTS["products"]
+    if not (products.get("clarity", {}).get("chat_caution")
+            and products.get("ocuflow-bedtime", {}).get("chat_caution")):
+        pytest.skip("needs both cautions opted in")
+    q = "Thanks. What is the dose of OcuFlow Bedtime for me?"
+    assert app._do_not_use_slugs(q, ["Can my daughter take Clarity?"]) == []
+    assert app._do_not_use_slugs(q, ["My daughter is 12."]) == ["ocuflow-bedtime"]
+
+
+def test_two_quoted_cautions_get_the_several_rule():
+    q = "Is it safe to take Clarity with Stress Release?"
+    block = app.named_product_facts_block(q, member=True)
+    if block.count("Caution: ") < 2:
+        pytest.skip("needs two opted-in cautions")
+    assert "There is more than one caution below" in block
+    assert '"The caution on the product page for <product name> is:"' in block

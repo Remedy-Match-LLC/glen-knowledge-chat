@@ -3223,6 +3223,7 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
     given = set()
     written = 0
     held = 0
+    quoted = 0
     linked = False
     for i, parts in enumerate(blocks):
         lines = []
@@ -3240,6 +3241,7 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                     # The stay line brings the closing reminder, as a written caution
                     # does (review round 1).
                     lines.append(_CAUTION_STAY_LINE)
+                    quoted += 1
                     continue
                 where = (_CAUTION_LINK_WHERE_LONG.format(url=_caution_link_url(part.key))
                          if long_form else _CAUTION_LINK_WHERE)
@@ -3286,7 +3288,10 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
     several = ((_SEVERAL_CAUTIONS_RULE + "\n") if shown > 1
                else (_ONE_CAUTION_RULE + "\n") if shown == 1 and any_copy_rule
                else "")
-    if gated and any_copy_rule:
+    if quoted > 1 and not several:
+        # Two quoted cautions were once merged into one paraphrase (review round 3).
+        several = _SEVERAL_CAUTIONS_RULE + "\n"
+    if (gated and any_copy_rule) or quoted:
         # The gated note asks for "The caution on the product page is ..."; one page, not
         # two. Labels carry no cautions since Glen's ruling of 2026-10-15, so the caution
         # is the product page's (Glen "yes", 2026-10-15).
@@ -3693,11 +3698,13 @@ def _pre_terms_caution_reply(query_text: str, prior_user_turns=None) -> str:
 #    (_subject_text), so "Graves'" reads "graves".
 # 3. A "do not use if you have X" sentence also matches X itself: each piece of X split on
 #    "or", commas and brackets, without its article, when the question holds that piece.
-#    One-word pieces count only from 8 letters, so "hyperthyroidism" counts, "it" never.
+#    One-word pieces count only from 5 letters, so "asthma" counts, "it" never.
 # A negation ("I am not pregnant") still matches: that only withholds the dose.
 # Live cautions also say "Avoid in pregnancy", "Avoid during pregnancy" and "Not for use
-# with anticoagulant" (review round 1), so any "avoid" or "not for" sentence is read.
-_DO_NOT_USE_SENTENCE = re.compile(r"\bdo not use\b|\bavoid\b|\bnot for\b", re.IGNORECASE)
+# with anticoagulant" (review round 1), so any "avoid" or "not for" sentence is read, and
+# "Do not give it to anyone under 18" and "Do not combine with a blood thinner" (round 3).
+_DO_NOT_USE_SENTENCE = re.compile(r"\bdo not (?:use|give|combine)\b|\bavoid\b|\bnot for\b",
+                                  re.IGNORECASE)
 _DO_NOT_USE_SITUATIONS = (
     # (words in the do-not-use sentence, words in the visitor's message, words to ignore)
     (("pregnan",), (" pregnan", "expecting a baby", "trying to conceive"), ()),
@@ -3708,7 +3715,8 @@ _DO_NOT_USE_SITUATIONS = (
      ("hyperthyroid", " graves ", "overactive thyroid", "thyroid is overactive"), ()),
     (("18 or under", "under 18", "children", " child "),
      (" child ", " children ", " kid ", " kids ", "under 18", " my son ", " my daughter",
-      "toddler", " infant", " teen", " minor "), ()),
+      "toddler", " infant", " teenager", " my teen ", " a teen ", " teen son",
+      " teen daughter", " a minor "), (" a minor sleep", " a minor issue", " a minor problem")),
     (("liver disease",), _CAUTION_SUBJECT_WORDS["liver disease"], ()),
     (("surgery",), _CAUTION_SUBJECT_WORDS["surgery"], ()),
     (("bleeding",), _CAUTION_SUBJECT_WORDS["bleeding"], ()),
@@ -3719,11 +3727,17 @@ _DO_NOT_USE_SITUATIONS = (
     (("prostate cancer",), ("prostate cancer",), ()),
     (("menses", "menstrua"), (" menses", " menstrua", " my period", " on my period",
                               " having my period"), ()),
+    # Current injuries only: Scar Silk is for old scars, so "an old injury scar" and "I
+    # burned my arm years ago" must not match (review round 3).
     (("wound", "tissue injury", "fracture", "sprain", " burn "),
-     (" wound", " injury", " injured", " fracture", " broke my", " broken ", " sprain",
-      " a burn ", " burned ", " cut myself"), ()),
-    (("anticoagulant", "antiplatelet", "blood thinner"),
-     _CAUTION_SUBJECT_WORDS["blood thinner"] + ("antiplatelet", "clopidogrel", "plavix"), ()),
+     (" fresh wound", " open wound", " a wound ", " healing wound", " wound is healing",
+      " healing from", " just broke", " broke my", " fractured my", " recent fracture",
+      " sprained my", " i have a sprain", " recent injury", " just injured",
+      " burned myself", " a fresh burn", " cut myself"), ()),
+    (("anticoagulant", "antiplatelet", "blood thinner", "aspirin"),
+     _CAUTION_SUBJECT_WORDS["blood thinner"] + ("antiplatelet", "clopidogrel", "plavix",
+                                                "aspirin", "ticagrelor", "brilinta",
+                                                "prasugrel", "effient"), ()),
 )
 _STATED_AGE = re.compile(r" (\d{1,2}) (?:year|yr)s? old ")
 _ARTICLE = re.compile(r"^(?:a|an|the|another|any|had|have)\s+")
@@ -3779,13 +3793,19 @@ def _do_not_use_slugs(query_text: str, prior_user_turns=None) -> list:
         return []
     given = set()
     _named_product_facts(_carried_query(query_text, prior_user_turns), given_out=given)
-    said = " ".join([query_text] + [t for t in (prior_user_turns or [])
-                                    if isinstance(t, str)][-_FOLLOW_UP_LOOKBACK:])
-    said = _without_product_names(said, given, products)
+    earlier = [t for t in (prior_user_turns or []) if isinstance(t, str)][-_FOLLOW_UP_LOOKBACK:]
+    named = [set(_named_product_spans(t, products)) for t in earlier]
     out = []
     for slug in sorted(given):
         pr = products.get(slug) or {}
-        if pr.get("chat_caution") and _stated_do_not_use(pr.get("warning") or "", said):
+        if not pr.get("chat_caution"):
+            continue
+        # An earlier turn counts when it names this product or none: "Can my daughter
+        # take Clarity?" says nothing about OcuFlow Bedtime asked next (review round 3).
+        said = " ".join([query_text] + [t for t, n in zip(earlier, named)
+                                        if not n or slug in n])
+        said = _without_product_names(said, given, products)
+        if _stated_do_not_use(pr.get("warning") or "", said):
             out.append(slug)
     return out
 
