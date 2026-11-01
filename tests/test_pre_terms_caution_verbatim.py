@@ -89,8 +89,15 @@ def test_an_anonymous_non_safety_question_is_unchanged(post):
 
 
 def test_after_the_terms_the_answer_is_unchanged(post):
-    answer, done, streamed, _ = post(SAFETY, member=True)
+    # Caution v2 says "consult" on aspirin, not "do not use", so the model answers.
+    answer, done, streamed, _ = post("Is Blood Cleanse safe with aspirin?", member=True)
     assert streamed and answer == MODEL_TEXT
+
+
+def test_after_the_terms_breastfeeding_gets_the_caution_and_no_dose(post):
+    # Caution v2 says "Do not use if you ... are breastfeeding".
+    answer, done, streamed, _ = post(SAFETY, member=True)
+    assert not streamed and "breastfeeding" in answer and "capsules" not in answer
 
 
 def test_a_product_without_the_chat_opt_in_is_unchanged(post, monkeypatch):
