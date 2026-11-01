@@ -17,6 +17,7 @@ import app
 BRIEF_FRAME = "BRIEF — INCLUDE-AND-TRANSCEND OPEN LOOP"
 LONG_FRAME = "make breaking THAT assumption the central belief"
 RULES = app._CAUTION_ANSWER_RULES
+MEMBER_RULES = RULES.replace(app._CAUTION_ANSWER_POINT, app._CAUTION_ANSWER_QUOTE)
 SURGERY = "I have an operation next week. Is Stress Release okay?"
 
 
@@ -131,10 +132,14 @@ def test_the_brief_form_keeps_the_cap_and_the_cta_line_and_the_long_form_neither
     assert app._CTA_DIRECTIVE_SPEC in app._brief_synth_instruction()
 
 
-def test_the_brief_chat_answer_replaces_the_frame(prompt):
-    _chat(SURGERY)
+def test_the_brief_chat_answer_replaces_the_frame(prompt, monkeypatch):
+    # After the Terms. Before them, or when the visitor states a do-not-use situation such
+    # as surgery, code writes the reply (Glen, 2026-10-31; knowledge tab, 2026-11-01).
+    # A member gets the caution quoted, not pointed to (Glen, 2026-11-01).
+    monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
+    _chat("I take a thyroid medication. Is Stress Release okay?")
     msg = prompt[-1]
-    assert msg.count(RULES) == 1 and BRIEF_FRAME not in msg
+    assert msg.count(MEMBER_RULES) == 1 and BRIEF_FRAME not in msg
 
 
 @pytest.mark.parametrize("logged_in", [False, True])
@@ -151,22 +156,21 @@ def test_a_dose_question_in_chat_keeps_the_frame(prompt):
     assert RULES not in prompt[-1] and BRIEF_FRAME in prompt[-1]
 
 
-def test_a_follow_up_in_chat_takes_the_product_from_its_history(prompt):
-    _chat("Can I take it before surgery?",
+def test_a_follow_up_in_chat_takes_the_product_from_its_history(prompt, monkeypatch):
+    monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
+    _chat("Can I take it with my thyroid medication?",
           history=[{"role": "user", "content": "Tell me about Stress Release"}])
-    assert RULES in prompt[-1]
+    assert MEMBER_RULES in prompt[-1]
 
 
 def test_the_gated_chat_answer_keeps_the_caution_answer(prompt, monkeypatch):
     monkeypatch.setattr(app, "_is_gated_question", lambda *a, **k: True)
     monkeypatch.setattr(app, "is_member", lambda *a, **k: False)
     _chat("I have lupus. Can I take Stress Release?")
-    msg = prompt[-1]
-    assert msg.count(RULES) == 1 and BRIEF_FRAME not in msg
-    # Glen, 2026-10-24: the gated caution answer points to the caution, never copies it.
-    assert app._PRODUCTS["products"]["stress-release"]["warning"] not in msg
-    assert app._CAUTION_LINK_LINE.format(name="Stress Release",
-                                         where=app._CAUTION_LINK_WHERE) in msg
+    # Glen, 2026-10-31: before the Terms the caution is quoted verbatim by code, with no
+    # commentary, so the model is never asked (tests/test_pre_terms_caution_verbatim.py).
+    # This replaces the 2026-10-24 gated answer that only pointed to the caution.
+    assert prompt == []
 
 
 def test_the_full_answer_replaces_its_frame(prompt):

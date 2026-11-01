@@ -2761,6 +2761,15 @@ _NO_SAFETY_VERDICT = (" Never say a product is safe, harmless or fine to take, a
                       "tell the user what is safe for them: give the directions and caution "
                       "here instead. Add no claim about a condition, such as how it changes "
                       "in pregnancy, that this text does not make.")
+# Glen, platform tab, 2026-11-01 ("yes"): a visitor who has agreed to the Terms also gets
+# the full caution word for word. This replaces the link line above for them; his
+# 2026-10-24 "Chat doesn't duplicate the caution" stands only where nothing else applies.
+_CAUTION_QUOTE_LINE = (
+    "The caution on the product page for {name} covers what the user asks about. Quote "
+    "it below word for word and in full, every sentence, as its own paragraph starting "
+    "\"The caution on the product page for {name} is:\". Do not shorten, reword, merge or "
+    "summarise it. Add nothing that contradicts, qualifies or weakens it. Never say "
+    "{name} is safe.")
 _CAUTION_LINK_WHERE = ("A link that opens it is added under your answer, so do not write "
                        "its address yourself.")
 _CAUTION_LINK_WHERE_LONG = "End your answer with this line: Read the full caution: {url}"
@@ -2977,7 +2986,7 @@ _UMBRELLA_ROW = re.compile(
 
 def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                          no_caution_out=None, link_cautions=(), long_form=False,
-                         caution_out=None) -> str:
+                         caution_out=None, quote_cautions=False) -> str:
     """Approved store text for the catalog products the user names in the question.
 
     The chat does not search `specific-formulations`, so a product whose facts live
@@ -3214,6 +3223,7 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
     given = set()
     written = 0
     held = 0
+    quoted = 0
     linked = False
     for i, parts in enumerate(blocks):
         lines = []
@@ -3223,6 +3233,16 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                     continue
                 given.add(part.key)
                 cname = html.unescape(products[part.key].get("name") or part.key).strip()
+                if quote_cautions:
+                    # Quoted in place of the link (Glen, 2026-11-01).
+                    cwarn = (products[part.key].get("warning") or "").strip()
+                    lines.append(_CAUTION_QUOTE_LINE.format(name=cname))
+                    lines.append(f"Caution: {cwarn}")
+                    # The stay line brings the closing reminder, as a written caution
+                    # does (review round 1).
+                    lines.append(_CAUTION_STAY_LINE)
+                    quoted += 1
+                    continue
                 where = (_CAUTION_LINK_WHERE_LONG.format(url=_caution_link_url(part.key))
                          if long_form else _CAUTION_LINK_WHERE)
                 part = _CAUTION_LINK_LINE.format(name=cname, where=where)
@@ -3268,7 +3288,10 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
     several = ((_SEVERAL_CAUTIONS_RULE + "\n") if shown > 1
                else (_ONE_CAUTION_RULE + "\n") if shown == 1 and any_copy_rule
                else "")
-    if gated and any_copy_rule:
+    if quoted > 1 and not several:
+        # Two quoted cautions were once merged into one paraphrase (review round 3).
+        several = _SEVERAL_CAUTIONS_RULE + "\n"
+    if (gated and any_copy_rule) or quoted:
         # The gated note asks for "The caution on the product page is ..."; one page, not
         # two. Labels carry no cautions since Glen's ruling of 2026-10-15, so the caution
         # is the product page's (Glen "yes", 2026-10-15).
@@ -3379,7 +3402,7 @@ def _carried_query(query_text: str, prior_user_turns) -> str:
 
 
 def named_product_facts_block(query_text: str, gated: bool = False,
-                              prior_user_turns=None, long_form=False) -> str:
+                              prior_user_turns=None, long_form=False, member=False) -> str:
     """The facts block, or "". It goes LAST in the user message, after the synthesis
     instruction. Read-back 2026-10-08: placed before the snippets, 8 of 16 answers
     failed; placed after them but before the instruction, 2 of 16 failed.
@@ -3389,7 +3412,7 @@ def named_product_facts_block(query_text: str, gated: bool = False,
     carried = _carried_query(query_text, prior_user_turns)
     facts = _named_product_facts(carried, gated,
                                  link_cautions=_caution_link_slugs(query_text, prior_user_turns),
-                                 long_form=long_form)
+                                 long_form=long_form, quote_cautions=member)
     if facts and carried != query_text:
         products = (_PRODUCTS or {}).get("products", {}) or {}
         slug = next(iter(_named_product_spans(carried, products)))
@@ -3517,6 +3540,23 @@ def _is_drug_interaction_snippet(meta) -> bool:
             and " interactions " in str(meta.get("title") or "").lower())
 
 
+def _without_product_names(text: str, slugs, products) -> str:
+    """The text with each listed product's own name, display name and aliases removed,
+    as whole words in any case. A word in a product's name is no subject its caution
+    names: "How much Thyroid Support should I take?" asks no thyroid question
+    (coordinator, 2026-11-01)."""
+    names = set()
+    for slug in slugs:
+        pr = products.get(slug) or {}
+        for n in [pr.get("name"), pr.get("display_name")] + list(pr.get("aliases") or []):
+            if isinstance(n, str) and html.unescape(n).strip():
+                names.add(html.unescape(n).replace("\u2122", "").strip())
+    text = html.unescape(text or "").replace("\u2122", "")
+    for n in sorted(names, key=len, reverse=True):
+        text = re.sub(r"(?<!\w)" + re.escape(n) + r"(?!\w)", " ", text, flags=re.IGNORECASE)
+    return text
+
+
 def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
     """The caution subjects the question names, for the opted-in cautions its facts block
     carries. The products come from the facts builder itself, so a follow-up resolves
@@ -3531,7 +3571,7 @@ def _caution_subjects_asked(query_text: str, prior_user_turns=None) -> list:
     caution = _subject_text(" ".join((products.get(k) or {}).get("warning") or ""
                                      for k in sorted(given)
                                      if (products.get(k) or {}).get("chat_caution")))
-    q = _subject_text(query_text)
+    q = _subject_text(_without_product_names(query_text, given, products))
     return [key for key, words in _CAUTION_SUBJECT_WORDS.items()
             if any(t in caution for t in (key,) + _CAUTION_SUBJECT_IN_CAUTION.get(key, ()))
             and _asks_subject(key, words, q)]
@@ -3544,7 +3584,11 @@ _CAUTION_SAFETY_WORDS = (" safe ", " safely ", " safety ", " side effect", " cau
 
 
 # Phrases that hold a safety word and ask nothing about safety (review round 2).
-_CAUTION_SAFETY_NOT = (" warning sign", " safe bet")
+# "Is it safe to order Blood Cleanse with a credit card?" asks about the shop, and before
+# the Terms a caution question replaces the whole answer (review round 1).
+_CAUTION_SAFETY_NOT = (" warning sign", " safe bet", " safe to order", " safe to buy",
+                       " safe to pay", " safe to purchase", " safe to shop",
+                       " safe checkout", " safe payment")
 
 
 def _caution_link_slugs(query_text: str, prior_user_turns=None) -> list:
@@ -3558,7 +3602,7 @@ def _caution_link_slugs(query_text: str, prior_user_turns=None) -> list:
             return []
         given = set()
         _named_product_facts(_carried_query(query_text, prior_user_turns), given_out=given)
-        q = _subject_text(query_text)
+        q = _subject_text(_without_product_names(query_text, given, products))
         asked = [key for key, words in _CAUTION_SUBJECT_WORDS.items()
                  if _asks_subject(key, words, q)]
         q_safety = q
@@ -3594,6 +3638,208 @@ def _caution_link_ctas(query_text: str, prior_user_turns=None) -> list:
         out.append({"type": "page", "target": _caution_link_url(slug),
                     "label": f"Read the full caution for {name}"})
     return out
+
+
+# Glen, 2026-10-31 (relayed): a visitor who names a product and asks a safety question
+# gets that product's full caution word for word, Terms or no Terms. Before the Terms it
+# adds no commentary or personal application. Log 2616 ("Is Blood Cleanse safe while
+# breastfeeding?", anonymous) only said a caution applied; log 2615 quoted one and added
+# an invented mechanism. So before the Terms the reply is written here, not by the model.
+_PRE_TERMS_CAUTION_LEAD = "The caution on the product page for {name} is:"
+# Both lines approved by Glen in the platform tab, 2026-11-01.
+_PRE_TERMS_CAUTION_INVITE = ("If you'd like guidance for your own situation, please share "
+                             "your first and last name and agree to the Terms.")
+
+
+def _verbatim_caution_paras(query_text: str, prior_user_turns=None, slugs=None) -> list:
+    """(slug, paragraph) for each opted-in caution the question touches
+    (_caution_link_slugs), or for the slugs given: the lead line, then the record's
+    warning verbatim."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    out = []
+    if slugs is None:
+        slugs = _caution_link_slugs(query_text, prior_user_turns)
+    for slug in slugs:
+        pr = products.get(slug) or {}
+        warn = (pr.get("warning") or "").strip()
+        if pr.get("chat_caution") and warn:
+            name = html.unescape(pr.get("name") or slug).strip()
+            out.append((slug, _PRE_TERMS_CAUTION_LEAD.format(name=name) + "\n\n" + warn))
+    return out
+
+
+def _pre_terms_caution_reply(query_text: str, prior_user_turns=None) -> str:
+    """The whole reply for a visitor who has not agreed to the Terms when the question
+    touches an opted-in caution (_caution_link_slugs): each caution verbatim from its
+    record, then the Terms invitation. "" otherwise, so the answer goes on as before."""
+    try:
+        slugs = _caution_link_slugs(query_text, prior_user_turns)
+        slugs += [s for s in _do_not_use_slugs(query_text, prior_user_turns)
+                  if s not in slugs]
+        paras = [p for _, p in _verbatim_caution_paras(query_text, prior_user_turns,
+                                                       slugs=slugs)]
+        return "\n\n".join(paras + [_PRE_TERMS_CAUTION_INVITE]) if paras else ""
+    except Exception as e:
+        print(f"[chat] pre-Terms caution reply skipped: {e!r}", flush=True)
+        return ""
+
+
+# Knowledge tab ruling, 2026-11-01, for everyone: when the visitor's stated situation
+# matches a "do not use" line in the caution, such as pregnancy or Graves' disease, the
+# answer quotes the caution and gives no dose or directions. Live chat 2622 gave "1 to 3
+# capsules daily" to a visitor who said she is pregnant.
+#
+# The matcher is conservative in one direction: a false match only withholds the dose.
+# 1. It reads only "do not use ...", "avoid use ..." and "Not for ..." sentences. Stress
+#    Release says "Avoid use in pregnancy or while breastfeeding", which means the same. "Keep out of reach of
+#    children" and "consult your physician" sentences never match.
+# 2. A situation matches when its sentence words are in such a sentence and its visitor
+#    words are in the question or the earlier user turns. Both sides are padded lower case
+#    (_subject_text), so "Graves'" reads "graves".
+# 3. A "do not use if you have X" sentence also matches X itself: each piece of X split on
+#    "or", commas and brackets, without its article, when the question holds that piece.
+#    One-word pieces count only from 5 letters, so "asthma" counts, "it" never.
+# A negation ("I am not pregnant") still matches: that only withholds the dose.
+# Live cautions also say "Avoid in pregnancy", "Avoid during pregnancy" and "Not for use
+# with anticoagulant" (review round 1), so any "avoid" or "not for" sentence is read, and
+# "Do not give it to anyone under 18" and "Do not combine with a blood thinner" (round 3).
+_DO_NOT_USE_SENTENCE = re.compile(r"\bdo not (?:use|give|combine)\b|\bavoid\b|\bnot for\b",
+                                  re.IGNORECASE)
+_INJURY_SENTENCE_WORDS = ("wound", "tissue injury", "fracture", "sprain", " burn ")
+_INJURY_PAST = (" years ago", " months ago", " long ago", " last year", " old scar",
+                " old injury", " old burn", " an old ", " has healed", " fully healed")
+# Situations about the visitor's own body carry from an earlier turn about any product.
+# This one can be about someone else, so it carries only from a turn naming the same
+# product or none: "Can my daughter take Clarity?" says nothing about OcuFlow Bedtime
+# asked next (review round 3).
+_MINOR_SENTENCE_WORDS = ("18 or under", "under 18", "children", " child ")
+_DO_NOT_USE_SITUATIONS = (
+    # (words in the do-not-use sentence, words in the visitor's message, words to ignore)
+    (("pregnan",), (" pregnan", "expecting a baby", "trying to conceive"), ()),
+    (("breastfeed", "breast feed", "nursing"),
+     ("breastfeed", "breast feed", " nursing", "lactat"),
+     (" nursing home", " nursing school", " nursing student")),
+    (("hyperthyroid", "graves", "overactive thyroid"),
+     ("hyperthyroid", " graves ", "overactive thyroid", "thyroid is overactive"), ()),
+    (_MINOR_SENTENCE_WORDS,
+     (" child ", " children ", " kid ", " kids ", "under 18", " my son ", " my daughter",
+      "toddler", " infant", " teenager", " my teen ", " a teen ", " teen son",
+      " teen daughter", " in my teens", " a minor "),
+     (" a minor sleep", " a minor issue", " a minor problem", " since my teens")),
+    (("liver disease",), _CAUTION_SUBJECT_WORDS["liver disease"], ()),
+    (("surgery",), _CAUTION_SUBJECT_WORDS["surgery"], ()),
+    (("bleeding",), _CAUTION_SUBJECT_WORDS["bleeding"], ()),
+    (("retinoid",), ("retinoid", "isotretinoin", "acitretin", "accutane", "tretinoin"), ()),
+    (("tetracycline",), ("tetracycline", "doxycycline", "minocycline"), ()),
+    (("stargardt", "abca4"), ("stargardt", "abca4"), ()),
+    (("pineapple",), ("allergic to pineapple", "pineapple allerg", "allergy to pineapple"), ()),
+    (("prostate cancer",), ("prostate cancer",), ()),
+    (("menses", "menstrua"), (" menses", " menstrua", " my period", " on my period",
+                              " having my period"), ()),
+    # Current injuries only: Scar Silk is for old scars, so "an old injury scar" and "I
+    # burned my arm years ago" must not match (review round 3, _INJURY_PAST).
+    (_INJURY_SENTENCE_WORDS,
+     (" fresh wound", " open wound", " a wound ", " healing wound", " wound is healing",
+      " healing from", " i broke ", " broke my", " broken ", " fractured my", " recent fracture",
+      " sprained", " i have a sprain", " recent injury", " injured my", " i injured",
+      " burned my", " i burned ", " got burned", " burned myself", " a fresh burn",
+      " cut myself", " cut my "),
+     (" broken blood vessel", " broken capillar", " broken vessel")),
+    (("anticoagulant", "antiplatelet", "blood thinner", "aspirin"),
+     _CAUTION_SUBJECT_WORDS["blood thinner"] + ("antiplatelet", "clopidogrel", "plavix",
+                                                "aspirin", "ticagrelor", "brilinta",
+                                                "prasugrel", "effient"), ()),
+)
+_STATED_AGE = re.compile(r" (\d{1,2}) (?:year|yr)s? old ")
+_ARTICLE = re.compile(r"^(?:a|an|the|another|any|had|have)\s+")
+
+
+def _do_not_use_sentences(warning: str) -> list:
+    """The caution's "do not use" and "Not for" sentences, each padded lower case."""
+    sentences = re.split(r"(?<=[.!?])\s+", (warning or "").strip())
+    return [_subject_text(s) for s in sentences if _DO_NOT_USE_SENTENCE.search(s)]
+
+
+# "Not for people with epilepsy" names its condition as "do not use if you have" does
+# (review round 2).
+_DO_NOT_USE_CONDITION = re.compile(
+    r" (?:do not use (?:\w+ )?if you have|avoid use if you have|not for (?:anyone|people|"
+    r"those) (?:with|who have)) (.+)")
+
+
+def _under_age_stated(sentence: str, visitor: str) -> bool:
+    """True when the visitor states an age the sentence excludes: under 18, or 18 as well
+    when the sentence says "18 or under" (review round 2)."""
+    top = 18 if " 18 or under " in sentence else 17
+    return any(1 <= int(n) <= top for n in _STATED_AGE.findall(visitor))
+
+
+def _stated_do_not_use(warning: str, visitor_text: str, minor_text=None) -> bool:
+    """True when the visitor's text states a situation a do-not-use sentence names. A
+    minor is read from minor_text when it is given, else from visitor_text."""
+    q = _subject_text(visitor_text)
+    for sent in _do_not_use_sentences(warning):
+        for in_sentence, visitor, ignore in _DO_NOT_USE_SITUATIONS:
+            qq = q
+            if in_sentence is _MINOR_SENTENCE_WORDS and minor_text is not None:
+                qq = _subject_text(minor_text)
+            if in_sentence is _INJURY_SENTENCE_WORDS:
+                # A past injury is skipped only in its own sentence, so "My old scar has
+                # healed. I burned my hand this morning." still matches.
+                qq = " ".join(" " + x + " " for x in re.split(r"(?<=[.!?])\s+", visitor_text or "")
+                              if not any(p in _subject_text(x) for p in _INJURY_PAST))
+                qq = _subject_text(qq)
+            for phrase in ignore:
+                qq = qq.replace(phrase, " ")
+            if any(w in sent for w in in_sentence) and (
+                    any(w in qq for w in visitor)
+                    or (" child " in in_sentence and _under_age_stated(sent, qq))):
+                return True
+        m = _DO_NOT_USE_CONDITION.search(sent)
+        for piece in re.split(r" or |,|\(|\)", m.group(1) if m else ""):
+            piece = _ARTICLE.sub("", piece.strip())
+            if piece and (" " in piece or len(piece) >= 5) and f" {piece} " in q:
+                return True
+    return False
+
+
+def _do_not_use_slugs(query_text: str, prior_user_turns=None) -> list:
+    """The named products with an opted-in caution whose do-not-use lines the visitor's
+    stated situation matches, in slug order. Any named product counts, not only one whose
+    caution the question touches: "I'm pregnant" then "How much Thyroid Support should I
+    take?" asks no caution subject yet must get no dose (review round 2)."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    if not query_text or not products:
+        return []
+    given = set()
+    _named_product_facts(_carried_query(query_text, prior_user_turns), given_out=given)
+    earlier = [t for t in (prior_user_turns or []) if isinstance(t, str)][-_FOLLOW_UP_LOOKBACK:]
+    named = [set(_named_product_spans(t, products)) for t in earlier]
+    out = []
+    for slug in sorted(given):
+        pr = products.get(slug) or {}
+        if not pr.get("chat_caution"):
+            continue
+        said = _without_product_names(" ".join([query_text] + earlier), given, products)
+        minor = _without_product_names(" ".join(
+            [query_text] + [t for t, n in zip(earlier, named) if not n or slug in n]),
+            given, products)
+        if _stated_do_not_use(pr.get("warning") or "", said, minor_text=minor):
+            out.append(slug)
+    return out
+
+
+def _do_not_use_caution_reply(query_text: str, prior_user_turns=None) -> str:
+    """The whole reply, for anyone, when the visitor states a situation a named product's
+    opted-in caution says not to use it in: each such caution verbatim, with no
+    directions or dose. "" otherwise."""
+    try:
+        slugs = _do_not_use_slugs(query_text, prior_user_turns)
+        paras = _verbatim_caution_paras(query_text, prior_user_turns, slugs=slugs)
+        return "\n\n".join(p for _, p in paras)
+    except Exception as e:
+        print(f"[chat] do-not-use caution reply skipped: {e!r}", flush=True)
+        return ""
 
 
 def _caution_link_cta(query_text: str, prior_user_turns=None):
@@ -3720,7 +3966,20 @@ _CAUTION_ANSWER_RULES = (
     "not agreed to the Terms, that one next step is the invitation to agree to them. ")
 
 
-def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False):
+# The same rules for a visitor who agreed to the Terms: the caution is quoted, not pointed
+# to (Glen, platform tab, 2026-11-01).
+_CAUTION_ANSWER_POINT = (
+    "1. Open by saying, for each product whose caution names what the user asks about, "
+    "that its product page carries a caution on this and that they should read it in full "
+    "before taking it. Do not quote or summarise the caution: the text below says how the "
+    "reader reaches it.\n")
+_CAUTION_ANSWER_QUOTE = (
+    "1. Open, for each product whose caution names what the user asks about, with that "
+    "caution quoted word for word and in full from the text below.\n")
+
+
+def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False,
+                         member=False):
     """The caution answer instruction, when the question names a subject an opted-in
     caution in this answer names, else None. The brief form keeps a 200-word cap and the
     CTA line; the long form lists sources as the long instruction does. Fails open to
@@ -3732,24 +3991,27 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
         print(f"[chat] caution answer instruction skipped: {e!r}", flush=True)
         return None
     # Read here: the note is imported further down the module.
-    rules = (_CAUTION_ANSWER_RULES + "Keep every other rule: product links only from the "
+    head = (_CAUTION_ANSWER_RULES.replace(_CAUTION_ANSWER_POINT, _CAUTION_ANSWER_QUOTE)
+            if member else _CAUTION_ANSWER_RULES)
+    rules = (head + "Keep every other rule: product links only from the "
              "injection table, and product claims only from sources ("
              + _SOURCED_PRODUCT_NOTE + ").\n\n")
     if long_form:
         return rules + "List sources at the end.\n\n"
     return (rules
-            + "Keep the answer to 200 words or fewer, not counting the Sources line and "
-              "the CTA directive line. For the next step, take the CURIOUS rung (`page`, "
+            + "Keep the answer to 200 words or fewer, not counting the Sources line, "
+              + ("the quoted caution, " if member else "")
+              + "and the CTA directive line. For the next step, take the CURIOUS rung (`page`, "
               "with the product's page URL from the injection table), or the ENGAGED rung "
               "(`email`) if there is no URL.\n\n"
             + _CTA_DIRECTIVE_SPEC + "\n\n")
 
 
-def _chat_synth_instr(query_text, prior_user_turns, mode, logged_in):
+def _chat_synth_instr(query_text, prior_user_turns, mode, logged_in, member=False):
     """chat()'s synthesis instruction: the caution answer when it applies, else the
     long form in full mode and the brief otherwise."""
     full = mode == "full"
-    return (_caution_synth_instr(query_text, prior_user_turns, long_form=full)
+    return (_caution_synth_instr(query_text, prior_user_turns, long_form=full, member=member)
             or (_long_form_synth_instr(logged_in) if full else _brief_synth_instruction()))
 
 
@@ -7701,7 +7963,11 @@ def chat():
             if turn.get("role") in ("user", "assistant") and turn.get("content"):
                 messages.append({"role": turn["role"], "content": turn["content"]})
 
-        synth_instr = _chat_synth_instr(query, _prior_user, mode, bool(auth_user))
+        # Members who agreed to the Terms get a touched caution quoted, not linked (Glen,
+        # platform tab, 2026-11-01).
+        _tos_member = is_member(session_id, email)
+        synth_instr = _chat_synth_instr(query, _prior_user, mode, bool(auth_user),
+                                        member=_tos_member)
 
         attachment_context = ""
         if extracted_text:
@@ -7727,7 +7993,7 @@ def chat():
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             f"{product_block}"
             f"{synth_instr}"
-            f"{named_product_facts_block(query, prior_user_turns=_prior_user)}"
+            f"{named_product_facts_block(query, prior_user_turns=_prior_user, member=_tos_member)}"
             f"{_approved_wording_reminder(context_str)}"
         })
 
@@ -7741,7 +8007,15 @@ def chat():
         _ally_ov = ash_ally.ally_overlay(LOG_DB, email or _member_email)
         if _ally_ov:
             _system = _ally_ov + "\n\n" + _system
-        if not is_member(session_id, email) and _is_gated_question(query):
+        # Before the Terms, a question that touches an opted-in caution gets the caution
+        # verbatim and the Terms invitation, written by code (Glen, 2026-10-31). After
+        # them, code writes it only when the visitor states a do-not-use situation, with
+        # no dose (knowledge tab, 2026-11-01).
+        _pre_terms_caution = (_do_not_use_caution_reply(query, _prior_user) if _tos_member
+                              else _pre_terms_caution_reply(query, _prior_user))
+        if _pre_terms_caution and not _tos_member:
+            yield sse({"gate": True})
+        elif not _tos_member and _is_gated_question(query):
             _system = _system + _EDUCATE_ONLY_POLICY
             # A non-member who names a product gets its label text, framed as label
             # information (Glen, 2026-10-09). Dropping it made the model answer from
@@ -7763,6 +8037,10 @@ def chat():
                                             strip_leading_label_text)
 
             def _toks():
+                if _pre_terms_caution:
+                    full_answer.append(_pre_terms_caution)
+                    yield _pre_terms_caution
+                    return
                 with _cl.messages.stream(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=max_tok,
@@ -7848,7 +8126,8 @@ def chat():
         # Generate next Socratic question
         next_question = ""
         try:
-            nq_msg = _cl.messages.create(
+            # A model-written follow-up would be commentary before the Terms.
+            nq_msg = None if _pre_terms_caution else _cl.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=80,
                 system="Generate a single Socratic follow-up question for a healing wisdom chatbot. Output only the question, nothing else.",
@@ -7857,7 +8136,8 @@ def chat():
                     "What one deeper question would guide the person further into this exploration? "
                     "Make it personally evocative and specific to what was just discussed."}]
             )
-            next_question = nq_msg.content[0].text.strip().strip('"')
+            if nq_msg is not None:
+                next_question = nq_msg.content[0].text.strip().strip('"')
         except Exception:
             pass
 
