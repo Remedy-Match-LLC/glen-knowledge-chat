@@ -3715,15 +3715,21 @@ _INJURY_PAST = (" years ago", " months ago", " long ago", " last year", " old sc
 _MINOR_SENTENCE_WORDS = ("18 or under", "under 18", "children", " child ")
 _DO_NOT_USE_SITUATIONS = (
     # (words in the do-not-use sentence, words in the visitor's message, words to ignore)
-    (("pregnan",), (" pregnan", "expecting a baby", "trying to conceive"), ()),
+    (("pregnan",), (" pregnan", "expecting a baby", "trying to conceive", " we re expecting",
+                    " we are expecting", " i m expecting", " i am expecting"), ()),
     (("breastfeed", "breast feed", "nursing"),
-     ("breastfeed", "breast feed", " nursing", "lactat"),
-     (" nursing home", " nursing school", " nursing student")),
+     ("breastfeed", "breast feed", " nursing", "lactat", " i nurse ", " nurse my baby",
+      " nurse my son", " nurse my daughter"),
+     (" nursing home", " nursing school", " nursing student", " in nursing",
+      " nursing career", " nursing job", " nursing degree")),
     (("hyperthyroid", "graves", "overactive thyroid"),
      ("hyperthyroid", " graves ", "overactive thyroid", "thyroid is overactive"), ()),
     (_MINOR_SENTENCE_WORDS,
-     (" child ", " children ", " kid ", " kids ", "under 18", " my son ", " my daughter",
-      "toddler", " infant", " teenager", " my teen ", " a teen ", " teen son",
+     # "My son bought me Blood Cleanse" is about the visitor (Blood Cleanse round 3), so a
+     # son or daughter counts only as the one who would take it.
+     (" child ", " children ", " kid ", " kids ", "under 18", " for my son", " for my daughter",
+      " my son take", " my daughter take", " give my son", " give my daughter",
+      " my son use", " my daughter use", "toddler", " infant", " teenager", " my teen ", " a teen ", " teen son",
       " teen daughter", " in my teens", " a minor "),
      (" a minor sleep", " a minor issue", " a minor problem", " since my teens")),
     (("liver disease",), _CAUTION_SUBJECT_WORDS["liver disease"], ()),
@@ -3750,7 +3756,8 @@ _DO_NOT_USE_SITUATIONS = (
                                                 "aspirin", "ticagrelor", "brilinta",
                                                 "prasugrel", "effient"), ()),
 )
-_STATED_AGE = re.compile(r" (\d{1,2}) (?:year|yr)s? old ")
+_STATED_AGE = re.compile(r" (\d{1,2}) (?:year|yr)s? old | (?:son|daughter|child|kid|i) "
+                         r"(?:is|am|m|s) (\d{1,2}) ")
 _ARTICLE = re.compile(r"^(?:a|an|the|another|any|had|have)\s+")
 
 
@@ -3771,7 +3778,7 @@ def _under_age_stated(sentence: str, visitor: str) -> bool:
     """True when the visitor states an age the sentence excludes: under 18, or 18 as well
     when the sentence says "18 or under" (review round 2)."""
     top = 18 if " 18 or under " in sentence else 17
-    return any(1 <= int(n) <= top for n in _STATED_AGE.findall(visitor))
+    return any(1 <= int(a or b) <= top for a, b in _STATED_AGE.findall(visitor))
 
 
 def _stated_do_not_use(warning: str, visitor_text: str, minor_text=None) -> bool:
