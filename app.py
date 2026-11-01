@@ -3596,6 +3596,35 @@ def _caution_link_ctas(query_text: str, prior_user_turns=None) -> list:
     return out
 
 
+# Glen, 2026-10-31 (relayed): a visitor who names a product and asks a safety question
+# gets that product's full caution word for word, Terms or no Terms. Before the Terms it
+# adds no commentary or personal application. Log 2616 ("Is Blood Cleanse safe while
+# breastfeeding?", anonymous) only said a caution applied; log 2615 quoted one and added
+# an invented mechanism. So before the Terms the reply is written here, not by the model.
+_PRE_TERMS_CAUTION_LEAD = "The caution on the product page for {name} is:"
+_PRE_TERMS_CAUTION_INVITE = ("For guidance specific to you, add your first and last name "
+                             "and agree to the Terms.")
+
+
+def _pre_terms_caution_reply(query_text: str, prior_user_turns=None) -> str:
+    """The whole reply for a visitor who has not agreed to the Terms when the question
+    touches an opted-in caution (_caution_link_slugs): each caution verbatim from its
+    record, then the Terms invitation. "" otherwise, so the answer goes on as before."""
+    try:
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        paras = []
+        for slug in _caution_link_slugs(query_text, prior_user_turns):
+            pr = products.get(slug) or {}
+            warn = (pr.get("warning") or "").strip()
+            if pr.get("chat_caution") and warn:
+                name = html.unescape(pr.get("name") or slug).strip()
+                paras.append(_PRE_TERMS_CAUTION_LEAD.format(name=name) + "\n\n" + warn)
+        return "\n\n".join(paras + [_PRE_TERMS_CAUTION_INVITE]) if paras else ""
+    except Exception as e:
+        print(f"[chat] pre-Terms caution reply skipped: {e!r}", flush=True)
+        return ""
+
+
 def _caution_link_cta(query_text: str, prior_user_turns=None):
     """The first caution button, or None."""
     ctas = _caution_link_ctas(query_text, prior_user_turns)
@@ -7741,7 +7770,13 @@ def chat():
         _ally_ov = ash_ally.ally_overlay(LOG_DB, email or _member_email)
         if _ally_ov:
             _system = _ally_ov + "\n\n" + _system
-        if not is_member(session_id, email) and _is_gated_question(query):
+        _tos_member = is_member(session_id, email)
+        # Before the Terms, a question that touches an opted-in caution gets the caution
+        # verbatim and the Terms invitation, written by code (Glen, 2026-10-31).
+        _pre_terms_caution = "" if _tos_member else _pre_terms_caution_reply(query, _prior_user)
+        if _pre_terms_caution:
+            yield sse({"gate": True})
+        elif not _tos_member and _is_gated_question(query):
             _system = _system + _EDUCATE_ONLY_POLICY
             # A non-member who names a product gets its label text, framed as label
             # information (Glen, 2026-10-09). Dropping it made the model answer from
@@ -7763,6 +7798,10 @@ def chat():
                                             strip_leading_label_text)
 
             def _toks():
+                if _pre_terms_caution:
+                    full_answer.append(_pre_terms_caution)
+                    yield _pre_terms_caution
+                    return
                 with _cl.messages.stream(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=max_tok,
@@ -7848,7 +7887,8 @@ def chat():
         # Generate next Socratic question
         next_question = ""
         try:
-            nq_msg = _cl.messages.create(
+            # A model-written follow-up would be commentary before the Terms.
+            nq_msg = None if _pre_terms_caution else _cl.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=80,
                 system="Generate a single Socratic follow-up question for a healing wisdom chatbot. Output only the question, nothing else.",
@@ -7857,7 +7897,8 @@ def chat():
                     "What one deeper question would guide the person further into this exploration? "
                     "Make it personally evocative and specific to what was just discussed."}]
             )
-            next_question = nq_msg.content[0].text.strip().strip('"')
+            if nq_msg is not None:
+                next_question = nq_msg.content[0].text.strip().strip('"')
         except Exception:
             pass
 
