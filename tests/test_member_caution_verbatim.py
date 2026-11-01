@@ -377,6 +377,11 @@ def test_two_quoted_cautions_get_the_several_rule():
     ("My daughter is 35. How much Blood Cleanse should she take?", False),
     ("My son is 9. How much Blood Cleanse?", True),
     ("I'm 16. How much Blood Cleanse should I take?", True),
+    ("Can my son safely take Blood Cleanse?", True),
+    ("My daughter wants to take Blood Cleanse.", True),
+    ("Should I give Blood Cleanse to my son?", True),
+    ("I work in nursing and I nurse my baby. How much Blood Cleanse can I take?", True),
+    ("My son gave me Blood Cleanse. How much should I take?", False),
 ])
 def test_blood_cleanse_v2_situations(said, hit):
-    assert bool(app._do_not_use_slugs(said, [])) is hit
+    assert ("blood-cleanse" in app._do_not_use_slugs(said, [])) is hit
