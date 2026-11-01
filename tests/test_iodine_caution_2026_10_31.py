@@ -6,7 +6,9 @@ Thermogenesis gets the line after its vinpocetine line. Estro-Clear and Vitamin 
 already named thyroid, so marketing merged the line into their cautions and Glen said yes in
 the marketing tab on 2026-10-31 (marketing/04 Copy/iodine-caution-merge-2026-10-31/).
 GastroZyme was held until Glen read a shelf bottle. Its line now ships with its label rows.
-Thyroid Support is held while sales asks Glen about its panel's 182 mcg. The Estrogen and
+Thyroid Support was held while sales asked Glen about its panel. Its caution v7 (store
+page 117, Glen 2026-10-31) carries the 150 mcg sentence with a thyroid tail of its own;
+tests/test_thyroid_support_v7_2026_10_31.py pins the whole text. The Estrogen and
 Fibrin Balance Program's intro repeats Estro-Clear's caution, so it carries the same lines
 (Glen "yes", marketing tab, 2026-10-31); tests/test_estrogen_fibrin_balance_program.py pins it.
 """
@@ -37,7 +39,11 @@ WARNING = {
         "requirement. At 2 capsules daily this is about 300 mcg." + TAIL),
 }
 # GastroZyme's line came with its label rows (tests/test_gastrozyme_label_rows_2026_10_31.py).
-HELD = ("thyroid-support",)
+# Thyroid Support's v7 caution keeps the 150 mcg sentence. Its tail says "any other thyroid
+# condition", because v7 already rules out an overactive thyroid.
+THYROID_LINE = ("Each capsule contains about 150 mcg of iodine, the adult daily requirement. "
+                "If you have any other thyroid condition or take other iodine products, consult "
+                "your health professional before use.")
 
 
 def _load(name):
@@ -52,12 +58,11 @@ def test_the_caution_carries_the_iodine_line(slug):
     assert _load("products-manual-corrections.json")[slug]["warning"] == WARNING[slug]
 
 
-def test_the_held_products_are_unchanged():
-    # Review round 2: the held product had no caution, and it has no corrections
-    # entry, so a hold that slips shows here as any warning at all.
+def test_thyroid_support_carries_the_v7_iodine_line():
     p, c = _load("products.json"), _load("products-manual-corrections.json")
-    for slug in HELD:
-        assert "warning" not in p[slug] and slug not in c, slug
+    for d in (p, c):
+        assert THYROID_LINE in d["thyroid-support"]["warning"]
+        assert d["thyroid-support"]["chat_caution"] is True
 
 
 def test_a_rebuild_keeps_the_lines(tmp_path, monkeypatch):
@@ -71,6 +76,7 @@ def test_a_rebuild_keeps_the_lines(tmp_path, monkeypatch):
     rebuilt = json.load(open(tmp_path / "products.json"))["products"]
     for slug, w in WARNING.items():
         assert rebuilt[slug]["warning"] == w, slug
+    assert THYROID_LINE in rebuilt["thyroid-support"]["warning"]
 
 
 @pytest.fixture

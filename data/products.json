@@ -8819,42 +8819,52 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "MSC",
-     "dose": "244 mcg"
+     "name": "Gingerols 20% (Zingiber officinale)",
+     "dose": "100 mg"
     },
     {
-     "name": "Ashwagandha root extract Ayurvedic Ginseng Withania somnifera Withanolides",
-     "dose": "50 mg"
+     "name": "Zinc (Zinc Bisglycinate)",
+     "dose": "15 mg"
     },
     {
-     "name": "Vitamin D3: Cholecalciferol",
-     "dose": "1.92 mg"
+     "name": "Selenium (Methylselenocysteine)",
+     "dose": "100 mcg"
     },
     {
-     "name": "Inositol",
-     "dose": "200 mg"
+     "name": "Iodine (Potassium Iodide)",
+     "dose": "150 mcg"
     },
     {
-     "name": "Zinc Glycinate",
-     "dose": "75 mg"
-    },
-    {
-     "name": "Potassium Iodide KI",
-     "dose": "194 mg"
-    },
-    {
-     "name": "Black Cumin Seed, black caraway, black seed, black cumin, fennel flower, nigella, nutmeg flower, Roman coriander,[3][6] black onion seed[8] and kalonji.[5]",
+     "name": "Thymoquinone 20% (Nigella sativa)",
      "dose": "25 mg"
     },
     {
-     "name": "Gingerol; Sabinsa GingerMax® or BioPerine Ginger 20-25% gingerols; Indena GingerSelect® 20% gingerols",
-     "dose": "100 mg"
+     "name": "Withanolides 20% (Withania somnifera)",
+     "dose": "50 mg"
+    },
+    {
+     "name": "Vitamin B8: Myo-Inositol",
+     "dose": "200 mg"
+    },
+    {
+     "name": "Vitamin D3: Cholecalciferol",
+     "dose": "24 mcg (960 IU)"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Thyroid Support . Price: $70.",
+   "ingredients_source": "store page remedymatch.com 117, panel v7 (Glen, 2026-10-31)",
+   "description": "Serving size: 1 capsule. Servings per bottle: 30. Contents: 30 vegicaps.\n\nOther ingredients: Organic Pullulan vegicaps, Healing Energy, Love & Prayer.",
    "bottle_type": "30 Caps",
-   "fmp_id": "367"
+   "fmp_id": "367",
+   "warning": "Do not use if you are pregnant or breastfeeding. Not for anyone 18 or under. Do not use if you have hormone-sensitive prostate cancer. Do not use if you have an overactive thyroid (hyperthyroidism or Graves' disease). Keep out of reach of children. Rare cases of liver injury have been linked to ashwagandha. Do not use if you have had liver injury from ashwagandha. If you have liver disease, consult your physician before use. Stop use and see your physician if you notice dark urine or yellowing skin or eyes. Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have any other thyroid condition or take other iodine products, consult your health professional before use. Ashwagandha may raise thyroid hormone levels and change thyroid test results. If you take a thyroid hormone medicine, consult your physician before use. Ginger may increase the risk of bleeding. If you take a blood thinner or antiplatelet medicine, such as warfarin, aspirin or clopidogrel, or have a bleeding disorder, consult your physician before use. If you are planning surgery, tell your surgical team you take this product and ask when to stop. Ashwagandha may add to the effect of sedatives or seizure medicines and may interact with medicines for diabetes, blood pressure or the immune system. Ginger may lower blood sugar too far when taken with diabetes medicines. If you take any prescription medicine, or have an autoimmune condition, consult your physician before use. Zinc can reduce how well quinolone and tetracycline antibiotics and penicillamine are absorbed. If you take one of these, ask your pharmacist how far apart to take them. If you take other zinc or selenium supplements, keep your total from food and supplements at or below 40 mg of zinc and 400 mcg of selenium a day. Ashwagandha may cause drowsiness, stomach upset, diarrhea or vomiting. Do not drive or operate machinery if it makes you drowsy. If these effects are severe, stop use and see your physician. Ashwagandha may be safe for up to three months. Ask your physician before using it longer.",
+   "chat_caution": true,
+   "directions": "1 capsule a day with food, or as guided.",
+   "copy_pinned": [
+    "ingredients",
+    "directions",
+    "description"
+   ],
+   "content_since": "2026-11-01T07:29:48+00:00",
+   "enrichment_note": "Store page 117 panel and caution v7, approved by Glen 2026-10-31 (marketing/04 Copy/thyroid-support-panel-2026-10-31/). Iodine 150 mcg from potassium iodide; the old row read Potassium Iodide KI 194 mg, a wrong unit."
   },
   "et1-immune-1": {
    "name": "ET1 Imu-1 Immune Energetic Terrain Infoceutical",

@@ -31,7 +31,7 @@ WITH_LINE = sorted([
     "lcarnosine",
     "melissa-20-1-extract-powder", "moisture-eyes-night-oil", "moisturize",
     "n-acetyl-l-carnosine", "neuro-magnesium", "pterostilbene-pure-powder",
-    "vitamin-d-syntropy", "wash--rinse", "zinc-taste-test", "zinc-taste-test-drops"])
+    "thyroid-support", "vitamin-d-syntropy", "wash--rinse", "zinc-taste-test", "zinc-taste-test-drops"])
 
 
 def _products():
