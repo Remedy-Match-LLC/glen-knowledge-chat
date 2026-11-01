@@ -110,3 +110,16 @@ def test_a_pinned_product_with_a_caution_but_no_chat_opt_in_is_unchanged(post):
 def test_the_reply_builder_gives_nothing_without_a_caution_question():
     assert app._pre_terms_caution_reply("What is Blood Cleanse?") == ""
     assert _warning() in app._pre_terms_caution_reply(SAFETY)
+
+
+def test_anonymous_pregnancy_question_gets_the_caution_and_no_dose(post):
+    # Live chat 2622 (anonymous): "Can I take Macular Wellness Safranal while pregnant?"
+    # said a caution applies, then gave "1 to 3 capsules daily ..." to a pregnant visitor.
+    pr = app._PRODUCTS["products"]["macular-wellness-safranal"]
+    directions = pr["directions"].strip()
+    assert pr.get("chat_caution") and directions
+    answer, done, streamed, _ = post("Can I take Macular Wellness Safranal while pregnant?")
+    assert _warning("macular-wellness-safranal") in answer
+    assert directions not in answer
+    assert not any(w in answer.lower() for w in ("capsule", "daily"))
+    assert not streamed
