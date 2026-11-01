@@ -4483,5 +4483,16 @@
     ],
     "content_since": "2026-10-31T20:36:29+00:00",
     "note": "December 2024 label (Glen read the bottle 31 Oct 2026). FileMaker 322 aligned 31 Oct. Protease 150 mg per Glen 31 Oct; label misprints 444 mg."
+  },
+  "macular-wellness-safranal": {
+    "ingredients_source": "db-formulations-2026-06-25",
+    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+    "chat_caution": true,
+    "directions": "1 to 3 capsules daily with meals away from other carotenoids, or as guided.",
+    "copy_pinned": [
+      "directions"
+    ],
+    "content_since": "2026-10-31T21:54:01+00:00",
+    "note": "Vinpocetine line and October 2025 label directions (formulation spec 2026-10-31-macular-wellness-safranal-contents, App). Rows unconfirmed until the panel spec; ingredients_source kept so the replay does not mark them manual."
   }
 }

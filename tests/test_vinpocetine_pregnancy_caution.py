@@ -38,7 +38,11 @@ FOLLOWED = {"thermogenesis": (
     "Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have a "
     "thyroid condition or take other iodine products, consult your health professional before "
     "use.")}
-ALL = OWN_ROW + BLEND_ROW + ["vinpocetine"] + DESCRIPTION_ONLY + ["sleep-syntropy", "vitality"]
+# Its label's Bioavailability Factors list vinpocetine, while the app rows wait on the panel
+# spec (formulation, 2026-10-31-macular-wellness-safranal-contents).
+LABEL_ONLY = ["macular-wellness-safranal"]
+ALL = (OWN_ROW + BLEND_ROW + ["vinpocetine"] + DESCRIPTION_ONLY + ["sleep-syntropy", "vitality"]
+       + LABEL_ONLY)
 EVERYDAY = {"longevity": "Longevity", "heart-health": "Heart Health",
             "muscle-mass": "Muscle Mass", "sustain": "Sustain", "one-step": "One Step",
             "rescue": "Rescue", "night-vision": "Night Vision", "perfect-skin": "Perfect Skin",
@@ -62,7 +66,7 @@ def _products():
 
 
 def test_the_list_is_the_spec_list():
-    assert len(ALL) == len(set(ALL)) == 41
+    assert len(ALL) == len(set(ALL)) == 42
 
 
 @pytest.mark.parametrize("slug", ALL)
