@@ -27,6 +27,10 @@ from datetime import datetime, timedelta, timezone
 # 273 was still 'confirmed' when its label was bought (2 Nov 2026). 'cancelled' and
 # 'delivered' are settled records.
 _OPEN = ("paid", "confirmed", "new", "packed", "shipped")
+# The statuses this rule added on 2 Nov 2026. One of these with a tracking number has
+# had its parcel, so it steers no later label. new/packed/shipped keep their old
+# behaviour, which the address tests pin.
+_ADDED = ("paid", "confirmed", "done")
 
 # A 'done' order counts too when it may simply have been closed before its label.
 # Orders 277 and 278 were marked done first and never got a tracking email. Glen,
@@ -68,14 +72,15 @@ def could_await_label(order, now=None):
     would let a later label at that address follow it, and send a client's next
     parcel to the earlier order's practitioner (review round 2, 2026-11-02)."""
     status = order.get("status")
+    if status in _ADDED and str(order.get("tracking_number") or "").strip():
+        return False
     if status in _OPEN:
         return True
-    if status != "done" or str(order.get("tracking_number") or "").strip():
+    if status != "done":
         return False
     now = now or datetime.now(timezone.utc)
     paid = _paid_at(order.get("paid_at"))
-    if paid is None or not (now - timedelta(days=DONE_GRACE_DAYS) <= paid <= now
-                            + timedelta(days=1)):
+    if paid is None or not (now - timedelta(days=DONE_GRACE_DAYS) <= paid <= now):
         return False                      # never paid, paid too long ago, or garbled
     try:
         items = json.loads(order.get("items_json") or "[]")
