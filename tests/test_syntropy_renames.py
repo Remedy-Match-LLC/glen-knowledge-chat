@@ -502,9 +502,10 @@ def test_scan_suggestions_never_recommend_molybdenum():
 def test_glossary_names_molybdenum_only_as_the_mineral():
     doc = json.loads((ROOT / "data" / "clinical_theory_catalog.json").read_text())
     (e,) = [e for d in doc["dimensions"] for e in d["entries"] if e.get("slug") == "molybdenum"]
+    # Thyroid Support left the entry: v7 has no molybdenum (Glen, 2026-11-02).
     assert e["description"] == ("Molybdenum is important for endocrine regulation.You can find "
-                                "Molybdenum in Sulfur Syntropy and Thyroid Support")
-    assert [r["name"] for r in e["remedies"]] == ["Sulfur Syntropy", "Thyroid Support"]
+                                "Molybdenum in Sulfur Syntropy.")
+    assert [r["name"] for r in e["remedies"]] == ["Sulfur Syntropy"]
 
 
 def test_atlas_drops_molybdenum_and_no_edge_points_at_it():
