@@ -1171,7 +1171,7 @@ def _send_portal_welcome(email, name, token):
         print(f"[portal-welcome] {em}: {e!r}", flush=True)
 
 
-def _send_library_ready(email, name, token, ebook_title, slug):
+def _send_library_ready(email, name, token, ebook_title, slug, wait=False):
     """Best-effort: send the 'your ebook is ready' portal-library email after a
     public /api/ebook/optin grant. Suppression-aware, once-guarded PER (email,
     ebook_slug) — deliberately a SEPARATE guard table from
@@ -1179,7 +1179,8 @@ def _send_library_ready(email, name, token, ebook_title, slug):
     silently skipped just because the same address already received an
     order-time portal welcome (and vice versa: buying later still gets the
     order-time welcome). Network send runs in a daemon thread so the caller
-    (the public opt-in route) is never blocked; never raises."""
+    (the public opt-in route) is never blocked; never raises. wait=True sends in this
+    thread and returns how it went (the console resend), else None."""
     em = (email or "").strip().lower()
     if not em or not token or not slug:
         return
@@ -1207,10 +1208,11 @@ def _send_library_ready(email, name, token, ebook_title, slug):
         body = (f"Aloha {name or ''},\n\nYour {title} is waiting for you in your library:\n\n"
                 f"{url}\n\nYou can read it or listen to it right inside, whenever it suits you. "
                 f"Reply anytime with questions.\n\nWith aloha,\nDr. Glen & Rae")
+        args = (em, name, f"Your {title} is ready \U0001f33a", body, slug)
+        if wait:
+            return _send_library_ready_mail(*args)
         import threading
-        threading.Thread(target=_send_library_ready_mail,
-                         args=(em, name, f"Your {title} is ready \U0001f33a", body, slug),
-                         daemon=True).start()
+        threading.Thread(target=_send_library_ready_mail, args=args, daemon=True).start()
     except Exception as e:
         print(f"[library-ready] {em}/{slug}: {e!r}", flush=True)
 
@@ -1252,13 +1254,14 @@ def _send_library_ready_mail(em, name, subject, body, slug):
         except Exception as e:
             print(f"[library-ready] send raised: {type(e).__name__}", flush=True)
     if via in ("ses", "unknown", "ghl", "suppressed", "undeliverable"):
-        return
+        return via
     try:
         with _db_lock, db.connect(LOG_DB) as cx:
             cx.execute("DELETE FROM ebook_library_welcome_sent WHERE email=? AND ebook_slug=?",
                        (em, slug))
     except Exception as e:
         print(f"[library-ready] guard release failed: {type(e).__name__}", flush=True)
+    return via
 
 
 def _link_resend_generic(purpose, url_template, ttl):
@@ -39721,6 +39724,60 @@ def api_console_portal_link_resend():
         f"anytime at {login} with this email.\n\n— Dr. Glen Swartwout")
     return jsonify({"ok": bool(sent_via), "sent_via": sent_via, "error": err,
                     "link": link, "reissued": reissued})
+
+
+@app.route("/api/console/library-ready/resend", methods=["POST"])
+def api_console_library_ready_resend():
+    """Send the free-ebook library email again to someone whose first one never arrived.
+    Eight went out from Glen's Gmail on 29 Oct and bounced on its daily cap, after the
+    once-guard was written (Glen "yes" to resending through SES, 2026-11-02, platform tab).
+    Console only. It never creates a portal or a grant and never issues a new link. It
+    sends by the opt-in's own path: SES first, never Glen's Gmail.
+
+    sent_before (ISO time) is required. Only a send recorded before it is released, in one
+    statement, so a retry or a second call finds the new record and sends nothing (review
+    round 2)."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    slug = (body.get("ebook_slug") or "").strip()
+    sent_before = (body.get("sent_before") or "").strip()
+    from dashboard import ebook_catalog as _cat, notify_state as _ns
+    from dashboard import client_portal as _cp, email_suppression as _es
+    from dashboard import portal_library as _lib
+    meta = _cat.get(slug) if slug else None
+    if not email or not meta or not sent_before:
+        return jsonify({"ok": False,
+                        "error": "email, a known ebook_slug and sent_before required"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _lib.init_table(cx)
+        if not _lib.has(cx, email, slug):
+            return jsonify({"ok": False, "error": "that email has no grant for that ebook"}), 404
+        # The link they were first sent. A new one would stop any copy they hold from working.
+        token = (_ns.get_state(cx, email) or {}).get("portal_token")
+        # A stored link that no longer opens the portal would mail a dead link (round 1).
+        if not token or not cx.execute("SELECT 1 FROM client_portals WHERE email=? AND "
+                                       "token_hash=?", (email, _cp._hash(token))).fetchone():
+            return jsonify({"ok": False, "error": "no working stored link, so nothing was "
+                            "sent"}), 409
+        # Suppressed: keep the record, so a lifted suppression does not send it (round 1).
+        _es.init_table(cx)
+        if _es.is_suppressed(cx, email):
+            return jsonify({"ok": False, "sent_via": "suppressed"})
+        row = cx.execute("SELECT name FROM client_portals WHERE email=?", (email,)).fetchone()
+        cx.execute("CREATE TABLE IF NOT EXISTS ebook_library_welcome_sent (email TEXT, "
+                   "ebook_slug TEXT, sent_at TEXT, PRIMARY KEY(email, ebook_slug))")
+        cur = cx.execute("DELETE FROM ebook_library_welcome_sent WHERE email=? AND "
+                         "ebook_slug=? AND sent_at < ?", (email, slug, sent_before))
+        if cur.rowcount != 1:
+            return jsonify({"ok": False, "error": "no send recorded before sent_before, "
+                            "so nothing was sent"}), 409
+        cx.commit()
+    via = _send_library_ready(email, (row[0] if row else "") or "", token, meta["title"],
+                              slug, wait=True)
+    # "unknown" may have been delivered, so it is not reported as a failure to retry.
+    return jsonify({"ok": via in ("ses", "ghl"), "sent_via": via})
 
 
 @app.route("/api/console/affiliate/backfill", methods=["POST"])
