@@ -43,6 +43,19 @@ FOLLOWED = {"thermogenesis": (
 LABEL_ONLY = ["macular-wellness-safranal"]
 ALL = (OWN_ROW + BLEND_ROW + ["vinpocetine"] + DESCRIPTION_ONLY + ["sleep-syntropy", "vitality"]
        + LABEL_ONLY)
+# Blood Cleanse's store caution v2 opens with its own vinpocetine sentence and adds
+# breastfeeding (marketing/04 Copy/blood-cleanse-niacin-2026-10-31/change-v2.md).
+REPLACED = {"blood-cleanse": (
+    "This formula contains vinpocetine. Do not use if you are pregnant, could become "
+    "pregnant, or are breastfeeding. It is not for children. Consult your physician before "
+    "use if you take any medicine, including aspirin or other pain relievers. This matters "
+    "most with blood pressure, heart, blood thinning, blood sugar, cholesterol or "
+    "immune-suppressing medicines. Also consult first if you have liver disease, gout, a "
+    "stomach ulcer, low blood pressure, a bleeding disorder, an autoimmune condition or a "
+    "seizure disorder, or are planning surgery. Niacin may cause a temporary flush. Stop use "
+    "and consult your physician if you notice yellowing of the skin or eyes, or dark urine. "
+    "This formula may change blood pressure and blood sugar, affect bleeding, and change how "
+    "some medications are processed.")}
 EVERYDAY = {"longevity": "Longevity", "heart-health": "Heart Health",
             "muscle-mass": "Muscle Mass", "sustain": "Sustain", "one-step": "One Step",
             "rescue": "Rescue", "night-vision": "Night Vision", "perfect-skin": "Perfect Skin",
@@ -79,6 +92,8 @@ def test_each_record_and_its_correction_carry_the_line(slug):
         assert before and p["warning"] == _expected(slug, before)
     elif slug in FOLLOWED:
         assert p["warning"] == _expected(slug) + " " + FOLLOWED[slug]
+    elif slug in REPLACED:
+        assert p["warning"] == REPLACED[slug]
     else:
         assert p["warning"] == _expected(slug)
 

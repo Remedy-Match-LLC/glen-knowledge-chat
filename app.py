@@ -3713,19 +3713,30 @@ _INJURY_PAST = (" years ago", " months ago", " long ago", " last year", " old sc
 # product or none: "Can my daughter take Clarity?" says nothing about OcuFlow Bedtime
 # asked next (review round 3).
 _MINOR_SENTENCE_WORDS = ("18 or under", "under 18", "children", " child ")
+_ADULT_CHILD = re.compile(r" my (?:son|daughter)(?= is (?:1[89]|[2-9]\d) | is an adult | is grown )")
 _DO_NOT_USE_SITUATIONS = (
     # (words in the do-not-use sentence, words in the visitor's message, words to ignore)
-    (("pregnan",), (" pregnan", "expecting a baby", "trying to conceive"), ()),
+    (("pregnan",), (" pregnan", "expecting a baby", "trying to conceive", " we re expecting",
+                    " we are expecting", " i m expecting", " i am expecting"), ()),
     (("breastfeed", "breast feed", "nursing"),
-     ("breastfeed", "breast feed", " nursing", "lactat"),
-     (" nursing home", " nursing school", " nursing student")),
+     ("breastfeed", "breast feed", " nursing", "lactat", " i nurse ", " nurse my baby",
+      " nurse my son", " nurse my daughter"),
+     (" nursing home", " nursing school", " nursing student", " in nursing",
+      " nursing career", " nursing job", " nursing degree")),
     (("hyperthyroid", "graves", "overactive thyroid"),
      ("hyperthyroid", " graves ", "overactive thyroid", "thyroid is overactive"), ()),
     (_MINOR_SENTENCE_WORDS,
+     # "My son bought me Blood Cleanse" is about the visitor (Blood Cleanse round 3): a son
+     # or daughter who bought, gave or told is skipped, and so is one stated to be 18 or
+     # over (_ADULT_CHILD).
      (" child ", " children ", " kid ", " kids ", "under 18", " my son ", " my daughter",
       "toddler", " infant", " teenager", " my teen ", " a teen ", " teen son",
       " teen daughter", " in my teens", " a minor "),
-     (" a minor sleep", " a minor issue", " a minor problem", " since my teens")),
+     (" a minor sleep", " a minor issue", " a minor problem", " since my teens",
+      " my son bought", " my daughter bought", " my son gave", " my daughter gave",
+      " my son told", " my daughter told", " my son sent", " my daughter sent",
+      " my son recommended", " my daughter recommended", " my son suggested",
+      " my daughter suggested", " my son found", " my daughter found")),
     (("liver disease",), _CAUTION_SUBJECT_WORDS["liver disease"], ()),
     (("surgery",), _CAUTION_SUBJECT_WORDS["surgery"], ()),
     (("bleeding",), _CAUTION_SUBJECT_WORDS["bleeding"], ()),
@@ -3750,7 +3761,8 @@ _DO_NOT_USE_SITUATIONS = (
                                                 "aspirin", "ticagrelor", "brilinta",
                                                 "prasugrel", "effient"), ()),
 )
-_STATED_AGE = re.compile(r" (\d{1,2}) (?:year|yr)s? old ")
+_STATED_AGE = re.compile(r" (\d{1,2}) (?:year|yr)s? old | (?:son|daughter|child|kid|i) "
+                         r"(?:is|am|m|s) (\d{1,2}) ")
 _ARTICLE = re.compile(r"^(?:a|an|the|another|any|had|have)\s+")
 
 
@@ -3771,7 +3783,7 @@ def _under_age_stated(sentence: str, visitor: str) -> bool:
     """True when the visitor states an age the sentence excludes: under 18, or 18 as well
     when the sentence says "18 or under" (review round 2)."""
     top = 18 if " 18 or under " in sentence else 17
-    return any(1 <= int(n) <= top for n in _STATED_AGE.findall(visitor))
+    return any(1 <= int(a or b) <= top for a, b in _STATED_AGE.findall(visitor))
 
 
 def _stated_do_not_use(warning: str, visitor_text: str, minor_text=None) -> bool:
@@ -3781,8 +3793,10 @@ def _stated_do_not_use(warning: str, visitor_text: str, minor_text=None) -> bool
     for sent in _do_not_use_sentences(warning):
         for in_sentence, visitor, ignore in _DO_NOT_USE_SITUATIONS:
             qq = q
-            if in_sentence is _MINOR_SENTENCE_WORDS and minor_text is not None:
-                qq = _subject_text(minor_text)
+            if in_sentence is _MINOR_SENTENCE_WORDS:
+                if minor_text is not None:
+                    qq = _subject_text(minor_text)
+                qq = _ADULT_CHILD.sub(" ", qq)
             if in_sentence is _INJURY_SENTENCE_WORDS:
                 # A past injury is skipped only in its own sentence, so "My old scar has
                 # healed. I burned my hand this morning." still matches.

@@ -364,3 +364,24 @@ def test_two_quoted_cautions_get_the_several_rule():
     assert products["stress-release"]["warning"].strip() in block
     assert "There is more than one caution below" in block
     assert '"The caution on the product page for <product name> is:"' in block
+
+
+# Blood Cleanse caution v2, review round 3, 2026-11-01.
+@pytest.mark.parametrize("said,hit", [
+    ("My son bought me Blood Cleanse. How many capsules should I take?", False),
+    ("I work in nursing. How much Blood Cleanse should I take?", False),
+    ("I nurse my baby. How much Blood Cleanse can I take?", True),
+    ("We're expecting. How much Blood Cleanse can I take?", True),
+    ("Can my daughter take Blood Cleanse?", True),
+    ("How much Blood Cleanse should I give my son?", True),
+    ("My daughter is 35. How much Blood Cleanse should she take?", False),
+    ("My son is 9. How much Blood Cleanse?", True),
+    ("I'm 16. How much Blood Cleanse should I take?", True),
+    ("Can my son safely take Blood Cleanse?", True),
+    ("My daughter wants to take Blood Cleanse.", True),
+    ("Should I give Blood Cleanse to my son?", True),
+    ("I work in nursing and I nurse my baby. How much Blood Cleanse can I take?", True),
+    ("My son gave me Blood Cleanse. How much should I take?", False),
+])
+def test_blood_cleanse_v2_situations(said, hit):
+    assert ("blood-cleanse" in app._do_not_use_slugs(said, [])) is hit
