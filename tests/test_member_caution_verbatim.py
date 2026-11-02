@@ -15,10 +15,10 @@ import pytest
 import app
 
 MODEL_TEXT = "Model answer."
-# Thyroid Support caution v7, embedded: thyroid-support has no warning on origin/main yet
-# (marketing/04 Copy/thyroid-support-panel-2026-10-31/caution-v7.txt).
+# Thyroid Support caution v7 (marketing/04 Copy/thyroid-support-panel-2026-10-31/caution-v7.txt),
+# now the real record's: the fixture checks it rather than swapping it in (review round 3).
 THYROID_V7 = "Do not use if you are pregnant or breastfeeding. Not for anyone 18 or under. Do not use if you have hormone-sensitive prostate cancer. Do not use if you have an overactive thyroid (hyperthyroidism or Graves' disease). Keep out of reach of children. Rare cases of liver injury have been linked to ashwagandha. Do not use if you have had liver injury from ashwagandha. If you have liver disease, consult your physician before use. Stop use and see your physician if you notice dark urine or yellowing skin or eyes. Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have any other thyroid condition or take other iodine products, consult your health professional before use. Ashwagandha may raise thyroid hormone levels and change thyroid test results. If you take a thyroid hormone medicine, consult your physician before use. Ginger may increase the risk of bleeding. If you take a blood thinner or antiplatelet medicine, such as warfarin, aspirin or clopidogrel, or have a bleeding disorder, consult your physician before use. If you are planning surgery, tell your surgical team you take this product and ask when to stop. Ashwagandha may add to the effect of sedatives or seizure medicines and may interact with medicines for diabetes, blood pressure or the immune system. Ginger may lower blood sugar too far when taken with diabetes medicines. If you take any prescription medicine, or have an autoimmune condition, consult your physician before use. Zinc can reduce how well quinolone and tetracycline antibiotics and penicillamine are absorbed. If you take one of these, ask your pharmacist how far apart to take them. If you take other zinc or selenium supplements, keep your total from food and supplements at or below 40 mg of zinc and 400 mcg of selenium a day. Ashwagandha may cause drowsiness, stomach upset, diarrhea or vomiting. Do not drive or operate machinery if it makes you drowsy. If these effects are severe, stop use and see your physician. Ashwagandha may be safe for up to three months. Ask your physician before using it longer."
-THYROID_DIRECTIONS = "1 capsule daily with a meal, or as guided."
+THYROID_DIRECTIONS = "1 capsule a day with food, or as guided."
 GRAVES = "Can I take Thyroid Support if I have Graves' disease?"
 
 
@@ -56,9 +56,8 @@ def post(monkeypatch, tmp_path):
         return _FakeStream(MODEL_TEXT)
     monkeypatch.setattr(app._cl.messages, "stream", _stream)
     rec = app._PRODUCTS["products"]["thyroid-support"]
-    for k, v in (("warning", THYROID_V7), ("chat_caution", True),
-                 ("copy_pinned", ["directions"]), ("directions", THYROID_DIRECTIONS)):
-        monkeypatch.setitem(rec, k, v)
+    assert rec["warning"] == THYROID_V7 and rec["chat_caution"] is True
+    assert rec["directions"] == THYROID_DIRECTIONS and "directions" in rec["copy_pinned"]
 
     def _post(q, member=True):
         monkeypatch.setattr(app, "is_member", lambda *a, **k: member)

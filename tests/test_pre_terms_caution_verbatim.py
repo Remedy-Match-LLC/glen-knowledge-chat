@@ -158,3 +158,14 @@ def test_a_member_with_graves_gets_the_thyroid_caution_and_no_dose(post):
     assert not streamed and answer.strip() == (
         "The caution on the product page for Thyroid Support is:\n\n"
         + _warning("thyroid-support"))
+
+
+def test_lowercase_thyroid_support_with_a_cue_gets_the_caution(post):
+    answer, done, streamed, _ = post("is thyroid support safe while pregnant?")
+    assert _warning("thyroid-support") in answer and not streamed
+    assert "1 capsule" not in answer
+
+
+def test_lowercase_thyroid_support_without_a_cue_is_an_ordinary_phrase():
+    assert "### Thyroid Support" not in (
+        app._named_product_facts("what foods give thyroid support?") or "")
