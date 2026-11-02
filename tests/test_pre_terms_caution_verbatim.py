@@ -169,3 +169,9 @@ def test_lowercase_thyroid_support_with_a_cue_gets_the_caution(post):
 def test_lowercase_thyroid_support_without_a_cue_is_an_ordinary_phrase():
     assert "### Thyroid Support" not in (
         app._named_product_facts("what foods give thyroid support?") or "")
+
+
+def test_an_ordinary_thyroid_support_phrase_gets_no_caution_through_the_route(post):
+    # Review round 2: the route, not just the facts block.
+    answer, done, streamed, _ = post("what foods give thyroid support?")
+    assert streamed and answer == MODEL_TEXT
