@@ -109,6 +109,8 @@ def test_what_is_it_gets_the_approved_description(appmod, gated):
     block = appmod._named_product_facts("What is Blood Cleanse?", gated=gated) or ""
     section = block[block.index("### Blood Cleanse"):].split("\n### ")[0]
     assert " ".join(DESCRIPTION.split()) in " ".join(section.split())
+    # The caution travels with the description in the same section (review round 2).
+    assert f"Caution: {WARNING}" in section and f"Directions: {DIRECTIONS}" in section
     for line in (appmod._NO_DESCRIPTION_GATED, appmod._NO_DESCRIPTION):
         assert line.format(name="Blood Cleanse") not in section
     # The scraped text's medicine advice never reaches the bot.
