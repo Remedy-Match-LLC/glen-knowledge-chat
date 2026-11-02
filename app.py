@@ -39744,6 +39744,7 @@ def api_console_library_ready_resend():
     slug = (body.get("ebook_slug") or "").strip()
     sent_before = (body.get("sent_before") or "").strip()
     from dashboard import ebook_catalog as _cat, notify_state as _ns
+    from dashboard import client_portal as _cp, email_suppression as _es
     from dashboard import portal_library as _lib
     meta = _cat.get(slug) if slug else None
     if not email or not meta or not sent_before:
@@ -39755,8 +39756,15 @@ def api_console_library_ready_resend():
             return jsonify({"ok": False, "error": "that email has no grant for that ebook"}), 404
         # The link they were first sent. A new one would stop any copy they hold from working.
         token = (_ns.get_state(cx, email) or {}).get("portal_token")
-        if not token:
-            return jsonify({"ok": False, "error": "no stored link, so nothing was sent"}), 409
+        # A stored link that no longer opens the portal would mail a dead link (round 1).
+        if not token or not cx.execute("SELECT 1 FROM client_portals WHERE email=? AND "
+                                       "token_hash=?", (email, _cp._hash(token))).fetchone():
+            return jsonify({"ok": False, "error": "no working stored link, so nothing was "
+                            "sent"}), 409
+        # Suppressed: keep the record, so a lifted suppression does not send it (round 1).
+        _es.init_table(cx)
+        if _es.is_suppressed(cx, email):
+            return jsonify({"ok": False, "sent_via": "suppressed"})
         row = cx.execute("SELECT name FROM client_portals WHERE email=?", (email,)).fetchone()
         cx.execute("CREATE TABLE IF NOT EXISTS ebook_library_welcome_sent (email TEXT, "
                    "ebook_slug TEXT, sent_at TEXT, PRIMARY KEY(email, ebook_slug))")

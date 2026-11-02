@@ -97,7 +97,20 @@ def test_a_suppressed_lead_gets_nothing(console, transports, ses):
         es.init_table(cx)
         es.add(cx, "lead@x.com", "hard", "bounce", "test")
     r = _resend(console)
-    assert r.get_json()["ok"] is False and len(ses.calls) == 1 and transports == []
+    assert r.get_json() == {"ok": False, "sent_via": "suppressed"}
+    assert len(ses.calls) == 1 and transports == []
+    assert _guard_rows(console) == [("lead@x.com", SLUG)]
+
+
+def test_a_stored_link_that_no_longer_opens_the_portal_is_not_sent(console, transports, ses):
+    _optin(console)
+    from dashboard import db
+    with db.connect(console.LOG_DB) as cx:
+        cx.execute("UPDATE client_portals SET token_hash='stale' WHERE email=?", ("lead@x.com",))
+        cx.commit()
+    r = _resend(console)
+    assert r.status_code == 409 and len(ses.calls) == 1
+    assert _guard_rows(console) == [("lead@x.com", SLUG)]
 
 
 def test_a_retry_after_a_resend_sends_nothing(console, transports, ses):
