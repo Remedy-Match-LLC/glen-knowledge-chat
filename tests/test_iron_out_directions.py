@@ -1,4 +1,4 @@
-"""Iron Out: pinned directions and a caution, up to 4 a day.
+"""Iron Out: pinned directions up to 4 a day, and a caution.
 
 Glen, 2026-10-18: "change the dosage range to up to 4 a day", "yes" to the directions
 line below, and he wrote the caution: "Take up to 4 capsules a day." Spec, production
@@ -15,9 +15,11 @@ import pytest
 import app
 
 DIRECTIONS = "1 to 4 capsules daily with food, or as guided."
-# The vinpocetine pregnancy line follows Glen's caution (2026-10-30).
-CAUTION = ("Take up to 4 capsules a day. This formula contains vinpocetine, so do not use it "
-           "if you are pregnant or could become pregnant.")
+# The vinpocetine pregnancy line followed Glen's caution (2026-10-30). His dose sentence left
+# the caution on 2026-11-01 ("yes", platform tab): the directions carry the dose, and a dose
+# inside a caution is quoted word for word even where no dose may be given.
+CAUTION = ("This formula contains vinpocetine, so do not use it if you are pregnant or could "
+           "become pregnant.")
 FIELDS = {"directions": DIRECTIONS, "copy_pinned": ["directions"], "warning": CAUTION,
           "chat_caution": True}
 QUESTIONS = ["How many Iron Out capsules can I take a day?",

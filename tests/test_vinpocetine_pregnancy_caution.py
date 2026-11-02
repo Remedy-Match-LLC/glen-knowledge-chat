@@ -31,8 +31,9 @@ BLEND_ROW = ["acetaldehyde-detox", "apoptogenesis", "appestat", "blood-cleanse",
              "vital-energy-be", "vitamin-c-syntropy"]
 DESCRIPTION_ONLY = ["nerve-repair", "nerve-pulse"]
 # Their earlier warning stays first, then one space and the line.
-APPENDED = {"iron-out": "Take up to 4 capsules a day.",
-            "sleep-syntropy": None, "vitality": None}
+# Iron Out's "Take up to 4 capsules a day." left its warning, so it carries the line alone:
+# the directions carry the dose (Glen "yes", 2026-11-01, platform tab).
+APPENDED = {"sleep-syntropy": None, "vitality": None}
 # A later caution line follows the vinpocetine line (iodine, Glen "yes" 2026-10-31).
 FOLLOWED = {"thermogenesis": (
     "Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have a "
