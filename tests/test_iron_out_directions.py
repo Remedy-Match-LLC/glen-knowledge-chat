@@ -134,3 +134,16 @@ def test_the_page_gives_the_directions_and_the_caution(appmod):
     secs = {s["id"]: s for s in d["sections"]}
     assert secs["ingredients"]["body"]["directions"] == DIRECTIONS
     assert secs["caution"]["body"] == CAUTION
+
+
+@pytest.mark.parametrize("question, prior", [
+    ("Is Iron Out safe while pregnant?", []),
+    ("Can I take Iron Out?", ["I'm pregnant."]),
+])
+def test_the_code_written_caution_replies_give_no_dose(question, prior):
+    """Glen, 2026-11-01: the dose left the caution, so a reply quoting it gives none."""
+    replies = [app._pre_terms_caution_reply(question, prior),
+               app._do_not_use_caution_reply(question, prior)]
+    assert any(CAUTION in r for r in replies), replies
+    for r in replies:
+        assert "capsules a day" not in r and "1 to 4" not in r, r
