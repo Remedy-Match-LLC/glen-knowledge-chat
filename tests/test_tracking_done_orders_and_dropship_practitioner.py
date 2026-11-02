@@ -125,19 +125,36 @@ def test_the_grace_period_is_measured_from_today():
              "items_json": json.dumps([{"slug": PHYSICAL, "qty": 1}])}
     now = datetime(2026, 11, 2, tzinfo=timezone.utc)
     assert tr.could_await_label(order, now=now)
-    assert tr.could_await_label(order, now=now + timedelta(days=13))     # 15 Nov
+    assert tr.could_await_label(order, now=now + timedelta(days=13))      # 15 Nov
     assert not tr.could_await_label(order, now=now + timedelta(days=14))  # 16 Nov
+
+
+@pytest.mark.parametrize("paid_at", ["2026-2-01", "11/01/2026", "2026-12-25T00:00:00Z",
+                                     "", None])
+def test_a_garbled_or_future_payment_date_is_not_recent(paid_at):
+    order = {"status": "done", "paid_at": paid_at,
+             "items_json": json.dumps([{"slug": PHYSICAL, "qty": 1}])}
+    assert not tr.could_await_label(order, now=datetime(2026, 11, 2, tzinfo=timezone.utc))
+
+
+def test_a_done_order_that_had_its_parcel_does_not_steer_the_next_one(wcx):
+    """Round 2: a tracked done drop-ship must not send a later label to its practitioner."""
+    oid = _with_dropship(wcx, client=None, status="done", **AT_LABEL)
+    _set_paid(wcx, oid, 1)
+    wcx.execute("UPDATE orders SET tracking_number='9400000000000000000009' WHERE id=?",
+                (oid,))
+    wcx.commit()
+    r, sends, drafts = _real(wcx, _match("cyndi@gmail.example", "high"))
+    assert all(to != PRAC for to, _h, _t in sends + drafts)
 
 
 # --- a delivered scan on a linked done order -------------------------------------------
 
 @pytest.fixture
 def app_module():
+    # No skip on failure: a broken import must fail this test, not hide it (round 2).
     import importlib
-    try:
-        return importlib.import_module("app")
-    except Exception as e:  # noqa: BLE001
-        pytest.skip(f"app not importable: {e}")
+    return importlib.import_module("app")
 
 
 def test_a_delivered_scan_moves_a_done_order_and_opens_its_month(app_module, monkeypatch):

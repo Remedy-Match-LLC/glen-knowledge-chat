@@ -47,18 +47,36 @@ def _catalog():
         return {}
 
 
+def _paid_at(value):
+    """paid_at as an aware datetime, or None when absent or unreadable."""
+    if isinstance(value, datetime):
+        paid = value
+    else:
+        try:
+            paid = datetime.fromisoformat(str(value or "").strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return paid if paid.tzinfo else paid.replace(tzinfo=timezone.utc)
+
+
 def could_await_label(order, now=None):
     """Can this order still be waiting for a parcel? Open, or 'done' within the grace
-    period with something to ship. `order` needs status, paid_at and items_json."""
+    period with something to ship and no tracking number yet. `order` needs status,
+    paid_at, items_json and tracking_number.
+
+    A done order that already has its tracking number has had its parcel. Counting it
+    would let a later label at that address follow it, and send a client's next
+    parcel to the earlier order's practitioner (review round 2, 2026-11-02)."""
     status = order.get("status")
     if status in _OPEN:
         return True
-    if status != "done":
+    if status != "done" or str(order.get("tracking_number") or "").strip():
         return False
     now = now or datetime.now(timezone.utc)
-    cutoff = (now - timedelta(days=DONE_GRACE_DAYS)).date().isoformat()
-    if str(order.get("paid_at") or "")[:10] < cutoff:
-        return False                      # never paid, or paid too long ago
+    paid = _paid_at(order.get("paid_at"))
+    if paid is None or not (now - timedelta(days=DONE_GRACE_DAYS) <= paid <= now
+                            + timedelta(days=1)):
+        return False                      # never paid, paid too long ago, or garbled
     try:
         items = json.loads(order.get("items_json") or "[]")
     except (TypeError, ValueError):
@@ -430,7 +448,7 @@ def _resolve_at(cx, name, z, sk, require_name):
     marks = ",".join("?" for _ in statuses)
     board = []
     for o in _rows(cx, f"SELECT email, name, address_json, status, "
-                       f"{_optional_columns(cx, ('paid_at', 'items_json'))}, "
+                       f"{_optional_columns(cx, ('paid_at', 'items_json', 'tracking_number'))}, "
                        f"{_dropship_columns(cx)} FROM orders WHERE status IN ({marks})",
                    statuses):
         if not could_await_label(o):

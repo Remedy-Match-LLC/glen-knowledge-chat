@@ -547,7 +547,7 @@ def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
     marks = ",".join("?" for _ in statuses)
     orders_cur = cx.execute(
         "SELECT id, email, name, address_json, status, "
-        f"{_trc._optional_columns(cx, ('paid_at', 'items_json'))} FROM orders "
+        f"{_trc._optional_columns(cx, ('paid_at', 'items_json', 'tracking_number'))} FROM orders "
         f"WHERE status IN ({marks}) "
         "AND (tracking_number IS NULL OR trim(tracking_number)='') "
         "ORDER BY id DESC", statuses
