@@ -161,8 +161,9 @@ def test_an_added_order_that_had_its_parcel_does_not_steer_the_next_one(wcx, sta
     """Round 2: a tracked drop-ship must not send a later label to its practitioner."""
     oid = _with_dropship(wcx, client=None, status=status, **AT_LABEL)
     _set_paid(wcx, oid, 1)
-    wcx.execute("UPDATE orders SET tracking_number='9400000000000000000009' WHERE id=?",
-                (oid,))
+    # Made yesterday, so only the tracking number keeps it out (round 3).
+    wcx.execute("UPDATE orders SET tracking_number='9400000000000000000009', created_at=? "
+                "WHERE id=?", (_days_ago(1), oid))
     wcx.commit()
     r, sends, drafts = _real(wcx, _match("cyndi@gmail.example", "high"))
     assert all(to != PRAC for to, _h, _t in sends + drafts)
@@ -280,6 +281,40 @@ def test_two_boxes_to_the_practitioner_name_the_client_once():
             "numbers, one for each box:") in email["text"]
     assert "Box 2: 9400000000000000000002" in email["text"]
     assert "your" not in email["text"].split("Aloha")[1].split("Box 1")[0].lower()
+    assert ("<p>The order for Cyndi O&#x27;Brien is on its way. Here are the USPS "
+            "tracking numbers, one for each box:</p>") in email["html"]
+    assert "Your order" not in email["html"]
+
+
+def test_an_ordinary_client_email_keeps_its_greeting_and_wording(wcx):
+    """Round 3: only a drop-ship to its practitioner changes wording."""
+    from dashboard import orders as _orders
+    _orders.init_orders_table(wcx)
+    wcx.execute("INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+                "address_json) VALUES (?,?,?,?,?,?,?)",
+                (_days_ago(2), "storefront", "s1", "cyndi@own.example", "Cyndi O'Brien",
+                 "packed", json.dumps({"street": "1016 W Chicago Ct", "zip": "85224"})))
+    wcx.commit()
+    r, sends, _ = _real(wcx)
+    (to, html, text), = sends
+    assert to == "cyndi@own.example" and text.startswith("Aloha Cyndi,\n\nYour order is "
+                                                         "on its way.")
+    assert "The order for" not in text and "The order for" not in html
+
+
+def test_two_practitioner_spellings_greet_no_one(wcx):
+    """Round 3: never greet the practitioner by her client's name."""
+    _with_dropship(wcx, **AT_LABEL)
+    wcx.execute("INSERT INTO orders (created_at, source, external_ref, email, name, status, "
+                "practitioner_id, recipient_email, address_json) VALUES (?,?,?,?,?,?,?,?,?)",
+                ("2026-10-02", "dropship", "d2", PRAC, "Ashley M King", "packed", "p1",
+                 CLIENT, json.dumps({"name": "Cyndi O'Brien", "street": "1016 W Chicago Ct",
+                                     "zip": "85224"})))
+    wcx.commit()
+    r, sends, _ = _real(wcx, _match(CLIENT, "high"))
+    (to, _html, text), = sends
+    assert to == PRAC and text.startswith("The order for Cyndi O'Brien is on its way.")
+    assert "Aloha" not in text
 
 
 def test_no_practitioner_name_means_no_greeting_rather_than_the_clients():
