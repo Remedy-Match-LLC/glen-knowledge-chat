@@ -868,10 +868,12 @@
     "warning": "This formula contains vinpocetine. Do not use if you are pregnant, could become pregnant, or are breastfeeding. It is not for children. Consult your physician before use if you take any medicine, including aspirin or other pain relievers. This matters most with blood pressure, heart, blood thinning, blood sugar, cholesterol or immune-suppressing medicines. Also consult first if you have liver disease, gout, a stomach ulcer, low blood pressure, a bleeding disorder, an autoimmune condition or a seizure disorder, or are planning surgery. Niacin may cause a temporary flush. Stop use and consult your physician if you notice yellowing of the skin or eyes, or dark urine. This formula may change blood pressure and blood sugar, affect bleeding, and change how some medications are processed.",
     "chat_caution": true,
     "directions": "1 to 4 capsules daily in divided doses with food, or as guided.",
+    "description": "Blood Cleanse supports healthy circulation and blood pressure regulation.\n\nBlood pressure elevates in order to try to clean the blood when toxic, acidic, viscous blood is hard to pump through the kidneys, which are the high-pressure filters of the systemic blood supply.\n\nThe heart is the pump that generates the increased pressure by working harder in order to filter the thick blood.\n\nSupporting cleansing of the blood reduces stress on both the heart and the kidneys.",
     "copy_pinned": [
-      "directions"
+      "directions",
+      "description"
     ],
-    "content_since": "2026-11-01T07:50:13+00:00"
+    "content_since": "2026-11-02T04:11:47+00:00"
   },
   "shields-up-cold-flu-formula": {
     "ingredients": [

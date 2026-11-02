@@ -2,8 +2,12 @@
 
 Source: marketing/04 Copy/blood-cleanse-niacin-2026-10-31/change-v2.md, the "After:" text.
 It replaces the one-line vinpocetine warning. The niacin dose is open with Glen, so no
-ingredient row changes. Only the directions are pinned, so the chat gets the directions and
-the caution but no scraped description.
+ingredient row changes.
+
+Description, Glen "yes" 2026-11-01, platform tab: four sentences word for word from the
+store page draft, production/05 Formulations/blood-cleanse/2026-10-24. The scraped one
+repeated the name four times, was cut off, and advised a dose change with blood pressure
+medicines. Before it, "What is Blood Cleanse?" before the Terms got only the name and Page.
 """
 import json
 import os
@@ -24,6 +28,14 @@ WARNING = (
     "This formula may change blood pressure and blood sugar, affect bleeding, and change how "
     "some medications are processed.")
 DIRECTIONS = "1 to 4 capsules daily in divided doses with food, or as guided."
+DESCRIPTION = (
+    "Blood Cleanse supports healthy circulation and blood pressure regulation.\n\n"
+    "Blood pressure elevates in order to try to clean the blood when toxic, acidic, viscous "
+    "blood is hard to pump through the kidneys, which are the high-pressure filters of the "
+    "systemic blood supply.\n\n"
+    "The heart is the pump that generates the increased pressure by working harder in order "
+    "to filter the thick blood.\n\n"
+    "Supporting cleansing of the blood reduces stress on both the heart and the kidneys.")
 # The rows on origin/main before this change (commit 7daba4fb), unchanged here.
 ROWS = [
     {"name": "Niacin", "dose": "45 mg"},
@@ -61,7 +73,8 @@ def test_the_warning_is_v2_verbatim(name):
     assert p["warning"] == WARNING
     assert p["chat_caution"] is True
     assert p["directions"] == DIRECTIONS and p["directions"].endswith("or as guided.")
-    assert p["copy_pinned"] == ["directions"]
+    assert p["copy_pinned"] == ["directions", "description"]
+    assert p["description"] == DESCRIPTION
 
 
 def test_the_rows_and_their_source_are_unchanged():
@@ -89,3 +102,14 @@ def test_the_chat_facts_carry_the_breastfeeding_line(appmod):
     assert "or are breastfeeding" in block
     assert WARNING in block
     assert f"Directions: {DIRECTIONS}" in block
+
+
+@pytest.mark.parametrize("gated", [True, False])
+def test_what_is_it_gets_the_approved_description(appmod, gated):
+    block = appmod._named_product_facts("What is Blood Cleanse?", gated=gated) or ""
+    section = block[block.index("### Blood Cleanse"):].split("\n### ")[0]
+    assert " ".join(DESCRIPTION.split()) in " ".join(section.split())
+    for line in (appmod._NO_DESCRIPTION_GATED, appmod._NO_DESCRIPTION):
+        assert line.format(name="Blood Cleanse") not in section
+    # The scraped text's medicine advice never reaches the bot.
+    assert "antihypertensive" not in section and "Blood Cleanse . Blood" not in section
