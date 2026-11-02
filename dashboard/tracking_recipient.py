@@ -31,6 +31,8 @@ _OPEN = ("paid", "confirmed", "new", "packed", "shipped")
 # had its parcel, so it steers no later label. new/packed/shipped keep their old
 # behaviour, which the address tests pin.
 _ADDED = ("paid", "confirmed", "done")
+# The columns could_await_label reads, beyond status.
+_LABEL_COLUMNS = ("created_at", "paid_at", "items_json", "tracking_number")
 
 # A 'done' order counts too when it may simply have been closed before its label.
 # Orders 277 and 278 were marked done first and never got a tracking email. Glen,
@@ -65,8 +67,9 @@ def _paid_at(value):
 
 def could_await_label(order, now=None):
     """Can this order still be waiting for a parcel? Open, or 'done' within the grace
-    period with something to ship and no tracking number yet. `order` needs status,
-    paid_at, items_json and tracking_number.
+    period with something to ship and no tracking number yet. 'paid' and 'confirmed'
+    count when made in the grace period. `order` needs status, created_at, paid_at,
+    items_json and tracking_number.
 
     A done order that already has its tracking number has had its parcel. Counting it
     would let a later label at that address follow it, and send a client's next
@@ -74,13 +77,19 @@ def could_await_label(order, now=None):
     status = order.get("status")
     if status in _ADDED and str(order.get("tracking_number") or "").strip():
         return False
+    now = now or datetime.now(timezone.utc)
+
+    def recent(value):
+        when = _paid_at(value)
+        return when is not None and now - timedelta(days=DONE_GRACE_DAYS) <= when <= now
+
+    if status in ("paid", "confirmed"):
+        # An invoice abandoned months ago must not catch a later parcel at its
+        # address (review round 1, 2026-11-02). Order 273 was made 8 days before.
+        return recent(order.get("created_at"))
     if status in _OPEN:
         return True
-    if status != "done":
-        return False
-    now = now or datetime.now(timezone.utc)
-    paid = _paid_at(order.get("paid_at"))
-    if paid is None or not (now - timedelta(days=DONE_GRACE_DAYS) <= paid <= now):
+    if status != "done" or not recent(order.get("paid_at")):
         return False                      # never paid, paid too long ago, or garbled
     try:
         items = json.loads(order.get("items_json") or "[]")
@@ -453,7 +462,7 @@ def _resolve_at(cx, name, z, sk, require_name):
     marks = ",".join("?" for _ in statuses)
     board = []
     for o in _rows(cx, f"SELECT email, name, address_json, status, "
-                       f"{_optional_columns(cx, ('paid_at', 'items_json', 'tracking_number'))}, "
+                       f"{_optional_columns(cx, _LABEL_COLUMNS)}, "
                        f"{_dropship_columns(cx)} FROM orders WHERE status IN ({marks})",
                    statuses):
         if not could_await_label(o):

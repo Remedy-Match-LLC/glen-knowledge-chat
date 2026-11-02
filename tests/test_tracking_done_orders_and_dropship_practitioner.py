@@ -73,6 +73,18 @@ def test_an_order_before_the_board_gets_its_tracking(status):
     assert O.get_order(cx, oid)["tracking_number"] == SHIPMENT["tracking"]
 
 
+@pytest.mark.parametrize("status", ["confirmed", "paid"])
+def test_an_invoice_made_long_ago_does_not_catch_a_parcel(status):
+    """Round 1: an abandoned August invoice at the address must not take the link."""
+    cx = _cx()
+    oid = _order(cx, status=status, paid_days_ago=None)
+    cx.execute("UPDATE orders SET created_at=? WHERE id=?", (_days_ago(60), oid))
+    cx.commit()
+    _, res = _link(cx)
+    assert res["status"] == "unmatched"
+    assert O.get_order(cx, oid)["tracking_number"] is None
+
+
 def test_a_recently_paid_done_order_gets_its_tracking():
     """Orders 277 and 278: closed before the label."""
     cx = _cx()
