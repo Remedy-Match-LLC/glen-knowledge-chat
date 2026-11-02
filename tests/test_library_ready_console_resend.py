@@ -16,10 +16,14 @@ from tests.test_library_ready_never_uses_glens_gmail import (  # noqa: F401  (fi
 SLUG = "healing-glaucoma-starter"
 
 
-def _resend(appmod, email="lead@x.com", slug=SLUG, key=True):
+LATER = "9999-01-01T00:00:00+00:00"
+
+
+def _resend(appmod, email="lead@x.com", slug=SLUG, key=True, before=LATER):
     headers = {"X-Console-Key": appmod.CONSOLE_SECRET} if key else {}
     return appmod.app.test_client().post("/api/console/library-ready/resend",
-                                         json={"email": email, "ebook_slug": slug},
+                                         json={"email": email, "ebook_slug": slug,
+                                               "sent_before": before},
                                          headers=headers)
 
 
@@ -94,3 +98,28 @@ def test_a_suppressed_lead_gets_nothing(console, transports, ses):
         es.add(cx, "lead@x.com", "hard", "bounce", "test")
     r = _resend(console)
     assert r.get_json()["ok"] is False and len(ses.calls) == 1 and transports == []
+
+
+def test_a_retry_after_a_resend_sends_nothing(console, transports, ses):
+    """Review round 2: a retry, or a second call, must not send a second copy."""
+    _optin(console)
+    cx = sqlite3.connect(console.LOG_DB)
+    (first_at,) = cx.execute("SELECT sent_at FROM ebook_library_welcome_sent").fetchone()
+    cx.close()
+    import datetime as _dt
+    cutoff = (_dt.datetime.fromisoformat(first_at) + _dt.timedelta(microseconds=1)).isoformat()
+    assert _resend(console, before=cutoff).get_json()["ok"] is True
+    r = _resend(console, before=cutoff)
+    assert r.status_code == 409 and len(ses.calls) == 2
+
+
+def test_a_send_after_the_cutoff_is_not_released(console, transports, ses):
+    _optin(console)
+    r = _resend(console, before="2000-01-01T00:00:00+00:00")
+    assert r.status_code == 409 and len(ses.calls) == 1
+    assert _guard_rows(console) == [("lead@x.com", SLUG)]
+
+
+def test_sent_before_is_required(console, transports, ses):
+    _optin(console)
+    assert _resend(console, before="").status_code == 400 and len(ses.calls) == 1

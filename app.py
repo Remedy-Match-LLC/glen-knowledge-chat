@@ -39732,17 +39732,23 @@ def api_console_library_ready_resend():
     Eight went out from Glen's Gmail on 29 Oct and bounced on its daily cap, after the
     once-guard was written (Glen "yes" to resending through SES, 2026-11-02, platform tab).
     Console only. It never creates a portal or a grant and never issues a new link. It
-    sends by the opt-in's own path: SES first, never Glen's Gmail."""
+    sends by the opt-in's own path: SES first, never Glen's Gmail.
+
+    sent_before (ISO time) is required. Only a send recorded before it is released, in one
+    statement, so a retry or a second call finds the new record and sends nothing (review
+    round 2)."""
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
     slug = (body.get("ebook_slug") or "").strip()
+    sent_before = (body.get("sent_before") or "").strip()
     from dashboard import ebook_catalog as _cat, notify_state as _ns
     from dashboard import portal_library as _lib
     meta = _cat.get(slug) if slug else None
-    if not email or not meta:
-        return jsonify({"ok": False, "error": "email and a known ebook_slug required"}), 400
+    if not email or not meta or not sent_before:
+        return jsonify({"ok": False,
+                        "error": "email, a known ebook_slug and sent_before required"}), 400
     with _db_lock, db.connect(LOG_DB) as cx:
         _lib.init_table(cx)
         if not _lib.has(cx, email, slug):
@@ -39754,12 +39760,16 @@ def api_console_library_ready_resend():
         row = cx.execute("SELECT name FROM client_portals WHERE email=?", (email,)).fetchone()
         cx.execute("CREATE TABLE IF NOT EXISTS ebook_library_welcome_sent (email TEXT, "
                    "ebook_slug TEXT, sent_at TEXT, PRIMARY KEY(email, ebook_slug))")
-        cx.execute("DELETE FROM ebook_library_welcome_sent WHERE email=? AND ebook_slug=?",
-                   (email, slug))
+        cur = cx.execute("DELETE FROM ebook_library_welcome_sent WHERE email=? AND "
+                         "ebook_slug=? AND sent_at < ?", (email, slug, sent_before))
+        if cur.rowcount != 1:
+            return jsonify({"ok": False, "error": "no send recorded before sent_before, "
+                            "so nothing was sent"}), 409
         cx.commit()
     via = _send_library_ready(email, (row[0] if row else "") or "", token, meta["title"],
                               slug, wait=True)
-    return jsonify({"ok": via == "ses", "sent_via": via})
+    # "unknown" may have been delivered, so it is not reported as a failure to retry.
+    return jsonify({"ok": via in ("ses", "ghl"), "sent_via": via})
 
 
 @app.route("/api/console/affiliate/backfill", methods=["POST"])
