@@ -55,6 +55,12 @@ PINS = ["ingredients", "directions", "description"]
 GRAVES = "Do not use if you have an overactive thyroid (hyperthyroidism or Graves' disease)."
 
 
+# The page's serving and other-ingredients lines (description-after-v7.html), "&amp;"
+# decoded. Pinned whole so a wrong count or a dropped ingredient fails (review round 2).
+DESCRIPTION = ("Serving size: 1 capsule. Servings per bottle: 30. Contents: 30 vegicaps.\n\n"
+               "Other ingredients: Organic Pullulan vegicaps, Healing Energy, Love & Prayer.")
+
+
 def _load(name):
     d = json.load(open(os.path.join(ROOT, "data", name), encoding="utf-8"))
     return d.get("products", d)
@@ -139,7 +145,7 @@ def test_the_chat_facts_carry_the_graves_line(appmod):
 def test_the_ampersand_is_a_plain_character(appmod):
     """The page source wrote "Love &amp; Prayer"; the record and the chat carry "&"."""
     for name in ("products.json", "products-manual-corrections.json"):
-        assert "Love & Prayer." in _load(name)["thyroid-support"]["description"]
+        assert _load(name)["thyroid-support"]["description"] == DESCRIPTION
     block = appmod._named_product_facts("What is Thyroid Support?", gated=True) or ""
     assert "Love & Prayer." in block and "&amp;" not in block
 
