@@ -12012,7 +12012,7 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Blood Cleanse . Blood Cleanse Blood Cleanse Blood Cleanse supports healthy circulation and blood pressure regulation. Monitor blood pressure carefully if taking together with antihypertensive medications, as dosage may need to be adjusted to prevent hypotension. Blood pressure elevates in order to try to clean the blood when toxic, acidic, viscous blood is hard to pump through the kidneys, which are the high-pressure filters of the systemic blood supply. The heart is the pump that generates the increased pressure by working harder in order to filter the thick blood. Supporting cleansing of...",
+   "description": "Blood Cleanse supports healthy circulation and blood pressure regulation.\n\nBlood pressure elevates in order to try to clean the blood when toxic, acidic, viscous blood is hard to pump through the kidneys, which are the high-pressure filters of the systemic blood supply.\n\nThe heart is the pump that generates the increased pressure by working harder in order to filter the thick blood.\n\nSupporting cleansing of the blood reduces stress on both the heart and the kidneys.",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: TMG (Trimethylglycine)",
    "gk_extra_accepted": true,
@@ -12023,9 +12023,10 @@
    "chat_caution": true,
    "directions": "1 to 4 capsules daily in divided doses with food, or as guided.",
    "copy_pinned": [
-    "directions"
+    "directions",
+    "description"
    ],
-   "content_since": "2026-11-01T07:50:13+00:00"
+   "content_since": "2026-11-02T04:11:47+00:00"
   },
   "reverse-age": {
    "name": "Reverse AGE",
