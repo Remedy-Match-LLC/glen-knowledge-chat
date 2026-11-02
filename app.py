@@ -2352,6 +2352,10 @@ _CUE_NAMES = frozenset({
     # "what is in brain boost?" still bring the label facts (spec
     # 2026-10-30-brain-boost-one-record, step 9).
     "brain-boost",
+    # Do-not-use lines for pregnancy, under 18 and Graves': "is thyroid support safe while
+    # pregnant?" must bring the caution (Thyroid Support v7, review round 3). A cue keeps
+    # "thyroid support for women" an ordinary phrase.
+    "thyroid-support",
 })
 # Pinned products whose name is an everyday biology word in any casing ("What does the
 # Microbiome do for immunity?"), so it counts only beside a product cue, capitalised or

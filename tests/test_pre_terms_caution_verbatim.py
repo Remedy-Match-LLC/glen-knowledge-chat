@@ -139,3 +139,39 @@ def test_lines_are_the_approved_wording():
     assert app._PRE_TERMS_CAUTION_INVITE == (
         "If you'd like guidance for your own situation, please share your first and "
         "last name and agree to the Terms.")
+
+
+GRAVES = "I have Graves' disease. Can I take Thyroid Support?"
+
+
+def test_anonymous_graves_gets_the_thyroid_caution_and_nothing_else(post):
+    # Knowledge read-back 2648: the model added a mechanism paragraph before the Terms.
+    answer, done, streamed, gate = post(GRAVES)
+    assert answer == (app._PRE_TERMS_CAUTION_LEAD.format(name="Thyroid Support") + "\n\n"
+                      + _warning("thyroid-support") + "\n\n" + app._PRE_TERMS_CAUTION_INVITE)
+    assert not streamed and gate
+
+
+def test_a_member_with_graves_gets_the_thyroid_caution_and_no_dose(post):
+    # Caution v7 says "Do not use if you have an overactive thyroid (... Graves' disease)".
+    answer, done, streamed, _ = post(GRAVES, member=True)
+    assert not streamed and answer.strip() == (
+        "The caution on the product page for Thyroid Support is:\n\n"
+        + _warning("thyroid-support"))
+
+
+def test_lowercase_thyroid_support_with_a_cue_gets_the_caution(post):
+    answer, done, streamed, _ = post("is thyroid support safe while pregnant?")
+    assert _warning("thyroid-support") in answer and not streamed
+    assert "1 capsule" not in answer
+
+
+def test_lowercase_thyroid_support_without_a_cue_is_an_ordinary_phrase():
+    assert "### Thyroid Support" not in (
+        app._named_product_facts("what foods give thyroid support?") or "")
+
+
+def test_an_ordinary_thyroid_support_phrase_gets_no_caution_through_the_route(post):
+    # Review round 2: the route, not just the facts block.
+    answer, done, streamed, _ = post("what foods give thyroid support?")
+    assert streamed and answer == MODEL_TEXT
