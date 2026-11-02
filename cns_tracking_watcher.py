@@ -293,6 +293,7 @@ def _resolve(s, find_contact, address_resolve, harvest_fn):
     addr = None
     addr_failed = False
     to_client = False
+    prac_name = ""
     path = "other"
     if address_resolve is not None:
         try:
@@ -312,6 +313,7 @@ def _resolve(s, find_contact, address_resolve, harvest_fn):
             if addr.get("dropship"):
                 path = "dropship"
                 to_client = bool(addr.get("to_client"))
+                prac_name = "" if to_client else (addr.get("prac_name") or "")
             elif addr.get("source") == "board" and addr.get("name_agrees"):
                 path = "own"
             if ghl_email != a_email:
@@ -336,7 +338,8 @@ def _resolve(s, find_contact, address_resolve, harvest_fn):
             conf = "harvested"
     return {"to": to, "conf": conf, "ghl_contact_id": ghl_contact_id,
             "review_reason": review_reason, "harvested": harvested,
-            "path": path, "addr_failed": addr_failed, "to_client": to_client}
+            "path": path, "addr_failed": addr_failed, "to_client": to_client,
+            "prac_name": prac_name}
 
 
 def _dropship_hold(r, shipments, cx):
@@ -401,9 +404,15 @@ def _notify_group(r, shipments, parsed, msg_id, cx, draft_fn, persist_contact, s
                      and conf in AUTO_SEND_CONFIDENCES)
     status = ("sent" if send_eligible else
               "drafted" if to else "needs_review")
+    # A drop-ship going to its practitioner greets the practitioner and names the
+    # client. Glen, 2026-11-02: the practitioner "has the email contact".
+    to_prac = (not guarded and r.get("path") == "dropship" and not r.get("to_client"))
     email = build_tracking_email(numbers if len(numbers) > 1 else numbers[0],
-                                 first["recipient_name"], resolved_email=to,
-                                 hold_note=hold_reason if guarded else None)
+                                 (r.get("prac_name") or None) if to_prac
+                                 else first["recipient_name"],
+                                 resolved_email=to,
+                                 hold_note=hold_reason if guarded else None,
+                                 for_client=first["recipient_name"] if to_prac else None)
 
     draft_id = None
     onboarded = False
