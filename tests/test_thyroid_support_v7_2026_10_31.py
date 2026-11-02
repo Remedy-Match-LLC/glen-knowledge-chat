@@ -134,3 +134,20 @@ def test_the_chat_facts_carry_the_graves_line(appmod):
     assert f"Directions: {DIRECTIONS}" in block
     assert "Iodine (Potassium Iodide): 150 mcg" in block
     assert "194 mg" not in block
+
+
+def test_the_ampersand_is_a_plain_character(appmod):
+    """The page source wrote "Love &amp; Prayer"; the record and the chat carry "&"."""
+    for name in ("products.json", "products-manual-corrections.json"):
+        assert "Love & Prayer." in _load(name)["thyroid-support"]["description"]
+    block = appmod._named_product_facts("What is Thyroid Support?", gated=True) or ""
+    assert "Love & Prayer." in block and "&amp;" not in block
+
+
+@pytest.mark.parametrize("q", ["I have Graves' disease. Can I take Thyroid Support?",
+                               "Can I take Thyroid Support with levothyroxine?"])
+def test_before_the_terms_the_caution_is_written_by_code(appmod, q):
+    """Knowledge read-back 2648: the model added a mechanism paragraph before the Terms."""
+    reply = appmod._pre_terms_caution_reply(q, [])
+    assert reply.startswith(appmod._PRE_TERMS_CAUTION_LEAD.format(name="Thyroid Support"))
+    assert CAUTION in reply and "1 capsule a day" not in reply
