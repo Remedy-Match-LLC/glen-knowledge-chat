@@ -5,10 +5,13 @@ the entry reads "You can find Molybdenum in Sulfur Syntropy.", and "yes" in the 
 to the chat's copy matching. Production fixed its own copy the same day.
 """
 import json
+from pathlib import Path
+
+CATALOG = Path(__file__).resolve().parent.parent / "data" / "clinical_theory_catalog.json"
 
 
 def _molybdenum():
-    d = json.load(open("data/clinical_theory_catalog.json"))
+    d = json.loads(CATALOG.read_text())
     found = [e for dim in d["dimensions"] for e in dim["entries"] if e.get("slug") == "molybdenum"]
     assert len(found) == 1
     return found[0]
