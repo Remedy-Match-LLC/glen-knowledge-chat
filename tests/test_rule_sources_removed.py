@@ -43,11 +43,25 @@ def test_a_line_with_no_rule_is_left_exactly_as_written():
     assert rs.rewrite_text(text) == text
 
 
-def test_an_entry_that_names_a_rule_goes_even_if_real():
-    """The trade-off, stated: a real source titled with these words is dropped too.
-    A missing source name costs less than the chat citing its own rules."""
-    text = BODY + "**Sources:** Clinical Theory (terrain), Rule of Thirds lecture\n"
-    assert rs.rewrite_text(text) == BODY + "**Sources:** Clinical Theory (terrain)\n"
+@pytest.mark.parametrize("real", [
+    "FDA safety notice, Manufacturer instructions",
+    "Rule of Thirds lecture, Clinical Theory (terrain)",
+    "Retired formulas archive, CDS Water Purifier & Activator product page",
+])
+def test_a_real_source_with_a_rule_word_is_kept(real):
+    """Round 2: only the chat's own rules go, by word AND subject."""
+    text = BODY + f"**Sources:** {real}\n"
+    assert rs.rewrite_text(text) == text
+
+
+def test_a_bar_separated_list_keeps_its_real_source():
+    text = BODY + "Sources: Clinical Theory | Standing CDS rule\n"
+    assert rs.rewrite_text(text) == BODY + "Sources: Clinical Theory\n"
+
+
+def test_a_bare_carriage_return_is_not_a_line_break_in_either_path():
+    text = "Sources: Clinical Theory\rFollow the CDS rule.\n"
+    assert rs.rewrite_text(text) == "".join(rs.rewrite_stream(iter([text])))
 
 
 @pytest.mark.parametrize("prose", [

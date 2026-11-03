@@ -6,9 +6,11 @@ Ensurance rule went live on 2 Nov 2026, three of four read-back answers listed i
 "Wellness Ensurance retirement directive (2026-11-02)" and the like, and the CDS rule did
 the same after #2143. Glen, 2026-11-02, platform tab: "yes" to removing them in code.
 
-Only an entry on the Sources line is touched, and only one that names a rule, directive,
-notice, instruction, prompt or retirement. A real source is kept as written. A Sources
-line left with nothing on it is removed.
+Only an entry on the Sources line is touched, and only one that names both a rule word
+(rule, directive, notice, instruction, prompt, standing, retired) and the subject of one
+of the chat's own standing rules: Wellness Ensurance, CDS, or the chat's own prompt. So
+"FDA safety notice" or "Manufacturer instructions" stays (review round 2). A real source
+is kept as written. A Sources line left with nothing on it is removed.
 
 rewrite_stream holds back only a line that may be the Sources line, so the rest of the
 answer streams as before.
@@ -16,22 +18,30 @@ answer streams as before.
 import re
 
 _LABEL = re.compile(r"^(\s*(?:[*_]{1,2})?\s*sources?\s*(?:[*_]{1,2})?\s*:\s*(?:[*_]{1,2})?\s*)"
-                    r"(.*?)(\s*)$", re.I | re.S)
+                    r"([^\n]*?)(\s*)$", re.I)
 _LABEL_START = re.compile(r"\s*[*_]{0,2}\s*(?:s(?:o(?:u(?:r(?:c(?:e(?:s)?)?)?)?)?)?)?"
                           r"\s*[*_]{0,2}\s*", re.I)
 _RULE_WORDS = re.compile(r"\b(?:rules?|directives?|notices?|instructions?|prompt|"
                          r"standing|retire(?:d|ment)?)\b", re.I)
+# The subjects of the chat's standing rules (app._STANDING_USE_RULE) and its own prompt.
+_RULE_SUBJECTS = re.compile(r"wellness[\s\-_]*(?:e|i)nsurance|\bcds\b|\bmms\b|"
+                            r"chlorine dioxide|water purifier|system prompt|this prompt|"
+                            r"\bstanding\b|\bchat(?:bot)?\b", re.I)
+
+
+def _is_rule(entry):
+    return bool(_RULE_WORDS.search(entry) and _RULE_SUBJECTS.search(entry))
 
 
 def _entries(body):
-    """Split a Sources body on commas and semicolons outside brackets."""
+    """Split a Sources body on commas, semicolons and bars outside brackets."""
     out, cur, depth = [], "", 0
     for ch in body:
         if ch in "([":
             depth += 1
         elif ch in ")]" and depth:
             depth -= 1
-        if ch in ",;" and depth == 0:
+        if ch in ",;|" and depth == 0:
             out.append(cur)
             cur = ""
         else:
@@ -48,7 +58,7 @@ def scrub_line(line):
         return line
     label, body, tail = m.groups()
     entries = _entries(body)
-    kept = [e for e in entries if not _RULE_WORDS.search(e)]
+    kept = [e for e in entries if not _is_rule(e)]
     if len(kept) == len(entries):
         return line
     kept = [e.strip() for e in kept if e.strip(" .*_")]
@@ -61,7 +71,8 @@ def rewrite_text(text):
     if not text:
         return text
     out = []
-    for line in text.splitlines(keepends=True):
+    # Split on "\n" only, exactly as rewrite_stream does (review round 2).
+    for line in re.findall(r"[^\n]*\n|[^\n]+", text):
         kept = scrub_line(line)
         if kept is not None:
             out.append(kept)
