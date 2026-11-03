@@ -125,3 +125,15 @@ def test_every_chat_route_runs_it():
     line = "**Sources:** Wellness Ensurance retirement directive (2026-11-02)\n"
     assert app._store_links_text(BODY + line) == BODY
     assert "".join(app._store_links_stream(iter([BODY, line]))) == BODY
+
+
+def test_a_sales_page_section_is_left_alone():
+    """Round 2: sales sections share the wrapper but are not chat answers."""
+    import importlib
+    app = importlib.import_module("app")
+    line = "**Sources:** Wellness Ensurance retirement directive (2026-11-02)\n"
+    assert app._store_links_text(BODY + line, chat=False) == BODY + line
+    assert "".join(app._store_links_stream(iter([BODY, line]), chat=False)) == BODY + line
+    src = open("app.py").read()
+    assert src.count("_store_links_stream(_toks(), chat=False)") == 2
+    assert src.count('_store_links_text("".join(acc).strip(), chat=False)') == 2
