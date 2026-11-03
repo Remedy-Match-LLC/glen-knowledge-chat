@@ -8349,18 +8349,23 @@ def _is_legacy_storefront_url(url):
     return _lsl.is_legacy_store_url(url)
 
 
-def _store_links_stream(deltas):
+def _store_links_stream(deltas, chat=True):
     """Streamed answer deltas with old store links rewritten to the new product
-    pages, or removed when no live product matches. Drains `deltas` fully."""
-    from dashboard import legacy_store_links as _lsl
-    return _lsl.rewrite_stream(deltas, PUBLIC_BASE_URL)
+    pages, or removed when no live product matches. Drains `deltas` fully.
+
+    Every chat route streams through here, so it also removes the chat's own rules
+    from the Sources line (Glen, 2026-11-02). See dashboard/rule_sources.py. A sales
+    page section passes chat=False: it is not a chat answer (review round 2)."""
+    from dashboard import legacy_store_links as _lsl, rule_sources as _rs
+    return _lsl.rewrite_stream(_rs.rewrite_stream(deltas) if chat else deltas,
+                               PUBLIC_BASE_URL)
 
 
-def _store_links_text(text):
+def _store_links_text(text, chat=True):
     """The same rewrite for a whole answer: what gets logged or cached is what the
     client was shown."""
-    from dashboard import legacy_store_links as _lsl
-    return _lsl.rewrite_text(text, PUBLIC_BASE_URL)
+    from dashboard import legacy_store_links as _lsl, rule_sources as _rs
+    return _lsl.rewrite_text(_rs.rewrite_text(text) if chat else text, PUBLIC_BASE_URL)
 
 
 from dashboard.portal_concierge import ROLE_AND_CLAIMS as _ROLE_AND_CLAIMS
@@ -12868,9 +12873,9 @@ def begin_product_page_gen(slug, section):
                         tok = _strip_dash(tok)
                         acc.append(tok)
                         yield tok
-                for delta in _store_links_stream(_toks()):
+                for delta in _store_links_stream(_toks(), chat=False):
                     yield sse({"token": delta})
-            text = _store_links_text("".join(acc).strip())  # cache what the page showed
+            text = _store_links_text("".join(acc).strip(), chat=False)  # cache what the page showed
             if text:
                 try:
                     with db.connect(LOG_DB) as cx:
@@ -13565,9 +13570,9 @@ def begin_ingredient_page_gen(slug, section):
                         tok = _strip_dash(tok)
                         acc.append(tok)
                         yield tok
-                for delta in _store_links_stream(_toks()):
+                for delta in _store_links_stream(_toks(), chat=False):
                     yield sse({"token": delta})
-            text = _store_links_text("".join(acc).strip())  # cache what the page showed
+            text = _store_links_text("".join(acc).strip(), chat=False)  # cache what the page showed
             if text:
                 try:
                     with _db_lock, db.connect(LOG_DB) as cx:
