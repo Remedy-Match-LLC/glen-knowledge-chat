@@ -19,10 +19,11 @@ import re
 
 # Plural only: the chat's list is "Sources:". A study quote's single "Source:" line is
 # Glen's citation format and is never touched (review round 1).
-_LABEL = re.compile(r"^(\s*(?:[*_]{1,2})?\s*sources\s*(?:[*_]{1,2})?\s*:\s*(?:[*_]{1,2})?\s*)"
-                    r"([^\n]*?)(\s*)$", re.I)
-_LABEL_START = re.compile(r"\s*[*_]{0,2}\s*(?:s(?:o(?:u(?:r(?:c(?:e(?:s)?)?)?)?)?)?)?"
-                          r"\s*[*_]{0,2}\s*", re.I)
+# A bullet or quote mark may lead it, and bold may close it (review round 3).
+_LABEL = re.compile(r"^(\s*(?:[->]\s*)?(?:[*_]{1,2})?\s*sources\s*(?:[*_]{1,2})?\s*:\s*"
+                    r"(?:[*_]{1,2})?\s*)([^\n]*?)([*_]{0,2}\s*)$", re.I)
+_LABEL_START = re.compile(r"\s*(?:[->]\s*)?[*_]{0,2}\s*"
+                          r"(?:s(?:o(?:u(?:r(?:c(?:e(?:s)?)?)?)?)?)?)?\s*[*_]{0,2}\s*", re.I)
 # Not after a hyphen: "long-standing" or "self-instruction" is not a rule word.
 _RULE_WORDS = re.compile(r"(?<![\w-])(?:rules?|directives?|notices?|instructions?|prompt|"
                          r"standing|retire(?:d|ment)?)\b", re.I)
@@ -69,6 +70,7 @@ def scrub_line(line):
     if len(kept) == len(entries):
         return line
     kept = [e.strip() for e in kept if e.strip(" .*_")]
+    # A closing mark the rule entry carried ("rule**") belongs to the whole line.
     if not kept:
         return None
     return label + ", ".join(kept) + tail

@@ -137,3 +137,37 @@ def test_a_sales_page_section_is_left_alone():
     src = open("app.py").read()
     assert src.count("_store_links_stream(_toks(), chat=False)") == 2
     assert src.count('_store_links_text("".join(acc).strip(), chat=False)') == 2
+
+
+@pytest.mark.parametrize("rule", [
+    "Standing MMS rule", "Chlorine dioxide directive", "Water purifier rule",
+    "System prompt instructions", "This prompt", "Chat rule (2 Nov)",
+    "Chatbot retirement notice", "Wellness Insurance retirement notice",
+])
+def test_each_rule_subject_is_removed(rule):
+    """Round 3: every subject alternative is pinned."""
+    text = BODY + f"**Sources:** Clinical Theory (terrain), {rule}\n"
+    assert rs.rewrite_text(text) == BODY + "**Sources:** Clinical Theory (terrain)\n"
+
+
+def test_a_link_whose_address_spells_a_rule_is_kept():
+    """Round 3: only link stripping saves this one."""
+    text = BODY + "Sources: [CDS page](https://x.example/cds/rule), Clinical Theory\n"
+    assert rs.rewrite_text(text) == text
+
+
+def test_bold_closing_marks_stay_when_a_rule_is_removed():
+    text = BODY + "**Sources: Clinical Theory, Standing CDS rule**\n"
+    assert rs.rewrite_text(text) == BODY + "**Sources: Clinical Theory**\n"
+
+
+@pytest.mark.parametrize("lead", ["- ", "> "])
+def test_a_bulleted_or_quoted_sources_line_is_cleaned(lead):
+    text = BODY + f"{lead}Sources: Clinical Theory, Standing CDS rule\n"
+    assert rs.rewrite_text(text) == BODY + f"{lead}Sources: Clinical Theory\n"
+    assert "".join(rs.rewrite_stream(iter(list(text)))) == rs.rewrite_text(text)
+
+
+def test_an_ordinary_bullet_streams_without_waiting_for_its_line():
+    out = rs.rewrite_stream(iter(["- Drink ", "water daily"]))
+    assert next(out) == "- Drink "
