@@ -44,10 +44,23 @@ def test_the_chat_prompt_names_it_beside_the_other_retired_products(appmod):
 @pytest.mark.parametrize("name", ["Wellness Ensurance", "Wellness Ensurance Level 3",
                                   "WellnessEnsurance", "wellnessensurance.com",
                                   "Wellness-Ensurance", "Wellness  Ensurance",
-                                  "Wellness Insurance Level 3"])
+                                  "Wellness Insurance Level 3", "Wellness-Insurance"])
 def test_the_matcher_never_auto_recommends_it(appmod, name):
     assert appmod._ff_auto_excluded(name)
 
 
-def test_an_ordinary_product_still_passes_the_matcher(appmod):
+def test_every_real_wellness_product_still_passes_the_matcher(appmod):
+    """Round 3: a check that caught "wellness" alone would block these unnoticed."""
+    import json
+    with open("data/products.json") as fh:
+        names = {p.get("name") for p in json.load(fh)["products"].values()
+                 if "wellness" in (p.get("name") or "").lower()}
+    assert {"Macular Wellness Lutein", "Bioenergetic Wellness Scanner"} <= names
+    assert [n for n in names if appmod._ff_auto_excluded(n)] == []
     assert not appmod._ff_auto_excluded("Brain Cleanse")
+
+
+def test_it_says_what_to_answer_when_asked(appmod):
+    block = appmod._STANDING_USE_RULE.split("RETIRED PROGRAM.")[1]
+    assert "say plainly that Wellness Ensurance is no longer offered" in block
+    assert "then help with what they need" in block
