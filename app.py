@@ -2774,13 +2774,19 @@ def _former_name_match(query_text, slug, former, products):
     # long message stays fast (CI, test_a_long_message_is_read_quickly).
     if not former.get(slug) or _former_name_guarded(slug):
         return None
+    # Only names whose first word the question holds: a C-level substring test, so a
+    # long message pays nothing for the regexes below.
+    low = query_text.lower()
+    names = [a for a in former[slug] if a.split()[0].lower() in low]
+    if not names:
+        return None
     # A vinpocetine formula asked about with a pregnancy or safety cue counts in any
     # casing, as its catalog name does: "is synergy c safe while pregnant?" gets the
     # caution (review round 3b).
     vinpo = (_VINPOCETINE_LINE in ((products.get(slug) or {}).get("warning") or "")
              and bool(_PREGNANCY_OR_SAFETY_CUE.search(query_text)))
     # The longest first, so "Vitamin D Synergy Powder" is quoted whole (review round 3b).
-    for alias in sorted(former.get(slug, ()), key=len, reverse=True):
+    for alias in sorted(names, key=len, reverse=True):
         # "Synergy-C" is typed too.
         pattern = (r"(?<![\w+-])" + r"(?:\s*-\s*|\s+)".join(re.escape(w) for w in alias.split())
                    + r"(?![\w+-])")
