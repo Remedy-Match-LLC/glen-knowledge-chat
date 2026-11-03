@@ -2557,8 +2557,9 @@ def _use_rule_block(query_text, prior_user_turns=None) -> str:
 def _named_product_spans(query_text: str, products: dict) -> dict:
     """{slug: (start, end)} for each pinned, active product named in the question.
 
-    Only a product's own catalog name counts, never an alias: an alias can name an old
-    or consolidated product, and the block tells the model the name is real. The whole
+    A product's own catalog name counts, and so does a former name no other product
+    shares (_former_names, Glen "yes" 2026-11-03). A shared alias can name an old or
+    consolidated product, and the block tells the model the name is real. The whole
     name must stand as words, cased as in the catalog: "clear the way for my lymph" and
     "reverse age naturally" are not product names (review round 3). A product whose name
     is an everyday word in _COMMON_WORD_NAMES never qualifies, and neither does one Glen has
@@ -2568,6 +2569,7 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
     """
     query_text = html.unescape(query_text).replace("\u2122", "")
     spans = {}
+    former = _former_name_table(products)
     for slug, p in products.items():
         # A waiting-list product qualifies unpinned: its block carries only the
         # availability sentence checkout gives, never its unapproved description.
@@ -2673,12 +2675,145 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                     or (query_text[m.start():m.end()] != name
                         and re.search(rf"\b{word.capitalize()}\b", query_text))):
                 m = None
+        if not m:
+            m = _former_name_match(query_text, slug, former, products)
         if m:
             spans[slug] = m.span()
     # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."
     return {s: sp for s, sp in spans.items()
             if not any(o != s and o_sp[0] <= sp[0] and sp[1] <= o_sp[1] and o_sp != sp
                        for o, o_sp in spans.items())}
+
+
+def _former_names(slug, products):
+    """The aliases of `slug` that no other product uses as a name or alias. Glen "yes",
+    2026-11-03: asked about "Synergy C", the chat matched no product, got no directions
+    or caution, and invented "2-3 capsules" of a formula above the vitamin A upper limit.
+    An alias another product shares ("CDS", "Day", "EMF") is left out, since it may name
+    a different or merged product."""
+    return _former_name_table(products).get(slug, [])
+
+
+def _former_name_table(products):
+    """{slug: [former names]} for the catalog. Built fresh on each call, so an edited
+    catalog never keeps a stale alias (review round 2); callers build it once per
+    question, not once per product."""
+    def _norm(s):
+        # Hyphens as spaces, as the matcher reads them: "Synergy-C" is "Synergy C"
+        # (review round 2b).
+        s = html.unescape(s or "").replace("\u2122", "").lower()
+        return " ".join(re.split(r"\s*-\s*|\s+", s.strip())) if s.strip() else ""
+    taken = {}
+    for o, op in products.items():
+        if not isinstance(op, dict):
+            continue
+        for n in [op.get("name")] + list(op.get("aliases") or []):
+            if _norm(n):
+                taken.setdefault(_norm(n), set()).add(o)
+    table = {}
+    for o, op in products.items():
+        if not isinstance(op, dict):
+            continue
+        own = f" {_norm(op.get('name'))} "
+        for a in op.get("aliases") or []:
+            a = html.unescape(a or "").replace("\u2122", "").strip()
+            # Two words at least, and no short form of the catalog name: "Sleep",
+            # "Energy" and "Fat Metabolism" are everyday words, and the catalog name's own
+            # rules already cover a short form (review round 3, 2026-11-03).
+            if (len(a.split()) >= 2 and f" {_norm(a)} " not in own
+                    and taken.get(_norm(a)) == {o}):
+                table.setdefault(o, []).append(a)
+    return table
+
+
+# A dose cue beside a former name. A lowercase former name, or one in a Title Cased
+# question, counts only beside one: "what is vitamin a synergy?" and "is the vitamin A
+# synergy safe in pregnancy?" ask about nutrition (review rounds 1 and 3, 2026-11-03).
+_FORMER_NAME_DOSE_BEFORE = re.compile(
+    r"(?:how\s+much|how\s+many|dose\s+of|dosage\s+of|directions\s+for|capsules?\s+of)"
+    r"(?:\s+(?:the|my|your))?\s*$", re.IGNORECASE)
+# "how much vitamin d synergy with k2" asks how two nutrients combine (review round 1).
+_FORMER_NAME_RELATION_AFTER = re.compile(
+    r"\s*(?:(?:with|and|between|from|in|into|for|vs|versus|or)\b|&)", re.IGNORECASE)
+_FORMER_NAME_DOSE_AFTER = re.compile(
+    r"\s*(?:should|dose|dosage|doses|capsules?|caps|vegicaps?|supplement|formula|"
+    r"do\s+i\s+take|to\s+take|directions|a\s+day|per\s+day|daily)\b", re.IGNORECASE)
+
+
+def _former_name_guarded(slug):
+    """A former name skips these: their own rules guard the catalog name against
+    ordinary speech, and the alias path has none of them (review round 1)."""
+    return (slug in _ALWAYS_CUE_NAMES or slug in _SENTENCE_START_CUE_NAMES
+            or slug in _YIELDS_TO_LONGER_NAMES or slug in _YIELDS_TO_PREFIX
+            or slug in _YIELDS_AFTER or slug in _YIELDS_BEFORE)
+
+
+def _title_cased_around(text, start, end):
+    """Most of the question's other words capitalised, so a capital says nothing about
+    a name. The name itself and each sentence's first word are not counted, so "Does
+    Sleep Synergy help insomnia?" is ordinary casing (review round 3)."""
+    # One pass, so a long question stays linear (review round 3b: 25 s at 24,500 chars).
+    words, opens = [], True
+    for m in re.finditer(r"[A-Za-z]{2,}|[.?!\n]", text):
+        tok = m.group(0)
+        if tok in ".?!\n":
+            opens = True
+            continue
+        if not opens and not (start <= m.start() < end):
+            words.append(tok)
+        opens = False
+    return len(words) >= 2 and sum(w[0].isupper() for w in words) >= 0.6 * len(words)
+
+
+def _former_name_match(query_text, slug, former, products):
+    """A match of one of the product's former names in the question, or None. `former`
+    is _former_name_table's result. Cased as in the catalog it counts, unless the rest
+    of the question is Title Cased. Then, and in any other casing, it needs a dose cue
+    beside it, so "what is vitamin a synergy?" names nothing."""
+    # Most products have no former name: return before any scan of the question, so a
+    # long message stays fast (CI, test_a_long_message_is_read_quickly).
+    if not former.get(slug) or _former_name_guarded(slug):
+        return None
+    # Only names whose first word the question holds: a C-level substring test, so a
+    # long message pays nothing for the regexes below.
+    low = query_text.lower()
+    names = [a for a in former[slug] if a.split()[0].lower() in low]
+    if not names:
+        return None
+    # A vinpocetine formula asked about with a pregnancy or safety cue counts in any
+    # casing, as its catalog name does: "is synergy c safe while pregnant?" gets the
+    # caution (review round 3b).
+    vinpo = (_VINPOCETINE_LINE in ((products.get(slug) or {}).get("warning") or "")
+             and bool(_PREGNANCY_OR_SAFETY_CUE.search(query_text)))
+    # The longest first, so "Vitamin D Synergy Powder" is quoted whole (review round 3b).
+    for alias in sorted(names, key=len, reverse=True):
+        # "Synergy-C" is typed too.
+        pattern = (r"(?<![\w+-])" + r"(?:\s*-\s*|\s+)".join(re.escape(w) for w in alias.split())
+                   + r"(?![\w+-])")
+        for mi in itertools.islice(re.finditer(pattern, query_text, re.IGNORECASE), 40):
+            cased = " ".join(re.split(r"\s*-\s*|\s+", mi.group(0))) == alias
+            if (cased and not _title_cased_around(query_text, *mi.span())) or vinpo:
+                return mi
+            if ((_FORMER_NAME_DOSE_BEFORE.search(query_text[max(0, mi.start() - 30):mi.start()])
+                 and not _FORMER_NAME_RELATION_AFTER.match(query_text, mi.end()))
+                    or _FORMER_NAME_DOSE_AFTER.match(query_text, mi.end())):
+                return mi
+    return None
+
+
+def _former_name_used(query_text, slug, products):
+    """The former name the question uses for `slug`, or "" when it uses the catalog name."""
+    # The same text the spans were computed on, so a "\u2122" or entity earlier in the
+    # question does not shift them (review round 1).
+    query_text = html.unescape(query_text or "").replace("\u2122", "")
+    span = _named_product_spans(query_text, products).get(slug)
+    if not span:
+        return ""
+    said = " ".join(re.split(r"\s*-\s*|\s+", query_text[span[0]:span[1]].strip())).lower()
+    for alias in _former_names(slug, products):
+        if said == " ".join(re.split(r"\s*-\s*|\s+", alias)).lower():
+            return alias
+    return ""
 
 
 def _inside_longer_catalog_name(query_text, slug, span, products):
@@ -3033,6 +3168,11 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                 and f"Caution: {_warn}" not in desc):
             desc = desc.replace(_warn, f"Caution: {_warn}", 1)
         parts = [f"### {name}", f"Page: {_catalog_page_url(slug)}"]
+        _former = _former_name_used(query_text, slug, products)
+        if _former:
+            # "Another name", since some aliases are spelling variants (review round 1).
+            parts.append(f'The user wrote "{_former}", another name for {name}. Answer '
+                         f"about {name}, by that name, from this text.")
         if desc:
             parts.append(desc)
         # A bundle has no directions or warning of its own: its approved intro carries

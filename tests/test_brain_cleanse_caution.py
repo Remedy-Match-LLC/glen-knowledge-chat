@@ -290,10 +290,12 @@ def test_lowercase_brain_cleanse_without_a_cue_stays_out():
     assert "### Brain Cleanse" not in _block("is a brain cleanse at night a real thing")
 
 
-def test_the_old_name_sleep_synergy_is_a_known_gap():
-    # The bot matches catalog names only (spec: known gap). Pinned here so a change
-    # to alias matching is a decision, not an accident.
-    assert "### Sleep Syntropy" not in _block("What is Sleep Synergy?")
+def test_the_old_name_sleep_synergy_reaches_sleep_syntropy():
+    # The known gap was closed by decision: a former name no other product shares now
+    # counts (Glen "yes", 2026-11-03, after Synergy C got an invented dose).
+    b = _block("What is Sleep Synergy?")
+    assert "### Sleep Syntropy" in b
+    assert 'The user wrote "Sleep Synergy", another name for Sleep Syntropy.' in b
 
 
 def _synthetic(monkeypatch, **fields):

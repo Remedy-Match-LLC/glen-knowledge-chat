@@ -56,7 +56,7 @@ def test_names_clients_actually_type(question, name):
     "how do I reverse age spots?",
     "hydrolyzed whey or casein for breakfast?",   # generic words, no catalog casing
     "What is AngiostasisXYZ123?",           # the whole name must stand as a word
-    "Tell me about Dental Regen Powder",    # an old name: aliases never count
+    "Tell me about Dental Regen Powder",    # an old name that is no alias
     "reverse age naturally",                # review round 3
     "I have acetaldehyde detox issues after drinking",
     "Moisturize my skin. What helps?",      # the verb at a sentence start, no cue
