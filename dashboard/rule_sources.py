@@ -17,20 +17,27 @@ answer streams as before.
 """
 import re
 
-_LABEL = re.compile(r"^(\s*(?:[*_]{1,2})?\s*sources?\s*(?:[*_]{1,2})?\s*:\s*(?:[*_]{1,2})?\s*)"
+# Plural only: the chat's list is "Sources:". A study quote's single "Source:" line is
+# Glen's citation format and is never touched (review round 1).
+_LABEL = re.compile(r"^(\s*(?:[*_]{1,2})?\s*sources\s*(?:[*_]{1,2})?\s*:\s*(?:[*_]{1,2})?\s*)"
                     r"([^\n]*?)(\s*)$", re.I)
 _LABEL_START = re.compile(r"\s*[*_]{0,2}\s*(?:s(?:o(?:u(?:r(?:c(?:e(?:s)?)?)?)?)?)?)?"
                           r"\s*[*_]{0,2}\s*", re.I)
-_RULE_WORDS = re.compile(r"\b(?:rules?|directives?|notices?|instructions?|prompt|"
+# Not after a hyphen: "long-standing" or "self-instruction" is not a rule word.
+_RULE_WORDS = re.compile(r"(?<![\w-])(?:rules?|directives?|notices?|instructions?|prompt|"
                          r"standing|retire(?:d|ment)?)\b", re.I)
 # The subjects of the chat's standing rules (app._STANDING_USE_RULE) and its own prompt.
 _RULE_SUBJECTS = re.compile(r"wellness[\s\-_]*(?:e|i)nsurance|\bcds\b|\bmms\b|"
                             r"chlorine dioxide|water purifier|system prompt|this prompt|"
-                            r"\bstanding\b|\bchat(?:bot)?\b", re.I)
+                            r"\bchat(?:bot)?\b", re.I)
+_LINK_TARGET = re.compile(r"\]\([^)]*\)|https?://\S+")
 
 
 def _is_rule(entry):
-    return bool(_RULE_WORDS.search(entry) and _RULE_SUBJECTS.search(entry))
+    """A rule word and a rule subject, read from the words a reader sees: a link's
+    address is ignored ("notice-of-privacy" in a URL is not a notice)."""
+    seen = _LINK_TARGET.sub("]", entry)
+    return bool(_RULE_WORDS.search(seen) and _RULE_SUBJECTS.search(seen))
 
 
 def _entries(body):

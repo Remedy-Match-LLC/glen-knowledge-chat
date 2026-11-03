@@ -54,6 +54,26 @@ def test_a_real_source_with_a_rule_word_is_kept(real):
     assert rs.rewrite_text(text) == text
 
 
+@pytest.mark.parametrize("line", [
+    "Source: [Long-standing effects of magnesium deficiency](https://pubmed.example/1)\n",
+    "Source: Standing CDS rule\n",
+])
+def test_a_study_quotes_single_source_line_is_never_touched(line):
+    """Round 1: Glen's study quotes end with a linked "Source:" line."""
+    assert rs.rewrite_text(BODY + line) == BODY + line
+
+
+def test_long_standing_in_a_title_is_not_a_rule():
+    text = BODY + "Sources: Long-standing CDS water purifier study, Clinical Theory\n"
+    assert rs.rewrite_text(text) == text
+
+
+def test_a_word_in_a_link_address_does_not_count():
+    text = BODY + ("Sources: [CDS page](https://x.example/cds-rule-notice), "
+                   "Clinical Theory\n")
+    assert rs.rewrite_text(text) == text
+
+
 def test_a_bar_separated_list_keeps_its_real_source():
     text = BODY + "Sources: Clinical Theory | Standing CDS rule\n"
     assert rs.rewrite_text(text) == BODY + "Sources: Clinical Theory\n"
