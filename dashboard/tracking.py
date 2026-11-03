@@ -199,7 +199,8 @@ def parse_cns_confirmation(html: str) -> Dict[str, object]:
 
 def build_tracking_email(tracking, recipient_name: Optional[str] = None,
                          resolved_email: Optional[str] = None,
-                         hold_note: Optional[str] = None) -> dict:
+                         hold_note: Optional[str] = None,
+                         for_client: Optional[str] = None) -> dict:
     """Build the draft Glen reviews + sends. Mirrors his manual email exactly:
     an "Aloha <first name>" greeting (when we know the name), the tracking number
     as a live USPS link, then his standard sign-off.
@@ -219,10 +220,15 @@ def build_tracking_email(tracking, recipient_name: Optional[str] = None,
     hold_note: why the watcher held this draft (a drop-ship client whose practitioner
     has client mail off). It replaces the "find their address" note, which would tell
     the reviewer to do the one thing they must not.
+
+    for_client: the drop-ship client's name, when this email goes to the practitioner.
+    Glen, 2026-11-02: "For drop ship orders, such as from Ashley King, we send the
+    tracking email to the practitioner as she has the email contact." recipient_name
+    is then the practitioner's, for the greeting, and the text names whose order it is.
     """
     numbers = [tracking] if isinstance(tracking, str) else list(tracking)
     if len(numbers) > 1:
-        return _build_multi(numbers, recipient_name, resolved_email, hold_note)
+        return _build_multi(numbers, recipient_name, resolved_email, hold_note, for_client)
     tracking = numbers[0]
     url = tracking_url(tracking)
     greeting_html = (
@@ -250,30 +256,41 @@ def build_tracking_email(tracking, recipient_name: Optional[str] = None,
         )
     html = (
         f"<div dir=\"ltr\">{note_html}{greeting_html}"
-        f"<p>Your order is on its way. Here is your USPS tracking number:</p>"
+        f"<p>{escape(_lead(for_client))} Here is {_your(for_client)} USPS tracking number:</p>"
         f'<h3><a href="{url}">{tracking}</a></h3>'
         f"{SIGNATURE_HTML}</div>"
     )
     text = (
-        f"{note_text}{greeting_text}Your order is on its way. "
-        f"Here is your USPS tracking number:\n\n{tracking}\n{url}"
+        f"{note_text}{greeting_text}{_lead(for_client)} "
+        f"Here is {_your(for_client)} USPS tracking number:\n\n{tracking}\n{url}"
         f"{SIGNATURE_TEXT}"
     )
     return {"subject": EMAIL_SUBJECT, "html": html, "text": text}
 
 
-def _build_multi(numbers, recipient_name, resolved_email, hold_note=None):
+def _lead(for_client):
+    return f"The order for {for_client} is on its way." if for_client \
+        else "Your order is on its way."
+
+
+def _your(for_client):
+    return "the" if for_client else "your"
+
+
+def _build_multi(numbers, recipient_name, resolved_email, hold_note=None, for_client=None):
     """One email for several boxes to one address: the same email, with every number."""
-    one = build_tracking_email(numbers[0], recipient_name, resolved_email, hold_note)
-    single_html = f'<p>Your order is on its way. Here is your USPS tracking number:</p>' \
+    one = build_tracking_email(numbers[0], recipient_name, resolved_email, hold_note,
+                               for_client)
+    lead, your = _lead(for_client), _your(for_client)
+    single_html = f'<p>{escape(lead)} Here is {your} USPS tracking number:</p>' \
                   f'<h3><a href="{tracking_url(numbers[0])}">{numbers[0]}</a></h3>'
-    single_text = (f"Your order is on its way. Here is your USPS tracking number:\n\n"
+    single_text = (f"{lead} Here is {your} USPS tracking number:\n\n"
                    f"{numbers[0]}\n{tracking_url(numbers[0])}")
-    multi_html = ("<p>Your order is on its way. Here are your USPS tracking numbers, "
+    multi_html = (f"<p>{escape(lead)} Here are {your} USPS tracking numbers, "
                   "one for each box:</p>"
                   + "".join(f'<h3>Box {i}: <a href="{tracking_url(n)}">{n}</a></h3>'
                             for i, n in enumerate(numbers, 1)))
-    multi_text = ("Your order is on its way. Here are your USPS tracking numbers, "
+    multi_text = (f"{lead} Here are {your} USPS tracking numbers, "
                   "one for each box:\n\n"
                   + "\n\n".join(f"Box {i}: {n}\n{tracking_url(n)}"
                                 for i, n in enumerate(numbers, 1)))
@@ -518,13 +535,22 @@ def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
     # branch of the matching below refuses a non-unique result instead of guessing.
     # So more candidates can only produce a unique match or a refusal.
     #
-    # 'delivered' and 'done' are deliberately still excluded: attaching a parcel to
-    # a closed order gains nothing and would touch a settled record.
+    # The same reasoning admits 'paid' and 'confirmed' (order 273, 2 Nov 2026), and a
+    # 'done' order paid in the last 14 days with something to ship (277 and 278 were
+    # closed before their labels). See tracking_recipient.could_await_label. Linked,
+    # a done order also moves to 'delivered' on the carrier's delivery scan and opens
+    # its coaching month, as an open order does. Glen, 2026-11-02: "yes".
+    #
+    # 'delivered' is still excluded: that parcel has already arrived.
+    from dashboard import tracking_recipient as _trc
+    statuses = _trc.label_statuses()
+    marks = ",".join("?" for _ in statuses)
     orders_cur = cx.execute(
-        "SELECT id, email, name, address_json FROM orders "
-        "WHERE status IN ('new','packed','shipped') "
+        "SELECT id, email, name, address_json, status, "
+        f"{_trc._optional_columns(cx, _trc._LABEL_COLUMNS)} FROM orders "
+        f"WHERE status IN ({marks}) "
         "AND (tracking_number IS NULL OR trim(tracking_number)='') "
-        "ORDER BY id DESC"
+        "ORDER BY id DESC", statuses
     )
     rows = orders_cur.fetchall()
     if rows and hasattr(rows[0], "keys"):
@@ -532,6 +558,7 @@ def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
     else:
         columns = [d[0] for d in orders_cur.description]
         orders = [dict(zip(columns, row)) for row in rows]
+    orders = [o for o in orders if _trc.could_await_label(o)]
     recipient = _norm_match_text(shipment.get("recipient_name"))
     target_email = str(resolved_email or "").strip().lower()
     ship_key = _shipment_address_key(shipment)

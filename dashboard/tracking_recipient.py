@@ -15,13 +15,93 @@ Rae, never the first row. A different surname never agrees, even at the right ad
 Pure reads. A missing table resolves to nothing rather than raising, so the watcher
 falls back to its name path instead of failing the parcel.
 """
+import functools
 import json
+import os
 import re
 import unicodedata
+from datetime import datetime, timedelta, timezone
 
-# Board orders that can still be this parcel's order. 'cancelled', 'delivered' and
-# 'done' are settled records, the same exclusion link_shipment_to_orders makes.
-_OPEN = ("new", "packed", "shipped")
+# Board orders that can still be this parcel's order, the same set
+# link_shipment_to_orders uses. 'paid' and 'confirmed' come before the board: order
+# 273 was still 'confirmed' when its label was bought (2 Nov 2026). 'cancelled' and
+# 'delivered' are settled records.
+_OPEN = ("paid", "confirmed", "new", "packed", "shipped")
+# The statuses this rule added on 2 Nov 2026. One of these with a tracking number has
+# had its parcel, so it steers no later label. new/packed/shipped keep their old
+# behaviour, which the address tests pin.
+_ADDED = ("paid", "confirmed", "done")
+# The columns could_await_label reads, beyond status.
+_LABEL_COLUMNS = ("created_at", "paid_at", "items_json", "tracking_number")
+
+# A 'done' order counts too when it may simply have been closed before its label.
+# Orders 277 and 278 were marked done first and never got a tracking email. Glen,
+# 2026-11-02, platform tab: "yes", for a done order paid in the last 14 days that
+# holds a physical item. A digital purchase is created 'done' and ships nothing.
+DONE_GRACE_DAYS = 14
+
+_PRODUCTS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "data", "products.json")
+
+
+@functools.lru_cache(maxsize=1)
+def _catalog():
+    try:
+        with open(_PRODUCTS_PATH) as fh:
+            return json.load(fh).get("products") or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _paid_at(value):
+    """paid_at as an aware datetime, or None when absent or unreadable."""
+    if isinstance(value, datetime):
+        paid = value
+    else:
+        try:
+            paid = datetime.fromisoformat(str(value or "").strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return paid if paid.tzinfo else paid.replace(tzinfo=timezone.utc)
+
+
+def could_await_label(order, now=None):
+    """Can this order still be waiting for a parcel? Open, or 'done' within the grace
+    period with something to ship and no tracking number yet. 'paid' and 'confirmed'
+    count when made in the grace period. `order` needs status, created_at, paid_at,
+    items_json and tracking_number.
+
+    A done order that already has its tracking number has had its parcel. Counting it
+    would let a later label at that address follow it, and send a client's next
+    parcel to the earlier order's practitioner (review round 2, 2026-11-02)."""
+    status = order.get("status")
+    if status in _ADDED and str(order.get("tracking_number") or "").strip():
+        return False
+    now = now or datetime.now(timezone.utc)
+
+    def recent(value):
+        when = _paid_at(value)
+        return when is not None and now - timedelta(days=DONE_GRACE_DAYS) <= when <= now
+
+    if status in ("paid", "confirmed"):
+        # An invoice abandoned months ago must not catch a later parcel at its
+        # address (review round 1, 2026-11-02). Order 273 was made 8 days before.
+        return recent(order.get("created_at"))
+    if status in _OPEN:
+        return True
+    if status != "done" or not recent(order.get("paid_at")):
+        return False                      # never paid, paid too long ago, or garbled
+    try:
+        items = json.loads(order.get("items_json") or "[]")
+    except (TypeError, ValueError):
+        return False
+    from dashboard import orders as _orders
+    return _orders.physical_units(items if isinstance(items, list) else [], _catalog()) > 0
+
+
+def label_statuses():
+    """The statuses whose orders could_await_label may accept, for a SQL IN list."""
+    return _OPEN + ("done",)
 
 _STREET_WORDS = {
     "street": "st", "avenue": "ave", "av": "ave", "road": "rd", "drive": "dr",
@@ -123,10 +203,10 @@ def _rows(cx, sql, params=()):
 
 
 def _result(email=None, source=None, conflict=False, reason="", candidates=(),
-            dropship=False, name_agrees=False, to_client=False):
+            dropship=False, name_agrees=False, to_client=False, prac_name=""):
     return {"email": email, "source": source, "conflict": conflict, "reason": reason,
             "candidates": sorted(set(candidates)), "dropship": dropship,
-            "name_agrees": name_agrees, "to_client": to_client}
+            "name_agrees": name_agrees, "to_client": to_client, "prac_name": prac_name}
 
 
 def _one_email(found):
@@ -194,12 +274,16 @@ def _resolve_by_address(cx, shipment):
     return found
 
 
-def _dropship_columns(cx):
-    """SELECT list for the drop-ship columns. Older databases may lack them; select
-    NULL rather than fail, because a failed read here empties the whole board step."""
+def _optional_columns(cx, columns):
+    """SELECT list for order columns an older database may lack: NULL rather than
+    fail, because a failed read here empties the whole board step."""
     from dashboard import db as _db
     return ", ".join(c if _db.column_exists(cx, "orders", c) else f"NULL AS {c}"
-                     for c in ("source", "practitioner_id", "recipient_email"))
+                     for c in columns)
+
+
+def _dropship_columns(cx):
+    return _optional_columns(cx, ("source", "practitioner_id", "recipient_email"))
 
 
 def _switched_on(cx):
@@ -374,10 +458,15 @@ def email_is_held(cx, email, holds=None):
 
 def _resolve_at(cx, name, z, sk, require_name):
     # 1. Board orders at this address.
-    marks = ",".join("?" for _ in _OPEN)
+    statuses = label_statuses()
+    marks = ",".join("?" for _ in statuses)
     board = []
-    for o in _rows(cx, f"SELECT email, name, address_json, {_dropship_columns(cx)} "
-                       f"FROM orders WHERE status IN ({marks})", _OPEN):
+    for o in _rows(cx, f"SELECT email, name, address_json, status, "
+                       f"{_optional_columns(cx, _LABEL_COLUMNS)}, "
+                       f"{_dropship_columns(cx)} FROM orders WHERE status IN ({marks})",
+                   statuses):
+        if not could_await_label(o):
+            continue
         try:
             a = json.loads(o.get("address_json") or "{}")
         except (TypeError, ValueError):
@@ -410,7 +499,12 @@ def _resolve_at(cx, name, z, sk, require_name):
                                        for o in ours])
             if email:
                 pracs = {(o.get("email") or "").strip().lower() for o in ours}
+                # A drop-ship order's own name is the practitioner's. One name is the
+                # greeting; two spellings greet no one rather than pick one.
+                names = {(o.get("name") or "").strip() for o in ours
+                         if (o.get("email") or "").strip().lower() == email}
                 return _result(email, "board", dropship=True, to_client=email not in pracs,
+                               prac_name=names.pop() if len(names) == 1 else "",
                                reason="open drop-ship order at the ship-to address")
         elif own and not ours:
             # A housemate's own order: the label names them, not the drop-ship client.
