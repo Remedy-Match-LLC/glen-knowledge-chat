@@ -2770,7 +2770,9 @@ def _former_name_match(query_text, slug, former, products):
     is _former_name_table's result. Cased as in the catalog it counts, unless the rest
     of the question is Title Cased. Then, and in any other casing, it needs a dose cue
     beside it, so "what is vitamin a synergy?" names nothing."""
-    if slug in former and _former_name_guarded(slug):
+    # Most products have no former name: return before any scan of the question, so a
+    # long message stays fast (CI, test_a_long_message_is_read_quickly).
+    if not former.get(slug) or _former_name_guarded(slug):
         return None
     # A vinpocetine formula asked about with a pregnancy or safety cue counts in any
     # casing, as its catalog name does: "is synergy c safe while pregnant?" gets the
