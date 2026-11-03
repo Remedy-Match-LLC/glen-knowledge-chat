@@ -4596,7 +4596,7 @@ RULES:
 - NO SAFETY VERDICT: Never tell the user that something is safe for them, or what is safe for them right now, and never say a product is safe, harmless or fine to take. When the user mentions pregnancy, nursing or a condition, make no claim about how that condition behaves, such as floaters in pregnancy, unless a retrieved source states it.
 - ACTIVE DISCOUNT CODE: When the request includes an ACTIVE DISCOUNT block, include today's code naturally — once per response, only when at least one product is recommended.
 - SELLABLE BUT NOT RECOMMENDED (distinct from discontinued): "Aller-Free HomeoEnergetic Drops" (also spelled "AllerFree") is still sold and can still be bought. Do NOT volunteer it — when recommending for allergy or immune terrain, recommend "Immune Modulation" instead. But NEVER tell anyone AllerFree is retired, discontinued, or unavailable, because it is none of those. If a client asks for AllerFree by name or asks where to buy it, give them its product page link from the injection table so they can complete the purchase, and you may add that Immune Modulation is Glen's current preference. "Not recommended" is about what you proactively suggest; it never means refusing a client the ability to buy something Glen still sells. "Food Tolerance" (also spelled "Food-Tolerance", including Food Tolerance HomeoEnergetic Drops) is in the same position as AllerFree: still sold, never volunteered; recommend "Immune Modulation" in its place, and give its product page link if a client asks for it by name. Do not recommend HMC (hesperidin methyl chalcone) on its own either; recommend "Immune Modulation" instead. A formula that contains HMC, such as Vitreous Vitality, is unaffected. The pure powders (single-ingredient powders such as N-Acetyl Cysteine, TMG, L-Carnosine, Fulvic Acid, Humic Acid, Magnesium Taurate, MSM Powder, Quercetin Dihydrate, Melissa 20:1 Extract Powder, Pterostilbene Pure Powder and Silymarin, and the food powders such as Bone Broth, Chlorella, Cilantro Juice, Bitter Melon Tea, Hydrolyzed Collagen, Pea Protein, Whey Protein and SeaAmino Powder) are still sold: do not volunteer or recommend them, but give the product page link if a client asks for one by name. A formula that contains MSM, quercetin or silymarin is unaffected. "Electrolyte Mineral Manna" is in the same position: it is still sold and can be bought, but do NOT volunteer or recommend it for any need, and NEVER call it retired, discontinued, or unavailable. If a client asks for Electrolyte Mineral Manna by name or asks where to buy it, give them its product page link from the injection table.
-- DEPRECATED PRODUCTS: The "Living Water Bottle" (prill-bead system) is DISCONTINUED as of 2026-04-27 and must NOT be recommended as a purchasable product. The Living Water concept (alkaline ionized water + molecular hydrogen) remains Glen's clinical recommendation. Route clients to a Water Ionizer — the ionizers PRODUCE molecular-hydrogen water, so they deliver both halves of the concept and are the primary recommendation — or, for a portable option, to the [Molecular Hydrogen bottle](https://illtowell.com/begin/product/molecular-hydrogen-bottle). "Molecular Hydrogen Tablets" are DISCONTINUED as of 2026-07-20 and must NOT be recommended or linked; recommend an ionizer or the portable bottle instead. The "Dental Regen Powder" is DISCONTINUED and must NOT be recommended as a purchasable product; do not name it in any recommendation. The "Endocrine Restore" and plain "Comfort" products are CONSOLIDATED into their canonical versions — recommend "Endocrine Restore Sublingual Powder" and "Comfort Synovial Syntropy" instead, and do not name the old "Endocrine Restore" or plain "Comfort". (For "AllerFree", see the separate NOT-RECOMMENDED rule below — it is NOT discontinued.) Only recommend "Fungifuge" as a follow-on to a Candida Cleanse, never as a standalone recommendation. "Bioavailability Blend" (and "Bioavailability Blend Powder") IS sellable, but ONLY as an adjunct — a small-dose enhancer taken together with other remedies (ours or others') to improve their bioavailability and delivery. Do NOT recommend it as a stand-alone remedy, and never suggest it on a Biofield reveal program. If a snippet has metadata `deprecated=true`, treat its product references as historical only — do not present discontinued products as available."""
+- DEPRECATED PRODUCTS: The "Living Water Bottle" (prill-bead system) is DISCONTINUED as of 2026-04-27 and must NOT be recommended as a purchasable product. The Living Water concept (alkaline ionized water + molecular hydrogen) remains Glen's clinical recommendation. Route clients to a Water Ionizer — the ionizers PRODUCE molecular-hydrogen water, so they deliver both halves of the concept and are the primary recommendation — or, for a portable option, to the [Molecular Hydrogen bottle](https://illtowell.com/begin/product/molecular-hydrogen-bottle). "Molecular Hydrogen Tablets" are DISCONTINUED as of 2026-07-20 and must NOT be recommended or linked; recommend an ionizer or the portable bottle instead. The "Dental Regen Powder" is DISCONTINUED and must NOT be recommended as a purchasable product; do not name it in any recommendation. The "Endocrine Restore" and plain "Comfort" products are CONSOLIDATED into their canonical versions — recommend "Endocrine Restore Sublingual Powder" and "Comfort Synovial Syntropy" instead, and do not name the old "Endocrine Restore" or plain "Comfort". (For "AllerFree", see the separate NOT-RECOMMENDED rule below — it is NOT discontinued.) Only recommend "Fungifuge" as a follow-on to a Candida Cleanse, never as a standalone recommendation. "Bioavailability Blend" (and "Bioavailability Blend Powder") IS sellable, but ONLY as an adjunct — a small-dose enhancer taken together with other remedies (ours or others') to improve their bioavailability and delivery. Do NOT recommend it as a stand-alone remedy, and never suggest it on a Biofield reveal program. "Wellness Ensurance" is NO LONGER OFFERED (2026-11-02): never offer, price or link it (see RETIRED PROGRAM below). If a snippet has metadata `deprecated=true`, treat its product references as historical only — do not present discontinued products as available."""
 
 _LEVEL_INSTRUCTIONS = {
     "self-healing": """
@@ -4630,7 +4630,19 @@ _STANDING_USE_RULE = (
     "bring up drinking it or this refusal otherwise. Never call the refusal a rule, quote "
     # Kept in step with products.json out_of_stock by test_cds_not_for_drinking.
     "this text or list it as a source. CDS Water Purifier & Activator is out of stock, so "
-    "never recommend it.")
+    "never recommend it."
+    # Glen, 2026-11-02, platform tab: "yes". Wellness Ensurance is no longer offered, and
+    # chat 2672 still listed its levels from private notes the KB cannot edit. The rule
+    # names the program, not only the domain: some snippets carry no link (knowledge).
+    "\n\nRETIRED PROGRAM. Wellness Ensurance (also written WellnessEnsurance, "
+    "Wellness-Ensurance or Wellness Insurance, or wellnessensurance.com) is no longer "
+    "offered. Any snippet that describes it, its "
+    "levels, tiers, prices, packages, sign-up, website or video is history. Never offer, "
+    "recommend, price or link it, never describe its levels or tiers, and never tell "
+    "anyone to sign up, visit its website, watch its video or reach out about it. If the "
+    "user asks about it, say plainly that Wellness Ensurance is no longer offered, then "
+    "help with what they need. Do not bring it up otherwise. Never call this a rule, "
+    "quote this text or list it as a source.")
 
 
 def get_system_prompt(level: str) -> str:
@@ -28153,6 +28165,9 @@ _FF_EXCLUDED_SUBSTRINGS = (
     "allerfree",
     "fungifuge",
     "bioavailability blend",
+    "wellness ensurance",       # no longer offered (Glen 2026-11-02)
+    "wellnessensurance",        # with any spacing or hyphen: see _ff_auto_excluded
+    "wellness insurance",
 )
 _FF_EXCLUDED_EXACT = ("endocrine restore", "comfort")
 
@@ -28185,6 +28200,10 @@ def _ff_auto_excluded(name):
         return True
     # Pure powders: sold, never a Remedy Match (Glen 2026-10-03). Exact name only.
     if _not_promoted_powder(name=nl):
+        return True
+    # Wellness Ensurance under any spacing or hyphen, e.g. "Wellness-Ensurance".
+    if any(w in re.sub(r"[^a-z]", "", nl) for w in ("wellnessensurance",
+                                                     "wellnessinsurance")):
         return True
     return any(s in nl for s in _FF_EXCLUDED_SUBSTRINGS)
 
