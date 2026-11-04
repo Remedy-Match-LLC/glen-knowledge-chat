@@ -8532,7 +8532,7 @@
    "fmp_id": "923",
    "qty_pricing": true,
    "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
-   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant. Do not use this formula if you take warfarin or another vitamin K antagonist, because it contains vitamin K2. Other ingredients may also affect bleeding. If you take any other blood thinner or antiplatelet medicine, have a bleeding disorder, or are planning surgery, consult your physician before use. If you take any other prescription medicine, especially blood pressure medicine, consult your physician or pharmacist before use. If you have liver disease, consult your physician before use. Stop use and consult your physician if your skin or the whites of your eyes turn yellow. If you are breastfeeding, consult your physician before use. If you are under 18, consult your physician before use. Keep out of reach of children.",
    "chat_caution": true
   },
   "macular-wellness-lycopene": {
