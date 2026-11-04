@@ -4,12 +4,15 @@ Three tables on the existing chat_log.db (persistent /data disk on Render):
 
   bottle_types   — Glen/Rae catalog of SKU shapes (e.g., "dropper 1oz")
   box_capacity   — per (bottle_type, box_size) → max qty that fits
-  usps_rates     — historical USPS retail prices + Glen's charged price after
-                   the rounding rule (≥50¢ up, ≤49¢ down). Each rate row
-                   carries `confirmed_by` so we can stage proposed updates
-                   from the watcher and require Glen's manual approval before
-                   they go live (matches the "money changes are human-triggered"
-                   rule).
+  usps_rates     — historical USPS prices + Glen's charged price after the
+                   rounding rule (up to the next whole dollar). Each rate row
+                   carries `confirmed_by`. The daily watcher applies a USPS
+                   change at once and emails Glen (Glen, 2026-11-03: "at
+                   once"); a manual entry at /admin/shipping is still staged
+                   and confirmed by hand.
+                   The `usps_retail_cents` column holds the price the charge
+                   follows: USPS Commercial Pricing since 2026-11-03.
+  usps_watch_state — the watcher's last good read and last failure alert.
 
 Public surface used by app.py routes + the order-entry page:
 
@@ -330,6 +333,12 @@ def init_shipping_schema(cx: sqlite3.Connection) -> None:
             )
         """)
     cx.execute("""
+        CREATE TABLE IF NOT EXISTS usps_watch_state (
+            key   TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    cx.execute("""
         CREATE TABLE IF NOT EXISTS packing_settings (
             key   TEXT PRIMARY KEY,
             value INTEGER NOT NULL
@@ -409,9 +418,11 @@ def init_shipping_schema(cx: sqlite3.Connection) -> None:
 # ── Rounding rule ─────────────────────────────────────────────────────────────
 
 def round_to_dollar(cents: int) -> int:
-    """Round to the nearest whole dollar. ≥50¢ rounds up, ≤49¢ rounds down."""
+    """Round up to the next whole dollar; a whole dollar stays. Glen, 2026-11-03: "We
+    round the exact price up to the next even dollar amount" ($32.75 -> $33). It was
+    the nearest dollar before, which charged $32 for a $32.49 box."""
     dollars, remainder = divmod(int(cents), 100)
-    if remainder >= 50:
+    if remainder:
         dollars += 1
     return dollars * 100
 
@@ -1041,9 +1052,13 @@ def delete_rate(rate_id: int, db_path: Optional[str] = None) -> str:
 
 import re
 
+# The Priority Mail page lists each Flat Rate package with its Commercial Pricing and
+# its Post Office price. business/prices.htm stopped listing the domestic boxes (by
+# 2026-11-03 it showed only International ones), so a read there failed or matched an
+# International price, and the charge stayed at July's figure.
 USPS_PRICES_URL = os.environ.get(
     "USPS_PRICES_URL",
-    "https://www.usps.com/business/prices.htm",
+    "https://www.usps.com/ship/priority-mail.htm",
 )
 
 # A scraped rate that moves more than this fraction from the current confirmed rate
@@ -1051,27 +1066,41 @@ USPS_PRICES_URL = os.environ.get(
 # review rather than auto-proposed. Flat-rate box prices don't jump 40% year to year.
 MAX_RATE_JUMP_PCT = 0.40
 
-# Order matters: "Large" before "Medium" before "Small" so the regex doesn't
-# greedy-match "Small" inside "Small Flat Rate Box". We match per-size
-# independently anyway, but keep this list as the canonical lookup.
+# Each name is followed by its Commercial Pricing figure on the page, then "Commercial
+# Pricing" and the Post Office price. The charge follows the commercial price (Glen's $33
+# for a $32.75 Large box). Medium matches its first listing, "Medium Flat Rate Box — 1".
+# Up to the price, without crossing into another package's name or price: a package
+# whose own price vanished must not read the next card's (review round 2).
+_SAME_CARD = r"(?:(?!Flat\s+Rate|\$).){0,40}?"
+
 _SIZE_PATTERNS = [
     # S is our internal Small Box packed inside a USPS Flat Rate Padded Envelope.
     # Price the carrier package actually mailed, not USPS's Small Flat Rate Box.
-    ("S", re.compile(r"(?:Padded\s+Flat\s+Rate\s+Envelope|Flat\s+Rate\s+Padded\s+Envelope)[^$]{0,200}\$(\d+\.\d{2})", re.I | re.S)),
-    ("M", re.compile(r"Medium\s+Flat\s+Rate\s+Box[^$]{0,200}\$(\d+\.\d{2})", re.I | re.S)),
-    ("L", re.compile(r"Large\s+Flat\s+Rate\s+Box[^$]{0,200}\$(\d+\.\d{2})", re.I | re.S)),
+    ("S", re.compile(r"(?:Padded\s+Flat\s+Rate\s+Envelope|Flat\s+Rate\s+Padded\s+Envelope)" + _SAME_CARD + r"\$(\d+\.\d{2})\s*Commercial\s+Pricing", re.I)),
+    ("M", re.compile(r"Medium\s+Flat\s+Rate\s+Box" + _SAME_CARD + r"\$(\d+\.\d{2})\s*Commercial\s+Pricing", re.I)),
+    ("L", re.compile(r"Large\s+Flat\s+Rate\s+Box" + _SAME_CARD + r"\$(\d+\.\d{2})\s*Commercial\s+Pricing", re.I)),
 ]
 
 
+def _page_text(html: str) -> str:
+    """The page's words with tags removed, entities decoded and spaces collapsed, so a
+    price split across tags reads as one line."""
+    import html as _html
+    text = re.sub(r"<(script|style)\b.*?</\1>", " ", html or "", flags=re.I | re.S)
+    text = _html.unescape(re.sub(r"<[^>]+>", " ", text))
+    return re.sub(r"\s+", " ", text)
+
+
 def _parse_usps_html(html: str) -> Dict[str, int]:
-    """Extract padded-envelope/Medium/Large retail prices in cents from USPS HTML.
+    """Extract the padded-envelope/Medium/Large Commercial Pricing in cents.
 
     Raises ValueError if any size is missing — caller should treat that as
     "source page changed, need a manual update via /admin/shipping".
     """
+    text = _page_text(html)
     out: Dict[str, int] = {}
     for size, pat in _SIZE_PATTERNS:
-        m = pat.search(html)
+        m = pat.search(text)
         if m:
             dollars, cents = m.group(1).split(".")
             out[size] = int(dollars) * 100 + int(cents)
@@ -1114,67 +1143,146 @@ def fetch_usps_retail_prices(timeout: int = 30) -> Dict[str, int]:
     import urllib.request
     req = urllib.request.Request(
         USPS_PRICES_URL,
-        headers={"User-Agent": "glen-knowledge-chat/1.0 (rate-watcher)"},
+        # usps.com refuses some non-browser agents, so send a browser one.
+        headers={"User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) "
+                                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36")},
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         html = resp.read().decode("utf-8", errors="replace")
     return _parse_usps_html(html)
 
 
+WATCHER = "usps-watcher"
+_SIZE_NAMES = {"S": "Padded Flat Rate Envelope (our Small)", "M": "Medium Flat Rate Box",
+               "L": "Large Flat Rate Box"}
+SHIPPING_ADMIN_HINT = "https://illtowell.com/admin/shipping"
+
+# Who is told. Glen, 2026-11-03: "When their price goes up we should know within a day."
+USPS_WATCH_ALERT_TO = os.environ.get("USPS_WATCH_ALERT_TO", "drglenswartwout@gmail.com")
+# A read that keeps failing alerts on its first day, then once a week until it reads.
+_FAILURE_REALERT_DAYS = 7
+
+
+def _watch_get(key: str, db_path: Optional[str] = None) -> Optional[str]:
+    with _connect(db_path) as cx:
+        row = cx.execute("SELECT value FROM usps_watch_state WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def _watch_set(key: str, value: str, db_path: Optional[str] = None) -> None:
+    with _connect(db_path) as cx:
+        cx.execute("INSERT INTO usps_watch_state (key, value) VALUES (?, ?) "
+                   "ON CONFLICT (key) DO UPDATE SET value = excluded.value", (key, value))
+        cx.commit()
+
+
+def _watch_alert(subject: str, body: str) -> bool:
+    """Email Glen. True only when Gmail returned a message id: a skipped send (pytest, a
+    suppressed address) is not a sent alert (review round 1). Never raises: an alert
+    failure must not undo an applied rate."""
+    try:
+        from dashboard import inbox as _inbox
+        res = _inbox.send_email(USPS_WATCH_ALERT_TO, subject, body) or {}
+        if not res.get("id"):
+            print(f"[usps-rate-check] alert not sent: {res!r}", flush=True)
+            return False
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"[usps-rate-check] alert not sent: {e!r}", flush=True)
+        return False
+
+
+def _failure_alert_due(today: str, db_path: Optional[str] = None) -> bool:
+    last = _watch_get("last_failure_alert", db_path=db_path)
+    if not last:
+        return True
+    try:
+        from datetime import date
+        gap = (date.fromisoformat(today) - date.fromisoformat(last)).days
+    except ValueError:
+        return True
+    return gap >= _FAILURE_REALERT_DAYS
+
+
 def check_usps_rates(
     today: Optional[str] = None,
     db_path: Optional[str] = None,
+    notify: bool = True,
 ) -> dict:
-    """Watcher entry point — called from /cron/usps-rate-check.
+    """Watcher entry point — called daily from /cron/usps-rate-check.
 
-    Compares scraped USPS retail prices against the latest confirmed rate per
-    box size. For any size whose retail price differs (and which doesn't
-    already have an identical pending proposal), stages a `propose_rate_update`.
+    Compares the USPS Commercial Pricing on the page with the latest confirmed rate
+    per box size. A size whose price moved is applied at once (Glen, 2026-11-03: "at
+    once"), confirmed as `usps-watcher`, and Glen is emailed what changed. A move of
+    more than MAX_RATE_JUMP_PCT is not applied: it is flagged and emailed, because it
+    is far more likely a page change than a USPS price. A page that cannot be read is
+    emailed on its first day and weekly while it stays unreadable.
 
     Returns a summary dict for the cron log:
-        {checked_at, scraped: {S, M, L}, proposed: [...], unchanged: [...], errors: [...]}
+        {checked_at, scraped: {S, M, L}, applied: [...], unchanged: [...],
+         flagged: [...], errors: [...], alerted: bool}
     """
     today = today or datetime.now(timezone.utc).date().isoformat()
     summary = {
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "scraped": None,
-        "proposed": [],
+        "applied": [],
         "unchanged": [],
         "flagged": [],
         "errors": [],
+        "alerted": False,
     }
     try:
         scraped = fetch_usps_retail_prices()
         summary["scraped"] = scraped
     except Exception as e:
         summary["errors"].append(f"fetch failed: {e}")
+        unsent = _watch_get("unsent_alert", db_path=db_path) or ""
+        if notify and (unsent or _failure_alert_due(today, db_path=db_path)):
+            # An applied change whose email failed rides along (review round 2).
+            summary["alerted"] = _watch_alert(
+                "USPS price check could not read the USPS page",
+                "The daily USPS Flat Rate price check could not read today's prices.\n\n"
+                f"Page: {USPS_PRICES_URL}\nError: {e}\n\n"
+                "Shipping keeps charging the last prices it read until this is fixed.\n"
+                "The platform tab owns the fix: dashboard/shipping.py, _parse_usps_html.\n"
+                f"Current prices: {SHIPPING_ADMIN_HINT}"
+                + (f"\n\nNot sent earlier:\n{unsent}" if unsent else ""))
+            if summary["alerted"]:
+                _watch_set("last_failure_alert", today, db_path=db_path)
+                _watch_set("unsent_alert", "", db_path=db_path)
         return summary
 
+    _watch_set("last_good_read", today, db_path=db_path)
+    _watch_set("last_failure_alert", "", db_path=db_path)
     current = get_current_rates(db_path=db_path)
-    pending = list_pending_rate_updates(db_path=db_path)
-    pending_keys = {(p["box_size"], p["usps_retail_cents"]) for p in pending}
-
+    lines = []
     for size, retail_cents in scraped.items():
         cur = current.get(size)
-        if cur and cur["usps_retail_cents"] == retail_cents:
-            summary["unchanged"].append(size)
+        # A hand-entered rate dated ahead of today outranks any row dated today, so
+        # applying would repeat daily. Leave it and say so (review round 1).
+        if cur and str(cur.get("effective_date") or "") > today:
+            summary["flagged"].append({
+                "box_size": size, "scraped_cents": retail_cents,
+                "current_cents": cur["usps_retail_cents"],
+                "reason": f"a rate dated {cur['effective_date']} is set ahead"})
             continue
-        if (size, retail_cents) in pending_keys:
-            summary["unchanged"].append(f"{size} (already pending)")
+        if (cur and cur["usps_retail_cents"] == retail_cents
+                and int(cur["charged_cents"]) == round_to_dollar(retail_cents)):
+            summary["unchanged"].append(size)
             continue
         # Plausibility guard: the USPS page layout can shift so the scraper grabs an
         # adjacent (wrong) price. A confirmed rate that jumps more than MAX_RATE_JUMP_PCT
-        # is almost certainly a mis-scrape, so FLAG it for manual review instead of
-        # auto-proposing garbage that could then be confirmed (the 2026-07 incident:
-        # $12.65 -> $33.75). A first-ever rate (no current) is not gated.
+        # is almost certainly a mis-scrape, so FLAG it instead of charging it (the
+        # 2026-07 incident: $12.65 -> $33.75). A first-ever rate (no current) is not gated.
         if cur and cur.get("usps_retail_cents"):
             base = cur["usps_retail_cents"]
             if abs(retail_cents - base) > base * MAX_RATE_JUMP_PCT:
                 summary["flagged"].append({
                     "box_size": size, "scraped_cents": retail_cents, "current_cents": base,
-                    "reason": (f"scraped ${retail_cents/100:.2f} differs more than "
-                               f"{int(MAX_RATE_JUMP_PCT*100)}% from the current ${base/100:.2f}; "
-                               f"not auto-proposed (possible USPS page change) — review at /admin/shipping"),
+                    "reason": (f"it moved more than {int(MAX_RATE_JUMP_PCT*100)}%, which is "
+                               "more likely a USPS page change than a price. Review it at "
+                               "/admin/shipping"),
                 })
                 continue
         try:
@@ -1185,7 +1293,59 @@ def check_usps_rates(
                 effective_date=today,
                 db_path=db_path,
             )
-            summary["proposed"].append({"id": rid, "box_size": size, "retail_cents": retail_cents})
+            confirm_rate_update(rid, confirmed_by=WATCHER, db_path=db_path)
+            old_charge = int(cur["charged_cents"]) if cur else None
+            new_charge = round_to_dollar(retail_cents)
+            summary["applied"].append({"id": rid, "box_size": size, "retail_cents": retail_cents,
+                                       "charged_cents": new_charge,
+                                       "previous_charged_cents": old_charge})
+            lines.append(
+                f"{_SIZE_NAMES.get(size, size)}: USPS ${retail_cents/100:.2f}"
+                + (f" (was ${cur['usps_retail_cents']/100:.2f})" if cur else "")
+                + f". We now charge ${new_charge/100:.0f}"
+                + (f" (was ${old_charge/100:.0f})." if old_charge is not None
+                   and old_charge != new_charge else ", unchanged."))
         except Exception as e:
-            summary["errors"].append(f"{size} propose failed: {e}")
+            summary["errors"].append(f"{size} apply failed: {e}")
+    # A flag or an error is told once, not every day it stays (review round 1).
+    told = set(filter(None, (_watch_get("told", db_path=db_path) or "").split("\n")))
+    still = set()
+    for f in summary["flagged"]:
+        key = f"flag:{f['box_size']}:{f['scraped_cents']}:{f['current_cents']}"
+        still.add(key)
+        if key in told:
+            continue
+        lines.append(f"{_SIZE_NAMES.get(f['box_size'], f['box_size'])}: the page read "
+                     f"${f['scraped_cents']/100:.2f} against ${f['current_cents']/100:.2f}. "
+                     f"Not applied: {f['reason']}. Please check it.")
+    for err in summary["errors"]:
+        key = "error:" + err
+        still.add(key)
+        if key not in told:
+            lines.append(f"Not applied: {err}")
+    # A change already applied must still reach Glen if today's email fails: keep the
+    # text and send it with the next run (review round 2).
+    unsent = _watch_get("unsent_alert", db_path=db_path) or ""
+    if notify and (lines or unsent):
+        changed = any(a["charged_cents"] != a["previous_charged_cents"] for a in summary["applied"])
+        text = "\n".join(lines)
+        if unsent:
+            earlier = "\n".join(ln for ln in unsent.split("\n") if ln and ln not in lines)
+            if earlier:
+                text = (text + "\n\n" if text else "") + "Not sent earlier:\n" + earlier
+        summary["alerted"] = _watch_alert(
+            "USPS shipping price changed" if (changed or unsent) else "USPS shipping price check",
+            text + "\n\nSource: " + USPS_PRICES_URL
+            + "\nNew orders use the new charge now. Invoices already made keep theirs.\n"
+            + f"Current prices: {SHIPPING_ADMIN_HINT}")
+        if summary["alerted"]:
+            _watch_set("unsent_alert", "", db_path=db_path)
+        else:
+            # Keep each line once, however many days the email fails (review round 1).
+            kept = [ln for ln in (unsent.split("\n") if unsent else []) if ln]
+            kept += [ln for ln in lines if ln not in kept]
+            _watch_set("unsent_alert", "\n".join(kept), db_path=db_path)
+            still = told & still            # not told yet: try again tomorrow
+    if notify:   # a run that emails nobody tells nobody (review round 2)
+        _watch_set("told", "\n".join(sorted(still)), db_path=db_path)
     return summary

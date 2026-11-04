@@ -75,9 +75,11 @@ def test_round_to_dollar_rounds_50_up():
     from dashboard.shipping import round_to_dollar
     assert round_to_dollar(1250) == 1300  # $12.50 → $13.00
 
-def test_round_to_dollar_rounds_49_down():
+def test_round_to_dollar_rounds_any_cents_up():
+    # Glen, 2026-11-03: "We round the exact price up to the next even dollar amount."
     from dashboard.shipping import round_to_dollar
-    assert round_to_dollar(1249) == 1200  # $12.49 → $12.00
+    assert round_to_dollar(1249) == 1300  # $12.49 → $13.00, was $12 under the old rule
+    assert round_to_dollar(1201) == 1300
 
 def test_round_to_dollar_rounds_99_up():
     from dashboard.shipping import round_to_dollar
@@ -88,11 +90,11 @@ def test_round_to_dollar_keeps_whole_dollars():
     assert round_to_dollar(1200) == 1200
 
 def test_round_to_dollar_actual_usps_rates():
-    """The April 26 2026 retail rates → Glen's charged prices."""
+    """USPS Commercial Pricing on 2026-11-03 gives today's charges."""
     from dashboard.shipping import round_to_dollar
-    assert round_to_dollar(1265) == 1300  # Small  $12.65 → $13
-    assert round_to_dollar(2295) == 2300  # Medium $22.95 → $23
-    assert round_to_dollar(3150) == 3200  # Large  $31.50 → $32
+    assert round_to_dollar(1284) == 1300  # Padded envelope $12.84 → $13
+    assert round_to_dollar(2202) == 2300  # Medium $22.02 → $23
+    assert round_to_dollar(3275) == 3300  # Large  $32.75 → $33 (Glen's figure)
 
 
 # ── Box-fit matrix ────────────────────────────────────────────────────────────
@@ -309,66 +311,260 @@ def test_confirm_rate_update_marks_confirmed(seeded_db):
 
 # ── USPS rate watcher ─────────────────────────────────────────────────────────
 
+# The shape of usps.com/ship/priority-mail.htm on 2026-11-03: each package, its
+# Commercial Pricing, then its Post Office price, split across tags.
 SAMPLE_USPS_HTML = """
 <html><body>
 <h2>Priority Mail Flat Rate</h2>
-<ul>
-  <li>Flat Rate Envelope: $11.95</li>
-  <li>Flat Rate Padded Envelope: $12.30</li>
-  <li>Small Flat Rate Box: $13.50</li>
-  <li>Medium Flat Rate Box: $24.00</li>
-  <li>Large Flat Rate Box: $33.10</li>
-</ul>
+<div class="card"><h3>Flat Rate Envelope</h3><p><strong>$11.24</strong> Commercial Pricing</p><p>$13.90 at Post Office</p></div>
+<div class="card"><h3>Padded Flat Rate Envelope</h3><p><strong>$12.84</strong> Commercial Pricing</p><p>$15.00 at Post Office</p></div>
+<div class="card"><h3>Small Flat Rate Box</h3><p><strong>$12.95</strong> Commercial Pricing</p><p>$14.65 at Post Office</p></div>
+<div class="card"><h3>Medium Flat Rate Box &mdash; 1 (top-loading)</h3><p><strong>$22.02</strong> Commercial Pricing</p><p>$25.80 at Post Office</p></div>
+<div class="card"><h3>Medium Flat Rate Box &mdash; 2 (side-loading)</h3><p><strong>$22.02</strong> Commercial Pricing</p><p>$25.80 at Post Office</p></div>
+<div class="card"><h3>Large Flat Rate Box</h3><p><strong>$32.75</strong> Commercial Pricing</p><p>$36.10 at Post Office</p></div>
 </body></html>
 """
 
-def test_parse_usps_html_extracts_three_sizes():
+# business/prices.htm on 2026-11-03: only International Flat Rate boxes are listed.
+INTERNATIONAL_ONLY_HTML = """
+<p>Priority Mail International Flat Rate Envelopes From $32.65 at Post Office From $31.61
+for Commercial Base</p><p>Medium Flat Rate Boxes From $61.80 at Post Office</p>
+<p>Large Flat Rate Boxes From $75.15 at Post Office From $73.24 for Commercial Base</p>
+"""
+
+
+def test_parse_usps_html_reads_commercial_pricing():
     from dashboard.shipping import _parse_usps_html
     out = _parse_usps_html(SAMPLE_USPS_HTML)
-    assert out == {"S": 1230, "M": 2400, "L": 3310}
+    assert out == {"S": 1284, "M": 2202, "L": 3275}
+
+def test_parse_usps_html_never_reads_an_international_price():
+    from dashboard.shipping import _parse_usps_html
+    with pytest.raises(ValueError, match="missing sizes"):
+        _parse_usps_html(INTERNATIONAL_ONLY_HTML)
 
 def test_parse_usps_html_raises_on_missing_size():
     from dashboard.shipping import _parse_usps_html
-    bad = "<html><body><p>Flat Rate Padded Envelope: $12.30 (medium price moved)</p></body></html>"
+    bad = "<p>Padded Flat Rate Envelope <b>$12.84</b> Commercial Pricing (medium price moved)</p>"
     with pytest.raises(ValueError, match="missing sizes"):
         _parse_usps_html(bad)
 
-
-def test_check_usps_rates_proposes_when_retail_differs(seeded_db, monkeypatch):
-    """If scraped retail differs from current, propose an update."""
+def test_the_watcher_reads_the_priority_mail_page():
     from dashboard import shipping
-    # Seeded db has S=$12.65 retail. Pretend USPS now reports $13.50.
+    assert shipping.USPS_PRICES_URL.endswith("/ship/priority-mail.htm")
+
+
+@pytest.fixture
+def alerts(monkeypatch):
+    from dashboard import shipping
+    sent = []
+    monkeypatch.setattr(shipping, "_watch_alert",
+                        lambda subject, body: sent.append((subject, body)) or True)
+    return sent
+
+
+def test_check_usps_rates_applies_a_change_at_once(seeded_db, monkeypatch, alerts):
+    """Glen, 2026-11-03: a USPS change applies "at once", and he is told."""
+    from dashboard import shipping
+    cur = shipping.get_current_rates(db_path=seeded_db)
     monkeypatch.setattr(shipping, "fetch_usps_retail_prices",
-                        lambda timeout=30: {"S": 1350, "M": 2295, "L": 3150})
+                        lambda timeout=30: {"S": cur["S"]["usps_retail_cents"],
+                                            "M": cur["M"]["usps_retail_cents"], "L": 3375})
     summary = shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)
-    assert summary["scraped"] == {"S": 1350, "M": 2295, "L": 3150}
-    proposed_sizes = [p["box_size"] for p in summary["proposed"]]
-    assert proposed_sizes == ["S"]   # only S differed
-    assert "M" in summary["unchanged"]
-    assert "L" in summary["unchanged"]
+    assert [a["box_size"] for a in summary["applied"]] == ["L"]
+    assert summary["unchanged"] == ["S", "M"]
+    now = shipping.get_current_rates(db_path=seeded_db)["L"]
+    assert now["charged_cents"] == 3400 and now["confirmed_by"] == "usps-watcher"
+    assert shipping.list_pending_rate_updates(db_path=seeded_db) == []
+    assert len(alerts) == 1 and alerts[0][0] == "USPS shipping price changed"
+    assert "$33.75" in alerts[0][1] and "We now charge $34" in alerts[0][1]
 
-def test_check_usps_rates_skips_existing_pending(seeded_db, monkeypatch):
-    """A second run shouldn't pile up duplicate pending rows for the same retail."""
+def test_check_usps_rates_is_quiet_when_nothing_moved(seeded_db, monkeypatch, alerts):
     from dashboard import shipping
-    monkeypatch.setattr(shipping, "fetch_usps_retail_prices",
-                        lambda timeout=30: {"S": 1350, "M": 2295, "L": 3150})
-    shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)
-    second = shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)
-    assert second["proposed"] == []
-    assert "S (already pending)" in second["unchanged"]
-    pending = shipping.list_pending_rate_updates(db_path=seeded_db)
-    assert len(pending) == 1   # still just the one from the first run
+    cur = shipping.get_current_rates(db_path=seeded_db)
+    same = {k: v["usps_retail_cents"] for k, v in cur.items()}
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", lambda timeout=30: same)
+    summary = shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)
+    assert summary["applied"] == [] and alerts == []
+    second = shipping.check_usps_rates(today="2027-01-19", db_path=seeded_db)
+    assert second["applied"] == [] and alerts == []
 
-def test_check_usps_rates_handles_fetch_failure(seeded_db, monkeypatch):
-    """A network error should be captured in errors[], not raise."""
+def test_a_second_run_applies_nothing_again(seeded_db, monkeypatch, alerts):
+    from dashboard import shipping
+    cur = shipping.get_current_rates(db_path=seeded_db)
+    new = {k: v["usps_retail_cents"] for k, v in cur.items()}
+    new["S"] += 20
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", lambda timeout=30: new)
+    shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)
+    second = shipping.check_usps_rates(today="2027-01-19", db_path=seeded_db)
+    assert second["applied"] == [] and len(alerts) == 1
+
+def test_a_large_jump_is_flagged_not_charged(seeded_db, monkeypatch, alerts):
+    from dashboard import shipping
+    before = shipping.get_current_rates(db_path=seeded_db)["L"]["charged_cents"]
+    cur = shipping.get_current_rates(db_path=seeded_db)
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices",
+                        lambda timeout=30: {"S": cur["S"]["usps_retail_cents"],
+                                            "M": cur["M"]["usps_retail_cents"], "L": 7515})
+    summary = shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)
+    assert summary["applied"] == [] and [f["box_size"] for f in summary["flagged"]] == ["L"]
+    assert shipping.get_current_rates(db_path=seeded_db)["L"]["charged_cents"] == before
+    assert len(alerts) == 1 and "Not applied" in alerts[0][1]
+
+def test_check_usps_rates_handles_fetch_failure(seeded_db, monkeypatch, alerts):
+    """A network error should be captured in errors[], not raise, and Glen is told."""
     from dashboard import shipping
     def boom(timeout=30):
         raise RuntimeError("connection refused")
     monkeypatch.setattr(shipping, "fetch_usps_retail_prices", boom)
     summary = shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)
     assert summary["scraped"] is None
-    assert summary["proposed"] == []
+    assert summary["applied"] == []
     assert any("fetch failed" in e for e in summary["errors"])
+    assert len(alerts) == 1 and "could not read" in alerts[0][0]
+
+def test_a_failing_read_alerts_on_day_one_then_weekly(seeded_db, monkeypatch, alerts):
+    from dashboard import shipping
+    def boom(timeout=30):
+        raise ValueError("USPS price scrape missing sizes: ['S']")
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", boom)
+    for day in ("2027-01-18", "2027-01-19", "2027-01-24"):
+        shipping.check_usps_rates(today=day, db_path=seeded_db)
+    assert len(alerts) == 1
+    shipping.check_usps_rates(today="2027-01-25", db_path=seeded_db)
+    assert len(alerts) == 2
+
+def test_a_good_read_resets_the_failure_alert(seeded_db, monkeypatch, alerts):
+    from dashboard import shipping
+    cur = {k: v["usps_retail_cents"]
+           for k, v in shipping.get_current_rates(db_path=seeded_db).items()}
+    def boom(timeout=30):
+        raise RuntimeError("down")
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", boom)
+    shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", lambda timeout=30: cur)
+    shipping.check_usps_rates(today="2027-01-19", db_path=seeded_db)
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", boom)
+    shipping.check_usps_rates(today="2027-01-20", db_path=seeded_db)
+    assert len(alerts) == 2       # a new outage is news again
+
+def test_an_old_rounding_is_corrected_without_a_usps_change(seeded_db, monkeypatch, alerts):
+    """A $32.49 box charged $32 under the old nearest-dollar rule becomes $33."""
+    from dashboard import shipping
+    rid = shipping.propose_rate_update(box_size="L", usps_retail_cents=3249, source_url="t",
+                                       effective_date="2027-01-01", db_path=seeded_db)
+    shipping.confirm_rate_update(rid, confirmed_by="glen", db_path=seeded_db)
+    with shipping._connect(seeded_db) as cx:
+        cx.execute("UPDATE usps_rates SET charged_cents = 3200 WHERE id = ?", (rid,))
+        cx.commit()
+    cur = {k: v["usps_retail_cents"]
+           for k, v in shipping.get_current_rates(db_path=seeded_db).items()}
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", lambda timeout=30: cur)
+    summary = shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)
+    assert [a["box_size"] for a in summary["applied"]] == ["L"]
+    assert shipping.get_current_rates(db_path=seeded_db)["L"]["charged_cents"] == 3300
+    assert "We now charge $33 (was $32)." in alerts[0][1]
+
+def test_a_price_without_its_own_figure_is_not_read_from_the_next_card():
+    from dashboard.shipping import _parse_usps_html
+    html = SAMPLE_USPS_HTML.replace("<p><strong>$12.84</strong> Commercial Pricing</p>", "")
+    with pytest.raises(ValueError, match="missing sizes"):
+        _parse_usps_html(html)
+
+def test_an_alert_that_failed_is_sent_with_the_next_run(seeded_db, monkeypatch):
+    from dashboard import shipping
+    sent, ok = [], {"v": False}
+    monkeypatch.setattr(shipping, "_watch_alert",
+                        lambda subject, body: sent.append(body) or ok["v"])
+    cur = {k: v["usps_retail_cents"]
+           for k, v in shipping.get_current_rates(db_path=seeded_db).items()}
+    cur["L"] += 100
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", lambda timeout=30: dict(cur))
+    shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)   # email fails
+    ok["v"] = True
+    shipping.check_usps_rates(today="2027-01-19", db_path=seeded_db)   # nothing new
+    assert len(sent) == 2 and "Not sent earlier" in sent[1]
+    shipping.check_usps_rates(today="2027-01-20", db_path=seeded_db)
+    assert len(sent) == 2
+
+def test_a_flag_is_told_once_not_daily(seeded_db, monkeypatch, alerts):
+    from dashboard import shipping
+    cur = {k: v["usps_retail_cents"]
+           for k, v in shipping.get_current_rates(db_path=seeded_db).items()}
+    cur["L"] = 7515
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", lambda timeout=30: dict(cur))
+    for day in ("2027-01-18", "2027-01-19", "2027-01-20"):
+        shipping.check_usps_rates(today=day, db_path=seeded_db)
+    assert len(alerts) == 1
+
+def test_a_rate_set_ahead_is_left_and_told_once(seeded_db, monkeypatch, alerts):
+    from dashboard import shipping
+    rid = shipping.propose_rate_update(box_size="L", usps_retail_cents=3400, source_url="t",
+                                       effective_date="2027-06-01", db_path=seeded_db)
+    shipping.confirm_rate_update(rid, confirmed_by="glen", db_path=seeded_db)
+    cur = {k: v["usps_retail_cents"]
+           for k, v in shipping.get_current_rates(db_path=seeded_db).items()}
+    cur["L"] = 3375
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", lambda timeout=30: dict(cur))
+    for day in ("2027-01-18", "2027-01-19"):
+        summary = shipping.check_usps_rates(today=day, db_path=seeded_db)
+        assert summary["applied"] == []
+    assert len(alerts) == 1 and "set ahead" in alerts[0][1]
+
+def test_a_skipped_send_is_not_counted_as_sent(monkeypatch):
+    from dashboard import shipping, inbox
+    monkeypatch.setattr(inbox, "send_email", lambda *a, **k: {"skipped": "suppressed"})
+    assert shipping._watch_alert("s", "b") is False
+    monkeypatch.setattr(inbox, "send_email", lambda *a, **k: {"id": "m1"})
+    assert shipping._watch_alert("s", "b") is True
+
+def test_retried_lines_are_kept_once(seeded_db, monkeypatch):
+    from dashboard import shipping
+    monkeypatch.setattr(shipping, "_watch_alert", lambda subject, body: False)
+    cur = {k: v["usps_retail_cents"]
+           for k, v in shipping.get_current_rates(db_path=seeded_db).items()}
+    cur["L"] = 7515
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", lambda timeout=30: dict(cur))
+    for day in ("2027-01-18", "2027-01-19", "2027-01-20"):
+        shipping.check_usps_rates(today=day, db_path=seeded_db)
+    unsent = shipping._watch_get("unsent_alert", db_path=seeded_db)
+    assert unsent.count("Large Flat Rate Box") == 1
+
+def test_an_unsent_change_rides_on_the_failure_email(seeded_db, monkeypatch):
+    from dashboard import shipping
+    sent, ok = [], {"v": False}
+    monkeypatch.setattr(shipping, "_watch_alert",
+                        lambda subject, body: sent.append(body) or ok["v"])
+    cur = {k: v["usps_retail_cents"]
+           for k, v in shipping.get_current_rates(db_path=seeded_db).items()}
+    cur["L"] += 100
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", lambda timeout=30: dict(cur))
+    shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db)   # email fails
+    ok["v"] = True
+    def boom(timeout=30):
+        raise RuntimeError("down")
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", boom)
+    shipping.check_usps_rates(today="2027-01-19", db_path=seeded_db)
+    assert "Not sent earlier" in sent[-1] and "Large Flat Rate Box" in sent[-1]
+    assert shipping._watch_get("unsent_alert", db_path=seeded_db) == ""
+
+def test_a_quiet_run_does_not_mark_a_flag_told(seeded_db, monkeypatch, alerts):
+    from dashboard import shipping
+    cur = {k: v["usps_retail_cents"]
+           for k, v in shipping.get_current_rates(db_path=seeded_db).items()}
+    cur["L"] = 7515
+    monkeypatch.setattr(shipping, "fetch_usps_retail_prices", lambda timeout=30: dict(cur))
+    shipping.check_usps_rates(today="2027-01-18", db_path=seeded_db, notify=False)
+    shipping.check_usps_rates(today="2027-01-19", db_path=seeded_db)
+    assert len(alerts) == 1
+
+def test_the_check_runs_every_day():
+    src = (Path(__file__).resolve().parent.parent / "scripts" / "run_personal_email_cron.py").read_text()
+    at = src.index('_piggyback_post("usps-rate-check"')
+    line_start = src.rindex("\n", 0, at) + 1
+    # Called at the function's own indent, so no day-of-week branch encloses it.
+    assert src[line_start:at] == "    "
+    assert "weekday()" not in src[max(0, at - 300):at]
 
 
 # ── Schema extensions: dimensions + packing settings ──────────────────────────
@@ -542,7 +738,7 @@ def test_delete_rate_refuses_last_confirmed(tmp_path):
         delete_rate(seed_id, db_path=db)   # only confirmed S rate -> no fallback, refuse
 
 
-def test_check_usps_rates_flags_implausible_jump(tmp_path, monkeypatch):
+def test_check_usps_rates_flags_implausible_jump(tmp_path, monkeypatch, alerts):
     from dashboard import shipping as sh
     db = str(tmp_path / "chat_log.db")
     with sqlite3.connect(db) as cx:
@@ -552,5 +748,5 @@ def test_check_usps_rates_flags_implausible_jump(tmp_path, monkeypatch):
                         lambda *a, **k: {"S": 3375, "M": 2295, "L": 3150})
     summary = sh.check_usps_rates(today="2026-07-07", db_path=db)
     assert "S" in [f["box_size"] for f in summary["flagged"]]     # flagged, not proposed
-    assert not any(p["box_size"] == "S" for p in summary["proposed"])
+    assert not any(p["box_size"] == "S" for p in summary["applied"])
     assert "M" in summary["unchanged"] and "L" in summary["unchanged"]
