@@ -10446,7 +10446,21 @@ def _is_certification_student(email):
 
 
 def _group_coaching_entitled(email):
-    return _is_paid_member(email) or _is_certification_student(email)
+    return (_is_paid_member(email) or _is_certification_student(email)
+            or _spend_coaching_access(email))
+
+
+def _spend_coaching_access(email):
+    """Over $200 paid in the last 30 days opens Group Coaching, and only that (Glen,
+    2026-11-04). See dashboard/spend_access.py. Fail closed."""
+    try:
+        from dashboard import spend_access as _sa
+        email = _canonical_email(email)
+        with db.connect(LOG_DB) as cx:
+            return _sa.qualifies(cx, email)
+    except Exception as e:
+        print(f"[spend-access] check failed: {e!r}", flush=True)
+        return False
 
 
 # Recurring membership tiers (Group Coaching). One QBO Item, price set per tier.
@@ -25428,6 +25442,26 @@ def members_board_buckets(cx, strict=False):
         if strict:
             raise
         print(f"[members-board] family plan read failed: {e!r}", flush=True)
+    # Over $200 paid in 30 days: Group Coaching and the invitation, nothing else (Glen,
+    # 2026-11-04). Its own bucket, so filter_audience.py never counts it as paying and an
+    # unsubscribe still drops them. Only people not already on the board.
+    try:
+        from dashboard import spend_access as _sa
+        # Lowercased: the board keeps a membership row's email as stored, and a
+        # "Jane@" member listed again here would read as paying and not paying
+        # (review round 3).
+        _seen = {(r.get("email") or "").strip().lower()
+                 for v in buckets.values() for r in v}
+        _sa.ensure_tables(cx)
+        buckets["spend"] = [
+            {"email": em, "name": _member_name_for(cx, em), "category": "spend",
+             "spend_30d_cents": cents, "tier": 0, "order_count": 0}
+            for em, cents in sorted(_sa.spenders(cx).items()) if em not in _seen]
+    except Exception as e:
+        if strict:
+            raise
+        buckets["spend"] = []
+        print(f"[members-board] spend read failed: {e!r}", flush=True)
     # credit_cents is always 0 now (accrual retired); sort is a harmless no-op
     # kept for row-shape stability.
     buckets["trial"].sort(key=lambda r: r.get("credit_cents", 0), reverse=True)

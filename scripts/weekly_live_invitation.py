@@ -204,6 +204,19 @@ def _authoritative_access_sets():
     return paid, certification
 
 
+def _spend_set():
+    """Over $200 paid in 30 days opens Group Coaching (Glen, 2026-11-04), so they are told
+    coaching is included, as the Reserve gate lets them in. Kept apart from the paid set:
+    an unsubscribe still drops them, because the waiver is for sessions people pay for
+    (review round 1, 2026-11-04)."""
+    from dashboard import spend_access as _sa
+    with appmod.db.connect(appmod.LOG_DB) as cx:
+        _sa.ensure_tables(cx)
+        out = {_email(e) for e in _sa.spenders(cx)}
+    out.discard("")
+    return out
+
+
 def _board_emails():
     """Everyone on the members board, trial and paused included: the roster
     filter_audience.py --members-board adds (Glen, 2026-10-14). Read here from the
@@ -467,7 +480,8 @@ def run(args):
     if allowed is not None:
         audience = {email: contact for email, contact in audience.items()
                     if allowed(email)}
-    eligible = paid | certification
+    waived = paid | certification
+    eligible = waived | _spend_set()
     counts = {"pb_member": len(tag_sets["pb:member"]),
               "e4l_account": len(tag_sets["e4l account"]),
               "certification": len(certification), "paid_full": len(paid),
@@ -534,7 +548,7 @@ def run(args):
             if prior in {"queued", "sent", "delivered", "opened", "clicked"}:
                 counts["already_queued"] += 1
                 continue
-            if _suppressed_for_invitation(cx, email, eligible):
+            if _suppressed_for_invitation(cx, email, waived):
                 counts["suppressed"] += 1
                 _record_recipient(cx, campaign_id, email, contact.get("id") or "", "",
                                   "suppressed")
@@ -741,7 +755,8 @@ def run_correction(args, *, portal_check=None, find_contact=None, send=None, sle
     send = send or _send
     sleep = sleep or time.sleep
     paid, certification = _authoritative_access_sets()
-    eligible = paid | certification
+    waived = paid | certification
+    eligible = waived | _spend_set()
     counts = {"reached_by_original": 0, "not_on_consent_list": 0, "suppressed": 0,
               "dnd": 0, "no_contact": 0, "already_queued": 0, "queued": 0,
               "failed": 0, "unknown": 0, "skipped_unknown": 0}
@@ -760,7 +775,7 @@ def run_correction(args, *, portal_check=None, find_contact=None, send=None, sle
                               "already_have_it": sum(1 for e in audience if
                                                      _existing_status(cx, campaign_id, e) in REACHED),
                               "suppressed_now": sum(1 for e in audience
-                                                    if _suppressed_for_invitation(cx, e, eligible)),
+                                                    if _suppressed_for_invitation(cx, e, waived)),
                               "group_eligible": len(set(audience) & eligible),
                               "portal_routes_calendar": portal_ready}, sort_keys=True))
             return 0
@@ -783,7 +798,7 @@ def run_correction(args, *, portal_check=None, find_contact=None, send=None, sle
             if prior in REACHED:
                 counts["already_queued"] += 1
                 continue
-            if _suppressed_for_invitation(cx, email, eligible):
+            if _suppressed_for_invitation(cx, email, waived):
                 counts["suppressed"] += 1
                 _record_recipient(cx, campaign_id, email, "", "", "suppressed")
                 continue
