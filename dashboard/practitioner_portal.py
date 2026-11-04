@@ -460,9 +460,8 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
     `waitlist_only`; its page takes waiting-list sign-ups instead. The slug itself follows
     `superseded_by` past a retired duplicate, as checkout does. A bundle is blocked when an
     ACTIVE component is `waitlist_only`, at any depth (a bundle inside a bundle), with a
-    cycle guard. An INACTIVE component is never checked and never followed: the old bundle
-    scar-reduction-program lists the retired msm-syntropy-powder record and stays on sale
-    (formulation, 2026-10-09; review round 2).
+    cycle guard. An INACTIVE component is never checked and never followed, so a bundle
+    naming a retired record stays on sale (formulation, 2026-10-09; review round 2).
     Returns {"slug", "name"} of the blocking product."""
     cat = catalog if catalog is not None else pricing._load_catalog()
 
