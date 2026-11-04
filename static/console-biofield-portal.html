@@ -210,7 +210,14 @@
       <textarea id="pcReply" rows="6" placeholder="Write your reply to the client&hellip;" style="width:100%"></textarea>
       <div style="margin-top:.5rem">
         <button class="btn ghost" onclick="draftReply()">&#10024; Draft reply</button>
-        <button class="btn" onclick="sendReply()">Send as Dr. Glen</button>
+        <label style="font-weight:normal;margin-left:.6rem">Signed by
+          <select id="pcAuthor">
+            <option value="">choose who wrote or approved it</option>
+            <option>Emary</option>
+            <option>Rae</option>
+            <option>Dr. Glen</option>
+          </select></label>
+        <button class="btn" onclick="sendReply()">Send</button>
         <label style="font-weight:normal;margin-left:.6rem"><input type="checkbox" id="pcNotify" checked> Email the client that you replied</label>
         <span id="pcStatus" class="muted small"></span>
       </div>
@@ -983,9 +990,13 @@ async function sendReply(){
   var email=($('email').value||'').trim(); var content=($('pcReply').value||'').trim();
   if(!email){ $('pcStatus').textContent='Enter a client email above.'; return; }
   if(!content){ $('pcStatus').textContent='Write a reply first.'; return; }
+  // Glen, 4 Nov 2026: "we sign based on who wrote it or edited and approved the final
+  // draft." No default, so a reply is never signed with the wrong name by accident.
+  var author = $('pcAuthor') ? ($('pcAuthor').value||'') : '';
+  if(!author){ $('pcStatus').textContent='Choose who wrote or approved this reply.'; return; }
   $('pcStatus').textContent='Sending…';
   var notify = $('pcNotify') ? $('pcNotify').checked : true;
-  try{ var r=await api('POST','/api/console/portal/'+encodeURIComponent(email)+'/message',{content:content, notify:notify});
+  try{ var r=await api('POST','/api/console/portal/'+encodeURIComponent(email)+'/message',{content:content, notify:notify, author:author});
     if(r.ok && r.json && r.json.ok){ $('pcReply').value='';
       $('pcStatus').textContent = r.json.notified ? 'Sent — in the portal chat and the client was emailed.' : 'Sent — it’s in the client’s portal chat.';
       loadThread(); }
