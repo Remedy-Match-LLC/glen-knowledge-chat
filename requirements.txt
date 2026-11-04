@@ -27,6 +27,7 @@ imageio-ffmpeg
 Pillow
 pillow-heif>=0.18,<2
 qrcode[pil]>=7.4
+fpdf2>=2.8,<3
 psycopg[binary]>=3.1
 psycopg_pool>=3.2
 python-frontmatter

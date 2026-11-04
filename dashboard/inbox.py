@@ -612,12 +612,15 @@ def send_reply(thread_id: str, body: str, override_to: Optional[str] = None) -> 
 
 
 def send_email(to_email: str, subject: str, body: str, from_name: Optional[str] = None,
-               html: Optional[str] = None) -> dict:
+               html: Optional[str] = None, attachments: Optional[list] = None) -> dict:
     """Generic Gmail send — used by /full-report so it doesn't need SMTP creds.
 
     Sends as plain text from drglenswartwout@gmail.com (the authorized account).
     When `html` is given, sends multipart/alternative (plain `body` + HTML);
     callers that omit `html` are unchanged.
+
+    `attachments` is a list of (filename, mime type, bytes). With any, the message
+    becomes multipart/mixed: the text (or text + HTML) part, then each file.
 
     Suppression guard: skip addresses on the email_suppression list (hard bounces
     fed by the local bounce scanner) so we stop emailing dead addresses. Fail-open
@@ -652,6 +655,22 @@ def send_email(to_email: str, subject: str, body: str, from_name: Optional[str] 
         mime.attach(MIMEText(html, "html", "utf-8"))
     else:
         mime = MIMEText(body, "plain", "utf-8")
+    if attachments:
+        from email import encoders
+        from email.mime.base import MIMEBase
+        from email.mime.multipart import MIMEMultipart
+        outer = MIMEMultipart("mixed")
+        outer.attach(mime)
+        for fname, ctype, data in attachments:
+            maintype, _, subtype = (ctype or "").partition("/")
+            if not (maintype and subtype):
+                maintype, subtype = "application", "octet-stream"
+            part = MIMEBase(maintype, subtype)
+            part.set_payload(data)
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment", filename=fname)
+            outer.attach(part)
+        mime = outer
     mime["To"] = to_email
     mime["Subject"] = subject
     if from_name:

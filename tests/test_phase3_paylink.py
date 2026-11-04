@@ -138,8 +138,9 @@ def _capture_send_email(monkeypatch):
     from dashboard import inbox
     cap = {}
 
-    def _fake(to, subject, plain, *, from_name=None, html=None):
-        cap.update(to=to, subject=subject, plain=plain, from_name=from_name, html=html)
+    def _fake(to, subject, plain, *, from_name=None, html=None, attachments=None):
+        cap.update(to=to, subject=subject, plain=plain, from_name=from_name, html=html,
+                   attachments=attachments)
         return {"id": "1"}
 
     monkeypatch.setattr(inbox, "send_email", _fake)

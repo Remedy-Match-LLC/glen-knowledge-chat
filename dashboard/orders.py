@@ -1279,6 +1279,18 @@ def _invoice_paylink_enabled():
 _SENDABLE_INVOICE = _PRE_FULFILL + ("new",)
 
 
+def _invoice_pdf_attachment(order):
+    """[(filename, "application/pdf", bytes)] for the formal invoice, or None on any fault."""
+    try:
+        import app as _app
+        from dashboard import invoice_pdf as _ipdf
+        summary = _app._invoice_summary_with_ledger(order)
+        return [(_ipdf.filename(summary), "application/pdf", _ipdf.render_invoice_pdf(summary))]
+    except Exception as e:  # noqa: BLE001 - the link alone still lets them pay
+        print(f"[invoice-pdf] order #{order.get('id')}: {type(e).__name__}: {e}", flush=True)
+        return None
+
+
 def _send_invoice_exec(params, ctx):
     """OWNER: email the customer a tokenized invoice link. For an unpaid invoice
     it's a review-and-pay link; for a paid order it's a paid-invoice receipt.
@@ -1325,19 +1337,23 @@ def _send_invoice_exec(params, ctx):
     # review-and-pay link. Only the noun, lead sentence, and CTA button differ —
     # the greeting/signoff/link wrapper are shared so they can't drift.
     paid = (order.get("pay_status") == "paid")
+    # The formal invoice as a PDF (Glen, 2026-11-04): the link opens the pay page, so
+    # the document itself rides along. A drawing fault never stops the email.
+    attachments = _invoice_pdf_attachment(order)
+    att = " A PDF copy is attached." if attachments else ""
     if paid:
         subject = f"Your Remedy Match receipt {ref}"
-        lead_plain = (f"Here's your paid invoice {ref} ({total}) — paid in full, mahalo. "
+        lead_plain = (f"Here's your paid invoice {ref} ({total}) — paid in full, mahalo.{att} "
                       f"View or download it here:")
         lead_html = (f"Here's your paid invoice <b>{ref}</b> (<b>{total}</b>) — paid in full, "
-                     f"mahalo. You can view or download it here:")
+                     f"mahalo.{att} You can view or download it here:")
         btn_color, btn_label = "#3a5a40", "View &amp; download your invoice"
     else:
         subject = f"Your Remedy Match invoice {ref}"
-        lead_plain = (f"Your invoice {ref} is ready ({total}). View, adjust, ask "
+        lead_plain = (f"Your invoice {ref} is ready ({total}).{att} View, adjust, ask "
                       f"questions, and pay here:")
-        lead_html = (f"Your invoice <b>{ref}</b> is ready (<b>{total}</b>). You can review it, "
-                     f"adjust quantities, ask questions, and pay securely here:")
+        lead_html = (f"Your invoice <b>{ref}</b> is ready (<b>{total}</b>).{att} You can review "
+                     f"it, adjust quantities, ask questions, and pay securely here:")
         btn_color, btn_label = "#7c5cbf", "View &amp; pay your invoice"
     plain = f"Hi {name},\n\n{lead_plain}\n{link}\n\nMahalo,\nDr. Glen Swartwout"
     html = (f"<p>Hi {name_html},</p><p>{lead_html}</p>"
@@ -1345,8 +1361,8 @@ def _send_invoice_exec(params, ctx):
             f"border-radius:6px;text-decoration:none'>{btn_label}</a></p>"
             f"<p>Mahalo,<br>Dr. Glen Swartwout</p>")
     try:
-        _inbox.send_email(email, subject, plain,
-                          from_name="Dr. Glen Swartwout", html=html)
+        _inbox.send_email(email, subject, plain, from_name="Dr. Glen Swartwout", html=html,
+                          **({"attachments": attachments} if attachments else {}))
     except Exception as e:
         raise ValueError(f"could not send invoice email: {e}")
     mark_invoice_sent(cx, oid)
