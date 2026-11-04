@@ -4,8 +4,9 @@ Spec: production/05 Formulations/_store-updates/2026-10-09-scar-reduction-progra
 section 1, approved by Glen. Scar Soft Drink carries `waitlist_only` until
 tetrahydrocurcumin is in stock. The one predicate is practitioner_portal.is_orderable,
 which also refuses a bundle with a waitlist_only component. An INACTIVE component never
-blocks a bundle: the old bundle scar-reduction-program lists the retired msm-syntropy-powder record
-and stays on sale at $252 (formulation, 2026-10-09).
+blocks a bundle (formulation, 2026-10-09). The old bundle scar-reduction-program listed the
+retired msm-syntropy-powder record until 2026-11-04, when Glen had it repointed to the live
+msm-syntropy; it stays on sale at $252.
 
 Every route below is refused with the fixture product, and for checkout and autoship no
 payment provider is called. A refusal names the blocking product.
@@ -118,10 +119,11 @@ def test_an_inactive_component_never_blocks_its_bundle(catalog, monkeypatch, com
     assert pp.is_orderable("test-bundle-inactive", catalog) is True
 
 
-def test_the_old_bundle_with_an_inactive_component_stays_on_sale(catalog):
+def test_the_old_bundle_stays_on_sale(catalog):
+    # Repointed from the retired msm-syntropy-powder (Glen "yes", platform tab, 2026-11-04).
     old = catalog["scar-reduction-program"]
-    assert {"slug": "msm-syntropy-powder", "qty": 1} in old["bundle_component_slugs"]
-    assert catalog["msm-syntropy-powder"].get("inactive") is True
+    assert {"slug": "msm-syntropy", "qty": 1} in old["bundle_component_slugs"]
+    assert not catalog["msm-syntropy"].get("inactive")
     assert pp.is_orderable("scar-reduction-program", catalog) is True
     assert pp.waitlist_block("scar-reduction-program", catalog) is None
     assert bundle_pricing.compute_bundle_price_cents(old, catalog) == 25200
