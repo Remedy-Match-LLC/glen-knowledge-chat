@@ -1561,9 +1561,36 @@ function openPortalOrderBasket(captureContext){
   // door, so naming "current" here reveals the Scans door and the basket stays
   // hidden. Same shape as the hash routes below, and the same helper.
   showTab(portalPanelFor({panel:"current", shellPanel:"remedy-detail"}));
+  // Land on the card OPEN. A client who had folded "Order your remedies" was scrolled
+  // to its folded heading and saw no pay step (Donna, 2026-11-03). Same deep-link
+  // open as applyPortalHash: it holds even if the saved fold state arrives later.
+  const basket = document.getElementById("portal-order-basket");
+  const foldId = (basket && typeof _foldIdOf === "function" && _foldIdOf(basket)) || "portal-order-basket";
+  // Fold state already here: open it now. A pending request is left only while it
+  // loads, or a leftover one would undo the client's next Hide (review round 1).
+  if(typeof _foldsV2 !== "undefined" && _foldsV2 && typeof _foldsV2 === "object"){
+    if(typeof _foldOpenCard === "function") _foldOpenCard(foldId);
+  }else if(typeof _foldsV2 === "undefined" || _foldsV2 !== false){
+    window._foldDeepLinkOpen = foldId;
+  }
   window.setTimeout(function(){
     const card = document.getElementById("portal-order-basket");
-    if(card) card.scrollIntoView({behavior:"smooth", block:"start"});
+    if(!card) return;
+    // The older per-browser folding (PORTAL_FOLDS_V2 off) keeps no shared state. Its
+    // remembered fold is cleared before folds load too, as that load may answer 404.
+    // Shown open now even while folds load, so a stalled load cannot hide the pay
+    // step (review round 2).
+    const shared = typeof _foldsV2 !== "undefined" && _foldsV2 && typeof _foldsV2 === "object";
+    if(!shared && typeof _cardFoldKey === "function" && typeof _cardFoldWrite === "function"){
+      const key = _cardFoldKey(card);
+      if(key) _cardFoldWrite(key, false);
+    }
+    if(!shared && card.classList.contains("is-folded")){
+      card.classList.remove("is-folded");
+      const btn = card.querySelector(".card-fold");
+      if(btn){ btn.textContent = "Hide"; btn.setAttribute("aria-expanded", "true"); }
+    }
+    card.scrollIntoView({behavior:"smooth", block:"start"});
   }, 0);
 }
 window.openPortalOrderBasket = openPortalOrderBasket;
@@ -9282,6 +9309,10 @@ function _foldApplyAll(){
     _deepLinked = window._foldDeepLinkOpen;
     _foldsV2.state = F.setCard(_foldsV2.state, _deepLinked, false);
     window._foldDeepLinkOpen = null;
+    // Save it open, or the next refresh from the server folds it again (review round 1,
+    // 2026-11-03). _foldPut keeps a local record unsaved.
+    _foldRev++;
+    _foldSave();
   }
   var byDoor = _foldCardsByDoor();
   Object.keys(byDoor).forEach(function(door){
