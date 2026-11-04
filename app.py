@@ -64363,14 +64363,10 @@ def invoice_page(token):
     return resp
 
 
-@app.route("/api/invoice/<token>", methods=["GET"])
-def api_invoice_get(token):
-    order = _invoice_order_for_token(token)
-    if not order:
-        return jsonify({"ok": False, "error": "invalid or expired invoice"}), 404
+def _invoice_summary_with_ledger(order):
+    """_invoice_summary plus the payments and balance from the ledger: everything the
+    formal invoice prints. The invoice page and the emailed PDF both read this."""
     summary = _invoice_summary(order)
-    summary["savings_offer"] = _order_savings_offer(order)   # switch-to-save (None unless a cheaper plan)
-    summary["membership_offer"] = _invoice_membership_offer(order)   # join-and-save (None if paid/member)
     oid = order.get("id")
     cx = db.connect(LOG_DB)
     cx.row_factory = _sqlite3.Row
@@ -64394,6 +64390,17 @@ def api_invoice_get(token):
                 "kind": "payment", "amount_cents": _bal["paid_cents"]}]
     finally:
         cx.close()
+    return summary
+
+
+@app.route("/api/invoice/<token>", methods=["GET"])
+def api_invoice_get(token):
+    order = _invoice_order_for_token(token)
+    if not order:
+        return jsonify({"ok": False, "error": "invalid or expired invoice"}), 404
+    summary = _invoice_summary_with_ledger(order)
+    summary["savings_offer"] = _order_savings_offer(order)   # switch-to-save (None unless a cheaper plan)
+    summary["membership_offer"] = _invoice_membership_offer(order)   # join-and-save (None if paid/member)
     if _read_receipts_enabled():
         try:
             # NOTE: aliased _opens (not _op) — a local `as _op` here would shadow
