@@ -38,7 +38,19 @@ APPENDED = {"sleep-syntropy": None, "vitality": None}
 FOLLOWED = {"thermogenesis": (
     "Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have a "
     "thyroid condition or take other iodine products, consult your health professional before "
-    "use.")}
+    "use."),
+    # Glen "yes" in the marketing tab, 2026-11-04 (marketing/04 Copy/
+    # vein-support-caution-2026-11-02/change-v3.md, three review rounds).
+    "vein-support": (
+    "Do not use this formula if you take warfarin or another vitamin K antagonist, because it "
+    "contains vitamin K2. Other ingredients may also affect bleeding. If you take any other "
+    "blood thinner or antiplatelet medicine, have a bleeding disorder, or are planning surgery, "
+    "consult your physician before use. If you take any other prescription medicine, "
+    "especially blood pressure medicine, consult your physician or pharmacist before use. If "
+    "you have liver disease, consult your physician before use. Stop use and consult your "
+    "physician if your skin or the whites of your eyes turn yellow. If you are breastfeeding, "
+    "consult your physician before use. If you are under 18, consult your physician before "
+    "use. Keep out of reach of children.")}
 # Its label's Bioavailability Factors list vinpocetine, while the app rows wait on the panel
 # spec (formulation, 2026-10-31-macular-wellness-safranal-contents).
 LABEL_ONLY = ["macular-wellness-safranal"]
