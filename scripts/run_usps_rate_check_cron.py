@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Weekly USPS Flat Rate rate-check cron entry point.
+"""USPS Flat Rate rate-check cron entry point (not provisioned: the check runs daily
+as a piggyback of run_personal_email_cron.py).
 
-Runs on Render's cron worker. Posts to the web service's
-/cron/usps-rate-check endpoint, which scrapes USPS retail prices and
-stages any changes as pending updates for Glen to confirm at
-/admin/shipping.
+Posts to the web service's /cron/usps-rate-check endpoint, which reads the USPS
+Commercial Pricing, applies any change at once and emails Glen (2026-11-03).
 
 Same cross-container pattern as run_personal_email_cron.py — the
 persistent disk lives on the web service, not the cron container.

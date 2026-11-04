@@ -222,12 +222,12 @@ services:
           name: glen-knowledge-chat
           envVarKey: CRON_SECRET
 
-  # Weekly USPS Flat Rate watcher — scrapes USPS retail prices, stages any
-  # changes as pending updates at /admin/shipping for Glen to confirm. Same
+  # Daily USPS Flat Rate watcher — reads USPS Commercial Pricing, applies any
+  # change at once and emails Glen (2026-11-03; was weekly and staged). Same
   # cross-container pattern as glen-personal-email-daily: cron just curls
   # the web service, which holds the persistent disk + DB.
   # NOTE: NOT provisioned as a standalone Render service — folded into the daily
-  # glen-personal-email-daily cron (run_daily_piggybacks), Monday-gated. Commented
+  # glen-personal-email-daily cron (run_daily_piggybacks), daily since 2026-11-03. Commented
   # out (not a live spec) so applying this blueprint can't re-provision it and cause
   # double-runs. Documentation only:
   #   - type: cron

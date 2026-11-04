@@ -139,7 +139,7 @@ MODULES_3B = {
         "fn": "init_shipping_schema",
         "tables": [
             "bottle_types", "box_capacity", "usps_rates",
-            "product_bottle_types", "packing_settings",
+            "product_bottle_types", "packing_settings", "usps_watch_state",
         ],
         "deps": [],  # box_capacity FKs bottle_types, both owned by this module
     },

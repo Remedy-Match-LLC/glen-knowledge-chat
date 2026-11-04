@@ -21,7 +21,6 @@ import sys
 import json
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
 
 from _cron_http import post_with_retry
 from weekly_live_schedule import monday_publish_due
@@ -189,10 +188,9 @@ def run_daily_piggybacks():
     else:
         print("[weekly-live-bootstrap] not Monday (HST) — skip", flush=True)
 
-    if datetime.now(timezone.utc).weekday() == 0:  # Monday
-        _piggyback_post("usps-rate-check", "/cron/usps-rate-check", "X-Cron-Secret", CRON_SECRET)
-    else:
-        print("[usps-rate-check] not Monday (UTC) — skip", flush=True)
+    # Daily, not Mondays only. Glen, 2026-11-03: "When their price goes up we should know
+    # within a day." A change is applied at once and emailed.
+    _piggyback_post("usps-rate-check", "/cron/usps-rate-check", "X-Cron-Secret", CRON_SECRET)
 
 
 def check_public_surfaces():
