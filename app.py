@@ -35515,12 +35515,29 @@ def api_console_portal_messages(email):
                     "messages": _portal_chat_thread(email)})
 
 
-def _notify_client_of_reply(email, name):
-    """Best-effort: email the client that Dr. Glen replied, linking their portal.
-    Respects opt-out; suppression handled downstream. Returns True if sent."""
+def _reply_author_name(author):
+    """The name a reply notice gives as its writer: the reply's own author, one line.
+
+    Glen, 4 Nov 2026: "we sign based on who wrote it or edited and approved the final
+    draft." The notice used to say "Dr. Glen replied" whoever wrote the reply, so a
+    reply from Rae or Emary reached the client as his."""
+    name = " ".join(str(author or "").split())[:60]
+    return name or "Dr. Glen"
+
+
+# What _send_full_report_email returns when the mail really went out. "suppressed"
+# and "console-log" mean it did not (review round 1).
+_REPLY_NOTICE_SENT_VIA = ("gmail-api", "smtp", "ghl")
+
+
+def _notify_client_of_reply(email, name, author="Dr. Glen"):
+    """Best-effort: email the client that a reply is waiting, linking their portal.
+    Names the reply's author. Respects opt-out; suppression handled downstream.
+    Returns True if sent."""
     email = (email or "").strip().lower()
     if not email:
         return False
+    who = _reply_author_name(author)
     try:
         from dashboard import notify_state as _ns
         from dashboard import client_portal as _cp
@@ -35530,12 +35547,14 @@ def _notify_client_of_reply(email, name):
                 return False
             token = _cp.ensure_token(cx, email, name or "")
         link = portal_link(token)
-        _send_full_report_email(
-            email, name, "Dr. Glen replied to you 🌺",
-            f"Aloha {name or ''},\n\nDr. Glen just replied to you in your Healing Oasis "
+        # Signed by the reply's author too (Glen, 4 Nov 2026: "we sign based on who
+        # wrote it"); it used to sign "Dr. Glen & Rae" for every reply.
+        sent_via, _err = _send_full_report_email(
+            email, name, f"{who} replied to you 🌺",
+            f"Aloha {name or ''},\n\n{who} just replied to you in your Healing Oasis "
             f"portal. Come read it and continue the conversation here:\n\n{link}\n\n"
-            f"With aloha,\nDr. Glen & Rae")
-        return True
+            f"With aloha,\n{who}")
+        return sent_via in _REPLY_NOTICE_SENT_VIA
     except Exception as e:
         print(f"[portal-chat] reply notify failed: {e!r}", flush=True)
         return False
@@ -35550,7 +35569,9 @@ def api_console_portal_message(email):
         return jsonify({"error": "unauthorized"}), 401
     data = request.get_json(silent=True) or {}
     content = (data.get("content") or "").strip()
-    author = (data.get("author") or "Dr. Glen").strip() or "Dr. Glen"
+    # One normalised name for both the stored chat row and the notice, so the chat and
+    # the email never disagree about who wrote it (review round 1).
+    author = _reply_author_name(data.get("author"))
     notify = data.get("notify", True)
     if not content:
         return jsonify({"error": "empty message"}), 400
@@ -35561,7 +35582,7 @@ def api_console_portal_message(email):
         rec = _cp.get_portal_content_by_email(cx, email) or {}
     notified = False
     if mid is not None and notify:
-        notified = _notify_client_of_reply(email, rec.get("name") or "")
+        notified = _notify_client_of_reply(email, rec.get("name") or "", author)
     return jsonify({"ok": mid is not None, "id": mid, "notified": notified})
 
 
@@ -35602,8 +35623,8 @@ def api_console_portal_import_email(email):
 
 @app.route("/api/console/portal/<path:email>/draft-reply", methods=["POST"])
 def api_console_portal_draft_reply(email):
-    """Console: AI-draft Dr. Glen's personal reply to a client's latest portal-chat
-    message (grounded in their thread + portal data), to seed the composer. Glen
+    """Console: AI-draft the team's reply to a client's latest portal-chat
+    message (grounded in their thread + portal data), to seed the composer. Staff
     edits then sends. Console-gated; drafting only — nothing is posted or emailed."""
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
@@ -35622,18 +35643,31 @@ def api_console_portal_draft_reply(email):
         orders = []
     ctx = _pcz.build_context(rec.get("content") or {}, orders)
     # Glen's drafted reply follows the same CDS rule as the portal chat (review, #2143).
-    sys = _pcz.system_prompt(ctx) + _STANDING_USE_RULE + (
-        "\n\nYou are drafting DR. GLEN'S OWN personal reply to this client (first person, warm, "
-        "signed 'Dr. Glen'), to address their most recent message in the thread below. Keep it "
+    # The shared base prompt tells the portal concierge to sign off as Dr. Glen. A staff
+    # draft is signed at send time instead, so that one sentence is removed here
+    # (review round 4).
+    sys = _pcz.system_prompt(ctx).replace(
+        "Sign off as Dr. Glen only when concluding.", "") + _STANDING_USE_RULE + (
+        # Glen, 4 Nov 2026: "routine replies should be handled by Emary ... trained to
+        # escalate issues to Rae and/or me as needed rather than making up answers ... we
+        # sign based on who wrote it or edited and approved the final draft." So the draft
+        # speaks as "we" and carries no signature: the console signs it with the name
+        # chosen at send time.
+        "\n\nYou are drafting the Healing Oasis team's reply to this client (warm, written as "
+        "'we'), to address their most recent message in the thread below. Do not add a "
+        "signature or a sign-off name: the person who sends it is shown as its author. Keep it "
         "concise and grounded in their data. If it needs a consultation, a custom Terrain "
         "Restore, or clinical judgment, say Dr. Glen will follow up personally.")
+    # Each staff message under its own author, so Emary's or Rae's earlier words are
+    # never presented to the model as Dr. Glen's (review round 3).
     who = lambda m: ("Client" if m["role"] in ("client", "user")
-                     else ("Dr. Glen" if m["role"] == "practitioner" else "Assistant"))
+                     else ((m.get("author") or "Staff") if m["role"] == "practitioner"
+                           else "Assistant"))
     convo = "\n".join(f"{who(m)}: {m['content']}" for m in msgs[-12:])
     try:
         r = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=500, system=sys,
                                 messages=[{"role": "user",
-                                           "content": "CONVERSATION:\n" + convo + "\n\nDraft Dr. Glen's reply:"}])
+                                           "content": "CONVERSATION:\n" + convo + "\n\nDraft the team's reply:"}])
         draft = _strip_dash(r.content[0].text.strip())
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:200]}), 502
