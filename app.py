@@ -4168,11 +4168,97 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
             + _CTA_DIRECTIVE_SPEC + "\n\n")
 
 
-def _chat_synth_instr(query_text, prior_user_turns, mode, logged_in, member=False):
-    """chat()'s synthesis instruction: the caution answer when it applies, else the
-    long form in full mode and the brief otherwise."""
+# In place of the usual answer structure when a passage from one of Glen's clinical
+# protocols is in the sources. Knowledge's check on 2026-11-05 (chats 2709-2711, the
+# earthing protocol): the consensus / limitation / assumption beats were filled with
+# invented timings ("a 10-minute shower", the outdoor 20 to 30 minutes applied to the
+# bath), invented reasons ("many people underdose", "a dose-response curve"), a health
+# claim no source makes, and barefoot grass walking for someone with reduced feeling in
+# the feet, which the protocol advises against. Glen "yes" (platform tab): answer from the
+# protocol's own wording, with no consensus frame and no tease.
+PROTOCOL_SOURCE_TYPE = "clinical-protocol"
+_PROTOCOL_STEPS = (
+    "1. Give the steps, amounts, times and frequencies exactly as the protocol states "
+    "them, with its qualifiers kept: 'up to' stays 'up to', 'may' stays 'may', 'about' "
+    "stays 'about'.\n"
+    "2. A time, amount or step the protocol gives for one method applies to that method "
+    "only. If it gives none for the method asked about, say it does not give one. Never "
+    "carry a number across from another method.\n"
+    "3. If the protocol says that some people should use one method rather than another, "
+    "tell those people that, and never suggest to them the method it advises against. "
+    "Such a restriction covers only the method and situation the protocol names: never "
+    "extend it to a method it does not name. Read it where it sits: a caution in guidance "
+    "for being outdoors on the ground does not cover a bath or a shower.\n"
+    "4. Add no benefit, mechanism, reason, timing, dose-response or health claim that the "
+    "protocol or another source below does not state. For any part of the question the "
+    "protocol does not cover, say so, then answer that part from the other sources if "
+    "they cover it.\n"
+    "5. A safety warning, interaction or contraindication that a source states and that "
+    "applies to this user is always given, plainly.\n"
+    "6. If space runs short, keep every warning and cut steps, saying the source gives "
+    "the rest.\n")
+_PROTOCOL_ANSWER_RULES = (
+    "PROTOCOL ANSWER. A source below is one of Dr. Glen's own protocols. This replaces "
+    "the usual answer structure, including the system prompt's 5-beat lead, its brief "
+    "rationale and its extended and long formats: no consensus, no limitation, no hidden "
+    "assumption, no tease, no break-and-rebuild, and no added dosage ranges, mechanisms or "
+    "edge cases. Where the question is about what the protocol covers, answer from the "
+    "protocol's own wording.\n"
+    + _PROTOCOL_STEPS
+    + "7. Close with one next step. A greeting or a clarifying turn needs none.\n")
+
+
+def _has_protocol_source(sources_list):
+    """True when a source in this answer is one of Glen's clinical protocols."""
+    try:
+        items = list(sources_list or [])
+    except TypeError:
+        return False
+    for s in items:     # one malformed entry never hides a protocol after it (round 2)
+        try:
+            if str(s.get("field") or "").strip().lower() == PROTOCOL_SOURCE_TYPE:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _protocol_synth_instr(sources_list, long_form=False):
+    """The protocol answer instruction, when a protocol is among the sources, else None."""
+    if not _has_protocol_source(sources_list):
+        return None
+    rules = (_PROTOCOL_ANSWER_RULES + "Keep every other rule: product links only from "
+             "the injection table, and product claims only from sources ("
+             + _SOURCED_PRODUCT_NOTE + ").\n\n")
+    if long_form:
+        return rules + "List sources at the end.\n\n"
+    return (rules
+            + "Keep the answer to 200 words or fewer, not counting the Sources line and the "
+              "CTA directive line. For the next step, take the CURIOUS rung (`page`, with a "
+              "page URL from the injection table), or the ENGAGED rung (`email`) if there "
+              "is no URL.\n\n"
+            + _CTA_DIRECTIVE_SPEC + "\n\n")
+
+
+def _with_protocol_steps(caution_instr, sources_list):
+    """A caution answer that also cites a protocol keeps the protocol's wording rules
+    (review round 3: "I'm pregnant, can I use Epsom salt in the shower?" lost them)."""
+    if not caution_instr or not _has_protocol_source(sources_list):
+        return caution_instr
+    return (caution_instr + "A source below is one of Dr. Glen's own protocols. For what it "
+            "covers, also follow these rules:\n" + _PROTOCOL_STEPS + "\n")
+
+
+def _chat_synth_instr(query_text, prior_user_turns, mode, logged_in, member=False,
+                      sources_list=None):
+    """chat()'s synthesis instruction: the caution answer when it applies, then the
+    protocol answer when a protocol is a source, else the long form in full mode and the
+    brief otherwise."""
     full = mode == "full"
-    return (_caution_synth_instr(query_text, prior_user_turns, long_form=full, member=member)
+    return (_with_protocol_steps(_caution_synth_instr(query_text, prior_user_turns,
+                                                      long_form=full, member=member),
+                                 sources_list)
+            or _protocol_synth_instr(sources_list, long_form=full)
             or (_long_form_synth_instr(logged_in) if full else _brief_synth_instruction()))
 
 
@@ -8140,7 +8226,7 @@ def chat():
         # platform tab, 2026-11-01).
         _tos_member = is_member(session_id, email)
         synth_instr = _chat_synth_instr(query, _prior_user, mode, bool(auth_user),
-                                        member=_tos_member)
+                                        member=_tos_member, sources_list=sources_list)
 
         attachment_context = ""
         if extracted_text:
@@ -17487,7 +17573,9 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
     )
     product_block = f"{product_directive}\n\n" if product_directive else ""
 
-    synth_instr = (_caution_synth_instr(query, _prior_user, long_form=True)
+    synth_instr = (_with_protocol_steps(_caution_synth_instr(query, _prior_user,
+                                                             long_form=True), sources_list)
+                   or _protocol_synth_instr(sources_list, long_form=True)
                    or _long_form_synth_instr(is_logged_in))
     user_msg = (
         f"USER QUESTION: {query}\n\n"
@@ -17690,7 +17778,9 @@ def _full_report_stream(log_id, query, level, session_id,
         )
         product_block = f"{product_directive}\n\n" if product_directive else ""
 
-        synth_instr = (_caution_synth_instr(query, _prior_user, long_form=True)
+        synth_instr = (_with_protocol_steps(_caution_synth_instr(query, _prior_user,
+                                                                 long_form=True), sources_list)
+                       or _protocol_synth_instr(sources_list, long_form=True)
                        or _long_form_synth_instr(is_logged_in))
         user_msg = (
             f"USER QUESTION: {query}\n\n"
