@@ -1384,6 +1384,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             email, name = _test_person(cx, test_id)
             if not email:
                 return jsonify({"ok": False, "error": "this test has no client email"}), 400
+            # The intake page sends what its header fields show. A photo is filed under
+            # the SAVED email and name, so an unsaved edit refuses the upload rather than
+            # saving the header, which can raise an invoice (review round 1, 2026-11-04).
+            exp_e = request.form.get("expect_email")
+            exp_n = request.form.get("expect_name")
+            if exp_e is not None and (exp_e.strip().lower() != email
+                                      or (exp_n or "").strip() != name):
+                return jsonify({"ok": False, "unsaved_header": True, "error": (
+                    "The email or name above is not saved yet. Press Save header, "
+                    "then upload the photo.")}), 409
             people = _cph.fmp_people_for_email(cx, email)
             pid = _cph.fmp_person_for(cx, email, name)
             if people is None:
