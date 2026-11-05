@@ -118,6 +118,54 @@ def list_messages(cx, email, limit=100):
              "created_at": r["created_at"]} for r in reversed(rows)]
 
 
+IMPORTED_PREFIX = "Imported from email for reference."
+INBOUND_MAX = 500
+
+
+def inbound_since(cx, since, limit=INBOUND_MAX):
+    """Client-authored messages created at or after `since` (ISO UTC), oldest first, for
+    the morning check (Glen, 2026-11-05: "add the check on portal chats to the start of day
+    new client message check process"). Each row says whether an email import made it and
+    whether a practitioner or an AI row followed it in that client's thread. The name is
+    the people record's, else the message's author unless that is the portal's "You".
+    Returns (rows, truncated). At the cap the NEWEST rows are cut and truncated is True;
+    the morning job treats that as a failed run. The import flag is the label prefix that
+    both email importers write."""
+    init_table(cx)
+    lim = max(1, min(int(limit or INBOUND_MAX), INBOUND_MAX))
+    rows = cx.execute(
+        "SELECT m.id, m.email, m.author, m.content, m.created_at, "
+        "EXISTS (SELECT 1 FROM portal_chat_messages p WHERE p.email = m.email "
+        "AND p.role = ? AND p.id > m.id), "
+        "EXISTS (SELECT 1 FROM portal_chat_messages a WHERE a.email = m.email "
+        "AND a.role = ? AND a.id > m.id) "
+        "FROM portal_chat_messages m WHERE m.role = ? AND m.created_at >= ? "
+        "ORDER BY m.id LIMIT ?",
+        (PRACTITIONER, ASSISTANT, CLIENT, str(since or ""), lim + 1)).fetchall()
+    truncated = len(rows) > lim
+    rows = rows[:lim]
+    names = {}
+    emails = sorted({(r[1] or "").strip().lower() for r in rows})
+    if emails:
+        try:
+            marks = ",".join("?" for _ in emails)
+            for e, n in cx.execute(f"SELECT lower(email), name FROM people WHERE "
+                                   f"lower(email) IN ({marks})", emails).fetchall():
+                names[(e or "").strip()] = (n or "").strip()
+        except Exception:
+            names = {}     # no people table: fall back to the message's author
+    out = []
+    for mid, email, author, content, at, human, ai in rows:
+        e = (email or "").strip().lower()
+        author = (author or "").strip()
+        name = names.get(e) or ("" if author.lower() in ("", "you") else author)
+        out.append({"id": mid, "email": e, "name": name, "content": content or "",
+                    "created_at": at or "",
+                    "imported": (content or "").startswith(IMPORTED_PREFIX),
+                    "human_reply_after": bool(human), "ai_reply_after": bool(ai)})
+    return out, truncated
+
+
 def record_exchange(cx, email, query, answer, client_name=None):
     """Persist one concierge turn: the client's message + the AI answer.
     Returns the client message's row id (or None if it was a no-op), so a
