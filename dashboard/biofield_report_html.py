@@ -459,6 +459,67 @@ async function loadPhotoPicks(tid, email, name, boxId, imgId){
 </script>"""
 
 
+# Glen, 2026-11-04 (primary tab, while adding Marvin Fox's photo): "Put that button on the
+# intake page as well." The same upload as the Report tab's photobox, shown only when the
+# test has a client email, as there. The upload route files the photo under the test's
+# SAVED email and name, so the page sends what its fields show and the route refuses an
+# unsaved edit. It never saves the header itself: that save can raise an invoice.
+_AUTHOR_PHOTO_JS = """<script>
+var _authorPhotoBusy=false;
+async function uploadAuthorPhoto(tid){
+  var f=document.getElementById('authorphotofile');
+  var stat=document.getElementById('authorphotostat');
+  // Capture the file and the fields at entry, so a second pick cannot change what this
+  // upload sends (review round 2).
+  var file=f&&f.files&&f.files[0]; if(f)f.value='';
+  if(!file)return;
+  if(_authorPhotoBusy){stat.textContent='An upload is already running.';return}
+  var email=(((document.getElementById('h_email')||{}).value)||'').trim();
+  var name=(((document.getElementById('h_name')||{}).value)||'').trim();
+  if(!email){stat.textContent='Add the client\u2019s email first.';return}
+  _authorPhotoBusy=true; stat.textContent='Uploading\u2026';
+  try{
+    var fd=new FormData(); fd.append('photo', file);
+    fd.append('expect_email', email); fd.append('expect_name', name);
+    var j; try{ j=await (await fetch('/test/'+tid+'/photo',{method:'POST',body:fd})).json(); }
+    catch(e){
+      // The route may have saved it before the answer was lost (review round 2).
+      stat.textContent='No answer from the server, so the photo may or may not have saved. '
+        +'Reload the page and check the photo before uploading again.';
+      return;
+    }
+    if(!j||!j.ok){ stat.textContent='Error: '+((j&&j.error)||'failed'); return; }
+    var saved = j.prod_pushed ? 'Saved' : 'Saved locally (prod push pending)';
+    var nowE=(((document.getElementById('h_email')||{}).value)||'').trim();
+    var nowN=(((document.getElementById('h_name')||{}).value)||'').trim();
+    if(nowE.toLowerCase()!==email.toLowerCase()||nowN!==name){
+      // The header changed during the upload: say whose photo it was, and show only the
+      // photo of the client now in the header (review round 2).
+      stat.textContent=saved+' for '+(name||email)+'. The header now shows someone else.';
+    } else {
+      stat.textContent=saved+'.';
+      var img=document.getElementById('authorclientphoto');
+      if(img){ img.src='/client-photo/'+encodeURIComponent(j.email||email)+'?name='
+        +encodeURIComponent(name)+'&t='+Date.now(); img.style.display='block'; }
+    }
+    // The upload is done. A display refresh that fails must not read as a failed upload.
+    if(window.refreshHeaderPhoto){ try{ await window.refreshHeaderPhoto(); }catch(e){} }
+  } finally { _authorPhotoBusy=false; }
+}
+</script>"""
+
+
+def _author_photo_upload(tid, photo_email):
+    """The intake page's Upload photo button. Empty when the test has no client email."""
+    if not (photo_email or "").strip():
+        return ""
+    return ("<div class=btnrow style='margin:6px 0 4px'>"
+            "<label class=btn style='cursor:pointer;display:inline-block'>Upload photo"
+            "<input id=authorphotofile type=file accept='image/*' style='display:none' "
+            f"onchange=\"uploadAuthorPhoto('{tid}')\"></label>"
+            "<span id=authorphotostat class=food></span></div>" + _AUTHOR_PHOTO_JS)
+
+
 _PHOTO_JS = """<script>
 async function uploadPhoto(tid, eq, nq){
   var f=document.getElementById('photofile');
@@ -3361,7 +3422,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<img id=authorclientphoto class=authorheadphoto alt='Selected client headshot' "
         f"style='display:{'block' if photo_src else 'none'}' src='{_e(photo_src)}' "
         "onload=\"this.style.display='block'\" onerror=\"this.style.display='none'\">"
-        "</div><div id=authorphotopicks></div>" + _PHOTO_PICK_JS
+        "</div>" + _author_photo_upload(tid, photo_email)
+        + "<div id=authorphotopicks></div>" + _PHOTO_PICK_JS
         + f"<script>loadPhotoPicks('{tid}',decodeURIComponent('{_up.quote(photo_email, safe='')}'),"
           f"decodeURIComponent('{_up.quote(photo_name, safe='')}'),'authorphotopicks',"
           "'authorclientphoto')</script>")
