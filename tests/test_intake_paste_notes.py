@@ -25,15 +25,30 @@ def _no_gate(monkeypatch):
 _NONE = {"status": "none", "found": False, "findings": [], "days_ago": None, "fresh": False}
 
 
-def _app(db, stresses=(), calls=None, raises=None):
+def _e4l(db, people=()):
+    """An e4l.db beside the test db, holding (name, email) rows. Empty: one person."""
+    path = db + ".e4l.db"
+    with sqlite3.connect(path) as cx:
+        cx.execute("CREATE TABLE IF NOT EXISTS e4l_clients (name TEXT, email TEXT)")
+        cx.executemany("INSERT INTO e4l_clients VALUES (?,?)", list(people))
+    return path
+
+
+def _app(db, stresses=(), calls=None, raises=None, findings=(), people=(), profile=None):
+    from dashboard.biofield_records import SYSTEM as RECORDS_SYSTEM
+
     def complete(system, user):
         if calls is not None:
             calls.append(user)
         if raises:
             raise raises
+        if system == RECORDS_SYSTEM:     # the conditions-and-medicines pass
+            return json.dumps({"findings": list(findings)})
         return json.dumps({"stresses": list(stresses)})
-    return create_app(db, scan_lookup=lambda e, client_id=None: _NONE, fetch_profile=lambda e: {},
-                      fetch_recent_comms=lambda e: {}, interpret_complete=complete)
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
+                      fetch_profile=lambda e: dict(profile or {}),
+                      fetch_recent_comms=lambda e: {}, interpret_complete=complete,
+                      e4l_db=_e4l(db, people))
 
 
 def _new(client, email="j@x.com", name="J"):
@@ -80,7 +95,7 @@ def test_paste_adds_labels_with_paste_source(tmp_path):
     client = _app(str(tmp_path / "p.db"), ["Chronic fatigue", "Poor sleep"], calls).test_client()
     tid = _new(client)
     r = client.post(f"/author/{tid}/mine-paste", json={"text": f"Tired all day. {MARKER}"})
-    assert r.status_code == 200 and r.get_json() == {"added": 2, "skipped": 0}
+    assert r.status_code == 200 and r.get_json() == {"added": 2, "skipped": 0, "offered": 0, "already": 0}
     assert calls and MARKER in calls[0]          # the pasted text reached the interpreter
     rows = {(s["label"], s["source"]) for s in _stresses(client, tid)}
     assert {("Chronic fatigue", "paste"), ("Poor sleep", "paste")} <= rows
@@ -148,7 +163,8 @@ def test_name_only_intake_is_accepted(tmp_path):
     with sqlite3.connect(db) as cx:
         assert cx.execute("SELECT email FROM biofield_auth_tests").fetchone()[0] in ("", None)
     j = client.post(f"/author/{tid}/mine-paste", json={"text": "notes"}).get_json()
-    assert j == {"added": 1, "skipped": 0}
+    assert j == {"added": 1, "skipped": 0, "offered": 0, "clinical_note":
+                 "Conditions and medicines need the client's email in the header."}
 
 
 def test_email_only_intake_is_accepted(tmp_path):
@@ -206,7 +222,9 @@ def test_label_filter_boundaries(tmp_path, label, kept):
     client = _app(db, [label]).test_client()
     tid = _new(client)
     j = client.post(f"/author/{tid}/mine-paste", json={"text": "notes"}).get_json()
-    assert j == ({"added": 1, "skipped": 0} if kept else {"added": 0, "skipped": 1})
+    none = {"offered": 0, "already": 0}
+    assert j == ({"added": 1, "skipped": 0, **none} if kept
+                 else {"added": 0, "skipped": 1, **none})
     assert _stress_count(db) == (1 if kept else 0)
 
 
@@ -248,7 +266,7 @@ def test_label_echoing_the_notes_is_skipped(tmp_path):
     client = _app(db, ["Poor sleep", sentence, f"Short {MARKER}\nsecond line"]).test_client()
     tid = _new(client)
     j = client.post(f"/author/{tid}/mine-paste", json={"text": sentence}).get_json()
-    assert j == {"added": 1, "skipped": 2}
+    assert j == {"added": 1, "skipped": 2, "offered": 0, "already": 0}
     assert _all_text_hits(db, MARKER) == []
     assert [s["label"] for s in _stresses(client, tid)] == ["Poor sleep"]
 
