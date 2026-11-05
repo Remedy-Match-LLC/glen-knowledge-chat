@@ -3235,7 +3235,14 @@ const PP_MAX = 20; // 20 polls × 6s ≈ 2 min before we fall back to the SMS li
 // "2026-06-05" -> "Jun 5, 2026" (parsed as local midnight so the day never slips).
 const fmtDate = (d)=>{
   if(!d) return "";
-  const dt = new Date(d + "T00:00:00");
+  // A bare date reads as that calendar day. A full timestamp, as an order's created_at
+  // is stored, reads as the client's local day; one the browser cannot parse falls back
+  // to its first ten characters. Before 4 Nov 2026 a timestamp showed raw on My Remedies.
+  const s = String(d).trim();
+  if(!/^\d{4}-\d{2}-\d{2}/.test(s)) return String(d);
+  // Python writes six-digit fractions; trim to milliseconds, which every browser parses.
+  let dt = s.length === 10 ? new Date(s + "T00:00:00") : new Date(s.replace(/(\.\d{3})\d+/, "$1"));
+  if(isNaN(dt)) dt = new Date(s.slice(0, 10) + "T00:00:00");
   if(isNaN(dt)) return String(d);
   return dt.toLocaleDateString("en-US", {month:"short", day:"numeric", year:"numeric"});
 };
