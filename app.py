@@ -35515,6 +35515,26 @@ def api_console_portal_messages(email):
                     "messages": _portal_chat_thread(email)})
 
 
+@app.route("/api/console/portal/inbound")
+def api_console_portal_inbound():
+    """Console: client portal messages since ?since=<ISO UTC>, for the morning check
+    (Glen, 2026-11-05). Read-only. The text is returned to the console caller only and
+    never printed to the log."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    since = (request.args.get("since") or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?Z?", since):
+        return jsonify({"error": "since must be an ISO UTC time"}), 400
+    from dashboard import portal_chat as _pchat
+    try:
+        with db.connect(LOG_DB) as cx:
+            rows, truncated = _pchat.inbound_since(cx, since)
+    except Exception as e:
+        print(f"[portal-inbound] read failed: {type(e).__name__}", flush=True)
+        return jsonify({"error": "read failed"}), 500
+    return jsonify({"since": since, "messages": rows, "truncated": truncated})
+
+
 def _reply_author_name(author):
     """The name a reply notice gives as its writer: the reply's own author, one line.
 
