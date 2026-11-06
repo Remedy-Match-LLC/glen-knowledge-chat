@@ -27,24 +27,25 @@ import sqlite3
 import sys
 import urllib.request
 
-BATCH = 500
-
-
 def read_rows(path):
+    """Every (email, client_id) in e4l.db, plus the emails that carry two different
+    ids. Production refuses those too, and also catches two addresses of one person."""
     cx = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        rows = cx.execute(
+        raw = cx.execute(
             "SELECT client_id, email FROM e4l_clients "
             "WHERE email IS NOT NULL AND TRIM(email)<>''").fetchall()
     finally:
         cx.close()
-    seen, out = set(), []
-    for cid, email in rows:
+    ids = {}
+    for cid, email in raw:
         e = (email or "").strip().lower()
-        if e and "@" in e and e not in seen:
-            seen.add(e)
-            out.append({"email": e, "client_id": str(cid)})
-    return out
+        if e and "@" in e and cid is not None:
+            ids.setdefault(e, set()).add(str(cid))
+    ambiguous = sorted(e for e, s in ids.items() if len(s) > 1)
+    rows = [{"email": e, "client_id": next(iter(s))}
+            for e, s in sorted(ids.items()) if len(s) == 1]
+    return rows, ambiguous
 
 
 def post(base, key, rows, apply):
@@ -68,8 +69,9 @@ def main(argv=None):
                       help="WRITE e4l_client_id in production (needs Glen's yes)")
     args = ap.parse_args(argv)
 
-    rows = read_rows(os.path.expanduser(args.db))
-    print(f"e4l.db: {len(rows)} clients with a usable email")
+    rows, ambiguous = read_rows(os.path.expanduser(args.db))
+    print(f"e4l.db: {len(rows)} clients with one email and one id; "
+          f"{len(ambiguous)} emails carry two ids and are left out")
     if not (args.remote_count or args.apply):
         print("Local dry run. Nothing was sent. First 3 rows:")
         for r in rows[:3]:
@@ -81,17 +83,13 @@ def main(argv=None):
         print("CONSOLE_SECRET is not set in the environment.", file=sys.stderr)
         return 2
     base = os.environ.get("SCAN_REWARD_BASE_URL") or "https://illtowell.com"
-    totals = {}
-    for i in range(0, len(rows), BATCH):
-        out = post(base, key, rows[i:i + BATCH], apply=args.apply)
-        if not out.get("ok", True) or "rows" not in out:
-            print(f"Production refused batch {i // BATCH + 1}: {out}", file=sys.stderr)
-            return 1
-        for k, v in out.items():
-            if isinstance(v, int) and not isinstance(v, bool):
-                totals[k] = totals.get(k, 0) + v
+    # One request, so production judges ambiguity across the whole source.
+    out = post(base, key, rows, apply=args.apply)
+    if "rows" not in out:
+        print(f"Production refused: {out}", file=sys.stderr)
+        return 1
     print(("APPLIED: " if args.apply else "Count only, nothing written: ")
-          + json.dumps(totals, sort_keys=True))
+          + json.dumps(out, sort_keys=True))
     return 0
 
 
