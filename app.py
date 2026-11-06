@@ -2578,8 +2578,11 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         # bundle that lists caution_components: its block carries only those cautions.
         # An out-of-stock product qualifies like a waiting-list one: Night Vision, unpinned,
         # was otherwise never named out of stock to the bot (review round 1, 2026-10-25).
+        # A shelf count at 0 qualifies like the hand-set flag (STOCK_COUNTS_ENABLED,
+        # 2026-11-06): the same note the buying paths read. Flag off, it is the flag alone.
         if (not (p.get("copy_pinned") or p.get("waitlist_only") or p.get("chat_caution")
                  or str(p.get("out_of_stock") or "").strip()
+                 or _stock_counts.is_counted_out(slug, p)
                  or _bundle_bot_cautions(p, products))
                 or p.get("inactive")
                 or p.get("info_only")
@@ -10763,6 +10766,13 @@ def _is_orderable(slug, p=None):
     if p is not None:
         cat = {**cat, slug: p}
     return _ppw.is_orderable(slug, cat)
+
+
+# Shelf counts (STOCK_COUNTS_ENABLED, Glen 2026-11-06) read the orders database and
+# this catalog. Lambdas, so a test's monkeypatched LOG_DB or catalog is what they see.
+from dashboard import stock_counts as _stock_counts
+_stock_counts.set_db_path_fn(lambda: LOG_DB)
+_stock_counts.set_catalog_fn(lambda: _PRODUCTS.get("products") or {})
 
 
 def _waitlist_refusal(slug):
@@ -24030,6 +24040,111 @@ def console_support_programs_page():
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
     return resp
+
+
+@app.route("/console/stock")
+def console_stock_page():
+    """Shelf counts (Glen, 2026-11-06). The page holds no data; its API is guarded."""
+    resp = send_from_directory(STATIC, "console-stock.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+@app.route("/api/console/stock", methods=["GET"])
+def api_console_stock():
+    """Every counted product, lowest first, with average monthly sales and months of
+    supply; the GrooveKart names that matched no product; the products a count can be
+    entered for. 404 while STOCK_COUNTS_ENABLED is off."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    if not _stock_counts.enabled():
+        return jsonify({"ok": False, "error": "Stock counts are switched off."}), 404
+    cx = db.connect(LOG_DB)
+    try:
+        _stock_counts.init_tables(cx)
+        return jsonify({"ok": True,
+                        "low_stock_at": _stock_counts.LOW_STOCK_AT,
+                        "window_days": _stock_counts.AVG_WINDOW_DAYS,
+                        "rows": _stock_counts.console_rows(cx),
+                        "unmatched": _stock_counts.list_unmatched(cx),
+                        "products": _stock_counts.countable_products()})
+    finally:
+        cx.close()
+
+
+@app.route("/api/console/stock/set", methods=["POST"])
+def api_console_stock_set():
+    """Set one product's count, with a reason ("delivery from the lab", "shelf count").
+    The change is logged with who, when and why."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    if not _stock_counts.enabled():
+        return jsonify({"ok": False, "error": "Stock counts are switched off."}), 404
+    data = request.get_json(silent=True) or {}
+    cx = db.connect(LOG_DB)
+    try:
+        res = _stock_counts.set_count(cx, data.get("slug"), data.get("count"),
+                                      who=_stock_console_who(), reason=data.get("reason"))
+        return jsonify({"ok": True, **res})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    finally:
+        cx.close()
+
+
+def _stock_console_who():
+    """Who set a count: "console:<scope>" for a per-user token (e.g. workspace:rae),
+    "console" for the master key or a login cookie, which name nobody."""
+    try:
+        key = _present_console_key()
+        if key and key != CONSOLE_SECRET:
+            with db.connect(LOG_DB) as cx:
+                row = cx.execute(
+                    "SELECT u.scope FROM access_tokens t "
+                    "JOIN workspace_users u ON u.id = t.user_id "
+                    "WHERE t.token = ? AND t.revoked_at IS NULL", (key,)).fetchone()
+            if row and row[0]:
+                return f"console:{row[0]}"
+    except Exception:  # noqa: BLE001
+        pass
+    return "console"
+
+
+@app.route("/api/console/stock/reconcile", methods=["POST"])
+def api_console_stock_reconcile():
+    """The self-heal, on demand: sync every live order of the last 30 days that has no
+    stock move, and every cancelled order still holding bottles."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    if not _stock_counts.enabled():
+        return jsonify({"ok": False, "error": "Stock counts are switched off."}), 404
+    cx = db.connect(LOG_DB)
+    try:
+        return jsonify({"ok": True, "synced": _stock_counts.reconcile(cx)})
+    finally:
+        cx.close()
+
+
+@app.route("/api/cron/stock-reconcile", methods=["POST"])
+def api_cron_stock_reconcile():
+    """Nightly self-heal (X-Cron-Secret header == CRON_SECRET, falls back to
+    CONSOLE_SECRET). Order writes never run it: it stays out of the request path."""
+    # Header only: a ?key= query string lands in access logs (review round 3).
+    key = request.headers.get("X-Cron-Secret", "").strip()
+    expected = os.environ.get("CRON_SECRET") or os.environ.get("CONSOLE_SECRET", "")
+    if not expected or not hmac.compare_digest(key, expected):
+        return jsonify({"error": "unauthorized"}), 401
+    if not _stock_counts.enabled():
+        return jsonify({"ok": True, "synced": [], "enabled": False})
+    cx = db.connect(LOG_DB)
+    try:
+        return jsonify({"ok": True, "synced": _stock_counts.reconcile(cx)})
+    finally:
+        cx.close()
 
 
 @app.route("/console/related-products")
@@ -48204,6 +48319,50 @@ def _notify_store_order(payload):
         print(f"[gk-notify] skipped: {e!r}", flush=True)
 
 
+def _gk_order_items(product_names, raw_products):
+    """The GrooveKart order row's lines. Flag off: [{"name"}], exactly as before. Flag
+    on: each also carries stock_qty and, on an exact name match, stock_slug, so the
+    decrement and the monthly average read the same lines. Never raises."""
+    if _stock_counts.enabled():
+        try:
+            items = _stock_counts.groovekart_items(raw_products)
+            if [it["name"] for it in items] == list(product_names):
+                return items
+        except Exception as e:  # noqa: BLE001
+            print(f"[stock] GrooveKart line detail skipped: {e!r}", flush=True)
+    return [{"name": n} for n in product_names]
+
+
+def _stock_groovekart_arrival(external_ref, raw_products, payload=None):
+    """A GrooveKart order comes off the shelf count when it arrives, since GrooveKart
+    never says when it is paid (STOCK_COUNTS_ENABLED, Glen 2026-11-06). Names that
+    match no product are listed on /console/stock. Total: this runs inside the webhook,
+    and a raise would 500 it into a GrooveKart retry storm."""
+    try:
+        if not _stock_counts.enabled():
+            return
+        cx = db.connect(LOG_DB)
+        try:
+            oid = None
+            if external_ref:
+                try:
+                    r = cx.execute("SELECT id FROM orders WHERE source='groovekart' "
+                                   "AND external_ref=?", (external_ref,)).fetchone()
+                    oid = int(r[0]) if r else None
+                except Exception:  # noqa: BLE001  (no orders table on a fresh DB)
+                    try:
+                        cx.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
+            _stock_counts.on_groovekart_delivery(
+                cx, oid, raw_products, key=_stock_counts.delivery_key(payload or {}),
+                ref=external_ref)
+        finally:
+            cx.close()
+    except Exception as e:  # noqa: BLE001
+        print(f"[stock] GrooveKart arrival skipped: {e!r}", flush=True)
+
+
 @app.route("/webhook/groovekart", methods=["POST"])
 def groovekart_webhook():
     """GrooveKart order → GHL E4L pipeline with purchase tag."""
@@ -48292,8 +48451,10 @@ def groovekart_webhook():
                   external_ref=str(data.get("id") or data.get("order_id")
                                    or data.get("reference") or email or _bos_orders._now()),
                   email=email, name=(first + " " + last).strip(), phone=phone,
-                  items=[{"name": n} for n in product_names],
+                  items=_gk_order_items(product_names, _raw_products),
                   total_cents=int(round(float(order_total or 0) * 100)), channel="retail")
+    _stock_groovekart_arrival(str(data.get("id") or data.get("order_id")
+                                  or data.get("reference") or ""), _raw_products, data)
     threading.Thread(
         target=_send_kloud_order_instructions,
         args=(email, first, product_names,
@@ -61618,6 +61779,7 @@ def console_reprice_orders_from_qbo():
                 cx.execute("UPDATE orders SET items_json=?, updated_at=? WHERE id=?",
                            (json.dumps(new_items), _bos_orders._now(), o.get("id")))
                 cx.commit()
+                _bos_orders._stock_sync(cx, o.get("id"))   # flag off: a no-op
                 rec["applied"] = True
             results.append(rec)
     finally:

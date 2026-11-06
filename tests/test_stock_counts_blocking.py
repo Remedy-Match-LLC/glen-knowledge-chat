@@ -31,7 +31,8 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "LOG_DB", path)
     monkeypatch.setattr(app, "_PORTAL_CART_ENABLED", True)
     sent = []
-    monkeypatch.setattr(SC, "_notify", lambda s, b: sent.append((s, b)))
+    monkeypatch.setattr(SC, "_send_one", lambda to, s, b: sent.append((to, s)) or True)
+    monkeypatch.setattr(SC, "_spawn", lambda fn: fn())
     products = app._PRODUCTS.setdefault("products", {})
     monkeypatch.setitem(products, BUNDLE, {
         "name": "Test Stock Bundle", "bundle": True, "price_cents": 14000,
@@ -179,3 +180,38 @@ def test_an_unreadable_database_fails_open(client, env, monkeypatch):
     SC._invalidate()
     monkeypatch.setattr(app, "LOG_DB", "/nonexistent-dir/x/chat_log.db")
     assert app._is_orderable(SS) is True
+
+
+# Unpinned and no chat caution, so only an availability reason lets the bot name it.
+NV = "iop-syntropy"
+NV_Q = "Can I order IOP Syntropy?"
+
+
+def test_the_chat_is_told_a_counted_out_product_is_out_of_stock(env):
+    assert not env[NV].get("copy_pinned") and not env[NV].get("chat_caution")
+    before = app._named_product_facts(NV_Q)
+    assert "cannot be ordered now" not in before
+    _set(NV, 0)
+    b = app._named_product_facts(NV_Q)
+    assert "### IOP Syntropy" in b
+    assert "Availability: IOP Syntropy is out of stock." in b
+    assert ("IOP Syntropy cannot be ordered now. Never say it is available to order "
+            "or in stock.") in b
+    assert "$" not in app._alias_price_hint("IOP Syntropy", NV)
+
+
+def test_with_the_flag_off_the_chat_text_is_byte_identical(env, monkeypatch):
+    monkeypatch.setenv("STOCK_COUNTS_ENABLED", "")
+    before = app._named_product_facts(NV_Q)
+    hint = app._alias_price_hint("IOP Syntropy", NV)
+    monkeypatch.setenv("STOCK_COUNTS_ENABLED", "1")
+    _set(NV, 0)
+    monkeypatch.setenv("STOCK_COUNTS_ENABLED", "")
+    SC._invalidate()
+    assert app._named_product_facts(NV_Q) == before
+    assert app._alias_price_hint("IOP Syntropy", NV) == hint
+
+
+def test_the_chat_is_not_told_a_stocked_product_is_out(env):
+    _set(NV, 5)
+    assert "cannot be ordered now" not in app._named_product_facts(NV_Q)
