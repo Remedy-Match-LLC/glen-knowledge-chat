@@ -754,3 +754,32 @@ def test_the_five_plate_ionizer_is_counted_but_never_goes_off_sale(env, monkeypa
     assert SC.is_counted_out("scar-silk", cat["scar-silk"]) is False
     _set(cx, "scar-silk", 0)
     assert SC.is_counted_out("scar-silk", cat["scar-silk"])   # the rule is per product
+
+
+def test_infoceuticals_alert_at_zero_or_at_one_when_they_sell_monthly(env, monkeypatch):
+    """Glen, 2026-11-06: "For Infoceuticals, set the alert level to zero, unless the average
+    monthly use is 1 or more, then set it to 1." Other products still alert at 3."""
+    cat = dict(CAT)
+    cat["es1-lymph"] = {"name": "ES1 Lymph and Immune Energetic Star Infoceutical",
+                        "price_cents": 4000}
+    cat["youth"] = {"name": "Youth Infoceutical", "price_cents": 4000}
+    monkeypatch.setattr(SC, "_CATALOG_FN", lambda: cat)
+    avg = {"es1-lymph": 0.5, "youth": 1.0, "scar-silk": 0.0}
+    monkeypatch.setattr(SC, "monthly_sales_cached", lambda cx, c=None: avg)
+    cx, sent = env["cx"], env["sent"]
+
+    def low_subjects():
+        return [s for s in _subjects(sent) if s.startswith("Low stock")]
+    _set(cx, "es1-lymph", 1)                 # slow seller: no alert at 1
+    assert low_subjects() == []
+    _set(cx, "es1-lymph", 0)                 # ... but at 0
+    assert any("ES1" in s for s in low_subjects())
+    _set(cx, "youth", 2)
+    assert not any("Youth" in s for s in low_subjects())
+    _set(cx, "youth", 1)                     # sells 1 a month: alert at 1
+    assert any("Youth" in s for s in low_subjects())
+    _set(cx, "scar-silk", 3)                 # other products unchanged
+    assert any("Scar Silk" in s for s in low_subjects())
+    assert SC.low_stock_at(cat["youth"], 1.0) == 1
+    assert SC.low_stock_at(cat["es1-lymph"], 0.99) == 0
+    assert SC.low_stock_at(cat["scar-silk"], 5) == 3

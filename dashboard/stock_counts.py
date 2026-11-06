@@ -43,6 +43,16 @@ from dashboard import db
 
 FLAG = "STOCK_COUNTS_ENABLED"
 LOW_STOCK_AT = 3                  # Glen, 2026-11-06: "yes" to 3 bottles or fewer
+
+
+def low_stock_at(p, avg) -> int:
+    """The low-stock alert level for one product. Glen, 2026-11-06: "For Infoceuticals, set
+    the alert level to zero, unless the average monthly use is 1 or more, then set it to
+    1." Every other product alerts at LOW_STOCK_AT."""
+    name = str((p or {}).get("name") or "").lower() if isinstance(p, dict) else ""
+    if "infoceutical" in name:
+        return 1 if float(avg or 0) >= 1 else 0
+    return LOW_STOCK_AT
 AVG_WINDOW_DAYS = 365             # average monthly sales over the last 12 months
 DEDUPE_DAYS = 14                  # a line within 14 days of another source's line is one sale
 RECONCILE_DAYS = 30               # the self-heal looks back this far
@@ -760,11 +770,11 @@ def _deliver(slug, kind, to, subject, body):
         print(f"[stock] alert state not saved for {slug}/{kind}/{to}: {e!r}", flush=True)
 
 
-def _alert_text(kind, name, count, avg):
+def _alert_text(kind, name, count, avg, low_at=LOW_STOCK_AT):
     if kind == "low":
         return (f"Low stock: {name}, {count} left",
                 f"{name} is down to {count} bottle{'s' if count != 1 else ''}.\n\n"
-                f"The alert goes out at {LOW_STOCK_AT} or fewer. "
+                f"The alert goes out at {low_at} or fewer. "
                 f"About {avg:.1f} sell in a month.\n\nStock page: {CONSOLE_URL}")
     return (f"Under one month of {name}: {count} left",
             f"{name} has {count} bottle{'s' if count != 1 else ''} left. "
@@ -790,7 +800,7 @@ def check_alerts(cx, slugs, catalog=None):
                 continue
             count = get_count(cx, slug)
             avg = float(avg_map.get(slug) or 0.0)
-            for kind, cond in (("low", count <= LOW_STOCK_AT),
+            for kind, cond in (("low", count <= low_stock_at(cat.get(slug), avg)),
                                ("month", avg > 0 and count < avg)):
                 if not cond:
                     cx.execute("DELETE FROM stock_alerts WHERE slug=? AND kind=?", (slug, kind))
@@ -812,17 +822,18 @@ def check_alerts(cx, slugs, catalog=None):
                             "OR (state='pending' AND attempted_at < ?))",
                             (_now(), slug, kind, to, retry_before)).rowcount == 1
                     if got:
-                        starts.append((slug, kind, to, count, avg))
+                        starts.append((slug, kind, to, count, avg,
+                                       low_stock_at(cat.get(slug), avg)))
         cx.commit()
     except Exception as e:  # noqa: BLE001
         _safe_rollback(cx)
         print(f"[stock] alert check skipped: {e!r}", flush=True)
         return []
-    for slug, kind, to, count, avg in starts:
+    for slug, kind, to, count, avg, low_at in starts:
         name = (cat.get(slug) or {}).get("name") or slug
-        subject, body = _alert_text(kind, name, count, avg)
+        subject, body = _alert_text(kind, name, count, avg, low_at)
         _spawn(lambda s=slug, k=kind, t=to, su=subject, b=body: _deliver(s, k, t, su, b))
-    return [(s, k, t) for s, k, t, _c, _a in starts]
+    return [(s, k, t) for s, k, t, _c, _a, _l in starts]
 
 
 # ── console ────────────────────────────────────────────────────────────────────
@@ -838,6 +849,7 @@ def console_rows(cx, catalog=None) -> list:
         a = round(float(avg.get(slug) or 0.0), 2)
         rows.append({"slug": slug, "name": (cat.get(slug) or {}).get("name") or slug,
                      "count": count, "avg_monthly": a,
+                     "low_at": low_stock_at(cat.get(slug), a),
                      "months_supply": (round(count / a, 1) if a > 0 else None),
                      "updated_at": updated})
     rows.sort(key=lambda x: (x["count"], x["name"].lower()))

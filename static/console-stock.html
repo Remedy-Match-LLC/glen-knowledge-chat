@@ -113,7 +113,8 @@ out of stock everywhere. Lowest count first.</p>
     document.getElementById('tbl').style.display = rows.length ? 'table' : 'none';
     document.getElementById('no-rows').style.display = rows.length ? 'none' : 'block';
     document.getElementById('rows').innerHTML = rows.map(function(x, i){
-      var cls = x.count <= 0 ? 'zero' : (x.count <= LOW ? 'low' : '');
+      var lo = (x.low_at == null) ? LOW : x.low_at;
+      var cls = x.count <= 0 ? 'zero' : (x.count <= lo ? 'low' : '');
       return '<tr><td>'+esc(x.name)+'<br><span class="status">'+esc(x.slug)+'</span></td>'+
         '<td class="num '+cls+'">'+esc(x.count)+'</td>'+
         '<td class="num">'+esc(x.avg_monthly)+'</td>'+
