@@ -38,6 +38,9 @@ HISTORY_TABLES = frozenset({
     "inquiry_practitioners", "practitioner_inquiry_opt_outs", "practitioner_suggestions",
     "biofield_reveal_preview",        # an hour-long Import Reveal preview (2026-10-18); its
     #                                   email is a guard that the client has not changed
+    "scan_invites",                   # who invited whom to a scan (2026-11-06); a record of
+    #                                   what happened, like referral_events
+    "scan_arrivals",                  # one E4L scan notice as it arrived (2026-11-06)
 })
 MERGE_OWN_TABLES = frozenset({
     "person_merges", "email_aliases", "portal_token_aliases", "person_merge_changes",
@@ -67,6 +70,7 @@ MOVE_TABLES = frozenset({
     "voice_analysis_consent",          # the voice analysis opt-in (2026-10-27)
     "member_reward_grants", "membership_comps", "mentor_page_requests", "module_certifications",
     "orders", "owned_tools", "peer_optin", "people", "person_attributes", "points_ledger",
+    "reading_credits",                 # free-reading credits (2026-11-06): a balance, like points
     "portal_biofield_reports", "portal_card_state", "portal_cart_seeded", "portal_chat_messages",
     "portal_credentials", "portal_email_imports", "portal_event_registrations",
     "portal_extended_history", "portal_external_identities", "portal_fold_state",
