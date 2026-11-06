@@ -176,10 +176,7 @@ def test_a_row_with_a_pattern_matches_by_its_pattern(tmp_path, monkeypatch):
 
 def test_a_ticked_row_showing_only_the_grey_default_earns_its_layer(tmp_path, monkeypatch):
     """Glen, 2026-11-06, on Othon Molina's intake: "Each of them says in grey what the
-    stress pattern defaults to so that should qualify." The layer takes the name the
-    grey text shows, and "Add to layer" heads it with that same name."""
-    from dashboard.biofield_report_html import render_clinical_checklist
-
+    stress pattern defaults to so that should qualify." The layer takes that name."""
     def setup(cx, tid):
         save_selection(cx, tid, "My eyes hurt", ["Clear Lens Eye Drops"])
     db, tid, client = _app(tmp_path, monkeypatch, ["My eyes hurt"], setup)
@@ -187,29 +184,41 @@ def test_a_ticked_row_showing_only_the_grey_default_earns_its_layer(tmp_path, mo
     assert j["no_pattern"] == []
     assert [(c["kind"], c["layer"], c["remedies"]) for c in j["changes"]] == \
         [("new", "My eyes hurt", ["Clear Lens Eye Drops"])]
-    # The grey text on the page names the same condition.
-    page = render_clinical_checklist([{"label": "My eyes hurt", "stress_pattern": ""}])
-    assert "placeholder=\"Defaults to 'My eyes hurt'\"" in page
-    # So does the + button: an empty pattern field heads the layer with the default.
-    r = client.post(f"/author/{tid}/clinical-items/balance",
-                    json={"label": "My eyes hurt", "layer": 1, "remedies": [],
-                          "pattern": ""}).get_json()
-    assert r["ok"]
-    assert {row[1] for row in _chain(db, tid)} == {"My eyes hurt"}
 
 
-def test_a_ticked_row_with_no_default_is_still_skipped_and_listed(tmp_path, monkeypatch):
-    """Every labelled row has a default today, so the branch is reached by making the
-    shared default empty: a row with no pattern, no topic and no default earns
-    nothing and is listed."""
-    from dashboard import biofield_clinical_layer_sync as sync
-
+def test_an_unticked_default_row_does_not_mark_a_hand_layer_stale(tmp_path, monkeypatch):
+    """Review round 1, finding 1: only a ticked row falls back to its default."""
     def setup(cx, tid):
+        add_chain_row(cx, tid, 1, "My eyes hurt", "My eyes hurt", "Old Remedy")
+    db, tid, client = _app(tmp_path, monkeypatch, ["My eyes hurt"], setup)
+    with sqlite3.connect(db) as cx:
+        from dashboard.biofield_clinical_layer_sync import targets
+        wanted, no_pattern = targets(cx, [{"label": "My eyes hurt", "checked": False}])
+    assert wanted == [] and no_pattern == []
+    assert _preview(client, tid)["stale"] == []
+
+
+def test_a_default_row_on_a_hand_layer_offers_removals_unticked(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        add_chain_row(cx, tid, 1, "My eyes hurt", "My eyes hurt", "", confirmed=0)
+        add_chain_row(cx, tid, 1, "My eyes hurt", "", "Old Remedy", confirmed=0)
         save_selection(cx, tid, "My eyes hurt", ["Clear Lens Eye Drops"])
     db, tid, client = _app(tmp_path, monkeypatch, ["My eyes hurt"], setup)
-    monkeypatch.setattr(sync, "default_pattern", lambda label: "")
     j = _preview(client, tid)
-    assert j["changes"] == [] and j["no_pattern"] == ["My eyes hurt"]
+    kinds = {(c["kind"], c.get("remedy"), c["preticked"]) for c in j["changes"]}
+    assert ("remove", "Old Remedy", False) in kinds
+    assert ("add", "Clear Lens Eye Drops", True) in kinds
+
+
+def test_a_ticked_row_with_no_name_is_listed_not_dropped(tmp_path):
+    from dashboard.biofield_clinical_layer_sync import NO_NAME, targets
+    with sqlite3.connect(str(tmp_path / "x.db")) as cx:
+        wanted, no_pattern = targets(cx, [
+            {"label": "", "checked": True, "selected_remedies": ["A"]},
+            {"label": "   ", "checked": True, "selected_remedies": ["B"]},
+            {"label": "  ", "checked": False}])
+    assert wanted == [] and no_pattern == [NO_NAME, NO_NAME]
+    assert NO_NAME == "(row with no name)"
 
 
 def test_a_scan_layer_is_never_changed(tmp_path, monkeypatch):

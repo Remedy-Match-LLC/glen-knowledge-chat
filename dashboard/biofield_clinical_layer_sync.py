@@ -40,6 +40,9 @@ from dashboard.biofield_clinical_sections import row_ticks
 # A layer holding one of these rows came from a scan or a program: never changed.
 FIXED_ORIGINS = ("scan", "program")
 
+# How a ticked row with a blank name is listed among the rows that earn no layer.
+NO_NAME = "(row with no name)"
+
 
 class Stale(ValueError):
     """The chain or the Clinical Summary changed since the preview."""
@@ -100,6 +103,9 @@ def targets(cx, items):
     for item in items or []:
         label = str(item.get("label") or "").strip()
         if not label:
+            # Nothing can name its layer, but a ticked row is never dropped silently.
+            if item.get("checked"):
+                no_pattern.append(NO_NAME)
             continue
         # The pattern the page shows: one Glen typed for this test wins, then the
         # stored one, then a suggestion (apply_selection and build set that order).
@@ -109,7 +115,10 @@ def targets(cx, items):
         # default_pattern(), so both still name the condition alike. Glen, 2026-11-06.
         pattern = str(item.get("stress_pattern") or "").strip()
         key = _norm(label)
-        default = "" if pattern or key in topics else default_pattern(label)
+        # Ticked rows only: an unticked row named by its default would become a
+        # target, and mark a layer typed by hand with that name as stale.
+        default = ("" if pattern or key in topics or not item.get("checked")
+                   else default_pattern(label))
         if pattern:
             name, keys = pattern, {_norm(pattern)}
         elif key in topics:
