@@ -2638,6 +2638,65 @@
    "bottle_type": "30 Caps",
    "fmp_id": "346"
   },
+  "binder-complex-powder": {
+   "name": "Binder Complex Powder",
+   "price_cents": 7000,
+   "qty_pricing": true,
+   "ingredients": [
+    {
+     "name": "Chitosan deacetylation",
+     "dose": "170 mg"
+    },
+    {
+     "name": "Modified Citrus Pectin",
+     "dose": "30 mg"
+    },
+    {
+     "name": "Clinoptilolite Zeolite",
+     "dose": "40 mg"
+    },
+    {
+     "name": "Chlorella (broken cell wall)",
+     "dose": "30 mg"
+    },
+    {
+     "name": "French Green Clay",
+     "dose": "30 mg"
+    },
+    {
+     "name": "Slippery Elm Bark Extract",
+     "dose": "40 mg"
+    },
+    {
+     "name": "Cilantro Juice",
+     "dose": "30 mg"
+    },
+    {
+     "name": "Activated Coconut Charcoal",
+     "dose": "30 mg"
+    },
+    {
+     "name": "Fulvic Acid Supernal Sublime",
+     "dose": "1 mg"
+    },
+    {
+     "name": "Aloe Vera 98% Mucilaginous Polysaccharide Organic Extract",
+     "dose": "25 mg"
+    },
+    {
+     "name": "Humic Acid",
+     "dose": "1 mg"
+    },
+    {
+     "name": "button mushroom Chitosan, white mushroom, crimini, baby bella, portobello",
+     "dose": "30 mg"
+    }
+   ],
+   "ingredients_source": "binder-complex capsule formula; powder label Binder_Complex_Powder_1x7.9in_0526 (same 12 actives, one 457 mg scoop)",
+   "description": "Binder Complex Powder . 27.4 grams, 60 scoops of 457 mg. Price: $70.",
+   "bottle_type": "30 g",
+   "source": "manual-add-2026-11-06"
+  },
   "chelation": {
    "name": "Chelation",
    "price_cents": 7000,
