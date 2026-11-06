@@ -621,6 +621,101 @@ def _rids_on_test(cx, tid, rids):
     return want
 
 
+# The dose instructions move as one unit: the duplicate's are taken only when the kept
+# row has none at all, so a merged row never mixes one card's dose with another's
+# frequency (review round 1, 2026-11-05).
+_INSTRUCTIONS = ("dosage", "frequency", "timing", "schedule_slot")
+
+
+def _fold_shared_remedies(cx, tid, target_rows, source_rows):
+    """Delete each source row whose remedy is already on the merged card. Returns the
+    deleted row ids. Never commits: the consolidation's commit is the same unit.
+
+    Glen, 2026-11-05: "When I consolidate 2 layers in Biofield Intake and they contain
+    a common remedy, don't duplicate it." The target's row is kept, so the card keeps
+    the dose Glen set there; when it has no instructions at all it takes the
+    duplicate's. Bottles keep the larger count and confirmed stays set. Call it
+    after the caller has moved every source row's Balances onto the target rows: the
+    kept row then carries both cards' stresses, and the deleted row holds no link.
+    Remedies match by the layer fold's catalog identity (exact names and aliases,
+    never fuzzy, because this deletes rows)."""
+    from dashboard.biofield_chain_fold import _remedy_key
+    t = _num(tid)
+    kept = {}
+    for r in target_rows:
+        k = _remedy_key(r[1])
+        if k and k not in kept:
+            kept[k] = int(r[0])
+    # Only a remedy on BOTH cards folds. Two rows of one remedy on the source card
+    # alone may be deliberate (a morning and a bedtime dose), so they both move
+    # (review round 2, 2026-11-05).
+    # Only the first source row of each remedy folds; a second one moves, so a deliberate
+    # second dose on the source card survives even when the target has the remedy
+    # (review round 3, 2026-11-05).
+    dup_of, folded = {}, set()
+    for r in source_rows:
+        k = _remedy_key(r[1])
+        if k and k in kept and k not in folded:
+            folded.add(k)
+            dup_of[int(r[0])] = kept[k]
+    for dup, keep in dup_of.items():
+        cur = cx.execute("SELECT * FROM biofield_auth_chain WHERE test_id=? AND id IN (?,?)",
+                         (t, keep, dup))
+        cols = [d[0] for d in cur.description]
+        by_id = {int(row[cols.index("id")]): dict(zip(cols, row)) for row in cur.fetchall()}
+        k_row, d_row = by_id.get(keep), by_id.get(dup)
+        if not k_row or not d_row:
+            continue
+        inst = [c for c in _INSTRUCTIONS if c in cols]
+        fill = {}
+        if all(_blank(k_row[c]) for c in inst):
+            fill.update({c: d_row[c] for c in inst if not _blank(d_row[c])})
+        # The invoice bills the largest count per product, so the merged card bills
+        # the larger of the two (blank is 1). Never fewer than before the merge.
+        if "bottles" in cols:
+            kb, db_ = _bottles(k_row["bottles"]), _bottles(d_row["bottles"])
+            if db_ > kb:
+                fill["bottles"] = db_
+        # Confirmed if either was: a confirmed row must not turn into a proposal that
+        # the automatic fold can then remove.
+        if "confirmed" in cols and not k_row["confirmed"] and d_row["confirmed"]:
+            fill["confirmed"] = 1
+        # Per-layer stress codes are read from every row of the card; keep the union.
+        if "codes" in cols:
+            merged = _codes(k_row["codes"]) + [c for c in _codes(d_row["codes"])
+                                               if c not in _codes(k_row["codes"])]
+            if merged != _codes(k_row["codes"]):
+                fill["codes"] = json.dumps(merged)
+        if fill:
+            sets = ",".join(f"{c}=?" for c in fill)
+            cx.execute(f"UPDATE biofield_auth_chain SET {sets} WHERE test_id=? AND id=?",
+                       (*fill.values(), t, keep))
+        cx.execute("DELETE FROM biofield_auth_chain WHERE test_id=? AND id=?", (t, dup))
+    return set(dup_of)
+
+
+def _blank(v):
+    # "[]" is what the route writes to schedule_slot when a dose is dragged off.
+    return v is None or (isinstance(v, str) and v.strip() in ("", "[]"))
+
+
+def _bottles(v):
+    try:
+        return max(1, int(v))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _codes(v):
+    if not v:
+        return []
+    try:
+        got = json.loads(v)
+    except (TypeError, ValueError):
+        got = str(v).split(",")       # never overwrite codes that are not JSON
+    return [str(c).strip() for c in (got if isinstance(got, list) else [got]) if str(c).strip()]
+
+
 def consolidate_layer_balances(cx, tid, source_layer, target_layer,
                                source_rids=None, target_rids=None):
     """Move remedy-linked stress coverage from one layer card to another.
@@ -786,7 +881,8 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
             seen.add(key)
             merged_tail.append(item)
     merged_tail_text = ", ".join(merged_tail)
-    all_rids = target_rids | source_rids
+    dup_rids = _fold_shared_remedies(cx, tid, target_rows, source_rows)
+    all_rids = (target_rids | source_rids) - dup_rids
     if all_rids:
         row_marks = ",".join("?" for _ in all_rids)
         cx.execute(
