@@ -85,7 +85,16 @@
   var next = panel.querySelector("#portalSearchNext");
   var pageNo = panel.querySelector("#portalSearchPageNo");
 
-  var state = {q: "", page: 1, pages: 1, seq: 0, timer: null};
+  var state = {q: "", page: 1, pages: 1, seq: 0, timer: null, ctl: null};
+
+  // Every input change and every clear starts a new generation and aborts the fetch in
+  // flight, so an older response can never fill a cleared or changed search.
+  function supersede() {
+    state.seq++;
+    if (state.ctl) { try { state.ctl.abort(); } catch (e) {} }
+    state.ctl = null;
+    return state.seq;
+  }
 
   function open() {
     panel.hidden = false;
@@ -102,6 +111,7 @@
   });
 
   function clear(msg) {
+    supersede();
     list.innerHTML = "";
     pager.hidden = true;
     statusEl.textContent = msg;
@@ -134,22 +144,27 @@
   function run(page) {
     var q = state.q;
     if (q.length < MIN) { clear("Type at least 2 letters."); return; }
-    var seq = ++state.seq;
+    var seq = supersede();
+    var ctl = (typeof AbortController === "function") ? new AbortController() : null;
+    state.ctl = ctl;
     statusEl.textContent = "Searching…";
     fetch("/api/portal/" + encodeURIComponent(TOKEN) + "/site-search?q=" +
-          encodeURIComponent(q) + "&page=" + (page || 1), {credentials: "same-origin"})
+          encodeURIComponent(q) + "&page=" + (page || 1),
+          {credentials: "same-origin", signal: ctl ? ctl.signal : undefined})
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (seq !== state.seq) return;          // a newer search has started
         if (!d || !d.ok) { clear("Search is not available right now."); return; }
         render(d);
       })
-      .catch(function () { if (seq === state.seq) clear("Search is not available right now."); });
+      .catch(function () { if (seq === state.seq) clear("Search is not available right now."); })
+      .then(function () { if (state.ctl === ctl) state.ctl = null; });
   }
 
   input.addEventListener("input", function () {
     state.q = input.value.trim();
     clearTimeout(state.timer);
+    supersede();
     state.timer = setTimeout(function () { run(1); }, DEBOUNCE_MS);
   });
   prev.addEventListener("click", function () { if (state.page > 1) run(state.page - 1); });
@@ -165,9 +180,20 @@
     e.preventDefault();
     close();
     if (!ON_HOME) { location.href = "/portal/" + encodeURIComponent(TOKEN) + r.url; return; }
-    if (r.scan_date) {
+    // Search covers the account holder only. A caregiver viewing a member (?member=)
+    // returns to their own view: drop member and scan_date from the address, then
+    // reload the portal in place, on the clicked report when there is one.
+    var params = new URLSearchParams(location.search);
+    var viewingMember = params.has("member");
+    if (viewingMember) {
+      params.delete("member");
+      params.delete("scan_date");
+      var qs = params.toString();
+      history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+    }
+    if (r.scan_date || viewingMember) {
       // selectedScanDate and load() are the portal page's own globals.
-      try { selectedScanDate = r.scan_date; load(); } catch (err) {}
+      try { selectedScanDate = r.scan_date || null; load(); } catch (err) {}
     }
     if (location.hash === r.url) window.dispatchEvent(new HashChangeEvent("hashchange"));
     else location.hash = r.url;

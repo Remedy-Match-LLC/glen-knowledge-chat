@@ -7,7 +7,8 @@ One list, ranked by match, from three sources:
   query here filters on that one email. Nothing in this module ever reads another
   client's rows, and nothing takes an email from the request.
 - "store": products and programs, by the store's own listing rule
-  (shop_catalog.listable), less the never-recommend list. Price and "can be bought now"
+  (shop_catalog.listable), and nothing else. Glen, 6 Nov 2026, on the do-not-recommend
+  products the store already lists (Electrolyte Mineral Manna): "it can list them". Price and "can be bought now"
   come from the caller's orderability predicate (practitioner_portal.is_orderable).
 - "page": public pages this app serves, read once per process from their static files.
 
@@ -17,11 +18,11 @@ import html as _html
 import json
 import re
 import threading
+import time
 from html.parser import HTMLParser
 from pathlib import Path
 
 from dashboard.order_destination import destination_for
-from dashboard.related_products import DO_NOT_RECOMMEND
 from dashboard.shop_catalog import listable
 
 PAGE_SIZE = 10
@@ -145,56 +146,62 @@ def snippet_html(body, terms, size=SNIPPET_CHARS):
 
 
 # ── the client's own records ─────────────────────────────────────────────────
+#
+# Each source is the SAME selection the portal's own tab uses, handed in by the caller:
+# the Orders tab's app._published_invoices_for / app._past_invoices_for, the report
+# reads api_client_portal makes, and app._portal_chat_thread (the last 100 messages,
+# exactly what the Messages card shows). Search never shows more than the portal shows.
 
-def _order_item_names(items_json):
+def _safe_read(cx, fn, default):
+    """fn(cx), or `default` when the table is missing. A failed read on Postgres aborts
+    the transaction, so roll back before the next read."""
     try:
-        items = json.loads(items_json or "[]")
-    except (TypeError, ValueError):
-        return []
+        return fn(cx)
+    except Exception as e:
+        print(f"[portal-search] read failed: {e!r}", flush=True)
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        return default
+
+
+def invoice_item_names(order):
+    """Item names from the order an invoice link opens (app._invoice_order_for_token),
+    which is what the invoice page shows to whoever holds that link."""
     names = []
-    for it in items if isinstance(items, list) else []:
-        if isinstance(it, dict):
-            n = (it.get("name") or it.get("title") or it.get("slug") or "").strip()
-        else:
-            n = str(it or "").strip()
+    for it in (order or {}).get("items") or []:
+        n = (it.get("name") or it.get("title") or it.get("slug") or "").strip() \
+            if isinstance(it, dict) else str(it or "").strip()
         if n:
             names.append(n)
     return names
 
 
-def order_docs(cx, email):
-    """The client's orders as the Orders tab shows them: paid receipts, and published
-    invoices still to pay. Same filters as app._past_invoices_for and
-    app._published_invoices_for. Legacy FileMaker invoices are not searched."""
-    email = (email or "").strip().lower()
-    if not email:
-        return []
-    try:
-        rows = cx.execute(
-            "SELECT total_cents, COALESCE(invoice_token,''), COALESCE(items_json,'[]'), "
-            "COALESCE(paid_at, updated_at, created_at, ''), COALESCE(pay_status,''), "
-            "COALESCE(status,''), COALESCE(portal_published,0) FROM orders "
-            "WHERE lower(coalesce(email,''))=? AND coalesce(status,'')<>'cancelled' "
-            "ORDER BY id DESC", (email,)).fetchall()
-    except Exception as e:
-        print(f"[portal-search] orders read failed: {e!r}", flush=True)
-        try:
-            cx.rollback()
-        except Exception:
-            pass
-        return []
+def order_docs(published, past, items_for_token):
+    """Orders as the Orders tab lists them. `items_for_token(tok)` returns the item
+    names the invoice page shows for that link, or [] when it shows none (an expired
+    link, another client's order). A modern receipt with no link has no item names on
+    the tab, so only its date and amount are searched. A FileMaker receipt's lines are
+    shown on the tab, so they are searched."""
     docs = []
-    for total, tok, items_json, when, pay, status, published in rows:
-        amount = f"${(total or 0) / 100:.2f}"
-        when = (when or "")[:10]
-        if pay == "paid":
-            title = f"Order receipt, {when}, {amount}" if when else f"Order receipt, {amount}"
-        elif int(published or 0) == 1 and tok and status not in ("delivered", "done"):
-            title = f"Invoice to pay, {amount}"
+    for inv in published or []:
+        tok = inv.get("token") or ""
+        docs.append({"source": RECORDS, "kind": "order",
+                     "title": f"Invoice to pay, ${inv.get('amount_dollars') or '0.00'}",
+                     "body": ", ".join(items_for_token(tok) if tok else []), "url": "#orders"})
+    for inv in past or []:
+        tok = inv.get("token") or ""
+        amount, when = f"${inv.get('amount_dollars') or '0.00'}", inv.get("when") or ""
+        word = "Order receipt" if inv.get("paid") else "Invoice"
+        title = f"{word}, {when}, {amount}" if when else f"{word}, {amount}"
+        if tok:
+            names = items_for_token(tok)
         else:
-            continue
+            names = [(it.get("description") or it.get("product_name") or "").strip()
+                     for it in inv.get("items") or [] if isinstance(it, dict)]
         docs.append({"source": RECORDS, "kind": "order", "title": title,
-                     "body": ", ".join(_order_item_names(items_json)), "url": "#orders"})
+                     "body": ", ".join(n for n in names if n), "url": "#orders"})
     return docs
 
 
@@ -216,10 +223,11 @@ def _report_title(kind, date):
     return f"{word}, {date}" if date else word
 
 
-def report_docs(cx, email, *, reports_unlocked, portal_content=None):
-    """The client's published reports: confirmed stored reports and scan reveals, never
-    a date the owner has put on hold. Remedy names are searched only when
-    `reports_unlocked()` is true, because the portal blurs them otherwise."""
+def report_docs(cx, email, *, show_remedies, portal_content=None):
+    """The client's published reports, from the reads api_client_portal makes: confirmed
+    stored reports and scan reveals, never a date the owner has put on hold. Remedy
+    names are searched only when `show_remedies`, because the portal blurs them
+    otherwise. The caller computes that BEFORE opening `cx`."""
     from dashboard import biofield_reveals as _brv
     from dashboard import portal_biofield_reports as _pbr
     from dashboard import portal_view as _pv
@@ -227,39 +235,20 @@ def report_docs(cx, email, *, reports_unlocked, portal_content=None):
     email = (email or "").strip().lower()
     if not email:
         return []
-    _pbr.init_table(cx)
-    _rh.init_table(cx)
-    held = set(_rh.held_dates(cx, email) or [])
-    show = None
-
-    def _show():
-        nonlocal show
-        if show is None:
-            try:
-                show = bool(reports_unlocked())
-            except Exception:
-                show = False
-        return show
-
+    held = set(_safe_read(cx, lambda c: _rh.held_dates(c, email), set()) or [])
+    dates = _safe_read(cx, lambda c: _pbr.list_report_dates(c, email), [])
     docs, seen = [], set()
-    dates = _pbr.list_report_dates(cx, email)
     for d in dates:
-        rep = _pbr.get_report(cx, email, d) or {}
+        rep = _safe_read(cx, lambda c: _pbr.get_report(c, email, d), None) or {}
+        seen.add(d)   # a draft or held report hides a reveal of the same date too
         if d in held or (rep.get("status") or "confirmed") != "confirmed":
-            seen.add(d)   # a draft or held report hides a reveal of the same date too
             continue
         content = rep.get("content") or {}
         kind = rep.get("report_kind") or _pbr.effective_kind(None, content)
-        seen.add(d)
         docs.append({"source": RECORDS, "kind": "report", "title": _report_title(kind, d),
-                     "body": _report_body(content, _show()), "url": "#biofield",
+                     "body": _report_body(content, show_remedies), "url": "#biofield",
                      "scan_date": d})
-    try:
-        _brv.init_table(cx)
-        reveals = _brv.list_for_email(cx, email)
-    except Exception as e:
-        print(f"[portal-search] reveals read failed: {e!r}", flush=True)
-        reveals = []
+    reveals = _safe_read(cx, lambda c: _brv.list_for_email(c, email), [])
     for r in reveals:
         d = r.get("scan_date") or ""
         if not d or d in seen or d in held:
@@ -268,25 +257,27 @@ def report_docs(cx, email, *, reports_unlocked, portal_content=None):
         content = _pv._reveal_as_report_content(r)
         docs.append({"source": RECORDS, "kind": "report",
                      "title": _report_title(_pbr.REMEDY_MATCH, d),
-                     "body": _report_body(content, _show()), "url": "#biofield",
+                     "body": _report_body(content, show_remedies), "url": "#biofield",
                      "scan_date": d})
-    # A portal with no dated report shows the report held on the portal record itself.
+    # No dated report and no reveal: the portal shows the report held on the portal
+    # record itself, with its own biofield_status. A hold on its current_scan_date
+    # keeps it out too, so a held report can never be found here.
     if not dates and not reveals and portal_content:
         pc = portal_content or {}
-        if pc.get("layers") and (pc.get("biofield_status") or "confirmed") == "confirmed":
+        cur = (pc.get("current_scan_date") or "").strip()
+        if (pc.get("layers") and (pc.get("biofield_status") or "confirmed") == "confirmed"
+                and not (cur and cur in held)):
             docs.append({"source": RECORDS, "kind": "report",
                          "title": _report_title(_pbr.effective_kind(None, pc), ""),
-                         "body": _report_body(pc, _show()), "url": "#biofield"})
+                         "body": _report_body(pc, show_remedies), "url": "#biofield"})
     return docs
 
 
-def message_docs(cx, email):
+def message_docs(messages):
+    """The Messages card's thread (app._portal_chat_thread)."""
     from dashboard import portal_chat as _pchat
-    email = (email or "").strip().lower()
-    if not email:
-        return []
     docs = []
-    for m in _pchat.list_messages(cx, email, limit=100000):
+    for m in messages or []:
         when = (m.get("created_at") or "")[:10]
         who = "you" if m.get("role") == _pchat.CLIENT else (m.get("author") or "Dr. Glen and the team")
         title = f"Message from {who}" + (f", {when}" if when else "")
@@ -295,11 +286,34 @@ def message_docs(cx, email):
     return docs
 
 
-def record_docs(cx, email, *, reports_unlocked, portal_content=None):
-    return (order_docs(cx, email)
-            + report_docs(cx, email, reports_unlocked=reports_unlocked,
-                          portal_content=portal_content)
-            + message_docs(cx, email))
+# A built corpus is kept briefly so typing and paging do not reload everything. Keyed by
+# the email the portal token resolved to, and by nothing else.
+CORPUS_TTL_S = 60
+_CORPUS_MAX = 256
+_CORPUS_LOCK = threading.Lock()
+_CORPUS = {}
+
+
+def cached(key, build, ttl=None):
+    ttl = CORPUS_TTL_S if ttl is None else ttl
+    now = time.monotonic()
+    with _CORPUS_LOCK:
+        hit = _CORPUS.get(key)
+        if hit and now - hit[0] < ttl:
+            return hit[1]
+    value = build()
+    with _CORPUS_LOCK:
+        if len(_CORPUS) >= _CORPUS_MAX:
+            for k, _v in sorted(_CORPUS.items(), key=lambda kv: kv[1][0])[:_CORPUS_MAX // 4]:
+                _CORPUS.pop(k, None)
+        _CORPUS[key] = (now, value)
+    return value
+
+
+def reset_caches():
+    with _CORPUS_LOCK:
+        _CORPUS.clear()
+    reset_page_index()
 
 
 # ── the store ────────────────────────────────────────────────────────────────
@@ -312,17 +326,18 @@ def _ingredient_text(p):
 
 
 def product_docs(products, get_product, is_orderable):
-    """Every product the store lists, less DO_NOT_RECOMMEND. `products` is the raw
-    catalog {slug: record}; `get_product` follows a retired slug to its successor."""
+    """Every product the store lists, by shop_catalog.listable: inactive, info_only and
+    service records stay out. Do-not-recommend products the store lists are searched
+    too. Glen, 6 Nov 2026: "it can list them." Listing is not recommending.
+    `products` is the raw catalog {slug: record}; `get_product` follows a retired slug
+    to its successor."""
     seen, docs = set(), []
     for slug in (products or {}):
-        if slug in DO_NOT_RECOMMEND:
-            continue
         p = get_product(slug)
         if not listable(p):
             continue
         real = p.get("slug") or slug
-        if real in seen or real in DO_NOT_RECOMMEND:
+        if real in seen:
             continue
         seen.add(real)
         name = (p.get("name") or real).strip()
@@ -432,7 +447,12 @@ def reset_page_index():
 # ── ranking and paging ───────────────────────────────────────────────────────
 
 def search(docs, terms, page=1, page_size=PAGE_SIZE):
-    """Rank every doc matching all terms, then return one page of results."""
+    """Rank every doc matching all terms, then return one page of results.
+
+    Paging is by offset over a fresh ranking on each request. If the client's records
+    change between two page requests a result can shift by one place across a page
+    boundary. That is accepted for a 10-per-page search of one client's own records
+    (review round 2, declined)."""
     hits = []
     for d in docs if terms else []:
         if names_retired(d.get("title", "") + " " + d.get("body", "")):
