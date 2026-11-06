@@ -209,3 +209,27 @@ def test_fill_endpoint_applies_only_on_json_true(app_mod, monkeypatch):
     out = c.post("/api/console/people/e4l-client-ids", headers={"X-Console-Key": KEY},
                  json={"rows": rows, "apply": True}).get_json()
     assert out["set"] == 1
+
+
+def test_r3_4_order_hook_db_error_leaves_a_pending_mark(app_mod, monkeypatch):
+    from dashboard import scan_reward as sr
+    monkeypatch.setenv(FLAG, "1")
+
+    def boom(*a, **k):
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(sr, "credit_store_order", boom)
+    app_mod._scan_reward_on_paid_order({"email": "f@y.com"}, "INV-7")
+    with sqlite3.connect(app_mod._test_db) as cx:
+        assert cx.execute("SELECT outcome FROM reading_credit_outcomes WHERE event_key=?",
+                          ("store-order:INV-7",)).fetchone()[0] == "pending"
+
+
+def test_r3_2_order_hook_passes_the_courtesy_price_check(app_mod, monkeypatch):
+    from dashboard import scan_reward as sr
+    monkeypatch.setenv(FLAG, "1")
+    seen = {}
+    monkeypatch.setattr(app_mod, "_order_has_line_below_store_price", lambda o: True)
+    monkeypatch.setattr(sr, "credit_store_order",
+                        lambda cx, o, ref, **kw: seen.update(kw))
+    app_mod._scan_reward_on_paid_order({"email": "f@y.com"}, "INV-8")
+    assert seen["below_store_price"] is True

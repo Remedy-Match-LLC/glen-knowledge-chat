@@ -58,6 +58,7 @@ REASON_STORE_ORDER = "friend_store_order"
 REASON_E4L_ORDER = "friend_e4l_order"
 REASON_PRL_ORDER = "friend_prl_order"
 REASON_SPEND = "reading_delivered"
+REASON_REVERSAL = "order_reversed"   # a cancelled or refunded order takes its credit back
 REASON_BUYER_STORE_ORDER = "own_store_order"
 REASON_BUYER_E4L_ORDER = "own_e4l_order"
 REASON_BUYER_PRL_ORDER = "own_prl_order"

@@ -106,6 +106,52 @@ def identity_emails(cx, email):
     return out
 
 
+_GMAIL_DOMAINS = ("gmail.com", "googlemail.com")
+
+
+def gmail_key(email):
+    """One key per Gmail mailbox: Gmail ignores dots and anything after a plus in
+    the local part, and googlemail.com is the same service. Other addresses are
+    returned as they are."""
+    e = _norm(email)
+    local, _, dom = e.rpartition("@")
+    if dom in _GMAIL_DOMAINS and local:
+        return local.split("+", 1)[0].replace(".", "") + "@gmail.com"
+    return e
+
+
+# Where a person may already appear under another spelling of their Gmail address.
+_VARIANT_SOURCES = (("referral_events", "email"), ("orders", "email"),
+                    ("scan_freshness", "email"), ("client_scans", "email"),
+                    ("scan_arrivals", "email"), ("scan_invites", "friend_email"))
+
+
+def variant_emails(cx, ids):
+    """`ids` plus every stored address that is the same Gmail mailbox as one of
+    them. Narrowed in SQL by first letter and domain, then matched exactly in Python
+    on gmail_key, so it works the same on SQLite and Postgres."""
+    keys = {gmail_key(i) for i in ids if _norm(i).rpartition("@")[2] in _GMAIL_DOMAINS}
+    out = set(ids)
+    if not keys:
+        return out
+    for table, col in _VARIANT_SOURCES:
+        if not _has_table(cx, table):
+            continue
+        for k in keys:
+            c = k[0]
+            for (e,) in cx.execute(
+                    f"SELECT DISTINCT LOWER({col}) FROM {table} "
+                    f"WHERE LOWER({col}) LIKE ? OR LOWER({col}) LIKE ?",
+                    (c + "%@gmail.com", c + "%@googlemail.com")).fetchall():
+                if e and gmail_key(e) == k:
+                    out.add(_norm(e))
+    return out
+
+
+def _same_person(a_ids, b_ids):
+    return bool({gmail_key(x) for x in a_ids} & {gmail_key(x) for x in b_ids})
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Tables
 # ═══════════════════════════════════════════════════════════════════════════
@@ -208,13 +254,13 @@ def _purchase_times(cx, ids):
     return [r[0] for r in rows if r[0]]
 
 
-def holder_for(cx, friend_email, at=None):
+def holder_for(cx, friend_email, at=None, ids=None):
     """Decision 2 applied to what we hold: the inviter owning `friend_email` at `at`
     (default now), with their canonical email. None when no one holds the friend."""
     approved = _approved_slugs(cx)
     if not approved:
         return None
-    ids = identity_emails(cx, friend_email)
+    ids = ids or identity_emails(cx, friend_email)
     if not ids:
         return None
     h = rules.holder_at(_engagements(cx, ids, approved), _purchase_times(cx, ids),
@@ -259,14 +305,15 @@ def record_invite(cx, friend_email, slug):
     if slug not in approved:
         return "not-approved"
     friend = canonical(cx, raw)
-    ids = identity_emails(cx, raw)
-    if ids & identity_emails(cx, approved[slug]):
+    # Aliases, then every stored spelling of the same Gmail mailbox.
+    ids = variant_emails(cx, identity_emails(cx, raw))
+    if _same_person(ids, identity_emails(cx, approved[slug])):
         return "self"
     why = _known_customer(cx, ids)
     if why:
         return why
     _lock(cx, f"scan-invite:{friend}")
-    if holder_for(cx, friend) is not None:
+    if holder_for(cx, friend, ids=ids) is not None:
         cx.commit()
         return "held"
     cx.execute("INSERT INTO scan_invites (friend_email, slug, inviter_email, engaged_at, "
@@ -305,17 +352,23 @@ def lead_with_scan(offers):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def balance(cx, email):
-    row = cx.execute("SELECT COALESCE(SUM(delta),0) FROM reading_credits WHERE email=?",
-                     (canonical(cx, email),)).fetchone()
+    """Under every alias of the person, so rows written before a merge still count."""
+    ph, vals = _in(identity_emails(cx, email))
+    if not vals:
+        return 0
+    row = cx.execute(f"SELECT COALESCE(SUM(delta),0) FROM reading_credits "
+                     f"WHERE email IN ({ph})", vals).fetchone()
     return int(row[0] or 0) if row else 0
 
 
 def ledger(cx, email, limit=200):
+    ph, vals = _in(identity_emails(cx, email))
+    if not vals:
+        return []
     rows = cx.execute(
-        "SELECT delta, reason, event_key, friend_email, inviter_slug, detail, "
-        "created_by, created_at FROM reading_credits WHERE email=? "
-        "ORDER BY created_at DESC, id DESC LIMIT ?",
-        (canonical(cx, email), int(limit))).fetchall()
+        f"SELECT delta, reason, event_key, friend_email, inviter_slug, detail, "
+        f"created_by, created_at FROM reading_credits WHERE email IN ({ph}) "
+        f"ORDER BY created_at DESC, id DESC LIMIT ?", vals + (int(limit),)).fetchall()
     keys = ("delta", "reason", "event_key", "friend_email", "inviter_slug", "detail",
             "created_by", "created_at")
     return [dict(zip(keys, tuple(r))) for r in rows]
@@ -323,13 +376,18 @@ def ledger(cx, email, limit=200):
 
 def portal_summary(cx, email):
     """What the client portal shows. None when this person has no ledger rows."""
-    row = cx.execute("SELECT COUNT(*), COALESCE(SUM(delta),0), "
-                     "COALESCE(SUM(CASE WHEN delta>0 THEN delta ELSE 0 END),0) "
-                     "FROM reading_credits WHERE email=?", (canonical(cx, email),)).fetchone()
+    ph, vals = _in(identity_emails(cx, email))
+    if not vals:
+        return None
+    row = cx.execute(f"SELECT COUNT(*), COALESCE(SUM(delta),0), "
+                     f"COALESCE(SUM(CASE WHEN reason=? THEN -delta ELSE 0 END),0) "
+                     f"FROM reading_credits WHERE email IN ({ph})",
+                     (rules.REASON_SPEND,) + vals).fetchone()
     if not row or not int(row[0] or 0):
         return None
-    return {"balance": int(row[1] or 0), "earned": int(row[2] or 0),
-            "used": int(row[2] or 0) - int(row[1] or 0)}
+    bal, used = int(row[1] or 0), int(row[2] or 0)
+    # earned is net of reversals, so earned - used == balance always.
+    return {"balance": bal, "earned": bal + used, "used": used}
 
 
 PORTAL_ANCHOR = '  part("scans", renderEyeVisionReport(d.eye_vision_report));\n'
@@ -364,6 +422,7 @@ def spend(cx, email, *, key, by, note=""):
     is a duplicate and spends once. The same key for a different client is a
     conflict."""
     canon = canonical(cx, email)
+    ids = identity_emails(cx, email)
     key = (key or "").strip()
     if not canon or not key:
         return {"ok": False, "error": "email and key required"}
@@ -372,17 +431,19 @@ def spend(cx, email, *, key, by, note=""):
     prior = cx.execute("SELECT email FROM reading_credits WHERE event_key=?", (ek,)).fetchone()
     if prior:
         cx.commit()
-        if prior[0] != canon:
+        if prior[0] not in ids:
             return {"ok": False, "conflict": True,
                     "error": "this key was already used for a different client"}
         return {"ok": True, "spent": False, "duplicate": True, "balance": balance(cx, canon)}
+    ph, vals = _in(ids)
     cur = cx.execute(
-        "INSERT INTO reading_credits (email, delta, reason, event_key, detail, "
-        "created_by, created_at) "
-        "SELECT ?, -1, ?, ?, ?, ?, ? "
-        "WHERE (SELECT COALESCE(SUM(delta),0) FROM reading_credits WHERE email=?) >= 1 "
-        "ON CONFLICT(event_key) DO NOTHING",
-        (canon, rules.REASON_SPEND, ek, note or "", by or "", _now(), canon))
+        f"INSERT INTO reading_credits (email, delta, reason, event_key, detail, "
+        f"created_by, created_at) "
+        f"SELECT ?, -1, ?, ?, ?, ?, ? "
+        f"WHERE (SELECT COALESCE(SUM(delta),0) FROM reading_credits "
+        f"WHERE email IN ({ph})) >= 1 "
+        f"ON CONFLICT(event_key) DO NOTHING",
+        (canon, rules.REASON_SPEND, ek, note or "", by or "", _now()) + vals)
     wrote = (cur.rowcount or 0) > 0
     cx.commit()
     if not wrote:
@@ -401,10 +462,36 @@ def notify_inviter(inviter_email, *, reason, friend_email):
     return None
 
 
+PENDING = "pending"
+
+
 def _outcome(cx, event_key):
+    """The final decision for an event, or None. "pending" is not a decision: it
+    marks an attempt that hit a database error, for the next settle or a reconcile."""
     row = cx.execute("SELECT outcome FROM reading_credit_outcomes WHERE event_key=?",
                      (event_key,)).fetchone()
-    return row[0] if row else None
+    return row[0] if row and row[0] != PENDING else None
+
+
+_OUTCOME_UPSERT = ("INSERT INTO reading_credit_outcomes (event_key, outcome, detail, "
+                   "decided_at) VALUES (?,?,?,?) ON CONFLICT(event_key) DO UPDATE SET "
+                   "outcome=excluded.outcome, detail=excluded.detail, "
+                   "decided_at=excluded.decided_at "
+                   "WHERE reading_credit_outcomes.outcome='pending'")
+
+
+def mark_pending(cx, event_key, detail=""):
+    """Record a retryable attempt. Never overwrites a real decision."""
+    cx.execute("INSERT INTO reading_credit_outcomes (event_key, outcome, detail, decided_at) "
+               "VALUES (?,?,?,?) ON CONFLICT(event_key) DO NOTHING",
+               (event_key, PENDING, detail or "", _now()))
+    cx.commit()
+
+
+def pending_keys(cx, prefix=""):
+    return [r[0] for r in cx.execute(
+        "SELECT event_key FROM reading_credit_outcomes WHERE outcome=? AND event_key LIKE ? "
+        "ORDER BY decided_at", (PENDING, prefix + "%")).fetchall()]
 
 
 def _plan_inviter(cx, friend_ids, at, *, reason, event_key, readings, detail=""):
@@ -448,9 +535,7 @@ def _apply(cx, plan):
         return {"credited": False, "why": plan["why"]}
     now = _now()
     if plan["action"] == "outcome":
-        cx.execute("INSERT INTO reading_credit_outcomes (event_key, outcome, decided_at) "
-                   "VALUES (?,?,?) ON CONFLICT(event_key) DO NOTHING",
-                   (plan["event_key"], plan["outcome"], now))
+        cx.execute(_OUTCOME_UPSERT, (plan["event_key"], plan["outcome"], "", now))
         return {"credited": False, "why": plan["outcome"]}
     cur = cx.execute(
         "INSERT INTO reading_credits (email, delta, reason, event_key, friend_email, "
@@ -459,9 +544,7 @@ def _apply(cx, plan):
         (plan["email"], int(plan["delta"]), plan["reason"], plan["event_key"],
          plan["friend"], plan["slug"], plan["detail"], "system", now))
     wrote = (cur.rowcount or 0) > 0
-    cx.execute("INSERT INTO reading_credit_outcomes (event_key, outcome, detail, decided_at) "
-               "VALUES (?,?,?,?) ON CONFLICT(event_key) DO NOTHING",
-               (plan["event_key"], "credited", plan["email"], now))
+    cx.execute(_OUTCOME_UPSERT, (plan["event_key"], "credited", plan["email"], now))
     return {"credited": wrote, "why": "credited" if wrote else "duplicate",
             "to": plan["email"]}
 
@@ -494,14 +577,30 @@ def _plan_order(cx, buyer_ids, at, *, event_key, inviter_reason, buyer_reason, d
                          readings=rules.READINGS_PER_QUALIFYING_ORDER, detail=detail)
 
 
-def credit_store_order(cx, order, order_ref, *, catalog=None, is_wholesale=False):
+def credit_store_order(cx, order, order_ref, *, catalog=None, is_wholesale=False,
+                       below_store_price=False):
     """One reading for a paid store order with an E4L infoceutical or PRL line, to
     the buyer or the inviter per ORDER_CREDIT_TO. Idempotent per order_ref, and the
-    first decision for an order is final."""
+    first decision for an order is final.
+
+    Earns nothing, as System A: a discount (discount_cents != 0), a line below its
+    store price (the caller passes app._order_has_line_below_store_price), a $0
+    total, or a cancelled order.
+
+    Splitting one cart into several orders is allowed on purpose. Glen's rule is
+    "one free scan per order, no minimum", so there is no per-cart or per-day cap."""
     order = order or {}
     ids = identity_emails(cx, order.get("email"))
     if not ids or not order_ref:
         return {"credited": False, "why": "no-email-or-ref"}
+    if str(order.get("status") or "") == "cancelled":
+        return {"credited": False, "why": "cancelled"}
+    if int(order.get("discount_cents") or 0) != 0:
+        return {"credited": False, "why": "discounted"}
+    if below_store_price:
+        return {"credited": False, "why": "below-store-price"}
+    if int(order.get("total_cents") or 0) <= 0:
+        return {"credited": False, "why": "zero-total"}
     at = (order.get("paid_at") or "").strip() or (order.get("created_at") or "").strip()
     if not rules.parse_ts(at):
         return {"credited": False, "why": "no-purchase-time"}
@@ -542,6 +641,117 @@ def credit_prl_order(cx, buyer_email, *, order_ref, ordered_at):
     return _run(cx, plan, f"credit:{ek}")
 
 
+# ── Reversals and the reconcile sweep ──────────────────────────────────────
+
+def _order_by_ref(cx, order_ref):
+    if not _has_table(cx, "orders"):
+        return None
+    cur = cx.execute("SELECT * FROM orders WHERE external_ref=? ORDER BY id DESC LIMIT 1",
+                     (order_ref,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    o = dict(zip([d[0] for d in cur.description], tuple(row)))
+    try:
+        o["items"] = json.loads(o.get("items_json") or "[]")
+    except Exception:
+        o["items"] = []
+    return o
+
+
+def order_is_reversed(cx, order):
+    """Cancelled, or refunded in full: pay_status 'refunded', or active refunds that
+    cover every active payment. A partial refund keeps the credit."""
+    if str(order.get("status") or "") == "cancelled":
+        return True
+    if str(order.get("pay_status") or "") == "refunded":
+        return True
+    if order.get("id") is not None and _has_table(cx, "order_payments"):
+        sums = dict(cx.execute(
+            "SELECT kind, COALESCE(SUM(amount_cents),0) FROM order_payments "
+            "WHERE order_id=? AND status='active' GROUP BY kind", (order["id"],)).fetchall())
+        paid, refunded = int(sums.get("payment") or 0), int(sums.get("refund") or 0)
+        return paid > 0 and refunded >= paid
+    return False
+
+
+def reverse_store_order(cx, order_ref, *, why="cancelled-or-refunded"):
+    """Take back a store-order credit with a reversal row. Idempotent per order.
+
+    Never blocked by the balance: if the reading was already spent, the reversal is
+    still recorded and the balance shows negative, so Glen and Rae can see it. The
+    order's outcome becomes "reversed", so no retry can credit it again."""
+    ek = rules.event_key_store_order(order_ref)
+    earn = cx.execute("SELECT email, delta, friend_email, inviter_slug FROM reading_credits "
+                      "WHERE event_key=?", (ek,)).fetchone()
+    try:
+        _lock(cx, f"credit:{ek}")
+        wrote = False
+        if earn:
+            cur = cx.execute(
+                "INSERT INTO reading_credits (email, delta, reason, event_key, friend_email, "
+                "inviter_slug, detail, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(event_key) DO NOTHING",
+                (earn[0], -int(earn[1]), rules.REASON_REVERSAL, f"reverse:{ek}",
+                 earn[2] or "", earn[3] or "", why, "system", _now()))
+            wrote = (cur.rowcount or 0) > 0
+        cx.execute("INSERT INTO reading_credit_outcomes (event_key, outcome, detail, "
+                   "decided_at) VALUES (?,?,?,?) ON CONFLICT(event_key) DO UPDATE SET "
+                   "outcome=excluded.outcome, detail=excluded.detail",
+                   (ek, "reversed", why, _now()))
+        cx.commit()
+    except Exception:
+        cx.rollback()
+        raise
+    return {"reversed": wrote}
+
+
+def reconcile(cx, *, catalog=None, is_wholesale=None, below_store_price=None):
+    """Finish what a settle could not. Runs from the reply-watch cron and a console
+    action, flag on only.
+
+    * Pending store-order credits (a database error at settle time) are retried.
+    * Earned store-order credits whose order is now cancelled or fully refunded are
+      reversed.
+
+    is_wholesale and below_store_price are the app's own checks, passed in."""
+    init_tables(cx)
+    out = {"retried": 0, "credited": 0, "reversed": 0, "missing": 0}
+    prefix = rules.event_key_store_order("")
+    for ek in pending_keys(cx, prefix):
+        ref = ek[len(prefix):]
+        order = _order_by_ref(cx, ref)
+        if not order:
+            out["missing"] += 1
+            continue
+        out["retried"] += 1
+        if order_is_reversed(cx, order):
+            reverse_store_order(cx, ref)
+            continue
+        if not (str(order.get("pay_status") or "") == "paid" or str(order.get("status") or "")
+                in ("paid", "shipped", "delivered", "done")):
+            continue
+        r = credit_store_order(
+            cx, order, ref, catalog=catalog,
+            is_wholesale=bool(is_wholesale(order)) if is_wholesale else False,
+            below_store_price=bool(below_store_price(order)) if below_store_price else False)
+        out["credited"] += int(bool(r.get("credited")))
+        if not r.get("credited") and _outcome(cx, ek) is None:
+            # Not creditable and not decided: close the pending row so it stops retrying.
+            cx.execute(_OUTCOME_UPSERT, (ek, r.get("why") or "not-credited", "", _now()))
+            cx.commit()
+    for (ek,) in cx.execute(
+            "SELECT event_key FROM reading_credits WHERE event_key LIKE ? AND delta>0",
+            (prefix + "%",)).fetchall():
+        if cx.execute("SELECT 1 FROM reading_credits WHERE event_key=?",
+                      (f"reverse:{ek}",)).fetchone():
+            continue
+        order = _order_by_ref(cx, ek[len(prefix):])
+        if order and order_is_reversed(cx, order):
+            out["reversed"] += int(reverse_store_order(cx, ek[len(prefix):])["reversed"])
+    return out
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Pieces 3 and 4: scan arrivals from E4L "New voice scan" notices
 # ═══════════════════════════════════════════════════════════════════════════
@@ -572,11 +782,16 @@ def parse_scan_notice(subject, body):
             "client_name": m.group(1).strip()}
 
 
-def scan_history(cx, ids, noticed_at):
+def scan_history(cx, ids, noticed_at, invited_at=None):
     """"first", "repeat" or "unknown" for a scan noticed at `noticed_at` (None: ask
     whether any scan at all is on record). A scan on the same day counts as prior.
     Asked under every alias. A failed query, or no history store to ask, is unknown.
-    Read-only, and run before any write, so a failure cannot undo one."""
+    Read-only, and run before any write, so a failure cannot undo one.
+
+    For an INVITED friend, `invited_at` is their earliest invite. The invite gate
+    proved no scan was on record then, so only a synced scan dated before that day
+    counts as prior. Without this, the Mac's 15-minute scan sync can write the very
+    scan being noticed into client_scans first and cost the inviter the credit."""
     try:
         ph, vals = _in(ids)
         if _has_table(cx, "scan_arrivals") and cx.execute(
@@ -584,13 +799,16 @@ def scan_history(cx, ids, noticed_at):
                 vals).fetchone():
             return "repeat"
         asked = 0
-        day = (noticed_at or "9999-12-31")[:10]
+        if invited_at:
+            op, day = "<", str(invited_at)[:10]
+        else:
+            op, day = "<=", (noticed_at or "9999-12-31")[:10]
         for table, col in SCAN_HISTORY_TABLES:
             if not _has_table(cx, table):
                 continue
             asked += 1
             if cx.execute(f"SELECT 1 FROM {table} WHERE LOWER(email) IN ({ph}) "
-                          f"AND {col}<=? LIMIT 1", vals + (day,)).fetchone():
+                          f"AND {col}{op}? LIMIT 1", vals + (day,)).fetchone():
                 return "repeat"
         return "first" if asked else "unknown"
     except Exception:
@@ -611,7 +829,10 @@ def record_scan_arrival(cx, *, msg_id, email, client_name, noticed_at):
     ids = identity_emails(cx, email)
     if cx.execute("SELECT 1 FROM scan_arrivals WHERE gmail_msg_id=?", (msg_id,)).fetchone():
         return "duplicate"
-    history = scan_history(cx, ids, noticed_at)
+    ph, vals = _in(ids)
+    first_invite = cx.execute(f"SELECT MIN(engaged_at) FROM scan_invites "
+                              f"WHERE friend_email IN ({ph})", vals).fetchone()[0]
+    history = scan_history(cx, ids, noticed_at, invited_at=first_invite)
     plan = None
     if history == "first":
         plan = _plan_inviter(cx, ids, noticed_at, reason=rules.REASON_FIRST_SCAN,

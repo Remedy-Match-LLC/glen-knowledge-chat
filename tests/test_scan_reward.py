@@ -24,7 +24,7 @@ def _ago(days):
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
 
-def _cx(approved=("alice", "bob"), history=True):
+def _cx(approved=("alice", "bob"), history=True, gmail_affiliate=False):
     cx = sqlite3.connect(":memory:")
     cx.executescript("""
     CREATE TABLE affiliate_signups (id INTEGER PRIMARY KEY, created_at TEXT, name TEXT,
@@ -35,7 +35,10 @@ def _cx(approved=("alice", "bob"), history=True):
       utm_campaign TEXT DEFAULT '', utm_content TEXT DEFAULT '', utm_term TEXT DEFAULT '',
       quiz_score TEXT DEFAULT '', raw_json TEXT DEFAULT '');
     CREATE TABLE orders (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT,
-      status TEXT, pay_status TEXT, paid_at TEXT, created_at TEXT);
+      status TEXT, pay_status TEXT, paid_at TEXT, created_at TEXT, external_ref TEXT,
+      total_cents INTEGER DEFAULT 0, discount_cents INTEGER DEFAULT 0, items_json TEXT);
+    CREATE TABLE order_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER,
+      kind TEXT, amount_cents INTEGER, status TEXT DEFAULT 'active');
     CREATE TABLE people (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE,
       name TEXT DEFAULT '', roles TEXT DEFAULT '[]', tags TEXT DEFAULT '[]');
     CREATE TABLE email_aliases (alias_email TEXT PRIMARY KEY, canonical_email TEXT NOT NULL,
@@ -51,6 +54,9 @@ def _cx(approved=("alice", "bob"), history=True):
     for i, s in enumerate(approved):
         cx.execute("INSERT INTO affiliate_signups (email, slug, token, status) "
                    "VALUES (?,?,?, 'approved')", (f"{s}@x.com", s, f"t{i}"))
+    if gmail_affiliate:
+        cx.execute("INSERT INTO affiliate_signups (email, slug, token, status) "
+                   "VALUES ('carol@gmail.com', 'carol', 'tc', 'approved')")
     cx.commit()
     sr.init_tables(cx)
     return cx
@@ -268,14 +274,37 @@ def test_first_scan_credits_the_inviter_once_and_only_the_first():
     assert sr.balance(cx, "alice@x.com") == 1
 
 
-def test_a_prior_scan_the_same_day_counts_as_prior():
+def test_an_invited_friends_scan_synced_before_the_notice_still_credits():
+    # R3-1, inverted: the Mac's 15-minute sync wrote this very scan to client_scans
+    # and scan_freshness before reply-watch read the notice. The invite proved no
+    # scan existed then, so only scans dated before the invite count as prior.
+    cx = _cx()
+    _invite(cx, "friend@y.com", "alice", 5)
+    today = datetime.now(timezone.utc).date().isoformat()
+    cx.execute("INSERT INTO scan_freshness VALUES ('friend@y.com', ?, '')", (today,))
+    cx.execute("INSERT INTO client_scans (email, scan_date) VALUES ('friend@y.com', ?)",
+               (today,))
+    cx.commit()
+    assert _notice(cx, "m1", "friend@y.com") == "first"
+    assert sr.balance(cx, "alice@x.com") == 1
+
+
+def test_an_invited_friends_scan_dated_before_the_invite_is_prior():
+    cx = _cx()
+    _invite(cx, "friend@y.com", "alice", 5)
+    cx.execute("INSERT INTO client_scans (email, scan_date) VALUES ('friend@y.com', ?)",
+               (_ago(6)[:10],))
+    cx.commit()
+    assert _notice(cx, "m1", "friend@y.com") == "repeat"
+    assert sr.balance(cx, "alice@x.com") == 0
+
+
+def test_an_uninvited_persons_same_day_scan_still_counts_as_prior():
     cx = _cx()
     today = datetime.now(timezone.utc).date().isoformat()
     cx.execute("INSERT INTO scan_freshness VALUES ('friend@y.com', ?, '')", (today,))
     cx.commit()
-    _invite(cx, "friend@y.com", "alice", 5)
     assert _notice(cx, "m1", "friend@y.com") == "repeat"
-    assert sr.balance(cx, "alice@x.com") == 0
 
 
 def test_no_scan_history_store_means_unknown_and_no_credit():
@@ -348,7 +377,7 @@ CATALOG = {"es1-lymph": {"name": "ES1 Lymph Infoceutical"},
 
 
 def _order(email="friend@y.com", qty=1, paid_days_ago=0, created_days_ago=None):
-    o = {"email": email, "items": [{"slug": "es1-lymph", "qty": qty}]}
+    o = {"email": email, "items": [{"slug": "es1-lymph", "qty": qty}], "total_cents": 4500}
     if paid_days_ago is not None:
         o["paid_at"] = _ago(paid_days_ago)
     if created_days_ago is not None:
@@ -420,7 +449,7 @@ def test_qty_zero_and_wholesale_and_non_infoceutical_never_qualify():
     cx = _cx()
     assert sr.credit_store_order(cx, _order(qty=0), "INV-1", catalog=CATALOG)["why"] == \
         "not-qualifying"
-    plain = {"email": "friend@y.com", "paid_at": _ago(0),
+    plain = {"email": "friend@y.com", "paid_at": _ago(0), "total_cents": 4500,
              "items": [{"slug": "myelin", "qty": 1}]}
     assert sr.credit_store_order(cx, plain, "INV-2", catalog=CATALOG)["why"] == "not-qualifying"
     assert sr.credit_store_order(cx, _order(), "INV-3", catalog=CATALOG,
@@ -548,3 +577,138 @@ def test_flag_reads_the_environment(monkeypatch):
     assert not sr.enabled()
     monkeypatch.setenv(rules.FLAG_ENV, "1")
     assert sr.enabled()
+
+
+# ── Round 3 ─────────────────────────────────────────────────────────────────
+
+def _store_order_row(cx, ref, *, status="shipped", pay_status="paid", email="friend@y.com"):
+    cx.execute("INSERT INTO orders (email, status, pay_status, paid_at, created_at, "
+               "external_ref, total_cents, items_json) VALUES (?,?,?,?,?,?,4500,?)",
+               (email, status, pay_status, _ago(1), _ago(1), ref,
+                '[{"slug": "es1-lymph", "qty": 1}]'))
+    cx.commit()
+    return cx.execute("SELECT id FROM orders WHERE external_ref=?", (ref,)).fetchone()[0]
+
+
+def test_r3_2_a_cancelled_order_reverses_its_credit_once():
+    cx = _cx()
+    assert sr.credit_store_order(cx, _order(), "INV-1", catalog=CATALOG)["credited"]
+    _store_order_row(cx, "INV-1", status="cancelled")
+    assert sr.reconcile(cx, catalog=CATALOG)["reversed"] == 1
+    assert sr.reconcile(cx, catalog=CATALOG)["reversed"] == 0
+    assert sr.balance(cx, "friend@y.com") == 0
+    assert cx.execute("SELECT COUNT(*) FROM reading_credits WHERE reason=?",
+                      (rules.REASON_REVERSAL,)).fetchone()[0] == 1
+    # A later settle of the same order cannot credit it again.
+    assert sr.credit_store_order(cx, _order(), "INV-1", catalog=CATALOG)["why"] == \
+        "decided:reversed"
+
+
+def test_r3_2_a_spent_credit_is_still_reversed_and_shows_negative():
+    cx = _cx()
+    sr.credit_store_order(cx, _order(), "INV-1", catalog=CATALOG)
+    assert sr.spend(cx, "friend@y.com", key="report-1", by="console")["spent"]
+    assert sr.reverse_store_order(cx, "INV-1")["reversed"]
+    assert not sr.reverse_store_order(cx, "INV-1")["reversed"]
+    assert sr.balance(cx, "friend@y.com") == -1
+    assert not sr.spend(cx, "friend@y.com", key="report-2", by="console")["ok"]
+
+
+def test_r3_2_a_full_refund_reverses_and_a_partial_one_does_not():
+    cx = _cx()
+    sr.credit_store_order(cx, _order(), "INV-1", catalog=CATALOG)
+    sr.credit_store_order(cx, _order(), "INV-2", catalog=CATALOG)
+    a = _store_order_row(cx, "INV-1")
+    b = _store_order_row(cx, "INV-2")
+    cx.executemany("INSERT INTO order_payments (order_id, kind, amount_cents) VALUES (?,?,?)",
+                   [(a, "payment", 4500), (a, "refund", 4500),
+                    (b, "payment", 4500), (b, "refund", 1000)])
+    cx.commit()
+    assert sr.reconcile(cx, catalog=CATALOG)["reversed"] == 1
+    assert sr.balance(cx, "friend@y.com") == 1
+
+
+@pytest.mark.parametrize("change,why", [
+    ({"discount_cents": 500}, "discounted"),
+    ({"total_cents": 0}, "zero-total"),
+    ({"status": "cancelled"}, "cancelled"),
+])
+def test_r3_2_discounted_free_and_cancelled_orders_earn_nothing(change, why):
+    cx = _cx()
+    o = {**_order(), **change}
+    assert sr.credit_store_order(cx, o, "INV-1", catalog=CATALOG)["why"] == why
+
+
+def test_r3_2_a_courtesy_price_earns_nothing():
+    cx = _cx()
+    out = sr.credit_store_order(cx, _order(), "INV-1", catalog=CATALOG, below_store_price=True)
+    assert out["why"] == "below-store-price"
+
+
+def test_r3_2_split_orders_each_earn():
+    # Glen: "one free scan per order, no minimum". No per-cart cap.
+    cx = _cx()
+    for ref in ("A", "B", "C"):
+        assert sr.credit_store_order(cx, _order(), ref, catalog=CATALOG)["credited"]
+    assert sr.balance(cx, "friend@y.com") == 3
+
+
+def test_r3_3_gmail_dots_and_plus_tags_are_one_person():
+    assert sr.gmail_key("Fri.End+promo@GoogleMail.com") == "friend@gmail.com"
+    assert sr.gmail_key("a.b+c@example.com") == "a.b+c@example.com"
+    cx = _cx(gmail_affiliate=True)
+    assert sr.record_invite(cx, "c.a.r.o.l+x@googlemail.com", "carol") == "self"
+    _paid(cx, "friend@gmail.com", 30)
+    assert sr.record_invite(cx, "fri.end+new@googlemail.com", "alice") == "known-customer"
+
+
+def test_r3_3_a_held_gmail_friend_cannot_be_reclaimed_by_spelling():
+    cx = _cx()
+    _invite(cx, "pal@gmail.com", "alice", 5)
+    assert sr.record_invite(cx, "p.a.l+2@gmail.com", "bob") == "held"
+
+
+def test_r3_4_a_pending_outcome_is_retried_and_completed():
+    cx = _cx()
+    ek = rules.event_key_store_order("INV-1")
+    sr.mark_pending(cx, ek, "db error")
+    _store_order_row(cx, "INV-1")
+    out = sr.reconcile(cx, catalog=CATALOG)
+    assert out["retried"] == 1 and out["credited"] == 1
+    assert cx.execute("SELECT outcome FROM reading_credit_outcomes WHERE event_key=?",
+                      (ek,)).fetchone()[0] == "credited"
+    assert sr.reconcile(cx, catalog=CATALOG)["retried"] == 0
+
+
+def test_r3_4_pending_never_overwrites_a_decision():
+    cx = _cx()
+    sr.credit_store_order(cx, _order(), "INV-1", catalog=CATALOG)
+    ek = rules.event_key_store_order("INV-1")
+    sr.mark_pending(cx, ek)
+    assert sr._outcome(cx, ek) == "credited"
+
+
+def test_r3_5_ledger_reads_every_alias():
+    cx = _cx()
+    # A row written under the old address before the two people were merged.
+    sr._apply(cx, {"action": "credit", "email": "old@y.com", "delta": 1, "reason": "t",
+                   "event_key": "k-old", "friend": "", "slug": "", "detail": ""})
+    cx.commit()
+    _alias(cx, "old@y.com", "new@y.com")
+    assert sr.balance(cx, "new@y.com") == 1
+    assert len(sr.ledger(cx, "new@y.com")) == 1
+    assert sr.portal_summary(cx, "new@y.com")["balance"] == 1
+    assert sr.spend(cx, "new@y.com", key="r1", by="console")["spent"]
+    assert sr.spend(cx, "old@y.com", key="r1", by="console")["duplicate"]
+    assert sr.balance(cx, "old@y.com") == 0
+
+
+def test_r3_4_a_late_plan_cannot_overwrite_a_final_decision():
+    # Two settles race: both plan before either writes. The second must not turn
+    # "credited" into "no-holder".
+    cx = _cx()
+    sr.credit_store_order(cx, _order(), "INV-1", catalog=CATALOG)
+    ek = rules.event_key_store_order("INV-1")
+    sr._apply(cx, {"action": "outcome", "outcome": "no-holder", "event_key": ek})
+    cx.commit()
+    assert sr._outcome(cx, ek) == "credited"
