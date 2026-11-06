@@ -52,8 +52,8 @@ def _e4l(tmp_path, extra=()):
 def _app(tmp_path, e4l=None, **kw):
     from biofield_local_app import create_app
     db = str(tmp_path / "chat_log.db")
+    kw.setdefault("scan_lookup", lambda e: {"found": False, "layers": []})
     app = create_app(db, e4l_db=e4l or _e4l(tmp_path),
-                     scan_lookup=lambda e: {"found": False, "layers": []},
                      fetch_client_photo=lambda *a, **k: None, **kw)
     return app.test_client(), db
 
@@ -120,7 +120,8 @@ def test_import_reveal_treats_the_pet_as_an_animal(tmp_path, monkeypatch):
         return {"found": False}
 
     monkeypatch.setattr(RI, "synthesize_reveal_layers", capture)
-    client, _db = _app(tmp_path)
+    client, _db = _app(tmp_path, scan_lookup=lambda e, client_id=None: {
+        "found": True, "scan_id": 77, "layers": []})
     tid = _intake(client, "Rover Owner", OWNER)
     client.post(f"/author/{tid}/e4l/import-reveal", json={})
     assert seen.get("is_animal") is True
@@ -250,3 +251,93 @@ def test_the_stored_client_id_finds_the_photo(tmp_path):
     _photos(db)
     r = client.get(f"/client-photo/{OWNER}?name=Rover&cid=1002")
     assert r.status_code == 200 and r.data == b"PET-PHOTO"
+
+
+# ---- scans: a shared email holds a person and an animal -----------------------------
+# Coordinator, 2026-11-06: intake 64's scan panel and Import Reveal read Agnes's scans.
+# Here both E4L records sit on ONE email, so the email cannot tell them apart.
+
+ANN_SCAN, PET_SCAN = 9001, 9002
+
+
+def _shared_e4l(tmp_path):
+    p = str(tmp_path / "e4l.db")
+    cx = sqlite3.connect(p)
+    cx.execute("CREATE TABLE e4l_clients (client_id INTEGER PRIMARY KEY, name TEXT, "
+               "email TEXT, species TEXT, animal_name TEXT)")
+    cx.executemany("INSERT INTO e4l_clients VALUES (?,?,?,?,?)",
+                   [(1001, "Ann Owner", OWNER, "Human", ""),
+                    (1003, "Rover Owner", OWNER, "Dog", "Rover")])
+    cx.execute("CREATE TABLE e4l_scans (scan_id INTEGER PRIMARY KEY, client_id INTEGER, "
+               "scan_date TEXT)")
+    # The person's scan is the newer, so an email read gives it to the dog too.
+    cx.executemany("INSERT INTO e4l_scans VALUES (?,?,?)",
+                   [(ANN_SCAN, 1001, "2026-11-03"), (PET_SCAN, 1003, "2026-11-01")])
+    cx.execute("CREATE TABLE e4l_scan_results (id INTEGER PRIMARY KEY, scan_id INTEGER, "
+               "item_code TEXT, priority_rank INTEGER)")
+    cx.executemany("INSERT INTO e4l_scan_results (scan_id,item_code,priority_rank) "
+                   "VALUES (?,?,?)", [(ANN_SCAN, "ED1", 1), (PET_SCAN, "ES9", 1)])
+    cx.execute("CREATE TABLE e4l_items (code TEXT, name TEXT, full_name TEXT, "
+               "e4l_description TEXT, category TEXT)")
+    cx.commit()
+    cx.close()
+    return p
+
+
+def _shared_app(tmp_path):
+    from biofield_local_app import create_app
+    db = str(tmp_path / "chat_log.db")
+    app = create_app(db, e4l_db=_shared_e4l(tmp_path),
+                     fetch_client_photo=lambda *a, **k: None,
+                     fetch_runner=lambda **k: {"ok": True})
+    return app.test_client(), db
+
+
+def _panel_scan(client, tid):
+    return client.get(f"/author/{tid}/e4l").get_json()["e4l"]
+
+
+@pytest.mark.parametrize("name,scan_id,code", [("Ann Owner", ANN_SCAN, "ED1"),
+                                               ("Rover Owner", PET_SCAN, "ES9")])
+def test_the_scan_panel_shows_only_this_persons_scan(tmp_path, name, scan_id, code):
+    client, _db = _shared_app(tmp_path)
+    tid = _intake(client, name, OWNER)
+    ctx = _panel_scan(client, tid)
+    assert ctx["scan_id"] == scan_id
+    assert [f["code"] for f in ctx["findings"]] == [code]
+
+
+def test_the_stored_client_id_picks_the_scan(tmp_path):
+    client, _db = _shared_app(tmp_path)
+    tid = _intake(client, "Rover", OWNER, client_id="1003")
+    assert _panel_scan(client, tid)["scan_id"] == PET_SCAN
+
+
+def test_the_e4l_refresh_reads_this_persons_scan(tmp_path):
+    client, _db = _shared_app(tmp_path)
+    tid = _intake(client, "Rover Owner", OWNER)
+    j = client.post(f"/author/{tid}/e4l/refresh", json={}).get_json()
+    assert j["e4l"]["scan_id"] == PET_SCAN
+
+
+@pytest.mark.parametrize("name,scan_id", [("Ann Owner", ANN_SCAN),
+                                          ("Rover Owner", PET_SCAN)])
+def test_import_reveal_synthesises_this_persons_scan(tmp_path, monkeypatch, name, scan_id):
+    seen = {}
+
+    def capture(email, scan_id=None, **k):
+        seen["scan_id"] = scan_id
+        return {"found": False}
+
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", capture)
+    client, _db = _shared_app(tmp_path)
+    tid = _intake(client, name, OWNER)
+    client.post(f"/author/{tid}/e4l/import-reveal", json={})
+    assert seen.get("scan_id") == scan_id
+
+
+def test_an_email_only_intake_still_reads_the_email(tmp_path):
+    """No name and no id: the email is the last fallback, as before: every client on it."""
+    client, _db = _shared_app(tmp_path)
+    tid = _intake(client, "", OWNER)
+    assert _panel_scan(client, tid)["scan_id"] == ANN_SCAN

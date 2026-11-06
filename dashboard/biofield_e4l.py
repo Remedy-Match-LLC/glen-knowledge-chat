@@ -66,16 +66,21 @@ def _merge_group(cx, client_id):
     return group
 
 
-def _latest_scan(cx, email):
+def _latest_scan(cx, email, client_id=None):
     """{scan_id, scan_date} for the most recent scan across the client's merged
-    identity, or None."""
-    crows = cx.execute("SELECT client_id FROM e4l_clients WHERE lower(email)=lower(?)",
-                       (str(email or "").strip(),)).fetchall()
-    if not crows:
-        return None
-    group = set()
-    for cr in crows:
-        group |= _merge_group(cx, cr["client_id"])
+    identity, or None. With client_id, that one client's identity only: an owner and
+    her pet can share an email, and the email reads both of them (Skylar Verches,
+    2026-11-06)."""
+    if client_id is not None:
+        group = _merge_group(cx, int(client_id))
+    else:
+        crows = cx.execute("SELECT client_id FROM e4l_clients WHERE lower(email)=lower(?)",
+                           (str(email or "").strip(),)).fetchall()
+        if not crows:
+            return None
+        group = set()
+        for cr in crows:
+            group |= _merge_group(cx, cr["client_id"])
     ph = ",".join("?" for _ in group)
     r = cx.execute(f"""SELECT s.scan_id, s.scan_date FROM e4l_scans s
                        WHERE s.client_id IN ({ph})
@@ -206,19 +211,19 @@ def _none(window_days):
             "message": "No E4L scan on file"}
 
 
-def scan_context(email, today, *, db_path=None, window_days=14, limit=12):
+def scan_context(email, today, *, db_path=None, window_days=14, limit=12, client_id=None):
     """Most recent E4L scan for `email` as of `today` (YYYY-MM-DD). Returns a dict:
       status: "fresh" | "stale" | "none"
       found, scan_id, scan_date, days_ago, fresh, window_days, findings, message
     Fresh = a scan exists within `window_days`. Never raises."""
     none = _none(window_days)
-    if not (email or "").strip():
+    if not (email or "").strip() and client_id is None:
         return none
     cx = _connect_ro(_db_path(db_path))
     if cx is None:
         return none
     try:
-        scan = _latest_scan(cx, email)
+        scan = _latest_scan(cx, email, client_id)
         if not scan:
             return none
         days = _days_ago(scan["scan_date"], today)

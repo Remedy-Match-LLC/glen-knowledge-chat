@@ -817,7 +817,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     # voice scan. Default reads ~/AI-Training/e4l.db read-only as of today's date;
     # injectable for tests. Never raises -> intake is never blocked.
     scan_lookup = scan_lookup or (
-        lambda email: _scan_context(email, datetime.date.today().isoformat()))
+        lambda email, client_id=None: _scan_context(
+            email, datetime.date.today().isoformat(), db_path=e4l_db, client_id=client_id))
     # Name picker + on-demand live fetch (the local mirror lags, so selecting a client
     # can pull their newest scan straight from the live E4L portal). Both injectable.
     client_search = client_search or (lambda q: _search_clients(q))
@@ -1056,10 +1057,50 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return {"name": name, "species": species,
                 "owner": (owner.split() or [""])[0]}
 
+    # Every scan read in the intake goes through these two. A pet and its owner can
+    # share an email, and the email read both: Skylar Verches's intake showed Agnes's
+    # scans (2026-11-06). The intake's own E4L client (intake_e4l_client, the same
+    # order species uses) picks the scans. Email alone is the last fallback.
+    def _scan_client_id(rep):
+        """The E4L client id whose scans this report reads, or None for the email."""
+        from dashboard.biofield_e4l import intake_e4l_client
+        c = (rep or {}).get("client") or {}
+        try:
+            who = intake_e4l_client(e4l_db, c.get("e4l_client_id") or "",
+                                    c.get("email") or "", c.get("name") or "")
+        except Exception:
+            return None
+        if who and who.get("by") != "email" and who.get("client_id") is not None:
+            return who["client_id"]
+        return None
+
+    def _scan_keyed(rep):
+        """(scan context, keyed) for this report's person. keyed is True when the scan
+        was read for their own E4L client, not the email."""
+        email = (((rep or {}).get("client") or {}).get("email") or "").strip()
+        cid = _scan_client_id(rep)
+        if cid is None:
+            return scan_lookup(email), False
+        try:
+            return scan_lookup(email, client_id=cid), True
+        except TypeError:                   # an injected lookup that takes the email only
+            return scan_lookup(email), False
+
+    def _scan_for(rep):
+        """Scan context for this report's person: their own E4L client where known."""
+        return _scan_keyed(rep)[0]
+
+    def _reveal_scan(rep):
+        """(keyed, scan_id) for a reveal synthesis. keyed means the scan was read for the
+        intake's own E4L client: the synthesis must use that scan, never the email's
+        newest, and no scan means none (scan_id None)."""
+        ctx, keyed = _scan_keyed(rep)
+        return (True, (ctx or {}).get("scan_id")) if keyed else (False, None)
+
     def _e4l(cx, test_id):
-        """Scan context + rendered panel for a test's stored client email."""
+        """Scan context + rendered panel for a test's own E4L client."""
         rep = _report_for(cx, test_id)
-        ctx = scan_lookup((rep.get("client") or {}).get("email") or "")
+        ctx = _scan_for(rep)
         return ctx, rep
 
     def _e4l_panel(test_id, ctx):
@@ -1230,7 +1271,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not email:
             return  # only early return: nothing to mine/seed without an email
         _st.init_stress_tables(cx)
-        ctx = scan_lookup(email)
+        ctx = _scan_for(rep)
         if ctx.get("found"):
             # Scan-seeding: skip if already seeded (unless force)
             if force or not cx.execute(
@@ -1241,7 +1282,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     _st.seed_from_scan(cx, test_id, ctx.get("findings") or [], coverage)
                 else:
                     try:
-                        res = _ri.synthesize_reveal_layers(email, today=_dt.date.today().isoformat())
+                        keyed, sid = _reveal_scan(rep)
+                        if keyed and not sid:
+                            raise LookupError("no scan for this intake's own client")
+                        res = _ri.synthesize_reveal_layers(email, scan_id=sid,
+                                                           today=_dt.date.today().isoformat())
                     except Exception:
                         pass  # synthesis failure: skip scan seeding, fall through to profile mining
                     else:
@@ -1637,7 +1682,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             try:
                 from dashboard.e4l_scan_marks import infoceutical_marks
                 from dashboard.biofield_authoring import infoceutical_names_by_code
-                sctx = scan_lookup(email) if email else {}
+                sctx = _scan_for(rep) if email else {}
                 if not email:
                     scan_problem.append("This client has no email, so no scan was looked up")
                 elif not (sctx or {}).get("found"):
@@ -1992,7 +2037,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 scan_marks, _sctx = None, {}
                 try:
                     from dashboard.e4l_scan_marks import infoceutical_marks
-                    _sctx = scan_lookup(c_email) if c_email else {}
+                    _sctx = _scan_for(rep) if c_email else {}
                     if (_sctx or {}).get("found"):
                         scan_marks = infoceutical_marks(cx, e4l_db, _sctx.get("scan_id"))
                 except Exception as _me:
@@ -2782,9 +2827,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": "no client selected yet",
                     "newer": False, "e4l": scan_lookup(""),
                     "html": render_e4l_panel(scan_lookup(""))}
-        before = scan_lookup(email)
+        before = _scan_for(rep)
         res = _fetch_live(client_id=client_id, name=client.get("name"), runner=fetch_runner)
-        after = scan_lookup(email)
+        after = _scan_for(rep)
         newer = bool(after.get("found") and (
             not before.get("found")
             or (after.get("scan_date") or "") > (before.get("scan_date") or "")))
@@ -2861,10 +2906,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     # An animal's remedy is the FileMaker remedy-list name for its code
                     # (Glen, 2026-10-01), the list the picker and the dosing read.
                     from dashboard.biofield_authoring import infoceutical_names_by_code
-                    res = _ri.synthesize_reveal_layers(
-                        email, today=_dt.date.today().isoformat(), is_animal=_is_animal,
+                    keyed, sid = _reveal_scan(rep)
+                    res = ({"found": False} if keyed and not sid else
+                           _ri.synthesize_reveal_layers(
+                        email, scan_id=sid, today=_dt.date.today().isoformat(),
+                        is_animal=_is_animal,
                         infoceutical_names=infoceutical_names_by_code(cx) if _is_animal
-                        else None)
+                        else None))
                 except Exception as e:
                     return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
             if not res.get("found"):
@@ -4699,7 +4747,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # failure never hides a section.
                 try:
                     _email = ((rep.get("client") or {}).get("email") or "").strip()
-                    scan = scan_lookup(_email) or {}
+                    scan = _scan_for(rep) or {}
                     body_fresh = bool(scan.get("fresh")) if _email else True
                     scan_note = scan.get("message") or ""
                 except Exception:
