@@ -43,7 +43,7 @@ out of stock everywhere. Lowest count first.</p>
 
 <div class="card" id="add-card" style="display:none">
   <div class="row">
-    <input class="product" id="add-product" list="product-list" placeholder="Product name or slug">
+    <input class="product" id="add-product" list="product-list" placeholder="Product name or slug" oninput="fillList()">
     <input class="count" id="add-count" type="number" min="0" step="1" placeholder="Count">
     <input class="reason" id="add-reason" placeholder="Reason, e.g. shelf count">
     <button onclick="addCount()">Set count</button>
@@ -82,7 +82,22 @@ out of stock everywhere. Lowest count first.</p>
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   var PRODUCTS = [];
+  var COUNTED = {};
   var LOW = 3;
+
+  // The drop-down lists only products not yet counted. Glen, 2026-11-06: "as I add
+  // inventories, can you remove those items from the drop down list, but still be able
+  // to find them if I start typing the product name". So from two typed letters on, a
+  // counted product that matches is offered too.
+  function fillList(){
+    var q = document.getElementById('add-product').value.trim().toLowerCase();
+    var typed = q.length >= 2;
+    document.getElementById('product-list').innerHTML = PRODUCTS.filter(function(p){
+      if (!COUNTED[p.slug]) return true;
+      return typed && (p.name.toLowerCase().indexOf(q) >= 0 || p.slug.indexOf(q) >= 0);
+    }).map(function(p){
+      return '<option value="'+esc(p.name)+'">'+esc(p.slug)+(COUNTED[p.slug] ? ', counted' : '')+'</option>'; }).join('');
+  }
 
   async function load(){
     var r = await fetch('/api/console/stock', { headers: hdr() });
@@ -92,9 +107,9 @@ out of stock everywhere. Lowest count first.</p>
       off.style.display='block'; return; }
     LOW = d.low_stock_at; PRODUCTS = d.products || [];
     document.getElementById('add-card').style.display='block';
-    document.getElementById('product-list').innerHTML = PRODUCTS.map(function(p){
-      return '<option value="'+esc(p.name)+'">'+esc(p.slug)+'</option>'; }).join('');
     var rows = d.rows || [];
+    COUNTED = {}; rows.forEach(function(x){ COUNTED[x.slug] = true; });
+    fillList();
     document.getElementById('tbl').style.display = rows.length ? 'table' : 'none';
     document.getElementById('no-rows').style.display = rows.length ? 'none' : 'block';
     document.getElementById('rows').innerHTML = rows.map(function(x, i){

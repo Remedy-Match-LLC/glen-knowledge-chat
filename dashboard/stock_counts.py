@@ -11,7 +11,8 @@ Plan: platform/plans/2026-11-06-stock-counts-in-the-app.md. Every rule below is 
   one made live again takes it off again. GrooveKart sends no paid signal, so its orders
   come off the count on arrival.
 - Bundles take one bottle (times the component qty) from each product inside them.
-- Made-to-order products (`made_to_order` in the catalog) are never counted.
+- Made-to-order products (`made_to_order` in the catalog) are never counted. Nor are
+  custom ones ("in Terrain Restore" in the name) or drop-shipped ones (DROP_SHIPPED).
 - Every change is one row in `stock_log`: slug, delta, new count, who, when, why, order.
 - Glen and Rae are emailed when a product falls to LOW_STOCK_AT bottles or fewer, and
   when it falls below one month of average sales. Once per crossing.
@@ -196,11 +197,35 @@ def init_tables(cx):
 
 # ── the predicate ───────────────────────────────────────────────────────────────
 
-def countable(p) -> bool:
-    """Whether a product can carry a count. Made-to-order never does (Glen, question 3).
-    A bundle does not either: its components are counted."""
+# Never on the shelf, so never counted, and a count can never take them off sale.
+# Glen, 2026-11-06: "15-plate water ionizers are not stocked, they are drop shipped, so
+# zero on shelf. Available for sale."
+DROP_SHIPPED = frozenset({"water-ionizer-15plate"})
+# Glen, 2026-11-06: "all items with names that include \"in terrain restore\" are custom."
+CUSTOM_NAME_PART = "in terrain restore"
+
+
+def not_counted_why(p, slug=None):
+    """Why a product carries no count ("a bundle", "made to order", "custom",
+    "drop shipped"), or None when it can be counted."""
     p = p if isinstance(p, dict) else {}
-    return not p.get("made_to_order") and not p.get("bundle")
+    slug = slug or p.get("slug")
+    if p.get("bundle"):
+        return "a bundle"
+    if p.get("made_to_order"):
+        return "made to order"
+    if CUSTOM_NAME_PART in " ".join(str(p.get("name") or "").lower().split()):
+        return "custom"
+    if slug in DROP_SHIPPED:
+        return "drop shipped"
+    return None
+
+
+def countable(p, slug=None) -> bool:
+    """Whether a product can carry a count. Made-to-order never does (Glen, question 3).
+    Nor does a custom or drop-shipped one. A bundle does not either: its components are
+    counted."""
+    return not_counted_why(p, slug) is None
 
 
 def zero_slugs() -> frozenset:
@@ -230,7 +255,7 @@ def zero_slugs() -> frozenset:
 def is_counted_out(slug, p) -> bool:
     """True when the flag is on and `slug` is counted at 0 or below. Flag off: False,
     with no database access at all."""
-    if not enabled() or not slug or not countable(p):
+    if not enabled() or not slug or not countable(p, slug):
         return False
     return slug in zero_slugs()
 
@@ -283,9 +308,8 @@ def set_count(cx, slug, count, *, who, reason, catalog=None):
     p = cat.get(slug)
     if not p:
         raise ValueError(f"unknown product: {slug}")
-    if not countable(p):
-        raise ValueError(f"{p.get('name') or slug} is not counted "
-                         f"({'a bundle' if p.get('bundle') else 'made to order'})")
+    if not countable(p, slug):
+        raise ValueError(f"{p.get('name') or slug} is not counted ({not_counted_why(p, slug)})")
     try:
         n = int(count)
     except (TypeError, ValueError):
@@ -357,7 +381,7 @@ def units_for_items(items, catalog) -> dict:
                 cq = max(1, _parse_qty((comp or {}).get("qty"), 1))
                 _add(cs, qty * cq, seen | {cs})
             return
-        if p and p.get("made_to_order"):
+        if p and not countable(p, slug):
             return
         out[slug] = out.get(slug, 0) + qty
 
@@ -820,7 +844,7 @@ def countable_products(catalog=None) -> list:
     for slug, p in cat.items():
         if not isinstance(p, dict) or p.get("inactive") or p.get("info_only"):
             continue
-        if p.get("service") or p.get("digital") or not countable(p):
+        if p.get("service") or p.get("digital") or not countable(p, slug):
             continue
         out.append({"slug": slug, "name": p.get("name") or slug})
     out.sort(key=lambda x: x["name"].lower())

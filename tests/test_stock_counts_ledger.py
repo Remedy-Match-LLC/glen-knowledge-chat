@@ -696,3 +696,34 @@ def test_console_is_off_with_the_flag(console, monkeypatch):
     assert console.get("/api/console/stock", headers=h).status_code == 404
     assert console.post("/api/console/stock/reconcile", headers=h).status_code == 404
     assert console.get("/console/stock").status_code == 200
+
+
+def test_custom_and_drop_shipped_products_are_never_counted(env, monkeypatch):
+    """Glen, 2026-11-06: products named "in Terrain Restore" are custom, and the 15-plate
+    water ionizer is drop shipped. Neither can carry a count, neither is offered on the
+    Stock page, and an old zero row never takes one off sale."""
+    cat = dict(CAT)
+    cat["root-chakra-in-terrain-restore"] = {"name": "Root Chakra Essence in  Terrain Restore",
+                                             "price_cents": 7000}
+    cat["water-ionizer-15plate"] = {"name": "15-Plate Water Ionizer (Living Water)",
+                                    "price_cents": 250000}
+    monkeypatch.setattr(SC, "_CATALOG_FN", lambda: cat)
+    cx = env["cx"]
+    for slug, why in (("root-chakra-in-terrain-restore", "custom"),
+                      ("water-ionizer-15plate", "drop shipped")):
+        with pytest.raises(ValueError, match=why):
+            _set(cx, slug, 3)
+    offered = {p["slug"] for p in SC.countable_products()}
+    assert "scar-silk" in offered
+    assert not offered & {"root-chakra-in-terrain-restore", "water-ionizer-15plate"}
+    # A zero row written before this rule (as on 6 Nov) blocks nothing.
+    cx.execute("INSERT INTO stock_counts (slug, count, set_at, updated_at) VALUES (?,?,?,?)",
+               ("water-ionizer-15plate", 0, "x", "x"))
+    cx.commit()
+    SC._invalidate()
+    assert "water-ionizer-15plate" in SC.zero_slugs()
+    assert not SC.is_counted_out("water-ionizer-15plate", cat["water-ionizer-15plate"])
+    # An order for either takes nothing.
+    assert SC.units_for_items([{"slug": "water-ionizer-15plate", "qty": 1},
+                               {"slug": "root-chakra-in-terrain-restore", "qty": 1},
+                               {"slug": "scar-silk", "qty": 1}], cat) == {"scar-silk": 1}
