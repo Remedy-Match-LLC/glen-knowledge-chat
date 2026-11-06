@@ -12272,7 +12272,6 @@
   },
   "dental-regen-powder": {
    "name": "Dental Regen Powder",
-   "inactive": true,
    "price_cents": 7000,
    "pinecone_title": "Dental Regen Powder",
    "url": "https://myhealingoasis.com/begin/product/dental-regen-powder",
@@ -12324,8 +12323,7 @@
    "gk_extra_accepted": true,
    "bottle_type": "30 g",
    "fmp_id": "449",
-   "qty_pricing": true,
-   "superseded_by": "dental-powder"
+   "qty_pricing": true
   },
   "inositol": {
    "name": "Inositol",
