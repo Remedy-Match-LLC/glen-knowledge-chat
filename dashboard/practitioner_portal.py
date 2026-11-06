@@ -487,7 +487,7 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
             cp = cat.get(cs) if cs else None
             if not cp or cp.get("inactive") or cs in seen:
                 continue
-            if cp.get("waitlist_only") or cp.get("enquiry_only") or _stock_note(cp):
+            if cp.get("waitlist_only") or cp.get("enquiry_only") or _out_note(cs, cp):
                 return _block(cs, cp)
             hit = _components(cp, seen | {cs})
             if hit:
@@ -497,7 +497,7 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
     s, p = _resolve(slug)
     if not p:
         return None
-    if p.get("waitlist_only") or p.get("enquiry_only") or _stock_note(p):
+    if p.get("waitlist_only") or p.get("enquiry_only") or _out_note(s, p):
         return _block(s, p)
     return _components(p, {s})
 
@@ -515,9 +515,24 @@ def _stock_note(p):
     return " " if v else ""
 
 
+def _count_note(slug, p):
+    """A one-space note when the shelf count says `slug` is sold out, else "". Behind
+    STOCK_COUNTS_ENABLED: off, this never touches the database (Glen, 2026-11-06,
+    platform/plans/2026-11-06-stock-counts-in-the-app.md). A product with no count
+    stays on sale. The bare note gives the line: {name} is out of stock."""
+    from dashboard import stock_counts
+    return " " if stock_counts.is_counted_out(slug, p) else ""
+
+
+def _out_note(slug, p):
+    """The hand-set `out_of_stock` note, else the shelf count's. A flag wins over a
+    count, so Glen can hold back a product with bottles on the shelf."""
+    return _stock_note(p) or _count_note(slug, p)
+
+
 def _block(slug, p):
     b = {"slug": slug, "name": p.get("name") or slug}
-    note = _stock_note(p)
+    note = _out_note(slug, p)
     if p.get("enquiry_only") and not p.get("waitlist_only"):
         b["enquiry_only"] = True
     elif note and not p.get("waitlist_only"):

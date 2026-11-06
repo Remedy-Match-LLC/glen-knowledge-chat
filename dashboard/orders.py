@@ -577,6 +577,7 @@ def set_order_status(cx, order_id, status):
             _holds.remove_from_hold(cx, order_id)
         except Exception as e:  # never let hold cleanup block the cancel
             print(f"[orders] hold-remove-on-cancel skipped for #{order_id}: {e!r}", flush=True)
+        _stock_on_cancelled(cx, order_id)
     if status in ("shipped", "delivered", "done") and cur.rowcount:
         try:
             from . import shipped_report_release as _report_release
@@ -1125,6 +1126,27 @@ def _consume_ship_credit_on_pay(cx, order_id):
         print(f"[ship_credit] consume-on-pay skipped for #{order_id}: {e!r}", flush=True)
 
 
+def _stock_on_paid(cx, order_id):
+    """Take a paid order's bottles off the shelf count, once (STOCK_COUNTS_ENABLED,
+    Glen 2026-11-06). Flag off: returns before touching anything. Never raises."""
+    try:
+        from dashboard import stock_counts as _stock
+        if _stock.enabled():
+            _stock.on_order_paid(cx, order_id)
+    except Exception as e:  # payment must never fail because stock keeping did
+        print(f"[orders] stock decrement skipped for #{order_id}: {e!r}", flush=True)
+
+
+def _stock_on_cancelled(cx, order_id):
+    """Put a cancelled order's bottles back, once. Same flag. Never raises."""
+    try:
+        from dashboard import stock_counts as _stock
+        if _stock.enabled():
+            _stock.on_order_cancelled(cx, order_id)
+    except Exception as e:  # never let stock keeping block the cancel
+        print(f"[orders] stock restore skipped for #{order_id}: {e!r}", flush=True)
+
+
 def set_order_payment(cx, order_id, *, method, amount_cents):
     """Record payment on an order: mark paid + capture method/amount/time, and
     drop it into the fulfillment board as 'new'. No money is moved (Phase 1)."""
@@ -1136,6 +1158,7 @@ def set_order_payment(cx, order_id, *, method, amount_cents):
     if cur.rowcount:
         _ensure_portal_receipt(cx, order_id)
         _consume_ship_credit_on_pay(cx, order_id)
+        _stock_on_paid(cx, order_id)
     return cur.rowcount > 0
 
 
@@ -1165,6 +1188,7 @@ def mark_order_paid_keep_status(cx, order_id, *, method, amount_cents):
     cx.commit()
     if cur.rowcount:
         _ensure_portal_receipt(cx, order_id)
+        _stock_on_paid(cx, order_id)
     return cur.rowcount > 0
 
 
