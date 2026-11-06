@@ -199,8 +199,9 @@ def init_tables(cx):
 
 # Never on the shelf, so never counted, and a count can never take them off sale.
 # Glen, 2026-11-06: "15-plate water ionizers are not stocked, they are drop shipped, so
-# zero on shelf. Available for sale."
-DROP_SHIPPED = frozenset({"water-ionizer-15plate"})
+# zero on shelf. Available for sale." Then: "the 9-plate water ionizer is also not
+# stocked, but available, so zero on shelf still means it is available for purchase."
+DROP_SHIPPED = frozenset({"water-ionizer-15plate", "water-ionizer-9plate"})
 # Glen, 2026-11-06: "all items with names that include \"in terrain restore\" are custom."
 CUSTOM_NAME_PART = "in terrain restore"
 

@@ -709,8 +709,11 @@ def test_custom_and_drop_shipped_products_are_never_counted(env, monkeypatch):
                                     "price_cents": 250000}
     monkeypatch.setattr(SC, "_CATALOG_FN", lambda: cat)
     cx = env["cx"]
+    cat["water-ionizer-9plate"] = {"name": "9-Plate Water Ionizer (Living Water)",
+                                   "price_cents": 200000}
     for slug, why in (("root-chakra-in-terrain-restore", "custom"),
-                      ("water-ionizer-15plate", "drop shipped")):
+                      ("water-ionizer-15plate", "drop shipped"),
+                      ("water-ionizer-9plate", "drop shipped")):
         with pytest.raises(ValueError, match=why):
             _set(cx, slug, 3)
     offered = {p["slug"] for p in SC.countable_products()}
