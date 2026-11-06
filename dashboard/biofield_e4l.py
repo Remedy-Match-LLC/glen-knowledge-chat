@@ -419,6 +419,97 @@ def species_from_e4l(e4l_db, email):
     return (row[0] or "").strip() or None
 
 
+def _person_key(name):
+    return " ".join("".join(ch for ch in (name or "").lower()
+                            if ch.isalnum() or ch == " ").split())
+
+
+def intake_e4l_client(e4l_db, client_id=None, email=None, name=None):
+    """The E4L client an intake is for: {"client_id", "email", "species", "animal_name",
+    "by"}, or None.
+
+    An owner and her pet often share one email. Skylar Verches, a dog, was started from
+    an email her owner Agnes sent, so the intake carried Agnes's address and every
+    email-keyed lookup read Agnes: species Human, so FFs, and no photo (2026-11-06).
+    The intake's own identity wins, in this order:
+      1. its stored E4L client id ("id");
+      2. the E4L client on its email whose name matches the intake name ("email+name");
+      3. the one E4L client anywhere with exactly that name ("name"), only when the
+         email holds no client of that name; two or more namesakes give nothing here;
+      4. the newest E4L client on the email that has a species ("email"), as before.
+    Never raises; an unreadable e4l.db is None."""
+    path = e4l_db
+    if not path:
+        return None
+    e = (email or "").strip().lower()
+    want = _person_key(name)
+    cols = "client_id, email, species, animal_name, name"
+    try:
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as ecx:
+            def pack(r, by):
+                return {"client_id": r[0], "email": (r[1] or "").strip().lower(),
+                        "species": (r[2] or "").strip() or None,
+                        "animal_name": (r[3] or "").strip(), "by": by}
+            cid = str(client_id or "").strip()
+            if cid.isdigit():
+                r = ecx.execute(f"SELECT {cols} FROM e4l_clients WHERE client_id=?",
+                                (int(cid),)).fetchone()
+                if r:
+                    return pack(r, "id")
+            if want:
+                on_email = ecx.execute(
+                    f"SELECT {cols} FROM e4l_clients WHERE lower(trim(email))=? "
+                    "ORDER BY client_id DESC", (e,)).fetchall() if e else []
+                hits = [r for r in on_email if _person_key(r[4]) == want]
+                if hits:
+                    return pack(hits[0], "email+name")
+            if len(want.split()) >= 2:          # a first name alone names nobody
+                first = want.split()[0]
+                cands = ecx.execute(
+                    f"SELECT {cols} FROM e4l_clients WHERE name LIKE ? COLLATE NOCASE",
+                    (f"%{first}%",)).fetchall()
+                named = [r for r in cands if _person_key(r[4]) == want]
+                if len(named) == 1:
+                    return pack(named[0], "name")
+            if e:
+                r = ecx.execute(
+                    f"SELECT {cols} FROM e4l_clients WHERE lower(trim(email))=? "
+                    "AND species IS NOT NULL AND species<>'' "
+                    "ORDER BY client_id DESC LIMIT 1", (e,)).fetchone()
+                if r:
+                    return pack(r, "email")
+    except sqlite3.Error:
+        return None
+    return None
+
+
+def species_for_intake(e4l_db, client_id=None, email=None, name=None):
+    """Species for an intake, keyed on the intake's own E4L client (intake_e4l_client),
+    then Glen's recorded answer for the email. None means nobody knows. The one species
+    read for every Biofield Intake surface."""
+    rec = intake_e4l_client(e4l_db, client_id, email, name)
+    if rec and rec.get("species"):
+        return rec["species"]
+    if rec and rec.get("by") != "email":
+        # This person's own record has no species. Another client on the same email
+        # (an owner) must not lend it one: only Glen's recorded answer counts.
+        return _species_answer(e4l_db, email)
+    return species_from_e4l(e4l_db, email)
+
+
+def _species_answer(e4l_db, email):
+    e = (email or "").strip().lower()
+    if not e or not e4l_db:
+        return None
+    try:
+        with sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True) as ecx:
+            row = ecx.execute("SELECT species FROM species_answers WHERE email=? "
+                              "AND species IS NOT NULL AND species<>''", (e,)).fetchone()
+    except sqlite3.Error:
+        return None
+    return ((row[0] if row else "") or "").strip() or None
+
+
 def record_species_answer(e4l_db, email, species):
     """Store Glen's answer for a client whose E4L species is blank, so he is asked once.
     `species` is "Human" or the animal ("Dog", "Cat", "Horse", ...). Returns the stored

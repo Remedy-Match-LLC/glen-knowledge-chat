@@ -32,3 +32,14 @@ def infoceutical_by_code(catalog):
         if m and "infoceutical" in name.lower():
             out.setdefault(m.group(1), name)
     return out
+
+
+def is_infoceutical_remedy(name):
+    """True when a remedy name is an E4L infoceutical, the only thing an animal gets.
+
+    Glen, 2026-11-06, of Skylar Verches, a dog: "It's also recommending FF's instead of
+    just infoceuticals." The one product test every animal surface uses: the + buttons,
+    the remedy-set apply, the layer pick and the invoice draft. Every infoceutical in
+    the FileMaker list says "Infoceutical" in its name; 12 of the 84 carry no code
+    ("Day Infoceutical", "EMF Infoceutical"), so the code is not required."""
+    return "infoceutical" in (name or "").lower()

@@ -721,6 +721,10 @@ def _install_log_redaction() -> None:
     logging.getLogger("werkzeug").addFilter(_Redact())
 
 
+_ANIMAL_ONLY = ("This client is an animal. An animal gets infoceuticals only, "
+                "never a Functional Formulation (Glen, 2026-11-06).")
+
+
 def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                interpret_complete=None, scan_lookup=None, client_search=None,
                fetch_runner=None, fetch_profile=None, fetch_recent_comms=None,
@@ -743,15 +747,45 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     # catalog, so it is told here how to recognise an animal's test and which
     # infoceutical covers each code. Species comes from e4l.db, the store _animal_for
     # already reads; chat_log.db on Glen's Mac has no client_species table.
-    def _animal_infoceuticals_for(cx, tid):
+    # Species follows the intake's OWN E4L client, not its email. Skylar Verches, a
+    # dog, was started from her owner's email, so an email lookup read the owner as
+    # Human and every surface offered FFs (Glen, 2026-11-06). One identity, one
+    # species read, one predicate for every recommendation surface.
+    def _intake_ident(cx, tid):
+        """(email, name, e4l_client_id) stored on an authored intake."""
+        try:
+            row = cx.execute("SELECT email, name, e4l_client_id FROM biofield_auth_tests "
+                             "WHERE id=?", (int(str(tid).lstrip("a") or 0),)).fetchone()
+        except sqlite3.OperationalError:          # an old table with no e4l_client_id
+            row = cx.execute("SELECT email, name, NULL FROM biofield_auth_tests "
+                             "WHERE id=?", (int(str(tid).lstrip("a") or 0),)).fetchone()
+        if not row:
+            return "", "", ""
+        return ((row[0] or "").strip(), (row[1] or "").strip(), str(row[2] or "").strip())
+
+    def _intake_species(cx, tid):
+        from dashboard.biofield_e4l import species_for_intake
+        email, name, cid = _intake_ident(cx, tid)
+        return species_for_intake(e4l_db, cid, email, name)
+
+    def _intake_is_animal(cx, tid):
+        """THE animal predicate for a Biofield Intake. An animal gets infoceuticals only."""
         from dashboard import client_species as _cspec
-        from dashboard.biofield_e4l import species_from_e4l as _species_from_e4l
+        return _cspec.is_animal(_intake_species(cx, tid))
+
+    def _animal_refused(cx, tid, rems):
+        """The remedies an animal intake may not take (anything not an infoceutical).
+        Empty for a person."""
+        from dashboard.animal_infoceuticals import is_infoceutical_remedy
+        rems = [(r or "").strip() for r in (rems or []) if (r or "").strip()]
+        if not rems or not _intake_is_animal(cx, tid):
+            return []
+        return [r for r in rems if not is_infoceutical_remedy(r)]
+
+    def _animal_infoceuticals_for(cx, tid):
         from dashboard.animal_infoceuticals import infoceutical_by_code
         from dashboard.biofield_portal_publish import load_catalog
-        row = cx.execute("SELECT email FROM biofield_auth_tests WHERE id=?",
-                         (int(str(tid).lstrip("a") or 0),)).fetchone()
-        email = ((row[0] if row else "") or "").strip()
-        if not _cspec.is_animal(_species_from_e4l(e4l_db, email)):
+        if not _intake_is_animal(cx, tid):
             return None
         # The FileMaker remedy list, as Import Reveal uses (Glen, 2026-10-01), so a suggestion
         # and an imported row name the same product. The web catalog only if FileMaker is absent.
@@ -769,11 +803,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     # gets {"needs_species": true}; the page asks him and records it via /species.
     # Replaces the 2026-09-15 default of treating a blank as a person in the Intake.
     def _species_needed(cx, test_id):
-        from dashboard.biofield_e4l import species_from_e4l as _species_from_e4l
-        row = cx.execute("SELECT email FROM biofield_auth_tests WHERE id=?",
-                         (int(str(test_id).lstrip("a") or 0),)).fetchone()
-        email = ((row[0] if row else "") or "").strip()
-        if not email or _species_from_e4l(e4l_db, email):
+        email = _intake_ident(cx, test_id)[0]
+        if not email or _intake_species(cx, test_id):
             return None
         return {"ok": False, "needs_species": True,
                 "reason": "Species unknown: tell me if this client is a person or an animal."}
@@ -873,7 +904,24 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception:
             return False
 
-    def _operator_photo(email, name):
+    def _operator_photo(email, name, cid=None):
+        """The photo for this intake's person, or None. When the intake's email finds
+        none and the intake is for an E4L client on ANOTHER email (a pet started from
+        its owner's email: Skylar Verches, 2026-11-06), that client's own email is read
+        under the same rules."""
+        rec, pid = _operator_photo_on(email, name)
+        if rec:
+            return rec, pid
+        from dashboard.biofield_e4l import intake_e4l_client
+        who = intake_e4l_client(e4l_db, cid, email, name) or {}
+        own = who.get("email") or ""
+        if who.get("by") in ("id", "name") and own and own != (email or "").strip().lower():
+            rec2, pid2 = _operator_photo_on(own, name)
+            if rec2:
+                return rec2, pid2
+        return rec, pid
+
+    def _operator_photo_on(email, name):
         """The photo Biofield Intake shows for this intake's person, or None.
 
         The person's own row when the email and name resolve to one FileMaker record.
@@ -984,26 +1032,28 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         row, or Human reads as a person, so a lookup failure leaves the human narrative
         exactly as it was. The owner is fetched only for an animal."""
         from dashboard import client_species as _cspec
+        from dashboard.biofield_e4l import intake_e4l_client, species_for_intake
         c = rep.get("client") or {}
         email = (c.get("email") or "").strip().lower()
         if not email:
             return None
+        # The intake's own E4L client, as _intake_species reads it, not the email's.
+        cid, cname = c.get("e4l_client_id") or "", c.get("name") or ""
         try:
-            with sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True) as ecx:
-                row = ecx.execute(
-                    "SELECT species, animal_name FROM e4l_clients "
-                    "WHERE lower(trim(email))=? AND species IS NOT NULL AND species<>'' "
-                    "ORDER BY client_id DESC LIMIT 1", (email,)).fetchone()
+            species = species_for_intake(e4l_db, cid, email, cname)
+            rec = intake_e4l_client(e4l_db, cid, email, cname) or {}
         except Exception:
             return None
-        if not row or not _cspec.is_animal(row[0]):
+        if not _cspec.is_animal(species):
             return None
-        name = (row[1] or "").strip() or ((c.get("name") or "").split() or [""])[0]
+        name = (rec.get("animal_name") or "").strip() or ((cname or "").split() or [""])[0]
+        species = (species or "").strip()
         try:
-            owner = (fetch_animal_owner(email) or "").strip()
+            own_email = rec.get("email") if rec.get("by") not in (None, "email") else email
+            owner = (fetch_animal_owner(own_email or email) or "").strip()
         except Exception:
             owner = ""
-        return {"name": name, "species": row[0].strip(),
+        return {"name": name, "species": species,
                 "owner": (owner.split() or [""])[0]}
 
     def _e4l(cx, test_id):
@@ -1352,7 +1402,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def client_photo(email):
         """Serve a client's photo (local store). Gated by the console cookie like the
         rest of the intake app. 404 when absent so <img onerror> hides cleanly."""
-        rec, _pid = _operator_photo(email, request.args.get("name", ""))
+        rec, _pid = _operator_photo(email, request.args.get("name", ""),
+                                    request.args.get("cid", ""))
         if not rec:
             return Response("", status=404)
         resp = Response(rec["blob"], mimetype=rec["content_type"])
@@ -1362,7 +1413,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     @app.route("/client-photo-framing/<path:email>")
     def client_photo_framing(email):
         """Return the same nondestructive face focal point used by portal avatars."""
-        rec, _pid = _operator_photo(email, request.args.get("name", ""))
+        rec, _pid = _operator_photo(email, request.args.get("name", ""),
+                                    request.args.get("cid", ""))
         if not rec:
             return jsonify({"ok": False, "error": "not found"}), 404
         return jsonify({"ok": True, "focus_x": rec.get("focus_x", 50),
@@ -2254,6 +2306,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if not nm:
                 continue
             remedies.append({"name": nm, "qty": biofield_invoice.line_bottles(l)})
+        # An animal is invoiced infoceuticals only (Glen, 2026-11-06). An FF already on
+        # its chain is left off the draft and named in the reply, never charged.
+        with sqlite3.connect(db_path) as cx:
+            animal_refused = _animal_refused(cx, test_id, [r["name"] for r in remedies])
+        remedies = [r for r in remedies if r["name"] not in animal_refused]
         # The invoice follows the Biofield Analysis's section buttons (Glen, 2026-10-19).
         remedies, left_off, _ = _primary_invoice(test_id, remedies)
         from html import escape as _esc
@@ -2287,7 +2344,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     "added": 0, "skipped": built["skipped"],
                     "warning": _esc(_rsplit.left_off_warning(left_off)), "note": note,
                     "print_url": "", "orders_url": "", "external_ref": "", "total_dollars": "",
-                    "left_off": left_off}
+                    "left_off": left_off, "animal_refused": animal_refused}
         # A repeated raise refreshes Biofield-sourced remedies from the schedule,
         # while keeping lines added manually in Edit Invoice on the current draft.
         previous = invoice_latest(email) or {}
@@ -2360,7 +2417,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             warning = ((warning + " " if warning else "") + _esc(
                 f"Not stored against this test: {link_refused}. Its line in the list "
                 "shows this invoice as approximate."))
+        if animal_refused:
+            warning = ((warning + " " if warning else "") + _esc(
+                "Left off: an animal gets infoceuticals only, so these were not "
+                "invoiced: " + ", ".join(animal_refused) + "."))
         return {"ok": True, "already_paid": bool(paid.get("paid")), "no_charge": no_charge,
+                "animal_refused": animal_refused,
                 "print_url": link.get("print_url") if link.get("ok") else "",
                 "order_id": created.get("order_id"),
                 "orders_url": biofield_invoice.default_orders_link(created.get("order_id")),
@@ -2782,9 +2844,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # Species comes from e4l.db. This used to read client_species in
             # chat_log.db, which does not exist on Glen's Mac: the lookup threw, was
             # caught, and every animal imported as a person (Sasha, 2026-09-21).
-            from dashboard import client_species as _cspec
-            from dashboard.biofield_e4l import species_from_e4l as _species_from_e4l
-            _is_animal = _cspec.is_animal(_species_from_e4l(e4l_db, email))
+            _is_animal = _intake_is_animal(cx, test_id)
             from dashboard import biofield_reveal_preview as _rp
             token = str(_body.get("token") or "")
             stored = _rp.load(cx, test_id, token) if force and token else None
@@ -2962,6 +3022,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         layers. Returns count."""
         from dashboard import biofield_stress as _st
         rems = [(r or "").strip() for r in (rems or []) if (r or "").strip()]
+        refused = _animal_refused(cx, test_id, rems)
+        rems = [r for r in rems if r not in refused]
         if not rems:
             return 0
         tnum = int(str(test_id).lstrip("a") or 0)
@@ -3092,6 +3154,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             ask = _species_needed(cx, test_id)
             if ask:
                 return ask
+            if _animal_refused(cx, test_id, [remedy]):
+                return {"ok": False, "animal_refused": [remedy], "error": _ANIMAL_ONLY}
             name = resolve_remedy_name(cx, remedy)         # 'heart health' -> 'Heart Health'
             d = remedy_dosing(cx, name)                    # auto-fill from the FF
             rows = cx.execute("SELECT id FROM biofield_auth_chain WHERE test_id=? AND layer=? "
@@ -3131,6 +3195,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             ask = _species_needed(cx, test_id)
             if ask:
                 return ask
+            if _animal_refused(cx, test_id, [rem]):
+                return {"ok": False, "animal_refused": [rem], "error": _ANIMAL_ONLY}
             added = _append_layers(cx, test_id, [rem])
         return {"ok": True, "added": added}
 
@@ -3171,8 +3237,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             ask = _species_needed(cx, test_id)
             if ask:
                 return ask
+            refused = _animal_refused(cx, test_id, rems)
+            rems = [r for r in rems if r not in refused]
             added = _append_layers(cx, test_id, rems)
-        return {"ok": True, "added": added}
+        return {"ok": True, "added": added, "animal_refused": refused}
 
     @app.route("/author/<test_id>/stress/<int:sid>/balance", methods=["POST"])
     def author_stress_balance(test_id, sid):

@@ -916,11 +916,11 @@ async function refreshHeaderPhoto(){
  if(!email){img.removeAttribute('src');img.style.display='none';return}
  try{
   var j=await (await fetch('/client-photo-framing/'+encodeURIComponent(email)
-   +'?name='+encodeURIComponent(pname))).json();
+   +'?name='+encodeURIComponent(pname)+'&cid='+encodeURIComponent(val('h_client_id')))).json();
   if(j.ok)img.style.objectPosition=j.focus_x+'% '+j.focus_y+'%';
  }catch(e){img.style.objectPosition='50% 42%'}
  img.style.display='none';img.src='/client-photo/'+encodeURIComponent(email)
-   +'?name='+encodeURIComponent(pname)+'&t='+Date.now();
+   +'?name='+encodeURIComponent(pname)+'&cid='+encodeURIComponent(val('h_client_id'))+'&t='+Date.now();
 }
 // --- E4L client picker: name autocomplete -> email (dropdown if duplicates) -> date
 var E4L_CLIENT_ID=null;
@@ -1764,7 +1764,7 @@ async function suggestPreserved(){
 // --- Minimal-remedy set: editable + searchable + drag-reorder + persist ---
 function mrNames(){return [].slice.call(document.querySelectorAll('#mrlist .mrname'))
  .map(function(i){return (i.value||'').trim()}).filter(Boolean)}
-function mrSetPanel(j){if(j&&j.html!==undefined)document.getElementById('suggestpanel').innerHTML=j.html}
+function mrSetPanel(j){if(j&&j.animal_refused&&j.animal_refused.length&&j.error)alert(j.error);if(j&&j.html!==undefined)document.getElementById('suggestpanel').innerHTML=j.html}
 async function layerPick(b){mrSetPanel(await post('/author/__TID__/layer/'+b.getAttribute('data-n')+'/select',{remedy:b.getAttribute('data-remedy')}))}
 async function mrSave(){mrSetPanel(await post('/author/__TID__/remedy-set',{remedies:mrNames()}))}
 async function mrEdit(inp){await mrSave()}
@@ -1797,7 +1797,7 @@ async function mrAddOne(btn){var row=btn.closest('.mrrow');var inp=row?row.query
  var rem=inp?(inp.value||'').trim():'';if(!rem){return}
  btn.disabled=true;var o=btn.textContent;btn.textContent='\\u2026';
  try{var j=await post('/author/__TID__/remedy-set/add-one',{remedy:rem});
-  if(j&&j.ok){location.reload()}else{btn.textContent=o;btn.disabled=false}}
+  if(j&&j.ok){location.reload()}else{btn.textContent=o;btn.disabled=false;if(j&&j.error)alert(j.error)}}
  catch(e){btn.textContent=o;btn.disabled=false}}
 loadLists();
 loadE4L();
@@ -3381,7 +3381,9 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
     photo_email = (c.get("email") or "").strip()
     photo_name = (c.get("name") or "").strip()
     photo_src = (f"/client-photo/{_up.quote(photo_email, safe='')}"
-                 f"?name={_up.quote(photo_name, safe='')}" if photo_email else "")
+                 f"?name={_up.quote(photo_name, safe='')}"
+                 f"&cid={_up.quote(str(c.get('e4l_client_id') or ''), safe='')}"
+                 if photo_email else "")
     head = (_workflow_nav("intake", c.get("email") or "")
             + _client_tabs("edit", tid, c.get("email") or "")
             + f"<p><a href='/'>&larr; All tests</a> &nbsp;&middot;&nbsp; "
