@@ -790,3 +790,17 @@ def test_infoceuticals_alert_at_zero_or_at_one_when_they_sell_monthly(env, monke
     assert any(s.startswith("Under one month") and "Youth" in s for s in _subjects(sent))
     assert SC.month_alert_applies(cat["es1-lymph"], 0.5) is False
     assert SC.month_alert_applies(cat["scar-silk"], 0.5) is True
+
+
+def test_last_set_names_the_item_counted_last_and_ignores_order_deductions(env):
+    # Glen, 2026-11-06: show the item inventoried last, so he keeps his place.
+    cx = env["cx"]
+    assert SC.last_set(cx) is None
+    _set(cx, "scar-silk", 10)
+    _set(cx, "moisturize", 4)
+    assert SC.last_set(cx)["slug"] == "moisturize"
+    oid = _order(cx, [{"slug": "scar-silk", "qty": 1}])
+    O.set_order_payment(cx, oid, method="card", amount_cents=7000)
+    last = SC.last_set(cx)
+    assert (last["slug"], last["count"]) == ("moisturize", 4)
+    assert last["name"] == CAT["moisturize"]["name"]
