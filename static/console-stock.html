@@ -48,6 +48,10 @@ out of stock everywhere. Lowest count first.</p>
     <button onclick="addCount()">Set count</button>
   </div>
   <div class="status" id="add-status"></div>
+  <div class="row" style="margin-top:10px">
+    <button onclick="reconcileNow()">Check recent orders</button>
+    <span class="status" id="rec-status">Finds paid orders from the last 30 days that never came off the count, and fixes them. It also runs once a day by itself.</span>
+  </div>
   <datalist id="product-list"></datalist>
 </div>
 
@@ -137,6 +141,16 @@ out of stock everywhere. Lowest count first.</p>
                         document.getElementById('add-reason').value, st);
     if (ok){ document.getElementById('add-product').value=''; document.getElementById('add-count').value='';
       document.getElementById('add-reason').value=''; load(); }
+  }
+  async function reconcileNow(){
+    var st = document.getElementById('rec-status');
+    st.className = 'status'; st.textContent = 'Checking';
+    var r = await fetch('/api/console/stock/reconcile', { method:'POST', headers: hdr() });
+    var d = {}; try { d = await r.json(); } catch(e){}
+    if (!r.ok || !d.ok){ st.className = 'status err'; st.textContent = d.error || 'Not checked.'; return; }
+    var n = (d.synced || []).length;
+    st.className = 'status ok'; st.textContent = n ? ('Fixed ' + n + ' order' + (n === 1 ? '' : 's') + '.') : 'Nothing to fix.';
+    load();
   }
   load();
 </script>

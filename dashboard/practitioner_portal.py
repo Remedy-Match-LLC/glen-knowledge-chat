@@ -399,6 +399,16 @@ def name_to_slug(name, catalog) -> Optional[str]:
     return _live(_name_to_any_slug(name.strip().lower(), catalog), catalog)
 
 
+def exact_name_to_slug(name, catalog) -> Optional[str]:
+    """name_to_slug's exact tiers only: a whole alias, or the exact catalog name or
+    pinecone_title. No substring fallback. Stock counts decrement only on this, so a
+    fuzzy hit never takes a bottle off the wrong product (review, 2026-11-06)."""
+    if not name or is_ambiguous_product_name(name):
+        return None
+    catalog = catalog or {}
+    return _live(_name_to_any_slug(name.strip().lower(), catalog, exact_only=True), catalog)
+
+
 def _live(slug, catalog):
     """`slug` if it is on sale, else its live replacement, else None (round 1,
     2026-10-07: off-sale Molybdenum Syntropy reached the wholesale cart)."""
@@ -410,7 +420,7 @@ def _live(slug, catalog):
     return live if p and not p.get("inactive") else None
 
 
-def _name_to_any_slug(nl, catalog):
+def _name_to_any_slug(nl, catalog, exact_only=False):
     # An alias answers to its whole name only: a renamed product keeps its old name once
     # pinecone_title changes (Synergy C -> Vitamin C Syntropy, 2026-09-28), and never
     # captures a longer name that merely contains it (review rounds 1 and 2).
@@ -429,7 +439,7 @@ def _name_to_any_slug(nl, catalog):
     # inside "Magnesium Synergy Capsules" and sent it to Vitamin C Syntropy (2026-09-30).
     # Wider rules (whole words, longest overlap) were measured on 12,086 clinical names
     # in review round 1 and moved hundreds of other names, many onto wrong products.
-    if len(nl) <= 4:
+    if exact_only or len(nl) <= 4:
         return None
     for slug, p in catalog.items():
         for cand in (p.get("name"), p.get("pinecone_title")):

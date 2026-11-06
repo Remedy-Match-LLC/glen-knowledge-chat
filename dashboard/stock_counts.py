@@ -7,26 +7,30 @@ Plan: platform/plans/2026-11-06-stock-counts-in-the-app.md. Every rule below is 
 - At 0 or below, the product is refused exactly like a hand-set `out_of_stock` flag, by
   the one predicate (practitioner_portal.waitlist_block), with the line
   "{name} is out of stock." A hand-set flag still wins over a count.
-- A bottle leaves the count when an order is PAID. A cancelled order puts it back.
-  GrooveKart sends no paid signal, so its orders come off the count on arrival.
+- A bottle leaves the count when an order is PAID. A cancelled order puts it back, and
+  one made live again takes it off again. GrooveKart sends no paid signal, so its orders
+  come off the count on arrival.
 - Bundles take one bottle (times the component qty) from each product inside them.
 - Made-to-order products (`made_to_order` in the catalog) are never counted.
 - Every change is one row in `stock_log`: slug, delta, new count, who, when, why, order.
-- Each order moves a slug at most once per direction (`stock_order_moves` primary key),
-  so a payment or a cancel recorded twice never double-counts.
 - Glen and Rae are emailed when a product falls to LOW_STOCK_AT bottles or fewer, and
   when it falls below one month of average sales. Once per crossing.
+
+How an order moves stock: sync_order(). It locks the order row, re-reads its CURRENT
+status, works out what the order should hold off the shelf now, and moves only the
+difference. `stock_order_moves` holds, per (order, slug), `qty` (what the order has
+accounted for) and `taken` (what it actually took off a count). So paying twice, a
+pay/cancel race, a reinstated order, an edited order and a webhook retry all converge on
+the same answer, and none double-counts. A sale made before a product's last count was
+set is already reflected in that count, so it never comes off it.
 
 The whole feature sits behind STOCK_COUNTS_ENABLED (default off). Off, nothing here reads
 or writes the database and every caller behaves exactly as before. Turning it on with no
 counts entered changes nothing either: no count means on sale, and nothing to decrement.
-
-Callers pass `cx` where they have one. The predicate has none, so it opens its own
-connection to the path app.py registers (set_db_path_fn), and caches the set of
-sold-out slugs for ZERO_CACHE_SECONDS.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import threading
@@ -39,9 +43,12 @@ from dashboard import db
 FLAG = "STOCK_COUNTS_ENABLED"
 LOW_STOCK_AT = 3                  # Glen, 2026-11-06: "yes" to 3 bottles or fewer
 AVG_WINDOW_DAYS = 365             # average monthly sales over the last 12 months
-DEDUPE_DAYS = 14                  # a history line within 14 days of an app order is one sale
+DEDUPE_DAYS = 14                  # a line within 14 days of another source's line is one sale
+RECONCILE_DAYS = 30               # the self-heal looks back this far
+RECONCILE_EVERY_HOURS = 24
 ZERO_CACHE_SECONDS = 5.0          # how stale the sold-out set may be in another worker
 AVG_CACHE_SECONDS = 600.0
+SEND_RETRY_AFTER_SECONDS = 3600   # a send left 'pending' this long (a crash) is retried
 CONSOLE_URL = "https://illtowell.com/console/stock"
 _DAYS_PER_MONTH = 30.4375
 
@@ -89,18 +96,34 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _invalidate_zero():
+    """A count changed: the sold-out set is stale. The average is not."""
+    with _LOCK:
+        _ZERO["path"] = None
+
+
 def _invalidate():
+    """Both caches (tests)."""
     with _LOCK:
         _ZERO["path"] = None
         _AVG["path"] = None
 
 
+def _safe_rollback(cx):
+    try:
+        cx.rollback()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ── schema ──────────────────────────────────────────────────────────────────────
 
 def init_tables(cx):
+    # set_at: when the count was last SET by hand. Sales before it are in the count.
     cx.execute("""CREATE TABLE IF NOT EXISTS stock_counts (
         slug       TEXT PRIMARY KEY,
         count      INTEGER NOT NULL,
+        set_at     TEXT NOT NULL,
         updated_at TEXT NOT NULL)""")
     # Append only. Nothing updates or deletes a row here.
     cx.execute("""CREATE TABLE IF NOT EXISTS stock_log (
@@ -113,22 +136,30 @@ def init_tables(cx):
         reason    TEXT NOT NULL DEFAULT '',
         order_id  INTEGER)""")
     cx.execute("CREATE INDEX IF NOT EXISTS ix_stock_log_slug ON stock_log(slug)")
-    # One move per (order, slug, direction): the idempotency key. direction is
-    # 'out' (paid, or GrooveKart arrival) or 'back' (cancelled).
+    # Per (order, slug): qty the order has accounted for, and bottles it actually took
+    # off a count. sync_order moves only the difference to what it should hold now.
     cx.execute("""CREATE TABLE IF NOT EXISTS stock_order_moves (
-        order_id  INTEGER NOT NULL,
-        slug      TEXT NOT NULL,
-        direction TEXT NOT NULL,
-        qty       INTEGER NOT NULL,
-        moved_at  TEXT NOT NULL,
-        PRIMARY KEY (order_id, slug, direction))""")
-    # A row means the alert has fired for this crossing. Deleted when the condition
-    # clears, which re-arms it.
+        order_id   INTEGER NOT NULL,
+        slug       TEXT NOT NULL,
+        qty        INTEGER NOT NULL DEFAULT 0,
+        taken      INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (order_id, slug))""")
+    # A row means this alert's crossing is open. Deleted when the condition clears.
     cx.execute("""CREATE TABLE IF NOT EXISTS stock_alerts (
         slug     TEXT NOT NULL,
         kind     TEXT NOT NULL,
         fired_at TEXT NOT NULL,
         PRIMARY KEY (slug, kind))""")
+    # Delivery per recipient: 'pending' while a send is in flight, then 'sent' or
+    # 'failed'. A failed (or long-pending) one is retried by the next check.
+    cx.execute("""CREATE TABLE IF NOT EXISTS stock_alert_sends (
+        slug         TEXT NOT NULL,
+        kind         TEXT NOT NULL,
+        recipient    TEXT NOT NULL,
+        state        TEXT NOT NULL,
+        attempted_at TEXT NOT NULL,
+        PRIMARY KEY (slug, kind, recipient))""")
     # GrooveKart product names that matched no catalog product, for the console page.
     cx.execute("""CREATE TABLE IF NOT EXISTS stock_unmatched_names (
         name       TEXT PRIMARY KEY,
@@ -137,6 +168,13 @@ def init_tables(cx):
         first_seen TEXT NOT NULL,
         last_seen  TEXT NOT NULL,
         last_ref   TEXT NOT NULL DEFAULT '')""")
+    # One row per GrooveKart delivery, so a redelivered webhook lists nothing twice.
+    cx.execute("""CREATE TABLE IF NOT EXISTS stock_gk_deliveries (
+        delivery_key TEXT PRIMARY KEY,
+        seen_at      TEXT NOT NULL)""")
+    cx.execute("""CREATE TABLE IF NOT EXISTS stock_meta (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL)""")
     cx.commit()
 
 
@@ -188,9 +226,10 @@ def get_count(cx, slug):
     return None if r is None else int(r[0])
 
 
-def all_counts(cx) -> dict:
-    return {r[0]: int(r[1]) for r in cx.execute(
-        "SELECT slug, count FROM stock_counts").fetchall()}
+def _count_row(cx, slug):
+    """(count, set_at) or None."""
+    r = cx.execute("SELECT count, set_at FROM stock_counts WHERE slug=?", (slug,)).fetchone()
+    return None if r is None else (int(r[0]), r[1])
 
 
 def log_for(cx, slug, limit=50):
@@ -211,9 +250,18 @@ def _append_log(cx, slug, delta, new_count, who, reason, order_id=None):
          (int(order_id) if order_id is not None else None)))
 
 
+def _lock_count(cx, slug):
+    """Lock one count row for this transaction. A no-op UPDATE: on Postgres it takes the
+    row lock (as SELECT ... FOR UPDATE would); on SQLite it takes the write lock, so no
+    other writer commits in between. Returns whether the row exists."""
+    return cx.execute("UPDATE stock_counts SET updated_at=updated_at WHERE slug=?",
+                      (slug,)).rowcount == 1
+
+
 def set_count(cx, slug, count, *, who, reason, catalog=None):
-    """Set a product's count (a shelf count, a delivery). Logs the change. Returns
-    {"slug", "count", "delta"}. Raises ValueError on a bad slug or count."""
+    """Set a product's count (a shelf count, a delivery). Logs the exact change from the
+    value it overwrote. Returns {"slug", "count", "delta"}. Raises ValueError on a bad
+    slug, count or reason."""
     cat = _catalog(catalog)
     slug = (slug or "").strip()
     p = cat.get(slug)
@@ -232,46 +280,45 @@ def set_count(cx, slug, count, *, who, reason, catalog=None):
     if not reason:
         raise ValueError("a reason is required")
     init_tables(cx)
-    old = get_count(cx, slug)
     now = _now()
-    if old is None:
-        cx.execute("INSERT INTO stock_counts (slug, count, updated_at) VALUES (?,?,?)",
-                   (slug, n, now))
-    else:
-        cx.execute("UPDATE stock_counts SET count=?, updated_at=? WHERE slug=?",
-                   (n, now, slug))
-    delta = n - (old or 0)
-    _append_log(cx, slug, delta, n, who, reason)
-    cx.commit()
-    _invalidate()
+    try:
+        cur = cx.execute(
+            "INSERT INTO stock_counts (slug, count, set_at, updated_at) VALUES (?,?,?,?) "
+            "ON CONFLICT (slug) DO NOTHING", (slug, n, now, now))
+        if cur.rowcount == 1:
+            old = 0
+        else:
+            _lock_count(cx, slug)
+            old = get_count(cx, slug)
+            cx.execute("UPDATE stock_counts SET count=?, set_at=?, updated_at=? WHERE slug=?",
+                       (n, now, now, slug))
+        delta = n - old
+        _append_log(cx, slug, delta, n, who, reason)
+        cx.commit()
+    except Exception:
+        _safe_rollback(cx)
+        raise
+    _invalidate_zero()
     check_alerts(cx, [slug], catalog=cat)
     return {"slug": slug, "count": n, "delta": delta}
 
 
-def _move(cx, order_id, slug, qty, direction, *, who, reason):
-    """Claim (order, slug, direction) and apply it. Returns the new count, or None when
-    this move was already made (or the slug has no count). Caller commits."""
-    if get_count(cx, slug) is None:
-        return None
-    cur = cx.execute(
-        "INSERT INTO stock_order_moves (order_id, slug, direction, qty, moved_at) "
-        "VALUES (?,?,?,?,?) ON CONFLICT (order_id, slug, direction) DO NOTHING",
-        (int(order_id), slug, direction, int(qty), _now()))
-    if cur.rowcount != 1:
-        return None
-    delta = -int(qty) if direction == "out" else int(qty)
-    cx.execute("UPDATE stock_counts SET count = count + ?, updated_at=? WHERE slug=?",
-               (delta, _now(), slug))
-    new = get_count(cx, slug)
-    _append_log(cx, slug, delta, new, who, reason, order_id)
-    return new
-
-
-def _safe_rollback(cx):
+def _parse_qty(v, default):
+    if v is None or v == "":
+        return default
     try:
-        cx.rollback()
-    except Exception:  # noqa: BLE001
-        pass
+        return int(float(v))
+    except (TypeError, ValueError):
+        return default
+
+
+def _line_slug_qty(it):
+    """(slug, qty) for one stored order line. A GrooveKart line carries its matched
+    product as stock_slug and its quantity as stock_qty (set at ingestion). A line with
+    no quantity is one bottle; an explicit 0 or less is none."""
+    slug = str(it.get("slug") or it.get("stock_slug") or "").strip()
+    raw = it.get("qty") if it.get("qty") not in (None, "") else it.get("stock_qty")
+    return slug, _parse_qty(raw, 1)
 
 
 def units_for_items(items, catalog) -> dict:
@@ -291,10 +338,7 @@ def units_for_items(items, catalog) -> dict:
                 cp = catalog.get(cs) if cs else None
                 if not cp or cp.get("inactive") or cs in seen:
                     continue
-                try:
-                    cq = max(1, int((comp or {}).get("qty") or 1))
-                except (TypeError, ValueError):
-                    cq = 1
+                cq = max(1, _parse_qty((comp or {}).get("qty"), 1))
                 _add(cs, qty * cq, seen | {cs})
             return
         if p and p.get("made_to_order"):
@@ -304,82 +348,161 @@ def units_for_items(items, catalog) -> dict:
     for it in (items or []):
         if not isinstance(it, dict):
             continue
-        slug = str(it.get("slug") or "").strip()
+        slug, qty = _line_slug_qty(it)
         if not slug or it.get("kind") == "membership" or slug.startswith("membership:"):
             continue
-        try:
-            qty = int(it.get("qty") or 0)
-        except (TypeError, ValueError):
-            qty = 0
         if qty > 0:
             _add(slug, qty, {slug})
     return out
 
 
-def _order_items(cx, order_id):
-    r = cx.execute("SELECT items_json FROM orders WHERE id=?", (int(order_id),)).fetchone()
-    if not r:
-        return []
+def _parse_items(raw):
     try:
-        items = json.loads(r[0] or "[]")
+        items = json.loads(raw or "[]")
     except (TypeError, ValueError):
         return []
     return items if isinstance(items, list) else []
 
 
-def on_order_paid(cx, order_id, catalog=None):
-    """Take a paid order's bottles off the count, once. Never raises: payment must
-    never fail because stock keeping did. Returns {slug: new_count} for moves made."""
+def _apply(cx, slug, delta, *, who, reason, order_id):
+    """Add `delta` to a count (negative takes bottles off) and log it. Caller holds the
+    transaction."""
+    cx.execute("UPDATE stock_counts SET count = count + ?, updated_at=? WHERE slug=?",
+               (int(delta), _now(), slug))
+    _append_log(cx, slug, delta, get_count(cx, slug), who, reason, order_id)
+
+
+def sync_order(cx, order_id, catalog=None):
+    """Make the shelf reflect this order as it stands NOW. Never raises.
+
+    Locks the order row (a no-op UPDATE: a row lock on Postgres, the write lock on
+    SQLite), re-reads its status, and works out what it should hold off the shelf:
+    its bottles when it is live (paid, or a GrooveKart order, and not cancelled), else
+    none. Only the difference from what it already holds moves. A cancel committed
+    first means a later pay hook finds it cancelled and takes nothing. Returns
+    {slug: new_count} for counts that moved."""
     if not enabled():
         return {}
     try:
         cat = _catalog(catalog)
         init_tables(cx)
-        units = units_for_items(_order_items(cx, order_id), cat)
+        if cx.execute("UPDATE orders SET updated_at=updated_at WHERE id=?",
+                      (int(order_id),)).rowcount != 1:
+            cx.commit()
+            return {}
+        r = cx.execute("SELECT status, pay_status, source, items_json, "
+                       "COALESCE(paid_at, created_at) FROM orders WHERE id=?",
+                       (int(order_id),)).fetchone()
+        status, pay, source, items_json, sold_at = tuple(r)
+        gk = source == "groovekart"
+        live = (status or "") != "cancelled" and (pay == "paid" or gk)
+        who = "groovekart" if gk else "order"
+        want = units_for_items(_parse_items(items_json), cat) if live else {}
+        held = {row[0]: (int(row[1]), int(row[2])) for row in cx.execute(
+            "SELECT slug, qty, taken FROM stock_order_moves WHERE order_id=?",
+            (int(order_id),)).fetchall()}
         moved = {}
-        for slug, qty in sorted(units.items()):
-            new = _move(cx, order_id, slug, qty, "out", who="order",
-                        reason=f"paid order #{order_id}")
-            if new is not None:
-                moved[slug] = new
+        for slug in sorted(set(want) | set(held)):
+            q, t = held.get(slug, (0, 0))
+            d = want.get(slug, 0)
+            if d == q and (live or t == 0):
+                continue
+            counted = _lock_count(cx, slug)
+            if not live:
+                new_q, new_t = 0, 0
+            else:
+                new_q, new_t = d, t
+                row = _count_row(cx, slug) if counted else None
+                # A sale before the count was last set is already in that count.
+                if row is not None and str(sold_at or "") >= str(row[1] or ""):
+                    new_t = max(0, t + (d - q))
+                elif d < q:
+                    new_t = max(0, min(t, d))
+            if counted and new_t != t:
+                ref = (f"cancelled order #{order_id}" if not live else
+                       f"GrooveKart order #{order_id}" if gk else f"paid order #{order_id}")
+                _apply(cx, slug, t - new_t, who=who, reason=ref, order_id=order_id)
+                moved[slug] = get_count(cx, slug)
+            if slug in held:
+                cx.execute("UPDATE stock_order_moves SET qty=?, taken=?, updated_at=? "
+                           "WHERE order_id=? AND slug=?",
+                           (new_q, new_t, _now(), int(order_id), slug))
+            else:
+                cx.execute("INSERT INTO stock_order_moves (order_id, slug, qty, taken, "
+                           "updated_at) VALUES (?,?,?,?,?)",
+                           (int(order_id), slug, new_q, new_t, _now()))
         cx.commit()
         if moved:
-            _invalidate()
+            _invalidate_zero()
             check_alerts(cx, list(moved), catalog=cat)
         return moved
     except Exception as e:  # noqa: BLE001
         _safe_rollback(cx)
-        print(f"[stock] paid-order decrement skipped for #{order_id}: {e!r}", flush=True)
+        print(f"[stock] sync skipped for order #{order_id}: {e!r}", flush=True)
         return {}
+
+
+def on_order_paid(cx, order_id, catalog=None):
+    return sync_order(cx, order_id, catalog)
 
 
 def on_order_cancelled(cx, order_id, catalog=None):
-    """Put back every bottle this order took off, once. Reads the moves log rather
-    than items_json, so an order edited after payment returns what it actually took.
-    Never raises. Returns {slug: new_count}."""
+    return sync_order(cx, order_id, catalog)
+
+
+# ── self-healing ───────────────────────────────────────────────────────────────
+
+def reconcile(cx, *, days=RECONCILE_DAYS, catalog=None):
+    """Heal a crash between an order's commit and its stock move. Syncs every order in
+    the last `days` that is live with no move recorded, and every cancelled order that
+    still holds bottles. Returns the order ids synced."""
     if not enabled():
-        return {}
+        return []
     try:
         init_tables(cx)
-        rows = cx.execute(
-            "SELECT slug, qty FROM stock_order_moves WHERE order_id=? AND direction='out'",
-            (int(order_id),)).fetchall()
-        moved = {}
-        for slug, qty in sorted((r[0], int(r[1])) for r in rows):
-            new = _move(cx, order_id, slug, qty, "back", who="order",
-                        reason=f"cancelled order #{order_id}")
-            if new is not None:
-                moved[slug] = new
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=int(days))).isoformat()
+        ids = [int(r[0]) for r in cx.execute(
+            "SELECT o.id FROM orders o WHERE COALESCE(o.status,'') <> 'cancelled' "
+            "AND (o.pay_status='paid' OR o.source='groovekart') "
+            "AND COALESCE(o.paid_at, o.created_at) >= ? "
+            "AND NOT EXISTS (SELECT 1 FROM stock_order_moves m WHERE m.order_id=o.id)",
+            (cutoff,)).fetchall()]
+        ids += [int(r[0]) for r in cx.execute(
+            "SELECT DISTINCT m.order_id FROM stock_order_moves m JOIN orders o "
+            "ON o.id=m.order_id WHERE o.status='cancelled' AND m.taken > 0").fetchall()]
         cx.commit()
-        if moved:
-            _invalidate()
-            check_alerts(cx, list(moved), catalog=catalog)
-        return moved
     except Exception as e:  # noqa: BLE001
         _safe_rollback(cx)
-        print(f"[stock] cancel restore skipped for #{order_id}: {e!r}", flush=True)
-        return {}
+        print(f"[stock] reconcile skipped: {e!r}", flush=True)
+        return []
+    for oid in sorted(set(ids)):
+        sync_order(cx, oid, catalog)
+    return sorted(set(ids))
 
+
+def maybe_reconcile(cx, catalog=None):
+    """Run reconcile at most once per RECONCILE_EVERY_HOURS across all workers: the
+    first caller to advance `stock_meta.last_reconcile` runs it. Never raises."""
+    if not enabled():
+        return None
+    try:
+        init_tables(cx)
+        now = datetime.now(timezone.utc)
+        stale = (now - timedelta(hours=RECONCILE_EVERY_HOURS)).isoformat()
+        cur = cx.execute("INSERT INTO stock_meta (key, value) VALUES ('last_reconcile', ?) "
+                         "ON CONFLICT (key) DO NOTHING", (now.isoformat(),))
+        claimed = cur.rowcount == 1 or cx.execute(
+            "UPDATE stock_meta SET value=? WHERE key='last_reconcile' AND value < ?",
+            (now.isoformat(), stale)).rowcount == 1
+        cx.commit()
+    except Exception as e:  # noqa: BLE001
+        _safe_rollback(cx)
+        print(f"[stock] reconcile claim skipped: {e!r}", flush=True)
+        return None
+    return reconcile(cx, catalog=catalog) if claimed else None
+
+
+# ── GrooveKart ─────────────────────────────────────────────────────────────────
 
 def groovekart_lines(products) -> list:
     """[(name, qty)] from a GrooveKart webhook's products[]. Quantity is
@@ -391,24 +514,35 @@ def groovekart_lines(products) -> list:
         name = str(item.get("product_name") or item.get("name") or "").strip()
         if not name:
             continue
-        try:
-            qty = int(float(item.get("product_quantity") or item.get("quantity") or 1))
-        except (TypeError, ValueError):
-            qty = 1
+        qty = _parse_qty(item.get("product_quantity") or item.get("quantity"), 1)
         out.append((name, max(1, qty)))
     return out
 
 
-def record_unmatched(cx, name, qty, ref):
-    now = _now()
-    cur = cx.execute(
-        "UPDATE stock_unmatched_names SET times=times+1, qty=qty+?, last_seen=?, last_ref=? "
-        "WHERE name=?", (int(qty), now, str(ref or ""), name))
-    if cur.rowcount == 0:
-        cx.execute(
-            "INSERT INTO stock_unmatched_names (name, times, qty, first_seen, last_seen, "
-            "last_ref) VALUES (?,?,?,?,?,?) ON CONFLICT (name) DO NOTHING",
-            (name, 1, int(qty), now, now, str(ref or "")))
+def groovekart_items(products, catalog=None) -> list:
+    """The order row's items for a GrooveKart order: [{"name", "stock_qty"}], plus
+    "stock_slug" when the name matches a product EXACTLY (alias, name or title). The
+    keys are stock_* so no other reader of items_json (packing, repertoire) changes."""
+    from dashboard.practitioner_portal import exact_name_to_slug
+    cat = _catalog(catalog)
+    out = []
+    for name, qty in groovekart_lines(products):
+        it = {"name": name, "stock_qty": qty}
+        slug = exact_name_to_slug(name, cat)
+        if slug:
+            it["stock_slug"] = slug
+        out.append(it)
+    return out
+
+
+def delivery_key(payload) -> str:
+    """The GrooveKart order id, else a hash of the payload."""
+    p = payload if isinstance(payload, dict) else {}
+    ref = p.get("id") or p.get("order_id") or p.get("reference")
+    if ref not in (None, ""):
+        return f"id:{ref}"
+    blob = json.dumps(payload, sort_keys=True, default=str)
+    return "sha256:" + hashlib.sha256(blob.encode()).hexdigest()
 
 
 def list_unmatched(cx) -> list:
@@ -418,54 +552,35 @@ def list_unmatched(cx) -> list:
         "FROM stock_unmatched_names ORDER BY last_seen DESC").fetchall()]
 
 
-def on_groovekart_order(cx, order_id, products, catalog=None, ref=""):
-    """A GrooveKart order comes off the count when it arrives: GrooveKart never says
-    when it is paid. Names are matched with practitioner_portal.name_to_slug. A name
-    that matches nothing is recorded for the console. Total: never raises.
-    `order_id` may be None (the order row was not written); then names are still
-    matched and recorded, but nothing is decremented, since there is no key to make
-    a retry idempotent."""
+def on_groovekart_delivery(cx, order_id, products, *, key, ref="", catalog=None):
+    """A GrooveKart delivery: list its unmatched names once per delivery, then sync its
+    order (if the row was written). The marker insert and the name counts commit
+    together, and the names are counted only when the marker inserted. Never raises."""
     if not enabled():
         return {}
     try:
-        from dashboard.practitioner_portal import name_to_slug
         cat = _catalog(catalog)
         init_tables(cx)
-        items, seen_unmatched = [], False
-        for name, qty in groovekart_lines(products):
-            slug = name_to_slug(name, cat)
-            if slug:
-                items.append({"slug": slug, "qty": qty})
-            elif order_id is None or not _already_moved(cx, order_id):
-                record_unmatched(cx, name, qty, ref)
-                seen_unmatched = True
-        moved = {}
-        if order_id is not None:
-            for slug, qty in sorted(units_for_items(items, cat).items()):
-                new = _move(cx, order_id, slug, qty, "out", who="groovekart",
-                            reason=f"GrooveKart order {ref or order_id}")
-                if new is not None:
-                    moved[slug] = new
-            # A marker so a webhook retry does not count its unmatched names twice.
-            cx.execute(
-                "INSERT INTO stock_order_moves (order_id, slug, direction, qty, moved_at) "
-                "VALUES (?,?,?,?,?) ON CONFLICT (order_id, slug, direction) DO NOTHING",
-                (int(order_id), "", "gk-seen", 0, _now()))
+        cur = cx.execute("INSERT INTO stock_gk_deliveries (delivery_key, seen_at) "
+                         "VALUES (?,?) ON CONFLICT (delivery_key) DO NOTHING", (key, _now()))
+        if cur.rowcount == 1:
+            now = _now()
+            for it in groovekart_items(products, cat):
+                if it.get("stock_slug"):
+                    continue
+                if cx.execute(
+                        "UPDATE stock_unmatched_names SET times=times+1, qty=qty+?, "
+                        "last_seen=?, last_ref=? WHERE name=?",
+                        (it["stock_qty"], now, str(ref or ""), it["name"])).rowcount == 0:
+                    cx.execute(
+                        "INSERT INTO stock_unmatched_names (name, times, qty, first_seen, "
+                        "last_seen, last_ref) VALUES (?,?,?,?,?,?)",
+                        (it["name"], 1, it["stock_qty"], now, now, str(ref or "")))
         cx.commit()
-        if moved:
-            _invalidate()
-            check_alerts(cx, list(moved), catalog=cat)
-        return moved if not seen_unmatched else dict(moved, _unmatched=True)
     except Exception as e:  # noqa: BLE001
         _safe_rollback(cx)
-        print(f"[stock] GrooveKart decrement skipped for {ref or order_id}: {e!r}", flush=True)
-        return {}
-
-
-def _already_moved(cx, order_id):
-    return cx.execute(
-        "SELECT 1 FROM stock_order_moves WHERE order_id=? AND direction='gk-seen'",
-        (int(order_id),)).fetchone() is not None
+        print(f"[stock] GrooveKart names skipped for {ref}: {e!r}", flush=True)
+    return sync_order(cx, order_id, catalog) if order_id is not None else {}
 
 
 # ── average monthly sales ──────────────────────────────────────────────────────
@@ -491,19 +606,30 @@ def monthly_sales(cx, catalog=None, *, now=None) -> dict:
     """{slug: average bottles sold per month} over the last AVG_WINDOW_DAYS, from every
     order source (Glen, 2026-11-06: "combine all order sources"):
 
-    - `orders` lines: slug + qty. Counted when paid, or shipped/delivered/done, and not
-      cancelled. GrooveKart orders carry names only: matched with name_to_slug, 1 each.
+    - `orders` lines: slug + qty (no qty is 1). Counted when paid, or
+      shipped/delivered/done, and not cancelled. GrooveKart orders count unless
+      cancelled, by stock_slug/stock_qty, else by an EXACT name match, 1 each.
     - `purchase_history` lines (FileMaker 'fmp', older 'groovekart'): no qty, 1 each.
 
-    A purchase_history line with the same lowercase email and slug as an `orders` line
-    within DEDUPE_DAYS is the same sale, and counts once. Bundles count against their
-    components. Unmatched lines and made-to-order products are left out."""
-    from dashboard.practitioner_portal import name_to_slug
+    A line with the same lowercase email and slug as a line from ANOTHER source within
+    DEDUPE_DAYS is the same sale, and counts once: orders vs history, and fmp vs
+    groovekart history. Two lines from the same source are two sales. Bundles count
+    against their components. Unmatched lines and made-to-order products are left out."""
+    from dashboard.practitioner_portal import exact_name_to_slug
     cat = _catalog(catalog)
     today = (now or datetime.now(timezone.utc)).date()
     start = today - timedelta(days=AVG_WINDOW_DAYS)
     cutoff = (start - timedelta(days=DEDUPE_DAYS)).isoformat()
-    order_lines = []            # (email, slug, day, qty)
+    seen = {}                   # (email, slug) -> [(day, source)]
+    totals = {}
+
+    def _count(slug, qty, d):
+        if d < start or d > today:
+            return
+        for s, n in units_for_items([{"slug": slug, "qty": qty}], cat).items():
+            if s in cat:
+                totals[s] = totals.get(s, 0) + n
+
     if _table_exists(cx, "orders"):
         for r in cx.execute(
                 "SELECT email, items_json, source, COALESCE(paid_at, created_at), status, "
@@ -514,47 +640,32 @@ def monthly_sales(cx, catalog=None, *, now=None) -> dict:
             if not (gk or pay == "paid" or status in ("paid", "shipped", "delivered", "done")):
                 continue
             d = _day(at)
-            try:
-                items = json.loads(items_json or "[]")
-            except (TypeError, ValueError):
-                items = []
-            for it in (items if isinstance(items, list) else []):
+            if not d:
+                continue
+            em = (email or "").strip().lower()
+            for it in _parse_items(items_json):
                 if not isinstance(it, dict):
                     continue
-                slug = str(it.get("slug") or "").strip()
+                slug, qty = _line_slug_qty(it)
                 if not slug and gk:
-                    slug = name_to_slug(str(it.get("name") or ""), cat) or ""
-                try:
-                    qty = int(it.get("qty") or (1 if gk else 0))
-                except (TypeError, ValueError):
-                    qty = 0
-                if slug and qty > 0 and d:
-                    order_lines.append(((email or "").strip().lower(), slug, d, qty))
-    seen = {}
-    for em, slug, d, _q in order_lines:
-        seen.setdefault((em, slug), []).append(d)
-    totals = {}
-
-    def _count(slug, qty, d):
-        if d < start or d > today:
-            return
-        for s, n in units_for_items([{"slug": slug, "qty": qty}], cat).items():
-            if s in cat:
-                totals[s] = totals.get(s, 0) + n
-
-    for em, slug, d, qty in order_lines:
-        _count(slug, qty, d)
+                    slug = exact_name_to_slug(str(it.get("name") or ""), cat) or ""
+                if slug and qty > 0:
+                    seen.setdefault((em, slug), []).append((d, "orders"))
+                    _count(slug, qty, d)
     if _table_exists(cx, "purchase_history"):
         for r in cx.execute(
-                "SELECT email, slug, purchased_at FROM purchase_history "
-                "WHERE source IN ('fmp','groovekart') AND purchased_at >= ?",
-                (cutoff,)).fetchall():
-            em, slug, at = (str(r[0] or "").strip().lower(), str(r[1] or ""), r[2])
+                "SELECT email, slug, purchased_at, source FROM purchase_history "
+                "WHERE source IN ('fmp','groovekart') AND purchased_at >= ? "
+                "ORDER BY purchased_at", (cutoff,)).fetchall():
+            em, slug, at, src = (str(r[0] or "").strip().lower(), str(r[1] or ""), r[2],
+                                 str(r[3] or ""))
             d = _day(at)
             if not d or not slug:
                 continue
-            if any(abs((d - od).days) <= DEDUPE_DAYS for od in seen.get((em, slug), ())):
+            prior = seen.setdefault((em, slug), [])
+            if any(s != src and abs((d - od).days) <= DEDUPE_DAYS for od, s in prior):
                 continue
+            prior.append((d, src))
             _count(slug, 1, d)
     months = AVG_WINDOW_DAYS / _DAYS_PER_MONTH
     return {s: n / months for s, n in totals.items()}
@@ -579,19 +690,35 @@ def _recipients():
     return RECIPIENTS
 
 
-def _send_all(subject, body):
+def _send_one(to, subject, body) -> bool:
+    """True when the mail went. Under pytest inbox.send_email sends nothing."""
     from dashboard import inbox
-    for to in _recipients():
+    try:
+        r = inbox.send_email(to, subject, body)
+    except Exception as e:  # noqa: BLE001
+        print(f"[stock] alert to {to} failed: {e!r}", flush=True)
+        return False
+    return not (isinstance(r, dict) and r.get("error"))
+
+
+def _spawn(fn):
+    """Sends run in the background: an order never waits on, or fails on, mail."""
+    threading.Thread(target=fn, daemon=True).start()
+
+
+def _deliver(slug, kind, to, subject, body):
+    ok = _send_one(to, subject, body)
+    try:
+        cx = db.connect(db_path())
         try:
-            inbox.send_email(to, subject, body)
-        except Exception as e:  # noqa: BLE001
-            print(f"[stock] alert to {to} failed: {e!r}", flush=True)
-
-
-def _notify(subject, body):
-    """Sent in the background: an order must never wait on, or fail on, mail. Under
-    pytest inbox.send_email sends nothing (PYTEST_CURRENT_TEST guard)."""
-    threading.Thread(target=_send_all, args=(subject, body), daemon=True).start()
+            cx.execute("UPDATE stock_alert_sends SET state=?, attempted_at=? "
+                       "WHERE slug=? AND kind=? AND recipient=? AND state='pending'",
+                       ("sent" if ok else "failed", _now(), slug, kind, to))
+            cx.commit()
+        finally:
+            cx.close()
+    except Exception as e:  # noqa: BLE001
+        print(f"[stock] alert state not saved for {slug}/{kind}/{to}: {e!r}", flush=True)
 
 
 def _alert_text(kind, name, count, avg):
@@ -607,38 +734,56 @@ def _alert_text(kind, name, count, avg):
 
 
 def check_alerts(cx, slugs, catalog=None):
-    """Fire each alert once per crossing: low (count <= LOW_STOCK_AT) and one month
-    (count < average monthly sales). An alert re-arms when its condition clears.
-    Never raises. Returns the [(slug, kind)] that fired."""
-    fired = []
+    """Low (count <= LOW_STOCK_AT) and one month (count < average monthly sales), once
+    per crossing, to each recipient. Each slug's count row is locked and re-read before
+    deciding, so a stale checker cannot re-arm or fire on an old count. A recipient is
+    claimed 'pending' before its send and marked 'sent' only when the send succeeds; a
+    failed one is retried by the next check. A cleared condition re-arms the alert.
+    Never raises. Returns the [(slug, kind, recipient)] sends started."""
+    starts = []
     try:
         cat = _catalog(catalog)
         avg_map = monthly_sales_cached(cx, cat)
+        retry_before = (datetime.now(timezone.utc)
+                        - timedelta(seconds=SEND_RETRY_AFTER_SECONDS)).isoformat()
         for slug in sorted(set(slugs or ())):
-            count = get_count(cx, slug)
-            if count is None:
+            if not _lock_count(cx, slug):
                 continue
+            count = get_count(cx, slug)
             avg = float(avg_map.get(slug) or 0.0)
             for kind, cond in (("low", count <= LOW_STOCK_AT),
                                ("month", avg > 0 and count < avg)):
-                if cond:
-                    cur = cx.execute(
-                        "INSERT INTO stock_alerts (slug, kind, fired_at) VALUES (?,?,?) "
-                        "ON CONFLICT (slug, kind) DO NOTHING", (slug, kind, _now()))
-                    if cur.rowcount == 1:
-                        fired.append((slug, kind, count, avg))
-                else:
-                    cx.execute("DELETE FROM stock_alerts WHERE slug=? AND kind=?",
+                if not cond:
+                    cx.execute("DELETE FROM stock_alerts WHERE slug=? AND kind=?", (slug, kind))
+                    cx.execute("DELETE FROM stock_alert_sends WHERE slug=? AND kind=?",
                                (slug, kind))
+                    continue
+                cx.execute("INSERT INTO stock_alerts (slug, kind, fired_at) VALUES (?,?,?) "
+                           "ON CONFLICT (slug, kind) DO NOTHING", (slug, kind, _now()))
+                for to in _recipients():
+                    got = cx.execute(
+                        "INSERT INTO stock_alert_sends (slug, kind, recipient, state, "
+                        "attempted_at) VALUES (?,?,?,'pending',?) "
+                        "ON CONFLICT (slug, kind, recipient) DO NOTHING",
+                        (slug, kind, to, _now())).rowcount == 1
+                    if not got:
+                        got = cx.execute(
+                            "UPDATE stock_alert_sends SET state='pending', attempted_at=? "
+                            "WHERE slug=? AND kind=? AND recipient=? AND (state='failed' "
+                            "OR (state='pending' AND attempted_at < ?))",
+                            (_now(), slug, kind, to, retry_before)).rowcount == 1
+                    if got:
+                        starts.append((slug, kind, to, count, avg))
         cx.commit()
     except Exception as e:  # noqa: BLE001
         _safe_rollback(cx)
         print(f"[stock] alert check skipped: {e!r}", flush=True)
         return []
-    for slug, kind, count, avg in fired:
+    for slug, kind, to, count, avg in starts:
         name = (cat.get(slug) or {}).get("name") or slug
-        _notify(*_alert_text(kind, name, count, avg))
-    return [(s, k) for s, k, _c, _a in fired]
+        subject, body = _alert_text(kind, name, count, avg)
+        _spawn(lambda s=slug, k=kind, t=to, su=subject, b=body: _deliver(s, k, t, su, b))
+    return [(s, k, t) for s, k, t, _c, _a in starts]
 
 
 # ── console ────────────────────────────────────────────────────────────────────

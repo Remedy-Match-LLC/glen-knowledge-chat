@@ -577,7 +577,8 @@ def set_order_status(cx, order_id, status):
             _holds.remove_from_hold(cx, order_id)
         except Exception as e:  # never let hold cleanup block the cancel
             print(f"[orders] hold-remove-on-cancel skipped for #{order_id}: {e!r}", flush=True)
-        _stock_on_cancelled(cx, order_id)
+    if cur.rowcount:
+        _stock_sync(cx, order_id)   # cancelled puts bottles back; reinstated takes them
     if status in ("shipped", "delivered", "done") and cur.rowcount:
         try:
             from . import shipped_report_release as _report_release
@@ -651,6 +652,8 @@ def set_order_items_and_total(cx, order_id, items, total_cents):
         "UPDATE orders SET items_json=?, total_cents=?, updated_at=? WHERE id=?",
         (json.dumps(items or []), int(total_cents or 0), _now(), order_id))
     cx.commit()
+    if cur.rowcount:
+        _stock_sync(cx, order_id)
     return cur.rowcount > 0
 
 
@@ -1126,25 +1129,19 @@ def _consume_ship_credit_on_pay(cx, order_id):
         print(f"[ship_credit] consume-on-pay skipped for #{order_id}: {e!r}", flush=True)
 
 
-def _stock_on_paid(cx, order_id):
-    """Take a paid order's bottles off the shelf count, once (STOCK_COUNTS_ENABLED,
-    Glen 2026-11-06). Flag off: returns before touching anything. Never raises."""
+def _stock_sync(cx, order_id):
+    """Bring the shelf count in line with this order as it now stands: paid takes its
+    bottles off, cancelled puts them back, reinstated takes them again, each once
+    (STOCK_COUNTS_ENABLED, Glen 2026-11-06). Then the once-a-day self-heal, if due.
+    Flag off: returns before touching anything. Never raises: payment, a cancel or a
+    status change must never fail because stock keeping did."""
     try:
         from dashboard import stock_counts as _stock
         if _stock.enabled():
-            _stock.on_order_paid(cx, order_id)
-    except Exception as e:  # payment must never fail because stock keeping did
-        print(f"[orders] stock decrement skipped for #{order_id}: {e!r}", flush=True)
-
-
-def _stock_on_cancelled(cx, order_id):
-    """Put a cancelled order's bottles back, once. Same flag. Never raises."""
-    try:
-        from dashboard import stock_counts as _stock
-        if _stock.enabled():
-            _stock.on_order_cancelled(cx, order_id)
-    except Exception as e:  # never let stock keeping block the cancel
-        print(f"[orders] stock restore skipped for #{order_id}: {e!r}", flush=True)
+            _stock.sync_order(cx, order_id)
+            _stock.maybe_reconcile(cx)
+    except Exception as e:  # noqa: BLE001
+        print(f"[orders] stock sync skipped for #{order_id}: {e!r}", flush=True)
 
 
 def set_order_payment(cx, order_id, *, method, amount_cents):
@@ -1158,7 +1155,7 @@ def set_order_payment(cx, order_id, *, method, amount_cents):
     if cur.rowcount:
         _ensure_portal_receipt(cx, order_id)
         _consume_ship_credit_on_pay(cx, order_id)
-        _stock_on_paid(cx, order_id)
+        _stock_sync(cx, order_id)
     return cur.rowcount > 0
 
 
@@ -1188,7 +1185,7 @@ def mark_order_paid_keep_status(cx, order_id, *, method, amount_cents):
     cx.commit()
     if cur.rowcount:
         _ensure_portal_receipt(cx, order_id)
-        _stock_on_paid(cx, order_id)
+        _stock_sync(cx, order_id)
     return cur.rowcount > 0
 
 
