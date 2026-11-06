@@ -23,6 +23,14 @@ from dashboard.biofield_authoring import init_auth_tables, create_test, add_chai
 from dashboard.biofield_report_html import render_fee_panel
 
 
+@pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These invoices are a person's. An unknown species now leaves FFs off the
+    invoice (2026-11-06 review, finding 8b), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
 # ── The selector and the bottle multiplier (the Intake app) ──────────────────
 
 def _fee_state():

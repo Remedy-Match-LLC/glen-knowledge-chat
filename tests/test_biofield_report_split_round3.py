@@ -17,6 +17,14 @@ from tests.test_biofield_report_split import (  # noqa: F401  (fixtures)
 
 
 @pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These invoices are a person's. An unknown species now leaves FFs off the
+    invoice (2026-11-06 review, finding 8b), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
+@pytest.fixture(autouse=True)
 def _block_smtp(monkeypatch):
     def refuse(*a, **k):
         raise RuntimeError("no mail in tests")

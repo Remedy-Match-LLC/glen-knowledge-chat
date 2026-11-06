@@ -14,6 +14,15 @@ from dashboard import biofield_clinical_sections as cs
 from dashboard import biofield_plan_report as pr
 from dashboard import biofield_report_split as rs
 
+
+@pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These invoices are a person's. An unknown species now leaves FFs off the
+    invoice (2026-11-06 review, finding 8b), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
 INFO = "ED12 Kidney Energetic Driver Infoceutical"
 CATALOG = [{"slug": "liver-support", "name": "Liver Support"},
            {"slug": "ed12", "name": INFO},

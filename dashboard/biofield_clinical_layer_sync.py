@@ -270,13 +270,18 @@ def _digest(layers, changes, ticks=None):
     return hashlib.sha256(body.encode()).hexdigest()[:16]
 
 
-def apply(cx, test_id, items, digest, chosen, resolve=None, dosing=None, now=""):
+def apply(cx, test_id, items, digest, chosen, resolve=None, dosing=None, now="",
+          refuse=None):
     """Write the chosen changes, re-planned inside the write lock. Raises Stale when
     the plan's digest is not the one previewed. Returns a count per kind.
 
     `chosen` is the list of change ids Glen ticked. One that is not in the plan is
-    refused as stale too: it can only come from an older preview."""
+    refused as stale too: it can only come from an older preview.
+
+    `refuse(name)` True leaves a remedy off: an animal gets infoceuticals only (Glen,
+    2026-11-06). The caller collects the names."""
     dosing = dosing or (lambda cx, name: {})
+    refuse = refuse or (lambda name: False)
     from dashboard.biofield_clinical_head_term import card_rids, link_wording
     from dashboard.biofield_stress import init_stress_tables
     init_stress_tables(cx)   # it commits, so before the write lock, never inside it
@@ -302,7 +307,7 @@ def apply(cx, test_id, items, digest, chosen, resolve=None, dosing=None, now="")
             c = ids[cid]
             if c["kind"] == "add":
                 k = _norm(c["remedy"])
-                if k in landed:
+                if k in landed or refuse(c["remedy"]):
                     continue
                 landed.add(k)
                 g = layers[_norm(c["layer"])]
@@ -315,7 +320,8 @@ def apply(cx, test_id, items, digest, chosen, resolve=None, dosing=None, now="")
                 done["removed"] += 1
             elif c["kind"] == "new":
                 last += 1
-                names = [n for n in c["remedies"] if _norm(n) not in landed]
+                names = [n for n in c["remedies"] if _norm(n) not in landed
+                         and not refuse(n)]
                 landed |= {_norm(n) for n in names}
                 # A pattern-named layer carries the pattern as its Tail too; the
                 # wording goes to its Balances. A topic-named one keeps the wording.

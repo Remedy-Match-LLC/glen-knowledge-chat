@@ -227,7 +227,10 @@ def _client(tmp_path, email):
                      scan_lookup=lambda e: {"found": False, "layers": []})
     client = app.test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
-    client.post(f"/author/{tid}/header", json={"name": "Sasha", "email": email,
+    # Each intake names its own client. A name that matches nobody on the email no
+    # longer borrows that email's species (2026-11-06 review, finding 3).
+    name = {CAT: "Sasha", PERSON: "Karin"}.get(email, "Sasha")
+    client.post(f"/author/{tid}/header", json={"name": name, "email": email,
                                                "date": "2026-09-21"})
     return client, tid, db
 

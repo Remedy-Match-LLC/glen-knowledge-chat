@@ -18,7 +18,9 @@ import pytest
 import dashboard.biofield_reveal_import as RI
 from dashboard import biofield_stress as st
 from dashboard.animal_infoceuticals import is_infoceutical_remedy
-from dashboard.biofield_e4l import intake_e4l_client, species_for_intake
+from dashboard.biofield_e4l import (intake_e4l_client, record_species_answer,
+                                    resolve_intake_subject, species_for_intake,
+                                    suggest_intake_client)
 
 OWNER = "owner@x.com"
 PET = "pet@x.com"
@@ -67,12 +69,24 @@ def _intake(client, name, email, client_id=None):
     return tid
 
 
+def _pet(client):
+    """The dog's intake on the owner's email, after Glen confirms the suggestion."""
+    tid = _intake(client, "Rover Owner", OWNER)
+    j = client.post(f"/author/{tid}/e4l-client/confirm", json={"client_id": 1002}).get_json()
+    assert j["ok"] is True, j
+    return tid
+
+
 # ---- the identity and species read --------------------------------------------------
 
-def test_the_pet_on_the_owners_email_reads_as_a_dog(tmp_path):
+def test_the_pet_on_the_owners_email_is_suggested_not_taken(tmp_path):
+    """Review finding 2: a namesake on another email is only offered. Until Glen
+    confirms, the subject is unknown and he is asked for the species."""
     p = _e4l(tmp_path)
-    assert species_for_intake(p, None, OWNER, "Rover Owner") == "Dog"
-    assert intake_e4l_client(p, None, OWNER, "Rover Owner")["email"] == PET
+    assert species_for_intake(p, None, OWNER, "Rover Owner") is None
+    assert intake_e4l_client(p, None, OWNER, "Rover Owner") is None
+    sug = suggest_intake_client(p, OWNER, "Rover Owner")
+    assert sug["client_id"] == 1002 and sug["email"] == PET and sug["species"] == "Dog"
 
 
 def test_the_stored_e4l_client_id_wins(tmp_path):
@@ -99,14 +113,15 @@ def test_a_pet_with_no_species_does_not_borrow_the_owners(tmp_path):
 
 def test_two_namesakes_name_nobody(tmp_path):
     p = _e4l(tmp_path, extra=[(1004, "Rover Owner", "other@x.com", "Dog", "")])
-    assert intake_e4l_client(p, None, OWNER, "Rover Owner")["by"] == "email"
+    assert intake_e4l_client(p, None, OWNER, "Rover Owner") is None
+    assert suggest_intake_client(p, OWNER, "Rover Owner") is None
 
 
 # ---- every surface, through the real routes -----------------------------------------
 
 def test_suggestions_treat_the_pet_as_an_animal(tmp_path):
     client, db = _app(tmp_path)
-    tid = _intake(client, "Rover Owner", OWNER)
+    tid = _pet(client)
     assert st.animal_infoceuticals(sqlite3.connect(db), tid) is not None
     tid2 = _intake(client, "Ann Owner", OWNER)
     assert st.animal_infoceuticals(sqlite3.connect(db), tid2) is None
@@ -122,7 +137,7 @@ def test_import_reveal_treats_the_pet_as_an_animal(tmp_path, monkeypatch):
     monkeypatch.setattr(RI, "synthesize_reveal_layers", capture)
     client, _db = _app(tmp_path, scan_lookup=lambda e, client_id=None: {
         "found": True, "scan_id": 77, "layers": []})
-    tid = _intake(client, "Rover Owner", OWNER)
+    tid = _pet(client)
     client.post(f"/author/{tid}/e4l/import-reveal", json={})
     assert seen.get("is_animal") is True
 
@@ -135,7 +150,7 @@ def _layers(db, tid):
 
 def test_the_plus_button_refuses_an_ff_for_the_pet(tmp_path):
     client, db = _app(tmp_path)
-    tid = _intake(client, "Rover Owner", OWNER)
+    tid = _pet(client)
     j = client.post(f"/author/{tid}/remedy-set/add-one", json={"remedy": FF}).get_json()
     assert j["ok"] is False and j["animal_refused"] == [FF]
     assert _layers(db, tid) == []
@@ -152,7 +167,7 @@ def test_the_plus_button_still_adds_an_ff_for_a_person(tmp_path):
 
 def test_apply_to_chain_drops_the_ffs_for_the_pet(tmp_path):
     client, db = _app(tmp_path)
-    tid = _intake(client, "Rover Owner", OWNER)
+    tid = _pet(client)
     j = client.post(f"/author/{tid}/remedy-set/apply-to-chain",
                     json={"remedies": [FF, INFO]}).get_json()
     assert j["animal_refused"] == [FF] and j["added"] == 1
@@ -161,7 +176,7 @@ def test_apply_to_chain_drops_the_ffs_for_the_pet(tmp_path):
 
 def test_a_layer_pick_refuses_an_ff_for_the_pet(tmp_path):
     client, db = _app(tmp_path)
-    tid = _intake(client, "Rover Owner", OWNER)
+    tid = _pet(client)
     j = client.post(f"/author/{tid}/layer/1/select", json={"remedy": FF}).get_json()
     assert j["ok"] is False and j["animal_refused"] == [FF]
     assert _layers(db, tid) == []
@@ -198,7 +213,7 @@ def _slugs(calls):
 
 def test_the_invoice_draft_leaves_the_ff_off_for_the_pet(tmp_path):
     client, db, calls = _invoice_app(tmp_path)
-    tid = _intake(client, "Rover Owner", OWNER)
+    tid = _pet(client)
     _chain(db, tid, [FF, INFO])
     j = client.post(f"/author/{tid}/invoice", json={}).get_json()
     assert j["animal_refused"] == [FF]
@@ -230,11 +245,14 @@ def _photos(db):
 
 def test_the_pets_photo_shows_on_an_intake_under_the_owners_email(tmp_path):
     client, db = _app(tmp_path)
-    _intake(client, "Rover Owner", OWNER)
+    _pet(client)
     _photos(db)
-    r = client.get(f"/client-photo/{OWNER}?name=Rover%20Owner")
+    r = client.get(f"/client-photo/{OWNER}?name=Rover%20Owner&cid=1002")
     assert r.status_code == 200 and r.data == b"PET-PHOTO"
-    assert client.get(f"/client-photo-framing/{OWNER}?name=Rover%20Owner").status_code == 200
+    assert client.get(f"/client-photo-framing/{OWNER}?name=Rover%20Owner&cid=1002"
+                      ).status_code == 200
+    # Before Glen confirms, the page holds no id: the owner's email shows nothing.
+    assert client.get(f"/client-photo/{OWNER}?name=Rover%20Owner").status_code == 404
 
 
 def test_the_owners_photo_is_not_shown_for_the_pet(tmp_path):
@@ -341,3 +359,456 @@ def test_an_email_only_intake_still_reads_the_email(tmp_path):
     client, _db = _shared_app(tmp_path)
     tid = _intake(client, "", OWNER)
     assert _panel_scan(client, tid)["scan_id"] == ANN_SCAN
+
+
+# ==== 2026-11-06 review findings ======================================================
+
+def _e4l_rows(tmp_path, rows, scans=(), merges=()):
+    """An e4l.db with these clients, scans (scan_id, client_id, date) and merges."""
+    p = str(tmp_path / "e4l.db")
+    cx = sqlite3.connect(p)
+    cx.execute("CREATE TABLE e4l_clients (client_id INTEGER PRIMARY KEY, name TEXT, "
+               "email TEXT, species TEXT, animal_name TEXT)")
+    cx.executemany("INSERT INTO e4l_clients VALUES (?,?,?,?,?)", rows)
+    cx.execute("CREATE TABLE e4l_scans (scan_id INTEGER PRIMARY KEY, client_id INTEGER, "
+               "scan_date TEXT)")
+    cx.executemany("INSERT INTO e4l_scans VALUES (?,?,?)", scans)
+    cx.execute("CREATE TABLE e4l_scan_results (id INTEGER PRIMARY KEY, scan_id INTEGER, "
+               "item_code TEXT, priority_rank INTEGER)")
+    cx.execute("CREATE TABLE e4l_items (code TEXT, name TEXT, full_name TEXT, "
+               "e4l_description TEXT, category TEXT)")
+    if merges:
+        cx.execute("CREATE TABLE e4l_identity_merges (dup_client_id INTEGER, "
+                   "canonical_client_id INTEGER)")
+        cx.executemany("INSERT INTO e4l_identity_merges VALUES (?,?)", merges)
+    cx.commit()
+    cx.close()
+    return p
+
+
+def _real_app(tmp_path, e4l, **kw):
+    from biofield_local_app import create_app
+    db = str(tmp_path / "chat_log.db")
+    app = create_app(db, e4l_db=e4l, fetch_client_photo=lambda *a, **k: None,
+                     fetch_runner=lambda **k: {"ok": True}, **kw)
+    return app.test_client(), db
+
+
+# -- 1. two clients of one name on one email ---------------------------------------
+
+SAM = [(1005, "Sam Owner", OWNER, "Human", ""), (1006, "Sam Owner", OWNER, "Dog", "Sam")]
+
+
+def test_two_different_people_of_one_name_on_one_email_resolve_to_nobody(tmp_path):
+    p = _e4l_rows(tmp_path, SAM)
+    res = resolve_intake_subject(p, None, OWNER, "Sam Owner")
+    assert res["by"] == "unresolved" and res["ambiguous"] is True
+    assert res["species"] is None              # the owner is asked, never hits[0]'s Dog
+    client, _db = _real_app(tmp_path, p)
+    tid = _intake(client, "Sam Owner", OWNER)
+    j = client.post(f"/author/{tid}/remedy-set/add-one", json={"remedy": FF}).get_json()
+    assert j.get("needs_species") is True
+
+
+def test_two_rows_of_one_name_in_one_merge_group_are_one_person(tmp_path):
+    rows = [(1005, "Sam Owner", OWNER, "Dog", "Sam"), (1006, "Sam Owner", OWNER, "Dog", "Sam")]
+    p = _e4l_rows(tmp_path, rows, merges=[(1006, 1005)])
+    res = resolve_intake_subject(p, None, OWNER, "Sam Owner")
+    assert res["by"] == "email+name" and res["species"] == "Dog"
+
+
+def test_the_stored_id_settles_two_of_one_name(tmp_path):
+    p = _e4l_rows(tmp_path, SAM)
+    assert species_for_intake(p, "1005", OWNER, "Sam Owner") == "Human"
+
+
+# -- 2. the namesake on another email waits for Glen's Confirm ---------------------
+
+def test_the_page_offers_the_namesake_and_confirm_stores_it(tmp_path):
+    client, db = _app(tmp_path)
+    tid = _intake(client, "Rover Owner", OWNER)
+    page = client.get(f"/author/{tid}").get_data(as_text=True)
+    assert "Is this ROVER OWNER, Dog, on another email?" in page
+    assert "confirmE4LClient('1002')" in page
+    # Unconfirmed: species unknown, so the + button asks.
+    assert client.post(f"/author/{tid}/remedy-set/add-one",
+                       json={"remedy": FF}).get_json().get("needs_species") is True
+    bad = client.post(f"/author/{tid}/e4l-client/confirm", json={"client_id": 1001})
+    assert bad.status_code == 409
+    assert client.post(f"/author/{tid}/e4l-client/confirm",
+                       json={"client_id": 1002}).get_json() == {"ok": True,
+                                                                "client_id": "1002"}
+    row = sqlite3.connect(db).execute("SELECT e4l_client_id FROM biofield_auth_tests "
+                                      "WHERE id=?", (int(tid.lstrip("a")),)).fetchone()
+    assert row[0] == "1002"
+    assert "on another email?" not in client.get(f"/author/{tid}").get_data(as_text=True)
+
+
+# -- 3. a name that matches nobody on its email does not borrow the owner -----------
+
+def test_a_name_matching_nobody_on_the_email_is_not_the_owner(tmp_path):
+    client, db = _shared_app(tmp_path)
+    p = str(tmp_path / "e4l.db")
+    assert species_for_intake(p, None, OWNER, "Kitty Owner") is None
+    assert resolve_intake_subject(p, None, OWNER, "Kitty Owner")["by"] == "unresolved"
+    tid = _intake(client, "Kitty Owner", OWNER)
+    ctx = _panel_scan(client, tid)
+    assert ctx["found"] is False and ctx["scan_id"] is None
+    _photos(db)
+    assert client.get(f"/client-photo/{OWNER}?name=Kitty%20Owner").status_code == 404
+
+
+# -- 4. species answers are per subject ---------------------------------------------
+
+BLANK = [(1001, "Ann Owner", OWNER, "", ""), (1003, "Rover Owner", OWNER, "", "Rover")]
+
+
+def test_an_answer_for_the_pet_does_not_answer_for_the_owner(tmp_path):
+    p = _e4l_rows(tmp_path, BLANK)
+    client, _db = _real_app(tmp_path, p)
+    pet = _intake(client, "Rover Owner", OWNER)
+    ann = _intake(client, "Ann Owner", OWNER)
+    assert client.post(f"/author/{pet}/species", json={"species": "dog"}).get_json() == \
+        {"ok": True, "species": "Dog"}
+    assert species_for_intake(p, None, OWNER, "Rover Owner") == "Dog"
+    assert species_for_intake(p, None, OWNER, "Ann Owner") is None
+    assert client.post(f"/author/{ann}/remedy-set/add-one",
+                       json={"remedy": FF}).get_json().get("needs_species") is True
+
+
+def test_an_unresolved_subjects_answer_is_kept_by_email_and_name(tmp_path):
+    p = _e4l_rows(tmp_path, [(1001, "Ann Owner", OWNER, "Human", "")])
+    client, _db = _real_app(tmp_path, p)
+    tid = _intake(client, "Kitty Owner", OWNER)
+    client.post(f"/author/{tid}/species", json={"species": "Cat"})
+    assert species_for_intake(p, None, OWNER, "Kitty Owner") == "Cat"
+    assert species_for_intake(p, None, OWNER, "Other Owner") is None
+    assert species_for_intake(p, None, OWNER, "Ann Owner") == "Human"
+
+
+def test_an_old_email_only_answer_applies_only_to_a_lone_client(tmp_path):
+    """An email-only row from before the migration, on the old table shape."""
+    p = _e4l_rows(tmp_path, BLANK + [(1009, "Solo Person", "solo@x.com", "", "")])
+    cx = sqlite3.connect(p)
+    cx.execute("CREATE TABLE species_answers (email TEXT PRIMARY KEY, species TEXT NOT NULL, "
+               "answered_at TEXT NOT NULL)")
+    cx.executemany("INSERT INTO species_answers VALUES (?,?,'2026-10-01')",
+                   [(OWNER, "Dog"), ("solo@x.com", "Human")])
+    cx.commit()
+    cx.close()
+    assert species_for_intake(p, None, OWNER, "Ann Owner") is None     # two on the email
+    assert species_for_intake(p, None, "solo@x.com", "Solo Person") == "Human"
+    assert species_for_intake(p, None, "solo@x.com", "") == "Human"
+    assert species_for_intake(p, None, "solo@x.com", "Someone Else") is None
+    # The migration is additive: the old rows survive a new answer.
+    record_species_answer(p, OWNER, "Human", client_id=1001)
+    cols = {r[1] for r in sqlite3.connect(p).execute("PRAGMA table_info(species_answers)")}
+    assert {"client_id", "subject_email", "name_key"} <= cols
+    assert species_for_intake(p, None, "solo@x.com", "Solo Person") == "Human"
+    assert species_for_intake(p, None, OWNER, "Ann Owner") == "Human"
+    assert species_for_intake(p, None, OWNER, "Rover Owner") is None
+
+
+# -- 5. the page sends and keeps the client id --------------------------------------
+
+def _save_header_post(h_client_id):
+    """Run the page's own saveHeader under node; return the body it posts."""
+    import json
+    import re
+    import shutil
+    import subprocess
+    from dashboard import biofield_report_html as H
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    fn = re.search(r"async function saveHeader\(\)\{.*?\n \}?astat\('Header saved\.'\);setE4L\(j\)\}",
+                   H._AUTHOR_JS, re.S).group(0)
+    js = """
+var els={h_name:{value:'Rover Owner'},h_email:{value:'owner@x.com'},h_date:{value:'2026-11-06'},
+         h_client_id:{value:%(cid)s}};
+var document={getElementById:function(i){return els[i]||null}};
+function val(i){return els[i]?els[i].value:''}
+function set(i,v){if(els[i])els[i].value=v}
+function orderToken(){return 'tok'}
+function astat(){} function setE4L(){}
+var sent=null;
+async function post(p,b){sent={path:p,body:b};return {ok:true,client_id:'1002'}}
+%(fn)s
+saveHeader().then(function(){console.log(JSON.stringify({sent:sent,kept:els.h_client_id.value}))});
+""" % {"cid": json.dumps(h_client_id), "fn": fn}
+    out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=20)
+    assert out.returncode == 0, out.stderr[-1500:]
+    return json.loads(out.stdout.strip().splitlines()[-1])
+
+
+def test_the_page_posts_the_client_id_it_holds_and_keeps_the_reply():
+    r = _save_header_post("1002")
+    assert r["sent"]["path"] == "/author/__TID__/header"
+    assert r["sent"]["body"]["client_id"] == "1002"
+    assert r["kept"] == "1002"
+
+
+def test_what_the_page_posts_stores_the_id(tmp_path):
+    """The body saveHeader really sends, posted to the route."""
+    client, db = _app(tmp_path)
+    tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
+    body = _save_header_post("1002")["sent"]["body"]
+    j = client.post(f"/author/{tid}/header", json=body).get_json()
+    assert j["client_id"] == "1002"
+    assert species_for_intake(str(tmp_path / "e4l.db"), "1002", OWNER,
+                              "Rover Owner") == "Dog"
+    page = client.get(f"/author/{tid}").get_data(as_text=True)
+    assert 'id=h_client_id value="1002"' in page
+
+
+def test_a_match_on_the_email_by_name_is_stored_and_a_new_name_drops_it(tmp_path):
+    client, db = _shared_app(tmp_path)
+    tid = _intake(client, "Rover Owner", OWNER)
+
+    def stored():
+        return sqlite3.connect(db).execute(
+            "SELECT e4l_client_id FROM biofield_auth_tests WHERE id=?",
+            (int(tid.lstrip("a")),)).fetchone()[0]
+    assert stored() == "1003"
+    # A different name with no id: the old id must not win.
+    j = client.post(f"/author/{tid}/header", json={"name": "Ann Owner", "email": OWNER,
+                                                   "date": "2026-11-06"}).get_json()
+    assert stored() == "1001" and j["client_id"] == "1001"
+    assert _panel_scan(client, tid)["scan_id"] == ANN_SCAN
+
+
+def test_typing_a_name_by_hand_drops_the_held_id(tmp_path):
+    from dashboard import biofield_report_html as H
+    assert "function dropClientId(){E4L_CLIENT_ID=null;set('h_client_id','')}" in H._AUTHOR_JS
+    client, _db = _app(tmp_path)
+    tid = _intake(client, "Ann Owner", OWNER)
+    page = client.get(f"/author/{tid}").get_data(as_text=True)
+    assert 'id=h_name autocomplete=off oninput="dropClientId();nameSearch()"' in page
+    assert 'id=h_email autocomplete=off oninput="dropClientId();emailSearch()"' in page
+
+
+# -- 6. an unresolved named subject reads no scan and no reveal ---------------------
+
+def test_an_unresolved_subject_gets_no_reveal(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(RI, "synthesize_reveal_layers",
+                        lambda *a, **k: calls.append(k) or {"found": False})
+    client, _db = _shared_app(tmp_path)
+    tid = _intake(client, "Kitty Owner", OWNER)
+    client.post(f"/author/{tid}/species", json={"species": "Cat"})
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
+    assert calls == [] and j.get("ok") is not True
+
+
+# -- 7. the resolved client id wins over the email and name -------------------------
+
+def test_the_resolved_id_wins_over_a_photo_the_email_and_name_find(tmp_path):
+    from dashboard import client_photos as cph
+    client, db = _app(tmp_path)
+    _photos(db)
+    with sqlite3.connect(db) as cx:
+        cph.put_for_client(cx, "21", OWNER, b"ANN-PHOTO", "image/jpeg", source="portal-self")
+    # Ann Owner on OWNER is a FileMaker person with her own photo, so the email and
+    # name find it. The stored id says the dog, and the id wins.
+    assert client.get(f"/client-photo/{OWNER}?name=Ann%20Owner").data == b"ANN-PHOTO"
+    r = client.get(f"/client-photo/{OWNER}?name=Ann%20Owner&cid=1002")
+    assert r.status_code == 200 and r.data == b"PET-PHOTO"
+
+
+# -- 8. the invoice --------------------------------------------------------------------
+
+def test_an_ff_on_the_open_draft_is_left_off_for_the_pet(tmp_path):
+    calls = {}
+
+    def fake_create(customer, lines, **kw):
+        calls["lines"] = lines
+        return {"ok": True, "order_id": 7, "external_ref": "X", "total_cents": 100,
+                "error": None, "accepted_slugs": []}
+
+    previous = {"ok": True, "order_id": 7, "status": "open", "pay_status": "",
+                "items": [{"slug": "immune-modulation", "qty": 1, "source": "manual"}]}
+    client, db = _app(
+        tmp_path,
+        invoice_fetch_catalog=lambda: [{"slug": "immune-modulation", "name": FF},
+                                       {"slug": "es1", "name": INFO}],
+        invoice_create=fake_create,
+        invoice_link=lambda oid: {"ok": True, "print_url": "", "error": None},
+        invoice_latest=lambda email: previous, invoice_paid_check=lambda email: {})
+    tid = _pet(client)
+    _chain(db, tid, [INFO])
+    j = client.post(f"/author/{tid}/invoice", json={}).get_json()
+    assert "immune-modulation" not in _slugs(calls) and "es1" in _slugs(calls)
+    assert j["animal_refused"] == [FF] and FF in j["warning"]
+
+
+def test_an_unknown_species_blocks_ffs_on_the_invoice(tmp_path):
+    calls = {}
+
+    def fake_create(customer, lines, **kw):
+        calls["lines"] = lines
+        return {"ok": True, "order_id": 7, "external_ref": "X", "total_cents": 100,
+                "error": None, "accepted_slugs": []}
+
+    client, db = _app(
+        tmp_path, e4l=str(tmp_path / "missing-e4l.db"),
+        invoice_fetch_catalog=lambda: [{"slug": "immune-modulation", "name": FF},
+                                       {"slug": "es1", "name": INFO}],
+        invoice_create=fake_create,
+        invoice_link=lambda oid: {"ok": True, "print_url": "", "error": None},
+        invoice_latest=lambda email: {}, invoice_paid_check=lambda email: {})
+    tid = _intake(client, "Ann Owner", OWNER)
+    _chain(db, tid, [FF, INFO])
+    j = client.post(f"/author/{tid}/invoice", json={}).get_json()
+    assert j["species_unknown"] is True and j["animal_refused"] == [FF]
+    assert "immune-modulation" not in _slugs(calls) and "es1" in _slugs(calls)
+    assert "species is unknown" in j["warning"]
+
+
+# -- 9. a person's scans on an older row of the same name ---------------------------
+
+def test_scans_on_an_older_row_of_the_same_name_are_read(tmp_path):
+    rows = [(1001, "Ann Owner", OWNER, "Human", ""), (1007, "Ann Owner", OWNER, "Human", ""),
+            (1003, "Rover Owner", OWNER, "Dog", "Rover")]
+    p = _e4l_rows(tmp_path, rows, scans=[(9001, 1001, "2026-11-01"),
+                                         (9002, 1003, "2026-11-04")])
+    client, _db = _real_app(tmp_path, p)
+    tid = _intake(client, "Ann Owner", OWNER, client_id="1007")
+    # Ann's own older row, never the dog's newer scan.
+    assert _panel_scan(client, tid)["scan_id"] == 9001
+
+
+# -- 10. a whole infoceutical name, after resolution --------------------------------
+
+@pytest.mark.parametrize("name,ok", [
+    (INFO, True),
+    ("Day Infoceutical", True),
+    ("EI13 Hearing & Learning Energetic Integrator Infoceutical", True),
+    (f"{INFO} + Day Infoceutical", True),
+    (f"{FF} + {INFO}", False),
+    ("Immune Modulation Infoceutical", False),
+    ("ES1 Infoceutical", False),
+    (FF, False),
+])
+def test_only_whole_infoceutical_names_pass(name, ok):
+    assert is_infoceutical_remedy(name) is ok
+
+
+def test_the_layer_pick_checks_the_name_that_is_stored(tmp_path, monkeypatch):
+    import biofield_local_app as BLA
+    monkeypatch.setattr(BLA, "resolve_remedy_name",
+                        lambda cx, n: FF if n == INFO.lower() else n)
+    monkeypatch.setattr(BLA, "remedy_dosing", lambda cx, n: {})
+    client, db = _app(tmp_path)
+    tid = _pet(client)
+    j = client.post(f"/author/{tid}/layer/1/select",
+                    json={"remedy": INFO.lower()}).get_json()
+    assert j["ok"] is False and j["animal_refused"] == [FF]
+    j = client.post(f"/author/{tid}/remedy-set/add-one", json={"remedy": INFO.lower()}).get_json()
+    assert j["ok"] is False and j["animal_refused"] == [FF]
+    assert _layers(db, tid) == []
+
+
+# -- 11. the other ways into the chain ----------------------------------------------
+
+def test_a_hand_typed_row_for_the_pet_leaves_the_ff_off(tmp_path):
+    client, db = _app(tmp_path)
+    tid = _pet(client)
+    j = client.post(f"/author/{tid}/row", json={"layer": 1, "head": "Liver",
+                                               "remedy": FF, "dosage": "2 caps"}).get_json()
+    assert j["animal_refused"] == [FF]
+    assert _layers(db, tid) == [""]
+    rid = j["rid"]
+    j = client.post(f"/author/{tid}/row/{rid}", json={"remedy": FF, "head": "Kidney"}).get_json()
+    assert j["animal_refused"] == [FF]
+    row = sqlite3.connect(db).execute("SELECT head, remedy, dosage FROM biofield_auth_chain "
+                                      "WHERE id=?", (rid,)).fetchone()
+    assert row == ("Kidney", "", "")
+    client.post(f"/author/{tid}/row/{rid}", json={"remedy": INFO})
+    assert _layers(db, tid) == [INFO]
+
+
+def test_a_persons_hand_typed_ff_is_kept(tmp_path):
+    client, db = _app(tmp_path)
+    tid = _intake(client, "Ann Owner", OWNER)
+    j = client.post(f"/author/{tid}/row", json={"layer": 1, "remedy": FF}).get_json()
+    assert "animal_refused" not in j and _layers(db, tid) == [FF]
+
+
+def test_interpret_leaves_the_ff_off_for_the_pet(tmp_path, monkeypatch):
+    import biofield_local_app as BLA
+    from dashboard.biofield_narrative import save_notes
+    monkeypatch.setattr(BLA, "interpret_transcript", lambda *a, **k: {"layers": [
+        {"layer": 1, "head": "Liver", "most_affected": "Liver", "remedy": FF},
+        {"layer": 2, "head": "Lymph", "most_affected": "Lymph", "remedy": INFO}]})
+    monkeypatch.setattr(BLA, "resolve_remedy_name", lambda cx, n: n)
+    client, db = _app(tmp_path)
+    tid = _pet(client)
+    with sqlite3.connect(db) as cx:
+        save_notes(cx, tid, "spoken session")
+    j = client.post(f"/author/{tid}/interpret", json={}).get_json()
+    assert j["animal_refused"] == [FF] and j["added"] == 2
+    assert _layers(db, tid) == ["", INFO]
+
+
+def test_the_program_apply_leaves_the_ff_off_for_the_pet(tmp_path, monkeypatch):
+    import biofield_local_app as BLA
+    from dashboard import biofield_program as BP
+    monkeypatch.setattr(BLA, "resolve_remedy_name", lambda cx, n: n)
+    monkeypatch.setattr(BP, "build_program", lambda **k: {"remedies": [FF, INFO], "stages": [
+        {"stage": "mind", "picks": [{"remedy": FF, "covers": []},
+                                    {"remedy": INFO, "covers": []}],
+         "suppressed": [], "uncovered": []}]})
+    client, db = _app(tmp_path)
+    tid = _pet(client)
+    j = client.post(f"/author/{tid}/program",
+                    json={"apply": True, "mode": "full",
+                          "include": {"spirit": False}}).get_json()
+    assert j["applied"] is True and j["animal_refused"] == [FF]
+    assert _layers(db, tid) == [INFO]
+
+
+def test_a_clinical_balance_leaves_the_ff_off_for_the_pet(tmp_path, monkeypatch):
+    import biofield_local_app as BLA
+    monkeypatch.setattr(BLA, "resolve_remedy_name", lambda cx, n: n)
+    client, db = _app(tmp_path)
+    tid = _pet(client)
+    j = client.post(f"/author/{tid}/clinical-items/balance",
+                    json={"label": "Itchy skin", "layer": 1,
+                          "remedies": [FF, INFO]}).get_json()
+    assert j["animal_refused"] == [FF]
+    assert FF not in _layers(db, tid) and INFO in _layers(db, tid)
+
+
+# -- 12. one resolution per request, and no full-name scan on a normal request ------
+
+def test_one_resolution_per_request_and_no_name_scan(tmp_path, monkeypatch):
+    from dashboard import biofield_e4l as BE
+    real = BE.resolve_intake_subject
+    seen = {"resolve": 0, "suggest": 0}
+
+    def counting(*a, **k):
+        seen["resolve"] += 1
+        return real(*a, **k)
+
+    def no_scan(*a, **k):
+        seen["suggest"] += 1
+        return None
+    client, db = _app(tmp_path)
+    tid = _pet(client)
+    monkeypatch.setattr(BE, "resolve_intake_subject", counting)
+    monkeypatch.setattr(BE, "suggest_intake_client", no_scan)
+    client.post(f"/author/{tid}/remedy-set/apply-to-chain", json={"remedies": [FF, INFO]})
+    assert seen == {"resolve": 1, "suggest": 0}
+    seen["resolve"] = 0
+    client.get(f"/author/{tid}")
+    assert seen["suggest"] == 0              # resolved by id: nothing to offer
+
+
+def test_a_first_name_typed_alone_finds_its_own_client_but_a_surname_does_not(tmp_path):
+    """Finding 3 keeps a short form: "Sasha" on Sasha Takahashi's email is Sasha. An
+    owner's surname alone, or a pet's full name, on her email is not her."""
+    p = _e4l_rows(tmp_path, [(1001, "Agnes Verches", OWNER, "Human", "")])
+    assert resolve_intake_subject(p, None, OWNER, "Agnes")["by"] == "email+first"
+    assert species_for_intake(p, None, OWNER, "Agnes") == "Human"
+    assert resolve_intake_subject(p, None, OWNER, "Verches")["by"] == "unresolved"
+    assert species_for_intake(p, None, OWNER, "Skylar Verches") is None

@@ -721,6 +721,9 @@ def _install_log_redaction() -> None:
     logging.getLogger("werkzeug").addFilter(_Redact())
 
 
+# The subject resolutions that name the intake's own E4L client.
+_RESOLVED = ("id", "email+name", "email+first")
+
 _ANIMAL_ONLY = ("This client is an animal. An animal gets infoceuticals only, "
                 "never a Functional Formulation (Glen, 2026-11-06).")
 
@@ -763,24 +766,85 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return "", "", ""
         return ((row[0] or "").strip(), (row[1] or "").strip(), str(row[2] or "").strip())
 
-    def _intake_species(cx, tid):
-        from dashboard.biofield_e4l import species_for_intake
+    # One resolution per request (2026-11-06 review). Every surface asks the same
+    # question several times a request, and each ask opened e4l.db again.
+    def _subject(cid, email, name):
+        """resolve_intake_subject for these three, cached for this request."""
+        from flask import g, has_request_context
+        from dashboard.biofield_e4l import _person_key, resolve_intake_subject
+        key = (str(cid or "").strip(), (email or "").strip().lower(), _person_key(name))
+        cache = g.setdefault("_e4l_subjects", {}) if has_request_context() else None
+        if cache is not None and key in cache:
+            return cache[key]
+        try:
+            res = resolve_intake_subject(e4l_db, *key[:2], name)
+        except Exception:
+            res = {"by": "none", "client": None, "scan_ids": None, "species": None,
+                   "ambiguous": False}
+        if cache is not None:
+            cache[key] = res
+        return res
+
+    def _forget_subjects():
+        """Drop the request's cached resolutions after a write that changes one."""
+        from flask import g, has_request_context
+        if has_request_context():
+            g.pop("_e4l_subjects", None)
+
+    def _subject_of(rep):
+        c = (rep or {}).get("client") or {}
+        return _subject(c.get("e4l_client_id") or "", c.get("email") or "",
+                        c.get("name") or "")
+
+    def _intake_subject(cx, tid):
         email, name, cid = _intake_ident(cx, tid)
-        return species_for_intake(e4l_db, cid, email, name)
+        return _subject(cid, email, name)
+
+    def _intake_species(cx, tid):
+        return _intake_subject(cx, tid)["species"]
 
     def _intake_is_animal(cx, tid):
         """THE animal predicate for a Biofield Intake. An animal gets infoceuticals only."""
         from dashboard import client_species as _cspec
         return _cspec.is_animal(_intake_species(cx, tid))
 
+    def _info_known(cx):
+        """Every infoceutical product name: the repo catalog plus the FileMaker remedy
+        list, so a whole name can be checked (is_infoceutical_remedy)."""
+        from flask import g, has_request_context
+        from dashboard.animal_infoceuticals import infoceutical_names
+        if has_request_context() and g.get("_info_known") is not None:
+            return g._info_known
+        try:
+            from dashboard.biofield_portal_publish import load_catalog
+            catalog = load_catalog()
+        except Exception:
+            catalog = {}
+        fmp = []
+        try:
+            from dashboard.biofield_authoring import _clean_product_name
+            for (raw,) in cx.execute("SELECT product_name FROM fmp_snap_products "
+                                     "WHERE lower(product_name) LIKE '%infoceutical%'"):
+                fmp += [raw, _clean_product_name(raw)]
+        except Exception:
+            pass
+        known = infoceutical_names(catalog, fmp)
+        if has_request_context():
+            g._info_known = known
+        return known
+
+    def _not_infoceuticals(cx, rems):
+        from dashboard.animal_infoceuticals import is_infoceutical_remedy
+        known = _info_known(cx)
+        return [r for r in rems if not is_infoceutical_remedy(r, known)]
+
     def _animal_refused(cx, tid, rems):
         """The remedies an animal intake may not take (anything not an infoceutical).
         Empty for a person."""
-        from dashboard.animal_infoceuticals import is_infoceutical_remedy
         rems = [(r or "").strip() for r in (rems or []) if (r or "").strip()]
         if not rems or not _intake_is_animal(cx, tid):
             return []
-        return [r for r in rems if not is_infoceutical_remedy(r)]
+        return _not_infoceuticals(cx, rems)
 
     def _animal_infoceuticals_for(cx, tid):
         from dashboard.animal_infoceuticals import infoceutical_by_code
@@ -906,21 +970,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return False
 
     def _operator_photo(email, name, cid=None):
-        """The photo for this intake's person, or None. When the intake's email finds
-        none and the intake is for an E4L client on ANOTHER email (a pet started from
-        its owner's email: Skylar Verches, 2026-11-06), that client's own email is read
-        under the same rules."""
-        rec, pid = _operator_photo_on(email, name)
-        if rec:
-            return rec, pid
-        from dashboard.biofield_e4l import intake_e4l_client
-        who = intake_e4l_client(e4l_db, cid, email, name) or {}
-        own = who.get("email") or ""
-        if who.get("by") in ("id", "name") and own and own != (email or "").strip().lower():
-            rec2, pid2 = _operator_photo_on(own, name)
-            if rec2:
-                return rec2, pid2
-        return rec, pid
+        """The photo for this intake's person, or None.
+
+        The intake's own E4L client wins (2026-11-06 review): when one is resolved, its
+        own email is read with the intake's name, never the intake's email first. A pet
+        started from its owner's email (Skylar Verches) shows the pet. A named intake
+        whose email holds E4L clients but none of that name shows nothing, because the
+        email's photo is then most likely the owner's. Email and name alone are read
+        only when no E4L client is resolved and E4L has nothing to say."""
+        subj = _subject(cid, email, name)
+        if subj["by"] in _RESOLVED:
+            own = (subj["client"] or {}).get("email") or (email or "").strip().lower()
+            return _operator_photo_on(own, name)
+        if subj["by"] == "unresolved":
+            return None, None
+        return _operator_photo_on(email, name)
 
     def _operator_photo_on(email, name):
         """The photo Biofield Intake shows for this intake's person, or None.
@@ -1033,58 +1097,57 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         row, or Human reads as a person, so a lookup failure leaves the human narrative
         exactly as it was. The owner is fetched only for an animal."""
         from dashboard import client_species as _cspec
-        from dashboard.biofield_e4l import intake_e4l_client, species_for_intake
         c = rep.get("client") or {}
         email = (c.get("email") or "").strip().lower()
         if not email:
             return None
-        # The intake's own E4L client, as _intake_species reads it, not the email's.
-        cid, cname = c.get("e4l_client_id") or "", c.get("name") or ""
+        # The intake's own subject, as _intake_species reads it, not the email's.
+        cname = c.get("name") or ""
         try:
-            species = species_for_intake(e4l_db, cid, email, cname)
-            rec = intake_e4l_client(e4l_db, cid, email, cname) or {}
+            subj = _subject_of(rep)
         except Exception:
             return None
+        species, rec = subj["species"], subj["client"] or {}
         if not _cspec.is_animal(species):
             return None
         name = (rec.get("animal_name") or "").strip() or ((cname or "").split() or [""])[0]
         species = (species or "").strip()
         try:
-            own_email = rec.get("email") if rec.get("by") not in (None, "email") else email
+            own_email = rec.get("email") if subj["by"] in _RESOLVED else email
             owner = (fetch_animal_owner(own_email or email) or "").strip()
         except Exception:
             owner = ""
         return {"name": name, "species": species,
                 "owner": (owner.split() or [""])[0]}
 
-    # Every scan read in the intake goes through these two. A pet and its owner can
-    # share an email, and the email read both: Skylar Verches's intake showed Agnes's
-    # scans (2026-11-06). The intake's own E4L client (intake_e4l_client, the same
-    # order species uses) picks the scans. Email alone is the last fallback.
-    def _scan_client_id(rep):
-        """The E4L client id whose scans this report reads, or None for the email."""
-        from dashboard.biofield_e4l import intake_e4l_client
-        c = (rep or {}).get("client") or {}
-        try:
-            who = intake_e4l_client(e4l_db, c.get("e4l_client_id") or "",
-                                    c.get("email") or "", c.get("name") or "")
-        except Exception:
-            return None
-        if who and who.get("by") != "email" and who.get("client_id") is not None:
-            return who["client_id"]
-        return None
+    # Every scan read in the intake goes through these. A pet and its owner can share an
+    # email, and the email read both: Skylar Verches's intake showed Agnes's scans
+    # (2026-11-06). The intake's own subject (resolve_intake_subject) picks the scans.
+    # A named intake that matches nobody on its email reads none at all. The email alone
+    # is read only when the intake has no name, or E4L does not hold the email.
+    def _unresolved_scan():
+        from dashboard.biofield_e4l import _none
+        ctx = _none(14)
+        ctx["unresolved"] = True
+        ctx["message"] = ("No E4L client on this email has this intake's name, so no "
+                          "scan was read. Pick the client in the header.")
+        return ctx
 
     def _scan_keyed(rep):
         """(scan context, keyed) for this report's person. keyed is True when the scan
-        was read for their own E4L client, not the email."""
+        was read for their own subject, not the email."""
         email = (((rep or {}).get("client") or {}).get("email") or "").strip()
-        cid = _scan_client_id(rep)
-        if cid is None:
-            return scan_lookup(email), False
-        try:
-            return scan_lookup(email, client_id=cid), True
-        except TypeError:                   # an injected lookup that takes the email only
-            return scan_lookup(email), False
+        subj = _subject_of(rep)
+        if subj["by"] == "unresolved":
+            return _unresolved_scan(), True
+        if subj["by"] in _RESOLVED:
+            ids = tuple(subj.get("scan_ids") or (subj["client"]["client_id"],))
+            arg = ids[0] if len(ids) == 1 else ids
+            try:
+                return scan_lookup(email, client_id=arg), True
+            except TypeError:               # an injected lookup that takes the email only
+                return scan_lookup(email), False
+        return scan_lookup(email), False
 
     def _scan_for(rep):
         """Scan context for this report's person: their own E4L client where known."""
@@ -1092,7 +1155,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     def _reveal_scan(rep):
         """(keyed, scan_id) for a reveal synthesis. keyed means the scan was read for the
-        intake's own E4L client: the synthesis must use that scan, never the email's
+        intake's own subject: the synthesis must use that scan, never the email's
         newest, and no scan means none (scan_id None)."""
         ctx, keyed = _scan_keyed(rep)
         return (True, (ctx or {}).get("scan_id")) if keyed else (False, None)
@@ -2193,6 +2256,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception as _he:
             print(f"[history-links] panel skipped: {_he!r}", flush=True)
             _hl_html = ""
+        # A namesake on another email is offered, never taken (2026-11-06 review).
+        # Only for an intake no E4L client on its own email answers, so the full-name
+        # scan stays off every normal page load.
+        _suggest = None
+        try:
+            if _subject_of(rep)["by"] in ("unresolved", "none"):
+                from dashboard.biofield_e4l import suggest_intake_client
+                _c = rep.get("client") or {}
+                _suggest = suggest_intake_client(e4l_db, _c.get("email") or "",
+                                                 _c.get("name") or "")
+        except Exception as _se:
+            print(f"[e4l-suggest] {test_id}: skipped: {_se!r}", flush=True)
         _notified = ""
         try:
             from dashboard import biofield_test_notified as _btn
@@ -2213,6 +2288,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                            profile_unavailable=profile_unavailable,
                                            alias_map=_alias_map, display_map=_display_map,
                                            history_links_html=_hl_html,
+                                           e4l_suggestion=_suggest,
                                            client_notified=bool(_notified)),
                         mimetype="text/html")
 
@@ -2253,8 +2329,27 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_header(test_id):
         d = request.get_json(silent=True) or {}
         with sqlite3.connect(db_path) as cx:
+            was_email, was_name, _was_cid = _intake_ident(cx, test_id)
+            posted_cid = d.get("client_id")
+            if posted_cid is None and (
+                    (d.get("name") is not None
+                     and (d.get("name") or "").strip() != was_name)
+                    or (d.get("email") is not None
+                        and (d.get("email") or "").strip().lower() != was_email.lower())):
+                posted_cid = ""        # a different person: a stale id must not win
             update_header(cx, test_id, name=d.get("name"), email=d.get("email"),
-                          date=d.get("date"), client_id=d.get("client_id"))
+                          date=d.get("date"), client_id=posted_cid)
+            # Keep the E4L client the header now names, so the id wins from here on.
+            # Only a sure match is stored: the stored id itself or the one person on the
+            # email with this name. A namesake on another email waits for Glen's
+            # Confirm (/e4l-client/confirm).
+            email, name, cid = _intake_ident(cx, test_id)
+            subj = _subject(cid, email, name)
+            if subj["by"] in ("id", "email+name"):   # never a first-name match
+                sure = str(subj["client"]["client_id"])
+                if sure != cid:
+                    update_header(cx, test_id, client_id=sure)
+                    cid = sure
             ctx, _ = _e4l(cx, test_id)  # client now known -> pull recent E4L scan
             _seed_stresses(cx, test_id)  # synthesize + seed stress coverage if scan found
         invoice = {"ok": False, "reason": "no_email"}
@@ -2278,7 +2373,27 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         invoice_note=biofield_invoice.DEFAULT_INVOICE_NOTE,
                         idempotency_key=(d.get("idempotency_key") or ""))
         return {"ok": True, "e4l": ctx, "html": _e4l_panel(test_id, ctx),
-                "invoice": invoice}
+                "invoice": invoice, "client_id": cid}
+
+    @app.route("/author/<test_id>/e4l-client/confirm", methods=["POST"])
+    def author_e4l_client_confirm(test_id):
+        """Glen confirms the namesake on another email is this intake's subject.
+
+        A full-name match on another email is only offered (suggest_intake_client):
+        it can be an unrelated person or animal. Confirming stores that client id on
+        the intake, and from then on the id decides species, scans and photo. Refused
+        when the offer no longer stands, so a stale page cannot store a stranger."""
+        from dashboard.biofield_e4l import suggest_intake_client
+        want = str((request.get_json(silent=True) or {}).get("client_id") or "").strip()
+        with sqlite3.connect(db_path) as cx:
+            email, name, _cid = _intake_ident(cx, test_id)
+            sug = suggest_intake_client(e4l_db, email, name)
+            if not want or not sug or str(sug["client_id"]) != want:
+                return {"ok": False, "error": "That suggestion no longer applies. "
+                                              "Reload the page."}, 409
+            update_header(cx, test_id, client_id=want)
+        _forget_subjects()
+        return {"ok": True, "client_id": want}
 
     @app.route("/author/<test_id>/fee", methods=["POST"])
     def author_fee(test_id):
@@ -2336,6 +2451,44 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return {"ok": True, "caregivers": res.get("caregivers") or [],
                 "remembered": res.get("remembered")}
 
+    def _invoice_refused_note(refused, species_unknown):
+        if not refused:
+            return ""
+        if species_unknown:
+            return ("Left off: this client's species is unknown, so only infoceuticals "
+                    "were invoiced. Record person or animal, then raise it again. Not "
+                    "invoiced: " + ", ".join(refused) + ".")
+        return ("Left off: an animal gets infoceuticals only, so these were not "
+                "invoiced: " + ", ".join(refused) + ".")
+
+    def _gate_invoice_lines(lines, catalog, previous_items, known, refused):
+        """Lines an animal (or an unknown species) may be charged: the analysis, any
+        service, and infoceuticals. A product line is named by the catalog, else by
+        the draft's own item; one that cannot be named is left off. Each name left
+        off is appended to `refused`."""
+        from dashboard.animal_infoceuticals import is_infoceutical_remedy
+        by_slug = {}
+        for item in (catalog or []):
+            if isinstance(item, dict) and item.get("slug"):
+                by_slug[item["slug"]] = item
+        prev_names = {(i.get("slug") or ""): (i.get("name") or "")
+                      for i in previous_items or [] if isinstance(i, dict)}
+        kept = []
+        for line in lines or []:
+            slug = (line.get("slug") or "").strip()
+            item = by_slug.get(slug) or {}
+            if slug == biofield_invoice.BIOFIELD_SLUG or item.get("service"):
+                kept.append(line)
+                continue
+            name = (item.get("name") or prev_names.get(slug) or "").strip()
+            if name and is_infoceutical_remedy(name, known):
+                kept.append(line)
+                continue
+            label = name or slug
+            if label and label not in refused:
+                refused.append(label)
+        return kept
+
     @app.route("/author/<test_id>/invoice", methods=["POST"])
     def author_invoice(test_id):
         with sqlite3.connect(db_path) as cx:
@@ -2352,9 +2505,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 continue
             remedies.append({"name": nm, "qty": biofield_invoice.line_bottles(l)})
         # An animal is invoiced infoceuticals only (Glen, 2026-11-06). An FF already on
-        # its chain is left off the draft and named in the reply, never charged.
+        # its chain is left off the draft and named in the reply, never charged. An
+        # unknown species blocks FFs too, as the + button does: an unreadable e4l.db or
+        # a pet whose species nobody recorded must not be charged an FF.
         with sqlite3.connect(db_path) as cx:
-            animal_refused = _animal_refused(cx, test_id, [r["name"] for r in remedies])
+            species_unknown = bool(_species_needed(cx, test_id))
+            gate = species_unknown or _intake_is_animal(cx, test_id)
+            animal_refused = (_not_infoceuticals(cx, [r["name"] for r in remedies])
+                              if gate else [])
+            _known_info = _info_known(cx) if gate else set()
         remedies = [r for r in remedies if r["name"] not in animal_refused]
         # The invoice follows the Biofield Analysis's section buttons (Glen, 2026-10-19).
         remedies, left_off, _ = _primary_invoice(test_id, remedies)
@@ -2387,9 +2546,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": True, "already_paid": not no_charge, "no_charge": no_charge,
                     "order_id": None if no_charge else paid.get("order_id"),
                     "added": 0, "skipped": built["skipped"],
-                    "warning": _esc(_rsplit.left_off_warning(left_off)), "note": note,
+                    "warning": _esc(" ".join(x for x in (
+                        _rsplit.left_off_warning(left_off),
+                        _invoice_refused_note(animal_refused, species_unknown)) if x)),
+                    "note": note,
                     "print_url": "", "orders_url": "", "external_ref": "", "total_dollars": "",
-                    "left_off": left_off, "animal_refused": animal_refused}
+                    "left_off": left_off, "animal_refused": animal_refused,
+                    "species_unknown": species_unknown}
         # A repeated raise refreshes Biofield-sourced remedies from the schedule,
         # while keeping lines added manually in Edit Invoice on the current draft.
         previous = invoice_latest(email) or {}
@@ -2403,6 +2566,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if update_order_id:
             built["lines"] = biofield_invoice.merge_manual_invoice_lines(
                 built["lines"], previous.get("items") or [])
+        if gate:
+            # The merge keeps lines already on the open draft, and one of those can be
+            # an FF from before (2026-11-06 review). Filter the merged draft too.
+            built["lines"] = _gate_invoice_lines(built["lines"], catalog,
+                                                 previous.get("items") or [],
+                                                 _known_info, animal_refused)
         note = biofield_invoice.build_invoice_note(rep.get("phase"), rep.get("location"))
         create_kwargs = {"invoice_note": note,
                          "idempotency_key": ((request.get_json(silent=True) or {})
@@ -2464,10 +2633,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 "shows this invoice as approximate."))
         if animal_refused:
             warning = ((warning + " " if warning else "") + _esc(
-                "Left off: an animal gets infoceuticals only, so these were not "
-                "invoiced: " + ", ".join(animal_refused) + "."))
+                _invoice_refused_note(animal_refused, species_unknown)))
         return {"ok": True, "already_paid": bool(paid.get("paid")), "no_charge": no_charge,
-                "animal_refused": animal_refused,
+                "animal_refused": animal_refused, "species_unknown": species_unknown,
                 "print_url": link.get("print_url") if link.get("ok") else "",
                 "order_id": created.get("order_id"),
                 "orders_url": biofield_invoice.default_orders_link(created.get("order_id")),
@@ -2829,6 +2997,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     "html": render_e4l_panel(scan_lookup(""))}
         before = _scan_for(rep)
         res = _fetch_live(client_id=client_id, name=client.get("name"), runner=fetch_runner)
+        _forget_subjects()             # the fetch can add the subject's own E4L record
         after = _scan_for(rep)
         newer = bool(after.get("found") and (
             not before.get("found")
@@ -2858,7 +3027,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         email = ((row[0] if row else "") or "").strip()
         if not email:
             return {"ok": False, "error": "No client selected yet"}, 400
-        return {"ok": True, "species": record_species_answer(e4l_db, email, species)}
+        # Per subject (2026-11-06): an answer for a pet must not answer for its owner on
+        # the same email. By the E4L client when resolved, else by email plus name.
+        with sqlite3.connect(db_path) as cx:
+            _email, name, _cid = _intake_ident(cx, test_id)
+            subj = _intake_subject(cx, test_id)
+        if subj["by"] in _RESOLVED:
+            stored = record_species_answer(e4l_db, email, species,
+                                           client_id=subj["client"]["client_id"])
+        else:
+            stored = record_species_answer(e4l_db, email, species, name=name)
+        _forget_subjects()
+        return {"ok": True, "species": stored}
 
     @app.route("/author/<test_id>/e4l/import-reveal", methods=["POST"])
     def author_import_reveal(test_id):
@@ -3058,7 +3238,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 "has_pattern": data["has_pattern"], "html": html,
                 "layer_candidates": layer_candidates or []}
 
-    def _append_layers(cx, test_id, rems):
+    def _append_layers(cx, test_id, rems, refused_out=None):
         """Append each remedy as a new causal-chain layer at the bottom (existing
         layers untouched). The head is a SINGLE functional term — the root
         'Driver'-level stressor among those the remedy covers (falling back to the
@@ -3072,6 +3252,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rems = [(r or "").strip() for r in (rems or []) if (r or "").strip()]
         refused = _animal_refused(cx, test_id, rems)
         rems = [r for r in rems if r not in refused]
+        if refused_out is not None:
+            refused_out.extend(r for r in refused if r not in refused_out)
         if not rems:
             return 0
         tnum = int(str(test_id).lstrip("a") or 0)
@@ -3088,24 +3270,30 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         _st.init_stress_tables(cx)
         added = 0
         try:
-            added = _append_batch(cx, test_id, rems, cover_by, nxt, conds)
+            added = _append_batch(cx, test_id, rems, cover_by, nxt, conds, refused_out)
             cx.commit()
         except BaseException:
             cx.rollback()
             raise
         return added
 
-    def _append_batch(cx, test_id, rems, cover_by, nxt, conds):
+    def _append_batch(cx, test_id, rems, cover_by, nxt, conds, refused_out=None):
         from dashboard import biofield_clinical_head_term as _ht
         added = 0
         for r in rems:
+            name = resolve_remedy_name(cx, r)     # 'heart health' -> 'Heart Health'
+            # The guard runs on the name that is stored: resolution can turn an
+            # infoceutical-sounding text into an FF (2026-11-06 review).
+            if _animal_refused(cx, test_id, [name]):
+                if refused_out is not None and name not in refused_out:
+                    refused_out.append(name)
+                continue
             nxt += 1
             covers = cover_by.get(r, [])
             # Root driver as Head, every covered stressor in the Tail. A Clinical
             # Summary condition with a stored pattern is named by that pattern, and its
             # full wording goes to the layer's Balances (Glen, 2026-10-20).
             head, tail, wording = _ht.layer_fields(covers, conds)
-            name = resolve_remedy_name(cx, r)     # 'heart health' -> 'Heart Health'
             d = remedy_dosing(cx, name)           # auto-fill dosage/frequency/timing from the FF
             rid = add_chain_row(cx, test_id, nxt, head, tail, name,
                                 d.get("dosage", ""), d.get("frequency", ""), d.get("timing", ""),
@@ -3205,6 +3393,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if _animal_refused(cx, test_id, [remedy]):
                 return {"ok": False, "animal_refused": [remedy], "error": _ANIMAL_ONLY}
             name = resolve_remedy_name(cx, remedy)         # 'heart health' -> 'Heart Health'
+            if _animal_refused(cx, test_id, [name]):       # the name that is stored
+                return {"ok": False, "animal_refused": [name], "error": _ANIMAL_ONLY}
             d = remedy_dosing(cx, name)                    # auto-fill from the FF
             rows = cx.execute("SELECT id FROM biofield_auth_chain WHERE test_id=? AND layer=? "
                               "ORDER BY id", (tnum, n)).fetchall()
@@ -3245,7 +3435,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return ask
             if _animal_refused(cx, test_id, [rem]):
                 return {"ok": False, "animal_refused": [rem], "error": _ANIMAL_ONLY}
-            added = _append_layers(cx, test_id, [rem])
+            refused = []
+            added = _append_layers(cx, test_id, [rem], refused)
+        if refused:
+            return {"ok": False, "added": added, "animal_refused": refused,
+                    "error": _ANIMAL_ONLY}
         return {"ok": True, "added": added}
 
     @app.route("/author/<test_id>/remedy-set", methods=["POST"])
@@ -3285,9 +3479,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             ask = _species_needed(cx, test_id)
             if ask:
                 return ask
-            refused = _animal_refused(cx, test_id, rems)
-            rems = [r for r in rems if r not in refused]
-            added = _append_layers(cx, test_id, rems)
+            refused = []
+            added = _append_layers(cx, test_id, rems, refused)
         return {"ok": True, "added": added, "animal_refused": refused}
 
     @app.route("/author/<test_id>/stress/<int:sid>/balance", methods=["POST"])
@@ -3307,10 +3500,25 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": "Tag not found."}, 404
         return {"ok": True}
 
+    def _gate_row_fields(cx, test_id, d):
+        """A hand-typed row for an animal keeps its layer and tail but drops an FF and
+        its dosing. Returns the names left off (2026-11-06 review)."""
+        rem = (d.get("remedy") or "").strip()
+        if not rem:
+            return []
+        refused = _animal_refused(cx, test_id, [rem])
+        if refused:
+            for k in ("remedy", "dosage", "frequency", "timing"):
+                if k in d:
+                    d[k] = ""
+        return refused
+
     @app.route("/author/<test_id>/row", methods=["POST"])
     def author_row_add(test_id):
         d = request.get_json(silent=True) or {}
         with sqlite3.connect(db_path) as cx:
+            refused = _gate_row_fields(cx, test_id, d)
+            gated = {"animal_refused": refused, "error": _ANIMAL_ONLY} if refused else {}
             layer = _layer_int(d.get("layer"))
             confirmed, origin = 1, "live"
             anchor_rid = d.get("anchor_rid")
@@ -3332,12 +3540,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                             remedy=d.get("remedy", ""), dosage=d.get("dosage", ""),
                             frequency=d.get("frequency", ""), timing=d.get("timing", ""),
                         )
-                        return {"ok": True, "rid": anchor_id, "filled_anchor": True}
+                        return {"ok": True, "rid": anchor_id, "filled_anchor": True,
+                                **gated}
             rid = add_chain_row(cx, test_id, layer, d.get("head", ""),
                                 d.get("most_affected", ""), d.get("remedy", ""),
                                 d.get("dosage", ""), d.get("frequency", ""), d.get("timing", ""),
                                 confirmed=confirmed, origin=origin)
-        return {"ok": True, "rid": rid}
+        return {"ok": True, "rid": rid, **gated}
 
     @app.route("/author/<test_id>/row/<int:rid>", methods=["POST"])
     def author_row_save(test_id, rid):
@@ -3351,6 +3560,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if isinstance(d.get("schedule_slots"), list):
             import json as _json
             d["schedule_slot"] = _json.dumps(d["schedule_slots"])
+        gated = {}
+        if (d.get("remedy") or "").strip():
+            with sqlite3.connect(db_path) as cx:
+                refused = _animal_refused(cx, test_id, [d["remedy"]])
+            if refused:
+                # An edit never puts an FF on an animal's row. The rest of the edit
+                # stands; the row keeps the remedy it had.
+                for k in ("remedy", "dosage", "frequency", "timing"):
+                    d.pop(k, None)
+                gated = {"animal_refused": refused, "error": _ANIMAL_ONLY}
         fields = {}
         for k in ("layer", "head", "most_affected", "remedy", "dosage",
                   "frequency", "timing", "schedule_slot"):
@@ -3374,10 +3593,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 if fields:
                     update_chain_row(cx, rid, **fields)
                 reorder_chain(cx, test_id, rid, new_layer)
-            return {"ok": True}
+            return {"ok": True, **gated}
         with sqlite3.connect(db_path) as cx:
             update_chain_row(cx, rid, **fields)
-        return {"ok": True}
+        return {"ok": True, **gated}
 
     @app.route("/author/<test_id>/row/<int:rid>/delete", methods=["POST"])
     def author_row_delete(test_id, rid):
@@ -4114,10 +4333,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         **sync.plan(cx, test_id, items, resolve_remedy_name)}
             chosen = [str(c) for c in body.get("chosen") or []]
             try:
+                refused = []
+
+                def _refuse(name, _cx=cx):
+                    bad = _animal_refused(_cx, test_id, [name])
+                    refused.extend(x for x in bad if x not in refused)
+                    return bool(bad)
                 done = sync.apply(cx, test_id, items, str(body.get("digest") or ""), chosen,
-                                  resolve_remedy_name, remedy_dosing, _now())
+                                  resolve_remedy_name, remedy_dosing, _now(),
+                                  refuse=_refuse)
             except sync.Stale as exc:
                 return {"ok": False, "stale": True, "error": str(exc)}, 409
+        if refused:
+            done = {**done, "animal_refused": refused, "error": _ANIMAL_ONLY}
         return {"ok": True, "applied": True, **done}
 
     @app.route("/author/<test_id>/fold-duplicate", methods=["POST"])
@@ -4535,8 +4763,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         remedies = body.get("remedies") or []
         if not isinstance(remedies, list):
             return {"ok": False, "error": "Remedies must be a list"}, 400
+        refused = []
         try:
             with sqlite3.connect(db_path) as cx:
+                # An animal gets infoceuticals only (2026-11-06 review): checked by the
+                # text and by the name balance_item will store.
+                for r in list(remedies):
+                    bad = (_animal_refused(cx, test_id, [str(r or "")]) or
+                           _animal_refused(cx, test_id,
+                                           [resolve_remedy_name(cx, str(r or "").strip())]))
+                    if bad:
+                        refused.extend(x for x in bad if x not in refused)
+                        remedies.remove(r)
                 result = balance_item(
                     cx, test_id, body.get("label"), body.get("layer"), remedies,
                     resolve_name=resolve_remedy_name, dosing=remedy_dosing,
@@ -4544,6 +4782,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 )
         except (TypeError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}, 400
+        if refused:
+            result = {**result, "animal_refused": refused, "error": _ANIMAL_ONLY}
         return {"ok": True, **result}
 
     @app.route("/author/<test_id>/capture-stresses", methods=["POST"])
@@ -4593,6 +4833,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         "dosage": dosage, "frequency": frequency, "timing": timing})
         return out, result
 
+    def _gate_layers(cx, test_id, layers):
+        """Transcript layers for an animal keep their head and tail, but an FF and its
+        dosing are left off. Returns the names left off (2026-11-06 review)."""
+        refused = _animal_refused(cx, test_id, [l.get("remedy") for l in layers])
+        for l in layers:
+            if (l.get("remedy") or "").strip() in refused:
+                l.update({"remedy": "", "dosage": "", "frequency": "", "timing": ""})
+        return refused
+
     @app.route("/author/<test_id>/interpret", methods=["POST"])
     def author_interpret(test_id):
         with sqlite3.connect(db_path) as cx:
@@ -4608,6 +4857,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # stored layer, as the scan import and the program buttons already do.
             after = _last_layer_no(_report_for(cx, test_id))
             added = 0
+            refused = _gate_layers(cx, test_id, layers)
             for l in layers:
                 n = l["layer"]
                 add_chain_row(cx, test_id, (int(n) + after) if n is not None else None,
@@ -4619,8 +4869,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # the test. Per-field, so a re-interpret with no phase spoken won't wipe it.
             update_terrain(cx, test_id, phase=result.get("phase"),
                            location=result.get("location"))
-        return {"added": added, "header": result.get("header", ""),
-                "phase": result.get("phase"), "location": result.get("location", "")}
+        out = {"added": added, "header": result.get("header", ""),
+               "phase": result.get("phase"), "location": result.get("location", "")}
+        if refused:
+            out.update({"animal_refused": refused, "error": _ANIMAL_ONLY})
+        return out
 
     @app.route("/author/<test_id>/program", methods=["POST"])
     def author_program(test_id):
@@ -4784,6 +5037,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             init_auth_tables(cx)
             _st.init_stress_tables(cx)
             n, made = _last_layer_no(rep), 0
+            # An animal gets infoceuticals only, on this path too (2026-11-06 review):
+            # a transcript layer keeps its head without the FF, an FF pick is skipped.
+            refused = _gate_layers(cx, test_id, interpreted)
             try:
                 # The transcript's layers land exactly as the Interpret button writes
                 # them: unconfirmed, because he may still edit what he spoke.
@@ -4800,6 +5056,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # wording goes to the layer's Balances (Glen, 2026-10-20).
                 for st in prog["stages"]:
                     for p in st["picks"]:
+                        pick = resolve_remedy_name(cx, p["remedy"])
+                        bad = (_animal_refused(cx, test_id, [p["remedy"]])
+                               or _animal_refused(cx, test_id, [pick]))
+                        if bad:
+                            refused.extend(x for x in bad if x not in refused)
+                            continue
                         n += 1
                         lead = (p.get("label") or "").strip()
                         ctok = token_of({"label": lead, "source": "tag"}) if lead else ""
@@ -4824,7 +5086,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if spirit_meta:
                 update_terrain(cx, test_id, phase=spirit_meta.get("phase"),
                                location=spirit_meta.get("location"))
-        return {"ok": True, "applied": True, "mode": mode, "layers_added": made}
+        out = {"ok": True, "applied": True, "mode": mode, "layers_added": made}
+        if refused:
+            out.update({"animal_refused": refused, "error": _ANIMAL_ONLY})
+        return out
 
     @app.route("/author/<test_id>/delete", methods=["POST"])
     def author_delete(test_id):
