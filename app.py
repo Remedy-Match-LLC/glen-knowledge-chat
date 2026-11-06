@@ -21654,7 +21654,7 @@ def api_console_reading_credits_spend():
     key = (data.get("key") or "").strip()[:200]
     if not email or "@" not in email or not key:
         return jsonify({"ok": False, "error": "email and key required"}), 400
-    by = "owner" if _present_console_key() != CONSOLE_SECRET else "console"
+    by = "owner" if _owner_token_ok(_present_console_key()) else "console"
     with db.connect(LOG_DB) as cx:
         _scan_reward.init_tables(cx)
         out = _scan_reward.spend(cx, email, key=key, by=by,
