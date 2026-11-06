@@ -730,3 +730,25 @@ def test_custom_and_drop_shipped_products_are_never_counted(env, monkeypatch):
     assert SC.units_for_items([{"slug": "water-ionizer-15plate", "qty": 1},
                                {"slug": "root-chakra-in-terrain-restore", "qty": 1},
                                {"slug": "scar-silk", "qty": 1}], cat) == {"scar-silk": 1}
+
+
+def test_the_five_plate_ionizer_is_counted_but_never_goes_off_sale(env, monkeypatch):
+    """Glen, 2026-11-06: 5 paid-for units wait at the manufacturer, "always keep it
+    showing available for sale". It is counted and comes off with orders, but 0 blocks
+    nothing."""
+    cat = dict(CAT)
+    cat["water-ionizer-5plate"] = {"name": "5-Plate Water Ionizer (Living Water)",
+                                   "price_cents": 150000}
+    monkeypatch.setattr(SC, "_CATALOG_FN", lambda: cat)
+    cx = env["cx"]
+    _set(cx, "water-ionizer-5plate", 1)
+    assert "water-ionizer-5plate" in {p["slug"] for p in SC.countable_products()}
+    oid = _order(cx, [{"slug": "water-ionizer-5plate", "qty": 1}])
+    O.set_order_payment(cx, oid, method="card", amount_cents=150000)
+    assert _count(cx, "water-ionizer-5plate") == 0
+    SC._invalidate()
+    assert "water-ionizer-5plate" in SC.zero_slugs()
+    assert not SC.is_counted_out("water-ionizer-5plate", cat["water-ionizer-5plate"])
+    assert SC.is_counted_out("scar-silk", cat["scar-silk"]) is False
+    _set(cx, "scar-silk", 0)
+    assert SC.is_counted_out("scar-silk", cat["scar-silk"])   # the rule is per product

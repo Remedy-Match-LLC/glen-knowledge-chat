@@ -202,6 +202,10 @@ def init_tables(cx):
 # zero on shelf. Available for sale." Then: "the 9-plate water ionizer is also not
 # stocked, but available, so zero on shelf still means it is available for purchase."
 DROP_SHIPPED = frozenset({"water-ionizer-15plate", "water-ionizer-9plate"})
+# Counted, and alerted on, but a count at 0 never takes them off sale. Glen, 2026-11-06:
+# "5-plate ionizer has stock paid for on the shelf at the manufacturer, starting with 5
+# units ... always keep it showing available for sale."
+ALWAYS_ON_SALE = frozenset({"water-ionizer-5plate"})
 # Glen, 2026-11-06: "all items with names that include \"in terrain restore\" are custom."
 CUSTOM_NAME_PART = "in terrain restore"
 
@@ -256,7 +260,7 @@ def zero_slugs() -> frozenset:
 def is_counted_out(slug, p) -> bool:
     """True when the flag is on and `slug` is counted at 0 or below. Flag off: False,
     with no database access at all."""
-    if not enabled() or not slug or not countable(p, slug):
+    if not enabled() or not slug or slug in ALWAYS_ON_SALE or not countable(p, slug):
         return False
     return slug in zero_slugs()
 
