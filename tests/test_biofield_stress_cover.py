@@ -10,6 +10,15 @@ from dashboard.biofield_report_html import render_author_html, render_stress_pan
 from biofield_local_app import create_app
 
 
+@pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These intakes are a person's. An unknown species keeps FFs off every write, with
+    or without an email (2026-11-06 outside review), so the client is a person here."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
+
 def _setup(cx):
     st.init_stress_tables(cx)
     rid = add_chain_row(cx, "9", 1, "Head", "", "Nerve Pulse", "", "", "")

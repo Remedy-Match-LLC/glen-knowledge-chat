@@ -658,11 +658,17 @@ def resolve_intake_subject(e4l_db, client_id=None, email=None, name=None):
                         sp = _answer_legacy(ecx, own)    # its email holds it alone
                 out["species"] = sp
                 return out
-            answer = _answer_for_subject(ecx, e, want)
+            # Ambiguous: a pet and a person answer to the name. Nobody's answer holds.
+            answer = None if out["ambiguous"] else _answer_for_subject(ecx, e, want)
             if want and on_email:
                 out["by"], out["species"] = "unresolved", answer
                 return out
     except sqlite3.Error:
+        # Fail closed (outside review): a partial or old schema must not hand a named
+        # or id'd intake the email's species or scans. Only a bare email reads it.
+        if want or cid:
+            return {"by": "unresolved", "client": None, "scan_ids": None,
+                    "species": None, "ambiguous": False}
         out = {"by": "none", "client": None, "scan_ids": None, "species": None,
                "ambiguous": False}
         answer = None
@@ -726,6 +732,17 @@ def record_species_answer(e4l_db, email, species, client_id=None, name=None):
     sp = (species or "").strip()
     cid = str(client_id or "").strip()
     if not sp or not e4l_db or not (e or cid.isdigit()):
+        return None
+    # Never create an e4l.db, nor answer into one with no clients table: the caller
+    # reports the failure instead of a silent success (outside review).
+    if not os.path.exists(e4l_db):
+        return None
+    try:
+        with closing(sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)) as ro:
+            if not ro.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                              "AND name='e4l_clients'").fetchone():
+                return None
+    except sqlite3.Error:
         return None
     sp = sp[:1].upper() + sp[1:].lower()
     if cid.isdigit():

@@ -783,8 +783,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         try:
             res = resolve_intake_subject(e4l_db, *key[:2], name)
         except Exception:
-            res = {"by": "none", "client": None, "scan_ids": None, "species": None,
-                   "ambiguous": False}
+            # Fail closed: a named or id'd intake is unknown, never the email's.
+            res = {"by": "unresolved" if (key[0] or key[2]) else "none", "client": None,
+                   "scan_ids": None, "species": None, "ambiguous": False}
         if cache is not None:
             cache[key] = res
         return res
@@ -849,7 +850,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         review, round 3)."""
         if _intake_is_animal(cx, tid):
             return "animal"
-        if _intake_ident(cx, tid)[0] and not _intake_species(cx, tid):
+        if not _intake_species(cx, tid):           # with or without an email
             return "unknown"
         return None
 
@@ -888,8 +889,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     # gets {"needs_species": true}; the page asks him and records it via /species.
     # Replaces the 2026-09-15 default of treating a blank as a person in the Intake.
     def _species_needed(cx, test_id):
-        email = _intake_ident(cx, test_id)[0]
-        if not email or _intake_species(cx, test_id):
+        # No email is no exemption (2026-11-06 outside review): nobody knows the
+        # species, so FFs wait. The page asks; the answer needs a client picked.
+        if _intake_species(cx, test_id):
             return None
         return {"ok": False, "needs_species": True,
                 "reason": "Species unknown: tell me if this client is a person or an animal."}
@@ -1168,7 +1170,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             ids = tuple(subj.get("scan_ids") or (subj["client"]["client_id"],))
             arg = ids[0] if len(ids) == 1 else ids
             # Never the email for a resolved subject: it may be the owner's (round 3).
-            return scan_lookup(email, client_id=arg), True
+            try:
+                return scan_lookup(email, client_id=arg), True
+            except TypeError:            # a lookup that cannot key by client: no scan
+                return _unresolved_scan(), True
         return scan_lookup(email), False
 
     def _scan_for(rep):
@@ -2411,15 +2416,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         held = str(body.get("held") or "").strip()
         with sqlite3.connect(db_path) as cx:
             email, name, cid = _intake_ident(cx, test_id)
-            if held != cid:
-                # Another tab picked a client since this page loaded (round 3).
-                return {"ok": False, "error": "This page is out of date: the intake now "
-                                              "holds another client. Reload the page."}, 409
             sug = suggest_intake_client(e4l_db, email, name)
             if not want or not sug or str(sug["client_id"]) != want:
                 return {"ok": False, "error": "That suggestion no longer applies. "
                                               "Reload the page."}, 409
-            update_header(cx, test_id, client_id=want)
+            # Only when the intake still holds what the page held: another tab may
+            # have picked a client since this page loaded (outside review).
+            from dashboard.biofield_authoring import _now
+            changed = cx.execute(
+                "UPDATE biofield_auth_tests SET e4l_client_id=?, updated_at=? "
+                "WHERE id=? AND COALESCE(e4l_client_id,'')=?",
+                (want, _now(), int(str(test_id).lstrip("a") or 0), held)).rowcount
+            cx.commit()
+            if not changed:
+                return {"ok": False, "error": "This page is out of date: the intake now "
+                                              "holds another client. Reload the page."}, 409
         _forget_subjects()
         return {"ok": True, "client_id": want}
 
@@ -2757,6 +2768,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         oid = (request.get_json(silent=True) or {}).get("order_id")
         if not oid:
             return {"ok": False, "error": "no order_id"}, 400
+        # Prod finds the latest order by email, and an owner and her pet share one.
+        # Another subject's order is never published from this intake (outside review).
+        with sqlite3.connect(db_path) as cx:
+            _pub_email = _intake_ident(cx, test_id)[0]
+        clash = _draft_clash(test_id, _pub_email, oid) if _pub_email else ""
+        if clash:
+            return {"ok": False, "error": clash.replace("Not raised", "Not published")
+                    .replace("Raising", "Publishing")}, 409
         # The pay card must not carry an FF for an animal or an unknown species
         # (2026-11-06 review, round 3). The order's own lines are checked.
         with sqlite3.connect(db_path) as cx:
@@ -3129,6 +3148,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         else:
             stored = record_species_answer(e4l_db, email, species, name=name)
         _forget_subjects()
+        if not stored:
+            return {"ok": False, "error": "The answer was not recorded: e4l.db has no "
+                                          "client table here. Nothing was changed."}, 500
         return {"ok": True, "species": stored}
 
     @app.route("/author/<test_id>/e4l/import-reveal", methods=["POST"])

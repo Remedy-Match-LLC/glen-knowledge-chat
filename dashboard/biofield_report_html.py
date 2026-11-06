@@ -776,7 +776,8 @@ async function askSpecies(){
  else{sp=prompt('Which animal? For example Dog, Cat or Horse.','Dog');
   if(!sp||!sp.trim())return false}
  var r=await post0('/author/__TID__/species',{species:sp.trim()});
- return !!(r&&r.ok)}
+ if(!(r&&r.ok)){alert((r&&r.error)||'The answer was not recorded.');return false}
+ return true}
 async function post(p,b){var j=await post0(p,b);
  if(j&&j.needs_species){if(!(await askSpecies()))return j;j=await post0(p,b)}
  return j}

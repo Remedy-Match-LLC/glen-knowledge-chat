@@ -1067,7 +1067,8 @@ def test_a_resolved_subject_never_falls_back_to_the_email(tmp_path):
     client = app.test_client()
     tid = _intake(client, "Rover", OWNER, client_id="1002")
     r = client.get(f"/author/{tid}/e4l")
-    assert r.status_code != 200 or (r.get_json() or {}).get("e4l", {}).get("scan_id") != 5
+    assert r.status_code == 200
+    assert r.get_json()["e4l"]["found"] is False and r.get_json()["e4l"]["scan_id"] is None
 
 
 # -- 9. a pet's one-word name is a suggestion -----------------------------------------
@@ -1077,3 +1078,81 @@ def test_a_pets_one_word_name_is_suggested(tmp_path):
     assert suggest_intake_client(p, OWNER, "Rover")["client_id"] == 1002
     assert intake_e4l_client(p, None, OWNER, "Rover") is None
     assert suggest_intake_client(p, OWNER, "Ann") is None       # a person's first name
+
+
+
+# ==== 2026-11-06 outside review of 539eefb3 ===========================================
+
+def test_the_pet_never_publishes_the_owners_order(tmp_path):
+    from dashboard import biofield_progress as bp
+    published = []
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "",
+              "items": [{"slug": "es1", "qty": 1}]}
+    client, db = _app(
+        tmp_path, invoice_fetch_catalog=lambda: [{"slug": "es1", "name": INFO}],
+        invoice_latest=lambda email: latest,
+        invoice_publish=lambda oid: published.append(oid) or {"ok": True})
+    ann = _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    with sqlite3.connect(db) as cx:
+        bp.link_order(cx, ann, 7)
+    r = client.post(f"/author/{pet}/invoice/publish", json={"order_id": 7})
+    assert r.status_code == 409 and "Ann Owner" in r.get_json()["error"]
+    assert published == []
+
+
+def test_no_email_is_no_exemption_from_the_species_gate(tmp_path):
+    client, db = _unknown_app(tmp_path)
+    tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
+    j = client.post(f"/author/{tid}/row", json={"layer": 1, "remedy": FF}).get_json()
+    assert j["animal_refused"] == [FF] and j["species_unknown"] is True
+    assert client.post(f"/author/{tid}/remedy-set/add-one",
+                       json={"remedy": FF}).get_json().get("needs_species") is True
+
+
+def _old_schema(tmp_path):
+    """An e4l.db from before animal_name: every read of it fails."""
+    p = str(tmp_path / "e4l.db")
+    cx = sqlite3.connect(p)
+    cx.execute("CREATE TABLE e4l_clients (client_id INTEGER PRIMARY KEY, name TEXT, "
+               "email TEXT, species TEXT)")
+    cx.execute("INSERT INTO e4l_clients VALUES (1001, 'Ann Owner', ?, 'Human')", (OWNER,))
+    cx.execute("CREATE TABLE e4l_scans (scan_id INTEGER PRIMARY KEY, client_id INTEGER, "
+               "scan_date TEXT)")
+    cx.execute("INSERT INTO e4l_scans VALUES (9001, 1001, '2026-11-01')")
+    cx.commit()
+    cx.close()
+    return p
+
+
+def test_a_resolver_error_fails_closed_for_a_named_or_stored_intake(tmp_path):
+    p = _old_schema(tmp_path)
+    for cid, name in (("1001", ""), (None, "Rover Owner")):
+        res = resolve_intake_subject(p, cid, OWNER, name)
+        assert res["by"] == "unresolved" and res["species"] is None
+    assert species_for_intake(p, None, OWNER, "") == "Human"       # a bare email reads it
+    client, _db = _real_app(tmp_path, p)
+    tid = _intake(client, "Rover Owner", OWNER)
+    assert _panel_scan(client, tid)["scan_id"] is None
+
+
+def test_an_ambiguous_name_takes_no_answer(tmp_path):
+    p = _e4l_rows(tmp_path, [(1005, "Sam Owner", OWNER, "", ""),
+                             (1006, "Sam Owner", OWNER, "", "Sam")])
+    record_species_answer(p, OWNER, "Dog", name="Sam Owner")
+    res = resolve_intake_subject(p, None, OWNER, "Sam Owner")
+    assert res["ambiguous"] is True and res["species"] is None
+
+
+def test_an_answer_with_no_client_table_is_an_error_the_page_shows(tmp_path):
+    p = str(tmp_path / "e4l.db")
+    sqlite3.connect(p).close()                                  # no e4l_clients table
+    client, _db = _real_app(tmp_path, p)
+    tid = _intake(client, "Ann Owner", OWNER)
+    r = client.post(f"/author/{tid}/species", json={"species": "Human"})
+    assert r.status_code == 500 and "not recorded" in r.get_json()["error"]
+    assert record_species_answer(str(tmp_path / "nothing.db"), OWNER, "Dog") is None
+    assert not (tmp_path / "nothing.db").exists()
+    from dashboard import biofield_report_html as H
+    assert "if(!(r&&r.ok)){alert((r&&r.error)||'The answer was not recorded.');return false}" \
+        in H._AUTHOR_JS
