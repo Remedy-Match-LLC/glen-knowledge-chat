@@ -21,6 +21,7 @@
   input.product{ flex:2; min-width:200px; }
   button{ padding:8px 13px; border-radius:8px; border:1px solid var(--gold);
           background:var(--gold); color:#0a150d; font-weight:600; cursor:pointer; font-size:13px; }
+  button.quick{ background:transparent; color:var(--gold); }
   .wrap{ overflow-x:auto; margin:0 16px; max-width:980px; }
   table{ border-collapse:collapse; width:100%; font-size:13px; }
   th, td{ text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); vertical-align:middle; }
@@ -29,6 +30,19 @@
   .zero{ color:var(--red); font-weight:600; }
   .low{ color:var(--amber); font-weight:600; }
   .status{ font-size:12px; color:var(--muted); }
+  /* A picker that shows 10 items at once and scrolls (Glen, 2026-11-06). A browser
+     datalist cannot be sized, so this replaces it. */
+  .pick{ position:relative; flex:2; min-width:200px; display:flex; }
+  .pick input{ flex:1; min-width:0; }
+  .pick ul{ display:none; position:absolute; z-index:20; left:0; right:0; top:100%;
+            margin:4px 0 0; padding:0; list-style:none; background:var(--surface);
+            border:1px solid var(--border); border-radius:8px;
+            max-height:calc(10 * 32px); overflow-y:auto; }
+  .pick ul.open{ display:block; }
+  .pick li{ height:32px; line-height:32px; padding:0 10px; font-size:13px; cursor:pointer;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pick li.on, .pick li:hover{ background:var(--border); }
+  .pick li .tag{ color:var(--muted); font-size:11px; }
   .status.err{ color:var(--red); }
   .status.ok{ color:var(--green); }
   .empty{ color:var(--muted); font-size:13px; margin:0 16px; }
@@ -42,17 +56,18 @@ out of stock everywhere. Lowest count first.</p>
 
 <div class="card" id="add-card" style="display:none">
   <div class="row">
-    <input class="product" id="add-product" list="product-list" placeholder="Product name or slug">
+    <div class="pick"><input id="add-product" placeholder="Product name or slug" autocomplete="off">
+      <ul id="product-pick" role="listbox"></ul></div>
     <input class="count" id="add-count" type="number" min="0" step="1" placeholder="Count">
     <input class="reason" id="add-reason" placeholder="Reason, e.g. shelf count">
     <button onclick="addCount()">Set count</button>
+    <button class="quick" onclick="addCount('Shelf count')" title="Saves this count with the reason Shelf count">Shelf count</button>
   </div>
   <div class="status" id="add-status"></div>
   <div class="row" style="margin-top:10px">
     <button onclick="reconcileNow()">Check recent orders</button>
     <span class="status" id="rec-status">Finds paid orders from the last 30 days that never came off the count, and fixes them.</span>
   </div>
-  <datalist id="product-list"></datalist>
 </div>
 
 <div class="wrap"><table id="tbl" style="display:none">
@@ -80,7 +95,69 @@ out of stock everywhere. Lowest count first.</p>
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   var PRODUCTS = [];
+  var COUNTED = {};
   var LOW = 3;
+
+  // The drop-down lists only products not yet counted. Glen, 2026-11-06: "as I add
+  // inventories, can you remove those items from the drop down list, but still be able
+  // to find them if I start typing the product name". So from two typed letters on, a
+  // counted product that matches is offered too.
+  // pickFilter: what a picker offers for typed text q. Not yet counted: always, narrowed
+  // by q. Counted: only from two typed letters, and only when it matches.
+  function pickFilter(items, counted, q){
+    q = (q || '').trim().toLowerCase();
+    return items.filter(function(it){
+      var hit = !q || it.name.toLowerCase().indexOf(q) >= 0 || String(it.key).toLowerCase().indexOf(q) >= 0;
+      if (!counted[it.key]) return hit;
+      return q.length >= 2 && hit;
+    });
+  }
+  // makePicker(input, list, items(), counted()): a 10-row scrolling list under the input.
+  // Choosing an item writes its name into the input.
+  function makePicker(inputId, listId, items, counted){
+    var inp = document.getElementById(inputId), ul = document.getElementById(listId);
+    var shown = [], on = -1;
+    function draw(){
+      shown = pickFilter(items(), counted(), inp.value);
+      on = -1;
+      ul.innerHTML = shown.map(function(it, i){
+        return '<li role="option" data-i="'+i+'">'+esc(it.name)+
+          (counted()[it.key] ? ' <span class="tag">counted</span>' : '')+'</li>'; }).join('');
+      ul.classList.toggle('open', shown.length > 0 && document.activeElement === inp);
+    }
+    function mark(i){
+      var lis = ul.querySelectorAll('li');
+      if (on >= 0 && lis[on]) lis[on].classList.remove('on');
+      on = Math.max(0, Math.min(i, lis.length - 1));
+      if (lis[on]){ lis[on].classList.add('on'); lis[on].scrollIntoView({block:'nearest'}); }
+    }
+    function choose(i){
+      if (!shown[i]) return;
+      inp.value = shown[i].name; ul.classList.remove('open');
+    }
+    inp.addEventListener('focus', draw);
+    inp.addEventListener('input', draw);
+    inp.addEventListener('blur', function(){ ul.classList.remove('open'); });
+    ul.addEventListener('mousedown', function(e){       // before blur closes the list
+      var li = e.target.closest('li'); if (!li) return;
+      e.preventDefault(); choose(+li.getAttribute('data-i'));
+    });
+    inp.addEventListener('keydown', function(e){
+      if (!ul.classList.contains('open')){ if (e.key === 'ArrowDown') draw(); return; }
+      if (e.key === 'ArrowDown'){ e.preventDefault(); mark(on + 1); }
+      else if (e.key === 'ArrowUp'){ e.preventDefault(); mark(on - 1); }
+      else if (e.key === 'Enter' && on >= 0){ e.preventDefault(); choose(on); }
+      else if (e.key === 'Escape'){ ul.classList.remove('open'); }
+    });
+    return { redraw: draw };
+  }
+  var productPicker = null;
+  function fillList(){
+    if (!productPicker) productPicker = makePicker('add-product', 'product-pick',
+      function(){ return PRODUCTS.map(function(p){ return {key: p.slug, name: p.name}; }); },
+      function(){ return COUNTED; });
+    if (document.activeElement === document.getElementById('add-product')) productPicker.redraw();
+  }
 
   async function load(){
     var r = await fetch('/api/console/stock', { headers: hdr() });
@@ -90,13 +167,14 @@ out of stock everywhere. Lowest count first.</p>
       off.style.display='block'; return; }
     LOW = d.low_stock_at; PRODUCTS = d.products || [];
     document.getElementById('add-card').style.display='block';
-    document.getElementById('product-list').innerHTML = PRODUCTS.map(function(p){
-      return '<option value="'+esc(p.name)+'">'+esc(p.slug)+'</option>'; }).join('');
     var rows = d.rows || [];
+    COUNTED = {}; rows.forEach(function(x){ COUNTED[x.slug] = true; });
+    fillList();
     document.getElementById('tbl').style.display = rows.length ? 'table' : 'none';
     document.getElementById('no-rows').style.display = rows.length ? 'none' : 'block';
     document.getElementById('rows').innerHTML = rows.map(function(x, i){
-      var cls = x.count <= 0 ? 'zero' : (x.count <= LOW ? 'low' : '');
+      var lo = (x.low_at == null) ? LOW : x.low_at;
+      var cls = x.count <= 0 ? 'zero' : (x.count <= lo ? 'low' : '');
       return '<tr><td>'+esc(x.name)+'<br><span class="status">'+esc(x.slug)+'</span></td>'+
         '<td class="num '+cls+'">'+esc(x.count)+'</td>'+
         '<td class="num">'+esc(x.avg_monthly)+'</td>'+
@@ -104,7 +182,9 @@ out of stock everywhere. Lowest count first.</p>
         '<td><div class="row"><input class="count" type="number" min="0" step="1" id="c'+i+'">'+
         '<input class="reason" id="r'+i+'" placeholder="Reason"></div>'+
         '<div class="status" id="s'+i+'"></div></td>'+
-        '<td><button data-slug="'+esc(x.slug)+'" data-i="'+i+'" onclick="saveRow(this)">Save</button></td></tr>';
+        '<td><div class="row"><button data-slug="'+esc(x.slug)+'" data-i="'+i+'" onclick="saveRow(this)">Save</button>'+
+        '<button class="quick" data-slug="'+esc(x.slug)+'" data-i="'+i+'" onclick="saveRow(this, \'Shelf count\')" '+
+        'title="Saves this count with the reason Shelf count">Shelf count</button></div></td></tr>';
     }).join('');
     var un = d.unmatched || [];
     ['unmatched-h','unmatched-sub'].forEach(function(id){
@@ -126,20 +206,21 @@ out of stock everywhere. Lowest count first.</p>
     return true;
   }
 
-  async function saveRow(btn){
+  // "Shelf count" buttons save with that reason, so the free-text box can stay empty.
+  async function saveRow(btn, reason){
     var i = btn.getAttribute('data-i');
     var ok = await post(btn.getAttribute('data-slug'), document.getElementById('c'+i).value,
-                        document.getElementById('r'+i).value, document.getElementById('s'+i));
+                        reason || document.getElementById('r'+i).value, document.getElementById('s'+i));
     if (ok) load();
   }
 
-  async function addCount(){
+  async function addCount(reason){
     var v = document.getElementById('add-product').value.trim();
     var hit = PRODUCTS.find(function(p){ return p.slug === v || p.name === v; });
     var st = document.getElementById('add-status');
     if (!hit){ st.className = 'status err'; st.textContent = 'Pick a product from the list.'; return; }
     var ok = await post(hit.slug, document.getElementById('add-count').value,
-                        document.getElementById('add-reason').value, st);
+                        reason || document.getElementById('add-reason').value, st);
     if (ok){ document.getElementById('add-product').value=''; document.getElementById('add-count').value='';
       document.getElementById('add-reason').value=''; load(); }
   }

@@ -696,3 +696,97 @@ def test_console_is_off_with_the_flag(console, monkeypatch):
     assert console.get("/api/console/stock", headers=h).status_code == 404
     assert console.post("/api/console/stock/reconcile", headers=h).status_code == 404
     assert console.get("/console/stock").status_code == 200
+
+
+def test_custom_and_drop_shipped_products_are_never_counted(env, monkeypatch):
+    """Glen, 2026-11-06: products named "in Terrain Restore" are custom, and the 15-plate
+    water ionizer is drop shipped. Neither can carry a count, neither is offered on the
+    Stock page, and an old zero row never takes one off sale."""
+    cat = dict(CAT)
+    cat["root-chakra-in-terrain-restore"] = {"name": "Root Chakra Essence in  Terrain Restore",
+                                             "price_cents": 7000}
+    cat["water-ionizer-15plate"] = {"name": "15-Plate Water Ionizer (Living Water)",
+                                    "price_cents": 250000}
+    monkeypatch.setattr(SC, "_CATALOG_FN", lambda: cat)
+    cx = env["cx"]
+    cat["water-ionizer-9plate"] = {"name": "9-Plate Water Ionizer (Living Water)",
+                                   "price_cents": 200000}
+    cat["aller-free-he"] = {"name": "Aller-Free Homeo-Energetic Drops", "price_cents": 3000}
+    for slug, why in (("root-chakra-in-terrain-restore", "custom"),
+                      ("aller-free-he", "custom"),
+                      ("water-ionizer-15plate", "drop shipped"),
+                      ("water-ionizer-9plate", "drop shipped")):
+        with pytest.raises(ValueError, match=why):
+            _set(cx, slug, 3)
+    offered = {p["slug"] for p in SC.countable_products()}
+    assert "scar-silk" in offered
+    assert not offered & {"root-chakra-in-terrain-restore", "water-ionizer-15plate"}
+    # A zero row written before this rule (as on 6 Nov) blocks nothing.
+    cx.execute("INSERT INTO stock_counts (slug, count, set_at, updated_at) VALUES (?,?,?,?)",
+               ("water-ionizer-15plate", 0, "x", "x"))
+    cx.commit()
+    SC._invalidate()
+    assert "water-ionizer-15plate" in SC.zero_slugs()
+    assert not SC.is_counted_out("water-ionizer-15plate", cat["water-ionizer-15plate"])
+    # An order for either takes nothing.
+    assert SC.units_for_items([{"slug": "water-ionizer-15plate", "qty": 1},
+                               {"slug": "root-chakra-in-terrain-restore", "qty": 1},
+                               {"slug": "scar-silk", "qty": 1}], cat) == {"scar-silk": 1}
+
+
+def test_the_five_plate_ionizer_is_counted_but_never_goes_off_sale(env, monkeypatch):
+    """Glen, 2026-11-06: 5 paid-for units wait at the manufacturer, "always keep it
+    showing available for sale". It is counted and comes off with orders, but 0 blocks
+    nothing."""
+    cat = dict(CAT)
+    cat["water-ionizer-5plate"] = {"name": "5-Plate Water Ionizer (Living Water)",
+                                   "price_cents": 150000}
+    monkeypatch.setattr(SC, "_CATALOG_FN", lambda: cat)
+    cx = env["cx"]
+    _set(cx, "water-ionizer-5plate", 1)
+    assert "water-ionizer-5plate" in {p["slug"] for p in SC.countable_products()}
+    oid = _order(cx, [{"slug": "water-ionizer-5plate", "qty": 1}])
+    O.set_order_payment(cx, oid, method="card", amount_cents=150000)
+    assert _count(cx, "water-ionizer-5plate") == 0
+    SC._invalidate()
+    assert "water-ionizer-5plate" in SC.zero_slugs()
+    assert not SC.is_counted_out("water-ionizer-5plate", cat["water-ionizer-5plate"])
+    assert SC.is_counted_out("scar-silk", cat["scar-silk"]) is False
+    _set(cx, "scar-silk", 0)
+    assert SC.is_counted_out("scar-silk", cat["scar-silk"])   # the rule is per product
+
+
+def test_infoceuticals_alert_at_zero_or_at_one_when_they_sell_monthly(env, monkeypatch):
+    """Glen, 2026-11-06: "For Infoceuticals, set the alert level to zero, unless the average
+    monthly use is 1 or more, then set it to 1." Other products still alert at 3."""
+    cat = dict(CAT)
+    cat["es1-lymph"] = {"name": "ES1 Lymph and Immune Energetic Star Infoceutical",
+                        "price_cents": 4000}
+    cat["youth"] = {"name": "Youth Infoceutical", "price_cents": 4000}
+    monkeypatch.setattr(SC, "_CATALOG_FN", lambda: cat)
+    avg = {"es1-lymph": 0.5, "youth": 1.0, "scar-silk": 0.0}
+    monkeypatch.setattr(SC, "monthly_sales_cached", lambda cx, c=None: avg)
+    cx, sent = env["cx"], env["sent"]
+
+    def low_subjects():
+        return [s for s in _subjects(sent) if s.startswith("Low stock")]
+    _set(cx, "es1-lymph", 1)                 # slow seller: no alert at 1
+    assert low_subjects() == []
+    _set(cx, "es1-lymph", 0)                 # ... but at 0
+    assert any("ES1" in s for s in low_subjects())
+    _set(cx, "youth", 2)
+    assert not any("Youth" in s for s in low_subjects())
+    _set(cx, "youth", 1)                     # sells 1 a month: alert at 1
+    assert any("Youth" in s for s in low_subjects())
+    _set(cx, "scar-silk", 3)                 # other products unchanged
+    assert any("Scar Silk" in s for s in low_subjects())
+    assert SC.low_stock_at(cat["youth"], 1.0) == 1
+    assert SC.low_stock_at(cat["es1-lymph"], 0.99) == 0
+    assert SC.low_stock_at(cat["scar-silk"], 5) == 3
+    # One month of supply: a slow Infoceutical never sends it, a monthly seller does.
+    assert not any(s.startswith("Under one month") and "ES1" in s for s in _subjects(sent))
+    avg["youth"] = 2.0
+    _set(cx, "youth", 1)
+    assert any(s.startswith("Under one month") and "Youth" in s for s in _subjects(sent))
+    assert SC.month_alert_applies(cat["es1-lymph"], 0.5) is False
+    assert SC.month_alert_applies(cat["scar-silk"], 0.5) is True
