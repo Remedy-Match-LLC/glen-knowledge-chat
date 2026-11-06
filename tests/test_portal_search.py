@@ -346,9 +346,13 @@ def test_retired_destinations_never_returned_from_any_source():
 # ── review rounds 1 and 2 ────────────────────────────────────────────────────
 
 def _legacy_portal(appmod, email, content):
+    from dashboard import biofield_reveals as brv
     from dashboard import client_portal as cp
+    from dashboard import portal_biofield_reports as pbr
+    from dashboard import report_holds as rh
     cx = sqlite3.connect(appmod.LOG_DB)
-    cp.init_client_portal_table(cx)
+    for init in (cp.init_client_portal_table, pbr.init_table, rh.init_table, brv.init_table):
+        init(cx)              # the tables prod has; a missing one now fails closed
     token, _ = cp.upsert_portal(cx, email, "Legacy", content)
     cx.close()
     return token
@@ -485,7 +489,7 @@ def test_no_connection_is_open_while_unlock_or_chat_runs(env, monkeypatch):
     monkeypatch.setattr(appmod, "_portal_chat_thread",
                         lambda e: seen.append(("chat", open_now[0])) or real_chat(e))
     assert _search(client, tok).status_code == 200
-    assert seen == [("unlock", 0), ("chat", 0)]
+    assert sorted(seen) == [("chat", 0), ("unlock", 0)]
 
 
 def test_corpus_is_cached_per_email(env, monkeypatch):
@@ -496,7 +500,7 @@ def test_corpus_is_cached_per_email(env, monkeypatch):
     calls = []
     real = appmod._portal_search_records
     monkeypatch.setattr(appmod, "_portal_search_records",
-                        lambda e, c: calls.append(e) or real(e, c))
+                        lambda e: calls.append(e) or real(e))
     for q in ("zep", "zeph", WORD):
         _search(client, tok_a, q=q)
     _search(client, tok_a, page=2)
@@ -544,3 +548,155 @@ def test_household_member_param_does_not_widen_search(env, monkeypatch):
     recs = _records(r.get_json())
     assert len(recs) == 3 and all("alphaonly" in _text(x) for x in recs)
     assert "bravoonly" not in json.dumps(r.get_json())
+
+
+# ── review round 3 ───────────────────────────────────────────────────────────
+
+def test_failed_hold_read_returns_no_reports(env, monkeypatch):
+    client, appmod = env
+    tok = _seed_client(appmod, "alpha@example.com", "alphaonly")
+    from dashboard import report_holds as rh
+
+    def boom(cx, email):
+        raise RuntimeError("holds unreadable")
+    monkeypatch.setattr(rh, "held_dates", boom)
+    recs = _records(_search(client, tok).get_json())
+    assert sorted(r["kind"] for r in recs) == ["message", "order"]
+
+
+def test_failed_report_status_read_returns_no_reports(env, monkeypatch):
+    client, appmod = env
+    tok = _seed_client(appmod, "alpha@example.com", "alphaonly")
+    from dashboard import portal_biofield_reports as pbr
+
+    def boom(cx, email, d):
+        raise RuntimeError("report unreadable")
+    monkeypatch.setattr(pbr, "get_report", boom)
+    # Matches on the report title, so an unreadable report would otherwise be found.
+    recs = _records(_search(client, tok, q="remedy match").get_json())
+    assert not [r for r in recs if r["kind"] == "report"]
+
+
+def test_reports_get_their_own_connection(env, monkeypatch):
+    client, appmod = env
+    tok = _seed_client(appmod, "alpha@example.com", "alphaonly")
+    used = {}
+    real_pub, real_rep = appmod._published_invoices_for, ps.report_docs
+
+    def pub(cx, e):
+        used["orders"] = id(cx)
+        return real_pub(cx, e)
+
+    def rep(cx, e, **k):
+        used["reports"] = id(cx)
+        return real_rep(cx, e, **k)
+    monkeypatch.setattr(appmod, "_published_invoices_for", pub)
+    monkeypatch.setattr(ps, "report_docs", rep)
+    _search(client, tok)
+    assert set(used) == {"orders", "reports"} and used["orders"] != used["reports"]
+
+
+def test_shared_connection_is_reset_after_an_invoice_helper(env, monkeypatch):
+    """The app's invoice helpers swallow their own errors. On Postgres that leaves the
+    transaction aborted, so the next read on the same connection must follow a rollback."""
+    client, appmod = env
+    tok = _seed_client(appmod, "alpha@example.com", "alphaonly")
+    real_connect = appmod.db.connect
+
+    class _PgLike:
+        def __init__(self, *a, **k):
+            self.cx, self.aborted = real_connect(*a, **k), False
+
+        def __enter__(self):
+            self.cx.__enter__()
+            return self
+
+        def __exit__(self, *a):
+            return self.cx.__exit__(*a)
+
+        def execute(self, *a, **k):
+            if self.aborted:
+                raise RuntimeError("current transaction is aborted")
+            return self.cx.execute(*a, **k)
+
+        def rollback(self):
+            self.aborted = False
+            return self.cx.rollback()
+
+        def __getattr__(self, name):
+            return getattr(self.cx, name)
+
+    saw = []
+
+    def published(cx, email):
+        cx.aborted = True          # a failed SELECT, swallowed as the real helper does
+        return []
+
+    def past(cx, email):
+        saw.append(cx.aborted)
+        return []
+    monkeypatch.setattr(appmod.db, "connect", _PgLike)
+    monkeypatch.setattr(appmod, "_published_invoices_for", published)
+    monkeypatch.setattr(appmod, "_past_invoices_for", past)
+    _search(client, tok)
+    assert saw == [False]
+
+
+def test_reports_are_not_cached(env, monkeypatch):
+    client, appmod = env
+    tok = _seed_client(appmod, "alpha@example.com", "alphaonly")
+    monkeypatch.setattr(ps, "CORPUS_TTL_S", 60)
+    from dashboard import report_holds as rh
+    assert _search(client, tok, q="alphaonly greeting").get_json()["total"] == 1
+    assert _search(client, tok, q="alphaonlyremedy").get_json()["total"] == 1
+    cx = sqlite3.connect(appmod.LOG_DB)
+    rh.hold(cx, "alpha@example.com", "2026-10-02")
+    cx.close()
+    assert _search(client, tok, q="alphaonly greeting").get_json()["total"] == 0
+    cx = sqlite3.connect(appmod.LOG_DB)
+    rh.release(cx, "alpha@example.com", "2026-10-02")
+    cx.close()
+    monkeypatch.setattr(appmod, "_portal_biofield_unlocked", lambda e: False)
+    assert _search(client, tok, q="alphaonlyremedy").get_json()["total"] == 0
+    # Orders and messages may stay cached.
+    assert ps._CORPUS.get(("records", "alpha@example.com"))
+
+
+def _one_product(monkeypatch, appmod):
+    products = {"ok-one": {"slug": "ok-one", "name": f"{WORD} Drops", "price_cents": 2500}}
+    monkeypatch.setattr(appmod, "_PRODUCTS", {"products": products})
+    monkeypatch.setattr(appmod, "_get_product", lambda slug: products.get(slug))
+
+
+def test_store_result_shows_the_clients_own_price(env, monkeypatch):
+    client, appmod = env
+    tok = _seed_client(appmod, "alpha@example.com", "alphaonly")
+    _one_product(monkeypatch, appmod)
+    asked = []
+
+    def priced(items, email=None):
+        asked.append((items, email))
+        return [], [{"name": "x", "unit_cents": 1999}], 1999
+    monkeypatch.setattr(appmod, "_portal_priced_lines", priced)
+    store = [r for r in _search(client, tok).get_json()["results"] if r["source"] == "store"]
+    assert store[0]["price"] == "$19.99"
+    assert asked == [([{"slug": "ok-one", "qty": 1}], "alpha@example.com")]
+
+
+def test_store_result_keeps_catalog_price_when_client_pricing_fails(env, monkeypatch):
+    client, appmod = env
+    tok = _seed_client(appmod, "alpha@example.com", "alphaonly")
+    _one_product(monkeypatch, appmod)
+
+    def boom(items, email=None):
+        raise RuntimeError("pricing down")
+    monkeypatch.setattr(appmod, "_portal_priced_lines", boom)
+    store = [r for r in _search(client, tok).get_json()["results"] if r["source"] == "store"]
+    assert store[0]["price"] == "$25.00"
+
+
+def test_echoed_query_is_capped(env):
+    client, appmod = env
+    tok = _seed_client(appmod, "alpha@example.com", "alphaonly")
+    body = _search(client, tok, q="a" * 500).get_json()
+    assert len(body["q"]) == ps.MAX_QUERY_CHARS == 200

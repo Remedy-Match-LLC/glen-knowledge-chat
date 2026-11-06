@@ -74,9 +74,17 @@ SCRIPT_TAG = '<script id="portal-search-assets" defer src="/static/js/portal-sea
 
 # ── query and matching ───────────────────────────────────────────────────────
 
+MAX_QUERY_CHARS = 200
+
+
+def clean_query(q):
+    """The query as searched and echoed: trimmed, at most MAX_QUERY_CHARS."""
+    return (q or "").strip()[:MAX_QUERY_CHARS]
+
+
 def terms_for(q):
     """Lower-cased words of the query, or [] when it is shorter than MIN_QUERY_CHARS."""
-    q = (q or "").strip().lower()
+    q = clean_query(q).lower()
     if len(q) < MIN_QUERY_CHARS:
         return []
     out = []
@@ -152,18 +160,27 @@ def snippet_html(body, terms, size=SNIPPET_CHARS):
 # reads api_client_portal makes, and app._portal_chat_thread (the last 100 messages,
 # exactly what the Messages card shows). Search never shows more than the portal shows.
 
-def _safe_read(cx, fn, default):
-    """fn(cx), or `default` when the table is missing. A failed read on Postgres aborts
-    the transaction, so roll back before the next read."""
+def _rollback(cx):
     try:
-        return fn(cx)
+        cx.rollback()
+    except Exception:
+        pass
+
+
+def _safe_read(cx, fn, default, *, reset=False):
+    """fn(cx), or `default` when the read fails. A failed read on Postgres aborts the
+    transaction, so roll back before the next read. `reset` also rolls back after a
+    read that may swallow its own error (the app's invoice helpers return [] on any
+    failure), so the shared connection is never left aborted for the next read."""
+    try:
+        out = fn(cx)
     except Exception as e:
         print(f"[portal-search] read failed: {e!r}", flush=True)
-        try:
-            cx.rollback()
-        except Exception:
-            pass
+        _rollback(cx)
         return default
+    if reset:
+        _rollback(cx)
+    return out
 
 
 def invoice_item_names(order):
@@ -227,7 +244,11 @@ def report_docs(cx, email, *, show_remedies, portal_content=None):
     """The client's published reports, from the reads api_client_portal makes: confirmed
     stored reports and scan reveals, never a date the owner has put on hold. Remedy
     names are searched only when `show_remedies`, because the portal blurs them
-    otherwise. The caller computes that BEFORE opening `cx`."""
+    otherwise. The caller computes that BEFORE opening `cx`, and gives this function
+    a connection of its own, as the portal page does with cx_r.
+
+    Fails closed. If a read that decides what is hidden fails (the holds, the report
+    list, a report's status), no reports are returned at all."""
     from dashboard import biofield_reveals as _brv
     from dashboard import portal_biofield_reports as _pbr
     from dashboard import portal_view as _pv
@@ -235,11 +256,17 @@ def report_docs(cx, email, *, show_remedies, portal_content=None):
     email = (email or "").strip().lower()
     if not email:
         return []
-    held = set(_safe_read(cx, lambda c: _rh.held_dates(c, email), set()) or [])
-    dates = _safe_read(cx, lambda c: _pbr.list_report_dates(c, email), [])
+    try:
+        held = set(_rh.held_dates(cx, email) or [])
+        dates = list(_pbr.list_report_dates(cx, email))
+        stored = {d: (_pbr.get_report(cx, email, d) or {}) for d in dates}
+    except Exception as e:
+        print(f"[portal-search] report reads failed, no reports returned: {e!r}", flush=True)
+        _rollback(cx)
+        return []
     docs, seen = [], set()
     for d in dates:
-        rep = _safe_read(cx, lambda c: _pbr.get_report(c, email, d), None) or {}
+        rep = stored[d]
         seen.add(d)   # a draft or held report hides a reveal of the same date too
         if d in held or (rep.get("status") or "confirmed") != "confirmed":
             continue
@@ -248,8 +275,8 @@ def report_docs(cx, email, *, show_remedies, portal_content=None):
         docs.append({"source": RECORDS, "kind": "report", "title": _report_title(kind, d),
                      "body": _report_body(content, show_remedies), "url": "#biofield",
                      "scan_date": d})
-    reveals = _safe_read(cx, lambda c: _brv.list_for_email(c, email), [])
-    for r in reveals:
+    reveals = _safe_read(cx, lambda c: _brv.list_for_email(c, email), None)
+    for r in reveals or []:
         d = r.get("scan_date") or ""
         if not d or d in seen or d in held:
             continue
@@ -261,8 +288,9 @@ def report_docs(cx, email, *, show_remedies, portal_content=None):
                      "scan_date": d})
     # No dated report and no reveal: the portal shows the report held on the portal
     # record itself, with its own biofield_status. A hold on its current_scan_date
-    # keeps it out too, so a held report can never be found here.
-    if not dates and not reveals and portal_content:
+    # keeps it out too. A failed reveals read (None) leaves it out as well, since a
+    # reveal would have replaced it on the page.
+    if not dates and reveals == [] and portal_content:
         pc = portal_content or {}
         cur = (pc.get("current_scan_date") or "").strip()
         if (pc.get("layers") and (pc.get("biofield_status") or "confirmed") == "confirmed"
@@ -477,6 +505,7 @@ def search(docs, terms, page=1, page_size=PAGE_SIZE):
              "snippet_html": snippet_html(d.get("body") or d.get("title") or "", terms),
              "score": s}
         if d["source"] == STORE:
+            r["slug"] = d.get("slug") or ""
             r["price"] = d.get("price") or ""
             r["orderable"] = bool(d.get("orderable"))
         if d.get("scan_date"):
