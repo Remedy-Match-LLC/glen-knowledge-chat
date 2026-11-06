@@ -45,7 +45,6 @@ LOW_STOCK_AT = 3                  # Glen, 2026-11-06: "yes" to 3 bottles or fewe
 AVG_WINDOW_DAYS = 365             # average monthly sales over the last 12 months
 DEDUPE_DAYS = 14                  # a line within 14 days of another source's line is one sale
 RECONCILE_DAYS = 30               # the self-heal looks back this far
-RECONCILE_EVERY_HOURS = 24
 ZERO_CACHE_SECONDS = 5.0          # how stale the sold-out set may be in another worker
 AVG_CACHE_SECONDS = 600.0
 SEND_RETRY_AFTER_SECONDS = 3600   # a send left 'pending' this long (a crash) is retried
@@ -118,6 +117,22 @@ def _safe_rollback(cx):
 
 # ── schema ──────────────────────────────────────────────────────────────────────
 
+_INITED = set()
+
+
+def ensure_tables(cx):
+    """init_tables once per process per database path (review round 3)."""
+    key = db_path()
+    if key not in _INITED:
+        init_tables(cx)
+        _INITED.add(key)
+
+
+def _forget_tables():
+    """A missing table after ensure_tables: the database was replaced. Re-init next time."""
+    _INITED.discard(db_path())
+
+
 def init_tables(cx):
     # set_at: when the count was last SET by hand. Sales before it are in the count.
     cx.execute("""CREATE TABLE IF NOT EXISTS stock_counts (
@@ -138,11 +153,15 @@ def init_tables(cx):
     cx.execute("CREATE INDEX IF NOT EXISTS ix_stock_log_slug ON stock_log(slug)")
     # Per (order, slug): qty the order has accounted for, and bottles it actually took
     # off a count. sync_order moves only the difference to what it should hold now.
+    # sold_at: when the order first went live, never updated (a re-payment re-stamps
+    # orders.paid_at; this does not move). Slug '' with qty 0 marks an order synced
+    # with nothing to count, so the self-heal skips it.
     cx.execute("""CREATE TABLE IF NOT EXISTS stock_order_moves (
         order_id   INTEGER NOT NULL,
         slug       TEXT NOT NULL,
         qty        INTEGER NOT NULL DEFAULT 0,
         taken      INTEGER NOT NULL DEFAULT 0,
+        sold_at    TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (order_id, slug))""")
     # A row means this alert's crossing is open. Deleted when the condition clears.
@@ -172,9 +191,6 @@ def init_tables(cx):
     cx.execute("""CREATE TABLE IF NOT EXISTS stock_gk_deliveries (
         delivery_key TEXT PRIMARY KEY,
         seen_at      TEXT NOT NULL)""")
-    cx.execute("""CREATE TABLE IF NOT EXISTS stock_meta (
-        key   TEXT PRIMARY KEY,
-        value TEXT NOT NULL)""")
     cx.commit()
 
 
@@ -279,7 +295,7 @@ def set_count(cx, slug, count, *, who, reason, catalog=None):
     reason = (reason or "").strip()
     if not reason:
         raise ValueError("a reason is required")
-    init_tables(cx)
+    ensure_tables(cx)
     now = _now()
     try:
         cur = cx.execute(
@@ -385,7 +401,7 @@ def sync_order(cx, order_id, catalog=None):
         return {}
     try:
         cat = _catalog(catalog)
-        init_tables(cx)
+        ensure_tables(cx)
         if cx.execute("UPDATE orders SET updated_at=updated_at WHERE id=?",
                       (int(order_id),)).rowcount != 1:
             cx.commit()
@@ -393,14 +409,17 @@ def sync_order(cx, order_id, catalog=None):
         r = cx.execute("SELECT status, pay_status, source, items_json, "
                        "COALESCE(paid_at, created_at) FROM orders WHERE id=?",
                        (int(order_id),)).fetchone()
-        status, pay, source, items_json, sold_at = tuple(r)
+        status, pay, source, items_json, now_sold = tuple(r)
         gk = source == "groovekart"
         live = (status or "") != "cancelled" and (pay == "paid" or gk)
         who = "groovekart" if gk else "order"
         want = units_for_items(_parse_items(items_json), cat) if live else {}
-        held = {row[0]: (int(row[1]), int(row[2])) for row in cx.execute(
-            "SELECT slug, qty, taken FROM stock_order_moves WHERE order_id=?",
-            (int(order_id),)).fetchall()}
+        rows = cx.execute("SELECT slug, qty, taken, sold_at FROM stock_order_moves "
+                          "WHERE order_id=?", (int(order_id),)).fetchall()
+        held = {row[0]: (int(row[1]), int(row[2])) for row in rows if row[0]}
+        # When the order first went live, from this log, not orders.paid_at, which a
+        # second payment re-stamps (review round 3).
+        sold_at = min([str(row[3]) for row in rows] or [str(now_sold or "")])
         moved = {}
         for slug in sorted(set(want) | set(held)):
             q, t = held.get(slug, (0, 0))
@@ -408,20 +427,22 @@ def sync_order(cx, order_id, catalog=None):
             if d == q and (live or t == 0):
                 continue
             counted = _lock_count(cx, slug)
-            if not live:
-                new_q, new_t = 0, 0
+            row = _count_row(cx, slug) if counted else None
+            # An order first sold before the product's count was last set is already
+            # in that count. It never takes from it, and a cancel never puts back what
+            # it took before the count, which would inflate it (review round 3).
+            pre = row is not None and sold_at < str(row[1] or "")
+            new_q = d if live else 0
+            if pre or not counted:
+                new_t = 0
+                apply = 0
             else:
-                new_q, new_t = d, t
-                row = _count_row(cx, slug) if counted else None
-                # A sale before the count was last set is already in that count.
-                if row is not None and str(sold_at or "") >= str(row[1] or ""):
-                    new_t = max(0, t + (d - q))
-                elif d < q:
-                    new_t = max(0, min(t, d))
-            if counted and new_t != t:
+                new_t = max(0, t + (d - q)) if live else 0
+                apply = t - new_t
+            if apply:
                 ref = (f"cancelled order #{order_id}" if not live else
                        f"GrooveKart order #{order_id}" if gk else f"paid order #{order_id}")
-                _apply(cx, slug, t - new_t, who=who, reason=ref, order_id=order_id)
+                _apply(cx, slug, apply, who=who, reason=ref, order_id=order_id)
                 moved[slug] = get_count(cx, slug)
             if slug in held:
                 cx.execute("UPDATE stock_order_moves SET qty=?, taken=?, updated_at=? "
@@ -429,8 +450,14 @@ def sync_order(cx, order_id, catalog=None):
                            (new_q, new_t, _now(), int(order_id), slug))
             else:
                 cx.execute("INSERT INTO stock_order_moves (order_id, slug, qty, taken, "
-                           "updated_at) VALUES (?,?,?,?,?)",
-                           (int(order_id), slug, new_q, new_t, _now()))
+                           "sold_at, updated_at) VALUES (?,?,?,?,?,?)",
+                           (int(order_id), slug, new_q, new_t, sold_at, _now()))
+        if live and not rows and not want:
+            # Live with nothing to count: mark it, so the self-heal skips it.
+            cx.execute("INSERT INTO stock_order_moves (order_id, slug, qty, taken, "
+                       "sold_at, updated_at) VALUES (?,?,?,?,?,?) "
+                       "ON CONFLICT (order_id, slug) DO NOTHING",
+                       (int(order_id), "", 0, 0, sold_at, _now()))
         cx.commit()
         if moved:
             _invalidate_zero()
@@ -438,6 +465,8 @@ def sync_order(cx, order_id, catalog=None):
         return moved
     except Exception as e:  # noqa: BLE001
         _safe_rollback(cx)
+        if "no such table" in str(e) or "does not exist" in str(e):
+            _forget_tables()
         print(f"[stock] sync skipped for order #{order_id}: {e!r}", flush=True)
         return {}
 
@@ -459,7 +488,7 @@ def reconcile(cx, *, days=RECONCILE_DAYS, catalog=None):
     if not enabled():
         return []
     try:
-        init_tables(cx)
+        ensure_tables(cx)
         cutoff = (datetime.now(timezone.utc) - timedelta(days=int(days))).isoformat()
         ids = [int(r[0]) for r in cx.execute(
             "SELECT o.id FROM orders o WHERE COALESCE(o.status,'') <> 'cancelled' "
@@ -478,28 +507,6 @@ def reconcile(cx, *, days=RECONCILE_DAYS, catalog=None):
     for oid in sorted(set(ids)):
         sync_order(cx, oid, catalog)
     return sorted(set(ids))
-
-
-def maybe_reconcile(cx, catalog=None):
-    """Run reconcile at most once per RECONCILE_EVERY_HOURS across all workers: the
-    first caller to advance `stock_meta.last_reconcile` runs it. Never raises."""
-    if not enabled():
-        return None
-    try:
-        init_tables(cx)
-        now = datetime.now(timezone.utc)
-        stale = (now - timedelta(hours=RECONCILE_EVERY_HOURS)).isoformat()
-        cur = cx.execute("INSERT INTO stock_meta (key, value) VALUES ('last_reconcile', ?) "
-                         "ON CONFLICT (key) DO NOTHING", (now.isoformat(),))
-        claimed = cur.rowcount == 1 or cx.execute(
-            "UPDATE stock_meta SET value=? WHERE key='last_reconcile' AND value < ?",
-            (now.isoformat(), stale)).rowcount == 1
-        cx.commit()
-    except Exception as e:  # noqa: BLE001
-        _safe_rollback(cx)
-        print(f"[stock] reconcile claim skipped: {e!r}", flush=True)
-        return None
-    return reconcile(cx, catalog=catalog) if claimed else None
 
 
 # ── GrooveKart ─────────────────────────────────────────────────────────────────
@@ -560,7 +567,7 @@ def on_groovekart_delivery(cx, order_id, products, *, key, ref="", catalog=None)
         return {}
     try:
         cat = _catalog(catalog)
-        init_tables(cx)
+        ensure_tables(cx)
         cur = cx.execute("INSERT INTO stock_gk_deliveries (delivery_key, seen_at) "
                          "VALUES (?,?) ON CONFLICT (delivery_key) DO NOTHING", (key, _now()))
         if cur.rowcount == 1:
@@ -791,7 +798,7 @@ def check_alerts(cx, slugs, catalog=None):
 def console_rows(cx, catalog=None) -> list:
     """Every counted product, lowest count first."""
     cat = _catalog(catalog)
-    init_tables(cx)
+    ensure_tables(cx)
     avg = monthly_sales_cached(cx, cat)
     rows = []
     for r in cx.execute("SELECT slug, count, updated_at FROM stock_counts").fetchall():

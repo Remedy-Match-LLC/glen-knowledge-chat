@@ -228,6 +228,7 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
         cx.commit()
         if items is not None:
             _emit_source_events(cx, row[0], email, items)
+            _stock_sync(cx, row[0])   # an edited paid order moves the difference
         return row[0]
     oid = dbwrite.insert_returning_id(
         cx,
@@ -1132,14 +1133,13 @@ def _consume_ship_credit_on_pay(cx, order_id):
 def _stock_sync(cx, order_id):
     """Bring the shelf count in line with this order as it now stands: paid takes its
     bottles off, cancelled puts them back, reinstated takes them again, each once
-    (STOCK_COUNTS_ENABLED, Glen 2026-11-06). Then the once-a-day self-heal, if due.
-    Flag off: returns before touching anything. Never raises: payment, a cancel or a
+    (STOCK_COUNTS_ENABLED, Glen 2026-11-06). The self-heal runs from cron and the
+    console, never here. Flag off: returns before touching anything. Never raises: payment, a cancel or a
     status change must never fail because stock keeping did."""
     try:
         from dashboard import stock_counts as _stock
         if _stock.enabled():
             _stock.sync_order(cx, order_id)
-            _stock.maybe_reconcile(cx)
     except Exception as e:  # noqa: BLE001
         print(f"[orders] stock sync skipped for #{order_id}: {e!r}", flush=True)
 
