@@ -174,10 +174,40 @@ def test_a_row_with_a_pattern_matches_by_its_pattern(tmp_path, monkeypatch):
         [("add", "Adrenal Support", "Ashwagandha")]
 
 
-def test_a_free_text_row_with_no_pattern_is_skipped(tmp_path, monkeypatch):
+def test_a_ticked_row_showing_only_the_grey_default_earns_its_layer(tmp_path, monkeypatch):
+    """Glen, 2026-11-06, on Othon Molina's intake: "Each of them says in grey what the
+    stress pattern defaults to so that should qualify." The layer takes the name the
+    grey text shows, and "Add to layer" heads it with that same name."""
+    from dashboard.biofield_report_html import render_clinical_checklist
+
     def setup(cx, tid):
         save_selection(cx, tid, "My eyes hurt", ["Clear Lens Eye Drops"])
     db, tid, client = _app(tmp_path, monkeypatch, ["My eyes hurt"], setup)
+    j = _preview(client, tid)
+    assert j["no_pattern"] == []
+    assert [(c["kind"], c["layer"], c["remedies"]) for c in j["changes"]] == \
+        [("new", "My eyes hurt", ["Clear Lens Eye Drops"])]
+    # The grey text on the page names the same condition.
+    page = render_clinical_checklist([{"label": "My eyes hurt", "stress_pattern": ""}])
+    assert "placeholder=\"Defaults to 'My eyes hurt'\"" in page
+    # So does the + button: an empty pattern field heads the layer with the default.
+    r = client.post(f"/author/{tid}/clinical-items/balance",
+                    json={"label": "My eyes hurt", "layer": 1, "remedies": [],
+                          "pattern": ""}).get_json()
+    assert r["ok"]
+    assert {row[1] for row in _chain(db, tid)} == {"My eyes hurt"}
+
+
+def test_a_ticked_row_with_no_default_is_still_skipped_and_listed(tmp_path, monkeypatch):
+    """Every labelled row has a default today, so the branch is reached by making the
+    shared default empty: a row with no pattern, no topic and no default earns
+    nothing and is listed."""
+    from dashboard import biofield_clinical_layer_sync as sync
+
+    def setup(cx, tid):
+        save_selection(cx, tid, "My eyes hurt", ["Clear Lens Eye Drops"])
+    db, tid, client = _app(tmp_path, monkeypatch, ["My eyes hurt"], setup)
+    monkeypatch.setattr(sync, "default_pattern", lambda label: "")
     j = _preview(client, tid)
     assert j["changes"] == [] and j["no_pattern"] == ["My eyes hurt"]
 
