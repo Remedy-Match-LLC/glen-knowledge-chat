@@ -783,3 +783,10 @@ def test_infoceuticals_alert_at_zero_or_at_one_when_they_sell_monthly(env, monke
     assert SC.low_stock_at(cat["youth"], 1.0) == 1
     assert SC.low_stock_at(cat["es1-lymph"], 0.99) == 0
     assert SC.low_stock_at(cat["scar-silk"], 5) == 3
+    # One month of supply: a slow Infoceutical never sends it, a monthly seller does.
+    assert not any(s.startswith("Under one month") and "ES1" in s for s in _subjects(sent))
+    avg["youth"] = 2.0
+    _set(cx, "youth", 1)
+    assert any(s.startswith("Under one month") and "Youth" in s for s in _subjects(sent))
+    assert SC.month_alert_applies(cat["es1-lymph"], 0.5) is False
+    assert SC.month_alert_applies(cat["scar-silk"], 0.5) is True

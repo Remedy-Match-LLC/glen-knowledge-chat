@@ -53,6 +53,16 @@ def low_stock_at(p, avg) -> int:
     if "infoceutical" in name:
         return 1 if float(avg or 0) >= 1 else 0
     return LOW_STOCK_AT
+
+
+def month_alert_applies(p, avg) -> bool:
+    """Whether the one-month-supply alert can fire. Glen, 2026-11-06: Infoceuticals skip
+    it "if they sell less than 1 a month for now"."""
+    name = str((p or {}).get("name") or "").lower() if isinstance(p, dict) else ""
+    a = float(avg or 0)
+    if "infoceutical" in name and a < 1:
+        return False
+    return a > 0
 AVG_WINDOW_DAYS = 365             # average monthly sales over the last 12 months
 DEDUPE_DAYS = 14                  # a line within 14 days of another source's line is one sale
 RECONCILE_DAYS = 30               # the self-heal looks back this far
@@ -801,7 +811,8 @@ def check_alerts(cx, slugs, catalog=None):
             count = get_count(cx, slug)
             avg = float(avg_map.get(slug) or 0.0)
             for kind, cond in (("low", count <= low_stock_at(cat.get(slug), avg)),
-                               ("month", avg > 0 and count < avg)):
+                               ("month", month_alert_applies(cat.get(slug), avg)
+                                and count < avg)):
                 if not cond:
                     cx.execute("DELETE FROM stock_alerts WHERE slug=? AND kind=?", (slug, kind))
                     cx.execute("DELETE FROM stock_alert_sends WHERE slug=? AND kind=?",
