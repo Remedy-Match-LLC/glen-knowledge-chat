@@ -24099,8 +24099,9 @@ def _stock_console_who():
     """Who set a count: "console:<scope>" for a per-user token (e.g. workspace:rae),
     "console" for the master key or a login cookie, which name nobody."""
     try:
+        # The master key matches no access_tokens row, so it falls through to "console".
         key = _present_console_key()
-        if key and key != CONSOLE_SECRET:
+        if key:
             with db.connect(LOG_DB) as cx:
                 row = cx.execute(
                     "SELECT u.scope FROM access_tokens t "
