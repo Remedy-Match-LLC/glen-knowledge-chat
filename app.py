@@ -275,6 +275,7 @@ from dashboard import auth_limits as _auth_limits
 from dashboard import client_address as _client_address
 from dashboard import response_timing as _response_timing
 from dashboard import db
+from dashboard import scan_reward as _scan_reward  # SCAN_REWARD_ENABLED, default off
 from dashboard import browser_languages as _browser_languages
 from dashboard import dbwrite
 from dashboard.chat_limits import (client_ip, VelocityLimiter, LIMITS,
@@ -2578,8 +2579,11 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         # bundle that lists caution_components: its block carries only those cautions.
         # An out-of-stock product qualifies like a waiting-list one: Night Vision, unpinned,
         # was otherwise never named out of stock to the bot (review round 1, 2026-10-25).
+        # A shelf count at 0 qualifies like the hand-set flag (STOCK_COUNTS_ENABLED,
+        # 2026-11-06): the same note the buying paths read. Flag off, it is the flag alone.
         if (not (p.get("copy_pinned") or p.get("waitlist_only") or p.get("chat_caution")
                  or str(p.get("out_of_stock") or "").strip()
+                 or _stock_counts.is_counted_out(slug, p)
                  or _bundle_bot_cautions(p, products))
                 or p.get("inactive")
                 or p.get("info_only")
@@ -7773,6 +7777,19 @@ def begin_unlock():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
+    # Scan share reward, build piece 1: a friend who gives an email on /begin/scan
+    # with an inviter is recorded in scan_invites (never referral_events). Its own
+    # connection, after the funnel's has committed, so a failure here can neither
+    # share nor roll back the funnel's write. Rules: dashboard/scan_reward_rules.py.
+    if _scan_reward.enabled() and path == "/begin/scan" and state.get("email"):
+        try:
+            with _db_lock, db.connect(LOG_DB) as _cx_sr:
+                _scan_reward.init_tables(_cx_sr)
+                _scan_reward.record_invite(
+                    _cx_sr, state["email"], ref_slug or (state.get("ref_slug") or ""))
+        except Exception as _sre:  # noqa: BLE001 - never blocks the scan
+            print(f"[scan-reward] record_invite failed: {_sre!r}", flush=True)
+
     # Free-tier transition (email + ToS): onboard to GHL + concierge referral,
     # non-blocking — same pattern as /chat.
     if (state["current_rung"] == "free_tier"
@@ -9583,6 +9600,10 @@ _PORTAL_CART_ENABLED = os.environ.get("PORTAL_CART_ENABLED", "").strip().lower()
 _CART_PAGE_ENABLED = os.environ.get("CART_PAGE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # Public store at /shop. Dark until Glen says it goes live (a flag flip is its own deploy).
 _SHOP_ENABLED = os.environ.get("SHOP_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+# Search in the client portal header (plan 2026-11-06-portal-header-site-search, step 1).
+# Ships OFF. Off: no icon (the script tag is never injected), the search route 404s,
+# and every portal page is byte-identical to today. See dashboard/portal_search.py.
+_PORTAL_SEARCH_ENABLED = os.environ.get("PORTAL_SEARCH_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # "Clinical Theory of Everything" hub tile: a link out to Glen's published TheBrain
 # view (bra.in/6j852k). Ships dark; same truthy set as the other portal flags. With
 # this off the portal payload carries brain.enabled false and no tile renders.
@@ -10765,6 +10786,13 @@ def _is_orderable(slug, p=None):
     return _ppw.is_orderable(slug, cat)
 
 
+# Shelf counts (STOCK_COUNTS_ENABLED, Glen 2026-11-06) read the orders database and
+# this catalog. Lambdas, so a test's monkeypatched LOG_DB or catalog is what they see.
+from dashboard import stock_counts as _stock_counts
+_stock_counts.set_db_path_fn(lambda: LOG_DB)
+_stock_counts.set_catalog_fn(lambda: _PRODUCTS.get("products") or {})
+
+
 def _waitlist_refusal(slug):
     """The buyer-facing refusal for a waitlist_only slug, or None when it is orderable
     as far as the waiting list goes."""
@@ -11383,6 +11411,7 @@ def _credit_course_referral(cx, ref, buyer_email, product_cents, order_ref):
 def _settle_referral(order, *, order_ref: str) -> None:
     """Credit the referrer (points or cash) on a full-price referred sale.
     Idempotent per order_ref. Best-effort -- never raises."""
+    _scan_reward_on_paid_order(order, order_ref)
     if not _rewards_enabled():
         return
     try:
@@ -11411,6 +11440,37 @@ def _settle_referral(order, *, order_ref: str) -> None:
             _credit_referrer_by_slug(cx, slug, buyer_email, product_cents, order_ref)
     except Exception as _e:
         print(f"[rewards] _settle_referral failed inv={order_ref}: {_e!r}", flush=True)
+
+
+def _scan_reward_on_paid_order(order, order_ref):
+    """Scan share reward, build piece 6: one reading to the friend's inviter for a paid
+    store order with an E4L infoceutical or PRL line. Runs from _settle_referral, so the
+    card path and every alt-pay path reach it. Its own connection, idempotent per
+    order_ref, independent of REWARDS_TIERS_ENABLED. Never raises."""
+    if not _scan_reward.enabled() or not order or not order_ref:
+        return
+    try:
+        with db.connect(LOG_DB) as cx:
+            _scan_reward.init_tables(cx)
+            _scan_reward.credit_store_order(
+                cx, order, order_ref, is_wholesale=_is_wholesale_order(order),
+                below_store_price=_order_has_line_below_store_price(order))
+    except Exception as _e:  # noqa: BLE001
+        print(f"[scan-reward] order credit failed ref={order_ref}: {_e!r}", flush=True)
+        # Leave a retryable mark on a fresh connection. The reconcile completes it.
+        try:
+            with db.connect(LOG_DB) as cx:
+                _scan_reward.init_tables(cx)
+                _scan_reward.mark_pending(
+                    cx, _scan_reward.rules.event_key_store_order(order_ref), repr(_e)[:300])
+        except Exception as _e2:  # noqa: BLE001
+            print(f"[scan-reward] pending mark failed ref={order_ref}: {_e2!r}", flush=True)
+
+
+def _scan_reward_reconcile():
+    with db.connect(LOG_DB) as cx:
+        return _scan_reward.reconcile(cx, is_wholesale=_is_wholesale_order,
+                                      below_store_price=_order_has_line_below_store_price)
 
 
 def _maybe_raise_cashout_review(cx, slug: str, mode: str) -> None:
@@ -21548,20 +21608,103 @@ def affiliate_hub_data(slug):
             "SELECT name, description, url_template, COALESCE(instructions, '') "
             "FROM affiliate_offers WHERE active=1 ORDER BY sort_order ASC"
         ).fetchall()
+    offer_list = [
+        {
+            "name": o[0],
+            "description": o[1],
+            "url": o[2].replace("{slug}", slug),
+            "instructions": o[3],
+        }
+        for o in offers
+    ]
+    # Scan share reward, build piece 2: the scan link leads the hub. Read-side only.
+    if _scan_reward.enabled():
+        offer_list = _scan_reward.lead_with_scan(offer_list)
     return jsonify({
         "name": name,
         "organization": org,
         "slug": slug,
-        "offers": [
-            {
-                "name": o[0],
-                "description": o[1],
-                "url": o[2].replace("{slug}", slug),
-                "instructions": o[3],
-            }
-            for o in offers
-        ]
+        "offers": offer_list
     })
+
+
+def _scan_reward_console_ok():
+    """Console gate for the reading-credit endpoints. Fails CLOSED: an unset
+    CONSOLE_SECRET refuses, rather than opening the gate."""
+    if not CONSOLE_SECRET:
+        return False
+    key = _present_console_key()
+    return key == CONSOLE_SECRET or _owner_token_ok(key)
+
+
+@app.route("/api/console/reading-credits", methods=["GET"])
+def api_console_reading_credits():
+    """Scan share reward: one person's reading-credit balance and ledger."""
+    if not _scan_reward.enabled():
+        return jsonify({"error": "not found"}), 404
+    if not _scan_reward_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    email = (request.args.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+    with db.connect(LOG_DB) as cx:
+        _scan_reward.init_tables(cx)
+        return jsonify({"ok": True, "email": email,
+                        "balance": _scan_reward.balance(cx, email),
+                        "ledger": _scan_reward.ledger(cx, email)})
+
+
+@app.route("/api/console/reading-credits/spend", methods=["POST"])
+def api_console_reading_credits_spend():
+    """Glen or Rae marks one reading delivered: writes one spend row. Body:
+    {email, key, note}. `key` names the delivery (the reading's report id, say) so a
+    repeat click spends once. Publishing the reading is a separate, manual step."""
+    if not _scan_reward.enabled():
+        return jsonify({"error": "not found"}), 404
+    if not _scan_reward_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    key = (data.get("key") or "").strip()[:200]
+    if not email or "@" not in email or not key:
+        return jsonify({"ok": False, "error": "email and key required"}), 400
+    by = "owner" if _owner_token_ok(_present_console_key()) else "console"
+    with db.connect(LOG_DB) as cx:
+        _scan_reward.init_tables(cx)
+        out = _scan_reward.spend(cx, email, key=key, by=by,
+                                 note=(data.get("note") or "").strip()[:500])
+    return jsonify(out), (200 if out.get("ok") else 409)
+
+
+@app.route("/api/console/reading-credits/reconcile", methods=["POST"])
+def api_console_reading_credits_reconcile():
+    """Retry pending order credits and reverse credits on cancelled or refunded orders.
+    The reply-watch cron runs the same thing every 15 minutes."""
+    if not _scan_reward.enabled():
+        return jsonify({"error": "not found"}), 404
+    if not _scan_reward_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    return jsonify({"ok": True, **_scan_reward_reconcile()})
+
+
+@app.route("/api/console/people/e4l-client-ids", methods=["POST"])
+def api_console_people_e4l_client_ids():
+    """The one-time fill of people.e4l_client_id, called by
+    scripts/fill_people_e4l_client_ids.py. Body: {rows:[{email, client_id}], apply}.
+    Counts only unless apply is true. Never overwrites, never creates a person."""
+    if not _scan_reward.enabled():
+        return jsonify({"error": "not found"}), 404
+    if not _scan_reward_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    rows = data.get("rows") or []
+    if len(rows) > 5000:
+        # One request carries the whole source, so ambiguity is judged across all of it.
+        return jsonify({"ok": False, "error": "at most 5000 rows per request"}), 400
+    with db.connect(LOG_DB) as cx:
+        # Only a JSON true applies. "false", 1, "yes" all count only.
+        out = _scan_reward.fill_e4l_client_ids(cx, rows, apply=data.get("apply") is True)
+    return jsonify(out)
 
 
 @app.route("/affiliate/portal")
@@ -24030,6 +24173,112 @@ def console_support_programs_page():
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
     return resp
+
+
+@app.route("/console/stock")
+def console_stock_page():
+    """Shelf counts (Glen, 2026-11-06). The page holds no data; its API is guarded."""
+    resp = send_from_directory(STATIC, "console-stock.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+@app.route("/api/console/stock", methods=["GET"])
+def api_console_stock():
+    """Every counted product, lowest first, with average monthly sales and months of
+    supply; the GrooveKart names that matched no product; the products a count can be
+    entered for. 404 while STOCK_COUNTS_ENABLED is off."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    if not _stock_counts.enabled():
+        return jsonify({"ok": False, "error": "Stock counts are switched off."}), 404
+    cx = db.connect(LOG_DB)
+    try:
+        _stock_counts.init_tables(cx)
+        return jsonify({"ok": True,
+                        "low_stock_at": _stock_counts.LOW_STOCK_AT,
+                        "window_days": _stock_counts.AVG_WINDOW_DAYS,
+                        "rows": _stock_counts.console_rows(cx),
+                        "unmatched": _stock_counts.list_unmatched(cx),
+                        "products": _stock_counts.countable_products()})
+    finally:
+        cx.close()
+
+
+@app.route("/api/console/stock/set", methods=["POST"])
+def api_console_stock_set():
+    """Set one product's count, with a reason ("delivery from the lab", "shelf count").
+    The change is logged with who, when and why."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    if not _stock_counts.enabled():
+        return jsonify({"ok": False, "error": "Stock counts are switched off."}), 404
+    data = request.get_json(silent=True) or {}
+    cx = db.connect(LOG_DB)
+    try:
+        res = _stock_counts.set_count(cx, data.get("slug"), data.get("count"),
+                                      who=_stock_console_who(), reason=data.get("reason"))
+        return jsonify({"ok": True, **res})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    finally:
+        cx.close()
+
+
+def _stock_console_who():
+    """Who set a count: "console:<scope>" for a per-user token (e.g. workspace:rae),
+    "console" for the master key or a login cookie, which name nobody."""
+    try:
+        # The master key matches no access_tokens row, so it falls through to "console".
+        key = _present_console_key()
+        if key:
+            with db.connect(LOG_DB) as cx:
+                row = cx.execute(
+                    "SELECT u.scope FROM access_tokens t "
+                    "JOIN workspace_users u ON u.id = t.user_id "
+                    "WHERE t.token = ? AND t.revoked_at IS NULL", (key,)).fetchone()
+            if row and row[0]:
+                return f"console:{row[0]}"
+    except Exception:  # noqa: BLE001
+        pass
+    return "console"
+
+
+@app.route("/api/console/stock/reconcile", methods=["POST"])
+def api_console_stock_reconcile():
+    """The self-heal, on demand: sync every live order of the last 30 days that has no
+    stock move, and every cancelled order still holding bottles."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    if not _stock_counts.enabled():
+        return jsonify({"ok": False, "error": "Stock counts are switched off."}), 404
+    cx = db.connect(LOG_DB)
+    try:
+        return jsonify({"ok": True, "synced": _stock_counts.reconcile(cx)})
+    finally:
+        cx.close()
+
+
+@app.route("/api/cron/stock-reconcile", methods=["POST"])
+def api_cron_stock_reconcile():
+    """Nightly self-heal (X-Cron-Secret header == CRON_SECRET, falls back to
+    CONSOLE_SECRET). Order writes never run it: it stays out of the request path."""
+    # Header only: a ?key= query string lands in access logs (review round 3).
+    key = request.headers.get("X-Cron-Secret", "").strip()
+    expected = os.environ.get("CRON_SECRET") or os.environ.get("CONSOLE_SECRET", "")
+    if not expected or not hmac.compare_digest(key, expected):
+        return jsonify({"error": "unauthorized"}), 401
+    if not _stock_counts.enabled():
+        return jsonify({"ok": True, "synced": [], "enabled": False})
+    cx = db.connect(LOG_DB)
+    try:
+        return jsonify({"ok": True, "synced": _stock_counts.reconcile(cx)})
+    finally:
+        cx.close()
 
 
 @app.route("/console/related-products")
@@ -30124,12 +30373,21 @@ def evox_run_reminders():
     return jsonify({"sent": sent})
 
 
+def _client_portal_shell():
+    """The portal page. Flag off: the static file exactly as before. Flag on: the same
+    file with the reading-credit card's script added (scan share reward)."""
+    if not _scan_reward.enabled():
+        return send_from_directory(STATIC, "client-portal.html")
+    html = (STATIC / "client-portal.html").read_text(encoding="utf-8")
+    return Response(_scan_reward.inject_portal_card(html), mimetype="text/html")
+
+
 @app.route("/portal/<token>")
 def client_portal_page(token):
     sp = request.args.get("sp", "")
     if sp:
         return _redeem_staff_pass(token, sp)
-    resp = send_from_directory(STATIC, "client-portal.html")
+    resp = _client_portal_shell()
     # The portal shell contains its own recovery behavior and theme-safe error
     # styling. Never let a browser retain an older failure screen after a fix.
     resp.headers["Cache-Control"] = "private, no-store, max-age=0"
@@ -30864,6 +31122,17 @@ def api_client_portal(token):
         except Exception as _e:
             print(f"[eye-vision-report/payload] {_e!r}", flush=True)
     _request_timing_checkpoint("optional_tail")
+    # Scan share reward, build piece 5: the reading-credit balance. The portal holder's
+    # own email, not a ?member= view: credits belong to the inviter.
+    if _scan_reward.enabled():
+        try:
+            with db.connect(LOG_DB) as _cx_rc:
+                _scan_reward.init_tables(_cx_rc)
+                _rc = _scan_reward.portal_summary(_cx_rc, (portal.get("email") or ""))
+            if _rc:
+                payload["reading_credits"] = _rc
+        except Exception as _e:
+            print(f"[scan-reward/payload] {_e!r}", flush=True)
     if _staff_view:
         payload["staff_view"] = {"client": (portal.get("name") or "").strip()
                                  or (portal.get("email") or "").split("@")[0]}
@@ -36451,6 +36720,97 @@ def api_client_portal_product_search(token):
         })
     results.sort(key=lambda row: row["name"].lower())
     return jsonify({"ok": True, "products": results[:30]})
+
+
+def _portal_search_page_gates():
+    """The flags that keep a gated public page out of the search index while it is dark."""
+    from dashboard import supplement_reviews as _sr
+    return {"shop": lambda: _SHOP_ENABLED, "product_review": _sr.enabled}
+
+
+def _portal_search_records(email):
+    """This client's orders and messages, from the same reads the Orders tab and the
+    Messages card make. Cached briefly by the caller. The chat thread opens its own
+    connection, so it runs after this function's connection is closed."""
+    from dashboard import portal_search as _psr
+    with db.connect(LOG_DB) as cx:
+        published = _psr._safe_read(cx, lambda c: _published_invoices_for(c, email), [],
+                                    reset=True)
+        past = _psr._safe_read(cx, lambda c: _past_invoices_for(c, email), [], reset=True)
+    messages = _portal_chat_thread(email)
+
+    def _items(tok):
+        try:
+            order = _invoice_order_for_token(tok)
+        except Exception as e:
+            print(f"[portal-search] invoice lookup failed: {e!r}", flush=True)
+            return []
+        if not order or (order.get("email") or "").strip().lower() != email:
+            return []
+        return _psr.invoice_item_names(order)
+
+    return _psr.order_docs(published, past, _items) + _psr.message_docs(messages)
+
+
+def _portal_search_reports(email, portal_content):
+    """This client's reports, read fresh on every search so a hold, a draft or an unlock
+    shows at once. The unlock check runs before the reports' own connection opens."""
+    from dashboard import portal_search as _psr
+    show_remedies = bool(_portal_biofield_unlocked(email))
+    with db.connect(LOG_DB) as cx_r:
+        return _psr.report_docs(cx_r, email, show_remedies=show_remedies,
+                                portal_content=portal_content)
+
+
+def _portal_search_client_prices(results, email):
+    """The client's own price on each orderable store result shown: the same
+    _portal_priced_lines call the portal's add-to-order control (order-catalog) makes.
+    The catalog price stays when that call gives nothing."""
+    for r in results:
+        if r.get("source") != "store" or not r.get("orderable") or not r.get("slug"):
+            continue
+        try:
+            _lines, rec, _sub = _portal_priced_lines([{"slug": r["slug"], "qty": 1}], email=email)
+        except Exception as e:
+            print(f"[portal-search] client price failed for {r['slug']!r}: {e!r}", flush=True)
+            continue
+        if rec and rec[0].get("unit_cents"):
+            r["price"] = f"${int(rec[0]['unit_cents']) / 100:.2f}"
+    return results
+
+
+@app.route("/api/portal/<token>/site-search", methods=["GET"])
+def api_client_portal_site_search(token):
+    """The portal header search: this client's own records, the store, and public pages.
+
+    The client is whoever the portal token (or the sign-in session) resolves to, exactly
+    as every other /api/portal/<token>/ route decides it. Records are read for that one
+    email only, never for an email named in the request, and ?member= is ignored: search
+    covers the account holder. An unknown token gets the same 404 as product-search, and
+    no results of any kind."""
+    if not _PORTAL_SEARCH_ENABLED:
+        return jsonify({"error": "not found"}), 404
+    from dashboard import portal_search as _psr
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+    email = ((portal or {}).get("email") or "").strip().lower()
+    if not portal or not email:
+        return jsonify({"error": "not found"}), 404
+    q = _psr.clean_query(request.args.get("q"))
+    terms = _psr.terms_for(q)
+    docs = []
+    if terms:
+        catalog = _PRODUCTS.get("products") or {}
+        docs = list(_psr.cached(("records", email), lambda: _portal_search_records(email)))
+        docs += _portal_search_reports(email, portal.get("content") or {})
+        docs += _psr.cached(("store",),
+                            lambda: _psr.product_docs(catalog, _get_product, _is_orderable))
+        docs += _psr.page_index(STATIC, _portal_search_page_gates())
+    out = _psr.search(docs, terms, page=request.args.get("page") or 1)
+    _portal_search_client_prices(out["results"], email)
+    resp = jsonify({"ok": True, "q": q, **out})
+    resp.headers["Cache-Control"] = "private, no-store, max-age=0"
+    return resp
 
 
 def _shop_programs():
@@ -42521,7 +42881,7 @@ def client_portal_me():
     # cookie via /api/portal/me/view. Dark until login is enabled.
     if not _client_login_enabled():
         return ("Not found", 404)
-    return send_from_directory(STATIC, "client-portal.html")
+    return _client_portal_shell()
 
 
 @app.route("/api/page-share-link", methods=["GET"])
@@ -45045,6 +45405,16 @@ def cron_reply_watch():
             from dashboard import e4l_account_notifications as _e4l_accounts
             with db.connect(LOG_DB) as cx:
                 e4l_counts = _e4l_accounts.ingest_notifications(cx)
+            # Scan share reward, build piece 3: "New voice scan" notices become scan
+            # arrivals. Gmail read only. Its own try, so it can never fail the watcher.
+            if _scan_reward.enabled():
+                try:
+                    with db.connect(LOG_DB) as cx:
+                        e4l_counts = {**e4l_counts,
+                                      "scan_arrivals": _scan_reward.ingest_scan_notices(cx)}
+                    e4l_counts["reading_credit_reconcile"] = _scan_reward_reconcile()
+                except Exception as _sre:  # noqa: BLE001
+                    print(f"[scan-reward] scan notice ingest failed: {_sre!r}", flush=True)
     except (_gt.GmailTokenMissing, RefreshError) as e:
         now_iso = datetime.now(timezone.utc).isoformat()
         if _gt.should_send_alert(str(LOG_DB), "inbox_gmail", now_iso):
@@ -48204,6 +48574,50 @@ def _notify_store_order(payload):
         print(f"[gk-notify] skipped: {e!r}", flush=True)
 
 
+def _gk_order_items(product_names, raw_products):
+    """The GrooveKart order row's lines. Flag off: [{"name"}], exactly as before. Flag
+    on: each also carries stock_qty and, on an exact name match, stock_slug, so the
+    decrement and the monthly average read the same lines. Never raises."""
+    if _stock_counts.enabled():
+        try:
+            items = _stock_counts.groovekart_items(raw_products)
+            if [it["name"] for it in items] == list(product_names):
+                return items
+        except Exception as e:  # noqa: BLE001
+            print(f"[stock] GrooveKart line detail skipped: {e!r}", flush=True)
+    return [{"name": n} for n in product_names]
+
+
+def _stock_groovekart_arrival(external_ref, raw_products, payload=None):
+    """A GrooveKart order comes off the shelf count when it arrives, since GrooveKart
+    never says when it is paid (STOCK_COUNTS_ENABLED, Glen 2026-11-06). Names that
+    match no product are listed on /console/stock. Total: this runs inside the webhook,
+    and a raise would 500 it into a GrooveKart retry storm."""
+    try:
+        if not _stock_counts.enabled():
+            return
+        cx = db.connect(LOG_DB)
+        try:
+            oid = None
+            if external_ref:
+                try:
+                    r = cx.execute("SELECT id FROM orders WHERE source='groovekart' "
+                                   "AND external_ref=?", (external_ref,)).fetchone()
+                    oid = int(r[0]) if r else None
+                except Exception:  # noqa: BLE001  (no orders table on a fresh DB)
+                    try:
+                        cx.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
+            _stock_counts.on_groovekart_delivery(
+                cx, oid, raw_products, key=_stock_counts.delivery_key(payload or {}),
+                ref=external_ref)
+        finally:
+            cx.close()
+    except Exception as e:  # noqa: BLE001
+        print(f"[stock] GrooveKart arrival skipped: {e!r}", flush=True)
+
+
 @app.route("/webhook/groovekart", methods=["POST"])
 def groovekart_webhook():
     """GrooveKart order → GHL E4L pipeline with purchase tag."""
@@ -48292,8 +48706,10 @@ def groovekart_webhook():
                   external_ref=str(data.get("id") or data.get("order_id")
                                    or data.get("reference") or email or _bos_orders._now()),
                   email=email, name=(first + " " + last).strip(), phone=phone,
-                  items=[{"name": n} for n in product_names],
+                  items=_gk_order_items(product_names, _raw_products),
                   total_cents=int(round(float(order_total or 0) * 100)), channel="retail")
+    _stock_groovekart_arrival(str(data.get("id") or data.get("order_id")
+                                  or data.get("reference") or ""), _raw_products, data)
     threading.Thread(
         target=_send_kloud_order_instructions,
         args=(email, first, product_names,
@@ -61618,6 +62034,7 @@ def console_reprice_orders_from_qbo():
                 cx.execute("UPDATE orders SET items_json=?, updated_at=? WHERE id=?",
                            (json.dumps(new_items), _bos_orders._now(), o.get("id")))
                 cx.commit()
+                _bos_orders._stock_sync(cx, o.get("id"))   # flag off: a no-op
                 rec["applied"] = True
             results.append(rec)
     finally:
@@ -66599,6 +67016,10 @@ def _inject_journey_shell(response):
             authed = bool(get_authenticated_user(request))
             mode = shell_nav.resolve_mode(request.path, authed)
             html = shell_nav.inject_shell_html(html, mode, REWARDS_1B_ENABLED, REWARDS_1B_GIFT_ENABLED, quest_enabled=JOURNEY_QUEST_ENABLED)
+        if _PORTAL_SEARCH_ENABLED:
+            from dashboard import portal_search as _psr
+            if _psr.is_portal_page(request.path):
+                html = _psr.inject_html(html)
         response.set_data(html)
     except Exception as e:  # never let the shell break a page
         print(f"[journey-shell] inject skipped: {e!r}", flush=True)
