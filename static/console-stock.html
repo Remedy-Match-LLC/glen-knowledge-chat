@@ -1,0 +1,157 @@
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Counts</title>
+<style>
+  :root{ --bg:#0a150d; --surface:#0f1f14; --border:#21472d; --cream:#eaf3ec; --muted:#8aa594;
+         --gold:#d4a843; --green:#7fd6a0; --amber:#e0b96b; --red:#e08a8a; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--cream);
+        font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  h1{ margin:18px 16px 2px; font-size:22px; }
+  h2{ margin:24px 16px 8px; font-size:16px; }
+  .sub{ margin:0 16px 14px; color:var(--muted); font-size:13px; }
+  .card{ margin:0 16px 16px; background:var(--surface); border:1px solid var(--border);
+         border-radius:12px; padding:14px 16px; max-width:980px; }
+  .row{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  input{ padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+         background:var(--bg); color:var(--cream); font-size:13px; font-family:inherit; }
+  input.count{ width:80px; }
+  input.reason{ flex:1; min-width:160px; }
+  input.product{ flex:2; min-width:200px; }
+  button{ padding:8px 13px; border-radius:8px; border:1px solid var(--gold);
+          background:var(--gold); color:#0a150d; font-weight:600; cursor:pointer; font-size:13px; }
+  .wrap{ overflow-x:auto; margin:0 16px; max-width:980px; }
+  table{ border-collapse:collapse; width:100%; font-size:13px; }
+  th, td{ text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  th{ color:var(--muted); font-weight:600; }
+  td.num{ text-align:right; font-variant-numeric:tabular-nums; }
+  .zero{ color:var(--red); font-weight:600; }
+  .low{ color:var(--amber); font-weight:600; }
+  .status{ font-size:12px; color:var(--muted); }
+  .status.err{ color:var(--red); }
+  .status.ok{ color:var(--green); }
+  .empty{ color:var(--muted); font-size:13px; margin:0 16px; }
+  #keybox{ margin:16px; }
+</style>
+<h1>Stock counts</h1>
+<p class="sub">Bottles on the shelf. A product with no count stays on sale. At 0 it shows
+out of stock everywhere. Lowest count first.</p>
+<div id="keybox" style="display:none"><input id="key-input" type="text" placeholder="console key"> <button onclick="unlock()">Unlock</button></div>
+<p id="off" class="empty" style="display:none"></p>
+
+<div class="card" id="add-card" style="display:none">
+  <div class="row">
+    <input class="product" id="add-product" list="product-list" placeholder="Product name or slug">
+    <input class="count" id="add-count" type="number" min="0" step="1" placeholder="Count">
+    <input class="reason" id="add-reason" placeholder="Reason, e.g. shelf count">
+    <button onclick="addCount()">Set count</button>
+  </div>
+  <div class="status" id="add-status"></div>
+  <div class="row" style="margin-top:10px">
+    <button onclick="reconcileNow()">Check recent orders</button>
+    <span class="status" id="rec-status">Finds paid orders from the last 30 days that never came off the count, and fixes them.</span>
+  </div>
+  <datalist id="product-list"></datalist>
+</div>
+
+<div class="wrap"><table id="tbl" style="display:none">
+  <thead><tr><th>Product</th><th>Count</th><th>Avg a month</th><th>Months of supply</th>
+  <th>New count and reason</th><th></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table></div>
+<p class="empty" id="no-rows" style="display:none">No counts entered yet.</p>
+
+<h2 id="unmatched-h" style="display:none">GrooveKart names that matched no product</h2>
+<p class="sub" id="unmatched-sub" style="display:none">These sold on GrooveKart but came off no count.</p>
+<div class="wrap"><table id="unmatched" style="display:none">
+  <thead><tr><th>Name</th><th>Orders</th><th>Bottles</th><th>Last seen</th><th>Last order</th></tr></thead>
+  <tbody id="unmatched-rows"></tbody>
+</table></div>
+
+<script src="/static/op-nav.js" data-active="admin" data-sub="stock"></script>
+<script>
+  function key(){ try { return localStorage.getItem('console_key') || ''; } catch(e){ return ''; } }
+  (function(){ var u = new URLSearchParams(location.search).get('key');
+    if(u){ try { localStorage.setItem('console_key', u); } catch(e){} } })();
+  function hdr(){ return { 'X-Console-Key': key(), 'Content-Type':'application/json' }; }
+  function unlock(){ try { localStorage.setItem('console_key', document.getElementById('key-input').value); } catch(e){}
+    document.getElementById('keybox').style.display='none'; load(); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  var PRODUCTS = [];
+  var LOW = 3;
+
+  async function load(){
+    var r = await fetch('/api/console/stock', { headers: hdr() });
+    if (r.status === 401){ document.getElementById('keybox').style.display='block'; return; }
+    var d = await r.json();
+    if (!d.ok){ var off = document.getElementById('off'); off.textContent = d.error || 'Could not load.';
+      off.style.display='block'; return; }
+    LOW = d.low_stock_at; PRODUCTS = d.products || [];
+    document.getElementById('add-card').style.display='block';
+    document.getElementById('product-list').innerHTML = PRODUCTS.map(function(p){
+      return '<option value="'+esc(p.name)+'">'+esc(p.slug)+'</option>'; }).join('');
+    var rows = d.rows || [];
+    document.getElementById('tbl').style.display = rows.length ? 'table' : 'none';
+    document.getElementById('no-rows').style.display = rows.length ? 'none' : 'block';
+    document.getElementById('rows').innerHTML = rows.map(function(x, i){
+      var cls = x.count <= 0 ? 'zero' : (x.count <= LOW ? 'low' : '');
+      return '<tr><td>'+esc(x.name)+'<br><span class="status">'+esc(x.slug)+'</span></td>'+
+        '<td class="num '+cls+'">'+esc(x.count)+'</td>'+
+        '<td class="num">'+esc(x.avg_monthly)+'</td>'+
+        '<td class="num">'+(x.months_supply == null ? '' : esc(x.months_supply))+'</td>'+
+        '<td><div class="row"><input class="count" type="number" min="0" step="1" id="c'+i+'">'+
+        '<input class="reason" id="r'+i+'" placeholder="Reason"></div>'+
+        '<div class="status" id="s'+i+'"></div></td>'+
+        '<td><button data-slug="'+esc(x.slug)+'" data-i="'+i+'" onclick="saveRow(this)">Save</button></td></tr>';
+    }).join('');
+    var un = d.unmatched || [];
+    ['unmatched-h','unmatched-sub'].forEach(function(id){
+      document.getElementById(id).style.display = un.length ? 'block' : 'none'; });
+    document.getElementById('unmatched').style.display = un.length ? 'table' : 'none';
+    document.getElementById('unmatched-rows').innerHTML = un.map(function(u){
+      return '<tr><td>'+esc(u.name)+'</td><td class="num">'+esc(u.times)+'</td><td class="num">'+
+        esc(u.qty)+'</td><td>'+esc(String(u.last_seen||'').slice(0,10))+'</td><td>'+esc(u.last_ref)+'</td></tr>';
+    }).join('');
+  }
+
+  async function post(slug, count, reason, statusEl){
+    statusEl.className = 'status'; statusEl.textContent = 'Saving';
+    var r = await fetch('/api/console/stock/set', { method:'POST', headers: hdr(),
+      body: JSON.stringify({ slug: slug, count: count, reason: reason }) });
+    var d = {}; try { d = await r.json(); } catch(e){}
+    if (!r.ok || !d.ok){ statusEl.className = 'status err'; statusEl.textContent = d.error || 'Not saved.'; return false; }
+    statusEl.className = 'status ok'; statusEl.textContent = 'Saved: ' + d.count;
+    return true;
+  }
+
+  async function saveRow(btn){
+    var i = btn.getAttribute('data-i');
+    var ok = await post(btn.getAttribute('data-slug'), document.getElementById('c'+i).value,
+                        document.getElementById('r'+i).value, document.getElementById('s'+i));
+    if (ok) load();
+  }
+
+  async function addCount(){
+    var v = document.getElementById('add-product').value.trim();
+    var hit = PRODUCTS.find(function(p){ return p.slug === v || p.name === v; });
+    var st = document.getElementById('add-status');
+    if (!hit){ st.className = 'status err'; st.textContent = 'Pick a product from the list.'; return; }
+    var ok = await post(hit.slug, document.getElementById('add-count').value,
+                        document.getElementById('add-reason').value, st);
+    if (ok){ document.getElementById('add-product').value=''; document.getElementById('add-count').value='';
+      document.getElementById('add-reason').value=''; load(); }
+  }
+  async function reconcileNow(){
+    var st = document.getElementById('rec-status');
+    st.className = 'status'; st.textContent = 'Checking';
+    var r = await fetch('/api/console/stock/reconcile', { method:'POST', headers: hdr() });
+    var d = {}; try { d = await r.json(); } catch(e){}
+    if (!r.ok || !d.ok){ st.className = 'status err'; st.textContent = d.error || 'Not checked.'; return; }
+    var n = (d.synced || []).length;
+    st.className = 'status ok'; st.textContent = n ? ('Fixed ' + n + ' order' + (n === 1 ? '' : 's') + '.') : 'Nothing to fix.';
+    load();
+  }
+  load();
+</script>
