@@ -30,6 +30,19 @@
   .zero{ color:var(--red); font-weight:600; }
   .low{ color:var(--amber); font-weight:600; }
   .status{ font-size:12px; color:var(--muted); }
+  /* A picker that shows 10 items at once and scrolls (Glen, 2026-11-06). A browser
+     datalist cannot be sized, so this replaces it. */
+  .pick{ position:relative; flex:2; min-width:200px; display:flex; }
+  .pick input{ flex:1; min-width:0; }
+  .pick ul{ display:none; position:absolute; z-index:20; left:0; right:0; top:100%;
+            margin:4px 0 0; padding:0; list-style:none; background:var(--surface);
+            border:1px solid var(--border); border-radius:8px;
+            max-height:calc(10 * 32px); overflow-y:auto; }
+  .pick ul.open{ display:block; }
+  .pick li{ height:32px; line-height:32px; padding:0 10px; font-size:13px; cursor:pointer;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pick li.on, .pick li:hover{ background:var(--border); }
+  .pick li .tag{ color:var(--muted); font-size:11px; }
   .status.err{ color:var(--red); }
   .status.ok{ color:var(--green); }
   .empty{ color:var(--muted); font-size:13px; margin:0 16px; }
@@ -43,7 +56,8 @@ out of stock everywhere. Lowest count first.</p>
 
 <div class="card" id="add-card" style="display:none">
   <div class="row">
-    <input class="product" id="add-product" list="product-list" placeholder="Product name or slug" oninput="fillList()">
+    <div class="pick"><input id="add-product" placeholder="Product name or slug" autocomplete="off">
+      <ul id="product-pick" role="listbox"></ul></div>
     <input class="count" id="add-count" type="number" min="0" step="1" placeholder="Count">
     <input class="reason" id="add-reason" placeholder="Reason, e.g. shelf count">
     <button onclick="addCount()">Set count</button>
@@ -54,7 +68,6 @@ out of stock everywhere. Lowest count first.</p>
     <button onclick="reconcileNow()">Check recent orders</button>
     <span class="status" id="rec-status">Finds paid orders from the last 30 days that never came off the count, and fixes them.</span>
   </div>
-  <datalist id="product-list"></datalist>
 </div>
 
 <div class="wrap"><table id="tbl" style="display:none">
@@ -89,14 +102,61 @@ out of stock everywhere. Lowest count first.</p>
   // inventories, can you remove those items from the drop down list, but still be able
   // to find them if I start typing the product name". So from two typed letters on, a
   // counted product that matches is offered too.
+  // pickFilter: what a picker offers for typed text q. Not yet counted: always, narrowed
+  // by q. Counted: only from two typed letters, and only when it matches.
+  function pickFilter(items, counted, q){
+    q = (q || '').trim().toLowerCase();
+    return items.filter(function(it){
+      var hit = !q || it.name.toLowerCase().indexOf(q) >= 0 || String(it.key).toLowerCase().indexOf(q) >= 0;
+      if (!counted[it.key]) return hit;
+      return q.length >= 2 && hit;
+    });
+  }
+  // makePicker(input, list, items(), counted()): a 10-row scrolling list under the input.
+  // Choosing an item writes its name into the input.
+  function makePicker(inputId, listId, items, counted){
+    var inp = document.getElementById(inputId), ul = document.getElementById(listId);
+    var shown = [], on = -1;
+    function draw(){
+      shown = pickFilter(items(), counted(), inp.value);
+      on = -1;
+      ul.innerHTML = shown.map(function(it, i){
+        return '<li role="option" data-i="'+i+'">'+esc(it.name)+
+          (counted()[it.key] ? ' <span class="tag">counted</span>' : '')+'</li>'; }).join('');
+      ul.classList.toggle('open', shown.length > 0 && document.activeElement === inp);
+    }
+    function mark(i){
+      var lis = ul.querySelectorAll('li');
+      if (on >= 0 && lis[on]) lis[on].classList.remove('on');
+      on = Math.max(0, Math.min(i, lis.length - 1));
+      if (lis[on]){ lis[on].classList.add('on'); lis[on].scrollIntoView({block:'nearest'}); }
+    }
+    function choose(i){
+      if (!shown[i]) return;
+      inp.value = shown[i].name; ul.classList.remove('open');
+    }
+    inp.addEventListener('focus', draw);
+    inp.addEventListener('input', draw);
+    inp.addEventListener('blur', function(){ ul.classList.remove('open'); });
+    ul.addEventListener('mousedown', function(e){       // before blur closes the list
+      var li = e.target.closest('li'); if (!li) return;
+      e.preventDefault(); choose(+li.getAttribute('data-i'));
+    });
+    inp.addEventListener('keydown', function(e){
+      if (!ul.classList.contains('open')){ if (e.key === 'ArrowDown') draw(); return; }
+      if (e.key === 'ArrowDown'){ e.preventDefault(); mark(on + 1); }
+      else if (e.key === 'ArrowUp'){ e.preventDefault(); mark(on - 1); }
+      else if (e.key === 'Enter' && on >= 0){ e.preventDefault(); choose(on); }
+      else if (e.key === 'Escape'){ ul.classList.remove('open'); }
+    });
+    return { redraw: draw };
+  }
+  var productPicker = null;
   function fillList(){
-    var q = document.getElementById('add-product').value.trim().toLowerCase();
-    var typed = q.length >= 2;
-    document.getElementById('product-list').innerHTML = PRODUCTS.filter(function(p){
-      if (!COUNTED[p.slug]) return true;
-      return typed && (p.name.toLowerCase().indexOf(q) >= 0 || p.slug.indexOf(q) >= 0);
-    }).map(function(p){
-      return '<option value="'+esc(p.name)+'">'+esc(p.slug)+(COUNTED[p.slug] ? ', counted' : '')+'</option>'; }).join('');
+    if (!productPicker) productPicker = makePicker('add-product', 'product-pick',
+      function(){ return PRODUCTS.map(function(p){ return {key: p.slug, name: p.name}; }); },
+      function(){ return COUNTED; });
+    if (document.activeElement === document.getElementById('add-product')) productPicker.redraw();
   }
 
   async function load(){
