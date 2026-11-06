@@ -924,7 +924,9 @@
    "qbo_item_id": "18",
    "price_cents": 7000,
    "pinecone_title": "Holy Grail Full Spectrum ORMUS",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "description": "10 drops 3 times a day in mouth",
+   "bottle_type": "Dropper 50 mL"
   },
   "lens-zyme": {
    "name": "Lens-Zyme Brunescense Buster",
@@ -14365,6 +14367,8 @@
   },
   "holy-grail-full-spectrum-drops": {
    "name": "Holy Grail Full Spectrum Drops",
+   "inactive": true,
+   "superseded_by": "holy-grail-ormus",
    "price_cents": 7000,
    "pinecone_title": "Holy Grail Full Spectrum Drops",
    "qty_pricing": true,
@@ -24843,6 +24847,8 @@
   },
   "hydrolyzed-collagen-powder-grass-fed-type-i-iii": {
    "name": "Hydrolyzed Collagen Powder - Grass Fed, Type I & III",
+   "inactive": true,
+   "superseded_by": "hydrolyzed-collagen",
    "price_cents": 4000,
    "pinecone_title": "Hydrolyzed Collagen Powder - Grass Fed, Type I & III",
    "qty_pricing": false,

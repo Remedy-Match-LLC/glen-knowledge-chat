@@ -61,6 +61,10 @@ def test_current_products_are_sellable(slug):
 # ---------------------------------------------------------------------------
 
 RETIRED = {
+    # Glen, 2026-11-06: "Holy Grail has 2 variant names" and "Hydrolyzed Collagen has 2
+    # variants". Each folds into the listing that holds the alias, QuickBooks item or copy.
+    "holy-grail-full-spectrum-drops": "holy-grail-ormus",
+    "hydrolyzed-collagen-powder-grass-fed-type-i-iii": "hydrolyzed-collagen",
     "dental-regen-powder": "dental-powder",
     "relax": "stress-release",
     "connective-tissue-support": "comfort-synovial-syntropy",
