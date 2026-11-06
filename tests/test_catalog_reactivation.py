@@ -64,6 +64,9 @@ def test_current_products_are_sellable(slug):
 # not sold out yet. Keep it listed separately until we sell those 3 bottles." Retire it
 # to dental-powder again once its shelf count reaches 0.
 RETIRED = {
+    # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
+    # product)". One listing, the HomeoEnergetic one.
+    "digestzymes": "digestzymes-homeoenergetic-drops",
     "relax": "stress-release",
     "connective-tissue-support": "comfort-synovial-syntropy",
     "comfort": "comfort-synovial-syntropy",
