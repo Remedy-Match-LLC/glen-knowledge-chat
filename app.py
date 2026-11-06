@@ -9583,6 +9583,10 @@ _PORTAL_CART_ENABLED = os.environ.get("PORTAL_CART_ENABLED", "").strip().lower()
 _CART_PAGE_ENABLED = os.environ.get("CART_PAGE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # Public store at /shop. Dark until Glen says it goes live (a flag flip is its own deploy).
 _SHOP_ENABLED = os.environ.get("SHOP_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+# Search in the client portal header (plan 2026-11-06-portal-header-site-search, step 1).
+# Ships OFF. Off: no icon (the script tag is never injected), the search route 404s,
+# and every portal page is byte-identical to today. See dashboard/portal_search.py.
+_PORTAL_SEARCH_ENABLED = os.environ.get("PORTAL_SEARCH_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # "Clinical Theory of Everything" hub tile: a link out to Glen's published TheBrain
 # view (bra.in/6j852k). Ships dark; same truthy set as the other portal flags. With
 # this off the portal payload carries brain.enabled false and no tile renders.
@@ -36451,6 +36455,97 @@ def api_client_portal_product_search(token):
         })
     results.sort(key=lambda row: row["name"].lower())
     return jsonify({"ok": True, "products": results[:30]})
+
+
+def _portal_search_page_gates():
+    """The flags that keep a gated public page out of the search index while it is dark."""
+    from dashboard import supplement_reviews as _sr
+    return {"shop": lambda: _SHOP_ENABLED, "product_review": _sr.enabled}
+
+
+def _portal_search_records(email):
+    """This client's orders and messages, from the same reads the Orders tab and the
+    Messages card make. Cached briefly by the caller. The chat thread opens its own
+    connection, so it runs after this function's connection is closed."""
+    from dashboard import portal_search as _psr
+    with db.connect(LOG_DB) as cx:
+        published = _psr._safe_read(cx, lambda c: _published_invoices_for(c, email), [],
+                                    reset=True)
+        past = _psr._safe_read(cx, lambda c: _past_invoices_for(c, email), [], reset=True)
+    messages = _portal_chat_thread(email)
+
+    def _items(tok):
+        try:
+            order = _invoice_order_for_token(tok)
+        except Exception as e:
+            print(f"[portal-search] invoice lookup failed: {e!r}", flush=True)
+            return []
+        if not order or (order.get("email") or "").strip().lower() != email:
+            return []
+        return _psr.invoice_item_names(order)
+
+    return _psr.order_docs(published, past, _items) + _psr.message_docs(messages)
+
+
+def _portal_search_reports(email, portal_content):
+    """This client's reports, read fresh on every search so a hold, a draft or an unlock
+    shows at once. The unlock check runs before the reports' own connection opens."""
+    from dashboard import portal_search as _psr
+    show_remedies = bool(_portal_biofield_unlocked(email))
+    with db.connect(LOG_DB) as cx_r:
+        return _psr.report_docs(cx_r, email, show_remedies=show_remedies,
+                                portal_content=portal_content)
+
+
+def _portal_search_client_prices(results, email):
+    """The client's own price on each orderable store result shown: the same
+    _portal_priced_lines call the portal's add-to-order control (order-catalog) makes.
+    The catalog price stays when that call gives nothing."""
+    for r in results:
+        if r.get("source") != "store" or not r.get("orderable") or not r.get("slug"):
+            continue
+        try:
+            _lines, rec, _sub = _portal_priced_lines([{"slug": r["slug"], "qty": 1}], email=email)
+        except Exception as e:
+            print(f"[portal-search] client price failed for {r['slug']!r}: {e!r}", flush=True)
+            continue
+        if rec and rec[0].get("unit_cents"):
+            r["price"] = f"${int(rec[0]['unit_cents']) / 100:.2f}"
+    return results
+
+
+@app.route("/api/portal/<token>/site-search", methods=["GET"])
+def api_client_portal_site_search(token):
+    """The portal header search: this client's own records, the store, and public pages.
+
+    The client is whoever the portal token (or the sign-in session) resolves to, exactly
+    as every other /api/portal/<token>/ route decides it. Records are read for that one
+    email only, never for an email named in the request, and ?member= is ignored: search
+    covers the account holder. An unknown token gets the same 404 as product-search, and
+    no results of any kind."""
+    if not _PORTAL_SEARCH_ENABLED:
+        return jsonify({"error": "not found"}), 404
+    from dashboard import portal_search as _psr
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+    email = ((portal or {}).get("email") or "").strip().lower()
+    if not portal or not email:
+        return jsonify({"error": "not found"}), 404
+    q = _psr.clean_query(request.args.get("q"))
+    terms = _psr.terms_for(q)
+    docs = []
+    if terms:
+        catalog = _PRODUCTS.get("products") or {}
+        docs = list(_psr.cached(("records", email), lambda: _portal_search_records(email)))
+        docs += _portal_search_reports(email, portal.get("content") or {})
+        docs += _psr.cached(("store",),
+                            lambda: _psr.product_docs(catalog, _get_product, _is_orderable))
+        docs += _psr.page_index(STATIC, _portal_search_page_gates())
+    out = _psr.search(docs, terms, page=request.args.get("page") or 1)
+    _portal_search_client_prices(out["results"], email)
+    resp = jsonify({"ok": True, "q": q, **out})
+    resp.headers["Cache-Control"] = "private, no-store, max-age=0"
+    return resp
 
 
 def _shop_programs():
@@ -66599,6 +66694,10 @@ def _inject_journey_shell(response):
             authed = bool(get_authenticated_user(request))
             mode = shell_nav.resolve_mode(request.path, authed)
             html = shell_nav.inject_shell_html(html, mode, REWARDS_1B_ENABLED, REWARDS_1B_GIFT_ENABLED, quest_enabled=JOURNEY_QUEST_ENABLED)
+        if _PORTAL_SEARCH_ENABLED:
+            from dashboard import portal_search as _psr
+            if _psr.is_portal_page(request.path):
+                html = _psr.inject_html(html)
         response.set_data(html)
     except Exception as e:  # never let the shell break a page
         print(f"[journey-shell] inject skipped: {e!r}", flush=True)
