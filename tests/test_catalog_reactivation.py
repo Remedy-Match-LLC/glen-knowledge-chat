@@ -67,6 +67,11 @@ RETIRED = {
     # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
     # product)". One listing, the HomeoEnergetic one.
     "digestzymes": "digestzymes-homeoenergetic-drops",
+    # Glen, 2026-11-06: "yes", three more twins are the same products. Here the plain listing
+    # holds the ingredients and approved copy, so the FileMaker HomeoEnergetic row points to it.
+    "energessence-homeoenergetic-drops": "energessence",
+    "natural-resource-a-z-homeoenergetic-drops": "natural-resource-az",
+    "shark-essence-homeoenergetic-drops": "shark-essence",
     "relax": "stress-release",
     "connective-tissue-support": "comfort-synovial-syntropy",
     "comfort": "comfort-synovial-syntropy",

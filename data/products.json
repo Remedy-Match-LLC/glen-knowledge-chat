@@ -2640,6 +2640,7 @@
   },
   "binder-complex-powder": {
    "name": "Binder Complex Powder",
+   "directions": "1 - 2 scoops a day in living water, away from beneficial oils, or as guided. Discontinue and take extra living water with any constipation.",
    "price_cents": 7000,
    "qty_pricing": true,
    "ingredients": [
@@ -14243,6 +14244,8 @@
   },
   "energessence-homeoenergetic-drops": {
    "name": "Energessence HomeoEnergetic Drops",
+   "inactive": true,
+   "superseded_by": "energessence",
    "price_cents": 7000,
    "pinecone_title": "Energessence HomeoEnergetic Drops",
    "qty_pricing": true,
@@ -14267,6 +14270,8 @@
   },
   "natural-resource-a-z-homeoenergetic-drops": {
    "name": "Natural Resource A-Z HomeoEnergetic Drops",
+   "inactive": true,
+   "superseded_by": "natural-resource-az",
    "price_cents": 7000,
    "pinecone_title": "Natural Resource A-Z HomeoEnergetic Drops",
    "qty_pricing": true,
@@ -14308,6 +14313,8 @@
   },
   "shark-essence-homeoenergetic-drops": {
    "name": "Shark Essence HomeoEnergetic Drops",
+   "inactive": true,
+   "superseded_by": "shark-essence",
    "price_cents": 7000,
    "pinecone_title": "Shark Essence HomeoEnergetic Drops",
    "qty_pricing": true,
