@@ -573,7 +573,7 @@ def test_failed_report_status_read_returns_no_reports(env, monkeypatch):
         raise RuntimeError("report unreadable")
     monkeypatch.setattr(pbr, "get_report", boom)
     # Matches on the report title, so an unreadable report would otherwise be found.
-    recs = _records(_search(client, tok, q="remedy match").get_json())
+    recs = _records(_search(client, tok, q="2026-10-02").get_json())
     assert not [r for r in recs if r["kind"] == "report"]
 
 
