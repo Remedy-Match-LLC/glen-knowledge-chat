@@ -2579,8 +2579,11 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         # bundle that lists caution_components: its block carries only those cautions.
         # An out-of-stock product qualifies like a waiting-list one: Night Vision, unpinned,
         # was otherwise never named out of stock to the bot (review round 1, 2026-10-25).
+        # A shelf count at 0 qualifies like the hand-set flag (STOCK_COUNTS_ENABLED,
+        # 2026-11-06): the same note the buying paths read. Flag off, it is the flag alone.
         if (not (p.get("copy_pinned") or p.get("waitlist_only") or p.get("chat_caution")
                  or str(p.get("out_of_stock") or "").strip()
+                 or _stock_counts.is_counted_out(slug, p)
                  or _bundle_bot_cautions(p, products))
                 or p.get("inactive")
                 or p.get("info_only")
@@ -9597,6 +9600,10 @@ _PORTAL_CART_ENABLED = os.environ.get("PORTAL_CART_ENABLED", "").strip().lower()
 _CART_PAGE_ENABLED = os.environ.get("CART_PAGE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # Public store at /shop. Dark until Glen says it goes live (a flag flip is its own deploy).
 _SHOP_ENABLED = os.environ.get("SHOP_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+# Search in the client portal header (plan 2026-11-06-portal-header-site-search, step 1).
+# Ships OFF. Off: no icon (the script tag is never injected), the search route 404s,
+# and every portal page is byte-identical to today. See dashboard/portal_search.py.
+_PORTAL_SEARCH_ENABLED = os.environ.get("PORTAL_SEARCH_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # "Clinical Theory of Everything" hub tile: a link out to Glen's published TheBrain
 # view (bra.in/6j852k). Ships dark; same truthy set as the other portal flags. With
 # this off the portal payload carries brain.enabled false and no tile renders.
@@ -10777,6 +10784,13 @@ def _is_orderable(slug, p=None):
     if p is not None:
         cat = {**cat, slug: p}
     return _ppw.is_orderable(slug, cat)
+
+
+# Shelf counts (STOCK_COUNTS_ENABLED, Glen 2026-11-06) read the orders database and
+# this catalog. Lambdas, so a test's monkeypatched LOG_DB or catalog is what they see.
+from dashboard import stock_counts as _stock_counts
+_stock_counts.set_db_path_fn(lambda: LOG_DB)
+_stock_counts.set_catalog_fn(lambda: _PRODUCTS.get("products") or {})
 
 
 def _waitlist_refusal(slug):
@@ -24161,6 +24175,112 @@ def console_support_programs_page():
     return resp
 
 
+@app.route("/console/stock")
+def console_stock_page():
+    """Shelf counts (Glen, 2026-11-06). The page holds no data; its API is guarded."""
+    resp = send_from_directory(STATIC, "console-stock.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+@app.route("/api/console/stock", methods=["GET"])
+def api_console_stock():
+    """Every counted product, lowest first, with average monthly sales and months of
+    supply; the GrooveKart names that matched no product; the products a count can be
+    entered for. 404 while STOCK_COUNTS_ENABLED is off."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    if not _stock_counts.enabled():
+        return jsonify({"ok": False, "error": "Stock counts are switched off."}), 404
+    cx = db.connect(LOG_DB)
+    try:
+        _stock_counts.init_tables(cx)
+        return jsonify({"ok": True,
+                        "low_stock_at": _stock_counts.LOW_STOCK_AT,
+                        "window_days": _stock_counts.AVG_WINDOW_DAYS,
+                        "rows": _stock_counts.console_rows(cx),
+                        "unmatched": _stock_counts.list_unmatched(cx),
+                        "products": _stock_counts.countable_products()})
+    finally:
+        cx.close()
+
+
+@app.route("/api/console/stock/set", methods=["POST"])
+def api_console_stock_set():
+    """Set one product's count, with a reason ("delivery from the lab", "shelf count").
+    The change is logged with who, when and why."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    if not _stock_counts.enabled():
+        return jsonify({"ok": False, "error": "Stock counts are switched off."}), 404
+    data = request.get_json(silent=True) or {}
+    cx = db.connect(LOG_DB)
+    try:
+        res = _stock_counts.set_count(cx, data.get("slug"), data.get("count"),
+                                      who=_stock_console_who(), reason=data.get("reason"))
+        return jsonify({"ok": True, **res})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    finally:
+        cx.close()
+
+
+def _stock_console_who():
+    """Who set a count: "console:<scope>" for a per-user token (e.g. workspace:rae),
+    "console" for the master key or a login cookie, which name nobody."""
+    try:
+        # The master key matches no access_tokens row, so it falls through to "console".
+        key = _present_console_key()
+        if key:
+            with db.connect(LOG_DB) as cx:
+                row = cx.execute(
+                    "SELECT u.scope FROM access_tokens t "
+                    "JOIN workspace_users u ON u.id = t.user_id "
+                    "WHERE t.token = ? AND t.revoked_at IS NULL", (key,)).fetchone()
+            if row and row[0]:
+                return f"console:{row[0]}"
+    except Exception:  # noqa: BLE001
+        pass
+    return "console"
+
+
+@app.route("/api/console/stock/reconcile", methods=["POST"])
+def api_console_stock_reconcile():
+    """The self-heal, on demand: sync every live order of the last 30 days that has no
+    stock move, and every cancelled order still holding bottles."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    if not _stock_counts.enabled():
+        return jsonify({"ok": False, "error": "Stock counts are switched off."}), 404
+    cx = db.connect(LOG_DB)
+    try:
+        return jsonify({"ok": True, "synced": _stock_counts.reconcile(cx)})
+    finally:
+        cx.close()
+
+
+@app.route("/api/cron/stock-reconcile", methods=["POST"])
+def api_cron_stock_reconcile():
+    """Nightly self-heal (X-Cron-Secret header == CRON_SECRET, falls back to
+    CONSOLE_SECRET). Order writes never run it: it stays out of the request path."""
+    # Header only: a ?key= query string lands in access logs (review round 3).
+    key = request.headers.get("X-Cron-Secret", "").strip()
+    expected = os.environ.get("CRON_SECRET") or os.environ.get("CONSOLE_SECRET", "")
+    if not expected or not hmac.compare_digest(key, expected):
+        return jsonify({"error": "unauthorized"}), 401
+    if not _stock_counts.enabled():
+        return jsonify({"ok": True, "synced": [], "enabled": False})
+    cx = db.connect(LOG_DB)
+    try:
+        return jsonify({"ok": True, "synced": _stock_counts.reconcile(cx)})
+    finally:
+        cx.close()
+
+
 @app.route("/console/related-products")
 def console_related_products_page():
     resp = send_from_directory(STATIC, "console-related-products.html")
@@ -36602,6 +36722,97 @@ def api_client_portal_product_search(token):
     return jsonify({"ok": True, "products": results[:30]})
 
 
+def _portal_search_page_gates():
+    """The flags that keep a gated public page out of the search index while it is dark."""
+    from dashboard import supplement_reviews as _sr
+    return {"shop": lambda: _SHOP_ENABLED, "product_review": _sr.enabled}
+
+
+def _portal_search_records(email):
+    """This client's orders and messages, from the same reads the Orders tab and the
+    Messages card make. Cached briefly by the caller. The chat thread opens its own
+    connection, so it runs after this function's connection is closed."""
+    from dashboard import portal_search as _psr
+    with db.connect(LOG_DB) as cx:
+        published = _psr._safe_read(cx, lambda c: _published_invoices_for(c, email), [],
+                                    reset=True)
+        past = _psr._safe_read(cx, lambda c: _past_invoices_for(c, email), [], reset=True)
+    messages = _portal_chat_thread(email)
+
+    def _items(tok):
+        try:
+            order = _invoice_order_for_token(tok)
+        except Exception as e:
+            print(f"[portal-search] invoice lookup failed: {e!r}", flush=True)
+            return []
+        if not order or (order.get("email") or "").strip().lower() != email:
+            return []
+        return _psr.invoice_item_names(order)
+
+    return _psr.order_docs(published, past, _items) + _psr.message_docs(messages)
+
+
+def _portal_search_reports(email, portal_content):
+    """This client's reports, read fresh on every search so a hold, a draft or an unlock
+    shows at once. The unlock check runs before the reports' own connection opens."""
+    from dashboard import portal_search as _psr
+    show_remedies = bool(_portal_biofield_unlocked(email))
+    with db.connect(LOG_DB) as cx_r:
+        return _psr.report_docs(cx_r, email, show_remedies=show_remedies,
+                                portal_content=portal_content)
+
+
+def _portal_search_client_prices(results, email):
+    """The client's own price on each orderable store result shown: the same
+    _portal_priced_lines call the portal's add-to-order control (order-catalog) makes.
+    The catalog price stays when that call gives nothing."""
+    for r in results:
+        if r.get("source") != "store" or not r.get("orderable") or not r.get("slug"):
+            continue
+        try:
+            _lines, rec, _sub = _portal_priced_lines([{"slug": r["slug"], "qty": 1}], email=email)
+        except Exception as e:
+            print(f"[portal-search] client price failed for {r['slug']!r}: {e!r}", flush=True)
+            continue
+        if rec and rec[0].get("unit_cents"):
+            r["price"] = f"${int(rec[0]['unit_cents']) / 100:.2f}"
+    return results
+
+
+@app.route("/api/portal/<token>/site-search", methods=["GET"])
+def api_client_portal_site_search(token):
+    """The portal header search: this client's own records, the store, and public pages.
+
+    The client is whoever the portal token (or the sign-in session) resolves to, exactly
+    as every other /api/portal/<token>/ route decides it. Records are read for that one
+    email only, never for an email named in the request, and ?member= is ignored: search
+    covers the account holder. An unknown token gets the same 404 as product-search, and
+    no results of any kind."""
+    if not _PORTAL_SEARCH_ENABLED:
+        return jsonify({"error": "not found"}), 404
+    from dashboard import portal_search as _psr
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+    email = ((portal or {}).get("email") or "").strip().lower()
+    if not portal or not email:
+        return jsonify({"error": "not found"}), 404
+    q = _psr.clean_query(request.args.get("q"))
+    terms = _psr.terms_for(q)
+    docs = []
+    if terms:
+        catalog = _PRODUCTS.get("products") or {}
+        docs = list(_psr.cached(("records", email), lambda: _portal_search_records(email)))
+        docs += _portal_search_reports(email, portal.get("content") or {})
+        docs += _psr.cached(("store",),
+                            lambda: _psr.product_docs(catalog, _get_product, _is_orderable))
+        docs += _psr.page_index(STATIC, _portal_search_page_gates())
+    out = _psr.search(docs, terms, page=request.args.get("page") or 1)
+    _portal_search_client_prices(out["results"], email)
+    resp = jsonify({"ok": True, "q": q, **out})
+    resp.headers["Cache-Control"] = "private, no-store, max-age=0"
+    return resp
+
+
 def _shop_programs():
     """Glen's condition programs as the console editor last saved them (D2)."""
     from dashboard import condition_programs as _cp
@@ -48363,6 +48574,50 @@ def _notify_store_order(payload):
         print(f"[gk-notify] skipped: {e!r}", flush=True)
 
 
+def _gk_order_items(product_names, raw_products):
+    """The GrooveKart order row's lines. Flag off: [{"name"}], exactly as before. Flag
+    on: each also carries stock_qty and, on an exact name match, stock_slug, so the
+    decrement and the monthly average read the same lines. Never raises."""
+    if _stock_counts.enabled():
+        try:
+            items = _stock_counts.groovekart_items(raw_products)
+            if [it["name"] for it in items] == list(product_names):
+                return items
+        except Exception as e:  # noqa: BLE001
+            print(f"[stock] GrooveKart line detail skipped: {e!r}", flush=True)
+    return [{"name": n} for n in product_names]
+
+
+def _stock_groovekart_arrival(external_ref, raw_products, payload=None):
+    """A GrooveKart order comes off the shelf count when it arrives, since GrooveKart
+    never says when it is paid (STOCK_COUNTS_ENABLED, Glen 2026-11-06). Names that
+    match no product are listed on /console/stock. Total: this runs inside the webhook,
+    and a raise would 500 it into a GrooveKart retry storm."""
+    try:
+        if not _stock_counts.enabled():
+            return
+        cx = db.connect(LOG_DB)
+        try:
+            oid = None
+            if external_ref:
+                try:
+                    r = cx.execute("SELECT id FROM orders WHERE source='groovekart' "
+                                   "AND external_ref=?", (external_ref,)).fetchone()
+                    oid = int(r[0]) if r else None
+                except Exception:  # noqa: BLE001  (no orders table on a fresh DB)
+                    try:
+                        cx.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
+            _stock_counts.on_groovekart_delivery(
+                cx, oid, raw_products, key=_stock_counts.delivery_key(payload or {}),
+                ref=external_ref)
+        finally:
+            cx.close()
+    except Exception as e:  # noqa: BLE001
+        print(f"[stock] GrooveKart arrival skipped: {e!r}", flush=True)
+
+
 @app.route("/webhook/groovekart", methods=["POST"])
 def groovekart_webhook():
     """GrooveKart order → GHL E4L pipeline with purchase tag."""
@@ -48451,8 +48706,10 @@ def groovekart_webhook():
                   external_ref=str(data.get("id") or data.get("order_id")
                                    or data.get("reference") or email or _bos_orders._now()),
                   email=email, name=(first + " " + last).strip(), phone=phone,
-                  items=[{"name": n} for n in product_names],
+                  items=_gk_order_items(product_names, _raw_products),
                   total_cents=int(round(float(order_total or 0) * 100)), channel="retail")
+    _stock_groovekart_arrival(str(data.get("id") or data.get("order_id")
+                                  or data.get("reference") or ""), _raw_products, data)
     threading.Thread(
         target=_send_kloud_order_instructions,
         args=(email, first, product_names,
@@ -61777,6 +62034,7 @@ def console_reprice_orders_from_qbo():
                 cx.execute("UPDATE orders SET items_json=?, updated_at=? WHERE id=?",
                            (json.dumps(new_items), _bos_orders._now(), o.get("id")))
                 cx.commit()
+                _bos_orders._stock_sync(cx, o.get("id"))   # flag off: a no-op
                 rec["applied"] = True
             results.append(rec)
     finally:
@@ -66758,6 +67016,10 @@ def _inject_journey_shell(response):
             authed = bool(get_authenticated_user(request))
             mode = shell_nav.resolve_mode(request.path, authed)
             html = shell_nav.inject_shell_html(html, mode, REWARDS_1B_ENABLED, REWARDS_1B_GIFT_ENABLED, quest_enabled=JOURNEY_QUEST_ENABLED)
+        if _PORTAL_SEARCH_ENABLED:
+            from dashboard import portal_search as _psr
+            if _psr.is_portal_page(request.path):
+                html = _psr.inject_html(html)
         response.set_data(html)
     except Exception as e:  # never let the shell break a page
         print(f"[journey-shell] inject skipped: {e!r}", flush=True)

@@ -399,6 +399,16 @@ def name_to_slug(name, catalog) -> Optional[str]:
     return _live(_name_to_any_slug(name.strip().lower(), catalog), catalog)
 
 
+def exact_name_to_slug(name, catalog) -> Optional[str]:
+    """name_to_slug's exact tiers only: a whole alias, or the exact catalog name or
+    pinecone_title. No substring fallback. Stock counts decrement only on this, so a
+    fuzzy hit never takes a bottle off the wrong product (review, 2026-11-06)."""
+    if not name or is_ambiguous_product_name(name):
+        return None
+    catalog = catalog or {}
+    return _live(_name_to_any_slug(name.strip().lower(), catalog, exact_only=True), catalog)
+
+
 def _live(slug, catalog):
     """`slug` if it is on sale, else its live replacement, else None (round 1,
     2026-10-07: off-sale Molybdenum Syntropy reached the wholesale cart)."""
@@ -410,7 +420,7 @@ def _live(slug, catalog):
     return live if p and not p.get("inactive") else None
 
 
-def _name_to_any_slug(nl, catalog):
+def _name_to_any_slug(nl, catalog, exact_only=False):
     # An alias answers to its whole name only: a renamed product keeps its old name once
     # pinecone_title changes (Synergy C -> Vitamin C Syntropy, 2026-09-28), and never
     # captures a longer name that merely contains it (review rounds 1 and 2).
@@ -429,7 +439,7 @@ def _name_to_any_slug(nl, catalog):
     # inside "Magnesium Synergy Capsules" and sent it to Vitamin C Syntropy (2026-09-30).
     # Wider rules (whole words, longest overlap) were measured on 12,086 clinical names
     # in review round 1 and moved hundreds of other names, many onto wrong products.
-    if len(nl) <= 4:
+    if exact_only or len(nl) <= 4:
         return None
     for slug, p in catalog.items():
         for cand in (p.get("name"), p.get("pinecone_title")):
@@ -487,7 +497,7 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
             cp = cat.get(cs) if cs else None
             if not cp or cp.get("inactive") or cs in seen:
                 continue
-            if cp.get("waitlist_only") or cp.get("enquiry_only") or _stock_note(cp):
+            if cp.get("waitlist_only") or cp.get("enquiry_only") or _out_note(cs, cp):
                 return _block(cs, cp)
             hit = _components(cp, seen | {cs})
             if hit:
@@ -497,7 +507,7 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
     s, p = _resolve(slug)
     if not p:
         return None
-    if p.get("waitlist_only") or p.get("enquiry_only") or _stock_note(p):
+    if p.get("waitlist_only") or p.get("enquiry_only") or _out_note(s, p):
         return _block(s, p)
     return _components(p, {s})
 
@@ -515,9 +525,24 @@ def _stock_note(p):
     return " " if v else ""
 
 
+def _count_note(slug, p):
+    """A one-space note when the shelf count says `slug` is sold out, else "". Behind
+    STOCK_COUNTS_ENABLED: off, this never touches the database (Glen, 2026-11-06,
+    platform/plans/2026-11-06-stock-counts-in-the-app.md). A product with no count
+    stays on sale. The bare note gives the line: {name} is out of stock."""
+    from dashboard import stock_counts
+    return " " if stock_counts.is_counted_out(slug, p) else ""
+
+
+def _out_note(slug, p):
+    """The hand-set `out_of_stock` note, else the shelf count's. A flag wins over a
+    count, so Glen can hold back a product with bottles on the shelf."""
+    return _stock_note(p) or _count_note(slug, p)
+
+
 def _block(slug, p):
     b = {"slug": slug, "name": p.get("name") or slug}
-    note = _stock_note(p)
+    note = _out_note(slug, p)
     if p.get("enquiry_only") and not p.get("waitlist_only"):
         b["enquiry_only"] = True
     elif note and not p.get("waitlist_only"):
