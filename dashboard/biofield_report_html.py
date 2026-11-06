@@ -2635,6 +2635,10 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
                              bottles_unavailable=False, free_factors=None,
                              botanical=None):
     """Scannable editable checklist; completion follows the current remedy program."""
+    # The grey default in each row's pattern field, from the one function Update
+    # Clinical layers and "Add to layer" also name a condition by. Imported here, as
+    # below, because biofield_clinical_checklist pulls in the profile modules.
+    from dashboard.biofield_clinical_checklist import default_pattern as _default_pattern
     items = items or []
     layer_groups = group_layers(layers or [])
     layer_options = []
@@ -2766,7 +2770,7 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
                  f"{'<span class=clinical-stress-hint>suggested</span>' if item.get('pattern_is_suggested') else ''}"
                  f"<input class=clinical-stress list=vocab value=\"{_e(item.get('stress_pattern') or '')}\" "
                  f"data-remembered=\"{_e(item.get('remembered_pattern') or '')}\" "
-                 f"placeholder=\"Defaults to '{_e(label)}'\" oninput=clinicalStressTyped(this) "
+                 f"placeholder=\"Defaults to '{_e(_default_pattern(label))}'\" oninput=clinicalStressTyped(this) "
                  "onchange=saveClinicalStress(this)></label>"
                  f"<button type=button class='btn ghost clinical-stress-save'{stress_hidden} "
                  "onclick=rememberClinicalStress(this)>Replace remembered term</button>"
