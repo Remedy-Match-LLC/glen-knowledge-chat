@@ -54,9 +54,11 @@ def test_it_is_sent_once_however_often_the_drain_runs(tmp_path):
 
 def test_a_second_signup_does_not_send_again(tmp_path):
     cx = _cx(tmp_path)
-    rme.request_confirm(cx, "a@example.com")
+    rme.request_confirm(cx, "a@example.com", now=T0)
     _drain(cx)
-    assert not rme.request_confirm(cx, "a@example.com")
+    # Pinned to the test clock: on the real clock the 7-day resend window ran out on
+    # 5 Nov 2026, 7 days after T0, and the test failed on every branch.
+    assert not rme.request_confirm(cx, "a@example.com", now=T0 + timedelta(hours=1))
     assert _drain(cx, T0 + timedelta(hours=1))[1] == []
 
 
