@@ -228,6 +228,7 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
         cx.commit()
         if items is not None:
             _emit_source_events(cx, row[0], email, items)
+            _stock_sync(cx, row[0])   # an edited paid order moves the difference
         return row[0]
     oid = dbwrite.insert_returning_id(
         cx,
@@ -577,6 +578,8 @@ def set_order_status(cx, order_id, status):
             _holds.remove_from_hold(cx, order_id)
         except Exception as e:  # never let hold cleanup block the cancel
             print(f"[orders] hold-remove-on-cancel skipped for #{order_id}: {e!r}", flush=True)
+    if cur.rowcount:
+        _stock_sync(cx, order_id)   # cancelled puts bottles back; reinstated takes them
     if status in ("shipped", "delivered", "done") and cur.rowcount:
         try:
             from . import shipped_report_release as _report_release
@@ -650,6 +653,8 @@ def set_order_items_and_total(cx, order_id, items, total_cents):
         "UPDATE orders SET items_json=?, total_cents=?, updated_at=? WHERE id=?",
         (json.dumps(items or []), int(total_cents or 0), _now(), order_id))
     cx.commit()
+    if cur.rowcount:
+        _stock_sync(cx, order_id)
     return cur.rowcount > 0
 
 
@@ -1125,6 +1130,20 @@ def _consume_ship_credit_on_pay(cx, order_id):
         print(f"[ship_credit] consume-on-pay skipped for #{order_id}: {e!r}", flush=True)
 
 
+def _stock_sync(cx, order_id):
+    """Bring the shelf count in line with this order as it now stands: paid takes its
+    bottles off, cancelled puts them back, reinstated takes them again, each once
+    (STOCK_COUNTS_ENABLED, Glen 2026-11-06). The self-heal runs from cron and the
+    console, never here. Flag off: returns before touching anything. Never raises: payment, a cancel or a
+    status change must never fail because stock keeping did."""
+    try:
+        from dashboard import stock_counts as _stock
+        if _stock.enabled():
+            _stock.sync_order(cx, order_id)
+    except Exception as e:  # noqa: BLE001
+        print(f"[orders] stock sync skipped for #{order_id}: {e!r}", flush=True)
+
+
 def set_order_payment(cx, order_id, *, method, amount_cents):
     """Record payment on an order: mark paid + capture method/amount/time, and
     drop it into the fulfillment board as 'new'. No money is moved (Phase 1)."""
@@ -1136,6 +1155,7 @@ def set_order_payment(cx, order_id, *, method, amount_cents):
     if cur.rowcount:
         _ensure_portal_receipt(cx, order_id)
         _consume_ship_credit_on_pay(cx, order_id)
+        _stock_sync(cx, order_id)
     return cur.rowcount > 0
 
 
@@ -1165,6 +1185,7 @@ def mark_order_paid_keep_status(cx, order_id, *, method, amount_cents):
     cx.commit()
     if cur.rowcount:
         _ensure_portal_receipt(cx, order_id)
+        _stock_sync(cx, order_id)
     return cur.rowcount > 0
 
 
