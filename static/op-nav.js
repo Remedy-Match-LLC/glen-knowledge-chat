@@ -63,7 +63,7 @@
       finance:       [ {id:"money",label:"Money",href:"/console/money"+qs}, {id:"pricing",label:"Pricing",href:"/console/pricing-settings"+qs},
                        {id:"studio-credits",label:"Studio Credits",href:"/console/studio-credits"+qs}, {id:"tax",label:"Tax",href:"/admin/tax"+qs} ],
       admin:         [ {id:"approvals",label:"Approvals",href:"/console/approvals"+qs}, {id:"projects",label:"Projects",href:"/console/projects"+qs},
-                       {id:"settings",label:"Settings",href:"/console/settings"+qs} ]
+                       {id:"stock",label:"Stock",href:"/console/stock"+qs}, {id:"settings",label:"Settings",href:"/console/settings"+qs} ]
     };
   }
   var NAV_PROFILES = {

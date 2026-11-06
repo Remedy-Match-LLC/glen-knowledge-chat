@@ -21,6 +21,7 @@
   input.product{ flex:2; min-width:200px; }
   button{ padding:8px 13px; border-radius:8px; border:1px solid var(--gold);
           background:var(--gold); color:#0a150d; font-weight:600; cursor:pointer; font-size:13px; }
+  button.quick{ background:transparent; color:var(--gold); }
   .wrap{ overflow-x:auto; margin:0 16px; max-width:980px; }
   table{ border-collapse:collapse; width:100%; font-size:13px; }
   th, td{ text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); vertical-align:middle; }
@@ -46,6 +47,7 @@ out of stock everywhere. Lowest count first.</p>
     <input class="count" id="add-count" type="number" min="0" step="1" placeholder="Count">
     <input class="reason" id="add-reason" placeholder="Reason, e.g. shelf count">
     <button onclick="addCount()">Set count</button>
+    <button class="quick" onclick="addCount('Shelf count')" title="Saves this count with the reason Shelf count">Shelf count</button>
   </div>
   <div class="status" id="add-status"></div>
   <div class="row" style="margin-top:10px">
@@ -104,7 +106,9 @@ out of stock everywhere. Lowest count first.</p>
         '<td><div class="row"><input class="count" type="number" min="0" step="1" id="c'+i+'">'+
         '<input class="reason" id="r'+i+'" placeholder="Reason"></div>'+
         '<div class="status" id="s'+i+'"></div></td>'+
-        '<td><button data-slug="'+esc(x.slug)+'" data-i="'+i+'" onclick="saveRow(this)">Save</button></td></tr>';
+        '<td><div class="row"><button data-slug="'+esc(x.slug)+'" data-i="'+i+'" onclick="saveRow(this)">Save</button>'+
+        '<button class="quick" data-slug="'+esc(x.slug)+'" data-i="'+i+'" onclick="saveRow(this, \'Shelf count\')" '+
+        'title="Saves this count with the reason Shelf count">Shelf count</button></div></td></tr>';
     }).join('');
     var un = d.unmatched || [];
     ['unmatched-h','unmatched-sub'].forEach(function(id){
@@ -126,20 +130,21 @@ out of stock everywhere. Lowest count first.</p>
     return true;
   }
 
-  async function saveRow(btn){
+  // "Shelf count" buttons save with that reason, so the free-text box can stay empty.
+  async function saveRow(btn, reason){
     var i = btn.getAttribute('data-i');
     var ok = await post(btn.getAttribute('data-slug'), document.getElementById('c'+i).value,
-                        document.getElementById('r'+i).value, document.getElementById('s'+i));
+                        reason || document.getElementById('r'+i).value, document.getElementById('s'+i));
     if (ok) load();
   }
 
-  async function addCount(){
+  async function addCount(reason){
     var v = document.getElementById('add-product').value.trim();
     var hit = PRODUCTS.find(function(p){ return p.slug === v || p.name === v; });
     var st = document.getElementById('add-status');
     if (!hit){ st.className = 'status err'; st.textContent = 'Pick a product from the list.'; return; }
     var ok = await post(hit.slug, document.getElementById('add-count').value,
-                        document.getElementById('add-reason').value, st);
+                        reason || document.getElementById('add-reason').value, st);
     if (ok){ document.getElementById('add-product').value=''; document.getElementById('add-count').value='';
       document.getElementById('add-reason').value=''; load(); }
   }
