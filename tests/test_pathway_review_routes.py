@@ -40,7 +40,7 @@ def _ingredients(tmp_path):
 def _client(tmp_path):
     return create_app(str(tmp_path / "c.db"), e4l_db=str(tmp_path / "e.db"),
                       ingredients_db=_ingredients(tmp_path),
-                      scan_lookup=lambda e: _NONE).test_client()
+                      scan_lookup=lambda e, client_id=None: _NONE).test_client()
 
 
 def test_page_renders_the_pending_atom(tmp_path):
@@ -96,7 +96,7 @@ def test_every_pathway_route_is_console_gated(tmp_path, monkeypatch):
     monkeypatch.setenv("CONSOLE_SECRET", "s3cret")
     app = create_app(str(tmp_path / "c.db"), e4l_db=str(tmp_path / "e.db"),
                      ingredients_db=_ingredients(tmp_path),
-                     scan_lookup=lambda e: _NONE)
+                     scan_lookup=lambda e, client_id=None: _NONE)
     c = app.test_client()
     assert c.get("/pathway-review").status_code == 401
     assert c.get("/api/pathway-review/queue").status_code == 401

@@ -48,8 +48,8 @@ def test_refresh_pulls_newer_scan_and_returns_panel(tmp_path):
     _seed_e4l(e4l, [(900, "2026-04-14")])               # stale scan only
     today = "2026-06-24"
 
-    def lookup(email):
-        return scan_context(email, today, db_path=str(e4l))
+    def lookup(email, client_id=None):
+        return scan_context(email, today, db_path=str(e4l), client_id=client_id)
 
     def runner(client_id=None, name=None):               # "live fetch" inserts a fresh scan
         _seed_e4l(e4l, [(950, "2026-06-23")])
@@ -72,7 +72,7 @@ def test_refresh_reports_not_newer_when_nothing_changes(tmp_path):
     _seed_e4l(e4l, [(950, "2026-06-23")])
     today = "2026-06-24"
     c = create_app(str(tmp_path / "chat_log.db"),
-                   scan_lookup=lambda e: scan_context(e, today, db_path=str(e4l)),
+                   scan_lookup=lambda e, client_id=None: scan_context(e, today, db_path=str(e4l), client_id=client_id),
                    fetch_runner=lambda client_id=None, name=None: {"ok": True}).test_client()
     tid = c.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     c.post(f"/author/{tid}/header", json={"email": "k@x.com"})
@@ -87,7 +87,7 @@ def test_refresh_surfaces_fetch_error(tmp_path):
     def runner(client_id=None, name=None):
         raise RuntimeError("E4L login failed")
     c = create_app(str(tmp_path / "chat_log.db"),
-                   scan_lookup=lambda em: scan_context(em, "2026-06-24", db_path=str(e4l)),
+                   scan_lookup=lambda em, client_id=None: scan_context(em, "2026-06-24", db_path=str(e4l), client_id=client_id),
                    fetch_runner=runner).test_client()
     tid = c.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     c.post(f"/author/{tid}/header", json={"email": "k@x.com"})

@@ -274,7 +274,7 @@ def app_client(tmp_path, monkeypatch):
                        invoice_link=lambda oid: {"ok": False},
                        invoice_paid_check=lambda email: {},
                        invoice_latest=lambda email: {"ok": False},
-                       scan_lookup=lambda email: {},
+                       scan_lookup=lambda email, client_id=None: {},
                        auto_publish=lambda *a, **k: published.append(a) or calls.update(
                            publish_kw=k) or {}).test_client()
     c.db, c.written, c.calls, c.published = db, written, calls, published
@@ -752,7 +752,7 @@ def rich(tmp_path, monkeypatch):
                        invoice_create=fake_create, invoice_link=lambda oid: {"ok": False},
                        invoice_paid_check=lambda email: {},
                        invoice_latest=lambda email: {"ok": False},
-                       scan_lookup=lambda email: {}).test_client()
+                       scan_lookup=lambda email, client_id=None: {}).test_client()
     c.db, c.rec = db, rec
     c.tid = n if str(n).startswith("a") else f"a{n}"
     return c

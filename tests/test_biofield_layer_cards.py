@@ -59,7 +59,7 @@ def test_reorder_layers_route(tmp_path, monkeypatch):
     # app does not reset it, so clear the copy the guard actually reads.
     import dashboard as _d; monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
     db = str(tmp_path / "c.db")
-    client = create_app(db, scan_lookup=lambda e: {"status": "none", "found": False,
+    client = create_app(db, scan_lookup=lambda e, client_id=None: {"status": "none", "found": False,
                                                     "findings": [], "fresh": False}).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
     r1 = client.post(f"/author/{tid}/row", json={"layer": 1, "head": "First", "remedy": "R1"}).get_json()["rid"]
@@ -75,7 +75,7 @@ def test_add_remedy_inherits_unconfirmed_scan_layer_zone(tmp_path, monkeypatch):
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
     import dashboard as _d; monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
     db = str(tmp_path / "c.db")
-    client = create_app(db, scan_lookup=lambda e: {"status": "none", "found": False,
+    client = create_app(db, scan_lookup=lambda e, client_id=None: {"status": "none", "found": False,
                                                     "findings": [], "fresh": False}).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
     with sqlite3.connect(db) as cx:
@@ -95,7 +95,7 @@ def test_add_remedy_fills_empty_layer_anchor_instead_of_adding_row(tmp_path, mon
     import dashboard as _d; monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
     from dashboard.biofield_authoring import remove_remedy_preserving_layer
     db = str(tmp_path / "c.db")
-    client = create_app(db, scan_lookup=lambda e: {"status": "none", "found": False,
+    client = create_app(db, scan_lookup=lambda e, client_id=None: {"status": "none", "found": False,
                                                     "findings": [], "fresh": False}).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
     with sqlite3.connect(db) as cx:

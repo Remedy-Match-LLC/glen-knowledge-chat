@@ -914,7 +914,7 @@ async function saveHeader(){const j=await post('/author/__TID__/header',
 // the id the page held for the previous one is dropped (the header then re-matches).
 function dropClientId(){E4L_CLIENT_ID=null;set('h_client_id','')}
 async function confirmE4LClient(cid){
- var j=await post('/author/__TID__/e4l-client/confirm',{client_id:cid});
+ var j=await post('/author/__TID__/e4l-client/confirm',{client_id:cid,held:val('h_client_id')});
  if(j&&j.ok){set('h_client_id',j.client_id);location.reload()}
  else{alert((j&&j.error)||'Could not confirm.')}}
 async function refreshHeaderPhoto(){
@@ -3381,7 +3381,7 @@ def _e4l_suggestion_html(sug):
     <name>, <species>, on another email? Confirm". Nothing until Glen confirms."""
     if not sug or not sug.get("client_id"):
         return ""
-    who = _e(sug.get("name") or "this client")
+    who = _e(sug.get("subject_name") or sug.get("name") or "this client")
     species = _e(sug.get("species") or "species unknown")
     cid = _e(str(sug.get("client_id")))
     return ("<div id=e4lsuggest class=food style='margin-top:8px'>"

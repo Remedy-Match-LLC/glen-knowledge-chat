@@ -219,7 +219,7 @@ def test_the_route_serves_the_chart_and_the_page_links_it(tmp_path, monkeypatch)
         con.commit()
     published = []
     client = bla.create_app(db, fetch_profile=lambda e: {"conditions": ["Gut"]},
-                            scan_lookup=lambda e: {"found": False},
+                            scan_lookup=lambda e, client_id=None: {"found": False},
                             auto_publish=lambda *a, **k: published.append(a)).test_client()
     page = client.get(f"/test/{tid}/overview").get_data(as_text=True)
     data = json.loads(re.search(r"const D=(\{.*?\});", page).group(1).replace("<\\/", "</"))

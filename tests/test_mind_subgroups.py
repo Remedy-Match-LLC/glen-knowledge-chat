@@ -128,7 +128,7 @@ def test_the_sort_route_sorts_and_the_panel_shows_it(tmp_path):
         if "sort a client's health stress labels" in system:
             return json.dumps({"kinds": {"1": "condition", "2": "lab"}})
         return json.dumps({"stresses": []})
-    c = create_app(db, scan_lookup=lambda e: _NONE, fetch_profile=lambda e: {},
+    c = create_app(db, scan_lookup=lambda e, client_id=None: _NONE, fetch_profile=lambda e: {},
                    fetch_recent_comms=lambda e: {}, interpret_complete=complete,
                    client_gmail=None, records_reader=None).test_client()
     tid = c.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]

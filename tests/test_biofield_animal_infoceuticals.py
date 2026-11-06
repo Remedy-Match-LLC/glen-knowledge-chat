@@ -224,7 +224,8 @@ def _client(tmp_path, email):
     from biofield_local_app import create_app
     db = str(tmp_path / "chat_log.db")
     app = create_app(db, e4l_db=_e4l(tmp_path),
-                     scan_lookup=lambda e: {"found": False, "layers": []})
+                     scan_lookup=lambda e, client_id=None: {"found": True, "scan_id": 1,
+                                                            "layers": []})
     client = app.test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     # Each intake names its own client. A name that matches nobody on the email no

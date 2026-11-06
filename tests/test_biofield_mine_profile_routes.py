@@ -19,7 +19,7 @@ _PROFILE = {"email": "j@x.com", "tags": ["Inflammation"], "conditions": "Eczema"
 
 def _app(db, profile, stresses):
     import json as _j
-    return create_app(db, scan_lookup=lambda e: _NONE,
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
                       fetch_profile=lambda e: profile if e == "j@x.com" else {},
                       interpret_complete=lambda s, u: _j.dumps({"stresses": stresses}))
 
@@ -92,7 +92,7 @@ def test_mine_profile_failure_is_best_effort(tmp_path):
     db = str(tmp_path / "c.db")
     def boom(e):
         raise RuntimeError("people hub down")
-    client = create_app(db, scan_lookup=lambda e: _NONE, fetch_profile=boom,
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE, fetch_profile=boom,
                         interpret_complete=lambda s, u: "{}").test_client()
     tid = _new(client, "j@x.com")
     j = client.post(f"/author/{tid}/mine-profile", json={}).get_json()

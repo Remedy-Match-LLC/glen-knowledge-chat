@@ -195,7 +195,7 @@ def test_cover_route(tmp_path, monkeypatch):
     # app does not reset it, so clear the copy the guard actually reads.
     import dashboard as _d; monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
     db = str(tmp_path / "c.db")
-    client = create_app(db, scan_lookup=lambda e: {"status": "none", "found": False,
+    client = create_app(db, scan_lookup=lambda e, client_id=None: {"status": "none", "found": False,
                                                    "findings": [], "fresh": False}).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
     rid = client.post(f"/author/{tid}/row", json={"layer": 1, "head": "H", "remedy": "Nerve Pulse"}).get_json()["rid"]
@@ -212,7 +212,7 @@ def test_consolidate_balances_route(tmp_path, monkeypatch):
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
     import dashboard as _d; monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
     db = str(tmp_path / "c.db")
-    client = create_app(db, scan_lookup=lambda e: {"status": "none", "found": False,
+    client = create_app(db, scan_lookup=lambda e, client_id=None: {"status": "none", "found": False,
                                                    "findings": [], "fresh": False}).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
     source_rid = client.post(f"/author/{tid}/row", json={

@@ -144,7 +144,7 @@ def _app(tmp_path, conditions):
     e.execute("CREATE TABLE e4l_clients(client_id INTEGER, name TEXT, email TEXT)")
     e.commit()
     e.close()
-    app = create_app(db, scan_lookup=lambda e: {"found": False},
+    app = create_app(db, scan_lookup=lambda e, client_id=None: {"found": False},
                      fetch_profile=lambda e: {"conditions": list(conditions)},
                      fetch_recent_comms=lambda e: {}, e4l_db=str(e4l),
                      client_gmail=lambda cx, e: {"text": "", "held": 0, "error": None},

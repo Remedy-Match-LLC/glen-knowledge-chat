@@ -164,7 +164,7 @@ def _app(tmp_path, monkeypatch, phase=None, intake=None):
         con.commit()
     published = []
     app = bla.create_app(db, fetch_profile=lambda email: {"conditions": ["Gut"]},
-                         scan_lookup=lambda email: {"found": False},
+                         scan_lookup=lambda email, client_id=None: {"found": False},
                          auto_publish=lambda *a, **k: published.append(a) or {})
     return tid, app.test_client(), published
 

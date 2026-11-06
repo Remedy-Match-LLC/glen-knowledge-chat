@@ -54,7 +54,7 @@ def _e4l(tmp_path, extra=()):
 def _app(tmp_path, e4l=None, **kw):
     from biofield_local_app import create_app
     db = str(tmp_path / "chat_log.db")
-    kw.setdefault("scan_lookup", lambda e: {"found": False, "layers": []})
+    kw.setdefault("scan_lookup", lambda e, client_id=None: {"found": False, "layers": []})
     app = create_app(db, e4l_db=e4l or _e4l(tmp_path),
                      fetch_client_photo=lambda *a, **k: None, **kw)
     return app.test_client(), db
@@ -428,7 +428,7 @@ def test_the_page_offers_the_namesake_and_confirm_stores_it(tmp_path):
     client, db = _app(tmp_path)
     tid = _intake(client, "Rover Owner", OWNER)
     page = client.get(f"/author/{tid}").get_data(as_text=True)
-    assert "Is this ROVER OWNER, Dog, on another email?" in page
+    assert "Is this Rover, Dog, on another email?" in page
     assert "confirmE4LClient('1002')" in page
     # Unconfirmed: species unknown, so the + button asks.
     assert client.post(f"/author/{tid}/remedy-set/add-one",
@@ -812,3 +812,268 @@ def test_a_first_name_typed_alone_finds_its_own_client_but_a_surname_does_not(tm
     assert species_for_intake(p, None, OWNER, "Agnes") == "Human"
     assert resolve_intake_subject(p, None, OWNER, "Verches")["by"] == "unresolved"
     assert species_for_intake(p, None, OWNER, "Skylar Verches") is None
+
+
+# ==== 2026-11-06 review, round 3 ======================================================
+# E4L stores a pet with animal_name set, and its `name` is often the OWNER's. A record
+# with an animal_name goes by it; one without goes by `name`.
+
+AGNES = "agnes@x.com"
+
+
+def _household(tmp_path, pet_species=""):
+    """Agnes and her dog Skylar on one email; the dog's record carries Agnes's name."""
+    return _e4l_rows(
+        tmp_path,
+        [(1001, "Agnes Verches", AGNES, "Human", ""),
+         (1003, "Agnes Verches", AGNES, pet_species, "Skylar")],
+        scans=[(9001, 1001, "2026-11-04"), (9003, 1003, "2026-11-01")])
+
+
+# -- 1. one kind of subject per union; a pet is never its owner ---------------------
+
+def test_a_stored_pet_id_never_reads_its_owners_scans(tmp_path):
+    client, _db = _real_app(tmp_path, _household(tmp_path))
+    tid = _intake(client, "Skylar", AGNES, client_id="1003")
+    assert _panel_scan(client, tid)["scan_id"] == 9003
+
+
+def test_the_owner_and_the_pet_on_one_email_each_resolve_to_themselves(tmp_path):
+    p = _household(tmp_path, pet_species="Dog")
+    owner = resolve_intake_subject(p, None, AGNES, "Agnes Verches")
+    assert owner["client"]["client_id"] == 1001 and owner["scan_ids"] == (1001,)
+    pet = resolve_intake_subject(p, None, AGNES, "Skylar Verches")
+    assert pet["client"]["client_id"] == 1003 and pet["species"] == "Dog"
+    assert resolve_intake_subject(p, None, AGNES, "Skylar")["client"]["client_id"] == 1003
+
+
+def test_two_unmerged_rows_of_one_person_are_one_person(tmp_path):
+    """Finding 9 again, with no client id posted: the scans on the older row count."""
+    rows = [(1001, "Ann Owner", OWNER, "Human", ""), (1007, "Ann Owner", OWNER, "Human", ""),
+            (1003, "Rover Owner", OWNER, "Dog", "Rover")]
+    p = _e4l_rows(tmp_path, rows, scans=[(9001, 1001, "2026-11-01"),
+                                         (9002, 1003, "2026-11-04")])
+    client, _db = _real_app(tmp_path, p)
+    tid = _intake(client, "Ann Owner", OWNER)
+    assert _panel_scan(client, tid)["scan_id"] == 9001
+
+
+# -- 2. a stored pet id never inherits the owner's or the intake email's answer -----
+
+def test_a_pet_reads_only_its_own_species_answer(tmp_path):
+    p = _e4l_rows(tmp_path, [(1001, "Ann Owner", OWNER, "", ""),
+                             (1002, "Ann Owner", PET, "", "Rover")])
+    record_species_answer(p, OWNER, "Human")                          # old email-only
+    record_species_answer(p, OWNER, "Human", name="Rover Owner")      # the intake's email
+    record_species_answer(p, OWNER, "Human", client_id=1001)          # the owner
+    assert species_for_intake(p, "1002", OWNER, "Rover Owner") is None
+    record_species_answer(p, PET, "Dog", name="Rover")                # its own email+name
+    assert species_for_intake(p, "1002", OWNER, "Rover Owner") == "Dog"
+
+
+# -- 3. an old email-only answer holds for an email with no E4L client --------------
+
+def test_an_old_answer_holds_for_a_person_with_no_e4l_record(tmp_path):
+    p = _e4l_rows(tmp_path, [(1001, "Ann Owner", OWNER, "Human", "")])
+    record_species_answer(p, "new@x.com", "Human")
+    assert species_for_intake(p, None, "new@x.com", "New Person") == "Human"
+
+
+# -- 4. an unknown species keeps FFs off every write, and an animal off the portal --
+
+def _unknown_app(tmp_path, **kw):
+    """No e4l.db at all: the read fails, so nobody knows the species."""
+    return _app(tmp_path, e4l=str(tmp_path / "missing-e4l.db"), **kw)
+
+
+def test_a_name_that_does_not_match_tells_the_operator(tmp_path):
+    """Bob for Robert: the FF is left off, and the reply says why."""
+    p = _e4l_rows(tmp_path, [(1001, "Robert Smith", OWNER, "", "")])
+    client, db = _real_app(tmp_path, p)
+    tid = _intake(client, "Bob Smith", OWNER)
+    j = client.post(f"/author/{tid}/row", json={"layer": 1, "remedy": FF}).get_json()
+    assert j["animal_refused"] == [FF] and j["species_unknown"] is True
+    assert "species is unknown" in j["error"]
+
+
+def test_an_unknown_species_keeps_ffs_off_rows_interpret_balance_and_program(
+        tmp_path, monkeypatch):
+    import biofield_local_app as BLA
+    from dashboard import biofield_program as BP
+    from dashboard.biofield_narrative import save_notes
+    monkeypatch.setattr(BLA, "resolve_remedy_name", lambda cx, n: n)
+    monkeypatch.setattr(BLA, "interpret_transcript", lambda *a, **k: {"layers": [
+        {"layer": 1, "head": "Liver", "most_affected": "Liver", "remedy": FF}]})
+    monkeypatch.setattr(BP, "build_program", lambda **k: {"remedies": [FF], "stages": [
+        {"stage": "mind", "picks": [{"remedy": FF, "covers": []}],
+         "suppressed": [], "uncovered": []}]})
+    client, db = _unknown_app(tmp_path)
+    tid = _intake(client, "Ann Owner", OWNER)
+    with sqlite3.connect(db) as cx:
+        save_notes(cx, tid, "spoken")
+    replies = [
+        client.post(f"/author/{tid}/row", json={"layer": 1, "remedy": FF}).get_json(),
+        client.post(f"/author/{tid}/interpret", json={}).get_json(),
+        client.post(f"/author/{tid}/clinical-items/balance",
+                    json={"label": "Itch", "layer": 1, "remedies": [FF]}).get_json(),
+        client.post(f"/author/{tid}/program", json={"apply": True, "force": True,
+                                                    "include": {"spirit": False}}).get_json()]
+    for j in replies:
+        assert j["animal_refused"] == [FF] and j["species_unknown"] is True, j
+    assert FF not in _layers(db, tid)
+
+
+def test_an_unknown_species_keeps_ffs_off_the_layer_sync(tmp_path, monkeypatch):
+    from dashboard import biofield_e4l as BE
+    from tests.test_clinical_layer_sync import _app as sync_app, _apply, _chain as sync_chain
+    from tests.test_clinical_layer_sync import _gut_by_hand, _preview
+    monkeypatch.setattr(BE, "species_from_e4l", lambda e4l_db, email: None)
+    db, tid, client = sync_app(tmp_path, monkeypatch, ["Gut"], _gut_by_hand)
+    j = _preview(client, tid)
+    r = _apply(client, tid, j, [c["id"] for c in j["changes"]]).get_json()
+    assert r["animal_refused"] == ["Transform"] and r["species_unknown"] is True
+    assert "Transform" not in {row[3] for row in sync_chain(db, tid)}
+
+
+def test_an_ff_already_on_the_pets_chain_never_reaches_her_portal(tmp_path, monkeypatch):
+    monkeypatch.setenv("PORTAL_PUBLISH_BASE_URL", "http://portal.invalid")
+    client, db = _app(tmp_path)
+    tid = _pet(client)
+    _chain(db, tid, [FF, INFO])               # written before the rule existed
+    r = client.post(f"/test/{tid}/publish-portal", json={})
+    j = r.get_json()
+    assert r.status_code == 409 and j["animal_refused"] == [FF]
+    assert "Not published" in j["error"] and FF in j["error"]
+
+
+def test_an_unknown_species_blocks_the_publish_too(tmp_path, monkeypatch):
+    monkeypatch.setenv("PORTAL_PUBLISH_BASE_URL", "http://portal.invalid")
+    client, db = _unknown_app(tmp_path)
+    tid = _intake(client, "Ann Owner", OWNER)
+    _chain(db, tid, [FF])
+    j = client.post(f"/test/{tid}/publish-portal", json={}).get_json()
+    assert j["species_unknown"] is True and j["animal_refused"] == [FF]
+
+
+def test_the_invoice_pay_card_is_checked_for_an_ff(tmp_path):
+    published = []
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "",
+              "items": [{"slug": "immune-modulation", "qty": 1}, {"slug": "es1", "qty": 1}]}
+    client, db = _app(
+        tmp_path,
+        invoice_fetch_catalog=lambda: [{"slug": "immune-modulation", "name": FF},
+                                       {"slug": "es1", "name": INFO}],
+        invoice_latest=lambda email: latest,
+        invoice_publish=lambda oid: published.append(oid) or {"ok": True})
+    tid = _pet(client)
+    r = client.post(f"/author/{tid}/invoice/publish", json={"order_id": 7})
+    assert r.status_code == 409 and r.get_json()["animal_refused"] == [FF]
+    r = client.post(f"/author/{tid}/invoice/publish", json={"order_id": 8})
+    assert r.status_code == 409 and "could not be checked" in r.get_json()["error"]
+    latest["items"] = [{"slug": "es1", "qty": 1}]
+    assert client.post(f"/author/{tid}/invoice/publish",
+                       json={"order_id": 7}).get_json() == {"ok": True}
+    assert published == [7]
+
+
+# -- 5. an open draft on a shared email that is someone else's is left alone ---------
+
+def _shared_invoice_app(tmp_path, latest):
+    calls = {}
+
+    def fake_create(customer, lines, **kw):
+        calls["lines"], calls["kw"] = lines, kw
+        return {"ok": True, "order_id": 7, "external_ref": "X", "total_cents": 100,
+                "error": None, "accepted_slugs": []}
+    client, db = _app(
+        tmp_path,
+        invoice_fetch_catalog=lambda: [{"slug": "immune-modulation", "name": FF},
+                                       {"slug": "es1", "name": INFO}],
+        invoice_create=fake_create,
+        invoice_link=lambda oid: {"ok": True, "print_url": "", "error": None},
+        invoice_latest=lambda email: latest, invoice_paid_check=lambda email: {},
+        order_fetch=lambda ids: ([], None))
+    return client, db, calls
+
+
+def test_the_pet_never_edits_the_owners_open_draft(tmp_path):
+    from dashboard import biofield_progress as bp
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "",
+              "items": [{"slug": "immune-modulation", "qty": 1, "source": "biofield"}]}
+    client, db, calls = _shared_invoice_app(tmp_path, latest)
+    ann = _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    with sqlite3.connect(db) as cx:
+        bp.link_order(cx, ann, 7)
+    _chain(db, pet, [INFO])
+    r = client.post(f"/author/{pet}/invoice", json={})
+    assert r.status_code == 409 and "Ann Owner" in r.get_json()["error"]
+    assert calls == {}
+    # Ann raising her own draft still updates it.
+    _chain(db, ann, [FF])
+    assert client.post(f"/author/{ann}/invoice", json={}).get_json()["ok"] is True
+    assert calls["kw"]["update_order_id"] == 7
+
+
+def test_an_unstored_draft_on_a_shared_email_is_left_alone(tmp_path):
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "", "items": []}
+    client, db, calls = _shared_invoice_app(tmp_path, latest)
+    _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    _chain(db, pet, [INFO])
+    assert client.post(f"/author/{pet}/invoice", json={}).status_code == 409
+    assert calls == {}
+
+
+# -- 6. the photo is read by the resolved client's own name and email ---------------
+
+def test_the_photo_uses_the_pets_own_name_never_the_header_name(tmp_path):
+    from dashboard import client_photos as cph
+    client, db = _app(tmp_path)
+    with sqlite3.connect(db) as cx:
+        cx.execute("CREATE TABLE IF NOT EXISTS fmp_snap_clients "
+                   "(id_pk TEXT, name_first TEXT, name_last TEXT, email TEXT)")
+        cx.executemany("INSERT INTO fmp_snap_clients VALUES (?,?,?,?)",
+                       [("31", "Rover", "", PET), ("32", "Ann", "Owner", PET)])
+        cph.put_for_client(cx, "31", PET, b"ROVER", "image/jpeg", source="portal-self")
+        cph.put_for_client(cx, "32", PET, b"ANN", "image/jpeg", source="portal-self")
+        cx.commit()
+    r = client.get(f"/client-photo/{OWNER}?name=Ann%20Owner&cid=1002")
+    assert r.status_code == 200 and r.data == b"ROVER"
+
+
+# -- 7. a stale tab cannot confirm over a newer pick ---------------------------------
+
+def test_confirm_refuses_when_the_page_holds_an_old_id(tmp_path):
+    client, db = _app(tmp_path)
+    tid = _intake(client, "Rover Owner", OWNER)
+    r = client.post(f"/author/{tid}/e4l-client/confirm",
+                    json={"client_id": 1002, "held": "1001"})
+    assert r.status_code == 409 and "out of date" in r.get_json()["error"]
+    assert client.post(f"/author/{tid}/e4l-client/confirm",
+                       json={"client_id": 1002, "held": ""}).get_json()["ok"] is True
+    from dashboard import biofield_report_html as H
+    assert "{client_id:cid,held:val('h_client_id')}" in H._AUTHOR_JS
+
+
+# -- 8. a resolved subject never reads scans by the email ----------------------------
+
+def test_a_resolved_subject_never_falls_back_to_the_email(tmp_path):
+    from biofield_local_app import create_app
+    db = str(tmp_path / "chat_log.db")
+    app = create_app(db, e4l_db=_e4l(tmp_path), fetch_client_photo=lambda *a, **k: None,
+                     scan_lookup=lambda e: {"found": True, "scan_id": 5, "layers": []})
+    app.testing = False
+    client = app.test_client()
+    tid = _intake(client, "Rover", OWNER, client_id="1002")
+    r = client.get(f"/author/{tid}/e4l")
+    assert r.status_code != 200 or (r.get_json() or {}).get("e4l", {}).get("scan_id") != 5
+
+
+# -- 9. a pet's one-word name is a suggestion -----------------------------------------
+
+def test_a_pets_one_word_name_is_suggested(tmp_path):
+    p = _e4l(tmp_path)
+    assert suggest_intake_client(p, OWNER, "Rover")["client_id"] == 1002
+    assert intake_e4l_client(p, None, OWNER, "Rover") is None
+    assert suggest_intake_client(p, OWNER, "Ann") is None       # a person's first name

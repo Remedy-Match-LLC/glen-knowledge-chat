@@ -17,7 +17,7 @@ _NONE = {"status": "none", "found": False, "findings": [], "days_ago": None, "fr
 def _app(db, stresses):
     # interpret_complete returns a fixed stresses payload; scan_lookup finds nothing (no seeding)
     import json as _j
-    return create_app(db, scan_lookup=lambda e: _NONE,
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
                       interpret_complete=lambda s, u: _j.dumps({"stresses": stresses}))
 
 

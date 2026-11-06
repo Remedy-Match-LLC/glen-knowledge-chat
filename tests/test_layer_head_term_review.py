@@ -18,6 +18,15 @@ from dashboard.biofield_clinical_proposals import save_pattern, save_selection
 from dashboard.biofield_stress import (add_stress, init_stress_tables, list_stresses,
                                        move_links_off)
 
+
+@pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These intakes are a person's. An unknown species now keeps FFs off every write
+    and publish (2026-11-06 review, round 3), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
 ADRENAL = "Adrenal Fatigue, Current, 2023"
 GLAUCOMA = "Suspect of Glaucoma/high pressures and thinning cornea, Current, 2020"
 _NO_SCAN = {"status": "none", "found": False, "findings": [], "days_ago": None,
@@ -66,7 +75,7 @@ def _row(cx, rid):
 
 
 def _client(db, conditions=()):
-    return create_app(db, scan_lookup=lambda e: _NO_SCAN,
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NO_SCAN,
                       fetch_profile=lambda e: {"conditions": list(conditions)},
                       fetch_recent_comms=lambda e: {},
                       interpret_complete=lambda s, u: json.dumps({"layers": []})
@@ -377,7 +386,7 @@ def test_a_program_failing_after_a_transcript_layer_writes_nothing(tmp_path, mon
     save_selection(cx, tid, ADRENAL, ["Adren Remedy"])
     cx.commit()
     cx.close()
-    client = create_app(db, scan_lookup=lambda e: _NO_SCAN,
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NO_SCAN,
                         fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: {},
                         interpret_complete=lambda s, u: json.dumps({"layers": [
                             {"layer": 1, "head": "Grief", "most_affected": "Grief",

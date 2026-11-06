@@ -24,6 +24,14 @@ from dashboard.biofield_clinical_checklist import balance_item, remember_stress_
 from dashboard.biofield_clinical_proposals import save_selection
 from dashboard.biofield_stress import add_stress, init_stress_tables, list_stresses
 
+
+@pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These intakes are a person's. An unknown species now keeps FFs off every write
+    and publish (2026-11-06 review, round 3), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
 ADRENAL = "Adrenal Fatigue, Current, 2023"
 MIGRAINE = ("Migranes, Current, Past, 2001 once I started taking natural calm they "
             "slowed down/they come rarely now")
@@ -52,7 +60,7 @@ def _setup(tmp_path, conditions, patterns, selections):
         for label, remedies in selections.items():
             save_selection(cx, tid, label, remedies)
         cx.commit()
-    app = create_app(db, scan_lookup=lambda e: _NO_SCAN,
+    app = create_app(db, scan_lookup=lambda e, client_id=None: _NO_SCAN,
                      fetch_profile=lambda e: {"conditions": conditions},
                      fetch_recent_comms=lambda e: {},
                      interpret_complete=lambda s, u: json.dumps({"layers": []}))

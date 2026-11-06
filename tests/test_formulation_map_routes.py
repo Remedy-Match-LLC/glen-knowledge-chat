@@ -29,7 +29,7 @@ def _e4l(tmp_path):
 
 def _client(tmp_path):
     db_path = str(tmp_path / "c.db")
-    return create_app(db_path, e4l_db=_e4l(tmp_path), scan_lookup=lambda e: _NONE).test_client()
+    return create_app(db_path, e4l_db=_e4l(tmp_path), scan_lookup=lambda e, client_id=None: _NONE).test_client()
 
 
 def test_page_renders_codes(tmp_path):
@@ -50,7 +50,7 @@ def test_add_remedy_input_filters_catalog_by_entered_string(tmp_path):
 def test_page_corrects_er_placeholder_to_anatomical_name(tmp_path):
     db_path = _e4l(tmp_path)
     c = create_app(str(tmp_path / "c.db"), e4l_db=db_path,
-                   scan_lookup=lambda e: _NONE).test_client()
+                   scan_lookup=lambda e, client_id=None: _NONE).test_client()
     html = c.get("/formulation-map").get_data(as_text=True)
     assert "ER68" in html and "Acoustic Nerve" in html
     with sqlite3.connect(db_path) as cx:

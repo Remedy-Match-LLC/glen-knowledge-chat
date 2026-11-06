@@ -19,6 +19,14 @@ from dashboard.biofield_clinical_checklist import remember_stress_pattern, sugge
 from dashboard.biofield_clinical_proposals import save_pattern, save_selection
 from dashboard.biofield_stress import init_stress_tables
 
+
+@pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These intakes are a person's. An unknown species now keeps FFs off every write
+    and publish (2026-11-06 review, round 3), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
 WET = "Wet AMD"
 WET_TERM = "Macular Vascular Containment"   # the seed's suggestion, stored nowhere
 
@@ -47,7 +55,7 @@ def _setup(tmp_path, conditions, selections, stored=None, typed=None):
         for label, pattern in (typed or {}).items():
             save_pattern(cx, tid, label, pattern)
         cx.commit()
-    app = create_app(db, scan_lookup=lambda e: _NO_SCAN,
+    app = create_app(db, scan_lookup=lambda e, client_id=None: _NO_SCAN,
                      fetch_profile=lambda e: {"conditions": conditions},
                      fetch_recent_comms=lambda e: {},
                      interpret_complete=lambda s, u: json.dumps({"layers": []}))

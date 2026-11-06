@@ -48,7 +48,7 @@ def _seed(path):
 def test_each_refresh_is_logged_and_returns_its_download_errors(tmp_path, capsys):
     e4l = tmp_path / "e4l.db"; _seed(e4l)
     c = create_app(str(tmp_path / "chat_log.db"),
-                   scan_lookup=lambda em: scan_context(em, "2026-06-24", db_path=str(e4l)),
+                   scan_lookup=lambda em, client_id=None: scan_context(em, "2026-06-24", db_path=str(e4l), client_id=client_id),
                    fetch_runner=lambda **k: {"ok": True, "new_scans": 1,
                                              "download_errors": 1}).test_client()
     tid = c.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]

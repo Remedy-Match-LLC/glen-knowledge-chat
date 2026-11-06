@@ -40,12 +40,13 @@ def _e4l(tmp_path, species):
 
 def _client(tmp_path, species, monkeypatch, seen=None):
     def synth(*a, **k):
-        if seen is not None:
+        # Import Reveal passes is_animal; the header's stress seeding does not.
+        if seen is not None and "is_animal" in k:
             seen.append(k.get("is_animal"))
         return _FRESH
     monkeypatch.setattr(RI, "synthesize_reveal_layers", synth)
     db = str(tmp_path / "chat_log.db")
-    c = create_app(db, scan_lookup=lambda e: _NONE, e4l_db=_e4l(tmp_path, species)).test_client()
+    c = create_app(db, scan_lookup=lambda e, client_id=None: _FRESH, e4l_db=_e4l(tmp_path, species)).test_client()
     tid = c.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     c.post(f"/author/{tid}/header", json={"name": "Pet", "email": "pet@x.com", "date": "2026-06-25"})
     return c, tid, db

@@ -57,7 +57,7 @@ def _client(tmp_path, db_path=None):
     db_path = db_path or _ingredients(tmp_path)
     return create_app(str(tmp_path / "c.db"), e4l_db=str(tmp_path / "e.db"),
                       ingredients_db=db_path,
-                      scan_lookup=lambda e: {"status": "none", "found": False,
+                      scan_lookup=lambda e, client_id=None: {"status": "none", "found": False,
                                              "findings": [], "days_ago": None,
                                              "fresh": False}).test_client()
 
@@ -169,7 +169,7 @@ def test_every_condition_review_route_is_console_gated(tmp_path, monkeypatch):
     from biofield_local_app import create_app
     app = create_app(str(tmp_path / "c.db"), e4l_db=str(tmp_path / "e.db"),
                      ingredients_db=_ingredients(tmp_path),
-                     scan_lookup=lambda e: {"status": "none", "found": False,
+                     scan_lookup=lambda e, client_id=None: {"status": "none", "found": False,
                                             "findings": [], "days_ago": None,
                                             "fresh": False})
     c = app.test_client()

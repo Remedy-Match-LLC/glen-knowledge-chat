@@ -870,7 +870,7 @@ def test_narrative_save_and_generate_return_the_check_warnings(tmp_path):
     db = str(tmp_path / "chat_log.db")
     _seed(db)
     client = create_app(db, complete=lambda s, u: "Aloha Lewis,\n\nLiver Support aids the liver.",
-                        scan_lookup=lambda email: None).test_client()
+                        scan_lookup=lambda email, client_id=None: None).test_client()
     bad = client.post("/test/10/narrative",
                       json={"narrative": "Liver Support aids the liver."}).get_json()
     assert any("Liver Support" in w for w in bad["warnings"]), bad
