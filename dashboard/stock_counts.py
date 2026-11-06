@@ -207,7 +207,8 @@ DROP_SHIPPED = frozenset({"water-ionizer-15plate", "water-ionizer-9plate"})
 # units ... always keep it showing available for sale."
 ALWAYS_ON_SALE = frozenset({"water-ionizer-5plate"})
 # Glen, 2026-11-06: "all items with names that include \"in terrain restore\" are custom."
-CUSTOM_NAME_PART = "in terrain restore"
+# Then: "Products with \"HomeoEnergetic\" are custom made as needed."
+CUSTOM_NAME_PARTS = ("in terrain restore", "homeoenergetic")
 
 
 def not_counted_why(p, slug=None):
@@ -219,7 +220,9 @@ def not_counted_why(p, slug=None):
         return "a bundle"
     if p.get("made_to_order"):
         return "made to order"
-    if CUSTOM_NAME_PART in " ".join(str(p.get("name") or "").lower().split()):
+    nm = " ".join(str(p.get("name") or "").lower().split())
+    if any(part in nm or part in nm.replace(" ", "").replace("-", "")
+           for part in CUSTOM_NAME_PARTS):
         return "custom"
     if slug in DROP_SHIPPED:
         return "drop shipped"
