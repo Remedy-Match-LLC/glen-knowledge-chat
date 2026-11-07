@@ -88,6 +88,9 @@ RETIRED = {
     "shields-up-cold-flu-formula": "shields-up",
     # Glen, 2026-11-06: "combine Terrain Restore and Terrain Restore Drops".
     "terrain-restore-drops": "terrain-restore",
+    # Glen, 2026-11-06: "merge the 2 potassium citrates", "$40", and yes, the same 120-capsule
+    # bottle. One bottle left, then discontinued.
+    "potassium-citrate-pure-120-capsules": "potassium-citrate",
     # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
     # product)". One listing, the HomeoEnergetic one.
     "digestzymes": "digestzymes-homeoenergetic-drops",
