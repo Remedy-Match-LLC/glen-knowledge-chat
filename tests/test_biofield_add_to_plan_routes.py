@@ -112,6 +112,10 @@ def test_on_an_empty_plan_the_chosen_products_come_first_then_the_reveal(
     assert _chain(db) == [(1, "Lymph", "Lymph Flow", ["ES1", "ER5"]),
                           (2, "Love", "MB8 Love Infoceutical", ["MB8"]),
                           (3, "Kidney Health", "Kidney Kare", ["ED12"])]
+    # A Body layer's tail is its head until Glen edits it. The reveal layer that
+    # joined it brought its head to the Balances, not to the tail.
+    assert _tails(db, "Lymph") == {"Lymph"} and _tails(db, "Love") == {"Love"}
+    assert _balances(db, "Lymph") == ["Lymph drainage"]
 
 
 def test_a_choice_the_row_does_not_offer_is_refused(tmp_path, monkeypatch):
@@ -137,9 +141,25 @@ def _gut(cx, tid):
 def _three_way():
     return _reveal({"n": 1, "title": "Acid load", "most_affected": "Kidney",
                     "remedy_name": "Alkalize Powder", "codes": ["ED2", "ED12"]},
-                   {"n": 2, "title": "Gut Repair", "remedy_name": "Gut Restore",
+                   {"n": 2, "title": "Gut Repair", "most_affected": "Leaky gut",
+                    "remedy_name": "Gut Restore",
                     "codes": ["ET5"]},
                    {"n": 3, "title": "Bone Density", "remedy_name": "Bone Builder"})
+
+
+def _balances(db, head):
+    """The stress labels in the Balances of the layer with this head."""
+    with sqlite3.connect(db) as cx:
+        return sorted({r[0] for r in cx.execute(
+            "SELECT s.label FROM biofield_auth_layer_stress l "
+            "JOIN biofield_auth_stress s ON s.id=l.stress_id "
+            "JOIN biofield_auth_chain c ON c.id=l.chain_rid WHERE c.head=?", (head,))})
+
+
+def _tails(db, head):
+    with sqlite3.connect(db) as cx:
+        return {r[0] for r in cx.execute(
+            "SELECT most_affected FROM biofield_auth_chain WHERE head=?", (head,))}
 
 
 def _added(client, tid, choices=None):
@@ -165,10 +185,10 @@ def test_on_a_plan_with_layers_it_previews_then_joins_relates_and_adds(tmp_path,
     # The same product joined layer 1: its new code is there, and no second row.
     assert chain[0] == (1, "Gut", "Alkalize Powder", ["ED2", "ED12"])
     assert [r[2] for r in chain].count("Alkalize Powder") == 1
-    with sqlite3.connect(db) as cx:
-        tail = cx.execute("SELECT most_affected FROM biofield_auth_chain "
-                          "WHERE remedy='Alkalize Powder'").fetchone()[0]
-    assert tail == "Gut, Kidney, Acid load"      # its tail, then its different head
+    # The tail stays its one item (Glen, 2026-11-07). The joining layer's tail and
+    # its different head are Balances on the kept layer instead.
+    assert _tails(db, "Gut") == {"Gut"}
+    assert {"Kidney", "Acid load"} <= set(_balances(db, "Gut"))
     # The related layer is held in the list, never written (Glen, 2026-11-07: "yes,
     # hold them in the list"), so the added layers leave no gap for it.
     assert [(r[0], r[1], r[2]) for r in chain[1:]] == [
@@ -222,13 +242,12 @@ def test_each_join_choice_keeps_the_remedies_glen_picked(tmp_path, monkeypatch, 
     assert not any(x[1] == "Gut Repair" for x in _chain(db)), "the related layer stayed apart"
     # Whatever is kept, the layer carries both layers' codes.
     assert {c for x in gut for c in x[3]} >= {"ED2", "ED12", "ET5"}
-    # The head not kept joins the balanced stresses (Glen, 2026-11-07), once.
-    with sqlite3.connect(db) as cx:
-        tails = {r[0] for r in cx.execute(
-            "SELECT most_affected FROM biofield_auth_chain WHERE head='Gut'")}
-        stresses = [r[0] for r in cx.execute("SELECT label FROM biofield_auth_stress")]
-    assert all(t.split(", ").count("Gut Repair") == 1 for t in tails), tails
-    assert "Gut Repair" in stresses
+    # The kept tail stays one item; the head not kept and the joining tail are
+    # Balances on the kept layer (Glen, 2026-11-07), each once.
+    assert _tails(db, "Gut") == {"Gut"}
+    bal = _balances(db, "Gut")
+    assert {"Gut Repair", "Leaky gut"} <= set(bal)
+    assert len([b for b in bal if b.lower() == "gut repair"]) == 1
     assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"] == []
 
 

@@ -76,14 +76,24 @@ def merged_tail(into, extra):
     return ", ".join(items)
 
 
-def joined_tail(into_head, into_tail, head, tail):
-    """The kept layer's tail after a join: the joining layer's tail items, then its
-    head when it differs from the kept head (Glen, 2026-11-07: "When two layers are
-    joined, and the heads are different, add the head not selected to the balanced
-    stresses as well"). Nothing already there is added twice."""
-    out = merged_tail(into_tail, tail)
+def join_stresses(into_head, into_tail, head, tail, have=()):
+    """What a join adds to the kept layer's balanced stresses: the joining layer's
+    tail items, then its head when it differs from the kept head. The kept tail is
+    never changed.
+
+    Glen, 2026-11-07: "When two layers are joined, and the heads are different, add
+    the head not selected to the balanced stresses as well." Then, on the tail: it
+    "should be one prominent/relevant finding ... The rest of the info is balanced
+    stress patterns on that layer." Nothing matching the kept head, the kept tail,
+    `have` or an earlier item is listed, ignoring case and spacing."""
+    seen = [into_head, into_tail] + list(have or [])
+    out = []
+    items = _tail_items(tail)
     if str(head or "").strip() and not _same(head, into_head):
-        out = merged_tail(out, str(head).replace(",", " "))
+        items.append(str(head).strip())
+    for item in items:
+        if not any(_same(item, s) for s in seen + out):
+            out.append(item)
     return out
 
 
@@ -138,7 +148,8 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
     (biofield_reveal_import.harmony_laser_for); without it no laser is checked.
 
     joined:  {"layer", "into", "into_head", "into_rids", "into_remedies", "into_rid",
-              "codes" (new to that row), "tail" (merged, or None if unchanged),
+              "codes" (new to that row), "stresses" (labels for its Balances; its
+              tail is never changed),
               "laser" (a laser row to add to that layer, or None)}. A join onto a
               layer from this same batch has "into_new" (the n it was given) and its
               codes are already merged into that layer in "add"/"related".
@@ -212,7 +223,6 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
                     "why": "joining would put a thyroid or abdomen code on the "
                            "Harmony Laser layer"})
                 continue
-            tail = joined_tail(g.get("head"), g.get("most_affected"), f["head"], f["tail"])
             laser = None
             if (laser_for and not has_laser and layer.get("laser")
                     and laser_for(union) is not None):
@@ -221,19 +231,20 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
             out["joined"].append({
                 "layer": layer, **_summary(g), "into_rid": row.get("id"),
                 "codes": new_codes,
-                "tail": tail if tail != (g.get("most_affected") or "") else None,
+                "stresses": join_stresses(g.get("head"), g.get("most_affected"),
+                                          f["head"], f["tail"]),
                 "laser": laser})
             continue
         if k and k in placed:
             target = placed[k]
             target["codes"] = _union(codes_of(target.get("codes")), f["codes"])
-            tail_key = ("tail" if "tail" in target and "most_affected" not in target
-                        else "most_affected")
-            target[tail_key] = joined_tail(incoming_fields(target)["head"],
-                                           target.get(tail_key), f["head"], f["tail"])
+            tf = incoming_fields(target)
+            more = join_stresses(tf["head"], tf["tail"], f["head"], f["tail"],
+                                 have=target.get("stresses") or [])
+            target["stresses"] = list(target.get("stresses") or []) + more
             out["joined"].append({"layer": layer, "into_new": target["n"],
-                                  "into_head": incoming_fields(target)["head"],
-                                  "codes": f["codes"], "tail": None, "laser": None})
+                                  "into_head": tf["head"], "codes": f["codes"],
+                                  "stresses": more, "laser": None})
             continue
         new = dict(layer, n=None)
         if k:

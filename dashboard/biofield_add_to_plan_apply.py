@@ -21,7 +21,7 @@ import json
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from dashboard.biofield_add_to_plan import codes_of, merged_tail
+from dashboard.biofield_add_to_plan import codes_of
 
 CHOICES = ("separate", "existing", "new", "both")
 PREVIEW_TTL = timedelta(hours=1)
@@ -107,7 +107,8 @@ def describe(got):
         f = incoming_fields(L)
         return {"n": L.get("n"), "title": f["head"], "remedy": f["remedy"]}
     return {"joined": [dict(lay(j["layer"]), into=j.get("into", j.get("into_new")),
-                            into_head=j.get("into_head") or "", codes=j.get("codes") or [])
+                            into_head=j.get("into_head") or "", codes=j.get("codes") or [],
+                            stresses=j.get("stresses") or [])
                        for j in got["joined"]],
             "related": [dict(lay(r["layer"]), into=r["into"], into_head=r["into_head"],
                              into_remedies=r["into_remedies"], rule=r["rule"], why=r["why"])
@@ -127,13 +128,19 @@ def land(cx, tid, got, write_layers, laser_row=None):
     layers, already numbered, as rows (import_layers_to_test). `laser_row(layer_no,
     head, tail, codes, laser)` adds a Harmony Laser row onto a joined layer.
 
+    A join never changes the kept layer's tail: what the joining layer brings goes
+    to the kept layer's Balances (Glen, 2026-11-07), as stresses linked to its rows.
+
     Returns {"added", "joined", "proposals": [id]}. Commits."""
+    from dashboard.biofield_clinical_head_term import card_rids, link_wording
+    from dashboard.biofield_stress import init_stress_tables
+    init_stress_tables(cx)   # it commits, so before any write
     ensure_schema(cx)
     t = _num(tid)
     for j in got["joined"]:
         if j.get("into_new") is not None:
             continue                  # merged into a new layer of this same batch
-        row = cx.execute("SELECT codes,layer,head FROM biofield_auth_chain "
+        row = cx.execute("SELECT codes,layer,head,most_affected FROM biofield_auth_chain "
                          "WHERE test_id=? AND id=?", (t, j["into_rid"])).fetchone()
         if not row:
             continue
@@ -141,15 +148,21 @@ def land(cx, tid, got, write_layers, laser_row=None):
         more = [c for c in j.get("codes") or [] if c not in have]
         if more:
             _set_codes(cx, tid, j["into_rid"], have + more)
-        if j.get("tail") is not None:
-            marks = ",".join("?" * len(j["into_rids"]))
-            cx.execute(f"UPDATE biofield_auth_chain SET most_affected=? "
-                       f"WHERE test_id=? AND id IN ({marks})",
-                       [j["tail"], t] + list(j["into_rids"]))
         if j.get("laser") and laser_row:
-            laser_row(row[1], row[2], j.get("tail") or "", have + more, j["laser"])
+            laser_row(row[1], row[2], row[3] or "", have + more, j["laser"])
+        link_wording(cx, tid, j.get("stresses") or [],
+                     card_rids(cx, tid, row[2]) or j["into_rids"])
+    before = cx.execute("SELECT COALESCE(MAX(id),0) FROM biofield_auth_chain WHERE test_id=?",
+                        (t,)).fetchone()[0]
     layers = sorted(got["add"], key=lambda L: L.get("n") or 0)
     added = write_layers(layers) if layers else 0
+    # A repeat inside this click joined a new layer: its stresses go to that layer.
+    for L in layers:
+        if L.get("stresses"):
+            rids = [r[0] for r in cx.execute(
+                "SELECT id FROM biofield_auth_chain WHERE test_id=? AND id>? AND layer=?",
+                (t, before, L.get("n")))]
+            link_wording(cx, tid, L["stresses"], rids)
     ids = []
     for r in got["related"]:
         from dashboard.biofield_add_to_plan import incoming_fields
@@ -393,8 +406,17 @@ def resolve(cx, tid, pid, choice, write_layer=None):
         layer_of = lambda rid: cx.execute(
             "SELECT layer FROM biofield_auth_chain WHERE test_id=? AND id=?",
             (t, rid)).fetchone()[0]
+        # The kept layer's tail stays its one item (Glen, 2026-11-07). The joining
+        # layer's head and tail become Balances: the consolidation links them.
+        kept_tail = next((r[0] for r in cx.execute(
+            f"SELECT most_affected FROM biofield_auth_chain WHERE test_id=? AND id IN "
+            f"({','.join('?' * len(into))}) ORDER BY layer,sort_seq,id", [t] + list(into))
+            if (r[0] or "").strip()), "")
         consolidate_layer_balances(cx, tid, layer_of(src[0]), layer_of(into[0]),
                                    source_rids=src, target_rids=into)
+        left = list(_live(cx, tid, src)) + list(_live(cx, tid, into))
+        cx.execute(f"UPDATE biofield_auth_chain SET most_affected=? WHERE test_id=? AND id IN "
+                   f"({','.join('?' * len(left))})", [kept_tail, t] + left)
         # The consolidation folds a remedy both layers share, so re-read who is left.
         s, i = list(_live(cx, tid, src)), list(_live(cx, tid, into))
         if choice == "existing":
