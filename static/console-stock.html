@@ -54,6 +54,10 @@ out of stock everywhere. Lowest count first.</p>
 <div id="keybox" style="display:none"><input id="key-input" type="text" placeholder="console key"> <button onclick="unlock()">Unlock</button></div>
 <p id="off" class="empty" style="display:none"></p>
 
+<div class="card" id="needs-card" style="display:none">
+  <strong>Running low</strong> <span class="status">Out, at or under the alert level, or under one month's sales. <span id="needs-mail"></span></span>
+  <ul id="needs-list" style="margin:8px 0 0 18px; padding:0"></ul>
+</div>
 <div class="card" id="add-card" style="display:none">
   <div class="row">
     <div class="pick"><input id="add-product" placeholder="Product name or slug" autocomplete="off">
@@ -171,6 +175,13 @@ out of stock everywhere. Lowest count first.</p>
     var rows = d.rows || [];
     COUNTED = {}; rows.forEach(function(x){ COUNTED[x.slug] = true; });
     fillList();
+    var needs = rows.filter(function(x){ return x.needs; });
+    document.getElementById('needs-mail').textContent = d.alert_emails ? 'Alert emails are on.' : 'No emails are sent.';
+    document.getElementById('needs-card').style.display = needs.length ? 'block' : 'none';
+    document.getElementById('needs-list').innerHTML = needs.map(function(x){
+      return '<li><span class="'+(x.needs === 'out' ? 'zero' : 'low')+'">'+esc(x.name)+'</span>: '+
+        esc(x.count)+' left, '+esc(x.needs)+'</li>';
+    }).join('');
     var ls = d.last_set;
     document.getElementById('last-set').textContent = ls ?
       ('Last counted: ' + ls.name + ', set to ' + ls.count) : '';

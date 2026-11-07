@@ -84,6 +84,16 @@ def enabled() -> bool:
     return os.environ.get(FLAG, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+ALERT_EMAIL_FLAG = "STOCK_ALERT_EMAILS"
+
+
+def alert_emails_on() -> bool:
+    """Off unless set. Glen, 2026-11-06: "Stop sending emails about inventory to Rae. I
+    handle that. ... Please don't send separate email about each item. ... We'll want an
+    on-screen summary list, not emails right now." The Stock page shows the list instead."""
+    return os.environ.get(ALERT_EMAIL_FLAG, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def set_db_path_fn(fn):
     """app.py registers `lambda: LOG_DB`, so the predicate reads the orders database."""
     global _DB_PATH_FN
@@ -799,6 +809,20 @@ def check_alerts(cx, slugs, catalog=None):
     claimed 'pending' before its send and marked 'sent' only when the send succeeds; a
     failed one is retried by the next check. A cleared condition re-arms the alert.
     Never raises. Returns the [(slug, kind, recipient)] sends started."""
+    if not alert_emails_on():
+        # Nothing is held for later: a pending or failed send would retry the moment the
+        # flag came back, and a sent alert could never re-arm (2026-11-06 review, round 2).
+        try:
+            ensure_tables(cx)
+            # Round 1: every product, not only the ones checked, or an untouched restocked
+            # product kept its "sent" record and stayed silent after the switch back.
+            cx.execute("DELETE FROM stock_alert_sends")
+            cx.execute("DELETE FROM stock_alerts")
+            cx.commit()
+        except Exception as e:  # noqa: BLE001
+            _safe_rollback(cx)
+            print(f"[stock] alert clear skipped: {e!r}", flush=True)
+        return []
     starts = []
     try:
         cat = _catalog(catalog)
@@ -858,9 +882,13 @@ def console_rows(cx, catalog=None) -> list:
     for r in cx.execute("SELECT slug, count, updated_at FROM stock_counts").fetchall():
         slug, count, updated = r[0], int(r[1]), r[2]
         a = round(float(avg.get(slug) or 0.0), 2)
+        raw = float(avg.get(slug) or 0.0)
+        p = cat.get(slug)
+        needs = ("out" if count <= 0 else "low" if count <= low_stock_at(p, raw)
+                 else "under a month" if month_alert_applies(p, raw) and count < raw else None)
         rows.append({"slug": slug, "name": (cat.get(slug) or {}).get("name") or slug,
-                     "count": count, "avg_monthly": a,
-                     "low_at": low_stock_at(cat.get(slug), a),
+                     "count": count, "avg_monthly": a, "needs": needs,
+                     "low_at": low_stock_at(p, raw),   # the alert rule's own average
                      "months_supply": (round(count / a, 1) if a > 0 else None),
                      "updated_at": updated})
     rows.sort(key=lambda x: (x["count"], x["name"].lower()))

@@ -36,6 +36,7 @@ RAE = "suerae1111@gmail.com"
 @pytest.fixture(autouse=True)
 def env(monkeypatch, tmp_path):
     monkeypatch.setenv("STOCK_COUNTS_ENABLED", "1")
+    monkeypatch.setenv("STOCK_ALERT_EMAILS", "1")         # the mail path stays tested
     path = str(tmp_path / "chat_log.db")
     monkeypatch.setattr(SC, "_DB_PATH_FN", lambda: path)
     monkeypatch.setattr(SC, "_CATALOG_FN", lambda: CAT)
@@ -804,3 +805,39 @@ def test_last_set_names_the_item_counted_last_and_ignores_order_deductions(env):
     last = SC.last_set(cx)
     assert (last["slug"], last["count"]) == ("moisturize", 4)
     assert last["name"] == CAT["moisturize"]["name"]
+
+
+def test_no_stock_email_goes_unless_alert_emails_are_switched_on(env, monkeypatch):
+    # Glen, 2026-11-06: "Stop sending emails about inventory to Rae ... not emails right now."
+    monkeypatch.delenv("STOCK_ALERT_EMAILS", raising=False)
+    cx = env["cx"]
+    _set(cx, "scar-silk", 1)
+    assert env["sent"] == []
+    assert cx.execute("SELECT COUNT(*) FROM stock_alerts").fetchone()[0] == 0
+    assert cx.execute("SELECT COUNT(*) FROM stock_alert_sends").fetchone()[0] == 0
+
+
+def test_console_rows_name_what_needs_reordering(env, monkeypatch):
+    monkeypatch.delenv("STOCK_ALERT_EMAILS", raising=False)
+    cx = env["cx"]
+    _set(cx, "scar-silk", 0)
+    _set(cx, "moisturize", 2)
+    _set(cx, "wholomega", 50)
+    needs = {r["slug"]: r["needs"] for r in SC.console_rows(cx)}
+    assert needs["scar-silk"] == "out" and needs["moisturize"] == "low"
+    assert needs["wholomega"] is None
+
+
+def test_switching_emails_off_leaves_nothing_to_resend_later(env, monkeypatch):
+    # Review round 2: a pending send must not retry, and a sent alert must re-arm.
+    cx = env["cx"]
+    _set(cx, "scar-silk", 1)                       # emails on: an alert goes
+    assert env["sent"]
+    cx.execute("UPDATE stock_alert_sends SET state='failed'")
+    cx.commit()
+    monkeypatch.delenv("STOCK_ALERT_EMAILS", raising=False)
+    _set(cx, "moisturize", 50)                     # a check of another product while off
+    assert cx.execute("SELECT COUNT(*) FROM stock_alert_sends").fetchone()[0] == 0
+    assert cx.execute("SELECT COUNT(*) FROM stock_alerts").fetchone()[0] == 0
+    _set(cx, "scar-silk", 1)
+    assert cx.execute("SELECT COUNT(*) FROM stock_alerts").fetchone()[0] == 0
