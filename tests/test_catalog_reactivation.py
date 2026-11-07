@@ -70,6 +70,8 @@ RETIRED = {
     "hydrolyzed-collagen-powder-grass-fed-type-i-iii": "hydrolyzed-collagen",
     # Glen, 2026-11-06: "a duplication of Mold Spray (with Mold Spray Mould Spray)".
     "mold-spray-mould-spray": "mold-spray",
+    # Glen, 2026-11-06: "join Off Syrup and Off Syrup Drops".
+    "offsyrup-drops": "off-syrup",
     # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
     # product)". One listing, the HomeoEnergetic one.
     "digestzymes": "digestzymes-homeoenergetic-drops",

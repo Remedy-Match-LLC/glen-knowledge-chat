@@ -2905,6 +2905,7 @@
   },
   "off-syrup": {
    "name": "Off Syrup",
+   "bottle_type": "Dropper 50 mL",
    "price_cents": 7000,
    "pinecone_title": "Off Syrup",
    "url": "https://myhealingoasis.com/begin/product/off-syrup",
@@ -15498,6 +15499,8 @@
   },
   "offsyrup-drops": {
    "name": "OffSyrup Drops",
+   "inactive": true,
+   "superseded_by": "off-syrup",
    "price_cents": 7000,
    "pinecone_title": "OffSyrup Drops",
    "qty_pricing": true,
