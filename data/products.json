@@ -11554,6 +11554,7 @@
   },
   "terrain-restore": {
    "name": "Terrain Restore",
+   "description": "10 drops under tongue or in water 3 times a day ideally 30 minutes before meals with affirmation & visualization",
    "price_cents": 7000,
    "pinecone_title": "Terrain Restore",
    "url": "https://myhealingoasis.com/begin/product/terrain-restore",
@@ -14929,6 +14930,8 @@
   },
   "terrain-restore-drops": {
    "name": "Terrain Restore Drops",
+   "inactive": true,
+   "superseded_by": "terrain-restore",
    "price_cents": 7000,
    "pinecone_title": "Terrain Restore Drops",
    "qty_pricing": true,

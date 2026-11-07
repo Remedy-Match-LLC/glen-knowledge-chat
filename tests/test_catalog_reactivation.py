@@ -86,6 +86,8 @@ RETIRED = {
     # Glen, 2026-11-06: "combine Shields Up with Shields Up - Cold/Flu Formula". Shields Up
     # holds the store page, the shelf count and FileMaker row 469.
     "shields-up-cold-flu-formula": "shields-up",
+    # Glen, 2026-11-06: "combine Terrain Restore and Terrain Restore Drops".
+    "terrain-restore-drops": "terrain-restore",
     # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
     # product)". One listing, the HomeoEnergetic one.
     "digestzymes": "digestzymes-homeoenergetic-drops",
