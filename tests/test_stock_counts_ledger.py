@@ -826,3 +826,17 @@ def test_console_rows_name_what_needs_reordering(env, monkeypatch):
     needs = {r["slug"]: r["needs"] for r in SC.console_rows(cx)}
     assert needs["scar-silk"] == "out" and needs["moisturize"] == "low"
     assert needs["wholomega"] is None
+
+
+def test_switching_emails_off_leaves_nothing_to_resend_later(env, monkeypatch):
+    # Review round 2: a pending send must not retry, and a sent alert must re-arm.
+    cx = env["cx"]
+    _set(cx, "scar-silk", 1)                       # emails on: an alert goes
+    assert env["sent"]
+    cx.execute("UPDATE stock_alert_sends SET state='failed'")
+    cx.commit()
+    monkeypatch.delenv("STOCK_ALERT_EMAILS", raising=False)
+    _set(cx, "moisturize", 50)                     # any check while off
+    assert cx.execute("SELECT COUNT(*) FROM stock_alert_sends").fetchone()[0] == 0
+    _set(cx, "scar-silk", 1)
+    assert cx.execute("SELECT COUNT(*) FROM stock_alerts").fetchone()[0] == 0

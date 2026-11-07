@@ -810,6 +810,18 @@ def check_alerts(cx, slugs, catalog=None):
     failed one is retried by the next check. A cleared condition re-arms the alert.
     Never raises. Returns the [(slug, kind, recipient)] sends started."""
     if not alert_emails_on():
+        # Nothing is held for later: a pending or failed send would retry the moment the
+        # flag came back, and a sent alert could never re-arm (2026-11-06 review, round 2).
+        try:
+            ensure_tables(cx)
+            cx.execute("DELETE FROM stock_alert_sends WHERE state <> 'sent'")
+            for slug in sorted(set(slugs or ())):
+                cx.execute("DELETE FROM stock_alerts WHERE slug=?", (slug,))
+                cx.execute("DELETE FROM stock_alert_sends WHERE slug=?", (slug,))
+            cx.commit()
+        except Exception as e:  # noqa: BLE001
+            _safe_rollback(cx)
+            print(f"[stock] alert clear skipped: {e!r}", flush=True)
         return []
     starts = []
     try:
