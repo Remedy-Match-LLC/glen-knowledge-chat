@@ -9,8 +9,11 @@ His rulings, 2026-10-19, in the platform tab:
     ("yes"). Josie Gagnon's 4 layers were typed in, none made by the old button.
     A layer holding a scan or program row is never touched.
   - A topic row with no stress pattern matches and names a layer by its topic name:
-    its key, its label or its display name ("yes"). A free-text row with no pattern
-    is still skipped, as clinical_layers skips it.
+    its key, its label or its display name ("yes").
+
+His ruling, 2026-11-06: a ticked row whose pattern field shows only the grey default
+earns its layer, named by that default (default_pattern). Only a row with no default
+at all is skipped and listed.
 
 What the preview offers, each as a change Glen ticks:
   add      a newly ticked remedy, onto the layer that matches its row. Pre-ticked
@@ -31,11 +34,14 @@ preview showed no longer matches.
 import hashlib
 import json
 
-from dashboard.biofield_clinical_checklist import _norm, display_labels
+from dashboard.biofield_clinical_checklist import _norm, default_pattern, display_labels
 from dashboard.biofield_clinical_sections import row_ticks
 
 # A layer holding one of these rows came from a scan or a program: never changed.
 FIXED_ORIGINS = ("scan", "program")
+
+# How a ticked row with a blank name is listed among the rows that earn no layer.
+NO_NAME = "(row with no name)"
 
 
 class Stale(ValueError):
@@ -97,17 +103,30 @@ def targets(cx, items):
     for item in items or []:
         label = str(item.get("label") or "").strip()
         if not label:
+            # Nothing can name its layer, but a ticked row is never dropped silently.
+            if item.get("checked"):
+                no_pattern.append(NO_NAME)
             continue
         # The pattern the page shows: one Glen typed for this test wins, then the
         # stored one, then a suggestion (apply_selection and build set that order).
         # The + button sends the same value, so both name a condition alike (round 3 N1).
+        # Last, a row with none of those, and no topic, falls back to the grey
+        # default its empty field shows. "Add to layer" falls back to the same
+        # default_pattern(), so both still name the condition alike. Glen, 2026-11-06.
         pattern = str(item.get("stress_pattern") or "").strip()
         key = _norm(label)
+        # Ticked rows only: an unticked row named by its default would become a
+        # target, and mark a layer typed by hand with that name as stale.
+        default = ("" if pattern or key in topics or not item.get("checked")
+                   else default_pattern(label))
         if pattern:
             name, keys = pattern, {_norm(pattern)}
         elif key in topics:
             name = display.get(key) or label
             keys = {key, _norm(name)}
+        elif default:
+            pattern = default
+            name, keys = default, {_norm(default)}
         else:
             if item.get("checked"):
                 no_pattern.append(label)

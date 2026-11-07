@@ -11,7 +11,8 @@ Plan: platform/plans/2026-11-06-stock-counts-in-the-app.md. Every rule below is 
   one made live again takes it off again. GrooveKart sends no paid signal, so its orders
   come off the count on arrival.
 - Bundles take one bottle (times the component qty) from each product inside them.
-- Made-to-order products (`made_to_order` in the catalog) are never counted.
+- Made-to-order products (`made_to_order` in the catalog) are never counted. Nor are
+  custom ones ("in Terrain Restore" in the name) or drop-shipped ones (DROP_SHIPPED).
 - Every change is one row in `stock_log`: slug, delta, new count, who, when, why, order.
 - Glen and Rae are emailed when a product falls to LOW_STOCK_AT bottles or fewer, and
   when it falls below one month of average sales. Once per crossing.
@@ -42,6 +43,26 @@ from dashboard import db
 
 FLAG = "STOCK_COUNTS_ENABLED"
 LOW_STOCK_AT = 3                  # Glen, 2026-11-06: "yes" to 3 bottles or fewer
+
+
+def low_stock_at(p, avg) -> int:
+    """The low-stock alert level for one product. Glen, 2026-11-06: "For Infoceuticals, set
+    the alert level to zero, unless the average monthly use is 1 or more, then set it to
+    1." Every other product alerts at LOW_STOCK_AT."""
+    name = str((p or {}).get("name") or "").lower() if isinstance(p, dict) else ""
+    if "infoceutical" in name:
+        return 1 if float(avg or 0) >= 1 else 0
+    return LOW_STOCK_AT
+
+
+def month_alert_applies(p, avg) -> bool:
+    """Whether the one-month-supply alert can fire. Glen, 2026-11-06: Infoceuticals skip
+    it "if they sell less than 1 a month for now"."""
+    name = str((p or {}).get("name") or "").lower() if isinstance(p, dict) else ""
+    a = float(avg or 0)
+    if "infoceutical" in name and a < 1:
+        return False
+    return a > 0
 AVG_WINDOW_DAYS = 365             # average monthly sales over the last 12 months
 DEDUPE_DAYS = 14                  # a line within 14 days of another source's line is one sale
 RECONCILE_DAYS = 30               # the self-heal looks back this far
@@ -196,11 +217,43 @@ def init_tables(cx):
 
 # ── the predicate ───────────────────────────────────────────────────────────────
 
-def countable(p) -> bool:
-    """Whether a product can carry a count. Made-to-order never does (Glen, question 3).
-    A bundle does not either: its components are counted."""
+# Never on the shelf, so never counted, and a count can never take them off sale.
+# Glen, 2026-11-06: "15-plate water ionizers are not stocked, they are drop shipped, so
+# zero on shelf. Available for sale." Then: "the 9-plate water ionizer is also not
+# stocked, but available, so zero on shelf still means it is available for purchase."
+DROP_SHIPPED = frozenset({"water-ionizer-15plate", "water-ionizer-9plate"})
+# Counted, and alerted on, but a count at 0 never takes them off sale. Glen, 2026-11-06:
+# "5-plate ionizer has stock paid for on the shelf at the manufacturer, starting with 5
+# units ... always keep it showing available for sale."
+ALWAYS_ON_SALE = frozenset({"water-ionizer-5plate"})
+# Glen, 2026-11-06: "all items with names that include \"in terrain restore\" are custom."
+# Then: "Products with \"HomeoEnergetic\" are custom made as needed."
+CUSTOM_NAME_PARTS = ("in terrain restore", "homeoenergetic")
+
+
+def not_counted_why(p, slug=None):
+    """Why a product carries no count ("a bundle", "made to order", "custom",
+    "drop shipped"), or None when it can be counted."""
     p = p if isinstance(p, dict) else {}
-    return not p.get("made_to_order") and not p.get("bundle")
+    slug = slug or p.get("slug")
+    if p.get("bundle"):
+        return "a bundle"
+    if p.get("made_to_order"):
+        return "made to order"
+    nm = " ".join(str(p.get("name") or "").lower().split())
+    if any(part in nm or part in nm.replace(" ", "").replace("-", "")
+           for part in CUSTOM_NAME_PARTS):
+        return "custom"
+    if slug in DROP_SHIPPED:
+        return "drop shipped"
+    return None
+
+
+def countable(p, slug=None) -> bool:
+    """Whether a product can carry a count. Made-to-order never does (Glen, question 3).
+    Nor does a custom or drop-shipped one. A bundle does not either: its components are
+    counted."""
+    return not_counted_why(p, slug) is None
 
 
 def zero_slugs() -> frozenset:
@@ -230,7 +283,7 @@ def zero_slugs() -> frozenset:
 def is_counted_out(slug, p) -> bool:
     """True when the flag is on and `slug` is counted at 0 or below. Flag off: False,
     with no database access at all."""
-    if not enabled() or not slug or not countable(p):
+    if not enabled() or not slug or slug in ALWAYS_ON_SALE or not countable(p, slug):
         return False
     return slug in zero_slugs()
 
@@ -283,9 +336,8 @@ def set_count(cx, slug, count, *, who, reason, catalog=None):
     p = cat.get(slug)
     if not p:
         raise ValueError(f"unknown product: {slug}")
-    if not countable(p):
-        raise ValueError(f"{p.get('name') or slug} is not counted "
-                         f"({'a bundle' if p.get('bundle') else 'made to order'})")
+    if not countable(p, slug):
+        raise ValueError(f"{p.get('name') or slug} is not counted ({not_counted_why(p, slug)})")
     try:
         n = int(count)
     except (TypeError, ValueError):
@@ -357,7 +409,7 @@ def units_for_items(items, catalog) -> dict:
                 cq = max(1, _parse_qty((comp or {}).get("qty"), 1))
                 _add(cs, qty * cq, seen | {cs})
             return
-        if p and p.get("made_to_order"):
+        if p and not countable(p, slug):
             return
         out[slug] = out.get(slug, 0) + qty
 
@@ -728,11 +780,11 @@ def _deliver(slug, kind, to, subject, body):
         print(f"[stock] alert state not saved for {slug}/{kind}/{to}: {e!r}", flush=True)
 
 
-def _alert_text(kind, name, count, avg):
+def _alert_text(kind, name, count, avg, low_at=LOW_STOCK_AT):
     if kind == "low":
         return (f"Low stock: {name}, {count} left",
                 f"{name} is down to {count} bottle{'s' if count != 1 else ''}.\n\n"
-                f"The alert goes out at {LOW_STOCK_AT} or fewer. "
+                f"The alert goes out at {low_at} or fewer. "
                 f"About {avg:.1f} sell in a month.\n\nStock page: {CONSOLE_URL}")
     return (f"Under one month of {name}: {count} left",
             f"{name} has {count} bottle{'s' if count != 1 else ''} left. "
@@ -758,8 +810,9 @@ def check_alerts(cx, slugs, catalog=None):
                 continue
             count = get_count(cx, slug)
             avg = float(avg_map.get(slug) or 0.0)
-            for kind, cond in (("low", count <= LOW_STOCK_AT),
-                               ("month", avg > 0 and count < avg)):
+            for kind, cond in (("low", count <= low_stock_at(cat.get(slug), avg)),
+                               ("month", month_alert_applies(cat.get(slug), avg)
+                                and count < avg)):
                 if not cond:
                     cx.execute("DELETE FROM stock_alerts WHERE slug=? AND kind=?", (slug, kind))
                     cx.execute("DELETE FROM stock_alert_sends WHERE slug=? AND kind=?",
@@ -780,17 +833,18 @@ def check_alerts(cx, slugs, catalog=None):
                             "OR (state='pending' AND attempted_at < ?))",
                             (_now(), slug, kind, to, retry_before)).rowcount == 1
                     if got:
-                        starts.append((slug, kind, to, count, avg))
+                        starts.append((slug, kind, to, count, avg,
+                                       low_stock_at(cat.get(slug), avg)))
         cx.commit()
     except Exception as e:  # noqa: BLE001
         _safe_rollback(cx)
         print(f"[stock] alert check skipped: {e!r}", flush=True)
         return []
-    for slug, kind, to, count, avg in starts:
+    for slug, kind, to, count, avg, low_at in starts:
         name = (cat.get(slug) or {}).get("name") or slug
-        subject, body = _alert_text(kind, name, count, avg)
+        subject, body = _alert_text(kind, name, count, avg, low_at)
         _spawn(lambda s=slug, k=kind, t=to, su=subject, b=body: _deliver(s, k, t, su, b))
-    return [(s, k, t) for s, k, t, _c, _a in starts]
+    return [(s, k, t) for s, k, t, _c, _a, _l in starts]
 
 
 # ── console ────────────────────────────────────────────────────────────────────
@@ -806,10 +860,27 @@ def console_rows(cx, catalog=None) -> list:
         a = round(float(avg.get(slug) or 0.0), 2)
         rows.append({"slug": slug, "name": (cat.get(slug) or {}).get("name") or slug,
                      "count": count, "avg_monthly": a,
+                     "low_at": low_stock_at(cat.get(slug), a),
                      "months_supply": (round(count / a, 1) if a > 0 else None),
                      "updated_at": updated})
     rows.sort(key=lambda x: (x["count"], x["name"].lower()))
     return rows
+
+
+def last_set(cx, catalog=None):
+    """The product whose count was entered most recently by hand, so Glen can keep his
+    place on the shelf. Glen, 2026-11-06: "If the stock counts can show the name of the
+    item inventoried last, that would help me keep my place." Order deductions carry an
+    order id and are skipped. Returns {slug, name, count, logged_at} or None."""
+    cat = _catalog(catalog)
+    ensure_tables(cx)
+    r = cx.execute("SELECT l.slug, l.new_count, l.logged_at FROM stock_log l "
+                   "JOIN stock_counts c ON c.slug = l.slug "
+                   "WHERE l.order_id IS NULL ORDER BY l.id DESC LIMIT 1").fetchone()
+    if not r:
+        return None
+    return {"slug": r[0], "name": (cat.get(r[0]) or {}).get("name") or r[0],
+            "count": int(r[1]), "logged_at": r[2]}
 
 
 def countable_products(catalog=None) -> list:
@@ -820,7 +891,7 @@ def countable_products(catalog=None) -> list:
     for slug, p in cat.items():
         if not isinstance(p, dict) or p.get("inactive") or p.get("info_only"):
             continue
-        if p.get("service") or p.get("digital") or not countable(p):
+        if p.get("service") or p.get("digital") or not countable(p, slug):
             continue
         out.append({"slug": slug, "name": p.get("name") or slug})
     out.sort(key=lambda x: x["name"].lower())

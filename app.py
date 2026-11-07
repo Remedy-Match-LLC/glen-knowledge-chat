@@ -275,6 +275,7 @@ from dashboard import auth_limits as _auth_limits
 from dashboard import client_address as _client_address
 from dashboard import response_timing as _response_timing
 from dashboard import db
+from dashboard import scan_reward as _scan_reward  # SCAN_REWARD_ENABLED, default off
 from dashboard import browser_languages as _browser_languages
 from dashboard import dbwrite
 from dashboard.chat_limits import (client_ip, VelocityLimiter, LIMITS,
@@ -7776,6 +7777,19 @@ def begin_unlock():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
+    # Scan share reward, build piece 1: a friend who gives an email on /begin/scan
+    # with an inviter is recorded in scan_invites (never referral_events). Its own
+    # connection, after the funnel's has committed, so a failure here can neither
+    # share nor roll back the funnel's write. Rules: dashboard/scan_reward_rules.py.
+    if _scan_reward.enabled() and path == "/begin/scan" and state.get("email"):
+        try:
+            with _db_lock, db.connect(LOG_DB) as _cx_sr:
+                _scan_reward.init_tables(_cx_sr)
+                _scan_reward.record_invite(
+                    _cx_sr, state["email"], ref_slug or (state.get("ref_slug") or ""))
+        except Exception as _sre:  # noqa: BLE001 - never blocks the scan
+            print(f"[scan-reward] record_invite failed: {_sre!r}", flush=True)
+
     # Free-tier transition (email + ToS): onboard to GHL + concierge referral,
     # non-blocking — same pattern as /chat.
     if (state["current_rung"] == "free_tier"
@@ -11397,6 +11411,7 @@ def _credit_course_referral(cx, ref, buyer_email, product_cents, order_ref):
 def _settle_referral(order, *, order_ref: str) -> None:
     """Credit the referrer (points or cash) on a full-price referred sale.
     Idempotent per order_ref. Best-effort -- never raises."""
+    _scan_reward_on_paid_order(order, order_ref)
     if not _rewards_enabled():
         return
     try:
@@ -11425,6 +11440,37 @@ def _settle_referral(order, *, order_ref: str) -> None:
             _credit_referrer_by_slug(cx, slug, buyer_email, product_cents, order_ref)
     except Exception as _e:
         print(f"[rewards] _settle_referral failed inv={order_ref}: {_e!r}", flush=True)
+
+
+def _scan_reward_on_paid_order(order, order_ref):
+    """Scan share reward, build piece 6: one reading to the friend's inviter for a paid
+    store order with an E4L infoceutical or PRL line. Runs from _settle_referral, so the
+    card path and every alt-pay path reach it. Its own connection, idempotent per
+    order_ref, independent of REWARDS_TIERS_ENABLED. Never raises."""
+    if not _scan_reward.enabled() or not order or not order_ref:
+        return
+    try:
+        with db.connect(LOG_DB) as cx:
+            _scan_reward.init_tables(cx)
+            _scan_reward.credit_store_order(
+                cx, order, order_ref, is_wholesale=_is_wholesale_order(order),
+                below_store_price=_order_has_line_below_store_price(order))
+    except Exception as _e:  # noqa: BLE001
+        print(f"[scan-reward] order credit failed ref={order_ref}: {_e!r}", flush=True)
+        # Leave a retryable mark on a fresh connection. The reconcile completes it.
+        try:
+            with db.connect(LOG_DB) as cx:
+                _scan_reward.init_tables(cx)
+                _scan_reward.mark_pending(
+                    cx, _scan_reward.rules.event_key_store_order(order_ref), repr(_e)[:300])
+        except Exception as _e2:  # noqa: BLE001
+            print(f"[scan-reward] pending mark failed ref={order_ref}: {_e2!r}", flush=True)
+
+
+def _scan_reward_reconcile():
+    with db.connect(LOG_DB) as cx:
+        return _scan_reward.reconcile(cx, is_wholesale=_is_wholesale_order,
+                                      below_store_price=_order_has_line_below_store_price)
 
 
 def _maybe_raise_cashout_review(cx, slug: str, mode: str) -> None:
@@ -21562,20 +21608,103 @@ def affiliate_hub_data(slug):
             "SELECT name, description, url_template, COALESCE(instructions, '') "
             "FROM affiliate_offers WHERE active=1 ORDER BY sort_order ASC"
         ).fetchall()
+    offer_list = [
+        {
+            "name": o[0],
+            "description": o[1],
+            "url": o[2].replace("{slug}", slug),
+            "instructions": o[3],
+        }
+        for o in offers
+    ]
+    # Scan share reward, build piece 2: the scan link leads the hub. Read-side only.
+    if _scan_reward.enabled():
+        offer_list = _scan_reward.lead_with_scan(offer_list)
     return jsonify({
         "name": name,
         "organization": org,
         "slug": slug,
-        "offers": [
-            {
-                "name": o[0],
-                "description": o[1],
-                "url": o[2].replace("{slug}", slug),
-                "instructions": o[3],
-            }
-            for o in offers
-        ]
+        "offers": offer_list
     })
+
+
+def _scan_reward_console_ok():
+    """Console gate for the reading-credit endpoints. Fails CLOSED: an unset
+    CONSOLE_SECRET refuses, rather than opening the gate."""
+    if not CONSOLE_SECRET:
+        return False
+    key = _present_console_key()
+    return key == CONSOLE_SECRET or _owner_token_ok(key)
+
+
+@app.route("/api/console/reading-credits", methods=["GET"])
+def api_console_reading_credits():
+    """Scan share reward: one person's reading-credit balance and ledger."""
+    if not _scan_reward.enabled():
+        return jsonify({"error": "not found"}), 404
+    if not _scan_reward_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    email = (request.args.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+    with db.connect(LOG_DB) as cx:
+        _scan_reward.init_tables(cx)
+        return jsonify({"ok": True, "email": email,
+                        "balance": _scan_reward.balance(cx, email),
+                        "ledger": _scan_reward.ledger(cx, email)})
+
+
+@app.route("/api/console/reading-credits/spend", methods=["POST"])
+def api_console_reading_credits_spend():
+    """Glen or Rae marks one reading delivered: writes one spend row. Body:
+    {email, key, note}. `key` names the delivery (the reading's report id, say) so a
+    repeat click spends once. Publishing the reading is a separate, manual step."""
+    if not _scan_reward.enabled():
+        return jsonify({"error": "not found"}), 404
+    if not _scan_reward_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    key = (data.get("key") or "").strip()[:200]
+    if not email or "@" not in email or not key:
+        return jsonify({"ok": False, "error": "email and key required"}), 400
+    by = "owner" if _owner_token_ok(_present_console_key()) else "console"
+    with db.connect(LOG_DB) as cx:
+        _scan_reward.init_tables(cx)
+        out = _scan_reward.spend(cx, email, key=key, by=by,
+                                 note=(data.get("note") or "").strip()[:500])
+    return jsonify(out), (200 if out.get("ok") else 409)
+
+
+@app.route("/api/console/reading-credits/reconcile", methods=["POST"])
+def api_console_reading_credits_reconcile():
+    """Retry pending order credits and reverse credits on cancelled or refunded orders.
+    The reply-watch cron runs the same thing every 15 minutes."""
+    if not _scan_reward.enabled():
+        return jsonify({"error": "not found"}), 404
+    if not _scan_reward_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    return jsonify({"ok": True, **_scan_reward_reconcile()})
+
+
+@app.route("/api/console/people/e4l-client-ids", methods=["POST"])
+def api_console_people_e4l_client_ids():
+    """The one-time fill of people.e4l_client_id, called by
+    scripts/fill_people_e4l_client_ids.py. Body: {rows:[{email, client_id}], apply}.
+    Counts only unless apply is true. Never overwrites, never creates a person."""
+    if not _scan_reward.enabled():
+        return jsonify({"error": "not found"}), 404
+    if not _scan_reward_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    rows = data.get("rows") or []
+    if len(rows) > 5000:
+        # One request carries the whole source, so ambiguity is judged across all of it.
+        return jsonify({"ok": False, "error": "at most 5000 rows per request"}), 400
+    with db.connect(LOG_DB) as cx:
+        # Only a JSON true applies. "false", 1, "yes" all count only.
+        out = _scan_reward.fill_e4l_client_ids(cx, rows, apply=data.get("apply") is True)
+    return jsonify(out)
 
 
 @app.route("/affiliate/portal")
@@ -24072,6 +24201,7 @@ def api_console_stock():
                         "low_stock_at": _stock_counts.LOW_STOCK_AT,
                         "window_days": _stock_counts.AVG_WINDOW_DAYS,
                         "rows": _stock_counts.console_rows(cx),
+                        "last_set": _stock_counts.last_set(cx),
                         "unmatched": _stock_counts.list_unmatched(cx),
                         "products": _stock_counts.countable_products()})
     finally:
@@ -30244,12 +30374,21 @@ def evox_run_reminders():
     return jsonify({"sent": sent})
 
 
+def _client_portal_shell():
+    """The portal page. Flag off: the static file exactly as before. Flag on: the same
+    file with the reading-credit card's script added (scan share reward)."""
+    if not _scan_reward.enabled():
+        return send_from_directory(STATIC, "client-portal.html")
+    html = (STATIC / "client-portal.html").read_text(encoding="utf-8")
+    return Response(_scan_reward.inject_portal_card(html), mimetype="text/html")
+
+
 @app.route("/portal/<token>")
 def client_portal_page(token):
     sp = request.args.get("sp", "")
     if sp:
         return _redeem_staff_pass(token, sp)
-    resp = send_from_directory(STATIC, "client-portal.html")
+    resp = _client_portal_shell()
     # The portal shell contains its own recovery behavior and theme-safe error
     # styling. Never let a browser retain an older failure screen after a fix.
     resp.headers["Cache-Control"] = "private, no-store, max-age=0"
@@ -30984,6 +31123,17 @@ def api_client_portal(token):
         except Exception as _e:
             print(f"[eye-vision-report/payload] {_e!r}", flush=True)
     _request_timing_checkpoint("optional_tail")
+    # Scan share reward, build piece 5: the reading-credit balance. The portal holder's
+    # own email, not a ?member= view: credits belong to the inviter.
+    if _scan_reward.enabled():
+        try:
+            with db.connect(LOG_DB) as _cx_rc:
+                _scan_reward.init_tables(_cx_rc)
+                _rc = _scan_reward.portal_summary(_cx_rc, (portal.get("email") or ""))
+            if _rc:
+                payload["reading_credits"] = _rc
+        except Exception as _e:
+            print(f"[scan-reward/payload] {_e!r}", flush=True)
     if _staff_view:
         payload["staff_view"] = {"client": (portal.get("name") or "").strip()
                                  or (portal.get("email") or "").split("@")[0]}
@@ -42732,7 +42882,7 @@ def client_portal_me():
     # cookie via /api/portal/me/view. Dark until login is enabled.
     if not _client_login_enabled():
         return ("Not found", 404)
-    return send_from_directory(STATIC, "client-portal.html")
+    return _client_portal_shell()
 
 
 @app.route("/api/page-share-link", methods=["GET"])
@@ -45256,6 +45406,16 @@ def cron_reply_watch():
             from dashboard import e4l_account_notifications as _e4l_accounts
             with db.connect(LOG_DB) as cx:
                 e4l_counts = _e4l_accounts.ingest_notifications(cx)
+            # Scan share reward, build piece 3: "New voice scan" notices become scan
+            # arrivals. Gmail read only. Its own try, so it can never fail the watcher.
+            if _scan_reward.enabled():
+                try:
+                    with db.connect(LOG_DB) as cx:
+                        e4l_counts = {**e4l_counts,
+                                      "scan_arrivals": _scan_reward.ingest_scan_notices(cx)}
+                    e4l_counts["reading_credit_reconcile"] = _scan_reward_reconcile()
+                except Exception as _sre:  # noqa: BLE001
+                    print(f"[scan-reward] scan notice ingest failed: {_sre!r}", flush=True)
     except (_gt.GmailTokenMissing, RefreshError) as e:
         now_iso = datetime.now(timezone.utc).isoformat()
         if _gt.should_send_alert(str(LOG_DB), "inbox_gmail", now_iso):

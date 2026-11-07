@@ -131,6 +131,18 @@ def suggested_pattern(label):
     return _suggested_patterns().get(_norm(label), "")
 
 
+def default_pattern(label):
+    """The stress pattern a row falls back to when none is typed, stored or suggested:
+    the condition's own name.
+
+    One function for every place that names the condition. The page shows it in grey
+    in the empty pattern field ("Defaults to '...'"), "Add to layer" heads the layer
+    with it, and Update Clinical layers names a new layer by it. Glen, 2026-11-06:
+    "Each of them says in grey what the stress pattern defaults to so that should
+    qualify." A blank label has no default."""
+    return str(label or "").strip()
+
+
 def stress_pattern(cx, label):
     ensure_stress_schema(cx)
     row = cx.execute("SELECT pattern FROM biofield_clinical_stress WHERE item_key=?",
@@ -841,7 +853,7 @@ def balance_item(cx, test_id, label, layer, remedies, resolve_name=lambda cx, na
     layer = int(layer)
     if not label or layer < 1:
         raise ValueError("Item and a positive layer number are required")
-    term = str(pattern or "").strip()[:160] or label
+    term = str(pattern or "").strip()[:160] or default_pattern(label)
     init_auth_tables(cx)
     from dashboard.biofield_stress import init_stress_tables
     init_stress_tables(cx)       # it commits, so before any write here
