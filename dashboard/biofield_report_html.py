@@ -776,7 +776,8 @@ async function askSpecies(){
  else{sp=prompt('Which animal? For example Dog, Cat or Horse.','Dog');
   if(!sp||!sp.trim())return false}
  var r=await post0('/author/__TID__/species',{species:sp.trim()});
- return !!(r&&r.ok)}
+ if(!(r&&r.ok)){alert((r&&r.error)||'The answer was not recorded.');return false}
+ return true}
 async function post(p,b){var j=await post0(p,b);
  if(j&&j.needs_species){if(!(await askSpecies()))return j;j=await post0(p,b)}
  return j}
@@ -906,8 +907,17 @@ async function addLayerStress(input,layer){var label=(input.value||'').trim();if
 async function assignStress(sid){astat('Assigning…');const j=await post('/author/__TID__/stress/'+sid+'/assign',{});astat(j&&j.ok?('Assigned to its layer.'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function assignAllStresses(){astat('Assigning all…');const j=await post('/author/__TID__/stresses/assign-all',{});astat(j&&j.ok?('Assigned '+(j.assigned||0)+' stress(es).'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function saveHeader(){const j=await post('/author/__TID__/header',
- {name:val('h_name'),email:val('h_email'),date:val('h_date'),
-  idempotency_key:orderToken('header')});astat('Header saved.');setE4L(j)}
+ {name:val('h_name'),email:val('h_email'),date:val('h_date'),client_id:val('h_client_id'),
+  idempotency_key:orderToken('header')});
+ if(j&&j.client_id!==undefined)set('h_client_id',j.client_id==null?'':j.client_id);
+ astat('Header saved.');setE4L(j)}
+// A name or email typed by hand is another person until it is picked or matched, so
+// the id the page held for the previous one is dropped (the header then re-matches).
+function dropClientId(){E4L_CLIENT_ID=null;set('h_client_id','')}
+async function confirmE4LClient(cid){
+ var j=await post('/author/__TID__/e4l-client/confirm',{client_id:cid,held:val('h_client_id')});
+ if(j&&j.ok){set('h_client_id',j.client_id);location.reload()}
+ else{alert((j&&j.error)||'Could not confirm.')}}
 async function refreshHeaderPhoto(){
  var img=document.getElementById('authorclientphoto'),email=val('h_email').trim(),
      pname=val('h_name').trim();
@@ -916,11 +926,11 @@ async function refreshHeaderPhoto(){
  if(!email){img.removeAttribute('src');img.style.display='none';return}
  try{
   var j=await (await fetch('/client-photo-framing/'+encodeURIComponent(email)
-   +'?name='+encodeURIComponent(pname))).json();
+   +'?name='+encodeURIComponent(pname)+'&cid='+encodeURIComponent(val('h_client_id')))).json();
   if(j.ok)img.style.objectPosition=j.focus_x+'% '+j.focus_y+'%';
  }catch(e){img.style.objectPosition='50% 42%'}
  img.style.display='none';img.src='/client-photo/'+encodeURIComponent(email)
-   +'?name='+encodeURIComponent(pname)+'&t='+Date.now();
+   +'?name='+encodeURIComponent(pname)+'&cid='+encodeURIComponent(val('h_client_id'))+'&t='+Date.now();
 }
 // --- E4L client picker: name autocomplete -> email (dropdown if duplicates) -> date
 var E4L_CLIENT_ID=null;
@@ -1764,7 +1774,7 @@ async function suggestPreserved(){
 // --- Minimal-remedy set: editable + searchable + drag-reorder + persist ---
 function mrNames(){return [].slice.call(document.querySelectorAll('#mrlist .mrname'))
  .map(function(i){return (i.value||'').trim()}).filter(Boolean)}
-function mrSetPanel(j){if(j&&j.html!==undefined)document.getElementById('suggestpanel').innerHTML=j.html}
+function mrSetPanel(j){if(j&&j.animal_refused&&j.animal_refused.length&&j.error)alert(j.error);if(j&&j.html!==undefined)document.getElementById('suggestpanel').innerHTML=j.html}
 async function layerPick(b){mrSetPanel(await post('/author/__TID__/layer/'+b.getAttribute('data-n')+'/select',{remedy:b.getAttribute('data-remedy')}))}
 async function mrSave(){mrSetPanel(await post('/author/__TID__/remedy-set',{remedies:mrNames()}))}
 async function mrEdit(inp){await mrSave()}
@@ -1797,7 +1807,7 @@ async function mrAddOne(btn){var row=btn.closest('.mrrow');var inp=row?row.query
  var rem=inp?(inp.value||'').trim():'';if(!rem){return}
  btn.disabled=true;var o=btn.textContent;btn.textContent='\\u2026';
  try{var j=await post('/author/__TID__/remedy-set/add-one',{remedy:rem});
-  if(j&&j.ok){location.reload()}else{btn.textContent=o;btn.disabled=false}}
+  if(j&&j.ok){location.reload()}else{btn.textContent=o;btn.disabled=false;if(j&&j.error)alert(j.error)}}
  catch(e){btn.textContent=o;btn.disabled=false}}
 loadLists();
 loadE4L();
@@ -3371,6 +3381,20 @@ wrap.addEventListener('change',later,true);
 })();</script>"""
 
 
+def _e4l_suggestion_html(sug):
+    """The question for a namesake on another email (2026-11-06 review): "Is this
+    <name>, <species>, on another email? Confirm". Nothing until Glen confirms."""
+    if not sug or not sug.get("client_id"):
+        return ""
+    who = _e(sug.get("subject_name") or sug.get("name") or "this client")
+    species = _e(sug.get("species") or "species unknown")
+    cid = _e(str(sug.get("client_id")))
+    return ("<div id=e4lsuggest class=food style='margin-top:8px'>"
+            f"Is this {who}, {species}, on another email? "
+            f"<button class='btn ghost' onclick=\"confirmE4LClient('{cid}')\">Confirm</button>"
+            f" <span class=food>({_e(sug.get('email') or '')})</span></div>")
+
+
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
                        clinical_checklist=None, dispensed=None, dispensed_error=None,
@@ -3378,14 +3402,16 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                        profile_unavailable=False, alias_map=None, display_map=None,
                        narrative_warnings=None, history_links_html="",
                        clinical_free_factors=None, clinical_botanical=None,
-                       client_notified=False):
+                       client_notified=False, e4l_suggestion=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
     photo_email = (c.get("email") or "").strip()
     photo_name = (c.get("name") or "").strip()
     photo_src = (f"/client-photo/{_up.quote(photo_email, safe='')}"
-                 f"?name={_up.quote(photo_name, safe='')}" if photo_email else "")
+                 f"?name={_up.quote(photo_name, safe='')}"
+                 f"&cid={_up.quote(str(c.get('e4l_client_id') or ''), safe='')}"
+                 if photo_email else "")
     head = (_workflow_nav("intake", c.get("email") or "")
             + _client_tabs("edit", tid, c.get("email") or "")
             + f"<p><a href='/'>&larr; All tests</a> &nbsp;&middot;&nbsp; "
@@ -3407,16 +3433,17 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         f"<input type=hidden id=h_client_id value=\"{_e(c.get('e4l_client_id') or '')}\">"
         "<label>Client name</label>"
         "<span style='position:relative;display:inline-block'>"
-        f"<input id=h_name autocomplete=off oninput=nameSearch() value=\"{_e(c.get('name') or '')}\" style='width:280px'>"
+        f"<input id=h_name autocomplete=off oninput=\"dropClientId();nameSearch()\" value=\"{_e(c.get('name') or '')}\" style='width:280px'>"
         "<div id=h_dd class=dd></div></span>"
         "<label>Email</label>"
         "<span style='position:relative;display:inline-block'>"
-        f"<input id=h_email autocomplete=off oninput=emailSearch() "
+        f"<input id=h_email autocomplete=off oninput=\"dropClientId();emailSearch()\" "
         f"value=\"{_e(c.get('email') or '')}\" style='width:280px'>"
         "<div id=h_edd class=dd></div></span>"
         f"<label>Date</label><input id=h_date value=\"{_e(report.get('date') or '')}\" style='width:160px'>"
         "<div class=btnrow><button class=btn onclick=saveHeader()>Save header</button>"
-        "<span id=astat class=food></span></div></div>")
+        "<span id=astat class=food></span></div>"
+        + _e4l_suggestion_html(e4l_suggestion) + "</div>")
     editor_header = (
         "<div class=authorheadgrid><div>"
         "<h1 style='margin:0'>Edit Biofield Test</h1>"

@@ -114,7 +114,7 @@ def test_page_ticks_a_dated_scan_and_shows_the_mark(tmp_path, monkeypatch):
                         lambda c, e, sid: dict(PURPLE, scan_id=str(sid)))
     scan = {"found": True, "scan_id": 7, "scan_date": "2026-10-18"}
     app = create_app(db, fetch_profile=lambda email: {"conditions": ["Fatigue"]},
-                     scan_lookup=lambda email: scan)
+                     scan_lookup=lambda email, client_id=None: scan)
     page = app.test_client().get(f"/author/{tid}").get_data(as_text=True)
     with sqlite3.connect(db) as con:
         assert selections(con, tid)["fatigue"] == [ED5]
@@ -216,7 +216,7 @@ def _page_app(tmp_path, monkeypatch, conditions, date="2026-10-18"):
     monkeypatch.setattr(e4l_scan_marks, "infoceutical_marks",
                         lambda c, e, sid: dict(PURPLE, scan_id=str(sid)))
     app = create_app(db, fetch_profile=lambda email: {"conditions": list(conditions)},
-                     scan_lookup=lambda email: {"found": True, "scan_id": 7,
+                     scan_lookup=lambda email, client_id=None: {"found": True, "scan_id": 7,
                                                 "scan_date": date})
     return db, tid, app.test_client()
 

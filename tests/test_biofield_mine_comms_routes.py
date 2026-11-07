@@ -20,7 +20,7 @@ _COMMS = {"intake_summary": "first name: Jane\n  Energy?: Low",
 
 def _app(db, comms, stresses):
     import json as _j
-    return create_app(db, scan_lookup=lambda e: _NONE,
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
                       fetch_profile=lambda e: {},
                       fetch_recent_comms=lambda e: comms if e == "j@x.com" else {},
                       interpret_complete=lambda s, u: _j.dumps({"stresses": stresses}))
@@ -70,7 +70,7 @@ def test_header_save_mines_comms_run_once(tmp_path):
 
 def _app_with(db, *, comms=None, profile=None, stresses=()):
     import json as _j
-    return create_app(db, scan_lookup=lambda e: _NONE,
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
                       fetch_profile=lambda e: profile,
                       fetch_recent_comms=lambda e: comms,
                       interpret_complete=lambda s, u: _j.dumps({"stresses": list(stresses)}))
@@ -107,7 +107,7 @@ def test_a_section_the_server_could_not_read_is_named_and_the_rest_still_mined(t
         calls.append(1)
         return _j.dumps({"stresses": ["Chronic fatigue"] if len(calls) > 1 else []})
 
-    client = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: _NONE,
+    client = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e, client_id=None: _NONE,
                         fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: comms,
                         interpret_complete=complete).test_client()
     tid = _new(client, "j@x.com")
@@ -131,7 +131,7 @@ def test_a_failure_part_way_keeps_the_count_of_stresses_already_added(tmp_path, 
         calls.append(1)
         return _j.dumps({"stresses": ["Chronic fatigue", "Poor sleep"] if len(calls) > 1 else []})
 
-    client = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: _NONE,
+    client = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e, client_id=None: _NONE,
                         fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: _COMMS,
                         interpret_complete=complete).test_client()
     tid = _new(client, "j@x.com")

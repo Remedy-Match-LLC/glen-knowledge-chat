@@ -17,6 +17,14 @@ from tests.test_biofield_report_split import (  # noqa: F401  (fixtures)
 
 
 @pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These invoices are a person's. An unknown species now leaves FFs off the
+    invoice (2026-11-06 review, finding 8b), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
+@pytest.fixture(autouse=True)
 def _block_smtp(monkeypatch):
     def refuse(*a, **k):
         raise RuntimeError("no mail in tests")
@@ -36,7 +44,7 @@ def _app(c, **kw):
                 invoice_link=lambda oid: {"ok": False},
                 invoice_paid_check=lambda email: {},
                 invoice_latest=lambda email: {"ok": False},
-                scan_lookup=lambda email: {}, auto_publish=lambda *a, **k: {})
+                scan_lookup=lambda email, client_id=None: {}, auto_publish=lambda *a, **k: {})
     args.update(kw)
     return bla.create_app(c.db, **args).test_client()
 
@@ -246,7 +254,7 @@ def test_a_scan_read_error_refuses_remedy_sources(app_client, monkeypatch):
     from dashboard import e4l_scan_marks
     monkeypatch.setattr(e4l_scan_marks, "infoceutical_marks", lambda cx, db, sid: {
         "recommended": set(), "purple": set(), "recommended_error": "table missing"})
-    c = _app(app_client, scan_lookup=lambda email: {"found": True, "scan_id": 5})
+    c = _app(app_client, scan_lookup=lambda email, client_id=None: {"found": True, "scan_id": 5})
     r = c.get(f"/test/{app_client.tid}/reports.pdf?mode=singly&r=remedy_sources")
     assert r.status_code == 409 and b"table missing" in r.data
 

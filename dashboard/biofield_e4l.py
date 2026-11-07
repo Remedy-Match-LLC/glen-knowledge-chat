@@ -11,6 +11,7 @@ The query (latest-scan + identity-merge handling + ranked findings) is vendored 
 the vault tool `02 Skills/e4l_synthesis.py`, which is not importable by this app.
 """
 import datetime
+from contextlib import closing
 import os
 import re
 import subprocess
@@ -66,16 +67,29 @@ def _merge_group(cx, client_id):
     return group
 
 
-def _latest_scan(cx, email):
+def _latest_scan(cx, email, client_id=None):
     """{scan_id, scan_date} for the most recent scan across the client's merged
-    identity, or None."""
-    crows = cx.execute("SELECT client_id FROM e4l_clients WHERE lower(email)=lower(?)",
-                       (str(email or "").strip(),)).fetchall()
-    if not crows:
-        return None
-    group = set()
-    for cr in crows:
-        group |= _merge_group(cx, cr["client_id"])
+    identity, or None. With client_id, that one client's identity only: an owner and
+    her pet can share an email, and the email reads both of them (Skylar Verches,
+    2026-11-06)."""
+    if client_id is not None:
+        # One id, or several: the same-name rows on the subject's own email, which an
+        # unmerged duplicate leaves apart (resolve_intake_subject "scan_ids").
+        ids = ([client_id] if isinstance(client_id, (int, str))
+               else list(client_id))
+        group = set()
+        for one in ids:
+            group |= _merge_group(cx, int(one))
+        if not group:
+            return None
+    else:
+        crows = cx.execute("SELECT client_id FROM e4l_clients WHERE lower(email)=lower(?)",
+                           (str(email or "").strip(),)).fetchall()
+        if not crows:
+            return None
+        group = set()
+        for cr in crows:
+            group |= _merge_group(cx, cr["client_id"])
     ph = ",".join("?" for _ in group)
     r = cx.execute(f"""SELECT s.scan_id, s.scan_date FROM e4l_scans s
                        WHERE s.client_id IN ({ph})
@@ -206,19 +220,19 @@ def _none(window_days):
             "message": "No E4L scan on file"}
 
 
-def scan_context(email, today, *, db_path=None, window_days=14, limit=12):
+def scan_context(email, today, *, db_path=None, window_days=14, limit=12, client_id=None):
     """Most recent E4L scan for `email` as of `today` (YYYY-MM-DD). Returns a dict:
       status: "fresh" | "stale" | "none"
       found, scan_id, scan_date, days_ago, fresh, window_days, findings, message
     Fresh = a scan exists within `window_days`. Never raises."""
     none = _none(window_days)
-    if not (email or "").strip():
+    if not (email or "").strip() and client_id is None:
         return none
     cx = _connect_ro(_db_path(db_path))
     if cx is None:
         return none
     try:
-        scan = _latest_scan(cx, email)
+        scan = _latest_scan(cx, email, client_id)
         if not scan:
             return none
         days = _days_ago(scan["scan_date"], today)
@@ -395,43 +409,361 @@ def species_from_e4l(e4l_db, email):
     When the E4L scrape has no species, Glen's own answer (species_answers, written by
     record_species_answer) is used. Glen, 2026-10-01: "if species is blank, ask me
     first". None now means nobody knows, and the Intake asks him before proposing
-    remedies. Skylar, a dog with a blank scrape, was given FFs that day."""
+    remedies. Skylar, a dog with a blank scrape, was given FFs that day.
+
+    An answer is read here only when the email holds at most one E4L client: that
+    client's own answer, or an old email-only answer. None of them is a person with no
+    E4L record, whose old answer still holds. On an email an owner shares with
+    her pet, an answer given for one of them must not answer for the other
+    (2026-11-06). resolve_intake_subject reads the per-subject answers."""
     e = (email or "").strip().lower()
     if not e or not e4l_db:
         return None
     try:
-        with sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True) as ecx:
+        with closing(sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)) as ecx:
             row = ecx.execute(
                 "SELECT species FROM e4l_clients "
                 "WHERE lower(trim(email))=? AND species IS NOT NULL AND species<>'' "
                 "ORDER BY client_id DESC LIMIT 1", (e,)).fetchone()
-            if not row:
-                try:
-                    row = ecx.execute(
-                        "SELECT species FROM species_answers WHERE email=? "
-                        "AND species IS NOT NULL AND species<>''", (e,)).fetchone()
-                except sqlite3.OperationalError:   # no answers recorded yet
-                    row = None
+            if row:
+                return (row[0] or "").strip() or None
+            ids = [r[0] for r in ecx.execute(
+                "SELECT client_id FROM e4l_clients WHERE lower(trim(email))=?", (e,))]
+            if len(ids) > 1:
+                return None
+            return _answer_for_clients(ecx, ids) or _answer_legacy(ecx, e)
     except sqlite3.Error:
         return None
-    if not row:
+
+
+def _person_key(name):
+    return " ".join("".join(ch for ch in (name or "").lower()
+                            if ch.isalnum() or ch == " ").split())
+
+
+# --- Glen's species answers, one per subject (2026-11-06) ----------------------------
+# species_answers began keyed by email alone (email TEXT PRIMARY KEY), so an answer for
+# a pet leaked to its owner on the same email. Migrated additively: three nullable
+# columns. A new row keeps the primary key unique by holding its subject key in the
+# email column ("cid:<id>" or "subject:<email>|<name>"); an old row holds a real email.
+
+_ANSWER_COLS = (("client_id", "INTEGER"), ("subject_email", "TEXT"), ("name_key", "TEXT"))
+
+
+def _answer_cols(ecx):
+    try:
+        return {r[1] for r in ecx.execute("PRAGMA table_info(species_answers)")}
+    except sqlite3.Error:
+        return set()
+
+
+def _one_answer(ecx, where, args):
+    try:
+        row = ecx.execute(f"SELECT species FROM species_answers WHERE {where} "
+                          "AND species IS NOT NULL AND species<>'' "
+                          "ORDER BY answered_at DESC LIMIT 1", args).fetchone()
+    except sqlite3.Error:
         return None
-    return (row[0] or "").strip() or None
+    return ((row[0] if row else "") or "").strip() or None
 
 
-def record_species_answer(e4l_db, email, species):
-    """Store Glen's answer for a client whose E4L species is blank, so he is asked once.
+def _answer_for_clients(ecx, ids):
+    ids = [int(i) for i in ids or []]
+    if not ids or "client_id" not in _answer_cols(ecx):
+        return None
+    return _one_answer(ecx, f"client_id IN ({','.join('?' for _ in ids)})", tuple(ids))
+
+
+def _answer_for_subject(ecx, email, want):
+    if not email or "name_key" not in _answer_cols(ecx):
+        return None
+    return _one_answer(ecx, "client_id IS NULL AND subject_email=? AND name_key=?",
+                       (email, want or ""))
+
+
+def _answer_legacy(ecx, email):
+    cols = _answer_cols(ecx)
+    if not cols or not email:
+        return None
+    if "client_id" in cols:
+        return _one_answer(ecx, "email=? AND client_id IS NULL AND name_key IS NULL",
+                           (email,))
+    return _one_answer(ecx, "email=?", (email,))
+
+
+# --- whose intake is it --------------------------------------------------------------
+
+_COLS = "client_id, email, species, animal_name, name"
+
+
+# --- whose name is it ------------------------------------------------------------------
+# E4L stores a pet with animal_name set, and its `name` is often the OWNER's name
+# (2026-11-06 review, round 3). So a record with an animal_name is named by it; one
+# without is named by `name`. Every match below reads names this way.
+
+def _is_animal_species(sp):
+    return (sp or "").strip().lower() not in ("", "human", "person")
+
+
+def subject_name(r):
+    """The name an E4L record's subject goes by: its animal_name, else its name."""
+    return (r[3] or "").strip() or (r[4] or "").strip()
+
+
+def _subject_tokens(r):
+    """The words of the subject's name. A pet adds its owner's surname, so "Skylar
+    Verches" names Skylar, whose record says name "Agnes Verches"."""
+    pet = _person_key(r[3])
+    if not pet:
+        return _person_key(r[4]).split()
+    toks = pet.split()
+    last = (_person_key(r[4]).split() or [""])[-1]
+    return toks + ([last] if last and last not in toks else [])
+
+
+def _subject_keys(r):
+    """The full names an intake may give this record's subject."""
+    pet = _person_key(r[3])
+    if not pet:
+        return {_person_key(r[4])} - {""}
+    return {pet, " ".join(_subject_tokens(r))}
+
+
+def _kind(r):
+    """("animal", pet name) or ("human", name). Two rows of one kind and one name on an
+    email are one subject split in two; a pet and its owner never are."""
+    pet = _person_key(r[3])
+    if pet:
+        return ("animal", pet)
+    return ("animal" if _is_animal_species(r[2]) else "human", _person_key(r[4]))
+
+
+def _pack(r, by):
+    return {"client_id": r[0], "email": (r[1] or "").strip().lower(),
+            "species": (r[2] or "").strip() or None,
+            "animal_name": (r[3] or "").strip(), "name": (r[4] or "").strip(),
+            "subject_name": subject_name(r), "by": by}
+
+
+def _same_kind_rows(ecx, rec):
+    """Every row on the subject's own email of the same kind and name, rec included.
+
+    A person's E4L record can be split in two before anyone merges it, with the scans
+    on the older row, so both are read. Never a pet with its owner, never two names,
+    and never a row whose species says it is someone else."""
+    kind = _kind(rec)
+    sp = (rec[2] or "").strip().lower()
+    out = [rec]
+    for r in ecx.execute(f"SELECT {_COLS} FROM e4l_clients WHERE lower(trim(email))=? "
+                         "ORDER BY client_id DESC", ((rec[1] or "").strip().lower(),)):
+        if int(r[0]) == int(rec[0]):
+            continue
+        other = (r[2] or "").strip().lower()
+        if _kind(r) == kind and not (sp and other and other != sp):
+            out.append(r)
+    return out
+
+
+def _same_name_ids(ecx, rec):
+    return tuple(sorted(int(r[0]) for r in _same_kind_rows(ecx, rec)))
+
+
+RESOLVED = ("id", "email+name", "email+first")
+
+
+def resolve_intake_subject(e4l_db, client_id=None, email=None, name=None):
+    """Who an intake is for, from one read of e4l.db. A dict:
+
+      by        "id"          its stored E4L client id;
+                "email+name"  the subject on its email with its name. A record with
+                              an animal_name is named by it (its `name` is often the
+                              owner's), optionally with the owner's surname;
+                "email+first" no exact name, but the one subject on its email whose
+                              name starts with the first name typed ("Sasha");
+                "email"       no name on the intake: the newest client on the email
+                              with a species, as before;
+                "unresolved"  it has a name, its email holds E4L clients, and none of
+                              them is this subject, or a pet and a person both answer
+                              to it. Species unknown, no scans, no photo;
+                "none"        e4l.db says nothing: unreadable, or a nameless intake on
+                              an email with no species, or a named one on an email
+                              E4L does not hold. Callers keep the old email reads.
+      client    the E4L row ({client_id, email, species, animal_name, name,
+                subject_name, by}) or None
+      scan_ids  ids whose scans are this subject's (the three resolved kinds), else None
+      species   the species, Glen's answer for this subject included, or None
+      ambiguous True when a pet and a person on the email both answer to the name
+
+    A namesake on ANOTHER email is never taken on its own: suggest_intake_client
+    offers it and Glen confirms. Never raises."""
+    e = (email or "").strip().lower()
+    want = _person_key(name)
+    cid = str(client_id or "").strip()
+    out = {"by": "none", "client": None, "scan_ids": None, "species": None,
+           "ambiguous": False}
+    if not e4l_db or not os.path.exists(e4l_db):
+        out["species"] = species_from_e4l(e4l_db, email)
+        return out
+    try:
+        with closing(sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)) as ecx:
+            on_email = ecx.execute(
+                f"SELECT {_COLS} FROM e4l_clients WHERE lower(trim(email))=? "
+                "ORDER BY client_id DESC", (e,)).fetchall() if e else []
+            rec, by = None, None
+            if cid.isdigit():
+                rec = ecx.execute(f"SELECT {_COLS} FROM e4l_clients WHERE client_id=?",
+                                  (int(cid),)).fetchone()
+                by = "id" if rec else None
+            if rec is None and want:
+                toks = want.split()
+                exact = [r for r in on_email if want in _subject_keys(r)]
+                # A first name typed alone ("Sasha" for "Sasha Takahashi"): the same
+                # first name, and every word typed is in the subject's name. An
+                # owner's surname alone ("Verches") is not her pet.
+                first = [r for r in on_email
+                         if (_subject_tokens(r) or [""])[0] == toks[0]
+                         and set(toks) <= set(_subject_tokens(r))]
+                for hits, kind in ((exact, "email+name"), (first, "email+first")):
+                    if not hits:
+                        continue
+                    if len({_kind(h) for h in hits}) == 1:
+                        # One subject, maybe split over rows: the one with a species.
+                        rec = next((h for h in hits if (h[2] or "").strip()), hits[0])
+                        by = kind
+                    else:
+                        out["ambiguous"] = True
+                    break
+            if rec is None and not want and e:
+                rec = next((r for r in on_email if (r[2] or "").strip()), None)
+                by = "email" if rec else None
+            if rec is not None:
+                out["by"], out["client"] = by, _pack(rec, by)
+                if by == "email":
+                    out["species"] = out["client"]["species"]
+                    return out
+                rows = _same_kind_rows(ecx, rec)
+                out["scan_ids"] = tuple(sorted(int(r[0]) for r in rows))
+                sp = next(((r[2] or "").strip() for r in rows if (r[2] or "").strip()),
+                          None)
+                if not sp:
+                    # No species on the subject's own record. Only Glen's answer for
+                    # THIS subject counts: by its client id, then by its own email and
+                    # name. Never the intake's email, which may be the owner's.
+                    own = (rec[1] or "").strip().lower()
+                    sp = (_answer_for_clients(ecx, out["scan_ids"])
+                          or _answer_for_subject(ecx, own, _person_key(subject_name(rec))))
+                    if not sp and own and ecx.execute(
+                            "SELECT COUNT(*) FROM e4l_clients WHERE lower(trim(email))=?",
+                            (own,)).fetchone()[0] <= 1:
+                        sp = _answer_legacy(ecx, own)    # its email holds it alone
+                out["species"] = sp
+                return out
+            # Ambiguous: a pet and a person answer to the name. Nobody's answer holds.
+            answer = None if out["ambiguous"] else _answer_for_subject(ecx, e, want)
+            if want and on_email:
+                out["by"], out["species"] = "unresolved", answer
+                return out
+    except sqlite3.Error:
+        # Fail closed (outside review): a partial or old schema must not hand a named
+        # or id'd intake the email's species or scans. Only a bare email reads it.
+        if want or cid:
+            return {"by": "unresolved", "client": None, "scan_ids": None,
+                    "species": None, "ambiguous": False}
+        out = {"by": "none", "client": None, "scan_ids": None, "species": None,
+               "ambiguous": False}
+        answer = None
+    out["species"] = answer or species_from_e4l(e4l_db, email)
+    return out
+
+
+def intake_e4l_client(e4l_db, client_id=None, email=None, name=None):
+    """The E4L client an intake is for ({client_id, email, species, animal_name, name,
+    subject_name, by}), or None when unresolved. See resolve_intake_subject."""
+    return resolve_intake_subject(e4l_db, client_id, email, name)["client"]
+
+
+def species_for_intake(e4l_db, client_id=None, email=None, name=None):
+    """Species for an intake, keyed on the intake's own subject. None means nobody
+    knows. The one species read for every Biofield Intake surface."""
+    return resolve_intake_subject(e4l_db, client_id, email, name)["species"]
+
+
+def suggest_intake_client(e4l_db, email=None, name=None):
+    """The one E4L subject on ANOTHER email with exactly this name, or None.
+
+    Only a suggestion: a namesake elsewhere can be an unrelated person or animal, so the
+    intake page asks "Is this <name>, <species>, on another email?" and Glen confirms.
+    A full name matches a subject's name; one word matches a pet's animal_name only
+    ("Skylar"). The name scan reads the whole table, so it runs only for that
+    question, never on a normal request."""
+    e = (email or "").strip().lower()
+    want = _person_key(name)
+    if not want or not e4l_db or not os.path.exists(e4l_db):
+        return None
+    one_word = len(want.split()) < 2
+    try:
+        with closing(sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)) as ecx:
+            if e and any(want in _subject_keys(r) for r in ecx.execute(
+                    f"SELECT {_COLS} FROM e4l_clients WHERE lower(trim(email))=?", (e,))):
+                return None
+            first = f"%{want.split()[0]}%"
+            cands = ecx.execute(f"SELECT {_COLS} FROM e4l_clients WHERE name LIKE ? "
+                                "COLLATE NOCASE OR animal_name LIKE ? COLLATE NOCASE",
+                                (first, first)).fetchall()
+    except sqlite3.Error:
+        return None
+    if one_word:
+        named = [r for r in cands if _person_key(r[3]) == want]
+    else:
+        named = [r for r in cands if want in _subject_keys(r)]
+    named = [r for r in named if (r[1] or "").strip().lower() != e]
+    return _pack(named[0], "suggested") if len(named) == 1 else None
+
+
+def record_species_answer(e4l_db, email, species, client_id=None, name=None):
+    """Store Glen's answer for a subject whose E4L species is blank, so he is asked once.
     `species` is "Human" or the animal ("Dog", "Cat", "Horse", ...). Returns the stored
-    value, or None when the input is unusable. Glen, 2026-10-01."""
+    value, or None when the input is unusable. Glen, 2026-10-01.
+
+    Keyed per subject (2026-11-06): by `client_id` when the intake's E4L client is
+    known, else by the email plus the intake's `name`. With neither, the old email-only
+    row, which resolve_intake_subject applies only to an email holding one client."""
     e = (email or "").strip().lower()
     sp = (species or "").strip()
-    if not e or not sp or not e4l_db:
+    cid = str(client_id or "").strip()
+    if not sp or not e4l_db or not (e or cid.isdigit()):
+        return None
+    # Never create an e4l.db, nor answer into one with no clients table: the caller
+    # reports the failure instead of a silent success (outside review).
+    if not os.path.exists(e4l_db):
+        return None
+    try:
+        with closing(sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)) as ro:
+            if not ro.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                              "AND name='e4l_clients'").fetchone():
+                return None
+    except sqlite3.Error:
         return None
     sp = sp[:1].upper() + sp[1:].lower()
-    with sqlite3.connect(e4l_db) as ecx:
+    if cid.isdigit():
+        row = (f"cid:{int(cid)}", int(cid), e or None, None)
+    elif name is not None:
+        nk = _person_key(name)
+        row = (f"subject:{e}|{nk}", None, e, nk)
+    else:
+        row = (e, None, None, None)
+    with closing(sqlite3.connect(e4l_db)) as ecx:
         ecx.execute("CREATE TABLE IF NOT EXISTS species_answers ("
                     "email TEXT PRIMARY KEY, species TEXT NOT NULL, answered_at TEXT NOT NULL)")
-        ecx.execute("INSERT INTO species_answers (email, species, answered_at) "
-                    "VALUES (?, ?, datetime('now')) ON CONFLICT(email) DO UPDATE SET "
-                    "species=excluded.species, answered_at=excluded.answered_at", (e, sp))
+        have = _answer_cols(ecx)
+        for col, typ in _ANSWER_COLS:
+            if col not in have:
+                ecx.execute(f"ALTER TABLE species_answers ADD COLUMN {col} {typ}")
+        ecx.execute("INSERT INTO species_answers (email, species, answered_at, client_id, "
+                    "subject_email, name_key) VALUES (?, ?, datetime('now'), ?, ?, ?) "
+                    "ON CONFLICT(email) DO UPDATE SET species=excluded.species, "
+                    "answered_at=excluded.answered_at, client_id=excluded.client_id, "
+                    "subject_email=excluded.subject_email, name_key=excluded.name_key",
+                    (row[0], sp, row[1], row[2], row[3]))
+        ecx.commit()
     return sp

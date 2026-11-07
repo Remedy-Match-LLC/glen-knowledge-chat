@@ -64,6 +64,7 @@ out of stock everywhere. Lowest count first.</p>
     <button class="quick" onclick="addCount('Shelf count')" title="Saves this count with the reason Shelf count">Shelf count</button>
   </div>
   <div class="status" id="add-status"></div>
+  <div class="status" id="last-set"></div>
   <div class="row" style="margin-top:10px">
     <button onclick="reconcileNow()">Check recent orders</button>
     <span class="status" id="rec-status">Finds paid orders from the last 30 days that never came off the count, and fixes them.</span>
@@ -170,6 +171,9 @@ out of stock everywhere. Lowest count first.</p>
     var rows = d.rows || [];
     COUNTED = {}; rows.forEach(function(x){ COUNTED[x.slug] = true; });
     fillList();
+    var ls = d.last_set;
+    document.getElementById('last-set').textContent = ls ?
+      ('Last counted: ' + ls.name + ', set to ' + ls.count) : '';
     document.getElementById('tbl').style.display = rows.length ? 'table' : 'none';
     document.getElementById('no-rows').style.display = rows.length ? 'none' : 'block';
     document.getElementById('rows').innerHTML = rows.map(function(x, i){

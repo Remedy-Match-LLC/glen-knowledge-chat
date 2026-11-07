@@ -5,6 +5,14 @@ from dashboard.biofield_authoring import init_auth_tables, create_test, add_chai
 
 
 @pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These invoices are a person's. An unknown species now leaves FFs off the
+    invoice (2026-11-06 review, finding 8b), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
+@pytest.fixture(autouse=True)
 def _no_gate(monkeypatch):
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
     # dashboard/__init__.py captures CONSOLE_SECRET at import; reloading

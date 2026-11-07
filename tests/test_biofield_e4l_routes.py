@@ -9,6 +9,14 @@ from biofield_local_app import create_app
 
 
 @pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These intakes are a person's. An unknown species now keeps FFs off every write
+    and publish (2026-11-06 review, round 3), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
+@pytest.fixture(autouse=True)
 def _no_gate(monkeypatch):
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
     # dashboard/__init__.py captures CONSOLE_SECRET at import; reloading
@@ -26,7 +34,7 @@ _NONE = {"status": "none", "found": False, "scan_id": None, "scan_date": None,
          "message": "No E4L scan on file"}
 
 
-def _lookup(email):
+def _lookup(email, client_id=None):
     return _FRESH if (email or "").strip().lower() == "jane@x.com" else _NONE
 
 

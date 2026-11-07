@@ -32,7 +32,7 @@ def _app(db, stresses=(), calls=None, raises=None):
         if raises:
             raise raises
         return json.dumps({"stresses": list(stresses)})
-    return create_app(db, scan_lookup=lambda e: _NONE, fetch_profile=lambda e: {},
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NONE, fetch_profile=lambda e: {},
                       fetch_recent_comms=lambda e: {}, interpret_complete=complete)
 
 

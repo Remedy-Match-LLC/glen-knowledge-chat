@@ -105,15 +105,15 @@ def _e4l(tmp_path, species, email="h@x.com", animal_name=""):
     return path
 
 
-def _generate(tmp_path, e4l_db, owner_lookup):
+def _generate(tmp_path, e4l_db, owner_lookup, intake_name="Hershey  Connour"):
     seen = {}
     app = create_app(str(tmp_path / "chat_log.db"),
                      complete=lambda s, u: seen.update(s=s, u=u) or "Aloha Hershey,\n\nx",
-                     scan_lookup=lambda e: {}, fetch_profile=lambda e: {},
+                     scan_lookup=lambda e, client_id=None: {}, fetch_profile=lambda e: {},
                      e4l_db=e4l_db, fetch_animal_owner=owner_lookup)
     c = app.test_client()
     tid = c.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
-    c.post(f"/author/{tid}/header", json={"name": "Hershey  Connour", "email": "H@x.com"})
+    c.post(f"/author/{tid}/header", json={"name": intake_name, "email": "H@x.com"})
     c.post(f"/author/{tid}/row", json={"layer": 1, "head": "Circulation",
                                        "remedy": "ED5 Circulation Driver"})
     r = c.post(f"/test/{tid}/generate", json={"notes": ""})
@@ -131,8 +131,9 @@ def test_route_addresses_a_dog_to_its_owner(tmp_path):
 
 
 def test_route_prefers_the_recorded_animal_name(tmp_path):
+    # A record with an animal_name goes by it: its name may be the owner's (round 3).
     _, seen = _generate(tmp_path, _e4l(tmp_path, "Dog", animal_name="Hersh"),
-                        lambda e: "Sharon")
+                        lambda e: "Sharon", intake_name="Hersh Connour")
     assert "Hersh's Biofield Analysis" in seen["s"]
 
 

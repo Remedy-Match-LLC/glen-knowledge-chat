@@ -867,6 +867,22 @@ def console_rows(cx, catalog=None) -> list:
     return rows
 
 
+def last_set(cx, catalog=None):
+    """The product whose count was entered most recently by hand, so Glen can keep his
+    place on the shelf. Glen, 2026-11-06: "If the stock counts can show the name of the
+    item inventoried last, that would help me keep my place." Order deductions carry an
+    order id and are skipped. Returns {slug, name, count, logged_at} or None."""
+    cat = _catalog(catalog)
+    ensure_tables(cx)
+    r = cx.execute("SELECT l.slug, l.new_count, l.logged_at FROM stock_log l "
+                   "JOIN stock_counts c ON c.slug = l.slug "
+                   "WHERE l.order_id IS NULL ORDER BY l.id DESC LIMIT 1").fetchone()
+    if not r:
+        return None
+    return {"slug": r[0], "name": (cat.get(r[0]) or {}).get("name") or r[0],
+            "count": int(r[1]), "logged_at": r[2]}
+
+
 def countable_products(catalog=None) -> list:
     """[{slug, name}] a count can be entered for: on sale, shippable, not a bundle,
     not made to order."""

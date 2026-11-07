@@ -4,6 +4,15 @@ from biofield_local_app import create_app
 
 
 @pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These intakes are a person's. An unknown species keeps FFs off every write, with
+    or without an email (2026-11-06 outside review), so the client is a person here."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
+
+@pytest.fixture(autouse=True)
 def _no_gate(monkeypatch):
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
     # dashboard/__init__.py captures CONSOLE_SECRET at import; reloading
@@ -17,7 +26,7 @@ _NONE = {"status": "none", "found": False, "findings": [], "days_ago": None, "fr
 def _app(db, stresses):
     # interpret_complete returns a fixed stresses payload; scan_lookup finds nothing (no seeding)
     import json as _j
-    return create_app(db, scan_lookup=lambda e: _NONE,
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
                       interpret_complete=lambda s, u: _j.dumps({"stresses": stresses}))
 
 

@@ -6,6 +6,15 @@ from dashboard.biofield_stress import init_stress_tables, seed_from_scan
 
 
 @pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These intakes are a person's. An unknown species keeps FFs off every write, with
+    or without an email (2026-11-06 outside review), so the client is a person here."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
+
+@pytest.fixture(autouse=True)
 def _no_gate(monkeypatch):
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
     # dashboard/__init__.py captures CONSOLE_SECRET at import; reloading
@@ -27,7 +36,7 @@ def _seed(db, tid_num):
 
 def test_route_returns_suggestion(tmp_path):
     db = str(tmp_path / "c.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     _seed(db, int(tid.lstrip("a")))
     j = client.get(f"/author/{tid}/suggest-remedies").get_json()
@@ -37,7 +46,7 @@ def test_route_returns_suggestion(tmp_path):
 
 def test_route_returns_layer_candidates(tmp_path):
     db = str(tmp_path / "c.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     _seed(db, int(tid.lstrip("a")))
     client.post(f"/author/{tid}/row", json={"layer": 1, "head": "Membrane", "remedy": "Neuro Magnesium"})
@@ -51,7 +60,7 @@ def test_route_returns_layer_candidates(tmp_path):
 def test_layer_select_swaps_chain_remedy_and_learns(tmp_path):
     from dashboard.biofield_stress import get_saved_remedy_set
     db = str(tmp_path / "c.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     _seed(db, int(tid.lstrip("a")))
     client.post(f"/author/{tid}/row", json={"layer": 1, "head": "Membrane", "remedy": "Neuro Magnesium"})
@@ -67,7 +76,7 @@ def test_layer_select_swaps_chain_remedy_and_learns(tmp_path):
 
 def test_route_reflects_live_chain(tmp_path):
     db = str(tmp_path / "c.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     _seed(db, int(tid.lstrip("a")))
     # put the covering remedy on the chain -> stresses balanced -> nothing to suggest
@@ -88,7 +97,7 @@ def test_route_tags_second_order_candidates_from_the_e4l_map(tmp_path):
         "INSERT INTO formulations VALUES (1, 'Neuro Magnesium');"
         "INSERT INTO e4l_formulation_map VALUES (1, 'ED1', 'ED1', 1, 1, 2, '[\"low magnesium\"]');")
     ex.commit(); ex.close()
-    client = create_app(db, scan_lookup=lambda e: _NONE, e4l_db=e4l).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE, e4l_db=e4l).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     _seed(db, int(tid.lstrip("a")))
     client.post(f"/author/{tid}/row", json={"layer": 1, "head": "Membrane", "remedy": "Neuro Magnesium"})

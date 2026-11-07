@@ -187,7 +187,7 @@ def _client(tmp_path, comms, mail, seen):
     def interpret(system, user):
         seen.append(user)
         return json.dumps({"stresses": ["From email"] if "Floaters" in user else []})
-    return create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: _NONE,
+    return create_app(str(tmp_path / "c.db"), scan_lookup=lambda e, client_id=None: _NONE,
                       fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: comms,
                       interpret_complete=interpret,
                       client_gmail=lambda cx, e: mail).test_client()
@@ -326,7 +326,7 @@ def test_the_real_reader_is_never_wired_under_pytest(tmp_path, monkeypatch):
     (tmp_path / "token.json").write_text("{}")
     called = []
     monkeypatch.setattr(bg, "client_email_text", lambda *a, **k: called.append(1) or {})
-    c = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: _NONE,
+    c = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e, client_id=None: _NONE,
                    fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: {},
                    interpret_complete=lambda s, u: json.dumps({"stresses": []})).test_client()
     tid = _new(c)
@@ -371,7 +371,7 @@ def test_one_bad_message_does_not_stop_the_rest(tmp_path, e4l):
 def test_a_console_fetch_that_raises_still_mines_email(tmp_path):
     def boom(e):
         raise RuntimeError("")
-    c = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: _NONE,
+    c = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e, client_id=None: _NONE,
                    fetch_profile=lambda e: {}, fetch_recent_comms=boom,
                    interpret_complete=lambda s, u: json.dumps(
                        {"stresses": ["From email"] if "Floaters" in u else []}),
