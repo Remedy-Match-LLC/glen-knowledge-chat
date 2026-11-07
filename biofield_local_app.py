@@ -1206,7 +1206,20 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     prl = render_prl_section(_ps.view(pcx, test_id, codes))
             except Exception as _pe:
                 print(f"[prl-section] {test_id}: skipped: {_pe!r}", flush=True)
-        return render_e4l_panel(ctx, prl_html=prl)
+        body = ""
+        if (ctx or {}).get("found"):
+            # Glen, 2026-11-07: the Body panel, above Import Reveal. A failure says
+            # so in the panel and leaves the rest of it as it was.
+            from dashboard.biofield_report_html import render_body_panel
+            try:
+                with sqlite3.connect(db_path) as bcx:
+                    panel = _body_panel(bcx, test_id, None, ctx.get("scan_id"))
+            except Exception as _be:
+                print(f"[body-panel] {test_id}: {_be!r}", flush=True)
+                panel = {"rows": [], "error": f"The Body panel could not be read: {_be!r}"[:200]}
+            days = ctx.get("days_ago")
+            body = render_body_panel(panel, fresh=days is not None and days < 7)
+        return render_e4l_panel(ctx, prl_html=prl, body_html=body)
 
     def _mine_profile(cx, test_id):
         """Mine the client's consolidated People-hub profile into tag stresses.
@@ -3256,6 +3269,209 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                              "why": s["why"]} for s in skipped],
                 "no_remedy_layers": sum(1 for L in layers if L.get("no_remedy"))}
 
+    # -- Add to plan (Glen, 2026-11-07) ---------------------------------------------
+    # See dashboard/biofield_add_to_plan.py. Body adds the chosen product for each
+    # recommended Infoceutical, then the Import Reveal layers. A layer of a product
+    # already on the plan joins it; a related one is proposed and waits for Glen.
+
+    def _atp_context(cx, test_id, scan_id):
+        """(recommended codes or None, ticked {condition: names}, vocabulary), read
+        as the Import Reveal preview reads them (biofield_reveal_preview.split)."""
+        from dashboard import biofield_reveal_preview as _rp
+        from dashboard.biofield_clinical_proposals import selections
+        recommended = None
+        if scan_id:
+            try:
+                from dashboard.e4l_scan_marks import infoceutical_marks
+                recommended = (infoceutical_marks(cx, e4l_db, scan_id) or {}).get("recommended")
+            except Exception:  # noqa: BLE001  unread: the infoceutical rule relates nothing
+                recommended = None
+        try:
+            ticked = selections(cx, test_id)
+        except Exception:  # noqa: BLE001
+            ticked = {}
+        try:
+            vocabulary = [r[0] for r in cx.execute(
+                "SELECT DISTINCT item_key FROM biofield_clinical_catalog")]
+        except Exception:  # noqa: BLE001
+            vocabulary = []
+        return recommended, ticked, vocabulary + _rp.program_conditions()
+
+    def _atp_propose_landed(cx, test_id, before_max):
+        """Proposals for the layers written since row id `before_max` (a live layer, or
+        a Mind layer). Never fails the write it follows: the layer is already on the
+        plan, and a proposal it misses can be made by hand."""
+        from dashboard import biofield_add_to_plan as _atp
+        from dashboard import biofield_add_to_plan_apply as _ap
+        from dashboard.biofield_chain_fold import _remedy_key
+        try:
+            rows = _ap.chain_rows(cx, test_id)
+            new = [r["id"] for r in rows if int(r["id"]) > int(before_max or 0)]
+            if not new:
+                return []
+            rep = _report_for(cx, test_id)
+            sid = (_scan_for(rep) or {}).get("scan_id") if (
+                (rep.get("client") or {}).get("email") or "").strip() else None
+            recommended, ticked, vocab = _atp_context(cx, test_id, sid)
+            found = _atp.related_after_landing(rows, new, recommended=recommended,
+                                               ticked_names=ticked, vocabulary=vocab,
+                                               key=_remedy_key)
+            ids = _ap.propose(cx, test_id, found)
+            return [dict(p, id=i) for p, i in zip(found, ids)]
+        except Exception as e:  # noqa: BLE001
+            print(f"[add-to-plan] {test_id}: no proposal: {e!r}", flush=True)
+            return []
+
+    def _max_row_id(cx, test_id):
+        try:
+            return cx.execute("SELECT COALESCE(MAX(id),0) FROM biofield_auth_chain "
+                              "WHERE test_id=?", (int(str(test_id).lstrip("a") or 0),)
+                              ).fetchone()[0] or 0
+        except sqlite3.Error:
+            return 0
+
+    def _body_panel(cx, test_id, rep, scan_id):
+        """The Body panel's rows for this intake, as biofield_body_panel builds them."""
+        from dashboard import biofield_body_panel as _bp
+        from dashboard.biofield_authoring import infoceutical_names_by_code
+        return _bp.panel_rows(e4l_db, scan_id, infoceutical_names_by_code(cx) or {},
+                              is_animal=_intake_is_animal(cx, test_id))
+
+    @app.route("/author/<test_id>/e4l/add-to-plan", methods=["POST"])
+    def author_body_add_to_plan(test_id):
+        """Body "Add to plan": the product chosen for each recommended Infoceutical,
+        then the Import Reveal layers, through biofield_add_to_plan.classify.
+
+        As Import Reveal: an old scan asks first (allow_stale), and on a chain that
+        already has layers the click previews and stores what it would write; the
+        confirm ({token}) writes exactly that, once, if the chain is unchanged."""
+        import datetime as _dt
+        from dashboard import biofield_add_to_plan as _atp
+        from dashboard import biofield_add_to_plan_apply as _ap
+        from dashboard import biofield_body_panel as _bp
+        from dashboard import biofield_reveal_import as _ri
+        from dashboard.biofield_authoring import (exact_canonical_name,
+                                                  infoceutical_names_by_code)
+        from dashboard.biofield_chain_fold import _remedy_key
+        body = request.get_json(silent=True) or {}
+        allow_stale = bool(body.get("allow_stale"))
+        token = str(body.get("token") or "")
+        with sqlite3.connect(db_path) as cx:
+            rep = _report_for(cx, test_id)
+            email = ((rep.get("client") or {}).get("email") or "").strip()
+            if not email:
+                return {"ok": False, "reason": "No client selected yet"}
+            ask = _species_needed(cx, test_id)
+            if ask:
+                return ask
+            is_animal = _intake_is_animal(cx, test_id)
+            stored = _ap.load_preview(cx, test_id, token) if token else None
+            if token and not stored:
+                return {"ok": False, "reason": "The preview has expired. "
+                                              "Click Add to plan again."}
+            if stored and stored["email"] != email.lower():
+                return {"ok": False, "reason": "The client changed since the preview. "
+                                              "Click Add to plan again."}
+            if stored:
+                res, products = stored["res"], stored["products"]
+            else:
+                try:
+                    keyed, sid = _reveal_scan(rep)
+                    res = ({"found": False} if keyed and not sid else
+                           _ri.synthesize_reveal_layers(
+                               email, scan_id=sid, today=_dt.date.today().isoformat(),
+                               is_animal=is_animal,
+                               infoceutical_names=infoceutical_names_by_code(cx)
+                               if is_animal else None))
+                except Exception as e:
+                    return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
+                if not res.get("found"):
+                    return {"ok": False, "reason": "No E4L scan on file"}
+                try:
+                    panel = _body_panel(cx, test_id, rep, res.get("scan_id"))
+                    products, unnamed = _bp.chosen_layers(panel, body.get("choices") or {},
+                                                          is_animal=is_animal)
+                except ValueError as e:
+                    return {"ok": False, "reason": str(e)}
+                res = dict(res, unnamed=unnamed)
+            if not res.get("fresh") and not allow_stale:
+                return {"ok": False, "stale": True, "days_ago": res.get("days_ago"),
+                        "reason": f"Latest scan is {res.get('days_ago')} days old "
+                                  "— refresh first, or add it anyway"}
+            # An animal takes infoceuticals only, whatever the page sent.
+            refused = _animal_refused(cx, test_id, [p["remedy_name"] for p in products])
+            products = [p for p in products if p["remedy_name"] not in refused]
+            incoming = products + [dict(L, source="reveal") for L in res.get("layers") or []]
+            rows = _ap.chain_rows(cx, test_id)
+            recommended, ticked, vocab = _atp_context(cx, test_id, res.get("scan_id"))
+            got = _atp.classify(rows, incoming, recommended=recommended,
+                                ticked_names=ticked, vocabulary=vocab, key=_remedy_key,
+                                resolve=lambda n: exact_canonical_name(cx, n),
+                                last_layer=_last_layer_no(rep),
+                                laser_for=_ri.harmony_laser_for)
+            shown = _ap.describe(got)
+            chain = _ap.digest(rows)
+            if rows and not stored:
+                token = _ap.save_preview(cx, test_id, {"res": res, "products": products,
+                                                       "email": email.lower(),
+                                                       "chain": chain, "preview": shown})
+                return {"ok": False, "needs_confirm": True,
+                        "existing": _layer_count(rep), "token": token, "preview": shown,
+                        "unnamed": res.get("unnamed") or [],
+                        "recommended_unread": recommended is None}
+            if stored:
+                if chain != stored["chain"] or shown != stored["preview"]:
+                    return {"ok": False, "reason": "The plan changed since the preview. "
+                                                  "Click Add to plan again."}
+                if not _ap.consume_preview(cx, test_id, token):
+                    return {"ok": False, "reason": "That preview was already added."}
+
+            def _laser_row(layer_no, head, tail, codes, laser):
+                from dashboard.biofield_authoring import add_chain_row
+                name = exact_canonical_name(cx, laser.get("name"))
+                d = remedy_dosing(cx, name)
+                timing = d.get("timing", "")
+                if laser.get("caution"):
+                    timing = (timing + " " if timing else "") + laser["caution"]
+                add_chain_row(cx, test_id, layer_no, head, tail, name,
+                              dosage=d.get("dosage", ""), frequency=d.get("frequency", ""),
+                              timing=timing, confirmed=0, origin="scan", codes=codes,
+                              commit=False)
+
+            done = _ap.land(cx, test_id, got,
+                            lambda layers: _ri.import_layers_to_test(cx, test_id, layers),
+                            laser_row=_laser_row)
+            _seed_stresses(cx, test_id, force=True, layers=res.get("layers") or [])
+        return {"ok": True, "added": done["added"], "joined": shown["joined"],
+                "related": shown["related"], "proposals": done["proposals"],
+                "stale_override": not res.get("fresh"),
+                "unnamed": res.get("unnamed") or [],
+                "animal_refused": refused}
+
+    @app.route("/author/<test_id>/add-to-plan/proposals")
+    def author_add_to_plan_proposals(test_id):
+        from dashboard import biofield_add_to_plan_apply as _ap
+        with sqlite3.connect(db_path) as cx:
+            return {"ok": True, "proposals": _ap.pending(cx, test_id)}
+
+    @app.route("/author/<test_id>/add-to-plan/resolve", methods=["POST"])
+    def author_add_to_plan_resolve(test_id):
+        """Glen's choice on one related layer: separate, existing, new or both."""
+        from dashboard import biofield_add_to_plan_apply as _ap
+        body = request.get_json(silent=True) or {}
+        try:
+            pid = int(body.get("id"))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "A proposal id is required"}, 400
+        with sqlite3.connect(db_path) as cx:
+            try:
+                done = _ap.resolve(cx, test_id, pid, str(body.get("choice") or ""))
+            except _ap.Gone as e:
+                return {"ok": False, "error": str(e)}, 409
+            except ValueError as e:
+                return {"ok": False, "error": str(e)}, 400
+        return {"ok": True, **done}
+
     @app.route("/author/<test_id>/stresses")
     def author_stresses(test_id):
         from dashboard import biofield_stress as _st
@@ -4451,11 +4667,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     bad = _animal_refused(_cx, test_id, [name])
                     refused.extend(x for x in bad if x not in refused)
                     return bool(bad)
+                before = _max_row_id(cx, test_id)
                 done = sync.apply(cx, test_id, items, str(body.get("digest") or ""), chosen,
                                   resolve_remedy_name, remedy_dosing, _now(),
                                   refuse=_refuse)
             except sync.Stale as exc:
                 return {"ok": False, "stale": True, "error": str(exc)}, 409
+            # Glen, 2026-11-07: a new Mind layer related to one already on the plan
+            # is proposed for joining (dashboard/biofield_add_to_plan.py).
+            done = {**done, "proposals": _atp_propose_landed(cx, test_id, before)}
         if refused:
             done = {**done, **_ff_block(cx, test_id, refused)}
         return {"ok": True, "applied": True, **done}

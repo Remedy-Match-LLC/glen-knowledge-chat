@@ -292,7 +292,8 @@ def test_the_page_has_the_button():
     from dashboard import biofield_report_html as page
     import inspect
     src = inspect.getsource(page)
-    assert "onclick=clinicalLayersUpdate()>Update Clinical layers</button>" in src
+    # Glen, 2026-11-07: Mind's "Add to plan" is this button, renamed.
+    assert "onclick=clinicalLayersUpdate()>Add to plan</button>" in src
     assert "async function clinicalLayersUpdateApply()" in src
 
 

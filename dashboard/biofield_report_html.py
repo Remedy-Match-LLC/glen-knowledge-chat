@@ -1816,6 +1816,96 @@ suggestPreserved();
 setPhase(1);
 restoreDepth();
 restoreView();
+// Add to plan (Glen, 2026-11-07). Body adds the chosen product for each recommended
+// Infoceutical, then the Import Reveal layers. A same-product layer joins at once; a
+// related one waits under the plan for a choice. All text is set with textContent.
+function atpAll(kind){
+ document.querySelectorAll('#bodypanel tr.atp-row').forEach(function(tr){
+  var radios=tr.querySelectorAll('input[type=radio]:not([disabled])');
+  var pick=null;radios.forEach(function(r){
+   if(kind==='infoceutical'&&r.value==='infoceutical')pick=r;
+   if(kind==='match'&&!pick&&r.value!=='infoceutical')pick=r});
+  if(pick)pick.checked=true})}
+function atpChoices(){var out={};
+ document.querySelectorAll('#bodypanel tr.atp-row').forEach(function(tr){
+  var on=tr.querySelector('input[type=radio]:checked');if(on)out[tr.dataset.code]=on.value});
+ return out}
+function atpStat(t){var e=document.getElementById('atpStat');if(e)e.textContent=t}
+function atpLine(L){return (L.title||'(no heading)')+(L.remedy?' \u00b7 '+L.remedy:'')}
+// Resolves true on Add, false on Cancel.
+function atpPreview(j){return new Promise(function(done){
+ var p=j.preview||{joined:[],related:[],add:[]},box=impEl('div','','imp-preview');
+ var old=document.getElementById('atpPreview');if(old)old.remove();box.id='atpPreview';
+ box.appendChild(impEl('div','This plan has '+j.existing+' layer(s). '+p.add.length+' new, '
+  +p.joined.length+' joining a layer with the same product, '+p.related.length
+  +' related to a layer already there.','imp-head'));
+ if(j.recommended_unread)box.appendChild(impEl('div','The recommended Infoceuticals on the scan '
+  +'could not be read, so that rule related nothing.','food'));
+ if((j.unnamed||[]).length)box.appendChild(impEl('div','Not on the remedy list, so left out: '
+  +j.unnamed.join(', '),'food'));
+ if(p.joined.length){box.appendChild(impEl('div','Joined','imp-sub'));
+  p.joined.forEach(function(L){var r=impEl('div',atpLine(L)+' joins layer '+L.into+' '
+   +(L.into_head||''),'imp-row');
+   if((L.codes||[]).length)r.appendChild(impEl('span','adds '+L.codes.join(', '),'imp-why'));
+   box.appendChild(r)})}
+ if(p.related.length){box.appendChild(impEl('div','Related','imp-sub'));
+  p.related.forEach(function(L){var r=impEl('div',atpLine(L),'imp-row');
+   r.appendChild(impEl('span','meets layer '+L.into+' '+(L.into_head||'')+': '+L.rule+', '+L.why,'imp-why'));
+   box.appendChild(r)});
+  box.appendChild(impEl('div','Each related layer is added as its own layer. You choose '
+   +'under the plan whether to join it.','food'))}
+ if(p.add.length){box.appendChild(impEl('div','Added','imp-sub'));
+  p.add.forEach(function(L){box.appendChild(impEl('div',atpLine(L),'imp-row'))})}
+ var go=impEl('button','Add to plan','btn'),no=impEl('button','Cancel','btn ghost');
+ go.type=no.type='button';
+ go.onclick=function(){box.remove();done(true)};no.onclick=function(){box.remove();done(false)};
+ var bar=impEl('div','','imp-bar');bar.appendChild(go);bar.appendChild(no);box.appendChild(bar);
+ var at=document.getElementById('atpStat');at.parentNode.insertBefore(box,at.nextSibling);
+ atpStat('Review what will be added below.')})}
+function atpRemember(j){try{sessionStorage.setItem('atpJoined:__TID__',JSON.stringify(j.joined||[]))}catch(e){}}
+async function bodyAddToPlan(){
+ if(window.__atpBusy)return;window.__atpBusy=true;
+ var b=document.getElementById('atpBtn');if(b)b.disabled=true;atpStat('Adding\u2026');
+ try{
+  var body={choices:atpChoices()};
+  var j=await post('/author/__TID__/e4l/add-to-plan',body);
+  if(j&&j.stale){
+   if(!confirm('The latest E4L scan is '+j.days_ago+' days old. Add it anyway?')){atpStat('Cancelled.');return}
+   body.allow_stale=true;j=await post('/author/__TID__/e4l/add-to-plan',body)}
+  if(j&&j.needs_confirm){
+   if(!(await atpPreview(j))){atpStat('Cancelled.');return}
+   body.token=j.token;j=await post('/author/__TID__/e4l/add-to-plan',body)}
+  if(j&&j.ok){atpRemember(j);atpStat('Added '+j.added+' row(s). Reloading\u2026');location.reload()}
+  else atpStat((j&&(j.reason||j.error))||'Could not add them.')
+ }catch(e){atpStat('Could not add them.')}
+ finally{window.__atpBusy=false;if(b)b.disabled=false}}
+async function atpResolve(id,choice,btn){
+ btn.disabled=true;
+ var j=await post('/author/__TID__/add-to-plan/resolve',{id:id,choice:choice});
+ if(j&&j.ok)location.reload();else{btn.disabled=false;alert((j&&j.error)||'Could not do that.')}}
+async function atpLoad(){
+ var box=document.getElementById('atpList');if(!box)return;
+ var joined=[];try{joined=JSON.parse(sessionStorage.getItem('atpJoined:__TID__')||'[]');
+  sessionStorage.removeItem('atpJoined:__TID__')}catch(e){}
+ var j={proposals:[]};
+ try{j=await (await fetch('/author/__TID__/add-to-plan/proposals')).json()}catch(e){}
+ box.textContent='';
+ if(joined.length){box.appendChild(impEl('div','Joined','imp-sub'));
+  joined.forEach(function(L){box.appendChild(impEl('div',atpLine(L)+' joined layer '
+   +(L.into_head||L.into)+((L.codes||[]).length?', adding '+L.codes.join(', '):''),'imp-row'))})}
+ var ps=(j&&j.proposals)||[];if(!ps.length)return;
+ box.appendChild(impEl('div','Related: join, or keep separate?','imp-sub'));
+ ps.forEach(function(p){
+  var row=impEl('div','','imp-row');
+  var have=(p.into_remedies||[]).join(', ')||'no remedy',fresh=(p.source_remedies||[]).join(', ')||'no remedy';
+  row.appendChild(impEl('div',(p.source_head||'(no heading)')+' ('+fresh+') meets '
+   +(p.into_head||'(no heading)')+' ('+have+'): '+p.rule+', '+p.why));
+  var bar=impEl('div','','btnrow');
+  [['separate','Keep separate'],['existing','Join, keep '+have],['new','Join, keep '+fresh],
+   ['both','Join, keep both']].forEach(function(c){
+   var x=impEl('button',c[1],c[0]==='separate'?'btn ghost':'btn');x.type='button';
+   x.onclick=function(){atpResolve(p.id,c[0],x)};bar.appendChild(x)});
+  row.appendChild(bar);box.appendChild(row)})}
 </script>"""
 
 
@@ -1960,7 +2050,7 @@ def render_prl_section(view):
             f"{_e(view.get('prl_link') or '')}.</div>{''.join(out)}</div>")
 
 
-def render_e4l_panel(ctx, prl_html=""):
+def render_e4l_panel(ctx, prl_html="", body_html=""):
     """Reference panel for the most recent E4L voice scan (fresh / stale / none).
     Always shows the scan's age + ranked findings when one exists; read-only —
     Glen's spoken testing still fills the causal chain. All scan free-text escaped."""
@@ -2012,13 +2102,80 @@ def render_e4l_panel(ctx, prl_html=""):
                f"<span class=food>scan is {_e(str(days))} days old</span>")
     else:
         imp = ""
-    check = ("<div class=btnrow style='margin-top:8px'>"
+    check = ((body_html or "") + "<div class=btnrow style='margin-top:8px'>"
              "<button class='btn ghost' onclick=checkE4L()>Check E4L now</button>"
              f"{imp}"
              "<span id=e4lchk class=food></span></div>")
     return (f"<div class=card style='border-left:3px solid {color}'>"
             "<div class=food style='text-transform:uppercase;font-size:11px;letter-spacing:.08em'>"
             f"Recent E4L voice scan</div>{head}{sub}{body}{note}{check}</div>")
+
+
+def render_body_panel(panel, fresh=True):
+    """Body: the recommended Infoceuticals, each with its top Remedy Matches, one
+    choice per row, and the Body "Add to plan" button (Glen, 2026-11-07). See
+    dashboard/biofield_body_panel.py. All scan and product text is escaped."""
+    panel = panel or {}
+    rows = panel.get("rows") or []
+    animal = bool(panel.get("animal"))
+    cap = "<div class=food style='font-weight:600'>Body &middot; recommended Infoceuticals</div>"
+    note = ""
+    if panel.get("error"):
+        note += f"<div class=food>{_e(panel['error'])}</div>"
+    if animal:
+        note += ("<div class=food>An animal takes the Infoceutical. "
+                 "The Remedy Matches are shown for reference only.</div>")
+    width = max([len(r.get("matches") or []) for r in rows] + [0])
+    table = ""
+    if rows:
+        head = "<tr><th>Infoceutical</th>" + "".join(
+            f"<th>Remedy Match {i}</th>" for i in range(1, width + 1)) + "</tr>"
+        body = ""
+        for r in rows:
+            code = _e(r.get("code") or "")
+            name = f"atp_{code}"
+            info = r.get("infoceutical") or ""
+            # The Infoceutical is the default; a person whose Infoceutical is not on
+            # the remedy list starts on the top match instead.
+            first = not info and not animal and bool(r.get("matches"))
+            cell = (f"<td><label><input type=radio name='{name}' value='infoceutical' "
+                    f"{'checked' if info else 'disabled'}> <b>{code}</b> "
+                    f"{_e(r.get('label') or '')}</label>"
+                    + (f"<div class=food>{_e(info)}</div>" if info else
+                       "<div class=food>not on the remedy list</div>") + "</td>")
+            for i, m in enumerate(r.get("matches") or []):
+                notes = []
+                if m.get("shared"):
+                    notes.append("shares " + _e(", ".join(m["shared"])))
+                if m.get("tier") == 2:
+                    notes.append("second order")
+                on = " checked" if first and i == 0 else ""
+                cell += (f"<td><label{' style=\'opacity:.5\'' if animal else ''}>"
+                         f"<input type=radio name='{name}' value=\"{_e(m.get('name') or '')}\""
+                         f"{' disabled' if animal else on}> {_e(m.get('name') or '')}</label>"
+                         + (f"<div class=food>{' &middot; '.join(notes)}</div>" if notes else "")
+                         + "</td>")
+            cell += "<td></td>" * (width - len(r.get("matches") or []))
+            body += f"<tr class=atp-row data-code='{code}'>{cell}</tr>"
+        switch = ("" if animal else
+                  "<div class=btnrow style='margin:4px 0'>"
+                  "<button class='btn ghost' onclick=\"atpAll('infoceutical')\">All Infoceuticals</button>"
+                  "<button class='btn ghost' onclick=\"atpAll('match')\">All Remedy Matches</button>"
+                  "</div>")
+        table = (switch + "<table class=atp-tbl style='width:100%;font-size:13px'>"
+                 + head + body + "</table>")
+    else:
+        note += "<div class=food>No recommended Infoceuticals to choose from.</div>"
+    button = ("<button class=btn id=atpBtn onclick=bodyAddToPlan()>Add to plan</button>"
+              if fresh else
+              "<button class=btn disabled title='Refresh to a scan under 7 days old'>"
+              "Add to plan</button>")
+    return ("<div id=bodypanel style='margin-top:10px;padding-top:8px;"
+            "border-top:1px solid var(--line,#ddd)'>" + cap + note + table +
+            "<div class=btnrow style='margin-top:6px'>" + button +
+            "<span id=atpStat class=food></span></div>"
+            "<div class=food>Adds the chosen products, then the Import Reveal layers, "
+            "after the layers already on the plan.</div></div>")
 
 
 def _depth_select(rid, side, current, depth_values):
@@ -3024,7 +3181,7 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             # which only appended, so a second run duplicated every layer. Like that
             # button it reads the Clinical Summary alone, never a scan finding.
             "<div class=btnrow style='margin-top:10px'>"
-            "<button class=btn onclick=clinicalLayersUpdate()>Update Clinical layers</button>"
+            "<button class=btn onclick=clinicalLayersUpdate()>Add to plan</button>"
             "<span id=clustat class=food></span></div>"
             "<div id=cluresult class=food style='margin-top:6px'></div>"
             # Glen, 2026-09-16: one sequence balancing the clinical and the scan
@@ -3475,6 +3632,9 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                                    no_pattern_heads=_no_pattern_heads(clinical_checklist))
              + "</div>"
              "</div>"
+             # Glen, 2026-11-07: what the last Add to plan joined, and each related
+             # layer waiting for his choice. Filled by atpLoad().
+             "<div id=atpList class=food style='margin-top:8px'></div>"
              "<datalist id=vocab></datalist><datalist id=catalog></datalist>")
     session = (
         "<h2>Live session (voice)</h2>"
@@ -3555,7 +3715,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  + _AUTHOR_JS.replace("__TID__", tid)
                  + _FOLD_JS.replace("__FOLDTID__", re.sub(r"[^A-Za-z0-9_-]", "", tid))
                            .replace("__FOLDDONE__", "true" if client_notified else "false")
-                 + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag()</script>",
+                 + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag();atpLoad()</script>",
                  client_name=(c.get("name") or ""), client_email=(c.get("email") or ""))
 
 
