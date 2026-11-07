@@ -4524,6 +4524,10 @@
   "potassium-citrate": {
    "name": "Potassium Citrate",
    "price_cents": 4000,
+   "bottle_type": "120 caps",
+   "description": "1 capsule daily with water, or as guided",
+   "sell_through": true,
+   "discontinue_when_sold_out": true,
    "pinecone_title": "Potassium Citrate",
    "url": "https://myhealingoasis.com/begin/product/potassium-citrate",
    "legacy_store_url": "https://remedymatch.com/remedies/forms/powders/pure-simple-singles/432-potassium-citrate"
@@ -25010,6 +25014,8 @@
   },
   "potassium-citrate-pure-120-capsules": {
    "name": "Potassium Citrate, Pure 120 capsules",
+   "inactive": true,
+   "superseded_by": "potassium-citrate",
    "price_cents": 7000,
    "pinecone_title": "Potassium Citrate, Pure 120 capsules",
    "qty_pricing": false,
