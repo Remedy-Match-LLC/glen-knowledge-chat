@@ -84,13 +84,14 @@ def test_rename_does_not_touch_pinecone_title():
     assert prods["clear-lens-eye-drops"]["pinecone_title"] == "Clear Lens Eyedrops"
 
 
-def test_serenity_capsule_and_drink_mix_both_stay_sellable():
-    """Not duplicates: 305 is a capsule ('1 capsule daily'), 1081 a drink mix
-    ('1 scoop 2 times a day'). 305 carries FMP's trailing '*' = discontinuing but
-    STILL sellable, and it is the only one of the two with any sales history."""
+def test_serenity_capsule_folds_into_serene_blue_green_and_drink_mix_stays():
+    """1081 is a drink mix ('1 scoop 2 times a day') and stays sellable. The 305 capsule
+    twin folded into Serene Blue Green, the same 30-capsule bottle (Glen, 2026-11-06:
+    "Serene Blue Green and Serenity Blue Green Balance combine")."""
     prods = _products()
-    for slug in ("serenity-blue-green-balance", "serenity-bluegreen-balance-drink-mix"):
-        assert not prods[slug].get("inactive"), f"{slug} must remain sellable"
+    assert not prods["serenity-bluegreen-balance-drink-mix"].get("inactive")
+    assert prods["serenity-blue-green-balance"].get("superseded_by") == "serenity"
+    assert not prods["serenity"].get("inactive")
 
 
 def test_both_retired_clear_lens_slugs_resolve_to_the_survivor():
