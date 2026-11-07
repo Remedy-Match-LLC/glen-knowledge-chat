@@ -881,6 +881,10 @@ def console_rows(cx, catalog=None) -> list:
     rows = []
     for r in cx.execute("SELECT slug, count, updated_at FROM stock_counts").fetchall():
         slug, count, updated = r[0], int(r[1]), r[2]
+        if (cat.get(slug) or {}).get("superseded_by"):
+            # A retired twin's count now lives on its survivor, so showing both would
+            # count the same bottles twice (Glen, 2026-11-06, the Serenity fold).
+            continue
         a = round(float(avg.get(slug) or 0.0), 2)
         raw = float(avg.get(slug) or 0.0)
         p = cat.get(slug)

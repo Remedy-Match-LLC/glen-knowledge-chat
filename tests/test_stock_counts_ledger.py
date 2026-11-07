@@ -841,3 +841,18 @@ def test_switching_emails_off_leaves_nothing_to_resend_later(env, monkeypatch):
     assert cx.execute("SELECT COUNT(*) FROM stock_alerts").fetchone()[0] == 0
     _set(cx, "scar-silk", 1)
     assert cx.execute("SELECT COUNT(*) FROM stock_alerts").fetchone()[0] == 0
+
+
+def test_a_retired_twin_does_not_show_its_count_beside_the_survivor(env):
+    # Glen, 2026-11-06: Serenity Blue Green Balance folded into Serenity, and its 8 bottles
+    # moved there. The old row must not show a second 8.
+    cx = env["cx"]
+    cat = {"serenity": {"name": "Serenity"},
+           "serenity-blue-green-balance": {"name": "Serenity Blue Green Balance",
+                                           "inactive": True, "superseded_by": "serenity"}}
+    SC.ensure_tables(cx)
+    for slug in cat:
+        cx.execute("INSERT INTO stock_counts (slug, count, set_at, updated_at) VALUES (?, 8, ?, ?)",
+                   (slug, "2026-11-06T00:00:00", "2026-11-06T00:00:00"))
+    cx.commit()
+    assert [r["slug"] for r in SC.console_rows(cx, cat)] == ["serenity"]
