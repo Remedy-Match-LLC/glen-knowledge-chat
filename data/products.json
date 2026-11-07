@@ -2638,6 +2638,66 @@
    "bottle_type": "30 Caps",
    "fmp_id": "346"
   },
+  "binder-complex-powder": {
+   "name": "Binder Complex Powder",
+   "directions": "1 - 2 scoops a day in living water, away from beneficial oils, or as guided. Discontinue and take extra living water with any constipation.",
+   "price_cents": 7000,
+   "qty_pricing": true,
+   "ingredients": [
+    {
+     "name": "Chitosan deacetylation",
+     "dose": "170 mg"
+    },
+    {
+     "name": "Modified Citrus Pectin",
+     "dose": "30 mg"
+    },
+    {
+     "name": "Clinoptilolite Zeolite",
+     "dose": "40 mg"
+    },
+    {
+     "name": "Chlorella (broken cell wall)",
+     "dose": "30 mg"
+    },
+    {
+     "name": "French Green Clay",
+     "dose": "30 mg"
+    },
+    {
+     "name": "Slippery Elm Bark Extract",
+     "dose": "40 mg"
+    },
+    {
+     "name": "Cilantro Juice",
+     "dose": "30 mg"
+    },
+    {
+     "name": "Activated Coconut Charcoal",
+     "dose": "30 mg"
+    },
+    {
+     "name": "Fulvic Acid Supernal Sublime",
+     "dose": "1 mg"
+    },
+    {
+     "name": "Aloe Vera 98% Mucilaginous Polysaccharide Organic Extract",
+     "dose": "25 mg"
+    },
+    {
+     "name": "Humic Acid",
+     "dose": "1 mg"
+    },
+    {
+     "name": "button mushroom Chitosan, white mushroom, crimini, baby bella, portobello",
+     "dose": "30 mg"
+    }
+   ],
+   "ingredients_source": "binder-complex capsule formula; powder label Binder_Complex_Powder_1x7.9in_0526 (same 12 actives, one 457 mg scoop)",
+   "description": "Binder Complex Powder . 27.4 grams, 60 scoops of 457 mg. Price: $70.",
+   "bottle_type": "30 g",
+   "source": "manual-add-2026-11-06"
+  },
   "chelation": {
    "name": "Chelation",
    "price_cents": 7000,
@@ -7339,6 +7399,8 @@
   },
   "digestzymes": {
    "name": "Digestzymes",
+   "inactive": true,
+   "superseded_by": "digestzymes-homeoenergetic-drops",
    "price_cents": 7000,
    "pinecone_title": "Digestzymes",
    "url": "https://myhealingoasis.com/begin/product/digestzymes",
@@ -12213,7 +12275,6 @@
   },
   "dental-regen-powder": {
    "name": "Dental Regen Powder",
-   "inactive": true,
    "price_cents": 7000,
    "pinecone_title": "Dental Regen Powder",
    "url": "https://myhealingoasis.com/begin/product/dental-regen-powder",
@@ -12265,8 +12326,7 @@
    "gk_extra_accepted": true,
    "bottle_type": "30 g",
    "fmp_id": "449",
-   "qty_pricing": true,
-   "superseded_by": "dental-powder"
+   "qty_pricing": true
   },
   "inositol": {
    "name": "Inositol",
@@ -14184,6 +14244,8 @@
   },
   "energessence-homeoenergetic-drops": {
    "name": "Energessence HomeoEnergetic Drops",
+   "inactive": true,
+   "superseded_by": "energessence",
    "price_cents": 7000,
    "pinecone_title": "Energessence HomeoEnergetic Drops",
    "qty_pricing": true,
@@ -14208,6 +14270,8 @@
   },
   "natural-resource-a-z-homeoenergetic-drops": {
    "name": "Natural Resource A-Z HomeoEnergetic Drops",
+   "inactive": true,
+   "superseded_by": "natural-resource-az",
    "price_cents": 7000,
    "pinecone_title": "Natural Resource A-Z HomeoEnergetic Drops",
    "qty_pricing": true,
@@ -14249,6 +14313,8 @@
   },
   "shark-essence-homeoenergetic-drops": {
    "name": "Shark Essence HomeoEnergetic Drops",
+   "inactive": true,
+   "superseded_by": "shark-essence",
    "price_cents": 7000,
    "pinecone_title": "Shark Essence HomeoEnergetic Drops",
    "qty_pricing": true,

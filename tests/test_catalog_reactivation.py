@@ -60,8 +60,18 @@ def test_current_products_are_sellable(slug):
 # The three retirements
 # ---------------------------------------------------------------------------
 
+# Dental Regen Powder left this list on 2026-11-06. Glen: "The old Dental Regen Powder is
+# not sold out yet. Keep it listed separately until we sell those 3 bottles." Retire it
+# to dental-powder again once its shelf count reaches 0.
 RETIRED = {
-    "dental-regen-powder": "dental-powder",
+    # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
+    # product)". One listing, the HomeoEnergetic one.
+    "digestzymes": "digestzymes-homeoenergetic-drops",
+    # Glen, 2026-11-06: "yes", three more twins are the same products. Here the plain listing
+    # holds the ingredients and approved copy, so the FileMaker HomeoEnergetic row points to it.
+    "energessence-homeoenergetic-drops": "energessence",
+    "natural-resource-a-z-homeoenergetic-drops": "natural-resource-az",
+    "shark-essence-homeoenergetic-drops": "shark-essence",
     "relax": "stress-release",
     "connective-tissue-support": "comfort-synovial-syntropy",
     "comfort": "comfort-synovial-syntropy",
@@ -117,3 +127,11 @@ def test_get_product_resolves_all_five(slug):
     p = app._get_product(slug)
     assert p is not None, f"{slug} still resolves to nothing -> 404"
     assert p.get("name")
+
+
+def test_dental_regen_powder_is_listed_until_its_last_bottles_sell():
+    """Glen, 2026-11-06: listed on its own until its 3 bottles sell."""
+    p = _catalog()["dental-regen-powder"]
+    assert p.get("inactive") is not True
+    assert not p.get("superseded_by")
+    assert p.get("price_cents") == 7000

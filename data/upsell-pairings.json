@@ -1,7 +1,7 @@
 {
   "_comment": "Post-buy concierge pairing priors. Keys are active checkout-catalog slugs and every complement is an exact active catalog name. CI rejects retired, external, or unknown entries so the concierge cannot surface an unorderable configured recommendation.",
   "pairings": {
-    "gastrozyme":              ["GI Repair Helicobacter Pylori Terrain Support", "Microbiome", "Digestzymes"],
+    "gastrozyme":              ["GI Repair Helicobacter Pylori Terrain Support", "Microbiome", "Digestzymes HomeoEnergetic Drops"],
     "gi-repair":               ["Microbiome", "GastroZyme", "Medicinal Mushrooms"],
     "microbiome":              ["Transform", "Fiber Cleanse", "Mucosa Syntropy Powder"],
     "aces-eye-drops":          ["WholOmega", "Moisturize", "Harmony Laser"],
