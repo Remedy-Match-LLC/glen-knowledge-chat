@@ -1852,8 +1852,8 @@ function atpPreview(j){return new Promise(function(done){
   p.related.forEach(function(L){var r=impEl('div',atpLine(L),'imp-row');
    r.appendChild(impEl('span','meets layer '+L.into+' '+(L.into_head||'')+': '+L.rule+', '+L.why,'imp-why'));
    box.appendChild(r)});
-  box.appendChild(impEl('div','Each related layer is added as its own layer. You choose '
-   +'under the plan whether to join it.','food'))}
+  box.appendChild(impEl('div','Each related layer waits under the plan until you choose. '
+   +'It is not on the plan, or the invoice, before then.','food'))}
  if(p.add.length){box.appendChild(impEl('div','Added','imp-sub'));
   p.add.forEach(function(L){box.appendChild(impEl('div',atpLine(L),'imp-row'))})}
  var go=impEl('button','Add to plan','btn'),no=impEl('button','Cancel','btn ghost');

@@ -2,9 +2,11 @@
 biofield_add_to_plan, which is pure; this module carries them out.
 
   land()       writes one click's classification: each joined layer's codes and tail
-               go onto the layer it joins, every added or related layer becomes rows
-               numbered after the chain, and each related layer is stored as a
-               proposal.
+               go onto the layer it joins and every added layer becomes rows
+               numbered after the chain. Each related layer is held: stored with
+               its proposal and never written to the chain until Glen picks (Glen,
+               2026-11-07: "yes, hold them in the list").
+  hold_rows()  holds a Mind layer the same way, after Update Clinical wrote it.
   propose()    stores proposals for layers that landed some other way (a live layer,
                or a Mind layer from Update Clinical).
   pending()    the proposals still waiting for Glen, checked against the chain now.
@@ -41,6 +43,10 @@ def ensure_schema(cx):
         rule TEXT NOT NULL DEFAULT '', why TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL,
         resolved_at TEXT)""")
+    cols = {r[1] for r in cx.execute("PRAGMA table_info(biofield_add_to_plan_proposal)")}
+    if "held" not in cols:
+        # A held layer is not on the chain: its rows wait here until Glen picks.
+        cx.execute("ALTER TABLE biofield_add_to_plan_proposal ADD COLUMN held TEXT")
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_add_to_plan_preview (
         test_id INTEGER PRIMARY KEY, token TEXT NOT NULL, body TEXT NOT NULL,
         created_at TEXT NOT NULL)""")
@@ -142,34 +148,98 @@ def land(cx, tid, got, write_layers, laser_row=None):
                        [j["tail"], t] + list(j["into_rids"]))
         if j.get("laser") and laser_row:
             laser_row(row[1], row[2], j.get("tail") or "", have + more, j["laser"])
-    before = cx.execute("SELECT COALESCE(MAX(id),0) FROM biofield_auth_chain WHERE test_id=?",
-                        (t,)).fetchone()[0]
-    layers = sorted(got["add"] + [r["layer"] for r in got["related"]],
-                    key=lambda L: L.get("n") or 0)
+    layers = sorted(got["add"], key=lambda L: L.get("n") or 0)
     added = write_layers(layers) if layers else 0
     ids = []
     for r in got["related"]:
-        rids = [x[0] for x in cx.execute(
-            "SELECT id FROM biofield_auth_chain WHERE test_id=? AND id>? AND layer=? "
-            "ORDER BY id", (t, before, r["n"]))]
-        if rids:
-            ids.append(_insert(cx, tid, rids, r["into_rids"], r["layer"].get("title") or
-                               r["layer"].get("head") or "", r["into_head"],
-                               r["rule"], r["why"]))
+        from dashboard.biofield_add_to_plan import incoming_fields
+        layer = {k: v for k, v in r["layer"].items() if k != "n"}
+        ids.append(_insert(cx, tid, [], r["into_rids"], incoming_fields(layer)["head"],
+                           r["into_head"], r["rule"], r["why"],
+                           held={"kind": "layer", "layer": layer}))
     cx.commit()
     return {"added": added, "joined": sum(1 for j in got["joined"]
                                           if j.get("into_new") is None),
             "proposals": ids}
 
 
-def _insert(cx, tid, source_rids, into_rids, source_head, into_head, rule, why):
+def _insert(cx, tid, source_rids, into_rids, source_head, into_head, rule, why, held=None):
     cur = cx.execute(
         "INSERT INTO biofield_add_to_plan_proposal (test_id,source_rids,into_rids,"
-        "source_head,into_head,rule,why,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        "source_head,into_head,rule,why,status,created_at,held) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (_num(tid), json.dumps([int(r) for r in source_rids]),
          json.dumps([int(r) for r in into_rids]), source_head or "", into_head or "",
-         rule or "", why or "", "pending", _now()))
+         rule or "", why or "", "pending", _now(),
+         json.dumps(held) if held is not None else None))
     return cur.lastrowid
+
+
+_HOLD_SKIP = ("id", "test_id", "layer")
+
+
+def hold_rows(cx, tid, proposals):
+    """Hold Mind layers that Update Clinical has just written: each proposal's source
+    rows are copied into the proposal, with their Balances, and taken off the chain.
+    Returns the proposal ids. Commits."""
+    ensure_schema(cx)
+    t = _num(tid)
+    ids = []
+    for p in proposals or []:
+        rids = [int(r) for r in p["source_rids"]]
+        marks = ",".join("?" * len(rids))
+        cur = cx.execute(f"SELECT * FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks}) "
+                         f"ORDER BY id", [t] + rids)
+        cols = [d[0] for d in cur.description]
+        rows = [{c: v for c, v in zip(cols, r) if c not in _HOLD_SKIP} for r in cur.fetchall()]
+        links = []
+        try:
+            links = sorted({r[0] for r in cx.execute(
+                f"SELECT stress_id FROM biofield_auth_layer_stress WHERE test_id=? "
+                f"AND chain_rid IN ({marks})", [t] + rids)})
+            cx.execute(f"DELETE FROM biofield_auth_layer_stress WHERE test_id=? "
+                       f"AND chain_rid IN ({marks})", [t] + rids)
+        except Exception:  # noqa: BLE001  no link table yet: nothing to carry
+            links = []
+        cx.execute(f"DELETE FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
+                   [t] + rids)
+        ids.append(_insert(cx, tid, [], p["into_rids"], p["source_head"], p["into_head"],
+                           p["rule"], p["why"],
+                           held={"kind": "rows", "rows": rows, "stress_ids": links}))
+    cx.commit()
+    return ids
+
+
+def _held_remedies(held):
+    if held.get("kind") == "rows":
+        return [r.get("remedy") for r in held.get("rows") or [] if (r.get("remedy") or "").strip()]
+    from dashboard.biofield_add_to_plan import incoming_fields
+    name = incoming_fields(held.get("layer") or {})["remedy"]
+    return [name] if name else []
+
+
+def _write_held(cx, tid, held, write_layer):
+    """Put a held layer on the chain, after the last layer. Returns its new row ids."""
+    t = _num(tid)
+    before = cx.execute("SELECT COALESCE(MAX(id),0) FROM biofield_auth_chain WHERE test_id=?",
+                        (t,)).fetchone()[0]
+    last = cx.execute("SELECT COALESCE(MAX(layer),0) FROM biofield_auth_chain WHERE test_id=?",
+                      (t,)).fetchone()[0] or 0
+    if held.get("kind") == "rows":
+        for r in held.get("rows") or []:
+            cols = ["test_id", "layer"] + list(r)
+            cx.execute(f"INSERT INTO biofield_auth_chain ({','.join(cols)}) "
+                       f"VALUES ({','.join('?' * len(cols))})", [t, last + 1] + list(r.values()))
+    else:
+        if write_layer is None:
+            raise ValueError("No writer for a held layer")
+        write_layer(dict(held.get("layer") or {}, n=last + 1))
+    rids = [r[0] for r in cx.execute(
+        "SELECT id FROM biofield_auth_chain WHERE test_id=? AND id>? ORDER BY id", (t, before))]
+    for sid in held.get("stress_ids") or []:
+        for rid in rids:
+            cx.execute("INSERT OR IGNORE INTO biofield_auth_layer_stress "
+                       "(test_id,stress_id,chain_rid) VALUES(?,?,?)", (t, sid, rid))
+    return rids
 
 
 def propose(cx, tid, proposals):
@@ -201,8 +271,11 @@ def _check(cx, tid, p):
     for g in groups_of(chain_rows(cx, tid)):
         for r in g["rows"]:
             card[int(r["id"])] = g
-    s = next((card[r] for r in src if r in card), None)
     i = next((card[r] for r in into if r in card), None)
+    if p.get("held"):
+        # A held layer is off the chain: only the layer it would join must remain.
+        return (None, [int(r["id"]) for r in i["rows"]]) if i is not None else None
+    s = next((card[r] for r in src if r in card), None)
     if s is None or i is None or s is i:
         return None
     return [int(r["id"]) for r in s["rows"]], [int(r["id"]) for r in i["rows"]]
@@ -210,7 +283,7 @@ def _check(cx, tid, p):
 
 def _rows(cx, tid, status=None, pid=None):
     ensure_schema(cx)
-    q = ("SELECT id,source_rids,into_rids,source_head,into_head,rule,why,status "
+    q = ("SELECT id,source_rids,into_rids,source_head,into_head,rule,why,status,held "
          "FROM biofield_add_to_plan_proposal WHERE test_id=?")
     args = [_num(tid)]
     if status:
@@ -220,8 +293,11 @@ def _rows(cx, tid, status=None, pid=None):
         q += " AND id=?"
         args.append(int(pid))
     keys = ("id", "source_rids", "into_rids", "source_head", "into_head", "rule", "why",
-            "status")
-    return [dict(zip(keys, r)) for r in cx.execute(q + " ORDER BY id", args)]
+            "status", "held")
+    out = [dict(zip(keys, r)) for r in cx.execute(q + " ORDER BY id", args)]
+    for p in out:
+        p["held"] = json.loads(p["held"]) if p["held"] else None
+    return out
 
 
 def pending(cx, tid):
@@ -240,8 +316,10 @@ def pending(cx, tid):
             [_num(tid)] + list(ids))]
         out.append({"id": p["id"], "source_head": p["source_head"],
                     "into_head": p["into_head"], "rule": p["rule"], "why": p["why"],
-                    "source_rids": src, "into_rids": into,
-                    "source_remedies": rem(src), "into_remedies": rem(into)})
+                    "source_rids": src or [], "into_rids": into, "held": bool(p["held"]),
+                    "source_remedies": (_held_remedies(p["held"]) if p["held"]
+                                        else rem(src)),
+                    "into_remedies": rem(into)})
     if gone:
         marks = ",".join("?" * len(gone))
         cx.execute(f"UPDATE biofield_add_to_plan_proposal SET status='gone',resolved_at=? "
@@ -276,7 +354,7 @@ def _drop_rows(cx, tid, drop, keep):
                [t] + list(drop))
 
 
-def resolve(cx, tid, pid, choice):
+def resolve(cx, tid, pid, choice, write_layer=None):
     """Carry out Glen's choice on proposal `pid`. Raises Gone when its layers changed
     and ValueError for an unknown choice or proposal. Returns {"choice", "layer"}.
 
@@ -285,7 +363,11 @@ def resolve(cx, tid, pid, choice):
     Head stays, the new layer's Head and Tail join the Tail, and its Balances move.
     Then "existing" removes the new layer's remedy rows and "new" removes the
     existing ones, each after moving the removed rows' codes and Balances onto the
-    rows that stay."""
+    rows that stay.
+
+    A held layer is first put on the chain after the last layer, by `write_layer`
+    for a Body layer (import_layers_to_test) or from its stored rows for a Mind
+    layer. "separate" stops there; a join then merges it as above."""
     if choice not in CHOICES:
         raise ValueError("Pick one of: " + ", ".join(CHOICES))
     rows = _rows(cx, tid, pid=pid)
@@ -301,6 +383,10 @@ def resolve(cx, tid, pid, choice):
         cx.commit()
         raise Gone("Those layers changed since this was proposed. Reload the page.")
     src, into = ok
+    if p["held"]:
+        src = _write_held(cx, tid, p["held"], write_layer)
+        if not src:
+            raise ValueError("The held layer wrote no rows")
     if choice != "separate":
         from dashboard.biofield_stress import consolidate_layer_balances
         t = _num(tid)

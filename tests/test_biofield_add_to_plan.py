@@ -145,3 +145,12 @@ def test_a_landed_row_on_an_existing_layer_or_a_repeated_product_is_not_proposed
     assert atp.related_after_landing(repeat, [9]) == []
     unrelated = CHAIN + [_row(9, 4, "Kidney Health", "Kidney Kare")]
     assert atp.related_after_landing(unrelated, [9]) == []
+
+
+def test_a_held_related_layer_takes_no_number_and_leaves_no_gap():
+    # Glen, 2026-11-07: "yes, hold them in the list."
+    got = atp.classify(CHAIN, [{"title": "Liver Detoxification", "remedy_name": "Detox Daily"},
+                               {"title": "Kidney Health", "remedy_name": "Kidney Kare"}],
+                       last_layer=3, hold_related=True)
+    assert got["related"][0]["n"] is None and got["related"][0]["layer"]["n"] is None
+    assert [L["n"] for L in got["add"]] == [4]

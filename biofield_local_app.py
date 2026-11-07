@@ -3297,10 +3297,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             vocabulary = []
         return recommended, ticked, vocabulary + _rp.program_conditions()
 
-    def _atp_propose_landed(cx, test_id, before_max):
+    def _atp_propose_landed(cx, test_id, before_max, hold=False):
         """Proposals for the layers written since row id `before_max` (a live layer, or
         a Mind layer). Never fails the write it follows: the layer is already on the
-        plan, and a proposal it misses can be made by hand."""
+        plan, and a proposal it misses can be made by hand.
+
+        `hold` takes a related layer back off the chain into its proposal, for a Mind
+        click (Glen, 2026-11-07: "yes, hold them in the list"). A live layer stays."""
         from dashboard import biofield_add_to_plan as _atp
         from dashboard import biofield_add_to_plan_apply as _ap
         from dashboard.biofield_chain_fold import _remedy_key
@@ -3316,7 +3319,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             found = _atp.related_after_landing(rows, new, recommended=recommended,
                                                ticked_names=ticked, vocabulary=vocab,
                                                key=_remedy_key)
-            ids = _ap.propose(cx, test_id, found)
+            ids = (_ap.hold_rows if hold else _ap.propose)(cx, test_id, found)
             return [dict(p, id=i) for p, i in zip(found, ids)]
         except Exception as e:  # noqa: BLE001
             print(f"[add-to-plan] {test_id}: no proposal: {e!r}", flush=True)
@@ -3408,7 +3411,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                 ticked_names=ticked, vocabulary=vocab, key=_remedy_key,
                                 resolve=lambda n: exact_canonical_name(cx, n),
                                 last_layer=_last_layer_no(rep),
-                                laser_for=_ri.harmony_laser_for)
+                                laser_for=_ri.harmony_laser_for, hold_related=True)
             shown = _ap.describe(got)
             chain = _ap.digest(rows)
             if rows and not stored:
@@ -3458,6 +3461,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_add_to_plan_resolve(test_id):
         """Glen's choice on one related layer: separate, existing, new or both."""
         from dashboard import biofield_add_to_plan_apply as _ap
+        from dashboard import biofield_reveal_import as _ri
         body = request.get_json(silent=True) or {}
         try:
             pid = int(body.get("id"))
@@ -3465,7 +3469,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": "A proposal id is required"}, 400
         with sqlite3.connect(db_path) as cx:
             try:
-                done = _ap.resolve(cx, test_id, pid, str(body.get("choice") or ""))
+                # A held Body layer is written as Import Reveal writes a layer.
+                done = _ap.resolve(cx, test_id, pid, str(body.get("choice") or ""),
+                                   write_layer=lambda L: _ri.import_layers_to_test(
+                                       cx, test_id, [L]))
             except _ap.Gone as e:
                 return {"ok": False, "error": str(e)}, 409
             except ValueError as e:
@@ -4685,7 +4692,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"ok": False, "stale": True, "error": str(exc)}, 409
             # Glen, 2026-11-07: a new Mind layer related to one already on the plan
             # is proposed for joining (dashboard/biofield_add_to_plan.py).
-            done = {**done, "proposals": _atp_propose_landed(cx, test_id, before)}
+            done = {**done, "proposals": _atp_propose_landed(cx, test_id, before, hold=True)}
         if refused:
             done = {**done, **_ff_block(cx, test_id, refused)}
         return {"ok": True, "applied": True, **done}

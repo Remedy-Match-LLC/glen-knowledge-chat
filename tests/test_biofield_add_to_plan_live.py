@@ -62,3 +62,14 @@ def test_a_live_layer_from_the_remedy_set_is_proposed_too(tmp_path, monkeypatch)
     j = client.post(f"/author/{tid}/remedy-set/add-one", json={"remedy": "Detox Daily"}).get_json()
     assert j["ok"] and j["added"] == 1, j
     assert [p["into_head"] for p in j["proposals"]] == ["Liver and gallbladder"]
+
+
+def test_a_live_proposal_joined_by_hand_is_closed(tmp_path):
+    db = str(tmp_path / "chat_log.db")
+    _seed(db)
+    client, tid = _app(db, [{"layer": 1, "head": "Liver Detoxification",
+                             "most_affected": "Liver", "remedy": "Detox Daily"}])
+    assert client.post(f"/author/{tid}/interpret", json={}).get_json()["proposals"]
+    with sqlite3.connect(db) as cx:
+        cx.execute("UPDATE biofield_auth_chain SET head='Liver and gallbladder'")
+    assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"] == []

@@ -169,11 +169,11 @@ def test_on_a_plan_with_layers_it_previews_then_joins_relates_and_adds(tmp_path,
         tail = cx.execute("SELECT most_affected FROM biofield_auth_chain "
                           "WHERE remedy='Alkalize Powder'").fetchone()[0]
     assert tail == "Gut, Kidney"
-    # The related layer is on the plan as its own layer, and nothing joined it.
+    # The related layer is held in the list, never written (Glen, 2026-11-07: "yes,
+    # hold them in the list"), so the added layers leave no gap for it.
     assert [(r[0], r[1], r[2]) for r in chain[1:]] == [
         (2, "Lymph", "ES1 Lymph Energetic Star Infoceutical"),
-        (3, "Love", "MB8 Love Infoceutical"), (4, "Gut Repair", "Gut Restore"),
-        (5, "Bone Density", "Bone Builder")]
+        (3, "Love", "MB8 Love Infoceutical"), (4, "Bone Density", "Bone Builder")]
     props = client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"]
     assert [(q["source_head"], q["into_head"], q["source_remedies"], q["into_remedies"])
             for q in props] == [("Gut Repair", "Gut", ["Gut Restore"], ["Alkalize Powder"])]
@@ -225,12 +225,13 @@ def test_each_join_choice_keeps_the_remedies_glen_picked(tmp_path, monkeypatch, 
     assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"] == []
 
 
-def test_keep_separate_changes_nothing_and_closes_the_proposal(tmp_path, monkeypatch):
+def test_keep_separate_adds_the_held_layer_at_the_end_and_closes_the_proposal(
+        tmp_path, monkeypatch):
     client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
     _added(client, tid)
     before = _chain(db)
     assert _resolve(client, tid, "separate").status_code == 200
-    assert _chain(db) == before
+    assert _chain(db) == before + [(5, "Gut Repair", "Gut Restore", ["ET5"])]
     assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"] == []
 
 
@@ -239,7 +240,7 @@ def test_a_proposal_whose_layer_was_deleted_is_closed(tmp_path, monkeypatch):
     _added(client, tid)
     pid = client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"][0]["id"]
     with sqlite3.connect(db) as cx:
-        cx.execute("DELETE FROM biofield_auth_chain WHERE head='Gut Repair'")
+        cx.execute("DELETE FROM biofield_auth_chain WHERE head='Gut'")
     assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"] == []
     r = client.post(f"/author/{tid}/add-to-plan/resolve", json={"id": pid, "choice": "both"})
     assert r.status_code == 409
@@ -308,8 +309,13 @@ def test_a_new_mind_layer_related_to_an_existing_one_is_proposed(tmp_path, monke
     assert done["ok"] and len(done["proposals"]) == 1
     props = client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"]
     assert [(q["source_head"], q["into_head"]) for q in props] == [("Gut and digestion", "Gut")]
-    # The Mind layer stays on the plan until Glen picks.
-    assert [r[1] for r in _chain(db)] == ["Gut", "Gut and digestion"]
+    # The Mind layer is held in the list until Glen picks, then lands at the end.
+    assert [r[1] for r in _chain(db)] == ["Gut"]
+    r = client.post(f"/author/{tid}/add-to-plan/resolve",
+                    json={"id": props[0]["id"], "choice": "separate"})
+    assert r.status_code == 200, r.get_json()
+    assert [(x[0], x[1], x[2]) for x in _chain(db)] == [
+        (1, "Gut", "Gut Restore", ), (2, "Gut and digestion", "Alkalize Powder")]
 
 
 def test_a_preview_is_written_once_even_when_the_write_leaves_the_plan_unchanged(
@@ -327,9 +333,30 @@ def test_a_preview_is_written_once_even_when_the_write_leaves_the_plan_unchanged
     assert first["ok"] and again["ok"] is False
 
 
-def test_a_proposal_joined_by_hand_is_closed(tmp_path, monkeypatch):
+def test_a_held_related_layer_is_off_the_chain_and_the_invoice_until_glen_picks(
+        tmp_path, monkeypatch):
     client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
     _added(client, tid)
-    with sqlite3.connect(db) as cx:
-        cx.execute("UPDATE biofield_auth_chain SET head='Gut' WHERE head='Gut Repair'")
-    assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"] == []
+    sent = []
+    catalog = [{"slug": s, "name": n} for s, n in (
+        ("alkalize-powder", "Alkalize Powder"), ("gut-restore", "Gut Restore"),
+        ("bone-builder", "Bone Builder"), ("es1", "ES1 Lymph Energetic Star Infoceutical"),
+        ("mb8", "MB8 Love Infoceutical"))]
+    import biofield_local_app as app_mod
+    inv = app_mod.create_app(
+        db, e4l_db=str(tmp_path / "e4l.db"), invoice_fetch_catalog=lambda: catalog,
+        invoice_create=lambda c, lines, replace_open=False, invoice_note=None,
+        idempotency_key="", **k: sent.append([l.get("slug") for l in lines])
+        or {"ok": True, "order_id": len(sent)},
+        invoice_paid_check=lambda email: {"paid": True},
+        invoice_latest=lambda email: {}).test_client()
+
+    def invoiced():
+        r = inv.post(f"/author/{tid}/invoice", json={})
+        assert r.status_code == 200, r.get_data(as_text=True)[:300]
+        return sent[-1]
+    assert "Gut Restore" not in [r[2] for r in _chain(db)]
+    assert "gut-restore" not in invoiced()
+    assert _resolve(client, tid, "both").status_code == 200
+    assert "Gut Restore" in [r[2] for r in _chain(db)]
+    assert "gut-restore" in invoiced()

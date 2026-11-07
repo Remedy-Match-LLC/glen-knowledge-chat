@@ -109,7 +109,8 @@ def _summary(group):
 
 
 def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
-             vocabulary=(), key=None, resolve=None, last_layer=0, laser_for=None):
+             vocabulary=(), key=None, resolve=None, last_layer=0, laser_for=None,
+             hold_related=False):
     """{"joined": [...], "related": [...], "add": [...]}.
 
     `existing_rows` are chain rows {id, layer, head, most_affected, remedy, codes,
@@ -127,6 +128,10 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
     related: {"layer", "n", "into", "into_head", "into_rids", "into_remedies",
               "rule", "why"}.
     add:     the incoming layer with "n" set.
+
+    `hold_related` (Glen, 2026-11-07, "yes, hold them in the list"): a related layer
+    is not written until Glen picks, so it takes no layer number ("n" is None) and
+    the added layers are numbered without gaps.
     """
     key = key or _plain_key
     groups = groups_of(existing_rows)
@@ -182,9 +187,10 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
             if laser_for and has_laser and f["codes"] and laser_for(union) is None:
                 # Joining would put a thyroid or abdomen code on a Harmony Laser
                 # layer (Glen, 2026-10-12). Glen decides; it is not joined by itself.
-                n += 1
+                rn = None if hold_related else n + 1
+                n = rn or n
                 out["related"].append({
-                    "layer": dict(layer, n=n), "n": n, **_summary(g),
+                    "layer": dict(layer, n=rn), "n": rn, **_summary(g),
                     "rule": "same remedy",
                     "why": "joining would put a thyroid or abdomen code on the "
                            "Harmony Laser layer"})
@@ -211,8 +217,7 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
                                   "into_head": incoming_fields(target)["head"],
                                   "codes": f["codes"], "tail": None, "laser": None})
             continue
-        n += 1
-        new = dict(layer, n=n)
+        new = dict(layer, n=None)
         if k:
             placed[k] = new
         hit = _cover.heading_match(f["head"], conditions, vocabulary)
@@ -228,8 +233,11 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
                 codes = [c.strip() for c in tick[1].split(",")]
                 g = next((code_owner[c] for c in codes if c in code_owner), None)
                 rule, why = tick
+        if g is None or not hold_related:
+            n += 1
+            new["n"] = n
         if g is not None:
-            out["related"].append({"layer": new, "n": n, **_summary(g),
+            out["related"].append({"layer": new, "n": new["n"], **_summary(g),
                                    "rule": rule, "why": why})
         else:
             out["add"].append(new)
