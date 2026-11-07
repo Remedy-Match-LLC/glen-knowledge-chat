@@ -3567,7 +3567,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 "has_pattern": data["has_pattern"], "html": html,
                 "layer_candidates": layer_candidates or []}
 
-    def _append_layers(cx, test_id, rems, refused_out=None):
+    def _append_layers(cx, test_id, rems, refused_out=None, proposals_out=None):
         """Append each remedy as a new causal-chain layer at the bottom (existing
         layers untouched). The head is a SINGLE functional term — the root
         'Driver'-level stressor among those the remedy covers (falling back to the
@@ -3598,12 +3598,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         init_auth_tables(cx)
         _st.init_stress_tables(cx)
         added = 0
+        before = _max_row_id(cx, test_id)
         try:
             added = _append_batch(cx, test_id, rems, cover_by, nxt, conds, refused_out)
             cx.commit()
         except BaseException:
             cx.rollback()
             raise
+        # Glen, 2026-11-07: the live layer stays on the plan; one related to a layer
+        # already there is proposed for joining, after it lands.
+        found = _atp_propose_landed(cx, test_id, before) if added else []
+        if proposals_out is not None:
+            proposals_out.extend(found)
         return added
 
     def _append_batch(cx, test_id, rems, cover_by, nxt, conds, refused_out=None):
@@ -3731,9 +3737,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 update_chain_row(cx, rows[0][0], remedy=name, dosage=d.get("dosage", ""),
                                  frequency=d.get("frequency", ""), timing=d.get("timing", ""))
             else:
+                before = _max_row_id(cx, test_id)
                 add_chain_row(cx, test_id, n, (body.get("head") or ""), "", name,
                               d.get("dosage", ""), d.get("frequency", ""), d.get("timing", ""),
                               confirmed=1, origin="live")
+                _atp_propose_landed(cx, test_id, before)
             rep = _report_for(cx, test_id)
             chain = _chain_rows_for(rep)
             chain_rems = [(r.get("remedy") or "").strip() for r in chain if (r.get("remedy") or "").strip()]
@@ -3764,11 +3772,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return ask
             if _animal_refused(cx, test_id, [rem]):
                 return {"ok": False, **_ff_block(cx, test_id, [rem])}
-            refused = []
-            added = _append_layers(cx, test_id, [rem], refused)
+            refused, proposals = [], []
+            added = _append_layers(cx, test_id, [rem], refused, proposals)
         if refused:
-            return {"ok": False, "added": added, **_ff_block(cx, test_id, refused)}
-        return {"ok": True, "added": added}
+            return {"ok": False, "added": added, "proposals": proposals,
+                    **_ff_block(cx, test_id, refused)}
+        return {"ok": True, "added": added, "proposals": proposals}
 
     @app.route("/author/<test_id>/remedy-set", methods=["POST"])
     def author_remedy_set_save(test_id):
@@ -3807,9 +3816,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             ask = _species_needed(cx, test_id)
             if ask:
                 return ask
-            refused = []
-            added = _append_layers(cx, test_id, rems, refused)
-        return {"ok": True, "added": added, "animal_refused": refused}
+            refused, proposals = [], []
+            added = _append_layers(cx, test_id, rems, refused, proposals)
+        return {"ok": True, "added": added, "animal_refused": refused,
+                "proposals": proposals}
 
     @app.route("/author/<test_id>/stress/<int:sid>/balance", methods=["POST"])
     def author_stress_balance(test_id, sid):
@@ -5189,6 +5199,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # stored layer, as the scan import and the program buttons already do.
             after = _last_layer_no(_report_for(cx, test_id))
             added = 0
+            before = _max_row_id(cx, test_id)
             refused = _gate_layers(cx, test_id, layers)
             for l in layers:
                 n = l["layer"]
@@ -5201,8 +5212,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # the test. Per-field, so a re-interpret with no phase spoken won't wipe it.
             update_terrain(cx, test_id, phase=result.get("phase"),
                            location=result.get("location"))
+            proposals = _atp_propose_landed(cx, test_id, before) if added else []
         out = {"added": added, "header": result.get("header", ""),
-               "phase": result.get("phase"), "location": result.get("location", "")}
+               "phase": result.get("phase"), "location": result.get("location", ""),
+               "proposals": proposals}
         if refused:
             out.update(_ff_block(cx, test_id, refused))
         return out

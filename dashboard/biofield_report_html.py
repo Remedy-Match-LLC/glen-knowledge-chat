@@ -1775,7 +1775,7 @@ async function suggestPreserved(){
 function mrNames(){return [].slice.call(document.querySelectorAll('#mrlist .mrname'))
  .map(function(i){return (i.value||'').trim()}).filter(Boolean)}
 function mrSetPanel(j){if(j&&j.animal_refused&&j.animal_refused.length&&j.error)alert(j.error);if(j&&j.html!==undefined)document.getElementById('suggestpanel').innerHTML=j.html}
-async function layerPick(b){mrSetPanel(await post('/author/__TID__/layer/'+b.getAttribute('data-n')+'/select',{remedy:b.getAttribute('data-remedy')}))}
+async function layerPick(b){mrSetPanel(await post('/author/__TID__/layer/'+b.getAttribute('data-n')+'/select',{remedy:b.getAttribute('data-remedy')}));atpLoad()}
 async function mrSave(){mrSetPanel(await post('/author/__TID__/remedy-set',{remedies:mrNames()}))}
 async function mrEdit(inp){await mrSave()}
 var _mrDrag=null;
