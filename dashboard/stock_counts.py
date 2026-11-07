@@ -814,10 +814,10 @@ def check_alerts(cx, slugs, catalog=None):
         # flag came back, and a sent alert could never re-arm (2026-11-06 review, round 2).
         try:
             ensure_tables(cx)
-            cx.execute("DELETE FROM stock_alert_sends WHERE state <> 'sent'")
-            for slug in sorted(set(slugs or ())):
-                cx.execute("DELETE FROM stock_alerts WHERE slug=?", (slug,))
-                cx.execute("DELETE FROM stock_alert_sends WHERE slug=?", (slug,))
+            # Round 1: every product, not only the ones checked, or an untouched restocked
+            # product kept its "sent" record and stayed silent after the switch back.
+            cx.execute("DELETE FROM stock_alert_sends")
+            cx.execute("DELETE FROM stock_alerts")
             cx.commit()
         except Exception as e:  # noqa: BLE001
             _safe_rollback(cx)
@@ -888,7 +888,7 @@ def console_rows(cx, catalog=None) -> list:
                  else "under a month" if month_alert_applies(p, raw) and count < raw else None)
         rows.append({"slug": slug, "name": (cat.get(slug) or {}).get("name") or slug,
                      "count": count, "avg_monthly": a, "needs": needs,
-                     "low_at": low_stock_at(cat.get(slug), a),
+                     "low_at": low_stock_at(p, raw),   # the alert rule's own average
                      "months_supply": (round(count / a, 1) if a > 0 else None),
                      "updated_at": updated})
     rows.sort(key=lambda x: (x["count"], x["name"].lower()))

@@ -836,7 +836,8 @@ def test_switching_emails_off_leaves_nothing_to_resend_later(env, monkeypatch):
     cx.execute("UPDATE stock_alert_sends SET state='failed'")
     cx.commit()
     monkeypatch.delenv("STOCK_ALERT_EMAILS", raising=False)
-    _set(cx, "moisturize", 50)                     # any check while off
+    _set(cx, "moisturize", 50)                     # a check of another product while off
     assert cx.execute("SELECT COUNT(*) FROM stock_alert_sends").fetchone()[0] == 0
+    assert cx.execute("SELECT COUNT(*) FROM stock_alerts").fetchone()[0] == 0
     _set(cx, "scar-silk", 1)
     assert cx.execute("SELECT COUNT(*) FROM stock_alerts").fetchone()[0] == 0
