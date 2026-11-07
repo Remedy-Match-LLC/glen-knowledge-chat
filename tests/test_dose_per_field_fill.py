@@ -93,7 +93,17 @@ def test_spoken_frequency_does_not_suppress_catalog_dosage_and_timing(tmp_path, 
              "remedy": "Fiber Cleanse", "dosage": "", "frequency": "one a day",
              "timing": ""}]})
 
-    app = create_app(db, interpret_complete=interpret_complete)
+    # A person on record, so the species gate lets a Functional Formulation through. Without
+    # this the test read the machine's own e4l.db: it passed on a Mac and failed in CI.
+    e4l = str(tmp_path / "e4l.db")
+    ex = sqlite3.connect(e4l)
+    ex.execute("CREATE TABLE e4l_clients (client_id INTEGER PRIMARY KEY, name TEXT, "
+               "email TEXT, species TEXT, animal_name TEXT)")
+    ex.execute("INSERT INTO e4l_clients VALUES (1, 'Debra Herndon', 'chakamom1@gmail.com', "
+               "'Human', '')")
+    ex.commit()
+    ex.close()
+    app = create_app(db, e4l_db=e4l, interpret_complete=interpret_complete)
     c = app.test_client()
     c.post(f"/author/{tid}/session", json={"transcript": "Fiber Cleanse, one a day."})
     r = c.post(f"/author/{tid}/interpret", json={}).get_json()
