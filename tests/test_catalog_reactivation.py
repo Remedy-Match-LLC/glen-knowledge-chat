@@ -83,6 +83,9 @@ RETIRED = {
     # Glen, 2026-11-06: "Serene Blue Green and Serenity Blue Green Balance combine". Both
     # are the 30-capsule bottle; Serene Blue Green holds the store page and formula.
     "serenity-blue-green-balance": "serenity",
+    # Glen, 2026-11-06: "combine Shields Up with Shields Up - Cold/Flu Formula". Shields Up
+    # holds the store page, the shelf count and FileMaker row 469.
+    "shields-up-cold-flu-formula": "shields-up",
     # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
     # product)". One listing, the HomeoEnergetic one.
     "digestzymes": "digestzymes-homeoenergetic-drops",

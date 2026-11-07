@@ -15375,6 +15375,8 @@
   },
   "shields-up-cold-flu-formula": {
    "name": "Shields Up - Cold/Flu Formula",
+   "inactive": true,
+   "superseded_by": "shields-up",
    "price_cents": 7000,
    "pinecone_title": "Shields Up - Cold/Flu Formula",
    "qty_pricing": true,
