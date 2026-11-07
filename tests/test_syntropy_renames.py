@@ -370,7 +370,9 @@ def test_a_one_letter_ending_never_runs_into_a_longer_word():
 
 @pytest.mark.parametrize("name,slug", [("Ocuflow Day", "ocuflow-daytime"),
                                        ("Vital Energy Bee", "vital-energy-be"),
-                                       ("Digestzymes in Terrain Restore", "digestzymes"),
+                                       # Glen, 2026-11-06: plain Digestzymes is the same product as
+                                       # its HomeoEnergetic Drops, and folds into it.
+                                       ("Digestzymes in Terrain Restore", "digestzymes-homeoenergetic-drops"),
                                        ("Ginger", "gingerol")])
 def test_cart_keeps_how_other_short_forms_resolved(name, slug):
     """Round 1 measured whole-word and longest-overlap rules on 12,086 clinical names;
