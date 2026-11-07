@@ -64,6 +64,19 @@ def test_current_products_are_sellable(slug):
 # not sold out yet. Keep it listed separately until we sell those 3 bottles." Retire it
 # to dental-powder again once its shelf count reaches 0.
 RETIRED = {
+    # Glen, 2026-11-06: "Holy Grail has 2 variant names" and "Hydrolyzed Collagen has 2
+    # variants". Each folds into the listing that holds the alias, QuickBooks item or copy.
+    "holy-grail-full-spectrum-drops": "holy-grail-ormus",
+    "hydrolyzed-collagen-powder-grass-fed-type-i-iii": "hydrolyzed-collagen",
+    # Glen, 2026-11-06: "a duplication of Mold Spray (with Mold Spray Mould Spray)".
+    "mold-spray-mould-spray": "mold-spray",
+    # Glen, 2026-11-06: "join Off Syrup and Off Syrup Drops".
+    "offsyrup-drops": "off-syrup",
+    # Glen, 2026-11-06: "combine oxygen cleanse and oxygen cleanse watermelon powder". The
+    # powder holds the shelf count and the powder bottle; the same formula.
+    "oxygen-cleanse": "oxygen-cleanse-watermelon-powder",
+    # Glen, 2026-11-06: "merge Pea Protein Aminos and Pea Protein Aminos - Pure & Predigested".
+    "pea-protein-aminos-pure-predigested": "hydrolized-pea-protein-aminos--pure--predigested",
     # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
     # product)". One listing, the HomeoEnergetic one.
     "digestzymes": "digestzymes-homeoenergetic-drops",
