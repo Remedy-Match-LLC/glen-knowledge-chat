@@ -65,6 +65,8 @@ RETIRED = {
     # variants". Each folds into the listing that holds the alias, QuickBooks item or copy.
     "holy-grail-full-spectrum-drops": "holy-grail-ormus",
     "hydrolyzed-collagen-powder-grass-fed-type-i-iii": "hydrolyzed-collagen",
+    # Glen, 2026-11-06: "a duplication of Mold Spray (with Mold Spray Mould Spray)".
+    "mold-spray-mould-spray": "mold-spray",
     "dental-regen-powder": "dental-powder",
     "relax": "stress-release",
     "connective-tissue-support": "comfort-synovial-syntropy",

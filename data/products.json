@@ -15420,6 +15420,8 @@
   },
   "mold-spray-mould-spray": {
    "name": "Mold Spray Mould Spray",
+   "inactive": true,
+   "superseded_by": "mold-spray",
    "price_cents": 7000,
    "pinecone_title": "Mold Spray\nMould Spray",
    "qty_pricing": true,
