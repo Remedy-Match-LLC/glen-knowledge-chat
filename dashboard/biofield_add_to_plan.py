@@ -59,15 +59,32 @@ def _tail_items(text):
     return [t.strip() for t in str(text or "").split(",") if t.strip()]
 
 
+def _same(a, b):
+    """Two heads or tail items alike, ignoring case and spacing."""
+    return " ".join(str(a or "").lower().split()) == " ".join(str(b or "").lower().split())
+
+
 def merged_tail(into, extra):
-    """`into` with each item of `extra` it lacks appended, order kept."""
+    """`into` with each item of `extra` it lacks appended, order kept. Items match
+    ignoring case and spacing."""
     items = _tail_items(into)
-    seen = {t.lower() for t in items}
+    seen = {" ".join(t.lower().split()) for t in items}
     for t in _tail_items(extra):
-        if t.lower() not in seen:
-            seen.add(t.lower())
+        if " ".join(t.lower().split()) not in seen:
+            seen.add(" ".join(t.lower().split()))
             items.append(t)
     return ", ".join(items)
+
+
+def joined_tail(into_head, into_tail, head, tail):
+    """The kept layer's tail after a join: the joining layer's tail items, then its
+    head when it differs from the kept head (Glen, 2026-11-07: "When two layers are
+    joined, and the heads are different, add the head not selected to the balanced
+    stresses as well"). Nothing already there is added twice."""
+    out = merged_tail(into_tail, tail)
+    if str(head or "").strip() and not _same(head, into_head):
+        out = merged_tail(out, str(head).replace(",", " "))
+    return out
 
 
 def incoming_fields(layer):
@@ -195,7 +212,7 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
                     "why": "joining would put a thyroid or abdomen code on the "
                            "Harmony Laser layer"})
                 continue
-            tail = merged_tail(g.get("most_affected"), f["tail"])
+            tail = joined_tail(g.get("head"), g.get("most_affected"), f["head"], f["tail"])
             laser = None
             if (laser_for and not has_laser and layer.get("laser")
                     and laser_for(union) is not None):
@@ -212,7 +229,8 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
             target["codes"] = _union(codes_of(target.get("codes")), f["codes"])
             tail_key = ("tail" if "tail" in target and "most_affected" not in target
                         else "most_affected")
-            target[tail_key] = merged_tail(target.get(tail_key), f["tail"])
+            target[tail_key] = joined_tail(incoming_fields(target)["head"],
+                                           target.get(tail_key), f["head"], f["tail"])
             out["joined"].append({"layer": layer, "into_new": target["n"],
                                   "into_head": incoming_fields(target)["head"],
                                   "codes": f["codes"], "tail": None, "laser": None})

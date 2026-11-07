@@ -168,7 +168,7 @@ def test_on_a_plan_with_layers_it_previews_then_joins_relates_and_adds(tmp_path,
     with sqlite3.connect(db) as cx:
         tail = cx.execute("SELECT most_affected FROM biofield_auth_chain "
                           "WHERE remedy='Alkalize Powder'").fetchone()[0]
-    assert tail == "Gut, Kidney"
+    assert tail == "Gut, Kidney, Acid load"      # its tail, then its different head
     # The related layer is held in the list, never written (Glen, 2026-11-07: "yes,
     # hold them in the list"), so the added layers leave no gap for it.
     assert [(r[0], r[1], r[2]) for r in chain[1:]] == [
@@ -222,6 +222,13 @@ def test_each_join_choice_keeps_the_remedies_glen_picked(tmp_path, monkeypatch, 
     assert not any(x[1] == "Gut Repair" for x in _chain(db)), "the related layer stayed apart"
     # Whatever is kept, the layer carries both layers' codes.
     assert {c for x in gut for c in x[3]} >= {"ED2", "ED12", "ET5"}
+    # The head not kept joins the balanced stresses (Glen, 2026-11-07), once.
+    with sqlite3.connect(db) as cx:
+        tails = {r[0] for r in cx.execute(
+            "SELECT most_affected FROM biofield_auth_chain WHERE head='Gut'")}
+        stresses = [r[0] for r in cx.execute("SELECT label FROM biofield_auth_stress")]
+    assert all(t.split(", ").count("Gut Repair") == 1 for t in tails), tails
+    assert "Gut Repair" in stresses
     assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"] == []
 
 

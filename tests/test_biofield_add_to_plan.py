@@ -25,7 +25,28 @@ def test_the_same_product_joins_its_codes_and_tail_onto_the_layer_and_adds_no_ro
     j = got["joined"][0]
     assert j["into"] == 1 and j["into_rid"] == 1
     assert j["codes"] == ["ED12"]                      # ED2 is already on the row
-    assert j["tail"] == "Gut, Kidney, Bladder"
+    # Its tail items, then its own head, which differs from the kept head "Gut".
+    assert j["tail"] == "Gut, Kidney, Bladder, Kidney Health"
+
+
+def test_a_join_adds_the_other_head_once_and_never_the_same_head():
+    # Glen, 2026-11-07: "When two layers are joined, and the heads are different,
+    # add the head not selected to the balanced stresses as well."
+    same = atp.classify(CHAIN, [{"title": "  gut ", "most_affected": "Bloating",
+                                 "remedy_name": "Alkalize Powder"}])
+    assert same["joined"][0]["tail"] == "Gut, Bloating"
+    # The kept layer's tail lacks its own head, so only the head test keeps it out.
+    spaced = atp.classify(CHAIN, [{"title": "liver  AND gallbladder", "most_affected": "Bile",
+                                   "remedy_name": "Liver Life"}])
+    assert spaced["joined"][0]["tail"] == "Bile"
+    already = atp.classify(CHAIN, [{"title": "Acid  Load", "most_affected": "acid load",
+                                    "remedy_name": "Alkalize Powder"}])
+    assert already["joined"][0]["tail"] == "Gut, acid load"
+    batch = atp.classify([], [{"title": "Kidney", "most_affected": "Kidney",
+                               "remedy_name": "Kidney Kare"},
+                              {"title": "Urinary Tract", "most_affected": "Bladder",
+                               "remedy_name": "Kidney Kare"}])
+    assert batch["add"][0]["most_affected"] == "Kidney, Bladder, Urinary Tract"
 
 
 def test_the_same_product_matches_by_catalog_identity_not_spelling():
