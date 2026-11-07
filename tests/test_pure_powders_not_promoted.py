@@ -20,7 +20,7 @@ def _norm(t):
     return re.sub(r"\s+", " ", (t or "").strip().lower())
 
 
-def test_every_slug_is_in_the_catalog_and_69_are_live():
+def test_every_slug_is_in_the_catalog_and_67_are_live():
     missing = sorted(s for s in PURE_POWDER_SLUGS if s not in CATALOG)
     assert not missing, missing
     live = [s for s in PURE_POWDER_SLUGS if not CATALOG[s].get("inactive")]
@@ -28,8 +28,9 @@ def test_every_slug_is_in_the_catalog_and_69_are_live():
     # ruled it is never sold as a powder (it needs an enteric capsule). Plus Melissa
     # 20:1 Extract Powder, listed 2026-10-18 on Glen's approval, and Silymarin the same
     # day, missed from the October batch. Pterostilbene Pure Powder, listed 2026-10-26
-    # for a jar Glen invoiced that day.
-    assert len(live) == 69, sorted(live)
+    # for a jar Glen invoiced that day. Less two twins retired 2026-11-06 on Glen's word,
+    # into listings already in this set: Hydrolyzed Collagen and Pea Protein Aminos.
+    assert len(live) == 67, sorted(live)
 
 
 def test_names_are_exactly_the_catalog_names_of_the_slugs():
@@ -39,7 +40,9 @@ def test_names_are_exactly_the_catalog_names_of_the_slugs():
 def test_they_stay_sellable():
     for s in PURE_POWDER_SLUGS:
         if s in ("hydrolyzed-collagen-powder", "quercetin-dihydrate-powder-60-grams",
-                 "seaamino-powder", "serrapeptase"):
+                 "seaamino-powder", "serrapeptase",
+                 "hydrolyzed-collagen-powder-grass-fed-type-i-iii",
+                 "pea-protein-aminos-pure-predigested"):
             continue
         assert not CATALOG[s].get("inactive"), s
 
