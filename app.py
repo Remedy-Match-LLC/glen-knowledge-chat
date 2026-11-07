@@ -24201,6 +24201,7 @@ def api_console_stock():
                         "low_stock_at": _stock_counts.LOW_STOCK_AT,
                         "window_days": _stock_counts.AVG_WINDOW_DAYS,
                         "rows": _stock_counts.console_rows(cx),
+                        "last_set": _stock_counts.last_set(cx),
                         "unmatched": _stock_counts.list_unmatched(cx),
                         "products": _stock_counts.countable_products()})
     finally:
