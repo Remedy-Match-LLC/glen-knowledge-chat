@@ -77,6 +77,9 @@ RETIRED = {
     "oxygen-cleanse": "oxygen-cleanse-watermelon-powder",
     # Glen, 2026-11-06: "merge Pea Protein Aminos and Pea Protein Aminos - Pure & Predigested".
     "pea-protein-aminos-pure-predigested": "hydrolized-pea-protein-aminos--pure--predigested",
+    # Glen, 2026-11-06: "combine Rescue and Rescue Phytochromotherapy". Same formula, same
+    # 30 g jar; Rescue holds the store page and the copy.
+    "rescue-phytochromotherapy": "rescue",
     # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
     # product)". One listing, the HomeoEnergetic one.
     "digestzymes": "digestzymes-homeoenergetic-drops",

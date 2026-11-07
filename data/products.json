@@ -15147,6 +15147,8 @@
   },
   "rescue-phytochromotherapy": {
    "name": "Rescue Phytochromotherapy",
+   "inactive": true,
+   "superseded_by": "rescue",
    "price_cents": 7000,
    "pinecone_title": "Rescue Phytochromotherapy",
    "qty_pricing": true,
