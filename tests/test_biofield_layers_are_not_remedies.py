@@ -92,7 +92,7 @@ def test_reveal_import_counts_layers_and_appends_after_them(tmp_path, monkeypatc
     assert j["needs_confirm"] is True and j["existing"] == 4
     j = client.post(f"/author/{tid}/e4l/import-reveal",
                     json={"force": True, "token": j["token"]}).get_json()
-    assert j["ok"] is True and j["skipped"] == []
+    assert j["ok"] is True and j["related"] == []
     assert _stored_layers(db)[len(_PEACH):] == [5, 6], (
         "appended reveal layers must not reuse numbers 1 and 2")
 

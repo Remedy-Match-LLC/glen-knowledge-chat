@@ -1244,73 +1244,12 @@ async function delTest(){if(!confirm('Delete this entire test? This cannot be un
 async function confirmAll(){await post('/author/__TID__/confirm-all',{});location.reload()}
 async function confirmRow(rid){await post('/author/__TID__/row/'+rid+'/confirm',{});location.reload()}
 // Glen, 2026-10-01: the button shows it is working, beside it, until it finishes.
-function impStat(t){var e=document.getElementById('impStat');if(e)e.textContent=t;else astat(t)}
-function impBusy(on){var b=document.getElementById('impBtn');if(b)b.disabled=on;window.__impBusy=on}
-async function importReveal(){
-if(window.__impBusy)return;
-impBusy(true);impStat('Importing\u2026');
-try{await importReveal0()}catch(e){impStat('Import failed.')}
-finally{impBusy(false)}
-}
 function impEl(tag,text,cls){var e=document.createElement(tag);if(text)e.textContent=text;
  if(cls)e.className=cls;return e}
-// Resolves to {anyway:[layer key]} on Import, or null on Cancel. Built with textContent,
-// so a layer title can never become markup.
-function impPreview(j){return new Promise(function(done){
- var p=j.preview||{add:[],skip:[]},box=impEl('div','','imp-preview');
- var old=document.getElementById('impPreview');if(old)old.remove();box.id='impPreview';
- box.appendChild(impEl('div','This session has '+j.existing+' layer(s). '+p.add.length
-  +' reveal layer(s) will be added, '+p.skip.length+' skipped as covered.','imp-head'));
- if(p.recommended_unread)box.appendChild(impEl('div','The recommended infoceuticals on the scan '
-  +'could not be read, so that rule skipped nothing.','food'));
- if(p.catalog_unread)box.appendChild(impEl('div','The condition catalog could not be read, '
-  +'so a heading was matched against this client\u2019s layers only.','food'));
- if(p.add.length){box.appendChild(impEl('div','Added','imp-sub'));
-  p.add.forEach(function(L){box.appendChild(impEl('div',L.title+(L.remedy?' \u00b7 '+L.remedy:''),'imp-row'))})}
- var boxes=[];
- if(p.skip.length){box.appendChild(impEl('div','Skipped','imp-sub'));
-  p.skip.forEach(function(L){var row=impEl('label','','imp-row');var c=impEl('input');
-   c.type='checkbox';c.value=String(L.key);boxes.push(c);row.appendChild(c);
-   row.appendChild(document.createTextNode(' '+L.title+(L.remedy?' \u00b7 '+L.remedy:'')));
-   row.appendChild(impEl('span',L.rule+': '+L.why,'imp-why'));
-   row.appendChild(impEl('span','add anyway','imp-why'));box.appendChild(row)})}
- var go=impEl('button','Import','btn'),no=impEl('button','Cancel','btn ghost');
- go.type=no.type='button';
- go.onclick=function(){box.remove();done({anyway:boxes.filter(function(c){return c.checked})
-  .map(function(c){return c.value})})};
- no.onclick=function(){box.remove();done(null)};
- var bar=impEl('div','','imp-bar');bar.appendChild(go);bar.appendChild(no);box.appendChild(bar);
- var at=document.getElementById('impStat')||document.getElementById('impBtn');
- at.parentNode.insertBefore(box,at.nextSibling);impStat('Review the reveal layers below.')})}
-async function importReveal0(){
-  var body={};
-  var j=await post('/author/__TID__/e4l/import-reveal',body);
-  // An old scan is a judgement call, not a dead end: offer to import it anyway.
-  if(j && j.stale){
-    if(!confirm('The latest E4L scan is '+j.days_ago+' days old. Import it anyway?\\n\\n'
-                +'A fresh scan takes about ten seconds — count out loud, one to ten.')){ impStat('Cancelled.'); return; }
-    body.allow_stale=true;
-    j=await post('/author/__TID__/e4l/import-reveal',body);
-  }
-  if(j && j.needs_confirm){
-    // Glen, 2026-10-18: only the reveal layers no Clinical layer covers are added.
-    // The preview names each skipped layer and why, with a box to add it anyway.
-    var pick=await impPreview(j);
-    if(!pick){ impStat('Cancelled.'); return; }
-    body.force=true;body.token=j.token;body.add_anyway=pick.anyway;
-    j=await post('/author/__TID__/e4l/import-reveal',body);
-  }
-  if(j && j.ok){
-    var msg=j.stale_override?('Imported a '+j.days_ago+'-day-old scan.'):'Imported.';
-    // An animal layer whose codes carry no remedy-list infoceutical imports blank
-    // (Rejuvenators, MR, nutrition, environment). Say so before the page reloads.
-    if(j.no_remedy_layers){
-      impStat(msg+' '+j.no_remedy_layers+' layer(s) have no infoceutical on the remedy list, so their remedy is blank.');
-      setTimeout(function(){location.reload()},4000);
-    }else{ impStat(msg+' Reloading\u2026'); location.reload(); }
-  }
-  else { impStat((j&&j.reason)||'Import failed.'); }
-}
+// Glen, 2026-11-07: "Reveal only" follows the Add to plan rules, without the Body
+// panel's Infoceutical rows. The old skip and "add anyway" path is retired.
+async function importReveal(){
+ return atpRun('/author/__TID__/e4l/import-reveal',{},impStat,'impBtn','impStat')}
 // A <datalist> filters client-side over the options already loaded; it never re-queries
 // on input. So these fetches must return the WHOLE list — a low cap silently drops every
 // term past it (a remedy/stress alphabetically beyond the cutoff just never appears).
@@ -1831,9 +1770,10 @@ function atpChoices(){var out={};
   var on=tr.querySelector('input[type=radio]:checked');if(on)out[tr.dataset.code]=on.value});
  return out}
 function atpStat(t){var e=document.getElementById('atpStat');if(e)e.textContent=t}
+function impStat(t){var e=document.getElementById('impStat');if(e)e.textContent=t;else astat(t)}
 function atpLine(L){return (L.title||'(no heading)')+(L.remedy?' \u00b7 '+L.remedy:'')}
 // Resolves true on Add, false on Cancel.
-function atpPreview(j){return new Promise(function(done){
+function atpPreview(j,stat,statId){stat=stat||atpStat;return new Promise(function(done){
  var p=j.preview||{joined:[],related:[],add:[]},box=impEl('div','','imp-preview');
  var old=document.getElementById('atpPreview');if(old)old.remove();box.id='atpPreview';
  box.appendChild(impEl('div','This plan has '+j.existing+' layer(s). '+p.add.length+' new, '
@@ -1860,25 +1800,33 @@ function atpPreview(j){return new Promise(function(done){
  go.type=no.type='button';
  go.onclick=function(){box.remove();done(true)};no.onclick=function(){box.remove();done(false)};
  var bar=impEl('div','','imp-bar');bar.appendChild(go);bar.appendChild(no);box.appendChild(bar);
- var at=document.getElementById('atpStat');at.parentNode.insertBefore(box,at.nextSibling);
- atpStat('Review what will be added below.')})}
+ var at=document.getElementById(statId||'atpStat');at.parentNode.insertBefore(box,at.nextSibling);
+ stat('Review what will be added below.')})}
 function atpRemember(j){try{sessionStorage.setItem('atpJoined:__TID__',JSON.stringify(j.joined||[]))}catch(e){}}
-async function bodyAddToPlan(){
+// One flow for Body "Add to plan" and "Reveal only". The stale consent and the
+// preview token ride in ONE body, so neither retry drops the other.
+async function atpRun(url,body,stat,btnId,statId){
  if(window.__atpBusy)return;window.__atpBusy=true;
- var b=document.getElementById('atpBtn');if(b)b.disabled=true;atpStat('Adding\u2026');
+ var b=document.getElementById(btnId);if(b)b.disabled=true;stat('Adding\\u2026');
  try{
-  var body={choices:atpChoices()};
-  var j=await post('/author/__TID__/e4l/add-to-plan',body);
+  var j=await post(url,body);
   if(j&&j.stale){
-   if(!confirm('The latest E4L scan is '+j.days_ago+' days old. Add it anyway?')){atpStat('Cancelled.');return}
-   body.allow_stale=true;j=await post('/author/__TID__/e4l/add-to-plan',body)}
+   if(!confirm('The latest E4L scan is '+j.days_ago+' days old. Add it anyway?\\n\\n'
+    +'A fresh scan takes about ten seconds: count out loud, one to ten.')){stat('Cancelled.');return}
+   body.allow_stale=true;j=await post(url,body)}
   if(j&&j.needs_confirm){
-   if(!(await atpPreview(j))){atpStat('Cancelled.');return}
-   body.token=j.token;j=await post('/author/__TID__/e4l/add-to-plan',body)}
-  if(j&&j.ok){atpRemember(j);atpStat('Added '+j.added+' row(s). Reloading\u2026');location.reload()}
-  else atpStat((j&&(j.reason||j.error))||'Could not add them.')
- }catch(e){atpStat('Could not add them.')}
+   if(!(await atpPreview(j,stat,statId))){stat('Cancelled.');return}
+   body.token=j.token;j=await post(url,body)}
+  if(j&&j.ok){atpRemember(j);
+   var msg=(j.stale_override?'Added from a '+j.days_ago+'-day-old scan. ':'')+'Added '+j.added+' row(s).';
+   if(j.no_remedy_layers){stat(msg+' '+j.no_remedy_layers
+    +' layer(s) have no infoceutical on the remedy list, so their remedy is blank.');setTimeout(function(){location.reload()},4000)}
+   else{stat(msg+' Reloading\\u2026');location.reload()}}
+  else stat((j&&(j.reason||j.error))||'Could not add them.')
+ }catch(e){stat('Could not add them.')}
  finally{window.__atpBusy=false;if(b)b.disabled=false}}
+async function bodyAddToPlan(){
+ return atpRun('/author/__TID__/e4l/add-to-plan',{choices:atpChoices()},atpStat,'atpBtn','atpStat')}
 async function atpResolve(id,choice,btn){
  btn.disabled=true;
  var j=await post('/author/__TID__/add-to-plan/resolve',{id:id,choice:choice});
@@ -2093,18 +2041,24 @@ def render_e4l_panel(ctx, prl_html="", body_html=""):
     note = ("<div class=food style='margin-top:6px'>Reference only &mdash; your spoken "
             "testing fills the chain.</div>") if ctx.get("found") else ""
     days = ctx.get("days_ago")
+    # Glen, 2026-11-07: the old Import Reveal button, kept under Body as "Reveal
+    # only". It adds the reveal layers by the Add to plan rules, without the Body
+    # panel's products.
     if ctx.get("found") and days is not None and days < 7:
-        imp = ("<button class='btn' id=impBtn onclick=importReveal()>Import Reveal &rarr; Causal Chain</button>"
+        imp = ("<button class='btn ghost' id=impBtn onclick=importReveal()>Reveal only</button>"
                " <span id=impStat class=food></span>")
     elif ctx.get("found"):
-        imp = (f"<button class='btn' disabled title='Refresh to a scan under 7 days old'>"
-               f"Import Reveal &rarr; Causal Chain</button>"
+        imp = (f"<button class='btn ghost' disabled title='Refresh to a scan under 7 days old'>"
+               f"Reveal only</button>"
                f"<span class=food>scan is {_e(str(days))} days old</span>")
     else:
         imp = ""
-    check = ((body_html or "") + "<div class=btnrow style='margin-top:8px'>"
+    if imp:
+        imp = ("<div class=btnrow style='margin-top:6px'>" + imp + "</div>"
+               "<div class=food>Reveal only adds the Import Reveal layers by the same "
+               "rules, without the Infoceutical rows.</div>")
+    check = ((body_html or "") + imp + "<div class=btnrow style='margin-top:8px'>"
              "<button class='btn ghost' onclick=checkE4L()>Check E4L now</button>"
-             f"{imp}"
              "<span id=e4lchk class=food></span></div>")
     return (f"<div class=card style='border-left:3px solid {color}'>"
             "<div class=food style='text-transform:uppercase;font-size:11px;letter-spacing:.08em'>"

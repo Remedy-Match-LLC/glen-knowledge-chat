@@ -1,5 +1,5 @@
-"""The E4L panel offers an Import-Reveal button only when a scan is < 7 days old;
-the author page defines the importReveal() handler."""
+"""The E4L panel offers the "Reveal only" button (the old Import Reveal, Glen
+2026-11-07) only when a scan is < 7 days old; the author page defines importReveal()."""
 from dashboard.biofield_report_html import render_author_html, render_e4l_panel
 
 
@@ -13,21 +13,20 @@ def _ctx(found, days):
 
 def test_button_active_when_scan_under_7_days():
     html = render_e4l_panel(_ctx(True, 3))
-    assert "Import Reveal" in html
-    assert "onclick=importReveal()" in html
-    assert "disabled" not in html.split("Import Reveal")[0][-40:]  # button not disabled
+    assert "onclick=importReveal()>Reveal only</button>" in html
+    assert "disabled" not in html.split("Reveal only")[0][-60:]  # button not disabled
 
 
 def test_button_disabled_when_scan_stale():
     html = render_e4l_panel(_ctx(True, 12))
-    assert "Import Reveal" in html
+    assert "Reveal only</button>" in html
     assert "12 days old" in html
     assert "disabled" in html
 
 
 def test_no_button_when_no_scan():
     html = render_e4l_panel(_ctx(False, None))
-    assert "Import Reveal" not in html
+    assert "Reveal only" not in html
 
 
 def test_author_page_defines_import_reveal_handler():
@@ -37,3 +36,8 @@ def test_author_page_defines_import_reveal_handler():
     assert "function importReveal()" in html
     assert "/author/a7/e4l/import-reveal" in html
     assert "needs_confirm" in html
+
+
+def test_reveal_only_sits_under_the_body_panel():
+    html = render_e4l_panel(_ctx(True, 3), body_html="<div id=bodypanel></div>")
+    assert html.index("id=bodypanel") < html.index("Reveal only") < html.index("Check E4L now")

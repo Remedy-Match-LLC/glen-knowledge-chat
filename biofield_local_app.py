@@ -3168,106 +3168,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     @app.route("/author/<test_id>/e4l/import-reveal", methods=["POST"])
     def author_import_reveal(test_id):
-        """Import the client's E4L reveal layers + remedies as needs-review
-        causal-chain rows. A scan older than the freshness window is refused unless
-        allow_stale is passed -- refusing outright left the practitioner with no way
-        forward from the page. Appends only after an explicit force when the session
-        already has rows. Synthesis runs in-process (PHI stays local)."""
-        import datetime as _dt
-        from dashboard import biofield_reveal_import as _ri
-        _body = request.get_json(silent=True) or {}
-        force = bool(_body.get("force"))
-        # Two INDEPENDENT gates: allow_stale consents to an old scan, force consents to
-        # appending onto a session that already has layers. Neither implies the other.
-        allow_stale = bool(_body.get("allow_stale"))
-        with sqlite3.connect(db_path) as cx:
-            rep = _report_for(cx, test_id)
-            email = ((rep.get("client") or {}).get("email") or "").strip()
-            if not email:
-                return {"ok": False, "reason": "No client selected yet"}
-            ask = _species_needed(cx, test_id)
-            if ask:
-                return ask
-            # An animal's causal chain recommends the E4L infoceuticals (function names),
-            # not our Functional Formulations. Glen, 2026-09-18. is_animal is species !=
-            # human. Unknown species never reaches here: _species_needed asked Glen first.
-            #
-            # Species comes from e4l.db. This used to read client_species in
-            # chat_log.db, which does not exist on Glen's Mac: the lookup threw, was
-            # caught, and every animal imported as a person (Sasha, 2026-09-21).
-            _is_animal = _intake_is_animal(cx, test_id)
-            from dashboard import biofield_reveal_preview as _rp
-            token = str(_body.get("token") or "")
-            stored = _rp.load(cx, test_id, token) if force and token else None
-            if force and token and not stored:
-                return {"ok": False, "reason": "The preview has expired. "
-                                              "Click Import Reveal again."}
-            if stored and stored["email"] != email.lower():
-                return {"ok": False, "reason": "The client changed since the preview. "
-                                              "Click Import Reveal again."}
-            if stored:
-                res = stored["res"]   # the layers Glen previewed, not a new model run
-            else:
-                try:
-                    # An animal's remedy is the FileMaker remedy-list name for its code
-                    # (Glen, 2026-10-01), the list the picker and the dosing read.
-                    from dashboard.biofield_authoring import infoceutical_names_by_code
-                    keyed, sid = _reveal_scan(rep)
-                    res = ({"found": False} if keyed and not sid else
-                           _ri.synthesize_reveal_layers(
-                        email, scan_id=sid, today=_dt.date.today().isoformat(),
-                        is_animal=_is_animal,
-                        infoceutical_names=infoceutical_names_by_code(cx) if _is_animal
-                        else None))
-                except Exception as e:
-                    return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
-            if not res.get("found"):
-                return {"ok": False, "reason": "No E4L scan on file"}
-            stale = not res.get("fresh")
-            if stale and not allow_stale:
-                # Not a dead end any more: `stale` lets the page offer to go ahead,
-                # rather than refusing with no way forward.
-                return {"ok": False, "stale": True, "days_ago": res.get("days_ago"),
-                        "reason": f"Latest scan is {res.get('days_ago')} days old "
-                                  "— refresh to import, or import it anyway"}
-            existing = _layer_count(rep)
-            layers, skipped = res.get("layers") or [], []
-            # A stored preview is checked even if the chain was emptied since, so its
-            # skips are never dropped silently.
-            if existing or stored:
-                # Glen, 2026-10-18: add only the reveal layers no Clinical layer covers.
-                # The synthesis is a model call and differs run to run, so the layers
-                # Glen previews are stored and the import uses exactly those.
-                split = _rp.split(cx, test_id, rep, layers, res.get("scan_id"), e4l_db)
-                chain = _rp.chain_digest(rep.get("layers"))
-                if not stored:
-                    token = _rp.save(cx, test_id, res, split, email, chain)
-                    return {"ok": False, "needs_confirm": True, "existing": existing,
-                            "token": token, "preview": _rp.describe(split)}
-                if chain != stored["chain"] or _rp.describe(split) != stored["preview"]:
-                    return {"ok": False, "reason": "The chain changed since the preview. "
-                                                  "Click Import Reveal again."}
-                anyway = {str(k) for k in _body.get("add_anyway") or []}
-                skipped = [s for s in split["skip"] if str(s["layer"]["_key"]) not in anyway]
-                keep = {s["layer"]["_key"] for s in skipped}
-                # Renumbered 1..k, so a skipped layer leaves no gap after the existing ones.
-                layers = [dict(L, n=i) for i, L in
-                          enumerate((L for k, L in enumerate(layers) if k not in keep), 1)]
-                # Only one Import click may use a preview.
-                if not _rp.consume(cx, test_id, token):
-                    return {"ok": False, "reason": "That preview was already imported."}
-            imported = _ri.import_layers_to_test(cx, test_id, layers,
-                                                 after_layer=_last_layer_no(rep))
-            # Pass already-synthesized layers so the pipeline runs only once per import.
-            # All of them, skipped too: seeding rebuilds the coverage map from these, and
-            # a skipped layer's scan codes are still the scan's.
-            _seed_stresses(cx, test_id, force=True, layers=res.get("layers") or [])
-        # Reported back so an old scan behind a chain is never a silent fact.
-        return {"ok": True, "imported": imported, "stale_override": bool(stale),
-                "days_ago": res.get("days_ago") if stale else None,
-                "skipped": [{"title": s["layer"].get("title") or "", "rule": s["rule"],
-                             "why": s["why"]} for s in skipped],
-                "no_remedy_layers": sum(1 for L in layers if L.get("no_remedy"))}
+        """"Reveal only": the Import Reveal layers by the Add to plan rules, without
+        the Body panel's products (Glen, 2026-11-07). A same-product layer joins the
+        layer already there; a related one is held in the proposals list, off the
+        chain, until Glen picks; the rest are added after the existing layers. The
+        old skip and "add anyway" path is retired, so no layer's stress patterns are
+        dropped. The stale-scan gate and the preview token are as before. Synthesis
+        runs in-process (PHI stays local)."""
+        return _add_to_plan_flow(test_id, request.get_json(silent=True) or {},
+                                 with_products=False, label="Reveal only")
 
     # -- Add to plan (Glen, 2026-11-07) ---------------------------------------------
     # See dashboard/biofield_add_to_plan.py. Body adds the chosen product for each
@@ -3343,12 +3252,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     @app.route("/author/<test_id>/e4l/add-to-plan", methods=["POST"])
     def author_body_add_to_plan(test_id):
         """Body "Add to plan": the product chosen for each recommended Infoceutical,
-        then the Import Reveal layers, through biofield_add_to_plan.classify.
+        then the Import Reveal layers, through biofield_add_to_plan.classify."""
+        return _add_to_plan_flow(test_id, request.get_json(silent=True) or {},
+                                 with_products=True, label="Add to plan")
 
-        As Import Reveal: an old scan asks first (allow_stale), and on a chain that
-        already has layers the click previews and stores what it would write; the
-        confirm ({token}) writes exactly that, once, if the chain is unchanged."""
+    def _add_to_plan_flow(test_id, body, with_products, label):
+        """Body "Add to plan" (`with_products`) and "Reveal only".
+
+        An old scan asks first (allow_stale). On a chain that already has layers the
+        click previews and stores what it would write; the confirm ({token}) writes
+        exactly that, once, if the chain is unchanged. A token from the other button
+        is refused."""
         import datetime as _dt
+        kind = "body" if with_products else "reveal"
         from dashboard import biofield_add_to_plan as _atp
         from dashboard import biofield_add_to_plan_apply as _ap
         from dashboard import biofield_body_panel as _bp
@@ -3356,7 +3272,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_authoring import (exact_canonical_name,
                                                   infoceutical_names_by_code)
         from dashboard.biofield_chain_fold import _remedy_key
-        body = request.get_json(silent=True) or {}
         allow_stale = bool(body.get("allow_stale"))
         token = str(body.get("token") or "")
         with sqlite3.connect(db_path) as cx:
@@ -3369,12 +3284,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return ask
             is_animal = _intake_is_animal(cx, test_id)
             stored = _ap.load_preview(cx, test_id, token) if token else None
+            if stored and stored.get("kind", "body") != kind:
+                stored = None
             if token and not stored:
                 return {"ok": False, "reason": "The preview has expired. "
-                                              "Click Add to plan again."}
+                                              f"Click {label} again."}
             if stored and stored["email"] != email.lower():
                 return {"ok": False, "reason": "The client changed since the preview. "
-                                              "Click Add to plan again."}
+                                              f"Click {label} again."}
             if stored:
                 res, products = stored["res"], stored["products"]
             else:
@@ -3390,17 +3307,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
                 if not res.get("found"):
                     return {"ok": False, "reason": "No E4L scan on file"}
+                products, unnamed = [], []
                 try:
-                    panel = _body_panel(cx, test_id, rep, res.get("scan_id"))
-                    products, unnamed = _bp.chosen_layers(panel, body.get("choices") or {},
-                                                          is_animal=is_animal)
+                    if with_products:
+                        panel = _body_panel(cx, test_id, rep, res.get("scan_id"))
+                        products, unnamed = _bp.chosen_layers(
+                            panel, body.get("choices") or {}, is_animal=is_animal)
                 except ValueError as e:
                     return {"ok": False, "reason": str(e)}
                 res = dict(res, unnamed=unnamed)
             if not res.get("fresh") and not allow_stale:
                 return {"ok": False, "stale": True, "days_ago": res.get("days_ago"),
-                        "reason": f"Latest scan is {res.get('days_ago')} days old "
-                                  "— refresh first, or add it anyway"}
+                        "reason": f"Latest scan is {res.get('days_ago')} days old. "
+                                  "Refresh first, or add it anyway."}
             # An animal takes infoceuticals only, whatever the page sent.
             refused = _animal_refused(cx, test_id, [p["remedy_name"] for p in products])
             products = [p for p in products if p["remedy_name"] not in refused]
@@ -3415,7 +3334,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             shown = _ap.describe(got)
             chain = _ap.digest(rows)
             if rows and not stored:
-                token = _ap.save_preview(cx, test_id, {"res": res, "products": products,
+                token = _ap.save_preview(cx, test_id, {"kind": kind, "res": res,
+                                                       "products": products,
                                                        "email": email.lower(),
                                                        "chain": chain, "preview": shown})
                 return {"ok": False, "needs_confirm": True,
@@ -3425,7 +3345,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if stored:
                 if chain != stored["chain"] or shown != stored["preview"]:
                     return {"ok": False, "reason": "The plan changed since the preview. "
-                                                  "Click Add to plan again."}
+                                                  f"Click {label} again."}
                 if not _ap.consume_preview(cx, test_id, token):
                     return {"ok": False, "reason": "That preview was already added."}
 
@@ -3445,10 +3365,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                             lambda layers: _ri.import_layers_to_test(cx, test_id, layers),
                             laser_row=_laser_row)
             _seed_stresses(cx, test_id, force=True, layers=res.get("layers") or [])
-        return {"ok": True, "added": done["added"], "joined": shown["joined"],
-                "related": shown["related"], "proposals": done["proposals"],
+        return {"ok": True, "added": done["added"], "imported": done["added"],
+                "joined": shown["joined"], "related": shown["related"],
+                "proposals": done["proposals"],
                 "stale_override": not res.get("fresh"),
+                "days_ago": res.get("days_ago") if not res.get("fresh") else None,
                 "unnamed": res.get("unnamed") or [],
+                # An animal layer whose codes carry no remedy-list infoceutical
+                # imports with a blank remedy; the page says how many.
+                "no_remedy_layers": sum(1 for L in res.get("layers") or []
+                                        if L.get("no_remedy")),
                 "animal_refused": refused}
 
     @app.route("/author/<test_id>/add-to-plan/proposals")

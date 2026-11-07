@@ -386,3 +386,27 @@ def test_a_held_related_layer_is_off_the_chain_and_the_invoice_until_glen_picks(
     assert _resolve(client, tid, "both").status_code == 200
     assert "Gut Restore" in [r[2] for r in _chain(db)]
     assert "gut-restore" in invoiced()
+
+
+REVEAL = "/author/{}/e4l/import-reveal"
+
+
+def test_reveal_only_adds_the_reveal_layers_without_the_body_rows(tmp_path, monkeypatch):
+    # Glen, 2026-11-07: "Reveal only" is Add to plan without the Infoceutical rows.
+    res = _reveal({"n": 1, "title": "Kidney Health", "remedy_name": "Kidney Kare",
+                   "codes": ["ED12"]})
+    client, tid, db = _client(tmp_path, monkeypatch, res)
+    j = client.post(REVEAL.format(tid), json={"choices": {"ES1": "Lymph Flow"}}).get_json()
+    assert j["ok"], j
+    assert _chain(db) == [(1, "Kidney Health", "Kidney Kare", ["ED12"])]
+
+
+def test_a_body_preview_token_does_not_confirm_reveal_only(tmp_path, monkeypatch):
+    # A token is for the button that made it. A Body preview confirmed through
+    # Reveal only would write a plan Glen never previewed.
+    client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
+    j = client.post(URL.format(tid), json={}).get_json()
+    assert j["needs_confirm"]
+    n = len(_chain(db))
+    got = client.post(REVEAL.format(tid), json={"token": j["token"]}).get_json()
+    assert got["ok"] is False and "expired" in got["reason"] and len(_chain(db)) == n

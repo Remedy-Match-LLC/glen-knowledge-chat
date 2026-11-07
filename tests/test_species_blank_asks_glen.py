@@ -110,7 +110,8 @@ def test_the_page_asks_then_resends_the_same_request():
 
 def test_import_button_shows_it_is_working_and_ignores_a_second_click():
     js = H._AUTHOR_JS
-    assert "if(window.__impBusy)return;" in js
-    assert "impStat('Importing\u2026')" in js
+    # Reveal only shares the Add to plan flow (Glen, 2026-11-07).
+    assert "if(window.__atpBusy)return;" in js
+    assert "stat('Adding\\u2026')" in js
     src = open(H.__file__).read()
     assert "id=impBtn onclick=importReveal()" in src and "<span id=impStat" in src
