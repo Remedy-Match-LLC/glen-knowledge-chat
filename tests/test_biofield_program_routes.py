@@ -14,6 +14,14 @@ from biofield_local_app import create_app
 
 
 @pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These intakes are a person's. An unknown species now keeps FFs off every write
+    and publish (2026-11-06 review, round 3), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
+@pytest.fixture(autouse=True)
 def _no_gate(monkeypatch):
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
     import dashboard as _d
@@ -30,7 +38,7 @@ _SPIRIT = {"header": "", "phase": None, "location": "",
 
 
 def _app(db, spirit=None):
-    return create_app(db, scan_lookup=lambda e: _NO_SCAN,
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NO_SCAN,
                       fetch_profile=lambda e: {},
                       fetch_recent_comms=lambda e: {},
                       interpret_complete=lambda s, u: json.dumps(spirit or _SPIRIT))
@@ -152,7 +160,7 @@ def test_body_reads_not_fresh_without_a_recent_scan(tmp_path):
 
 def test_body_reads_fresh_with_a_recent_scan(tmp_path):
     fresh = dict(_NO_SCAN, status="fresh", found=True, fresh=True, days_ago=3)
-    client = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e: fresh,
+    client = create_app(str(tmp_path / "c.db"), scan_lookup=lambda e, client_id=None: fresh,
                         fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: {},
                         interpret_complete=lambda s, u: json.dumps(_SPIRIT)).test_client()
     tid = _new(client)

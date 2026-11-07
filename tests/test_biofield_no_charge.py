@@ -9,6 +9,8 @@ these tests pin that absence rather than any grant-side exclusion.
 """
 import sqlite3
 
+import pytest
+
 from biofield_local_app import create_app
 from dashboard.biofield_authoring import (
     add_chain_row, create_test, get_no_charge, init_auth_tables, set_no_charge,
@@ -16,6 +18,14 @@ from dashboard.biofield_authoring import (
 from dashboard.biofield_fee import build_fee_state
 from dashboard.biofield_invoice import BIOFIELD_SLUG
 from dashboard.biofield_report_html import render_fee_panel
+
+
+@pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These invoices are a person's. An unknown species now leaves FFs off the
+    invoice (2026-11-06 review, finding 8b), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
 
 
 def test_no_charge_defaults_off_and_persists_per_test(tmp_path):

@@ -198,7 +198,7 @@ def _app(tmp_path):
     e = sqlite3.connect(str(e4l))
     e.execute("CREATE TABLE e4l_clients(client_id INTEGER, name TEXT, email TEXT)")
     e.commit(); e.close()
-    app = create_app(db, scan_lookup=lambda e: _NONE, fetch_profile=lambda e: {},
+    app = create_app(db, scan_lookup=lambda e, client_id=None: _NONE, fetch_profile=lambda e: {},
                      fetch_recent_comms=lambda e: {}, e4l_db=str(e4l),
                      interpret_complete=_complete,
                      client_gmail=lambda cx, e: {"text": "", "held": 0, "error": None},
@@ -258,7 +258,7 @@ def test_a_model_failure_is_reported_not_raised(tmp_path, monkeypatch):
         raise RuntimeError("down")
     import biofield_local_app as bla
     db = str(tmp_path / "x.db")
-    app = bla.create_app(db, scan_lookup=lambda e: _NONE, fetch_profile=lambda e: {},
+    app = bla.create_app(db, scan_lookup=lambda e, client_id=None: _NONE, fetch_profile=lambda e: {},
                          fetch_recent_comms=lambda e: {}, interpret_complete=boom,
                          client_gmail=None, records_reader=None)
     c2 = app.test_client()

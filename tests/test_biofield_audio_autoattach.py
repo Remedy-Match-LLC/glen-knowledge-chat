@@ -34,7 +34,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(bpp, "publish_to_portal", fake_publish)
     db = str(tmp_path / "c.db")
     c = bla.create_app(db, tts=lambda script: b"MP3BYTES",
-                       scan_lookup=lambda e: {"status": "none", "found": False,
+                       scan_lookup=lambda e, client_id=None: {"status": "none", "found": False,
                                               "findings": [], "fresh": False}).test_client()
     c._db, c._calls = db, calls
     return c

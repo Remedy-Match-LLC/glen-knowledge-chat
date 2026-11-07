@@ -25,7 +25,7 @@ def _rule(css, selector):
 def test_stress_field_keeps_its_width_beside_the_combine_picker(tmp_path):
     profile = {"email": "s@x.com", "conditions": "Adrenal Fatigue; Suspect of Glaucoma"}
     app = create_app(str(tmp_path / "chat_log.db"), fetch_profile=lambda e: profile,
-                     scan_lookup=lambda e: {})
+                     scan_lookup=lambda e, client_id=None: {})
     c = app.test_client()
     tid = c.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     c.post(f"/author/{tid}/header", json={"name": "S", "email": "s@x.com"})

@@ -14,6 +14,15 @@ from dashboard import biofield_clinical_sections as cs
 from dashboard import biofield_plan_report as pr
 from dashboard import biofield_report_split as rs
 
+
+@pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These invoices are a person's. An unknown species now leaves FFs off the
+    invoice (2026-11-06 review, finding 8b), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
 INFO = "ED12 Kidney Energetic Driver Infoceutical"
 CATALOG = [{"slug": "liver-support", "name": "Liver Support"},
            {"slug": "ed12", "name": INFO},
@@ -265,7 +274,7 @@ def app_client(tmp_path, monkeypatch):
                        invoice_link=lambda oid: {"ok": False},
                        invoice_paid_check=lambda email: {},
                        invoice_latest=lambda email: {"ok": False},
-                       scan_lookup=lambda email: {},
+                       scan_lookup=lambda email, client_id=None: {},
                        auto_publish=lambda *a, **k: published.append(a) or calls.update(
                            publish_kw=k) or {}).test_client()
     c.db, c.written, c.calls, c.published = db, written, calls, published
@@ -743,7 +752,7 @@ def rich(tmp_path, monkeypatch):
                        invoice_create=fake_create, invoice_link=lambda oid: {"ok": False},
                        invoice_paid_check=lambda email: {},
                        invoice_latest=lambda email: {"ok": False},
-                       scan_lookup=lambda email: {}).test_client()
+                       scan_lookup=lambda email, client_id=None: {}).test_client()
     c.db, c.rec = db, rec
     c.tid = n if str(n).startswith("a") else f"a{n}"
     return c

@@ -44,7 +44,7 @@ def _new_test_with_email(client, email):
 def test_import_writes_rows_when_fresh(tmp_path, monkeypatch):
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _FRESH)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = _new_test_with_email(client, "jane@x.com")
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
     assert j["ok"] is True and j["imported"] == 1
@@ -57,7 +57,7 @@ def test_import_writes_rows_when_fresh(tmp_path, monkeypatch):
 def test_import_rejects_stale_scan(tmp_path, monkeypatch):
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _STALE)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = _new_test_with_email(client, "jane@x.com")
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
     assert j["ok"] is False and "24" in j["reason"]
@@ -66,7 +66,7 @@ def test_import_rejects_stale_scan(tmp_path, monkeypatch):
 def test_import_needs_confirm_then_appends_with_force(tmp_path, monkeypatch):
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _FRESH)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = _new_test_with_email(client, "jane@x.com")
     client.post(f"/author/{tid}/e4l/import-reveal", json={})          # first import (1 row)
     # The same heading with another remedy. An identical remedy would fold away on the
@@ -87,7 +87,7 @@ def test_import_needs_confirm_then_appends_with_force(tmp_path, monkeypatch):
 def test_an_identical_layer_added_anyway_keeps_one_row(tmp_path, monkeypatch):
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _FRESH)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = _new_test_with_email(client, "jane@x.com")
     client.post(f"/author/{tid}/e4l/import-reveal", json={})
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
@@ -100,7 +100,7 @@ def test_an_identical_layer_added_anyway_keeps_one_row(tmp_path, monkeypatch):
 def test_import_no_client_email(tmp_path, monkeypatch):
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _FRESH)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
     assert j["ok"] is False and "client" in j["reason"].lower()
@@ -111,7 +111,7 @@ def test_import_handles_synthesis_failure(tmp_path, monkeypatch):
         raise RuntimeError("pinecone down")
     monkeypatch.setattr(RI, "synthesize_reveal_layers", boom)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = _new_test_with_email(client, "jane@x.com")
     r = client.post(f"/author/{tid}/e4l/import-reveal", json={})
     assert r.status_code == 200
@@ -131,7 +131,7 @@ def test_a_stale_scan_offers_an_override_instead_of_a_dead_end(tmp_path, monkeyp
     not import, and could not tell the app to go ahead anyway."""
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _STALE_WITH_LAYERS)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = _new_test_with_email(client, "jane@x.com")
 
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
@@ -154,7 +154,7 @@ def test_allowing_a_stale_scan_does_not_also_bypass_the_existing_rows_confirm(
     session that already has layers -- that needs its own explicit force."""
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _STALE_WITH_LAYERS)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = _new_test_with_email(client, "jane@x.com")
     client.post(f"/author/{tid}/e4l/import-reveal", json={"allow_stale": True})
 
@@ -171,7 +171,7 @@ def test_force_alone_never_imports_a_stale_scan(tmp_path, monkeypatch):
     """The inverse: confirming an append is not consent to use an old scan."""
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _STALE_WITH_LAYERS)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = _new_test_with_email(client, "jane@x.com")
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={"force": True}).get_json()
     assert j["ok"] is False and j.get("stale") is True
@@ -180,7 +180,7 @@ def test_force_alone_never_imports_a_stale_scan(tmp_path, monkeypatch):
 def test_a_fresh_scan_is_unaffected_by_the_override(tmp_path, monkeypatch):
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _FRESH)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = _new_test_with_email(client, "jane@x.com")
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
     assert j["ok"] is True and j.get("stale_override") is False

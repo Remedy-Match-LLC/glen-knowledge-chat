@@ -43,7 +43,7 @@ _SYNTH = {"found": True, "scan_id": 900, "scan_date": "2026-06-24", "days_ago": 
 
 def _app(db):
     return create_app(
-        db, scan_lookup=lambda e: _FRESH if e == "j@x.com" else _NONE
+        db, scan_lookup=lambda e, client_id=None: _FRESH if e == "j@x.com" else _NONE
     ).test_client()
 
 
@@ -134,7 +134,7 @@ def test_import_reveal_synthesizes_exactly_once(tmp_path, monkeypatch):
 def test_row_save_layer_change_reorders(tmp_path, monkeypatch):
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _NONE)  # no seed needed
     db = str(tmp_path / "c.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     r1 = client.post(f"/author/{tid}/row", json={"layer": 1, "head": "A", "remedy": "R1"}).get_json()["rid"]
     r2 = client.post(f"/author/{tid}/row", json={"layer": 2, "head": "B", "remedy": "R2"}).get_json()["rid"]

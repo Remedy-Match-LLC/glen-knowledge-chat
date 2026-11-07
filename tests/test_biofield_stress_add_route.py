@@ -15,7 +15,7 @@ _NONE = {"status": "none", "found": False, "findings": [], "days_ago": None, "fr
 
 
 def _app(db):
-    return create_app(db, scan_lookup=lambda e: _NONE)
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NONE)
 
 
 def _new(client):

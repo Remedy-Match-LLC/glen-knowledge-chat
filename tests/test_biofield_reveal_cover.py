@@ -123,7 +123,7 @@ def _client(tmp_path, monkeypatch, result, scan=_NONE):
         return result
     monkeypatch.setattr(RI, "synthesize_reveal_layers", synth)
     db = str(tmp_path / "chat_log.db")
-    client = create_app(db, scan_lookup=lambda e: scan).test_client()
+    client = create_app(db, scan_lookup=lambda e, client_id=None: scan).test_client()
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     client.post(f"/author/{tid}/header", json={"name": "Jo", "email": "jo@x.com",
                                                "date": "2026-10-18"})

@@ -3,6 +3,16 @@ import biofield_local_app
 from dashboard import biofield_portal_publish as bpp
 from dashboard.biofield_authoring import create_test, add_chain_row
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _species_known_human(monkeypatch):
+    """These intakes are a person's. An unknown species now keeps FFs off every write
+    and publish (2026-11-06 review, round 3), so the client is known to be a person."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
 
 def _client(tmp_path):
     db = str(tmp_path / "t.db")

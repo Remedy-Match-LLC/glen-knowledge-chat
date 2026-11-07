@@ -296,7 +296,7 @@ def e4l(tmp_path):
 
 def _app(tmp_path, e4l, reader):
     db = str(tmp_path / "chat.db")
-    app = create_app(db, scan_lookup=lambda e: _NONE, fetch_profile=lambda e: {},
+    app = create_app(db, scan_lookup=lambda e, client_id=None: _NONE, fetch_profile=lambda e: {},
                      fetch_recent_comms=lambda e: {}, e4l_db=e4l,
                      interpret_complete=lambda s, u: json.dumps({"stresses": []}),
                      client_gmail=lambda cx, e: {"text": "", "held": 0, "error": None},
