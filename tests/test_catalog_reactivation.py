@@ -80,6 +80,9 @@ RETIRED = {
     # Glen, 2026-11-06: "combine Rescue and Rescue Phytochromotherapy". Same formula, same
     # 30 g jar; Rescue holds the store page and the copy.
     "rescue-phytochromotherapy": "rescue",
+    # Glen, 2026-11-06: "Serene Blue Green and Serenity Blue Green Balance combine". Both
+    # are the 30-capsule bottle; Serene Blue Green holds the store page and formula.
+    "serenity-blue-green-balance": "serenity",
     # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
     # product)". One listing, the HomeoEnergetic one.
     "digestzymes": "digestzymes-homeoenergetic-drops",

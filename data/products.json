@@ -11694,6 +11694,7 @@
   },
   "serenity": {
    "name": "Serene Blue Green",
+   "description": "1 capsule daily with food",
    "price_cents": 7000,
    "bottle_type": "30 Caps",
    "pinecone_title": "Serene Blue Green",
@@ -14466,6 +14467,8 @@
   },
   "serenity-blue-green-balance": {
    "name": "Serenity Blue Green Balance",
+   "inactive": true,
+   "superseded_by": "serenity",
    "price_cents": 7000,
    "pinecone_title": "Serenity Blue Green Balance",
    "qty_pricing": true,
