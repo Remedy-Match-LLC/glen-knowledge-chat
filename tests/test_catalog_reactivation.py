@@ -72,6 +72,11 @@ RETIRED = {
     "mold-spray-mould-spray": "mold-spray",
     # Glen, 2026-11-06: "join Off Syrup and Off Syrup Drops".
     "offsyrup-drops": "off-syrup",
+    # Glen, 2026-11-06: "combine oxygen cleanse and oxygen cleanse watermelon powder". The
+    # powder holds the shelf count and the powder bottle; the same formula.
+    "oxygen-cleanse": "oxygen-cleanse-watermelon-powder",
+    # Glen, 2026-11-06: "merge Pea Protein Aminos and Pea Protein Aminos - Pure & Predigested".
+    "pea-protein-aminos-pure-predigested": "hydrolized-pea-protein-aminos--pure--predigested",
     # Glen, 2026-11-06: "Digestzymes Homeoenergetic Drops also shows as Digestzymes (same
     # product)". One listing, the HomeoEnergetic one.
     "digestzymes": "digestzymes-homeoenergetic-drops",

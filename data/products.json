@@ -13137,6 +13137,8 @@
   },
   "hydrolized-pea-protein-aminos--pure--predigested": {
    "name": "Pea Protein Aminos",
+   "description": "1 scoop 3 times a day in drinks",
+   "bottle_type": "120 caps",
    "price_cents": 4000,
    "pinecone_title": "Pea Protein Aminos",
    "url": "https://myhealingoasis.com/begin/product/hydrolized-pea-protein-aminos--pure--predigested",
@@ -13162,6 +13164,8 @@
   },
   "oxygen-cleanse": {
    "name": "Oxygen Cleanse",
+   "inactive": true,
+   "superseded_by": "oxygen-cleanse-watermelon-powder",
    "price_cents": 7000,
    "pinecone_title": "Oxygen Cleanse",
    "url": "https://myhealingoasis.com/begin/product/oxygen-cleanse",
@@ -24843,6 +24847,8 @@
   },
   "pea-protein-aminos-pure-predigested": {
    "name": "Pea Protein Aminos - Pure & Predigested",
+   "inactive": true,
+   "superseded_by": "hydrolized-pea-protein-aminos--pure--predigested",
    "price_cents": 4000,
    "pinecone_title": "Pea Protein Aminos - Pure & Predigested",
    "qty_pricing": false,
