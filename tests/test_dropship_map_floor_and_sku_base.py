@@ -326,3 +326,14 @@ def test_the_name_cds_activator_finds_the_pair():
         assert _app._live_slug(_app._resolve_buy_slug(name)) == pair, name
         assert (_app._get_product(_app._resolve_buy_slug(name)) or {}).get("slug") == pair, name
     assert _app._live_slug(_app._TITLE_TO_SLUG.get("CDS Activator")) == pair
+
+
+def test_vitamin_e_120_gelcaps_is_priced_like_wholomega_120():
+    """Glen, 2026-11-06: "Add 2 bottles of Vitamin E Spectrum 120 gelcap size" and "price
+    it the same as WholOmega". Same price, compare-at and larger-size rule."""
+    import app as appmod
+    big = appmod._get_product("vitamin-e-spectrum-120-gelcaps")
+    omega = appmod._get_product("wholomega-120-gelcaps")
+    keys = ("price_cents", "regular_cents", "ff_larger_size", "qty_pricing", "bottle_type")
+    assert {k: big.get(k) for k in keys} == {k: omega.get(k) for k in keys}
+    assert not big.get("inactive")

@@ -2022,6 +2022,16 @@
    "bottle_type": "30 Caps",
    "fmp_id": "340"
   },
+  "vitamin-e-spectrum-120-gelcaps": {
+   "name": "Vitamin E Spectrum, 120 gelcaps",
+   "ff_larger_size": true,
+   "price_cents": 19000,
+   "pinecone_title": "Vitamin E Spectrum",
+   "qty_pricing": false,
+   "no_groovekart": true,
+   "regular_cents": 23000,
+   "bottle_type": "120 caps"
+  },
   "litewater": {
    "name": "Litewater",
    "price_cents": 3400,
