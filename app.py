@@ -1818,9 +1818,15 @@ def resolve_or_create_shortlink(product_name: str, alias_info: dict):
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         row = cx.execute(
-            "SELECT shortlink FROM shortlink_cache WHERE product_name = ?",
+            "SELECT shortlink, canonical FROM shortlink_cache WHERE product_name = ?",
             (product_name,)
         ).fetchone()
+    # A cached link made for an older destination is stale: the alias now points elsewhere
+    # ("Living Water" moved from the hydrogen bottle to the ionizers, Glen 2026-11-10).
+    # Treat it as a miss, so a fresh link is made for today's URL and replaces the row.
+    if row and (row["canonical"] or "") != canonical:
+        print(f"[shortlink] stale cache for {product_name!r}: destination changed", flush=True)
+        row = None
     if row:
         # Update last_used_at non-blocking
         try:
