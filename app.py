@@ -10792,6 +10792,10 @@ from dashboard import stock_counts as _stock_counts
 _stock_counts.set_db_path_fn(lambda: LOG_DB)
 _stock_counts.set_catalog_fn(lambda: _PRODUCTS.get("products") or {})
 
+# Formula review dates (Glen, 2026-11-09): every product's last review and its steps.
+from dashboard import formula_reviews as _formula_reviews
+_formula_reviews.set_catalog_fn(lambda: _PRODUCTS.get("products") or {})
+
 
 def _waitlist_refusal(slug):
     """The buyer-facing refusal for a waitlist_only slug, or None when it is orderable
@@ -24261,6 +24265,57 @@ def api_console_stock_reconcile():
     cx = db.connect(LOG_DB)
     try:
         return jsonify({"ok": True, "synced": _stock_counts.reconcile(cx)})
+    finally:
+        cx.close()
+
+
+@app.route("/console/formula-reviews")
+def console_formula_reviews_page():
+    """Formula review dates (Glen, 2026-11-09). The page holds no data; its API is guarded."""
+    resp = send_from_directory(STATIC, "console-formula-reviews.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+@app.route("/api/console/formula-reviews/overview", methods=["GET"])
+def api_console_formula_reviews_overview():
+    """Every product that is not inactive: reviewed ones oldest review first, then the
+    never-reviewed group. Each with the latest date for every step."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    cx = db.connect(LOG_DB)
+    try:
+        _formula_reviews.init_tables(cx)
+        return jsonify({"ok": True, **_formula_reviews.overview(cx)})
+    finally:
+        cx.close()
+
+
+@app.route("/api/console/formula-reviews", methods=["GET", "POST"])
+def api_console_formula_reviews():
+    """GET: the rows, newest first (?slug= for one product). POST: add one row,
+    {slug, step, date, value?, link?, note?}. A repeat of the same slug, step, date and
+    value is not stored twice: it answers created false."""
+    denied = _check_console_auth()
+    if denied:
+        return denied
+    cx = db.connect(LOG_DB)
+    try:
+        _formula_reviews.init_tables(cx)
+        if request.method == "GET":
+            return jsonify({"ok": True, "rows": _formula_reviews.list_events(
+                cx, request.args.get("slug") or None)})
+        data = request.get_json(silent=True) or {}
+        try:
+            res = _formula_reviews.add_event(
+                cx, data.get("slug"), data.get("step"), data.get("date"),
+                value=data.get("value"), link=data.get("link"), note=data.get("note"),
+                who=_stock_console_who())
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": True, **res}), (201 if res["created"] else 200)
     finally:
         cx.close()
 

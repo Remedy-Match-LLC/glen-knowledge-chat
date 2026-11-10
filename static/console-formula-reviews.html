@@ -1,0 +1,118 @@
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Formula Reviews</title>
+<style>
+  :root{ --bg:#0a150d; --surface:#0f1f14; --border:#21472d; --cream:#eaf3ec; --muted:#8aa594;
+         --gold:#d4a843; --green:#7fd6a0; --amber:#e0b96b; --red:#e08a8a; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--cream);
+        font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  h1{ margin:18px 16px 2px; font-size:22px; }
+  h2{ margin:24px 16px 8px; font-size:16px; }
+  .sub{ margin:0 16px 14px; color:var(--muted); font-size:13px; max-width:980px; }
+  input{ padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+         background:var(--bg); color:var(--cream); font-size:13px; font-family:inherit; }
+  button{ padding:8px 13px; border-radius:8px; border:1px solid var(--gold);
+          background:var(--gold); color:#0a150d; font-weight:600; cursor:pointer; font-size:13px; }
+  .wrap{ overflow-x:auto; margin:0 16px; max-width:1180px; }
+  table{ border-collapse:collapse; width:100%; font-size:13px; }
+  th, td{ text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th{ color:var(--muted); font-weight:600; white-space:nowrap; }
+  td.d{ white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .status{ font-size:12px; color:var(--muted); }
+  .waiting{ color:var(--amber); font-weight:600; }
+  .never{ color:var(--muted); font-style:italic; }
+  .path{ font-size:11px; color:var(--muted); word-break:break-all; }
+  a{ color:var(--gold); }
+  details{ margin:0 16px 16px; max-width:1180px; }
+  summary{ cursor:pointer; font-weight:600; padding:6px 0; }
+  .empty{ color:var(--muted); font-size:13px; margin:0 16px; }
+  #keybox{ margin:16px; }
+  #filter{ margin:0 16px 12px; width:280px; max-width:calc(100% - 32px); }
+</style>
+<h1>Formula reviews</h1>
+<p class="sub">When each product's formula was last reviewed, and how far each review has got.
+Reviewed products are listed oldest review first. Products with no review yet are grouped
+below them, under Never reviewed.</p>
+<div id="keybox" style="display:none"><input id="key-input" type="text" placeholder="console key"> <button onclick="unlock()">Unlock</button></div>
+<p id="off" class="empty" style="display:none"></p>
+<input id="filter" placeholder="Find a product" oninput="draw()" style="display:none">
+<p class="sub" id="counts"></p>
+
+<h2 id="reviewed-h" style="display:none">Reviewed, oldest first</h2>
+<div class="wrap"><table id="reviewed" style="display:none">
+  <thead><tr id="reviewed-head"></tr></thead>
+  <tbody id="reviewed-rows"></tbody>
+</table></div>
+
+<details id="never-box" style="display:none">
+  <summary id="never-sum">Never reviewed</summary>
+  <div class="wrap" style="margin:0"><table>
+    <thead><tr><th>Product</th><th>Last review</th></tr></thead>
+    <tbody id="never-rows"></tbody>
+  </table></div>
+</details>
+
+<script src="/static/op-nav.js" data-active="admin" data-sub="formula-reviews"></script>
+<script>
+  function key(){ try { return localStorage.getItem('console_key') || ''; } catch(e){ return ''; } }
+  (function(){ var u = new URLSearchParams(location.search).get('key');
+    if(u){ try { localStorage.setItem('console_key', u); } catch(e){} } })();
+  function hdr(){ return { 'X-Console-Key': key() }; }
+  function unlock(){ try { localStorage.setItem('console_key', document.getElementById('key-input').value); } catch(e){}
+    document.getElementById('keybox').style.display='none'; load(); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function day(d){ if (!d) return ''; var p = String(d).split('-');
+    return p.length === 3 ? (parseInt(p[2], 10) + ' ' + MONTHS[parseInt(p[1], 10) - 1] + ' ' + p[0]) : esc(d); }
+  // A web address opens. A file on Glen's Mac cannot be opened from a web page, so its path is shown.
+  function link(u){ if (!u) return '';
+    if (/^https?:\/\//i.test(u) || u.charAt(0) === '/' && u.indexOf('/Users/') !== 0)
+      return '<a href="'+esc(u)+'" target="_blank" rel="noopener">Open</a>';
+    return '<span class="path">'+esc(u)+'</span>'; }
+
+  var DATA = null;
+  async function load(){
+    var r = await fetch('/api/console/formula-reviews/overview', { headers: hdr() });
+    if (r.status === 401){ document.getElementById('keybox').style.display='block'; return; }
+    var d = await r.json();
+    if (!d.ok){ var off = document.getElementById('off'); off.textContent = d.error || 'Could not load.';
+      off.style.display='block'; return; }
+    DATA = d;
+    document.getElementById('filter').style.display = 'block';
+    document.getElementById('reviewed-head').innerHTML = '<th>Product</th>' +
+      d.steps.map(function(s){ return '<th>'+esc(s.label)+'</th>'; }).join('') + '<th>Review page</th>';
+    draw();
+  }
+
+  function draw(){
+    if (!DATA) return;
+    var q = document.getElementById('filter').value.trim().toLowerCase();
+    function hit(x){ return !q || x.name.toLowerCase().indexOf(q) >= 0 || x.slug.indexOf(q) >= 0; }
+    var rev = DATA.reviewed.filter(hit), nev = DATA.never_reviewed.filter(hit);
+    document.getElementById('counts').textContent = DATA.reviewed.length + ' reviewed, ' +
+      DATA.never_reviewed.length + ' never reviewed.';
+    document.getElementById('reviewed-h').style.display = rev.length ? 'block' : 'none';
+    document.getElementById('reviewed').style.display = rev.length ? 'table' : 'none';
+    document.getElementById('reviewed-rows').innerHTML = rev.map(function(x){
+      return '<tr><td>'+esc(x.name)+'<br><span class="status">'+esc(x.slug)+'</span></td>' +
+        DATA.steps.map(function(s){
+          var cell = day(x.steps[s.key]);
+          if (s.key === 'decision' && x.decision)
+            cell = '<span class="'+(x.decision === 'waiting' ? 'waiting' : '')+'">'+esc(x.decision)+'</span>' +
+                   (cell ? '<br><span class="status">'+cell+'</span>' : '');
+          return '<td class="d">'+cell+'</td>';
+        }).join('') + '<td>'+link(x.review_link)+'</td></tr>';
+    }).join('');
+    document.getElementById('never-box').style.display = nev.length ? 'block' : 'none';
+    document.getElementById('never-sum').textContent = 'Never reviewed (' + nev.length + ')';
+    if (q) document.getElementById('never-box').open = true;
+    document.getElementById('never-rows').innerHTML = nev.map(function(x){
+      return '<tr><td>'+esc(x.name)+'<br><span class="status">'+esc(x.slug)+'</span></td>' +
+        '<td class="never">never reviewed</td></tr>';
+    }).join('');
+  }
+  load();
+</script>
