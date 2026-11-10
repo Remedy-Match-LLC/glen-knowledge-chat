@@ -37,3 +37,11 @@ def test_nmn_plus_nr_is_100_mg_and_dose_ends_or_as_guided():
     by = {i["name"]: _mg(i["dose"]) for i in LIVE["ingredients"]}
     assert by["NMN (Nicotinamide Mononucleotide)"] + by["Nicotinamide Riboside (Vitamin B3)"] == 100
     assert LIVE["directions"] == PIN["directions"] == "Take 1 to 3 capsules daily with food, or as guided."
+
+
+def test_an_enrichment_rerun_cannot_bring_back_the_old_formula():
+    clean = json.loads((DATA / "products-enrich-clean.json").read_text())["mitochondrial-biogenesis"]
+    assert [(i["name"], i["dose"]) for i in clean["ingredients"]] == PAIRS
+    assert "Resveratrol" not in json.dumps(clean)
+    candidate = json.loads((DATA / "products-enrich-candidate.json").read_text())
+    assert "mitochondrial-biogenesis" not in candidate
