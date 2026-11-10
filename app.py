@@ -10861,53 +10861,86 @@ def _cart_waitlist_refusal(lines, skip_zero_qty=True):
 
 # Pickup only (Glen, 2026-11-09): a product with `pickup_only: true` is collected in
 # Hilo and never shipped (the 4 L Alkaline Microwater and Miracule Water).
-PICKUP_ONLY_LINE = "Pickup only, in Hilo"
+# What a CUSTOMER is told: on the product page in place of its buy controls, and in a
+# customer checkout's refusal. One constant, so the wording changes in one place.
+# Not yet approved by Glen (2026-11-09).
+PICKUP_ONLY_CUSTOMER_LINE = "Pickup only, in Hilo. Call (808) 217-9647 to arrange pickup."
 
 
-def _cart_pickup_only_names(cart, extra_products=None):
-    """Names of the pickup_only products in a cart, in cart order, deduplicated. A
-    bundle counts when one of its components is pickup only. Lines are dicts with
-    "slug"; extra_products ({slug: product}) are the in-house builder's typed items."""
-    names = []
+def _is_pickup_only_product(p):
+    """True when a product, or the live twin a retired record is superseded by, is
+    pickup only. A bundle component resolves by exact slug, so a retired slug must be
+    followed here or its pickup_only successor would ship (review, 2026-11-09)."""
+    if not isinstance(p, dict):
+        return False
+    if p.get("pickup_only"):
+        return True
+    slug = p.get("slug")
+    if isinstance(slug, str) and slug.strip():
+        live = _get_product(slug.strip())
+        return bool(live and live.get("pickup_only"))
+    return False
+
+
+def _cart_pickup_only_hits(cart, extra_products=None):
+    """[(line_name, item_name)] for each cart line that is, or is a bundle holding, a
+    pickup_only product. line_name is what the customer added; item_name is the pickup
+    only product, the same as line_name unless the line is a bundle. A line whose slug
+    is not a string is skipped: it names no product."""
+    hits = []
     for c in (cart or []):
         if not isinstance(c, dict):
             continue
-        slug = (c.get("slug") or "").strip()
+        slug = c.get("slug")
+        if not isinstance(slug, str) or not slug.strip():
+            continue
+        slug = slug.strip()
         p = _get_product(slug) or (extra_products or {}).get(slug)
         if not p:
             continue
+        line_name = p.get("name") or slug
         if p.get("pickup_only"):
-            names.append(p.get("name") or slug)
+            hits.append((line_name, line_name))
         elif p.get("bundle"):
             try:
                 comps = _shipping.bundle_component_products(p, _catalog_products())
             except _shipping.UnknownBundleComponent:
                 comps = []   # _price_cart raises its own refusal for this bundle
             for comp in comps:
-                if comp.get("pickup_only"):
-                    names.append(comp.get("name") or comp.get("slug") or slug)
-    return list(dict.fromkeys(names))
+                if _is_pickup_only_product(comp):
+                    live = _get_product(comp.get("slug") or "") or comp
+                    hits.append((line_name, live.get("name") or comp.get("slug") or slug))
+    return list(dict.fromkeys(hits))
+
+
+def _cart_pickup_only_names(cart, extra_products=None):
+    """Names of the pickup_only products in a cart, in cart order, deduplicated."""
+    return list(dict.fromkeys(item for _line, item in _cart_pickup_only_hits(cart, extra_products)))
 
 
 def _cart_has_pickup_only(cart, extra_products=None):
     """True when any line in the cart is a pickup_only product (or a bundle holding one)."""
-    return bool(_cart_pickup_only_names(cart, extra_products))
+    return bool(_cart_pickup_only_hits(cart, extra_products))
 
 
 def _pickup_only_refusal(cart, *, pickup_offered, extra_products=None):
-    """The refusal for a shipped cart holding a pickup_only product, or None.
+    """The refusal for the first cart line that is, or holds, a pickup_only product, or
+    None. A bundle is named as the customer added it, with the item it holds.
 
     pickup_offered: True where the caller can choose pickup (the in-house order builder
     and invoice editor), so the message tells them to. A customer checkout has no pickup
-    choice, so its message says only to remove the item."""
-    names = _cart_pickup_only_names(cart, extra_products)
-    if not names:
+    choice, so it gets PICKUP_ONLY_CUSTOMER_LINE."""
+    hits = _cart_pickup_only_hits(cart, extra_products)
+    if not hits:
         return None
-    who = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
-    verb = "is" if len(names) == 1 else "are"
+    line, item = hits[0]
     if pickup_offered:
-        return f"{who} {verb} pickup only, in Hilo. Choose pickup or remove it."
-    return f"{who} {verb} pickup only, in Hilo, and cannot be shipped. Remove it to check out."
+        what = (f"{line} is pickup only, in Hilo." if line == item
+                else f"{line} contains {item}, which is pickup only, in Hilo.")
+        return f"{what} Choose pickup or remove it."
+    what = (f"{line} cannot be shipped." if line == item
+            else f"{line} contains {item}, which cannot be shipped.")
+    return f"{what} {PICKUP_ONLY_CUSTOMER_LINE}"
 
 
 # What a client who reported sending payment is told (claim-paid's own reply).
@@ -11067,6 +11100,12 @@ class CheckoutError(Exception):
     """Raised for a checkout the customer must fix (e.g. non-US ship-to)."""
 
 
+class PickupOnlyError(CheckoutError):
+    """A shipped cart holding a pickup_only product. A CheckoutError, so every caller
+    that already turns those into a 400 does so here; its own type lets the
+    subscription cron tell it apart from a waitlist refusal."""
+
+
 # USPS flat-rate box thresholds by total bottle count (Glen 2026-06-14): <=4 S, <=12 M, else L.
 # Used as a fail-safe when the box-fit catalog can't pick a box; the catalog (when Rae fills it
 # at /admin/shipping) takes precedence via shipping.quote().
@@ -11170,7 +11209,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         _po = _pickup_only_refusal(cart, pickup_offered=pickup_offered,
                                    extra_products=extra_products)
         if _po:
-            raise CheckoutError(_po)
+            raise PickupOnlyError(_po)
     rep_slugs = None
     if REPERTOIRE_ENABLED and email and _is_paid_member(email):
         try:
@@ -11252,7 +11291,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                     # undercharge. CheckoutError surfaces as a 400, not a 500.
                     raise CheckoutError(str(e))
                 for _comp in _comps:
-                    if _comp.get("pickup_only"):
+                    if _is_pickup_only_product(_comp):
                         continue   # collected in Hilo, never packed
                     _bt = _shipping.packing_bottle_type(_comp, _fmt)
                     if _bt == _shipping.UNKNOWN_BOTTLE_TYPE:
@@ -12315,8 +12354,9 @@ def begin_buy_page(slug):
     p = _get_product(slug)
     if not p:
         return ("", 404)
-    if _waitlist_block(p.get("slug") or slug):
+    if _waitlist_block(p.get("slug") or slug) or p.get("pickup_only"):
         # Not ready to order (Scar Soft Drink, 2026-10-09): its page takes the waiting list.
+        # Pickup only (2026-11-09): its page says how to arrange pickup.
         return redirect(f"/begin/product/{p['slug']}")
     resp = send_from_directory(STATIC, "begin-buy.html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -12702,10 +12742,17 @@ def _apply_waitlist_page_data(data, slug, p):
     formats, autoship, the CTA section and its buy link. Its page shows the
     waiting-list form in their place.
 
-    A pickup_only product (Glen, 2026-11-09) gets `pickup_only_line`, shown on its page.
-    It stays on sale: only shipping it is refused, at checkout."""
+    A pickup_only product (Glen, 2026-11-09) cannot be bought online, so it loses the
+    buy link, the CTA section and autoship, and gets `pickup_only_line` in their place.
+    Its price stays: it is paid at pickup."""
     if p.get("pickup_only"):
-        data["pickup_only_line"] = PICKUP_ONLY_LINE
+        data["pickup_only_line"] = PICKUP_ONLY_CUSTOMER_LINE
+        for k in ("cta_url", "autoship", "formats", "founding", "founding_video_url"):
+            data.pop(k, None)
+        data["autoship_eligible"] = False
+        if isinstance(data.get("sections"), list):
+            data["sections"] = [sec for sec in data["sections"]
+                                if not (isinstance(sec, dict) and sec.get("id") == "cta")]
     from dashboard import product_waitlist as _pwl
     if slug in _pwl.LISTS and _waitlist_open(slug):
         t = _pwl.TEXTS[slug]
@@ -56040,6 +56087,16 @@ def cron_charge_subscriptions():
                                      subscriber_active=active,
                                      program_member=_is_paid_member(sub["email"]),
                                      email=sub["email"])
+                except PickupOnlyError as pe:
+                    # A pickup_only line cannot ship on autoship (2026-11-09). Count the
+                    # failure on the subscription so it is visible, and warn by id. The
+                    # payment_failed email is NOT sent: it tells the client to update a
+                    # card that was never declined.
+                    _subs.bump_failed_count(cx, sid)
+                    app.logger.warning("[sub-cron] pickup-only line blocks sub=%s: %s",
+                                       sid, pe)
+                    failed += 1
+                    continue
                 except CheckoutError as ce:
                     print(f"[sub-cron] price_cart sub={sid}: {ce!r}", flush=True)
                     failed += 1
@@ -63065,11 +63122,17 @@ def _for_note(member_name, note):
 
 
 def _bill_lines_to_caregiver(*, member_email, member_name, caregiver_email, lines_in,
-                             member_order=None, remember=True):
+                             member_order=None, remember=True, pickup=None):
     """Put a member's lines on the caregiver's open invoice, or on a new one.
 
     lines_in are editor lines for the MEMBER. Raises ValueError when the caregiver may
-    not pay for this member."""
+    not pay for this member.
+
+    pickup: the operator's explicit choice, or None when none was made. A new invoice
+    is opened with it (None leaves the caregiver's saved default to decide). An open
+    target becomes pickup when pickup is True, and otherwise keeps its own channel, so
+    an unticked box never turns the caregiver's pickup invoice into a shipped one
+    (review, 2026-11-09)."""
     from dashboard import household as _hh, family_plan as _fp
     member = (member_email or "").strip().lower()
     carer = (caregiver_email or "").strip().lower()
@@ -63117,8 +63180,8 @@ def _bill_lines_to_caregiver(*, member_email, member_name, caregiver_email, line
         try:
             priced, _ = _reprice_and_persist_invoice(
                 cx, target, keep + member_lines,
-                pickup=(target.get("channel") == "pickup"), strict_packaging=True,
-                allow_waitlist=True)
+                pickup=(pickup is True or target.get("channel") == "pickup"),
+                strict_packaging=True, allow_waitlist=True)
         finally:
             cx.close()
         if priced is None:
@@ -63139,7 +63202,8 @@ def _bill_lines_to_caregiver(*, member_email, member_name, caregiver_email, line
             resp = _c.post("/api/orders/manual",
                            headers={"X-Console-Key": CONSOLE_SECRET or ""},
                            json={"customer": {"email": carer, "name": cname},
-                                 "lines": member_lines, "_caregiver_route": False})
+                                 "lines": member_lines, "_caregiver_route": False,
+                                 **({"pickup": bool(pickup)} if pickup is not None else {})})
         body = resp.get_json(silent=True) or {}
         if resp.status_code != 200 or not body.get("ok"):
             raise ValueError("could not open the caregiver's invoice: "
@@ -63224,7 +63288,9 @@ def api_order_bill_with_caregiver(oid):
         res = _bill_lines_to_caregiver(
             member_email=email, member_name=order.get("name"), caregiver_email=carer,
             lines_in=_lines_from_items(order.get("items")), member_order=order,
-            remember=body.get("remember", True) is not False)
+            remember=body.get("remember", True) is not False,
+            # A pickup member order stays pickup on the caregiver's invoice (2026-11-09).
+            pickup=(True if order.get("channel") == "pickup" else None))
     except (ValueError, CheckoutError) as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify(res)
@@ -63661,7 +63727,9 @@ def api_orders_manual():
             try:
                 res = _bill_lines_to_caregiver(
                     member_email=_mem, member_name=customer.get("name"),
-                    caregiver_email=_carer, lines_in=lines_in, member_order=_prior)
+                    caregiver_email=_carer, lines_in=lines_in, member_order=_prior,
+                    # The operator's pickup tick travels with the lines (2026-11-09).
+                    pickup=(bool(body.get("pickup")) if "pickup" in body else None))
             except (ValueError, CheckoutError) as e:
                 return jsonify({"ok": False, "error": str(e)}), 400
             return jsonify({**res, "billed_to_caregiver": True,
@@ -63696,9 +63764,12 @@ def api_orders_manual():
                     order.get("status") in ("cancelled", "delivered", "done")):
                 return jsonify({"ok": False, "error": "this order can no longer be updated"}), 409
             try:
+                # An explicit pickup in the request wins; otherwise the order keeps its
+                # own channel. Never the saved preference here (#734 latch).
                 priced, _ = _reprice_and_persist_invoice(
                     cx, order, lines_in,
-                    pickup=(order.get("channel") == "pickup"),
+                    pickup=(bool(body.get("pickup")) if "pickup" in body
+                            else order.get("channel") == "pickup"),
                     invoice_note=body.get("invoice_note"))
             except CheckoutError as e:
                 return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400

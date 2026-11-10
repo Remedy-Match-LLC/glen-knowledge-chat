@@ -20,20 +20,34 @@ WATER = "test-pickup-water"
 WATER_NAME = "Test Pickup Water (4 L)"
 BOTTLE = "test-pickup-mix"
 BUNDLE = "test-pickup-bundle"
+BUNDLE_NAME = "Test Water Bundle"
+RETIRED = "test-pickup-water-old"
+OLD_BUNDLE = "test-pickup-old-bundle"
 _CAT = {
     WATER: {"slug": WATER, "name": WATER_NAME, "price_cents": 300,
             "bottle_type": "own-box", "pickup_only": True},
     BOTTLE: {"slug": BOTTLE, "name": "Test Mix", "price_cents": 7000,
              "bottle_type": "Dropper 50 mL"},
-    BUNDLE: {"slug": BUNDLE, "name": "Test Water Bundle", "bundle": True,
+    BUNDLE: {"slug": BUNDLE, "name": BUNDLE_NAME, "bundle": True,
              "price_cents": 7200,
              "bundle_component_slugs": [{"slug": BOTTLE, "qty": 1}, {"slug": WATER, "qty": 1}]},
+    # A retired record superseded by the water, with a shippable bottle of its own.
+    RETIRED: {"slug": RETIRED, "name": "Old Water", "price_cents": 300, "inactive": True,
+              "superseded_by": WATER, "bottle_type": "Dropper 50 mL"},
+    OLD_BUNDLE: {"slug": OLD_BUNDLE, "name": "Old Water Bundle", "bundle": True,
+                 "price_cents": 7200,
+                 "bundle_component_slugs": [{"slug": BOTTLE, "qty": 1},
+                                            {"slug": RETIRED, "qty": 1}]},
 }
 SHIP = {"name": "T", "street": "1 A St", "city": "Hilo", "state": "HI", "zip": "96720",
         "country": "US"}
 IN_HOUSE_REFUSAL = f"{WATER_NAME} is pickup only, in Hilo. Choose pickup or remove it."
-CUSTOMER_REFUSAL = (f"{WATER_NAME} is pickup only, in Hilo, and cannot be shipped. "
-                    "Remove it to check out.")
+CUSTOMER_LINE = "Pickup only, in Hilo. Call (808) 217-9647 to arrange pickup."
+CUSTOMER_REFUSAL = f"{WATER_NAME} cannot be shipped. {CUSTOMER_LINE}"
+BUNDLE_IN_HOUSE = (f"{BUNDLE_NAME} contains {WATER_NAME}, which is pickup only, in Hilo. "
+                   "Choose pickup or remove it.")
+BUNDLE_CUSTOMER = f"{BUNDLE_NAME} contains {WATER_NAME}, which cannot be shipped. {CUSTOMER_LINE}"
+CARER, PET = "carer@example.com", "pet@example.com"
 
 
 def _app():
@@ -52,8 +66,7 @@ def env(monkeypatch, tmp_path):
     products = appmod._PRODUCTS.setdefault("products", {})
     for slug, rec in _CAT.items():
         monkeypatch.setitem(products, slug, {k: v for k, v in rec.items() if k != "slug"})
-    monkeypatch.setattr(appmod, "_get_product",
-                        lambda slug: dict(_CAT[slug]) if slug in _CAT else None)
+    # The real _get_product reads these, so a retired slug follows superseded_by.
     monkeypatch.setattr(appmod, "_is_paid_member", lambda *a, **k: False)
     appmod._init_people_table()
     from dashboard import orders as O
@@ -93,6 +106,31 @@ def test_the_helper_finds_a_pickup_only_line(env):
 
 def test_the_helper_finds_one_inside_a_bundle(env):
     assert env._cart_has_pickup_only([{"slug": BUNDLE}]) is True
+
+
+def test_a_non_string_slug_is_skipped_not_a_500(env):
+    cart = [{"slug": 7}, {"slug": None}, {"slug": ["x"]}, {"slug": WATER}]
+    assert env._cart_pickup_only_names(cart) == [WATER_NAME]
+    assert env._cart_has_pickup_only([{"slug": 7}]) is False
+
+
+def test_a_bundle_naming_a_retired_slug_follows_it_to_the_water(env, packed):
+    assert env._cart_has_pickup_only([{"slug": OLD_BUNDLE}]) is True
+    with pytest.raises(env.CheckoutError):
+        env._price_cart([{"slug": OLD_BUNDLE}], ship=SHIP)
+    env._price_cart([{"slug": OLD_BUNDLE}], ship=SHIP, pickup=True)
+    assert packed[-1] == {"Dropper 50 mL": 1}   # the retired record's bottle is not packed
+
+
+def test_a_bundle_refusal_names_the_bundle_and_what_it_holds(env):
+    cart = [{"slug": BUNDLE}]
+    assert env._pickup_only_refusal(cart, pickup_offered=True) == BUNDLE_IN_HOUSE
+    assert env._pickup_only_refusal(cart, pickup_offered=False) == BUNDLE_CUSTOMER
+
+
+def test_the_customer_refusal_uses_the_page_constant(env):
+    assert env.PICKUP_ONLY_CUSTOMER_LINE == CUSTOMER_LINE
+    assert CUSTOMER_LINE in env._pickup_only_refusal([{"slug": WATER}], pickup_offered=False)
 
 
 def test_the_refusal_names_the_item_in_both_wordings(env):
@@ -218,17 +256,129 @@ def test_the_manual_board_order_refuses_it_unless_pickup(env, monkeypatch):
 
 # ── The store shows it ────────────────────────────────────────────────────────
 
-def test_the_product_page_data_carries_the_line(env):
-    data = {}
+def _page(**extra):
+    return {"price": "$3.00", "price_cents": 300, "cta_url": "/begin/buy/x",
+            "autoship": {"first_pct": 5}, "autoship_eligible": True,
+            "sections": [{"id": "cta"}, {"id": "intro"}], **extra}
+
+
+def test_the_product_page_hides_buy_and_autoship_and_shows_the_line(env):
+    data = _page()
     env._apply_waitlist_page_data(data, WATER, _CAT[WATER])
-    assert data["pickup_only_line"] == "Pickup only, in Hilo"
-    plain = {}
+    assert data["pickup_only_line"] == CUSTOMER_LINE
+    assert "cta_url" not in data and "autoship" not in data
+    assert data["autoship_eligible"] is False
+    assert [s["id"] for s in data["sections"]] == ["intro"]
+    assert data["price_cents"] == 300          # still priced: paid at pickup
+    plain = _page()
     env._apply_waitlist_page_data(plain, BOTTLE, _CAT[BOTTLE])
-    assert "pickup_only_line" not in plain
+    assert "pickup_only_line" not in plain and plain["cta_url"] and plain["autoship"]
+
+
+def test_the_buy_page_sends_the_buyer_back_to_the_product_page(env):
+    r = env.app.test_client().get(f"/begin/buy/{WATER}")
+    assert r.status_code == 302 and r.headers["Location"].endswith(f"/begin/product/{WATER}")
 
 
 def test_the_product_page_and_cart_render_it():
     static = Path(__file__).resolve().parent.parent / "static"
     page = (static / "begin-product.html").read_text()
     assert 'id="product-pickup-only"' in page and "data.pickup_only_line" in page
+    assert "!data.pickup_only_line) { renderCartControl(slug); }" in page
     assert "Pickup only, in Hilo" in (static / "begin-cart.html").read_text()
+
+
+# ── Caregiver billing carries the pickup tick (review, 2026-11-09) ───────────
+
+@pytest.fixture
+def carer(env, monkeypatch):
+    from dashboard import household as H
+    monkeypatch.setattr(env, "_push_invoice_edit_to_qbo", lambda *a, **k: {"pushed": False})
+    monkeypatch.setattr(env, "_hold_new_order_and_invite", lambda *a, **k: None)
+    with sqlite3.connect(env.LOG_DB) as cx:
+        H.init_household_tables(cx)
+        H.add_member(cx, CARER, PET, label="Pet", relationship="pet")
+        H.set_bill_with_caregiver(cx, CARER, PET, True)
+        cx.commit()
+    return env
+
+
+def _raise(env, email, lines, **extra):
+    return env.app.test_client().post(
+        "/api/orders/manual",
+        json={"customer": {"email": email, "name": "N"}, "lines": lines, **extra})
+
+
+def test_a_new_caregiver_invoice_opens_as_pickup_when_ticked(carer):
+    r = _raise(carer, PET, [{"slug": WATER, "qty": 1}], pickup=True)
+    body = r.get_json()
+    assert r.status_code == 200 and body["billed_to_caregiver"], body
+    o = _stored(carer, body["order_id"])
+    assert o["email"] == CARER and o["channel"] == "pickup"
+    assert int(o["shipping_cents"] or 0) == 0
+
+
+def test_an_open_caregiver_invoice_becomes_pickup_when_ticked(carer):
+    first = _raise(carer, CARER, [{"slug": BOTTLE, "qty": 1}], pickup=False).get_json()
+    assert _stored(carer, first["order_id"])["channel"] != "pickup"
+    r = _raise(carer, PET, [{"slug": WATER, "qty": 1}], pickup=True)
+    body = r.get_json()
+    assert r.status_code == 200 and body["order_id"] == first["order_id"], body
+    o = _stored(carer, first["order_id"])
+    assert o["channel"] == "pickup" and int(o["shipping_cents"] or 0) == 0
+
+
+def test_a_caregiver_invoice_still_refuses_it_unticked(carer):
+    r = _raise(carer, PET, [{"slug": WATER, "qty": 1}], pickup=False)
+    assert r.status_code == 400, r.get_data(as_text=True)
+
+
+def test_a_biofield_re_raise_takes_the_explicit_pickup(env):
+    first = _raise(env, "re@example.com", [{"slug": BOTTLE, "qty": 1}], pickup=False).get_json()
+    r = _raise(env, "re@example.com", [{"slug": WATER, "qty": 1}],
+               update_order_id=first["order_id"], pickup=True)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    o = _stored(env, first["order_id"])
+    assert o["channel"] == "pickup" and int(o["shipping_cents"] or 0) == 0
+    # With no pickup key the order keeps its own channel: still refused when it ships.
+    second = _raise(env, "re2@example.com", [{"slug": BOTTLE, "qty": 1}], pickup=False).get_json()
+    r = _raise(env, "re2@example.com", [{"slug": WATER, "qty": 1}],
+               update_order_id=second["order_id"])
+    assert r.status_code == 400
+
+
+# ── The autoship charge job (review, 2026-11-09) ──────────────────────────────
+
+def test_the_charge_job_counts_a_pickup_only_failure_and_warns(env, monkeypatch, caplog):
+    from dashboard import subscriptions as subs
+    monkeypatch.setenv("CRON_SECRET", "cron-test")
+    monkeypatch.setattr(env, "_subscriptions_enabled", lambda: True)
+    monkeypatch.setattr(env, "_ingest_order", lambda **k: None)
+    emails = []
+    monkeypatch.setattr(env, "_send_subscription_email",
+                        lambda to, kind, data: emails.append((to, kind)) or ("smtp", None))
+    monkeypatch.setattr(env, "_active_membership_for_email", lambda email: None)
+    charged = []
+    monkeypatch.setattr(env.stripe_pay, "charge_off_session",
+                        lambda *a, **k: charged.append(1) or {"status": "succeeded", "id": "ch"})
+    with sqlite3.connect(env.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        subs.init_subscriptions_table(cx)
+        subs.migrate_add_failed_count(cx)
+        sid = subs.create(cx, email="w@example.com", stripe_customer_id="cus_t",
+                          stripe_payment_method_id="pm_t", items=[{"slug": WATER, "qty": 1}],
+                          cadence_months=1, ship_address={"state": "HI", "country": "US"},
+                          next_charge_date="2000-01-01")
+        cx.commit()
+    with caplog.at_level("WARNING"):
+        r = env.app.test_client().post("/api/cron/charge-subscriptions",
+                                       headers={"X-Cron-Secret": "cron-test"})
+    assert r.status_code == 200 and r.get_json()["failed"] == 1, r.get_data(as_text=True)
+    assert charged == []
+    assert not any(kind == "payment_failed" for _to, kind in emails)
+    assert any(f"sub={sid}" in rec.getMessage() and rec.levelname == "WARNING"
+               for rec in caplog.records)
+    with sqlite3.connect(env.LOG_DB) as cx:
+        n, date = cx.execute("SELECT failed_count, next_charge_date FROM subscriptions "
+                             "WHERE id=?", (sid,)).fetchone()
+    assert n == 1 and date == "2000-01-01"
