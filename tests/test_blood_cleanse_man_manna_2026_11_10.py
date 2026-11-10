@@ -103,3 +103,10 @@ def test_no_row_opens_a_new_ingredient_page(tmp_path, monkeypatch):
                 assert ingredients.resolve(page), (slug, ing["name"], page)
     finally:
         ingredients._name_index.cache_clear()
+
+
+def test_man_manna_dose_line_is_glens_ruling_and_keeps_zinc_under_40_mg():
+    # Glen 2026-10-24: up to 3 a day; added to the app on his "yes" 2026-11-10.
+    for entry in (LIVE["man-manna"], PIN["man-manna"]):
+        assert entry["directions"] == "1 to 3 capsules a day with food, or as guided."
+    assert 3 * 11 < 40

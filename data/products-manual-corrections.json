@@ -4750,6 +4750,7 @@
     ],
     "ingredients_source": "db-formulations-2026-06-25",
     "content_since": "2026-11-10T17:43:52+00:00",
-    "note": "Glen 2026-11-10 ('yes'): zinc is stated as elemental, 11 mg from 55 mg Zinc Bisglycinate (20% Zn, FileMaker raw 3587). Batch run 143, 20 January 2026."
+    "note": "Glen 2026-11-10 ('yes'): zinc is stated as elemental, 11 mg from 55 mg Zinc Bisglycinate (20% Zn, FileMaker raw 3587). Batch run 143, 20 January 2026. Directions: Glen's 24 Oct 2026 ruling (up to 3 a day; 33 mg zinc, under the 40 mg upper limit), added on his 'yes' 2026-11-10.",
+    "directions": "1 to 3 capsules a day with food, or as guided."
   }
 }

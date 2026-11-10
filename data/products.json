@@ -10250,11 +10250,12 @@
    ],
    "ingredients_source": "db-formulations-2026-06-25",
    "description": "Man Manna . Man Manna Man Manna We researched all the best proven natural prostate remedies... We considered the range of therapeutic dosages for each ingredient by itself... We combined them in one comprehensive formula... Because of synergy, we see even better results with lower doses. A New Space Age Solution NASA’s Multi-Pill Problem Proves Why Your Prostate Regimen is Failing In space, astronauts once had to take over 20 pills a day just to stay healthy. The problem? Compliance dropped. Absorption was inconsistent. Results varied. So NASA simplified everything. They combined essential...",
-   "enrichment_note": "Glen 2026-11-10 ('yes'): zinc is stated as elemental, 11 mg from 55 mg Zinc Bisglycinate (20% Zn, FileMaker raw 3587). Batch run 143, 20 January 2026.",
+   "enrichment_note": "Glen 2026-11-10 ('yes'): zinc is stated as elemental, 11 mg from 55 mg Zinc Bisglycinate (20% Zn, FileMaker raw 3587). Batch run 143, 20 January 2026. Directions: Glen's 24 Oct 2026 ruling (up to 3 a day; 33 mg zinc, under the 40 mg upper limit), added on his 'yes' 2026-11-10.",
    "bottle_type": "30 Caps",
    "fmp_id": "178",
    "qty_pricing": true,
-   "content_since": "2026-11-10T17:43:52+00:00"
+   "content_since": "2026-11-10T17:43:52+00:00",
+   "directions": "1 to 3 capsules a day with food, or as guided."
   },
   "artemisinin": {
    "name": "Artemisinin",
