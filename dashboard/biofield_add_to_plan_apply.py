@@ -196,6 +196,9 @@ def land(cx, tid, got, write_layers, laser_row=None, commit=True):
     key, laser_k = _laser_key()
     lasered = set()
     for j in got["joined"]:
+        if j.get("into_held") is not None:
+            _join_held(cx, tid, j)
+            continue
         if j.get("into_batch") or j.get("into_new") is not None:
             continue                  # merged into a new or held layer of this same batch
         row = cx.execute("SELECT codes,layer,head,most_affected FROM biofield_auth_chain "
@@ -238,8 +241,50 @@ def land(cx, tid, got, write_layers, laser_row=None, commit=True):
         cx.commit()
     return {"added": added, "joined": sum(1 for j in got["joined"]
                                           if j.get("into_new") is None
-                                          and not j.get("into_batch")),
+                                          and not j.get("into_batch")
+                                          and j.get("into_held") is None),
             "proposals": ids}
+
+
+def held_pending(cx, tid):
+    """The pending held proposals, [{"id", "head", "held"}]. Read only: nothing is
+    created when the table is not there yet."""
+    from dashboard import db
+    if not db.column_exists(cx, "biofield_add_to_plan_proposal", "held"):
+        return []
+    return [{"id": r[0], "head": r[1] or "", "held": json.loads(r[2])} for r in cx.execute(
+        "SELECT id,source_head,held FROM biofield_add_to_plan_proposal WHERE test_id=? "
+        "AND status='pending' AND held IS NOT NULL ORDER BY id", (_num(tid),))]
+
+
+def _join_held(cx, tid, j):
+    """Merge a joined layer into the pending held proposal it matched: its new codes,
+    its stresses and its laser go into the held contents. Raises Changed when the
+    proposal was answered since the click read it. Never commits."""
+    row = cx.execute("SELECT held FROM biofield_add_to_plan_proposal WHERE test_id=? "
+                     "AND id=? AND status='pending'", (_num(tid), int(j["into_held"]))
+                     ).fetchone()
+    if not row or not row[0]:
+        raise Changed("A layer waiting in the Related list was answered since.")
+    held = json.loads(row[0])
+    codes, stresses = j.get("codes") or [], j.get("stresses") or []
+    if held.get("kind") == "rows":
+        rows = held.get("rows") or []
+        if rows and codes:
+            have = codes_of(rows[0].get("codes"))
+            rows[0]["codes"] = json.dumps(have + [c for c in codes if c not in have])
+        held["stresses"] = list(held.get("stresses") or []) + [
+            x for x in stresses if x not in (held.get("stresses") or [])]
+    else:
+        layer = held.setdefault("layer", {})
+        have = codes_of(layer.get("codes"))
+        layer["codes"] = have + [c for c in codes if c not in have]
+        layer["stresses"] = list(layer.get("stresses") or []) + [
+            x for x in stresses if x not in (layer.get("stresses") or [])]
+        if j.get("laser") and not layer.get("laser"):
+            layer["laser"] = j["laser"]
+    cx.execute("UPDATE biofield_add_to_plan_proposal SET held=? WHERE test_id=? AND id=?",
+               (json.dumps(held), _num(tid), int(j["into_held"])))
 
 
 def _norm(text):
@@ -361,8 +406,9 @@ def _write_held(cx, tid, held, write_layer, drop_laser=False):
         for rid in rids:
             cx.execute("INSERT OR IGNORE INTO biofield_auth_layer_stress "
                        "(test_id,stress_id,chain_rid) VALUES(?,?,?)", (t, sid, rid))
-    if layer.get("stresses"):
-        link_wording(cx, tid, layer["stresses"], rids)
+    labels = list(layer.get("stresses") or []) + list(held.get("stresses") or [])
+    if labels:
+        link_wording(cx, tid, labels, rids)
     return rids
 
 
@@ -502,6 +548,34 @@ def _head_codes(cx, tid, rids):
     return []
 
 
+def _one_card(cx, tid, a, b):
+    """True when rows `a` and `b` are on one card as the page groups them."""
+    from dashboard.biofield_add_to_plan import groups_of
+    a, b = {int(r) for r in a}, {int(r) for r in b}
+    return any({int(r["id"]) for r in g["rows"]} & a and {int(r["id"]) for r in g["rows"]} & b
+               for g in groups_of(chain_rows(cx, tid)))
+
+
+def _join_same_card(cx, tid, src, into, kept_tail):
+    """Join rows `src` onto the card `into` already shares with them: the kept layer's
+    number and Head, and each Tail item of theirs that the kept Tail and Head lack as
+    a Balance on the card. Never commits."""
+    from dashboard.biofield_add_to_plan import join_stresses
+    from dashboard.biofield_clinical_head_term import link_wording
+    t = _num(tid)
+    first = cx.execute(
+        f"SELECT layer,head FROM biofield_auth_chain WHERE test_id=? AND id IN "
+        f"({','.join('?' * len(into))}) ORDER BY layer,sort_seq,id LIMIT 1",
+        [t] + list(into)).fetchone()
+    tails = [r[0] for r in cx.execute(
+        f"SELECT most_affected FROM biofield_auth_chain WHERE test_id=? AND id IN "
+        f"({','.join('?' * len(src))}) ORDER BY id", [t] + list(src)) if (r[0] or "").strip()]
+    cx.execute(f"UPDATE biofield_auth_chain SET layer=?,head=? WHERE test_id=? AND id IN "
+               f"({','.join('?' * len(src))})", [first[0], first[1], t] + list(src))
+    labels = join_stresses(first[1], kept_tail, first[1], ", ".join(tails))
+    link_wording(cx, tid, labels, list(src) + list(into))
+
+
 def resolve(cx, tid, pid, choice, write_layer=None):
     """Carry out Glen's choice on proposal `pid`. Raises Gone when its layers changed
     or it was already answered, and ValueError for an unknown choice or proposal.
@@ -574,8 +648,15 @@ def resolve(cx, tid, pid, choice, write_layer=None):
                 f"SELECT most_affected FROM biofield_auth_chain WHERE test_id=? AND id IN "
                 f"({','.join('?' * len(into))}) ORDER BY layer,sort_seq,id",
                 [t] + list(into)) if (r[0] or "").strip()), "")
-            consolidate_layer_balances(cx, tid, layer_of(src[0]), layer_of(into[0]),
-                                       source_rids=src, target_rids=into)
+            if _one_card(cx, tid, src, into):
+                # A held layer with the kept layer's own Head lands on that card, so
+                # it is joined already: the consolidation would refuse to merge a card
+                # into itself. Put its rows on the kept layer and its Tail in Balances.
+                _join_same_card(cx, tid, src, into, kept_tail)
+            else:
+                consolidate_layer_balances(cx, tid, layer_of(src[0]), layer_of(into[0]),
+                                           source_rids=src, target_rids=into,
+                                           commit=False)
             left = list(_live(cx, tid, src)) + list(_live(cx, tid, into))
             cx.execute(f"UPDATE biofield_auth_chain SET most_affected=? WHERE test_id=? "
                        f"AND id IN ({','.join('?' * len(left))})", [kept_tail, t] + left)

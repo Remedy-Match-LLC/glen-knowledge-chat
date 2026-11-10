@@ -580,13 +580,28 @@ def test_a_plan_changed_between_the_read_and_the_write_is_refused(tmp_path, monk
     assert [x[1] for x in _chain(db)] == ["Sleep"]
 
 
-def test_a_second_click_reuses_the_pending_proposal(tmp_path, monkeypatch):
+def test_a_second_click_leaves_one_pending_proposal(tmp_path, monkeypatch):
+    # Round 3: the held product now joins its own proposal rather than making one.
     client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
     _added(client, tid)
     j, done = _added(client, tid)
-    assert done["ok"], done
+    assert done["ok"] and done["proposals"] == [], done
     props = client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"]
-    assert len(props) == 1 and done["proposals"] == [props[0]["id"]]
+    assert len(props) == 1
+
+
+def test_an_identical_pending_proposal_is_reused(tmp_path, monkeypatch):
+    from dashboard import biofield_add_to_plan_apply as _ap
+    client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
+    held = {"kind": "layer", "layer": {"title": "Gut Repair", "remedy_name": "Gut Restore",
+                                       "stresses": ["Leaky gut"]}}
+    with sqlite3.connect(db) as cx:
+        _ap.ensure_schema(cx)
+        a = _ap._insert(cx, tid, [], [1], "Gut Repair", "Gut", "same heading", "x", held=held)
+        b = _ap._insert(cx, tid, [], [1], "Gut Repair", "Gut", "same heading", "x", held=held)
+        cx.commit()
+        assert a == b and cx.execute("SELECT COUNT(*) FROM biofield_add_to_plan_proposal"
+                                     ).fetchone()[0] == 1
 
 
 def test_a_mind_layer_that_cannot_be_held_stays_on_the_plan_and_says_so(
@@ -617,3 +632,108 @@ def test_a_mind_layer_that_cannot_be_held_stays_on_the_plan_and_says_so(
                                   "chosen": new}).get_json()
     assert done["ok"] is False and "could not be held" in done["error"], done
     assert [r[1] for r in _chain(db)] == ["Gut", "Gut and digestion"]
+
+
+# -- round 3, 2026-11-10 ---------------------------------------------------------------
+
+def _same_head():
+    # Same Head as the Gut layer, another product: related by heading, so held.
+    return _reveal({"n": 1, "title": "Gut", "most_affected": "Leaky gut",
+                    "remedy_name": "Gut Restore", "codes": ["ET5"]})
+
+
+@pytest.mark.parametrize("choice,remedies", [
+    ("both", ["Alkalize Powder", "Gut Restore"]), ("existing", ["Alkalize Powder"])])
+def test_a_held_layer_with_the_same_head_joins(tmp_path, monkeypatch, choice, remedies):
+    client, tid, db = _client(tmp_path, monkeypatch, _same_head(), _gut)
+    _added(client, tid)
+    r = _resolve(client, tid, choice)
+    assert r.status_code == 200, r.get_json()
+    gut = [x for x in _chain(db) if x[1] == "Gut"]
+    assert sorted(x[2] for x in gut) == remedies and {x[0] for x in gut} == {1}
+    assert "Leaky gut" in _balances(db, "Gut")
+    assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"] == []
+
+
+def test_a_failure_after_the_merge_rolls_back_the_claim_and_the_writes(
+        tmp_path, monkeypatch):
+    from dashboard import biofield_add_to_plan_apply as _ap
+    client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
+    _added(client, tid)
+    before = _chain(db)
+
+    def boom(*a, **k):
+        raise ValueError("drop failed")
+    monkeypatch.setattr(_ap, "_drop_rows", boom)
+    r = _resolve(client, tid, "existing")
+    assert r.status_code == 400
+    assert _chain(db) == before, "the held layer was written"
+    props = client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"]
+    assert len(props) == 1, "the claim was kept"
+
+
+def test_a_held_product_brought_again_joins_its_proposal_not_the_plan(
+        tmp_path, monkeypatch):
+    client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
+    _added(client, tid)
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _reveal(
+        {"n": 1, "title": "Bowel Repair", "most_affected": "Colon",
+         "remedy_name": "Gut Restore", "codes": ["ET9"]}))
+    j, done = _added(client, tid)
+    assert done["ok"], done
+    assert "Gut Restore" not in [x[2] for x in _chain(db)], "it landed beside its proposal"
+    assert _resolve(client, tid, "separate").status_code == 200
+    held = [x for x in _chain(db) if x[2] == "Gut Restore"]
+    assert len(held) == 1 and held[0][3] == ["ET5", "ET9"]
+    assert {"Bowel Repair", "Colon"} <= set(_balances(db, held[0][1]))
+
+
+def test_update_clinical_does_not_offer_a_held_mind_layer_again(tmp_path, monkeypatch):
+    from dashboard import biofield_clinical_sections as cs
+    from dashboard.biofield_clinical_proposals import save_selection
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        from dashboard.biofield_authoring import create_test, init_auth_tables
+        init_auth_tables(cx)
+        tid = create_test(cx, "Jo", "jo@x.com", "2026-11-07")
+        add_chain_row(cx, tid, 1, "Gut", "Bloating", "Gut Restore", origin="scan",
+                      codes=["ET5"])
+        cs.upsert_item(cx, "Gut and digestion", cs.NUTRIENTS, {"name": "Vitamin C"})
+        save_selection(cx, tid, "Gut and digestion", ["Alkalize Powder"])
+        cx.commit()
+    client = create_app(db, fetch_profile=lambda email: {"conditions": ["Gut and digestion"]},
+                        fetch_recent_comms=lambda email: {}).test_client()
+    url = f"/author/{tid}/clinical-items/layers/update"
+    j = client.post(url, json={}).get_json()
+    new = [c["id"] for c in j["changes"] if c["kind"] == "new"]
+    done = client.post(url, json={"apply": True, "digest": j["digest"],
+                                  "chosen": new}).get_json()
+    assert done["ok"] and len(done["proposals"]) == 1, done
+    again = client.post(url, json={}).get_json()
+    assert [c for c in again["changes"] if c["kind"] == "new"] == [], again["changes"]
+
+
+def test_a_blocked_code_below_the_head_keeps_the_laser_on_a_join(tmp_path, monkeypatch):
+    # Only the head (ER5) counts; ER33 lower down does not block the held laser.
+    def setup(cx, tid):
+        add_chain_row(cx, tid, 1, "Gut", "Gut", "Alkalize Powder", origin="clinical",
+                      codes=["ER5", "ER33"])
+    client, tid, db = _client(tmp_path, monkeypatch, _held_laser(), setup)
+    _added(client, tid)
+    assert _resolve(client, tid, "both").status_code == 200
+    assert _laser_rows(db) == [(1, "Gut")]
+
+
+def test_a_blocked_code_below_the_head_keeps_the_laser_on_a_same_product_join(
+        tmp_path, monkeypatch):
+    import dashboard.biofield_body_panel as _bp
+    monkeypatch.setattr(_bp, "chosen_layers", lambda panel, choices, is_animal=False: ([], []))
+
+    def setup(cx, tid):
+        add_chain_row(cx, tid, 1, "Gut", "Gut", "Alkalize Powder", origin="clinical",
+                      codes=["ER5", "ER33"])
+    res = _reveal({"n": 1, "title": "Acid", "remedy_name": "Alkalize Powder",
+                   "codes": ["ER7"], "laser": LASER})
+    client, tid, db = _client(tmp_path, monkeypatch, res, setup)
+    j, done = _added(client, tid)
+    assert done["ok"] and _laser_rows(db) == [(1, "Gut")], done

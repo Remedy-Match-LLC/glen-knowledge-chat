@@ -144,7 +144,7 @@ def _summary(group):
 
 def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
              vocabulary=(), key=None, resolve=None, last_layer=0, laser_blocked=None,
-             hold_related=False):
+             hold_related=False, held=()):
     """{"joined": [...], "related": [...], "add": [...]}.
 
     `existing_rows` are chain rows {id, layer, head, most_affected, remedy, codes,
@@ -165,6 +165,10 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
     related: {"layer", "n", "into", "into_head", "into_rids", "into_remedies",
               "rule", "why"}.
     add:     the incoming layer with "n" set.
+
+    `held` are the pending held proposals, {"id", "held"} (held_pending). A layer of a
+    product already waiting in one joins that proposal ("into_held": its id), so a
+    product Glen has not placed yet never lands beside its own proposal.
 
     `hold_related` (Glen, 2026-11-07, "yes, hold them in the list"): a related layer
     is not written until Glen picks, so it takes no layer number ("n" is None) and
@@ -207,6 +211,27 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
         ticked_list = list(ticked_names or [])
     ticked = _cover.ticked_codes(ticked_list + [r.get("remedy") for r in existing_rows or []])
 
+    held_by_key = {}
+    for h in held or []:
+        body = h.get("held") or {}
+        if body.get("kind") == "rows":
+            rows = body.get("rows") or []
+            first = rows[0] if rows else {}
+            hf = {"head": str(first.get("head") or "").strip(),
+                  "tail": str(first.get("most_affected") or "").strip(),
+                  "codes": [c for r in rows for c in codes_of(r.get("codes"))]}
+            names = [r.get("remedy") for r in rows]
+            have = body.get("stresses") or []
+        else:
+            hf = incoming_fields(body.get("layer") or {})
+            names = [hf["remedy"]]
+            have = (body.get("layer") or {}).get("stresses") or []
+        for nm in names:
+            k = key((resolve(nm) or nm) if (resolve and nm) else nm)
+            if k and k not in held_by_key:
+                held_by_key[k] = {"id": h["id"], "fields": hf, "have": list(have),
+                                  "body": body}
+
     out = {"joined": [], "related": [], "add": []}
     placed = {}            # remedy key -> the new layer (dict) this batch already made
     lasered = set()        # existing layers this batch has already given a laser
@@ -240,6 +265,23 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
                 "stresses": join_stresses(g.get("head"), g.get("most_affected"),
                                           f["head"], f["tail"]),
                 "laser": laser})
+            continue
+        if k and k in held_by_key:
+            h = held_by_key[k]
+            hf = h["fields"]
+            more = join_stresses(hf["head"], hf["tail"], f["head"], f["tail"], have=h["have"])
+            h["have"] += more
+            new_codes = [c for c in f["codes"] if c not in hf["codes"]]
+            hf["codes"] = _union(hf["codes"], f["codes"])
+            laser = None
+            body = h["body"]
+            if (laser_blocked and body.get("kind") != "rows" and layer.get("laser")
+                    and not (body.get("layer") or {}).get("laser")
+                    and not h.get("laser") and not laser_blocked(hf["codes"][:1])):
+                laser = h["laser"] = layer.get("laser")
+            out["joined"].append({"layer": layer, "into_held": h["id"],
+                                  "into_head": hf["head"], "codes": new_codes,
+                                  "stresses": more, "laser": laser})
             continue
         if k and k in placed:
             target = placed[k]

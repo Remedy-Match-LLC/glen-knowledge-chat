@@ -3335,7 +3335,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                 resolve=lambda n: exact_canonical_name(cx, n),
                                 last_layer=_last_layer_no(rep),
                                 laser_blocked=_atp.laser_blocked_by_head,
-                                hold_related=True)
+                                hold_related=True, held=_ap.held_pending(cx, test_id))
             shown = _ap.describe(got)
             chain = _ap.digest(rows)
             if rows and not stored:
