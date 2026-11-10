@@ -36,8 +36,9 @@ DESCRIPTION = (
     "The heart is the pump that generates the increased pressure by working harder in order "
     "to filter the thick blood.\n\n"
     "Supporting cleansing of the blood reduces stress on both the heart and the kidneys.")
-# The rows on origin/main before this change (commit 7daba4fb), unchanged here.
-ROWS = [
+# The rows on origin/main before this change (commit 7daba4fb). Changed on purpose on
+# 2026-11-10 (Glen "yes", #2253): see CURRENT_ROWS below.
+OCTOBER_ROWS = [
     {"name": "Niacin", "dose": "45 mg"},
     {"name": "Pyridoxal 5-Phosphate, P-5-P, P5P, Vitamin B6", "dose": "2 mg"},
     {"name": "5-MTHF", "dose": "100 mcg"},
@@ -77,9 +78,38 @@ def test_the_warning_is_v2_verbatim(name):
     assert p["description"] == DESCRIPTION
 
 
-def test_the_rows_and_their_source_are_unchanged():
+# 2026-11-10, Glen "yes" (#2253): D3 reads as the premix's real dose, and the blend is listed
+# line by line (blend run 107) so vinpocetine shows. Every other October row is unchanged.
+_BLEND = [
+    {"name": "Phosphatides 30% (Helianthus annuus)", "dose": "13 mg"},
+    {"name": "Ginkgo European Standard 10:1 (Ginkgo biloba)", "dose": "8 mg",
+     "page_slug": "ginkgo-european-std-ginkgo-biloba"},
+    {"name": "Vitamin B3 (as Niacin)", "dose": "5 mg"},
+    {"name": "Moringa 100:1 (Moringa oleifera)", "dose": "3 mg"},
+    {"name": "DGL Licorice (Glycyrrhiza glabra)", "dose": "2 mg"},
+    {"name": "Vinpocetine 99% (Vinca minor)", "dose": "1 mg", "page_slug": "vinpocetine-vinca-minor"},
+    {"name": "Gingerols 10% (Zingiber officinale)", "dose": "0.5 mg",
+     "page_slug": "gingerols-10-zingiber-officinalis"},
+    {"name": "Piperine 95% (Piper nigrum)", "dose": "0.5 mg"},
+    {"name": "Humic Acid", "dose": "0.5 mg"},
+    {"name": "Fulvic Acid", "dose": "0.5 mg"},
+    {"name": "Spirit Minerals (ORMUS)", "dose": "0.5 mg", "page_slug": "11-spirit-minerals"},
+]
+_D3 = {"name": "Vitamin D3: Cholecalciferol", "dose": "16.6 mcg (665 IU)",
+       "grade": "500,000 IU/g", "compound_mg": 1.33}
+CURRENT_ROWS = []
+for _r in OCTOBER_ROWS:
+    if _r["name"] == "Bioavailability Blend":
+        CURRENT_ROWS += _BLEND
+    elif _r["name"] == "Vitamin D3: Cholecalciferol":
+        CURRENT_ROWS.append(_D3)
+    else:
+        CURRENT_ROWS.append(_r)
+
+
+def test_the_rows_are_octobers_with_only_d3_and_the_blend_changed():
     p, c = _load("products.json")[SLUG], _load("products-manual-corrections.json")[SLUG]
-    assert p["ingredients"] == ROWS and c["ingredients"] == ROWS
+    assert p["ingredients"] == CURRENT_ROWS and c["ingredients"] == CURRENT_ROWS
     # The entry keeps the record's source, so a replay does not mark the rows Glen-verified
     # and clear gk_stale.
     assert c["ingredients_source"] == p["ingredients_source"] == "db-formulations-2026-06-25"
