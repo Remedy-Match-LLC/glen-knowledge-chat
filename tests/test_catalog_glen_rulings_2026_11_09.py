@@ -53,3 +53,9 @@ def test_bacterotox_has_directions_and_sibling_list_price():
     p = PRODUCTS["bacterotox-homeopathic-complex-in-terrain-restore"]
     assert p["regular_cents"] == 8000
     assert p["description"].endswith("or as guided.")
+
+
+def test_waters_are_pickup_only():
+    # Glen, 2026-11-09: "pickup only". Checkout enforcement of the flag is platform's.
+    for slug in ("microwater-alkaline", "miracule-water"):
+        assert PRODUCTS[slug].get("pickup_only") is True, slug

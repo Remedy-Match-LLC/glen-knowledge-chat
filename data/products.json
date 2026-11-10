@@ -25769,18 +25769,20 @@
   },
   "microwater-alkaline": {
    "name": "Alkaline Microwater (4 L)",
+   "pickup_only": true,
    "price_cents": 300,
    "fmp_id": "87",
    "bottle_type": "own-box",
-   "intro": "Alkaline Microwater, sold by the 4 liters (about a gallon).",
+   "intro": "Alkaline Microwater, sold by the 4 liters (about a gallon). Pickup only, in Hilo.",
    "source": "glen-ruling-2026-11-09"
   },
   "miracule-water": {
    "name": "Miracule Water (4 L)",
+   "pickup_only": true,
    "price_cents": 300,
    "fmp_id": "424",
    "bottle_type": "own-box",
-   "intro": "Miracule Water, sold by the 4 liters (about a gallon).",
+   "intro": "Miracule Water, sold by the 4 liters (about a gallon). Pickup only, in Hilo.",
    "source": "glen-ruling-2026-11-09"
   },
   "capsule-filling-machine-100m": {
