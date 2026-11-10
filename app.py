@@ -10882,11 +10882,50 @@ def _is_pickup_only_product(p):
     return False
 
 
+def _bundle_parts_partial(p):
+    """(parts, unknown) for a bundle: every component that resolves, as
+    shipping.bundle_component_products would resolve it (exact slug, else exact name,
+    case-insensitive), and whether any did not. A bundle listing nothing is unknown.
+    Unlike that function it never raises, so a pickup check can still see the parts it
+    can identify and fail closed on the rest (review, 2026-11-09)."""
+    catalog = _catalog_products()
+    slug_comps = p.get("bundle_component_slugs")
+    parts, unknown = [], False
+    if slug_comps:
+        by_slug = {}
+        for item in catalog:
+            by_slug.setdefault(item.get("slug"), item)
+        for comp in slug_comps:
+            hit = by_slug.get((comp or {}).get("slug")) if isinstance(comp, dict) else None
+            if hit is None:
+                unknown = True
+            else:
+                parts.append(hit)
+        return parts, unknown
+    names = p.get("bundle_components") or []
+    if not names:
+        return [], True
+    by_name = {}
+    for item in catalog:
+        key = (item.get("name") or "").strip().lower()
+        if key:
+            by_name.setdefault(key, item)
+    for name in names:
+        hit = by_name.get(name.strip().lower()) if isinstance(name, str) else None
+        if hit is None:
+            unknown = True
+        else:
+            parts.append(hit)
+    return parts, unknown
+
+
 def _cart_pickup_only_hits(cart, extra_products=None):
     """[(line_name, item_name)] for each cart line that is, or is a bundle holding, a
     pickup_only product. line_name is what the customer added; item_name is the pickup
     only product, the same as line_name unless the line is a bundle. A line whose slug
-    is not a string is skipped: it names no product."""
+    is not a string is skipped: it names no product. A bundle with a component that
+    cannot be identified gives (line_name, None): it might hold a pickup only product,
+    so the gates refuse it on a shipped order rather than pass it (fail closed)."""
     hits = []
     for c in (cart or []):
         if not isinstance(c, dict):
@@ -10902,24 +10941,25 @@ def _cart_pickup_only_hits(cart, extra_products=None):
         if p.get("pickup_only"):
             hits.append((line_name, line_name))
         elif p.get("bundle"):
-            try:
-                comps = _shipping.bundle_component_products(p, _catalog_products())
-            except _shipping.UnknownBundleComponent:
-                comps = []   # _price_cart raises its own refusal for this bundle
+            comps, unknown = _bundle_parts_partial(p)
             for comp in comps:
                 if _is_pickup_only_product(comp):
                     live = _get_product(comp.get("slug") or "") or comp
                     hits.append((line_name, live.get("name") or comp.get("slug") or slug))
+            if unknown:
+                hits.append((line_name, None))
     return list(dict.fromkeys(hits))
 
 
 def _cart_pickup_only_names(cart, extra_products=None):
     """Names of the pickup_only products in a cart, in cart order, deduplicated."""
-    return list(dict.fromkeys(item for _line, item in _cart_pickup_only_hits(cart, extra_products)))
+    return list(dict.fromkeys(item for _line, item in _cart_pickup_only_hits(cart, extra_products)
+                              if item))
 
 
 def _cart_has_pickup_only(cart, extra_products=None):
-    """True when any line in the cart is a pickup_only product (or a bundle holding one)."""
+    """True when any line in the cart is a pickup_only product, or a bundle holding one
+    or holding a component that cannot be identified (fail closed)."""
     return bool(_cart_pickup_only_hits(cart, extra_products))
 
 
@@ -10934,6 +10974,11 @@ def _pickup_only_refusal(cart, *, pickup_offered, extra_products=None):
     if not hits:
         return None
     line, item = hits[0]
+    if item is None:
+        if pickup_offered:
+            return (f"{line} lists a product that cannot be identified, so it cannot be "
+                    "checked for pickup only. Fix the bundle or choose pickup.")
+        return f"{line} cannot be ordered online yet. Call (808) 217-9647 to order it."
     if pickup_offered:
         what = (f"{line} is pickup only, in Hilo." if line == item
                 else f"{line} contains {item}, which is pickup only, in Hilo.")
@@ -63122,7 +63167,8 @@ def _for_note(member_name, note):
 
 
 def _bill_lines_to_caregiver(*, member_email, member_name, caregiver_email, lines_in,
-                             member_order=None, remember=True, pickup=None):
+                             member_order=None, remember=True, pickup=None,
+                             require_pickup=None):
     """Put a member's lines on the caregiver's open invoice, or on a new one.
 
     lines_in are editor lines for the MEMBER. Raises ValueError when the caregiver may
@@ -63132,7 +63178,12 @@ def _bill_lines_to_caregiver(*, member_email, member_name, caregiver_email, line
     is opened with it (None leaves the caregiver's saved default to decide). An open
     target becomes pickup when pickup is True, and otherwise keeps its own channel, so
     an unticked box never turns the caregiver's pickup invoice into a shipped one
-    (review, 2026-11-09)."""
+    (review, 2026-11-09).
+
+    require_pickup (True/False): the board move passes the member order's own pickup
+    status. An open target whose pickup status differs raises ValueError, so neither
+    invoice's channel is switched without Rae (review, 2026-11-09). A new invoice
+    opens with it."""
     from dashboard import household as _hh, family_plan as _fp
     member = (member_email or "").strip().lower()
     carer = (caregiver_email or "").strip().lower()
@@ -63172,6 +63223,13 @@ def _bill_lines_to_caregiver(*, member_email, member_name, caregiver_email, line
             m["unit_cents"] = frozen[idx]
         member_lines.append(m)
 
+    if target and require_pickup is not None:
+        target_pickup = target.get("channel") == "pickup"
+        if target_pickup != bool(require_pickup):
+            raise ValueError(
+                f"The caregiver's open invoice #{target['id']} is "
+                f"{'pickup' if target_pickup else 'shipped'} and this order is "
+                f"{'pickup' if require_pickup else 'shipped'}. Make them match first.")
     if target:
         keep = [l for l in _lines_from_items(target.get("items"))
                 if (l.get("billed_for") or "") != member]
@@ -63289,8 +63347,10 @@ def api_order_bill_with_caregiver(oid):
             member_email=email, member_name=order.get("name"), caregiver_email=carer,
             lines_in=_lines_from_items(order.get("items")), member_order=order,
             remember=body.get("remember", True) is not False,
-            # A pickup member order stays pickup on the caregiver's invoice (2026-11-09).
-            pickup=(True if order.get("channel") == "pickup" else None))
+            # A new caregiver invoice inherits the member order's pickup; an open one
+            # whose pickup status differs is refused, never switched (2026-11-09).
+            pickup=(True if order.get("channel") == "pickup" else None),
+            require_pickup=(order.get("channel") == "pickup"))
     except (ValueError, CheckoutError) as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify(res)

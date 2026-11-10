@@ -23,6 +23,7 @@ BUNDLE = "test-pickup-bundle"
 BUNDLE_NAME = "Test Water Bundle"
 RETIRED = "test-pickup-water-old"
 OLD_BUNDLE = "test-pickup-old-bundle"
+UNKNOWN_BUNDLE = "test-pickup-unknown-bundle"
 _CAT = {
     WATER: {"slug": WATER, "name": WATER_NAME, "price_cents": 300,
             "bottle_type": "own-box", "pickup_only": True},
@@ -34,6 +35,11 @@ _CAT = {
     # A retired record superseded by the water, with a shippable bottle of its own.
     RETIRED: {"slug": RETIRED, "name": "Old Water", "price_cents": 300, "inactive": True,
               "superseded_by": WATER, "bottle_type": "Dropper 50 mL"},
+    # One part we can identify (a plain bottle) and one we cannot.
+    UNKNOWN_BUNDLE: {"slug": UNKNOWN_BUNDLE, "name": "Mystery Bundle", "bundle": True,
+                     "price_cents": 7200,
+                     "bundle_component_slugs": [{"slug": BOTTLE, "qty": 1},
+                                                {"slug": "no-such-product", "qty": 1}]},
     OLD_BUNDLE: {"slug": OLD_BUNDLE, "name": "Old Water Bundle", "bundle": True,
                  "price_cents": 7200,
                  "bundle_component_slugs": [{"slug": BOTTLE, "qty": 1},
@@ -382,3 +388,79 @@ def test_the_charge_job_counts_a_pickup_only_failure_and_warns(env, monkeypatch,
         n, date = cx.execute("SELECT failed_count, next_charge_date FROM subscriptions "
                              "WHERE id=?", (sid,)).fetchone()
     assert n == 1 and date == "2000-01-01"
+
+
+def _member_order(env, email, lines, *, pickup):
+    """An order of the member's own, not redirected to the caregiver."""
+    r = env.app.test_client().post(
+        "/api/orders/manual",
+        json={"customer": {"email": email, "name": "N"}, "lines": lines,
+              "pickup": pickup, "_caregiver_route": False})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    return r.get_json()["order_id"]
+
+
+def test_the_board_move_refuses_a_channel_mismatch_and_switches_nothing(carer):
+    target = _raise(carer, CARER, [{"slug": BOTTLE, "qty": 1}], pickup=False).get_json()
+    before = _stored(carer, target["order_id"])
+    pet = _member_order(carer, PET, [{"slug": WATER, "qty": 1}], pickup=True)
+    r = carer.app.test_client().post(f"/api/orders/{pet}/bill-with-caregiver", json={})
+    assert r.status_code == 400, r.get_data(as_text=True)
+    assert "Make them match first" in r.get_json()["error"]
+    after = _stored(carer, target["order_id"])
+    assert after["channel"] == before["channel"] != "pickup"
+    assert after["shipping_cents"] == before["shipping_cents"]
+    assert _stored(carer, pet)["status"] != "cancelled"
+
+
+def test_the_board_move_refuses_a_shipped_order_onto_a_pickup_invoice(carer):
+    _raise(carer, CARER, [{"slug": WATER, "qty": 1}], pickup=True)
+    pet = _member_order(carer, PET, [{"slug": BOTTLE, "qty": 1}], pickup=False)
+    r = carer.app.test_client().post(f"/api/orders/{pet}/bill-with-caregiver", json={})
+    assert r.status_code == 400, r.get_data(as_text=True)
+
+
+def test_the_board_move_onto_a_matching_pickup_invoice_goes_through(carer):
+    target = _raise(carer, CARER, [{"slug": WATER, "qty": 1}], pickup=True).get_json()
+    pet = _member_order(carer, PET, [{"slug": WATER, "qty": 2}], pickup=True)
+    r = carer.app.test_client().post(f"/api/orders/{pet}/bill-with-caregiver", json={})
+    assert r.status_code == 200 and r.get_json()["order_id"] == target["order_id"]
+    assert _stored(carer, target["order_id"])["channel"] == "pickup"
+
+
+def test_the_board_move_opens_a_new_pickup_invoice_for_a_pickup_order(carer):
+    pet = _member_order(carer, PET, [{"slug": WATER, "qty": 1}], pickup=True)
+    r = carer.app.test_client().post(f"/api/orders/{pet}/bill-with-caregiver", json={})
+    body = r.get_json()
+    assert r.status_code == 200 and body["created"] is True, body
+    o = _stored(carer, body["order_id"])
+    assert o["email"] == CARER and o["channel"] == "pickup"
+
+
+# ── A bundle with a part we cannot identify fails closed (review, 2026-11-09) ─
+
+def test_an_unknown_bundle_part_counts_as_possibly_pickup_only(env):
+    cart = [{"slug": UNKNOWN_BUNDLE}]
+    assert env._cart_has_pickup_only(cart) is True
+    assert env._cart_pickup_only_names(cart) == []
+    assert "cannot be identified" in env._pickup_only_refusal(cart, pickup_offered=True)
+    assert "(808) 217-9647" in env._pickup_only_refusal(cart, pickup_offered=False)
+
+
+def test_the_parts_that_resolve_are_still_walked(env, monkeypatch):
+    bundle = dict(_CAT[UNKNOWN_BUNDLE], bundle_component_slugs=[
+        {"slug": "no-such-product", "qty": 1}, {"slug": WATER, "qty": 1}])
+    monkeypatch.setitem(env._PRODUCTS["products"], UNKNOWN_BUNDLE,
+                        {k: v for k, v in bundle.items() if k != "slug"})
+    hits = env._cart_pickup_only_hits([{"slug": UNKNOWN_BUNDLE}])
+    assert hits == [("Mystery Bundle", WATER_NAME), ("Mystery Bundle", None)]
+
+
+def test_the_board_create_gate_refuses_an_unknown_bundle_shipped(env, monkeypatch):
+    monkeypatch.setattr(env, "_hold_new_order_and_invite", lambda *a, **k: None)
+    c = env.app.test_client()
+    items = [{"slug": UNKNOWN_BUNDLE, "qty": 1, "name": "Mystery Bundle"}]
+    r = c.post("/api/orders", json={"items": items, "channel": "retail"})
+    assert r.status_code == 400 and "cannot be identified" in r.get_json()["error"]
+    r = c.post("/api/orders", json={"items": items, "channel": "pickup"})
+    assert r.status_code == 200, r.get_data(as_text=True)
