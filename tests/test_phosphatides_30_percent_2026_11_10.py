@@ -100,15 +100,18 @@ def test_drafts_written_before_the_fix_are_reset():
             assert pin[slug]["content_since"] == live[slug]["content_since"], slug
 
 
-def test_every_phosphatides_row_lands_on_a_real_shared_ingredient_page():
-    from dashboard.ingredients import _name_index, slugify
-    index = _name_index()
+def test_every_phosphatides_row_lands_on_one_of_the_two_pages_the_redirects_target():
+    # Neither page is in FileMaker's names; both exist only through catalogue rows, so an
+    # "in the index" check built from products.json passes for any slug (review, #2251).
+    # Pin the two pages the old phosphatides-50 addresses redirect to (#2252, #2254) instead.
+    from dashboard.ingredients import resolve, slugify
+    pages = {"phosphatides-30-helianthus-annuus", "vitamin-b13-phosphatides-30-helianthus-a"}
     uses = {}
     for slug, p in _load("products.json").items():
         for ing in p.get("ingredients") or []:
-            if isinstance(ing, dict) and "hosphatides 30%" in ing["name"]:
+            if isinstance(ing, dict) and "phosphatides" in ing["name"].lower():
                 uses.setdefault(ing.get("page_slug") or slugify(ing["name"]), set()).add(slug)
-    assert uses
-    for page, products in uses.items():
-        assert page in index, page
-        assert len(products) >= 2, (page, products)
+    assert set(uses) <= pages, set(uses) - pages
+    for page in pages:
+        assert resolve(page), page
+        assert len(uses.get(page, ())) >= 2, (page, uses.get(page))
