@@ -8036,6 +8036,32 @@ def _velocity_guard(req, tier, session_id=""):
     return None
 
 
+_EMBED_PAGE_RE = re.compile(r"^https?://[A-Za-z0-9.-]+(:\d+)?(/[^\s?#]*)?$")
+
+
+def _chat_referer(header_referer, embed_page):
+    """What the chat log records as the page a chat came from.
+
+    A chat sent from the embed iframe carries the iframe's own address as its Referer,
+    so every embedded site looked alike. widget.js passes the page that holds it
+    (10 Nov 2026, refreshingvision.com), and that is logged as "embed <page>". Only a
+    request from /embed may claim one, and only a plain http(s) origin and path. The page
+    is the caller's own claim, so it is attribution, never proof of the site (review
+    round 2). An embed Referer is logged without its query, which carries the page."""
+    header_referer = str(header_referer or "")
+    page = str(embed_page or "").strip()[:300]
+    try:
+        from urllib.parse import urlparse as _up
+        from_embed = _up(header_referer).path == "/embed"
+    except Exception:
+        from_embed = False
+    if not from_embed:
+        return header_referer
+    if page and _EMBED_PAGE_RE.match(page):
+        return "embed " + page
+    return header_referer.split("?", 1)[0].split("#", 1)[0]
+
+
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
     if request.method == "OPTIONS":
@@ -8062,7 +8088,7 @@ def chat():
         or uuid.uuid4().hex
     )
     user_agent = request.headers.get("User-Agent", "")
-    referer    = request.headers.get("Referer", "")
+    referer    = _chat_referer(request.headers.get("Referer", ""), data.get("embed_page"))
     # Concierge — affiliate ref slug captured at entry (?ref=<slug> → rm_ref cookie)
     ref_slug   = (request.cookies.get("rm_ref") or "").strip()
 
