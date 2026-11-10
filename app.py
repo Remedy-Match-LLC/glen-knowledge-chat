@@ -13319,8 +13319,25 @@ def _ingredient_kickoff_build(slug, name):
     _threading.Thread(target=_build, daemon=True).start()
 
 
+def _ingredient_moved(prefix, slug):
+    """A 302 to an old ingredient address's new home, or None (2026-11-10)."""
+    from dashboard import ingredients as _ing
+    from flask import redirect as _redirect
+    try:
+        new = _ing.moved_to(slug)
+    except Exception:
+        new = None
+    if not new:
+        return None
+    qs = request.query_string.decode("utf-8", "ignore")
+    return _redirect(prefix + new + ("?" + qs if qs else ""), code=302)
+
+
 @app.route("/begin/ingredient/<slug>")
 def begin_ingredient_page(slug):
+    moved = _ingredient_moved("/begin/ingredient/", slug)
+    if moved:
+        return moved
     return send_from_directory(STATIC, "begin-ingredient.html")
 
 
@@ -13329,6 +13346,9 @@ def begin_ingredient_page_data(slug):
     from dashboard import ingredients as _ing, ingredient_pages as _ip
     info = _ing.resolve(slug)
     if not info:
+        moved = _ingredient_moved("/begin/ingredient-page-data/", slug)
+        if moved:
+            return moved
         return jsonify({"state": "unknown"}), 404
     name = info["name"]
     email = _ingredient_viewer_email()

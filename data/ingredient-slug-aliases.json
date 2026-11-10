@@ -1,0 +1,8 @@
+{
+  "_comment": "Old ingredient page addresses that now live at another address. An alias only applies when the old address no longer resolves to an ingredient of its own, so it can never hide a live page. Phosphatides: Glen read the bag, 30% not 50% (PR #2251, 2026-11-10).",
+  "aliases": {
+    "phosphatides-50-helianthus-annua": "phosphatides-30-helianthus-annuus",
+    "phosphatides-50-helianthus-annuus": "phosphatides-30-helianthus-annuus",
+    "vitamin-b13-phosphatides-50-helianthus-a": "vitamin-b13-phosphatides-30-helianthus-a"
+  }
+}
