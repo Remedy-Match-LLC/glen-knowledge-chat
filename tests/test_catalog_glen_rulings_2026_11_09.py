@@ -31,5 +31,25 @@ def test_new_entries_have_a_bottle_type_prod_knows():
 
 def test_old_entries_kept_so_links_still_work():
     assert PRODUCTS["capsule-filling-machine"]["price_cents"] == 19700
-    assert "bioenergetic-wellness-scanner" in PRODUCTS
+    assert PRODUCTS["bioenergetic-wellness-scanner"]["price_cents"] == 10000
     assert PRODUCTS["biofield-analysis"]["price_cents"] == 30000
+
+
+def test_new_fmp_ids_are_not_shared_with_any_other_entry():
+    for slug in EXPECTED:
+        fid = PRODUCTS[slug]["fmp_id"]
+        others = [k for k, p in PRODUCTS.items() if k != slug and str(p.get("fmp_id")) == fid]
+        assert not others, (slug, fid, others)
+
+
+def test_resolver_sends_scanner_models_to_their_own_entries():
+    from dashboard.practitioner_portal import name_to_slug
+    assert name_to_slug("Bioenergetic Wellness Scanner USB", PRODUCTS) == "bioenergetic-wellness-scanner-usb"
+    assert name_to_slug("Bioenergetic Wellness Scanner Bluetooth", PRODUCTS) == "bioenergetic-wellness-scanner-bluetooth"
+    assert name_to_slug("Miracule Water (4 L)", PRODUCTS) == "miracule-water"
+
+
+def test_bacterotox_has_directions_and_sibling_list_price():
+    p = PRODUCTS["bacterotox-homeopathic-complex-in-terrain-restore"]
+    assert p["regular_cents"] == 8000
+    assert p["description"].endswith("or as guided.")

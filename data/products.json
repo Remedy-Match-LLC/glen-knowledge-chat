@@ -25803,6 +25803,7 @@
   },
   "bioenergetic-wellness-scanner-usb": {
    "name": "Bioenergetic Wellness Scanner - USB",
+   "aliases": ["Bioenergetic Wellness Scanner USB"],
    "price_cents": 20000,
    "fmp_id": "970",
    "bottle_type": "handcradle",
@@ -25811,6 +25812,7 @@
   },
   "bioenergetic-wellness-scanner-bluetooth": {
    "name": "Bioenergetic Wellness Scanner - Bluetooth",
+   "aliases": ["Bioenergetic Wellness Scanner Bluetooth", "Bioenergetic Wellness Scanner - BlueTooth"],
    "price_cents": 10000,
    "fmp_id": "971",
    "bottle_type": "handcradle",
@@ -25819,6 +25821,8 @@
   },
   "bacterotox-homeopathic-complex-in-terrain-restore": {
    "name": "Bacterotox Homeopathic Complex in Terrain Restore",
+   "regular_cents": 8000,
+   "description": "Support for detoxification related to bacterial dysbiosis. 10 drops 3 times a day 30 minutes before food, or as guided.",
    "price_cents": 7000,
    "fixed_price": true,
    "counts_toward_volume": true,
