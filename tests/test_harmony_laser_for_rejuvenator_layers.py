@@ -1,10 +1,11 @@
 """Rejuvenator layers get the Harmony Laser as an extra first-order remedy.
 
 Glen, 2026-10-01: "For Rejuvenator layers, add the Harmony Laser as a 1st order remedy".
-Glen, 2026-10-12: no laser on any layer that touches the thyroid or the abdomen, mixed
-layers included. Pelvic codes, the other neck codes, the diaphragm and the oesophagus keep
+Glen, 2026-10-12: no laser on a layer that touches the thyroid or the abdomen. Pelvic codes, the other neck codes, the diaphragm and the oesophagus keep
 it. This replaced the 2026-10-01 caution rule. Every laser row carries Glen's caution,
 approved 2026-10-12. Humans and animals alike.
+Glen, 2026-11-10 ("yes"): only the layer's HEAD, its first code, blocks the laser. A
+thyroid or abdomen code further down a mixed layer no longer does.
 """
 import sqlite3
 
@@ -26,9 +27,11 @@ def test_the_blocked_list_is_glens_list_exactly():
 
 
 @pytest.mark.parametrize("code", BLOCKED)
-def test_a_thyroid_or_abdomen_code_blocks_the_laser_even_on_a_mixed_layer(code):
+def test_a_thyroid_or_abdomen_head_blocks_the_laser_and_a_secondary_one_does_not(code):
     assert RI.harmony_laser_for([code]) is None
-    assert RI.harmony_laser_for(["ER18", code, "ES1"]) is None
+    assert RI.harmony_laser_for([code, "ER18", "ES1"]) is None
+    # Inverted 2026-11-10: this mixed layer used to lose its laser.
+    assert RI.harmony_laser_for(["ER18", code, "ES1"]) == LASER
 
 
 @pytest.mark.parametrize("code", PELVIC)
@@ -39,12 +42,16 @@ def test_pelvic_codes_keep_the_laser(code):
 @pytest.mark.parametrize("codes,expected", [
     (["ER25", "ER33"], None),                          # Linda Maher's layer, scan 1066032
     (["ER18", "ER28", "ER44", "ER61"], LASER),         # Kimberly Jantz's layer keeps it
-    (["ER18", "er25"], None),                          # case and padding do not matter
-    (["ER18", " ER33 "], None),
+    (["er25", "ER18"], None),                          # case and padding do not matter
+    ([" ER33 ", "ER18"], None),
     (["er18"], LASER),
-    (["ER18", "ER 33"], None),                          # forms the AI might write
-    (["ER18", "ER033"], None),
-    (["ER18", "ER25 Stomach"], None),
+    (["ER 33", "ER18"], None),                          # forms the AI might write
+    (["ER033", "ER18"], None),
+    (["ER25 Stomach", "ER18"], None),
+    # Inverted 2026-11-10: a blocked code that is not the head keeps the laser.
+    (["ER18", "er25"], LASER),
+    (["ER18", "ER 33"], LASER),
+    (["ES1", "ER33"], LASER),                          # head ES1 is not blocked
     (["ER180"], LASER),                                # not ER18 + 0
     (["ES1", "MB8"], None),
     (["MR3", "ER"], None),            # not a numbered ER code

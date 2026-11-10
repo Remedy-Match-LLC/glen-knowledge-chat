@@ -1818,7 +1818,7 @@ async function atpRun(url,body,stat,btnId,statId){
    if(!(await atpPreview(j,stat,statId))){stat('Cancelled.');return}
    body.token=j.token;j=await post(url,body)}
   if(j&&j.ok){atpRemember(j);
-   var msg=(j.stale_override?'Added from a '+j.days_ago+'-day-old scan. ':'')+'Added '+j.added+' row(s).';
+   var msg=(j.stale_override?'Added from a '+j.days_ago+'-day-old scan. ':'')+'Added '+j.added+' row(s).'+(j.warning?' '+j.warning:'');
    if(j.no_remedy_layers){stat(msg+' '+j.no_remedy_layers
     +' layer(s) have no infoceutical on the remedy list, so their remedy is blank.');setTimeout(function(){location.reload()},4000)}
    else{stat(msg+' Reloading\\u2026');location.reload()}}
@@ -1847,10 +1847,12 @@ async function atpLoad(){
   var row=impEl('div','','imp-row');
   var have=(p.into_remedies||[]).join(', ')||'no remedy',fresh=(p.source_remedies||[]).join(', ')||'no remedy';
   row.appendChild(impEl('div',(p.source_head||'(no heading)')+' ('+fresh+') meets '
-   +(p.into_head||'(no heading)')+' ('+have+'): '+p.rule+', '+p.why));
+   +(p.into_head||'(no heading)')+' ('+have+'): '+p.rule+', '+p.why
+   +(p.into_gone?'. That layer was deleted, so it can only be kept separate.':'')));
   var bar=impEl('div','','btnrow');
-  [['separate','Keep separate'],['existing','Join, keep '+have],['new','Join, keep '+fresh],
-   ['both','Join, keep both']].forEach(function(c){
+  (p.into_gone?[['separate','Keep separate']]:
+   [['separate','Keep separate'],['existing','Join, keep '+have],['new','Join, keep '+fresh],
+   ['both','Join, keep both']]).forEach(function(c){
    var x=impEl('button',c[1],c[0]==='separate'?'btn ghost':'btn');x.type='button';
    x.onclick=function(){atpResolve(p.id,c[0],x)};bar.appendChild(x)});
   row.appendChild(bar);box.appendChild(row)})}

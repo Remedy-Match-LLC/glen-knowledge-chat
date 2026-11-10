@@ -3212,7 +3212,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         plan, and a proposal it misses can be made by hand.
 
         `hold` takes a related layer back off the chain into its proposal, for a Mind
-        click (Glen, 2026-11-07: "yes, hold them in the list"). A live layer stays."""
+        click (Glen, 2026-11-07: "yes, hold them in the list"). A live layer stays.
+        A failed hold is rolled back (the layer stays on the chain) and raised, so the
+        route reports it instead of a success."""
         from dashboard import biofield_add_to_plan as _atp
         from dashboard import biofield_add_to_plan_apply as _ap
         from dashboard.biofield_chain_fold import _remedy_key
@@ -3232,6 +3234,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return [dict(p, id=i) for p, i in zip(found, ids)]
         except Exception as e:  # noqa: BLE001
             print(f"[add-to-plan] {test_id}: no proposal: {e!r}", flush=True)
+            if hold:
+                raise
             return []
 
     def _max_row_id(cx, test_id):
@@ -3330,7 +3334,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                 ticked_names=ticked, vocabulary=vocab, key=_remedy_key,
                                 resolve=lambda n: exact_canonical_name(cx, n),
                                 last_layer=_last_layer_no(rep),
-                                laser_for=_ri.harmony_laser_for, hold_related=True)
+                                laser_blocked=_atp.laser_blocked_by_head,
+                                hold_related=True)
             shown = _ap.describe(got)
             chain = _ap.digest(rows)
             if rows and not stored:
@@ -3342,12 +3347,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         "existing": _layer_count(rep), "token": token, "preview": shown,
                         "unnamed": res.get("unnamed") or [],
                         "recommended_unread": recommended is None}
-            if stored:
-                if chain != stored["chain"] or shown != stored["preview"]:
-                    return {"ok": False, "reason": "The plan changed since the preview. "
-                                                  f"Click {label} again."}
-                if not _ap.consume_preview(cx, test_id, token):
-                    return {"ok": False, "reason": "That preview was already added."}
+            if stored and (chain != stored["chain"] or shown != stored["preview"]):
+                return {"ok": False, "reason": "The plan changed since the preview. "
+                                              f"Click {label} again."}
 
             def _laser_row(layer_no, head, tail, codes, laser):
                 from dashboard.biofield_authoring import add_chain_row
@@ -3361,11 +3363,33 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                               timing=timing, confirmed=0, origin="scan", codes=codes,
                               commit=False)
 
-            done = _ap.land(cx, test_id, got,
-                            lambda layers: _ri.import_layers_to_test(cx, test_id, layers),
-                            laser_row=_laser_row)
-            _seed_stresses(cx, test_id, force=True, layers=res.get("layers") or [])
+            # One transaction: the plan is re-read and must still be the one this
+            # click classified (empty or not), the token is used up, and the layers
+            # are written. A failure rolls all of it back, so the token survives.
+            try:
+                done = _ap.confirm(cx, test_id, got,
+                                   lambda layers: _ri.import_layers_to_test(
+                                       cx, test_id, layers, commit=False),
+                                   laser_row=_laser_row, chain=chain,
+                                   token=token if stored else None)
+            except _ap.Changed as e:
+                return {"ok": False, "reason": f"{e} Click {label} again."}
+            except Exception as e:  # noqa: BLE001  rolled back: nothing was written
+                print(f"[add-to-plan] {test_id}: write failed: {e!r}", flush=True)
+                return {"ok": False, "reason": "Nothing was added: the write failed. "
+                                              "Try again."}
+            # The plan is written and committed. Seeding the scan's stresses is a
+            # separate step; if it fails the page says so rather than reporting an error
+            # for a write that happened.
+            warning = ""
+            try:
+                _seed_stresses(cx, test_id, force=True, layers=res.get("layers") or [])
+            except Exception as e:  # noqa: BLE001
+                print(f"[add-to-plan] {test_id}: stress seeding failed: {e!r}", flush=True)
+                warning = ("The layers were added, but the scan's stress patterns were "
+                           "not seeded. Reload to retry.")
         return {"ok": True, "added": done["added"], "imported": done["added"],
+                "warning": warning,
                 "joined": shown["joined"], "related": shown["related"],
                 "proposals": done["proposals"],
                 "stale_override": not res.get("fresh"),
@@ -3398,7 +3422,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # A held Body layer is written as Import Reveal writes a layer.
                 done = _ap.resolve(cx, test_id, pid, str(body.get("choice") or ""),
                                    write_layer=lambda L: _ri.import_layers_to_test(
-                                       cx, test_id, [L]))
+                                       cx, test_id, [L], commit=False))
             except _ap.Gone as e:
                 return {"ok": False, "error": str(e)}, 409
             except ValueError as e:
@@ -4618,7 +4642,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"ok": False, "stale": True, "error": str(exc)}, 409
             # Glen, 2026-11-07: a new Mind layer related to one already on the plan
             # is proposed for joining (dashboard/biofield_add_to_plan.py).
-            done = {**done, "proposals": _atp_propose_landed(cx, test_id, before, hold=True)}
+            try:
+                held = _atp_propose_landed(cx, test_id, before, hold=True)
+            except Exception:  # noqa: BLE001  rolled back: the layers stay on the plan
+                return {"ok": False, "applied": True,
+                        "error": "The layers were added to the plan, but the related "
+                                 "ones could not be held for you to pick. Nothing "
+                                 "was lost: they are on the plan as separate layers."}
+            done = {**done, "proposals": held}
         if refused:
             done = {**done, **_ff_block(cx, test_id, refused)}
         return {"ok": True, "applied": True, **done}

@@ -31,6 +31,13 @@ from dashboard import biofield_reveal_cover as _cover
 HARMONY_LASER = "Harmony Laser"
 
 
+def laser_blocked_by_head(codes):
+    """True when a layer's head (its first code) is a blocked ER code. The one rule,
+    kept in biofield_reveal_import so the reveal import and a join cannot drift."""
+    from dashboard.biofield_reveal_import import laser_blocked_by_head as rule
+    return rule(codes)
+
+
 def _plain_key(name):
     return str(name or "").strip().lower()
 
@@ -136,7 +143,7 @@ def _summary(group):
 
 
 def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
-             vocabulary=(), key=None, resolve=None, last_layer=0, laser_for=None,
+             vocabulary=(), key=None, resolve=None, last_layer=0, laser_blocked=None,
              hold_related=False):
     """{"joined": [...], "related": [...], "add": [...]}.
 
@@ -144,15 +151,17 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
     origin}. `incoming` are layers in click order. `recommended` is the scan's
     recommended codes (None when unread), `ticked_names` the infoceuticals ticked in
     the Clinical Summary, as biofield_reveal_cover.plan takes them. `last_layer` is
-    the highest stored layer number. `laser_for(codes)` is the Harmony Laser rule
-    (biofield_reveal_import.harmony_laser_for); without it no laser is checked.
+    the highest stored layer number. `laser_blocked(codes)` is the Harmony Laser
+    head rule (laser_blocked_by_head); without it no incoming laser is kept. A layer
+    gets at most one laser, however many layers of this batch join it.
 
     joined:  {"layer", "into", "into_head", "into_rids", "into_remedies", "into_rid",
               "codes" (new to that row), "stresses" (labels for its Balances; its
               tail is never changed),
               "laser" (a laser row to add to that layer, or None)}. A join onto a
-              layer from this same batch has "into_new" (the n it was given) and its
-              codes are already merged into that layer in "add"/"related".
+              layer from this same batch has "into_batch": True and "into_new" (the
+              n it was given, None for a held related layer); its codes, stresses
+              and laser are already merged into that layer in "add"/"related".
     related: {"layer", "n", "into", "into_head", "into_rids", "into_remedies",
               "rule", "why"}.
     add:     the incoming layer with "n" set.
@@ -200,6 +209,7 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
 
     out = {"joined": [], "related": [], "add": []}
     placed = {}            # remedy key -> the new layer (dict) this batch already made
+    lasered = set()        # existing layers this batch has already given a laser
     n = int(last_layer or 0)
     for layer in incoming or []:
         f = incoming_fields(layer)
@@ -210,7 +220,8 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
         if k and k in by_key:
             g, row = by_key[k]
             group_codes = [c for r in g["rows"] for c in codes_of(r.get("codes"))]
-            has_laser = any(key(r.get("remedy")) == key(HARMONY_LASER) for r in g["rows"])
+            has_laser = (id(g) in lasered or
+                         any(key(r.get("remedy")) == key(HARMONY_LASER) for r in g["rows"]))
             # Glen, 2026-11-10: a same-product join is always automatic, a Harmony Laser
             # layer included. The laser is blocked only on a layer whose head is a
             # thyroid or abdomen code, and a join keeps the kept layer's head, so a
@@ -218,9 +229,10 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
             # code. An incoming laser rides onto the kept layer only if that head allows it.
             head_codes = (group_codes or f["codes"])[:1]
             laser = None
-            if (laser_for and not has_laser and layer.get("laser")
-                    and laser_for(head_codes) is not None):
+            if (laser_blocked and not has_laser and layer.get("laser")
+                    and not laser_blocked(head_codes)):
                 laser = layer.get("laser")
+                lasered.add(id(g))
             new_codes = [c for c in f["codes"] if c not in codes_of(row.get("codes"))]
             out["joined"].append({
                 "layer": layer, **_summary(g), "into_rid": row.get("id"),
@@ -236,9 +248,16 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
             more = join_stresses(tf["head"], tf["tail"], f["head"], f["tail"],
                                  have=target.get("stresses") or [])
             target["stresses"] = list(target.get("stresses") or []) + more
-            out["joined"].append({"layer": layer, "into_new": target["n"],
+            # The same head rule, on the layer this batch made. Its head is its first
+            # code once this layer's codes are merged in.
+            laser = None
+            if (laser_blocked and not target.get("laser") and layer.get("laser")
+                    and not laser_blocked(target["codes"][:1])):
+                laser = target["laser"] = layer.get("laser")
+            out["joined"].append({"layer": layer, "into_batch": True,
+                                  "into_new": target["n"],
                                   "into_head": tf["head"], "codes": f["codes"],
-                                  "stresses": more, "laser": None})
+                                  "stresses": more, "laser": laser})
             continue
         new = dict(layer, n=None)
         if k:

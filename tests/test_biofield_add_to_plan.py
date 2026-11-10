@@ -126,7 +126,7 @@ def test_a_same_product_join_onto_a_laser_layer_is_automatic():
     chain = [_row(1, 1, "Cells", "Rejuvenator Max", codes=["ER5"], origin="scan"),
              _row(2, 1, "Cells", "Harmony Laser", codes=["ER5"], origin="scan")]
     got = atp.classify(chain, [{"title": "Thyroid", "remedy_name": "Rejuvenator Max",
-                                "codes": ["ER33"]}], laser_for=harmony_laser_for,
+                                "codes": ["ER33"]}], laser_blocked=atp.laser_blocked_by_head,
                        last_layer=1)
     assert got["related"] == [] and got["add"] == []
     assert got["joined"][0]["into"] == 1 and got["joined"][0]["codes"] == ["ER33"]
@@ -138,7 +138,7 @@ def test_an_incoming_laser_follows_the_kept_head_not_a_secondary_code():
     chain = [_row(1, 1, "Cells", "Rejuvenator Max", codes=["ER5"], origin="scan")]
     got = atp.classify(chain, [{"title": "Thyroid", "remedy_name": "Rejuvenator Max",
                                 "codes": ["ER33"], "laser": laser}],
-                       laser_for=harmony_laser_for)
+                       laser_blocked=atp.laser_blocked_by_head)
     assert got["joined"][0]["laser"] == laser     # head ER5 allows it; ER33 is secondary
 
 
@@ -147,12 +147,12 @@ def test_a_joined_layer_brings_its_laser_only_when_the_kept_head_allows_one():
     chain = [_row(1, 1, "Cells", "Rejuvenator Max", codes=["ER5"], origin="scan")]
     ok = atp.classify(chain, [{"title": "Cells", "remedy_name": "Rejuvenator Max",
                                "codes": ["ER7"], "laser": laser}],
-                      laser_for=harmony_laser_for)
+                      laser_blocked=atp.laser_blocked_by_head)
     assert ok["joined"][0]["laser"] == laser
     chain[0]["codes"] = ["ER33"]
     blocked = atp.classify(chain, [{"title": "Cells", "remedy_name": "Rejuvenator Max",
                                     "codes": ["ER7"], "laser": laser}],
-                           laser_for=harmony_laser_for)
+                           laser_blocked=atp.laser_blocked_by_head)
     assert blocked["joined"][0]["laser"] is None
 
 
@@ -191,3 +191,58 @@ def test_a_held_related_layer_takes_no_number_and_leaves_no_gap():
                        last_layer=3, hold_related=True)
     assert got["related"][0]["n"] is None and got["related"][0]["layer"]["n"] is None
     assert [L["n"] for L in got["add"]] == [4]
+
+
+LASER = {"name": "Harmony Laser", "caution": "x"}
+
+
+def test_two_incoming_layers_joining_one_layer_bring_one_laser():
+    chain = [_row(1, 1, "Cells", "Rejuvenator Max", codes=["ER5"], origin="scan")]
+    got = atp.classify(chain, [{"title": "A", "remedy_name": "Rejuvenator Max",
+                                "codes": ["ER7"], "laser": LASER},
+                               {"title": "B", "remedy_name": "Rejuvenator Max",
+                                "codes": ["ER8"], "laser": LASER}],
+                       laser_blocked=atp.laser_blocked_by_head)
+    assert [j["laser"] for j in got["joined"]] == [LASER, None]
+
+
+def test_a_head_with_no_er_code_may_carry_the_laser():
+    # Glen, 2026-11-10: only a blocked head blocks it; harmony_laser_for gave None here.
+    chain = [_row(1, 1, "Gut", "Alkalize Powder", codes=["ED2", "ER33"])]
+    got = atp.classify(chain, [{"title": "Gut", "remedy_name": "Alkalize Powder",
+                                "codes": ["ER5"], "laser": LASER}],
+                       laser_blocked=atp.laser_blocked_by_head)
+    assert got["joined"][0]["laser"] == LASER
+
+
+def test_a_join_onto_a_layer_of_this_batch_follows_the_head_rule():
+    ok = atp.classify([], [{"title": "A", "remedy_name": "Kidney Kare", "codes": ["ER5"]},
+                           {"title": "B", "remedy_name": "Kidney Kare", "codes": ["ER33"],
+                            "laser": LASER}],
+                      laser_blocked=atp.laser_blocked_by_head)
+    assert ok["add"][0]["laser"] == LASER and ok["joined"][0]["into_batch"]
+    blocked = atp.classify([], [{"title": "A", "remedy_name": "Kidney Kare",
+                                 "codes": ["ER33"]},
+                                {"title": "B", "remedy_name": "Kidney Kare",
+                                 "codes": ["ER5"], "laser": LASER}],
+                           laser_blocked=atp.laser_blocked_by_head)
+    assert not blocked["add"][0].get("laser")
+
+
+def test_a_same_product_join_onto_a_held_layer_is_marked_for_the_batch():
+    got = atp.classify(CHAIN, [{"title": "Liver Detoxification", "remedy_name": "Detox Daily",
+                                "codes": ["ED9"]},
+                               {"title": "Bile flow", "most_affected": "Bile",
+                                "remedy_name": "Detox Daily", "codes": ["ED10"]}],
+                       last_layer=3, hold_related=True)
+    j = got["joined"][0]
+    assert j["into_batch"] and j["into_new"] is None
+    held = got["related"][0]["layer"]
+    assert held["codes"] == ["ED9", "ED10"] and held["stresses"] == ["Bile", "Bile flow"]
+
+
+def test_the_head_rule_reads_only_the_first_code():
+    assert atp.laser_blocked_by_head(["ER33", "ER5"])
+    assert atp.laser_blocked_by_head(["er 033"])
+    assert not atp.laser_blocked_by_head(["ER5", "ER33"])
+    assert not atp.laser_blocked_by_head(["ED2"]) and not atp.laser_blocked_by_head([])

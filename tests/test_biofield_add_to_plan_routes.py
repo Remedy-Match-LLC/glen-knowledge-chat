@@ -261,15 +261,26 @@ def test_keep_separate_adds_the_held_layer_at_the_end_and_closes_the_proposal(
     assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"] == []
 
 
-def test_a_proposal_whose_layer_was_deleted_is_closed(tmp_path, monkeypatch):
+def test_a_held_proposal_whose_layer_was_deleted_can_still_be_kept_separate(
+        tmp_path, monkeypatch):
+    # Inverted 2026-11-10 (review): the held layer's remedies and stresses live only
+    # in the proposal, so closing it as gone lost them. It stays, separate only.
     client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
     _added(client, tid)
     pid = client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"][0]["id"]
     with sqlite3.connect(db) as cx:
         cx.execute("DELETE FROM biofield_auth_chain WHERE head='Gut'")
-    assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"] == []
+    props = client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"]
+    assert [(q["id"], q["into_gone"], q["source_remedies"]) for q in props] == [
+        (pid, True, ["Gut Restore"])]
     r = client.post(f"/author/{tid}/add-to-plan/resolve", json={"id": pid, "choice": "both"})
-    assert r.status_code == 409
+    assert r.status_code == 409 and "separate" in r.get_json()["error"]
+    assert client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"], \
+        "a refused join leaves it pending"
+    r = client.post(f"/author/{tid}/add-to-plan/resolve",
+                    json={"id": pid, "choice": "separate"})
+    assert r.status_code == 200, r.get_json()
+    assert ("Gut Repair", "Gut Restore", ["ET5"]) in [x[1:] for x in _chain(db)]
 
 
 def test_an_unknown_choice_is_refused(tmp_path, monkeypatch):
@@ -410,3 +421,199 @@ def test_a_body_preview_token_does_not_confirm_reveal_only(tmp_path, monkeypatch
     n = len(_chain(db))
     got = client.post(REVEAL.format(tid), json={"token": j["token"]}).get_json()
     assert got["ok"] is False and "expired" in got["reason"] and len(_chain(db)) == n
+
+
+# -- review findings, 2026-11-10 ------------------------------------------------------
+
+def _related_twice():
+    # Gut Repair is related to Gut and held; Gut Lining is the same product, so it
+    # joins the held layer in the same click.
+    return _reveal({"n": 1, "title": "Gut Repair", "most_affected": "Leaky gut",
+                    "remedy_name": "Gut Restore", "codes": ["ET5"]},
+                   {"n": 2, "title": "Gut Lining", "most_affected": "Mucosa",
+                    "remedy_name": "Gut Restore", "codes": ["ET9"]})
+
+
+def test_a_same_product_layer_joins_a_held_layer_and_keeps_its_stresses(
+        tmp_path, monkeypatch):
+    client, tid, db = _client(tmp_path, monkeypatch, _related_twice(), _gut)
+    j, done = _added(client, tid)
+    assert done["ok"] and len(done["proposals"]) == 1, done
+    assert _resolve(client, tid, "separate").status_code == 200
+    held = [x for x in _chain(db) if x[1] == "Gut Repair"]
+    assert [(x[2], x[3]) for x in held] == [("Gut Restore", ["ET5", "ET9"])]
+    assert {"Gut Lining", "Mucosa"} <= set(_balances(db, "Gut Repair"))
+
+
+def _laser_rows(db):
+    with sqlite3.connect(db) as cx:
+        return [r for r in cx.execute("SELECT layer,head FROM biofield_auth_chain "
+                                      "WHERE remedy='Harmony Laser'")]
+
+
+LASER = {"name": "Harmony Laser", "caution": "x"}
+
+
+def _laser_join():
+    return _reveal({"n": 1, "title": "Acid", "remedy_name": "Alkalize Powder",
+                    "codes": ["ER5"], "laser": LASER},
+                   {"n": 2, "title": "Acid again", "remedy_name": "Alkalize Powder",
+                    "codes": ["ER7"], "laser": LASER})
+
+
+def test_two_layers_joining_one_layer_add_one_laser(tmp_path, monkeypatch):
+    import dashboard.biofield_body_panel as _bp
+    monkeypatch.setattr(_bp, "chosen_layers", lambda panel, choices, is_animal=False: ([], []))
+    client, tid, db = _client(tmp_path, monkeypatch, _laser_join(), _gut)
+    j, done = _added(client, tid)
+    assert done["ok"], done
+    # The Gut layer's head is ED2, not a blocked ER code, so it may carry one laser.
+    assert _laser_rows(db) == [(1, "Gut")]
+
+
+def _blocked_gut(cx, tid):
+    add_chain_row(cx, tid, 1, "Gut", "Gut", "Alkalize Powder", origin="clinical",
+                  codes=["ER33"])
+
+
+def _held_laser():
+    return _reveal({"n": 1, "title": "Gut Repair", "most_affected": "Leaky gut",
+                    "remedy_name": "Gut Restore", "codes": ["ER5"], "laser": LASER})
+
+
+def test_a_held_laser_joins_only_a_layer_whose_head_allows_it(tmp_path, monkeypatch):
+    client, tid, db = _client(tmp_path, monkeypatch, _held_laser(), _blocked_gut)
+    _added(client, tid)
+    assert _resolve(client, tid, "both").status_code == 200
+    assert _laser_rows(db) == [], "the kept head ER33 blocks the laser"
+    assert "Gut Restore" in [x[2] for x in _chain(db)]
+
+
+def test_a_held_laser_kept_separate_keeps_its_laser(tmp_path, monkeypatch):
+    client, tid, db = _client(tmp_path, monkeypatch, _held_laser(), _blocked_gut)
+    _added(client, tid)
+    assert _resolve(client, tid, "separate").status_code == 200
+    assert [h for _, h in _laser_rows(db)] == ["Gut Repair"]
+
+
+def test_a_held_laser_onto_a_layer_that_has_one_adds_none(tmp_path, monkeypatch):
+    def setup(cx, tid):
+        _gut(cx, tid)
+        add_chain_row(cx, tid, 1, "Gut", "Gut", "Harmony Laser", origin="scan",
+                      codes=["ED2"])
+    client, tid, db = _client(tmp_path, monkeypatch, _held_laser(), setup)
+    _added(client, tid)
+    assert _resolve(client, tid, "both").status_code == 200
+    assert len(_laser_rows(db)) == 1
+
+
+def test_a_proposal_answered_twice_at_once_is_written_once(tmp_path, monkeypatch):
+    from dashboard import biofield_add_to_plan_apply as _ap
+    client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
+    _added(client, tid)
+    pid = client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"][0]["id"]
+    real = _ap._rows
+    # Both answers read the proposal as pending before either wrote.
+    stale = [dict(p, status="pending") for p in real(sqlite3.connect(db), tid, pid=pid)]
+    assert client.post(f"/author/{tid}/add-to-plan/resolve",
+                       json={"id": pid, "choice": "separate"}).status_code == 200
+    after = _chain(db)
+    monkeypatch.setattr(_ap, "_rows", lambda cx, t, status=None, pid=None:
+                        stale if pid is not None else real(cx, t, status=status))
+    r = client.post(f"/author/{tid}/add-to-plan/resolve", json={"id": pid, "choice": "both"})
+    assert r.status_code == 409 and _chain(db) == after
+
+
+def test_a_failed_confirm_writes_nothing_and_its_token_still_works(tmp_path, monkeypatch):
+    client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
+    j = client.post(URL.format(tid), json={}).get_json()
+    real = RI.import_layers_to_test
+
+    def half(cx, t, layers, **k):
+        real(cx, t, layers[:1], **k)
+        raise RuntimeError("disk full")
+    monkeypatch.setattr(RI, "import_layers_to_test", half)
+    before = _chain(db)
+    bad = client.post(URL.format(tid), json={"token": j["token"]}).get_json()
+    assert bad["ok"] is False and "Nothing was added" in bad["reason"]
+    assert _chain(db) == before
+    monkeypatch.setattr(RI, "import_layers_to_test", real)
+    good = client.post(URL.format(tid), json={"token": j["token"]}).get_json()
+    assert good["ok"], good
+    assert "Bone Builder" in [x[2] for x in _chain(db)]
+
+
+def test_a_failed_stress_seed_after_the_write_is_reported_as_a_warning(
+        tmp_path, monkeypatch):
+    import dashboard.biofield_stress as _st
+    client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
+
+    real = _st.init_stress_tables
+
+    def after_the_write(cx):
+        # The seed's first step fails; the same call before the write succeeds.
+        if cx.execute("SELECT 1 FROM biofield_auth_chain WHERE remedy='Bone Builder'"
+                      ).fetchone():
+            raise RuntimeError("seed")
+        return real(cx)
+    monkeypatch.setattr(_st, "init_stress_tables", after_the_write)
+    j, done = _added(client, tid)
+    assert done["ok"] and "not seeded" in done["warning"], done
+    assert "Bone Builder" in [x[2] for x in _chain(db)]
+
+
+def test_a_plan_changed_between_the_read_and_the_write_is_refused(tmp_path, monkeypatch):
+    # An empty plan writes without a preview, so only the re-read inside the write
+    # transaction can catch a row that landed in between.
+    from dashboard import biofield_add_to_plan_apply as _ap
+    res = _reveal({"n": 1, "title": "Kidney Health", "remedy_name": "Kidney Kare",
+                   "codes": ["ED12"]})
+    client, tid, db = _client(tmp_path, monkeypatch, res)
+    real = _ap.begin
+
+    def racing(cx):
+        add_chain_row(cx, tid, 1, "Sleep", "", "Calm Night")
+        real(cx)
+    monkeypatch.setattr(_ap, "begin", racing)
+    j = client.post(URL.format(tid), json={}).get_json()
+    assert j["ok"] is False and "changed" in j["reason"], j
+    assert [x[1] for x in _chain(db)] == ["Sleep"]
+
+
+def test_a_second_click_reuses_the_pending_proposal(tmp_path, monkeypatch):
+    client, tid, db = _client(tmp_path, monkeypatch, _three_way(), _gut)
+    _added(client, tid)
+    j, done = _added(client, tid)
+    assert done["ok"], done
+    props = client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"]
+    assert len(props) == 1 and done["proposals"] == [props[0]["id"]]
+
+
+def test_a_mind_layer_that_cannot_be_held_stays_on_the_plan_and_says_so(
+        tmp_path, monkeypatch):
+    from dashboard import biofield_add_to_plan_apply as _ap
+    from dashboard import biofield_clinical_sections as cs
+    from dashboard.biofield_clinical_proposals import save_selection
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        from dashboard.biofield_authoring import create_test, init_auth_tables
+        init_auth_tables(cx)
+        tid = create_test(cx, "Jo", "jo@x.com", "2026-11-07")
+        add_chain_row(cx, tid, 1, "Gut", "Bloating", "Gut Restore", origin="scan",
+                      codes=["ET5"])
+        cs.upsert_item(cx, "Gut and digestion", cs.NUTRIENTS, {"name": "Vitamin C"})
+        save_selection(cx, tid, "Gut and digestion", ["Alkalize Powder"])
+        cx.commit()
+    client = create_app(db, fetch_profile=lambda email: {"conditions": ["Gut and digestion"]},
+                        fetch_recent_comms=lambda email: {}).test_client()
+
+    def boom(*a, **k):
+        raise RuntimeError("insert failed")
+    monkeypatch.setattr(_ap, "_insert", boom)
+    url = f"/author/{tid}/clinical-items/layers/update"
+    j = client.post(url, json={}).get_json()
+    new = [c["id"] for c in j["changes"] if c["kind"] == "new"]
+    done = client.post(url, json={"apply": True, "digest": j["digest"],
+                                  "chosen": new}).get_json()
+    assert done["ok"] is False and "could not be held" in done["error"], done
+    assert [r[1] for r in _chain(db)] == ["Gut", "Gut and digestion"]
