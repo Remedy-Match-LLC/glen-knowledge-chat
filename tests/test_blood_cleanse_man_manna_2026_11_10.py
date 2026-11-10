@@ -12,6 +12,21 @@ DATA = Path(__file__).resolve().parent.parent / "data"
 LIVE = json.loads((DATA / "products.json").read_text())["products"]
 PIN = json.loads((DATA / "products-manual-corrections.json").read_text())
 
+DIRECTIONS = "1 to 4 capsules daily in divided doses with food, or as guided."
+WARNING = (
+    "This formula contains vinpocetine. Do not use if you are pregnant, could become "
+    "pregnant, or are breastfeeding. It is not for children. Consult your physician "
+    "before use if you take any medicine, including aspirin or other pain relievers. "
+    "This matters most with blood pressure, heart, blood thinning, blood sugar, "
+    "cholesterol or immune-suppressing medicines. Also consult first if you have "
+    "liver disease, gout, a stomach ulcer, low blood pressure, a bleeding disorder, "
+    "an autoimmune condition or a seizure disorder, or are planning surgery. Niacin "
+    "may cause a temporary flush. Stop use and consult your physician if you notice "
+    "yellowing of the skin or eyes, or dark urine. This formula may change blood "
+    "pressure and blood sugar, affect bleeding, and change how some medications are "
+    "processed."
+)
+
 BLEND = [
     ("Phosphatides 30% (Helianthus annuus)", "13 mg", None),
     ("Ginkgo European Standard 10:1 (Ginkgo biloba)", "8 mg", "ginkgo-european-std-ginkgo-biloba"),
@@ -64,16 +79,27 @@ def test_old_drafts_reset_and_notes_match():
         assert LIVE[slug]["enrichment_note"] == PIN[slug]["note"]
 
 
-def test_no_row_opens_a_new_ingredient_page():
-    from dashboard.ingredients import _fmp_records, slugify
-    known = {slugify((r.get("name") or "").strip().replace("\n", " "))
-             for r in _fmp_records().values() if isinstance(r, dict)}
-    for slug, p in LIVE.items():
-        if slug in ("blood-cleanse", "man-manna"):
-            continue
-        for ing in p.get("ingredients") or []:
-            if isinstance(ing, dict):
-                known.add(ing.get("page_slug") or slugify(ing.get("name") or ""))
+def test_warning_and_directions_are_pinned_in_full():
+    for entry in (LIVE["blood-cleanse"], PIN["blood-cleanse"]):
+        assert entry["directions"] == DIRECTIONS
+    assert LIVE["blood-cleanse"]["warning"] == WARNING
+    assert PIN["blood-cleanse"]["warning"] == WARNING
+
+
+def test_no_row_opens_a_new_ingredient_page(tmp_path, monkeypatch):
+    """Resolve each row against an index built without these two products."""
+    from dashboard import ingredients
+    doc = json.loads((DATA / "products.json").read_text())
     for slug in ("blood-cleanse", "man-manna"):
-        for ing in LIVE[slug]["ingredients"]:
-            assert (ing.get("page_slug") or slugify(ing["name"])) in known, (slug, ing["name"])
+        doc["products"].pop(slug)
+    copy = tmp_path / "products.json"
+    copy.write_text(json.dumps(doc))
+    monkeypatch.setattr(ingredients, "_PRODUCTS", copy)
+    ingredients._name_index.cache_clear()
+    try:
+        for slug in ("blood-cleanse", "man-manna"):
+            for ing in LIVE[slug]["ingredients"]:
+                page = ing.get("page_slug") or ingredients.slugify(ing["name"])
+                assert ingredients.resolve(page), (slug, ing["name"], page)
+    finally:
+        ingredients._name_index.cache_clear()
