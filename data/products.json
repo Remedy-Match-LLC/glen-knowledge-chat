@@ -10258,16 +10258,19 @@
      "dose": "60 mg"
     },
     {
-     "name": "Zinc Glycinate",
-     "dose": "55 mg"
+     "name": "Zinc (as Zinc Bisglycinate, 55 mg)",
+     "dose": "11 mg",
+     "page_slug": "zinc-glycinate"
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
    "description": "Man Manna . Man Manna Man Manna We researched all the best proven natural prostate remedies... We considered the range of therapeutic dosages for each ingredient by itself... We combined them in one comprehensive formula... Because of synergy, we see even better results with lower doses. A New Space Age Solution NASA’s Multi-Pill Problem Proves Why Your Prostate Regimen is Failing In space, astronauts once had to take over 20 pills a day just to stay healthy. The problem? Compliance dropped. Absorption was inconsistent. Results varied. So NASA simplified everything. They combined essential...",
-   "enrichment_note": "Recovered from FMP (Glen 2026-06-05); label-formatted (FDA DVs).",
+   "enrichment_note": "Glen 2026-11-10 ('yes'): zinc is stated as elemental, 11 mg from 55 mg Zinc Bisglycinate (20% Zn, FileMaker raw 3587). Batch run 143, 20 January 2026. Directions: Glen's 24 Oct 2026 ruling (up to 3 a day; 33 mg zinc, under the 40 mg upper limit), added on his 'yes' 2026-11-10.",
    "bottle_type": "30 Caps",
    "fmp_id": "178",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "content_since": "2026-11-10T17:43:52+00:00",
+   "directions": "1 to 3 capsules a day with food, or as guided."
   },
   "artemisinin": {
    "name": "Artemisinin",
@@ -12089,7 +12092,9 @@
     },
     {
      "name": "Vitamin D3: Cholecalciferol",
-     "dose": "1.33 mg"
+     "dose": "16.6 mcg (665 IU)",
+     "grade": "500,000 IU/g",
+     "compound_mg": 1.33
     },
     {
      "name": "Coenzyme Q10, CoQ10, Ubiquinone",
@@ -12141,8 +12146,52 @@
      "dose": "20 mg"
     },
     {
-     "name": "Bioavailability Blend",
-     "dose": "34.5 mg"
+     "name": "Phosphatides 30% (Helianthus annuus)",
+     "dose": "13 mg"
+    },
+    {
+     "name": "Ginkgo European Standard 10:1 (Ginkgo biloba)",
+     "dose": "8 mg",
+     "page_slug": "ginkgo-european-std-ginkgo-biloba"
+    },
+    {
+     "name": "Vitamin B3 (as Niacin)",
+     "dose": "5 mg"
+    },
+    {
+     "name": "Moringa 100:1 (Moringa oleifera)",
+     "dose": "3 mg"
+    },
+    {
+     "name": "DGL Licorice (Glycyrrhiza glabra)",
+     "dose": "2 mg"
+    },
+    {
+     "name": "Vinpocetine 99% (Vinca minor)",
+     "dose": "1 mg",
+     "page_slug": "vinpocetine-vinca-minor"
+    },
+    {
+     "name": "Gingerols 10% (Zingiber officinale)",
+     "dose": "0.5 mg",
+     "page_slug": "gingerols-10-zingiber-officinalis"
+    },
+    {
+     "name": "Piperine 95% (Piper nigrum)",
+     "dose": "0.5 mg"
+    },
+    {
+     "name": "Humic Acid",
+     "dose": "0.5 mg"
+    },
+    {
+     "name": "Fulvic Acid",
+     "dose": "0.5 mg"
+    },
+    {
+     "name": "Spirit Minerals (ORMUS)",
+     "dose": "0.5 mg",
+     "page_slug": "11-spirit-minerals"
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
@@ -12152,7 +12201,7 @@
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
    "fmp_id": "429",
-   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it. Glen 2026-11-10 ('yes'): the 34.5 mg Bioavailability Blend is listed line by line (blend run 107), so vinpocetine 1 mg shows; D3 is 1.33 mg of a 500,000 IU/g premix (FileMaker raw 5313), so 16.6 mcg (665 IU). Batch run 34, 14 March 2025.",
    "warning": "This formula contains vinpocetine. Do not use if you are pregnant, could become pregnant, or are breastfeeding. It is not for children. Consult your physician before use if you take any medicine, including aspirin or other pain relievers. This matters most with blood pressure, heart, blood thinning, blood sugar, cholesterol or immune-suppressing medicines. Also consult first if you have liver disease, gout, a stomach ulcer, low blood pressure, a bleeding disorder, an autoimmune condition or a seizure disorder, or are planning surgery. Niacin may cause a temporary flush. Stop use and consult your physician if you notice yellowing of the skin or eyes, or dark urine. This formula may change blood pressure and blood sugar, affect bleeding, and change how some medications are processed.",
    "chat_caution": true,
    "directions": "1 to 4 capsules daily in divided doses with food, or as guided.",
@@ -12160,7 +12209,7 @@
     "directions",
     "description"
    ],
-   "content_since": "2026-11-02T04:11:47+00:00"
+   "content_since": "2026-11-10T17:43:52+00:00"
   },
   "reverse-age": {
    "name": "Reverse AGE",
