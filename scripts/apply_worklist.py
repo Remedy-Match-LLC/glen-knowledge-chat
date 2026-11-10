@@ -34,7 +34,7 @@ SECTION_A = {
     },
     "muscle-mass": {
         "add": [
-            "Phosphatides 50% (Helianthus annua)", "EGb 761 (Ginkgo biloba)",
+            "Phosphatides 30% (Helianthus annuus)", "EGb 761 (Ginkgo biloba)",
             "Vitamin B3 (Niacin)", "Moringa oleifera (Miracle Tree 100:1)",
             "Licorice (Glycyrrhiza glabra)", "Vinpocetine (Vinca minor)",
             "Gingerol 10% (Zingiber officinalis)", "Piperine (Piper nigrum)",
@@ -46,7 +46,7 @@ SECTION_A = {
     },
     "seaamino-syntropy": {
         "add": [
-            "Vitamin B13: Phosphatides 50% (Helianthus annua)",
+            "Vitamin B13: Phosphatides 30% (Helianthus annua)",
             "Fulvic Acid", "Humic Acid", "11 Spirit Minerals",
         ],
         "remove": [],
