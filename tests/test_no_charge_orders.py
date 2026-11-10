@@ -59,6 +59,10 @@ def env(monkeypatch, tmp_path):
     SC.init_tables(cx)
     from dashboard import events as E
     E.init_event_tables(cx)
+    from dashboard import db as DB
+    if not DB.column_exists(cx, "orders", "portal_published"):      # prod has it
+        cx.execute("ALTER TABLE orders ADD COLUMN portal_published INTEGER DEFAULT 0")
+    cx.commit()
     yield {"cx": cx, "calls": calls, "fee_free": fee_free, "path": path}
     cx.close()
     SC._invalidate()
@@ -154,16 +158,16 @@ def test_settling_takes_the_bottles_once(env):
     oid = _order(cx, [{"slug": "lymph-flow", "qty": 2, "unit_cents": 0, "line_cents": 0},
                       {"slug": "biofield-analysis", "qty": 1, "unit_cents": 0,
                        "line_cents": 0, "service": True}])
-    o, taken = O.mark_no_charge(cx, oid)
-    assert taken == []
+    o, taken, changed, resumed = O.mark_no_charge(cx, oid)
+    assert (taken, changed, resumed) == ([], [], False)
     assert (o["status"], o["pay_status"], o["pay_method"], o["paid_cents"]) == \
         ("new", "paid", "no charge", 0)
     assert SC.get_count(cx, "lymph-flow") == 8
     SC.sync_order(cx, oid)
     O.set_order_status(cx, oid, "done")
     assert SC.get_count(cx, "lymph-flow") == 8
-    with pytest.raises(ValueError, match="already marked paid"):
-        O.mark_no_charge(cx, oid)
+    o, _t, _c, resumed = O.mark_no_charge(cx, oid)     # a repeat is a safe re-check
+    assert resumed and o["status"] == "done"            # and moves nothing back
     assert SC.get_count(cx, "lymph-flow") == 8
     # No payment row is written: the ledger table is never touched.
     assert not cx.execute("SELECT 1 FROM sqlite_master WHERE name='order_payments'").fetchone()
@@ -299,10 +303,8 @@ def _app():
     repo = Path(__file__).resolve().parent.parent
     if str(repo) not in sys.path:
         sys.path.insert(0, str(repo))
-    try:
-        return importlib.import_module("app")
-    except Exception as e:  # pragma: no cover
-        pytest.skip(f"app not importable: {e}")
+    # An import failure fails the test. A skip here would pass these tests silently.
+    return importlib.import_module("app")
 
 
 def test_app_settlers_skip_a_no_charge_order(monkeypatch, tmp_path):
@@ -406,3 +408,99 @@ def test_a_normal_manual_order_still_prices_and_holds(manual):
     j = r.get_json()
     assert j["totals"]["total_cents"] == 9000
     assert holds == [j["order_id"]]
+
+
+# ── round 2 review ─────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("col,val", [("ship_credit_applied_cents", 900),
+                                     ("points_redeemed_cents", 4500),
+                                     ("source", "groovekart")])
+def test_a_change_after_the_read_is_not_overwritten(env, monkeypatch, col, val):
+    """Credit, points or the source change between the read and the write. The
+    guarded UPDATE refuses, so the order is not settled over the change."""
+    cx = env["cx"]
+    SC.set_count(cx, "lymph-flow", 10, who="t", reason="shelf")
+    oid = _order(cx, [{"slug": "lymph-flow", "qty": 1}])
+    stale = O.get_order(cx, oid)
+    cx.execute(f"UPDATE orders SET {col}=? WHERE id=?", (val, oid))
+    cx.commit()
+    real = O.get_order
+    reads = []
+
+    def _get(c, i):
+        reads.append(i)
+        return dict(stale) if len(reads) == 1 else real(c, i)
+    monkeypatch.setattr(O, "get_order", _get)
+    with pytest.raises(ValueError, match="changed while"):
+        O.mark_no_charge(cx, oid)
+    o = real(cx, oid)
+    assert o["pay_status"] != "paid" and o.get("pay_method") in (None, "")
+    assert SC.get_count(cx, "lymph-flow") == 10
+
+
+def test_a_crash_after_the_settle_commits_is_healed_by_running_it_again(env, monkeypatch):
+    """The stock sync commits on its own, so it cannot share the settle's transaction.
+    A failure after the commit leaves a paid order with no bottles taken. Running the
+    action again re-runs the receipt and the sync instead of refusing."""
+    cx = env["cx"]
+    SC.set_count(cx, "lymph-flow", 39, who="money", reason="by hand")
+    SC.set_count(cx, "microbiome", 11, who="t", reason="shelf")
+    oid = _order(cx, [{"slug": "lymph-flow", "qty": 1}, {"slug": "microbiome", "qty": 1}])
+    real_receipt = O._ensure_portal_receipt
+
+    def _boom(c, i):
+        raise RuntimeError("process died after the commit")
+    # The first step after the commit, so both the receipt and the sync are missed.
+    monkeypatch.setattr(O, "_ensure_portal_receipt", _boom)
+    res = D.dispatch_action(cx, "orders.mark_no_charge",
+                            {"order_id": oid, "already_taken": ["lymph-flow"]}, OWNER)
+    assert res["status"] == "failed" and "process died" in res["error"], res
+    o = O.get_order(cx, oid)
+    assert (o["pay_status"], o["pay_method"]) == ("paid", "no charge")
+    assert SC.get_count(cx, "microbiome") == 11          # the sync never ran
+    assert cx.execute("SELECT COALESCE(portal_published,0) FROM orders WHERE id=?",
+                      (oid,)).fetchone()[0] == 0         # nor the receipt
+    # The self-heal skips it: the hand-taken marker row counts as "synced".
+    assert oid not in SC.reconcile(cx)
+    monkeypatch.setattr(O, "_ensure_portal_receipt", real_receipt)
+    res = D.dispatch_action(cx, "orders.mark_no_charge",
+                            {"order_id": oid, "already_taken": ["lymph-flow"]}, OWNER)
+    assert res["status"] == "done", res
+    assert res["result"]["resumed"] is True
+    assert res["result"]["marker_rows_changed"] == []
+    assert (SC.get_count(cx, "lymph-flow"), SC.get_count(cx, "microbiome")) == (39, 10)
+    D.dispatch_action(cx, "orders.mark_no_charge", {"order_id": oid}, OWNER)
+    assert (SC.get_count(cx, "lymph-flow"), SC.get_count(cx, "microbiome")) == (39, 10)
+    assert cx.execute("SELECT portal_published FROM orders WHERE id=?",
+                      (oid,)).fetchone()[0] == 1
+
+
+def test_a_repeat_on_an_order_paid_another_way_is_still_refused(env):
+    cx = env["cx"]
+    oid = _order(cx, [{"slug": "lymph-flow", "qty": 1}], pay_status="paid", pay_method="cash")
+    with pytest.raises(ValueError, match="already marked paid"):
+        O.mark_no_charge(cx, oid)
+
+
+def test_already_taken_raises_an_existing_row_with_less_taken(env):
+    """An earlier sync left the line held but not taken (qty 1, taken 0), for example
+    while its product had no count. DO NOTHING would keep taken at 0, and the next
+    sync would take the hand-taken bottle a second time."""
+    cx = env["cx"]
+    SC.set_count(cx, "lymph-flow", 39, who="money", reason="by hand")
+    oid = _order(cx, [{"slug": "lymph-flow", "qty": 1}])
+    cx.execute("INSERT INTO stock_order_moves (order_id, slug, qty, taken, sold_at, "
+               "updated_at) VALUES (?,?,?,?,?,?)",
+               (oid, "lymph-flow", 1, 0, SC._now(), SC._now()))
+    cx.commit()
+    res = D.dispatch_action(cx, "orders.mark_no_charge",
+                            {"order_id": oid, "already_taken": ["lymph-flow"]}, OWNER)
+    assert res["status"] == "done", res
+    assert res["result"]["marker_rows_changed"] == [
+        {"slug": "lymph-flow", "before": {"qty": 1, "taken": 0},
+         "after": {"qty": 1, "taken": 1}}]
+    assert _moves(cx, oid) == [("lymph-flow", 1, 1)]
+    SC.sync_order(cx, oid)
+    assert SC.get_count(cx, "lymph-flow") == 39
+    O.set_order_status(cx, oid, "cancelled")             # returned once, like any paid order
+    assert SC.get_count(cx, "lymph-flow") == 40

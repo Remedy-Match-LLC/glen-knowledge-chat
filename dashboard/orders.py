@@ -1821,19 +1821,52 @@ def _no_charge_taken_slugs(order, already_taken, units):
     return sorted(set(out))
 
 
+def _no_charge_mark_taken(cx, oid, slugs, units, now):
+    """Record each hand-taken line as held by this order: qty is the line's qty and
+    taken is at least that. An existing row with less taken is raised, never lowered.
+    Caller holds the transaction. Returns [{slug, before, after}] for rows it changed,
+    where before/after are (qty, taken) and before is None for a new row."""
+    changed = []
+    for slug in slugs:
+        q = int(units[slug])
+        row = cx.execute("SELECT qty, taken FROM stock_order_moves WHERE order_id=? "
+                         "AND slug=?", (oid, slug)).fetchone()
+        if row is None:
+            cx.execute("INSERT INTO stock_order_moves (order_id, slug, qty, taken, "
+                       "sold_at, updated_at) VALUES (?,?,?,?,?,?)",
+                       (oid, slug, q, q, now, now))
+            changed.append({"slug": slug, "before": None, "after": (q, q)})
+            continue
+        before = (int(row[0]), int(row[1]))
+        after = (q, max(before[1], q))
+        if after != before:
+            cx.execute("UPDATE stock_order_moves SET qty=?, taken=?, updated_at=? "
+                       "WHERE order_id=? AND slug=?", (after[0], after[1], now, oid, slug))
+            changed.append({"slug": slug, "before": before, "after": after})
+    return changed
+
+
 def mark_no_charge(cx, order_id, *, already_taken=None, catalog=None):
     """Settle a $0 order as a gift: paid, by 'no charge', with no payment row.
 
     Refused unless the total is $0, the order is not cancelled and not already paid,
-    and no ship credit or points made it $0 (those are paid with credit and go through
-    Record payment, which spends the credit). Proposed or confirmed moves to 'new', as
-    Record payment does. Nothing is emailed and no paid-order reward or grant fires.
-    The bottles come off the shelf through the normal stock sync.
+    it is not a GrooveKart order, and no ship credit or points made it $0 (those are
+    paid with credit and go through Record payment, which spends the credit). Every
+    one of those conditions is in the UPDATE's WHERE too, so a change that lands after
+    the read cannot be overwritten. Proposed or confirmed moves to 'new', as Record
+    payment does. Nothing is emailed and no paid-order reward or grant fires.
+
+    The stock sync commits on its own, so it cannot share the settle's transaction.
+    Instead the call is safe to repeat: on an order already settled as no charge it
+    re-runs the portal receipt and the stock sync, both idempotent, and refuses
+    nothing. A crash between the settle and the sync is healed by running it again.
 
     `already_taken`: lines whose bottles were taken off the count by hand before this
     order existed. Each gets a stock_order_moves row holding its qty as already taken,
     so the sync takes nothing for it, and a cancel puts it back once, as it would for
-    any paid order. Written in the same transaction as the paid flag."""
+    any paid order. Written in the same transaction as the paid flag.
+
+    Returns (order, already_taken slugs, marker rows changed, resumed)."""
     from dashboard import stock_counts as _stock
     oid = int(order_id)
     order = get_order(cx, oid)
@@ -1841,7 +1874,8 @@ def mark_no_charge(cx, order_id, *, already_taken=None, catalog=None):
         raise ValueError(f"order #{oid} not found")
     if (order.get("status") or "") == "cancelled":
         raise ValueError(f"order #{oid} is cancelled")
-    if order.get("pay_status") == "paid":
+    resumed = order.get("pay_status") == "paid" and is_no_charge(order)
+    if order.get("pay_status") == "paid" and not resumed:
         raise ValueError(f"order #{oid} is already marked paid")
     total = int(order.get("total_cents") or 0)
     if total != 0:
@@ -1857,30 +1891,30 @@ def mark_no_charge(cx, order_id, *, already_taken=None, catalog=None):
     taken = _no_charge_taken_slugs(order, already_taken, units)
     now = _now()
     try:
+        changed = []
         if taken:
             _stock.ensure_tables(cx)
-            for slug in taken:
-                cx.execute(
-                    "INSERT INTO stock_order_moves (order_id, slug, qty, taken, sold_at, "
-                    "updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT (order_id, slug) DO NOTHING",
-                    (oid, slug, int(units[slug]), int(units[slug]), now, now))
-        # The refusals above, again in the WHERE, so a payment or cancel that lands
-        # between the read and this write cannot be overwritten.
-        cur = cx.execute(
-            "UPDATE orders SET status=CASE WHEN status IN ('proposed','confirmed') "
-            "THEN 'new' ELSE status END, pay_status='paid', pay_method=?, paid_cents=0, "
-            "paid_at=?, updated_at=? WHERE id=? AND COALESCE(pay_status,'')<>'paid' "
-            "AND COALESCE(status,'')<>'cancelled' AND COALESCE(total_cents,0)=0",
-            (NO_CHARGE_METHOD, now, now, oid))
-        if cur.rowcount != 1:
-            raise ValueError(f"order #{oid} changed while it was being settled")
+            changed = _no_charge_mark_taken(cx, oid, taken, units, now)
+        if not resumed:
+            cur = cx.execute(
+                "UPDATE orders SET status=CASE WHEN status IN ('proposed','confirmed') "
+                "THEN 'new' ELSE status END, pay_status='paid', pay_method=?, "
+                "paid_cents=0, paid_at=?, updated_at=? WHERE id=? "
+                "AND COALESCE(pay_status,'')<>'paid' "
+                "AND COALESCE(status,'')<>'cancelled' AND COALESCE(total_cents,0)=0 "
+                "AND COALESCE(ship_credit_applied_cents,0)=0 "
+                "AND COALESCE(points_redeemed_cents,0)=0 "
+                "AND COALESCE(source,'')<>'groovekart'",
+                (NO_CHARGE_METHOD, now, now, oid))
+            if cur.rowcount != 1:
+                raise ValueError(f"order #{oid} changed while it was being settled")
         cx.commit()
     except Exception:
         _safe_rollback(cx)
         raise
     _ensure_portal_receipt(cx, oid)
     _stock_sync(cx, oid)
-    return get_order(cx, oid), taken
+    return get_order(cx, oid), taken, changed, resumed
 
 
 def _mark_no_charge_exec(params, ctx):
@@ -1888,10 +1922,20 @@ def _mark_no_charge_exec(params, ctx):
     if cx is None:
         raise ValueError("no db connection")
     oid = int(params["order_id"])
-    o, taken = mark_no_charge(cx, oid, already_taken=params.get("already_taken"))
+    o, taken, changed, resumed = mark_no_charge(
+        cx, oid, already_taken=params.get("already_taken"))
+    verb = "was already settled as no charge; receipt and stock re-checked" if resumed \
+        else "settled as no charge"
     return {"order_id": oid, "status": o.get("status"), "pay_status": "paid",
             "pay_method": NO_CHARGE_METHOD, "paid_cents": 0, "already_taken": taken,
-            "message": f"Order #{oid} settled as no charge."
+            "marker_rows_changed": [
+                {"slug": c["slug"],
+                 "before": None if c["before"] is None else
+                 {"qty": c["before"][0], "taken": c["before"][1]},
+                 "after": {"qty": c["after"][0], "taken": c["after"][1]}}
+                for c in changed],
+            "resumed": resumed,
+            "message": f"Order #{oid} {verb}."
                        + (f" Already taken by hand: {', '.join(taken)}." if taken else "")}
 
 
