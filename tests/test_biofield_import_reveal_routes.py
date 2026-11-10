@@ -75,24 +75,28 @@ def test_import_needs_confirm_then_appends_with_force(tmp_path, monkeypatch):
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: other)
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
     assert j["needs_confirm"] is True and j["existing"] == 1 and j["token"]
-    # The same layer again is covered (Glen, 2026-10-18); Glen adds it anyway.
-    assert [L["rule"] for L in j["preview"]["skip"]] == ["same heading"]
-    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
-                     json={"force": True, "token": j["token"], "add_anyway": [j["preview"]["skip"][0]["key"]]}).get_json()
-    assert j2["ok"] is True and j2["imported"] == 1
+    # The same heading with another product is related: it is held in the list,
+    # off the chain, until Glen picks (Glen, 2026-11-07).
+    assert [L["rule"] for L in j["preview"]["related"]] == ["same heading"]
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal", json={"token": j["token"]}).get_json()
+    assert j2["ok"] is True and j2["imported"] == 0 and len(j2["proposals"]) == 1
     cx = sqlite3.connect(db)
+    assert cx.execute("SELECT COUNT(*) FROM biofield_auth_chain").fetchone()[0] == 1
+    r = client.post(f"/author/{tid}/add-to-plan/resolve",
+                    json={"id": j2["proposals"][0], "choice": "separate"})
+    assert r.status_code == 200
     assert cx.execute("SELECT COUNT(*) FROM biofield_auth_chain").fetchone()[0] == 2
 
 
-def test_an_identical_layer_added_anyway_keeps_one_row(tmp_path, monkeypatch):
+def test_an_identical_layer_joins_and_keeps_one_row(tmp_path, monkeypatch):
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _FRESH)
     db = str(tmp_path / "chat_log.db")
     client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE).test_client()
     tid = _new_test_with_email(client, "jane@x.com")
     client.post(f"/author/{tid}/e4l/import-reveal", json={})
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
-    client.post(f"/author/{tid}/e4l/import-reveal",
-                json={"force": True, "token": j["token"], "add_anyway": [j["preview"]["skip"][0]["key"]]})
+    assert [L["remedy"] for L in j["preview"]["joined"]] == ["Neuro Magnesium"]
+    client.post(f"/author/{tid}/e4l/import-reveal", json={"token": j["token"]})
     cx = sqlite3.connect(db)
     assert cx.execute("SELECT COUNT(*) FROM biofield_auth_chain").fetchone()[0] == 1
 
@@ -192,10 +196,11 @@ def test_the_page_offers_the_override_and_keeps_both_consents(tmp_path, monkeypa
     from dashboard.biofield_report_html import render_author_html
     html = render_author_html({"test_id": "a1", "client": {"name": "J", "email": "j@x.com"}})
     assert "j.stale" in html
-    assert "Import it anyway?" in html
+    assert "Add it anyway?" in html
     assert "body.allow_stale=true" in html
-    assert "body.force=true" in html
+    assert "body.token=j.token" in html
     # both consents ride in ONE body, so neither retry drops the other
-    assert "post('/author/a1/e4l/import-reveal',body)" in html
+    assert "j=await post(url,body)" in html
+    assert "atpRun('/author/a1/e4l/import-reveal',{}" in html
     # the scan procedure, quoted from the E4L page -- not invented
     assert "count out loud, one to ten" in html.lower()

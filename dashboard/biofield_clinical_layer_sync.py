@@ -170,6 +170,16 @@ def plan(cx, test_id, items, resolve=None):
         k = _remedy_key(cx, r[1], resolve)
         if k:
             on_chain.setdefault(k, "an unnamed layer")
+    # A Mind layer held in the Related list is waiting for Glen, off the chain. It is
+    # not offered as new again, and its remedies count as placed.
+    from dashboard.biofield_add_to_plan_apply import _held_remedies, held_pending
+    held_heads = set()
+    for h in held_pending(cx, test_id):
+        held_heads.add(_norm(h["head"]))
+        for name in _held_remedies(h["held"]):
+            k = _remedy_key(cx, name, resolve)
+            if k:
+                on_chain.setdefault(k, h["head"] + " (waiting in the Related list)")
     changes, stale, matched, elsewhere = [], [], set(), []
     # Existing layers first, in chain order, then new ones in checklist order: a
     # remedy ticked on two rows lands on the earlier layer, and a new layer is last.
@@ -205,6 +215,8 @@ def plan(cx, test_id, items, resolve=None):
         for remedy in t["remedies"]:
             name = resolve(cx, remedy) or remedy
             ticked.setdefault(_norm(name), name)
+        if layer is None and (t["keys"] | {_norm(t["name"])}) & held_heads:
+            continue
         if layer is None:
             add = []
             for k, name in ticked.items():

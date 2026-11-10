@@ -137,8 +137,9 @@ def _chain(db):
     return rows
 
 
-def test_preview_then_import_adds_only_uncovered_layers_and_reports_the_skipped(
-        tmp_path, monkeypatch):
+def test_preview_then_reveal_only_joins_holds_and_adds(tmp_path, monkeypatch):
+    # Glen, 2026-11-07: "Reveal only" follows the Add to plan rules. A same-product
+    # layer joins, a related one is held off the chain, the rest are added.
     first = _reveal({"n": 1, "title": "Liver and gallbladder", "remedy_name": "Stone Solvent"})
     client, tid, db, calls = _client(tmp_path, monkeypatch, first)
     client.post(f"/author/{tid}/e4l/import-reveal", json={})
@@ -149,28 +150,42 @@ def test_preview_then_import_adds_only_uncovered_layers_and_reports_the_skipped(
             {"n": 3, "title": "Mineral need", "remedy_name": "Stone Solvent"}))[1])
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
     assert j["needs_confirm"] and _chain(db) == [(1, "Liver and gallbladder", "Stone Solvent")]
-    assert [L["title"] for L in j["preview"]["add"]] == ["Kidney Health and Detoxification"]
-    assert [(L["n"], L["rule"]) for L in j["preview"]["skip"]] == [
-        (1, "same heading"), (3, "same remedy")]
+    p = j["preview"]
+    assert [L["title"] for L in p["add"]] == ["Kidney Health and Detoxification"]
+    assert [(L["title"], L["rule"]) for L in p["related"]] == [
+        ("Liver Detoxification and Support", "same heading")]
+    assert [(L["title"], L["into"]) for L in p["joined"]] == [("Mineral need", 1)]
     runs = len(calls)
-    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
-                     json={"force": True, "token": j["token"]}).get_json()
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal", json={"token": j["token"]}).get_json()
     assert len(calls) == runs, "the confirm step must not run the synthesis again"
-    assert j2["ok"] and j2["imported"] == 1
-    assert [s["rule"] for s in j2["skipped"]] == ["same heading", "same remedy"]
-    # The one added layer follows the existing one, with no gap.
-    assert _chain(db)[1] == (2, "Kidney Health and Detoxification", "Kidney Kare")
+    assert j2["ok"] and j2["imported"] == 1 and len(j2["proposals"]) == 1
+    # The added layer follows the existing one, with no gap; the related one waits.
+    assert _chain(db) == [(1, "Liver and gallbladder", "Stone Solvent"),
+                          (2, "Kidney Health and Detoxification", "Kidney Kare")]
+    # The joined layer's head is a Balance on the kept layer: nothing it carried is
+    # dropped.
+    cx = sqlite3.connect(db)
+    labels = {r[0] for r in cx.execute(
+        "SELECT s.label FROM biofield_auth_layer_stress l JOIN biofield_auth_stress s "
+        "ON s.id=l.stress_id")}
+    assert "Mineral need" in labels
 
 
-def test_add_anyway_imports_a_skipped_layer(tmp_path, monkeypatch):
+def _resolve(client, tid, pid, choice="separate"):
+    r = client.post(f"/author/{tid}/add-to-plan/resolve", json={"id": pid, "choice": choice})
+    assert r.status_code == 200, r.get_json()
+
+
+def test_a_held_layer_lands_when_glen_keeps_it_separate(tmp_path, monkeypatch):
     layer = _reveal({"n": 1, "title": "Gut", "remedy_name": ""})
     client, tid, db, _ = _client(tmp_path, monkeypatch, layer)
     client.post(f"/author/{tid}/e4l/import-reveal", json={})
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
-    assert [L["rule"] for L in j["preview"]["skip"]] == ["same heading"]
-    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
-                     json={"force": True, "token": j["token"], "add_anyway": [j["preview"]["skip"][0]["key"]]}).get_json()
-    assert j2["imported"] == 1 and j2["skipped"] == [] and len(_chain(db)) == 2
+    assert [L["rule"] for L in j["preview"]["related"]] == ["same heading"]
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal", json={"token": j["token"]}).get_json()
+    assert j2["imported"] == 0 and len(_chain(db)) == 1
+    _resolve(client, tid, j2["proposals"][0])
+    assert len(_chain(db)) == 2
 
 
 def test_force_without_the_preview_token_only_previews(tmp_path, monkeypatch):
@@ -186,14 +201,13 @@ def test_a_wrong_or_used_token_writes_nothing(tmp_path, monkeypatch):
     client, tid, db, _ = _client(tmp_path, monkeypatch, layer)
     client.post(f"/author/{tid}/e4l/import-reveal", json={})
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
-    bad = client.post(f"/author/{tid}/e4l/import-reveal",
-                      json={"force": True, "token": "forged"}).get_json()
+    bad = client.post(f"/author/{tid}/e4l/import-reveal", json={"token": "forged"}).get_json()
     assert bad["ok"] is False and "expired" in bad["reason"] and len(_chain(db)) == 1
-    client.post(f"/author/{tid}/e4l/import-reveal",
-                json={"force": True, "token": j["token"], "add_anyway": [j["preview"]["skip"][0]["key"]]})
-    again = client.post(f"/author/{tid}/e4l/import-reveal",
-                        json={"force": True, "token": j["token"]}).get_json()
-    assert again["ok"] is False and len(_chain(db)) == 2
+    first = client.post(f"/author/{tid}/e4l/import-reveal", json={"token": j["token"]}).get_json()
+    again = client.post(f"/author/{tid}/e4l/import-reveal", json={"token": j["token"]}).get_json()
+    assert first["ok"] and again["ok"] is False
+    pending = client.get(f"/author/{tid}/add-to-plan/proposals").get_json()["proposals"]
+    assert len(pending) == 1 and len(_chain(db)) == 1
 
 
 def test_an_expired_preview_is_refused(tmp_path):
@@ -229,22 +243,21 @@ def test_a_first_import_on_an_empty_chain_adds_every_layer(tmp_path, monkeypatch
         {"n": 1, "title": "Gut", "remedy_name": ""},
         {"n": 2, "title": "Gut", "remedy_name": ""}))
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
-    assert j["ok"] and j["imported"] == 2 and j["skipped"] == []
+    assert j["ok"] and j["imported"] == 2 and j["related"] == [] and j["joined"] == []
 
 
-def _run_preview(preview, clicks):
+def _run_preview(preview, button):
     import json as _json
     import shutil
     import subprocess
-    import inspect
     from dashboard import biofield_report_html as rh
     node = shutil.which("node")
     if not node:
         pytest.skip("node is not installed")
     # The rendered script, as the browser gets it, not the Python source.
     src = rh._AUTHOR_JS
-    start = src.index("function impEl(tag,text,cls)")
-    script = src[start:src.index("async function importReveal0(){", start)]
+    script = _fn(src, "impEl", "function") + "\n" + src[src.index("function atpLine("):
+                                                 src.index("function atpRemember(")]
     js = r"""
 function node(tag){var n={tag:tag,children:[],className:'',textContent:'',value:'',
  checked:false,appendChild:function(c){this.children.push(c);return c},remove:function(){}};
@@ -254,45 +267,45 @@ var made=[];var stat={textContent:''};var anchor={parentNode:{insertBefore:funct
 var document={createElement:function(t){return node(t)},createTextNode:function(t){return {tag:'#text',textContent:t}},
  getElementById:function(id){return id==='impStat'?anchor:null}};
 function impStat(t){stat.textContent=t}
+function atpStat(t){stat.textContent=t}
 SCRIPT
 function walk(n,out){out.push(n);(n.children||[]).forEach(function(c){walk(c,out)});return out}
-impPreview({existing:2,preview:PREVIEW}).then(function(r){
+atpPreview({existing:2,recommended_unread:true,preview:PREVIEW},impStat,'impStat').then(function(r){
  var all=walk(made[0],[]);console.log(JSON.stringify({r:r,
   text:all.map(function(n){return n.textContent}).filter(Boolean)}))});
-var all=walk(made[0],[]);var boxes=all.filter(function(n){return n.tag==='input'});
-CLICKS
+var all=walk(made[0],[]);
 var btn=all.filter(function(n){return n.tag==='button'});
 (BUTTON==='go'?btn[0]:btn[1]).onclick();
 """
     js = (js.replace("SCRIPT", script).replace("PREVIEW", _json.dumps(preview))
-          .replace("CLICKS", ";".join(f"boxes[{i}].checked=true" for i in clicks["boxes"]))
-          .replace("BUTTON", _json.dumps(clicks["button"])))
+          .replace("BUTTON", _json.dumps(button)))
     out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=20)
     assert out.returncode == 0, out.stderr
     return _json.loads(out.stdout)
 
 
-PREVIEW = {"add": [{"n": 2, "key": 1, "title": "Kidney", "remedy": "Kidney Kare"}],
-           "skip": [{"n": 1, "key": 0, "title": "<b>Liver</b>", "remedy": "",
-                     "rule": "same heading",
-                     "why": "Liver and gallbladder (shares \"liver\")"},
-                    {"n": None, "key": 2, "title": "Mineral", "remedy": "Stone Solvent",
-                     "rule": "same remedy", "why": "Stone Solvent"}],
-           "recommended_unread": True}
+PREVIEW = {"add": [{"n": 2, "title": "Kidney", "remedy": "Kidney Kare"}],
+           "related": [{"n": None, "title": "<b>Liver</b>", "remedy": "Liver Care",
+                        "into": 1, "into_head": "Liver and gallbladder",
+                        "into_remedies": ["Stone Solvent"], "rule": "same heading",
+                        "why": "Liver and gallbladder (shares \"liver\")"}],
+           "joined": [{"n": None, "title": "Mineral", "remedy": "Stone Solvent", "into": 1,
+                       "into_head": "Liver and gallbladder", "codes": ["ED2"]}]}
 
 
-def test_the_preview_lists_both_groups_and_returns_the_layers_ticked_to_add_anyway():
-    got = _run_preview(PREVIEW, {"boxes": [1], "button": "go"})
-    assert got["r"] == {"anyway": ["2"]}
+def test_the_preview_lists_the_three_groups_and_add_resolves_true():
+    got = _run_preview(PREVIEW, "go")
+    assert got["r"] is True
     text = " | ".join(got["text"])
-    assert "1 reveal layer(s) will be added, 2 skipped as covered" in text
-    assert "same heading: Liver and gallbladder (shares \"liver\")" in text
+    assert "1 new, 1 joining a layer with the same product, 1 related" in text
+    assert "same heading, Liver and gallbladder (shares \"liver\")" in text
+    assert "adds ED2" in text
     assert "could not be read" in text
-    assert "<b>Liver</b>" in text   # a title stays text
+    assert "<b>Liver</b> \u00b7 Liver Care" in text   # a title stays text
 
 
-def test_cancel_returns_nothing():
-    assert _run_preview(PREVIEW, {"boxes": [0], "button": "no"})["r"] is None
+def test_cancel_returns_false():
+    assert _run_preview(PREVIEW, "no")["r"] is False
 
 
 def _bare(html):
@@ -337,7 +350,7 @@ def test_a_chain_emptied_since_the_preview_is_refused(tmp_path, monkeypatch):
     client, tid, db, _ = _client(tmp_path, monkeypatch, layer)
     client.post(f"/author/{tid}/e4l/import-reveal", json={})
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
-    assert len(j["preview"]["skip"]) == 2
+    assert len(j["preview"]["related"]) == 2
     cx = sqlite3.connect(db)
     cx.execute("DELETE FROM biofield_auth_chain")
     cx.commit()
@@ -347,7 +360,7 @@ def test_a_chain_emptied_since_the_preview_is_refused(tmp_path, monkeypatch):
     assert j2["ok"] is False and "changed" in j2["reason"] and _chain(db) == []
 
 
-def test_layers_without_a_number_can_each_be_added_anyway(tmp_path, monkeypatch):
+def test_layers_without_a_number_are_each_held_and_resolved_alone(tmp_path, monkeypatch):
     layer = _reveal({"n": None, "title": "Gut", "remedy_name": ""},
                     {"n": None, "title": "Gut and liver", "remedy_name": ""})
     client, tid, db, _ = _client(tmp_path, monkeypatch, _reveal(
@@ -355,12 +368,11 @@ def test_layers_without_a_number_can_each_be_added_anyway(tmp_path, monkeypatch)
     client.post(f"/author/{tid}/e4l/import-reveal", json={})
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: layer)
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
-    keys = [L["key"] for L in j["preview"]["skip"]]
-    assert keys == [0, 1]
-    j2 = client.post(f"/author/{tid}/e4l/import-reveal",
-                     json={"force": True, "token": j["token"], "add_anyway": [1]}).get_json()
-    assert j2["imported"] == 1 and [s["title"] for s in j2["skipped"]] == ["Gut"]
-    assert _chain(db)[-1][1] == "Gut and liver"
+    assert [L["title"] for L in j["preview"]["related"]] == ["Gut", "Gut and liver"]
+    j2 = client.post(f"/author/{tid}/e4l/import-reveal", json={"token": j["token"]}).get_json()
+    assert j2["imported"] == 0 and len(j2["proposals"]) == 2
+    _resolve(client, tid, j2["proposals"][1])
+    assert _chain(db)[-1][1] == "Gut and liver" and len(_chain(db)) == 2
 
 
 def test_coverage_is_seeded_from_every_previewed_layer(tmp_path, monkeypatch):
@@ -376,9 +388,9 @@ def test_coverage_is_seeded_from_every_previewed_layer(tmp_path, monkeypatch):
     client.post(f"/author/{tid}/e4l/import-reveal", json={})
     monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: layer)
     j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
-    assert [s["title"] for s in j["preview"]["skip"]] == ["Gut"]
+    assert [s["title"] for s in j["preview"]["related"]] == ["Gut"]
     seen.clear()
-    client.post(f"/author/{tid}/e4l/import-reveal", json={"force": True, "token": j["token"]})
+    client.post(f"/author/{tid}/e4l/import-reveal", json={"token": j["token"]})
     assert seen and seen[-1] == ["Gut", "Kidney"]
 
 
@@ -454,12 +466,12 @@ def test_es_plurals_match_their_singular():
 
 def test_a_preview_taken_by_a_concurrent_click_imports_nothing(tmp_path, monkeypatch):
     # Both clicks passed the token check; the other one deleted the preview first.
-    from dashboard import biofield_reveal_preview as rp
+    from dashboard import biofield_add_to_plan_apply as ap
     client, tid, db, j = _previewed(tmp_path, monkeypatch)
-    monkeypatch.setattr(rp, "consume", lambda cx, test_id, token: False)
+    monkeypatch.setattr(ap, "consume_preview", lambda cx, test_id, token: False)
     j2 = client.post(f"/author/{tid}/e4l/import-reveal",
                      json={"force": True, "token": j["token"]}).get_json()
-    assert j2["ok"] is False and "already imported" in j2["reason"]
+    assert j2["ok"] is False and "already added" in j2["reason"]
     assert [r[1] for r in _chain(db)] == ["Gut"]
 
 
@@ -501,12 +513,12 @@ def test_the_route_reads_the_catalog_vocabulary(tmp_path, monkeypatch):
     # Glen: "'blood' alone doesn't functionally match Blood Sugar Regulation."
     _, _, _, j = _blood_chain(tmp_path, monkeypatch, catalog=True)
     assert [L["title"] for L in j["preview"]["add"]] == ["Blood Sugar Regulation"]
-    assert j["preview"]["skip"] == []
+    assert j["preview"]["related"] == []
 
 
 def test_a_coverage_change_since_the_preview_is_refused(tmp_path, monkeypatch):
     client, tid, db, j = _blood_chain(tmp_path, monkeypatch, catalog=False)
-    if j["preview"]["skip"]:
+    if j["preview"]["related"]:
         cx = sqlite3.connect(db)
         cx.execute("CREATE TABLE IF NOT EXISTS biofield_clinical_catalog (item_key TEXT)")
         cx.execute("INSERT INTO biofield_clinical_catalog (item_key) VALUES ('blood sugar')")
@@ -519,14 +531,14 @@ def test_a_coverage_change_since_the_preview_is_refused(tmp_path, monkeypatch):
     assert j2["ok"] is False and "changed" in j2["reason"]
 
 
-def _fn(src, name):
-    start = src.index(f"async function {name}(")
+def _fn(src, name, kind="async function"):
+    start = src.index(f"{kind} {name}(")
     end = min(i for i in (src.find("\nasync function", start + 10),
                           src.find("\nfunction", start + 10)) if i > 0)
     return src[start:end]
 
 
-def test_the_import_click_sends_the_token_and_the_add_anyway_ticks():
+def test_the_reveal_only_click_sends_the_token_and_nothing_else():
     import json as _json
     import shutil
     import subprocess
@@ -537,16 +549,23 @@ def test_the_import_click_sends_the_token_and_the_add_anyway_ticks():
     js = """
 var posted=[],stat=[];var location={reload:function(){}};
 function impStat(t){stat.push(t)}
+function atpRemember(){}
+var document={getElementById:function(){return null}};var window={};
 function confirm(){return true}
-async function impPreview(j){return {anyway:['2']}}
-async function post(url,body){posted.push(JSON.parse(JSON.stringify(body)));
-  return posted.length===1?{needs_confirm:true,token:'tok',existing:1,preview:{add:[],skip:[]}}
-                         :{ok:true,imported:1}}
+async function atpPreview(j){return true}
+async function post(url,body){posted.push([url,JSON.parse(JSON.stringify(body))]);
+  return posted.length===1?{needs_confirm:true,token:'tok',existing:1,preview:{add:[],related:[],joined:[]}}
+                         :{ok:true,added:1,imported:1}}
 SCRIPT
-importReveal0().then(function(){console.log(JSON.stringify({posted:posted,stat:stat}))});
-""".replace("SCRIPT", _fn(_bare(rh._AUTHOR_JS), "importReveal0"))
+importReveal().then(function(){console.log(JSON.stringify({posted:posted,stat:stat}))});
+""".replace("SCRIPT", _fn(_bare(rh._AUTHOR_JS), "atpRun") + "\n"
+            + _fn(_bare(rh._AUTHOR_JS), "importReveal"))
     out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=20)
     assert out.returncode == 0, out.stderr
     got = _json.loads(out.stdout)
-    assert got["posted"][0] == {}
-    assert got["posted"][1] == {"force": True, "token": "tok", "add_anyway": ["2"]}
+    assert [p[0] for p in got["posted"]] == ["/author/__TID__/e4l/import-reveal"] * 2
+    assert got["posted"][0][1] == {}
+    # The retired "add anyway" ticks are gone: the confirm sends the token alone.
+    assert got["posted"][1][1] == {"token": "tok"}
+
+

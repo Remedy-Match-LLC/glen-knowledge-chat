@@ -35,17 +35,28 @@ HARMONY_CAUTION = ("Start with the smallest dose and increase only as you tolera
                    "Never use it over the testes.")
 
 
-def harmony_laser_for(codes):
-    """The Harmony Laser row for a layer's codes, or None. Humans and animals alike."""
+def _er_code(x):
+    """"ER 33", "ER033" and "ER33 Thyroid" read as ER33, else None. The codes come
+    from the AI's layer synthesis, and a missed blocked code would put the laser back."""
     import re as _re
-    # Read "ER 33", "ER033" and "ER33 Thyroid" as ER33: the codes come from the AI's
-    # layer synthesis, and a missed blocked code would put the laser back (review).
-    ers = set()
-    for x in (codes or []):
-        m = _re.match(r"ER\s*0*(\d+)(?!\d)", str(x).strip().upper())
-        if m:
-            ers.add("ER" + m.group(1))
-    if not ers or ers & LASER_BLOCKED_ERS:
+    m = _re.match(r"ER\s*0*(\d+)(?!\d)", str(x or "").strip().upper())
+    return "ER" + m.group(1) if m else None
+
+
+def laser_blocked_by_head(codes):
+    """True when a layer's head blocks the Harmony Laser. The head is the layer's
+    first code (Glen, 2026-11-10, "yes"): the laser is blocked only when that code is
+    in LASER_BLOCKED_ERS. A thyroid or abdomen code further down the layer does not
+    block it, and a head with no ER code does not either."""
+    head = next((str(c).strip() for c in codes or [] if str(c).strip()), "")
+    return _er_code(head) in LASER_BLOCKED_ERS
+
+
+def harmony_laser_for(codes):
+    """The Harmony Laser row for a layer's codes, or None. Humans and animals alike.
+    A layer with no ER code gets none; one whose head is blocked gets none."""
+    ers = {e for e in (_er_code(x) for x in codes or []) if e}
+    if not ers or laser_blocked_by_head(codes):
         return None
     return {"name": HARMONY_LASER, "caution": HARMONY_CAUTION}
 
@@ -186,14 +197,17 @@ def build_coverage(layers, cx):
     return cov
 
 
-def import_layers_to_test(cx, tid, layers, after_layer=0):
+def import_layers_to_test(cx, tid, layers, after_layer=0, commit=True):
     """Create one needs-review (confirmed=0) chain row per reveal layer. Dosing is
     auto-filled from the product catalog when the remedy name resolves. Returns the
     number of rows created.
 
     `after_layer` is the intake's highest stored layer. Appending onto an intake that
     already has layers numbers the reveal's layers after it; numbering them from 1
-    again would interleave them with the layers already there."""
+    again would interleave them with the layers already there.
+
+    `commit=False` writes inside the caller's transaction: the caller has run
+    init_auth_tables first and commits (or rolls back) the whole write itself."""
     from dashboard.biofield_authoring import add_chain_row, exact_canonical_name, remedy_dosing
     n = 0
     for L in layers or []:
@@ -205,7 +219,7 @@ def import_layers_to_test(cx, tid, layers, after_layer=0):
                       L.get("most_affected") or "", name,
                       dosage=d.get("dosage", ""), frequency=d.get("frequency", ""),
                       timing=d.get("timing", ""), confirmed=0, origin="scan",
-                      codes=L.get("codes") or [])
+                      codes=L.get("codes") or [], commit=commit)
         n += 1
         laser = L.get("laser")
         if laser:
@@ -218,6 +232,7 @@ def import_layers_to_test(cx, tid, layers, after_layer=0):
             add_chain_row(cx, tid, (int(_n) + int(after_layer or 0)) if _n is not None else None,
                           L.get("title") or "", L.get("most_affected") or "", laser["name"],
                           dosage=ld.get("dosage", ""), frequency=ld.get("frequency", ""),
-                          timing=timing, confirmed=0, origin="scan", codes=L.get("codes") or [])
+                          timing=timing, confirmed=0, origin="scan", codes=L.get("codes") or [],
+                          commit=commit)
             n += 1
     return n

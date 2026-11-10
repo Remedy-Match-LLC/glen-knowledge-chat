@@ -717,7 +717,7 @@ def _codes(v):
 
 
 def consolidate_layer_balances(cx, tid, source_layer, target_layer,
-                               source_rids=None, target_rids=None):
+                               source_rids=None, target_rids=None, commit=True):
     """Move remedy-linked stress coverage from one layer card to another.
 
     Coverage is stored by normalized remedy name rather than layer number.  Copy
@@ -729,8 +729,12 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
     data-rids). Without them a stored layer number stands for the whole card that
     holds it, so a card spanning layers 12 and 13 moves both rows. Every row id
     must belong to this test.
+
+    `commit=False` runs inside the caller's transaction: the caller has run
+    init_stress_tables first, and commits or rolls back the whole unit itself.
     """
-    init_stress_tables(cx)
+    if commit:
+        init_stress_tables(cx)
     t = _num(tid)
     try:
         source, target = int(source_layer), int(target_layer)
@@ -890,7 +894,8 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer,
             f"WHERE test_id=? AND id IN ({row_marks})",
             (target, target_head, merged_tail_text, t, *all_rids),
         )
-    cx.commit()
+    if commit:
+        cx.commit()
     return len(visible_stress_ids)
 
 
