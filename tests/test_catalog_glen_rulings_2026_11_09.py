@@ -59,3 +59,11 @@ def test_waters_are_pickup_only():
     # Glen, 2026-11-09: "pickup only". Checkout enforcement of the flag is platform's.
     for slug in ("microwater-alkaline", "miracule-water"):
         assert PRODUCTS[slug].get("pickup_only") is True, slug
+
+
+def test_miron_bottle_ships_flat_at_the_medium_box_charge():
+    # Glen, 2026-11-10: 11.75 x 3.5 in, and "It fits" a USPS Medium box when he tried it.
+    # The packer's Medium model is too short for it, so it ships flat at the Medium charge.
+    p = PRODUCTS["miron-violet-glass-water-bottle-1l"]
+    assert p["bottle_type"] == "own-box"
+    assert p["flat_shipping_cents"] == 2300

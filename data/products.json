@@ -25764,6 +25764,7 @@
    "price_cents": 4000,
    "fmp_id": "55",
    "bottle_type": "own-box",
+   "flat_shipping_cents": 2300,
    "intro": "A 1 liter Miron violet glass drinking water bottle, filled with Microwater or Miracule Water.",
    "source": "glen-ruling-2026-11-09"
   },
