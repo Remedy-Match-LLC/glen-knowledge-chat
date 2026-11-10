@@ -12877,7 +12877,7 @@
      "dose": ""
     },
     {
-     "name": "Phosphatidylcholine 50% (from Sunflower, Helianthus annuus)",
+     "name": "Phosphatides 30% (Helianthus annuus)",
      "dose": ""
     },
     {
@@ -12936,7 +12936,8 @@
    "fmp_id": "460",
    "directions": "10 drops up to 3 times a day before meals.",
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "pl-polarity": {
    "name": "PL Polarity Infoceutical",

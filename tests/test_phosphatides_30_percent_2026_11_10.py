@@ -11,11 +11,12 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 FILES = ("products.json", "products-manual-corrections.json",
          "products-enrich-clean.json", "products-enrich-candidate.json")
-FIFTY = re.compile(r"phosphatides\s*50\s*%", re.I)
+FIFTY = re.compile(r"phosphatid\w*\s*50\s*%\s*\(from sunflower|phosphatides\s*50\s*%", re.I)
 TOUCHED = ["acetaldehyde-detox", "apoptogenesis", "bioavailability-blend", "curcu-guard",
            "dht-blocker", "immune-intelligence", "lens-zyme", "migrafree", "muscle-mass",
            "nerve-pulse", "night-vision", "rescue", "seaamino-syntropy", "stone-solvent",
-           "vitamin-c-syntropy", "vitreous-vitality"]
+           "vitamin-c-syntropy", "vitreous-vitality",
+           "vagus-nerve-support"]  # Glen 2026-11-10 "yes": its sunflower line is the same raw
 
 
 def _load(name):

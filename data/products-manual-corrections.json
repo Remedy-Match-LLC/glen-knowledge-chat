@@ -1011,7 +1011,7 @@
         "dose": ""
       },
       {
-        "name": "Phosphatidylcholine 50% (from Sunflower, Helianthus annuus)",
+        "name": "Phosphatides 30% (Helianthus annuus)",
         "dose": ""
       },
       {
@@ -1068,7 +1068,8 @@
     "note": "Glen 2026-09-14: this slug is Vagus Nerve Support Drops (FMP 460). The T33 amounts are per-bottle batch figures, so they are not shown as doses. Directions wait for Glen.",
     "bottle_type": "Dropper 50 mL",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "cinnamon-blue": {
     "ingredients": [
