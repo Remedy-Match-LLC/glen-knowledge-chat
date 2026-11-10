@@ -40,10 +40,8 @@ def _app():
     repo = Path(__file__).resolve().parent.parent
     if str(repo) not in sys.path:
         sys.path.insert(0, str(repo))
-    try:
-        return importlib.import_module("app")
-    except Exception as e:
-        pytest.skip(f"app not importable: {e}")
+    # No skip on import failure: this guards money, so a broken app must fail CI.
+    return importlib.import_module("app")
 
 
 @pytest.fixture
