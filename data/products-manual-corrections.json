@@ -4160,9 +4160,58 @@
     "chat_caution": true
   },
   "mitochondrial-biogenesis": {
-    "ingredients_source": "fmp_new",
+    "ingredients_source": "label-2026-11-09",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "ingredients": [
+      {
+        "name": "Rhodiola rosea (root), 3% Salidroside",
+        "dose": "155 mg"
+      },
+      {
+        "name": "Nicotinamide Riboside (Vitamin B3)",
+        "dose": "66 mg"
+      },
+      {
+        "name": "Coenzyme Q10 (Ubiquinone)",
+        "dose": "66 mg"
+      },
+      {
+        "name": "Bioavailability Blend (proprietary formula)",
+        "dose": "34.5 mg"
+      },
+      {
+        "name": "NMN (Nicotinamide Mononucleotide)",
+        "dose": "34 mg"
+      },
+      {
+        "name": "Na RALA (Stabilized Bio-enhanced Na R-Lipoate)",
+        "dose": "33 mg"
+      },
+      {
+        "name": "Luteolin (Sophora japonica)",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Pterostilbene",
+        "dose": "20 mg"
+      },
+      {
+        "name": "PQQ (Pyrroloquinoline Quinone)",
+        "dose": "7 mg"
+      },
+      {
+        "name": "Riboflavin-5-Phosphate (Vitamin B2)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Vitamin B12 (as Adenosylcobalamin, Methylcobalamin)",
+        "dose": "60 mcg"
+      }
+    ],
+    "directions": "Take 1 to 3 capsules daily with food, or as guided.",
+    "description": "Each Certified Organic Pullulan Vegicap of Mitochondrial Biogenesis supplies rhodiola (3% salidroside) 155 mg, nicotinamide riboside 66 mg, CoQ10 66 mg, Bioavailability Blend 34.5 mg, NMN 34 mg, Na R-lipoate 33 mg, luteolin 30 mg, pterostilbene 20 mg, PQQ 7 mg, riboflavin-5-phosphate 5 mg and vitamin B12 60 mcg. Take 1 to 3 capsules daily with food, or as guided.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love and Prayer. 30 capsules per bottle.",
+    "note": "Glen approved the final formula 2026-11-09 (to-do #131): 11 actives, 450.56 mg; source ~/YouCloned/Production/mitochondrial-biogenesis-40-bottles-updated.pdf."
   },
   "night-vision": {
     "ingredients_source": "fmp_new",
