@@ -6582,7 +6582,7 @@
      "dose": ""
     },
     {
-     "name": "Pacific Ocean ORMUS",
+     "name": "Volcanic Spring ORMUS Gold",
      "dose": ""
     },
     {
@@ -6598,13 +6598,13 @@
      "dose": ""
     }
    ],
-   "ingredients_source": "label-read-2026-09-26",
-   "description": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Pacific Ocean ORMUS, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day.\n\nOther ingredients: Healing Energy, Love and Prayer. 30 mL per bottle, about 60 servings of 10 drops.",
+   "ingredients_source": "label-2026-11",
+   "description": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Volcanic Spring ORMUS Gold, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day, or as guided.\n\nOther ingredients: Healing Energy, Love and Prayer. 30 mL per bottle, about 60 servings of 10 drops.",
    "qty_pricing": true,
-   "intro": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Pacific Ocean ORMUS, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day.",
-   "learn_markdown": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Pacific Ocean ORMUS, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day.\n\nIngredients: C60 (Buckminster Fullerenes); Pacific Ocean ORMUS; Monatomic Rose Gold ORMUS; Phinheas Manna M11 ORMUS; Black Seed Oil (Nigella sativa).",
+   "intro": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Volcanic Spring ORMUS Gold, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day, or as guided.",
+   "learn_markdown": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Volcanic Spring ORMUS Gold, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day, or as guided.\n\nIngredients: C60 (Buckminster Fullerenes); Volcanic Spring ORMUS Gold; Monatomic Rose Gold ORMUS; Phinheas Manna M11 ORMUS; Black Seed Oil (Nigella sativa).",
    "how_it_works": "",
-   "directions": "Up to 10 drops 2 times a day.",
+   "directions": "Up to 10 drops 2 times a day, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
