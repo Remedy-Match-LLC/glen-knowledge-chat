@@ -11723,6 +11723,8 @@ def _credit_course_referral(cx, ref, buyer_email, product_cents, order_ref):
 def _settle_referral(order, *, order_ref: str) -> None:
     """Credit the referrer (points or cash) on a full-price referred sale.
     Idempotent per order_ref. Best-effort -- never raises."""
+    if _bos_orders.is_no_charge(order):
+        return   # a no-charge gift earns no referral or scan reward (Glen, 2026-11-09)
     _scan_reward_on_paid_order(order, order_ref)
     if not _rewards_enabled():
         return
@@ -11852,7 +11854,7 @@ def _raise_settlement_skip_todo(order_ref, kind, skipped):
 def _settle_referrer_reward(cx, order, order_ref):
     """On a paid referral order: credit the referrer pct% of the referee's product spend.
     Returns cents credited (0 if none). Idempotent per referee; never raises into the caller."""
-    if not _REFERRALS:
+    if not _REFERRALS or _bos_orders.is_no_charge(order):
         return 0
     from dashboard import referrals as _rf, points as _points
     _points.init_points_table(cx)
@@ -11911,6 +11913,8 @@ def _settle_order_points(order, *, order_ref):
     Idempotent per order_ref. Best-effort -- never raises into the return handler.
     Buyer earn is suppressed on an affiliate-acquired first order (REWARDS_TIERS_ENABLED)."""
     from dashboard import points as _points
+    if _bos_orders.is_no_charge(order):
+        return   # a no-charge gift earns no points (Glen, 2026-11-09)
     email = (order.get("email") or "").strip().lower()
     if not email:
         return
@@ -12235,8 +12239,9 @@ def _grant_membership_line_dep(order):
     _grant_group_bundle's convention -- deps must not share the caller's cx) and
     delegates to _grant_membership_line_on_paid, which is idempotent per order_ref
     and commits its own write. No-op (returns "none") when there's no membership
-    line, so it's safe to call for every paid order."""
-    if not order:
+    line, so it's safe to call for every paid order. A no-charge gift grants nothing:
+    no membership, no Biofield month, no supply months (Glen, 2026-11-09)."""
+    if not order or _bos_orders.is_no_charge(order):
         return
     # Cheap pre-check BEFORE opening a connection: the card path already gates on
     # cart_has_membership_tier before invoking the grant, so mirror it here -- most
@@ -19899,13 +19904,17 @@ def _supply_cap_end(cx, email):
     if not email:
         return None
     rows = cx.execute(
-        "SELECT items_json, status, pay_status, paid_at, created_at, pay_method FROM orders "
+        "SELECT items_json, status, pay_status, paid_at, created_at, "
+        "COALESCE(pay_method,'') FROM orders "
         "WHERE lower(email)=lower(?) AND status!='cancelled'", (email,)).fetchall()
     latest = None
     for r in rows:
         items_json, status, pay_status, paid_at, created_at = (r[0], r[1], r[2], r[3], r[4])
-        if (r[5] or "") == _bos_orders.ZERO_TOTAL_METHOD:
-            continue          # a $0 order never anchors the refill cap (2026-11-16)
+        # A $0 order anchors no supply months, whether the auto-pay settled it
+        # (2026-11-16) or the operator marked it no charge (2026-11-09).
+        if (r[5] == _bos_orders.ZERO_TOTAL_METHOD
+                or _bos_orders.is_no_charge({"pay_method": r[5]})):
+            continue
         try:
             items = json.loads(items_json or "[]")
         except Exception:
@@ -65025,8 +65034,11 @@ def api_orders_manual():
                 _took_hold = _replace_order(cx, _left_shipments, oid)
             except Exception as _e:
                 print(f"[replace] swap skipped for #{oid}: {_e!r}", flush=True)
+        # A $0 order that no credit paid for is a gift (Glen, 2026-11-09). It is not
+        # held for a household parcel and opens no group, so no caregiver invite goes out.
+        _gift_order = (total_cents == 0 and not _sc_apply and not points_redeemed_cents)
         try:
-            if not _took_hold:
+            if not _took_hold and not _gift_order:
                 _hold_new_order_and_invite(cx, oid)
         except Exception as _e:
             print(f"[hold] hold+invite skipped: {_e!r}", flush=True)

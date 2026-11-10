@@ -20,6 +20,17 @@ _OPEN = ("new", "packed")  # unfulfilled
 _PRE_FULFILL = ("proposed", "confirmed")
 _TERMINAL_STATUSES = ("shipped", "delivered", "done", "cancelled")
 
+# A gift settled at $0 with no payment (Glen, 2026-11-09: "to track who the products
+# went to, don't we need invoices even though they are $0?"). It is marked paid so its
+# bottles come off the shelf, and every hook that pays out on a paid order skips it:
+# points, fee-free credit, referral and scan rewards, membership and supply grants.
+NO_CHARGE_METHOD = "no charge"
+
+
+def is_no_charge(order):
+    """True for an order settled by orders.mark_no_charge."""
+    return str((order or {}).get("pay_method") or "").strip().lower() == NO_CHARGE_METHOD
+
 # Customer-created hosted checkouts are operational carts until payment lands.
 # Staff invoices and practitioner drop-ships are intentionally excluded: those
 # remain actionable until a person resolves them.
@@ -1378,6 +1389,8 @@ def settle_order_points(cx, order, *, scope="rm", earn_pct=0.05):
     but omits the affiliate-first-order suppression — in-house manual orders are
     not affiliate-acquired, so that gate is a no-op for them."""
     from dashboard import points as _points
+    if is_no_charge(order):
+        return
     email = (order.get("email") or "").strip().lower()
     ref = (order.get("external_ref") or "").strip()
     if not email or not ref:
@@ -1588,7 +1601,7 @@ def set_referral_settle_hook(fn):
 def settle_referrals_on_payment(cx, order):
     """Run the registered referral settlement for an order that has just become
     paid. Best-effort: a referral hiccup never fails the payment record."""
-    if not _referral_settle_hook or not order:
+    if not _referral_settle_hook or not order or is_no_charge(order):
         return
     try:
         _referral_settle_hook(cx, order)
@@ -1614,7 +1627,7 @@ def set_points_settle_hook(fn):
 def settle_points_on_payment(cx, order):
     """Run the registered points settlement for an order that has just become paid.
     Best-effort: a points hiccup never fails the payment record."""
-    if not order:
+    if not order or is_no_charge(order):
         return
     credit_fee_free_on_payment(cx, order)
     if not _points_settle_hook:
@@ -1673,6 +1686,8 @@ def credit_fee_free_on_payment(cx, order, *, action_method=None, action_cents=No
     per order (points.credit keys on order_ref and reason). Best-effort."""
     try:
         from . import points as _points
+        if is_no_charge(order):
+            return 0
         email = (order.get("email") or "").strip().lower()
         ref = (order.get("external_ref") or "").strip()
         if not email or not ref or not earns_fee_free_points(order):
@@ -1783,6 +1798,109 @@ action(key="orders.record_payment", module="orders", title="Record payment",
        description="Record payment on a proposed/confirmed invoice or an unpaid Cart "
                    "order (e.g. in-person check/cash) and move it into fulfillment.",
        risk_tier=LOW_WRITE, permission=(OWNER,))(_record_payment_exec)
+def _no_charge_taken_slugs(order, already_taken, units):
+    """The slugs whose bottles were already taken off the shelf by hand. `already_taken`
+    is True or "all" for every counted line, else a list of slugs. A slug that is not a
+    counted line of this order is refused, so a typo cannot pass unnoticed."""
+    if already_taken in (None, False, "", []):
+        return []
+    if already_taken is True or (isinstance(already_taken, str)
+                                 and already_taken.strip().lower() == "all"):
+        return sorted(units)
+    if isinstance(already_taken, str):
+        already_taken = [already_taken]
+    if not isinstance(already_taken, (list, tuple)):
+        raise ValueError("already_taken must be a list of product slugs, or true for all")
+    out = []
+    for s in already_taken:
+        slug = str(s or "").strip()
+        if slug not in units:
+            raise ValueError(f"{slug or '(blank)'} is not a counted line on order "
+                             f"#{order.get('id')}")
+        out.append(slug)
+    return sorted(set(out))
+
+
+def mark_no_charge(cx, order_id, *, already_taken=None, catalog=None):
+    """Settle a $0 order as a gift: paid, by 'no charge', with no payment row.
+
+    Refused unless the total is $0, the order is not cancelled and not already paid,
+    and no ship credit or points made it $0 (those are paid with credit and go through
+    Record payment, which spends the credit). Proposed or confirmed moves to 'new', as
+    Record payment does. Nothing is emailed and no paid-order reward or grant fires.
+    The bottles come off the shelf through the normal stock sync.
+
+    `already_taken`: lines whose bottles were taken off the count by hand before this
+    order existed. Each gets a stock_order_moves row holding its qty as already taken,
+    so the sync takes nothing for it, and a cancel puts it back once, as it would for
+    any paid order. Written in the same transaction as the paid flag."""
+    from dashboard import stock_counts as _stock
+    oid = int(order_id)
+    order = get_order(cx, oid)
+    if not order:
+        raise ValueError(f"order #{oid} not found")
+    if (order.get("status") or "") == "cancelled":
+        raise ValueError(f"order #{oid} is cancelled")
+    if order.get("pay_status") == "paid":
+        raise ValueError(f"order #{oid} is already marked paid")
+    total = int(order.get("total_cents") or 0)
+    if total != 0:
+        raise ValueError(f"order #{oid} totals ${total / 100:.2f}; only a $0 order "
+                         "can be settled as no charge")
+    if (order.get("source") or "") == "groovekart":
+        raise ValueError(f"order #{oid} is a GrooveKart order")
+    if (int(order.get("ship_credit_applied_cents") or 0) > 0
+            or int(order.get("points_redeemed_cents") or 0) > 0):
+        raise ValueError(f"order #{oid} is $0 because credit or points cover it; "
+                         "record it as a payment so the credit is spent")
+    units = _stock.units_for_items(order.get("items") or [], _stock._catalog(catalog))
+    taken = _no_charge_taken_slugs(order, already_taken, units)
+    now = _now()
+    try:
+        if taken:
+            _stock.ensure_tables(cx)
+            for slug in taken:
+                cx.execute(
+                    "INSERT INTO stock_order_moves (order_id, slug, qty, taken, sold_at, "
+                    "updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT (order_id, slug) DO NOTHING",
+                    (oid, slug, int(units[slug]), int(units[slug]), now, now))
+        # The refusals above, again in the WHERE, so a payment or cancel that lands
+        # between the read and this write cannot be overwritten.
+        cur = cx.execute(
+            "UPDATE orders SET status=CASE WHEN status IN ('proposed','confirmed') "
+            "THEN 'new' ELSE status END, pay_status='paid', pay_method=?, paid_cents=0, "
+            "paid_at=?, updated_at=? WHERE id=? AND COALESCE(pay_status,'')<>'paid' "
+            "AND COALESCE(status,'')<>'cancelled' AND COALESCE(total_cents,0)=0",
+            (NO_CHARGE_METHOD, now, now, oid))
+        if cur.rowcount != 1:
+            raise ValueError(f"order #{oid} changed while it was being settled")
+        cx.commit()
+    except Exception:
+        _safe_rollback(cx)
+        raise
+    _ensure_portal_receipt(cx, oid)
+    _stock_sync(cx, oid)
+    return get_order(cx, oid), taken
+
+
+def _mark_no_charge_exec(params, ctx):
+    cx = (ctx or {}).get("cx") or (params or {}).get("cx")
+    if cx is None:
+        raise ValueError("no db connection")
+    oid = int(params["order_id"])
+    o, taken = mark_no_charge(cx, oid, already_taken=params.get("already_taken"))
+    return {"order_id": oid, "status": o.get("status"), "pay_status": "paid",
+            "pay_method": NO_CHARGE_METHOD, "paid_cents": 0, "already_taken": taken,
+            "message": f"Order #{oid} settled as no charge."
+                       + (f" Already taken by hand: {', '.join(taken)}." if taken else "")}
+
+
+# Owner only, like Record payment. Rae's per-user token resolves to the owner role
+# (rbac.SCOPE_ROLES), so she can run it; Shaira's VA token cannot.
+action(key="orders.mark_no_charge", module="orders", title="Settle as no charge",
+       description="Settle a $0 invoice as a gift: marks it paid by 'no charge', takes "
+                   "its bottles off the shelf, and pays out no points, credit or grants.",
+       risk_tier=LOW_WRITE, permission=(OWNER,))(_mark_no_charge_exec)
 action(key="orders.send_invoice", module="orders", title="Send & publish invoice",
        description="Email the customer a pay-link for a proposed/confirmed invoice.",
        risk_tier=LOW_WRITE, permission=(OWNER, OPS))(_send_invoice_exec)
