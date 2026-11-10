@@ -6,7 +6,20 @@ DATA = Path(__file__).resolve().parent.parent / "data"
 LIVE = json.loads((DATA / "products.json").read_text())["products"]["mitochondrial-biogenesis"]
 PIN = json.loads((DATA / "products-manual-corrections.json").read_text())["mitochondrial-biogenesis"]
 
-DOSES = ["155 mg", "66 mg", "66 mg", "34.5 mg", "34 mg", "33 mg", "30 mg", "20 mg", "7 mg", "5 mg", "60 mcg"]
+# (name, dose) pairs from the approved sheet, ~/YouCloned/Production/mitochondrial-biogenesis-40-bottles-updated.pdf
+PAIRS = [
+    ("Rhodiola rosea (root), 3% Salidroside", "155 mg"),
+    ("Nicotinamide Riboside (Vitamin B3)", "66 mg"),
+    ("Coenzyme Q10 (Ubiquinone)", "66 mg"),
+    ("Bioavailability Blend (proprietary formula)", "34.5 mg"),
+    ("NMN (Nicotinamide Mononucleotide)", "34 mg"),
+    ("Na RALA (Stabilized Bio-enhanced Na R-Lipoate)", "33 mg"),
+    ("Luteolin (Sophora japonica)", "30 mg"),
+    ("Pterostilbene", "20 mg"),
+    ("PQQ (Pyrroloquinoline Quinone)", "7 mg"),
+    ("Riboflavin-5-Phosphate (Vitamin B2)", "5 mg"),
+    ("Vitamin B12 (as Adenosylcobalamin, Methylcobalamin)", "60 mcg"),
+]
 
 
 def _mg(dose):
@@ -16,7 +29,7 @@ def _mg(dose):
 
 def test_eleven_actives_total_450_56_mg_in_live_and_pinned_copy():
     for entry in (LIVE, PIN):
-        assert [i["dose"] for i in entry["ingredients"]] == DOSES
+        assert [(i["name"], i["dose"]) for i in entry["ingredients"]] == PAIRS
         assert round(sum(_mg(i["dose"]) for i in entry["ingredients"]), 2) == 450.56
 
 
