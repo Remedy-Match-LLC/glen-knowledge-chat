@@ -327,6 +327,8 @@
       <!-- Out of stock (Glen, 2026-10-16): one line, from page-data `out_of_stock_line`,
            in place of every buy link until the flag is removed. -->
       <p id="product-out-of-stock" role="status" style="display:none;margin:1rem 0;padding:1rem;background:var(--surface,#f5f5f5);border-radius:12px;font-weight:700;"></p>
+      <!-- Pickup only (Glen, 2026-11-09): from page-data `pickup_only_line`. -->
+      <p id="product-pickup-only" style="display:none;margin:1rem 0;font-weight:700;"></p>
       <!-- Enquiry only (Kloud mats, Glen 2026-10-25): bought on our Centropix store. Shown
            only when page-data carries `enquiry`; takes the place of every buy link. -->
       <form id="product-enquiry" style="display:none;margin:1rem 0;padding:1rem;background:var(--surface,#f5f5f5);border-radius:12px;" novalidate>
@@ -1822,6 +1824,11 @@
       if (oos){
         oos.textContent = data.out_of_stock_line || '';
         oos.style.display = data.out_of_stock_line ? 'block' : 'none';
+      }
+      var pkup = document.getElementById('product-pickup-only');
+      if (pkup){
+        pkup.textContent = data.pickup_only_line || '';
+        pkup.style.display = data.pickup_only_line ? 'block' : 'none';
       }
       var mironAssets = Array.isArray(data.miron_assets) ? data.miron_assets : [];
       var mironStory = Array.isArray(data.miron_story) ? data.miron_story : [];
