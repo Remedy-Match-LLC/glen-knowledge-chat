@@ -119,17 +119,30 @@ def test_a_resolved_name_is_compared():
     assert got["joined"][0]["into"] == 1
 
 
-def test_a_join_that_puts_a_thyroid_code_on_a_laser_layer_is_proposed_not_joined():
+def test_a_same_product_join_onto_a_laser_layer_is_automatic():
+    """Glen, 2026-11-10: "No. Same product join can be automatic." The laser is blocked
+    only on a layer whose head is thyroid or abdomen, and a join keeps the kept head
+    (ER5 here), so the thyroid code joins and nothing is held for Glen."""
     chain = [_row(1, 1, "Cells", "Rejuvenator Max", codes=["ER5"], origin="scan"),
              _row(2, 1, "Cells", "Harmony Laser", codes=["ER5"], origin="scan")]
     got = atp.classify(chain, [{"title": "Thyroid", "remedy_name": "Rejuvenator Max",
                                 "codes": ["ER33"]}], laser_for=harmony_laser_for,
                        last_layer=1)
-    assert got["joined"] == []
-    assert got["related"][0]["rule"] == "same remedy"
+    assert got["related"] == [] and got["add"] == []
+    assert got["joined"][0]["into"] == 1 and got["joined"][0]["codes"] == ["ER33"]
+    assert got["joined"][0]["laser"] is None      # the layer already carries its laser
 
 
-def test_a_joined_layer_brings_its_laser_only_when_the_union_allows_one():
+def test_an_incoming_laser_follows_the_kept_head_not_a_secondary_code():
+    laser = {"name": "Harmony Laser", "caution": "x"}
+    chain = [_row(1, 1, "Cells", "Rejuvenator Max", codes=["ER5"], origin="scan")]
+    got = atp.classify(chain, [{"title": "Thyroid", "remedy_name": "Rejuvenator Max",
+                                "codes": ["ER33"], "laser": laser}],
+                       laser_for=harmony_laser_for)
+    assert got["joined"][0]["laser"] == laser     # head ER5 allows it; ER33 is secondary
+
+
+def test_a_joined_layer_brings_its_laser_only_when_the_kept_head_allows_one():
     laser = {"name": "Harmony Laser", "caution": "x"}
     chain = [_row(1, 1, "Cells", "Rejuvenator Max", codes=["ER5"], origin="scan")]
     ok = atp.classify(chain, [{"title": "Cells", "remedy_name": "Rejuvenator Max",

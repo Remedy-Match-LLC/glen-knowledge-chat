@@ -210,22 +210,16 @@ def classify(existing_rows, incoming, *, recommended=None, ticked_names=(),
         if k and k in by_key:
             g, row = by_key[k]
             group_codes = [c for r in g["rows"] for c in codes_of(r.get("codes"))]
-            union = _union(group_codes, f["codes"])
             has_laser = any(key(r.get("remedy")) == key(HARMONY_LASER) for r in g["rows"])
-            if laser_for and has_laser and f["codes"] and laser_for(union) is None:
-                # Joining would put a thyroid or abdomen code on a Harmony Laser
-                # layer (Glen, 2026-10-12). Glen decides; it is not joined by itself.
-                rn = None if hold_related else n + 1
-                n = rn or n
-                out["related"].append({
-                    "layer": dict(layer, n=rn), "n": rn, **_summary(g),
-                    "rule": "same remedy",
-                    "why": "joining would put a thyroid or abdomen code on the "
-                           "Harmony Laser layer"})
-                continue
+            # Glen, 2026-11-10: a same-product join is always automatic, a Harmony Laser
+            # layer included. The laser is blocked only on a layer whose head is a
+            # thyroid or abdomen code, and a join keeps the kept layer's head, so a
+            # join never moves the laser off its layer. The head is the layer's first
+            # code. An incoming laser rides onto the kept layer only if that head allows it.
+            head_codes = (group_codes or f["codes"])[:1]
             laser = None
             if (laser_for and not has_laser and layer.get("laser")
-                    and laser_for(union) is not None):
+                    and laser_for(head_codes) is not None):
                 laser = layer.get("laser")
             new_codes = [c for c in f["codes"] if c not in codes_of(row.get("codes"))]
             out["joined"].append({
