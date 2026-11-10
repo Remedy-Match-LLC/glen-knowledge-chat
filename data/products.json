@@ -25735,6 +25735,83 @@
    "digital": true,
    "source": "gk-video-course-import-2026-07-20",
    "intro": "Vision is our dominant sense as human beings... We can learn to use it wisely, or we can lose it."
+  },
+  "miron-violet-glass-water-bottle-1l": {
+   "name": "Miron Violet Glass 1 L Water Bottle",
+   "price_cents": 4000,
+   "fmp_id": "55",
+   "bottle_type": "own-box",
+   "flat_shipping_cents": 2300,
+   "intro": "A 1 liter Miron violet glass drinking water bottle, filled with Microwater or Miracule Water.",
+   "source": "glen-ruling-2026-11-09"
+  },
+  "microwater-alkaline": {
+   "name": "Alkaline Microwater (4 L)",
+   "pickup_only": true,
+   "price_cents": 300,
+   "fmp_id": "87",
+   "bottle_type": "own-box",
+   "intro": "Alkaline Microwater, sold by the 4 liters (about a gallon). Pickup only, in Hilo.",
+   "source": "glen-ruling-2026-11-09"
+  },
+  "miracule-water": {
+   "name": "Miracule Water (4 L)",
+   "pickup_only": true,
+   "price_cents": 300,
+   "fmp_id": "424",
+   "bottle_type": "own-box",
+   "intro": "Miracule Water, sold by the 4 liters (about a gallon). Pickup only, in Hilo.",
+   "source": "glen-ruling-2026-11-09"
+  },
+  "capsule-filling-machine-100m": {
+   "name": "100M Capsule Filling Machine",
+   "price_cents": 19700,
+   "fmp_id": "5",
+   "bottle_type": "own-box",
+   "flat_shipping_cents": 2300,
+   "intro": "The 100M model fills 100 capsules per tray.",
+   "source": "glen-ruling-2026-11-09"
+  },
+  "capsule-filling-machine-120s": {
+   "name": "120S Capsule Filling Machine",
+   "price_cents": 19700,
+   "fmp_id": "6",
+   "bottle_type": "own-box",
+   "flat_shipping_cents": 2300,
+   "intro": "The 120S model fills 120 capsules per tray.",
+   "source": "glen-ruling-2026-11-09"
+  },
+  "bioenergetic-wellness-scanner-usb": {
+   "name": "Bioenergetic Wellness Scanner - USB",
+   "aliases": ["Bioenergetic Wellness Scanner USB"],
+   "price_cents": 20000,
+   "fmp_id": "970",
+   "bottle_type": "handcradle",
+   "intro": "The USB model, for indoor use with people and indoor pets.",
+   "source": "glen-ruling-2026-11-09"
+  },
+  "bioenergetic-wellness-scanner-bluetooth": {
+   "name": "Bioenergetic Wellness Scanner - Bluetooth",
+   "aliases": ["Bioenergetic Wellness Scanner Bluetooth", "Bioenergetic Wellness Scanner - BlueTooth"],
+   "price_cents": 10000,
+   "fmp_id": "971",
+   "bottle_type": "handcradle",
+   "intro": "The Bluetooth model. A phone tests without a wire, so it suits outdoor and farm animals.",
+   "source": "glen-ruling-2026-11-09"
+  },
+  "bacterotox-homeopathic-complex-in-terrain-restore": {
+   "name": "Bacterotox Homeopathic Complex in Terrain Restore",
+   "regular_cents": 8000,
+   "description": "Support for detoxification related to bacterial dysbiosis. 10 drops 3 times a day 30 minutes before food, or as guided.",
+   "price_cents": 7000,
+   "fixed_price": true,
+   "counts_toward_volume": true,
+   "volume_eligible": false,
+   "qty_pricing": false,
+   "fmp_id": "1103",
+   "no_groovekart": true,
+   "bottle_type": "Dropper 50 mL",
+   "source": "glen-ruling-2026-11-09"
   }
  },
  "_enriched": "ingredients (FMP/Formulations/GK) + descriptions applied 2026-06-05; see products-stale-gk-clean.md"
