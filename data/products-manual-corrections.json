@@ -4263,9 +4263,88 @@
     "chat_caution": true
   },
   "nerve-repair": {
-    "ingredients_source": "fmp_new",
+    "ingredients_source": "fmp-run-114",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "ingredients": [
+      {
+        "name": "ALCAR (Acetyl L-Carnitine)",
+        "dose": "160 mg"
+      },
+      {
+        "name": "Lion's Mane Polysaccharides 30% (Hericium erinaceus)",
+        "dose": "160 mg"
+      },
+      {
+        "name": "Na RALA (Stabilized Bio-enhanced Na R-Lipoate)",
+        "dose": "60 mg"
+      },
+      {
+        "name": "Vitamin B1 (as Benfotiamine)",
+        "dose": "60 mg"
+      },
+      {
+        "name": "Vitamin B6 (as Pyridoxal 5-Phosphate)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Vitamin B12 (as Methylcobalamin)",
+        "dose": "500 mcg",
+        "page_slug": "vitamin-b12-methylcobalamin"
+      },
+      {
+        "name": "Phosphatides 30% (Helianthus annuus)",
+        "dose": "13 mg"
+      },
+      {
+        "name": "Ginkgo European Standard 10:1 (Ginkgo biloba)",
+        "dose": "8 mg",
+        "page_slug": "ginkgo-european-std-ginkgo-biloba"
+      },
+      {
+        "name": "Vitamin B3 (as Niacin)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Moringa 100:1 (Moringa oleifera)",
+        "dose": "3 mg"
+      },
+      {
+        "name": "DGL Licorice (Glycyrrhiza glabra)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Vinpocetine 99% (Vinca minor)",
+        "dose": "1 mg",
+        "page_slug": "vinpocetine-vinca-minor"
+      },
+      {
+        "name": "Gingerols 10% (Zingiber officinale)",
+        "dose": "0.5 mg",
+        "page_slug": "gingerols-10-zingiber-officinalis"
+      },
+      {
+        "name": "Piperine 95% (Piper nigrum)",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Humic Acid",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Fulvic Acid",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Spirit Minerals (ORMUS)",
+        "dose": "0.5 mg",
+        "page_slug": "11-spirit-minerals"
+      }
+    ],
+    "description": "Each capsule of Nerve Repair supplies ALCAR (acetyl L-carnitine) 160 mg, lion's mane polysaccharides 30% 160 mg, stabilized Na R-lipoate 60 mg, vitamin B1 as benfotiamine 60 mg, vitamin B6 as pyridoxal 5-phosphate 10 mg and vitamin B12 as methylcobalamin 500 mcg. It also holds 34.5 mg of our Bioavailability Blend, which includes vinpocetine 1 mg. Take 1 capsule up to 5 times daily with food, or as guided.",
+    "directions": "1 capsule up to 5 times daily with food, or as guided.",
+    "note": "Glen 2026-11-10 ('yes'): list the shelf batch, FileMaker run 114 (16 Nov 2025, 40 bottles), not the April 2026 next-batch recipe. The last 11 lines are the 34.5 mg Bioavailability Blend, amounts from blend run 107. Dose ruled by Glen 2026-10-24.",
+    "content_since": "2026-11-10T16:04:58+00:00"
   },
   "vitality": {
     "ingredients_source": "fmp_new",
