@@ -1,37 +1,113 @@
 """The sunflower phosphatides raw is 30%, per Glen reading the bag on 2026-11-10.
 
-FileMaker raw 5009 says 30% too. "50%" had been copied from label to label into 16 live
-products and 10 more in the enrichment source.
+FileMaker raw 5009 says 30% too. "50%" had been copied label to label into 16 live
+products, their pins, the enrichment files and the worklist script.
 """
 import json
 import re
 from pathlib import Path
 
-DATA = Path(__file__).resolve().parent.parent / "data"
-FILES = ("products.json", "products-manual-corrections.json", "products-enrich-clean.json")
+ROOT = Path(__file__).resolve().parent.parent
+DATA = ROOT / "data"
+FILES = ("products.json", "products-manual-corrections.json",
+         "products-enrich-clean.json", "products-enrich-candidate.json")
+FIFTY = re.compile(r"phosphatides\s*50\s*%", re.I)
+TOUCHED = ["acetaldehyde-detox", "apoptogenesis", "bioavailability-blend", "curcu-guard",
+           "dht-blocker", "immune-intelligence", "lens-zyme", "migrafree", "muscle-mass",
+           "nerve-pulse", "night-vision", "rescue", "seaamino-syntropy", "stone-solvent",
+           "vitamin-c-syntropy", "vitreous-vitality"]
 
 
-def test_no_catalogue_file_says_phosphatides_50_percent():
+def _load(name):
+    d = json.loads((DATA / name).read_text())
+    return d["products"] if name == "products.json" else d
+
+
+def _strings(o):
+    if isinstance(o, str):
+        yield o
+    elif isinstance(o, dict):
+        for k, v in o.items():
+            yield k
+            yield from _strings(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _strings(v)
+
+
+def _phos_rows(entry):
+    return [(i["name"], i["dose"]) for i in (entry.get("ingredients") or [])
+            if isinstance(i, dict) and "phosphatides" in i["name"].lower()]
+
+
+def test_no_decoded_string_in_any_catalogue_file_says_50_percent():
     for name in FILES:
-        text = (DATA / name).read_text()
-        assert not re.search(r"phosphatides 50", text, re.I), name
+        hits = [s for s in _strings(json.loads((DATA / name).read_text())) if FIFTY.search(s)]
+        assert hits == [], (name, hits[:3])
+    assert not FIFTY.search((ROOT / "scripts" / "apply_worklist.py").read_text())
 
 
-def test_the_two_listed_lines_read_30_percent_at_13_and_21_mg():
-    live = json.loads((DATA / "products.json").read_text())["products"]
-    pin = json.loads((DATA / "products-manual-corrections.json").read_text())
-    for entry, dose in ((live["vitreous-vitality"], "13 mg"), (pin["vitreous-vitality"], "13 mg"),
-                        (live["stone-solvent"], "21 mg")):
-        by = {i["name"]: i["dose"] for i in entry["ingredients"]}
-        assert by["Phosphatides 30% (Helianthus annuus)"] == dose
+def test_parsed_candidate_rows_carry_30_not_50():
+    def walk(o):
+        if isinstance(o, dict):
+            if "hosphatides" in str(o.get("raw", "")) and o.get("unit") == "%":
+                assert o["qty"] == 30.0, o
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(_load("products-enrich-candidate.json"))
 
 
-def test_every_phosphatides_row_lands_on_a_page_another_product_already_uses():
-    from dashboard.ingredients import slugify
-    live = json.loads((DATA / "products.json").read_text())["products"]
+def test_pins_match_live_and_a_replay_cannot_bring_back_50_percent(tmp_path, monkeypatch):
+    # The enrichment files already differ from live on main (pins override them), so the
+    # check is the replay itself: rebuilding products.json from clean + pins yields 30% only.
+    import contextlib
+    import io
+    import shutil
+    import sys
+    live, pin = _load("products.json"), _load("products-manual-corrections.json")
+    for slug in TOUCHED:
+        if (pin.get(slug) or {}).get("ingredients"):
+            assert _phos_rows(pin[slug]) == _phos_rows(live[slug]), slug
+    copy = tmp_path / "products.json"
+    shutil.copy(DATA / "products.json", copy)
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import apply_enrichment
+    monkeypatch.setattr(apply_enrichment, "PRODUCTS", str(copy))
+    with contextlib.redirect_stdout(io.StringIO()):
+        apply_enrichment.main()
+    replayed = json.loads(copy.read_text())["products"]
+    assert [s for s in _strings(replayed) if FIFTY.search(s)] == []
+    for slug in ("vitreous-vitality", "curcu-guard", "migrafree"):
+        assert _phos_rows(replayed[slug]) == _phos_rows(live[slug]), slug
+
+
+def test_vitreous_and_stone_solvent_read_30_percent_at_13_and_21_mg():
+    live, pin = _load("products.json"), _load("products-manual-corrections.json")
+    assert ("Phosphatides 30% (Helianthus annuus)", "13 mg") in _phos_rows(live["vitreous-vitality"])
+    assert _phos_rows(pin["vitreous-vitality"]) == _phos_rows(live["vitreous-vitality"])
+    assert ("Phosphatides 30% (Helianthus annuus)", "21 mg") in _phos_rows(live["stone-solvent"])
+
+
+def test_drafts_written_before_the_fix_are_reset():
+    live, pin = _load("products.json"), _load("products-manual-corrections.json")
+    for slug in TOUCHED:
+        assert live[slug]["content_since"] >= "2026-11-10T17", slug
+        if slug in pin:
+            assert pin[slug]["content_since"] == live[slug]["content_since"], slug
+
+
+def test_every_phosphatides_row_lands_on_a_real_shared_ingredient_page():
+    from dashboard.ingredients import _name_index, slugify
+    index = _name_index()
     uses = {}
-    for slug, p in live.items():
+    for slug, p in _load("products.json").items():
         for ing in p.get("ingredients") or []:
             if isinstance(ing, dict) and "hosphatides 30%" in ing["name"]:
                 uses.setdefault(ing.get("page_slug") or slugify(ing["name"]), set()).add(slug)
-    assert uses and all(len(products) >= 2 for products in uses.values()), uses
+    assert uses
+    for page, products in uses.items():
+        assert page in index, page
+        assert len(products) >= 2, (page, products)

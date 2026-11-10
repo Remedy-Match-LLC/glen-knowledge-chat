@@ -588,7 +588,8 @@
     "ingredients_source": "db-formulations-2026-06-25",
     "note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "vein-support": {
     "ingredients": [
@@ -1271,7 +1272,8 @@
     "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 30% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "aces-eye-drops": {
     "ingredients": [
@@ -1491,7 +1493,8 @@
     "panel_note": "Bioavailability Blend contains: Vitamin B3 (as Niacin) 5 mg; Vitamin B13 (Phosphatides 30%, Helianthus annuus); EGb 761 (Ginkgo biloba: 24% flavone glycosides, 6% lactones, <0.0005% ginkgolic acid); Miracle Tree 100:1 (Moringa oleifera); Licorice Omnipotent (Glycyrrhiza glabra); Vinpocetine (Vinca minor); Gingerol 10% (Zingiber officinale); Piperine (Piper nigrum); Fulvic Acid; Humic Acid; 11 Spirit Minerals.",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "dht-blocker": {
     "ingredients": [
@@ -1594,7 +1597,8 @@
     "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 30% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "energessence": {
     "ingredients": [
@@ -1863,7 +1867,8 @@
     "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 30% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "migrafree": {
     "ingredients": [
@@ -2009,7 +2014,8 @@
     "directions": "1 to 3 capsules a day with food, or as guided.",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "moisture-eyes-night-oil": {
     "ingredients": [
@@ -2468,7 +2474,8 @@
     "intro": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 2 capsules a day with food, or as guided.",
     "learn_markdown": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 2 capsules a day with food, or as guided.\n\n- Vitamin A (Retinyl Palmitate) 5000 IU\n- Vitamin C (Ascorbyl Palmitate) 50 mg\n- Vitamin D3 (Cholecalciferol) 400 IU\n- Vitamin E (D-Alpha Tocopheryl Succinate) 15 IU\n- Coenzyme Q10 (Ubiquinone) 5 mg\n- Magnesium (Mg Acetyl Taurate) 3 mg\n- Zinc (Zinc Carnosine) 5 mg\n- Iodine (Laminaria digitata) 150 mcg\n- Selenium (Methylselenocysteine) 70 mcg\n- Carnosine (Zinc Carnosine) 17 mg\n- Acetyl Taurate (Mg Acetyl Taurate) 47 mg\n- NAC (N-Acetyl L-Cysteine) 90 mg\n- GSH (Reduced & S-Acetyl Glutathione) 5 mg\n- Rutin (Sophora japonica) 10 mg\n- Luteolin (Reseda spp.) 10 mg\n- Apigenin (Apium graveolens) 10 mg\n- Quercetin Dihydrate (Sophora japonica) 10 mg\n- Silymarin 80% (Silybum marianum) 10 mg\n- Ellagic Acid (Rubus spp.) 10 mg\n- Polyphenols (Camellia sinensis) 10 mg\n- Oat Straw 100:1 (Avena sativa) 15 mg\n- Mistletoe 4:1 (Viscum album) 5 mg\n- Withanolides 10% (Withania somnifera) 10 mg\n- Ginsenosides 80% (Panax ginseng) 7 mg\n- Noni (Morinda citrifolia) (fructus) 20 mg\n- AHCC 50% (Lentinula edodes) (mycelia) 20 mg\n- Berberine (Coptis chinensis) 15 mg\n- Curcumin (Curcuma longa) 10 mg\n- Chlorella (Chlorella spp.) (broken cell wall) 10 mg\n- Allicin 25% (Allium sativum) 10 mg\n- Phytoceramides (Amorphophallus konjac) 25 mg\n- Bioavailability Blend 34.5 mg\n\nBioavailability Blend (34.5 mg): Phosphatides 30% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "pure--natural-msm-lotion": {
     "ingredients": [
@@ -3026,7 +3033,8 @@
     "intro": "Each Vitamin C Syntropy vegicap gives you vitamin C as magnesium ascorbate and ascorbyl palmitate. Alongside it you get natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, and glutathione in two forms, S-acetyl and reduced GSH. You also get coenzyme Q10 as ubiquinone, plus superoxide dismutase and catalase. Rounding it out are vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate, and vitamin B6 as pyridoxal 5'-phosphate. Then come the polyphenols: quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac. Magnesium threonate and magnesium ascorbate finish the formula, joined by a blend that aids absorption. Take 1 capsule daily before food, as guided.",
     "learn_markdown": "Each Vitamin C Syntropy vegicap combines vitamin C as magnesium ascorbate and ascorbyl palmitate, natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, glutathione as S-acetyl and reduced GSH, coenzyme Q10 as ubiquinone, superoxide dismutase and catalase with vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate and vitamin B6 as pyridoxal 5'-phosphate. Polyphenols include quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac, joined by magnesium threonate and magnesium ascorbate with a blend that aids absorption. Take 1 capsule daily before food, as guided.\n\nEach vegicap contains: Vitamin C (Mg Ascorbate & Ascorbyl Palmitate) 200 mg; Natural Dry Vitamin E (D-Alpha Tocopherol Succinate) 10 IU; Na R-Lipoate (Stabilized, Bio-enhanced) 20 mg; Glutathione (S-Acetyl & Reduced GSH) 20 mg; Coenzyme Q10 (Ubiquinone) 5 mg; Superoxide Dismutase (SOD) 31,000 units 10 mg; Catalase 1,000 FIP 10 mg; Vitamin A (retinyl palmitate) 3,660 mcg RAE (12,200 IU); Vitamin B5 (Calcium Pantothenate) 3.3 mg; Vitamin B6 (Pyridoxal 5'-Phosphate) 0.7 mg; Quercetin Dihydrate (Sophora japonica) 10 mg; Hesperidin Methyl Chalcone (HMC) (Citrus spp.) 10 mg; Luteolin (Reseda spp.) 10 mg; Fisetin 50% (Cotinus coggygria) 20 mg; Sumac 50:1 (Cotinus coggygria) 20 mg; Magnesium Threonate 10 mg; Magnesium Ascorbate 193 mg; Magnesium (as Ascorbate & Threonate) 13.2 mg; Bioavailability Blend 34.5 mg. Bioavailability Blend contains: Phosphatides 30% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "focus-neuro-magnesium-powder": {
     "description": "Focus Neuro-Magnesium is a drink mix built on three brain minerals together: lithium as lithium orotate, magnesium as magnesium threonate, and zinc as zinc bisglycinate. Around them, green tea L-theanine backs a polyphenol blend of celery seed apigenin and turmeric curcumin. Vitamin B6 as pyridoxal 5'-phosphate and vitamin D3 as cholecalciferol round out the formula, sweetened with monk fruit mogroside V. Take 2 scoops a day in water, or as guided.\n\nOther ingredients: Healing Energy, Love and Prayer. Contents: 30 grams, 60 scoops.",
@@ -3887,7 +3895,8 @@
       "intro",
       "description"
     ],
-    "note": "Glen 2026-10-26, platform tab: \"yes\" to the store page 315 caution, directions and 34-row panel (formulation spec production/05 Formulations/vitreous-vitality/2026-10-26/app-store-spec.md), with lutein out of the intro and floaters out of the overview."
+    "note": "Glen 2026-10-26, platform tab: \"yes\" to the store page 315 caution, directions and 34-row panel (formulation spec production/05 Formulations/vitreous-vitality/2026-10-26/app-store-spec.md), with lutein out of the intro and floaters out of the overview.",
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "breast-support": {
     "ingredients": [
@@ -4069,7 +4078,8 @@
   "bioavailability-blend": {
     "ingredients_source": "fmp_new",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "bioavailability-blend-powder": {
     "ingredients_source": "fmp-bom-2026-05-23",
@@ -4122,7 +4132,8 @@
   "muscle-mass": {
     "ingredients_source": "t33",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "one-step": {
     "ingredients_source": "t33",
@@ -4132,12 +4143,14 @@
   "seaamino-syntropy": {
     "ingredients_source": "t33",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "stone-solvent": {
     "ingredients_source": "t33",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "sustain": {
     "ingredients_source": "t33",
@@ -4216,7 +4229,8 @@
   "night-vision": {
     "ingredients_source": "fmp_new",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "perfect-skin": {
     "ingredients_source": "fmp_new",
@@ -4226,7 +4240,8 @@
   "rescue": {
     "ingredients_source": "t33",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "rescue-phytochromotherapy": {
     "ingredients_source": "fmp-bom-2026-05-23",

@@ -1028,7 +1028,8 @@
     "benefits"
    ],
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "medicinal-mushrooms": {
    "name": "Medicinal Mushrooms",
@@ -1237,7 +1238,8 @@
    "fmp_id": "394",
    "qty_pricing": true,
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "lipid-cleanse": {
    "name": "Lipid Cleanse",
@@ -1510,7 +1512,8 @@
    "bottle_type": "30 Caps",
    "fmp_id": "118",
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "sustain": {
    "name": "Sustain",
@@ -3740,7 +3743,8 @@
     "ingredients",
     "intro",
     "description"
-   ]
+   ],
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "seaamino-syntropy": {
    "name": "SeaAmino Syntropy",
@@ -3818,7 +3822,8 @@
    "description": "SeaAmino Syntropy is based on a traditional Nordic remedy of amino acids from enzymatically pre-digested white fish protein with added synergists for enhanced bioavailability. This combination of botanical and nutritional synergists boosts the already high healing benefits of hydrolyzed peptides from white fish, which include: 1. High Bioavailability and Digestibility Smaller peptide size : The hydrolysis process breaks down protein into smaller peptides, making them easier to digest and absorb. Efficient nutrient uptake : Helps ensure the...",
    "enrichment_note": "Section A: appended Bioavailability-Factors extras per Glen. Source: Glen's Products-Worklist.md.",
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "es3-nerve": {
    "name": "ES3 Nerve Function Energetic Star Infoceutical",
@@ -4519,7 +4524,8 @@
     "Synergy C"
    ],
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "potassium-citrate": {
    "name": "Potassium Citrate",
@@ -4792,7 +4798,8 @@
    "fmp_id": "879",
    "qty_pricing": true,
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "dry-eye-relief-program": {
    "name": "Dry Eye Relief Program",
@@ -5111,7 +5118,8 @@
    ],
    "learn_markdown": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 2 capsules a day with food, or as guided.\n\n- Vitamin A (Retinyl Palmitate) 5000 IU\n- Vitamin C (Ascorbyl Palmitate) 50 mg\n- Vitamin D3 (Cholecalciferol) 400 IU\n- Vitamin E (D-Alpha Tocopheryl Succinate) 15 IU\n- Coenzyme Q10 (Ubiquinone) 5 mg\n- Magnesium (Mg Acetyl Taurate) 3 mg\n- Zinc (Zinc Carnosine) 5 mg\n- Iodine (Laminaria digitata) 150 mcg\n- Selenium (Methylselenocysteine) 70 mcg\n- Carnosine (Zinc Carnosine) 17 mg\n- Acetyl Taurate (Mg Acetyl Taurate) 47 mg\n- NAC (N-Acetyl L-Cysteine) 90 mg\n- GSH (Reduced & S-Acetyl Glutathione) 5 mg\n- Rutin (Sophora japonica) 10 mg\n- Luteolin (Reseda spp.) 10 mg\n- Apigenin (Apium graveolens) 10 mg\n- Quercetin Dihydrate (Sophora japonica) 10 mg\n- Silymarin 80% (Silybum marianum) 10 mg\n- Ellagic Acid (Rubus spp.) 10 mg\n- Polyphenols (Camellia sinensis) 10 mg\n- Oat Straw 100:1 (Avena sativa) 15 mg\n- Mistletoe 4:1 (Viscum album) 5 mg\n- Withanolides 10% (Withania somnifera) 10 mg\n- Ginsenosides 80% (Panax ginseng) 7 mg\n- Noni (Morinda citrifolia) (fructus) 20 mg\n- AHCC 50% (Lentinula edodes) (mycelia) 20 mg\n- Berberine (Coptis chinensis) 15 mg\n- Curcumin (Curcuma longa) 10 mg\n- Chlorella (Chlorella spp.) (broken cell wall) 10 mg\n- Allicin 25% (Allium sativum) 10 mg\n- Phytoceramides (Amorphophallus konjac) 25 mg\n- Bioavailability Blend 34.5 mg\n\nBioavailability Blend (34.5 mg): Phosphatides 30% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "immune-modulation": {
    "warning": "Do not use if you are pregnant or breastfeeding. Consult your health professional before use if you take prescription medications, especially blood thinners, blood pressure or blood sugar medicines, or immune-suppressing medicines. Also consult first if you have a bleeding disorder, low blood pressure, or liver or gallbladder concerns, or are planning surgery. Stop use and consult your physician if you notice a rash, yellowing of the skin or eyes, or dark urine. This formula may affect bleeding, blood pressure, blood sugar and how some medications are processed.",
@@ -5329,7 +5337,8 @@
     "benefits"
    ],
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "macular-wellness-safranal": {
    "name": "Macular Wellness Safranal",
@@ -5738,7 +5747,8 @@
     "benefits"
    ],
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "longevity": {
    "name": "Longevity",
@@ -6818,7 +6828,8 @@
    "fmp_id": "1104",
    "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "hydrolyzed-collagen": {
    "name": "Hydrolyzed Collagen Powder",
@@ -7994,7 +8005,8 @@
     "benefits"
    ],
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "vitamin-p-polyphenols": {
    "name": "Vascular Integrity: Vitamin P Plus TECA",
@@ -8106,7 +8118,8 @@
    ],
    "ingredients_source": "fmp-bom-2026-05-23, corrected by Glen 2026-08-10 (32 species/34 strains; Bioavailability Blend removed)",
    "description": "Happy Cow Colostrum . Happy Cow Colostrum Immune Intelligence Happy Cow Colostrum is a synergistic blend featuring Colostrum from Cold-filtered 1st & 2nd milkings of Certified Organic Grass Fed Cows. Happy Cow Colostrum . Each Scoop provides: Lactoferrin ( Capra aegagrus hircus ) 100 mg Colostrum ( Capra aegagrus hircus ) 150 mg Microbiome (32 probiotic strains) 100 mg Cranesbill ( Geranium maculatum ) 50 mg Chlorella pyrenoidosa (broken cell wall) 50 mg Caprylic Acid (from Cocos nucifera ) 50 mg Bioavailability Factors: 34.5 mg Vitamin B13: Phosphatides 30% ( Helianthus annua ) EGb 761 (...",
-   "display_name": "Immune Intelligence (Happy Cow Colostrum)"
+   "display_name": "Immune Intelligence (Happy Cow Colostrum)",
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "mb4-cch": {
    "name": "MB4 CCH Cerebral Cortex Hologram Infoceutical",
@@ -8432,7 +8445,8 @@
    "bottle_type": "30 Caps",
    "fmp_id": "351",
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "et12-liver-3": {
    "name": "ET12 Liv-3 Liver Energetic Terrain Infoceutical",
@@ -9319,7 +9333,8 @@
     "benefits"
    ],
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "nerve-repair": {
    "name": "Nerve Repair",
@@ -10428,7 +10443,8 @@
    "bottle_type": "30 Caps",
    "fmp_id": "483",
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "content_since": "2026-11-10T17:19:24+00:00"
   },
   "et7-cfs": {
    "name": "ET7 CFS Fatigue Energetic Terrain Infoceutical",
