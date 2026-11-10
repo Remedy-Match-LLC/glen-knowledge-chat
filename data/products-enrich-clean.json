@@ -6537,54 +6537,78 @@
   },
   "nerve-repair": {
     "name": "Nerve Repair",
-    "ingredients_source": "fmp_new",
+    "ingredients_source": "fmp-run-114",
     "ingredients": [
       {
-        "name": "Benfotiamine",
-        "dose": "100 mg"
+        "name": "ALCAR (Acetyl L-Carnitine)",
+        "dose": "160 mg"
       },
       {
-        "name": "Pyridoxal-5-Phosphate (P5P)",
+        "name": "Lion's Mane Polysaccharides 30% (Hericium erinaceus)",
+        "dose": "160 mg"
+      },
+      {
+        "name": "Na RALA (Stabilized Bio-enhanced Na R-Lipoate)",
+        "dose": "60 mg"
+      },
+      {
+        "name": "Vitamin B1 (as Benfotiamine)",
+        "dose": "60 mg"
+      },
+      {
+        "name": "Vitamin B6 (as Pyridoxal 5-Phosphate)",
         "dose": "10 mg"
       },
       {
-        "name": "R-Lipoic Acid",
-        "dose": "10 mg"
+        "name": "Vitamin B12 (as Methylcobalamin)",
+        "dose": "500 mcg"
       },
       {
-        "name": "Baicalein",
-        "dose": "100 mg"
+        "name": "Phosphatides 30% (Helianthus annuus), in the Bioavailability Blend",
+        "dose": "13 mg"
       },
       {
-        "name": "Tetrahydrocurcumin",
-        "dose": "100 mg"
+        "name": "Ginkgo 10:1 (Ginkgo biloba), in the Bioavailability Blend",
+        "dose": "8 mg"
       },
       {
-        "name": "Methylcobalamin",
-        "dose": "1 mg"
-      },
-      {
-        "name": "Riboflavin-5-Phosphate (Coenzyme B2)",
+        "name": "Vitamin B3 (as Niacin), in the Bioavailability Blend",
         "dose": "5 mg"
       },
       {
-        "name": "5-MTHF (Methylfolate)",
-        "dose": "0.4 mg"
+        "name": "Moringa 100:1 (Moringa oleifera), in the Bioavailability Blend",
+        "dose": "3 mg"
       },
       {
-        "name": "Mixed Tocopherols",
-        "dose": "50 mg"
+        "name": "DGL Licorice (Glycyrrhiza glabra), in the Bioavailability Blend",
+        "dose": "2 mg"
       },
       {
-        "name": "Tocotrienols",
-        "dose": "100 mg"
+        "name": "Vinpocetine 99% (Vinca minor), in the Bioavailability Blend",
+        "dose": "1 mg"
       },
       {
-        "name": "Copper Glycinate",
-        "dose": "8 mg"
+        "name": "Gingerols 10% (Zingiber officinale), in the Bioavailability Blend",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Piperine 95% (Piper nigrum), in the Bioavailability Blend",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Humic Acid, in the Bioavailability Blend",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Fulvic Acid, in the Bioavailability Blend",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Spirit Minerals (ORMUS), in the Bioavailability Blend",
+        "dose": "0.5 mg"
       }
     ],
-    "description": "Nerve Repair (remedies > syntropy). Price: $70.\nNerve Repair (remedies > syntropy). Nerve Repair Nerve Repair Retail $80.00 Your Price $70 One organic Pullulan capsule of Nerve Repair supplies: ALCAR (Acetyl L-Carnitine) 160 mg Na RALA (Stabilized Bioenhanced Na R-Alpha Lipoate) 60 mg Lion's Mane Polysaccharides 30% ( Hericium erinaceus ) 160 mg Vitamin B1: Benfotiamine 60 mg Vitamin B6: P5P (Pyridoxal 5-Phosphate) 10 mg Vitamin B12: Methylcobalamin 500 mcg Bioavailability Proprietary Blend 34.5 mg Vitamin B13: Phosphatides 50% ( Helianthus annua ) EGb 761 ( Ginkgo biloba ) (24% Flavone Glycosides, 6% Lactones, <0.0005% Ginkgolic Acid) Vitamin B3 (as Niacin) 5 mg 25% Miracle Tree 100:1 ( Moringa oleifera ) Licorice Omnipotent ( Glycyrrhiza glabra ) Vinpocetine ( Vinca minor ) Gingerol 10% ( Zingiber officinalis ) Piperine ( Piper nigrum ) Fulvic Acid Humic Acid 11 Spirit Minerals Our Bioavailability Blend supplies 21 master ingredients formulated to: \u2022 increase the aqueous solubility of fat-soluble phytonutrients \u2022 restore the in\nNerve Repair (remedies > syntropy). \u2022 stimulate local circulation in the small intestine to increase nutrient absorption into the blood \u2022 increase c\u2026",
+    "description": "Each capsule of Nerve Repair supplies ALCAR (acetyl L-carnitine) 160 mg, lion's mane polysaccharides 30% 160 mg, stabilized Na R-lipoate 60 mg, vitamin B1 as benfotiamine 60 mg, vitamin B6 as pyridoxal 5-phosphate 10 mg and vitamin B12 as methylcobalamin 500 mcg. It also holds 34.5 mg of our Bioavailability Blend, which includes vinpocetine 1 mg. Take 1 capsule up to 5 times daily with food, or as guided.",
     "gk_stale": true,
     "stale_reason": "GK lists ALCAR and Lion's Mane Polysaccharides not in authoritative formula; authoritative has Baicalein, Tetrahydrocurcumin, Riboflavin-5-Phosphate, 5-MTHF, Mixed Tocopherols, Tocotrienols, and Copper Glycinate absent from GK page.",
     "added_on_gk": [

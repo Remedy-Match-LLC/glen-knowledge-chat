@@ -9329,62 +9329,83 @@
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/550-nerve-repair",
    "ingredients": [
     {
-     "name": "Benfotiamine",
-     "dose": "100 mg"
+     "name": "ALCAR (Acetyl L-Carnitine)",
+     "dose": "160 mg"
     },
     {
-     "name": "Pyridoxal 5-Phosphate, P-5-P, P5P, Vitamin B6",
+     "name": "Lion's Mane Polysaccharides 30% (Hericium erinaceus)",
+     "dose": "160 mg"
+    },
+    {
+     "name": "Na RALA (Stabilized Bio-enhanced Na R-Lipoate)",
+     "dose": "60 mg"
+    },
+    {
+     "name": "Vitamin B1 (as Benfotiamine)",
+     "dose": "60 mg"
+    },
+    {
+     "name": "Vitamin B6 (as Pyridoxal 5-Phosphate)",
      "dose": "10 mg"
     },
     {
-     "name": "Bio-Enhanced™ R-Lipoic Acid",
-     "dose": "10 mg"
+     "name": "Vitamin B12 (as Methylcobalamin)",
+     "dose": "500 mcg"
     },
     {
-     "name": "5,6,7-trihydroxyflavone",
-     "dose": "100 mg"
+     "name": "Phosphatides 30% (Helianthus annuus), in the Bioavailability Blend",
+     "dose": "13 mg"
     },
     {
-     "name": "Tetrahydrocurcumin, water soluble Curcuminoid",
-     "dose": "100 mg"
+     "name": "Ginkgo 10:1 (Ginkgo biloba), in the Bioavailability Blend",
+     "dose": "8 mg"
     },
     {
-     "name": "Vitamin B12, Methylcobalamin",
-     "dose": "1 mg"
-    },
-    {
-     "name": "Lion's Mane Erinacines 5% (Hericium erinaceus) (mycelium)",
-     "dose": "100 mg"
-    },
-    {
-     "name": "Riboflavin-5-Phosphate Vitamin B2",
+     "name": "Vitamin B3 (as Niacin), in the Bioavailability Blend",
      "dose": "5 mg"
     },
     {
-     "name": "5-MTHF",
-     "dose": "400 mcg"
+     "name": "Moringa 100:1 (Moringa oleifera), in the Bioavailability Blend",
+     "dose": "3 mg"
     },
     {
-     "name": "Mixed Tocopherols",
-     "dose": "50 mg"
+     "name": "DGL Licorice (Glycyrrhiza glabra), in the Bioavailability Blend",
+     "dose": "2 mg"
     },
     {
-     "name": "Rice bran oil",
-     "dose": "100 mg"
+     "name": "Vinpocetine 99% (Vinca minor), in the Bioavailability Blend",
+     "dose": "1 mg"
     },
     {
-     "name": "Copper Glycinate Amino Acid Chelated Copper Organic Copper",
-     "dose": "8 mg"
+     "name": "Gingerols 10% (Zingiber officinale), in the Bioavailability Blend",
+     "dose": "0.5 mg"
+    },
+    {
+     "name": "Piperine 95% (Piper nigrum), in the Bioavailability Blend",
+     "dose": "0.5 mg"
+    },
+    {
+     "name": "Humic Acid, in the Bioavailability Blend",
+     "dose": "0.5 mg"
+    },
+    {
+     "name": "Fulvic Acid, in the Bioavailability Blend",
+     "dose": "0.5 mg"
+    },
+    {
+     "name": "Spirit Minerals (ORMUS), in the Bioavailability Blend",
+     "dose": "0.5 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Nerve Repair . Price: $70. Nerve Repair . Nerve Repair Nerve Repair One organic Pullulan capsule of Nerve Repair supplies: ALCAR (Acetyl L-Carnitine) 160 mg Na RALA (Stabilized Bioenhanced Na R-Alpha Lipoate) 60 mg Lion's Mane Polysaccharides 30% ( Hericium erinaceus ) 160 mg Vitamin B1: Benfotiamine 60 mg Vitamin B6: P5P (Pyridoxal 5-Phosphate) 10 mg Vitamin B12: Methylcobalamin 500 mcg Bioavailability Proprietary Blend 34.5 mg Vitamin B13: Phosphatides 50% ( Helianthus annua ) EGb 761 ( Ginkgo biloba ) (24% Flavone Glycosides, 6% Lactones, <0.0005% Ginkgolic Acid) Vitamin B3 (as Niacin)...",
+   "ingredients_source": "fmp-run-114",
+   "description": "Each capsule of Nerve Repair supplies ALCAR (acetyl L-carnitine) 160 mg, lion's mane polysaccharides 30% 160 mg, stabilized Na R-lipoate 60 mg, vitamin B1 as benfotiamine 60 mg, vitamin B6 as pyridoxal 5-phosphate 10 mg and vitamin B12 as methylcobalamin 500 mcg. It also holds 34.5 mg of our Bioavailability Blend, which includes vinpocetine 1 mg. Take 1 capsule up to 5 times daily with food, or as guided.",
    "enrichment_note": "Recovered from FMP (Glen 2026-06-05); label-formatted (FDA DVs).",
    "bottle_type": "30 Caps",
    "fmp_id": "491",
    "qty_pricing": true,
    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "chat_caution": true,
+   "directions": "1 capsule up to 5 times daily with food, or as guided."
   },
   "transresveratrol": {
    "name": "Trans-Resveratrol",
