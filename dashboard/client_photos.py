@@ -205,7 +205,10 @@ def _name_key(name):
     apostrophe, not the digits 39). E4L stores some names escaped (2026-11-10)."""
     import html as _html
     raw = _html.unescape(_html.unescape(name or ""))
-    return " ".join("".join(ch for ch in raw.lower() if ch.isalnum() or ch == " ").split())
+    # Any whitespace a code decodes to (&nbsp;, a tab) is a word break, never deleted:
+    # "Ann&nbsp;A Bell" must key as "ann a bell", not "anna bell" (round 2).
+    return " ".join("".join(ch if (ch.isalnum() or ch.isspace()) else ""
+                            for ch in raw.lower()).split())
 
 
 def fmp_people_for_email(cx, email):
