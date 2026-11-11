@@ -45,7 +45,16 @@ def test_the_catalogue_carries_the_exact_words_live_and_pinned():
     assert before["ingredients_source"] != "manual"
 
 
-def test_a_required_twice_daily_dose_is_not_split_by_this_rule():
-    e = S.build_schedule([{"name": "X", "dosage": "1 capsule", "frequency": "twice daily",
-                           "timing": "between meals or at bedtime"}])["entries"][0]
-    assert "and/or" not in e["food"]
+import pytest
+
+
+@pytest.mark.parametrize("freq,optional", [
+    ("up to twice daily", True), ("up to 2 times daily", True),
+    ("once or twice daily", True), ("1 to 2 times daily", True),
+    ("twice a day", False), ("twice daily", False), ("2 times daily", False)])
+def test_two_doses_with_this_timing_never_stack_at_bedtime(freq, optional):
+    e = S.build_schedule([{"name": "X", "dosage": "1 capsule", "frequency": freq,
+                           "timing": "between meals or at bedtime, or as guided."}])["entries"][0]
+    assert e["slots"] == ["Mid-afternoon", "Bedtime"], freq
+    assert e["per_slot"] == "1 capsule"
+    assert ("and/or" in e["food"]) is optional, freq
