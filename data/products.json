@@ -8506,6 +8506,8 @@
    "ingredients_source": "db-formulations-2026-06-25",
    "description": "Alkalize Bicarbonate Blend . Price: $70.",
    "bottle_type": "30 Caps",
+   "directions": "Take 1 capsule up to twice daily, between meals or at bedtime, or as guided.",
+   "enrichment_note": "Glen 2026-11-10: directions set (\"Make it up to twice daily\"). FileMaker has only Alkalize Powder, so the capsule carried no dose.",
    "fmp_id": "350"
   },
   "mb2-cmh": {
