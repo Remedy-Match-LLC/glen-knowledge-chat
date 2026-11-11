@@ -1,6 +1,6 @@
 """Alkalize Bicarbonate Blend directions (Glen, 2026-11-10): "Take 1 capsule up to twice
 daily, between meals or at bedtime, or as guided." On the schedule, 1 capsule
-mid-afternoon and/or 1 at bedtime ("and/or"). FileMaker has only Alkalize Powder."""
+mid-afternoon and/or 1 at bedtime ("and/or"). FileMaker names the capsule's row "Alkalize Powder"."""
 import json
 import sqlite3
 

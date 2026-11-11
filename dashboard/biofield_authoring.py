@@ -754,7 +754,7 @@ _DOSE_OVERRIDES = {
     "breast support": {"dosage": "1 capsule", "frequency": "once a day",
                        "timing": "with food, or as guided."},
     # Glen, 2026-11-10: "Take 1 capsule up to twice daily, between meals or at bedtime, or as
-    # guided." FileMaker has only "Alkalize Powder", so the capsule had no dose at all.
+    # guided." The capsule's FileMaker row (350) is named "Alkalize Powder", so the name never matched.
     "alkalize bicarbonate blend": {"dosage": "1 capsule", "frequency": "up to twice daily",
                                    "timing": "between meals or at bedtime, or as guided."},
 }
