@@ -33,6 +33,10 @@ REFUSAL = ("Alkalize Bicarbonate Blend is not ready to order yet. "
 URL = f"/begin/product/{SLUG}"
 # Still waitlist_only, so the generic sign-up tests run against a live list.
 HELD = "fungal-nail-repair"
+HELD_REFUSAL = ("Fungal Nail Repair is not ready to order yet. "
+                "Join the waiting list on its page.")
+HELD_URL = f"/begin/product/{HELD}"
+UNIT_CENTS = 7000          # Alkalize's retail price, a unit
 
 
 def _real():
@@ -63,6 +67,19 @@ def _no_payment(monkeypatch):
     return calls
 
 
+def _refused(r, line=HELD_REFUSAL, url=HELD_URL, code=400):
+    assert r.status_code == code, (r.status_code, r.get_data(as_text=True)[:300])
+    body = r.get_json() or {}
+    assert line in (body.get("error") or ""), body
+    assert body.get("url") == url, body
+
+
+def _alk_line(pc):
+    """Alkalize's one priced line in a _price_cart result."""
+    (line,) = [ln for ln in pc["priced"]["lines"] if ln["slug"] == SLUG]
+    return line
+
+
 def _not_refused(r):
     """The answer carries no waiting-list refusal for Alkalize."""
     text = r.get_data(as_text=True)
@@ -79,7 +96,7 @@ def _stop_after_pricing(monkeypatch):
 
     def spy(cart, **k):
         out = real(cart, **k)
-        priced.append([line["slug"] for line in cart])
+        priced.append({"slugs": [line["slug"] for line in cart], "result": out})
         raise app.CheckoutError("stopped after pricing")
     monkeypatch.setattr(app, "_price_cart", spy)
     return priced
@@ -125,11 +142,27 @@ def test_the_predicate_accepts_it_like_the_control(catalog):
 # ── Cart and checkout ─────────────────────────────────────────────────────────
 
 def test_price_cart_prices_it():
-    """Glen, 2026-11-10: orderable again, so the cart is priced, Alkalize included."""
-    pc = app._price_cart([{"slug": CONTROL, "qty": 1}, {"slug": SLUG, "qty": 1}],
+    """Glen, 2026-11-10: orderable again, so the cart is priced, Alkalize included at
+    $70 a unit before any volume discount."""
+    pc = app._price_cart([{"slug": CONTROL, "qty": 1}, {"slug": SLUG, "qty": 2}],
                          ship={"country": "US"})
-    assert pc and int(pc["priced"]["subtotal_cents"]) > 0
-    assert SLUG in json.dumps(pc, default=str)
+    line = _alk_line(pc)
+    assert line["qty"] == 2 and line["list_cents"] == 2 * UNIT_CENTS
+    assert 0 < line["line_total_cents"] <= line["list_cents"]
+    (qbo,) = [q for q in pc["qbo_lines"] if q["name"] == "Alkalize Bicarbonate Blend"]
+    assert qbo["amount"] == UNIT_CENTS / 100 and qbo["qty"] == 2
+
+
+def test_price_cart_refuses_a_held_product_before_pricing():
+    with pytest.raises(app.CheckoutError) as e:
+        app._price_cart([{"slug": CONTROL, "qty": 1}, {"slug": HELD, "qty": 1}],
+                        ship={"country": "US"})
+    assert HELD_REFUSAL in str(e.value)
+
+
+def test_buy_page_sends_a_held_buyer_to_the_product_page(client):
+    r = client.get(f"/begin/buy/{HELD}")
+    assert r.status_code == 302 and r.headers["Location"].endswith(HELD_URL)
 
 
 def test_buy_page_serves_the_buy_page(client):
@@ -145,10 +178,22 @@ def test_begin_checkout_reaches_pricing_and_no_payment_here(client, monkeypatch)
     calls = _no_payment(monkeypatch)
     priced = _stop_after_pricing(monkeypatch)
     monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
-    r = client.post(f"/begin/checkout/{SLUG}", json={"email": "a@x.com", "method": "card"})
+    r = client.post(f"/begin/checkout/{SLUG}",
+                    json={"email": "a@x.com", "method": "card", "qty": 2})
     _not_refused(r)
     assert r.status_code == 400 and r.get_json()["error"] == "stopped after pricing"
-    assert priced == [[SLUG]] and calls == []
+    assert [p["slugs"] for p in priced] == [[SLUG]] and calls == []
+    line = _alk_line(priced[0]["result"])
+    assert line["qty"] == 2 and line["list_cents"] == 2 * UNIT_CENTS
+    assert line["line_total_cents"] > 0
+
+
+def test_begin_checkout_refuses_a_held_product_before_any_payment(client, monkeypatch):
+    calls = _no_payment(monkeypatch)
+    priced = _stop_after_pricing(monkeypatch)
+    monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
+    _refused(client.post(f"/begin/checkout/{HELD}", json={"email": "a@x.com", "method": "card"}))
+    assert calls == [] and priced == []
 
 
 def test_cart_add_accepts_it(client, logdb):
@@ -160,28 +205,52 @@ def test_cart_add_accepts_it(client, logdb):
     assert item["available"] is True
 
 
-def test_reorder_subscribe_reaches_pricing(client, monkeypatch):
-    """Glen, 2026-11-10: a subscription holding Alkalize is priced, not refused. The test
-    stops it after pricing, so no payment is attempted."""
-    calls = _no_payment(monkeypatch)
-    priced = _stop_after_pricing(monkeypatch)
+def test_cart_add_refuses_a_held_product(client, logdb):
+    _refused(client.post("/api/cart/add", json={"slug": HELD}))
+
+
+def _subscribe_ready(monkeypatch):
     monkeypatch.setattr(app, "_reorder_email_from_cookie", lambda: "a@x.com")
     monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
     monkeypatch.setattr(app, "_subscriptions_enabled", lambda: True)
     monkeypatch.setattr(app, "_STRIPE_ACTIVE", True)
     monkeypatch.setenv("PRICING_ENGINE_CHECKOUT", "1")
+
+
+def test_reorder_subscribe_reaches_pricing(client, monkeypatch):
+    """Glen, 2026-11-10: a subscription holding Alkalize is priced, not refused, at $70 a
+    unit before discount. The test stops it after pricing, so no payment is attempted."""
+    calls = _no_payment(monkeypatch)
+    priced = _stop_after_pricing(monkeypatch)
+    _subscribe_ready(monkeypatch)
     r = client.post("/reorder/subscribe", json={
-        "cadence_months": 1, "items": [{"slug": SLUG, "qty": 1}],
+        "cadence_months": 1, "items": [{"slug": SLUG, "qty": 2}],
         "address": {"street": "1 A St", "country": "US"}})
     _not_refused(r)
     assert r.status_code == 400 and r.get_json()["error"] == "stopped after pricing"
-    assert priced and all(SLUG in p for p in priced) and calls == []
+    assert priced and all(SLUG in p["slugs"] for p in priced) and calls == []
+    line = _alk_line(priced[0]["result"])
+    assert line["qty"] == 2 and line["list_cents"] == 2 * UNIT_CENTS
+    assert line["line_total_cents"] > 0
+
+
+def test_reorder_subscribe_refuses_a_held_product(client, monkeypatch):
+    calls = _no_payment(monkeypatch)
+    _subscribe_ready(monkeypatch)
+    _refused(client.post("/reorder/subscribe", json={
+        "cadence_months": 1, "items": [{"slug": HELD, "qty": 1}],
+        "address": {"street": "1 A St", "country": "US"}}))
+    assert calls == []
 
 
 # ── Invoices ──────────────────────────────────────────────────────────────────
 
 def test_wholesale_order_is_built_and_credit_redeemed(monkeypatch, catalog):
-    """Glen, 2026-11-10: a practitioner's order holding Alkalize is built."""
+    """Glen, 2026-11-10: a practitioner's order holding Alkalize is built. Alkalize has no
+    wholesale_discount_pct, so its unit is wholesale_pricing's blended curve, not its
+    retail price: one bottle is the q=1 knot, $50 (KNOT_Q1_CENTS)."""
+    from dashboard import wholesale_pricing as wp
+    assert catalog[SLUG].get("wholesale_discount_pct") is None
     redeemed = []
     monkeypatch.setattr(wc.wallet, "redeem_for_order", lambda *a, **k: redeemed.append(a) or 0)
     out = wc.build_order([{"slug": SLUG, "qty": 1}], {"id": "p1", "modules_completed": 1},
@@ -189,6 +258,21 @@ def test_wholesale_order_is_built_and_credit_redeemed(monkeypatch, catalog):
     assert out["ok"] is True, out
     assert "url" not in out and REFUSAL not in json.dumps(out, default=str)
     assert len(redeemed) == 1
+    assert wp.KNOT_Q1_CENTS == 5000
+    (line,) = out["qbo_payload"]["lines"]
+    assert line["name"] == "Alkalize Bicarbonate Blend" and line["qty"] == 1
+    assert line["amount"] == wp.KNOT_Q1_CENTS / 100
+    assert out["subtotal_cents"] == wp.KNOT_Q1_CENTS
+    assert redeemed[0][1] == wp.KNOT_Q1_CENTS    # credit is offered against the real subtotal
+
+
+def test_wholesale_order_refuses_a_held_product_before_credit_is_redeemed(monkeypatch, catalog):
+    redeemed = []
+    monkeypatch.setattr(wc.wallet, "redeem_for_order", lambda *a, **k: redeemed.append(a) or 0)
+    out = wc.build_order([{"slug": HELD, "qty": 1}], {"id": "p1", "modules_completed": 1},
+                         catalog=catalog)
+    assert out["ok"] is False and out["error"] == HELD_REFUSAL and out["url"] == HELD_URL
+    assert redeemed == []
 
 
 def test_console_biofield_catalog_marks_it_ready(monkeypatch, catalog):
@@ -202,6 +286,16 @@ def test_console_biofield_catalog_marks_it_ready(monkeypatch, catalog):
     assert rows[CONTROL]["waitlist_only"] is False
 
 
+def test_console_biofield_catalog_marks_a_held_product_not_ready(monkeypatch, catalog):
+    monkeypatch.setattr(app._bos_products, "catalog", lambda **kw: [
+        dict(catalog[s], slug=s) for s in (HELD, CONTROL)])
+    monkeypatch.setattr(app, "_portal_console_ok", lambda: True)
+    rows = {p["slug"]: p for p in
+            app.app.test_client().get("/api/console/biofield-portal/catalog").get_json()["products"]}
+    assert rows[HELD]["waitlist_only"] is True
+    assert rows[CONTROL]["waitlist_only"] is False
+
+
 # ── The page ──────────────────────────────────────────────────────────────────
 
 def test_the_page_data_shows_its_price(client):
@@ -212,11 +306,17 @@ def test_the_page_data_shows_its_price(client):
     assert d.get("cta_url")
 
 
+def test_a_held_page_data_sells_nothing(client):
+    d = client.get(f"/begin/product-page-data/{HELD}").get_json()
+    assert d["waitlist_only"] is True
+    assert d["price"] == "" and d["price_cents"] is None
+    assert "cta_url" not in d and d["autoship_eligible"] is False
+
+
 # ── Autoship renewals ─────────────────────────────────────────────────────────
 
-def test_the_autoship_charge_job_charges_it_and_moves_the_date(monkeypatch, tmp_path, capsys):
-    """Glen, 2026-11-10: an existing autoship holding Alkalize is charged again and its
-    date moves on, like the control autoship in the same run."""
+def _autoship_run(monkeypatch, tmp_path, capsys, slug):
+    """A control autoship and one holding `slug`, both due, through the charge job."""
     from dashboard import subscriptions as subs
     path = str(tmp_path / "chat_log.db")
     monkeypatch.setattr(app, "LOG_DB", path)
@@ -236,7 +336,7 @@ def test_the_autoship_charge_job_charges_it_and_moves_the_date(monkeypatch, tmp_
         subs.migrate_add_failed_count(cx)
         ids = {}
         for key, items in (("control", [{"slug": CONTROL, "qty": 1}]),
-                           ("alk", [{"slug": CONTROL, "qty": 1}, {"slug": SLUG, "qty": 1}])):
+                           ("other", [{"slug": CONTROL, "qty": 1}, {"slug": slug, "qty": 1}])):
             ids[key] = subs.create(cx, email=f"{key}@x.com", stripe_customer_id="cus_t",
                                    stripe_payment_method_id="pm_t", items=items,
                                    cadence_months=1, ship_address={"state": "CA", "country": "US"},
@@ -246,12 +346,30 @@ def test_the_autoship_charge_job_charges_it_and_moves_the_date(monkeypatch, tmp_
                                    headers={"X-Cron-Secret": "cron-test"})
     assert r.status_code == 200, r.get_data(as_text=True)[:300]
     out = capsys.readouterr().out
-    assert sorted(charged) == sorted([str(ids["control"]), str(ids["alk"])]), (
-        r.get_json(), out[-2500:])
-    assert REFUSAL not in out and "not ready to order" not in out
     with sqlite3.connect(path) as cx:
         dates = dict(cx.execute("SELECT id, next_charge_date FROM subscriptions").fetchall())
-    assert dates[ids["alk"]] != "2000-01-01"
+    return r, charged, ids, out, dates
+
+
+def test_the_autoship_charge_job_charges_it_and_moves_the_date(monkeypatch, tmp_path, capsys):
+    """Glen, 2026-11-10: an existing autoship holding Alkalize is charged again and its
+    date moves on, like the control autoship in the same run."""
+    r, charged, ids, out, dates = _autoship_run(monkeypatch, tmp_path, capsys, SLUG)
+    assert sorted(charged) == sorted([str(ids["control"]), str(ids["other"])]), (
+        r.get_json(), out[-2500:])
+    assert REFUSAL not in out and "not ready to order" not in out
+    assert dates[ids["other"]] != "2000-01-01"
+    assert dates[ids["control"]] != "2000-01-01"
+
+
+def test_the_autoship_charge_job_refuses_a_held_product_and_keeps_the_date(
+        monkeypatch, tmp_path, capsys):
+    """An autoship holding a still-held product is not charged and keeps its date. The
+    control autoship in the same run is charged, so the job did run."""
+    r, charged, ids, out, dates = _autoship_run(monkeypatch, tmp_path, capsys, HELD)
+    assert charged == [str(ids["control"])], (r.get_json(), out[-2500:])
+    assert HELD_REFUSAL in out
+    assert dates[ids["other"]] == "2000-01-01"
     assert dates[ids["control"]] != "2000-01-01"
 
 
