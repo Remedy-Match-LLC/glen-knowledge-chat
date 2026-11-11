@@ -201,7 +201,14 @@ def for_client_surface(cx, email, client_id=None):
 
 
 def _name_key(name):
-    return " ".join("".join(ch for ch in (name or "").lower() if ch.isalnum() or ch == " ").split())
+    """A name as a comparison key, with HTML codes decoded first ("&#39;" is an
+    apostrophe, not the digits 39). E4L stores some names escaped (2026-11-10)."""
+    import html as _html
+    raw = _html.unescape(_html.unescape(name or ""))
+    # Any whitespace a code decodes to (&nbsp;, a tab) is a word break, never deleted:
+    # "Ann&nbsp;A Bell" must key as "ann a bell", not "anna bell" (round 2).
+    return " ".join("".join(ch if (ch.isalnum() or ch.isspace()) else ""
+                            for ch in raw.lower()).split())
 
 
 def fmp_people_for_email(cx, email):
