@@ -64,3 +64,10 @@ def test_a_decoded_space_is_a_word_break_not_deleted():
     for key in (_person_key, P._name_key):
         assert key("Ann&nbsp;A Bell") == "ann a bell"
         assert key("Ann&nbsp;A Bell") != key("Anna Bell")
+
+
+def test_accented_and_irish_names_from_e4l_match_their_plain_form():
+    from dashboard import client_photos as P
+    for key in (_person_key, P._name_key):
+        assert key("Richard Th&#233;riault") == key("Richard Thériault")
+        assert key("Linda O&#39;Brien") == key("Linda O'Brien")
