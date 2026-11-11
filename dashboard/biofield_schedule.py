@@ -181,9 +181,11 @@ def _placement_core(freq, timing, dosage):
     # "Between meals or at bedtime", taken up to twice a day: one dose mid-afternoon
     # and/or one at bedtime, never the whole day's dose at bedtime (Glen, 2026-11-10,
     # Alkalize Bicarbonate Blend: "and/or").
-    if (times == 2 and "between meal" in t
+    # Only an "up to" dose: the second one is optional, and the food note says so, so
+    # the two slots never read as two required doses (review round 2).
+    if (times == 2 and "up to" in (freq or "").lower() and "between meal" in t
             and any(k in t for k in ("or at bedtime", "or bedtime", "or before bed"))):
-        return ["Mid-afternoon", "Bedtime"], "between meals", dose
+        return ["Mid-afternoon", "Bedtime"], "between meals and/or at bedtime", dose
     if any(k in t for k in ("at night", "before bed", "bedtime", "evening")):
         return together("Bedtime", "")
     if any(k in t for k in ("on rising", "upon rising", "on waking",

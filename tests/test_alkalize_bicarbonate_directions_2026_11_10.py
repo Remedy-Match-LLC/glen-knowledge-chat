@@ -21,7 +21,7 @@ def test_the_schedule_puts_one_capsule_mid_afternoon_and_one_at_bedtime():
                                                  "Alkalize Bicarbonate Blend"))])["entries"][0]
     assert e["slots"] == ["Mid-afternoon", "Bedtime"]
     assert e["per_slot"] == "1 capsule"
-    assert e["food"].startswith("between meals")
+    assert e["food"].startswith("between meals and/or at bedtime")
 
 
 def test_a_plain_bedtime_dose_still_goes_together_at_bedtime():
@@ -34,5 +34,18 @@ def test_the_catalogue_carries_the_exact_words_live_and_pinned():
     live = json.load(open("data/products.json"))["products"]["alkalize-bicarbonate-blend"]
     pin = json.load(open("data/products-manual-corrections.json"))["alkalize-bicarbonate-blend"]
     assert live["directions"] == WORDS and pin["directions"] == WORDS
-    # A directions-only pin must not mark the formula as Glen-verified.
-    assert pin["ingredients_source"] == live["ingredients_source"] != "manual"
+    # A directions-only pin must not mark the formula as Glen-verified: run the real
+    # replay and compare the whole record (review round 2).
+    import copy
+    from scripts.apply_enrichment import apply_corrections
+    doc = json.load(open("data/products.json"))["products"]
+    before = copy.deepcopy(doc["alkalize-bicarbonate-blend"])
+    apply_corrections(doc, json.load(open("data/products-manual-corrections.json")))
+    assert doc["alkalize-bicarbonate-blend"] == before
+    assert before["ingredients_source"] != "manual"
+
+
+def test_a_required_twice_daily_dose_is_not_split_by_this_rule():
+    e = S.build_schedule([{"name": "X", "dosage": "1 capsule", "frequency": "twice daily",
+                           "timing": "between meals or at bedtime"}])["entries"][0]
+    assert "and/or" not in e["food"]
