@@ -437,7 +437,12 @@ def species_from_e4l(e4l_db, email):
 
 
 def _person_key(name):
-    return " ".join("".join(ch for ch in (name or "").lower()
+    """A name as a comparison key. E4L stores some names HTML-escaped ("Desiree&#39;
+    DallaGuardia", 9 of 952 clients on 2026-11-10), so the codes are decoded first.
+    Left in, "&#39;" keyed as "39" and the name matched nobody, which hid the photo."""
+    import html as _html
+    raw = _html.unescape(_html.unescape(name or ""))
+    return " ".join("".join(ch for ch in raw.lower()
                             if ch.isalnum() or ch == " ").split())
 
 
@@ -506,8 +511,11 @@ def _is_animal_species(sp):
 
 
 def subject_name(r):
-    """The name an E4L record's subject goes by: its animal_name, else its name."""
-    return (r[3] or "").strip() or (r[4] or "").strip()
+    """The name an E4L record's subject goes by: its animal_name, else its name.
+    Decoded, since E4L stores some names HTML-escaped: callers match this name
+    against FileMaker and show it on the page."""
+    import html as _html
+    return _html.unescape(_html.unescape((r[3] or "").strip() or (r[4] or "").strip()))
 
 
 def _subject_tokens(r):

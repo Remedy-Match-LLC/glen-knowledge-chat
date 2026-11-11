@@ -201,7 +201,11 @@ def for_client_surface(cx, email, client_id=None):
 
 
 def _name_key(name):
-    return " ".join("".join(ch for ch in (name or "").lower() if ch.isalnum() or ch == " ").split())
+    """A name as a comparison key, with HTML codes decoded first ("&#39;" is an
+    apostrophe, not the digits 39). E4L stores some names escaped (2026-11-10)."""
+    import html as _html
+    raw = _html.unescape(_html.unescape(name or ""))
+    return " ".join("".join(ch for ch in raw.lower() if ch.isalnum() or ch == " ").split())
 
 
 def fmp_people_for_email(cx, email):
