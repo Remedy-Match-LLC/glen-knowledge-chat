@@ -8479,7 +8479,6 @@
   },
   "alkalize-bicarbonate-blend": {
    "name": "Alkalize Bicarbonate Blend",
-   "waitlist_only": true,
    "price_cents": 7000,
    "pinecone_title": "Alkalize Bicarbonate Blend",
    "url": "https://myhealingoasis.com/begin/product/alkalize-bicarbonate-blend",
@@ -8506,6 +8505,8 @@
    "ingredients_source": "db-formulations-2026-06-25",
    "description": "Alkalize Bicarbonate Blend . Price: $70.",
    "bottle_type": "30 Caps",
+   "directions": "Take 1 capsule up to twice daily, between meals or at bedtime, or as guided.",
+   "enrichment_note": "Glen 2026-11-10: directions set (\"Make it up to twice daily\"). The capsule's FileMaker row (350) is named Alkalize Powder, so the name never matched and the capsule carried no dose.",
    "fmp_id": "350"
   },
   "mb2-cmh": {
