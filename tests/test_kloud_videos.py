@@ -48,6 +48,10 @@ def test_kloud_fibroblast_video_after_bemer_before_models():
     m = re.search(r'<section[^>]*id="kloud-video"[^>]*>.*?</section>', html, re.S)
     assert m
     sec = m.group(0)
-    assert 'src="https://www.youtube-nocookie.com/embed/H3qdRdE1lq4"' in sec
+    assert re.search(r'<iframe src="https://www\.youtube-nocookie\.com/embed/H3qdRdE1lq4" '
+                     r'title="Connective Tissue Fibroblast Growth With Kloud"', sec)
+    cap = re.search(r"<figcaption[^>]*>(.*?)</figcaption>", sec, re.S)
+    assert cap and cap.group(1).strip() == "Connective tissue fibroblast growth with the Kloud."
+    assert "<!--" not in sec.split("<section", 1)[1]
     assert "BEMER" not in sec
     assert _section(html).end() < m.start() and m.end() < html.index(">Two models<")
