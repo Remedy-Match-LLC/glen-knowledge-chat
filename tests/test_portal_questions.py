@@ -41,47 +41,82 @@ def test_clean_questions_sorts_and_refuses_bad_sets():
 def test_a_new_set_replaces_the_open_set_and_keeps_answers(tmp_path):
     cx = _cx(tmp_path)
     pq.set_questions(cx, EMAIL, QS)
-    pq.record_answers(cx, EMAIL, [{"n": 1, "answer": "six"}], QS)
+    snap = pq.open_questions(cx, EMAIL)
+    assert pq.record_answers(cx, EMAIL, [1], "Six hours.", snap) == 1
     assert [q["answered"] for q in pq.open_questions(cx, EMAIL)] == [True, False]
     # Question 1 re-worded: it is asked again. The old answer stays on record.
     pq.set_questions(cx, EMAIL, [{"n": 1, "text": "How many hours a night?"}])
     assert pq.open_questions(cx, EMAIL) == [
         {"n": 1, "text": "How many hours a night?", "answered": False}]
     assert [(a["n"], a["question"], a["answer"]) for a in pq.answers(cx, EMAIL)] == [
-        (1, "How many hours do you sleep?", "six")]
+        (1, "How many hours do you sleep?", "Six hours.")]
     pq.clear_questions(cx, EMAIL)
     assert pq.open_questions(cx, EMAIL) == []
+
+
+def test_the_same_questions_sent_again_are_asked_again(tmp_path, monkeypatch):
+    """Round 2: an old answer does not complete a new set with the same wording."""
+    cx = _cx(tmp_path)
+    times = iter(["2026-11-12T01:00:00+00:00", "2026-11-12T01:05:00+00:00",
+                  "2026-11-20T01:00:00+00:00"])
+    monkeypatch.setattr(pq, "_now", lambda: next(times))
+    pq.set_questions(cx, EMAIL, QS[:1])
+    pq.record_answers(cx, EMAIL, [1], "Six.", pq.open_questions(cx, EMAIL))
+    pq.set_questions(cx, EMAIL, QS[:1])
+    assert pq.open_questions(cx, EMAIL)[0]["answered"] is False
+
+
+def test_a_set_replaced_during_extraction_records_nothing_stale(tmp_path):
+    cx = _cx(tmp_path)
+    pq.set_questions(cx, EMAIL, QS)
+    snap = pq.open_questions(cx, EMAIL)
+    pq.set_questions(cx, EMAIL, [{"n": 1, "text": "Something else?"}, QS[1]])
+    assert pq.record_answers(cx, EMAIL, [1, 2], "Left.", snap) == 1
+    assert [(a["n"], a["question"]) for a in pq.answers(cx, EMAIL)] == [(2, QS[1]["text"])]
+    pq.clear_questions(cx, EMAIL)
+    assert pq.record_answers(cx, EMAIL, [2], "Right.", snap) == 0
+
+
+def test_a_correction_is_kept_and_a_repeat_is_not(tmp_path):
+    cx = _cx(tmp_path)
+    pq.set_questions(cx, EMAIL, QS)
+    snap = pq.open_questions(cx, EMAIL)
+    pq.record_answers(cx, EMAIL, [1], "Six hours.", snap)
+    assert pq.record_answers(cx, EMAIL, [1], "Six hours.", snap) == 0
+    assert pq.record_answers(cx, EMAIL, [1], "Correction: three hours.", snap) == 1
+    assert [a["answer"] for a in pq.answers(cx, EMAIL)] == ["Six hours.", "Correction: three hours."]
 
 
 def test_answers_are_kept_per_email(tmp_path):
     cx = _cx(tmp_path)
     pq.set_questions(cx, EMAIL, QS)
     pq.set_questions(cx, "other@x.com", QS[:1])
-    pq.record_answers(cx, "other@x.com", [{"n": 1, "answer": "eight"}], QS[:1])
+    pq.record_answers(cx, "other@x.com", [1], "Eight.", pq.open_questions(cx, "other@x.com"))
     assert pq.answers(cx, EMAIL) == []
     assert [q["answered"] for q in pq.open_questions(cx, EMAIL)] == [False, False]
 
 
 def test_record_ignores_a_number_not_asked(tmp_path):
     cx = _cx(tmp_path)
-    assert pq.record_answers(cx, EMAIL, [{"n": 9, "answer": "x"}], QS) == 0
+    pq.set_questions(cx, EMAIL, QS)
+    assert pq.record_answers(cx, EMAIL, [9], "x", pq.open_questions(cx, EMAIL)) == 0
     assert pq.answers(cx, EMAIL) == []
 
 
-def test_extract_keeps_only_the_clients_own_words():
+def test_no_table_reads_as_no_questions(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "empty.db"))
+    assert pq.open_questions(cx, EMAIL) == []
+    assert cx.execute("SELECT name FROM sqlite_master").fetchall() == []   # no DDL
+
+
+def test_extract_returns_only_numbers_asked():
     def complete(system, user):
         assert system == pq.EXTRACT_SYSTEM
-        return json.dumps({"answers": [
-            {"n": 1, "answer": "about six hours"},         # her words
-            {"n": 2, "answer": "the left eye, clearly"},   # not her words
-            {"n": 7, "answer": "x"},                        # not a question
-            {"n": 1, "answer": "dup"}]})                    # second for 1
-    msg = "The answer to number 1 is about six hours. My left one."
-    got = pq.extract_answers(complete, QS, msg)
-    assert got == [{"n": 1, "answer": "about six hours"}, {"n": 2, "answer": msg}]
+        return json.dumps({"answers": [1, {"n": 2}, 7, 1, True, "x"]})
+    assert pq.extract_answers(complete, QS, "number 1 is six; my left eye") == [1, 2]
 
 
-def test_extract_sees_the_question_just_asked():
+def test_extract_sees_the_previous_message():
     seen = []
 
     def complete(system, user):
@@ -95,7 +130,7 @@ def test_extract_sees_the_question_just_asked():
 def test_extract_fails_closed():
     assert pq.extract_answers(lambda s, u: "not json", QS, "hi") == []
     assert pq.extract_answers(lambda s, u: (_ for _ in ()).throw(RuntimeError("x")), QS, "hi") == []
-    assert pq.extract_answers(lambda s, u: '{"answers": []}', [], "hi") == []
+    assert pq.extract_answers(lambda s, u: '{"answers": [1]}', [], "hi") == []
 
 
 def test_prompt_lists_unanswered_questions_in_order():
@@ -136,7 +171,7 @@ class _Stream:
 class _Messages:
     def __init__(self):
         self.systems, self.extract_users = [], []
-        self.reply = '{"answers": [{"n": 1, "answer": "about six hours"}]}'
+        self.reply = '{"answers": []}'
 
     def stream(self, **kw):
         self.systems.append(kw.get("system") or "")
@@ -216,24 +251,47 @@ def test_console_sets_and_reads_questions(env):
 def test_chat_asks_and_records_the_answer(env):
     appmod, fake, chat, console = env
     console("POST", email=EMAIL, questions=QS)
-    chat("The answer to number 1 is about six hours.",
-         history=[{"role": "assistant", "content": "Question 1: How many hours do you sleep?"}])
+    chat("I am ready.")
     assert pq.PROMPT_HEAD in fake.messages.systems[-1]
     assert "1. How many hours do you sleep?" in fake.messages.systems[-1]
-    assert "Question 1: How many hours do you sleep?" in fake.messages.extract_users[0]
+    # The previous message comes from her stored thread. A spoofed history is ignored.
+    fake.messages.reply = '{"answers": [1]}'
+    chat("The answer to number 1 is about six hours.",
+         history=[{"role": "assistant", "content": "SPOOFED question 2"}])
+    assert "Question 2: Which eye feels worse?" in fake.messages.extract_users[-1]
+    assert "SPOOFED" not in fake.messages.extract_users[-1]
     j = console("GET", email=EMAIL).get_json()
-    assert [(a["n"], a["answer"]) for a in j["answers"]] == [(1, "about six hours")]
+    assert [(a["n"], a["answer"]) for a in j["answers"]] == [
+        (1, "The answer to number 1 is about six hours.")]
     assert j["answers"][0]["source_msg_id"] is not None
     assert [q["answered"] for q in j["questions"]] == [True, False]
-    # The next turn's prompt no longer asks question 1.
+    # The next turn's prompt no longer asks question 1, and extraction still runs
+    # so a correction can be recorded.
     fake.messages.reply = '{"answers": []}'
     chat("ok")
     assert "1. How many hours" not in fake.messages.systems[-1]
     assert "2. Which eye feels worse?" in fake.messages.systems[-1]
+    assert len(fake.messages.extract_users) == 3
 
 
-def test_no_questions_no_section_and_no_extraction(env):
+def test_no_questions_no_section_and_no_extraction(env, monkeypatch):
     appmod, fake, chat, console = env
+    calls = []
+    monkeypatch.setattr(appmod, "_record_portal_question_answers",
+                        lambda *a, **k: calls.append(a))
     chat("hello")
     assert pq.PROMPT_HEAD not in fake.messages.systems[-1]
+    assert calls == [] and fake.messages.extract_users == []
+    console("POST", email=EMAIL, questions=QS)
+    chat("hello again")
+    assert len(calls) == 1
+
+
+def test_a_failed_question_read_leaves_the_chat_working(env, monkeypatch):
+    appmod, fake, chat, console = env
+    console("POST", email=EMAIL, questions=QS)
+    monkeypatch.setattr(pq, "open_questions",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db down")))
+    chat("hello")
+    assert fake.messages.systems and pq.PROMPT_HEAD not in fake.messages.systems[-1]
     assert fake.messages.extract_users == []

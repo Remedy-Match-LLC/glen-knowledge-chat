@@ -35791,11 +35791,18 @@ def api_portal_chat(token):
     _sys = _pcz.system_prompt(ctx) + _STANDING_USE_RULE
     # Dr. Glen's numbered questions for this client (Glen, 2026-11-12). Best effort:
     # a failed read leaves the chat as it was.
-    _open_qs = []
+    # The previous message is read from her stored thread, never from the
+    # browser-supplied history, so it cannot be steered (review round 2).
+    _open_qs, _q_prev = [], ""
     try:
         from dashboard import portal_questions as _pq
         with db.connect(LOG_DB) as _qcx:
             _open_qs = _pq.open_questions(_qcx, email)
+            if _open_qs:
+                from dashboard import portal_chat as _pqc
+                _last = _pqc.list_messages(_qcx, email, limit=1)
+                if _last and _last[-1].get("role") != _pqc.CLIENT:
+                    _q_prev = str(_last[-1].get("content") or "")
         _qsec = _pq.prompt_section(_open_qs)
         if _qsec:
             _sys += "\n\n" + _qsec
@@ -35922,13 +35929,12 @@ def api_portal_chat(token):
         except Exception as e:
             print(f"[portal-chat] persist failed: {e!r}", flush=True)
         # Record which of Dr. Glen's numbered questions this message answers.
-        if any(not q.get("answered") for q in _open_qs):
+        # Answered questions stay in: a later message may correct an answer.
+        if _open_qs:
             try:
                 import threading as _th
-                _prev = next((str(m.get("content") or "") for m in reversed(history[-8:])
-                              if isinstance(m, dict) and m.get("role") != "user"), "")
                 _th.Thread(target=_record_portal_question_answers,
-                           args=(email, query, _prev, _open_qs, _client_msg_id),
+                           args=(email, query, _q_prev, _open_qs, _client_msg_id),
                            daemon=True).start()
             except Exception as e:
                 print(f"[portal-questions] extract failed: {type(e).__name__}", flush=True)
@@ -36223,24 +36229,25 @@ PORTAL_WARNING_SIGN_LINE = ("I have passed this to Dr. Glen. This chat is for su
                             "self-healing as a supplement to your local health care.")
 
 
-def _record_portal_question_answers(email, query, previous_assistant, questions,
+def _record_portal_question_answers(email, query, previous_message, questions,
                                     client_msg_id=None):
-    """Background: which of Dr. Glen's open numbered questions the client's message
-    answers (portal_questions.extract_answers, Haiku), stored in her own words.
-    Never logs the message or the answers."""
+    """Background: which of Dr. Glen's numbered questions the client's message
+    answers (portal_questions.extract_answers, Haiku). Her whole message is stored
+    against each one. Never logs the message or the answers. Her message is also in
+    her stored chat thread, so a lost background run loses no words."""
     try:
         from dashboard import portal_questions as _pq
-        todo = [q for q in questions if not q.get("answered")]
 
         def _complete(system, user):
             m = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=1500,
                                     system=system, messages=[{"role": "user", "content": user}])
             return m.content[0].text
 
-        found = _pq.extract_answers(_complete, todo, query, previous_assistant)
+        found = _pq.extract_answers(_complete, questions, query, previous_message)
         if found:
             with _db_lock, db.connect(LOG_DB) as _qcx:
-                n = _pq.record_answers(_qcx, email, found, todo, source_msg_id=client_msg_id)
+                n = _pq.record_answers(_qcx, email, found, query, questions,
+                                       source_msg_id=client_msg_id)
             print(f"[portal-questions] recorded {n} answer(s)", flush=True)
         return found
     except Exception as e:
