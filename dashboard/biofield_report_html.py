@@ -1359,7 +1359,7 @@ async function minePaste(btn){var box=document.getElementById('pasteNotes'),text
   if(j.already)cl+=' Already listed: '+j.already+'.';
   if(j.clinical_note)cl+=' '+j.clinical_note;
   if(j.offered){try{window.refreshRecords&&window.refreshRecords()}catch(e){}}
-  if(box.value===text)box.value='';
+  if(box.value===text&&!j.keep_notes)box.value='';
   pstat((j.added?'Added '+j.added+' stress(es) from the pasted notes.':'No new stresses found in the pasted notes.')+sk+cl)}
  finally{if(btn)btn.disabled=false}}
 async function loadClinicalProposals(){

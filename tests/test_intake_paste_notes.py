@@ -287,7 +287,7 @@ def test_page_has_paste_box_and_posts_to_route():
     body = body[:body.index("\nasync function", 1)]
     assert "btn.disabled=true" in body
     assert "finally{if(btn)btn.disabled=false}" in body
-    assert "if(box.value===text)box.value=''" in body
+    assert "if(box.value===text&&!j.keep_notes)box.value=''" in body
     # loadStress() runs whenever something was added, before the error branch returns.
     assert body.index("if(j.added>0)loadStress()") < body.index("if(j.error)")
     # The box is cleared only on success: after the error branch has returned.

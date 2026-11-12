@@ -1340,9 +1340,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception:
             # Never echo the exception: its text can carry the pasted notes.
             return {"added": added, "skipped": skipped, "error": PASTE_FAILED}
-        return {"added": added, "skipped": skipped, **_paste_clinical(cx, test_id, text)}
+        try:
+            clinical = _paste_clinical(cx, test_id, text)
+        except Exception:
+            # The stresses above are kept and reported (review round 3).
+            clinical = {"offered": 0, "already": 0, "clinical_note": PASTE_CLINICAL_FAILED,
+                        "keep_notes": True}
+        return {"added": added, "skipped": skipped, **clinical}
 
     PASTE_CLINICAL_FAILED = "Conditions and medicines could not be read from the notes."
+    PASTE_PROFILE_UNCHECKED = ("The client's profile could not be checked, so some "
+                               "offered items may already be on it.")
 
     def _paste_clinical(cx, test_id, text):
         """Conditions and medicines in the notes, offered for Glen to accept (Glen,
@@ -1366,16 +1374,24 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"offered": 0, "already": 0, "clinical_note": "Conditions and medicines were not "
                     "offered: this address is shared, or E4L could not be checked."}
         known = [d["label"] for d in decisions(cx, test_id).values()]
+        profile_note = ""
         if not (using_default_fetch_profile and os.environ.get("CI")):
             try:
                 known += profile_labels(fetch_profile(email) or {}, cx)
             except Exception:
-                pass    # duplicates of profile items may be offered; Glen still decides
+                # Glen still decides, but he is told the check was not made (round 2).
+                profile_note = PASTE_PROFILE_UNCHECKED
         try:
             got = _br.store_pasted(cx, email, test_id, text, interpret_complete, known)
         except Exception:
             # Never echo the exception: its text can carry the pasted notes.
-            return {"offered": 0, "already": 0, "clinical_note": PASTE_CLINICAL_FAILED}
+            # The box keeps the notes so they can be pasted again (review round 2).
+            return {"offered": 0, "already": 0, "clinical_note": PASTE_CLINICAL_FAILED,
+                    "keep_notes": True}
+        if got.get("clinical_note"):
+            got["keep_notes"] = True     # some parts were not read
+        if profile_note:
+            got["clinical_note"] = " ".join(x for x in (got.get("clinical_note"), profile_note) if x)
         return got
 
     def _seed_stresses(cx, test_id, *, force=False, layers=None):

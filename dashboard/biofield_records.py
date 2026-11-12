@@ -488,8 +488,13 @@ def _label_keys(label):
 def _medicine_name(text):
     """A medicine's name without its dose: "Latanoprost 0.005% one drop" -> latanoprost."""
     from dashboard.biofield_clinical_proposals import item_key
-    # Cut at "(" or at a number after a space, so "Vitamin B12" keeps its 12.
-    return item_key(re.split(r"\(|\s\d", str(text or ""), maxsplit=1)[0])
+    # Cut at "(" or at a dose: a number with its unit. "Vitamin B12" keeps its 12, and
+    # "Omega 3 1000 mg" stays apart from "Omega 6" (review round 3).
+    return item_key(_DOSE.split(str(text or ""), maxsplit=1)[0])
+
+
+_DOSE = re.compile(r"\(|\s\d[\d.,/]*\s*(?:%|mg|mcg|µg|ug|g|kg|iu|ml|l|units?|drops?|"
+                   r"caps?(?:ules?)?|tabs?(?:lets?)?|tsp|tbsp|oz)(?![a-z])", re.I)
 
 
 def _medicine_places(label):
@@ -547,13 +552,16 @@ def store_pasted(cx, email, test_id, text, complete, known_labels=()):
     found, failed = _ask_pages(complete, pages)
     if pages and failed == len(pages):
         raise RuntimeError("pasted notes could not be read")
-    known, places = set(), set()
+    from dashboard.biofield_clinical_proposals import item_key
+    known, places, full = set(), set(), set()
     for label in known_labels or ():
         known |= _label_keys(label)
+        full.add(item_key(label))
         places |= _medicine_places(label)
     for kind, t in cx.execute(
             "SELECT kind, text FROM client_record_findings WHERE client_email=?", (email,)):
         known |= _label_keys(t)
+        full.add(item_key(t))
         places |= _medicine_places(t)
         if kind == "medication":
             places.add(_medicine_name(t))
@@ -565,8 +573,14 @@ def store_pasted(cx, email, test_id, text, complete, known_labels=()):
             continue
         keys = _label_keys(f["text"])
         name = _medicine_name(f["text"]) if f["kind"] == "medication" else ""
-        # A medicine already listed, or named in brackets on an item, is known.
-        if keys & known or (name and _named_in(name, places)):
+        # A medicine is known by its whole label, or by its name already listed as a
+        # medicine or in brackets. "Insulin (resistance)" is known as "insulin" for a
+        # condition, but it does not hide the medicine Insulin (review round 2).
+        if name:
+            seen = item_key(f["text"]) in full or _named_in(name, places)
+        else:
+            seen = bool(keys & known)
+        if seen:
             already += 1
             continue
         cur = cx.execute(
@@ -576,6 +590,7 @@ def store_pasted(cx, email, test_id, text, complete, known_labels=()):
         if (cur.rowcount or 0) > 0:
             offered += 1
         known |= keys
+        full.add(item_key(f["text"]))
         places |= _medicine_places(f["text"])
         if name:
             places.add(name)

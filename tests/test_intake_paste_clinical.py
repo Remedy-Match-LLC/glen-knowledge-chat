@@ -258,7 +258,7 @@ def _run_paste_js(reply):
                "global.loadStress=function(){};"
                "global.post=async function(){return " + json.dumps(reply) + "};"
                + body + ";minePaste(null).then(function(){"
-               "process.stdout.write(JSON.stringify({s:stat.textContent,r:refreshed}))});")
+               "process.stdout.write(JSON.stringify({s:stat.textContent,r:refreshed,b:box.value}))});")
     out = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=20)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout)
@@ -387,3 +387,77 @@ def test_the_added_day_is_local(monkeypatch):
     finally:
         monkeypatch.undo()
         time.tzset()
+
+
+# --- Review round 2 fixes ----------------------------------------------------------
+
+def test_a_condition_base_name_does_not_hide_a_medicine(tmp_path):
+    """"Insulin (resistance)" is known as insulin for a condition, but the medicine
+    Insulin is still offered. A hand-added medicine still blocks the same medicine."""
+    db = str(tmp_path / "p.db")
+    client = _app(db, [_f("medication", "Insulin"), _f("diagnosis", "Insulin"),
+                       _f("medication", "Latanoprost")]).test_client()
+    tid = _new(client)
+    _accept(client, tid, "Insulin (resistance)")
+    _accept(client, tid, "Latanoprost")
+    j = _paste(client, tid)
+    assert (j["offered"], j["already"]) == (1, 2)
+    assert [(r[0], r[1]) for r in _rows(db)] == [("medication", "Insulin")]
+
+
+def test_a_failed_profile_check_is_said(tmp_path, monkeypatch):
+    db = str(tmp_path / "p.db")
+    monkeypatch.delenv("CI", raising=False)
+
+    def broken(e):
+        raise RuntimeError("profile down")
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
+                        fetch_profile=broken, fetch_recent_comms=lambda e: {},
+                        interpret_complete=lambda s, u: json.dumps(
+                            {"findings": [_f("diagnosis", "Asthma")], "stresses": []}),
+                        e4l_db=_e4l(db, [])).test_client()
+    tid = _new(client)
+    j = _paste(client, tid)
+    assert j["offered"] == 1 and "profile could not be checked" in j["clinical_note"]
+
+
+def test_failed_reads_keep_the_notes_in_the_box(tmp_path):
+    db = str(tmp_path / "p.db")
+    client = _app(db, stresses=["Poor sleep"], raises=RuntimeError("down")).test_client()
+    tid = _new(client)
+    assert _paste(client, tid)["keep_notes"] is True
+    if not shutil.which("node"):
+        pytest.skip("needs node")
+    kept = _run_paste_js({"added": 1, "skipped": 0, "offered": 0, "already": 0,
+                          "clinical_note": "x", "keep_notes": True})
+    cleared = _run_paste_js({"added": 1, "skipped": 0, "offered": 1, "already": 0})
+    assert kept["b"] == "notes" and cleared["b"] == ""
+
+
+# --- Review round 3 fixes ----------------------------------------------------------
+
+def test_a_dose_cut_keeps_different_medicines_apart(tmp_path):
+    db = str(tmp_path / "p.db")
+    client = _app(db, [_f("medication", "Omega 3 1000 mg"), _f("medication", "Omega 6"),
+                       _f("medication", "Thyroid (Armour) 60 mg")],
+                  profile={"conditions": ["Thyroid"]}).test_client()
+    tid = _new(client)
+    j = _paste(client, tid)
+    assert (j["offered"], j["already"]) == (3, 0)
+    assert br._medicine_name("Vitamin D3 2000 IU") == "vitamin d3"
+    assert br._medicine_name("Latanoprost 0.005% one drop") == "latanoprost"
+    assert br._medicine_name("Vitamin B 6 50 mg") == "vitamin b 6"
+
+
+def test_a_failure_before_reading_keeps_the_stresses(tmp_path, monkeypatch):
+    db = str(tmp_path / "p.db")
+    client = _app(db, [_f("diagnosis", "Asthma")], stresses=["Poor sleep"]).test_client()
+    tid = _new(client)
+    import dashboard.biofield_clinical_proposals as cp
+
+    def boom(*a, **k):
+        raise RuntimeError("decisions down")
+    monkeypatch.setattr(cp, "decisions", boom)
+    r = client.post(f"/author/{tid}/mine-paste", json={"text": "notes"})
+    j = r.get_json()
+    assert r.status_code == 200 and j["added"] == 1 and j["keep_notes"] is True
