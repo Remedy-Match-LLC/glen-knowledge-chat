@@ -226,12 +226,52 @@ def test_a_merged_address_tags_the_surviving_person(cx):
     assert _queued(cx) == [("new@x.com", {"tags": [TAG]})]
 
 
-def test_a_reservation_lookup_that_fails_stops_the_list(cx, monkeypatch):
-    """Round 2: failing open would email every reserver."""
+def test_a_table_without_founding_columns_means_no_reservers(cx):
+    """Production, 2026-11-12: subscriptions exists but the founding columns do not. The
+    reserve path adds them before writing any reservation, so none can exist. The old
+    check raised UndefinedColumn here, which stopped every launch email."""
     subs.init_subscriptions_table(cx)          # the table exists but has no founding columns
     _join(cx, "a@x.com")
-    with pytest.raises(Exception):
-        pw.waiters_to_email(cx, SLUG)
+    assert [w["email"] for w in pw.waiters_to_email(cx, SLUG)] == ["a@x.com"]
+
+
+def test_a_reservation_lookup_that_fails_otherwise_stops_the_list(cx):
+    """Round 2: failing open would email every reserver. Only a missing table or column
+    means no reservers; any other failure raises."""
+    import sqlite3 as _sq
+
+    class _Broken:
+        def __init__(self, real):
+            self.real = real
+
+        def execute(self, sql, *a):
+            if "FROM subscriptions" in sql:
+                raise _sq.OperationalError("database is locked")
+            return self.real.execute(sql, *a)
+
+        def __getattr__(self, name):
+            return getattr(self.real, name)
+
+    subs.init_subscriptions_table(cx)
+    subs.migrate_add_founding_columns(cx)
+    _join(cx, "a@x.com")
+    with pytest.raises(_sq.OperationalError):
+        pw.waiters_to_email(_Broken(cx), SLUG)
+
+
+def test_the_failed_lookup_keeps_earlier_writes(cx):
+    """The savepoint undoes only the failed SELECT, never the caller's open writes."""
+    subs.init_subscriptions_table(cx)          # no founding columns: the lookup fails
+    _join(cx, "a@x.com")
+    cx.execute("UPDATE product_waitlist SET first_name='Kept' WHERE email='a@x.com'")
+    assert cx.in_transaction                   # the write is still open, not committed
+    assert pw._reserved(cx, SLUG) == set()
+    cx.rollback()                              # nothing was committed, so this drops the write...
+    assert cx.execute("SELECT first_name FROM product_waitlist WHERE email='a@x.com'").fetchone()[0] != "Kept"
+    cx.execute("UPDATE product_waitlist SET first_name='Kept' WHERE email='a@x.com'")
+    pw._reserved(cx, SLUG)
+    cx.commit()                                # ...and here the lookup left it in place to commit
+    assert cx.execute("SELECT first_name FROM product_waitlist WHERE email='a@x.com'").fetchone()[0] == "Kept"
 
 
 def test_no_reservations_table_means_no_reservers(cx):

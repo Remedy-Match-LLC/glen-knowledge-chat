@@ -312,19 +312,34 @@ def confirm(cx, token):
 
 
 def _reserved(cx, slug):
-    """Emails holding a live founding reservation. A missing table means none exist; any
-    OTHER failure raises, because failing open would email every reserver (round 2)."""
+    """Emails holding a live founding reservation.
+
+    A missing subscriptions table, or a table without the founding columns, means none
+    exist: the reserve and ship paths add those columns before they write any
+    reservation (subscriptions.migrate_add_founding_columns). Production has the table
+    without the columns, and the old check raised UndefinedColumn there, so no launch
+    email could ever be sent (2026-11-12). Any OTHER failure still raises, because
+    failing open would email every reserver (round 2).
+
+    The lookup runs inside a savepoint, as count_founding does. On Postgres a failed
+    SELECT aborts the whole transaction; rolling back to the savepoint undoes only it."""
+    from dashboard import subscriptions as _subs   # lazy: avoids an import cycle
+    cx.execute("SAVEPOINT waitlist_reserved")
     try:
-        cx.execute("SELECT 1 FROM subscriptions LIMIT 0").fetchall()
-    except Exception:  # noqa: BLE001 - no reservations table on a fresh database
+        rows = cx.execute(
+            "SELECT email FROM subscriptions WHERE founding=1 AND founding_slug=? "
+            "AND status!='cancelled'", (slug,)).fetchall()
+    except Exception as exc:
         try:
-            cx.rollback()
-        except Exception:  # noqa: BLE001
-            pass
-        return set()
-    return {_norm(_person_email(cx, _norm(r[0]))) for r in cx.execute(
-        "SELECT email FROM subscriptions WHERE founding=1 AND founding_slug=? "
-        "AND status!='cancelled'", (slug,)).fetchall()}
+            cx.execute("ROLLBACK TO SAVEPOINT waitlist_reserved")
+            cx.execute("RELEASE SAVEPOINT waitlist_reserved")
+        except Exception:
+            raise exc       # a dead connection: report the lookup's own failure
+        if _subs._schema_missing(exc):
+            return set()
+        raise
+    cx.execute("RELEASE SAVEPOINT waitlist_reserved")
+    return {_norm(_person_email(cx, _norm(r[0]))) for r in rows}
 
 
 def _unmailable(cx):
