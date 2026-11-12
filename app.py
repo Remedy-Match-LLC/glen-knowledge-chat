@@ -36030,6 +36030,9 @@ def api_console_portal_questions():
     if "@" not in email:
         return jsonify({"ok": False, "error": "email required"}), 400
     with _db_lock, db.connect(LOG_DB) as cx:
+        # Tables first: on Postgres a failed read of a missing table aborts the
+        # transaction, and the answers read after it would fail (review round 3).
+        _pq.ensure_tables(cx)
         if request.method == "POST":
             if body.get("clear") is True:
                 _pq.clear_questions(cx, email)

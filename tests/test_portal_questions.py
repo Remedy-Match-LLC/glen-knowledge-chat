@@ -295,3 +295,29 @@ def test_a_failed_question_read_leaves_the_chat_working(env, monkeypatch):
     chat("hello")
     assert fake.messages.systems and pq.PROMPT_HEAD not in fake.messages.systems[-1]
     assert fake.messages.extract_users == []
+
+
+def test_one_clients_questions_never_reach_another_clients_chat(env):
+    appmod, fake, chat, console = env
+    from dashboard import client_portal as _cp
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        other, _ = _cp.upsert_portal(cx, "b@x.com", "Bee", {})
+    console("POST", email=EMAIL, questions=QS)
+    r = appmod.app.test_client().post(f"/api/portal/{other}/chat", json={"query": "hi"})
+    r.data
+    assert pq.PROMPT_HEAD not in fake.messages.systems[-1]
+    assert "How many hours" not in fake.messages.systems[-1]
+    assert fake.messages.extract_users == []
+
+
+def test_console_read_creates_tables_before_reading(env, monkeypatch):
+    """Round 3: on Postgres a missing-table read aborts the transaction, so the
+    route makes the tables before its first read."""
+    appmod, fake, chat, console = env
+    order = []
+    real_ensure, real_open = pq.ensure_tables, pq.open_questions
+    monkeypatch.setattr(pq, "ensure_tables", lambda cx: order.append("ensure") or real_ensure(cx))
+    monkeypatch.setattr(pq, "open_questions", lambda cx, e: order.append("read") or real_open(cx, e))
+    assert console("GET", email=EMAIL).get_json() == {
+        "ok": True, "email": EMAIL, "questions": [], "answers": []}
+    assert order[0] == "ensure"
