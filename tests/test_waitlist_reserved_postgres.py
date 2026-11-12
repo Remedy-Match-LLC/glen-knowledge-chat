@@ -75,3 +75,27 @@ def test_reservations_are_still_found_once_the_columns_exist(monkeypatch):
         assert pw._reserved(cx, "neuro-magnesium") == {"res@x.com"}
     finally:
         _cleanup(cx)
+
+
+def test_missing_suppression_and_alias_tables_keep_the_earlier_write(monkeypatch):
+    """Round 1: _unmailable and _person_email rolled the whole transaction back when
+    their table was missing, dropping the caller's open writes."""
+    from dashboard import product_waitlist as pw
+    cx = _fresh(monkeypatch)
+    try:
+        cx.execute("DROP TABLE IF EXISTS email_suppression")
+        cx.execute("DROP TABLE IF EXISTS email_aliases")
+        cx.execute("DROP TABLE IF EXISTS people")
+        cx.execute("CREATE TABLE people (id SERIAL PRIMARY KEY, email TEXT UNIQUE, tags TEXT DEFAULT '[]')")
+        cx.commit()
+        cx.execute("INSERT INTO wl_probe VALUES ('kept')")       # uncommitted
+        assert pw._unmailable(cx) == set()
+        assert pw._person_email(cx, "a@x.com") == "a@x.com"
+        assert cx.execute("SELECT 1").fetchone()[0] == 1          # not aborted
+        cx.commit()
+        assert cx.execute("SELECT v FROM wl_probe").fetchone()[0] == "kept"
+    finally:
+        cx.rollback()
+        cx.execute("DROP TABLE IF EXISTS people")
+        cx.commit()
+        _cleanup(cx)

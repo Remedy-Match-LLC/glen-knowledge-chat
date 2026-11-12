@@ -138,15 +138,20 @@ def init_table(cx):
 
 def _person_email(cx, email):
     """The surviving person's address: a merged-away address tags the survivor (round 1)."""
+    from dashboard import person_aliases as _pa
+    cx.execute("SAVEPOINT waitlist_alias")
     try:
-        from dashboard import person_aliases as _pa
-        return _pa.canonical_email(cx, email) or email
+        out = _pa.canonical_email(cx, email) or email
     except Exception:  # noqa: BLE001 - no alias table yet
+        # Undo only this lookup: a full rollback would drop the caller's open writes.
         try:
-            cx.rollback()
+            cx.execute("ROLLBACK TO SAVEPOINT waitlist_alias")
+            cx.execute("RELEASE SAVEPOINT waitlist_alias")
         except Exception:  # noqa: BLE001
             pass
         return email
+    cx.execute("RELEASE SAVEPOINT waitlist_alias")
+    return out
 
 
 def _listed_row(cx, slug, email):
@@ -345,11 +350,15 @@ def _reserved(cx, slug):
 def _unmailable(cx):
     """Addresses the launch email must skip: suppressed (bounced) or unsubscribed."""
     out = set()
+    cx.execute("SAVEPOINT waitlist_suppression")
     try:
         out |= {_norm(r[0]) for r in cx.execute("SELECT email FROM email_suppression").fetchall()}
+        cx.execute("RELEASE SAVEPOINT waitlist_suppression")
     except Exception:  # noqa: BLE001 - no suppression table
+        # Undo only this lookup: a full rollback would drop the caller's open writes.
         try:
-            cx.rollback()
+            cx.execute("ROLLBACK TO SAVEPOINT waitlist_suppression")
+            cx.execute("RELEASE SAVEPOINT waitlist_suppression")
         except Exception:  # noqa: BLE001
             pass
     for e, t in cx.execute("SELECT email, tags FROM people WHERE tags LIKE ?",
