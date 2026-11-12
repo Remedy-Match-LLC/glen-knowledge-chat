@@ -35789,6 +35789,18 @@ def api_portal_chat(token):
     from dashboard import portal_concierge as _pcz
     ctx = _pcz.build_context(content, client_orders)
     _sys = _pcz.system_prompt(ctx) + _STANDING_USE_RULE
+    # Dr. Glen's numbered questions for this client (Glen, 2026-11-12). Best effort:
+    # a failed read leaves the chat as it was.
+    _open_qs = []
+    try:
+        from dashboard import portal_questions as _pq
+        with db.connect(LOG_DB) as _qcx:
+            _open_qs = _pq.open_questions(_qcx, email)
+        _qsec = _pq.prompt_section(_open_qs)
+        if _qsec:
+            _sys += "\n\n" + _qsec
+    except Exception as e:
+        print(f"[portal-questions] read failed: {type(e).__name__}", flush=True)
     if page_context:
         page_lines = [f"Current portal panel: {page_context.get('panel', 'unknown')}."]
         if page_context.get("title"):
@@ -35909,6 +35921,17 @@ def api_portal_chat(token):
                                        client_name=(portal.get("name") or "You"))
         except Exception as e:
             print(f"[portal-chat] persist failed: {e!r}", flush=True)
+        # Record which of Dr. Glen's numbered questions this message answers.
+        if any(not q.get("answered") for q in _open_qs):
+            try:
+                import threading as _th
+                _prev = next((str(m.get("content") or "") for m in reversed(history[-8:])
+                              if isinstance(m, dict) and m.get("role") != "user"), "")
+                _th.Thread(target=_record_portal_question_answers,
+                           args=(email, query, _prev, _open_qs, _client_msg_id),
+                           daemon=True).start()
+            except Exception as e:
+                print(f"[portal-questions] extract failed: {type(e).__name__}", flush=True)
         # Extract candidate health-record edits from the turn and queue them as
         # pending suggestions for the client to review (My Health Profile). Best
         # effort and flag-gated; must never break the chat stream.
@@ -35981,6 +36004,38 @@ def api_console_portal_messages(email):
         return jsonify({"error": "unauthorized"}), 401
     return jsonify({"email": (email or "").strip().lower(),
                     "messages": _portal_chat_thread(email)})
+
+
+@app.route("/api/console/portal/questions", methods=["GET", "POST"])
+def api_console_portal_questions():
+    """Console: Dr. Glen's numbered questions for one client's portal chat (Glen,
+    2026-11-12). POST {email, questions: [{n, text}]} replaces the open set, or
+    {email, clear: true} closes it. GET ?email= returns the questions and every answer
+    recorded, each with the question it answered. Answers are returned to the console
+    caller only and never logged."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import portal_questions as _pq
+    if request.method == "GET":
+        email = (request.args.get("email") or "").strip().lower()
+    else:
+        body = request.get_json(silent=True) or {}
+        email = (body.get("email") or "").strip().lower()
+    if "@" not in email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        if request.method == "POST":
+            if body.get("clear") is True:
+                _pq.clear_questions(cx, email)
+            else:
+                try:
+                    qs = _pq.clean_questions(body.get("questions"))
+                except ValueError as e:
+                    return jsonify({"ok": False, "error": str(e)}), 400
+                _pq.set_questions(cx, email, qs, set_by="console")
+        return jsonify({"ok": True, "email": email,
+                        "questions": _pq.open_questions(cx, email),
+                        "answers": _pq.answers(cx, email)})
 
 
 @app.route("/api/console/portal/inbound")
@@ -36166,6 +36221,31 @@ def api_console_portal_draft_reply(email):
 # triage item was actually stored, because its first sentence says so.
 PORTAL_WARNING_SIGN_LINE = ("I have passed this to Dr. Glen. This chat is for supporting your "
                             "self-healing as a supplement to your local health care.")
+
+
+def _record_portal_question_answers(email, query, previous_assistant, questions,
+                                    client_msg_id=None):
+    """Background: which of Dr. Glen's open numbered questions the client's message
+    answers (portal_questions.extract_answers, Haiku), stored in her own words.
+    Never logs the message or the answers."""
+    try:
+        from dashboard import portal_questions as _pq
+        todo = [q for q in questions if not q.get("answered")]
+
+        def _complete(system, user):
+            m = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=1500,
+                                    system=system, messages=[{"role": "user", "content": user}])
+            return m.content[0].text
+
+        found = _pq.extract_answers(_complete, todo, query, previous_assistant)
+        if found:
+            with _db_lock, db.connect(LOG_DB) as _qcx:
+                n = _pq.record_answers(_qcx, email, found, todo, source_msg_id=client_msg_id)
+            print(f"[portal-questions] recorded {n} answer(s)", flush=True)
+        return found
+    except Exception as e:
+        print(f"[portal-questions] record failed: {type(e).__name__}", flush=True)
+        return []
 
 
 def _extract_portal_health_suggestions(email, query, answer, client_msg_id=None):
