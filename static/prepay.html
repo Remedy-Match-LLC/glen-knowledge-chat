@@ -91,7 +91,7 @@
         }
       }
 
-      function fmt(cents) { return "$" + Math.round(cents / 100); }
+      function fmt(cents) { return "$" + Math.round(cents / 100).toLocaleString("en-US"); }
 
       function isDual(t) { return !!(t.commitment && careEnabled); }
 

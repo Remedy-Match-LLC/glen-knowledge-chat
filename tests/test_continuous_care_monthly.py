@@ -255,3 +255,24 @@ def test_checkout_refuses_the_discontinued_six_month_term(monkeypatch, tmp_path)
     r = app_module.app.test_client().post(
         "/continuous-care/checkout", json={"email": "a@x.com", "term_months": 6})
     assert r.get_json()["ok"] is False and made == []
+
+
+def test_a_checkout_opened_at_99_keeps_99_after_the_price_change(monkeypatch, tmp_path):
+    """Round 2, 2026-11-12: month 1 charged $99 before the $100 change, so months
+    2..N stay $99. With no amount from Stripe the catalog price is used."""
+    app_module = _load_app(); db = _fresh(app_module, monkeypatch, tmp_path)
+    from dashboard import stripe_pay, subscriptions as subs, prepay
+    for email, pi_extra, want in (("old@x.com", {"amount_received": 9900}, 9900),
+                                  ("new@x.com", {}, prepay.MONTHLY_ANCHOR_CENTS)):
+        monkeypatch.setattr(stripe_pay, "get_session",
+            lambda sid, e=email: {"metadata": {"email": e, "kind": "continuous_care_monthly",
+                                               "term_months": "12"}, "payment_intent": "pi_1"})
+        monkeypatch.setattr(stripe_pay, "get_payment_intent",
+            lambda pi_id, x=pi_extra: {"status": "succeeded", "id": "pi_1",
+                                       "customer": "cus_1", "payment_method": "pm_1", **x})
+        app_module._fulfill_continuous_care_monthly(f"sess_{email}")
+        with sqlite3.connect(db) as cx:
+            cx.row_factory = sqlite3.Row
+            rows = subs.active_memberships_by_email(cx, email)
+        assert [r["amount_cents"] for r in rows] == [want], email
+    assert prepay.MONTHLY_ANCHOR_CENTS == 10000

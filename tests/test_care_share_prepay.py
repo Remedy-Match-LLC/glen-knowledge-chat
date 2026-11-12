@@ -78,9 +78,9 @@ def _grant_row(db, session_id):
 
 
 def test_attributed_prepay_credits_doctor_on_lump(monkeypatch, tmp_path):
-    """A doctor's attributed 12-month prepay ($990 lump) stamps the grant row
+    """A doctor's attributed 12-month prepay ($1,000 lump) stamps the grant row
     with attribution + consent + term_end AND credits the doctor once, at the
-    cert-scaled share of the FULL lump (share_cents(99000, 12) = $495)."""
+    cert-scaled share of the FULL lump (share_cents(100000, 12) = $500)."""
     from dashboard import care_share
     A = _load_app()
     db = _fresh(A, monkeypatch, tmp_path)
@@ -253,7 +253,31 @@ def test_dispensary_refuses_the_discontinued_six_month_term(monkeypatch, tmp_pat
     monkeypatch.setattr(A.stripe_pay, "create_checkout_session",
                         lambda *a, **k: made.append(1) or {"id": "cs", "url": "u"})
     c = A.app.test_client()
-    for body in ({"tier_key": "6mo"}, {"tier_key": "1mo", "term_months": 6}):
-        r = c.post("/dispensary/doc1/continuous-care", json={"email": "pat@x.com", **body})
-        assert r.get_json()["ok"] is False, body
+    for body, err in (({"tier_key": "6mo"}, "invalid tier"),
+                      ({"tier_key": "1mo", "term_months": 6}, "invalid term")):
+        r = c.post("/dispensary/doc1/continuous-care",
+                   json={"email": "pat@x.com", "share_consent": True, **body})
+        assert r.get_json() == {"ok": False, "error": err}, body
     assert made == []
+    # The same request for 12 months reaches checkout, so the refusal is the term's.
+    for body in ({"tier_key": "12mo"}, {"tier_key": "1mo", "term_months": 12}):
+        r = c.post("/dispensary/doc1/continuous-care",
+                   json={"email": "pat@x.com", "share_consent": True, **body})
+        assert r.get_json()["ok"] is True, body
+    assert len(made) == 2
+
+
+def test_a_prepay_opened_at_990_credits_on_what_was_paid(monkeypatch, tmp_path):
+    """Round 1, 2026-11-12: a 12-month session opened at $990 and paid after the
+    $1,000 change credits the doctor on $990, not on the new price."""
+    from dashboard import care_share, stripe_pay
+    A = _load_app()
+    _fresh(A, monkeypatch, tmp_path)
+    rec = _patch_care_share(monkeypatch, modules=12)
+    _mock_prepay_session(A, monkeypatch, email="old@x.com", tier_key="12mo",
+                         dispensary_pid="prac-42", share_consent="1")
+    monkeypatch.setattr(stripe_pay, "get_payment_intent",
+        lambda pi: {"customer": "cus_1", "payment_method": "pm_1", "status": "succeeded",
+                    "amount_received": 99000})
+    assert A._fulfill_prepay_term("cs_old").get("ok") is True
+    assert rec == [("prac-42", care_share.share_cents(99000, 12), "care_share:prepay:cs_old")]
