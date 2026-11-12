@@ -92,6 +92,7 @@ MOVE_TABLES = frozenset({
     "member_interest", "membership_product_grants", "memberships", "order_membership_grants",
     "order_payments", "peer_interest", "peer_matches", "portal_library", "prepay_term_grants",
     "portal_library_links",   # a client's Library links, keyed by address (2026-10-13)
+    "portal_open_questions", "portal_question_answers",  # Dr. Glen's numbered questions (2026-11-12)
     "quiz_responses", "studio_credit_intents", "voice_signals",
     # Rule C (2026-10-23): a supply grant and a courtesy follow their membership row.
     "order_supply_grants", "membership_courtesy_log",
