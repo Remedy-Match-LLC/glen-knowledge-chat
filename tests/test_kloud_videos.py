@@ -9,9 +9,16 @@ LABEL = ("Blood flow before, during and after a session on a BEMER mat. "
 IDS = ["7kuzFcF7e5w", "sg8hz8B87gk"]
 
 
+def _section(html):
+    m = re.search(r'<section[^>]*id="blood-flow-videos"[^>]*>.*?</section>', html, re.S)
+    assert m, "blood-flow-videos section missing"
+    return m
+
+
 def _figures():
     html = PAGE.read_text(encoding="utf-8")
-    return html, re.findall(r'<figure class="video".*?</figure>', html, re.S)
+    assert len(re.findall(r"<figure\b[^>]*\bvideo\b", html)) == 2, "video figures outside the section"
+    return html, re.findall(r"<figure\b[^>]*\bvideo\b.*?</figure>", _section(html).group(0), re.S)
 
 
 def test_both_videos_embedded_with_label():
@@ -31,6 +38,6 @@ def test_no_tracking_youtube_embed():
 def test_videos_sit_after_intro_before_models():
     html, _ = _figures()
     i_pemf = html.index("PEMF stands for Pulsed Electromagnetic Fields")
-    i_vid = html.index('id="blood-flow-videos"')
+    sec = _section(html)
     i_models = html.index(">Two models<")
-    assert i_pemf < i_vid < i_models
+    assert i_pemf < sec.start() and sec.end() < i_models
