@@ -119,6 +119,7 @@ def env(monkeypatch, tmp_path):
     from dashboard import ses_mail
     monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
     monkeypatch.setattr(appmod, "CONSOLE_SECRET", "test-console-key")
+    monkeypatch.setenv("CONSOLE_SECRET", "test-console-key")
     monkeypatch.setattr(threading, "Thread", _InlineThread)
     monkeypatch.setattr(sbf, "_now", lambda: NOW_ROUTE)
     monkeypatch.setattr(appmod, "_auth_rate_limited", lambda email: None)
@@ -185,6 +186,8 @@ def test_an_opted_out_address_gets_no_offer(env, monkeypatch):
         es.add_optout(cx, "kai@x.com", "test")
     assert c.post("/api/studio-bf/claim", json=GOOD).status_code == 200
     assert ses.sent == []
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert sbf.get_claim(cx, "kai@x.com")["offer_outcome"] == "suppressed"
 
 
 def test_claims_are_refused_after_the_close(env, monkeypatch):
@@ -197,6 +200,7 @@ def test_claims_are_refused_after_the_close(env, monkeypatch):
 def test_console_refuses_when_no_secret_is_set(env, monkeypatch):
     appmod, c, _ = env
     monkeypatch.setattr(appmod, "CONSOLE_SECRET", "")
+    monkeypatch.setenv("CONSOLE_SECRET", "")
     assert c.get("/api/console/studio-bf", headers={"X-Console-Key": "x"}).status_code == 403
     assert c.get("/api/console/studio-bf").status_code == 403
 
@@ -220,31 +224,57 @@ def test_console_list_and_status_need_the_key(env):
 
 # --- review rounds 1 and 2 -------------------------------------------------------
 
-def test_a_changed_date_or_plan_resets_raes_check(tmp_path):
+def test_a_checked_claim_is_frozen_and_the_name_never_changes(tmp_path):
     cx = _cx(tmp_path)
     sbf.save_claim(cx, sbf.clean_claim(GOOD, today=AFTER))
+    row, _ = sbf.save_claim(cx, sbf.clean_claim({**GOOD, "name": "Someone Else"}, today=AFTER))
+    assert row["name"] == "Kai Lee"
     sbf.set_status(cx, "kai@x.com", "confirmed", "rae")
-    row, _ = sbf.save_claim(cx, sbf.clean_claim({**GOOD, "name": "Kai L"}, today=AFTER))
-    assert row["status"] == "confirmed" and row["status_by"] == "rae"   # same evidence
-    row, _ = sbf.save_claim(cx, sbf.clean_claim({**GOOD, "plan": "3mo"}, today=AFTER))
-    assert (row["status"], row["status_by"], row["status_at"]) == ("pending", None, None)
+    row, _ = sbf.save_claim(cx, sbf.clean_claim(
+        {**GOOD, "plan": "3mo", "bought_on": "2026-11-18"}, today=AFTER))
+    assert (row["status"], row["plan"], row["bought_on"]) == ("confirmed", "1yr", "2026-11-20")
 
 
-def test_send_marks_unknown_is_kept_none_is_freed_stale_is_retaken(tmp_path):
+def test_send_marks_unknown_is_kept_and_none_is_freed(tmp_path):
     cx = _cx(tmp_path)
     sbf.save_claim(cx, sbf.clean_claim(GOOD, today=AFTER), now=NOW_ROUTE)
-    assert sbf.pending_offer_emails(cx, now=NOW_ROUTE) == ["kai@x.com"]
+    assert sbf.pending_offer_emails(cx) == ["kai@x.com"]
     assert sbf.claim_offer_send(cx, "kai@x.com", now=NOW_ROUTE)
+    assert sbf.get_claim(cx, "kai@x.com")["offer_outcome"] == "sending"
     assert not sbf.claim_offer_send(cx, "kai@x.com", now=NOW_ROUTE)        # once
-    assert sbf.pending_offer_emails(cx, now=NOW_ROUTE) == []
-    later = NOW_ROUTE + sbf.STALE_MARK + sbf.timedelta(minutes=1)
-    assert sbf.pending_offer_emails(cx, now=later) == ["kai@x.com"]        # never ran
-    assert sbf.claim_offer_send(cx, "kai@x.com", now=later)                # so it is retaken
+    assert sbf.pending_offer_emails(cx) == []                              # never retaken
     sbf.record_offer_outcome(cx, "kai@x.com", None)                       # surely not sent
+    assert sbf.pending_offer_emails(cx) == ["kai@x.com"]
     assert sbf.claim_offer_send(cx, "kai@x.com", now=NOW_ROUTE)
     sbf.record_offer_outcome(cx, "kai@x.com", "unknown")                  # SES may have it
-    assert sbf.pending_offer_emails(cx, now=later) == []
-    assert not sbf.claim_offer_send(cx, "kai@x.com", now=later)
+    sbf.record_offer_outcome(cx, "kai@x.com", None)                       # a late None frees nothing
+    assert sbf.pending_offer_emails(cx) == []
+    assert sbf.get_claim(cx, "kai@x.com")["offer_outcome"] == "unknown"
+
+
+def test_an_unknown_send_is_never_repeated(env, monkeypatch):
+    appmod, c, ses = env
+    _copy(monkeypatch)
+
+    class _Timeout:
+        def send_email(self, **kw):
+            ses.sent.append(kw)
+            raise RuntimeError("read timed out")
+    from dashboard import ses_mail
+    monkeypatch.setattr(ses_mail, "_client", lambda: _Timeout())
+    c.post("/api/studio-bf/claim", json=GOOD)
+    c.post("/api/studio-bf/claim", json=GOOD)
+    r = c.post("/api/console/studio-bf", headers={"X-Console-Key": "test-console-key"},
+               json={"action": "send_pending"})
+    assert r.get_json()["tried"] == 0
+    assert len(ses.sent) == 1
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert sbf.get_claim(cx, "kai@x.com")["offer_outcome"] == "unknown"
+
+
+def test_a_non_ascii_key_is_refused_not_a_crash(env):
+    _, c, _ = env
+    assert c.get("/api/console/studio-bf", headers={"X-Console-Key": "kéy"}).status_code == 403
 
 
 def test_claims_made_while_held_are_sent_once_released(env, monkeypatch):
@@ -268,6 +298,7 @@ def test_claims_made_while_held_are_sent_once_released(env, monkeypatch):
 def test_an_owner_token_is_refused_when_no_secret_is_set(env, monkeypatch):
     appmod, c, _ = env
     monkeypatch.setattr(appmod, "CONSOLE_SECRET", "")
+    monkeypatch.setenv("CONSOLE_SECRET", "")
     monkeypatch.setattr(appmod, "_owner_token_ok", lambda key: True)
     assert c.get("/api/console/studio-bf", headers={"X-Console-Key": "own"}).status_code == 403
 
@@ -279,3 +310,13 @@ def test_the_rate_limit_refuses_before_anything_is_saved(env, monkeypatch):
     assert c.post("/api/studio-bf/claim", json=GOOD).status_code == 429
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert sbf.list_claims(cx) == []
+
+
+def test_the_webhook_secret_fallback_does_not_open_the_list(env, monkeypatch):
+    """Round 3: the app's CONSOLE_SECRET falls back to WEBHOOK_SECRET. This list reads
+    the console env var itself, so the webhook secret alone opens nothing."""
+    appmod, c, _ = env
+    monkeypatch.setattr(appmod, "CONSOLE_SECRET", "webhook-secret")
+    monkeypatch.setenv("CONSOLE_SECRET", "")
+    assert c.get("/api/console/studio-bf",
+                 headers={"X-Console-Key": "webhook-secret"}).status_code == 403

@@ -31384,12 +31384,12 @@ def _studio_bf_console_ok():
     """The console key or an owner token. Unlike _portal_console_ok, an unset secret
     refuses: this list holds buyers' names and emails."""
     import hmac
+    # The env var itself: CONSOLE_SECRET falls back to WEBHOOK_SECRET (review round 3).
+    secret = os.environ.get("CONSOLE_SECRET", "").strip()
     key = _present_console_key()
-    if not key:
+    if not key or not secret:
         return False
-    if not CONSOLE_SECRET:
-        return False
-    if hmac.compare_digest(key, CONSOLE_SECRET):
+    if hmac.compare_digest(str(key).encode("utf-8"), secret.encode("utf-8")):
         return True
     return bool(_owner_token_ok(key))
 

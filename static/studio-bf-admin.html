@@ -36,10 +36,12 @@
       <input id="key" type="password" placeholder="Console key">
       <button id="saveKey">Open</button>
     </div>
+    <p><button id="sendPending">Send the offer to claims not yet sent</button>
+      <span id="sendNote" class="note"></span></p>
     <div id="err" class="err"></div>
     <div class="scroll"><table>
       <thead><tr><th>Claimed</th><th>Name</th><th>Email</th><th>Bought on Studio</th>
-        <th>Plan</th><th>Last day to buy</th><th>On list</th><th>Check</th><th></th></tr></thead>
+        <th>Plan</th><th>Last day to buy</th><th>On list</th><th>Offer email</th><th>Check</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
   </div>
@@ -74,6 +76,7 @@
           cell(tr, c.claimed_on); cell(tr, c.name); cell(tr, c.email);
           cell(tr, c.bought_on); cell(tr, c.plan_label); cell(tr, c.last_day_label);
           cell(tr, c.list_optin ? 'yes' : 'no');
+          cell(tr, c.offer_outcome || 'not sent');
           cell(tr, c.status, 'st-' + c.status);
           var td = cell(tr, '');
           [['confirmed','Confirm'],['rejected','Reject'],['pending','Reset']].forEach(function(p){
@@ -87,10 +90,17 @@
         });
         if (!(j.claims || []).length) {
           var tr = document.createElement('tr'); var td = cell(tr, 'No claims yet.');
-          td.colSpan = 9; rows.appendChild(tr);
+          td.colSpan = 10; rows.appendChild(tr);
         }
       }).catch(function(e){ err.textContent = e.message; });
     }
+    document.getElementById('sendPending').onclick = function(){
+      var note = document.getElementById('sendNote'); note.textContent = 'Sending...';
+      api('POST', {action: 'send_pending'}).then(function(j){
+        note.textContent = j.ok ? ('Tried ' + j.tried + '.') : (j.error || 'Not sent.');
+        load();
+      }).catch(function(e){ note.textContent = ''; err.textContent = e.message; });
+    };
     if (KEY) load(); else askKey();
   })();
   </script>
