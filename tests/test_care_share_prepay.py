@@ -268,16 +268,23 @@ def test_dispensary_refuses_the_discontinued_six_month_term(monkeypatch, tmp_pat
 
 
 def test_a_prepay_opened_at_990_credits_on_what_was_paid(monkeypatch, tmp_path):
-    """Round 1, 2026-11-12: a 12-month session opened at $990 and paid after the
-    $1,000 change credits the doctor on $990, not on the new price."""
+    """Rounds 1 and 3, 2026-11-12: a 12-month session opened at $990 and paid after
+    the $1,000 change credits the doctor on $990. Runs through the real
+    stripe_pay helpers against faked Stripe JSON."""
     from dashboard import care_share, stripe_pay
     A = _load_app()
     _fresh(A, monkeypatch, tmp_path)
     rec = _patch_care_share(monkeypatch, modules=12)
-    _mock_prepay_session(A, monkeypatch, email="old@x.com", tier_key="12mo",
-                         dispensary_pid="prac-42", share_consent="1")
-    monkeypatch.setattr(stripe_pay, "get_payment_intent",
-        lambda pi: {"customer": "cus_1", "payment_method": "pm_1", "status": "succeeded",
-                    "amount_received": 99000})
+
+    def fake_get(path, version=""):
+        if path.startswith("/checkout/sessions/"):
+            return {"id": "cs_old", "payment_status": "paid", "amount_total": 99000,
+                    "payment_intent": "pi_1",
+                    "metadata": {"kind": "prepay_term", "email": "old@x.com",
+                                 "tier_key": "12mo", "dispensary_pid": "prac-42",
+                                 "share_consent": "1"}}
+        return {"id": "pi_1", "status": "succeeded", "customer": "cus_1",
+                "payment_method": "pm_1", "amount": 99000, "amount_received": 99000}
+    monkeypatch.setattr(stripe_pay, "_get", fake_get)
     assert A._fulfill_prepay_term("cs_old").get("ok") is True
     assert rec == [("prac-42", care_share.share_cents(99000, 12), "care_share:prepay:cs_old")]

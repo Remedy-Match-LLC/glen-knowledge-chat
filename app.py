@@ -7274,8 +7274,8 @@ def prepay_return():
 def _month_one_cents(pi, fallback_cents):
     """The monthly amount a card-on-file buyer agreed to: what month 1 actually
     charged. A checkout opened at $99 and paid after the $100 change (2026-11-12)
-    keeps $99 for months 2..N. Falls back to the catalog price when Stripe gives
-    no amount (review round 2)."""
+    keeps $99 for months 2..N. Callers pass the session's amount_total, then the
+    catalog price, as the fallback when the PaymentIntent gives no amount."""
     try:
         paid = int((pi or {}).get("amount_received") or (pi or {}).get("amount") or 0)
     except (TypeError, ValueError):
@@ -15867,7 +15867,7 @@ def _fulfill_prepay_term(session_id):
         pi = _sp.get_payment_intent(pi_id)
         # What this buyer actually paid: a session opened before the 2026-11-12
         # price change books its own price (review round 1).
-        paid_cents = _month_one_cents(pi, tier["price_cents"])
+        paid_cents = _month_one_cents(pi, sess.get("amount_total") or tier["price_cents"])
         if pi.get("status") != "succeeded":
             return {"ok": False, "reason": "unpaid"}
         claimed = False
@@ -16040,7 +16040,7 @@ def _fulfill_continuous_care_monthly(session_id):
             return {"ok": False, "reason": "incomplete"}
         pi = _sp.get_payment_intent(pi_id)
         # The price this buyer agreed to, kept for months 2..N and the books (round 1).
-        _cc_paid = _month_one_cents(pi, _pp.MONTHLY_ANCHOR_CENTS)
+        _cc_paid = _month_one_cents(pi, sess.get("amount_total") or _pp.MONTHLY_ANCHOR_CENTS)
         if pi.get("status") != "succeeded":
             return {"ok": False, "reason": "unpaid"}
         customer = pi.get("customer")
@@ -16345,7 +16345,7 @@ def _fulfill_membership_product(session_id):
                 _subs.create_membership(
                     cx, email=email, stripe_customer_id=customer,
                     stripe_payment_method_id=pm,
-                    amount_cents=_month_one_cents(pi, tier["price_cents"]),
+                    amount_cents=_month_one_cents(pi, sess.get("amount_total") or tier["price_cents"]),
                     next_charge_date=_subs.add_months(today_s, 1),
                     cadence_months=tier["cadence_months"],
                     term_charges_total=tier["term_charges"], initial_order_count=1)
