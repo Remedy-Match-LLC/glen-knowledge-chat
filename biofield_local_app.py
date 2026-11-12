@@ -1356,14 +1356,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_clinical_checklist import profile_labels
         email = _test_email(cx, test_id)
         if not email:
-            return {"offered": 0, "clinical_note":
+            return {"offered": 0, "already": 0, "clinical_note":
                     "Conditions and medicines need the client's email in the header."}
         try:
             held = people_on_address(e4l_db, email)
         except Exception:
             held = None
         if held is None or held > 1:
-            return {"offered": 0, "clinical_note": "Conditions and medicines were not "
+            return {"offered": 0, "already": 0, "clinical_note": "Conditions and medicines were not "
                     "offered: this address is shared, or E4L could not be checked."}
         known = [d["label"] for d in decisions(cx, test_id).values()]
         if not (using_default_fetch_profile and os.environ.get("CI")):
@@ -1375,7 +1375,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             got = _br.store_pasted(cx, email, test_id, text, interpret_complete, known)
         except Exception:
             # Never echo the exception: its text can carry the pasted notes.
-            return {"offered": 0, "clinical_note": PASTE_CLINICAL_FAILED}
+            return {"offered": 0, "already": 0, "clinical_note": PASTE_CLINICAL_FAILED}
         return got
 
     def _seed_stresses(cx, test_id, *, force=False, layers=None):

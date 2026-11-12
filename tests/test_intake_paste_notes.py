@@ -163,7 +163,7 @@ def test_name_only_intake_is_accepted(tmp_path):
     with sqlite3.connect(db) as cx:
         assert cx.execute("SELECT email FROM biofield_auth_tests").fetchone()[0] in ("", None)
     j = client.post(f"/author/{tid}/mine-paste", json={"text": "notes"}).get_json()
-    assert j == {"added": 1, "skipped": 0, "offered": 0, "clinical_note":
+    assert j == {"added": 1, "skipped": 0, "offered": 0, "already": 0, "clinical_note":
                  "Conditions and medicines need the client's email in the header."}
 
 

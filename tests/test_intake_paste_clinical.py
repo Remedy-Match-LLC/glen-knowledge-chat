@@ -48,7 +48,7 @@ def _app(db, findings=(), stresses=(), people=(), profile=None, calls=None, rais
                 raise raises
             return json.dumps({"findings": list(findings)})
         return json.dumps({"stresses": list(stresses)})
-    return create_app(db, scan_lookup=lambda e: _NONE,
+    return create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
                       fetch_profile=lambda e: dict(profile or {}),
                       fetch_recent_comms=lambda e: {}, interpret_complete=complete,
                       e4l_db=_e4l(db, people))
@@ -165,7 +165,7 @@ def test_a_shared_address_is_offered_nothing(tmp_path, people):
 
 def test_an_unreadable_e4l_is_offered_nothing(tmp_path):
     db = str(tmp_path / "p.db")
-    client = create_app(db, scan_lookup=lambda e: _NONE, fetch_profile=lambda e: {},
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE, fetch_profile=lambda e: {},
                         fetch_recent_comms=lambda e: {},
                         interpret_complete=lambda s, u: json.dumps(
                             {"findings": [_f("diagnosis", "Asthma")], "stresses": []}),
@@ -276,3 +276,114 @@ def test_the_paste_status_names_what_was_offered():
                          "clinical_note": "Conditions and medicines need the client's "
                                           "email in the header."})
     assert got["r"] == 0 and got["s"].endswith("need the client's email in the header.")
+
+
+# --- Review round 1 fixes ----------------------------------------------------------
+
+def test_a_condition_does_not_hide_a_medicine_of_the_same_words(tmp_path):
+    """M1: "Vitamin D deficiency" is a condition, not a medicine. A pasted
+    "Vitamin D3 2000 IU" is still offered, and B12 keeps its number."""
+    db = str(tmp_path / "p.db")
+    client = _app(db, [_f("medication", "Vitamin D3 2000 IU"),
+                       _f("medication", "Vitamin B12 1000 mcg"),
+                       _f("medication", "Iron 25 mg daily")]).test_client()
+    tid = _new(client)
+    _accept(client, tid, "Vitamin D deficiency")
+    _accept(client, tid, "Vitamin B deficiency")
+    _accept(client, tid, "Iron overload")
+    j = _paste(client, tid)
+    assert (j["offered"], j["already"]) == (3, 0)
+    assert br._medicine_name("Vitamin B12 1000 mcg") == "vitamin b12"
+    assert br._medicine_name("Latanoprost 0.005% one drop") == "latanoprost"
+
+
+def test_a_medicine_already_offered_is_not_offered_at_a_new_dose(tmp_path):
+    db = str(tmp_path / "p.db")
+    found = [[_f("medication", "Vitamin D3 1000 IU")], [_f("medication", "Vitamin D3 2000 IU")]]
+
+    def complete(system, user):
+        if system == br.SYSTEM:
+            return json.dumps({"findings": found.pop(0)})
+        return json.dumps({"stresses": []})
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
+                        fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: {},
+                        interpret_complete=complete, e4l_db=_e4l(db, [])).test_client()
+    tid = _new(client)
+    assert _paste(client, tid, "first")["offered"] == 1
+    j = _paste(client, tid, "second")
+    assert (j["offered"], j["already"]) == (0, 1)
+
+
+def test_pasted_suggestions_are_not_group_factors_until_added(tmp_path):
+    """M2: a pending pasted finding stays out of the clinical groups. A pending
+    finding read from a record still reaches them, as before."""
+    from dashboard.biofield_clinical_groups import factors_for
+    db = str(tmp_path / "p.db")
+    client = _app(db, [_f("diagnosis", "Asthma")]).test_client()
+    tid = _new(client)
+    assert _paste(client, tid)["offered"] == 1
+    with sqlite3.connect(db) as cx:
+        cx.execute("INSERT INTO client_record_findings(client_email, message_id, part, "
+                   "filename, page, kind, text, finding_date, created_at) "
+                   "VALUES(?,?,?,?,?,?,?,?,?)", (EMAIL, "gmail-1", 0, "labs.pdf", 1,
+                                                 "diagnosis", "Hypothyroidism", "", "x"))
+        pending = br.findings(cx, EMAIL)["pending"]
+        assert {f["text"] for f in pending} == {"Asthma", "Hypothyroidism"}
+        got = [f["factor"] for f in factors_for(cx, tid, pending)]
+    assert got == ["Hypothyroidism"]
+
+
+def test_one_failed_part_keeps_the_rest_of_a_long_paste(tmp_path):
+    """L: the first part of a long paste fails, the second is still read."""
+    db = str(tmp_path / "p.db")
+    seen = []
+
+    def complete(system, user):
+        if system == br.SYSTEM:
+            seen.append(user)
+            if len(seen) == 1:
+                raise RuntimeError("model down")
+            return json.dumps({"findings": [_f("diagnosis", "Asthma")]})
+        return json.dumps({"stresses": []})
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
+                        fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: {},
+                        interpret_complete=complete, e4l_db=_e4l(db, [])).test_client()
+    tid = _new(client)
+    text = ("line of notes\n" * 2600) + "END"
+    j = _paste(client, tid, text)
+    assert j["offered"] == 1 and "1 of 2 parts" in j["clinical_note"]
+
+
+def test_each_paste_gets_its_own_random_id(tmp_path):
+    """L: the id holds no trace of the notes, and the same notes pasted twice differ."""
+    import hashlib
+    db = str(tmp_path / "p.db")
+    found = [[_f("diagnosis", "Asthma")], [_f("diagnosis", "Eczema")]]
+
+    def complete(system, user):
+        if system == br.SYSTEM:
+            return json.dumps({"findings": found.pop(0)})
+        return json.dumps({"stresses": []})
+    client = create_app(db, scan_lookup=lambda e, client_id=None: _NONE,
+                        fetch_profile=lambda e: {}, fetch_recent_comms=lambda e: {},
+                        interpret_complete=complete, e4l_db=_e4l(db, [])).test_client()
+    tid = _new(client)
+    _paste(client, tid, "same notes")
+    _paste(client, tid, "same notes")
+    digest = hashlib.sha256(b"same notes").hexdigest()[:16]
+    with sqlite3.connect(db) as cx:
+        ids = [r[0] for r in cx.execute("SELECT message_id FROM client_record_findings")]
+    assert len(set(ids)) == 2 and not any(digest in i for i in ids)
+
+
+def test_the_added_day_is_local(monkeypatch):
+    """L: 04:30 UTC on the 12th is the evening of the 11th in Hilo."""
+    import time
+    monkeypatch.setenv("TZ", "Pacific/Honolulu")
+    time.tzset()
+    try:
+        assert br._local_day("2026-11-12T04:30:00+00:00") == "2026-11-11"
+        assert br._local_day(None) == ""
+    finally:
+        monkeypatch.undo()
+        time.tzset()

@@ -66,6 +66,15 @@ def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _local_day(stamp):
+    """A stored UTC time as this computer's calendar day: a paste at 6 pm in Hilo
+    is that day, not the next (review round 1)."""
+    try:
+        return datetime.fromisoformat(str(stamp)).astimezone().date().isoformat()
+    except (TypeError, ValueError):
+        return str(stamp or "")[:10]
+
+
 def record_kind(mime, filename):
     """"pdf", "image", "textutil" or "text" for a record this can read, else ""."""
     mime, name = (mime or "").lower(), (filename or "").lower()
@@ -401,7 +410,7 @@ def findings(cx, email):
                             "text": text, "date": date or "", "filename": name,
                             "page": cite, "email_date": sent[:10], "subject": subject,
                             "pasted": str(mid).startswith(PASTE_PREFIX),
-                            "added": added[:10]})
+                            "added": _local_day(added)})
     out["failed"] = [r[0] for r in cx.execute(
         "SELECT filename FROM client_record_reads WHERE client_email=? AND error IS NOT NULL "
         "AND attempts >= ?", (email, ATTEMPTS))]
@@ -479,7 +488,16 @@ def _label_keys(label):
 def _medicine_name(text):
     """A medicine's name without its dose: "Latanoprost 0.005% one drop" -> latanoprost."""
     from dashboard.biofield_clinical_proposals import item_key
-    return item_key(re.split(r"[(\d]", str(text or ""), maxsplit=1)[0])
+    # Cut at "(" or at a number after a space, so "Vitamin B12" keeps its 12.
+    return item_key(re.split(r"\(|\s\d", str(text or ""), maxsplit=1)[0])
+
+
+def _medicine_places(label):
+    """Where a medicine may already be named: text inside parentheses, as in
+    "Glaucoma (latanoprost)". A condition's own words are not a medicine, so
+    "Vitamin D deficiency" does not hide "Vitamin D3 2000 IU" (review round 1)."""
+    from dashboard.biofield_clinical_proposals import item_key
+    return {item_key(m) for m in re.findall(r"\(([^)]*)\)", str(label or "")) if item_key(m)}
 
 
 def _paste_pages(text):
@@ -502,34 +520,53 @@ def _paste_pages(text):
     return pages
 
 
+def _ask_pages(complete, pages):
+    """Each piece of the notes asked on its own, so one failed piece does not lose
+    the rest (review round 1). Returns (findings, failed pieces)."""
+    found, failed = [], 0
+    for page in pages:
+        try:
+            found.extend(ask(complete, [page], PASTE_FILENAME))
+        except Exception:
+            failed += 1
+    return found, failed
+
+
 def store_pasted(cx, email, test_id, text, complete, known_labels=()):
     """Conditions and medicines in pasted notes, stored as pending findings for Glen.
 
     known_labels are the items this intake already has: profile conditions and every
     accepted or dismissed suggestion. A finding already among them, or among this
     client's findings in any status, is skipped and counted as already. Returns
-    {"offered", "already"}. Raises when the model cannot be read; the caller says so
-    without echoing the notes."""
-    import hashlib
+    {"offered", "already"}, plus "clinical_note" when some of the notes could not be
+    read. Raises when none of the notes could be read; the caller says so without
+    echoing the notes."""
+    import uuid
     ensure_tables(cx)
-    found = ask(complete, _paste_pages(text), PASTE_FILENAME)
-    known = set()
+    pages = _paste_pages(text)
+    found, failed = _ask_pages(complete, pages)
+    if pages and failed == len(pages):
+        raise RuntimeError("pasted notes could not be read")
+    known, places = set(), set()
     for label in known_labels or ():
         known |= _label_keys(label)
-    for (t,) in cx.execute("SELECT text FROM client_record_findings WHERE client_email=?",
-                           (email,)):
+        places |= _medicine_places(label)
+    for kind, t in cx.execute(
+            "SELECT kind, text FROM client_record_findings WHERE client_email=?", (email,)):
         known |= _label_keys(t)
-    padded = [f" {k} " for k in known]
-    digest = hashlib.sha256(str(text).encode("utf-8")).hexdigest()[:16]
-    mid = f"{PASTE_PREFIX}{test_id}:{digest}"
+        places |= _medicine_places(t)
+        if kind == "medication":
+            places.add(_medicine_name(t))
+    # A random id: the notes themselves, even hashed, are never stored (review round 1).
+    mid = f"{PASTE_PREFIX}{test_id}:{uuid.uuid4().hex}"
     now, offered, already = _now(), 0, 0
     for f in found:
         if f["kind"] not in PASTE_KINDS or len(f["text"]) > PASTE_TEXT_MAX:
             continue
         keys = _label_keys(f["text"])
         name = _medicine_name(f["text"]) if f["kind"] == "medication" else ""
-        # A medicine named inside an item, as in "Glaucoma (latanoprost)", is known.
-        if keys & known or (name and any(f" {name} " in p for p in padded)):
+        # A medicine already listed, or named in brackets on an item, is known.
+        if keys & known or (name and _named_in(name, places)):
             already += 1
             continue
         cur = cx.execute(
@@ -539,6 +576,17 @@ def store_pasted(cx, email, test_id, text, complete, known_labels=()):
         if (cur.rowcount or 0) > 0:
             offered += 1
         known |= keys
-        padded = [f" {k} " for k in known]
+        places |= _medicine_places(f["text"])
+        if name:
+            places.add(name)
     cx.commit()
-    return {"offered": offered, "already": already}
+    out = {"offered": offered, "already": already}
+    if failed:
+        out["clinical_note"] = (f"{failed} of {len(pages)} parts of the notes could not be "
+                                "read for conditions and medicines.")
+    return out
+
+
+def _named_in(name, places):
+    """True when a medicine name is one of the places, or a whole word run inside one."""
+    return any(name == p or f" {name} " in f" {p} " for p in places)
