@@ -63,9 +63,13 @@ def day_label(d):
     return f"{d.strftime('%A')} {d.day} {d.strftime('%B')}"
 
 
-def clean_claim(data):
+def clean_claim(data, today=None):
     """{name, email, bought_on (date), plan, list_optin} from a form body, or raise
-    ValueError with a message the page can show."""
+    ValueError with a message the page can show. A purchase date after today, Hawaii
+    time, is refused (review round 1).
+
+    list_optin is only what the form said. Anyone can type any address, so a later
+    list email must not rely on it alone: the second PR confirms it first (round 1)."""
     data = data if isinstance(data, dict) else {}
     name = " ".join(str(data.get("name") or "").split())
     email = str(data.get("email") or "").strip().lower()
@@ -81,6 +85,8 @@ def clean_claim(data):
         raise ValueError("Please choose the date you bought the app.")
     if not (BOUGHT_FIRST <= bought <= BOUGHT_LAST):
         raise ValueError("The offer is for apps bought from 17 to 27 November 2026.")
+    if bought > (today or hawaii_day()):
+        raise ValueError("That date is still to come. Please choose the day you bought the app.")
     plan = str(data.get("plan") or "").strip()
     if plan not in PLANS:
         raise ValueError("Please choose your plan: 3 months or 1 year.")
@@ -102,40 +108,49 @@ def ensure_tables(cx):
         status_by TEXT,
         status_at TEXT,
         offer_sent_at TEXT,
+        offer_outcome TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL)""")
 
 
 def save_claim(cx, claim, now=None):
-    """Insert a first claim, or update the date, plan and name of a repeat one. A tick
+    """Insert a first claim, or update the name, date and plan of a repeat one. A tick
     in the box is kept once given; an untick never removes it. The claim day, and so
-    the last day to buy, is fixed by the first claim. Returns (row, is_new)."""
+    the last day to buy, is fixed by the first claim. A changed date or plan resets
+    Rae's check to pending, since she checked the old one (review round 2). Returns
+    (row, is_new)."""
     ensure_tables(cx)
     now = now or _now()
     stamp = now.isoformat(timespec="seconds")
     day = hawaii_day(now)
-    em = claim["email"]
-    old = cx.execute("SELECT email FROM studio_bf_claims WHERE email=?", (em,)).fetchone()
-    if old:
-        cx.execute("UPDATE studio_bf_claims SET name=?, bought_on=?, plan=?, "
-                   "list_optin=CASE WHEN ?=1 THEN 1 ELSE list_optin END, updated_at=? "
-                   "WHERE email=?",
-                   (claim["name"], claim["bought_on"].isoformat(), claim["plan"],
-                    1 if claim["list_optin"] else 0, stamp, em))
-    else:
-        cx.execute("INSERT INTO studio_bf_claims(email, name, bought_on, plan, list_optin, "
-                   "claimed_on, last_day_to_buy, source, status, created_at, updated_at) "
-                   "VALUES (?,?,?,?,?,?,?,?, 'pending', ?,?)",
-                   (em, claim["name"], claim["bought_on"].isoformat(), claim["plan"],
-                    1 if claim["list_optin"] else 0, day.isoformat(),
-                    last_day_to_buy(day).isoformat(), SOURCE, stamp, stamp))
+    em, bought = claim["email"], claim["bought_on"].isoformat()
+    # ON CONFLICT: two processes taking the same first claim cannot both insert.
+    cur = cx.execute(
+        "INSERT INTO studio_bf_claims(email, name, bought_on, plan, list_optin, "
+        "claimed_on, last_day_to_buy, source, status, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?, 'pending', ?,?) ON CONFLICT(email) DO NOTHING",
+        (em, claim["name"], bought, claim["plan"], 1 if claim["list_optin"] else 0,
+         day.isoformat(), last_day_to_buy(day).isoformat(), SOURCE, stamp, stamp))
+    is_new = cur.rowcount == 1
+    if not is_new:
+        cx.execute(
+            "UPDATE studio_bf_claims SET "
+            "status=CASE WHEN bought_on=? AND plan=? THEN status ELSE 'pending' END, "
+            "status_by=CASE WHEN bought_on=? AND plan=? THEN status_by ELSE NULL END, "
+            "status_at=CASE WHEN bought_on=? AND plan=? THEN status_at ELSE NULL END, "
+            "name=?, bought_on=?, plan=?, "
+            "list_optin=CASE WHEN ?=1 THEN 1 ELSE list_optin END, updated_at=? "
+            "WHERE email=?",
+            (bought, claim["plan"], bought, claim["plan"], bought, claim["plan"],
+             claim["name"], bought, claim["plan"], 1 if claim["list_optin"] else 0,
+             stamp, em))
     cx.commit()
-    return get_claim(cx, em), not old
+    return get_claim(cx, em), is_new
 
 
 _COLS = ("email", "name", "bought_on", "plan", "list_optin", "claimed_on",
          "last_day_to_buy", "source", "status", "status_by", "status_at",
-         "offer_sent_at", "created_at", "updated_at")
+         "offer_sent_at", "offer_outcome", "created_at", "updated_at")
 
 
 def _row(r):
@@ -183,19 +198,44 @@ def offer_message(row):
     return OFFER_SUBJECT.format(**fill), OFFER_TEXT.format(**fill)
 
 
+# A mark older than this with no outcome is a send that never ran (a restart, a thread
+# that never started), so it may be tried again (review round 2).
+STALE_MARK = timedelta(hours=1)
+
+
 def claim_offer_send(cx, email, now=None):
-    """Mark the offer as sent to this email before the send, so two quick submissions
-    send once. True when this caller should send."""
+    """Mark the offer as being sent to this email, before the send, so two quick
+    submissions send once. True when this caller should send. A stale mark with no
+    outcome is taken again."""
+    now = now or _now()
+    stale = (now - STALE_MARK).isoformat(timespec="seconds")
     cur = cx.execute("UPDATE studio_bf_claims SET offer_sent_at=? WHERE email=? AND "
-                     "offer_sent_at IS NULL",
-                     ((now or _now()).isoformat(timespec="seconds"),
-                      (email or "").strip().lower()))
+                     "offer_outcome IS NULL AND (offer_sent_at IS NULL OR offer_sent_at < ?)",
+                     (now.isoformat(timespec="seconds"), (email or "").strip().lower(), stale))
     cx.commit()
     return cur.rowcount == 1
 
 
-def release_offer_send(cx, email):
-    """A send that surely did not go out frees the mark, so a later claim retries."""
-    cx.execute("UPDATE studio_bf_claims SET offer_sent_at=NULL WHERE email=?",
-               ((email or "").strip().lower(),))
+def record_offer_outcome(cx, email, outcome):
+    """What the send did. None means it surely sent nothing: the mark is freed so a
+    later claim or the console's send-pending action tries again. "unknown" is kept,
+    so a send SES may have taken is never repeated."""
+    em = (email or "").strip().lower()
+    if outcome is None:
+        cx.execute("UPDATE studio_bf_claims SET offer_sent_at=NULL WHERE email=? AND "
+                   "offer_outcome IS NULL", (em,))
+    else:
+        cx.execute("UPDATE studio_bf_claims SET offer_outcome=? WHERE email=?",
+                   (str(outcome)[:20], em))
     cx.commit()
+
+
+def pending_offer_emails(cx, now=None):
+    """Claims whose offer has not gone: never tried, or a stale try with no outcome.
+    Claims made while the copy was held are sent from here once it is released."""
+    ensure_tables(cx)
+    stale = ((now or _now()) - STALE_MARK).isoformat(timespec="seconds")
+    rows = cx.execute("SELECT email FROM studio_bf_claims WHERE offer_outcome IS NULL AND "
+                      "(offer_sent_at IS NULL OR offer_sent_at < ?) ORDER BY created_at",
+                      (stale,)).fetchall()
+    return [r[0] for r in rows]

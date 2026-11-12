@@ -41,8 +41,7 @@
         Tell us when, and we will email you the offer.</p>
 
       <div id="done" class="done" hidden>
-        Thank you. Your offer is on its way to your inbox.
-        <span id="lastDay"></span>
+        Thank you. We have your claim, and your offer will come to you by email.
       </div>
 
       <form id="claim" novalidate>
@@ -89,8 +88,6 @@
           if (j && j.ok) {
             f.hidden = true;
             document.getElementById('done').hidden = false;
-            if (j.last_day_to_buy) document.getElementById('lastDay').textContent =
-              ' The offer is open until ' + j.last_day_to_buy + '.';
           } else {
             err.textContent = (j && j.error) || 'Something went wrong. Please try again.';
             go.disabled = false;

@@ -19,6 +19,8 @@ GOOD = {"name": " Kai  Lee ", "email": "Kai@X.com", "bought_on": "2026-11-20",
         "plan": "1yr", "list_optin": True}
 # 18 Nov 2026, 23:30 in Hawaii is already 19 Nov in UTC.
 LATE_18TH = datetime(2026, 11, 19, 9, 30, tzinfo=timezone.utc)
+AFTER = date(2026, 11, 28)          # a day after every allowed purchase date
+NOW_ROUTE = datetime(2026, 11, 28, 20, 0, tzinfo=timezone.utc)   # 28 Nov in Hawaii
 
 
 def _cx(tmp_path):
@@ -28,18 +30,24 @@ def _cx(tmp_path):
 # --- the module ---------------------------------------------------------------
 
 def test_clean_claim_trims_and_refuses_bad_input():
-    got = sbf.clean_claim(GOOD)
+    got = sbf.clean_claim(GOOD, today=AFTER)
     assert got == {"name": "Kai Lee", "email": "kai@x.com", "bought_on": date(2026, 11, 20),
                    "plan": "1yr", "list_optin": True}
-    assert sbf.clean_claim({**GOOD, "list_optin": "no"})["list_optin"] is False
+    assert sbf.clean_claim({**GOOD, "list_optin": "no"}, today=AFTER)["list_optin"] is False
     for bad in ({**GOOD, "name": " "}, {**GOOD, "email": "kai@x"},
                 {**GOOD, "bought_on": "2026-11-16"}, {**GOOD, "bought_on": "2026-11-28"},
                 {**GOOD, "bought_on": "20 Nov"}, {**GOOD, "plan": "6mo"},
                 {**GOOD, "name": "a" * 121}, None):
         with pytest.raises(ValueError):
-            sbf.clean_claim(bad)
+            sbf.clean_claim(bad, today=AFTER)
     for edge in ("2026-11-17", "2026-11-27"):
-        assert sbf.clean_claim({**GOOD, "bought_on": edge})["bought_on"].isoformat() == edge
+        assert sbf.clean_claim({**GOOD, "bought_on": edge}, today=AFTER)["bought_on"].isoformat() == edge
+
+
+def test_a_purchase_date_still_to_come_is_refused():
+    assert sbf.clean_claim(GOOD, today=date(2026, 11, 20))["bought_on"] == date(2026, 11, 20)
+    with pytest.raises(ValueError):
+        sbf.clean_claim(GOOD, today=date(2026, 11, 19))
 
 
 def test_last_day_is_the_hawaii_claim_day_plus_14():
@@ -56,12 +64,13 @@ def test_claims_close_after_6_december_hawaii_time():
 
 def test_a_repeat_claim_updates_but_keeps_its_first_day_and_tick(tmp_path):
     cx = _cx(tmp_path)
-    row, new = sbf.save_claim(cx, sbf.clean_claim(GOOD), now=LATE_18TH)
+    row, new = sbf.save_claim(cx, sbf.clean_claim(GOOD, today=AFTER), now=LATE_18TH)
     assert new and row["claimed_on"] == "2026-11-18" and row["last_day_to_buy"] == "2026-12-02"
     assert row["source"] == "studio_bf_2026" and row["status"] == "pending"
     later = datetime(2026, 11, 25, 20, 0, tzinfo=timezone.utc)
     row, new = sbf.save_claim(cx, sbf.clean_claim(
-        {**GOOD, "plan": "3mo", "bought_on": "2026-11-24", "list_optin": False}), now=later)
+        {**GOOD, "plan": "3mo", "bought_on": "2026-11-24", "list_optin": False},
+        today=AFTER), now=later)
     assert not new
     assert (row["plan"], row["bought_on"], row["plan_label"]) == ("3mo", "2026-11-24", "3 months")
     assert row["claimed_on"] == "2026-11-18" and row["last_day_label"] == "Wednesday 2 December"
@@ -71,7 +80,7 @@ def test_a_repeat_claim_updates_but_keeps_its_first_day_and_tick(tmp_path):
 
 def test_rae_sets_a_status(tmp_path):
     cx = _cx(tmp_path)
-    sbf.save_claim(cx, sbf.clean_claim(GOOD))
+    sbf.save_claim(cx, sbf.clean_claim(GOOD, today=AFTER))
     assert sbf.set_status(cx, "KAI@x.com", "confirmed", "rae")["status"] == "confirmed"
     assert sbf.set_status(cx, "nobody@x.com", "confirmed", "rae") is None
     with pytest.raises(ValueError):
@@ -80,7 +89,7 @@ def test_rae_sets_a_status(tmp_path):
 
 def test_offer_is_held_while_the_copy_is_unset(tmp_path):
     cx = _cx(tmp_path)
-    row, _ = sbf.save_claim(cx, sbf.clean_claim(GOOD))
+    row, _ = sbf.save_claim(cx, sbf.clean_claim(GOOD, today=AFTER))
     assert sbf.OFFER_SUBJECT is None and sbf.OFFER_TEXT is None
     assert sbf.offer_message(row) is None
 
@@ -111,7 +120,8 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
     monkeypatch.setattr(appmod, "CONSOLE_SECRET", "test-console-key")
     monkeypatch.setattr(threading, "Thread", _InlineThread)
-    monkeypatch.setattr(sbf, "_now", lambda: LATE_18TH)
+    monkeypatch.setattr(sbf, "_now", lambda: NOW_ROUTE)
+    monkeypatch.setattr(appmod, "_auth_rate_limited", lambda email: None)
     ses = _SES()
     monkeypatch.setattr(ses_mail, "_client", lambda: ses)
     monkeypatch.setenv("SES_SEND_ENABLED", "1")
@@ -141,7 +151,7 @@ def test_claim_records_and_sends_nothing_while_held(env, monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)   # so a send would reach the fake
     r = c.post("/api/studio-bf/claim", json=GOOD)
     assert r.status_code == 200
-    assert r.get_json() == {"ok": True, "last_day_to_buy": "Wednesday 2 December"}
+    assert r.get_json() == {"ok": True}   # nothing about the claim is echoed
     assert ses.sent == []
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert sbf.get_claim(cx, "kai@x.com")["offer_sent_at"] is None
@@ -162,7 +172,7 @@ def test_once_released_the_offer_goes_once_as_marketing_mail(env, monkeypatch):
     assert len(ses.sent) == 1
     raw = ses.sent[0]["Content"]["Raw"]["Data"].decode()
     assert ses.sent[0]["Destination"] == {"ToAddresses": ["kai@x.com"]}
-    assert "Buy by Wednesday 2 December." in raw
+    assert "Buy by Saturday 12 December." in raw
     assert "List-Unsubscribe" in raw          # marketing mail carries the one-click header
 
 
@@ -206,3 +216,66 @@ def test_console_list_and_status_need_the_key(env):
     assert r.get_json()["claim"]["status"] == "confirmed"
     assert c.post("/api/console/studio-bf", headers=h,
                   json={"email": "x@x.com", "status": "confirmed"}).status_code == 404
+
+
+# --- review rounds 1 and 2 -------------------------------------------------------
+
+def test_a_changed_date_or_plan_resets_raes_check(tmp_path):
+    cx = _cx(tmp_path)
+    sbf.save_claim(cx, sbf.clean_claim(GOOD, today=AFTER))
+    sbf.set_status(cx, "kai@x.com", "confirmed", "rae")
+    row, _ = sbf.save_claim(cx, sbf.clean_claim({**GOOD, "name": "Kai L"}, today=AFTER))
+    assert row["status"] == "confirmed" and row["status_by"] == "rae"   # same evidence
+    row, _ = sbf.save_claim(cx, sbf.clean_claim({**GOOD, "plan": "3mo"}, today=AFTER))
+    assert (row["status"], row["status_by"], row["status_at"]) == ("pending", None, None)
+
+
+def test_send_marks_unknown_is_kept_none_is_freed_stale_is_retaken(tmp_path):
+    cx = _cx(tmp_path)
+    sbf.save_claim(cx, sbf.clean_claim(GOOD, today=AFTER), now=NOW_ROUTE)
+    assert sbf.pending_offer_emails(cx, now=NOW_ROUTE) == ["kai@x.com"]
+    assert sbf.claim_offer_send(cx, "kai@x.com", now=NOW_ROUTE)
+    assert not sbf.claim_offer_send(cx, "kai@x.com", now=NOW_ROUTE)        # once
+    assert sbf.pending_offer_emails(cx, now=NOW_ROUTE) == []
+    later = NOW_ROUTE + sbf.STALE_MARK + sbf.timedelta(minutes=1)
+    assert sbf.pending_offer_emails(cx, now=later) == ["kai@x.com"]        # never ran
+    assert sbf.claim_offer_send(cx, "kai@x.com", now=later)                # so it is retaken
+    sbf.record_offer_outcome(cx, "kai@x.com", None)                       # surely not sent
+    assert sbf.claim_offer_send(cx, "kai@x.com", now=NOW_ROUTE)
+    sbf.record_offer_outcome(cx, "kai@x.com", "unknown")                  # SES may have it
+    assert sbf.pending_offer_emails(cx, now=later) == []
+    assert not sbf.claim_offer_send(cx, "kai@x.com", now=later)
+
+
+def test_claims_made_while_held_are_sent_once_released(env, monkeypatch):
+    appmod, c, ses = env
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    h = {"X-Console-Key": "test-console-key"}
+    c.post("/api/studio-bf/claim", json=GOOD)
+    c.post("/api/studio-bf/claim", json={**GOOD, "email": "b@x.com"})
+    assert ses.sent == []
+    r = c.post("/api/console/studio-bf", headers=h, json={"action": "send_pending"})
+    assert r.status_code == 409
+    _copy(monkeypatch)
+    r = c.post("/api/console/studio-bf", headers=h, json={"action": "send_pending"})
+    assert r.get_json() == {"ok": True, "tried": 2, "outcomes": {"ses": 2}}
+    assert sorted(m["Destination"]["ToAddresses"][0] for m in ses.sent) == ["b@x.com", "kai@x.com"]
+    r = c.post("/api/console/studio-bf", headers=h, json={"action": "send_pending"})
+    assert r.get_json()["tried"] == 0 and len(ses.sent) == 2
+    assert c.post("/api/console/studio-bf", json={"action": "send_pending"}).status_code == 403
+
+
+def test_an_owner_token_is_refused_when_no_secret_is_set(env, monkeypatch):
+    appmod, c, _ = env
+    monkeypatch.setattr(appmod, "CONSOLE_SECRET", "")
+    monkeypatch.setattr(appmod, "_owner_token_ok", lambda key: True)
+    assert c.get("/api/console/studio-bf", headers={"X-Console-Key": "own"}).status_code == 403
+
+
+def test_the_rate_limit_refuses_before_anything_is_saved(env, monkeypatch):
+    appmod, c, ses = env
+    monkeypatch.setattr(appmod, "_auth_rate_limited",
+                        lambda email: (appmod.jsonify({"error": "slow down"}), 429))
+    assert c.post("/api/studio-bf/claim", json=GOOD).status_code == 429
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert sbf.list_claims(cx) == []
