@@ -73,7 +73,7 @@ def test_checkout_builds_vaulted_session(monkeypatch, tmp_path):
 
     monkeypatch.setattr(app_module.stripe_pay, "create_checkout_session", fake_sess)
     r = app_module.app.test_client().post(
-        "/continuous-care/checkout", json={"email": "a@x.com", "term_months": 6})
+        "/continuous-care/checkout", json={"email": "a@x.com", "term_months": 12})
     body = r.get_json()
     assert body["ok"] is True
     assert body["url"] == "https://stripe/x"
@@ -81,7 +81,7 @@ def test_checkout_builds_vaulted_session(monkeypatch, tmp_path):
     assert cap["amount"] == prepay.MONTHLY_ANCHOR_CENTS
     assert cap["kw"]["save_card"] is True
     assert cap["kw"]["metadata"]["kind"] == "continuous_care_monthly"
-    assert cap["kw"]["metadata"]["term_months"] == "6"
+    assert cap["kw"]["metadata"]["term_months"] == "12"
     assert cap["kw"]["metadata"]["email"] == "a@x.com"
 
 
@@ -242,3 +242,43 @@ def test_webhook_and_return_single_membership(monkeypatch, tmp_path):
         cx.row_factory = sqlite3.Row
         rows = subs.active_memberships_by_email(cx, "race@x.com")
     assert len(rows) == 1
+
+
+def test_checkout_refuses_the_discontinued_six_month_term(monkeypatch, tmp_path):
+    """Glen, 2026-11-12: "discontinue the 6 month offer"."""
+    app_module = _load_app(); _fresh(app_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(app_module, "CONTINUOUS_CARE_MONTHLY_ENABLED", True, raising=False)
+    monkeypatch.setattr(app_module, "_STRIPE_ACTIVE", True, raising=False)
+    made = []
+    monkeypatch.setattr(app_module.stripe_pay, "create_checkout_session",
+                        lambda *a, **k: made.append(1) or {"id": "cs", "url": "u"})
+    r = app_module.app.test_client().post(
+        "/continuous-care/checkout", json={"email": "a@x.com", "term_months": 6})
+    assert r.get_json()["ok"] is False and made == []
+
+
+def test_a_checkout_opened_at_99_keeps_99_after_the_price_change(monkeypatch, tmp_path):
+    """Rounds 2 and 3, 2026-11-12: month 1 charged $99 before the $100 change, so
+    months 2..N stay $99. Runs through the real stripe_pay helpers against faked
+    Stripe JSON, so a helper that drops the amount fails here."""
+    app_module = _load_app(); db = _fresh(app_module, monkeypatch, tmp_path)
+    from dashboard import stripe_pay, subscriptions as subs, prepay
+    cases = (("old@x.com", {"amount": 9900, "amount_received": 9900}, None, 9900),
+             ("tot@x.com", {}, 9900, 9900),
+             ("new@x.com", {}, None, prepay.MONTHLY_ANCHOR_CENTS))
+    for email, pi_extra, total, want in cases:
+        def fake_get(path, version="", e=email, x=pi_extra, t=total):
+            if path.startswith("/checkout/sessions/"):
+                return {"id": "cs", "payment_status": "paid", "amount_total": t,
+                        "payment_intent": "pi_1",
+                        "metadata": {"email": e, "kind": "continuous_care_monthly",
+                                     "term_months": "12"}}
+            return {"id": "pi_1", "status": "succeeded", "customer": "cus_1",
+                    "payment_method": "pm_1", **x}
+        monkeypatch.setattr(stripe_pay, "_get", fake_get)
+        app_module._fulfill_continuous_care_monthly(f"sess_{email}")
+        with sqlite3.connect(db) as cx:
+            cx.row_factory = sqlite3.Row
+            rows = subs.active_memberships_by_email(cx, email)
+        assert [r["amount_cents"] for r in rows] == [want], email
+    assert prepay.MONTHLY_ANCHOR_CENTS == 10000

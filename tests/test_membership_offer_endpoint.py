@@ -17,10 +17,10 @@ def test_membership_offer_math_helper_computes_savings():
            ["paracleanse", "nerve-repair", "neuroceramides",
             "microbiome", "oxygen-cleanse", "macular-wellness-lycopene"]]
     m = app_mod._membership_offer_math("nonmember-math@example.com", ffs, "month")
-    assert m["gross_cents"] == 9900
+    assert m["gross_cents"] == 10000
     assert m["savings_cents"] > 0
     assert m["net_savings_cents"] == m["savings_cents"]
-    assert m["net_add_cents"] == max(0, 9900 - m["savings_cents"])
+    assert m["net_add_cents"] == max(0, 10000 - m["savings_cents"])
 
 
 def test_offer_math_for_six_ffs(client):
@@ -32,8 +32,8 @@ def test_offer_math_for_six_ffs(client):
                     headers={"X-Console-Key": app_mod.CONSOLE_SECRET})
     assert r.status_code == 200, r.data
     j = r.get_json()
-    assert j["gross_cents"] == 9900
+    assert j["gross_cents"] == 10000
     assert j["savings_cents"] > 0                       # membership unlocks FF savings
-    assert j["net_add_cents"] == max(0, 9900 - j["savings_cents"])
+    assert j["net_add_cents"] == max(0, 10000 - j["savings_cents"])
     assert j["net_savings_cents"] == j["savings_cents"]
     assert "month" in j["offered_tiers"]

@@ -39,7 +39,7 @@ def program_blocks(*, paid_owned, family_owned, paid_live, family_enabled):
             "Live group coaching with Dr. Glen",
             "Your protocol re-matched as you progress",
             "Your AI ally and Terrain Restore support",
-            "Billed $99 per month for 12 months; your first month is charged today",
+            "Billed $100 per month for 12 months; your first month is charged today",
         ],
         "price_cents": _po.MEMBERSHIP_PRICE_CENTS,
         "value_cents": None,

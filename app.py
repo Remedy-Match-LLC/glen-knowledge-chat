@@ -7236,7 +7236,8 @@ def prepay_checkout():
     data = request.get_json(silent=True) or request.form or {}
     email = (data.get("email") or "").strip().lower()
     tier_key = (data.get("tier_key") or "").strip()
-    tier = _pp.get_tier(tier_key)
+    # Only terms still sold: 3mo and 6mo are retired (Glen, 2026-11-12).
+    tier = _pp.get_tier(tier_key) if _pp.is_sold(tier_key) else None
     if not email or not tier:
         return jsonify({"ok": False, "error": "invalid"}), 200
     base = PUBLIC_BASE_URL.rstrip("/")
@@ -7268,6 +7269,18 @@ def prepay_return():
     res = _fulfill_prepay_term(sid) if sid else {"ok": False}
     ok = bool(res.get("ok"))
     return _redir(f"{PUBLIC_BASE_URL.rstrip('/')}/?prepay={'ok' if ok else 'err'}")
+
+
+def _month_one_cents(pi, fallback_cents):
+    """The monthly amount a card-on-file buyer agreed to: what month 1 actually
+    charged. A checkout opened at $99 and paid after the $100 change (2026-11-12)
+    keeps $99 for months 2..N. Callers pass the session's amount_total, then the
+    catalog price, as the fallback when the PaymentIntent gives no amount."""
+    try:
+        paid = int((pi or {}).get("amount_received") or (pi or {}).get("amount") or 0)
+    except (TypeError, ValueError):
+        paid = 0
+    return paid if paid > 0 else int(fallback_cents)
 
 
 def _continuous_care_checkout_session(email, term_months):
@@ -7337,7 +7350,7 @@ def membership_checkout():
 
 @app.route("/continuous-care/checkout", methods=["POST"])
 def continuous_care_checkout():
-    """Start a Stripe Checkout for Continuous Care MONTHLY (6 or 12 month fixed
+    """Start a Stripe Checkout for Continuous Care MONTHLY (12 month fixed
     term, card-on-file). Unlike the prepay ladder above, this VAULTS the card
     (save_card=True) — month 1 is charged now, and the charge cron bills months
     2..N off the vaulted card, capped at term_charges_total."""
@@ -7349,7 +7362,9 @@ def continuous_care_checkout():
         term_months = int(data.get("term_months") or 0)
     except (TypeError, ValueError):
         term_months = 0
-    if not email or term_months not in (6, 12):
+    # 12 only: the 6-month term is discontinued (Glen, 2026-11-12). Fulfilment still
+    # accepts 6 so a checkout already started completes.
+    if not email or term_months != 12:
         return jsonify({"ok": False, "error": "invalid"}), 200
     try:
         sess = _continuous_care_checkout_session(email, term_months)
@@ -15850,6 +15865,9 @@ def _fulfill_prepay_term(session_id):
         if not (email and tier and pi_id):
             return {"ok": False, "reason": "incomplete"}
         pi = _sp.get_payment_intent(pi_id)
+        # What this buyer actually paid: a session opened before the 2026-11-12
+        # price change books its own price (review round 1).
+        paid_cents = _month_one_cents(pi, sess.get("amount_total") or tier["price_cents"])
         if pi.get("status") != "succeeded":
             return {"ok": False, "reason": "unpaid"}
         claimed = False
@@ -15917,7 +15935,7 @@ def _fulfill_prepay_term(session_id):
                         from dashboard import care_share as _cshare, wallet as _wallet
                         m = _cshare.modules_for_practitioner(disp_pid)
                         if m is not None:
-                            cents = _cshare.share_cents(int(tier["price_cents"]), m)
+                            cents = _cshare.share_cents(int(paid_cents), m)
                             if cents > 0:
                                 _wallet.earn_care_share(
                                     str(disp_pid), cents,
@@ -15954,7 +15972,7 @@ def _fulfill_prepay_term(session_id):
         # never undo the committed grant. Inside the won-claim path, so exactly once.
         try:
             _ingest_order(source="prepay_term", external_ref=pi_id, email=email,
-                          total_cents=tier["price_cents"], channel="retail", status="done")
+                          total_cents=paid_cents, channel="retail", status="done")
         except Exception as _oe:
             print(f"[prepay] order-ledger record failed: {_oe!r}", flush=True)
         try:
@@ -15964,7 +15982,7 @@ def _fulfill_prepay_term(session_id):
                 body = (
                     "Aloha,\n\n"
                     f"Your {tier['label']} of Continuous Care is active - you're all set. "
-                    f"That's ${tier['price_cents']/100:.0f} prepaid (about "
+                    f"That's ${paid_cents/100:,.0f} prepaid (about "
                     f"${per_mo/100:.0f}/mo). I'll keep re-matching your protocol as you "
                     "progress, with live group coaching, your AI ally, and Terrain Restore "
                     "the whole way.\n\n"
@@ -15976,7 +15994,7 @@ def _fulfill_prepay_term(session_id):
         except Exception as _e:
             print(f"[prepay] confirmation email failed: {_e!r}", flush=True)
         _notify_first_cc_signup(email, f"Continuous Care up front ({tier['label']})",
-                                tier["price_cents"])
+                                paid_cents)
         return {"ok": True, "created": True, "email": email}
     except Exception as e:
         print(f"[prepay] fulfill failed: {e!r}", flush=True)
@@ -16021,6 +16039,8 @@ def _fulfill_continuous_care_monthly(session_id):
         if not (email and term_months in (6, 12) and pi_id):
             return {"ok": False, "reason": "incomplete"}
         pi = _sp.get_payment_intent(pi_id)
+        # The price this buyer agreed to, kept for months 2..N and the books (round 1).
+        _cc_paid = _month_one_cents(pi, sess.get("amount_total") or _pp.MONTHLY_ANCHOR_CENTS)
         if pi.get("status") != "succeeded":
             return {"ok": False, "reason": "unpaid"}
         customer = pi.get("customer")
@@ -16104,7 +16124,8 @@ def _fulfill_continuous_care_monthly(session_id):
                 # at term_months total charges (the Task-2 cron cap stops it there).
                 new_sid = _subs.create_membership(
                     cx, email=email, stripe_customer_id=customer,
-                    stripe_payment_method_id=pm, amount_cents=_pp.MONTHLY_ANCHOR_CENTS,
+                    stripe_payment_method_id=pm,
+                    amount_cents=_cc_paid,
                     next_charge_date=next_charge, cadence_months=1,
                     term_charges_total=term_months, initial_order_count=1,
                     attributed_practitioner_id=disp_pid,
@@ -16167,19 +16188,19 @@ def _fulfill_continuous_care_monthly(session_id):
         # once.
         try:
             _ingest_order(source="continuous_care_monthly", external_ref=pi.get("id"),
-                          email=email, items=[], total_cents=_pp.MONTHLY_ANCHOR_CENTS,
+                          email=email, items=[], total_cents=_cc_paid,
                           address={}, channel="retail", status="done")
         except Exception as _oe:
             print(f"[continuous-care] order-ledger record failed: {_oe!r}", flush=True)
         try:
             _send_subscription_email(email, "receipt", {
                 "kind": "membership", "product": "continuous_care",
-                "total_cents": _pp.MONTHLY_ANCHOR_CENTS, "cancel_url": cancel_url,
+                "total_cents": _cc_paid, "cancel_url": cancel_url,
                 "next_charge_date": next_charge, "invoice_id": pi.get("id")})
         except Exception as _e:
             print(f"[continuous-care] confirmation email failed: {_e!r}", flush=True)
         _notify_first_cc_signup(email, f"Continuous Care monthly ({term_months}mo term)",
-                                _pp.MONTHLY_ANCHOR_CENTS)
+                                _cc_paid)
         return {"ok": True, "created": True, "email": email}
     except Exception as e:
         print(f"[continuous-care] fulfill failed: {e!r}", flush=True)
@@ -16323,7 +16344,8 @@ def _fulfill_membership_product(session_id):
                 # Capped at term_charges (the charge cron self-cancels there).
                 _subs.create_membership(
                     cx, email=email, stripe_customer_id=customer,
-                    stripe_payment_method_id=pm, amount_cents=tier["price_cents"],
+                    stripe_payment_method_id=pm,
+                    amount_cents=_month_one_cents(pi, sess.get("amount_total") or tier["price_cents"]),
                     next_charge_date=_subs.add_months(today_s, 1),
                     cadence_months=tier["cadence_months"],
                     term_charges_total=tier["term_charges"], initial_order_count=1)
@@ -26605,7 +26627,10 @@ def dispensary_continuous_care(code):
         term_months = int(body.get("term_months") or 12)
     except (TypeError, ValueError):
         term_months = 12
-    if term_months not in (6, 12):
+    if term_months == 6:
+        # Discontinued (Glen, 2026-11-12). Refused, never silently made 12.
+        return jsonify({"ok": False, "error": "invalid term"}), 200
+    if term_months != 12:
         term_months = 12
 
     # Practitioner-share consent (Task 3): the "Start Continuous Care" card's
@@ -26623,7 +26648,10 @@ def dispensary_continuous_care(code):
     # with dispensary_pid + share_consent riding the metadata so
     # _fulfill_prepay_term can stamp attribution and credit the doctor.
     tier_key = (body.get("tier_key") or "1mo").strip()
-    if tier_key in ("6mo", "12mo"):
+    if tier_key not in ("1mo", "12mo"):
+        # 6mo is discontinued (Glen, 2026-11-12). Never fall through to monthly.
+        return jsonify({"ok": False, "error": "invalid tier"}), 200
+    if tier_key == "12mo":
         tier = _prepay.get_tier(tier_key)
         if not tier:
             return jsonify({"ok": False, "error": "invalid tier"}), 200
@@ -29609,9 +29637,8 @@ def _portal_reorder_module(email):
             continue
         age_days = (now - seen_at).days
         tier = None
-        if 90 < age_days <= 180:
-            tier = "6mo"
-        elif 180 < age_days <= 365:
+        # 6mo is discontinued (Glen, 2026-11-12), so every lapsed item offers 12.
+        if 90 < age_days <= 365:
             tier = "12mo"
         if tier:
             locked_rows.append({
@@ -59572,7 +59599,7 @@ def cron_membership_renewals():
         _src = (r["source"] or "")
         if _src.startswith("prepay_"):
             # A prepaid term is ending. NEVER auto-charge — send a renewal PROMPT at
-            # the (shallower) loyalty renewal rate. Skip if the ladder is dark.
+            # the price checkout charges. Skip if the ladder is dark.
             if not PREPAY_LADDER_ENABLED:
                 continue
             _tier_key = _src[len("prepay_"):]
@@ -59580,16 +59607,18 @@ def cron_membership_renewals():
             _tier = _prepay.get_tier(_tier_key)
             _term_label = (_tier or {}).get("label", "term")
             _base = (PUBLIC_BASE_URL or "").rstrip("/")
-            _renew_url = f"{_base}/prepay?renew={_tier_key}" if _base else "your member portal"
-            _renew_line = (f"${_renew_cents/100:.0f} for another {_term_label}"
-                           if _renew_cents else "your loyalty renewal rate")
+            # A retired term (6mo) renews onto the terms still sold, with no preselect.
+            _renew_q = f"?renew={_tier_key}" if _prepay.is_sold(_tier_key) else ""
+            _renew_url = f"{_base}/prepay{_renew_q}" if _base else "your member portal"
+            _renew_line = (f"${_renew_cents/100:,.0f} for another {_term_label}"
+                           if _renew_cents else "a new monthly or 12-month term")
             subject = f"Your Continuous Care renews in {days_left} day{s_days}"
             body = (
                 f"Aloha,\n\n"
                 f"Your prepaid Continuous Care ends in {days_left} day{s_days}"
                 f" on {r['expires_at']}. There's nothing to cancel and no automatic "
                 f"charge - your card was never kept on file for renewal.\n\n"
-                f"When you're ready to keep going, you can renew at your loyalty rate "
+                f"When you're ready to keep going, you can renew "
                 f"({_renew_line}) here:\n{_renew_url}\n\n"
                 f"Your care and everything in your portal stay active right up "
                 f"to that date.\n\n"
@@ -59603,7 +59632,7 @@ def cron_membership_renewals():
             if not PROGRAM_CARE_TASTER_ENABLED:
                 continue
             _base = (PUBLIC_BASE_URL or "").rstrip("/")
-            _renew_url = f"{_base}/prepay?renew=6mo" if _base else "your member portal"
+            _renew_url = f"{_base}/prepay" if _base else "your member portal"
             subject = f"Your care window ends in {days_left} day{s_days} - keep your Continuous Care going"
             body = (
                 f"Aloha,\n\n"

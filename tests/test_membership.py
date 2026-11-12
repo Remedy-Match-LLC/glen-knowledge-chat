@@ -917,7 +917,7 @@ def test_renewal_cron_care_taster_sends_continuous_care_invite(app_client_mem, f
     assert msgs, "care_taster member was not reminded"
     blob = " ".join(msgs).lower()
     assert "continuous care" in blob
-    assert "/prepay?renew=6mo" in blob
+    assert "/prepay" in blob and "renew=6mo" not in blob
     assert "truly.vip" not in blob              # must NOT get the video-renewal body
 
 

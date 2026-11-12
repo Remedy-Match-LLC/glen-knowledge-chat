@@ -17,5 +17,5 @@ def test_included_group_months_handles_junk():
 
 
 def test_membership_amount_default():
-    assert gb.MEMBERSHIP_AMOUNT_CENTS == 9900
+    assert gb.MEMBERSHIP_AMOUNT_CENTS == 10000
     assert gb.MEMBERSHIP_CADENCE_MONTHS == 1

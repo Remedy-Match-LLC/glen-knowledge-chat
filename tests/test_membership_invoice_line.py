@@ -9,8 +9,8 @@ def test_line_slug_and_for():
     assert line["kind"] == "membership"
     assert line["tier"] == "month"
     assert line["qty"] == 1
-    assert line["unit_cents"] == mp.get_tier("month")["price_cents"] == 9900
-    assert line["line_cents"] == 9900
+    assert line["unit_cents"] == mp.get_tier("month")["price_cents"] == 10000
+    assert line["line_cents"] == 10000
     assert line["name"] == mp.get_tier("month")["label"]
 
 
