@@ -107,7 +107,7 @@ def test_claim_return_creates_membership_and_is_idempotent(monkeypatch, tmp_path
     assert len(rows) == 1, rows
     m = rows[0]
     assert m["kind"] == "membership"
-    assert m["amount_cents"] == 9900
+    assert m["amount_cents"] == 10000
     assert m["cadence_months"] == 1
     today = datetime.date.today().isoformat()
     assert m["next_charge_date"] == subs.add_months(today, 1)

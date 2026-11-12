@@ -87,7 +87,7 @@ def test_grant_creates_membership(monkeypatch, tmp_path):
     assert len(rows) == 1
     m = rows[0]
     assert m["kind"] == "membership"
-    assert m["amount_cents"] == 9900
+    assert m["amount_cents"] == 10000
     assert m["cadence_months"] == 1
     expected = subs.add_months(date.today().isoformat(), 3)
     assert m["next_charge_date"] == expected

@@ -82,7 +82,7 @@ def test_duplicate_member_writes_reconcile_alert(appmod, monkeypatch):
     row = rows[0]
     assert row["email"] == "a@x.com"
     assert row["tier"] == "year_monthly"
-    assert row["amount_cents"] == 9900
+    assert row["amount_cents"] == 10000
     assert row["status"] == "open"
 
 

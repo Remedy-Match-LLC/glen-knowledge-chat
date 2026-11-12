@@ -62,7 +62,7 @@ def test_checkout_creates_session_at_tier_price(monkeypatch, tmp_path):
     r = app_module.app.test_client().post("/prepay/checkout", json={"email": "A@b.com", "tier_key": "12mo"})
     body = r.get_json()
     assert body["ok"] is True and body["url"] == "https://stripe.test/cs_1"
-    assert captured["amount"] == 99000
+    assert captured["amount"] == 100000
     assert captured["save_card"] is False
     assert captured["metadata"]["kind"] == "prepay_term"
     assert captured["metadata"]["tier_key"] == "12mo"
@@ -152,9 +152,7 @@ def test_tiers_endpoint_returns_public_rungs(monkeypatch, tmp_path):
     body = app_module.app.test_client().get("/api/prepay/tiers").get_json()
     assert body["ok"] is True
     keys = [t["key"] for t in body["tiers"]]
-    assert keys == ["1mo", "6mo", "12mo"]  # 3mo retired from the public picker
-    six = next(t for t in body["tiers"] if t["key"] == "6mo")
-    assert six["per_month_cents"] == 9100 and six["savings_pct"] == 8 and six["badge"] == "Most Popular"
+    assert keys == ["1mo", "12mo"]  # 3mo and 6mo retired from the public picker
 
 
 def test_prepay_page_flag_off_redirects(monkeypatch, tmp_path):
@@ -263,3 +261,19 @@ def test_return_unpaid_grants_nothing(monkeypatch, tmp_path):
     with sqlite3.connect(db) as cx:
         n = cx.execute("SELECT COUNT(*) FROM memberships WHERE email='a@b.com'").fetchone()[0]
     assert n == 0
+
+
+def test_checkout_refuses_retired_terms(monkeypatch, tmp_path):
+    """3mo and 6mo are no longer sold (6mo: Glen, 2026-11-12)."""
+    app_module = _load_app(); _fresh(app_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    monkeypatch.setattr(app_module, "_STRIPE_ACTIVE", True, raising=False)
+    made = []
+    from dashboard import stripe_pay
+    monkeypatch.setattr(stripe_pay, "create_checkout_session",
+                        lambda *a, **k: made.append(1) or {"id": "cs", "url": "u"})
+    c = app_module.app.test_client()
+    for key in ("3mo", "6mo"):
+        assert c.post("/prepay/checkout", json={"email": "a@b.com", "tier_key": key}
+                      ).get_json().get("ok") is False, key
+    assert made == []

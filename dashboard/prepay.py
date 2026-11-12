@@ -6,42 +6,43 @@ prepays 3/6/12 months up front at a modest progressive discount graduated to
 (no Flask, no Stripe, no DB) — term math delegates to subscriptions.add_months so
 tests run in isolation, mirroring subscriptions.py.
 
-The monthly term IS the $99/mo care rate: MONTHLY_ANCHOR_CENTS is the single
-source for that rate (also the reroute target for the $99/mo literals in
+The monthly term IS the $100/mo care rate (Glen, 2026-11-12; it was $99): MONTHLY_ANCHOR_CENTS is the single
+source for that rate (also the reroute target for the monthly literals in
 group_bundle.py / portal_offers.py and app.py's QBO tier).
 """
 
 from dashboard import subscriptions as _subs
 
-# The $99/mo Continuous Care rate. Single source of truth.
-MONTHLY_ANCHOR_CENTS = 9900
+# The $100/mo rate (Glen, 2026-11-12: "$100 a month, $1,000 a year"). Single source
+# of truth for new purchases. A subscription stores its own amount, so members who
+# joined at $99 stay at $99.
+MONTHLY_ANCHOR_CENTS = 10000
 
-# When a prepaid term ends, renewal is offered at a shallower (loyalty) rate than
-# the annual "2 months free" deal so we don't train discount-waiting — default =
-# the 6-month per-month rate ($91/mo). Tunable.
-RENEWAL_MONTHLY_CENTS = 9100
+# The renewal reminder quoted a $91/mo "loyalty" rate, which was the 6-month rate.
+# Nothing ever charged it: checkout charges the tier price. With the 6-month term
+# discontinued (Glen, 2026-11-12), the reminder quotes the real checkout price.
 
 # Continuous Care terms, in ascending order. price_cents is the one-time prepay
 # total. Discounts are graduated (0% / ~2% / ~8% / ~17%) capping at "2 months free"
 # at the annual term — a modest loyalty reward, not a fire-sale.
 TIERS = [
-    {"key": "1mo",  "months": 1,  "price_cents": 9900,  "badge": "",             "label": "Monthly"},
+    {"key": "1mo",  "months": 1,  "price_cents": 10000, "badge": "",             "label": "Monthly"},
     {"key": "3mo",  "months": 3,  "price_cents": 29000, "badge": "",             "label": "3 months"},
-    {"key": "6mo",  "months": 6,  "price_cents": 54600, "badge": "Most Popular", "label": "6 months"},
-    {"key": "12mo", "months": 12, "price_cents": 99000, "badge": "2 months free", "label": "12 months"},
+    {"key": "6mo",  "months": 6,  "price_cents": 54600, "badge": "", "label": "6 months"},
+    {"key": "12mo", "months": 12, "price_cents": 100000, "badge": "2 months free", "label": "12 months"},
 ]
 
 _BY_KEY = {t["key"]: t for t in TIERS}
 
-# The public-facing picker ladder. 3mo is retired from the public picker but its
-# TIERS entry is kept above (untouched) for easy restore — just add "3mo" back
-# here if it's ever reinstated.
-PUBLIC_TIER_KEYS = ["1mo", "6mo", "12mo"]
+# The public-facing picker ladder, and the only terms checkout sells. 3mo and 6mo are
+# retired (6mo by Glen, 2026-11-12: "discontinue the 6 month offer"). Their TIERS
+# entries stay so a term already bought still reads, grants and expires.
+PUBLIC_TIER_KEYS = ["1mo", "12mo"]
 
 # Tiers that represent a term commitment (as opposed to the no-commitment
 # monthly anchor) — used by the picker to show the "pay monthly vs pay up
 # front" choice.
-COMMITMENT_TIER_KEYS = ["6mo", "12mo"]
+COMMITMENT_TIER_KEYS = ["12mo"]
 
 
 def get_tier(key):
@@ -121,10 +122,15 @@ def term_days(start_yyyy_mm_dd: str, months: int) -> int:
 
 
 def renewal_price_cents(key):
-    """One-time price to renew the SAME term length at the loyalty renewal rate,
-    or None for an unknown tier. Used only to populate the renewal-prompt copy —
+    """What checkout charges to renew the SAME term, or None when that term is not
+    sold any more (3mo, 6mo) or is unknown. Used only for the renewal-prompt copy;
     no charge is ever made automatically."""
-    t = get_tier(key)
-    if not t:
+    if key not in PUBLIC_TIER_KEYS:
         return None
-    return RENEWAL_MONTHLY_CENTS * t["months"]
+    t = get_tier(key)
+    return t["price_cents"] if t else None
+
+
+def is_sold(key):
+    """True for a term checkout still sells."""
+    return key in PUBLIC_TIER_KEYS and get_tier(key) is not None

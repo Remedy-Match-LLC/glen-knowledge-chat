@@ -7236,7 +7236,8 @@ def prepay_checkout():
     data = request.get_json(silent=True) or request.form or {}
     email = (data.get("email") or "").strip().lower()
     tier_key = (data.get("tier_key") or "").strip()
-    tier = _pp.get_tier(tier_key)
+    # Only terms still sold: 3mo and 6mo are retired (Glen, 2026-11-12).
+    tier = _pp.get_tier(tier_key) if _pp.is_sold(tier_key) else None
     if not email or not tier:
         return jsonify({"ok": False, "error": "invalid"}), 200
     base = PUBLIC_BASE_URL.rstrip("/")
@@ -7337,7 +7338,7 @@ def membership_checkout():
 
 @app.route("/continuous-care/checkout", methods=["POST"])
 def continuous_care_checkout():
-    """Start a Stripe Checkout for Continuous Care MONTHLY (6 or 12 month fixed
+    """Start a Stripe Checkout for Continuous Care MONTHLY (12 month fixed
     term, card-on-file). Unlike the prepay ladder above, this VAULTS the card
     (save_card=True) — month 1 is charged now, and the charge cron bills months
     2..N off the vaulted card, capped at term_charges_total."""
@@ -7349,7 +7350,9 @@ def continuous_care_checkout():
         term_months = int(data.get("term_months") or 0)
     except (TypeError, ValueError):
         term_months = 0
-    if not email or term_months not in (6, 12):
+    # 12 only: the 6-month term is discontinued (Glen, 2026-11-12). Fulfilment still
+    # accepts 6 so a checkout already started completes.
+    if not email or term_months != 12:
         return jsonify({"ok": False, "error": "invalid"}), 200
     try:
         sess = _continuous_care_checkout_session(email, term_months)
@@ -26605,7 +26608,10 @@ def dispensary_continuous_care(code):
         term_months = int(body.get("term_months") or 12)
     except (TypeError, ValueError):
         term_months = 12
-    if term_months not in (6, 12):
+    if term_months == 6:
+        # Discontinued (Glen, 2026-11-12). Refused, never silently made 12.
+        return jsonify({"ok": False, "error": "invalid term"}), 200
+    if term_months != 12:
         term_months = 12
 
     # Practitioner-share consent (Task 3): the "Start Continuous Care" card's
@@ -26623,7 +26629,10 @@ def dispensary_continuous_care(code):
     # with dispensary_pid + share_consent riding the metadata so
     # _fulfill_prepay_term can stamp attribution and credit the doctor.
     tier_key = (body.get("tier_key") or "1mo").strip()
-    if tier_key in ("6mo", "12mo"):
+    if tier_key not in ("1mo", "12mo"):
+        # 6mo is discontinued (Glen, 2026-11-12). Never fall through to monthly.
+        return jsonify({"ok": False, "error": "invalid tier"}), 200
+    if tier_key == "12mo":
         tier = _prepay.get_tier(tier_key)
         if not tier:
             return jsonify({"ok": False, "error": "invalid tier"}), 200
@@ -59580,9 +59589,11 @@ def cron_membership_renewals():
             _tier = _prepay.get_tier(_tier_key)
             _term_label = (_tier or {}).get("label", "term")
             _base = (PUBLIC_BASE_URL or "").rstrip("/")
-            _renew_url = f"{_base}/prepay?renew={_tier_key}" if _base else "your member portal"
-            _renew_line = (f"${_renew_cents/100:.0f} for another {_term_label}"
-                           if _renew_cents else "your loyalty renewal rate")
+            # A retired term (6mo) renews onto the terms still sold, with no preselect.
+            _renew_q = f"?renew={_tier_key}" if _prepay.is_sold(_tier_key) else ""
+            _renew_url = f"{_base}/prepay{_renew_q}" if _base else "your member portal"
+            _renew_line = (f"${_renew_cents/100:,.0f} for another {_term_label}"
+                           if _renew_cents else "a new monthly or 12-month term")
             subject = f"Your Continuous Care renews in {days_left} day{s_days}"
             body = (
                 f"Aloha,\n\n"
@@ -59603,7 +59614,7 @@ def cron_membership_renewals():
             if not PROGRAM_CARE_TASTER_ENABLED:
                 continue
             _base = (PUBLIC_BASE_URL or "").rstrip("/")
-            _renew_url = f"{_base}/prepay?renew=6mo" if _base else "your member portal"
+            _renew_url = f"{_base}/prepay" if _base else "your member portal"
             subject = f"Your care window ends in {days_left} day{s_days} - keep your Continuous Care going"
             body = (
                 f"Aloha,\n\n"

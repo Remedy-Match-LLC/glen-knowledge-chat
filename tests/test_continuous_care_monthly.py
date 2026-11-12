@@ -73,7 +73,7 @@ def test_checkout_builds_vaulted_session(monkeypatch, tmp_path):
 
     monkeypatch.setattr(app_module.stripe_pay, "create_checkout_session", fake_sess)
     r = app_module.app.test_client().post(
-        "/continuous-care/checkout", json={"email": "a@x.com", "term_months": 6})
+        "/continuous-care/checkout", json={"email": "a@x.com", "term_months": 12})
     body = r.get_json()
     assert body["ok"] is True
     assert body["url"] == "https://stripe/x"
@@ -81,7 +81,7 @@ def test_checkout_builds_vaulted_session(monkeypatch, tmp_path):
     assert cap["amount"] == prepay.MONTHLY_ANCHOR_CENTS
     assert cap["kw"]["save_card"] is True
     assert cap["kw"]["metadata"]["kind"] == "continuous_care_monthly"
-    assert cap["kw"]["metadata"]["term_months"] == "6"
+    assert cap["kw"]["metadata"]["term_months"] == "12"
     assert cap["kw"]["metadata"]["email"] == "a@x.com"
 
 
@@ -242,3 +242,16 @@ def test_webhook_and_return_single_membership(monkeypatch, tmp_path):
         cx.row_factory = sqlite3.Row
         rows = subs.active_memberships_by_email(cx, "race@x.com")
     assert len(rows) == 1
+
+
+def test_checkout_refuses_the_discontinued_six_month_term(monkeypatch, tmp_path):
+    """Glen, 2026-11-12: "discontinue the 6 month offer"."""
+    app_module = _load_app(); _fresh(app_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(app_module, "CONTINUOUS_CARE_MONTHLY_ENABLED", True, raising=False)
+    monkeypatch.setattr(app_module, "_STRIPE_ACTIVE", True, raising=False)
+    made = []
+    monkeypatch.setattr(app_module.stripe_pay, "create_checkout_session",
+                        lambda *a, **k: made.append(1) or {"id": "cs", "url": "u"})
+    r = app_module.app.test_client().post(
+        "/continuous-care/checkout", json={"email": "a@x.com", "term_months": 6})
+    assert r.get_json()["ok"] is False and made == []
