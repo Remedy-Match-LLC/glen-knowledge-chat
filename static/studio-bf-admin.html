@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Studio Black Friday Claims</title>
+  <style>
+    :root { --ink:#1a2433; --muted:#5b6776; --line:#e3e8ef; --brand:#2f6f5e; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
+      Helvetica,Arial,sans-serif; color:var(--ink); background:#f6f8fa; line-height:1.45; }
+    .wrap { max-width:1000px; margin:0 auto; padding:28px 16px 64px; }
+    h1 { font-size:1.4rem; margin:0 0 4px; }
+    p.note { color:var(--muted); margin:0 0 18px; font-size:.95rem; }
+    .scroll { overflow-x:auto; background:#fff; border:1px solid var(--line); border-radius:12px; }
+    table { border-collapse:collapse; width:100%; font-size:.92rem; }
+    th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line);
+      vertical-align:top; white-space:nowrap; }
+    th { background:#f0f3f6; font-weight:600; }
+    .st-confirmed { color:var(--brand); font-weight:600; }
+    .st-rejected { color:#b42318; font-weight:600; }
+    button { padding:5px 9px; border:1px solid var(--line); border-radius:7px;
+      background:#fff; cursor:pointer; font-size:.85rem; margin-right:4px; }
+    #keyBox input { padding:9px; border:1px solid var(--line); border-radius:8px; width:260px; }
+    .err { color:#b42318; margin:10px 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Studio Black Friday claims</h1>
+    <p class="note">Match each claim to a line in Studio's Transactions table by date and
+      plan. Then mark it confirmed or rejected. Free items and the bonus month wait for a
+      confirmed claim.</p>
+    <div id="keyBox" hidden>
+      <input id="key" type="password" placeholder="Console key">
+      <button id="saveKey">Open</button>
+    </div>
+    <div id="err" class="err"></div>
+    <div class="scroll"><table>
+      <thead><tr><th>Claimed</th><th>Name</th><th>Email</th><th>Bought on Studio</th>
+        <th>Plan</th><th>Last day to buy</th><th>On list</th><th>Check</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+  </div>
+  <script>
+  (function(){
+    var KEY = '';
+    try { KEY = localStorage.getItem('console_key') || ''; } catch (e) {}
+    var rows = document.getElementById('rows'), err = document.getElementById('err');
+    function api(method, body){
+      return fetch('/api/console/studio-bf', { method: method,
+        headers: { 'Content-Type':'application/json', 'X-Console-Key': KEY },
+        body: body ? JSON.stringify(body) : undefined })
+        .then(function(r){
+          if (r.status === 401 || r.status === 403) { askKey(); throw new Error('Key rejected'); }
+          return r.json();
+        });
+    }
+    function askKey(){ document.getElementById('keyBox').hidden = false; }
+    document.getElementById('saveKey').onclick = function(){
+      KEY = document.getElementById('key').value.trim();
+      try { localStorage.setItem('console_key', KEY); } catch (e) {}
+      document.getElementById('keyBox').hidden = true; load();
+    };
+    function cell(tr, text, cls){ var td = document.createElement('td');
+      td.textContent = text; if (cls) td.className = cls; tr.appendChild(td); return td; }
+    function load(){
+      err.textContent = '';
+      api('GET').then(function(j){
+        rows.textContent = '';
+        (j.claims || []).forEach(function(c){
+          var tr = document.createElement('tr');
+          cell(tr, c.claimed_on); cell(tr, c.name); cell(tr, c.email);
+          cell(tr, c.bought_on); cell(tr, c.plan_label); cell(tr, c.last_day_label);
+          cell(tr, c.list_optin ? 'yes' : 'no');
+          cell(tr, c.status, 'st-' + c.status);
+          var td = cell(tr, '');
+          [['confirmed','Confirm'],['rejected','Reject'],['pending','Reset']].forEach(function(p){
+            if (p[0] === c.status) return;
+            var b = document.createElement('button'); b.textContent = p[1];
+            b.onclick = function(){ api('POST', {email: c.email, status: p[0], by: 'rae'})
+              .then(load).catch(function(e){ err.textContent = e.message; }); };
+            td.appendChild(b);
+          });
+          rows.appendChild(tr);
+        });
+        if (!(j.claims || []).length) {
+          var tr = document.createElement('tr'); var td = cell(tr, 'No claims yet.');
+          td.colSpan = 9; rows.appendChild(tr);
+        }
+      }).catch(function(e){ err.textContent = e.message; });
+    }
+    if (KEY) load(); else askKey();
+  })();
+  </script>
+</body>
+</html>
