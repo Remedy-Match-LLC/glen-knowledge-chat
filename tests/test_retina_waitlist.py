@@ -586,3 +586,15 @@ def test_a_missing_alias_table_returns_the_address(cx, monkeypatch):
         raise _sq.OperationalError("no such table: email_aliases")
     monkeypatch.setattr(pa, "canonical_email", _missing)
     assert pw._person_email(cx, "a@x.com") == "a@x.com"
+
+
+def test_a_missing_alias_column_raises(cx, monkeypatch):
+    """Round 2: a missing column does not prove there are no aliases, so it raises."""
+    import sqlite3 as _sq
+    from dashboard import person_aliases as pa
+
+    def _nocol(_cx, _e):
+        raise _sq.OperationalError("no such column: canonical")
+    monkeypatch.setattr(pa, "canonical_email", _nocol)
+    with pytest.raises(_sq.OperationalError):
+        pw._person_email(cx, "a@x.com")

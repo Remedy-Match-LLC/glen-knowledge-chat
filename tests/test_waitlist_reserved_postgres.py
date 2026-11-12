@@ -17,18 +17,18 @@ pytestmark = pytest.mark.skipif(not DSN, reason="BIOFIELD_PG_TEST_DSN not set")
 
 
 def _fresh(monkeypatch):
+    """A connection whose search_path is ONE new, uniquely named schema. Every table the
+    tests create or drop lives there, so a wrong DSN never touches real tables (round 2)."""
+    import secrets
     monkeypatch.setenv("DB_BACKEND", "postgres")
     monkeypatch.setenv("PG_DSN", DSN)
     from dashboard import db
     cx = db.connect("unused")
-    # These tests drop real table names. Refuse any database that looks used (round 3).
-    n = cx.execute("SELECT COUNT(*) FROM information_schema.tables "
-                   "WHERE table_schema='public'").fetchone()[0]
-    if n > 6:
-        cx.close()
-        pytest.fail(f"BIOFIELD_PG_TEST_DSN has {n} tables; point it at a throwaway database")
-    cx.execute("DROP TABLE IF EXISTS subscriptions")
-    cx.execute("DROP TABLE IF EXISTS wl_probe")
+    schema = "wl_reserved_test_" + secrets.token_hex(4)
+    cx.execute(f"CREATE SCHEMA {schema}")       # fails if it exists: never reuse one
+    cx.execute(f"SET search_path TO {schema}")
+    cx.commit()                                 # a rolled-back SET would revert
+    cx._wl_schema = schema
     cx.execute("CREATE TABLE subscriptions (id SERIAL PRIMARY KEY, email TEXT, status TEXT)")
     cx.execute("CREATE TABLE wl_probe (v TEXT)")
     cx.commit()
@@ -37,8 +37,8 @@ def _fresh(monkeypatch):
 
 def _cleanup(cx):
     cx.rollback()
-    cx.execute("DROP TABLE IF EXISTS subscriptions")
-    cx.execute("DROP TABLE IF EXISTS wl_probe")
+    cx.execute(f"DROP SCHEMA {cx._wl_schema} CASCADE")
+    cx.execute("RESET search_path")
     cx.commit()
     cx.close()
 
@@ -89,9 +89,6 @@ def test_missing_suppression_and_alias_tables_keep_the_earlier_write(monkeypatch
     from dashboard import product_waitlist as pw
     cx = _fresh(monkeypatch)
     try:
-        cx.execute("DROP TABLE IF EXISTS email_suppression")
-        cx.execute("DROP TABLE IF EXISTS email_aliases")
-        cx.execute("DROP TABLE IF EXISTS people")
         cx.execute("CREATE TABLE people (id SERIAL PRIMARY KEY, email TEXT UNIQUE, tags TEXT DEFAULT '[]')")
         cx.commit()
         cx.execute("INSERT INTO wl_probe VALUES ('kept')")       # uncommitted
@@ -101,8 +98,5 @@ def test_missing_suppression_and_alias_tables_keep_the_earlier_write(monkeypatch
         cx.commit()
         assert cx.execute("SELECT v FROM wl_probe").fetchone()[0] == "kept"
     finally:
-        cx.rollback()
-        cx.execute("DROP TABLE IF EXISTS people")
-        cx.commit()
         _cleanup(cx)
 

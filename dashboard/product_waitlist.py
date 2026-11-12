@@ -136,6 +136,18 @@ def init_table(cx):
     cx.commit()
 
 
+def _table_missing(exc):
+    """True only for "this table does not exist", never a missing column or other failure."""
+    try:
+        import psycopg
+        if isinstance(exc, psycopg.errors.UndefinedTable):
+            return True
+    except ImportError:
+        pass
+    import sqlite3
+    return isinstance(exc, sqlite3.OperationalError) and "no such table" in str(exc).lower()
+
+
 def _person_email(cx, email):
     """The surviving person's address: a merged-away address tags the survivor (round 1)."""
     from dashboard import person_aliases as _pa
@@ -149,10 +161,10 @@ def _person_email(cx, email):
             cx.execute("RELEASE SAVEPOINT waitlist_alias")
         except Exception:  # noqa: BLE001
             raise exc
-        # Only a missing alias table means "no aliases". A timeout or lock raises, or
-        # _reserved could miss a reserver filed under a merged-away address (round 3).
-        from dashboard import subscriptions as _subs
-        if _subs._schema_missing(exc):
+        # Only a missing alias TABLE means "no aliases". A missing column, timeout or lock
+        # raises, or _reserved could miss a reserver filed under a merged-away address
+        # (rounds 2 and 3).
+        if _table_missing(exc):
             return email
         raise
     cx.execute("RELEASE SAVEPOINT waitlist_alias")
