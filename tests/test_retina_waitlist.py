@@ -541,3 +541,48 @@ def test_once_confirmed_only_the_confirmation_line_shows(tmp_path):
     env = dict(os.environ, NODE_OPTIONS="")
     out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30, env=env)
     assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
+
+
+def test_a_suppression_lookup_that_fails_otherwise_stops_the_list(cx):
+    """Round 3: only a missing email_suppression table means nobody is suppressed. A lock
+    or timeout raises, or a bounced address would get the launch email."""
+    import sqlite3 as _sq
+
+    class _Locked:
+        def __init__(self, real):
+            self.real = real
+
+        def execute(self, sql, *a):
+            if "FROM email_suppression" in sql:
+                raise _sq.OperationalError("database is locked")
+            return self.real.execute(sql, *a)
+
+        def __getattr__(self, name):
+            return getattr(self.real, name)
+
+    cx.execute("CREATE TABLE IF NOT EXISTS email_suppression (email TEXT PRIMARY KEY)")
+    _join(cx, "a@x.com")
+    with pytest.raises(_sq.OperationalError):
+        pw.waiters_to_email(_Locked(cx), SLUG)
+
+
+def test_an_alias_lookup_that_fails_otherwise_raises(cx, monkeypatch):
+    """Round 3: a timeout on the alias lookup must not silently return the raw address."""
+    import sqlite3 as _sq
+    from dashboard import person_aliases as pa
+
+    def _boom(_cx, _e):
+        raise _sq.OperationalError("database is locked")
+    monkeypatch.setattr(pa, "canonical_email", _boom)
+    with pytest.raises(_sq.OperationalError):
+        pw._person_email(cx, "a@x.com")
+
+
+def test_a_missing_alias_table_returns_the_address(cx, monkeypatch):
+    import sqlite3 as _sq
+    from dashboard import person_aliases as pa
+
+    def _missing(_cx, _e):
+        raise _sq.OperationalError("no such table: email_aliases")
+    monkeypatch.setattr(pa, "canonical_email", _missing)
+    assert pw._person_email(cx, "a@x.com") == "a@x.com"

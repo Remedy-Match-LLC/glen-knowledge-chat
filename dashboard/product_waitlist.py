@@ -142,14 +142,19 @@ def _person_email(cx, email):
     cx.execute("SAVEPOINT waitlist_alias")
     try:
         out = _pa.canonical_email(cx, email) or email
-    except Exception:  # noqa: BLE001 - no alias table yet
+    except Exception as exc:  # noqa: BLE001
         # Undo only this lookup: a full rollback would drop the caller's open writes.
         try:
             cx.execute("ROLLBACK TO SAVEPOINT waitlist_alias")
             cx.execute("RELEASE SAVEPOINT waitlist_alias")
         except Exception:  # noqa: BLE001
-            pass
-        return email
+            raise exc
+        # Only a missing alias table means "no aliases". A timeout or lock raises, or
+        # _reserved could miss a reserver filed under a merged-away address (round 3).
+        from dashboard import subscriptions as _subs
+        if _subs._schema_missing(exc):
+            return email
+        raise
     cx.execute("RELEASE SAVEPOINT waitlist_alias")
     return out
 
@@ -354,13 +359,18 @@ def _unmailable(cx):
     try:
         out |= {_norm(r[0]) for r in cx.execute("SELECT email FROM email_suppression").fetchall()}
         cx.execute("RELEASE SAVEPOINT waitlist_suppression")
-    except Exception:  # noqa: BLE001 - no suppression table
+    except Exception as exc:  # noqa: BLE001
         # Undo only this lookup: a full rollback would drop the caller's open writes.
         try:
             cx.execute("ROLLBACK TO SAVEPOINT waitlist_suppression")
             cx.execute("RELEASE SAVEPOINT waitlist_suppression")
         except Exception:  # noqa: BLE001
-            pass
+            raise exc
+        # Only a missing table means "nobody suppressed". A timeout or lock raises, or a
+        # bounced address would get the launch email (round 3).
+        from dashboard import subscriptions as _subs
+        if not _subs._schema_missing(exc):
+            raise
     for e, t in cx.execute("SELECT email, tags FROM people WHERE tags LIKE ?",
                            ('%"consent:unsubscribed"%',)).fetchall():
         if "consent:unsubscribed" in json.loads(t or "[]"):

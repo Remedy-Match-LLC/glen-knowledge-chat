@@ -21,6 +21,12 @@ def _fresh(monkeypatch):
     monkeypatch.setenv("PG_DSN", DSN)
     from dashboard import db
     cx = db.connect("unused")
+    # These tests drop real table names. Refuse any database that looks used (round 3).
+    n = cx.execute("SELECT COUNT(*) FROM information_schema.tables "
+                   "WHERE table_schema='public'").fetchone()[0]
+    if n > 6:
+        cx.close()
+        pytest.fail(f"BIOFIELD_PG_TEST_DSN has {n} tables; point it at a throwaway database")
     cx.execute("DROP TABLE IF EXISTS subscriptions")
     cx.execute("DROP TABLE IF EXISTS wl_probe")
     cx.execute("CREATE TABLE subscriptions (id SERIAL PRIMARY KEY, email TEXT, status TEXT)")
@@ -99,3 +105,4 @@ def test_missing_suppression_and_alias_tables_keep_the_earlier_write(monkeypatch
         cx.execute("DROP TABLE IF EXISTS people")
         cx.commit()
         _cleanup(cx)
+
