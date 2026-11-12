@@ -31317,6 +31317,125 @@ def api_ebook_optin():
     return _cors(jsonify({"ok": True}), 200)
 
 
+# Studio Black Friday 2026 (marketing tab design, Glen 2026-11-12). The page stays
+# unlinked, and the offer email held, until marketing's copy is approved.
+@app.route("/studio-bf")
+def studio_bf_page():
+    resp = send_from_directory(STATIC, "studio-bf.html")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/api/studio-bf/claim", methods=["POST"])
+def api_studio_bf_claim():
+    """Public. Records one claim per email and, once the copy is released, sends the
+    offer email once. Echoes nothing about the claim: the last day to buy is in the
+    email, so the reply cannot tell anyone whether an address claimed earlier."""
+    from dashboard import studio_bf as _sbf
+    if not _sbf.is_open():
+        return jsonify({"ok": False, "error": "This offer closed on Sunday 6 December."}), 410
+    try:
+        claim = _sbf.clean_claim(request.get_json(silent=True) or request.form.to_dict())
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    # The auth routes' limiter: one caller typing many addresses is refused (round 1).
+    limited = _auth_rate_limited(claim["email"])
+    if limited:
+        return limited
+    with _db_lock, db.connect(LOG_DB) as cx:
+        row, _new = _sbf.save_claim(cx, claim)
+        msg = _sbf.offer_message(row)
+        send = bool(msg) and _sbf.claim_offer_send(cx, row["email"])
+    if send:
+        import threading
+        threading.Thread(target=_studio_bf_send_offer, args=(row["email"], msg),
+                         daemon=True).start()
+    return jsonify({"ok": True})
+
+
+def _studio_bf_send_offer(email, msg):
+    """Marketing mail through SES: the suppression list is checked and the footer
+    carries an unsubscribe link. A send that surely did not go out frees the mark."""
+    from dashboard import ses_mail as _ses, studio_bf as _sbf
+    try:
+        outcome, _mid = _ses.deliver(lambda: db.connect(LOG_DB), email, msg[0], msg[1],
+                                     marketing=True)
+    except Exception as e:
+        print(f"[studio-bf] send raised: {type(e).__name__}", flush=True)
+        outcome = "unknown"
+    print(f"[studio-bf] offer {outcome or 'not sent'}", flush=True)
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _sbf.record_offer_outcome(cx, email, outcome)
+    except Exception as e:
+        print(f"[studio-bf] outcome not recorded: {type(e).__name__}", flush=True)
+    return outcome
+
+
+@app.route("/admin/studio-bf")
+def admin_studio_bf_page():
+    """Rae's list. The page collects the console key; its API is console-gated."""
+    resp = send_from_directory(STATIC, "studio-bf-admin.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+def _studio_bf_console_ok():
+    """The console key or an owner token. Unlike _portal_console_ok, an unset secret
+    refuses: this list holds buyers' names and emails."""
+    import hmac
+    # The env var itself: CONSOLE_SECRET falls back to WEBHOOK_SECRET (review round 3).
+    secret = os.environ.get("CONSOLE_SECRET", "").strip()
+    key = _present_console_key()
+    if not key or not secret:
+        return False
+    if hmac.compare_digest(str(key).encode("utf-8"), secret.encode("utf-8")):
+        return True
+    return bool(_owner_token_ok(key))
+
+
+@app.route("/api/console/studio-bf", methods=["GET", "POST"])
+def api_console_studio_bf():
+    """GET: every claim. POST {email, status}: Rae's check against Studio's
+    Transactions table, one of pending, confirmed, rejected. POST
+    {action: "send_pending"}: send the offer to every claim it has not reached,
+    such as those made while the copy was held (review round 2). Console-gated."""
+    if not _studio_bf_console_ok():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    from dashboard import studio_bf as _sbf
+    body = request.get_json(silent=True) or {}
+    if request.method == "POST" and body.get("action") == "send_pending":
+        return _studio_bf_send_pending()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        if request.method == "GET":
+            return jsonify({"ok": True, "claims": _sbf.list_claims(cx)})
+        try:
+            row = _sbf.set_status(cx, body.get("email"), body.get("status"),
+                                  body.get("by") or "console")
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+    if row is None:
+        return jsonify({"ok": False, "error": "no claim for that email"}), 404
+    return jsonify({"ok": True, "claim": row})
+
+
+def _studio_bf_send_pending():
+    """Marks each unsent claim under the lock, then sends in turn outside it."""
+    from dashboard import studio_bf as _sbf
+    if _sbf.OFFER_SUBJECT is None or _sbf.OFFER_TEXT is None:
+        return jsonify({"ok": False, "error": "the offer copy is still held"}), 409
+    with _db_lock, db.connect(LOG_DB) as cx:
+        todo = []
+        for em in _sbf.pending_offer_emails(cx):
+            if _sbf.claim_offer_send(cx, em):
+                todo.append((em, _sbf.offer_message(_sbf.get_claim(cx, em))))
+    outcomes = {}
+    for em, msg in todo:
+        o = _studio_bf_send_offer(em, msg) or "not sent"
+        outcomes[o] = outcomes.get(o, 0) + 1
+    return jsonify({"ok": True, "tried": len(todo), "outcomes": outcomes})
+
+
 @app.route("/api/portal/<token>/folds", methods=["GET", "PUT"])
 def api_portal_folds(token):
     """One fold record per viewer per portal. Staff never write the client's record:
