@@ -177,9 +177,9 @@
 
   /* Videos */
   .videos{display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:14px}
-  .video .frame{position:relative; aspect-ratio:16/9; border-radius:10px; overflow:hidden; background:var(--soft)}
-  .video .frame iframe{position:absolute; inset:0; width:100%; height:100%; border:0}
-  .video .label{font-size:14px; color:var(--muted); margin:10px 0 0}
+  .video .frame, .kloudclip .frame{position:relative; aspect-ratio:16/9; border-radius:10px; overflow:hidden; background:var(--soft)}
+  .video .frame iframe, .kloudclip .frame iframe{position:absolute; inset:0; width:100%; height:100%; border:0}
+  .video .label, .kloudclip .label{font-size:14px; color:var(--muted); margin:10px 0 0}
 
   /* Programs table */
   table.programs{
@@ -267,6 +267,17 @@
       <figure class="video" style="margin:0">
         <div class="frame"><iframe src="https://www.youtube-nocookie.com/embed/sg8hz8B87gk" title="BEMER Circulation Comparison" loading="lazy" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
         <figcaption class="label">Blood flow before, during and after a session on a BEMER mat. BEMER is an earlier PEMF device from another company developed by the same researchers. This video was not filmed on a Kloud.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Kloud video (Glen's channel) -->
+  <section class="block" id="kloud-video">
+    <h2 class="section-title">On the Kloud</h2>
+    <div class="videos">
+      <figure class="kloudclip" style="margin:0">
+        <div class="frame"><iframe src="https://www.youtube-nocookie.com/embed/H3qdRdE1lq4" title="Connective Tissue Fibroblast Growth With Kloud" loading="lazy" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
+        <figcaption class="label">Connective tissue fibroblast growth with the Kloud.</figcaption>
       </figure>
     </div>
   </section>
