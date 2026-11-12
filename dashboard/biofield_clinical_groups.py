@@ -89,6 +89,9 @@ def factors_for(cx, test_id, record_findings=None):
     for f in record_findings or []:
         if f.get("kind") not in RECORD_KINDS:
             continue
+        # A pasted-notes suggestion is not a factor until Glen adds it (review round 1).
+        if f.get("pasted"):
+            continue
         text = _clean(f.get("text"), FACTOR_MAX)
         key = item_key(text)
         if key and key not in seen:

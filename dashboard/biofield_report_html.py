@@ -232,11 +232,14 @@ _RECORDS_HTML = ("<style>.records{margin-top:14px;padding:10px 12px;border:1px d
     # Escapes quotes too: the wording sits inside value="..." (review round 2).
     "function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;')"
     ".replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;')}"
-    "function src(f){return esc(f.filename)+(f.page?', page '+f.page:'')+' &middot; email '+esc(f.email_date)"
+    # Glen, 2026-11-04: a finding from pasted notes says so, with the day it was pasted.
+    "function src(f){if(f.pasted)return 'From pasted notes &middot; added '+esc(f.added);"
+    "return esc(f.filename)+(f.page?', page '+f.page:'')+' &middot; email '+esc(f.email_date)"
     "+(f.subject?' &ldquo;'+esc(f.subject)+'&rdquo;':'')+(f.date?' &middot; dated '+esc(f.date):'')}"
     "function render(j,note){if(!j.ok){box.innerHTML='<div class=food>'+esc(j.error||'Records unavailable')+'</div>';return}"
     "var h='';if(j.held)h+='<div class=food>Records were not read: E4L shows more than one person on this address.</div>';"
-    "var p='';if(j.pending.length){p+='<div class=proposal-head><b>Proposed from records</b>'"
+    "var p='';if(j.pending.length){var np=j.pending.filter(function(f){return f.pasted}).length;"
+    "p+='<div class=proposal-head><b>Proposed from '+(np===j.pending.length?'pasted notes':np?'records and pasted notes':'records')+'</b>'"
     "+'<span>Check each against the record. Edit the wording before you add it.</span></div>';"
     "j.pending.forEach(function(f){p+='<div class=\"proposal-row rf\" data-id='+f.id+'><div><span class=kind>'+esc(f.kind_label)+'</span>'"
     "+'<input value=\"'+esc(f.text)+'\" aria-label=\"Finding wording\"><div class=proposal-evidence>'+src(f)+'</div></div>'"
@@ -267,7 +270,7 @@ _RECORDS_HTML = ("<style>.records{margin-top:14px;padding:10px 12px;border:1px d
     "var r=await call(base+'/'+id,{decision:d,text:inp?inp.value:''});b.disabled=false;"
     "if(r.ok&&d!=='reject'&&/Diagnosis/.test(row.textContent)){location.reload();return}load(r.ok?'':r.error)}"
     "box.addEventListener('click',onClick);var pb=document.getElementById('recordProposals');if(pb)pb.addEventListener('click',onClick);"
-    "readAll()})();</script>")
+    "if(typeof window!=='undefined')window.refreshRecords=load;readAll()})();</script>")
 
 def _page(title, body, client_name="", client_email=""):
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
@@ -1351,8 +1354,13 @@ async function minePaste(btn){var box=document.getElementById('pasteNotes'),text
   var sk=j.skipped?' Skipped '+j.skipped+' that looked like copied text.':'';
   if(j.added>0)loadStress();
   if(j.error){pstat('Pasted notes: '+j.error+(j.added>0?' Added '+j.added+' before that.':'')+sk);return}
-  if(box.value===text)box.value='';
-  pstat((j.added?'Added '+j.added+' stress(es) from the pasted notes.':'No new stresses found in the pasted notes.')+sk)}
+  // Conditions and medicines wait in the records box for Add or Not relevant.
+  var cl=j.offered?' Offered '+j.offered+' condition(s) or medicine(s) for review under the Clinical Summary.':'';
+  if(j.already)cl+=' Already listed: '+j.already+'.';
+  if(j.clinical_note)cl+=' '+j.clinical_note;
+  if(j.offered){try{window.refreshRecords&&window.refreshRecords()}catch(e){}}
+  if(box.value===text&&!j.keep_notes)box.value='';
+  pstat((j.added?'Added '+j.added+' stress(es) from the pasted notes.':'No new stresses found in the pasted notes.')+sk+cl)}
  finally{if(btn)btn.disabled=false}}
 async function loadClinicalProposals(){
  var box=document.getElementById('clinicalProposals');if(!box)return;

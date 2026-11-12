@@ -66,6 +66,15 @@ def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _local_day(stamp):
+    """A stored UTC time as this computer's calendar day: a paste at 6 pm in Hilo
+    is that day, not the next (review round 1)."""
+    try:
+        return datetime.fromisoformat(str(stamp)).astimezone().date().isoformat()
+    except (TypeError, ValueError):
+        return str(stamp or "")[:10]
+
+
 def record_kind(mime, filename):
     """"pdf", "image", "textutil" or "text" for a record this can read, else ""."""
     mime, name = (mime or "").lower(), (filename or "").lower()
@@ -389,8 +398,9 @@ def findings(cx, email):
     except Exception:
         meta = {}
     out = {"pending": [], "approved": []}
-    for fid, mid, name, page, kind, text, date, status in cx.execute(
-            "SELECT id, message_id, filename, page, kind, text, finding_date, status "
+    for fid, mid, name, page, kind, text, date, status, added in cx.execute(
+            "SELECT id, message_id, filename, page, kind, text, finding_date, status, "
+            "created_at "
             "FROM client_record_findings WHERE client_email=? AND status IN "
             "('pending','approved') ORDER BY finding_date DESC, id", (email,)):
         sent, subject = meta.get(mid, ("", ""))
@@ -398,7 +408,9 @@ def findings(cx, email):
         cite = page if record_kind("", name) == "pdf" else None
         out[status].append({"id": fid, "kind": kind, "kind_label": KIND_LABEL[kind],
                             "text": text, "date": date or "", "filename": name,
-                            "page": cite, "email_date": sent[:10], "subject": subject})
+                            "page": cite, "email_date": sent[:10], "subject": subject,
+                            "pasted": str(mid).startswith(PASTE_PREFIX),
+                            "added": _local_day(added)})
     out["failed"] = [r[0] for r in cx.execute(
         "SELECT filename FROM client_record_reads WHERE client_email=? AND error IS NOT NULL "
         "AND attempts >= ?", (email, ATTEMPTS))]
@@ -450,3 +462,146 @@ def approved_diagnoses(cx, email):
     return [r[0] for r in cx.execute(
         "SELECT text FROM client_record_findings WHERE client_email=? AND "
         "status='approved' AND kind='diagnosis' ORDER BY id", (email,))]
+
+
+# --- Pasted notes (Glen, 2026-11-04) ---------------------------------------------------
+# Pasting a client's notes finds conditions and medicines as well as stresses. Each is
+# stored as a pending finding beside those read from records, so Glen accepts or dismisses
+# it in the same place. Nothing joins the Clinical summary until he accepts it. The
+# notes themselves are never stored: only the findings the model returns.
+PASTE_KINDS = ("diagnosis", "medication")
+PASTE_FILENAME = "Pasted notes"
+PASTE_PREFIX = "paste:"
+PASTE_TEXT_MAX = 160    # what SYSTEM asks for; a longer finding may be copied notes
+
+
+def _label_keys(label):
+    """The keys a label is known by: the whole label, and its text before "(".
+    "Glaucoma (3 eye drops)" is known as "glaucoma" too, so a pasted "Glaucoma" is
+    not offered again."""
+    from dashboard.biofield_clinical_proposals import item_key
+    label = str(label or "")
+    keys = {item_key(label), item_key(label.split("(", 1)[0])}
+    return {k for k in keys if k}
+
+
+def _medicine_name(text):
+    """A medicine's name without its dose: "Latanoprost 0.005% one drop" -> latanoprost."""
+    from dashboard.biofield_clinical_proposals import item_key
+    # Cut at "(" or at a dose: a number with its unit. "Vitamin B12" keeps its 12, and
+    # "Omega 3 1000 mg" stays apart from "Omega 6" (review round 3).
+    return item_key(_DOSE.split(str(text or ""), maxsplit=1)[0])
+
+
+_DOSE = re.compile(r"\(|\s\d[\d.,/]*\s*(?:%|mg|mcg|µg|ug|g|kg|iu|ml|l|units?|drops?|"
+                   r"caps?(?:ules?)?|tabs?(?:lets?)?|tsp|tbsp|oz)(?![a-z])", re.I)
+
+
+def _medicine_places(label):
+    """Where a medicine may already be named: text inside parentheses, as in
+    "Glaucoma (latanoprost)". A condition's own words are not a medicine, so
+    "Vitamin D deficiency" does not hide "Vitamin D3 2000 IU" (review round 1)."""
+    from dashboard.biofield_clinical_proposals import item_key
+    return {item_key(m) for m in re.findall(r"\(([^)]*)\)", str(label or "")) if item_key(m)}
+
+
+def _paste_pages(text):
+    """The notes cut into pieces that each fit one model call, at line breaks where
+    possible. ask() would cut a longer page short, and the rest would never be read."""
+    pages, cur = [], ""
+    for line in str(text or "").splitlines(keepends=True):
+        while len(line) > ASK_MAX:
+            if cur:
+                pages.append(cur)
+                cur = ""
+            pages.append(line[:ASK_MAX])
+            line = line[ASK_MAX:]
+        if len(cur) + len(line) > ASK_MAX:
+            pages.append(cur)
+            cur = ""
+        cur += line
+    if cur.strip():
+        pages.append(cur)
+    return pages
+
+
+def _ask_pages(complete, pages):
+    """Each piece of the notes asked on its own, so one failed piece does not lose
+    the rest (review round 1). Returns (findings, failed pieces)."""
+    found, failed = [], 0
+    for page in pages:
+        try:
+            found.extend(ask(complete, [page], PASTE_FILENAME))
+        except Exception:
+            failed += 1
+    return found, failed
+
+
+def store_pasted(cx, email, test_id, text, complete, known_labels=()):
+    """Conditions and medicines in pasted notes, stored as pending findings for Glen.
+
+    known_labels are the items this intake already has: profile conditions and every
+    accepted or dismissed suggestion. A finding already among them, or among this
+    client's findings in any status, is skipped and counted as already. Returns
+    {"offered", "already"}, plus "clinical_note" when some of the notes could not be
+    read. Raises when none of the notes could be read; the caller says so without
+    echoing the notes."""
+    import uuid
+    ensure_tables(cx)
+    pages = _paste_pages(text)
+    found, failed = _ask_pages(complete, pages)
+    if pages and failed == len(pages):
+        raise RuntimeError("pasted notes could not be read")
+    from dashboard.biofield_clinical_proposals import item_key
+    known, places, full = set(), set(), set()
+    for label in known_labels or ():
+        known |= _label_keys(label)
+        full.add(item_key(label))
+        places |= _medicine_places(label)
+    for kind, t in cx.execute(
+            "SELECT kind, text FROM client_record_findings WHERE client_email=?", (email,)):
+        known |= _label_keys(t)
+        full.add(item_key(t))
+        places |= _medicine_places(t)
+        if kind == "medication":
+            places.add(_medicine_name(t))
+    # A random id: the notes themselves, even hashed, are never stored (review round 1).
+    mid = f"{PASTE_PREFIX}{test_id}:{uuid.uuid4().hex}"
+    now, offered, already = _now(), 0, 0
+    for f in found:
+        if f["kind"] not in PASTE_KINDS or len(f["text"]) > PASTE_TEXT_MAX:
+            continue
+        keys = _label_keys(f["text"])
+        name = _medicine_name(f["text"]) if f["kind"] == "medication" else ""
+        # A medicine is known by its whole label, or by its name already listed as a
+        # medicine or in brackets. "Insulin (resistance)" is known as "insulin" for a
+        # condition, but it does not hide the medicine Insulin (review round 2).
+        if name:
+            seen = item_key(f["text"]) in full or _named_in(name, places)
+        else:
+            seen = bool(keys & known)
+        if seen:
+            already += 1
+            continue
+        cur = cx.execute(
+            "INSERT OR IGNORE INTO client_record_findings(client_email, message_id, part, "
+            "filename, page, kind, text, finding_date, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            (email, mid, 0, PASTE_FILENAME, f["page"], f["kind"], f["text"], f["date"], now))
+        if (cur.rowcount or 0) > 0:
+            offered += 1
+        known |= keys
+        full.add(item_key(f["text"]))
+        places |= _medicine_places(f["text"])
+        if name:
+            places.add(name)
+    cx.commit()
+    out = {"offered": offered, "already": already}
+    if failed:
+        out["clinical_note"] = (f"{failed} of {len(pages)} parts of the notes could not be "
+                                "read for conditions and medicines.")
+    return out
+
+
+def _named_in(name, places):
+    """True when a medicine name is one of the places, or a whole word run inside one."""
+    return any(name == p or f" {name} " in f" {p} " for p in places)
