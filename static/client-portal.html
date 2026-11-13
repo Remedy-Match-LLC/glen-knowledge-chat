@@ -3570,6 +3570,10 @@ function pollPending(){
 function familyPlanLine(fpl){
   // A payload without "holder" (an older server) keeps Cancel: the server refuses anyone
   // who holds no plan (review round 2).
+  // Cancelled by the holder: it will not renew, and cover runs to the paid date.
+  if(fpl.active && fpl.holder !== false && fpl.ends){
+    return `<p><strong>${esc(fpl.label)}</strong> is cancelled and will not renew. Your household keeps its unlocked analysis through the day before ${esc(fmtDate(fpl.ends))}, when it would have renewed.</p>`;
+  }
   if(fpl.active && fpl.holder !== false){
     return `<p><strong>${esc(fpl.label)}</strong> — you're on it. Everyone in your household with sharing on has their full analysis unlocked. <button type="button" class="linklike" data-fp-cancel="1">Cancel plan</button></p>`;
   }
@@ -3604,7 +3608,7 @@ document.addEventListener("click", async (e) => {
 // Cancel the Family Plan. A refusal is shown beside the button, never a silent reload
 // (review round 1, 2026-09-28).
 async function familyPlanCancel(cxl){
-  if(!window.confirm("Cancel the Family Plan? Household members lose their unlocked analysis at the end of the cycle.")) return;
+  if(!window.confirm("Cancel the Family Plan? It will not renew. Your household keeps its unlocked analysis until the end of the period you have paid for.")) return;
   cxl.disabled = true;
   try{
     const r = await fetch(`/api/portal/${encodeURIComponent(seg)}/family-plan/cancel`,

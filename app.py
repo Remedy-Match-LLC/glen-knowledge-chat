@@ -29224,6 +29224,8 @@ def _portal_options_for(email, holder_email=None):
                         # The SIGNED-IN person, not a member being viewed (?member=): a
                         # holder viewing her son keeps her own Cancel (review round 1).
                         "holder": bool(_fp.is_active(cx, holder_email or email)),
+                        # Set once the holder has cancelled: cover runs to this date.
+                        "ends": _fp.access_ends(cx, holder_email or email),
                     }
             except Exception as _e:
                 print(f"[portal-options/family] {_e!r}", flush=True)
@@ -38980,8 +38982,9 @@ def caregiver_pay_return():
 
 @app.route("/api/portal/<token>/family-plan/cancel", methods=["POST"])
 def portal_family_plan_cancel(token):
-    """Caregiver self-cancel. Stops covers() for the household at the next read;
-    no refund, no proration (the current paid cycle simply is not renewed)."""
+    """Caregiver self-cancel. The plan is not renewed, and the household keeps its
+    cover until the paid period ends (Glen, 2026-11-13). An unpaid or comped plan
+    ends at once. No refund, no proration."""
     from dashboard import portal_identity as _pi, family_plan as _fp
     sess_cookie = request.cookies.get("rm_portal_session", "")
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -38993,13 +38996,14 @@ def portal_family_plan_cancel(token):
             return jsonify({"error": "not_found"}), 404
         # A member covered by someone else's plan holds no plan row: the update used to
         # change nothing and answer ok (money-07, 2026-09-28). Refuse instead.
+        own = _fp.get(cx, ident.email)
+        if own and own.get("status") in ("cancelled", _fp.CANCELLING):
+            # A retry after a lost reply (round 2).
+            return jsonify({"ok": True, "access_until": _fp.access_ends(cx, ident.email)})
         if not _fp.is_active(cx, ident.email):
-            own = _fp.get(cx, ident.email)
-            if own and own.get("status") == "cancelled":
-                return jsonify({"ok": True})      # a retry after a lost reply (round 2)
             return jsonify({"ok": False, "error": "The plan holder manages this plan."}), 409
-        _fp.set_status(cx, ident.email, "cancelled")
-    return jsonify({"ok": True})
+        until = _fp.cancel_at_period_end(cx, ident.email)
+    return jsonify({"ok": True, "access_until": until})
 
 
 @app.route("/api/community/coach-subscribe/cancel", methods=["POST"])
@@ -39138,6 +39142,14 @@ def family_plan_charge_cron():
         due_rows = _fp.due(rcx, today)
     for sub in due_rows:
         email = sub["caregiver_email"]
+        # Read the row again just before charging: a holder or the console may have
+        # cancelled it since the list was read (Glen, 2026-11-13, review round 2).
+        with db.connect(LOG_DB) as fcx:
+            fcx.row_factory = sqlite3.Row
+            fresh = _fp.get(fcx, email)
+        if (not fresh or fresh.get("status") not in _fp.ACTIVE_STATUSES
+                or not fresh.get("next_charge_at") or fresh["next_charge_at"][:10] > today):
+            continue
         try:
             res = _sp.charge_off_session(
                 sub["stripe_customer_id"], sub["payment_method_id"], sub["amount_cents"],
@@ -39154,8 +39166,9 @@ def family_plan_charge_cron():
             _fp.init_family_plan_table(cx)
             _fp.record_charge(cx, caregiver_email=email, amount_cents=sub["amount_cents"],
                               pi_id=pi_id, status="succeeded" if ok else "failed")
+            renewed_cancelled = False
             if ok:
-                _fp.mark_charged(
+                renewed_cancelled = not _fp.mark_charged(
                     cx, email,
                     _subs.add_months(today, int(sub.get("cadence_months") or 1)))
             else:
@@ -39166,13 +39179,36 @@ def family_plan_charge_cron():
                     was_cancelled = True
                 else:
                     was_cancelled = False
+        # A plan cancelled while its charge was declining is over: no "update your
+        # card" email for it (review round 3).
+        if not ok:
+            with db.connect(LOG_DB) as acx:
+                acx.row_factory = sqlite3.Row
+                after = _fp.get(acx, email)
+            if not after or (after.get("status") not in _fp.ACTIVE_STATUSES and not was_cancelled):
+                failed += 1
+                continue
+        if ok and renewed_cancelled:
+            # The card was charged, but the plan was cancelled while the charge ran.
+            # It stays cancelled; Glen refunds by hand.
+            app.logger.warning("family plan charged after cancel for %s (pi %s)", email, pi_id)
+            try:
+                _note = (f"<p>A Family Plan renewal for {email} was charged "
+                         f"(${sub['amount_cents'] / 100:.2f}, payment {pi_id}) while the plan "
+                         f"was being cancelled. The plan stays cancelled. "
+                         f"Please refund this charge in Stripe.</p>")
+                send_evox_email(GLEN_CONSULT_EMAIL, "Glen",
+                                f"Refund needed: Family Plan charged after cancel ({email})",
+                                _note, _note, b"")
+            except Exception:
+                app.logger.exception("family plan refund notice failed for %s", email)
         if ok:
             charged += 1
         else:
             failed += 1
             if was_cancelled:
                 cancelled += 1
-            html = (f"<p>We could not process this month's Family Plan charge for {email}. "
+            html = (f"<p>We could not process the latest Family Plan charge for {email}. "
                     f"Please update the card on file from your portal to keep the plan active.</p>")
             try:
                 send_evox_email(email, "", "Your Family Plan payment did not go through",
