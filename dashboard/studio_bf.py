@@ -12,9 +12,9 @@ updates the date and plan and never resends the offer email.
 The last day to buy a door is the claim's Hawaii date plus 14 days. Claims close after
 Sunday 6 December 2026, Hawaii time.
 
-The offer email is HELD. OFFER_SUBJECT and OFFER_TEXT stay None until marketing's copy
-passes three review rounds and Glen types "send it" in the marketing tab. While they
-are None nothing is sent, whatever any flag says.
+The offer email is released: Glen typed "send it" for marketing's copy in the marketing
+tab on 12 Nov 2026. Setting OFFER_SUBJECT or OFFER_TEXT back to None
+holds it again, whatever any flag says.
 
 Pure apart from the connection it is handed. The mail send is injected.
 """
@@ -35,11 +35,88 @@ STATUSES = ("pending", "confirmed", "rejected")
 NAME_MAX = 120
 EMAIL_MAX = 254
 
-# Held until marketing's copy is approved. "{name}" and "{last_day}" are filled in.
-OFFER_SUBJECT = None
-OFFER_TEXT = None
+# Marketing's copy, word for word from ~/AI-Training/marketing/04 Copy/black-friday-2026/
+# emails-and-posts.md ("The offer email"). Glen typed "send it" in the marketing tab, 12 Nov 2026.
+# "{name}" and "{last_day}" are filled in.
+OFFER_SUBJECT = 'Your thank-you offer from Dr. Glen'
+OFFER_TEXT = """\
+Aloha {name},
+
+Thank you for choosing my Accelerated Self Healing app.
+
+Here is my thank-you offer.
+
+You have two weeks to take it up, until {last_day}.
+
+Each choice is at the regular price, with gifts added.
+
+Please pay with the email address this message came to, so your gifts reach you.
+
+One month of membership is $100.
+
+It comes with a second month free and a Biocompatible Nightlight.
+
+It is a single payment that does not renew.
+
+https://illtowell.com/prepay?renew=1mo
+
+The annual membership is $1,000.
+
+It comes with a Biocompatible Nightlight and a Therapeutic Nightlight.
+
+On this page, press "Pay up front".
+
+https://illtowell.com/prepay?renew=12mo
+
+The household annual membership is $1,497.
+
+It covers the people in your household and comes with the same two nightlights.
+
+If you are already a paid member, your $99 credit brings it to $1,398.
+
+On this page, press "Choose household annual".
+
+https://illtowell.com/membership
+
+A first Biofield Analysis is $300.
+
+It includes a month of membership.
+
+It also comes with a second month free, a Biocompatible Nightlight and two Wicking Toothbrushes.
+
+Start with the free scan and intake at https://illtowell.com/begin/scan
+
+You pay the $300 after the scan and intake.
+
+The nightlights and toothbrushes come in the box with your first or next product order.
+
+Aloha,
+
+Dr. Glen
+"""
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# The name is mailed to whatever address was typed, from Glen's domain, before Rae
+# checks the claim. So a name may not carry a link or an address: no "@", no "/", no
+# "www", and nothing shaped like a domain ("evil.example"). "Mary J. Smith" still passes.
+_NAME_LINK_RE = re.compile(r"[@/\\<>]|www|[a-z0-9-]\.[a-z]{2,}", re.IGNORECASE)
+# Spelled-out links and protocol words.
+_NAME_WORD_RE = re.compile(r"\b(dot|http|https)\b", re.IGNORECASE)
+
+
+def _name_looks_like_a_message(name):
+    """True when a name could carry a link, a phone number or hidden text.
+    Checked on the NFKC form, so fullwidth letters and Unicode dots count as plain.
+    Digits are refused, which also stops phone numbers and IP addresses.
+    Invisible format characters (zero-width, right-to-left override) are refused."""
+    import unicodedata
+    if any(unicodedata.category(ch) == "Cf" for ch in name):
+        return True
+    norm = unicodedata.normalize("NFKC", name).replace("\u3002", ".")
+    if any(ch.isdigit() for ch in norm):
+        return True
+    spaced_dot = re.search(r"[^\W\d_]\s+\.\s+[^\W\d_]{2,}", norm)   # "evil . com"
+    return bool(_NAME_LINK_RE.search(norm) or _NAME_WORD_RE.search(norm) or spaced_dot)
 
 
 def _now():
@@ -77,6 +154,8 @@ def clean_claim(data, today=None):
         raise ValueError("Please enter your name.")
     if len(name) > NAME_MAX:
         raise ValueError("Please shorten your name.")
+    if _name_looks_like_a_message(name):
+        raise ValueError("Please enter just your name.")
     if len(email) > EMAIL_MAX or not _EMAIL_RE.match(email):
         raise ValueError("Please enter a valid email address.")
     try:
@@ -198,7 +277,7 @@ def claim_offer_send(cx, email, now=None):
     sent nothing: one interrupted mid-call stays "sending" in Rae's list, because SES
     may have taken it (review round 3)."""
     cur = cx.execute("UPDATE studio_bf_claims SET offer_sent_at=?, offer_outcome='sending' "
-                     "WHERE email=? AND offer_outcome IS NULL",
+                     "WHERE email=? AND offer_outcome IS NULL AND status <> 'rejected'",
                      ((now or _now()).isoformat(timespec="seconds"),
                       (email or "").strip().lower()))
     cx.commit()
@@ -221,8 +300,9 @@ def record_offer_outcome(cx, email, outcome):
 
 def pending_offer_emails(cx):
     """Claims whose offer has never been tried, such as those made while the copy was
-    held. They are sent from the console once it is released."""
+    held. They are sent from the console once it is released. A claim Rae rejected is
+    never sent."""
     ensure_tables(cx)
     rows = cx.execute("SELECT email FROM studio_bf_claims WHERE offer_outcome IS NULL "
-                      "ORDER BY created_at").fetchall()
+                      "AND status <> 'rejected' ORDER BY created_at").fetchall()
     return [r[0] for r in rows]
