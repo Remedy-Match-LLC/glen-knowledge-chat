@@ -27,7 +27,7 @@ from urllib.parse import quote
 _SECRET = os.environ.get("CONSOLE_SECRET") or os.environ.get("WEBHOOK_SECRET", "")
 
 GLOBAL = "global"
-POSTAL = "Remedy Match LLC, Hilo, Hawaii"
+POSTAL = "Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA"
 
 
 def _norm(email: str) -> str:
