@@ -257,7 +257,7 @@
           else if(evt.error)throw new Error(String(evt.error));else if(evt.done)done=true}catch(e){if(e instanceof SyntaxError)continue;throw e}}}
       // The reply is complete: draw its links (client-portal.html's setChatText). While it
       // streamed it was plain text, so a half-written link was never clickable.
-      if(answer&&typeof window.setChatText==="function")window.setChatText(answerBubble,answer);
+      if(answer&&typeof window.setChatText==="function"){try{window.setChatText(answerBubble,answer)}catch(linkErr){answerBubble.textContent=answer}}
       chatHistory.push({role:"user",content:query},{role:"assistant",content:answer});repopulateChatHistory();speak(answer)
     }catch(e){answerBubble.textContent=(e&&e.message)||"Something went wrong. Please try again.";answerBubble.classList.add("error")}
     finally{sending=false;h.input.disabled=false;h.send.disabled=false;h.input.focus();if(continuousOn&&!speaking)scheduleListening()}}

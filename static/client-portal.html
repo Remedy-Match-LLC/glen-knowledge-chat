@@ -9824,8 +9824,12 @@ async function sendChatMessage(){
               // bound, which only the shell does, so with the flag off this is
               // the same TTS call it has always been.
               // The reply is complete, so its links can be drawn now, before
-              // the voice controls are attached to the bubble.
-              if(assistantBubble && assistantText) setChatText(assistantBubble, assistantText);
+              // the voice controls are attached to the bubble. A renderer fault falls
+              // back to plain text: it must never cost the door link or the voice.
+              if(assistantBubble && assistantText){
+                try{ setChatText(assistantBubble, assistantText); }
+                catch(linkErr){ assistantBubble.textContent = assistantText; }
+              }
               if(assistantBubble && assistantText){
                 if(window.PortalVoice && window.PortalVoice.armed()){
                   window.PortalVoice.onReply(assistantBubble, assistantText);
