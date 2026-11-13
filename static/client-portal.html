@@ -9071,6 +9071,37 @@ async function addSocial(){
 // ---- Ask Dr. Glen concierge chat ----
 let chatHistory = [];
 
+// Draw chat text with its links clickable, without innerHTML. A full http(s) address
+// is linked, and so is a bare address on one of our own domains, which the model
+// sometimes writes without https:// (Agnes Verches, 2026-11-12: an unclickable
+// "truly.vip/help"). Other bare domains stay plain text. Trailing sentence
+// punctuation is left outside the link.
+var CHAT_LINK_RE = /\bhttps?:\/\/[^\s<>"']+|\b(?:www\.)?(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)(?:\/[^\s<>"']*)?/gi;
+function setChatText(el, text){
+  if(!el) return;
+  text = String(text == null ? "" : text);
+  while(el.firstChild) el.removeChild(el.firstChild);
+  var last = 0, m;
+  CHAT_LINK_RE.lastIndex = 0;
+  while((m = CHAT_LINK_RE.exec(text))){
+    var raw = m[0];
+    var tail = (raw.match(/[.,;:!?)\]]+$/) || [""])[0];
+    var shown = tail ? raw.slice(0, -tail.length) : raw;
+    var before = text.slice(last, m.index);
+    // "you@myhealingoasis.com" is an email address, not a link.
+    if(!shown || /[@\w.-]$/.test(before) && !/^https?:/i.test(shown)){ continue; }
+    if(before) el.appendChild(document.createTextNode(before));
+    var a = document.createElement("a");
+    a.href = /^https?:\/\//i.test(shown) ? shown : "https://" + shown;
+    a.target = "_blank"; a.rel = "noopener";
+    a.textContent = shown;
+    el.appendChild(a);
+    last = m.index + shown.length;
+  }
+  if(last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+}
+window.setChatText = setChatText;
+
 function repopulateChatHistory(){
   var msgs = document.getElementById("chatMsgs");
   if(!msgs || !chatHistory.length) return;
@@ -9088,7 +9119,8 @@ function repopulateChatHistory(){
       div.appendChild(a);
     }
     var body = document.createElement("div");
-    body.textContent = entry.content || "";
+    if(cls === "user") body.textContent = entry.content || "";
+    else setChatText(body, entry.content || "");
     div.appendChild(body);
     msgs.appendChild(div);
   });
@@ -9744,7 +9776,7 @@ async function sendChatMessage(){
               if(assistantBubble){
                 // Hand the bubble over from "Thinking..." to the answer on the first token.
                 if(assistantBubble.className !== "chat-bubble assistant") assistantBubble.className = "chat-bubble assistant";
-                assistantBubble.textContent = assistantText;
+                setChatText(assistantBubble, assistantText);
               }
               if(msgs) msgs.scrollTop = msgs.scrollHeight;
             } else if(evt.suggestion){
