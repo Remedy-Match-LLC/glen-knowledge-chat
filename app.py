@@ -39142,6 +39142,14 @@ def family_plan_charge_cron():
         due_rows = _fp.due(rcx, today)
     for sub in due_rows:
         email = sub["caregiver_email"]
+        # Read the row again just before charging: a holder or the console may have
+        # cancelled it since the list was read (Glen, 2026-11-13, review round 2).
+        with db.connect(LOG_DB) as fcx:
+            fcx.row_factory = sqlite3.Row
+            fresh = _fp.get(fcx, email)
+        if (not fresh or fresh.get("status") not in _fp.ACTIVE_STATUSES
+                or not fresh.get("next_charge_at") or fresh["next_charge_at"][:10] > today):
+            continue
         try:
             res = _sp.charge_off_session(
                 sub["stripe_customer_id"], sub["payment_method_id"], sub["amount_cents"],
@@ -39158,8 +39166,9 @@ def family_plan_charge_cron():
             _fp.init_family_plan_table(cx)
             _fp.record_charge(cx, caregiver_email=email, amount_cents=sub["amount_cents"],
                               pi_id=pi_id, status="succeeded" if ok else "failed")
+            renewed_cancelled = False
             if ok:
-                _fp.mark_charged(
+                renewed_cancelled = not _fp.mark_charged(
                     cx, email,
                     _subs.add_months(today, int(sub.get("cadence_months") or 1)))
             else:
@@ -39170,6 +39179,20 @@ def family_plan_charge_cron():
                     was_cancelled = True
                 else:
                     was_cancelled = False
+        if ok and renewed_cancelled:
+            # The card was charged, but the plan was cancelled while the charge ran.
+            # It stays cancelled; Glen refunds by hand.
+            app.logger.warning("family plan charged after cancel for %s (pi %s)", email, pi_id)
+            try:
+                _note = (f"<p>A Family Plan renewal for {email} was charged "
+                         f"(${sub['amount_cents'] / 100:.2f}, payment {pi_id}) while the plan "
+                         f"was being cancelled. The plan stays cancelled. "
+                         f"Please refund this charge in Stripe.</p>")
+                send_evox_email(GLEN_CONSULT_EMAIL, "Glen",
+                                f"Refund needed: Family Plan charged after cancel ({email})",
+                                _note, _note, b"")
+            except Exception:
+                app.logger.exception("family plan refund notice failed for %s", email)
         if ok:
             charged += 1
         else:

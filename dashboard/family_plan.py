@@ -152,18 +152,31 @@ def cancel_at_period_end(cx, caregiver_email, today=None):
     """The holder cancels. Returns the date cover ends (YYYY-MM-DD) when a paid period
     is still running, else None after cancelling at once. Repeating it changes nothing."""
     today = today or _today()
-    row = get(cx, caregiver_email)
-    if not row:
-        return None
-    status = row.get("status") or ""
-    end = (row.get("next_charge_at") or "")[:10]
-    if status == CANCELLING:
-        return end if end > today else None
-    if status == "active" and end and end > today and (row.get("source") or "") != "comp":
-        set_status(cx, caregiver_email, CANCELLING)
-        return end
-    if status != "cancelled":
-        set_status(cx, caregiver_email, "cancelled")
+    email = _lc(caregiver_email)
+    for _ in range(3):
+        row = get(cx, email)
+        if not row:
+            return None
+        status = row.get("status") or ""
+        raw_end = row.get("next_charge_at")
+        end = (raw_end or "")[:10]
+        if status == CANCELLING:
+            return end if end > today else None
+        if status == "cancelled":
+            return None
+        to = (CANCELLING if status == "active" and end and end > today
+              and (row.get("source") or "") != "comp" else "cancelled")
+        # Only from the state just read: a console cancel or a renewal that lands in
+        # between must not be overwritten. On a lost race, read again.
+        if raw_end is None:
+            cur = cx.execute("UPDATE family_subscriptions SET status=? WHERE caregiver_email=? "
+                             "AND status=? AND next_charge_at IS NULL", (to, email, status))
+        else:
+            cur = cx.execute("UPDATE family_subscriptions SET status=? WHERE caregiver_email=? "
+                             "AND status=? AND next_charge_at=?", (to, email, status, raw_end))
+        cx.commit()
+        if (cur.rowcount or 0) == 1:
+            return end if to == CANCELLING else None
     return None
 
 
@@ -264,10 +277,15 @@ def due(cx, today):
 
 
 def mark_charged(cx, caregiver_email, next_charge_at):
-    cx.execute("UPDATE family_subscriptions SET next_charge_at=?, last_charged_at=?, "
-               "fail_count=0, status='active' WHERE caregiver_email=?",
-               (next_charge_at, _now(), _lc(caregiver_email)))
+    """Advance a renewed plan. Only an active or past_due plan is renewed: a plan
+    cancelled while its charge was in flight stays cancelled. Returns True when the
+    plan was advanced, False when the caller must refund the charge by hand."""
+    cur = cx.execute("UPDATE family_subscriptions SET next_charge_at=?, last_charged_at=?, "
+                     "fail_count=0, status='active' WHERE caregiver_email=? "
+                     "AND status IN (?,?)",
+                     (next_charge_at, _now(), _lc(caregiver_email), *ACTIVE_STATUSES))
     cx.commit()
+    return (cur.rowcount or 0) == 1
 
 
 def mark_failed(cx, caregiver_email, retry_at):
@@ -278,7 +296,8 @@ def mark_failed(cx, caregiver_email, retry_at):
     cron. Advancing next_charge_at here is a retry schedule, not a paid-cycle advance
     (the charge captured no money), so it does not violate the paid-once invariant."""
     cx.execute("UPDATE family_subscriptions SET fail_count=fail_count+1, status='past_due', "
-               "next_charge_at=? WHERE caregiver_email=?", (retry_at, _lc(caregiver_email)))
+               "next_charge_at=? WHERE caregiver_email=? AND status IN (?,?)",
+               (retry_at, _lc(caregiver_email), *ACTIVE_STATUSES))
     cx.commit()
 
 
