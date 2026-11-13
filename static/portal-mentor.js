@@ -255,6 +255,9 @@
       while(!done){const chunk=await reader.read();if(chunk.done)break;buf+=decoder.decode(chunk.value,{stream:true});const lines=buf.split("\n");buf=lines.pop();
         for(const line of lines){if(line.slice(0,6)!=="data: ")continue;try{const evt=JSON.parse(line.slice(6));if(evt.token){answer+=evt.token;answerBubble.textContent=answer;h.msgs.scrollTop=h.msgs.scrollHeight}
           else if(evt.error)throw new Error(String(evt.error));else if(evt.done)done=true}catch(e){if(e instanceof SyntaxError)continue;throw e}}}
+      // The reply is complete: draw its links (client-portal.html's setChatText). While it
+      // streamed it was plain text, so a half-written link was never clickable.
+      if(answer&&typeof window.setChatText==="function")window.setChatText(answerBubble,answer);
       chatHistory.push({role:"user",content:query},{role:"assistant",content:answer});repopulateChatHistory();speak(answer)
     }catch(e){answerBubble.textContent=(e&&e.message)||"Something went wrong. Please try again.";answerBubble.classList.add("error")}
     finally{sending=false;h.input.disabled=false;h.send.disabled=false;h.input.focus();if(continuousOn&&!speaking)scheduleListening()}}

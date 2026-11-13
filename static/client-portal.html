@@ -9084,7 +9084,8 @@ function _chatLinkTail(raw){
   var end = raw.length;
   while(end > 0){
     var ch = raw.charAt(end - 1), body = raw.slice(0, end);
-    if(".,;:!?".indexOf(ch) !== -1){ end--; continue; }
+    // Markdown bold or code marks, closing quotes, and a CJK full stop are not part of it.
+    if(".,;:!?*`\u201d\u2019\u3002\u00bb".indexOf(ch) !== -1){ end--; continue; }
     if(ch === ")" && body.split("(").length < body.split(")").length){ end--; continue; }
     if(ch === "]" && body.split("[").length < body.split("]").length){ end--; continue; }
     break;

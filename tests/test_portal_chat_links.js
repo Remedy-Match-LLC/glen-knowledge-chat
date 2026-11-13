@@ -95,6 +95,18 @@ e = render('(see https://truly.vip/E4L).');
 assert.deepStrictEqual(links(e), [['https://truly.vip/E4L', 'https://truly.vip/E4L']]);
 assert.strictEqual(plain(e), '(see https://truly.vip/E4L).');
 
+// 12. Formatting around a link is not part of it (the model often bolds a link).
+e = render('**https://myhealingoasis.com/portal/me#orders**');
+assert.deepStrictEqual(links(e), [['https://myhealingoasis.com/portal/me#orders',
+                                   'https://myhealingoasis.com/portal/me#orders']]);
+assert.strictEqual(plain(e), '**https://myhealingoasis.com/portal/me#orders**');
+e = render('Use `truly.vip/E4L` or \u201chttps://truly.vip/Intro\u201d\u3002');
+assert.deepStrictEqual(links(e).map(l => l[0]), ['https://truly.vip/E4L', 'https://truly.vip/Intro']);
+
+// 13. The floating mentor panel draws its finished reply with the same renderer.
+const mentor = fs.readFileSync(path.join(__dirname, '..', 'static', 'portal-mentor.js'), 'utf8');
+assert.ok(/window\.setChatText\(answerBubble,answer\)/.test(mentor), 'mentor panel reply not linked');
+
 // 11. Streaming draws plain text; links are drawn once the reply is done, before the
 // voice controls attach. Restored history is linked; a user bubble is not.
 assert.ok(/assistantBubble\.textContent = assistantText;/.test(page), 'stream should draw plain text');
