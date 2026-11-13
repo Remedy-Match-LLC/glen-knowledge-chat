@@ -9076,7 +9076,21 @@ let chatHistory = [];
 // sometimes writes without https:// (Agnes Verches, 2026-11-12: an unclickable
 // "truly.vip/help"). Other bare domains stay plain text. Trailing sentence
 // punctuation is left outside the link.
-var CHAT_LINK_RE = /\bhttps?:\/\/[^\s<>"']+|\b(?:www\.)?(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)(?:\/[^\s<>"']*)?/gi;
+// The host must end at the domain: "truly.vip.example.com" is someone else's.
+var CHAT_LINK_RE = /\bhttps?:\/\/[^\s<>"']+|\b(?:www\.)?(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)(?![\w-]|\.\w)(?:[\/?#][^\s<>"']*)?/gi;
+// Sentence punctuation after a link is not part of it. A closing bracket is kept
+// when the link itself opened it, as in /info_(billing).
+function _chatLinkTail(raw){
+  var end = raw.length;
+  while(end > 0){
+    var ch = raw.charAt(end - 1), body = raw.slice(0, end);
+    if(".,;:!?".indexOf(ch) !== -1){ end--; continue; }
+    if(ch === ")" && body.split("(").length < body.split(")").length){ end--; continue; }
+    if(ch === "]" && body.split("[").length < body.split("]").length){ end--; continue; }
+    break;
+  }
+  return raw.slice(end);
+}
 function setChatText(el, text){
   if(!el) return;
   text = String(text == null ? "" : text);
@@ -9085,7 +9099,7 @@ function setChatText(el, text){
   CHAT_LINK_RE.lastIndex = 0;
   while((m = CHAT_LINK_RE.exec(text))){
     var raw = m[0];
-    var tail = (raw.match(/[.,;:!?)\]]+$/) || [""])[0];
+    var tail = _chatLinkTail(raw);
     var shown = tail ? raw.slice(0, -tail.length) : raw;
     var before = text.slice(last, m.index);
     // "you@myhealingoasis.com" is an email address, not a link.
@@ -9776,7 +9790,9 @@ async function sendChatMessage(){
               if(assistantBubble){
                 // Hand the bubble over from "Thinking..." to the answer on the first token.
                 if(assistantBubble.className !== "chat-bubble assistant") assistantBubble.className = "chat-bubble assistant";
-                setChatText(assistantBubble, assistantText);
+                // Plain text while it streams: a half-written link must not be
+                // clickable, and an anchor rebuilt on every token can eat a click.
+                assistantBubble.textContent = assistantText;
               }
               if(msgs) msgs.scrollTop = msgs.scrollHeight;
             } else if(evt.suggestion){
@@ -9806,6 +9822,9 @@ async function sendChatMessage(){
               // back. PortalVoice.armed() is true only once the card host is
               // bound, which only the shell does, so with the flag off this is
               // the same TTS call it has always been.
+              // The reply is complete, so its links can be drawn now, before
+              // the voice controls are attached to the bubble.
+              if(assistantBubble && assistantText) setChatText(assistantBubble, assistantText);
               if(assistantBubble && assistantText){
                 if(window.PortalVoice && window.PortalVoice.armed()){
                   window.PortalVoice.onReply(assistantBubble, assistantText);

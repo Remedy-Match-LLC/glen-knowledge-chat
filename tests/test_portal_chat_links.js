@@ -77,8 +77,33 @@ e = render('Scan: https://Truly.VIP/E4L or orders: myhealingoasis.com/portal/me#
 assert.strictEqual(links(e).length, 2);
 assert.strictEqual(plain(e), 'Scan: https://Truly.VIP/E4L or orders: myhealingoasis.com/portal/me#orders');
 
-// 8. The live bubble and restored history both use it; a user bubble does not.
-assert.ok(/setChatText\(assistantBubble, assistantText\)/.test(page), 'stream bubble not linked');
+// 8. Another host that starts with our domain is not ours, and is not linked.
+e = render('Go to truly.vip.example.com/help now');
+assert.deepStrictEqual(links(e), []);
+assert.strictEqual(plain(e), 'Go to truly.vip.example.com/help now');
+e = render('Or truly.vipers.com today');
+assert.deepStrictEqual(links(e), []);
+
+// 9. A bare address keeps its fragment or query.
+e = render('Open myhealingoasis.com#orders now');
+assert.deepStrictEqual(links(e), [['https://myhealingoasis.com#orders', 'myhealingoasis.com#orders']]);
+
+// 10. A bracket the link opened stays in it; prose brackets stay out.
+e = render('See https://example.com/info_(billing) please');
+assert.deepStrictEqual(links(e), [['https://example.com/info_(billing)', 'https://example.com/info_(billing)']]);
+e = render('(see https://truly.vip/E4L).');
+assert.deepStrictEqual(links(e), [['https://truly.vip/E4L', 'https://truly.vip/E4L']]);
+assert.strictEqual(plain(e), '(see https://truly.vip/E4L).');
+
+// 11. Streaming draws plain text; links are drawn once the reply is done, before the
+// voice controls attach. Restored history is linked; a user bubble is not.
+assert.ok(/assistantBubble\.textContent = assistantText;/.test(page), 'stream should draw plain text');
+const done = page.indexOf('else if(evt.done)');
+assert.ok(done !== -1, 'done branch not found');
+const doneSrc = page.slice(done, page.indexOf('appendChatDoorLink(routedDoor', done));
+const linkAt = doneSrc.indexOf('setChatText(assistantBubble, assistantText)');
+assert.ok(linkAt !== -1, 'done branch does not draw links');
+assert.ok(linkAt < doneSrc.indexOf('PortalVoice.onReply'), 'links must be drawn before voice controls attach');
 assert.ok(/if\(cls === "user"\) body\.textContent = entry\.content \|\| "";\s*else setChatText\(body/.test(page),
           'history bubbles not linked');
 console.log('OK');
