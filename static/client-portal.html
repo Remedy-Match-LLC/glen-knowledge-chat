@@ -3572,7 +3572,7 @@ function familyPlanLine(fpl){
   // who holds no plan (review round 2).
   // Cancelled by the holder: it will not renew, and cover runs to the paid date.
   if(fpl.active && fpl.holder !== false && fpl.ends){
-    return `<p><strong>${esc(fpl.label)}</strong> is cancelled and will not renew. Your household keeps its unlocked analysis until ${esc(fmtDate(fpl.ends))}.</p>`;
+    return `<p><strong>${esc(fpl.label)}</strong> is cancelled and will not renew. Your household keeps its unlocked analysis through the day before ${esc(fmtDate(fpl.ends))}, when it would have renewed.</p>`;
   }
   if(fpl.active && fpl.holder !== false){
     return `<p><strong>${esc(fpl.label)}</strong> — you're on it. Everyone in your household with sharing on has their full analysis unlocked. <button type="button" class="linklike" data-fp-cancel="1">Cancel plan</button></p>`;

@@ -173,7 +173,8 @@ def test_portal_line_after_cancel_shows_the_date_and_no_cancel_button():
     assert r.returncode == 0, r.stderr
     import json
     a, b = json.loads(r.stdout)
-    assert "is cancelled and will not renew" in a and "Nov 1, 2027" in a
+    assert "is cancelled and will not renew" in a
+    assert "through the day before Nov 1, 2027, when it would have renewed" in a
     assert "data-fp-cancel" not in a
     assert "data-fp-cancel" in b and "will not renew" not in b
 
