@@ -25,9 +25,14 @@ def test_html_footer_escapes_the_address():
 
 
 def test_footer_identifies_the_sender():
-    # CAN-SPAM requires a physical postal address in commercial mail.
-    assert "Hawaii" in unsubscribe.footer_text("a@b.com")
-    assert "Hawaii" in unsubscribe.footer_html("a@b.com")
+    # CAN-SPAM requires a valid physical postal address in commercial mail. A city alone
+    # is not one. Glen chose the street address on 2026-11-12 (marketing tab).
+    street = "Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA"
+    assert unsubscribe.POSTAL == street
+    assert unsubscribe.footer_text("a@b.com").endswith("\n" + street)
+    # The HTML part escapes the apostrophe; a reader still sees Hawai'i.
+    html = unsubscribe.footer_html("a@b.com")
+    assert "Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai&#x27;i 96720 USA</div>" in html
 
 
 def test_scope_flows_into_the_link():
