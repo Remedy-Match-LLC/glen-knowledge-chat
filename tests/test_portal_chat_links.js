@@ -116,7 +116,18 @@ e = render('[x](javascript:alert(1))');
 assert.deepStrictEqual(links(e), []);
 // 12c. Italic marks, an ellipsis and a CJK comma are not part of a link.
 e = render('_https://truly.vip/E4L_ and https://truly.vip/Intro\u2026');
-assert.deepStrictEqual(links(e).map(l => l[0]), ['https://truly.vip/E4L', 'https://truly.vip/Intro']);
+assert.deepStrictEqual(links(e), [['https://truly.vip/E4L', 'https://truly.vip/E4L'],
+                                  ['https://truly.vip/Intro', 'https://truly.vip/Intro']]);
+e = render('_https://example.org/info_');
+assert.deepStrictEqual(links(e), [['https://example.org/info', 'https://example.org/info']]);
+// An underscore that belongs to the address is kept.
+e = render('Use https://truly.vip/Ab_ today');
+assert.deepStrictEqual(links(e), [['https://truly.vip/Ab_', 'https://truly.vip/Ab_']]);
+// 12d. A label that looks like our address cannot hide another destination.
+e = render('[https://myhealingoasis.com/portal/me#orders](https://example.net/pay)');
+assert.deepStrictEqual(links(e), [['https://example.net/pay', 'https://example.net/pay']]);
+e = render('[myhealingoasis.com/portal/me#orders](https://myhealingoasis.com/portal/me#orders)');
+assert.deepStrictEqual(links(e), [['https://myhealingoasis.com/portal/me#orders', 'myhealingoasis.com/portal/me#orders']]);
 
 // 13. The floating mentor panel draws its finished reply with the same renderer.
 const mentor = fs.readFileSync(path.join(__dirname, '..', 'static', 'portal-mentor.js'), 'utf8');

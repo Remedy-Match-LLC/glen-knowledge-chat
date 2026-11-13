@@ -9078,7 +9078,7 @@ let chatHistory = [];
 // punctuation is left outside the link.
 // The host must end at the domain: "truly.vip.example.com" is someone else's.
 // A markdown link [label](https://...) is drawn as its label, linked to its address.
-var CHAT_LINK_RE = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s()<>"']+(?:\([^\s()<>"']*\)[^\s()<>"']*)*)\)|\bhttps?:\/\/[^\s<>"']+|\b(?:www\.)?(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)(?![\w-]|\.\w)(?:[\/?#][^\s<>"']*)?/gi;
+var CHAT_LINK_RE = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s()<>"']+(?:\([^\s()<>"']*\)[^\s()<>"']*)*)\)|https?:\/\/[^\s<>"']+|\b(?:www\.)?(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)(?![\w-]|\.\w)(?:[\/?#][^\s<>"']*)?/gi;
 // Sentence punctuation after a link is not part of it. A closing bracket is kept
 // when the link itself opened it, as in /info_(billing).
 function _chatLinkTail(raw){
@@ -9086,7 +9086,7 @@ function _chatLinkTail(raw){
   while(end > 0){
     var ch = raw.charAt(end - 1), body = raw.slice(0, end);
     // Markdown bold or code marks, closing quotes, and a CJK full stop are not part of it.
-    if(".,;:!?*_`\u201d\u2019\u2026\u3001\u3002\u00bb".indexOf(ch) !== -1){ end--; continue; }
+    if(".,;:!?*`\u201d\u2019\u2026\u3001\u3002\u00bb".indexOf(ch) !== -1){ end--; continue; }
     if(ch === ")" && body.split("(").length < body.split(")").length){ end--; continue; }
     if(ch === "]" && body.split("[").length < body.split("]").length){ end--; continue; }
     break;
@@ -9104,7 +9104,14 @@ function setChatText(el, text){
       if(m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
       var md = document.createElement("a");
       md.href = m[2]; md.target = "_blank"; md.rel = "noopener";
-      md.textContent = m[1];
+      // A label that looks like an address must be that address. Otherwise show the
+      // real one, so a reply can never dress an outside link as our invoice page.
+      var label = m[1];
+      if(/:\/\/|\b(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)\b|www\./i.test(label)){
+        var asUrl = /^https?:\/\//i.test(label) ? label : "https://" + label;
+        if(asUrl.replace(/\/$/, "").toLowerCase() !== m[2].replace(/\/$/, "").toLowerCase()) label = m[2];
+      }
+      md.textContent = label;
       el.appendChild(md);
       last = m.index + m[0].length;
       continue;
@@ -9113,6 +9120,8 @@ function setChatText(el, text){
     var tail = _chatLinkTail(raw);
     var shown = tail ? raw.slice(0, -tail.length) : raw;
     var before = text.slice(last, m.index);
+    // _italic_ around a link: drop the closing mark only when an opening one is there.
+    if(/_$/.test(shown) && /_$/.test(before)){ shown = shown.slice(0, -1); }
     // "you@myhealingoasis.com" is an email address, not a link.
     if(!shown || /[@\w.-]$/.test(before) && !/^https?:/i.test(shown)){ continue; }
     if(before) el.appendChild(document.createTextNode(before));
