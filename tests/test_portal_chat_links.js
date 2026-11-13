@@ -129,6 +129,15 @@ assert.deepStrictEqual(links(e), [['https://example.net/pay', 'https://example.n
 e = render('[myhealingoasis.com/portal/me#orders](https://myhealingoasis.com/portal/me#orders)');
 assert.deepStrictEqual(links(e), [['https://myhealingoasis.com/portal/me#orders', 'myhealingoasis.com/portal/me#orders']]);
 
+// 12e. Path case matters; host case does not. Email addresses are never linked.
+e = render('[https://truly.vip/AbC](https://truly.vip/abc)');
+assert.deepStrictEqual(links(e), [['https://truly.vip/abc', 'https://truly.vip/abc']]);
+e = render('[https://Truly.VIP/E4L](https://truly.vip/E4L)');
+assert.deepStrictEqual(links(e), [['https://truly.vip/E4L', 'https://Truly.VIP/E4L']]);
+e = render('Mail truly.vip@example.org or billing+truly.vip@example.org');
+assert.deepStrictEqual(links(e), []);
+assert.strictEqual(plain(e), 'Mail truly.vip@example.org or billing+truly.vip@example.org');
+
 // 13. The floating mentor panel draws its finished reply with the same renderer.
 const mentor = fs.readFileSync(path.join(__dirname, '..', 'static', 'portal-mentor.js'), 'utf8');
 assert.ok(/window\.setChatText\(answerBubble,answer\)/.test(mentor), 'mentor panel reply not linked');

@@ -9078,7 +9078,7 @@ let chatHistory = [];
 // punctuation is left outside the link.
 // The host must end at the domain: "truly.vip.example.com" is someone else's.
 // A markdown link [label](https://...) is drawn as its label, linked to its address.
-var CHAT_LINK_RE = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s()<>"']+(?:\([^\s()<>"']*\)[^\s()<>"']*)*)\)|https?:\/\/[^\s<>"']+|\b(?:www\.)?(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)(?![\w-]|\.\w)(?:[\/?#][^\s<>"']*)?/gi;
+var CHAT_LINK_RE = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s()<>"']+(?:\([^\s()<>"']*\)[^\s()<>"']*)*)\)|https?:\/\/[^\s<>"']+|\b(?:www\.)?(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)(?![\w@-]|\.\w)(?:[\/?#][^\s<>"']*)?/gi;
 // Sentence punctuation after a link is not part of it. A closing bracket is kept
 // when the link itself opened it, as in /info_(billing).
 function _chatLinkTail(raw){
@@ -9109,7 +9109,14 @@ function setChatText(el, text){
       var label = m[1];
       if(/:\/\/|\b(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)\b|www\./i.test(label)){
         var asUrl = /^https?:\/\//i.test(label) ? label : "https://" + label;
-        if(asUrl.replace(/\/$/, "").toLowerCase() !== m[2].replace(/\/$/, "").toLowerCase()) label = m[2];
+        // Scheme and host compare without case; the path, query and fragment exactly.
+        var norm = function(u){
+          u = u.replace(/\/$/, "");
+          var at = u.indexOf("//") + 2, cut = u.slice(at).search(/[\/?#]/);
+          var end = cut === -1 ? u.length : at + cut;
+          return u.slice(0, end).toLowerCase() + u.slice(end);
+        };
+        if(norm(asUrl) !== norm(m[2])) label = m[2];
       }
       md.textContent = label;
       el.appendChild(md);
@@ -9123,7 +9130,7 @@ function setChatText(el, text){
     // _italic_ around a link: drop the closing mark only when an opening one is there.
     if(/_$/.test(shown) && /_$/.test(before)){ shown = shown.slice(0, -1); }
     // "you@myhealingoasis.com" is an email address, not a link.
-    if(!shown || /[@\w.-]$/.test(before) && !/^https?:/i.test(shown)){ continue; }
+    if(!shown || /[@\w.+-]$/.test(before) && !/^https?:/i.test(shown)){ continue; }
     if(before) el.appendChild(document.createTextNode(before));
     var a = document.createElement("a");
     a.href = /^https?:\/\//i.test(shown) ? shown : "https://" + shown;
