@@ -105,7 +105,10 @@
     // hear me. The mic shows not on, and cannot be turned on..." He had been told it was
     // on, in a bubble he could not see.
     if(h.msgs.hidden)h.msgs.hidden=false;
-    b.textContent=text||"";h.msgs.appendChild(b);h.msgs.scrollTop=h.msgs.scrollHeight;return b}
+    // A finished assistant message (restored history, greetings) gets clickable links;
+    // a streaming reply is appended empty and linked by panelSubmit once complete.
+    if(text&&role!=="user"&&typeof window.setChatText==="function"){try{window.setChatText(b,text)}catch(linkErr){b.textContent=text}}
+    else b.textContent=text||"";h.msgs.appendChild(b);h.msgs.scrollTop=h.msgs.scrollHeight;return b}
   // The card renders its own thread through repopulateChatHistory(), which keeps
   // a practitioner reply in its own class with the author byline. Re-rendering it
   // here would collapse Dr. Glen and Rae back into the assistant voice, which is
@@ -255,6 +258,9 @@
       while(!done){const chunk=await reader.read();if(chunk.done)break;buf+=decoder.decode(chunk.value,{stream:true});const lines=buf.split("\n");buf=lines.pop();
         for(const line of lines){if(line.slice(0,6)!=="data: ")continue;try{const evt=JSON.parse(line.slice(6));if(evt.token){answer+=evt.token;answerBubble.textContent=answer;h.msgs.scrollTop=h.msgs.scrollHeight}
           else if(evt.error)throw new Error(String(evt.error));else if(evt.done)done=true}catch(e){if(e instanceof SyntaxError)continue;throw e}}}
+      // The reply is complete: draw its links (client-portal.html's setChatText). While it
+      // streamed it was plain text, so a half-written link was never clickable.
+      if(answer&&typeof window.setChatText==="function"){try{window.setChatText(answerBubble,answer)}catch(linkErr){answerBubble.textContent=answer}}
       chatHistory.push({role:"user",content:query},{role:"assistant",content:answer});repopulateChatHistory();speak(answer)
     }catch(e){answerBubble.textContent=(e&&e.message)||"Something went wrong. Please try again.";answerBubble.classList.add("error")}
     finally{sending=false;h.input.disabled=false;h.send.disabled=false;h.input.focus();if(continuousOn&&!speaking)scheduleListening()}}

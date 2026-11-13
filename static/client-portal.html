@@ -9071,6 +9071,78 @@ async function addSocial(){
 // ---- Ask Dr. Glen concierge chat ----
 let chatHistory = [];
 
+// Draw chat text with its links clickable, without innerHTML. A full http(s) address
+// is linked, and so is a bare address on one of our own domains, which the model
+// sometimes writes without https:// (Agnes Verches, 2026-11-12: an unclickable
+// "truly.vip/help"). Other bare domains stay plain text. Trailing sentence
+// punctuation is left outside the link.
+// The host must end at the domain: "truly.vip.example.com" is someone else's.
+// A markdown link [label](https://...) is drawn as its label, linked to its address.
+var CHAT_LINK_RE = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s()<>"']+(?:\([^\s()<>"']*\)[^\s()<>"']*)*)\)|https?:\/\/[^\s<>"']+|\b(?:www\.)?(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)(?![\w@-]|\.\w)(?:[\/?#][^\s<>"']*)?/gi;
+// Sentence punctuation after a link is not part of it. A closing bracket is kept
+// when the link itself opened it, as in /info_(billing).
+function _chatLinkTail(raw){
+  var end = raw.length;
+  while(end > 0){
+    var ch = raw.charAt(end - 1), body = raw.slice(0, end);
+    // Markdown bold or code marks, closing quotes, and a CJK full stop are not part of it.
+    if(".,;:!?*`\u201d\u2019\u2026\u3001\u3002\u00bb".indexOf(ch) !== -1){ end--; continue; }
+    if(ch === ")" && body.split("(").length < body.split(")").length){ end--; continue; }
+    if(ch === "]" && body.split("[").length < body.split("]").length){ end--; continue; }
+    break;
+  }
+  return raw.slice(end);
+}
+function setChatText(el, text){
+  if(!el) return;
+  text = String(text == null ? "" : text);
+  while(el.firstChild) el.removeChild(el.firstChild);
+  var last = 0, m;
+  CHAT_LINK_RE.lastIndex = 0;
+  while((m = CHAT_LINK_RE.exec(text))){
+    if(m[2]){
+      if(m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+      var md = document.createElement("a");
+      md.href = m[2]; md.target = "_blank"; md.rel = "noopener";
+      // A label that looks like an address must be that address. Otherwise show the
+      // real one, so a reply can never dress an outside link as our invoice page.
+      var label = m[1];
+      if(/:\/\/|\b(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)\b|www\./i.test(label)){
+        var asUrl = /^https?:\/\//i.test(label) ? label : "https://" + label;
+        // Scheme and host compare without case; the path, query and fragment exactly.
+        var norm = function(u){
+          u = u.replace(/\/$/, "");
+          var at = u.indexOf("//") + 2, cut = u.slice(at).search(/[\/?#]/);
+          var end = cut === -1 ? u.length : at + cut;
+          return u.slice(0, end).toLowerCase() + u.slice(end);
+        };
+        if(norm(asUrl) !== norm(m[2])) label = m[2];
+      }
+      md.textContent = label;
+      el.appendChild(md);
+      last = m.index + m[0].length;
+      continue;
+    }
+    var raw = m[0];
+    var tail = _chatLinkTail(raw);
+    var shown = tail ? raw.slice(0, -tail.length) : raw;
+    var before = text.slice(last, m.index);
+    // _italic_ around a link: drop the closing mark only when an opening one is there.
+    if(/_$/.test(shown) && /_$/.test(before)){ shown = shown.slice(0, -1); }
+    // "you@myhealingoasis.com" is an email address, not a link.
+    if(!shown || /[@\w.+-]$/.test(before) && !/^https?:/i.test(shown)){ continue; }
+    if(before) el.appendChild(document.createTextNode(before));
+    var a = document.createElement("a");
+    a.href = /^https?:\/\//i.test(shown) ? shown : "https://" + shown;
+    a.target = "_blank"; a.rel = "noopener";
+    a.textContent = shown;
+    el.appendChild(a);
+    last = m.index + shown.length;
+  }
+  if(last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+}
+window.setChatText = setChatText;
+
 function repopulateChatHistory(){
   var msgs = document.getElementById("chatMsgs");
   if(!msgs || !chatHistory.length) return;
@@ -9088,7 +9160,8 @@ function repopulateChatHistory(){
       div.appendChild(a);
     }
     var body = document.createElement("div");
-    body.textContent = entry.content || "";
+    if(cls === "user") body.textContent = entry.content || "";
+    else setChatText(body, entry.content || "");
     div.appendChild(body);
     msgs.appendChild(div);
   });
@@ -9744,6 +9817,8 @@ async function sendChatMessage(){
               if(assistantBubble){
                 // Hand the bubble over from "Thinking..." to the answer on the first token.
                 if(assistantBubble.className !== "chat-bubble assistant") assistantBubble.className = "chat-bubble assistant";
+                // Plain text while it streams: a half-written link must not be
+                // clickable, and an anchor rebuilt on every token can eat a click.
                 assistantBubble.textContent = assistantText;
               }
               if(msgs) msgs.scrollTop = msgs.scrollHeight;
@@ -9774,6 +9849,13 @@ async function sendChatMessage(){
               // back. PortalVoice.armed() is true only once the card host is
               // bound, which only the shell does, so with the flag off this is
               // the same TTS call it has always been.
+              // The reply is complete, so its links can be drawn now, before
+              // the voice controls are attached to the bubble. A renderer fault falls
+              // back to plain text: it must never cost the door link or the voice.
+              if(assistantBubble && assistantText){
+                try{ setChatText(assistantBubble, assistantText); }
+                catch(linkErr){ assistantBubble.textContent = assistantText; }
+              }
               if(assistantBubble && assistantText){
                 if(window.PortalVoice && window.PortalVoice.armed()){
                   window.PortalVoice.onReply(assistantBubble, assistantText);
