@@ -9,7 +9,8 @@ money-path correctness (idempotent first charge, no cron double-charge) lives in
 the routes/cron, guarded by next_charge_at advancing only on success.
 
 `past_due` still covers: a failed renewal must not blur a client's report
-mid-month. The cron cancels after its retry budget, and cancelling stops cover.
+mid-month. The cron cancels after its retry budget, and that stops cover at once.
+A holder's own cancel keeps cover to the end of the paid period (CANCELLING).
 """
 
 TIERS = {
@@ -31,6 +32,27 @@ def get_tier(key):
 
 # Statuses that still entitle. `past_due` = grace while the cron retries.
 ACTIVE_STATUSES = ("active", "past_due")
+
+# Glen, 2026-11-13: a plan the holder cancels keeps its cover until the period already
+# paid for ends. The row says `cancelling` and next_charge_at is that end date. It is
+# never charged again (due() reads only ACTIVE_STATUSES), and it stops entitling on
+# that date with no job needed. An unpaid (past_due) or comped plan has no paid period
+# left, so it is cancelled at once.
+CANCELLING = "cancelling"
+
+
+def _today():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+# Entitling rows: an active or past_due plan, or a cancelling one inside its paid period.
+_ENTITLED_SQL = ("(status IN (?,?) OR (status=? AND next_charge_at IS NOT NULL "
+                 "AND substr(next_charge_at,1,10) > ?))")
+
+
+def _entitled_params(today=None):
+    return (*ACTIVE_STATUSES, CANCELLING, today or _today())
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS family_subscriptions (
@@ -121,9 +143,37 @@ def is_active(cx, caregiver_email):
     if not email:
         return False
     row = cx.execute(
-        "SELECT 1 FROM family_subscriptions WHERE caregiver_email=? AND status IN (?,?)",
-        (email, *ACTIVE_STATUSES)).fetchone()
+        "SELECT 1 FROM family_subscriptions WHERE caregiver_email=? AND " + _ENTITLED_SQL,
+        (email, *_entitled_params())).fetchone()
     return row is not None
+
+
+def cancel_at_period_end(cx, caregiver_email, today=None):
+    """The holder cancels. Returns the date cover ends (YYYY-MM-DD) when a paid period
+    is still running, else None after cancelling at once. Repeating it changes nothing."""
+    today = today or _today()
+    row = get(cx, caregiver_email)
+    if not row:
+        return None
+    status = row.get("status") or ""
+    end = (row.get("next_charge_at") or "")[:10]
+    if status == CANCELLING:
+        return end if end > today else None
+    if status == "active" and end and end > today and (row.get("source") or "") != "comp":
+        set_status(cx, caregiver_email, CANCELLING)
+        return end
+    if status != "cancelled":
+        set_status(cx, caregiver_email, "cancelled")
+    return None
+
+
+def access_ends(cx, caregiver_email, today=None):
+    """The date a cancelled plan's cover ends, while it is still running; else None."""
+    row = get(cx, caregiver_email)
+    if not row or row.get("status") != CANCELLING:
+        return None
+    end = (row.get("next_charge_at") or "")[:10]
+    return end if end > (today or _today()) else None
 
 
 def covers(cx, email):
@@ -162,7 +212,7 @@ def list_active(cx) -> list:
     rows = cx.execute(
         "SELECT caregiver_email, status, source, amount_cents, cadence_months, "
         "started_at, next_charge_at, fail_count FROM family_subscriptions "
-        "WHERE status IN (?,?) ORDER BY started_at DESC", ACTIVE_STATUSES).fetchall()
+        "WHERE " + _ENTITLED_SQL + " ORDER BY started_at DESC", _entitled_params()).fetchall()
     out = []
     for r in rows:
         d = dict(zip(("caregiver_email", "status", "source", "amount_cents",

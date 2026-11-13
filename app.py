@@ -29224,6 +29224,8 @@ def _portal_options_for(email, holder_email=None):
                         # The SIGNED-IN person, not a member being viewed (?member=): a
                         # holder viewing her son keeps her own Cancel (review round 1).
                         "holder": bool(_fp.is_active(cx, holder_email or email)),
+                        # Set once the holder has cancelled: cover runs to this date.
+                        "ends": _fp.access_ends(cx, holder_email or email),
                     }
             except Exception as _e:
                 print(f"[portal-options/family] {_e!r}", flush=True)
@@ -38980,8 +38982,9 @@ def caregiver_pay_return():
 
 @app.route("/api/portal/<token>/family-plan/cancel", methods=["POST"])
 def portal_family_plan_cancel(token):
-    """Caregiver self-cancel. Stops covers() for the household at the next read;
-    no refund, no proration (the current paid cycle simply is not renewed)."""
+    """Caregiver self-cancel. The plan is not renewed, and the household keeps its
+    cover until the paid period ends (Glen, 2026-11-13). An unpaid or comped plan
+    ends at once. No refund, no proration."""
     from dashboard import portal_identity as _pi, family_plan as _fp
     sess_cookie = request.cookies.get("rm_portal_session", "")
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -38993,13 +38996,14 @@ def portal_family_plan_cancel(token):
             return jsonify({"error": "not_found"}), 404
         # A member covered by someone else's plan holds no plan row: the update used to
         # change nothing and answer ok (money-07, 2026-09-28). Refuse instead.
+        own = _fp.get(cx, ident.email)
+        if own and own.get("status") in ("cancelled", _fp.CANCELLING):
+            # A retry after a lost reply (round 2).
+            return jsonify({"ok": True, "access_until": _fp.access_ends(cx, ident.email)})
         if not _fp.is_active(cx, ident.email):
-            own = _fp.get(cx, ident.email)
-            if own and own.get("status") == "cancelled":
-                return jsonify({"ok": True})      # a retry after a lost reply (round 2)
             return jsonify({"ok": False, "error": "The plan holder manages this plan."}), 409
-        _fp.set_status(cx, ident.email, "cancelled")
-    return jsonify({"ok": True})
+        until = _fp.cancel_at_period_end(cx, ident.email)
+    return jsonify({"ok": True, "access_until": until})
 
 
 @app.route("/api/community/coach-subscribe/cancel", methods=["POST"])
@@ -39172,7 +39176,7 @@ def family_plan_charge_cron():
             failed += 1
             if was_cancelled:
                 cancelled += 1
-            html = (f"<p>We could not process this month's Family Plan charge for {email}. "
+            html = (f"<p>We could not process the latest Family Plan charge for {email}. "
                     f"Please update the card on file from your portal to keep the plan active.</p>")
             try:
                 send_evox_email(email, "", "Your Family Plan payment did not go through",
