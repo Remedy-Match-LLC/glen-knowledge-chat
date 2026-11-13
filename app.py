@@ -39179,6 +39179,15 @@ def family_plan_charge_cron():
                     was_cancelled = True
                 else:
                     was_cancelled = False
+        # A plan cancelled while its charge was declining is over: no "update your
+        # card" email for it (review round 3).
+        if not ok:
+            with db.connect(LOG_DB) as acx:
+                acx.row_factory = sqlite3.Row
+                after = _fp.get(acx, email)
+            if not after or (after.get("status") not in _fp.ACTIVE_STATUSES and not was_cancelled):
+                failed += 1
+                continue
         if ok and renewed_cancelled:
             # The card was charged, but the plan was cancelled while the charge ran.
             # It stays cancelled; Glen refunds by hand.

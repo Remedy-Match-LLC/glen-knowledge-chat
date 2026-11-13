@@ -42,8 +42,11 @@ CANCELLING = "cancelling"
 
 
 def _today():
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).date().isoformat()
+    """Today in Hilo. A cancelled plan's cover then runs to midnight Hawaii time on the
+    renewal date, as the portal says, not 2pm the day before (review round 3)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Pacific/Honolulu")).date().isoformat()
 
 
 # Entitling rows: an active or past_due plan, or a cancelling one inside its paid period.

@@ -273,3 +273,34 @@ def test_cron_charge_landing_after_a_cancel_keeps_it_cancelled_and_asks_for_a_re
     subjects = [c.args[2] for c in mail.call_args_list]
     assert any(s.startswith("Refund needed: Family Plan charged after cancel") for s in subjects)
     assert all(c.args[0] == appmod.GLEN_CONSULT_EMAIL for c in mail.call_args_list)
+
+
+def test_a_decline_after_a_cancel_sends_no_update_your_card_email(cron_db):
+    from unittest import mock
+
+    def decline_while_cancelled(*a, **k):
+        with sqlite3.connect(appmod.LOG_DB) as cx2:
+            fp.set_status(cx2, HOLDER, "cancelled")
+        return {"id": "pi_no", "status": "requires_payment_method"}
+    with mock.patch("dashboard.stripe_pay.charge_off_session",
+                    side_effect=decline_while_cancelled), \
+         mock.patch.object(appmod, "send_evox_email") as mail:
+        _cron()
+    assert _status() == "cancelled"
+    assert not any(c.args[0] == HOLDER for c in mail.call_args_list)
+
+
+def test_a_decline_on_a_live_plan_still_asks_for_a_new_card(cron_db):
+    from unittest import mock
+    with mock.patch("dashboard.stripe_pay.charge_off_session",
+                    return_value={"id": "pi_no", "status": "requires_payment_method"}), \
+         mock.patch.object(appmod, "send_evox_email") as mail:
+        _cron()
+    assert _status() == "past_due"
+    assert any(c.args[0] == HOLDER for c in mail.call_args_list)
+
+
+def test_today_is_the_hawaii_date():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    assert fp._today() == datetime.now(ZoneInfo("Pacific/Honolulu")).date().isoformat()
