@@ -30,7 +30,8 @@ def test_prompt_gives_the_invoice_link_in_full():
     assert line.endswith(": https://myhealingoasis.com/portal/me#orders")
     assert "Never send them anywhere else to find or pay an invoice." in line
     assert "- Write every link in full, starting with https://." in sys
-    assert "truly.vip/help" not in sys
+    assert "Never give truly.vip/help: that address no longer works." in sys
+    assert "https://truly.vip/help" not in sys
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")

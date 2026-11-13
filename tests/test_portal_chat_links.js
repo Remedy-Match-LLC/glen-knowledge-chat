@@ -46,9 +46,9 @@ assert.deepStrictEqual(links(e), [['https://myhealingoasis.com/portal/me#orders'
 assert.strictEqual(plain(e), 'Open https://myhealingoasis.com/portal/me#orders.');
 
 // 2. The exact failure: a bare address on our own domain gets https://.
-e = render('Reach us at truly.vip/help.');
-assert.deepStrictEqual(links(e), [['https://truly.vip/help', 'truly.vip/help']]);
-assert.strictEqual(plain(e), 'Reach us at truly.vip/help.');
+e = render('Start at truly.vip/E4L.');
+assert.deepStrictEqual(links(e), [['https://truly.vip/E4L', 'truly.vip/E4L']]);
+assert.strictEqual(plain(e), 'Start at truly.vip/E4L.');
 e = render('See myhealingoasis.com/portal/me#orders, then pay.');
 assert.deepStrictEqual(links(e), [['https://myhealingoasis.com/portal/me#orders',
                                    'myhealingoasis.com/portal/me#orders']]);
@@ -103,9 +103,26 @@ assert.strictEqual(plain(e), '**https://myhealingoasis.com/portal/me#orders**');
 e = render('Use `truly.vip/E4L` or \u201chttps://truly.vip/Intro\u201d\u3002');
 assert.deepStrictEqual(links(e).map(l => l[0]), ['https://truly.vip/E4L', 'https://truly.vip/Intro']);
 
+// 12b. A markdown link shows its label, linked to its address.
+e = render('Open [your invoices](https://myhealingoasis.com/portal/me#orders) now');
+assert.deepStrictEqual(links(e), [['https://myhealingoasis.com/portal/me#orders', 'your invoices']]);
+assert.strictEqual(plain(e), 'Open your invoices now');
+e = render('[https://truly.vip/E4L](https://truly.vip/E4L).');
+assert.deepStrictEqual(links(e), [['https://truly.vip/E4L', 'https://truly.vip/E4L']]);
+assert.strictEqual(plain(e), 'https://truly.vip/E4L.');
+e = render('[Foo](https://en.wikipedia.org/wiki/Foo_(bar))');
+assert.deepStrictEqual(links(e), [['https://en.wikipedia.org/wiki/Foo_(bar)', 'Foo']]);
+e = render('[x](javascript:alert(1))');
+assert.deepStrictEqual(links(e), []);
+// 12c. Italic marks, an ellipsis and a CJK comma are not part of a link.
+e = render('_https://truly.vip/E4L_ and https://truly.vip/Intro\u2026');
+assert.deepStrictEqual(links(e).map(l => l[0]), ['https://truly.vip/E4L', 'https://truly.vip/Intro']);
+
 // 13. The floating mentor panel draws its finished reply with the same renderer.
 const mentor = fs.readFileSync(path.join(__dirname, '..', 'static', 'portal-mentor.js'), 'utf8');
 assert.ok(/window\.setChatText\(answerBubble,answer\)/.test(mentor), 'mentor panel reply not linked');
+assert.ok(/role!=="user"&&typeof window\.setChatText==="function"\)\{try\{window\.setChatText\(b,text\)/.test(mentor),
+          'mentor panel history not linked');
 
 // 11. Streaming draws plain text; links are drawn once the reply is done, before the
 // voice controls attach. Restored history is linked; a user bubble is not.

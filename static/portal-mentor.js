@@ -105,7 +105,10 @@
     // hear me. The mic shows not on, and cannot be turned on..." He had been told it was
     // on, in a bubble he could not see.
     if(h.msgs.hidden)h.msgs.hidden=false;
-    b.textContent=text||"";h.msgs.appendChild(b);h.msgs.scrollTop=h.msgs.scrollHeight;return b}
+    // A finished assistant message (restored history, greetings) gets clickable links;
+    // a streaming reply is appended empty and linked by panelSubmit once complete.
+    if(text&&role!=="user"&&typeof window.setChatText==="function"){try{window.setChatText(b,text)}catch(linkErr){b.textContent=text}}
+    else b.textContent=text||"";h.msgs.appendChild(b);h.msgs.scrollTop=h.msgs.scrollHeight;return b}
   // The card renders its own thread through repopulateChatHistory(), which keeps
   // a practitioner reply in its own class with the author byline. Re-rendering it
   // here would collapse Dr. Glen and Rae back into the assistant voice, which is

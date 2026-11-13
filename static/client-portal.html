@@ -9077,7 +9077,8 @@ let chatHistory = [];
 // "truly.vip/help"). Other bare domains stay plain text. Trailing sentence
 // punctuation is left outside the link.
 // The host must end at the domain: "truly.vip.example.com" is someone else's.
-var CHAT_LINK_RE = /\bhttps?:\/\/[^\s<>"']+|\b(?:www\.)?(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)(?![\w-]|\.\w)(?:[\/?#][^\s<>"']*)?/gi;
+// A markdown link [label](https://...) is drawn as its label, linked to its address.
+var CHAT_LINK_RE = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s()<>"']+(?:\([^\s()<>"']*\)[^\s()<>"']*)*)\)|\bhttps?:\/\/[^\s<>"']+|\b(?:www\.)?(?:truly\.vip|truly\.so|myhealingoasis\.com|illtowell\.com)(?![\w-]|\.\w)(?:[\/?#][^\s<>"']*)?/gi;
 // Sentence punctuation after a link is not part of it. A closing bracket is kept
 // when the link itself opened it, as in /info_(billing).
 function _chatLinkTail(raw){
@@ -9085,7 +9086,7 @@ function _chatLinkTail(raw){
   while(end > 0){
     var ch = raw.charAt(end - 1), body = raw.slice(0, end);
     // Markdown bold or code marks, closing quotes, and a CJK full stop are not part of it.
-    if(".,;:!?*`\u201d\u2019\u3002\u00bb".indexOf(ch) !== -1){ end--; continue; }
+    if(".,;:!?*_`\u201d\u2019\u2026\u3001\u3002\u00bb".indexOf(ch) !== -1){ end--; continue; }
     if(ch === ")" && body.split("(").length < body.split(")").length){ end--; continue; }
     if(ch === "]" && body.split("[").length < body.split("]").length){ end--; continue; }
     break;
@@ -9099,6 +9100,15 @@ function setChatText(el, text){
   var last = 0, m;
   CHAT_LINK_RE.lastIndex = 0;
   while((m = CHAT_LINK_RE.exec(text))){
+    if(m[2]){
+      if(m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+      var md = document.createElement("a");
+      md.href = m[2]; md.target = "_blank"; md.rel = "noopener";
+      md.textContent = m[1];
+      el.appendChild(md);
+      last = m.index + m[0].length;
+      continue;
+    }
     var raw = m[0];
     var tail = _chatLinkTail(raw);
     var shown = tail ? raw.slice(0, -tail.length) : raw;
