@@ -31318,7 +31318,7 @@ def api_ebook_optin():
 
 
 # Studio Black Friday 2026 (marketing tab design, Glen 2026-11-12). The page stays
-# unlinked, and the offer email held, until marketing's copy is approved.
+# unlinked until marketing's 17 Nov email. The offer copy was released on 12 Nov.
 @app.route("/studio-bf")
 def studio_bf_page():
     resp = send_from_directory(STATIC, "studio-bf.html")

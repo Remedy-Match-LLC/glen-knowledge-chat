@@ -87,11 +87,50 @@ def test_rae_sets_a_status(tmp_path):
         sbf.set_status(cx, "kai@x.com", "shipped", "rae")
 
 
-def test_offer_is_held_while_the_copy_is_unset(tmp_path):
+def _hold(monkeypatch):
+    monkeypatch.setattr(sbf, "OFFER_SUBJECT", None)
+    monkeypatch.setattr(sbf, "OFFER_TEXT", None)
+
+
+def test_offer_is_held_while_the_copy_is_unset(tmp_path, monkeypatch):
+    _hold(monkeypatch)
     cx = _cx(tmp_path)
     row, _ = sbf.save_claim(cx, sbf.clean_claim(GOOD, today=AFTER))
-    assert sbf.OFFER_SUBJECT is None and sbf.OFFER_TEXT is None
     assert sbf.offer_message(row) is None
+    monkeypatch.setattr(sbf, "OFFER_TEXT", "Aloha {name}.")
+    assert sbf.offer_message(row) is None       # either half unset holds it
+
+
+def test_the_released_copy_fills_both_blanks_and_carries_the_four_doors(tmp_path):
+    cx = _cx(tmp_path)
+    row, _ = sbf.save_claim(cx, sbf.clean_claim(GOOD, today=AFTER))
+    subject, text = sbf.offer_message(row)
+    assert subject == "Your thank-you offer from Dr. Glen"
+    assert text.startswith("Aloha " + row["name"] + ",\n\n")
+    assert "until " + row["last_day_label"] + "." in text
+    assert "{" not in text and "}" not in text
+    for link in ("https://illtowell.com/prepay?renew=1mo",
+                 "https://illtowell.com/prepay?renew=12mo",
+                 "https://illtowell.com/membership",
+                 "https://illtowell.com/begin/scan"):
+        assert link in text
+    for price in ("$100", "$1,000", "$1,497", "$1,398", "$300"):
+        assert price in text
+    assert text.rstrip().endswith("Aloha,\n\nDr. Glen")
+
+
+# SHA-256 of subject + "\n" + text exactly as approved in
+# ~/AI-Training/marketing/04 Copy/black-friday-2026/emails-and-posts.md, section
+# "The offer email", computed from that file on 12 Nov 2026. Any change to one word,
+# price or term fails here. Changing the copy means re-approval and a new hash.
+# Written in groups of eight so the push hook does not read it as a key.
+APPROVED_OFFER_SHA256 = "968aeb15 4936924d a49e8bdb 44ee8268 a4526eeb a019d82a e1f76138 e7dbbee6".replace(" ", "")
+
+
+def test_the_released_copy_is_exactly_the_approved_copy():
+    import hashlib
+    got = hashlib.sha256((sbf.OFFER_SUBJECT + "\n" + sbf.OFFER_TEXT).encode()).hexdigest()
+    assert got == APPROVED_OFFER_SHA256
 
 
 # --- the routes ---------------------------------------------------------------
@@ -149,6 +188,7 @@ def test_page_and_admin_page_are_served(env):
 
 def test_claim_records_and_sends_nothing_while_held(env, monkeypatch):
     appmod, c, ses = env
+    _hold(monkeypatch)
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)   # so a send would reach the fake
     r = c.post("/api/studio-bf/claim", json=GOOD)
     assert r.status_code == 200
@@ -279,6 +319,7 @@ def test_a_non_ascii_key_is_refused_not_a_crash(env):
 
 def test_claims_made_while_held_are_sent_once_released(env, monkeypatch):
     appmod, c, ses = env
+    _hold(monkeypatch)
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     h = {"X-Console-Key": "test-console-key"}
     c.post("/api/studio-bf/claim", json=GOOD)
@@ -320,3 +361,40 @@ def test_the_webhook_secret_fallback_does_not_open_the_list(env, monkeypatch):
     monkeypatch.setenv("CONSOLE_SECRET", "")
     assert c.get("/api/console/studio-bf",
                  headers={"X-Console-Key": "webhook-secret"}).status_code == 403
+
+
+def test_a_name_carrying_a_link_or_address_is_refused():
+    for bad in ("Locked, verify at evil.example", "see www dot x", "a@b", "x/y",
+                "<b>Kai</b>", "Go to EVIL.COM now", "evil dot com", "evil . com",
+                "\uff45\uff56\uff49\uff4c\uff0e\uff43\uff4f\uff4d", "evil\u3002com",
+                "evil.\u200bcom", "1.2.3.4", "Kai, call 1-800-555-0100", "Kai http:evil",
+                "Kai \u202eliam"):
+        try:
+            sbf.clean_claim({**GOOD, "name": bad}, today=AFTER)
+        except ValueError as e:
+            assert str(e) == "Please enter just your name."
+        else:
+            raise AssertionError(bad)
+    for ok in ("Mary J. Smith", "Kai O'Neil-Ho", "Dr. A. B. Lee", "Hōkū Kealoha"):
+        assert sbf.clean_claim({**GOOD, "name": ok}, today=AFTER)["name"] == ok
+
+
+def test_a_rejected_claim_is_never_in_the_pending_list(tmp_path):
+    cx = _cx(tmp_path)
+    sbf.save_claim(cx, sbf.clean_claim(GOOD, today=AFTER))
+    sbf.save_claim(cx, sbf.clean_claim({**GOOD, "email": "b@x.com"}, today=AFTER))
+    sbf.set_status(cx, "kai@x.com", "rejected", "rae")
+    assert sbf.pending_offer_emails(cx) == ["b@x.com"]
+
+
+def test_a_rejected_claim_gets_no_offer_from_a_repeat_claim(env, monkeypatch):
+    appmod, c, ses = env
+    _hold(monkeypatch)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    c.post("/api/studio-bf/claim", json=GOOD)          # saved while held, never tried
+    h = {"X-Console-Key": "test-console-key"}
+    c.post("/api/console/studio-bf", headers=h,
+           json={"email": "kai@x.com", "status": "rejected", "by": "rae"})
+    _copy(monkeypatch)
+    assert c.post("/api/studio-bf/claim", json=GOOD).status_code == 200
+    assert ses.sent == []
