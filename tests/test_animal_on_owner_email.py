@@ -1006,13 +1006,21 @@ def test_the_pet_never_edits_the_owners_open_draft(tmp_path):
     with sqlite3.connect(db) as cx:
         bp.link_order(cx, ann, 7)
     _chain(db, pet, [INFO])
+    # Inverted 2026-11-14 (Glen: "Skylar's remedies should also be added to the same
+    # invoice since Agnes pays for her dog's remedies"). The pet joins the owner's
+    # draft; it edits only its own "For <name>" lines.
     r = client.post(f"/author/{pet}/invoice", json={})
-    assert r.status_code == 409 and "Ann Owner" in r.get_json()["error"]
-    assert calls == {}
-    # Ann raising her own draft still updates it.
-    _chain(db, ann, [FF])
-    assert client.post(f"/author/{ann}/invoice", json={}).get_json()["ok"] is True
+    assert r.status_code == 200 and r.get_json()["ok"] is True, r.get_json()
     assert calls["kw"]["update_order_id"] == 7
+    lines = calls["lines"]
+    owner_line = [l for l in lines if l["slug"] == "immune-modulation"]
+    assert owner_line and not (owner_line[0].get("note") or "").startswith("For ")
+    pet_lines = [l for l in lines if (l.get("note") or "").startswith("For ")]
+    assert pet_lines, lines
+    # The owner's note and month count are not replaced by the pet's raise.
+    from dashboard import biofield_invoice as _bfi
+    assert calls["kw"].get("invoice_note") is _bfi.KEEP_NOTE
+    assert "supply_months" not in calls["kw"]
 
 
 def test_an_unstored_draft_on_a_shared_email_is_left_alone(tmp_path):
@@ -1021,7 +1029,20 @@ def test_an_unstored_draft_on_a_shared_email_is_left_alone(tmp_path):
     _intake(client, "Ann Owner", OWNER)
     pet = _pet(client)
     _chain(db, pet, [INFO])
-    assert client.post(f"/author/{pet}/invoice", json={}).status_code == 409
+    # Inverted 2026-11-14: an unstored draft on the owner's email is the household's.
+    r = client.post(f"/author/{pet}/invoice", json={})
+    assert r.status_code == 200 and calls["kw"]["update_order_id"] == 7
+
+
+def test_two_humans_on_one_email_still_never_share(tmp_path):
+    """Only a pet and its owner share. Two people on one email keep the refusal."""
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "", "items": []}
+    client, db, calls = _shared_invoice_app(tmp_path, latest)
+    _intake(client, "Ann Owner", OWNER)
+    bob = _intake(client, "Bob Other", OWNER)
+    _chain(db, bob, [FF])
+    r = client.post(f"/author/{bob}/invoice", json={})
+    assert r.status_code == 409, r.get_json()
     assert calls == {}
 
 

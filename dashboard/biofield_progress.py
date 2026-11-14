@@ -43,7 +43,7 @@ def ensure_schema(cx):
 
 
 def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False,
-               resolve=None):
+               resolve=None, share_with=()):
     """Remember that this test's invoice is this order. Returns (stored, reason).
 
     Refused when another test already holds this order: a household's second raise
@@ -53,7 +53,10 @@ def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False,
 
     resolve(order_id) -> the order that stands for it now (see resolver). Two tests
     whose orders resolve to the same final order hold the same invoice, so the second
-    is refused. Without it, only the same order number counts."""
+    is refused. Without it, only the same order number counts.
+
+    share_with names tests that may hold the same order: a pet and its owner on one
+    shared invoice (2026-11-14). Each raise there edits only its own lines."""
     oid, tid = int(order_id), str(test_id)
     resolve = resolve or (lambda x: int(x))
     ensure_schema(cx)
@@ -61,8 +64,11 @@ def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False,
     cx.execute("BEGIN IMMEDIATE")
     try:
         mine_final = resolve(oid)
+        _shared = {str(t) for t in (share_with or ())}
         for other, o in cx.execute(f"SELECT test_id, order_id FROM {LINK_TABLE} "
                                    "WHERE test_id<>?", (tid,)).fetchall():
+            if str(other) in _shared:
+                continue
             if int(o) == oid or resolve(int(o)) == mine_final:
                 cx.rollback()
                 return False, (f"order #{oid} is already stored for test {other}"

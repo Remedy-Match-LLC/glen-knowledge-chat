@@ -19621,6 +19621,13 @@ def _order_has_supply_line(order):
             continue
         if "line_cents" in it and not int(it.get("line_cents") or 0):
             continue
+        # A pet's line on its owner's invoice ("For Skylar") is not the owner's month
+        # of remedies (Glen 2026-11-14 plan). The owner's own lines still count.
+        from dashboard import biofield_invoice as _bfi_h
+        if ((it.get("source") or "").strip().lower() == "biofield"
+                and _bfi_h.household_tag_of(it.get("note"))
+                and not (it.get("billed_for") or "").strip()):
+            continue
         prod = _get_product(slug)
         if not prod or prod.get("service") or prod.get("digital"):
             continue

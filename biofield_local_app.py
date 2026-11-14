@@ -2552,7 +2552,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_e4l import _person_key
         return _person_key(_intake_ident(cx, tid_a)[1]) == _person_key(_intake_ident(cx, tid_b)[1])
 
-    def _draft_clash(test_id, email, oid):
+    def _draft_clash(test_id, email, oid, allow_household=False):
         """Why this intake must not edit the open draft on its email, or "".
 
         Prod finds the open draft by email, and an owner and her pet share one. The
@@ -2575,12 +2575,37 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                   int(str(test_id).lstrip("a") or 0)))]
             for t in others:
                 if not _same_subject(cx, t, test_id):
+                    if allow_household and (_intake_is_animal(cx, t)
+                                            or _intake_is_animal(cx, test_id)):
+                        # A pet and its owner share one invoice (Glen 2026-11-14).
+                        # Each raise replaces only its own tagged lines.
+                        continue
                     who = _intake_ident(cx, t)[1] or "another client"
                     return (f"Not raised: the open invoice draft on this email (order "
                             f"#{oid}) {'is' if owner else 'may be'} {who}'s, another "
                             "intake on this email. Raising this one would change their "
                             "invoice. Finish or cancel that draft first.")
         return ""
+
+    def _household_share(test_id, email):
+        """(tag, sharers) for a pet raised onto its owner's invoice.
+
+        tag is "For <first name>" when this intake is an animal and another subject's
+        intake shares its email, else "". sharers are the other subjects' tests on the
+        email that may hold the same order: a pet's owner, or an owner's pets."""
+        with sqlite3.connect(db_path) as cx:
+            tid_n = int(str(test_id).lstrip("a") or 0)
+            others = [f"a{r[0]}" for r in cx.execute(
+                "SELECT id FROM biofield_auth_tests WHERE lower(trim(email))=? AND id<>?",
+                (email.strip().lower(), tid_n))]
+            me_animal = _intake_is_animal(cx, test_id)
+            sharers = [t for t in others if not _same_subject(cx, t, test_id)
+                       and (me_animal or _intake_is_animal(cx, t))]
+            tag = ""
+            if me_animal and sharers:
+                first = (_intake_ident(cx, test_id)[1] or "").split()
+                tag = f"For {first[0]}" if first else "For your pet"
+        return tag, sharers
 
     def _invoice_refused_note(refused, species_unknown):
         if not refused:
@@ -2694,25 +2719,45 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 and previous.get("pay_status") != "paid")
             else None
         )
-        if update_order_id:
-            clash = _draft_clash(test_id, email, update_order_id)
-            if clash:
-                return {"ok": False, "error": clash, "draft_order_id": update_order_id}, 409
-            built["lines"] = biofield_invoice.merge_manual_invoice_lines(
-                built["lines"], previous.get("items") or [])
+        tag, sharers = _household_share(test_id, email)
+        if tag:
+            for _ln in built["lines"]:
+                _ln["note"] = biofield_invoice.household_note(tag[4:], _ln.get("note") or "")
         if gate:
-            # The merge keeps lines already on the open draft, and one of those can be
-            # an FF from before (2026-11-06 review). Filter the merged draft too.
+            # This intake's own lines first, before any merge (2026-11-06 review).
             built["lines"] = _gate_invoice_lines(built["lines"], catalog,
                                                  previous.get("items") or [],
                                                  _known_info, animal_refused)
+        joining = False
+        if update_order_id:
+            clash = _draft_clash(test_id, email, update_order_id, allow_household=True)
+            if clash:
+                return {"ok": False, "error": clash, "draft_order_id": update_order_id}, 409
+            if sharers:
+                # A shared household invoice: replace only this intake's lines and keep
+                # the other subject's lines, fee and hand-added lines as they are.
+                built["lines"] = biofield_invoice.merge_household_lines(
+                    built["lines"], previous.get("items") or [], tag)
+                joining = bool(tag)
+            else:
+                built["lines"] = biofield_invoice.merge_manual_invoice_lines(
+                    built["lines"], previous.get("items") or [])
+                if gate:
+                    # The merge keeps lines already on the open draft, and one of those
+                    # can be an FF from before (2026-11-06 review). Filter them too.
+                    built["lines"] = _gate_invoice_lines(built["lines"], catalog,
+                                                         previous.get("items") or [],
+                                                         _known_info, animal_refused)
         note = biofield_invoice.build_invoice_note(rep.get("phase"), rep.get("location"))
         create_kwargs = {"invoice_note": note,
                          "idempotency_key": ((request.get_json(silent=True) or {})
                                              .get("idempotency_key") or "")}
         if update_order_id:
             create_kwargs["update_order_id"] = update_order_id
-        if supply_posted:
+        if joining:
+            # The owner's invoice: their note and their month count stay as they are.
+            create_kwargs["invoice_note"] = biofield_invoice.KEEP_NOTE
+        elif supply_posted:
             create_kwargs["supply_months"] = supply_months
         created = invoice_create(
             {"name": client.get("name"), "email": email}, built["lines"], **create_kwargs)
@@ -2736,7 +2781,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 with sqlite3.connect(db_path) as cx:
                     _ok, _why = biofield_progress.link_order(
                         cx, test_id, created["order_id"],
-                        resolve=biofield_progress.resolver(_chains))
+                        resolve=biofield_progress.resolver(_chains),
+                        share_with=sharers)
                 if not _ok:
                     link_refused = _why
         except Exception as _le:

@@ -436,10 +436,71 @@ def upgrade_old_folded(items):
     return out
 
 
+# A pet's lines on its owner's shared invoice (Glen 2026-11-14: "Skylar's remedies
+# should also be added to the same invoice since Agnes pays for her dog's remedies").
+# The note names whose line it is, so each intake's raise replaces only its own lines.
+# The note survives Edit Invoice and prints on the invoice. billed_for is not used: it
+# holds a member's email, a pet shares its owner's, and any billed_for line stops the
+# owner's supply-month grant for the whole order.
+HOUSEHOLD_SEP = " | "
+
+
+def household_note(first_name, note=""):
+    """'For Skylar', or 'For Skylar | With A and B' when the line has its own note."""
+    tag = f"For {first_name}".strip()
+    return tag + (HOUSEHOLD_SEP + note if note else "")
+
+
+def household_tag_of(note):
+    """The 'For <name>' tag a household line's note starts with, or ""."""
+    text = str(note or "").strip()
+    if not text.startswith("For "):
+        return ""
+    return text.split(HOUSEHOLD_SEP, 1)[0].strip()
+
+
+def _strip_household_tag(note):
+    text = str(note or "").strip()
+    if household_tag_of(text):
+        return text.split(HOUSEHOLD_SEP, 1)[1].strip() if HOUSEHOLD_SEP in text else ""
+    return text
+
+
+def merge_household_lines(new_lines, existing_items, tag):
+    """Merge one intake's freshly raised lines into a draft other intakes share.
+
+    This intake's Biofield lines on the draft (its tag, or no tag when tag is "") are
+    replaced by new_lines. Every other line is kept as it was: the other intake's
+    Biofield lines and analysis fee, and lines added by hand in Edit Invoice. As in
+    merge_manual_invoice_lines, a hand-added line whose product the untagged raise now
+    carries is dropped."""
+    merged = [dict(line) for line in (new_lines or [])]
+    present = {(line.get("slug") or "").strip() for line in merged}
+    for item in existing_items or []:
+        slug = (item.get("slug") or "").strip()
+        if not slug:
+            continue
+        is_bf = (slug == BIOFIELD_SLUG or
+                 (item.get("source") or "").strip().lower() == "biofield")
+        item_tag = household_tag_of(item.get("note"))
+        if is_bf and item_tag == tag:
+            continue                      # this intake's own line: replaced
+        if not is_bf and not tag and slug in present:
+            continue
+        line = {"slug": slug, "qty": max(1, int(item.get("qty") or 1))}
+        for key in ("source", "note", "format", "billed_for"):
+            if item.get(key):
+                line[key] = item[key]
+        if item.get("override") and item.get("unit_cents") is not None:
+            line["unit_cents"] = item["unit_cents"]
+        merged.append(line)
+    return merged
+
+
 def note_ingredients(note):
     """The ingredients a terrain_restore_note names, in order. Display text read
     back, so it is used only for a line that carries no "held" list."""
-    text = str(note or "").strip()
+    text = _strip_household_tag(note)
     if not text.startswith("With "):
         return []
     text = text[5:]
@@ -571,6 +632,9 @@ def default_fetch_catalog():
         return []
 
 
+KEEP_NOTE = object()
+
+
 def default_create_order(customer, lines, replace_open=False, invoice_note=None,
                          update_order_id=None, idempotency_key="", supply_months=None):
     """Create the hand-off invoice on prod. With replace_open=True (a re-hand-off),
@@ -586,8 +650,12 @@ def default_create_order(customer, lines, replace_open=False, invoice_note=None,
         # bottle, so an analysis-only invoice still ships $0. Mark the order pickup
         # from the console when the client actually collects in person.
         body = {"customer": {"name": customer.get("name") or "", "email": customer.get("email") or ""},
-                "lines": lines, "replace_open": bool(replace_open),
-                "invoice_note": invoice_note or DEFAULT_INVOICE_NOTE}
+                "lines": lines, "replace_open": bool(replace_open)}
+        # KEEP_NOTE on an update leaves the stored invoice note as it is (a pet's raise
+        # joining its owner's invoice must not replace the owner's note).
+        if not (invoice_note is KEEP_NOTE and update_order_id):
+            body["invoice_note"] = ((invoice_note if invoice_note is not KEEP_NOTE else None)
+                                    or DEFAULT_INVOICE_NOTE)
         if update_order_id:
             body["update_order_id"] = int(update_order_id)
         # The authoring page mints one token per LOAD. Prod derives the order's
