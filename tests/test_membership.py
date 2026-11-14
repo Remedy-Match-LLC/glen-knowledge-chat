@@ -1,6 +1,6 @@
 import pytest
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, date
 
 from tests.test_begin_routes import _load_app
 
@@ -871,7 +871,8 @@ def test_renewal_cron_prepay_sends_no_charge_copy(app_client_mem, fake_smtp, mon
             if "prepaid@example.com" in to]
     assert msgs, "prepay member was not reminded"
     blob = " ".join(msgs).lower()
-    assert "continuous care renews" in blob     # prepay subject, not "coaching access ends"
+    assert "continuous care ends" in blob       # nothing renews by itself (review 2026-11-14)
+    assert "renews in" not in blob
     assert "truly.vip" not in blob              # must NOT get the video-renewal body
 
 
@@ -1051,7 +1052,7 @@ def test_renewal_cron_skips_already_reminded_within_24h(app_client_mem, fake_smt
         (str(_uuid.uuid4()), "already@example.com",
          now.isoformat()+"Z",
          (now+timedelta(days=2)).isoformat()+"Z", "prepay_12mo", "prepay_12mo",
-         (now-timedelta(hours=12)).isoformat()+"Z"))
+         (now-timedelta(minutes=1)).isoformat()+"Z"))
     cx.commit(); cx.close()
     fake_smtp.instances = []
     r = client.post("/api/cron/membership-renewals", headers=_ckey())
@@ -1090,34 +1091,168 @@ def test_renewal_cron_other_grants_get_no_email(app_client_mem, fake_smtp, monke
     cx.close()
 
 
-def test_renewal_cron_prepay_copy_shows_a_readable_date(app_client_mem, fake_smtp, monkeypatch):
-    """The end date reads as a Hawaii calendar date, not a raw ISO timestamp."""
-    client, app_module, db = app_client_mem
-    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+def _add_membership(db, email, expires_at, source, last=None, mid=None):
     import uuid as _uuid
-    now = datetime.utcnow()
-    exp = (now + timedelta(days=2)).isoformat() + "Z"
+    mid = mid or str(_uuid.uuid4())
     cx = sqlite3.connect(db)
     cx.execute(
-        "INSERT INTO memberships (id, email, granted_at, expires_at, granted_by, source) "
-        "VALUES (?,?,?,?,?,?)",
-        (str(_uuid.uuid4()), "dated@example.com", now.isoformat()+"Z", exp, "prepay_12mo", "prepay_12mo"))
+        "INSERT INTO memberships (id, email, granted_at, expires_at, granted_by, source, last_reminder_at) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (mid, email, datetime.utcnow().isoformat()+"Z", expires_at, source, source, last))
     cx.commit(); cx.close()
+    return mid
+
+
+def _sent_to(fake_smtp, email):
+    return [str(m) for inst in fake_smtp.instances for (_, to, m) in inst.sent if email in to]
+
+
+def test_hawaii_date_uses_hawaii_not_utc(app_client_mem):
+    """2026-11-17T08:00Z is 22:00 HST on 16 Nov. Expected values are written out,
+    not taken from the helper under test."""
+    _, app_module, _ = app_client_mem
+    assert app_module._hawaii_date("2026-11-17T08:00:00Z") == date(2026, 11, 16)
+    assert app_module._hawaii_date("2026-11-17T11:00:00Z") == date(2026, 11, 17)
+    assert "16 November 2026" in app_module._family_long_date("2026-11-17T08:00:00Z")
+
+
+@pytest.mark.parametrize("hours,phrase", [(6, "today"), (30, "tomorrow")])
+def test_renewal_cron_last_days_say_today_and_tomorrow(app_client_mem, fake_smtp, monkeypatch,
+                                                       hours, phrase):
+    """Never "ends in 0 days"."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    from zoneinfo import ZoneInfo
+    now_h = datetime.now(ZoneInfo("Pacific/Honolulu"))
+    # an expiry on a known Hawaii date: today 23:00 HST, or tomorrow 23:00 HST
+    day = now_h.date() + timedelta(days=0 if phrase == "today" else 1)
+    exp_h = datetime(day.year, day.month, day.day, 23, 0, tzinfo=ZoneInfo("Pacific/Honolulu"))
+    exp = exp_h.astimezone(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
+    if exp_h <= now_h:
+        pytest.skip("too late in the Hawaii day to build a future 'today' expiry")
+    _add_membership(db, "last@example.com", exp, "prepay_12mo")
     fake_smtp.instances = []
     client.post("/api/cron/membership-renewals", headers=_ckey())
-    msgs = " ".join(str(m) for inst in fake_smtp.instances for (_, to, m) in inst.sent
-                    if "dated@example.com" in to)
-    assert msgs
-    assert exp not in msgs and exp[:19] not in msgs
-    assert app_module._family_long_date(exp) in msgs
+    raw = " ".join(_sent_to(fake_smtp, "last@example.com"))
+    msgs = raw.lower()
+    assert f"ends {phrase}" in msgs
+    assert "0 days" not in msgs
+    assert f"{day.day} {day.strftime('%B')} {day.year}" in raw      # the Hawaii date, written out
+    assert exp[:10] not in raw or exp[:10] == day.isoformat()
 
 
-def test_daily_cron_posts_membership_renewals_with_console_key():
-    """The renewal reminders ride the 7 AM HST personal-email cron."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "run_personal_email_cron.py").read_text()
-    body = src[src.index("def run_daily_piggybacks"):]
-    assert '_piggyback_post("membership-renewals", "/api/cron/membership-renewals",\n                    "X-Console-Key", CONSOLE_SECRET)' in body
+def test_renewal_cron_yesterdays_reminder_does_not_block_today(app_client_mem, fake_smtp, monkeypatch):
+    """Daily, by Hawaii date: a reminder stamped yesterday in Hawaii, even under 24
+    hours ago, does not suppress today's."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    from zoneinfo import ZoneInfo
+    now_h = datetime.now(ZoneInfo("Pacific/Honolulu"))
+    y = now_h.date() - timedelta(days=1)
+    last_h = datetime(y.year, y.month, y.day, 23, 59, tzinfo=ZoneInfo("Pacific/Honolulu"))
+    last = last_h.astimezone(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
+    _add_membership(db, "daily@example.com", (datetime.utcnow()+timedelta(days=2)).isoformat()+"Z",
+                    "prepay_12mo", last=last)
+    fake_smtp.instances = []
+    r = client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert r.get_json().get("reminded") == 1
+    assert _sent_to(fake_smtp, "daily@example.com")
+
+
+@pytest.mark.parametrize("source", ["prepay_12mo", "care_taster_30d"])
+def test_renewal_cron_renewed_prepay_or_taster_is_silent(app_client_mem, fake_smtp, monkeypatch, source):
+    """A later grant (a renewal, or a taster buyer who moved to prepay) means this row
+    ending is not their care ending: no "renew here" email."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    monkeypatch.setattr(app_module, "PROGRAM_CARE_TASTER_ENABLED", True, raising=False)
+    src = app_module.CARE_TASTER_SOURCE if source.startswith("care") else source
+    now = datetime.utcnow()
+    _add_membership(db, "renewed@example.com", (now+timedelta(days=2)).isoformat()+"Z", src)
+    _add_membership(db, "renewed@example.com", (now+timedelta(days=370)).isoformat()+"Z", "prepay_12mo")
+    fake_smtp.instances = []
+    r = client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert r.get_json().get("reminded") == 0
+    assert not _sent_to(fake_smtp, "renewed@example.com")
+
+
+def test_renewal_cron_household_covered_member_is_silent(app_client_mem, fake_smtp, monkeypatch):
+    """A holder who upgraded to a running household plan keeps the old membership row;
+    it ending must not tell them their membership ends."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setenv("FAMILY_PLAN_ENABLED", "true")
+    from dashboard import family_plan as _fp
+    from dashboard import db as _db
+    now = datetime.utcnow()
+    src = sorted(app_module._membership_product_sources())[0]
+    _add_membership(db, "household@example.com", (now+timedelta(days=2)).isoformat()+"Z", src)
+    with _db.connect(db) as cx:
+        _fp.init_family_plan_table(cx)
+        _fp.activate(cx, "household@example.com",
+                     next_charge_at=(now+timedelta(days=20)).date().isoformat())
+        cx.commit()
+    fake_smtp.instances = []
+    r = client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert not _sent_to(fake_smtp, "household@example.com"), r.get_json()
+
+
+def test_renewal_cron_household_ending_first_still_reminds(app_client_mem, fake_smtp, monkeypatch):
+    """A cancelled household plan that ends before the membership row is no cover."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setenv("FAMILY_PLAN_ENABLED", "true")
+    monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "https://test.local", raising=False)
+    from dashboard import family_plan as _fp
+    from dashboard import db as _db
+    now = datetime.utcnow()
+    src = sorted(app_module._membership_product_sources())[0]
+    _add_membership(db, "lapsing@example.com", (now+timedelta(days=2)).isoformat()+"Z", src)
+    with _db.connect(db) as cx:
+        _fp.init_family_plan_table(cx)
+        _fp.activate(cx, "lapsing@example.com",
+                     next_charge_at=(now+timedelta(days=1)).date().isoformat())
+        _fp.set_status(cx, "lapsing@example.com", _fp.CANCELLING)
+        cx.commit()
+    monkeypatch.setattr(app_module, "_membership_continues", lambda r: False)
+    fake_smtp.instances = []
+    client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert _sent_to(fake_smtp, "lapsing@example.com")
+
+
+def test_renewal_cron_two_rows_one_email(app_client_mem, fake_smtp, monkeypatch):
+    """One person with two eligible rows ending in the window gets one email per run."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    monkeypatch.setattr(app_module, "PROGRAM_CARE_TASTER_ENABLED", True, raising=False)
+    monkeypatch.setattr(app_module, "_cover_continues", lambda r: False)
+    now = datetime.utcnow()
+    _add_membership(db, "twice@example.com", (now+timedelta(days=1)).isoformat()+"Z", "prepay_12mo")
+    _add_membership(db, "twice@example.com", (now+timedelta(days=2)).isoformat()+"Z",
+                    app_module.CARE_TASTER_SOURCE)
+    fake_smtp.instances = []
+    client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert len(_sent_to(fake_smtp, "twice@example.com")) == 1
+
+
+def test_daily_cron_runs_membership_renewals_with_console_key(monkeypatch):
+    """Run the daily piggybacks for real with HTTP stubbed: the renewal POST happens,
+    with X-Console-Key, and main's finally block calls the piggybacks."""
+    import importlib.util, pathlib, sys as _sys, ast
+    scripts = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+    monkeypatch.setenv("CRON_SECRET", "fake-cron")
+    monkeypatch.setenv("CONSOLE_SECRET", "fake-console")
+    monkeypatch.syspath_prepend(str(scripts))
+    spec = importlib.util.spec_from_file_location("_rpec", scripts / "run_personal_email_cron.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    calls = []
+    monkeypatch.setattr(mod, "_piggyback_post", lambda label, path, header, secret, **k: calls.append((label, path, header, secret)))
+    import urllib.request as _ur
+    monkeypatch.setattr(_ur, "urlopen", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no network")))
+    mod.run_daily_piggybacks()
+    assert ("membership-renewals", "/api/cron/membership-renewals", "X-Console-Key", "fake-console") in calls
+    tree = ast.parse((scripts / "run_personal_email_cron.py").read_text())
+    called = {n.func.id for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    assert "run_daily_piggybacks" in called
 
 
 # ── magic-link lifetimes ─────────────────────────────────────────────────────
