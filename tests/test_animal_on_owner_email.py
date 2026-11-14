@@ -1177,3 +1177,111 @@ def test_an_answer_with_no_client_table_is_an_error_the_page_shows(tmp_path):
     from dashboard import biofield_report_html as H
     assert "if(!(r&&r.ok)){alert((r&&r.error)||'The answer was not recorded.');return false}" \
         in H._AUTHOR_JS
+
+
+# -- 2026-11-14 review, rounds 1 and 2 ------------------------------------------------
+
+def test_a_second_person_is_refused_even_when_the_pet_linked_first(tmp_path):
+    from dashboard import biofield_progress as bp
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "", "items": []}
+    client, db, calls = _shared_invoice_app(tmp_path, latest)
+    ann = _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    bob = _intake(client, "Bob Other", OWNER)
+    with sqlite3.connect(db) as cx:
+        bp.link_order(cx, pet, 7)
+        bp.link_order(cx, ann, 7, share_with=[pet])
+    _chain(db, bob, [FF])
+    r = client.post(f"/author/{bob}/invoice", json={})
+    assert r.status_code == 409, r.get_json()
+    assert calls == {}
+
+
+def test_a_pets_hand_added_ff_kept_on_the_shared_draft_is_gated(tmp_path):
+    from dashboard import biofield_progress as bp
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "",
+              "items": [{"slug": "immune-modulation", "qty": 1, "source": "self",
+                         "note": "For Rover"},
+                        {"slug": "immune-modulation", "qty": 1, "source": "biofield"}]}
+    client, db, calls = _shared_invoice_app(tmp_path, latest)
+    ann = _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    with sqlite3.connect(db) as cx:
+        bp.link_order(cx, ann, 7)
+    _chain(db, pet, [INFO])
+    r = client.post(f"/author/{pet}/invoice", json={})
+    assert r.status_code == 200, r.get_json()
+    notes = [(l["slug"], l.get("note") or "") for l in calls["lines"]]
+    assert ("immune-modulation", "For Rover") not in notes
+    assert ("immune-modulation", "") in notes          # the owner's FF stays
+    assert FF in r.get_json()["animal_refused"]
+
+
+def test_the_owners_raise_gates_a_pets_kept_ff_too(tmp_path):
+    from dashboard import biofield_progress as bp
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "",
+              "items": [{"slug": "immune-modulation", "qty": 1, "source": "self",
+                         "note": "For Rover"},
+                        {"slug": "es1", "qty": 1, "source": "biofield",
+                         "note": "For Rover"}]}
+    client, db, calls = _shared_invoice_app(tmp_path, latest)
+    ann = _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    with sqlite3.connect(db) as cx:
+        bp.link_order(cx, pet, 7)
+        bp.link_order(cx, ann, 7, share_with=[pet])
+    _chain(db, ann, [FF])
+    r = client.post(f"/author/{ann}/invoice", json={})
+    assert r.status_code == 200, r.get_json()
+    notes = [(l["slug"], l.get("note") or "") for l in calls["lines"]]
+    assert ("es1", "For Rover") in notes
+    assert ("immune-modulation", "For Rover") not in notes
+    assert ("immune-modulation", "") in notes
+
+
+def test_the_owner_adopts_lines_a_pet_raised_alone(tmp_path):
+    from dashboard import biofield_progress as bp
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "",
+              "items": [{"slug": "es1", "qty": 1, "source": "biofield"}]}
+    client, db, calls = _shared_invoice_app(tmp_path, latest)
+    pet = _pet(client)
+    with sqlite3.connect(db) as cx:
+        bp.link_order(cx, pet, 7)
+    ann = _intake(client, "Ann Owner", OWNER)
+    _chain(db, ann, [FF])
+    r = client.post(f"/author/{ann}/invoice", json={})
+    assert r.status_code == 200, r.get_json()
+    notes = [(l["slug"], l.get("note") or "") for l in calls["lines"]]
+    assert ("es1", "For Rover") in notes and ("immune-modulation", "") in notes
+
+
+def test_the_pets_tag_is_remembered_after_a_raise(tmp_path):
+    from dashboard import biofield_progress as bp
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "", "items": []}
+    client, db, calls = _shared_invoice_app(tmp_path, latest)
+    ann = _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    with sqlite3.connect(db) as cx:
+        bp.link_order(cx, ann, 7)
+    _chain(db, pet, [INFO])
+    assert client.post(f"/author/{pet}/invoice", json={}).status_code == 200
+    with sqlite3.connect(db) as cx:
+        assert bp.stored_household_tags(cx) == {pet: "For Rover"}
+
+
+def test_the_pet_publishes_a_shared_invoice_carrying_its_lines(tmp_path):
+    from dashboard import biofield_progress as bp
+    published = []
+    latest = {"ok": True, "order_id": 7, "status": "open", "pay_status": "",
+              "items": [{"slug": "es1", "qty": 1, "source": "biofield",
+                         "note": "For Rover"}]}
+    client, db = _app(
+        tmp_path, invoice_fetch_catalog=lambda: [{"slug": "es1", "name": INFO}],
+        invoice_latest=lambda email: latest,
+        invoice_publish=lambda oid: published.append(oid) or {"ok": True})
+    ann = _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    with sqlite3.connect(db) as cx:
+        bp.link_order(cx, ann, 7)
+    r = client.post(f"/author/{pet}/invoice/publish", json={"order_id": 7})
+    assert r.get_json() == {"ok": True} and published == [7]

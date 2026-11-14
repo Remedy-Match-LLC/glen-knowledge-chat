@@ -91,6 +91,28 @@ def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False,
         raise
 
 
+HOUSEHOLD_TAG_TABLE = "biofield_household_tags"
+
+
+def stored_household_tags(cx):
+    """{test_id: tag} for each pet's lines on a shared invoice. Reads only."""
+    if not _has_table(cx, HOUSEHOLD_TAG_TABLE):
+        return {}
+    return {str(t): str(g) for t, g in
+            cx.execute(f"SELECT test_id, tag FROM {HOUSEHOLD_TAG_TABLE}").fetchall()}
+
+
+def remember_household_tag(cx, test_id, tag):
+    """Store the tag this test last wrote, so a renamed pet's old lines stay its own."""
+    cx.execute(f"CREATE TABLE IF NOT EXISTS {HOUSEHOLD_TAG_TABLE} ("
+               "test_id TEXT PRIMARY KEY, tag TEXT NOT NULL, updated_at TEXT NOT NULL)")
+    cx.execute(f"INSERT INTO {HOUSEHOLD_TAG_TABLE} (test_id, tag, updated_at) VALUES "
+               "(?,?,?) ON CONFLICT(test_id) DO UPDATE SET tag=excluded.tag, "
+               "updated_at=excluded.updated_at",
+               (str(test_id), str(tag), _dt.datetime.now(_dt.timezone.utc).isoformat()))
+    cx.commit()
+
+
 def _has_table(cx, name):
     return cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
                       (name,)).fetchone() is not None

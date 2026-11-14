@@ -451,12 +451,23 @@ def household_note(first_name, note=""):
     return tag + (HOUSEHOLD_SEP + note if note else "")
 
 
-def household_tag_of(note):
-    """The 'For <name>' tag a household line's note starts with, or ""."""
+def household_tag_of(note, known=None):
+    """The 'For <Name>' tag a household line's note starts with, or "".
+
+    With known (a set of tags), only a tag in it counts: the local app knows every
+    tag it wrote, so "For sleep" typed into an owner's note is never a pet's. Without
+    it (prod reads), the tag must be the whole note or end at HOUSEHOLD_SEP, and each
+    word of the name must start with a capital letter."""
     text = str(note or "").strip()
     if not text.startswith("For "):
         return ""
-    return text.split(HOUSEHOLD_SEP, 1)[0].strip()
+    tag = text.split(HOUSEHOLD_SEP, 1)[0].strip()
+    if known is not None:
+        return tag if tag in known else ""
+    words = tag[4:].split()
+    if not words or not all(w[:1].isupper() for w in words):
+        return ""
+    return tag
 
 
 def _strip_household_tag(note):
@@ -466,14 +477,25 @@ def _strip_household_tag(note):
     return text
 
 
-def merge_household_lines(new_lines, existing_items, tag):
+def merge_household_lines(new_lines, existing_items, tag, own_tags=(), known_tags=None,
+                          adopt_untagged_as=""):
     """Merge one intake's freshly raised lines into a draft other intakes share.
 
-    This intake's Biofield lines on the draft (its tag, or no tag when tag is "") are
-    replaced by new_lines. Every other line is kept as it was: the other intake's
-    Biofield lines and analysis fee, and lines added by hand in Edit Invoice. As in
-    merge_manual_invoice_lines, a hand-added line whose product the untagged raise now
-    carries is dropped."""
+    tag is this intake's tag ("" for the owner). own_tags are tags it wrote before,
+    so a renamed pet's old lines are still its own; "" in own_tags makes untagged
+    Biofield lines its own too (a pet's draft from before its owner had an intake).
+    known_tags are every pet's tags on this email: a note starting "For " that is not
+    one of them is ordinary text. None falls back to household_tag_of's own test. adopt_untagged_as re-tags untagged Biofield lines
+    as that pet's instead of replacing them (the owner raising onto a draft only the
+    pet had raised).
+
+    This intake's Biofield lines are replaced by new_lines. Every other line is kept:
+    the other subjects' lines, the fee and lines added by hand in Edit Invoice. A
+    hand-added line of this same subject whose product the raise now carries is
+    dropped, as in merge_manual_invoice_lines."""
+    known = (None if known_tags is None
+             else set(known_tags) | ({tag} if tag else set()))
+    mine = {tag} | set(own_tags or ())
     merged = [dict(line) for line in (new_lines or [])]
     present = {(line.get("slug") or "").strip() for line in merged}
     for item in existing_items or []:
@@ -482,17 +504,21 @@ def merge_household_lines(new_lines, existing_items, tag):
             continue
         is_bf = (slug == BIOFIELD_SLUG or
                  (item.get("source") or "").strip().lower() == "biofield")
-        item_tag = household_tag_of(item.get("note"))
-        if is_bf and item_tag == tag:
-            continue                      # this intake's own line: replaced
-        if not is_bf and not tag and slug in present:
-            continue
+        item_tag = household_tag_of(item.get("note"), known)
         line = {"slug": slug, "qty": max(1, int(item.get("qty") or 1))}
         for key in ("source", "note", "format", "billed_for"):
             if item.get(key):
                 line[key] = item[key]
         if item.get("override") and item.get("unit_cents") is not None:
             line["unit_cents"] = item["unit_cents"]
+        if adopt_untagged_as and is_bf and not item_tag:
+            line["note"] = household_note(adopt_untagged_as[4:], item.get("note") or "")
+            merged.append(line)
+            continue
+        if is_bf and item_tag in mine:
+            continue                      # this intake's own line: replaced
+        if not is_bf and item_tag in mine and slug in present:
+            continue
         merged.append(line)
     return merged
 

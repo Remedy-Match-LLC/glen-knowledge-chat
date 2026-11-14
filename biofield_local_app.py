@@ -2563,11 +2563,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         newest one by email and merge into it."""
         with sqlite3.connect(db_path) as cx:
             links = biofield_progress.stored_links(cx)
-            owner = next((t for t, o in links.items() if int(o) == int(oid)), None)
-            if owner == str(test_id):
+            # Every test stored for this order, never only the first: a pet and two
+            # people on one email must not let the second person past the pet's link
+            # (2026-11-14 review, round 1).
+            holders = [t for t, o in links.items() if int(o) == int(oid)]
+            owner = next((t for t in holders if t != str(test_id)), None)
+            if holders and all(t == str(test_id) for t in holders):
                 return ""
             if owner:
-                others = [owner]
+                others = [t for t in holders if t != str(test_id)]
             else:
                 others = [f"a{r[0]}" for r in cx.execute(
                     "SELECT id FROM biofield_auth_tests WHERE lower(trim(email))=? "
@@ -2587,25 +2591,68 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                             "invoice. Finish or cancel that draft first.")
         return ""
 
-    def _household_share(test_id, email):
-        """(tag, sharers) for a pet raised onto its owner's invoice.
+    def _household_share(test_id, email, order_id=None):
+        """How this intake's lines sit on a household invoice its email shares.
 
-        tag is "For <first name>" when this intake is an animal and another subject's
-        intake shares its email, else "". sharers are the other subjects' tests on the
-        email that may hold the same order: a pet's owner, or an owner's pets."""
+        Returns a dict:
+          tag: "For <first name>" when this intake is an animal and another subject's
+            intake shares its email, else "". Two pets with one first name get full
+            names, and then the test id (2026-11-14 review, round 2).
+          sharers: the other subjects' tests that may hold the same order.
+          own_tags: tags this subject wrote before, so a rename keeps its old lines.
+            "" is added when order_id is linked to this pet alone: its untagged lines
+            are from before the owner had an intake.
+          known_tags: every pet's tags on the email, old and current.
+          animal_tags: the same set, used to gate pets' lines kept on the draft.
+          adopt: the pet's tag when the owner raises onto a draft linked to that pet
+            alone, so its untagged lines are re-tagged instead of replaced."""
+        out = {"tag": "", "sharers": [], "own_tags": set(), "known_tags": set(),
+               "adopt": ""}
         with sqlite3.connect(db_path) as cx:
             tid_n = int(str(test_id).lstrip("a") or 0)
             others = [f"a{r[0]}" for r in cx.execute(
                 "SELECT id FROM biofield_auth_tests WHERE lower(trim(email))=? AND id<>?",
                 (email.strip().lower(), tid_n))]
-            me_animal = _intake_is_animal(cx, test_id)
-            sharers = [t for t in others if not _same_subject(cx, t, test_id)
-                       and (me_animal or _intake_is_animal(cx, t))]
-            tag = ""
-            if me_animal and sharers:
-                first = (_intake_ident(cx, test_id)[1] or "").split()
-                tag = f"For {first[0]}" if first else "For your pet"
-        return tag, sharers
+            me = str(test_id)
+            me_animal = _intake_is_animal(cx, me)
+            out["sharers"] = [t for t in others if not _same_subject(cx, t, me)
+                              and (me_animal or _intake_is_animal(cx, t))]
+            animals = [t for t in [me] + others if _intake_is_animal(cx, t)]
+            names = {t: ((_intake_ident(cx, t)[1] or "").split()) for t in animals}
+
+            def tag_of(t):
+                words = names.get(t) or []
+                if not words:
+                    return "For your pet"
+                rivals = [names.get(o) or [] for o in animals
+                          if o != t and not _same_subject(cx, o, t)]
+                if not any(r[:1] == words[:1] for r in rivals):
+                    return "For " + words[0]
+                if not any(r == words for r in rivals):
+                    return "For " + " ".join(words)
+                return "For " + " ".join(words) + " " + t.upper()
+
+            stored = biofield_progress.stored_household_tags(cx)
+            for t in animals:
+                out["known_tags"].add(tag_of(t))
+                if stored.get(t):
+                    out["known_tags"].add(stored[t])
+            if me_animal and out["sharers"]:
+                out["tag"] = tag_of(me)
+                out["own_tags"] = {stored[t] for t in [me] + others
+                                   if stored.get(t) and _same_subject(cx, t, me)}
+            if order_id is not None and out["sharers"]:
+                linked = [t for t, o in biofield_progress.stored_links(cx).items()
+                          if int(o) == int(order_id)]
+                if linked and out["tag"] and all(_same_subject(cx, t, me)
+                                                 for t in linked):
+                    out["own_tags"].add("")
+                elif (linked and not me_animal
+                      and all(_intake_is_animal(cx, t) for t in linked)
+                      and all(_same_subject(cx, t, linked[0]) for t in linked)):
+                    out["adopt"] = tag_of(linked[0])
+        out["animal_tags"] = set(out["known_tags"])
+        return out
 
     def _invoice_refused_note(refused, species_unknown):
         if not refused:
@@ -2645,8 +2692,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 refused.append(label)
         return kept
 
+    import threading as _raise_threading
+    _raise_lock = _raise_threading.Lock()
+
     @app.route("/author/<test_id>/invoice", methods=["POST"])
     def author_invoice(test_id):
+        # One raise at a time: an owner's and a pet's raise each read the shared draft,
+        # merge, and write it whole, so two at once lost one of them (2026-11-14
+        # review, round 2). Edit Invoice in prod is not covered by this lock.
+        with _raise_lock:
+            return _author_invoice_locked(test_id)
+
+    def _author_invoice_locked(test_id):
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
         client = rep.get("client") or {}
@@ -2719,7 +2776,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 and previous.get("pay_status") != "paid")
             else None
         )
-        tag, sharers = _household_share(test_id, email)
+        share = _household_share(test_id, email, update_order_id)
+        tag, sharers = share["tag"], share["sharers"]
         if tag:
             for _ln in built["lines"]:
                 _ln["note"] = biofield_invoice.household_note(tag[4:], _ln.get("note") or "")
@@ -2737,8 +2795,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # A shared household invoice: replace only this intake's lines and keep
                 # the other subject's lines, fee and hand-added lines as they are.
                 built["lines"] = biofield_invoice.merge_household_lines(
-                    built["lines"], previous.get("items") or [], tag)
+                    built["lines"], previous.get("items") or [], tag,
+                    own_tags=share["own_tags"], known_tags=share["known_tags"],
+                    adopt_untagged_as=share["adopt"])
                 joining = bool(tag)
+                # A pet's lines kept on the draft, hand-added ones too, are gated
+                # like its raised ones (2026-11-14 review, round 2).
+                _pets = [ln for ln in built["lines"] if biofield_invoice.household_tag_of(
+                    ln.get("note"), share["animal_tags"])]
+                if _pets:
+                    if not gate:
+                        with sqlite3.connect(db_path) as cx:
+                            _known_info = _info_known(cx)
+                    _ok = _gate_invoice_lines(_pets, catalog, previous.get("items") or [],
+                                              _known_info, animal_refused)
+                    _drop = [id(ln) for ln in _pets if not any(ln is k for k in _ok)]
+                    built["lines"] = [ln for ln in built["lines"] if id(ln) not in _drop]
             else:
                 built["lines"] = biofield_invoice.merge_manual_invoice_lines(
                     built["lines"], previous.get("items") or [])
@@ -2783,6 +2855,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         cx, test_id, created["order_id"],
                         resolve=biofield_progress.resolver(_chains),
                         share_with=sharers)
+                    if tag:
+                        biofield_progress.remember_household_tag(cx, test_id, tag)
                 if not _ok:
                     link_refused = _why
         except Exception as _le:
@@ -2871,6 +2945,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             _pub_email = _intake_ident(cx, test_id)[0]
         clash = _draft_clash(test_id, _pub_email, oid) if _pub_email else ""
+        if clash and not _draft_clash(test_id, _pub_email, oid, allow_household=True):
+            # A shared household invoice is published from either intake (2026-11-14
+            # review, round 1), but only once it carries this pet's lines, or for the
+            # owner a pet's. An owner's own order is still never published by the pet.
+            _sh = _household_share(test_id, _pub_email)
+            _lt = invoice_latest(_pub_email) or {}
+            _want = {_sh["tag"]} if _sh["tag"] else _sh["known_tags"]
+            if (_lt.get("ok") and str(_lt.get("order_id")) == str(oid) and _want
+                    and any(biofield_invoice.household_tag_of(i.get("note"), _want)
+                            for i in (_lt.get("items") or []))):
+                clash = ""
         if clash:
             return {"ok": False, "error": clash.replace("Not raised", "Not published")
                     .replace("Raising", "Publishing")}, 409
@@ -2955,8 +3040,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                            f"#{linked}."}, 409)
         cur_id = int(cur["id"])
         resolve = biofield_progress.resolver(orders)
+        # A pet and its owner hold one shared invoice, so either row acts on it
+        # (2026-11-14 review, round 1). Anyone else holding it still blocks.
+        with sqlite3.connect(db_path) as cx:
+            _em = _intake_ident(cx, test_id)[0] or ""
+        _shared = set(_household_share(test_id, _em)["sharers"]) if _em else set()
         others = sorted(t for t, o in links.items()
-                        if t != str(test_id)
+                        if t != str(test_id) and t not in _shared
                         and (int(o) in (int(linked), cur_id) or resolve(o) == cur_id))
         if others:
             return None, ({"ok": False, "error": f"Not done: order #{cur_id} is also stored "
@@ -3148,6 +3238,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                     if no_charge else
                                     f"Biofield Analysis already paid (order #{paid.get('order_id')}); "
                                     "no new invoice raised.")}
+            elif _household_share(test_id, email)["sharers"]:
+                # replace_open would cancel a draft a pet and its owner share, with the
+                # other's lines on it (2026-11-14 review, round 1).
+                invoice = {"ok": False,
+                           "error": ("Not raised: another intake on this email may share "
+                                     "its open invoice. Use Raise invoice, which edits "
+                                     "only this intake's lines.")}
             else:
                 # replace_open: a re-hand-off cancels prior open drafts, so no pileup.
                 note = biofield_invoice.build_invoice_note(rep.get("phase"), rep.get("location"))

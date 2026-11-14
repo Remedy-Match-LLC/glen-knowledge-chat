@@ -114,3 +114,69 @@ def test_keep_note_leaves_the_invoice_note_off_an_update(monkeypatch):
     bfi.default_create_order({"name": "A", "email": "a@x"}, [{"slug": "es1", "qty": 1}],
                              invoice_note=bfi.KEEP_NOTE)
     assert sent["body"]["invoice_note"] == bfi.DEFAULT_INVOICE_NOTE
+
+
+# ---- 2026-11-14 review, round 2 --------------------------------------------------
+
+def test_two_pets_with_one_first_name_keep_their_own_lines():
+    jones = {"slug": "es9", "qty": 1, "source": "biofield", "note": "For Skylar Jones"}
+    merged = bfi.merge_household_lines(
+        [{"slug": "es1", "qty": 1, "source": "biofield", "note": "For Skylar Smith"}],
+        AGNES_JULY + [jones], "For Skylar Smith",
+        known_tags={"For Skylar Smith", "For Skylar Jones"})
+    assert "es9" in [l["slug"] for l in merged]
+
+
+def test_a_renamed_pet_replaces_its_old_lines():
+    old = {"slug": "es9", "qty": 1, "source": "biofield", "note": "For Sky"}
+    merged = bfi.merge_household_lines(
+        [_pet("es1")], AGNES_JULY + [old], "For Skylar",
+        own_tags={"For Sky"}, known_tags={"For Sky", "For Skylar"})
+    slugs = [l["slug"] for l in merged]
+    assert "es9" not in slugs and "es1" in slugs and "rem-0" in slugs
+
+
+def test_the_owner_adopts_a_pet_only_drafts_lines_instead_of_deleting_them():
+    pet_only = [{"slug": FEE, "qty": 1},
+                {"slug": "es1", "qty": 1, "source": "biofield", "note": "With A and B"}]
+    merged = bfi.merge_household_lines(
+        [{"slug": "rem-0", "qty": 1, "source": "biofield"}], pet_only, "",
+        known_tags={"For Skylar"}, adopt_untagged_as="For Skylar")
+    es1 = [l for l in merged if l["slug"] == "es1"]
+    assert es1 and es1[0]["note"] == "For Skylar | With A and B"
+    fee = [l for l in merged if l["slug"] == FEE]
+    assert fee and fee[0]["note"] == "For Skylar"
+    assert "rem-0" in [l["slug"] for l in merged]
+
+
+def test_a_pet_replaces_its_own_untagged_lines_from_before_sharing():
+    pet_only = [{"slug": "es1", "qty": 1, "source": "biofield"}]
+    merged = bfi.merge_household_lines(
+        [_pet("es2")], pet_only, "For Skylar", own_tags={""}, known_tags={"For Skylar"})
+    assert [l["slug"] for l in merged] == ["es2"]
+
+
+def test_the_owners_raise_keeps_a_pets_hand_added_line_of_the_same_product():
+    hand_pet = {"slug": "rem-0", "qty": 1, "source": "self", "note": "For Skylar"}
+    merged = bfi.merge_household_lines(
+        [{"slug": "rem-0", "qty": 1, "source": "biofield"}], AGNES_JULY + [hand_pet], "",
+        known_tags={"For Skylar"})
+    assert sum(1 for l in merged if l["slug"] == "rem-0") == 2
+
+
+def test_an_ordinary_note_starting_for_is_not_a_pet_tag(monkeypatch):
+    prod = {"slug": "immune-modulation", "name": "IM", "bottle_type": "30 Caps"}
+    monkeypatch.setattr(appmod, "_get_product",
+                        lambda s: prod if s == "immune-modulation" else None)
+    assert bfi.household_tag_of("For sleep") == ""
+    assert bfi.household_tag_of("For Sleep", {"For Skylar"}) == ""
+    assert bfi.household_tag_of("For Skylar", {"For Skylar"}) == "For Skylar"
+    owner = {"items": [{"slug": "immune-modulation", "qty": 1, "source": "biofield",
+                        "note": "For sleep", "line_cents": 4500}]}
+    assert appmod._order_has_supply_line(owner) is True
+    # The owner's re-raise replaces her "For sleep" line, never keeps it twice.
+    merged = bfi.merge_household_lines(
+        [{"slug": "rem-0", "qty": 1, "source": "biofield"}],
+        [{"slug": "rem-0", "qty": 1, "source": "biofield", "note": "For Sleep"}], "",
+        known_tags={"For Skylar"})
+    assert len(merged) == 1
