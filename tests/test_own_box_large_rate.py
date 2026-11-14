@@ -5,7 +5,7 @@ except the cloth which depends on the size ordered." Before this, 20 products
 carried a typed flat_shipping_cents of 3200 and so missed the Large rate rise
 to $33 (usps_rates id 10, confirmed 3 Nov). Now 19 of them name the box
 (flat_shipping_boxes ["L"]) and follow usps_rates. The Bamboo Sanctuary Cloth
-keeps its $32 until Glen gives its size rule.
+packs as filler: no charge beside anything else, one Small box alone.
 """
 import sqlite3
 
@@ -52,11 +52,13 @@ def test_exactly_the_nineteen_name_the_large_box():
         assert "flat_shipping_cents" not in app._get_product(s), f"{s}: typed rate left beside the box"
 
 
-def test_no_typed_large_rate_remains_except_the_cloth():
+def test_no_typed_large_rate_remains():
     left = sorted(s for s, p in app._PRODUCTS["products"].items()
                   if p.get("flat_shipping_cents") == 3200)
-    assert left == [CLOTH]
-    assert app._get_product(CLOTH)["flat_shipping_cents"] == 3200
+    assert left == []
+    cloth = app._get_product(CLOTH)
+    assert cloth.get("ships_as_filler") is True
+    assert "flat_shipping_cents" not in cloth and "flat_shipping_boxes" not in cloth
 
 
 def test_large_box_items_charge_the_live_large_rate(rates):
@@ -75,10 +77,43 @@ def test_a_usps_change_carries_through(rates):
         assert pc["shipping_cents"] == 7000, s
 
 
-def test_cloth_ignores_the_live_rate(rates):
-    rates(3450)
-    pc = app._price_cart([{"slug": CLOTH, "qty": 1}], ship=US, channel="retail")
-    assert pc["shipping_cents"] == 3200
+def test_cloth_alone_ships_one_small_box(rates):
+    """Glen 2026-11-14: "It would fit a small box." Alone: one Small box at the live
+    S rate. Longer cuts are unruled, so qty above 1 still charges one Small box."""
+    small = shipping.get_current_rates()["S"]["charged_cents"]
+    for qty in (1, 3):
+        pc = app._price_cart([{"slug": CLOTH, "qty": qty}], ship=US, channel="retail")
+        assert pc["shipping_cents"] == small, qty
+
+
+def test_cloth_with_bottles_adds_nothing(rates):
+    """Glen: it fits "as part of the packing material, not take extra space"."""
+    bottle = "neuro-magnesium"
+    # A behaviour pin: an own-box line with no flat rate already packs at no extra
+    # charge here, so the discriminating test is the own-box one below.
+    alone = app._price_cart([{"slug": bottle, "qty": 4}], ship=US, channel="retail")
+    both = app._price_cart([{"slug": bottle, "qty": 4}, {"slug": CLOTH, "qty": 2}],
+                           ship=US, channel="retail")
+    assert alone["shipping_cents"] > 0
+    assert both["shipping_cents"] == alone["shipping_cents"]
+
+
+def test_cloth_with_an_own_box_item_adds_nothing(rates):
+    rates(3275)
+    pc = app._price_cart([{"slug": "molecular-hydrogen-bottle", "qty": 1}, {"slug": CLOTH, "qty": 1}],
+                         ship=US, channel="retail")
+    assert pc["shipping_cents"] == 3300
+
+
+def test_cloth_alone_is_still_us_only():
+    with pytest.raises(app.CheckoutError):
+        app._price_cart([{"slug": CLOTH, "qty": 1}],
+                        ship={"name": "T", "country": "AU"}, channel="retail")
+
+
+def test_cloth_alone_on_pickup_ships_nothing():
+    res = app._price_inhouse_invoice([{"slug": CLOTH, "qty": 1}], email="", pickup=True, ship=US)
+    assert res["shipping_cents"] == 0
 
 
 def test_large_box_item_never_reaches_the_packer(rates, monkeypatch):

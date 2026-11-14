@@ -25520,7 +25520,7 @@
    "name": "Bamboo Sanctuary Cloth with 40% Silver",
    "price_cents": 10000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "ships_as_filler": true,
    "source": "gk-physical-goods-import-2026-07-20",
    "intro": "Our select blend of half Bamboo fiber with 40% Silver and the remainder Spandex creates the perfect cloth to make your next garment."
   },

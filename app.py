@@ -11196,6 +11196,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     items, qbo_lines, items_rec, box_counts, subtotal_list, total_bottles = [], [], [], {}, 0, 0
     total_cello = 0
     flat_ship_cents = 0   # sum of per-product fixed shipping overrides (own-parcel items)
+    filler_alone_lines = 0   # shippable lines that pack as filler (ships_as_filler)
     # Names of lines packed at FALLBACK_BOTTLE_TYPE because their real packaging is
     # unspecified. Returned so an operator surface can list what needs measuring.
     packaging_review = []
@@ -11235,7 +11236,13 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         # UnknownBottleType pick_boxes raises and returns shipping_cents: None —
         # _shipping_for_cart then falls to the coarse qty rule via the `cents > 0`
         # False branch (not via its own except), charging a phantom bottle.
-        if _shipping.is_shippable(p):
+        if _shipping.is_shippable(p) and p.get("ships_as_filler") and not p.get("bundle"):
+            # Packs as filler inside another parcel (Glen 2026-11-14, Bamboo Sanctuary
+            # Cloth: it "will fit as part of the packing material, not take extra
+            # space"). It adds no space and no charge beside anything else that ships.
+            # Alone it needs a box of its own: see the Small-box charge after the loop.
+            filler_alone_lines += 1
+        elif _shipping.is_shippable(p):
             _flat = _own_box_flat_cents(p)
             if _flat > 0 and not p.get("bundle"):
                 # Own-parcel item with a FIXED shipping charge (e.g. the water ionizers,
@@ -11296,6 +11303,10 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                     total_bottles += qty * _per
     # US-only shipping — but only a cart with something to ship has an opinion
     # about the address. An overseas client buying a service prices fine.
+    if filler_alone_lines and not box_counts and not flat_ship_cents:
+        # Nothing else ships, so the filler goes alone: one Small box, whatever the
+        # quantity. Glen: "It would fit a small box." Longer cuts are not yet ruled.
+        flat_ship_cents = _box_rate_cents("S")
     if (box_counts or flat_ship_cents) and country not in ("US", "USA", ""):
         raise CheckoutError("We ship to US addresses only — please use a US forwarding address.")
     tier_arg = subscriber_tier_pct
