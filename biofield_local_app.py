@@ -2669,10 +2669,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 linked = [t for t, o in biofield_progress.stored_links(cx).items()
                           if int(o) == int(order_id)]
                 out["linked"] = linked
-                if linked and out["tag"] and all(_same_subject(cx, t, me)
-                                                 for t in linked):
+                # A stored tag means the pet has raised onto a shared draft before,
+                # and its lines since then are marked. Untagged lines are then the
+                # owner's, from a header or an earlier raise (2026-11-14 review,
+                # round 4). Without one, the pet raised alone and they are its own.
+                _marked = any(stored.get(t) for t in linked)
+                if (linked and out["tag"] and not _marked
+                        and all(_same_subject(cx, t, me) for t in linked)):
                     out["own_tags"].add("")
-                elif (linked and not me_animal
+                elif (linked and not me_animal and not _marked
                       and all(_intake_is_animal(cx, t) for t in linked)):
                     # The draft is the pet's alone. Its untagged lines may be the
                     # pet's, or the owner's from a raise whose link was never stored
@@ -3000,7 +3005,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             _pub_email = _intake_ident(cx, test_id)[0]
         clash = _draft_clash(test_id, _pub_email, oid) if _pub_email else ""
-        _pub_sh = _household_share(test_id, _pub_email) if _pub_email else {"tag": ""}
+        _pub_sh = (_household_share(test_id, _pub_email) if _pub_email
+                   else {"tag": "", "sharers": [], "known_tags": set()})
         if not clash and _pub_sh["tag"]:
             # A pet stored as the order's only holder still publishes only an order
             # carrying its own lines (2026-11-14 review, round 2).
@@ -3022,8 +3028,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     .replace("Raising", "Publishing")}, 409
         # The pay card must not carry an FF for an animal or an unknown species
         # (2026-11-06 review, round 3). The order's own lines are checked.
+        # On a shared invoice only the pets' marked lines are gated, from either
+        # intake: the owner may be charged FFs (2026-11-14 review, round 4).
+        _pub_pets = (_pub_sh.get("known_tags") or set()) if _pub_sh.get("sharers") else set()
         with sqlite3.connect(db_path) as cx:
-            if _ff_gate(cx, test_id):
+            if _ff_gate(cx, test_id) or _pub_pets:
                 email = _intake_ident(cx, test_id)[0]
                 latest = invoice_latest(email) or {}
                 if not latest.get("ok") or str(latest.get("order_id")) != str(oid):
@@ -3033,7 +3042,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                     "for Functional Formulations. " + out["error"])
                     return {"ok": False, **out}, 409
                 refused = []
-                _gate_invoice_lines(latest.get("items") or [], invoice_fetch_catalog(),
+                _all = not _pub_pets or _ff_gate(cx, test_id) == "unknown"
+                _check = [i for i in (latest.get("items") or [])
+                          if _all or biofield_invoice.household_tag_of(
+                              i.get("note"), _pub_pets)]
+                _gate_invoice_lines(_check, invoice_fetch_catalog(),
                                     latest.get("items") or [], _info_known(cx), refused)
                 if refused:
                     out = _ff_block(cx, test_id, refused)

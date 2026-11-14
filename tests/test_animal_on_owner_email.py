@@ -1355,3 +1355,58 @@ def test_a_pet_is_refused_when_an_unstored_draft_already_has_its_remedy(tmp_path
     r = client.post(f"/author/{pet}/invoice", json={})
     assert r.status_code == 409 and "es1" in r.get_json()["error"], r.get_json()
     assert calls == {}
+
+
+def _stateful_app(tmp_path, items, catalog=None):
+    """A fake prod that keeps the draft, so raises see each other's writes."""
+    state = {"items": list(items), "published": []}
+
+    def fake_create(customer, lines, **kw):
+        state["items"] = [dict(l) for l in lines]
+        return {"ok": True, "order_id": 7, "external_ref": "X", "total_cents": 100,
+                "error": None, "accepted_slugs": []}
+    client, db = _app(
+        tmp_path,
+        invoice_fetch_catalog=lambda: catalog or [
+            {"slug": "immune-modulation", "name": FF}, {"slug": "es1", "name": INFO},
+            {"slug": "biofield-analysis", "name": "Biofield Analysis", "service": True}],
+        invoice_create=fake_create,
+        invoice_link=lambda oid: {"ok": True, "print_url": "", "error": None},
+        invoice_latest=lambda email: {"ok": True, "order_id": 7, "status": "open",
+                                      "pay_status": "", "items": state["items"]},
+        invoice_paid_check=lambda email: {}, order_fetch=lambda ids: ([], None),
+        invoice_publish=lambda oid: state["published"].append(oid) or {"ok": True})
+    return client, db, state
+
+
+def test_the_pets_re_raise_keeps_the_owners_header_fee(tmp_path):
+    """Round 4: a header made an unlinked fee-only draft for the owner. The pet
+    raised first, then again; the owner's untagged fee must survive both."""
+    client, db, state = _stateful_app(tmp_path, [{"slug": "biofield-analysis", "qty": 1}])
+    ann = _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    _chain(db, pet, [INFO])
+    assert client.post(f"/author/{pet}/invoice", json={}).status_code == 200
+    assert client.post(f"/author/{pet}/invoice", json={}).status_code == 200
+    assert any(l["slug"] == "biofield-analysis" and not (l.get("note") or "")
+               for l in state["items"]), state["items"]
+    _chain(db, ann, [FF])
+    r = client.post(f"/author/{ann}/invoice", json={})
+    assert r.status_code == 200, r.get_json()
+
+
+def test_the_pet_publishes_a_shared_invoice_with_the_owners_ff(tmp_path):
+    client, db, state = _stateful_app(tmp_path, [])
+    ann = _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    _chain(db, ann, [FF])
+    _chain(db, pet, [INFO])
+    assert client.post(f"/author/{ann}/invoice", json={}).status_code == 200
+    assert client.post(f"/author/{pet}/invoice", json={}).status_code == 200
+    r = client.post(f"/author/{pet}/invoice/publish", json={"order_id": 7})
+    assert r.get_json() == {"ok": True}, r.get_json()
+    # A pet FF added by hand afterwards is caught from the owner's intake too.
+    state["items"].append({"slug": "immune-modulation", "qty": 1, "source": "self",
+                           "note": "For Rover"})
+    r = client.post(f"/author/{ann}/invoice/publish", json={"order_id": 7})
+    assert r.status_code == 409 and FF in r.get_json()["animal_refused"], r.get_json()
