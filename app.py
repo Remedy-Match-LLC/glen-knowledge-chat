@@ -19624,8 +19624,9 @@ def _order_has_supply_line(order):
         # A pet's line on its owner's invoice ("For Skylar") is not the owner's month
         # of remedies (Glen 2026-11-14 plan). The owner's own lines still count.
         from dashboard import biofield_invoice as _bfi_h
-        if ((it.get("source") or "").strip().lower() == "biofield"
-                and _bfi_h.household_tag_of(it.get("note"))
+        # Any source: a pet's line added by hand in Edit Invoice is the pet's too
+        # (2026-11-14 review, round 2).
+        if (_bfi_h.household_tag_of(it.get("note"))
                 and not (it.get("billed_for") or "").strip()):
             continue
         prod = _get_product(slug)

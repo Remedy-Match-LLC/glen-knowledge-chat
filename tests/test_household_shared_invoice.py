@@ -136,19 +136,6 @@ def test_a_renamed_pet_replaces_its_old_lines():
     assert "es9" not in slugs and "es1" in slugs and "rem-0" in slugs
 
 
-def test_the_owner_adopts_a_pet_only_drafts_lines_instead_of_deleting_them():
-    pet_only = [{"slug": FEE, "qty": 1},
-                {"slug": "es1", "qty": 1, "source": "biofield", "note": "With A and B"}]
-    merged = bfi.merge_household_lines(
-        [{"slug": "rem-0", "qty": 1, "source": "biofield"}], pet_only, "",
-        known_tags={"For Skylar"}, adopt_untagged_as="For Skylar")
-    es1 = [l for l in merged if l["slug"] == "es1"]
-    assert es1 and es1[0]["note"] == "For Skylar | With A and B"
-    fee = [l for l in merged if l["slug"] == FEE]
-    assert fee and fee[0]["note"] == "For Skylar"
-    assert "rem-0" in [l["slug"] for l in merged]
-
-
 def test_a_pet_replaces_its_own_untagged_lines_from_before_sharing():
     pet_only = [{"slug": "es1", "qty": 1, "source": "biofield"}]
     merged = bfi.merge_household_lines(
@@ -180,3 +167,11 @@ def test_an_ordinary_note_starting_for_is_not_a_pet_tag(monkeypatch):
         [{"slug": "rem-0", "qty": 1, "source": "biofield", "note": "For Sleep"}], "",
         known_tags={"For Skylar"})
     assert len(merged) == 1
+
+
+def test_a_pets_hand_added_line_buys_the_owner_no_months(monkeypatch):
+    prod = {"slug": "es1", "name": "ES1", "bottle_type": "30 Caps"}
+    monkeypatch.setattr(appmod, "_get_product", lambda s: prod if s == "es1" else None)
+    hand_pet = {"items": [{"slug": "es1", "qty": 1, "source": "self",
+                           "note": "For Skylar", "line_cents": 3000}]}
+    assert appmod._order_has_supply_line(hand_pet) is False
