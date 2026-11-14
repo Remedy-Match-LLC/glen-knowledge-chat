@@ -63078,7 +63078,8 @@ def _capped_override_unit(unit_cents, *, product, slug, cprices, ff_flat, price_
 def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
                            discount_cents_in=None, points_redeem_cents_in=None,
                            adjustment_cents_in=None, shipping_override_cents_in=None,
-                           strict_packaging=False, allow_waitlist=False):
+                           strict_packaging=False, allow_waitlist=False,
+                           shipping_fallback_cents_in=None):
     """Shared server-authoritative pricing for the in-house order builder AND the
     console invoice editor. Honors per-line unit_cents overrides; FF capsules get a
     volume rate — the order-wide mix/match rate for a paid member, the same-SKU
@@ -63254,11 +63255,19 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             extra_products=typed_products)
         shipping_cents = _bos_orders.effective_shipping_cents(pickup, pc.get("shipping_cents"))
         get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
+        _ship_fell_back = False
     except CheckoutError:
         raise
     except Exception as e:
         print(f"[inhouse-price] pricing fell back: {e!r}", flush=True)
         shipping_cents, get_cents = 0, 0
+        _ship_fell_back = True
+    computed_shipping_cents = shipping_cents
+    # A customer's edit recomputes shipping, but a rate error must never drop it to
+    # $0: the stored figure stands in (2026-11-14).
+    if (_ship_fell_back and shipping_fallback_cents_in not in (None, "") and not pickup
+            and shipping_override_cents_in in (None, "")):
+        shipping_cents = max(0, int(shipping_fallback_cents_in))
     # Owner-set manual shipping fee (Edit Invoice / order builder): when supplied, it
     # REPLACES the geometry-computed shipping — for products whose box dims aren't in the
     # catalog, or to match a hand-quoted rate. Non-negative; the address is still validated
@@ -63266,6 +63275,10 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     # the field under pickup, so this only guards a stray value).
     if shipping_override_cents_in not in (None, "") and not pickup:
         shipping_cents = max(0, int(shipping_override_cents_in))
+    # Typed by the owner and not what the rates give: kept on a customer's edit.
+    shipping_hand_set = bool(shipping_override_cents_in not in (None, "") and not pickup
+                             and (_ship_fell_back
+                                  or shipping_cents != computed_shipping_cents))
     discount_cents = (max(0, int(discount_cents_in))
                       if discount_cents_in not in (None, "") else 0)
     # Manual adjustment is SIGNED: negative = credit (lowers total), positive =
@@ -63284,6 +63297,8 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
         total_cents -= points_redeemed_cents
     return {"items_rec": items_rec, "cart": cart, "subtotal_cents": subtotal_list,
             "shipping_cents": shipping_cents, "get_cents": get_cents,
+            "computed_shipping_cents": computed_shipping_cents,
+            "shipping_hand_set": shipping_hand_set,
             "discount_cents": discount_cents, "adjustment_cents": adjustment_cents,
             "points_redeemed_cents": points_redeemed_cents,
             "price_caps": price_caps,
@@ -63330,7 +63345,8 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
                                  adjustment_cents_in=None, invoice_note=None,
                                  address_override=None, shipping_override_cents_in=None,
                                  strict_packaging=False, points_redeem_cents_in=None,
-                                 allow_waitlist=False):
+                                 allow_waitlist=False, keep_hand_set=False,
+                                 shipping_fallback_cents_in=None):
     """Reprice an order's line items at the current pricing (membership-aware) and
     persist the invoice. Shared by the manual invoice editor (/api/orders/<oid>/edit)
     and the one-click grant-and-reprice button. Carries the order's existing points +
@@ -63339,7 +63355,11 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     when no line resolves to a real product. Raises CheckoutError on a rejected ship-to.
 
     invoice_note=None leaves the stored note untouched (upsert_order skips it on update);
-    pass a string to replace it."""
+    pass a string to replace it.
+
+    keep_hand_set=True leaves the order's shipping_hand_set flag as it is: for a caller
+    that passes the stored shipping back as the override, which says nothing about who
+    set it. Otherwise the flag follows this save."""
     email = order.get("email") or ""
     # address_override (from the editor form) makes the editor authoritative for the
     # ship-to: reprice AND persist against it. None -> use the order's stored address
@@ -63365,7 +63385,9 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         points_redeem_cents_in=None,
         strict_packaging=strict_packaging,
         # Passed only when set, so a caller or spy written before 2026-10-20 still fits.
-        **({"allow_waitlist": True} if allow_waitlist else {}))
+        **({"allow_waitlist": True} if allow_waitlist else {}),
+        **({"shipping_fallback_cents_in": shipping_fallback_cents_in}
+           if shipping_fallback_cents_in not in (None, "") else {}))
     if priced is None:
         return None, None
     existing_points = int(order.get("points_redeemed_cents") or 0)
@@ -63423,7 +63445,9 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         shipping_cents=priced["shipping_cents"],
         ship_credit_applied_cents=existing_ship_credit,
         address=_persist_addr,
-        invoice_note=(invoice_note.strip() if isinstance(invoice_note, str) else None))
+        invoice_note=(invoice_note.strip() if isinstance(invoice_note, str) else None),
+        shipping_hand_set=(None if keep_hand_set
+                           else bool(priced.get("shipping_hand_set"))))
     _harvest_line_note_snippets(cx, priced["items_rec"])
     return priced, (order.get("pay_status") == "paid")
 
@@ -64492,7 +64516,8 @@ def api_orders_manual():
             shipping_cents=shipping_cents,
             points_redeemed_cents=points_redeemed_cents,
             ship_credit_applied_cents=_sc_apply,
-            invoice_note=((body.get("invoice_note") or "").strip() or None))
+            invoice_note=((body.get("invoice_note") or "").strip() or None),
+            shipping_hand_set=bool(priced.get("shipping_hand_set")))
         _harvest_line_note_snippets(cx, items_rec)
         if _supply_months is not None and oid:
             _bos_orders.set_order_supply_months(cx, oid, _supply_months)
@@ -65985,6 +66010,7 @@ def api_invoice_membership(token):
                                else None),
             adjustment_cents_in=order.get("adjustment_cents"),
             shipping_override_cents_in=order.get("shipping_cents"),
+            keep_hand_set=True,
             # The order's own lines: a held not-ready line never blocks (2026-10-20).
             allow_waitlist=True)
     except CheckoutError as e:
@@ -66142,6 +66168,8 @@ def api_invoice_update(token):
                             refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}))
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
+    _hand_set = bool(order.get("shipping_hand_set"))
+    _ship_before = int(order.get("shipping_cents") or 0)
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
         priced, _was_paid = _reprice_and_persist_invoice(
@@ -66149,9 +66177,13 @@ def api_invoice_update(token):
             pickup=(order.get("channel") == "pickup"),
             discount_cents_in=order.get("discount_cents"),
             adjustment_cents_in=order.get("adjustment_cents"),
-            # The amount was quoted by the owner. Preserve it while a customer edits
-            # products instead of replacing it (or dropping it on a rate error).
-            shipping_override_cents_in=order.get("shipping_cents"),
+            # Glen 2026-11-14 ("recalculate"): a customer's edit recomputes shipping, so
+            # adding bottles can move to a bigger box. A figure the owner typed is kept
+            # (platform tab, "yes"). A rate error keeps the stored figure, never $0.
+            shipping_override_cents_in=(order.get("shipping_cents")
+                                        if _hand_set else None),
+            keep_hand_set=_hand_set,
+            shipping_fallback_cents_in=order.get("shipping_cents"),
             allow_waitlist=True)
         if priced is None:
             return jsonify({"ok": False, "error": "no valid items"}), 400
@@ -66162,10 +66194,14 @@ def api_invoice_update(token):
         cx.close()
     try:
         from dashboard import inbox as _inbox
+        _ship_after = int(priced.get("shipping_cents") or 0)
+        _ship_line = (f" Shipping changed from ${_ship_before/100:,.2f} to "
+                      f"${_ship_after/100:,.2f}; set it back in Edit Invoice if you had "
+                      "quoted it." if _ship_after != _ship_before else "")
         _inbox.send_email("drglenswartwout@gmail.com",
                           f"Invoice {order.get('external_ref')} changed by customer",
                           f"Customer updated invoice {order.get('external_ref')} — "
-                          f"new total ${priced['total_cents']/100:,.2f}.")
+                          f"new total ${priced['total_cents']/100:,.2f}.{_ship_line}")
     except Exception as _e:
         print(f"[invoice] owner notify skipped: {_e!r}", flush=True)
     return jsonify({"ok": True, "order": _invoice_summary(updated)})

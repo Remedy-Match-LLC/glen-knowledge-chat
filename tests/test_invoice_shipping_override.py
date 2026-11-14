@@ -101,3 +101,38 @@ def test_edit_route_persists_shipping_override(stub_pricer, monkeypatch, tmp_pat
         saved = O.get_order(cx, oid)
     assert saved["shipping_cents"] == 1234
     assert saved["total_cents"] == 2234
+
+
+# ---- 2026-11-14: who set the figure (Glen: a customer edit recalculates) ----------
+
+def test_a_typed_figure_that_differs_is_hand_set(stub_pricer):
+    p = stub_pricer._price_inhouse_invoice(
+        LINES, email="", pickup=False, ship=SHIP, shipping_override_cents_in=1234)
+    assert p["shipping_hand_set"] is True and p["computed_shipping_cents"] == 700
+
+
+def test_a_prefilled_figure_equal_to_the_rate_is_computed(stub_pricer):
+    # Edit Invoice pre-fills the stored figure and sends it back on save.
+    p = stub_pricer._price_inhouse_invoice(
+        LINES, email="", pickup=False, ship=SHIP, shipping_override_cents_in=700)
+    assert p["shipping_hand_set"] is False
+
+
+def test_no_figure_and_pickup_are_never_hand_set(stub_pricer):
+    assert stub_pricer._price_inhouse_invoice(
+        LINES, email="", pickup=False, ship=SHIP)["shipping_hand_set"] is False
+    assert stub_pricer._price_inhouse_invoice(
+        LINES, email="", pickup=True, ship=SHIP,
+        shipping_override_cents_in=1234)["shipping_hand_set"] is False
+
+
+def test_a_rate_error_keeps_the_stored_figure_never_zero(stub_pricer, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("rates down")
+    monkeypatch.setattr(stub_pricer, "_price_cart", boom)
+    p = stub_pricer._price_inhouse_invoice(
+        LINES, email="", pickup=False, ship=SHIP, shipping_fallback_cents_in=3200)
+    assert p["shipping_cents"] == 3200
+    p = stub_pricer._price_inhouse_invoice(
+        LINES, email="", pickup=False, ship=SHIP, shipping_fallback_cents_in=3200)
+    assert p["total_cents"] == 1000 + 3200
