@@ -875,6 +875,66 @@ def test_renewal_cron_prepay_sends_no_charge_copy(app_client_mem, fake_smtp, mon
     assert "truly.vip" not in blob              # must NOT get the video-renewal body
 
 
+@pytest.mark.parametrize("source", ["membership_year_prepay", "membership_month",
+                                    "membership_year_monthly"])
+def test_renewal_cron_membership_door_gets_the_membership_prompt(app_client_mem, fake_smtp,
+                                                                 monkeypatch, source):
+    """A term bought at /membership never renews by itself. Before 2026-11-13 it fell
+    through to the coaching text that asks for a new video at truly.vip/Results."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "https://test.local", raising=False)
+    import uuid as _uuid
+    now = datetime.utcnow()
+    cx = sqlite3.connect(db)
+    cx.execute(
+        "INSERT INTO memberships (id, email, granted_at, expires_at, granted_by, source) "
+        "VALUES (?,?,?,?,?,?)",
+        (str(_uuid.uuid4()), "annual@example.com",
+         (now - timedelta(days=360)).isoformat() + "Z",
+         (now + timedelta(days=2)).isoformat() + "Z", source, source))
+    cx.commit(); cx.close()
+    fake_smtp.instances = []
+    r = client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert r.status_code == 200 and r.get_json().get("reminded") == 1
+    msgs = [str(m) for inst in fake_smtp.instances for (_, to, m) in inst.sent
+            if "annual@example.com" in to]
+    assert msgs, "membership-door member was not reminded"
+    blob = " ".join(msgs)
+    assert "Your Remedy Match membership ends in" in blob
+    assert "https://test.local/membership" in blob
+    assert "truly.vip" not in blob and "video" not in blob.lower()
+
+
+@pytest.mark.parametrize("case", ["later_grant", "still_billing"])
+def test_renewal_cron_membership_door_says_nothing_while_it_continues(app_client_mem, fake_smtp,
+                                                                     monkeypatch, case):
+    """Annual monthly is billed 12 times and each charge adds a grant, so an old grant
+    ending is not the membership ending (review round 1, 2026-11-13)."""
+    client, app_module, db = app_client_mem
+    import uuid as _uuid
+    from dashboard import subscriptions as _subs
+    now = datetime.utcnow()
+    cx = sqlite3.connect(db)
+    rows = [(now + timedelta(days=2))]
+    if case == "later_grant":
+        rows.append(now + timedelta(days=33))
+    for exp in rows:
+        cx.execute(
+            "INSERT INTO memberships (id, email, granted_at, expires_at, granted_by, source) "
+            "VALUES (?,?,?,?,?,?)",
+            (str(_uuid.uuid4()), "billing@example.com", (now - timedelta(days=30)).isoformat() + "Z",
+             exp.isoformat() + "Z", "membership_year_monthly", "membership_year_monthly"))
+    cx.commit(); cx.close()
+    if case == "still_billing":
+        monkeypatch.setattr(_subs, "active_memberships_by_email",
+                            lambda c, e: [{"id": 1}] if e == "billing@example.com" else [])
+    fake_smtp.instances = []
+    r = client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert r.status_code == 200
+    assert not [m for inst in fake_smtp.instances for (_, to, m) in inst.sent
+                if "billing@example.com" in to]
+
+
 def test_renewal_cron_prepay_skipped_when_flag_off(app_client_mem, fake_smtp, monkeypatch):
     client, app_module, db = app_client_mem
     monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", False, raising=False)

@@ -3570,6 +3570,10 @@ function pollPending(){
 function familyPlanLine(fpl){
   // A payload without "holder" (an older server) keeps Cancel: the server refuses anyone
   // who holds no plan (review round 2).
+  // The household annual: paid once, never renews, so there is nothing to cancel.
+  if(fpl.active && fpl.holder !== false && fpl.term_last_day){
+    return `<p><strong>${esc(fpl.label)}</strong> covers your household through ${esc(fmtDate(fpl.term_last_day))}. It is a single payment that does not renew. Everyone in your household with sharing on has their full analysis unlocked.</p>`;
+  }
   // Cancelled by the holder: it will not renew, and cover runs to the paid date.
   if(fpl.active && fpl.holder !== false && fpl.ends){
     return `<p><strong>${esc(fpl.label)}</strong> is cancelled and will not renew. Your household keeps its unlocked analysis through the day before ${esc(fmtDate(fpl.ends))}, when it would have renewed.</p>`;
