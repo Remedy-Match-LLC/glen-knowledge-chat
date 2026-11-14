@@ -175,3 +175,26 @@ def test_one_rates_read_per_cart(rates, monkeypatch):
     pc = app._price_cart([{"slug": s, "qty": 1} for s in LARGE_BOX], ship=US, channel="retail")
     assert pc["shipping_cents"] == 3300 * len(LARGE_BOX)
     assert len(calls) == 1
+
+
+VEGICAPS_4 = "empty-vegicaps-size-4"
+
+
+def test_vegicaps_size_4_packs_as_filler(rates):
+    """Glen 2026-11-14: "capsules fit in a small box"; a bag of 100 is about
+    6 x 1 x 0.75 in and 4.2 g. Alone: one Small box. Beside other items: no charge,
+    where the fixed $13 used to land on top of any box."""
+    p = app._get_product(VEGICAPS_4)
+    assert p.get("ships_as_filler") is True and "flat_shipping_cents" not in p
+    assert p.get("net_weight_g") == 4.2
+    small = shipping.get_current_rates()["S"]["charged_cents"]
+    alone = app._price_cart([{"slug": VEGICAPS_4, "qty": 1}], ship=US, channel="retail")
+    assert alone["shipping_cents"] == small
+    bottles = app._price_cart([{"slug": "neuro-magnesium", "qty": 4}], ship=US, channel="retail")
+    both = app._price_cart([{"slug": "neuro-magnesium", "qty": 4}, {"slug": VEGICAPS_4, "qty": 1}],
+                           ship=US, channel="retail")
+    assert both["shipping_cents"] == bottles["shipping_cents"]
+
+
+def test_vegicaps_size_00_keeps_its_fixed_rate():
+    assert app._get_product("empty-vegicaps-size-00")["flat_shipping_cents"] == 1300

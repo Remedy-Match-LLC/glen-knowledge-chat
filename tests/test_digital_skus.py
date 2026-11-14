@@ -203,7 +203,6 @@ def test_apparel_batch_shipping():
         "capsule-filling-machine": 2300,
         "capsule-filling-machine-with-tamping": 2300,
         "empty-vegicaps-size-00": 1300,
-        "empty-vegicaps-size-4": 1300,
         "large-mithreal-silver-lined-blanket": "L",
         "small-mithreal-silver-lined-blanket": "L",
         "circular-mithreal-silver-sleep-canopy": "L",

@@ -25790,7 +25790,9 @@
    "name": "Empty Vegicaps Size 4",
    "price_cents": 1200,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 1300,
+   "ships_as_filler": true,
+   "net_weight_g": 4.2,
+   "package_in": [6, 1, 0.75],
    "_note": "Name taken from the slug at import because the GrooveKart source SEO meta title was mis-copied from its sibling (read 'Empty Vegicaps Size 00'). Storefront meta title corrected to 'Empty Vegicaps Size 4' on 2026-07-20; product name and slug were already correct.",
    "source": "gk-apparel-import-2026-07-20"
   },
