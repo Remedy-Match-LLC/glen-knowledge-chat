@@ -164,3 +164,14 @@ def test_packages_follow_the_live_rates(rates):
     assert pc["shipping_cents"] == 3300 + m
     pc = app._price_cart([{"slug": "healing-tools-package", "qty": 1}], ship=US, channel="retail")
     assert pc["shipping_cents"] == 3300 + 10000
+
+
+def test_one_rates_read_per_cart(rates, monkeypatch):
+    """Every line in one cart is priced from the same rate snapshot."""
+    rates(3275)
+    calls = []
+    real = app._shipping.get_current_rates
+    monkeypatch.setattr(app._shipping, "get_current_rates", lambda *a, **k: (calls.append(1), real(*a, **k))[1])
+    pc = app._price_cart([{"slug": s, "qty": 1} for s in LARGE_BOX], ship=US, channel="retail")
+    assert pc["shipping_cents"] == 3300 * len(LARGE_BOX)
+    assert len(calls) == 1

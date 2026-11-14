@@ -11072,14 +11072,16 @@ class CheckoutError(Exception):
 # USPS flat-rate box thresholds by total bottle count (Glen 2026-06-14): <=4 S, <=12 M, else L.
 # Used as a fail-safe when the box-fit catalog can't pick a box; the catalog (when Rae fills it
 # at /admin/shipping) takes precedence via shipping.quote().
-_SHIP_FALLBACK_HARD = {"S": 1300, "M": 2300, "L": 3200}   # rounded rates if even the rates table is down
+_SHIP_FALLBACK_HARD = {"S": 1300, "M": 2300, "L": 3300}   # rounded rates if even the rates table is down (L $33 since 2026-11-03)
 
 
-def _box_rate_cents(size):
+def _box_rate_cents(size, rates=None):
     """The live charged rate for one USPS box size (S, M or L). Never raises.
-    Falls back to the rounded hard rate only when the rates table cannot answer."""
+    Falls back to the rounded hard rate only when the rates table cannot answer.
+    Pass `rates` (one get_current_rates() snapshot) to price a whole cart at one rate."""
     try:
-        rates = _shipping.get_current_rates() or {}
+        if rates is None:
+            rates = _shipping.get_current_rates() or {}
         r = rates.get(size) or {}
         cents = int(r.get("charged_cents") or r.get("usps_retail_cents") or 0)
         return cents or _SHIP_FALLBACK_HARD[size]
@@ -11087,7 +11089,7 @@ def _box_rate_cents(size):
         return _SHIP_FALLBACK_HARD[size]
 
 
-def _own_box_flat_cents(p):
+def _own_box_flat_cents(p, rates=None):
     """Per-unit fixed shipping for an own-parcel product.
     `flat_shipping_boxes` names USPS box sizes, charged at today's confirmed rate,
     so a USPS price change carries through (Glen 2026-11-14: "large box").
@@ -11096,7 +11098,7 @@ def _own_box_flat_cents(p):
     for size in (p.get("flat_shipping_boxes") or []):
         if size not in _SHIP_FALLBACK_HARD:
             raise CheckoutError(f"Unknown shipping box {size!r} for {p.get('name') or p.get('slug')}.")
-        cents += _box_rate_cents(size)
+        cents += _box_rate_cents(size, rates)
     return cents
 
 
@@ -11197,6 +11199,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     total_cello = 0
     flat_ship_cents = 0   # sum of per-product fixed shipping overrides (own-parcel items)
     filler_alone_lines = 0   # shippable lines that pack as filler (ships_as_filler)
+    _rates_snapshot = None   # one usps_rates read per cart, so every line uses the same rate
     # Names of lines packed at FALLBACK_BOTTLE_TYPE because their real packaging is
     # unspecified. Returned so an operator surface can list what needs measuring.
     packaging_review = []
@@ -11243,7 +11246,12 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
             # Alone it needs a box of its own: see the Small-box charge after the loop.
             filler_alone_lines += 1
         elif _shipping.is_shippable(p):
-            _flat = _own_box_flat_cents(p)
+            if _rates_snapshot is None:
+                try:
+                    _rates_snapshot = _shipping.get_current_rates() or {}
+                except Exception:
+                    _rates_snapshot = {}
+            _flat = _own_box_flat_cents(p, _rates_snapshot)
             if _flat > 0 and not p.get("bundle"):
                 # Own-parcel item with a FIXED shipping charge (e.g. the water ionizers,
                 # which each ship in their own box). Bill the flat rate per unit and keep
@@ -11306,7 +11314,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     if filler_alone_lines and not box_counts and not flat_ship_cents:
         # Nothing else ships, so the filler goes alone: one Small box, whatever the
         # quantity. Glen: "It would fit a small box." Longer cuts are not yet ruled.
-        flat_ship_cents = _box_rate_cents("S")
+        flat_ship_cents = _box_rate_cents("S", _rates_snapshot)
     if (box_counts or flat_ship_cents) and country not in ("US", "USA", ""):
         raise CheckoutError("We ship to US addresses only — please use a US forwarding address.")
     tier_arg = subscriber_tier_pct
