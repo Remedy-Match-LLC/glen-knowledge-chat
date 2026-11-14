@@ -63079,7 +63079,7 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
                            discount_cents_in=None, points_redeem_cents_in=None,
                            adjustment_cents_in=None, shipping_override_cents_in=None,
                            strict_packaging=False, allow_waitlist=False,
-                           shipping_fallback_cents_in=None):
+                           shipping_fallback_cents_in=None, shipping_typed=None):
     """Shared server-authoritative pricing for the in-house order builder AND the
     console invoice editor. Honors per-line unit_cents overrides; FF capsules get a
     volume rate — the order-wide mix/match rate for a paid member, the same-SKU
@@ -63275,10 +63275,15 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     # the field under pickup, so this only guards a stray value).
     if shipping_override_cents_in not in (None, "") and not pickup:
         shipping_cents = max(0, int(shipping_override_cents_in))
-    # Typed by the owner and not what the rates give: kept on a customer's edit.
-    shipping_hand_set = bool(shipping_override_cents_in not in (None, "") and not pickup
-                             and (_ship_fell_back
-                                  or shipping_cents != computed_shipping_cents))
+    # Typed by the owner: kept on a customer's edit. Edit Invoice says whether the
+    # figure was typed (shipping_typed), since it pre-fills the stored one and sends it
+    # back. Another caller gives no answer, so a figure the rates do not give counts.
+    _has_override = shipping_override_cents_in not in (None, "") and not pickup
+    if shipping_typed is not None:
+        shipping_hand_set = bool(_has_override and shipping_typed)
+    else:
+        shipping_hand_set = bool(_has_override and (
+            _ship_fell_back or shipping_cents != computed_shipping_cents))
     discount_cents = (max(0, int(discount_cents_in))
                       if discount_cents_in not in (None, "") else 0)
     # Manual adjustment is SIGNED: negative = credit (lowers total), positive =
@@ -63346,7 +63351,7 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
                                  address_override=None, shipping_override_cents_in=None,
                                  strict_packaging=False, points_redeem_cents_in=None,
                                  allow_waitlist=False, keep_hand_set=False,
-                                 shipping_fallback_cents_in=None):
+                                 shipping_fallback_cents_in=None, shipping_typed=None):
     """Reprice an order's line items at the current pricing (membership-aware) and
     persist the invoice. Shared by the manual invoice editor (/api/orders/<oid>/edit)
     and the one-click grant-and-reprice button. Carries the order's existing points +
@@ -63387,7 +63392,8 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         # Passed only when set, so a caller or spy written before 2026-10-20 still fits.
         **({"allow_waitlist": True} if allow_waitlist else {}),
         **({"shipping_fallback_cents_in": shipping_fallback_cents_in}
-           if shipping_fallback_cents_in not in (None, "") else {}))
+           if shipping_fallback_cents_in not in (None, "") else {}),
+        **({"shipping_typed": bool(shipping_typed)} if shipping_typed is not None else {}))
     if priced is None:
         return None, None
     existing_points = int(order.get("points_redeemed_cents") or 0)
@@ -63630,6 +63636,8 @@ def api_orders_edit(oid):
                 discount_cents_in=body.get("discount_cents"),
                 adjustment_cents_in=body.get("adjustment_cents"),
                 shipping_override_cents_in=body.get("shipping_cents"),
+                shipping_typed=(bool(body.get("shipping_typed"))
+                                if "shipping_typed" in body else None),
                 invoice_note=body.get("invoice_note"),
                 address_override=(_addr_in if isinstance(_addr_in, dict) else None),
                 strict_packaging=True,
@@ -64456,7 +64464,9 @@ def api_orders_manual():
             adjustment_cents_in=body.get("adjustment_cents"),
             shipping_override_cents_in=body.get("shipping_cents"),
             points_redeem_cents_in=body.get("points_redeem_cents"),
-            strict_packaging=True)
+            strict_packaging=True,
+            **({"shipping_typed": bool(body.get("shipping_typed"))}
+               if "shipping_typed" in body else {}))
     except CheckoutError as e:
         return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     if priced is None:

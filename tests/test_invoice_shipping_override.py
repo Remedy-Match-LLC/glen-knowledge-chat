@@ -136,3 +136,26 @@ def test_a_rate_error_keeps_the_stored_figure_never_zero(stub_pricer, monkeypatc
     p = stub_pricer._price_inhouse_invoice(
         LINES, email="", pickup=False, ship=SHIP, shipping_fallback_cents_in=3200)
     assert p["total_cents"] == 1000 + 3200
+
+
+def test_a_typed_figure_equal_to_the_rate_is_still_hand_set(stub_pricer):
+    p = stub_pricer._price_inhouse_invoice(
+        LINES, email="", pickup=False, ship=SHIP, shipping_override_cents_in=700,
+        shipping_typed=True)
+    assert p["shipping_hand_set"] is True
+
+
+def test_an_untyped_prefill_that_differs_is_not_hand_set(stub_pricer):
+    # Edit Invoice sent the stored figure back untouched; the rates have moved since.
+    p = stub_pricer._price_inhouse_invoice(
+        LINES, email="", pickup=False, ship=SHIP, shipping_override_cents_in=3200,
+        shipping_typed=False)
+    assert p["shipping_hand_set"] is False and p["shipping_cents"] == 3200
+
+
+def test_the_editor_reports_a_typed_figure():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "static" / "order-new.html").read_text()
+    assert html.count("body.shipping_typed = SHIP_TYPED;") == 2
+    assert "SHIP_TYPED = !!o.shipping_hand_set;" in html
+    assert 'SHIP_TYPED=true; recalc(); });' in html
