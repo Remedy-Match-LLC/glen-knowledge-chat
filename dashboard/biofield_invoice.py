@@ -436,10 +436,90 @@ def upgrade_old_folded(items):
     return out
 
 
+# A pet's lines on its owner's shared invoice (Glen 2026-11-14: "Skylar's remedies
+# should also be added to the same invoice since Agnes pays for her dog's remedies").
+# The note names whose line it is, so each intake's raise replaces only its own lines.
+# The note survives Edit Invoice and prints on the invoice. billed_for is not used: it
+# holds a member's email, a pet shares its owner's, and any billed_for line stops the
+# owner's supply-month grant for the whole order.
+HOUSEHOLD_SEP = " | "
+
+
+def household_note(first_name, note=""):
+    """'For Skylar', or 'For Skylar | With A and B' when the line has its own note."""
+    tag = f"For {first_name}".strip()
+    return tag + (HOUSEHOLD_SEP + note if note else "")
+
+
+def household_tag_of(note, known=None):
+    """The 'For <Name>' tag a household line's note starts with, or "".
+
+    With known (a set of tags), only a tag in it counts: the local app knows every
+    tag it wrote, so "For sleep" typed into an owner's note is never a pet's. Without
+    it (prod reads), the tag must be the whole note or end at HOUSEHOLD_SEP, and each
+    word of the name must start with a capital letter."""
+    text = str(note or "").strip()
+    if not text.startswith("For "):
+        return ""
+    tag = text.split(HOUSEHOLD_SEP, 1)[0].strip()
+    if known is not None:
+        return tag if tag in known else ""
+    words = tag[4:].split()
+    if not words or not all(w[:1].isupper() for w in words):
+        return ""
+    return tag
+
+
+def _strip_household_tag(note):
+    text = str(note or "").strip()
+    if household_tag_of(text):
+        return text.split(HOUSEHOLD_SEP, 1)[1].strip() if HOUSEHOLD_SEP in text else ""
+    return text
+
+
+def merge_household_lines(new_lines, existing_items, tag, own_tags=(), known_tags=None):
+    """Merge one intake's freshly raised lines into a draft other intakes share.
+
+    tag is this intake's tag ("" for the owner). own_tags are tags it wrote before,
+    so a renamed pet's old lines are still its own; "" in own_tags makes untagged
+    Biofield lines its own too (a pet's draft from before its owner had an intake).
+    known_tags are every pet's tags on this email: a note starting "For " that is not
+    one of them is ordinary text. None falls back to household_tag_of's own test.
+
+    This intake's Biofield lines are replaced by new_lines. Every other line is kept:
+    the other subjects' lines, the fee and lines added by hand in Edit Invoice. A
+    hand-added line of this same subject whose product the raise now carries is
+    dropped, as in merge_manual_invoice_lines."""
+    known = (None if known_tags is None
+             else set(known_tags) | ({tag} if tag else set()))
+    mine = {tag} | set(own_tags or ())
+    merged = [dict(line) for line in (new_lines or [])]
+    present = {(line.get("slug") or "").strip() for line in merged}
+    for item in existing_items or []:
+        slug = (item.get("slug") or "").strip()
+        if not slug:
+            continue
+        is_bf = (slug == BIOFIELD_SLUG or
+                 (item.get("source") or "").strip().lower() == "biofield")
+        item_tag = household_tag_of(item.get("note"), known)
+        line = {"slug": slug, "qty": max(1, int(item.get("qty") or 1))}
+        for key in ("source", "note", "format", "billed_for"):
+            if item.get(key):
+                line[key] = item[key]
+        if item.get("override") and item.get("unit_cents") is not None:
+            line["unit_cents"] = item["unit_cents"]
+        if is_bf and item_tag in mine:
+            continue                      # this intake's own line: replaced
+        if not is_bf and item_tag in mine and slug in present:
+            continue
+        merged.append(line)
+    return merged
+
+
 def note_ingredients(note):
     """The ingredients a terrain_restore_note names, in order. Display text read
     back, so it is used only for a line that carries no "held" list."""
-    text = str(note or "").strip()
+    text = _strip_household_tag(note)
     if not text.startswith("With "):
         return []
     text = text[5:]
@@ -571,6 +651,9 @@ def default_fetch_catalog():
         return []
 
 
+KEEP_NOTE = object()
+
+
 def default_create_order(customer, lines, replace_open=False, invoice_note=None,
                          update_order_id=None, idempotency_key="", supply_months=None):
     """Create the hand-off invoice on prod. With replace_open=True (a re-hand-off),
@@ -586,8 +669,12 @@ def default_create_order(customer, lines, replace_open=False, invoice_note=None,
         # bottle, so an analysis-only invoice still ships $0. Mark the order pickup
         # from the console when the client actually collects in person.
         body = {"customer": {"name": customer.get("name") or "", "email": customer.get("email") or ""},
-                "lines": lines, "replace_open": bool(replace_open),
-                "invoice_note": invoice_note or DEFAULT_INVOICE_NOTE}
+                "lines": lines, "replace_open": bool(replace_open)}
+        # KEEP_NOTE on an update leaves the stored invoice note as it is (a pet's raise
+        # joining its owner's invoice must not replace the owner's note).
+        if not (invoice_note is KEEP_NOTE and update_order_id):
+            body["invoice_note"] = ((invoice_note if invoice_note is not KEEP_NOTE else None)
+                                    or DEFAULT_INVOICE_NOTE)
         if update_order_id:
             body["update_order_id"] = int(update_order_id)
         # The authoring page mints one token per LOAD. Prod derives the order's

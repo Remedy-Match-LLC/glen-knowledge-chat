@@ -43,7 +43,7 @@ def ensure_schema(cx):
 
 
 def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False,
-               resolve=None):
+               resolve=None, share_with=()):
     """Remember that this test's invoice is this order. Returns (stored, reason).
 
     Refused when another test already holds this order: a household's second raise
@@ -53,7 +53,10 @@ def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False,
 
     resolve(order_id) -> the order that stands for it now (see resolver). Two tests
     whose orders resolve to the same final order hold the same invoice, so the second
-    is refused. Without it, only the same order number counts."""
+    is refused. Without it, only the same order number counts.
+
+    share_with names tests that may hold the same order: a pet and its owner on one
+    shared invoice (2026-11-14). Each raise there edits only its own lines."""
     oid, tid = int(order_id), str(test_id)
     resolve = resolve or (lambda x: int(x))
     ensure_schema(cx)
@@ -61,8 +64,11 @@ def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False,
     cx.execute("BEGIN IMMEDIATE")
     try:
         mine_final = resolve(oid)
+        _shared = {str(t) for t in (share_with or ())}
         for other, o in cx.execute(f"SELECT test_id, order_id FROM {LINK_TABLE} "
                                    "WHERE test_id<>?", (tid,)).fetchall():
+            if str(other) in _shared:
+                continue
             if int(o) == oid or resolve(int(o)) == mine_final:
                 cx.rollback()
                 return False, (f"order #{oid} is already stored for test {other}"
@@ -83,6 +89,28 @@ def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False,
     except Exception:
         cx.rollback()
         raise
+
+
+HOUSEHOLD_TAG_TABLE = "biofield_household_tags"
+
+
+def stored_household_tags(cx):
+    """{test_id: tag} for each pet's lines on a shared invoice. Reads only."""
+    if not _has_table(cx, HOUSEHOLD_TAG_TABLE):
+        return {}
+    return {str(t): str(g) for t, g in
+            cx.execute(f"SELECT test_id, tag FROM {HOUSEHOLD_TAG_TABLE}").fetchall()}
+
+
+def remember_household_tag(cx, test_id, tag):
+    """Store the tag this test last wrote, so a renamed pet's old lines stay its own."""
+    cx.execute(f"CREATE TABLE IF NOT EXISTS {HOUSEHOLD_TAG_TABLE} ("
+               "test_id TEXT PRIMARY KEY, tag TEXT NOT NULL, updated_at TEXT NOT NULL)")
+    cx.execute(f"INSERT INTO {HOUSEHOLD_TAG_TABLE} (test_id, tag, updated_at) VALUES "
+               "(?,?,?) ON CONFLICT(test_id) DO UPDATE SET tag=excluded.tag, "
+               "updated_at=excluded.updated_at",
+               (str(test_id), str(tag), _dt.datetime.now(_dt.timezone.utc).isoformat()))
+    cx.commit()
 
 
 def _has_table(cx, name):
