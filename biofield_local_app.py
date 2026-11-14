@@ -2567,6 +2567,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         & set(b["scan_ids"] or (b["client"]["client_id"],)))
         if a["client"] or b["client"]:
             return False
+        # An owner and her pet can share a name; a person is never an animal
+        # (2026-11-14 review, round 2c).
+        if _intake_is_animal(cx, tid_a) != _intake_is_animal(cx, tid_b):
+            return False
         from dashboard.biofield_e4l import _person_key
         return _person_key(_intake_ident(cx, tid_a)[1]) == _person_key(_intake_ident(cx, tid_b)[1])
 
@@ -2623,6 +2627,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 people.append(t)
         return len(people)
 
+    def _email_has_household(test_id, email):
+        """True when another subject's intake shares this email and an animal is
+        among them. Wider than sharers: two people and a pet count too, so a
+        hand-off never replaces a draft another intake may hold (round 2c)."""
+        with sqlite3.connect(db_path) as cx:
+            tid_n = int(str(test_id).lstrip("a") or 0)
+            others = [f"a{r[0]}" for r in cx.execute(
+                "SELECT id FROM biofield_auth_tests WHERE lower(trim(email))=? AND id<>?",
+                (email.strip().lower(), tid_n))]
+            diff = [t for t in others if not _same_subject(cx, t, test_id)]
+            return bool(diff) and (_intake_is_animal(cx, test_id)
+                                   or any(_intake_is_animal(cx, t) for t in diff))
+
     def _household_share(test_id, email, order_id=None):
         """How this intake's lines sit on a household invoice its email shares.
 
@@ -2665,8 +2682,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 rivals = [[w[:1].upper() + w[1:] for w in (names.get(o) or [])]
                           for o in rival_t]
                 # A tag another pet wrote before stays that pet's, even after a rename.
-                taken = {stored[o] for o in stored
-                         if o != t and stored[o] and not _same_subject(cx, o, t)}
+                taken = set().union(*[stored[o] for o in stored
+                                      if o != t and not _same_subject(cx, o, t)])
                 first = "For " + words[0]
                 full = "For " + " ".join(words)
                 if first not in taken and not any(r[:1] == words[:1] for r in rivals):
@@ -2677,14 +2694,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
             for t in animals:
                 out["known_tags"].add(tag_of(t))
-                if stored.get(t):
-                    out["known_tags"].add(stored[t])
+                out["known_tags"] |= stored.get(t, set())
             # Every animal's lines are marked, shared or not (Glen 2026-11-14: "yes",
             # a pet's own remedies earn no membership months). Unmarked is a person.
             if me_animal:
                 out["tag"] = tag_of(me)
-                out["own_tags"] = {stored[t] for t in [me] + others
-                                   if stored.get(t) and _same_subject(cx, t, me)}
+                out["own_tags"] = set().union(*[stored.get(t, set()) for t in [me] + others
+                                                if _same_subject(cx, t, me)])
             if order_id is not None and out["sharers"]:
                 linked = [t for t, o in biofield_progress.stored_links(cx).items()
                           if int(o) == int(order_id)]
@@ -2911,6 +2927,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             create_kwargs["invoice_note"] = biofield_invoice.KEEP_NOTE
         elif supply_posted:
             create_kwargs["supply_months"] = supply_months
+        if tag:
+            # Stored before prod is written: a tag on the invoice that this app does
+            # not know would read as the owner's (2026-11-14 review, round 2c).
+            with sqlite3.connect(db_path) as cx:
+                biofield_progress.remember_household_tag(cx, test_id, tag)
         created = invoice_create(
             {"name": client.get("name"), "email": email}, built["lines"], **create_kwargs)
         if not created.get("ok"):
@@ -2935,8 +2956,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         cx, test_id, created["order_id"],
                         resolve=biofield_progress.resolver(_chains),
                         share_with=sharers)
-                    if tag:
-                        biofield_progress.remember_household_tag(cx, test_id, tag)
                 if not _ok:
                     link_refused = _why
         except Exception as _le:
@@ -3332,7 +3351,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                     if no_charge else
                                     f"Biofield Analysis already paid (order #{paid.get('order_id')}); "
                                     "no new invoice raised.")}
-            elif _household_share(test_id, email)["sharers"]:
+            elif _email_has_household(test_id, email):
                 # replace_open would cancel a draft a pet and its owner share, with the
                 # other's lines on it (2026-11-14 review, round 1).
                 invoice = {"ok": False,

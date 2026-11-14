@@ -91,24 +91,29 @@ def link_order(cx, test_id, order_id, source="invoice", only_if_unlinked=False,
         raise
 
 
-HOUSEHOLD_TAG_TABLE = "biofield_household_tags"
+HOUSEHOLD_TAG_TABLE = "biofield_household_tag_history"
 
 
 def stored_household_tags(cx):
-    """{test_id: tag} for each pet's lines on a shared invoice. Reads only."""
+    """{test_id: {tags}} every tag each pet test has written. Reads only.
+
+    All of them, not the last: a line kept on the draft under an old name is
+    still the pet's after a rename (2026-11-14 review, round 2c)."""
     if not _has_table(cx, HOUSEHOLD_TAG_TABLE):
         return {}
-    return {str(t): str(g) for t, g in
-            cx.execute(f"SELECT test_id, tag FROM {HOUSEHOLD_TAG_TABLE}").fetchall()}
+    out = {}
+    for t, g in cx.execute(f"SELECT test_id, tag FROM {HOUSEHOLD_TAG_TABLE}").fetchall():
+        out.setdefault(str(t), set()).add(str(g))
+    return out
 
 
 def remember_household_tag(cx, test_id, tag):
-    """Store the tag this test last wrote, so a renamed pet's old lines stay its own."""
+    """Add a tag this test wrote. Old tags are kept."""
     cx.execute(f"CREATE TABLE IF NOT EXISTS {HOUSEHOLD_TAG_TABLE} ("
-               "test_id TEXT PRIMARY KEY, tag TEXT NOT NULL, updated_at TEXT NOT NULL)")
-    cx.execute(f"INSERT INTO {HOUSEHOLD_TAG_TABLE} (test_id, tag, updated_at) VALUES "
-               "(?,?,?) ON CONFLICT(test_id) DO UPDATE SET tag=excluded.tag, "
-               "updated_at=excluded.updated_at",
+               "test_id TEXT NOT NULL, tag TEXT NOT NULL, first_at TEXT NOT NULL, "
+               "PRIMARY KEY (test_id, tag))")
+    cx.execute(f"INSERT OR IGNORE INTO {HOUSEHOLD_TAG_TABLE} (test_id, tag, first_at) "
+               "VALUES (?,?,?)",
                (str(test_id), str(tag), _dt.datetime.now(_dt.timezone.utc).isoformat()))
     cx.commit()
 

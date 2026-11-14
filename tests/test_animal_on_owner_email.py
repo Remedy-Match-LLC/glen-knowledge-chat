@@ -1293,7 +1293,7 @@ def test_a_new_pet_never_takes_a_renamed_pets_old_tag(tmp_path):
     _chain(db, pet, [INFO])
     assert client.post(f"/author/{pet}/invoice", json={}).status_code == 200
     with sqlite3.connect(db) as cx:
-        assert bp.stored_household_tags(cx)[pet] != "For Rover"
+        assert "For Rover" not in bp.stored_household_tags(cx)[pet]
 
 
 def test_a_pet_holding_the_order_alone_never_publishes_an_owner_only_invoice(tmp_path):
@@ -1324,7 +1324,7 @@ def test_the_pets_tag_is_remembered_after_a_raise(tmp_path):
     _chain(db, pet, [INFO])
     assert client.post(f"/author/{pet}/invoice", json={}).status_code == 200
     with sqlite3.connect(db) as cx:
-        assert bp.stored_household_tags(cx) == {pet: "For Rover"}
+        assert bp.stored_household_tags(cx) == {pet: {"For Rover"}}
 
 
 def test_the_pet_publishes_a_shared_invoice_carrying_its_lines(tmp_path):
@@ -1357,7 +1357,7 @@ def test_a_pet_is_refused_when_an_unstored_draft_already_has_its_remedy(tmp_path
     assert calls == {}
 
 
-def _stateful_app(tmp_path, items, catalog=None):
+def _stateful_app(tmp_path, items, catalog=None, e4l=None):
     """A fake prod that keeps the draft, so raises see each other's writes."""
     state = {"items": list(items), "published": []}
 
@@ -1366,7 +1366,7 @@ def _stateful_app(tmp_path, items, catalog=None):
         return {"ok": True, "order_id": 7, "external_ref": "X", "total_cents": 100,
                 "error": None, "accepted_slugs": []}
     client, db = _app(
-        tmp_path,
+        tmp_path, e4l=e4l,
         invoice_fetch_catalog=lambda: catalog or [
             {"slug": "immune-modulation", "name": FF}, {"slug": "es1", "name": INFO},
             {"slug": "biofield-analysis", "name": "Biofield Analysis", "service": True}],
@@ -1435,3 +1435,18 @@ def test_the_pets_header_fee_never_becomes_the_owners(tmp_path):
     assert client.post(f"/author/{pet}/invoice", json={}).status_code == 200
     fees = [l for l in state["items"] if l["slug"] == "biofield-analysis"]
     assert len(fees) == 1 and fees[0]["note"].startswith("For Rover"), state["items"]
+
+
+def test_a_renamed_pet_keeps_every_tag_it_wrote(tmp_path):
+    from dashboard import biofield_progress as bp
+    with sqlite3.connect(str(tmp_path / "t.db")) as cx:
+        bp.remember_household_tag(cx, "a5", "For Rover")
+        bp.remember_household_tag(cx, "a5", "For Max")
+        bp.remember_household_tag(cx, "a5", "For Max")
+        assert bp.stored_household_tags(cx) == {"a5": {"For Rover", "For Max"}}
+
+
+def test_a_pet_named_with_a_digit_is_still_a_tag():
+    from dashboard import biofield_invoice as _bfi
+    assert _bfi.household_tag_of("For 007") == "For 007"
+    assert _bfi.household_tag_of("For sleep") == ""

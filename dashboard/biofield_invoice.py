@@ -457,7 +457,7 @@ def household_tag_of(note, known=None):
     With known (a set of tags), only a tag in it counts: the local app knows every
     tag it wrote, so "For sleep" typed into an owner's note is never a pet's. Without
     it (prod reads), the tag must be the whole note or end at HOUSEHOLD_SEP, and each
-    word of the name must start with a capital letter."""
+    word of the name must not start with a lowercase letter."""
     text = str(note or "").strip()
     if not text.startswith("For "):
         return ""
@@ -465,7 +465,8 @@ def household_tag_of(note, known=None):
     if known is not None:
         return tag if tag in known else ""
     words = tag[4:].split()
-    if not words or not all(w[:1].isupper() for w in words):
+    # A name may start with a digit ("007"); only a lowercase start is prose.
+    if not words or any(w[:1].islower() for w in words):
         return ""
     return tag
 
