@@ -890,7 +890,8 @@ async function loadOrderForEdit(oid){
   // Prefill the shipping fee from the stored order so it's visible and STICKY — editing
   // an invoice must not silently recompute away a shipping fee Glen set by hand. Clear the
   // field (or click Reprice shipping) to fall back to auto-computed shipping.
-  if (o.channel!=="pickup" && o.shipping_cents) $("o-shipping").value = (o.shipping_cents/100).toFixed(2);
+  // A typed $0 (a comped shipment) is shown too, so a save keeps it (2026-11-14).
+  if (o.channel!=="pickup" && (o.shipping_cents || o.shipping_hand_set)) $("o-shipping").value = ((o.shipping_cents||0)/100).toFixed(2);
   SHIP_TYPED = !!o.shipping_hand_set;
   if (o.channel==="pickup") $("pickup").checked = true;
   if (o.invoice_note) $("o-note").value = o.invoice_note;

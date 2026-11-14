@@ -158,6 +158,7 @@ def test_the_editor_reports_a_typed_figure():
     html = (Path(__file__).resolve().parent.parent / "static" / "order-new.html").read_text()
     assert html.count("body.shipping_typed = SHIP_TYPED;") == 2
     assert "SHIP_TYPED = !!o.shipping_hand_set;" in html
+    assert "(o.shipping_cents || o.shipping_hand_set)" in html       # a typed $0 shows
     assert 'SHIP_TYPED=true; recalc(); });' in html
 
 
@@ -195,3 +196,49 @@ def test_clearing_the_field_in_edit_invoice_recomputes(stub_pricer, monkeypatch)
                                              recompute_shipping=True)
     assert seen["price"]["shipping_override_cents_in"] is None
     assert seen["upsert"]["shipping_hand_set"] is False
+
+
+def _edit_route_order(stub_pricer, monkeypatch, tmp_path, **order_kw):
+    from dashboard import orders as O
+    db_path = str(tmp_path / "orders.db")
+    monkeypatch.setattr(stub_pricer, "LOG_DB", db_path)
+    monkeypatch.setattr(
+        stub_pricer, "_bos_actor",
+        lambda: type("A", (), {"role": stub_pricer._bos_rbac.OWNER})())
+    monkeypatch.setattr(stub_pricer, "_push_invoice_edit_to_qbo",
+                        lambda *a, **k: {"pushed": False})
+    with O.db.connect(db_path) as cx:
+        O.init_orders_table(cx)
+        oid = O.upsert_order(
+            cx, source="in-house", external_ref="INH-HS", email="s@x.com",
+            items=[{"slug": "widget", "name": "Widget", "qty": 1,
+                    "unit_cents": 1000, "line_cents": 1000}],
+            total_cents=4300, shipping_cents=3300, shipping_hand_set=True,
+            address=SHIP, channel="retail", status="proposed", **order_kw)
+
+    def saved():
+        with O.db.connect(db_path) as cx:
+            cx.row_factory = __import__("sqlite3").Row
+            return O.get_order(cx, oid)
+    return oid, saved
+
+
+def test_edit_route_blank_field_recomputes_a_typed_figure(stub_pricer, monkeypatch, tmp_path):
+    oid, saved = _edit_route_order(stub_pricer, monkeypatch, tmp_path)
+    r = stub_pricer.app.test_client().post(f"/api/orders/{oid}/edit",
+                                           json={"lines": LINES, "pickup": False})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert saved()["shipping_cents"] == 700 and saved()["shipping_hand_set"] == 0
+
+
+def test_edit_route_records_a_typed_figure(stub_pricer, monkeypatch, tmp_path):
+    oid, saved = _edit_route_order(stub_pricer, monkeypatch, tmp_path)
+    stub_pricer.app.test_client().post(
+        f"/api/orders/{oid}/edit",
+        json={"lines": LINES, "pickup": False, "shipping_cents": 700, "shipping_typed": True})
+    assert saved()["shipping_cents"] == 700 and saved()["shipping_hand_set"] == 1
+    stub_pricer.app.test_client().post(
+        f"/api/orders/{oid}/edit",
+        json={"lines": LINES, "pickup": False, "shipping_cents": 3300,
+              "shipping_typed": False})
+    assert saved()["shipping_hand_set"] == 0
