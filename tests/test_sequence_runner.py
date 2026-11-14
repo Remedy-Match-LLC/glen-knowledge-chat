@@ -132,8 +132,8 @@ def test_a_send_ses_may_have_made_is_never_retried(cx, monkeypatch, runner):
     sent = _sends(cx, monkeypatch, runner)
     runner.run_once(cx, now=NOW)
     assert sent == []
-    row = cx.execute("SELECT status, message_id FROM sequence_sends WHERE step_no=1").fetchone()
-    assert row == ("sent", "ses-unknown")
+    row = cx.execute("SELECT status FROM sequence_sends WHERE step_no=1").fetchone()
+    assert row[0] == "unknown" and counts["failed"] == 1
 
 
 def test_a_refusal_while_ses_is_on_fails_once_and_is_not_retried(cx, monkeypatch, runner):
@@ -156,6 +156,34 @@ def test_a_malformed_address_is_refused_before_sending(cx, monkeypatch, runner):
     rows = cx.execute("SELECT status, error FROM sequence_sends "
                       "WHERE status='failed'").fetchall()
     assert rows == [("failed", "malformed address")]
+
+
+@pytest.mark.parametrize("text,first,want", [
+    ("Aloha {{first_name}},\n\nBody", "Mona", "Aloha Mona,\n\nBody"),
+    ("Aloha {{first_name}},\n\nBody", "", "Aloha,\n\nBody"),
+    ("Hi {{ contact.first_name }}! See you, {{first_name}}.", "", "Hi! See you,."),
+    ("No field here", "", "No field here"),
+])
+def test_personalise_fills_or_drops_the_first_name(runner, text, first, want):
+    assert runner.personalise(text, first) == want
+
+
+def test_the_sent_email_never_shows_the_merge_field(cx, monkeypatch, runner):
+    sequences.upsert(cx, slug="nurture", name="Nurture", trigger_kind="manual",
+                     steps=[{"step_no": 1, "subject": "For {{first_name}}",
+                             "body_md": "Aloha {{first_name}},\n\nBody", "delay_days": 0}])
+    cx.execute("CREATE TABLE IF NOT EXISTS people (email TEXT, name TEXT)")
+    cx.execute("INSERT INTO people (email, name) VALUES ('a@b.com', 'mona smith')")
+    cx.commit()
+    sent = _sends(cx, monkeypatch, runner)
+    runner.run_once(cx, now=NOW)
+    assert "{{" not in sent[0]["body_md"] and "{{" not in sent[0]["subject"]
+    assert sent[0]["body_md"].startswith("Aloha Mona,")
+
+
+def test_a_dry_run_prints_no_address(cx, monkeypatch, runner, capsys):
+    runner.run_once(cx, now=NOW, dry_run=True)
+    assert "a@b.com" not in capsys.readouterr().out
 
 
 def test_a_claim_left_by_a_crash_is_closed_never_resent(cx, monkeypatch, runner):

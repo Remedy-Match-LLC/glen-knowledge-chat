@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -56,6 +57,35 @@ def _html(body_md):
     esc = _h.escape(body_md).replace("\n\n", "</p><p>").replace("\n", "<br>")
     return ('<div style="font-family:Arial,sans-serif;font-size:16px;'
             'line-height:1.55"><p>' + esc + "</p></div>")
+
+
+_FIRST_NAME = re.compile(r"\{\{\s*(contact\.)?first_name\s*\}\}")
+
+
+def _first_name(cx, email):
+    """The first name on her People record, or "" when there is none or it fails."""
+    try:
+        from dashboard import portal_welcome
+        row = cx.execute("SELECT name FROM people WHERE email=?",
+                         ((email or "").strip().lower(),)).fetchone()
+        return portal_welcome._first_name(row[0] if row else "")
+    except Exception:
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        return ""
+
+
+def personalise(text, first):
+    """Fill {{first_name}} (the steps' own merge field). With no name on file the
+    greeting reads "Aloha," and any other copy of the field is dropped, so nobody
+    ever sees the braces."""
+    text = str(text or "")
+    if first:
+        return _FIRST_NAME.sub(first, text)
+    text = re.sub(r"[ \t]+" + _FIRST_NAME.pattern + r"(?=\s*[,!.])", "", text)
+    return _FIRST_NAME.sub("", text)
 
 
 class _Lent:
@@ -118,7 +148,7 @@ def run_once(cx, *, now=None, dry_run=False, max_catchup_days=MAX_CATCHUP_DAYS):
     for d in _seq.due(cx, now=now, max_catchup_days=max_catchup_days):
         if dry_run:
             counts["would_send"] += 1
-            print(f"[dry] {d['email']} <- step {d['step_no']} \"{d['subject'][:50]}\"")
+            print(f"[dry] {d['slug']} step {d['step_no']} would send", flush=True)
             continue
         if not _seq.claim(cx, d["slug"], d["step_no"], d["email"]):
             continue                      # another process owns this send
@@ -134,21 +164,37 @@ def run_once(cx, *, now=None, dry_run=False, max_catchup_days=MAX_CATCHUP_DAYS):
             _seq.mark_failed(cx, d["slug"], d["step_no"], d["email"], "malformed address")
             counts["failed"] += 1
             continue
+        first = _first_name(cx, d["email"])
         try:
-            outcome, mid = send_one(cx, to_email=d["email"], subject=d["subject"],
-                                    body_md=d["body_md"], slug=d["slug"])
+            # End the read transaction first: no connection idles in one across the
+            # network call, and a failed read cannot leave the writes below aborted.
+            cx.rollback()
+        except Exception:
+            pass
+        try:
+            outcome, mid = send_one(cx, to_email=d["email"],
+                                    subject=personalise(d["subject"], first),
+                                    body_md=personalise(d["body_md"], first),
+                                    slug=d["slug"])
         except Exception as e:  # noqa: BLE001 — one bad address must not stop the tick
             _seq.mark_failed(cx, d["slug"], d["step_no"], d["email"], type(e).__name__)
             counts["failed"] += 1
             print(f"[seq] send failed step {d['step_no']}: {type(e).__name__}", flush=True)
             continue
+        try:
+            cx.rollback()      # a failed query inside deliver must not abort the writes
+        except Exception:
+            pass
         if outcome == "ses":
             _seq.mark_sent(cx, d["slug"], d["step_no"], d["email"], mid or "")
             counts["sent"] += 1
         elif outcome == "unknown":
-            # SES may have taken it. Recorded as sent so it is never sent twice.
-            _seq.mark_sent(cx, d["slug"], d["step_no"], d["email"], "ses-unknown")
+            # SES may have taken it. Its own status: never resent, never called sent,
+            # and the tick reports it as a failure for someone to look at.
+            _seq.mark_unknown(cx, d["slug"], d["step_no"], d["email"],
+                              "SES may have taken it; not resent")
             counts["unknown"] += 1
+            counts["failed"] += 1
         elif outcome == "suppressed":
             _seq.mark_skipped(cx, d["slug"], d["step_no"], d["email"],
                               "suppressed (SES check)")

@@ -265,6 +265,18 @@ def mark_failed(cx, slug, step_no, email, error):
     cx.commit()
 
 
+def mark_unknown(cx, slug, step_no, email, reason):
+    """SES may or may not have taken this send. Its own status, so it is never resent
+    (any row blocks a resend) and never counted as sent."""
+    e = (email or "").strip().lower()
+    cx.execute("""INSERT INTO sequence_sends
+        (slug, step_no, email, status, error) VALUES (?,?,?,'unknown',?)
+        ON CONFLICT(slug, step_no, email) DO UPDATE SET
+          status='unknown', error=excluded.error""",
+        (slug, int(step_no), e, str(reason)[:500]))
+    cx.commit()
+
+
 def mark_skipped(cx, slug, step_no, email, reason):
     e = (email or "").strip().lower()
     cx.execute("""INSERT INTO sequence_sends
