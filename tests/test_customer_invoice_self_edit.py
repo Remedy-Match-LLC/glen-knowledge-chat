@@ -144,3 +144,30 @@ def test_invoice_line_view_round_trips_refill_format():
         "slug": "iop-syntropy", "name": "IOP Syntropy", "qty": 2,
         "unit_cents": 5000, "line_cents": 10000, "format": "refill"})
     assert view["format"] == "refill"
+
+
+@pytest.mark.parametrize("extra", [{"group_shipment_id": 4},
+                                   {"address": {"state": "HI"}},
+                                   {"pay_status": "paid"}])
+def test_a_customer_edit_keeps_grouped_hawaii_and_paid_shipping(monkeypatch, extra):
+    appmod = _app()
+    order = {"id": 51, "source": "in-house", "external_ref": "INH-G",
+             "email": "g@example.com", "name": "G", "status": "confirmed",
+             "channel": "retail", "shipping_cents": 900,
+             "items": [{"slug": "iop-syntropy", "qty": 1}], **extra}
+    captured = {}
+    monkeypatch.setattr(appmod, "_invoice_order_for_token", lambda _t: order)
+    monkeypatch.setattr(appmod, "_get_product", lambda slug: {"name": slug, "price_cents": 6997,
+                                                               "bottle_type": "30 Caps"})
+
+    def fake_reprice(_cx, _order, lines, **kwargs):
+        captured.update(kwargs=kwargs)
+        return ({"items_rec": lines, "shipping_cents": 900, "total_cents": 7897}, False)
+    monkeypatch.setattr(appmod, "_reprice_and_persist_invoice", fake_reprice)
+    monkeypatch.setattr(appmod._bos_orders, "get_order", lambda _cx, _oid: order)
+    monkeypatch.setattr(appmod, "_invoice_summary", lambda _o: {"total_cents": 7897})
+    monkeypatch.setattr(appmod._inbox, "send_email", lambda *a, **k: None)
+    appmod.app.test_client().post("/api/invoice/token/update",
+                                  json={"lines": [{"slug": "iop-syntropy", "qty": 2}]})
+    assert captured["kwargs"]["shipping_override_cents_in"] == 900
+    assert captured["kwargs"]["keep_hand_set"] is True

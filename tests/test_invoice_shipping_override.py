@@ -159,3 +159,39 @@ def test_the_editor_reports_a_typed_figure():
     assert html.count("body.shipping_typed = SHIP_TYPED;") == 2
     assert "SHIP_TYPED = !!o.shipping_hand_set;" in html
     assert 'SHIP_TYPED=true; recalc(); });' in html
+
+
+def _persist_spy(monkeypatch, app):
+    seen = {}
+
+    def fake_price(lines, **kw):
+        seen["price"] = kw
+        ship = kw.get("shipping_override_cents_in")
+        return {"items_rec": [], "shipping_cents": ship if ship is not None else 6500,
+                "get_cents": 0, "discount_cents": 0, "adjustment_cents": 0,
+                "points_redeemed_cents": 0, "total_cents": 1000,
+                "shipping_hand_set": False}
+    monkeypatch.setattr(app, "_price_inhouse_invoice", fake_price)
+    monkeypatch.setattr(app._bos_orders, "upsert_order",
+                        lambda cx, **kw: seen.__setitem__("upsert", kw) or 1)
+    monkeypatch.setattr(app, "_harvest_line_note_snippets", lambda *a, **k: None)
+    return seen
+
+
+MONA = {"id": 300, "source": "in-house", "external_ref": "M", "email": "", "items": [],
+        "shipping_cents": 3300, "shipping_hand_set": 1, "channel": "retail"}
+
+
+def test_a_recomputing_caller_keeps_a_typed_figure(stub_pricer, monkeypatch):
+    seen = _persist_spy(monkeypatch, stub_pricer)
+    stub_pricer._reprice_and_persist_invoice(None, MONA, LINES, pickup=False)
+    assert seen["price"]["shipping_override_cents_in"] == 3300
+    assert seen["upsert"]["shipping_hand_set"] is None          # flag left as it is
+
+
+def test_clearing_the_field_in_edit_invoice_recomputes(stub_pricer, monkeypatch):
+    seen = _persist_spy(monkeypatch, stub_pricer)
+    stub_pricer._reprice_and_persist_invoice(None, MONA, LINES, pickup=False,
+                                             recompute_shipping=True)
+    assert seen["price"]["shipping_override_cents_in"] is None
+    assert seen["upsert"]["shipping_hand_set"] is False

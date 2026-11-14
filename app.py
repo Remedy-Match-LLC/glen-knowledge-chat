@@ -63351,7 +63351,8 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
                                  address_override=None, shipping_override_cents_in=None,
                                  strict_packaging=False, points_redeem_cents_in=None,
                                  allow_waitlist=False, keep_hand_set=False,
-                                 shipping_fallback_cents_in=None, shipping_typed=None):
+                                 shipping_fallback_cents_in=None, shipping_typed=None,
+                                 recompute_shipping=False):
     """Reprice an order's line items at the current pricing (membership-aware) and
     persist the invoice. Shared by the manual invoice editor (/api/orders/<oid>/edit)
     and the one-click grant-and-reprice button. Carries the order's existing points +
@@ -63364,8 +63365,16 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
 
     keep_hand_set=True leaves the order's shipping_hand_set flag as it is: for a caller
     that passes the stored shipping back as the override, which says nothing about who
-    set it. Otherwise the flag follows this save."""
+    set it. Otherwise the flag follows this save.
+
+    A figure the owner typed survives a caller that recomputes (caregiver billing,
+    grant member access, a Biofield raise), unless recompute_shipping says the owner
+    cleared it in Edit Invoice (2026-11-14 review, round 1)."""
     email = order.get("email") or ""
+    if (shipping_override_cents_in in (None, "") and not recompute_shipping
+            and order.get("shipping_hand_set") and not pickup):
+        shipping_override_cents_in = order.get("shipping_cents")
+        keep_hand_set = True
     # address_override (from the editor form) makes the editor authoritative for the
     # ship-to: reprice AND persist against it. None -> use the order's stored address
     # and leave it untouched (the grant-and-reprice + membership-toggle callers pass
@@ -63638,6 +63647,8 @@ def api_orders_edit(oid):
                 shipping_override_cents_in=body.get("shipping_cents"),
                 shipping_typed=(bool(body.get("shipping_typed"))
                                 if "shipping_typed" in body else None),
+                # A blank field in Edit Invoice is the owner asking for the rates.
+                recompute_shipping=body.get("shipping_cents") in (None, ""),
                 invoice_note=body.get("invoice_note"),
                 address_override=(_addr_in if isinstance(_addr_in, dict) else None),
                 strict_packaging=True,
@@ -66178,7 +66189,13 @@ def api_invoice_update(token):
                             refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}))
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
-    _hand_set = bool(order.get("shipping_hand_set"))
+    # Kept as stored, never recomputed by a customer: a figure the owner typed, a
+    # household's combined-shipment share (recomputed only for the whole group), a
+    # Hawaii shipment (always priced by hand), and a paid order (2026-11-14 review).
+    _ship_state = str((order.get("address") or {}).get("state") or "").strip().upper()
+    _hand_set = bool(order.get("shipping_hand_set") or order.get("group_shipment_id")
+                     or _ship_state in ("HI", "HAWAII")
+                     or (order.get("pay_status") or "") == "paid")
     _ship_before = int(order.get("shipping_cents") or 0)
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
