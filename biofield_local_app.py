@@ -3368,6 +3368,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # An animal's lines are marked as its own, as on a raise.
                 _htag = _household_share(test_id, email)["tag"]
                 if _htag:
+                    # Stored first, as on a raise: a rename must not orphan these.
+                    with sqlite3.connect(db_path) as _tcx:
+                        biofield_progress.remember_household_tag(_tcx, test_id, _htag)
                     for _ln in built["lines"]:
                         _ln["note"] = biofield_invoice.household_note(
                             _htag[4:], _ln.get("note") or "")
