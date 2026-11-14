@@ -2446,11 +2446,29 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     invoice = {"ok": True, "order_id": paid.get("order_id"),
                                "reason": "prepaid"}
                 else:
+                    _fee = {"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}
+                    _htag = _household_share(test_id, email)["tag"]
+                    if _htag:
+                        _fee["note"] = _htag   # an animal's fee is marked as its own
                     invoice = invoice_create(
                         {"name": d.get("name") or "", "email": email},
-                        [{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}],
+                        [_fee],
                         invoice_note=biofield_invoice.DEFAULT_INVOICE_NOTE,
                         idempotency_key=(d.get("idempotency_key") or ""))
+                    # Store whose fee draft this is, so a household raise later reads
+                    # its lines as this intake's (2026-11-14 review, round 5).
+                    try:
+                        if invoice.get("ok") and invoice.get("order_id"):
+                            with sqlite3.connect(db_path) as _lcx:
+                                biofield_progress.link_order(
+                                    _lcx, test_id, invoice["order_id"],
+                                    only_if_unlinked=True)
+                                if _htag:
+                                    biofield_progress.remember_household_tag(
+                                        _lcx, test_id, _htag)
+                    except Exception as _le:
+                        print(f"[progress] {test_id}: header link not stored: {_le!r}",
+                              flush=True)
         return {"ok": True, "e4l": ctx, "html": _e4l_panel(test_id, ctx),
                 "invoice": invoice, "client_id": cid}
 
@@ -2661,7 +2679,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 out["known_tags"].add(tag_of(t))
                 if stored.get(t):
                     out["known_tags"].add(stored[t])
-            if me_animal and out["sharers"]:
+            # Every animal's lines are marked, shared or not (Glen 2026-11-14: "yes",
+            # a pet's own remedies earn no membership months). Unmarked is a person.
+            if me_animal:
                 out["tag"] = tag_of(me)
                 out["own_tags"] = {stored[t] for t in [me] + others
                                    if stored.get(t) and _same_subject(cx, t, me)}
@@ -3007,7 +3027,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         clash = _draft_clash(test_id, _pub_email, oid) if _pub_email else ""
         _pub_sh = (_household_share(test_id, _pub_email) if _pub_email
                    else {"tag": "", "sharers": [], "known_tags": set()})
-        if not clash and _pub_sh["tag"]:
+        if not clash and _pub_sh["tag"] and _pub_sh.get("sharers"):
             # A pet stored as the order's only holder still publishes only an order
             # carrying its own lines (2026-11-14 review, round 2).
             clash = ("Not raised: this order carries none of this pet's lines. "
@@ -3320,6 +3340,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                      "its open invoice. Use Raise invoice, which edits "
                                      "only this intake's lines.")}
             else:
+                # An animal's lines are marked as its own, as on a raise.
+                _htag = _household_share(test_id, email)["tag"]
+                if _htag:
+                    for _ln in built["lines"]:
+                        _ln["note"] = biofield_invoice.household_note(
+                            _htag[4:], _ln.get("note") or "")
                 # replace_open: a re-hand-off cancels prior open drafts, so no pileup.
                 note = biofield_invoice.build_invoice_note(rep.get("phase"), rep.get("location"))
                 created = invoice_create({"name": client.get("name"), "email": email},

@@ -1410,3 +1410,28 @@ def test_the_pet_publishes_a_shared_invoice_with_the_owners_ff(tmp_path):
                            "note": "For Rover"})
     r = client.post(f"/author/{ann}/invoice/publish", json={"order_id": 7})
     assert r.status_code == 409 and FF in r.get_json()["animal_refused"], r.get_json()
+
+
+def test_a_pet_alone_has_its_lines_marked(tmp_path):
+    """Glen 2026-11-14 ("yes"): every animal's lines are marked, shared or not."""
+    client, db, state = _stateful_app(tmp_path, [])
+    pet = _pet(client)
+    _chain(db, pet, [INFO])
+    assert client.post(f"/author/{pet}/invoice", json={}).status_code == 200
+    assert state["items"] and all((l.get("note") or "").startswith("For Rover")
+                                  for l in state["items"]), state["items"]
+
+
+def test_the_pets_header_fee_never_becomes_the_owners(tmp_path):
+    """Round 5: a fee draft made by the pet's header is linked to the pet, so the
+    pet's raise replaces it and the owner is never charged a second fee."""
+    from dashboard import biofield_progress as bp
+    client, db, state = _stateful_app(tmp_path, [{"slug": "biofield-analysis", "qty": 1}])
+    _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    with sqlite3.connect(db) as cx:
+        bp.link_order(cx, pet, 7)              # what the pet's header now stores
+    _chain(db, pet, [INFO])
+    assert client.post(f"/author/{pet}/invoice", json={}).status_code == 200
+    fees = [l for l in state["items"] if l["slug"] == "biofield-analysis"]
+    assert len(fees) == 1 and fees[0]["note"].startswith("For Rover"), state["items"]
