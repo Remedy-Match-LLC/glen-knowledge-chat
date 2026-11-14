@@ -59972,33 +59972,66 @@ def _hawaii_date(value):
     return dt.astimezone(ZoneInfo("Pacific/Honolulu")).date()
 
 
+def _reminded_source(src):
+    """Grant sources that get a renewal reminder of their own."""
+    src = src or ""
+    return (src.startswith("prepay_") or src == CARE_TASTER_SOURCE
+            or src in _membership_product_sources())
+
+
 def _cover_continues(row):
-    """True when this grant ending does not end the person's care: a later grant, a
-    billing membership subscription, or a household plan that covers them past it."""
-    if _membership_continues(row):
+    """True when this grant ending does not end the person's care: a billing membership
+    subscription, a later grant that will itself be reminded, or a household plan that
+    covers them past this date. A later grant of a kind that is never reminded (such
+    as biofield_month_delivery) does not count, or no prompt would ever go out."""
+    email = (row["email"] or "").strip().lower()
+    expiry_h = _hawaii_date(row["expires_at"]).isoformat()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        try:
+            from dashboard import subscriptions as _subs
+            if _subs.active_memberships_by_email(cx, email):
+                return True
+        except Exception:
+            try:
+                cx.rollback()
+            except Exception:
+                pass
+        later = cx.execute(
+            "SELECT source FROM memberships WHERE lower(email)=? AND id<>? AND expires_at > ?",
+            (email, row["id"], row["expires_at"])).fetchall()
+    if any(_reminded_source(l[0]) for l in later):
         return True
     if not _family_plan_enabled():
         return False
-    email = (row["email"] or "").strip().lower()
     try:
         from dashboard import family_plan as _fp
+        from dashboard import household as _hh
         with db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
-            if not _fp.covers(cx, email):
-                return False
-            # A holder whose own plan ends before this grant does is not covered past it.
-            end = None
-            if _fp.is_active(cx, email):
-                end = _fp.term_ends(cx, email) or _fp.access_ends(cx, email)
+            holders = [email]
+            try:
+                holders += [(c["primary_email"] or "").strip().lower()
+                            for c in _hh.caregivers_for(cx, email)]
+            except Exception:
+                # No household links table yet: only their own plan can cover them.
+                try:
+                    cx.rollback()
+                except Exception:
+                    pass
+            for h in holders:
+                if not h or not _fp.is_active(cx, h):
+                    continue
+                end = _fp.term_ends(cx, h) or _fp.access_ends(cx, h)
+                # No end date: an ongoing monthly plan. Else it must outlast this grant.
+                if not end or str(end)[:10] > expiry_h:
+                    return True
     except Exception as e:
         print(f"[renewal-cron] household cover check failed: {e!r}", flush=True)
-        return False
-    if end and str(end)[:10] <= _hawaii_date(row["expires_at"]).isoformat():
-        return False
-    return True
+    return False
 
 
-def _remind_household_terms_ending(now_iso):
+def _remind_household_terms_ending(now_iso, sent_to=None):
     """The household annual is paid once and never renews (Glen, 2026-11-13). Remind
     the holder once a day in the last 3 days, with the renewal link, like the prepaid
     single terms. A renewal bought with the same email starts when this term ends.
@@ -60019,6 +60052,9 @@ def _remind_household_terms_ending(now_iso):
     for row in rows:
         email = row["caregiver_email"]
         end = row["next_charge_at"][:10]
+        if sent_to is not None and (email or "").strip().lower() in sent_to:
+            # Already reminded this run from their own membership row (review round 3).
+            continue
         # One conditional write claims today's reminder, and only while the term still
         # ends on that date and is not cancelled. A renewal or cancel since the list was
         # read, or a second run, sends nothing (review round 2).
@@ -60027,10 +60063,14 @@ def _remind_household_terms_ending(now_iso):
             prev = _fp.claim_reminder(cx, email, today, end)
         if prev is False:
             continue
-        days_left = (_date.fromisoformat(end) - _date.fromisoformat(today)).days
-        s_days = "s" if days_left != 1 else ""
+        # Counted to the last covered day, so the subject agrees with "covers your
+        # household through <date>": today, tomorrow, or in 2 days.
+        days_left = (_date.fromisoformat(_fp.last_covered_day(end))
+                     - _date.fromisoformat(today)).days
+        _when = ("today" if days_left <= 0 else
+                 "tomorrow" if days_left == 1 else f"in {days_left} days")
         last_day = _fp.long_date(_fp.last_covered_day(end))
-        subject = f"Your Household Membership ends in {days_left} day{s_days}"
+        subject = f"Your Household Membership ends {_when}"
         body = (
             f"Aloha,\n\n"
             f"Your Household Membership covers your household through {last_day}. "
@@ -60101,14 +60141,17 @@ def cron_membership_renewals():
             days_left = 0
         # "ends today" / "ends tomorrow" / "ends in 2 days", counted in Hawaii dates
         # so the count matches the date printed beside it.
+        if days_left > 2:
+            # Three emails, on the last three Hawaii days. The UTC window can reach a
+            # fourth day when the run time drifts (review round 3).
+            continue
         _when = ("today" if days_left == 0 else
                  "tomorrow" if days_left == 1 else f"in {days_left} days")
         _src = (r["source"] or "")
         _email_lc = (r["email"] or "").strip().lower()
         if _email_lc in _sent_to:
             continue
-        _reminded_kind = (_src.startswith("prepay_") or _src == CARE_TASTER_SOURCE
-                          or _src in _membership_product_sources())
+        _reminded_kind = _reminded_source(_src)
         if _reminded_kind and _cover_continues(r):
             # Renewed, still billed, moved on to another grant, or covered by a running
             # household plan: this row ending is not their care ending. Say nothing.
@@ -60226,7 +60269,7 @@ def cron_membership_renewals():
             except Exception as e:
                 print(f"[renewal-cron] journey_events insert failed: {e!r}", flush=True)
             reminded += 1
-    reminded += _remind_household_terms_ending(now_iso)
+    reminded += _remind_household_terms_ending(now_iso, sent_to=_sent_to)
     return jsonify({"reminded": reminded}), 200
 
 

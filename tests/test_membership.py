@@ -1212,7 +1212,6 @@ def test_renewal_cron_household_ending_first_still_reminds(app_client_mem, fake_
                      next_charge_at=(now+timedelta(days=1)).date().isoformat())
         _fp.set_status(cx, "lapsing@example.com", _fp.CANCELLING)
         cx.commit()
-    monkeypatch.setattr(app_module, "_membership_continues", lambda r: False)
     fake_smtp.instances = []
     client.post("/api/cron/membership-renewals", headers=_ckey())
     assert _sent_to(fake_smtp, "lapsing@example.com")
@@ -1314,3 +1313,101 @@ def test_signin_email_copy_states_the_real_window(app_module_with_db):
     app_module, _ = app_module_with_db
     assert app_module.AUTH_TOKEN_TTL_LABEL == "a week"
     assert timedelta(minutes=app_module.AUTH_TOKEN_TTL_MIN) == timedelta(days=7)
+
+
+def _household_tables(db):
+    from dashboard import family_plan as _fp, household as _hh, db as _db
+    with _db.connect(db) as cx:
+        _fp.init_family_plan_table(cx)
+        for name in ("init_household_tables",):
+            if hasattr(_hh, name):
+                getattr(_hh, name)(cx)
+                break
+        cx.commit()
+
+
+def test_linked_member_warned_when_caregivers_plan_ends_first(app_client_mem, fake_smtp, monkeypatch):
+    """Round 3: Bob's prepay ends in 2 days; his caregiver's cancelled household plan
+    ends tomorrow. That plan is no cover past Bob's date, so Bob is reminded."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setenv("FAMILY_PLAN_ENABLED", "true")
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    from dashboard import family_plan as _fp, db as _db
+    _household_tables(db)
+    now = datetime.utcnow()
+    _add_membership(db, "bob@example.com", (now+timedelta(days=2)).isoformat()+"Z", "prepay_12mo")
+    with _db.connect(db) as cx:
+        _fp.activate(cx, "alice@example.com", next_charge_at=(now+timedelta(days=1)).date().isoformat())
+        _fp.set_status(cx, "alice@example.com", _fp.CANCELLING)
+        cx.execute("INSERT INTO household_members (primary_email, member_email, created_at) VALUES (?,?,?)",
+                   ("alice@example.com", "bob@example.com", now.isoformat()))
+        cx.commit()
+    from dashboard import household as _hh
+    with _db.connect(db) as cx:
+        assert _hh.caregivers_for(cx, "bob@example.com"), "link not seeded"
+    fake_smtp.instances = []
+    client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert _sent_to(fake_smtp, "bob@example.com")
+
+
+def test_linked_member_silent_under_an_ongoing_household_plan(app_client_mem, fake_smtp, monkeypatch):
+    client, app_module, db = app_client_mem
+    monkeypatch.setenv("FAMILY_PLAN_ENABLED", "true")
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    from dashboard import family_plan as _fp, db as _db
+    _household_tables(db)
+    now = datetime.utcnow()
+    _add_membership(db, "carol@example.com", (now+timedelta(days=2)).isoformat()+"Z", "prepay_12mo")
+    with _db.connect(db) as cx:
+        _fp.activate(cx, "dan@example.com", next_charge_at=(now+timedelta(days=20)).date().isoformat())
+        cx.execute("INSERT INTO household_members (primary_email, member_email, created_at) VALUES (?,?,?)",
+                   ("dan@example.com", "carol@example.com", now.isoformat()))
+        cx.commit()
+    fake_smtp.instances = []
+    client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert not _sent_to(fake_smtp, "carol@example.com")
+
+
+def test_a_later_unreminded_grant_does_not_silence_the_prompt(app_client_mem, fake_smtp, monkeypatch):
+    """Round 3: a later biofield_month_delivery row is never reminded itself, so it must
+    not silence the prepay prompt."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    now = datetime.utcnow()
+    _add_membership(db, "carl@example.com", (now+timedelta(days=1)).isoformat()+"Z", "prepay_12mo")
+    _add_membership(db, "carl@example.com", (now+timedelta(days=2, hours=12)).isoformat()+"Z",
+                    "biofield_month_delivery")
+    fake_smtp.instances = []
+    client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert len(_sent_to(fake_smtp, "carl@example.com")) == 1
+
+
+def test_three_hawaii_days_out_is_not_yet_reminded(app_client_mem, fake_smtp, monkeypatch):
+    """Only the last three Hawaii days (2, 1, today) are reminded: no fourth email."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    from zoneinfo import ZoneInfo
+    now_h = datetime.now(ZoneInfo("Pacific/Honolulu"))
+    d = now_h.date() + timedelta(days=3)
+    exp_h = datetime(d.year, d.month, d.day, 0, 30, tzinfo=ZoneInfo("Pacific/Honolulu"))
+    exp_utc = exp_h.astimezone(timezone.utc)
+    if exp_utc - datetime.now(timezone.utc) >= timedelta(days=3):
+        pytest.skip("outside the 3-day SQL window at this hour")
+    _add_membership(db, "early@example.com", exp_utc.replace(tzinfo=None).isoformat()+"Z", "prepay_12mo")
+    fake_smtp.instances = []
+    client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert not _sent_to(fake_smtp, "early@example.com")
+
+
+def test_household_reminder_skips_someone_already_reminded_this_run(app_client_mem, monkeypatch):
+    _, app_module, _ = app_client_mem
+    monkeypatch.setattr(app_module, "_family_plan_enabled", lambda: True)
+    from dashboard import family_plan as _fp
+    monkeypatch.setattr(_fp, "terms_ending", lambda cx, today: [
+        {"caregiver_email": "holder@example.com", "next_charge_at": "2099-01-02"}])
+    claimed = []
+    monkeypatch.setattr(_fp, "claim_reminder", lambda *a: claimed.append(a) or None)
+    sent = []
+    monkeypatch.setattr(app_module, "_send_inquiry_email", lambda **k: sent.append(k) or True)
+    assert app_module._remind_household_terms_ending("x", sent_to={"holder@example.com"}) == 0
+    assert not sent and not claimed
