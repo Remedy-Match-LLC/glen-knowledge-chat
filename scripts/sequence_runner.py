@@ -7,7 +7,9 @@ deliberate `set_active`.
 
 Order of operations is the safety design:
 
-  1. release stale claims  — a crash mid-send must not wedge a step forever
+  1. close stale claims    — a crash mid-send must not wedge a step forever. The
+                             step is closed as skipped, never reopened: SES may have
+                             taken it before the crash.
   2. skip long-overdue     — a backdated enrollment must not release a burst
   3. claim                 — UNIQUE(slug, step_no, email) arbitrates, not a read
   4. check suppression     — at SEND time; someone can opt out on day 2 of 25
@@ -18,9 +20,9 @@ Order of operations is the safety design:
      tick tries again inside the catch-up window. A send SES may have made is
      recorded as sent and never retried: a duplicate cannot be recalled.
 
-Claim-before-send means a crash between 3 and 5 leaves a stuck row that step 1
-reopens. The alternative failure mode is a duplicate, and a duplicate cannot be
-recalled.
+Claim-before-send means a crash between 3 and 6 leaves a stuck row that step 1
+closes. That can cost one email. The alternative failure mode is a duplicate, and a
+duplicate cannot be recalled.
 
 Usage:
     python3 scripts/sequence_runner.py --dry-run
@@ -91,11 +93,11 @@ def _release(cx, slug, step_no, email):
 def run_once(cx, *, now=None, dry_run=False, max_catchup_days=MAX_CATCHUP_DAYS):
     from dashboard import email_suppression as _es, sequences as _seq
 
-    counts = {"released": 0, "skipped_stale": 0, "would_send": 0,
+    counts = {"abandoned": 0, "skipped_stale": 0, "would_send": 0,
               "sent": 0, "failed": 0, "suppressed": 0, "unknown": 0, "not_sent": 0}
 
     if not dry_run:
-        counts["released"] = _seq.release_stale_claims(
+        counts["abandoned"] = _seq.abandon_stale_claims(
             cx, now=now, older_than_minutes=STALE_CLAIM_MINUTES)
 
     for s in _seq.stale_steps(cx, now=now, max_catchup_days=max_catchup_days):

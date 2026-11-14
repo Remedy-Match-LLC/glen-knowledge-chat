@@ -135,6 +135,18 @@ def test_a_send_ses_may_have_made_is_never_retried(cx, monkeypatch, runner):
     assert row == ("sent", "ses-unknown")
 
 
+def test_a_claim_left_by_a_crash_is_closed_never_resent(cx, monkeypatch, runner):
+    """A crash after SES accepted the email and before mark_sent leaves a claim. A later
+    tick closes it as skipped, so the email is never sent twice (review round 2)."""
+    sequences.claim(cx, "nurture", 1, "a@b.com",
+                    claimed_at=_iso(NOW - datetime.timedelta(hours=2)))
+    sent = _sends(cx, monkeypatch, runner)
+    counts = runner.run_once(cx, now=NOW)
+    assert counts["abandoned"] == 1 and sent == []
+    row = cx.execute("SELECT status, error FROM sequence_sends WHERE step_no=1").fetchone()
+    assert row[0] == "skipped" and "may have gone out" in row[1]
+
+
 def test_an_ses_suppression_is_recorded_as_skipped(cx, monkeypatch, runner):
     _sends(cx, monkeypatch, runner, outcome="suppressed")
     counts = runner.run_once(cx, now=NOW)
