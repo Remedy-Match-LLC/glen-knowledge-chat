@@ -97,15 +97,24 @@ def run_turn(answers, history, query, base_voice, call_model):
     consent_ids = {f["id"] for f in _intake._fields() if f.get("type") == "consent"}
     updates = {k: v for k, v in (updates or {}).items() if k not in consent_ids}
     merged = _ip.merge_answers(answers or {}, updates)
-    if done:
-        say = (say + "\n\n" if say else "") + START_LINE_DONE
     return say or "Could you say that again?", merged, updates, done, False
+
+
+CHAT_SAVED = "_chat_saved"
+
+
+def _blank(v):
+    return v in ("", None, [], {}) or (isinstance(v, str) and not v.strip())
 
 
 def save(cx, email, updates, now_iso):
     """Merge `updates` into the CURRENT stored draft and save it. Re-reads the row so a
-    form save made while the model was thinking is kept. Refuses a submitted intake.
-    Returns the saved answers, or None when nothing was written."""
+    form save made while the model was thinking is kept. Never writes a submitted intake,
+    even one submitted a moment ago (the write is conditional in SQL).
+
+    Each field saved here is listed under CHAT_SAVED until the form has shown it, so a
+    stale open form cannot blank it (see `protect`). Returns the saved answers, or None
+    when nothing was written."""
     from dashboard import intake as _intake, intake_public as _ip
     email = (email or "").strip().lower()
     if not email or _intake.is_submitted(cx, email):
@@ -115,6 +124,36 @@ def save(cx, email, updates, now_iso):
     if not updates:
         return current
     merged = _ip.merge_answers(current, updates)
+    valid = {f["id"] for f in _intake._fields()} - {"email"}
+    learned = [k for k in updates if k in valid and k in merged]
+    if not learned:
+        return current
+    listed = [k for k in (current.get(CHAT_SAVED) or []) if isinstance(k, str)]
+    merged[CHAT_SAVED] = sorted(set(listed) | set(learned))
     merged["email"] = email
-    _intake.save_draft(cx, email, merged, now_iso)
+    if not _intake.save_draft_unless_submitted(cx, email, merged, now_iso):
+        return None
     return merged
+
+
+def protect(stored, incoming):
+    """What a FORM save should store, given the stored answers. A field the chat saved
+    that the form has not yet shown arrives blank from a stale form: keep the chat's
+    value. Once the form sends the stored value back (it has shown it), or sends a
+    different non-blank value (she changed it on the form), the field is the form's
+    again and leaves the list. A field missing from the form save keeps its value."""
+    stored = dict(stored or {})
+    out = dict(incoming or {})
+    listed = [k for k in (stored.get(CHAT_SAVED) or []) if isinstance(k, str)]
+    keep = []
+    for k in listed:
+        if k not in stored or _blank(stored[k]):
+            continue
+        if k not in out or _blank(out[k]):
+            out[k] = stored[k]
+            keep.append(k)
+    if keep:
+        out[CHAT_SAVED] = keep
+    else:
+        out.pop(CHAT_SAVED, None)
+    return out

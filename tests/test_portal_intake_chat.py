@@ -71,9 +71,9 @@ def test_terms_is_the_consent_field_the_filter_drops():
     assert [f["id"] for f in _intake._fields() if f.get("type") == "consent"] == ["terms"]
 
 
-def test_done_tells_her_to_tick_the_consent_herself():
+def test_run_turn_leaves_the_done_line_to_the_route():
     say, *_rest = pic.run_turn({}, [], "that's all", "", lambda s, m: _reply("Lovely.", done=True))
-    assert say.startswith("Lovely.") and pic.START_LINE_DONE in say
+    assert say == "Lovely." and pic.START_LINE_DONE not in say
 
 
 def test_messages_start_with_the_client():
@@ -93,9 +93,45 @@ def _db(tmp_path):
 def test_save_merges_into_the_current_draft(tmp_path):
     cx = _db(tmp_path)
     _intake.save_draft(cx, "a@x.com", {"street": "1 Main", "city": "Old"}, "t0")
-    out = pic.save(cx, "A@x.com", {"city": "Hilo"}, "t1")
+    out = pic.save(cx, "A@x.com", {"city": "Hilo", "bogus": 1}, "t1")
     assert out["street"] == "1 Main" and out["city"] == "Hilo"
-    assert _intake.get_response(cx, "a@x.com")["answers"]["city"] == "Hilo"
+    stored = _intake.get_response(cx, "a@x.com")["answers"]
+    assert stored["city"] == "Hilo" and stored[pic.CHAT_SAVED] == ["city"]
+
+
+def test_save_never_reopens_an_intake_submitted_after_the_check(tmp_path, monkeypatch):
+    cx = _db(tmp_path)
+    _intake.save_draft(cx, "a@x.com", {"city": "Old"}, "t0")
+    real = _intake.get_response
+
+    def submit_in_between(c, e):
+        row = real(c, e)
+        _intake.submit(c, "a@x.com", {"city": "Final"}, "t0")   # another process
+        return row
+    monkeypatch.setattr(_intake, "get_response", submit_in_between)
+    assert pic.save(cx, "a@x.com", {"city": "Hilo"}, "t1") is None
+    monkeypatch.setattr(_intake, "get_response", real)
+    row = _intake.get_response(cx, "a@x.com")
+    assert row["status"] == "submitted" and row["answers"]["city"] == "Final"
+
+
+def test_protect_keeps_chat_answers_a_stale_form_sends_blank():
+    stored = {"city": "Hilo", "street": "1 Main", pic.CHAT_SAVED: ["city", "street"]}
+    out = pic.protect(stored, {"city": "", "street": "1 Main", "dob": "1950-01-01"})
+    assert out["city"] == "Hilo" and out["street"] == "1 Main" and out["dob"] == "1950-01-01"
+    assert out[pic.CHAT_SAVED] == ["city"]     # street was shown by the form, it is the form's now
+
+
+def test_protect_lets_the_form_change_or_later_clear_a_field():
+    stored = {"city": "Hilo", pic.CHAT_SAVED: ["city"]}
+    assert pic.protect(stored, {"city": "Kona"}) == {"city": "Kona"}
+    shown = pic.protect(stored, {"city": "Hilo"})
+    assert shown == {"city": "Hilo"}
+    assert pic.protect(shown, {"city": ""}) == {"city": ""}
+
+
+def test_protect_without_chat_answers_changes_nothing():
+    assert pic.protect({"city": "Hilo"}, {"city": ""}) == {"city": ""}
 
 
 def test_save_refuses_a_submitted_intake(tmp_path):
@@ -146,6 +182,7 @@ def _events(resp):
 def _stored(app_mod, email="alison@x.com"):
     with sqlite3.connect(app_mod.LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
+        _intake.init_intake_table(cx)
         return _intake.get_response(cx, email)
 
 
@@ -199,6 +236,37 @@ def test_route_done_ends_the_mode(app_client):
                              json={"query": "that's everything", "intake_mode": True}))
     assert {"intake": {"mode": False, "done": True, "saved": []}} in ev
     assert any(pic.START_LINE_DONE in (e.get("token") or "") for e in ev)
+
+
+def test_route_failed_save_keeps_her_in_the_intake(app_client, monkeypatch):
+    app_mod, client, fake, calls = app_client
+    token = _portal(app_mod)
+    fake.reply = _reply("All done.", {"city": "Hilo"}, done=True)
+    monkeypatch.setattr(pic, "save", lambda *a: None)
+    ev = _events(client.post(f"/api/portal/{token}/chat",
+                             json={"query": "Hilo", "intake_mode": True}))
+    assert {"intake": {"mode": True, "done": False, "saved": []}} in ev
+    text = "".join(e.get("token") or "" for e in ev)
+    assert "Please say it again" in text and pic.START_LINE_DONE not in text
+
+
+def test_route_intake_store_failure_leaves_ordinary_chat(app_client, monkeypatch):
+    app_mod, client, fake, calls = app_client
+    monkeypatch.setattr(_intake, "is_submitted", lambda *a: (_ for _ in ()).throw(RuntimeError("x")))
+    assert app_mod._portal_intake_chat_response(
+        "alison@x.com", {"name": "A"}, "1 Main", [], True) is None
+
+
+def test_form_save_keeps_the_chat_answer_a_stale_form_blanked(app_client):
+    app_mod, client, fake, calls = app_client
+    token = _portal(app_mod)
+    client.post(f"/api/portal/{token}/chat", json={"query": "Hilo. let's do my intake"})
+    assert _stored(app_mod)["answers"]["city"] == "Hilo"
+    r = client.post(f"/api/intake/save-draft?token={token}",
+                    json={"answers": {"city": "", "street": "1 Main"}})
+    assert r.status_code == 200
+    a = _stored(app_mod)["answers"]
+    assert a["city"] == "Hilo" and a["street"] == "1 Main"
 
 
 def test_route_model_failure_is_a_retryable_error_and_saves_nothing(app_client):

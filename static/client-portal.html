@@ -7325,8 +7325,11 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
 
   let saveTimer = null;
   let saveChain = Promise.resolve(true);
-  window.__intakeForms.set(host, ()=>{
-    clearTimeout(saveTimer);
+  // A refresh first saves what she typed on the form (the server keeps the chat's
+  // answers over this form's blanks), waits for every queued save, then re-reads.
+  window.__intakeForms.set(host, async ()=>{
+    if(saveTimer){ clearTimeout(saveTimer); saveTimer = null; saveNow(); }
+    try{ await saveChain; }catch(e){}
     renderIntakeForm(host, tokenVal, onDone, Object.assign({}, options,
       {loadingText: "Updating with what you told me…"}));
   });

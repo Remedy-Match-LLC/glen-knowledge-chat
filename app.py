@@ -35942,12 +35942,19 @@ def _portal_intake_chat_response(email, portal, query, history, page_says_intake
     from dashboard import intake as _intake, portal_intake_chat as _pic
     if not email or not query:
         return None
-    with db.connect(LOG_DB) as cx:
-        cx.row_factory = sqlite3.Row
-        _intake.init_intake_table(cx)
-        submitted = _intake.is_submitted(cx, email)
-        row = _intake.get_response(cx, email)
-        answers = dict((row["answers"] if row else {}) or {})
+    if not (page_says_intake or _pic.wants_intake(query)):
+        return None   # an ordinary question never touches the intake store
+    try:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _intake.init_intake_table(cx)
+            submitted = _intake.is_submitted(cx, email)
+            row = _intake.get_response(cx, email)
+            answers = dict((row["answers"] if row else {}) or {})
+    except Exception as e:
+        # The intake store failing must not take the ordinary chat down with it.
+        print(f"[portal-intake-chat] read failed: {type(e).__name__}", flush=True)
+        return None
     if not _pic.should_run(submitted, page_says_intake, query):
         return None
     if not str(answers.get("first_name") or "").strip():
@@ -35960,7 +35967,7 @@ def _portal_intake_chat_response(email, portal, query, history, page_says_intake
         from dashboard import portal_triage as _pt_ws
         _warning_keys = _pt_ws.warning_signs(query)
     except Exception as e:
-        print(f"[triage] warning-sign check failed: {e!r}", flush=True)
+        print(f"[triage] warning-sign check failed: {type(e).__name__}", flush=True)
         _warning_keys = []
     _warning_item_id = None
     if _warning_keys:
@@ -35989,14 +35996,18 @@ def _portal_intake_chat_response(email, portal, query, history, page_says_intake
             print(f"[portal-intake-chat] save failed: {type(e).__name__}", flush=True)
         say = _strip_dash(say)
         if updates and saved is None:
+            # Not saved, so not finished: she stays in the intake to say it again.
+            done = False
             say += "\n\nI could not save that answer just now. Please say it again."
+        elif done:
+            say += "\n\n" + _pic.START_LINE_DONE
         if _warning_item_id:
             say += "\n\n" + PORTAL_WARNING_SIGN_LINE
             try:
                 with _db_lock, db.connect(LOG_DB) as _acx:
                     _pt_ws.set_answer(_acx, _warning_item_id, say)
             except Exception as e:
-                print(f"[triage] answer update failed: {e!r}", flush=True)
+                print(f"[triage] answer update failed: {type(e).__name__}", flush=True)
         yield sse({"token": say})
         yield sse({"intake": {"mode": not (done or stopped), "done": bool(done),
                               "saved": sorted(updates) if saved is not None else []}})
@@ -36006,7 +36017,7 @@ def _portal_intake_chat_response(email, portal, query, history, page_says_intake
                 _pchat.record_exchange(_pcx, email, query, say,
                                        client_name=(portal.get("name") or "You"))
         except Exception as e:
-            print(f"[portal-chat] persist failed: {e!r}", flush=True)
+            print(f"[portal-chat] persist failed: {type(e).__name__}", flush=True)
         yield sse({"done": True})
 
     return Response(stream_with_context(generate()), content_type="text/event-stream",
@@ -40329,7 +40340,11 @@ def intake_save_draft():
         if _intake.is_submitted(cx, ident.email):
             return jsonify({"ok": True})
         answers = (request.get_json(silent=True) or {}).get("answers") or {}
-        _intake.save_draft(cx, ident.email, answers, _hst_now().isoformat())
+        # A stale open form must not blank what she just said in the portal chat.
+        from dashboard import portal_intake_chat as _pic
+        _row = _intake.get_response(cx, ident.email)
+        answers = _pic.protect((_row or {}).get("answers") or {}, answers)
+        _intake.save_draft_unless_submitted(cx, ident.email, answers, _hst_now().isoformat())
     return jsonify({"ok": True})
 
 
@@ -40357,6 +40372,12 @@ def intake_submit():
         if ident is None:
             return jsonify({"error": "not_found"}), 404
         answers = (request.get_json(silent=True) or {}).get("answers") or {}
+        # Chat answers a stale form never showed are kept, then the marker is dropped.
+        from dashboard import portal_intake_chat as _pic
+        _row = _intake.get_response(cx, ident.email)
+        if _row and _row.get("status") != "submitted":
+            answers = _pic.protect(_row.get("answers") or {}, answers)
+        answers.pop(_pic.CHAT_SAVED, None)
         errors = _intake.validate_response(answers)
         if errors:
             return jsonify({"error": "invalid", "errors": errors}), 400
