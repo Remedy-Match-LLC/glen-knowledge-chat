@@ -120,7 +120,7 @@ def test_imported_flat_rates_match_glens_answers():
     exp = {
         "nir-brain-frequency-helmet": "L",      # "Helmets: we ship - $32 (Large) each"
         "hair-growth-helmet": "L",
-        "photobiomodulation-package": 5500,      # "Large + Medium" = 32 + 23
+        "photobiomodulation-package": "LM",      # "Large + Medium", both live (Glen 2026-11-14)
         "miracule-water-system": 10000,          # "Miracule: $100"
         "air-surface-pro-plus": "L",            # "Air & Surface PRO+ Large"
         "denas-microcurrent-eye-system": "L",   # "Denas Large (we ship)"
@@ -133,6 +133,9 @@ def test_imported_flat_rates_match_glens_answers():
         assert p, slug
         if cents == "L":   # Glen 2026-11-14: Large follows the live rate
             assert p.get("flat_shipping_boxes") == ["L"], slug
+            assert "flat_shipping_cents" not in p, slug
+        elif cents == "LM":
+            assert p.get("flat_shipping_boxes") == ["L", "M"], slug
             assert "flat_shipping_cents" not in p, slug
         else:
             assert p["flat_shipping_cents"] == cents, slug
@@ -163,12 +166,15 @@ def test_previously_held_devices_now_imported_with_glens_answers():
            "spirit-tuning-fork-172hz": (5000, 1300),
            "frosted-quartz-tuning-fork-172hz": (29700, 1300),
            "blue-blocking-photochromic-sunglasses": (13000, 1300),
-           "healing-tools-package": (799700, 13200)}
+           "healing-tools-package": (799700, "L+10000")}
     for slug, (price, flat) in exp.items():
         p = app._get_product(slug)
         assert p, slug
         assert p["price_cents"] == price, slug
-        assert p["flat_shipping_cents"] == flat, slug
+        if flat == "L+10000":
+            assert p["flat_shipping_cents"] == 10000 and p["flat_shipping_boxes"] == ["L"], slug
+        else:
+            assert p["flat_shipping_cents"] == flat, slug
 
 
 def test_healing_tools_excludes_the_centropix_fee():
@@ -176,7 +182,8 @@ def test_healing_tools_excludes_the_centropix_fee():
     so our $132 covers only the Large box + the ionizer's own parcel. The note
     must say so, or someone later reads $132 as total freight."""
     p = app._get_product("healing-tools-package")
-    assert p["flat_shipping_cents"] == 3200 + 10000
+    # Glen 2026-11-14: the Large box follows the live rate; the ionizer parcel stays $100.
+    assert p["flat_shipping_cents"] == 10000 and p["flat_shipping_boxes"] == ["L"]
     assert "Centropix" in p.get("_note", "")
 
 

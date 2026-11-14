@@ -39,7 +39,7 @@ def rates(monkeypatch, tmp_path):
 
 def _large_box_slugs():
     return sorted(s for s, p in app._PRODUCTS["products"].items()
-                  if p.get("flat_shipping_boxes") == ["L"])
+                  if p.get("flat_shipping_boxes") == ["L"] and not p.get("flat_shipping_cents"))
 
 
 def test_exactly_the_nineteen_name_the_large_box():
@@ -153,3 +153,14 @@ def test_vegicaps_size_4_is_twelve_dollars_and_size_00_unchanged():
     """Glen 2026-11-14: "update the store price to $12 (same item, acid resistant)"."""
     assert app._get_product("empty-vegicaps-size-4")["price_cents"] == 1200
     assert app._get_product("empty-vegicaps-size-00")["price_cents"] == 800
+
+
+def test_packages_follow_the_live_rates(rates):
+    """Glen 2026-11-14: "The packages follow the live rate"."""
+    rates(3275)
+    small_med = shipping.get_current_rates()
+    m = small_med["M"]["charged_cents"]
+    pc = app._price_cart([{"slug": "photobiomodulation-package", "qty": 1}], ship=US, channel="retail")
+    assert pc["shipping_cents"] == 3300 + m
+    pc = app._price_cart([{"slug": "healing-tools-package", "qty": 1}], ship=US, channel="retail")
+    assert pc["shipping_cents"] == 3300 + 10000

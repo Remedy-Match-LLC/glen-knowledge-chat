@@ -25303,7 +25303,7 @@
    "name": "Photobiomodulation Package",
    "price_cents": 599700,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 5500,
+   "flat_shipping_boxes": ["L", "M"],
    "intro": "We just love our new research grade Photobiomodulation Helmets, and I know your brain will love one, too.\r\nCompared to the commercially available unit",
    "source": "gk-device-import-2026-07-20"
   },
@@ -25511,9 +25511,9 @@
    "name": "Healing Tools Package",
    "price_cents": 799700,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 13200,
+   "flat_shipping_cents": 10000, "flat_shipping_boxes": ["L"],
    "intro": "For 40 years I&rsquo;ve been collecting healing tools and therapies in what we call our Healing Oasis. Prior to COVID, we were already working with 85",
-   "_note": "Our shipping covers the Large box ($32) plus the Water Ionizer's own parcel ($100). The Kloud PEMF mat ships from Centropix, who determine and charge their own freight fee directly — it is NOT included here and NOT billed by us.",
+   "_note": "Our shipping covers the Large box (live usps_rates L, since 2026-11-14) plus the Water Ionizer's own parcel ($100). The Kloud PEMF mat ships from Centropix, who determine and charge their own freight fee directly — it is NOT included here and NOT billed by us.",
    "source": "gk-device-import-2026-07-20"
   },
   "bamboo-sanctuary-cloth-with-40-silver": {
