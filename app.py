@@ -5534,6 +5534,16 @@ def begin_page():
     return _serve_funnel_home()
 
 
+@app.route("/begin/free")
+def begin_free_page():
+    """The free-membership page. truly.vip/help points here. Both join buttons open
+    the same "Send my link" form as /begin. Copy approved by Glen, 13 Nov 2026."""
+    resp = send_from_directory(STATIC, "begin-free.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
 @app.route("/purity-stat")
 def purity_stat_page():
     """Public embeddable widget rendering GET /api/purity/stats. iframe-friendly;
