@@ -1450,3 +1450,21 @@ def test_a_pet_named_with_a_digit_is_still_a_tag():
     from dashboard import biofield_invoice as _bfi
     assert _bfi.household_tag_of("For 007") == "For 007"
     assert _bfi.household_tag_of("For sleep") == ""
+
+
+def test_a_tag_stored_before_a_failed_raise_marks_nothing(tmp_path):
+    """Round 7: the tag is stored before prod is written. If that write fails, the
+    retry must still read the pet's unmarked lines as its own, never add a copy."""
+    from dashboard import biofield_progress as bp
+    client, db, state = _stateful_app(
+        tmp_path, [{"slug": "biofield-analysis", "qty": 1},
+                   {"slug": "es1", "qty": 1, "source": "biofield"}])
+    _intake(client, "Ann Owner", OWNER)
+    pet = _pet(client)
+    with sqlite3.connect(db) as cx:
+        bp.link_order(cx, pet, 7)
+        bp.remember_household_tag(cx, pet, "For Rover")   # left by the failed raise
+    _chain(db, pet, [INFO])
+    assert client.post(f"/author/{pet}/invoice", json={}).status_code == 200
+    slugs = [l["slug"] for l in state["items"]]
+    assert slugs.count("es1") == 1 and slugs.count("biofield-analysis") == 1, state["items"]

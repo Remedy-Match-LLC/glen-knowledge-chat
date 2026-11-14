@@ -2640,7 +2640,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return bool(diff) and (_intake_is_animal(cx, test_id)
                                    or any(_intake_is_animal(cx, t) for t in diff))
 
-    def _household_share(test_id, email, order_id=None):
+    def _household_share(test_id, email, order_id=None, items=None):
         """How this intake's lines sit on a household invoice its email shares.
 
         Returns a dict:
@@ -2709,7 +2709,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # and its lines since then are marked. Untagged lines are then the
                 # owner's, from a header or an earlier raise (2026-11-14 review,
                 # round 4). Without one, the pet raised alone and they are its own.
-                _marked = any(stored.get(t) for t in linked)
+                # Read from the draft itself, never from the stored history alone: a
+                # tag stored before a failed create marks nothing (round 7).
+                _linked_tags = set().union(*[stored.get(t, set()) for t in linked])
+                _marked = any(biofield_invoice.household_tag_of(i.get("note"),
+                                                                _linked_tags)
+                              for i in (items or []))
                 if (linked and out["tag"] and not _marked
                         and all(_same_subject(cx, t, me) for t in linked)):
                     out["own_tags"].add("")
@@ -2844,7 +2849,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 and previous.get("pay_status") != "paid")
             else None
         )
-        share = _household_share(test_id, email, update_order_id)
+        share = _household_share(test_id, email, update_order_id,
+                                 previous.get("items") or [])
         tag, sharers = share["tag"], share["sharers"]
         if tag:
             for _ln in built["lines"]:
