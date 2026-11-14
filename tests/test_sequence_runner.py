@@ -115,6 +115,7 @@ def test_the_ses_mail_carries_an_unsubscribe_scoped_to_the_sequence(cx, runner, 
 
 
 def test_a_send_ses_surely_did_not_make_frees_the_claim(cx, monkeypatch, runner):
+    monkeypatch.delenv("SES_SEND_ENABLED", raising=False)      # SES switched off
     _sends(cx, monkeypatch, runner, outcome=None)
     counts = runner.run_once(cx, now=NOW)
     assert counts["not_sent"] == 1 and counts["failed"] == 1 and counts["sent"] == 0
@@ -133,6 +134,28 @@ def test_a_send_ses_may_have_made_is_never_retried(cx, monkeypatch, runner):
     assert sent == []
     row = cx.execute("SELECT status, message_id FROM sequence_sends WHERE step_no=1").fetchone()
     assert row == ("sent", "ses-unknown")
+
+
+def test_a_refusal_while_ses_is_on_fails_once_and_is_not_retried(cx, monkeypatch, runner):
+    monkeypatch.setenv("SES_SEND_ENABLED", "1")
+    monkeypatch.setenv("SES_CONFIGURATION_SET", "test-config-set")
+    calls = _sends(cx, monkeypatch, runner, outcome=None)
+    later = NOW + datetime.timedelta(minutes=15)
+    c1 = runner.run_once(cx, now=NOW)
+    runner.run_once(cx, now=later)
+    assert c1["failed"] == 1 and c1["not_sent"] == 0 and len(calls) == 1
+    row = cx.execute("SELECT status, error FROM sequence_sends WHERE step_no=1").fetchone()
+    assert row[0] == "failed" and "refused" in row[1]
+
+
+def test_a_malformed_address_is_refused_before_sending(cx, monkeypatch, runner):
+    sequences.enroll(cx, "nurture", "x@y.com\nbcc: z@q.com", enrolled_at=_iso(NOW))
+    sent = _sends(cx, monkeypatch, runner)
+    runner.run_once(cx, now=NOW)
+    assert all("\n" not in s["to_email"] for s in sent)
+    rows = cx.execute("SELECT status, error FROM sequence_sends "
+                      "WHERE status='failed'").fetchall()
+    assert rows == [("failed", "malformed address")]
 
 
 def test_a_claim_left_by_a_crash_is_closed_never_resent(cx, monkeypatch, runner):

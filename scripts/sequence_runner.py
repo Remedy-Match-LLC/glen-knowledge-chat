@@ -16,8 +16,9 @@ Order of operations is the safety design:
   5. send                  — through Amazon SES, never GoHighLevel (Glen, 14 Nov 2026:
                              GHL is being retired). SES adds the unsubscribe footer and
                              the one-click headers, scoped to the sequence.
-  6. record sent/failed. A send SES surely did not make frees its claim, so the next
-     tick tries again inside the catch-up window. A send SES may have made is
+  6. record sent/failed. A send SES surely did not make because it is switched off
+     frees its claim, so a later tick tries again inside the catch-up window. A
+     refusal while SES is on is recorded as failed and not retried. A send SES may have made is
      recorded as sent and never retried: a duplicate cannot be recalled.
 
 Claim-before-send means a crash between 3 and 6 leaves a stuck row that step 1
@@ -84,7 +85,13 @@ def send_one(cx, *, to_email, subject, body_md, slug):
 
 
 def _release(cx, slug, step_no, email):
-    """Free this tick's claim on a send SES surely did not make."""
+    """Free this tick's claim on a send SES surely did not make. A failed query inside
+    deliver can leave a Postgres transaction aborted, so it is rolled back first (the
+    claim itself was committed by claim())."""
+    try:
+        cx.rollback()
+    except Exception:
+        pass
     cx.execute("DELETE FROM sequence_sends WHERE slug=? AND step_no=? AND email=? "
                "AND status='claimed'", (slug, int(step_no), (email or "").strip().lower()))
     cx.commit()
@@ -121,6 +128,12 @@ def run_once(cx, *, now=None, dry_run=False, max_catchup_days=MAX_CATCHUP_DAYS):
             _seq.mark_skipped(cx, d["slug"], d["step_no"], d["email"],
                               "suppressed or unsubscribed")
             continue
+        if any(c in d["email"] for c in "\r\n\t ") or "@" not in d["email"]:
+            # A malformed address fails while the message is built, which SES reports
+            # as "unknown". Refused here, so it is never recorded as sent (round 3).
+            _seq.mark_failed(cx, d["slug"], d["step_no"], d["email"], "malformed address")
+            counts["failed"] += 1
+            continue
         try:
             outcome, mid = send_one(cx, to_email=d["email"], subject=d["subject"],
                                     body_md=d["body_md"], slug=d["slug"])
@@ -141,10 +154,17 @@ def run_once(cx, *, now=None, dry_run=False, max_catchup_days=MAX_CATCHUP_DAYS):
                               "suppressed (SES check)")
             counts["suppressed"] += 1
         else:
-            # SES surely sent nothing (switched off, refused, unreachable). The claim is
-            # freed for the next tick; the step goes stale after the catch-up window.
-            _release(cx, d["slug"], d["step_no"], d["email"])
-            counts["not_sent"] += 1
+            # SES surely sent nothing. Switched off: the claim is freed so the step
+            # goes out once SES is back on (inside the catch-up window). Switched on:
+            # SES refused or was unreachable, so it is recorded as failed with that
+            # reason and not retried every tick (review round 3).
+            from dashboard import ses_mail
+            if not ses_mail.enabled():
+                _release(cx, d["slug"], d["step_no"], d["email"])
+                counts["not_sent"] += 1
+            else:
+                _seq.mark_failed(cx, d["slug"], d["step_no"], d["email"],
+                                 "SES refused or unreachable; nothing sent")
             counts["failed"] += 1
     return counts
 
