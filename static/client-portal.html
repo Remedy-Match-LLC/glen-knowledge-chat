@@ -7149,6 +7149,31 @@ async function consultJoin(){
 // options come from Glen's own INTAKE_FORM (dashboard/intake.py) but are still
 // built via createElement/textContent only — never innerHTML — matching the
 // coaches-card pattern above.
+// The intake by conversation (Glen, 2026-11-14). The portal chat walks the client
+// through this form by voice or typing and saves each answer into her draft. While it
+// runs, every open copy of the form is re-read after each saved answer, so a stale form
+// never saves over what she said in the chat.
+window.__intakeChatMode = false;
+window.__intakeForms = window.__intakeForms || new Map();
+window.onPortalIntakeChatEvent = function(info){
+  info = info || {};
+  window.__intakeChatMode = !!info.mode;
+  if(Array.isArray(info.saved) && info.saved.length || info.done){
+    window.__intakeForms.forEach(function(refresh, formHost){
+      if(formHost && formHost.isConnected) refresh(); else window.__intakeForms.delete(formHost);
+    });
+  }
+};
+function startIntakeByConversation(){
+  window.__intakeChatMode = true;
+  var input = document.getElementById("chatInput");
+  if(!input || typeof sendChatMessage !== "function") return false;
+  input.value = "I would like to do my intake by conversation.";
+  try{ input.scrollIntoView({behavior: "smooth", block: "center"}); }catch(e){}
+  sendChatMessage();
+  return true;
+}
+
 function showPortalIntakeComplete(host){
   host.innerHTML = "";
   const title = document.createElement("h2");
@@ -7262,6 +7287,20 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
   intro.className = "muted small";
   intro.textContent = options.intro || "Please complete your intake so Dr. Glen can prepare for your consult.";
   host.appendChild(intro);
+  if(!(stateData && stateData.submitted)){
+    const talk = document.createElement("button");
+    talk.type = "button";
+    talk.className = "btn full";
+    talk.textContent = "Answer by conversation instead";
+    talk.addEventListener("click", ()=>{
+      if(!startIntakeByConversation()) talkNote.textContent = "Open your chat and say: let's do my intake.";
+    });
+    host.appendChild(talk);
+    const talkNote = document.createElement("p");
+    talkNote.className = "muted small";
+    talkNote.textContent = "Talk or type with Dr. Glen’s assistant. Each answer saves here as you go.";
+    host.appendChild(talkNote);
+  }
 
   const collectAnswers = ()=>{
     const out = {};
@@ -7286,6 +7325,11 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
 
   let saveTimer = null;
   let saveChain = Promise.resolve(true);
+  window.__intakeForms.set(host, ()=>{
+    clearTimeout(saveTimer);
+    renderIntakeForm(host, tokenVal, onDone, Object.assign({}, options,
+      {loadingText: "Updating with what you told me…"}));
+  });
   const saveSnapshot = async snapshot=>{
     saveState.className = "intake-save-state";
     saveState.textContent = "Saving…";
@@ -9793,7 +9837,8 @@ async function sendChatMessage(){
         method: "POST",
         credentials: "same-origin",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({query: query, history: chatHistory.map(function(m){
+        body: JSON.stringify({query: query, intake_mode: !!window.__intakeChatMode,
+          history: chatHistory.map(function(m){
           return {role: (m.role==="user"||m.role==="client") ? "user" : "assistant",
                   content: m.content || ""};
         })}),
@@ -9844,6 +9889,8 @@ async function sendChatMessage(){
                 }).join(", "));
                 if(typeof loadCart === "function") loadCart();
               }
+            } else if(evt.intake){
+              if(typeof window.onPortalIntakeChatEvent === "function") window.onPortalIntakeChatEvent(evt.intake);
             } else if(evt.error){
               showChatRetry("Dr. Glen’s assistant is briefly unavailable. Your message is ready to retry.");
             } else if(evt.done){

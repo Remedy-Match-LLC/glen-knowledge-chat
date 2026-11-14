@@ -253,11 +253,11 @@
   async function panelSubmit(){const query=(h.input.value||"").trim();if(!query||sending)return;sending=true;h.input.value="";h.input.disabled=true;h.send.disabled=true;append("user",query);
     const answerBubble=append("assistant","");let answer="";
     try{const resp=await fetch("/api/portal/"+encodeURIComponent(token)+"/chat",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({query:query,page_context:pageContext(),history:chatHistory.map(m=>({role:(m.role==="user"||m.role==="client")?"user":"assistant",content:m.content||""}))})});
+      body:JSON.stringify({query:query,intake_mode:!!window.__intakeChatMode,page_context:pageContext(),history:chatHistory.map(m=>({role:(m.role==="user"||m.role==="client")?"user":"assistant",content:m.content||""}))})});
       if(!resp.ok)throw new Error("Unable to reach Dr. Glen right now.");const reader=resp.body.getReader(),decoder=new TextDecoder();let buf="",done=false;
       while(!done){const chunk=await reader.read();if(chunk.done)break;buf+=decoder.decode(chunk.value,{stream:true});const lines=buf.split("\n");buf=lines.pop();
         for(const line of lines){if(line.slice(0,6)!=="data: ")continue;try{const evt=JSON.parse(line.slice(6));if(evt.token){answer+=evt.token;answerBubble.textContent=answer;h.msgs.scrollTop=h.msgs.scrollHeight}
-          else if(evt.error)throw new Error(String(evt.error));else if(evt.done)done=true}catch(e){if(e instanceof SyntaxError)continue;throw e}}}
+          else if(evt.intake){if(typeof window.onPortalIntakeChatEvent==="function")window.onPortalIntakeChatEvent(evt.intake)}else if(evt.error)throw new Error(String(evt.error));else if(evt.done)done=true}catch(e){if(e instanceof SyntaxError)continue;throw e}}}
       // The reply is complete: draw its links (client-portal.html's setChatText). While it
       // streamed it was plain text, so a half-written link was never clickable.
       if(answer&&typeof window.setChatText==="function"){try{window.setChatText(answerBubble,answer)}catch(linkErr){answerBubble.textContent=answer}}

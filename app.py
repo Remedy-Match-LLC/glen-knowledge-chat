@@ -35935,6 +35935,84 @@ def api_invoice_open(token):
     return jsonify({"ok": True, "recorded": True, "open": st})
 
 
+def _portal_intake_chat_response(email, portal, query, history, page_says_intake):
+    """One turn of the intake guide in the portal chat, as the same SSE stream the
+    concierge sends, or None when this turn is not an intake turn. See
+    dashboard/portal_intake_chat.py for the rules."""
+    from dashboard import intake as _intake, portal_intake_chat as _pic
+    if not email or not query:
+        return None
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _intake.init_intake_table(cx)
+        submitted = _intake.is_submitted(cx, email)
+        row = _intake.get_response(cx, email)
+        answers = dict((row["answers"] if row else {}) or {})
+    if not _pic.should_run(submitted, page_says_intake, query):
+        return None
+    if not str(answers.get("first_name") or "").strip():
+        display = str(portal.get("name") or "").strip()
+        if display:
+            answers["first_name"] = display.split()[0]
+    # The warning-sign backstop runs on intake turns too: symptoms are what an intake
+    # is about, and a client may name an urgent one mid-form.
+    try:
+        from dashboard import portal_triage as _pt_ws
+        _warning_keys = _pt_ws.warning_signs(query)
+    except Exception as e:
+        print(f"[triage] warning-sign check failed: {e!r}", flush=True)
+        _warning_keys = []
+    _warning_item_id = None
+    if _warning_keys:
+        _warning_item_id = _start_warning_sign_delivery(
+            email, portal.get("name") or "", query, _warning_keys)
+
+    def _call(system, messages):
+        resp = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=800,
+                                   system=system, messages=messages)
+        return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+
+    def generate():
+        try:
+            say, _merged, updates, done, stopped = _pic.run_turn(
+                answers, history, query, get_system_prompt("self-healing"), _call)
+        except Exception as e:
+            print(f"[portal-intake-chat] turn failed: {type(e).__name__}", flush=True)
+            yield sse({"error": "assistant temporarily unavailable"}); return
+        saved = None
+        try:
+            with _db_lock, db.connect(LOG_DB) as wcx:
+                wcx.row_factory = sqlite3.Row
+                _intake.init_intake_table(wcx)
+                saved = _pic.save(wcx, email, updates, _hst_now().isoformat())
+        except Exception as e:
+            print(f"[portal-intake-chat] save failed: {type(e).__name__}", flush=True)
+        say = _strip_dash(say)
+        if updates and saved is None:
+            say += "\n\nI could not save that answer just now. Please say it again."
+        if _warning_item_id:
+            say += "\n\n" + PORTAL_WARNING_SIGN_LINE
+            try:
+                with _db_lock, db.connect(LOG_DB) as _acx:
+                    _pt_ws.set_answer(_acx, _warning_item_id, say)
+            except Exception as e:
+                print(f"[triage] answer update failed: {e!r}", flush=True)
+        yield sse({"token": say})
+        yield sse({"intake": {"mode": not (done or stopped), "done": bool(done),
+                              "saved": sorted(updates) if saved is not None else []}})
+        try:
+            from dashboard import portal_chat as _pchat
+            with _db_lock, db.connect(LOG_DB) as _pcx:
+                _pchat.record_exchange(_pcx, email, query, say,
+                                       client_name=(portal.get("name") or "You"))
+        except Exception as e:
+            print(f"[portal-chat] persist failed: {e!r}", flush=True)
+        yield sse({"done": True})
+
+    return Response(stream_with_context(generate()), content_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.route("/api/portal/<token>/chat", methods=["POST", "OPTIONS"])
 def api_portal_chat(token):
     if request.method == "OPTIONS":
@@ -35961,6 +36039,12 @@ def api_portal_chat(token):
         return jsonify({"error": "not found"}), 404
     email = (portal.get("email") or "").strip().lower()
     content = portal.get("content") or {}
+    # The intake by conversation (Glen, 2026-11-14): while her intake is unsubmitted, a
+    # client who asks for it, or is already in it, is walked through the form here.
+    _intake_turn = _portal_intake_chat_response(
+        email, portal, query, history, bool(data.get("intake_mode")))
+    if _intake_turn is not None:
+        return _intake_turn
     # The portal token authenticates this client's email. Only explicit order
     # verbs plus exact, currently available catalog names can mutate the cart.
     cart_added = []
