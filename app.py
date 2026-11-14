@@ -59972,6 +59972,32 @@ def _hawaii_date(value):
     return dt.astimezone(ZoneInfo("Pacific/Honolulu")).date()
 
 
+def _hawaii_hour(value):
+    from zoneinfo import ZoneInfo
+    dt = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Pacific/Honolulu")).hour
+
+
+def _reminded_today(email, today_h):
+    """True when any membership row for this email was reminded on this Hawaii date."""
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    with db.connect(LOG_DB) as cx:
+        vals = [r[0] for r in cx.execute(
+            "SELECT last_reminder_at FROM memberships WHERE lower(email)=? "
+            "AND last_reminder_at IS NOT NULL", (email,)).fetchall()]
+    for v in vals:
+        try:
+            if _hawaii_date(v) >= today_h:
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _reminded_source(src):
     """Grant sources that get a renewal reminder of their own."""
     src = src or ""
@@ -59992,11 +60018,17 @@ def _cover_continues(row):
             from dashboard import subscriptions as _subs
             if _subs.active_memberships_by_email(cx, email):
                 return True
-        except Exception:
+        except Exception as e:
             try:
                 cx.rollback()
             except Exception:
                 pass
+            _m = str(e).lower()
+            if "no such table" not in _m and "does not exist" not in _m:
+                # Unknown is not "ended": no email rather than a wrong one (round 4).
+                # A missing table means no subscriptions exist, which is known.
+                print(f"[renewal-cron] subscription check failed: {e!r}", flush=True)
+                return True
         later = cx.execute(
             "SELECT source FROM memberships WHERE lower(email)=? AND id<>? AND expires_at > ?",
             (email, row["id"], row["expires_at"])).fetchall()
@@ -60028,6 +60060,7 @@ def _cover_continues(row):
                     return True
     except Exception as e:
         print(f"[renewal-cron] household cover check failed: {e!r}", flush=True)
+        return True
     return False
 
 
@@ -60052,8 +60085,9 @@ def _remind_household_terms_ending(now_iso, sent_to=None):
     for row in rows:
         email = row["caregiver_email"]
         end = row["next_charge_at"][:10]
-        if sent_to is not None and (email or "").strip().lower() in sent_to:
-            # Already reminded this run from their own membership row (review round 3).
+        if ((sent_to is not None and (email or "").strip().lower() in sent_to)
+                or _reminded_today(email, _date.fromisoformat(today))):
+            # Already reminded today from their own membership row (review rounds 3, 4).
             continue
         # One conditional write claims today's reminder, and only while the term still
         # ends on that date and is not cancelled. A renewal or cancel since the list was
@@ -60112,14 +60146,14 @@ def cron_membership_renewals():
                 "SELECT id, email, expires_at, last_reminder_at, source FROM memberships "
                 "WHERE expires_at::timestamptz > now() "
                 "AND expires_at::timestamptz < now() + interval '3 days' "
-                "LIMIT 500"
+                "LIMIT 5000"
             ).fetchall()
         else:
             rows = cx.execute(
                 "SELECT id, email, expires_at, last_reminder_at, source FROM memberships "
                 "WHERE datetime(expires_at) > datetime('now') "
                 "AND datetime(expires_at) < datetime('now', '+3 days') "
-                "LIMIT 500"
+                "LIMIT 5000"
             ).fetchall()
     reminded = 0
     _today_h = _hawaii_date(now_iso)
@@ -60141,9 +60175,14 @@ def cron_membership_renewals():
             days_left = 0
         # "ends today" / "ends tomorrow" / "ends in 2 days", counted in Hawaii dates
         # so the count matches the date printed beside it.
-        if days_left > 2:
+        try:
+            _early = _hawaii_hour(r["expires_at"]) < 7
+        except Exception:
+            _early = False
+        if days_left > 3 or (days_left == 3 and not _early):
             # Three emails, on the last three Hawaii days. The UTC window can reach a
-            # fourth day when the run time drifts (review round 3).
+            # fourth day when the run time drifts (review round 3). An expiry before the
+            # 7 AM run is already over on its own date, so it starts a day earlier.
             continue
         _when = ("today" if days_left == 0 else
                  "tomorrow" if days_left == 1 else f"in {days_left} days")
@@ -60242,6 +60281,23 @@ def cron_membership_renewals():
             # and household annuals. This branch used to send the retired "record a
             # fresh video at truly.vip/Results" coaching text to all of them.
             continue
+        # Claim before sending: one conditional write, so two runs (or a retry after a
+        # partial run) cannot both send. Nobody is emailed twice on one Hawaii day,
+        # whichever of their rows was stamped (review round 4).
+        if _reminded_today(_email_lc, _today_h):
+            continue
+        with _db_lock, db.connect(LOG_DB) as cx:
+            # Two statements, not "? IS NULL": Postgres cannot type a bare NULL parameter.
+            if last is None:
+                cur = cx.execute("UPDATE memberships SET last_reminder_at=? WHERE id=? "
+                                 "AND last_reminder_at IS NULL", (now_iso, r["id"]))
+            else:
+                cur = cx.execute("UPDATE memberships SET last_reminder_at=? WHERE id=? "
+                                 "AND last_reminder_at=?", (now_iso, r["id"], last))
+            cx.commit()
+            claimed = (cur.rowcount or 0) == 1
+        if not claimed:
+            continue
         try:
             ok_sent = _send_inquiry_email(
                 to_email=r["email"], subject=subject, body=body,
@@ -60250,13 +60306,13 @@ def cron_membership_renewals():
         except Exception as e:
             print(f"[renewal-cron] send failed for {r['email']}: {e!r}", flush=True)
             ok_sent = False
+        if not ok_sent:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                cx.execute("UPDATE memberships SET last_reminder_at=? WHERE id=? "
+                           "AND last_reminder_at=?", (last, r["id"], now_iso))
+                cx.commit()
         if ok_sent:
             _sent_to.add(_email_lc)
-            with _db_lock, db.connect(LOG_DB) as cx:
-                cx.execute(
-                    "UPDATE memberships SET last_reminder_at=? WHERE id=?",
-                    (now_iso, r["id"])
-                )
             try:
                 with db.connect(LOG_DB) as cx:
                     cx.execute(

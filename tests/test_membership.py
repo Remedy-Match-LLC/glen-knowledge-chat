@@ -1389,14 +1389,19 @@ def test_three_hawaii_days_out_is_not_yet_reminded(app_client_mem, fake_smtp, mo
     from zoneinfo import ZoneInfo
     now_h = datetime.now(ZoneInfo("Pacific/Honolulu"))
     d = now_h.date() + timedelta(days=3)
-    exp_h = datetime(d.year, d.month, d.day, 0, 30, tzinfo=ZoneInfo("Pacific/Honolulu"))
-    exp_utc = exp_h.astimezone(timezone.utc)
-    if exp_utc - datetime.now(timezone.utc) >= timedelta(days=3):
+    late_h = datetime(d.year, d.month, d.day, 7, 30, tzinfo=ZoneInfo("Pacific/Honolulu"))
+    early_h = datetime(d.year, d.month, d.day, 0, 30, tzinfo=ZoneInfo("Pacific/Honolulu"))
+    now_utc = datetime.now(timezone.utc)
+    if late_h.astimezone(timezone.utc) - now_utc >= timedelta(days=3):
         pytest.skip("outside the 3-day SQL window at this hour")
-    _add_membership(db, "early@example.com", exp_utc.replace(tzinfo=None).isoformat()+"Z", "prepay_12mo")
+    for who, at in (("late@example.com", late_h), ("early@example.com", early_h)):
+        _add_membership(db, who, at.astimezone(timezone.utc).replace(tzinfo=None).isoformat()+"Z",
+                        "prepay_12mo")
     fake_smtp.instances = []
     client.post("/api/cron/membership-renewals", headers=_ckey())
-    assert not _sent_to(fake_smtp, "early@example.com")
+    assert not _sent_to(fake_smtp, "late@example.com")
+    # Ends before the 7 AM run on its own date: its three emails start a day sooner.
+    assert "ends in 3 days" in " ".join(_sent_to(fake_smtp, "early@example.com")).lower()
 
 
 def test_household_reminder_skips_someone_already_reminded_this_run(app_client_mem, monkeypatch):
@@ -1411,3 +1416,70 @@ def test_household_reminder_skips_someone_already_reminded_this_run(app_client_m
     monkeypatch.setattr(app_module, "_send_inquiry_email", lambda **k: sent.append(k) or True)
     assert app_module._remind_household_terms_ending("x", sent_to={"holder@example.com"}) == 0
     assert not sent and not claimed
+
+
+def test_a_retry_the_same_day_sends_nothing_more(app_client_mem, fake_smtp, monkeypatch):
+    """Round 4: two rows for one person, then a second run the same day. One email."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    monkeypatch.setattr(app_module, "PROGRAM_CARE_TASTER_ENABLED", True, raising=False)
+    monkeypatch.setattr(app_module, "_cover_continues", lambda r: False)
+    exp = (datetime.utcnow()+timedelta(days=1)).isoformat()+"Z"
+    _add_membership(db, "retry@example.com", exp, "prepay_12mo")
+    _add_membership(db, "retry@example.com", exp, app_module.CARE_TASTER_SOURCE)
+    fake_smtp.instances = []
+    client.post("/api/cron/membership-renewals", headers=_ckey())
+    client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert len(_sent_to(fake_smtp, "retry@example.com")) == 1
+
+
+def test_a_failed_send_is_released_for_the_next_run(app_client_mem, fake_smtp, monkeypatch):
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    mid = _add_membership(db, "fail@example.com", (datetime.utcnow()+timedelta(days=1)).isoformat()+"Z",
+                          "prepay_12mo")
+    monkeypatch.setattr(app_module, "_send_inquiry_email", lambda **k: False)
+    r = client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert r.get_json().get("reminded") == 0
+    cx = sqlite3.connect(db)
+    assert cx.execute("SELECT last_reminder_at FROM memberships WHERE id=?", (mid,)).fetchone()[0] is None
+    cx.close()
+
+
+def test_unknown_cover_sends_nothing(app_client_mem, fake_smtp, monkeypatch):
+    """Round 4: if billing cannot be read, say nothing rather than 'it ends'."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    from dashboard import subscriptions as _subs
+    def boom(*a, **k):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(_subs, "active_memberships_by_email", boom)
+    _add_membership(db, "unknown@example.com", (datetime.utcnow()+timedelta(days=1)).isoformat()+"Z",
+                    "prepay_12mo")
+    fake_smtp.instances = []
+    client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert not _sent_to(fake_smtp, "unknown@example.com")
+
+
+def test_household_retry_after_member_reminder_sends_nothing(app_client_mem, monkeypatch):
+    """Round 4: a holder reminded from their membership row today is not mailed again
+    by the household path on a later run."""
+    _, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "_family_plan_enabled", lambda: True)
+    from dashboard import family_plan as _fp
+    _add_membership(db, "holder2@example.com", "2099-01-01T00:00:00Z", "prepay_12mo",
+                    last=datetime.utcnow().isoformat()+"Z")
+    monkeypatch.setattr(_fp, "terms_ending", lambda cx, today: [
+        {"caregiver_email": "holder2@example.com", "next_charge_at": "2099-01-02"}])
+    sent = []
+    monkeypatch.setattr(app_module, "_send_inquiry_email", lambda **k: sent.append(k) or True)
+    monkeypatch.setattr(_fp, "claim_reminder", lambda *a: None)
+    assert app_module._remind_household_terms_ending("x", sent_to=set()) == 0
+    assert not sent
+
+
+def test_early_morning_expiry_gets_its_third_email_a_day_sooner(app_client_mem, monkeypatch):
+    """An expiry before the 7 AM run is over on its own date: 3 Hawaii days out counts."""
+    _, app_module, _ = app_client_mem
+    assert app_module._hawaii_hour("2026-11-19T10:30:00Z") == 0      # 00:30 HST
+    assert app_module._hawaii_hour("2026-11-19T20:00:00Z") == 10
