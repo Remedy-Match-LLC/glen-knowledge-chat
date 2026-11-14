@@ -11,8 +11,12 @@ Order of operations is the safety design:
   2. skip long-overdue     — a backdated enrollment must not release a burst
   3. claim                 — UNIQUE(slug, step_no, email) arbitrates, not a read
   4. check suppression     — at SEND time; someone can opt out on day 2 of 25
-  5. send                  — through the same transport as every other bulk mail
-  6. record sent/failed
+  5. send                  — through Amazon SES, never GoHighLevel (Glen, 14 Nov 2026:
+                             GHL is being retired). SES adds the unsubscribe footer and
+                             the one-click headers, scoped to the sequence.
+  6. record sent/failed. A send SES surely did not make frees its claim, so the next
+     tick tries again inside the catch-up window. A send SES may have made is
+     recorded as sent and never retried: a duplicate cannot be recalled.
 
 Claim-before-send means a crash between 3 and 5 leaves a stuck row that step 1
 reopens. The alternative failure mode is a duplicate, and a duplicate cannot be
@@ -42,36 +46,53 @@ MAX_CATCHUP_DAYS = 2
 STALE_CLAIM_MINUTES = 60
 
 
-def _html(body_md, email, slug):
-    """Markdown-ish body to HTML, plus the unsubscribe footer.
-
-    The footer is appended AFTER escaping so its anchor survives as markup, the
-    same ordering weekly_live_invitation needs.
-    """
+def _html(body_md):
+    """Markdown-ish body to HTML. The unsubscribe footer is added by ses_mail, after
+    this escaping, so its anchor survives as markup."""
     import html as _h
-
-    from dashboard import unsubscribe as _un
     esc = _h.escape(body_md).replace("\n\n", "</p><p>").replace("\n", "<br>")
-    doc = ('<div style="font-family:Arial,sans-serif;font-size:16px;'
-           'line-height:1.55"><p>' + esc + "</p></div>")
-    return doc + _un.footer_html(email, slug)
+    return ('<div style="font-family:Arial,sans-serif;font-size:16px;'
+            'line-height:1.55"><p>' + esc + "</p></div>")
 
 
-def send_one(*, to_email, subject, html):
-    """Send one sequence email. Returns a message id, or None when guarded."""
+class _Lent:
+    """Lends the tick's open connection to ses_mail.deliver for its suppression check,
+    without closing it (closing a pooled connection returns it to the pool)."""
+    def __init__(self, cx):
+        self.cx = cx
+
+    def __enter__(self):
+        return self.cx
+
+    def __exit__(self, *exc):
+        return False
+
+
+def send_one(cx, *, to_email, subject, body_md, slug):
+    """Send one sequence email through SES, as marketing mail with an unsubscribe
+    scoped to the sequence. Returns ses_mail.deliver's (outcome, message_id):
+    "ses", "suppressed", "unknown", or None when SES surely sent nothing. There is
+    no GoHighLevel fallback. Under pytest it sends nothing and returns (None, None)."""
     if _UNDER_TEST:
-        return None
-    from dashboard import ghl_email
-    res = ghl_email.send_via_ghl(to_email, subject, html=html,
-                                 from_name="Dr. Glen Swartwout")
-    return (res or {}).get("id")
+        return None, None
+    from dashboard import ses_mail
+    return ses_mail.deliver(lambda: _Lent(cx), to_email, subject, body_md,
+                            _html(body_md), marketing=True, scope=slug,
+                            from_name="Dr. Glen Swartwout")
+
+
+def _release(cx, slug, step_no, email):
+    """Free this tick's claim on a send SES surely did not make."""
+    cx.execute("DELETE FROM sequence_sends WHERE slug=? AND step_no=? AND email=? "
+               "AND status='claimed'", (slug, int(step_no), (email or "").strip().lower()))
+    cx.commit()
 
 
 def run_once(cx, *, now=None, dry_run=False, max_catchup_days=MAX_CATCHUP_DAYS):
     from dashboard import email_suppression as _es, sequences as _seq
 
     counts = {"released": 0, "skipped_stale": 0, "would_send": 0,
-              "sent": 0, "failed": 0, "suppressed": 0}
+              "sent": 0, "failed": 0, "suppressed": 0, "unknown": 0, "not_sent": 0}
 
     if not dry_run:
         counts["released"] = _seq.release_stale_claims(
@@ -99,15 +120,30 @@ def run_once(cx, *, now=None, dry_run=False, max_catchup_days=MAX_CATCHUP_DAYS):
                               "suppressed or unsubscribed")
             continue
         try:
-            mid = send_one(to_email=d["email"], subject=d["subject"],
-                           html=_html(d["body_md"], d["email"], d["slug"]))
+            outcome, mid = send_one(cx, to_email=d["email"], subject=d["subject"],
+                                    body_md=d["body_md"], slug=d["slug"])
+        except Exception as e:  # noqa: BLE001 — one bad address must not stop the tick
+            _seq.mark_failed(cx, d["slug"], d["step_no"], d["email"], type(e).__name__)
+            counts["failed"] += 1
+            print(f"[seq] send failed step {d['step_no']}: {type(e).__name__}", flush=True)
+            continue
+        if outcome == "ses":
             _seq.mark_sent(cx, d["slug"], d["step_no"], d["email"], mid or "")
             counts["sent"] += 1
-        except Exception as e:  # noqa: BLE001 — one bad address must not stop the tick
-            _seq.mark_failed(cx, d["slug"], d["step_no"], d["email"], repr(e))
+        elif outcome == "unknown":
+            # SES may have taken it. Recorded as sent so it is never sent twice.
+            _seq.mark_sent(cx, d["slug"], d["step_no"], d["email"], "ses-unknown")
+            counts["unknown"] += 1
+        elif outcome == "suppressed":
+            _seq.mark_skipped(cx, d["slug"], d["step_no"], d["email"],
+                              "suppressed (SES check)")
+            counts["suppressed"] += 1
+        else:
+            # SES surely sent nothing (switched off, refused, unreachable). The claim is
+            # freed for the next tick; the step goes stale after the catch-up window.
+            _release(cx, d["slug"], d["step_no"], d["email"])
+            counts["not_sent"] += 1
             counts["failed"] += 1
-            print(f"[seq] send failed {d['email']} step {d['step_no']}: {e!r}",
-                  flush=True)
     return counts
 
 
