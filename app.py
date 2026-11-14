@@ -35935,6 +35935,40 @@ def api_invoice_open(token):
     return jsonify({"ok": True, "recorded": True, "open": st})
 
 
+def _portal_message_backstops(email, name, query):
+    """The checks every portal chat message gets before its reply streams, on the
+    ordinary path and on intake turns alike (review rounds 1 and 3). Returns
+    (warning_item_id, flagged).
+
+    The warning-sign keyword backstop is cheap and needs no model. Its item is stored and
+    handed to the email job HERE, so a client disconnect, a stream error or a slow model
+    can neither lose nor delay it. Without a warning sign, the healing-crisis watch runs,
+    only inside the 10 days after a Biofield delivery. A flagged message skips
+    _triage_portal_message, so the Biofield request check starts here instead, after the
+    warning delivery has been handed off. An unflagged message is the caller's to send to
+    _triage_portal_message after the reply."""
+    try:
+        from dashboard import portal_triage as _pt_ws
+        warning_keys = _pt_ws.warning_signs(query)
+    except Exception as e:
+        print(f"[triage] warning-sign check failed: {type(e).__name__}", flush=True)
+        warning_keys = []
+    item_id = None
+    flagged = False
+    if warning_keys:
+        item_id = _start_warning_sign_delivery(email, name, query, warning_keys)
+        flagged = True
+    else:
+        healing_keys, healing = _healing_crisis_check(email, query)
+        if healing:
+            item_id = _start_warning_sign_delivery(email, name, query, healing_keys,
+                                                   flag=healing)
+            flagged = True
+    if flagged:
+        _start_biofield_request_flag(email, name, query)
+    return item_id, flagged
+
+
 def _portal_intake_chat_response(email, portal, query, history, page_says_intake):
     """One turn of the intake guide in the portal chat, as the same SSE stream the
     concierge sends, or None when this turn is not an intake turn. See
@@ -35961,18 +35995,10 @@ def _portal_intake_chat_response(email, portal, query, history, page_says_intake
         display = str(portal.get("name") or "").strip()
         if display:
             answers["first_name"] = display.split()[0]
-    # The warning-sign backstop runs on intake turns too: symptoms are what an intake
-    # is about, and a client may name an urgent one mid-form.
-    try:
-        from dashboard import portal_triage as _pt_ws
-        _warning_keys = _pt_ws.warning_signs(query)
-    except Exception as e:
-        print(f"[triage] warning-sign check failed: {type(e).__name__}", flush=True)
-        _warning_keys = []
-    _warning_item_id = None
-    if _warning_keys:
-        _warning_item_id = _start_warning_sign_delivery(
-            email, portal.get("name") or "", query, _warning_keys)
+    # Every backstop the ordinary chat runs runs here too: symptoms are what an intake
+    # is about, and a client may name an urgent one, or ask for Glen, mid-form.
+    _warning_item_id, _flagged = _portal_message_backstops(
+        email, portal.get("name") or "", query)
 
     def _call(system, messages):
         resp = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=800,
@@ -35991,7 +36017,7 @@ def _portal_intake_chat_response(email, portal, query, history, page_says_intake
             with _db_lock, db.connect(LOG_DB) as wcx:
                 wcx.row_factory = sqlite3.Row
                 _intake.init_intake_table(wcx)
-                saved = _pic.save(wcx, email, updates, _hst_now().isoformat())
+                saved = _pic.save_learned(wcx, email, updates, _hst_now().isoformat())
         except Exception as e:
             print(f"[portal-intake-chat] save failed: {type(e).__name__}", flush=True)
         say = _strip_dash(say)
@@ -36004,13 +36030,14 @@ def _portal_intake_chat_response(email, portal, query, history, page_says_intake
         if _warning_item_id:
             say += "\n\n" + PORTAL_WARNING_SIGN_LINE
             try:
+                from dashboard import portal_triage as _pt_ws
                 with _db_lock, db.connect(LOG_DB) as _acx:
                     _pt_ws.set_answer(_acx, _warning_item_id, say)
             except Exception as e:
                 print(f"[triage] answer update failed: {type(e).__name__}", flush=True)
         yield sse({"token": say})
         yield sse({"intake": {"mode": not (done or stopped), "done": bool(done),
-                              "saved": sorted(updates) if saved is not None else []}})
+                              "saved": list(saved[1]) if saved is not None else []}})
         try:
             from dashboard import portal_chat as _pchat
             with _db_lock, db.connect(LOG_DB) as _pcx:
@@ -36018,6 +36045,15 @@ def _portal_intake_chat_response(email, portal, query, history, page_says_intake
                                        client_name=(portal.get("name") or "You"))
         except Exception as e:
             print(f"[portal-chat] persist failed: {type(e).__name__}", flush=True)
+        # Triage, as on the ordinary path: a message that needs Glen reaches him.
+        if not _flagged:
+            try:
+                import threading as _tt
+                _tt.Thread(target=_triage_portal_message,
+                           args=(email, portal.get("name") or "", query, say),
+                           daemon=True).start()
+            except Exception as e:
+                print(f"[triage] start failed: {type(e).__name__}", flush=True)
         yield sse({"done": True})
 
     return Response(stream_with_context(generate()), content_type="text/event-stream",
@@ -36158,32 +36194,9 @@ def api_portal_chat(token):
     user_block = ((f"CONTEXT:\n{context_str}\n\n" if context_str else "") + query
                   + _approved_wording_reminder(context_str))
     messages.append({"role": "user", "content": user_block})
-    # Warning-sign keyword backstop on the client's own message (cheap, no model).
-    # Stored and handed to the email job HERE, before the reply streams, so a client
-    # disconnect, a stream error or a slow model can neither lose nor delay it.
-    try:
-        from dashboard import portal_triage as _pt_ws
-        _warning_keys = _pt_ws.warning_signs(query)
-    except Exception as e:
-        print(f"[triage] warning-sign check failed: {e!r}", flush=True)
-        _warning_keys = []
-    _warning_item_id = None
-    _healing_keys = []
-    if _warning_keys:
-        _warning_item_id = _start_warning_sign_delivery(
-            email, portal.get("name") or "", query, _warning_keys)
-    else:
-        # Healing-crisis watch: only inside the 10 days after a Biofield delivery.
-        _healing_keys, _healing = _healing_crisis_check(email, query)
-        if _healing:
-            _warning_item_id = _start_warning_sign_delivery(
-                email, portal.get("name") or "", query, _healing_keys, flag=_healing)
-        else:
-            _healing_keys = []
-    if _warning_keys or _healing_keys:
-        # These messages skip _triage_portal_message, so the Biofield request check
-        # starts here, after the warning delivery has already been handed off.
-        _start_biofield_request_flag(email, portal.get("name") or "", query)
+    # Warning-sign and healing-crisis backstops, handed off before the reply streams.
+    _warning_item_id, _flagged = _portal_message_backstops(
+        email, portal.get("name") or "", query)
 
     def generate():
         if cart_added:
@@ -36213,6 +36226,7 @@ def api_portal_chat(token):
             answer = answer + _line
             yield sse({"token": _line})
             try:
+                from dashboard import portal_triage as _pt_ws
                 with _db_lock, db.connect(LOG_DB) as _acx:
                     _pt_ws.set_answer(_acx, _warning_item_id, answer)
             except Exception as e:
@@ -36257,7 +36271,7 @@ def api_portal_chat(token):
                 print(f"[health-suggestions] extract failed: {e!r}", flush=True)
         # Triage: flag messages that need Dr. Glen's attention -> console + email him.
         # A warning sign or healing-crisis flag was already handed off before the stream.
-        if not (_warning_keys or _healing_keys):
+        if not _flagged:
             try:
                 import threading as _t2
                 _t2.Thread(target=_triage_portal_message,
@@ -40337,10 +40351,14 @@ def intake_save_draft():
         ident = _evox_ident(cx, request.args.get("token", ""))
         if ident is None:
             return jsonify({"error": "not_found"}), 404
+        # The row lock holds from this read to the write, so a chat save in another
+        # worker cannot land in between (review rounds 1 and 3).
+        _intake.lock_row(cx, ident.email)
         if _intake.is_submitted(cx, ident.email):
+            cx.commit()
             return jsonify({"ok": True})
         answers = (request.get_json(silent=True) or {}).get("answers") or {}
-        # A stale open form must not blank what she just said in the portal chat.
+        # A stale open form must not save over what she just said in the portal chat.
         from dashboard import portal_intake_chat as _pic
         _row = _intake.get_response(cx, ident.email)
         answers = _pic.protect((_row or {}).get("answers") or {}, answers)
@@ -40373,11 +40391,14 @@ def intake_submit():
             return jsonify({"error": "not_found"}), 404
         answers = (request.get_json(silent=True) or {}).get("answers") or {}
         # Chat answers a stale form never showed are kept, then the marker is dropped.
+        # The row stays locked until the submit commits, so no chat save lands between.
         from dashboard import portal_intake_chat as _pic
+        _intake.lock_row(cx, ident.email)
         _row = _intake.get_response(cx, ident.email)
         if _row and _row.get("status") != "submitted":
             answers = _pic.protect(_row.get("answers") or {}, answers)
         answers.pop(_pic.CHAT_SAVED, None)
+        answers.pop(_pic.LOADED, None)
         errors = _intake.validate_response(answers)
         if errors:
             return jsonify({"error": "invalid", "errors": errors}), 400

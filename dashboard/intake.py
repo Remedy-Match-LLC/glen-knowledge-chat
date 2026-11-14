@@ -354,6 +354,16 @@ def save_draft(cx, email, answers, now):
     _upsert(cx, email, answers, "draft", now, None)
 
 
+def lock_row(cx, email):
+    """Lock this client's intake row for the rest of the transaction, so two read,
+    merge and write sequences (the form's save and the chat's save, in different
+    workers) cannot interleave. A no-op UPDATE: on Postgres it takes the row lock, as
+    SELECT ... FOR UPDATE would; on SQLite it takes the write lock. The lock ends at
+    the next commit. Returns whether the row exists."""
+    return cx.execute("UPDATE intake_responses SET email=email WHERE email=?",
+                      ((email or "").strip().lower(),)).rowcount == 1
+
+
 def save_draft_unless_submitted(cx, email, answers, now):
     """save_draft that can never reopen a submitted intake, even when another process
     submits between the caller's check and this write: the update is conditional in SQL.

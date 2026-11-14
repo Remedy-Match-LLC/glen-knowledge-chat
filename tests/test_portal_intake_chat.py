@@ -25,9 +25,26 @@ def test_wants_intake_on_her_own_words(q):
 
 @pytest.mark.parametrize("q", [
     "What does my scan say about my liver?", "I took my remedies today",
-    "stop the intake", "pause my intake please"])
+    "stop the intake", "pause my intake please",
+    # Questions about the intake, a "later" and a "not" are ordinary chat (rounds 1, 3).
+    "how do I submit my intake form?", "Did Dr Glen finish reviewing my intake?",
+    "Where do I find my health profile?", "I will do my intake later",
+    "Do you have my intake form?", "What do I do after the intake form?",
+    "Did you finish my intake?", "I already did my intake", "I don't want to do my intake"])
 def test_wants_intake_not_on_other_words(q):
     assert not pic.wants_intake(q)
+
+
+@pytest.mark.parametrize("q", ["stop", "pause my intake", "let's stop for now", "not now",
+                               "finish later", "stop the intake please"])
+def test_wants_stop_on_a_short_stop(q):
+    assert pic.wants_stop(q)
+
+
+@pytest.mark.parametrize("q", ["I had to quit smoking before my intake",
+                               "I stop eating after 7pm", "my periods ended at 50"])
+def test_an_answer_that_says_stop_is_still_an_answer(q):
+    assert not pic.wants_stop(q)
 
 
 def test_should_run_never_on_a_submitted_intake():
@@ -130,6 +147,49 @@ def test_protect_lets_the_form_change_or_later_clear_a_field():
     assert pic.protect(shown, {"city": ""}) == {"city": ""}
 
 
+def test_save_learned_lists_only_fields_this_save_changed(tmp_path):
+    cx = _db(tmp_path)
+    _intake.save_draft(cx, "a@x.com", {"city": "Hilo"}, "t0")
+    answers, learned = pic.save_learned(
+        cx, "a@x.com", {"city": "Hilo", "street": "1 Main", "email": "b@y.com",
+                        "bogus": 1}, "t1")
+    assert learned == ["street"]
+    assert answers["email"] == "a@x.com"
+    assert _intake.get_response(cx, "a@x.com")["answers"][pic.CHAT_SAVED] == ["street"]
+
+
+def test_lock_row_reports_whether_the_row_exists(tmp_path):
+    cx = _db(tmp_path)
+    assert _intake.lock_row(cx, "a@x.com") is False
+    _intake.save_draft(cx, "a@x.com", {"city": "Hilo"}, "t0")
+    assert _intake.lock_row(cx, "A@x.com") is True
+
+
+L = pic.LOADED
+
+
+def test_protect_keeps_the_chat_answer_over_a_stale_forms_old_value():
+    stored = {"city": "Hilo", pic.CHAT_SAVED: ["city"]}
+    out = pic.protect(stored, {"city": "Old", L: {"city": "Old"}})
+    assert out["city"] == "Hilo" and out[pic.CHAT_SAVED] == ["city"] and L not in out
+
+
+def test_protect_takes_her_edit_on_a_stale_form():
+    stored = {"city": "Hilo", pic.CHAT_SAVED: ["city"]}
+    assert pic.protect(stored, {"city": "Kona", L: {"city": "Old"}}) == {"city": "Kona"}
+
+
+def test_protect_lets_her_clear_a_field_the_form_has_shown():
+    stored = {"city": "Hilo", pic.CHAT_SAVED: ["city"]}
+    assert pic.protect(stored, {"city": "", L: {"city": "Hilo"}}) == {"city": ""}
+    assert pic.protect(stored, {"city": "Hilo", L: {"city": "Hilo"}}) == {"city": "Hilo"}
+
+
+def test_protect_never_takes_the_marker_from_the_request():
+    out = pic.protect({"city": "Hilo"}, {"city": "", pic.CHAT_SAVED: ["city"], L: {}})
+    assert out == {"city": ""}
+
+
 def test_protect_without_chat_answers_changes_nothing():
     assert pic.protect({"city": "Hilo"}, {"city": ""}) == {"city": ""}
 
@@ -163,6 +223,9 @@ def app_client(tmp_path, monkeypatch):
         return types.SimpleNamespace(content=[types.SimpleNamespace(type="text", text=text)])
     fake_create.reply = _reply("Where do you live?", {"city": "Hilo"})
     monkeypatch.setattr(app._cl.messages, "create", fake_create, raising=False)
+    app.triaged = []
+    monkeypatch.setattr(app, "_triage_portal_message",
+                        lambda *a, **k: app.triaged.append(a))
     with app.app.test_client() as client:
         yield app, client, fake_create, calls
 
@@ -242,7 +305,7 @@ def test_route_failed_save_keeps_her_in_the_intake(app_client, monkeypatch):
     app_mod, client, fake, calls = app_client
     token = _portal(app_mod)
     fake.reply = _reply("All done.", {"city": "Hilo"}, done=True)
-    monkeypatch.setattr(pic, "save", lambda *a: None)
+    monkeypatch.setattr(pic, "save_learned", lambda *a: None)
     ev = _events(client.post(f"/api/portal/{token}/chat",
                              json={"query": "Hilo", "intake_mode": True}))
     assert {"intake": {"mode": True, "done": False, "saved": []}} in ev
@@ -295,6 +358,50 @@ def test_route_warning_sign_still_reaches_glen(app_client, monkeypatch):
                              json={"query": "I have chest pain", "intake_mode": True}))
     assert started and started[0][0] == "alison@x.com"
     assert any(app_mod.PORTAL_WARNING_SIGN_LINE in (e.get("token") or "") for e in ev)
+
+
+def test_route_intake_turn_is_triaged_like_an_ordinary_one(app_client):
+    app_mod, client, fake, calls = app_client
+    token = _portal(app_mod)
+    _events(client.post(f"/api/portal/{token}/chat",
+                        json={"query": "1 Main Street", "intake_mode": True}))
+    import time
+    for _ in range(50):
+        if app_mod.triaged:
+            break
+        time.sleep(0.02)
+    assert app_mod.triaged and app_mod.triaged[0][2] == "1 Main Street"
+
+
+def test_route_intake_turn_runs_the_healing_crisis_watch(app_client, monkeypatch):
+    app_mod, client, fake, calls = app_client
+    token = _portal(app_mod)
+    seen = []
+    monkeypatch.setattr(app_mod, "_healing_crisis_check",
+                        lambda e, q: seen.append(q) or (["rash"], {"kind": "healing"}))
+    started = []
+    monkeypatch.setattr(app_mod, "_start_warning_sign_delivery",
+                        lambda *a, **k: started.append(k.get("flag")) or 9)
+    monkeypatch.setattr(app_mod, "_start_biofield_request_flag", lambda *a: None)
+    from dashboard import portal_triage
+    monkeypatch.setattr(portal_triage, "set_answer", lambda *a: None)
+    ev = _events(client.post(f"/api/portal/{token}/chat",
+                             json={"query": "the rash got worse", "intake_mode": True}))
+    assert seen == ["the rash got worse"] and started == [{"kind": "healing"}]
+    assert any(app_mod.PORTAL_WARNING_SIGN_LINE in (e.get("token") or "") for e in ev)
+    assert app_mod.triaged == []      # a flagged message is not triaged twice
+
+
+def test_form_save_sends_what_it_loaded_and_the_server_never_stores_it(app_client):
+    app_mod, client, fake, calls = app_client
+    token = _portal(app_mod)
+    client.post(f"/api/portal/{token}/chat", json={"query": "Hilo. let's do my intake"})
+    client.post(f"/api/intake/save-draft?token={token}",
+                json={"answers": {"city": "Old", "_loaded": {"city": "Old"}}})
+    a = _stored(app_mod)["answers"]
+    assert a["city"] == "Hilo" and "_loaded" not in a
+    page = open("static/client-portal.html", encoding="utf-8").read()
+    assert "if(loadedSnapshot) out._loaded = loadedSnapshot;" in page
 
 
 def test_page_wiring_sends_the_mode_and_handles_the_event():

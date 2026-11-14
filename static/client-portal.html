@@ -7165,7 +7165,8 @@ window.onPortalIntakeChatEvent = function(info){
   }
 };
 function startIntakeByConversation(){
-  window.__intakeChatMode = true;
+  // The mode is set only by the server's intake event: a request the server does not
+  // take up (a submitted intake, a store failure) must leave the chat ordinary.
   var input = document.getElementById("chatInput");
   if(!input || typeof sendChatMessage !== "function") return false;
   input.value = "I would like to do my intake by conversation.";
@@ -7302,10 +7303,14 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
     host.appendChild(talkNote);
   }
 
+  // What this form showed when it rendered, read through its own getters so it compares
+  // like for like. The server uses it to tell her edits from a stale form's old values.
+  let loadedSnapshot = null;
   const collectAnswers = ()=>{
     const out = {};
     Object.keys(getters).forEach(fid => { out[fid] = getters[fid](); });
     out._completed_sections = Array.from(completedIntakeSections);
+    if(loadedSnapshot) out._loaded = loadedSnapshot;
     return out;
   };
 
@@ -7326,10 +7331,17 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
   let saveTimer = null;
   let saveChain = Promise.resolve(true);
   // A refresh first saves what she typed on the form (the server keeps the chat's
-  // answers over this form's blanks), waits for every queued save, then re-reads.
+  // answers over this form's stale values), waits for every queued save, then re-reads.
+  // It does not re-read while she is typing here, or after a failed save, so no edit
+  // of hers is thrown away. That form stays safe: the server still tells her edits
+  // from its stale values.
   window.__intakeForms.set(host, async ()=>{
     if(saveTimer){ clearTimeout(saveTimer); saveTimer = null; saveNow(); }
-    try{ await saveChain; }catch(e){}
+    let ok = true;
+    try{ ok = await saveChain; }catch(e){ ok = false; }
+    if(ok === false || saveTimer) return;
+    const active = document.activeElement;
+    if(active && active !== document.body && host.contains(active)) return;
     renderIntakeForm(host, tokenVal, onDone, Object.assign({}, options,
       {loadingText: "Updating with what you told me…"}));
   });
@@ -7380,6 +7392,8 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
     host.appendChild(secWrap);
     sectionEls.push(secWrap);
   });
+  loadedSnapshot = {};
+  Object.keys(getters).forEach(fid => { loadedSnapshot[fid] = getters[fid](); });
 
   let showIntakeSection = null;
   if(options.paged && sectionEls.length){

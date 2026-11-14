@@ -27,23 +27,41 @@ START_LINE_DONE = ("Thank you. That covers your intake questions. Please open Bu
 STOP_LINE = ("We can pause here. Everything you told me is saved in your intake draft. "
              "Say \"let's continue my intake\" whenever you are ready.")
 
-_INTAKE_WORD = r"(intake|health profile|intake form|intake questions)"
+_INTAKE_WORD = r"(intake|health profile)( form| questions)?"
+# A start is her own request: a start verb aimed straight at the intake ("do my
+# intake", "help me with the intake form"). Questions about the intake, a "later" and
+# a "not" are ordinary chat (review rounds 1 and 3).
 _START = re.compile(
-    r"\b(start|begin|do|fill|complete|continue|resume|finish|go through|help me with|"
-    r"work on|let'?s do)\b[^.?!]{0,40}\b" + _INTAKE_WORD + r"\b", re.I)
+    r"\b(start|begin|do|fill in|fill out|fill|complete|continue|resume|finish|go through|"
+    r"help me with|help me do|help me fill|work on)\s+(with\s+|on\s+|through\s+)?"
+    r"(my|the|this)\s+" + _INTAKE_WORD + r"\b", re.I)
+_ASKING = re.compile(r"^\s*(please\s+)?(can|could|would|will|shall|may)\s+(we|you|i)\b", re.I)
+_NOT_NOW = re.compile(
+    r"\b(later|tomorrow|not now|don'?t|do not|won'?t|will not|never|already|cannot|can'?t)\b",
+    re.I)
+# A stop is a short message that is only a stop, so an answer that happens to say
+# "quit" ("I had to quit smoking before my intake") is still an answer.
 _STOP = re.compile(
-    r"\b(stop|pause|quit|end|exit|finish later|not now|later)\b[^.?!]{0,30}\b"
-    + _INTAKE_WORD + r"\b|^\s*(stop|pause)\s*[.!]?\s*$", re.I)
+    r"^\s*(ok(ay)?[,.]?\s+)?(please\s+)?(let'?s\s+|can we\s+|i want to\s+|i need to\s+)?"
+    r"(stop|pause|quit|end|exit|take a break|finish (this |it |the |my )?(intake )?later|"
+    r"not now|later)"
+    r"(\s+(the|my|this))?(\s+" + _INTAKE_WORD + r")?"
+    r"(\s+(for now|now|here|for today|please))*\s*[.!]?\s*$", re.I)
 
 
 def wants_intake(query):
     """True when the client's own words ask to start or continue the intake."""
     q = str(query or "")
-    return bool(_START.search(q)) and not wants_stop(q)
+    if not _START.search(q) or wants_stop(q) or _NOT_NOW.search(q):
+        return False
+    if "?" in q and not _ASKING.search(q):
+        return False      # "did Dr Glen finish my intake?" is a question about it
+    return True
 
 
 def wants_stop(query):
-    return bool(_STOP.search(str(query or "")))
+    q = str(query or "")
+    return len(q.split()) <= 10 and bool(_STOP.search(q))
 
 
 def should_run(submitted, page_says_intake, query):
@@ -108,52 +126,89 @@ def _blank(v):
 
 
 def save(cx, email, updates, now_iso):
-    """Merge `updates` into the CURRENT stored draft and save it. Re-reads the row so a
-    form save made while the model was thinking is kept. Never writes a submitted intake,
-    even one submitted a moment ago (the write is conditional in SQL).
+    """The saved answers, or None when nothing was written. See `save_learned`."""
+    out = save_learned(cx, email, updates, now_iso)
+    return None if out is None else out[0]
+
+
+def save_learned(cx, email, updates, now_iso):
+    """Merge `updates` into the CURRENT stored draft and save it. Returns (answers,
+    learned): the saved answers and the field ids this save actually changed. Returns
+    None when nothing could be written.
+
+    The row is locked first (`intake.lock_row`), so a form save in another worker cannot
+    land between this read and this write. Never writes a submitted intake, even one
+    submitted a moment ago (the write is conditional in SQL).
 
     Each field saved here is listed under CHAT_SAVED until the form has shown it, so a
-    stale open form cannot blank it (see `protect`). Returns the saved answers, or None
-    when nothing was written."""
+    stale open form cannot save over it (see `protect`)."""
     from dashboard import intake as _intake, intake_public as _ip
     email = (email or "").strip().lower()
-    if not email or _intake.is_submitted(cx, email):
+    if not email:
         return None
-    row = _intake.get_response(cx, email)
-    current = dict((row["answers"] if row else {}) or {})
-    if not updates:
-        return current
-    merged = _ip.merge_answers(current, updates)
-    valid = {f["id"] for f in _intake._fields()} - {"email"}
-    learned = [k for k in updates if k in valid and k in merged]
-    if not learned:
-        return current
-    listed = [k for k in (current.get(CHAT_SAVED) or []) if isinstance(k, str)]
-    merged[CHAT_SAVED] = sorted(set(listed) | set(learned))
-    merged["email"] = email
-    if not _intake.save_draft_unless_submitted(cx, email, merged, now_iso):
-        return None
-    return merged
+    _intake.lock_row(cx, email)
+    try:
+        if _intake.is_submitted(cx, email):
+            return None
+        row = _intake.get_response(cx, email)
+        current = dict((row["answers"] if row else {}) or {})
+        if not updates:
+            return current, []
+        merged = _ip.merge_answers(current, updates)
+        valid = {f["id"] for f in _intake._fields()} - {"email"}
+        learned = sorted(k for k in updates
+                         if k in valid and k in merged and merged.get(k) != current.get(k))
+        if not learned:
+            return current, []
+        listed = [k for k in (current.get(CHAT_SAVED) or []) if isinstance(k, str)]
+        merged[CHAT_SAVED] = sorted(set(listed) | set(learned))
+        merged["email"] = email
+        if not _intake.save_draft_unless_submitted(cx, email, merged, now_iso):
+            return None
+        return merged, learned
+    finally:
+        try:
+            cx.commit()     # ends the row lock on every path
+        except Exception:
+            pass
+
+
+LOADED = "_loaded"
 
 
 def protect(stored, incoming):
-    """What a FORM save should store, given the stored answers. A field the chat saved
-    that the form has not yet shown arrives blank from a stale form: keep the chat's
-    value. Once the form sends the stored value back (it has shown it), or sends a
-    different non-blank value (she changed it on the form), the field is the form's
-    again and leaves the list. A field missing from the form save keeps its value."""
+    """What a FORM save should store, given the stored answers.
+
+    The form sends, under LOADED, the values it showed when it last rendered. A field
+    the chat saved is then decided by comparing three values:
+    - the form's value differs from what it loaded: she changed it on this form, so the
+      form wins, a clear included, and the field leaves the list;
+    - the form loaded the chat's value: it has shown it, so the field leaves the list;
+    - otherwise the form is stale for this field: the chat's value is kept.
+    A form that sends no LOADED (a page loaded before this change) keeps the chat's
+    value only over a blank. A field missing from the form save keeps its value. The
+    marker is rebuilt from the stored row, never taken from the request."""
     stored = dict(stored or {})
     out = dict(incoming or {})
+    loaded = out.pop(LOADED, None)
+    if not isinstance(loaded, dict):
+        loaded = None
+    out.pop(CHAT_SAVED, None)
     listed = [k for k in (stored.get(CHAT_SAVED) or []) if isinstance(k, str)]
     keep = []
     for k in listed:
         if k not in stored or _blank(stored[k]):
+            continue
+        if loaded is not None and k in loaded:
+            if k in out and out[k] != loaded[k]:
+                continue                      # her own edit on this form
+            out[k] = stored[k]
+            if loaded[k] != stored[k]:
+                keep.append(k)                # this form never showed the chat's value
             continue
         if k not in out or _blank(out[k]):
             out[k] = stored[k]
             keep.append(k)
     if keep:
         out[CHAT_SAVED] = keep
-    else:
-        out.pop(CHAT_SAVED, None)
     return out
