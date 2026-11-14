@@ -59959,7 +59959,112 @@ def _family_long_date(value):
     return _fp.long_date(s)
 
 
-def _remind_household_terms_ending(now_iso):
+def _hawaii_date(value):
+    """A stored UTC timestamp (or a bare date) as the Hawaii calendar date."""
+    from zoneinfo import ZoneInfo
+    from datetime import date as _date
+    s = str(value).strip()
+    if "T" not in s and " " not in s:
+        return _date.fromisoformat(s[:10])
+    dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Pacific/Honolulu")).date()
+
+
+def _hawaii_hour(value):
+    from zoneinfo import ZoneInfo
+    dt = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Pacific/Honolulu")).hour
+
+
+def _reminded_today(email, today_h):
+    """True when any membership row for this email was reminded on this Hawaii date."""
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    with db.connect(LOG_DB) as cx:
+        vals = [r[0] for r in cx.execute(
+            "SELECT last_reminder_at FROM memberships WHERE lower(email)=? "
+            "AND last_reminder_at IS NOT NULL", (email,)).fetchall()]
+    for v in vals:
+        try:
+            if _hawaii_date(v) >= today_h:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _reminded_source(src):
+    """Grant sources that get a renewal reminder of their own."""
+    src = src or ""
+    return (src.startswith("prepay_") or src == CARE_TASTER_SOURCE
+            or src in _membership_product_sources())
+
+
+def _cover_continues(row):
+    """True when this grant ending does not end the person's care: a billing membership
+    subscription, a later grant that will itself be reminded, or a household plan that
+    covers them past this date. A later grant of a kind that is never reminded (such
+    as biofield_month_delivery) does not count, or no prompt would ever go out."""
+    email = (row["email"] or "").strip().lower()
+    expiry_h = _hawaii_date(row["expires_at"]).isoformat()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        try:
+            from dashboard import subscriptions as _subs
+            if _subs.active_memberships_by_email(cx, email):
+                return True
+        except Exception as e:
+            try:
+                cx.rollback()
+            except Exception:
+                pass
+            _m = str(e).lower()
+            if "no such table" not in _m and "does not exist" not in _m:
+                # Unknown is not "ended": no email rather than a wrong one (round 4).
+                # A missing table means no subscriptions exist, which is known.
+                print(f"[renewal-cron] subscription check failed: {e!r}", flush=True)
+                return True
+        later = cx.execute(
+            "SELECT source FROM memberships WHERE lower(email)=? AND id<>? AND expires_at > ?",
+            (email, row["id"], row["expires_at"])).fetchall()
+    if any(_reminded_source(l[0]) for l in later):
+        return True
+    if not _family_plan_enabled():
+        return False
+    try:
+        from dashboard import family_plan as _fp
+        from dashboard import household as _hh
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            holders = [email]
+            try:
+                holders += [(c["primary_email"] or "").strip().lower()
+                            for c in _hh.caregivers_for(cx, email)]
+            except Exception:
+                # No household links table yet: only their own plan can cover them.
+                try:
+                    cx.rollback()
+                except Exception:
+                    pass
+            for h in holders:
+                if not h or not _fp.is_active(cx, h):
+                    continue
+                end = _fp.term_ends(cx, h) or _fp.access_ends(cx, h)
+                # No end date: an ongoing monthly plan. Else it must outlast this grant.
+                if not end or str(end)[:10] > expiry_h:
+                    return True
+    except Exception as e:
+        print(f"[renewal-cron] household cover check failed: {e!r}", flush=True)
+        return True
+    return False
+
+
+def _remind_household_terms_ending(now_iso, sent_to=None):
     """The household annual is paid once and never renews (Glen, 2026-11-13). Remind
     the holder once a day in the last 3 days, with the renewal link, like the prepaid
     single terms. A renewal bought with the same email starts when this term ends.
@@ -59980,6 +60085,10 @@ def _remind_household_terms_ending(now_iso):
     for row in rows:
         email = row["caregiver_email"]
         end = row["next_charge_at"][:10]
+        if ((sent_to is not None and (email or "").strip().lower() in sent_to)
+                or _reminded_today(email, _date.fromisoformat(today))):
+            # Already reminded today from their own membership row (review rounds 3, 4).
+            continue
         # One conditional write claims today's reminder, and only while the term still
         # ends on that date and is not cancelled. A renewal or cancel since the list was
         # read, or a second run, sends nothing (review round 2).
@@ -59988,10 +60097,14 @@ def _remind_household_terms_ending(now_iso):
             prev = _fp.claim_reminder(cx, email, today, end)
         if prev is False:
             continue
-        days_left = (_date.fromisoformat(end) - _date.fromisoformat(today)).days
-        s_days = "s" if days_left != 1 else ""
+        # Counted to the last covered day, so the subject agrees with "covers your
+        # household through <date>": today, tomorrow, or in 2 days.
+        days_left = (_date.fromisoformat(_fp.last_covered_day(end))
+                     - _date.fromisoformat(today)).days
+        _when = ("today" if days_left <= 0 else
+                 "tomorrow" if days_left == 1 else f"in {days_left} days")
         last_day = _fp.long_date(_fp.last_covered_day(end))
-        subject = f"Your Household Membership ends in {days_left} day{s_days}"
+        subject = f"Your Household Membership ends {_when}"
         body = (
             f"Aloha,\n\n"
             f"Your Household Membership covers your household through {last_day}. "
@@ -60033,32 +60146,55 @@ def cron_membership_renewals():
                 "SELECT id, email, expires_at, last_reminder_at, source FROM memberships "
                 "WHERE expires_at::timestamptz > now() "
                 "AND expires_at::timestamptz < now() + interval '3 days' "
-                "LIMIT 500"
+                "LIMIT 5000"
             ).fetchall()
         else:
             rows = cx.execute(
                 "SELECT id, email, expires_at, last_reminder_at, source FROM memberships "
                 "WHERE datetime(expires_at) > datetime('now') "
                 "AND datetime(expires_at) < datetime('now', '+3 days') "
-                "LIMIT 500"
+                "LIMIT 5000"
             ).fetchall()
     reminded = 0
+    _today_h = _hawaii_date(now_iso)
+    _sent_to = set()   # one reminder per person per run, even with two rows ending
     for r in rows:
         last = r["last_reminder_at"]
         if last:
+            # Once per Hawaii calendar day. A rolling 24 hours let a run that started
+            # a few minutes earlier than yesterday's skip a member's last reminder.
             try:
-                last_dt = datetime.fromisoformat(last.rstrip("Z"))
-                if (datetime.utcnow() - last_dt) < timedelta(hours=24):
+                if _hawaii_date(last) >= _today_h:
                     continue
             except Exception:
                 pass
         try:
-            exp_dt = _parse_utc(r["expires_at"])
-            days_left = max(0, (exp_dt - _now_utc()).days)
+            _ends_h = _hawaii_date(r["expires_at"])
+            days_left = max(0, (_ends_h - _today_h).days)
         except Exception:
             days_left = 0
-        s_days = "s" if days_left != 1 else ""
+        # "ends today" / "ends tomorrow" / "ends in 2 days", counted in Hawaii dates
+        # so the count matches the date printed beside it.
+        try:
+            _early = _hawaii_hour(r["expires_at"]) < 7
+        except Exception:
+            _early = False
+        if days_left > 3 or (days_left == 3 and not _early):
+            # Three emails, on the last three Hawaii days. The UTC window can reach a
+            # fourth day when the run time drifts (review round 3). An expiry before the
+            # 7 AM run is already over on its own date, so it starts a day earlier.
+            continue
+        _when = ("today" if days_left == 0 else
+                 "tomorrow" if days_left == 1 else f"in {days_left} days")
         _src = (r["source"] or "")
+        _email_lc = (r["email"] or "").strip().lower()
+        if _email_lc in _sent_to:
+            continue
+        _reminded_kind = _reminded_source(_src)
+        if _reminded_kind and _cover_continues(r):
+            # Renewed, still billed, moved on to another grant, or covered by a running
+            # household plan: this row ending is not their care ending. Say nothing.
+            continue
         if _src.startswith("prepay_"):
             # A prepaid term is ending. NEVER auto-charge — send a renewal PROMPT at
             # the price checkout charges. Skip if the ladder is dark.
@@ -60074,11 +60210,15 @@ def cron_membership_renewals():
             _renew_url = f"{_base}/prepay{_renew_q}" if _base else "your member portal"
             _renew_line = (f"${_renew_cents/100:,.0f} for another {_term_label}"
                            if _renew_cents else "a new monthly or 12-month term")
-            subject = f"Your Continuous Care renews in {days_left} day{s_days}"
+            try:
+                _ends = _family_long_date(r["expires_at"])
+            except Exception:
+                _ends = r["expires_at"]
+            subject = f"Your prepaid Continuous Care ends {_when}"
             body = (
                 f"Aloha,\n\n"
-                f"Your prepaid Continuous Care ends in {days_left} day{s_days}"
-                f" on {r['expires_at']}. There's nothing to cancel and no automatic "
+                f"Your prepaid Continuous Care ends {_when}"
+                f", on {_ends}. There's nothing to cancel and no automatic "
                 f"charge - your card was never kept on file for renewal.\n\n"
                 f"When you're ready to keep going, you can renew "
                 f"({_renew_line}) here:\n{_renew_url}\n\n"
@@ -60095,11 +60235,15 @@ def cron_membership_renewals():
                 continue
             _base = (PUBLIC_BASE_URL or "").rstrip("/")
             _renew_url = f"{_base}/prepay" if _base else "your member portal"
-            subject = f"Your care window ends in {days_left} day{s_days} - keep your Continuous Care going"
+            try:
+                _ends = _family_long_date(r["expires_at"])
+            except Exception:
+                _ends = r["expires_at"]
+            subject = f"Your care window ends {_when} - keep your Continuous Care going"
             body = (
                 f"Aloha,\n\n"
-                f"Your 30-day Continuous Care window ends in {days_left} day{s_days}"
-                f" on {r['expires_at']}. There's nothing to cancel and no automatic charge - "
+                f"Your 30-day Continuous Care window ends {_when}"
+                f", on {_ends}. There's nothing to cancel and no automatic charge - "
                 f"your card was never kept on file.\n\n"
                 f"When you're ready to keep your care going, continue on Continuous Care here:\n"
                 f"{_renew_url}\n\n"
@@ -60108,10 +60252,6 @@ def cron_membership_renewals():
                 f"---\n"
                 f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
             )
-        elif _src in _membership_product_sources() and _membership_continues(r):
-            # Still billed (Annual monthly: 12 charges) or already renewed: this grant
-            # ending is not the membership ending, so say nothing (review round 1).
-            continue
         elif _src in _membership_product_sources():
             # A membership bought at /membership is ending. These terms never renew by
             # themselves, and before 2026-11-13 they fell through to the old coaching
@@ -60122,10 +60262,10 @@ def cron_membership_renewals():
                 _ends = _family_long_date(r["expires_at"])
             except Exception:
                 _ends = r["expires_at"]
-            subject = f"Your Remedy Match membership ends in {days_left} day{s_days}"
+            subject = f"Your Remedy Match membership ends {_when}"
             body = (
                 f"Aloha,\n\n"
-                f"Your Remedy Match membership ends in {days_left} day{s_days}, on {_ends}. "
+                f"Your Remedy Match membership ends {_when}, on {_ends}. "
                 f"It does not renew by itself, so there is nothing to cancel.\n\n"
                 f"When you're ready to keep going, you can renew here:\n{_renew_url}\n\n"
                 f"Your membership and everything in your portal stay active right up "
@@ -60135,17 +60275,29 @@ def cron_membership_renewals():
                 f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
             )
         else:
-            subject = f"Your Remedy Match coaching access ends in {days_left} day{s_days}"
-            body = (
-                f"Hi,\n\n"
-                f"Your Remedy Match coaching access ends in {days_left} day{s_days}"
-                f" on {r['expires_at']}.\n\n"
-                f"To renew for another 30 days, record a fresh 3-5 minute video at:\n"
-                f"https://truly.vip/Results\n\n"
-                f"Glen reviews each submission and re-opens access on acceptance.\n\n"
-                f"---\n"
-                f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
-            )
+            # Every other grant (biofield_month_delivery, supply_months, video, comps,
+            # anything unknown) gets no email. Glen 2026-11-14, approving the daily
+            # schedule: reminders go only to prepay, the care taster, /membership terms
+            # and household annuals. This branch used to send the retired "record a
+            # fresh video at truly.vip/Results" coaching text to all of them.
+            continue
+        # Claim before sending: one conditional write, so two runs (or a retry after a
+        # partial run) cannot both send. Nobody is emailed twice on one Hawaii day,
+        # whichever of their rows was stamped (review round 4).
+        if _reminded_today(_email_lc, _today_h):
+            continue
+        with _db_lock, db.connect(LOG_DB) as cx:
+            # Two statements, not "? IS NULL": Postgres cannot type a bare NULL parameter.
+            if last is None:
+                cur = cx.execute("UPDATE memberships SET last_reminder_at=? WHERE id=? "
+                                 "AND last_reminder_at IS NULL", (now_iso, r["id"]))
+            else:
+                cur = cx.execute("UPDATE memberships SET last_reminder_at=? WHERE id=? "
+                                 "AND last_reminder_at=?", (now_iso, r["id"], last))
+            cx.commit()
+            claimed = (cur.rowcount or 0) == 1
+        if not claimed:
+            continue
         try:
             ok_sent = _send_inquiry_email(
                 to_email=r["email"], subject=subject, body=body,
@@ -60154,12 +60306,13 @@ def cron_membership_renewals():
         except Exception as e:
             print(f"[renewal-cron] send failed for {r['email']}: {e!r}", flush=True)
             ok_sent = False
-        if ok_sent:
+        if not ok_sent:
             with _db_lock, db.connect(LOG_DB) as cx:
-                cx.execute(
-                    "UPDATE memberships SET last_reminder_at=? WHERE id=?",
-                    (now_iso, r["id"])
-                )
+                cx.execute("UPDATE memberships SET last_reminder_at=? WHERE id=? "
+                           "AND last_reminder_at=?", (last, r["id"], now_iso))
+                cx.commit()
+        if ok_sent:
+            _sent_to.add(_email_lc)
             try:
                 with db.connect(LOG_DB) as cx:
                     cx.execute(
@@ -60172,7 +60325,7 @@ def cron_membership_renewals():
             except Exception as e:
                 print(f"[renewal-cron] journey_events insert failed: {e!r}", flush=True)
             reminded += 1
-    reminded += _remind_household_terms_ending(now_iso)
+    reminded += _remind_household_terms_ending(now_iso, sent_to=_sent_to)
     return jsonify({"reminded": reminded}), 200
 
 

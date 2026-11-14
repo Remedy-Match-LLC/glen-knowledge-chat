@@ -283,7 +283,7 @@ def test_reminder_names_the_last_day_price_and_link(db_clean, today, monkeypatch
     today["d"] = "2026-11-14"                        # the next Hawaii day: one more
     assert appmod._remind_household_terms_ending("2026-11-14T19:00:00Z") == 1
     assert m["to_email"] == HOLDER
-    assert m["subject"] == "Your Household Membership ends in 2 days"
+    assert m["subject"] == "Your Household Membership ends tomorrow"   # agrees with "through 14 November"
     assert "through 14 November 2026" in m["body"]
     assert "no card will be charged" in m["body"]
     assert "($1,497)" in m["body"] and "https://test.local/membership" in m["body"]

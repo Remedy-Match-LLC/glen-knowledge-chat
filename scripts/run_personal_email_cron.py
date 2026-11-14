@@ -157,6 +157,12 @@ def run_daily_piggybacks():
     # never double-charges; comped plans are never billed.
     _piggyback_post("family-plan-charge", "/api/cron/family-plan/charge",
                     "X-Console-Key", CONSOLE_SECRET)
+    # Membership renewal reminders (Glen 2026-11-14): prepay terms, the care taster,
+    # /membership terms and household annuals ending within 3 days get one email a day.
+    # Every other grant type gets none. Nothing called this endpoint before this line,
+    # so no reminder had ever been sent. Idempotent per day via last_reminder_at.
+    _piggyback_post("membership-renewals", "/api/cron/membership-renewals",
+                    "X-Console-Key", CONSOLE_SECRET)
     # Household hold-and-batch (#task-10): auto-release any hold group past its
     # ship-by deadline — combines >=2 orders into one shipment, or just un-holds a
     # lone order. Idempotent (a released group is no longer 'open').
