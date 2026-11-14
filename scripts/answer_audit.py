@@ -138,6 +138,18 @@ def money_cents(s):
     return int(round(float(s.replace(",", "")) * 100))
 
 
+
+# Charged USPS box rates the chat may quote. Checkout reads the live usps_rates table;
+# this offline audit cannot, so keep it in step when a rate changes (L $33 since 2026-11-03).
+BOX_CENTS = {"S": 1300, "M": 2300, "L": 3300}
+
+
+def _own_box_total_cents(p):
+    """Shipping for one unit of an own-box product that names its boxes."""
+    return int(p.get("flat_shipping_cents") or 0) + sum(
+        BOX_CENTS.get(b, 0) for b in (p.get("flat_shipping_boxes") or []))
+
+
 def audit(answer, products, group=None):
     """Return a list of finding strings for one answer. `group` is the question's
     group from QUESTIONS; "claim" answers are also checked for invented mechanism."""
@@ -195,6 +207,8 @@ def audit(answer, products, group=None):
                       "service_value_cents", "service_regular_cents"):
                 if p.get(k):
                     allowed.add(int(p[k]))
+            if p.get("flat_shipping_boxes"):
+                allowed.add(_own_box_total_cents(p))
         # any product NAMED in the answer also justifies its own price
         for slug, p in products.items():
             nm = p.get("name") or ""
@@ -202,8 +216,10 @@ def audit(answer, products, group=None):
                 for k in ("price_cents", "regular_cents", "flat_shipping_cents"):
                     if p.get(k):
                         allowed.add(int(p[k]))
+                if p.get("flat_shipping_boxes"):
+                    allowed.add(_own_box_total_cents(p))
         # common non-product figures we should not flag
-        allowed |= {1300, 2300, 3200, 10000}          # USPS S/M/L + own-parcel
+        allowed |= set(BOX_CENTS.values()) | {10000}  # USPS S/M/L + own-parcel
         for raw in MONEY.findall(answer):
             c = money_cents(raw)
             if c == 0 or c in allowed:

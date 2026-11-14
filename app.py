@@ -11072,7 +11072,34 @@ class CheckoutError(Exception):
 # USPS flat-rate box thresholds by total bottle count (Glen 2026-06-14): <=4 S, <=12 M, else L.
 # Used as a fail-safe when the box-fit catalog can't pick a box; the catalog (when Rae fills it
 # at /admin/shipping) takes precedence via shipping.quote().
-_SHIP_FALLBACK_HARD = {"S": 1300, "M": 2300, "L": 3200}   # rounded rates if even the rates table is down
+_SHIP_FALLBACK_HARD = {"S": 1300, "M": 2300, "L": 3300}   # rounded rates if even the rates table is down (L $33 since 2026-11-03)
+
+
+def _box_rate_cents(size, rates=None):
+    """The live charged rate for one USPS box size (S, M or L). Never raises.
+    Falls back to the rounded hard rate only when the rates table cannot answer.
+    Pass `rates` (one get_current_rates() snapshot) to price a whole cart at one rate."""
+    try:
+        if rates is None:
+            rates = _shipping.get_current_rates() or {}
+        r = rates.get(size) or {}
+        cents = int(r.get("charged_cents") or r.get("usps_retail_cents") or 0)
+        return cents or _SHIP_FALLBACK_HARD[size]
+    except Exception:
+        return _SHIP_FALLBACK_HARD[size]
+
+
+def _own_box_flat_cents(p, rates=None):
+    """Per-unit fixed shipping for an own-parcel product.
+    `flat_shipping_boxes` names USPS box sizes, charged at today's confirmed rate,
+    so a USPS price change carries through (Glen 2026-11-14: "large box").
+    `flat_shipping_cents` is a fixed amount added on top, for parcels with no box size."""
+    cents = int(p.get("flat_shipping_cents") or 0)
+    for size in (p.get("flat_shipping_boxes") or []):
+        if size not in _SHIP_FALLBACK_HARD:
+            raise CheckoutError(f"Unknown shipping box {size!r} for {p.get('name') or p.get('slug')}.")
+        cents += _box_rate_cents(size, rates)
+    return cents
 
 
 def _fallback_shipping_cents(total_bottles):
@@ -11081,13 +11108,7 @@ def _fallback_shipping_cents(total_bottles):
     if n <= 0:
         return 0
     size = "S" if n <= 4 else ("M" if n <= 12 else "L")
-    try:
-        rates = _shipping.get_current_rates() or {}
-        r = rates.get(size) or {}
-        cents = int(r.get("charged_cents") or r.get("usps_retail_cents") or 0)
-        return cents or _SHIP_FALLBACK_HARD[size]
-    except Exception:
-        return _SHIP_FALLBACK_HARD[size]
+    return _box_rate_cents(size)
 
 
 def _shipping_for_cart(box_counts, total_bottles):
@@ -11177,6 +11198,8 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     items, qbo_lines, items_rec, box_counts, subtotal_list, total_bottles = [], [], [], {}, 0, 0
     total_cello = 0
     flat_ship_cents = 0   # sum of per-product fixed shipping overrides (own-parcel items)
+    filler_alone_lines = 0   # shippable lines that pack as filler (ships_as_filler)
+    _rates_snapshot = None   # one usps_rates read per cart, so every line uses the same rate
     # Names of lines packed at FALLBACK_BOTTLE_TYPE because their real packaging is
     # unspecified. Returned so an operator surface can list what needs measuring.
     packaging_review = []
@@ -11216,8 +11239,19 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         # UnknownBottleType pick_boxes raises and returns shipping_cents: None —
         # _shipping_for_cart then falls to the coarse qty rule via the `cents > 0`
         # False branch (not via its own except), charging a phantom bottle.
-        if _shipping.is_shippable(p):
-            _flat = int(p.get("flat_shipping_cents") or 0)
+        if _shipping.is_shippable(p) and p.get("ships_as_filler") and not p.get("bundle"):
+            # Packs as filler inside another parcel (Glen 2026-11-14, Bamboo Sanctuary
+            # Cloth: it "will fit as part of the packing material, not take extra
+            # space"). It adds no space and no charge beside anything else that ships.
+            # Alone it needs a box of its own: see the Small-box charge after the loop.
+            filler_alone_lines += 1
+        elif _shipping.is_shippable(p):
+            if _rates_snapshot is None:
+                try:
+                    _rates_snapshot = _shipping.get_current_rates() or {}
+                except Exception:
+                    _rates_snapshot = {}
+            _flat = _own_box_flat_cents(p, _rates_snapshot)
             if _flat > 0 and not p.get("bundle"):
                 # Own-parcel item with a FIXED shipping charge (e.g. the water ionizers,
                 # which each ship in their own box). Bill the flat rate per unit and keep
@@ -11277,6 +11311,10 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                     total_bottles += qty * _per
     # US-only shipping — but only a cart with something to ship has an opinion
     # about the address. An overseas client buying a service prices fine.
+    if filler_alone_lines and not box_counts and not flat_ship_cents:
+        # Nothing else ships, so the filler goes alone: one Small box, whatever the
+        # quantity. Glen: "It would fit a small box." Longer cuts are not yet ruled.
+        flat_ship_cents = _box_rate_cents("S", _rates_snapshot)
     if (box_counts or flat_ship_cents) and country not in ("US", "USA", ""):
         raise CheckoutError("We ship to US addresses only — please use a US forwarding address.")
     tier_arg = subscriber_tier_pct
