@@ -60074,11 +60074,15 @@ def cron_membership_renewals():
             _renew_url = f"{_base}/prepay{_renew_q}" if _base else "your member portal"
             _renew_line = (f"${_renew_cents/100:,.0f} for another {_term_label}"
                            if _renew_cents else "a new monthly or 12-month term")
+            try:
+                _ends = _family_long_date(r["expires_at"])
+            except Exception:
+                _ends = r["expires_at"]
             subject = f"Your Continuous Care renews in {days_left} day{s_days}"
             body = (
                 f"Aloha,\n\n"
                 f"Your prepaid Continuous Care ends in {days_left} day{s_days}"
-                f" on {r['expires_at']}. There's nothing to cancel and no automatic "
+                f" on {_ends}. There's nothing to cancel and no automatic "
                 f"charge - your card was never kept on file for renewal.\n\n"
                 f"When you're ready to keep going, you can renew "
                 f"({_renew_line}) here:\n{_renew_url}\n\n"
@@ -60095,11 +60099,15 @@ def cron_membership_renewals():
                 continue
             _base = (PUBLIC_BASE_URL or "").rstrip("/")
             _renew_url = f"{_base}/prepay" if _base else "your member portal"
+            try:
+                _ends = _family_long_date(r["expires_at"])
+            except Exception:
+                _ends = r["expires_at"]
             subject = f"Your care window ends in {days_left} day{s_days} - keep your Continuous Care going"
             body = (
                 f"Aloha,\n\n"
                 f"Your 30-day Continuous Care window ends in {days_left} day{s_days}"
-                f" on {r['expires_at']}. There's nothing to cancel and no automatic charge - "
+                f" on {_ends}. There's nothing to cancel and no automatic charge - "
                 f"your card was never kept on file.\n\n"
                 f"When you're ready to keep your care going, continue on Continuous Care here:\n"
                 f"{_renew_url}\n\n"
@@ -60135,17 +60143,12 @@ def cron_membership_renewals():
                 f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
             )
         else:
-            subject = f"Your Remedy Match coaching access ends in {days_left} day{s_days}"
-            body = (
-                f"Hi,\n\n"
-                f"Your Remedy Match coaching access ends in {days_left} day{s_days}"
-                f" on {r['expires_at']}.\n\n"
-                f"To renew for another 30 days, record a fresh 3-5 minute video at:\n"
-                f"https://truly.vip/Results\n\n"
-                f"Glen reviews each submission and re-opens access on acceptance.\n\n"
-                f"---\n"
-                f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
-            )
+            # Every other grant (biofield_month_delivery, supply_months, video, comps,
+            # anything unknown) gets no email. Glen 2026-11-14, approving the daily
+            # schedule: reminders go only to prepay, the care taster, /membership terms
+            # and household annuals. This branch used to send the retired "record a
+            # fresh video at truly.vip/Results" coaching text to all of them.
+            continue
         try:
             ok_sent = _send_inquiry_email(
                 to_email=r["email"], subject=subject, body=body,

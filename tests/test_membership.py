@@ -999,9 +999,10 @@ def test_renewal_cron_care_taster_skipped_when_flag_off(app_client_mem, fake_smt
     assert r.status_code == 200 and r.get_json().get("reminded") == 0
 
 
-def test_renewal_cron_emails_expiring_in_window(app_client_mem, fake_smtp):
+def test_renewal_cron_emails_expiring_in_window(app_client_mem, fake_smtp, monkeypatch):
     """Members whose expires_at is in (now, now+3d) and not reminded in last 24h get reminded."""
     client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
     import uuid as _uuid
     now = datetime.utcnow()
     cx = sqlite3.connect(db)
@@ -1011,21 +1012,21 @@ def test_renewal_cron_emails_expiring_in_window(app_client_mem, fake_smtp):
         "VALUES (?,?,?,?,?,?)",
         (str(_uuid.uuid4()), "soon@example.com",
          now.isoformat()+"Z",
-         (now+timedelta(days=2)).isoformat()+"Z", "glen", "video"))
+         (now+timedelta(days=2)).isoformat()+"Z", "prepay_12mo", "prepay_12mo"))
     # Too far out (5d) - NOT reminded
     cx.execute(
         "INSERT INTO memberships (id, email, granted_at, expires_at, granted_by, source) "
         "VALUES (?,?,?,?,?,?)",
         (str(_uuid.uuid4()), "later@example.com",
          now.isoformat()+"Z",
-         (now+timedelta(days=5)).isoformat()+"Z", "glen", "video"))
+         (now+timedelta(days=5)).isoformat()+"Z", "prepay_12mo", "prepay_12mo"))
     # Already expired - NOT reminded
     cx.execute(
         "INSERT INTO memberships (id, email, granted_at, expires_at, granted_by, source) "
         "VALUES (?,?,?,?,?,?)",
         (str(_uuid.uuid4()), "past@example.com",
          (now-timedelta(days=2)).isoformat()+"Z",
-         (now-timedelta(days=1)).isoformat()+"Z", "glen", "video"))
+         (now-timedelta(days=1)).isoformat()+"Z", "prepay_12mo", "prepay_12mo"))
     cx.commit(); cx.close()
     fake_smtp.instances = []
     r = client.post("/api/cron/membership-renewals", headers=_ckey())
@@ -1038,8 +1039,9 @@ def test_renewal_cron_emails_expiring_in_window(app_client_mem, fake_smtp):
     assert not any("past@example.com" in to for to in to_addrs)
 
 
-def test_renewal_cron_skips_already_reminded_within_24h(app_client_mem, fake_smtp):
+def test_renewal_cron_skips_already_reminded_within_24h(app_client_mem, fake_smtp, monkeypatch):
     client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
     import uuid as _uuid
     now = datetime.utcnow()
     cx = sqlite3.connect(db)
@@ -1048,7 +1050,7 @@ def test_renewal_cron_skips_already_reminded_within_24h(app_client_mem, fake_smt
         "VALUES (?,?,?,?,?,?,?)",
         (str(_uuid.uuid4()), "already@example.com",
          now.isoformat()+"Z",
-         (now+timedelta(days=2)).isoformat()+"Z", "glen", "video",
+         (now+timedelta(days=2)).isoformat()+"Z", "prepay_12mo", "prepay_12mo",
          (now-timedelta(hours=12)).isoformat()+"Z"))
     cx.commit(); cx.close()
     fake_smtp.instances = []
@@ -1057,6 +1059,65 @@ def test_renewal_cron_skips_already_reminded_within_24h(app_client_mem, fake_smt
     assert r.get_json().get("reminded") == 0
     sends_all = [s for inst in fake_smtp.instances for s in inst.sent]
     assert not any("already@example.com" in to for (_, to, _) in sends_all)
+
+
+@pytest.mark.parametrize("source", ["video", "biofield_month_delivery", "supply_months",
+                                    "comp", "", "something_new"])
+def test_renewal_cron_other_grants_get_no_email(app_client_mem, fake_smtp, monkeypatch, source):
+    """Glen 2026-11-14: only prepay, the care taster, /membership terms and household
+    annuals are reminded. Every other grant gets nothing, never the retired
+    truly.vip/Results coaching text, and is not marked as reminded."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    monkeypatch.setattr(app_module, "PROGRAM_CARE_TASTER_ENABLED", True, raising=False)
+    import uuid as _uuid
+    now = datetime.utcnow()
+    mid = str(_uuid.uuid4())
+    cx = sqlite3.connect(db)
+    cx.execute(
+        "INSERT INTO memberships (id, email, granted_at, expires_at, granted_by, source) "
+        "VALUES (?,?,?,?,?,?)",
+        (mid, "other@example.com", now.isoformat()+"Z",
+         (now+timedelta(days=2)).isoformat()+"Z", "glen", source))
+    cx.commit(); cx.close()
+    fake_smtp.instances = []
+    r = client.post("/api/cron/membership-renewals", headers=_ckey())
+    assert r.status_code == 200 and r.get_json().get("reminded") == 0
+    sends_all = [s for inst in fake_smtp.instances for s in inst.sent]
+    assert not any("other@example.com" in to for (_, to, _) in sends_all)
+    cx = sqlite3.connect(db)
+    assert cx.execute("SELECT last_reminder_at FROM memberships WHERE id=?", (mid,)).fetchone()[0] is None
+    cx.close()
+
+
+def test_renewal_cron_prepay_copy_shows_a_readable_date(app_client_mem, fake_smtp, monkeypatch):
+    """The end date reads as a Hawaii calendar date, not a raw ISO timestamp."""
+    client, app_module, db = app_client_mem
+    monkeypatch.setattr(app_module, "PREPAY_LADDER_ENABLED", True, raising=False)
+    import uuid as _uuid
+    now = datetime.utcnow()
+    exp = (now + timedelta(days=2)).isoformat() + "Z"
+    cx = sqlite3.connect(db)
+    cx.execute(
+        "INSERT INTO memberships (id, email, granted_at, expires_at, granted_by, source) "
+        "VALUES (?,?,?,?,?,?)",
+        (str(_uuid.uuid4()), "dated@example.com", now.isoformat()+"Z", exp, "prepay_12mo", "prepay_12mo"))
+    cx.commit(); cx.close()
+    fake_smtp.instances = []
+    client.post("/api/cron/membership-renewals", headers=_ckey())
+    msgs = " ".join(str(m) for inst in fake_smtp.instances for (_, to, m) in inst.sent
+                    if "dated@example.com" in to)
+    assert msgs
+    assert exp not in msgs and exp[:19] not in msgs
+    assert app_module._family_long_date(exp) in msgs
+
+
+def test_daily_cron_posts_membership_renewals_with_console_key():
+    """The renewal reminders ride the 7 AM HST personal-email cron."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "run_personal_email_cron.py").read_text()
+    body = src[src.index("def run_daily_piggybacks"):]
+    assert '_piggyback_post("membership-renewals", "/api/cron/membership-renewals",\n                    "X-Console-Key", CONSOLE_SECRET)' in body
 
 
 # ── magic-link lifetimes ─────────────────────────────────────────────────────
