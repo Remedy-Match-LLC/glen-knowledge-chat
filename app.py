@@ -11075,12 +11075,9 @@ class CheckoutError(Exception):
 _SHIP_FALLBACK_HARD = {"S": 1300, "M": 2300, "L": 3200}   # rounded rates if even the rates table is down
 
 
-def _fallback_shipping_cents(total_bottles):
-    """Qty-based USPS box fallback (rounded charged rate). Never raises."""
-    n = int(total_bottles or 0)
-    if n <= 0:
-        return 0
-    size = "S" if n <= 4 else ("M" if n <= 12 else "L")
+def _box_rate_cents(size):
+    """The live charged rate for one USPS box size (S, M or L). Never raises.
+    Falls back to the rounded hard rate only when the rates table cannot answer."""
     try:
         rates = _shipping.get_current_rates() or {}
         r = rates.get(size) or {}
@@ -11088,6 +11085,28 @@ def _fallback_shipping_cents(total_bottles):
         return cents or _SHIP_FALLBACK_HARD[size]
     except Exception:
         return _SHIP_FALLBACK_HARD[size]
+
+
+def _own_box_flat_cents(p):
+    """Per-unit fixed shipping for an own-parcel product.
+    `flat_shipping_boxes` names USPS box sizes, charged at today's confirmed rate,
+    so a USPS price change carries through (Glen 2026-11-14: "large box").
+    `flat_shipping_cents` is a fixed amount added on top, for parcels with no box size."""
+    cents = int(p.get("flat_shipping_cents") or 0)
+    for size in (p.get("flat_shipping_boxes") or []):
+        if size not in _SHIP_FALLBACK_HARD:
+            raise CheckoutError(f"Unknown shipping box {size!r} for {p.get('name') or p.get('slug')}.")
+        cents += _box_rate_cents(size)
+    return cents
+
+
+def _fallback_shipping_cents(total_bottles):
+    """Qty-based USPS box fallback (rounded charged rate). Never raises."""
+    n = int(total_bottles or 0)
+    if n <= 0:
+        return 0
+    size = "S" if n <= 4 else ("M" if n <= 12 else "L")
+    return _box_rate_cents(size)
 
 
 def _shipping_for_cart(box_counts, total_bottles):
@@ -11217,7 +11236,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         # _shipping_for_cart then falls to the coarse qty rule via the `cents > 0`
         # False branch (not via its own except), charging a phantom bottle.
         if _shipping.is_shippable(p):
-            _flat = int(p.get("flat_shipping_cents") or 0)
+            _flat = _own_box_flat_cents(p)
             if _flat > 0 and not p.get("bundle"):
                 # Own-parcel item with a FIXED shipping charge (e.g. the water ionizers,
                 # which each ship in their own box). Bill the flat rate per unit and keep

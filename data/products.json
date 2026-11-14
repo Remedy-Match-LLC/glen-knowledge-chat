@@ -25260,8 +25260,8 @@
    "intro": "A portable bottle that generates molecular-hydrogen-rich water by electrolysis — Glen's recommended replacement for the discontinued Living Water Bottle.",
    "description": "Molecular Hydrogen is the perfect antioxidant. It is the smallest molecule that delivers electrons to even the smallest spaces in our cells, and it is the only antioxidant that cannot be overdosed — in excess, other antioxidants can block the body's own signalling. This portable bottle generates molecular-hydrogen-rich water on demand via electrolysis, so hydrogen-rich water travels with the client rather than being tied to a countertop system.",
    "source": "gk-migration-2026-07-19",
-   "flat_shipping_cents": 3200,
-   "_note": "Ships in a USPS Large Flat Rate box — $32 as of 2026-07-20 (Glen). The $100/unit rate belongs to the WATER IONIZERS, not this. NOTE: this is a hardcoded flat rate, so it does NOT track usps_rates when USPS raises the L-box price; the packer-driven items do."
+   "flat_shipping_boxes": ["L"],
+   "_note": "Ships in a USPS Large Flat Rate box (Glen 2026-07-20). The $100/unit rate belongs to the WATER IONIZERS, not this. Since 2026-11-14 flat_shipping_boxes ['L'] charges the live usps_rates Large row, so a USPS change carries through (Glen: \"large box\")."
   },
   "book-dry-eye-relief-ebook": {
    "volume_eligible": false,
@@ -25287,7 +25287,7 @@
    "name": "NIR Brain Frequency Helmet",
    "price_cents": 499700,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "intro": "The Brain Helmet delivers Near Infrared (NIR) light to the brain to energize and cleanse the tissue, helping to improve symptoms and restore lost func",
    "source": "gk-device-import-2026-07-20"
   },
@@ -25295,7 +25295,7 @@
    "name": "Hair Growth Helmet",
    "price_cents": 99700,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "intro": "Our hair regrowth helmet uses 660 nm light to activate the mitochondria in the skin and hair follicles of the head.",
    "source": "gk-device-import-2026-07-20"
   },
@@ -25319,7 +25319,7 @@
    "name": "Air & Surface PRO+",
    "price_cents": 139700,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "intro": "This is the perfect ionizer, and air purifier for your home and office.\r\nIf you are outside of California, it comes with the option to do a deep Ozone",
    "source": "gk-device-import-2026-07-20"
   },
@@ -25327,7 +25327,7 @@
    "name": "DENAS Microcurrent System for Eye Healing",
    "price_cents": 69700,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "intro": "DENAS stands for Dynamic Electro Neuro Adaptive Stimulator. This package uses advanced biofeedback technology based on the SCENAR system developed for",
    "source": "gk-device-import-2026-07-20"
   },
@@ -25399,7 +25399,7 @@
    "name": "FreshAir Mobile Portable Air Purifier",
    "price_cents": 19700,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "intro": "Perfect air ionizer and cleaner for your car or your cubicle.",
    "source": "gk-device-import-2026-07-20"
   },
@@ -25407,7 +25407,7 @@
    "name": "Microgen Wearable Microcurrent Generator",
    "price_cents": 49700,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "intro": "This is a programmable and wearable microcurrent frequency device.",
    "source": "gk-device-import-2026-07-20"
   },
@@ -25415,7 +25415,7 @@
    "name": "Shower Filter",
    "price_cents": 9000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "intro": "Remove over 95% of the Chlorine from your shower water...",
    "source": "gk-device-import-2026-07-20"
   },
@@ -25528,7 +25528,7 @@
    "name": "Boxers with Mithreal™ Silver",
    "price_cents": 8000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "source": "gk-physical-goods-import-2026-07-20",
    "intro": "Boxers are made of 42% Silver and 53% Cotton for comfort, durability, and excellent protection against EMF, as well as providing protection against fungal and bacterial growth responsible for body odo"
   },
@@ -25544,7 +25544,7 @@
    "name": "Infrared Bamboo Bath Towel",
    "price_cents": 4000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "source": "gk-physical-goods-import-2026-07-20",
    "intro": "Bamboo fiber promotes health and wellness..."
   },
@@ -25563,7 +25563,7 @@
    "name": "Mithreal™ Silver Head/Face Shield",
    "price_cents": 9000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "source": "gk-physical-goods-import-2026-07-20",
    "intro": "In a 2017 report, 64 people with autoimmune conditions wore a silver-threaded cap for 4 hours while asleep and 4 hours while awake. The caps were sewn for the study; they were not this product. Many participants were also taking a prescription drug in the researchers’ treatment program. The researchers asked whether symptoms changed at all, better or worse. “A full 90 % of the 64 patients reported a “Definite” or “Strong” change in their symptoms.” There was no comparison group.\n\nSource: Electrosmog and autoimmune disease (https://pmc.ncbi.nlm.nih.gov/articles/PMC5406447/)\n\nIf symptoms flare at first, wear it for shorter periods and build up as tolerated. If you tend to be very sensitive or reactive, start with minimal use so you can adjust timing to moderate any cleansing symptoms. Message us in the Messages box of your client portal if you experience increased symptoms, so we can guide you through any negative or mixed regulation response such as a cleansing reaction or healing crisis.",
    "copy_pinned": [
@@ -25585,7 +25585,7 @@
    "name": "Mithreal™ Silver Long Sleeve Shirt",
    "price_cents": 25000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "source": "gk-physical-goods-import-2026-07-20",
    "intro": "The Mithreal™ Silver Long Sleeve Shirt protects the important organs of the thorax and abdomen.",
    "copy_pinned": [
@@ -25607,7 +25607,7 @@
    "name": "Mithreal™ Silver T-shirt",
    "price_cents": 19000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "source": "gk-physical-goods-import-2026-07-20",
    "intro": "The Mithreal™ Silver T-shirt protects the important organs of the thorax and abdomen. It is made of 100% silver for maximum protection against EMF. The silver also resists the fungal and bacterial growth that causes body odor on clothes.",
    "copy_pinned": [
@@ -25618,7 +25618,7 @@
    "name": "Mithreal™ T-shirt with 70% Silver",
    "price_cents": 15000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "source": "gk-physical-goods-import-2026-07-20",
    "intro": "The Mithreal™ T-shirt with 70% Silver protects the important organs of the thorax and abdomen. It is made of 70% silver and 30% rayon for comfort and durability. The silver also resists the fungal and bacterial growth that causes body odor on clothes.",
    "copy_pinned": [
@@ -25629,7 +25629,7 @@
    "name": "Tank Top with 42% Silver",
    "price_cents": 11000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "source": "gk-physical-goods-import-2026-07-20",
    "intro": "The T-shirt is made of 42% Silver and 53% Cotton for comfort, durability, and excellent protection against EMF, as well as providing protection against fungal and bacterial growth responsible for body"
   },
@@ -25788,7 +25788,7 @@
   },
   "empty-vegicaps-size-4": {
    "name": "Empty Vegicaps Size 4",
-   "price_cents": 800,
+   "price_cents": 1200,
    "bottle_type": "own-box",
    "flat_shipping_cents": 1300,
    "_note": "Name taken from the slug at import because the GrooveKart source SEO meta title was mis-copied from its sibling (read 'Empty Vegicaps Size 00'). Storefront meta title corrected to 'Empty Vegicaps Size 4' on 2026-07-20; product name and slug were already correct.",
@@ -25798,28 +25798,28 @@
    "name": "Large Mithreal Silver-Lined Blanket",
    "price_cents": 25000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "source": "gk-apparel-import-2026-07-20"
   },
   "small-mithreal-silver-lined-blanket": {
    "name": "Small Mithreal Silver-Lined Blanket",
    "price_cents": 18000,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "source": "gk-apparel-import-2026-07-20"
   },
   "circular-mithreal-silver-sleep-canopy": {
    "name": "Circular Mithreal Silver Sleep Canopy",
    "price_cents": 79700,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "source": "gk-apparel-import-2026-07-20"
   },
   "square-mithreal-silver-sleep-canopy": {
    "name": "Square Mithreal Silver Sleep Canopy",
    "price_cents": 99700,
    "bottle_type": "own-box",
-   "flat_shipping_cents": 3200,
+   "flat_shipping_boxes": ["L"],
    "_note": "Name taken from the slug at import because the GrooveKart source SEO meta title was mis-copied from its sibling (read 'Circular Silver Sleep Canopy'). Storefront meta title corrected to 'Square Mithreal™ Silver Sleep Canopy' on 2026-07-20; product name and slug were already correct.",
    "source": "gk-apparel-import-2026-07-20"
   },

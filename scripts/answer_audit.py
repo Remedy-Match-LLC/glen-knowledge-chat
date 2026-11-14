@@ -203,7 +203,7 @@ def audit(answer, products, group=None):
                     if p.get(k):
                         allowed.add(int(p[k]))
         # common non-product figures we should not flag
-        allowed |= {1300, 2300, 3200, 10000}          # USPS S/M/L + own-parcel
+        allowed |= {1300, 2300, 3200, 3300, 10000}    # USPS S/M/L (L $33 since 2026-11-03) + own-parcel
         for raw in MONEY.findall(answer):
             c = money_cents(raw)
             if c == 0 or c in allowed:
