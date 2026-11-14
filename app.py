@@ -29237,6 +29237,13 @@ def _portal_options_for(email, holder_email=None):
                         # Set once the holder has cancelled: cover runs to this date.
                         "ends": _fp.access_ends(cx, holder_email or email),
                     }
+                    # A household annual: paid once, no renewal, so no Cancel. The
+                    # portal names the last covered day (Glen, 2026-11-13).
+                    _own = _fp.get(cx, holder_email or email)
+                    _term_end = _fp.term_ends(cx, holder_email or email)
+                    if _term_end:
+                        opts["family_plan"]["label"] = _fp.label_for(_own)
+                        opts["family_plan"]["term_last_day"] = _fp.last_covered_day(_term_end)
             except Exception as _e:
                 print(f"[portal-options/family] {_e!r}", flush=True)
         return opts
@@ -38744,6 +38751,10 @@ def portal_family_plan_subscribe(token):
         if ident is None:
             return jsonify({"error": "not_found"}), 404
         email = ident.email
+        _fp.init_family_plan_table(cx)
+        if _fp.term_ends(cx, email):
+            # A running annual: a monthly plan would overwrite it (review round 3).
+            return jsonify({"error": "annual_running"}), 409
     from dashboard import stripe_pay as _sp
     base = PUBLIC_BASE_URL.rstrip("/")
     sess = _sp.create_checkout_session(
@@ -38782,6 +38793,18 @@ def family_plan_checkout():
         return jsonify({"ok": False, "error": "email required"}), 400
     if not tier:
         return jsonify({"ok": False, "error": "unknown tier"}), 400
+    if int(tier["cadence_months"]) < _fp.TERM_CADENCE_MONTHS:
+        # A monthly purchase would overwrite a running annual and lose its paid days
+        # (review round 1). Renewing the annual is still allowed.
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _fp.init_family_plan_table(cx)
+            _running = _fp.term_ends(cx, email)
+        if _running:
+            return jsonify({"ok": False, "error": (
+                "Your Household Annual membership is active through "
+                f"{_fp.long_date(_fp.last_covered_day(_running))}. "
+                "You can renew it here when it is close to ending.")}), 409
     credit = min(_family_upgrade_credit(email), tier["amount_cents"])
     amount = tier["amount_cents"] - credit
     base = PUBLIC_BASE_URL.rstrip("/")
@@ -38790,7 +38813,10 @@ def family_plan_checkout():
         metadata={"kind": "family_plan", "email": email, "tier": tier_key,
                   "upgrade_credit_cents": str(credit)},
         success_url=f"{base}/family-plan/return?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{base}/membership", save_card=True)
+        # The household annual is paid once and never charged again (Glen,
+        # 2026-11-13), so no card is kept for it. Monthly still vaults one.
+        cancel_url=f"{base}/membership",
+        save_card=int(tier["cadence_months"]) < _fp.TERM_CADENCE_MONTHS)
     return jsonify({"ok": True, "url": sess.get("url"), "upgrade_credit_cents": credit,
                     "amount_cents": amount})
 
@@ -38819,27 +38845,55 @@ def _fulfill_family_plan(session_id):
         pi = _sp.get_payment_intent(pi_id)
         if pi.get("status") != "succeeded":
             return {"ok": False, "reason": "unpaid"}
+        term = int(tier["cadence_months"]) >= _fp.TERM_CADENCE_MONTHS
         customer, pm = pi.get("customer"), pi.get("payment_method")
-        if not (customer and pm):
+        if term:
+            pm = None                     # a one-time term keeps no card to charge
+        elif not (customer and pm):
             return {"ok": False, "reason": "no_card"}
-        from datetime import date as _date
-        next_charge = _subs.add_months(
-            _date.today().isoformat(), int(tier["cadence_months"]))
         with _db_lock, db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
             cx.execute("CREATE TABLE IF NOT EXISTS family_sub_grants "
                        "(session_id TEXT PRIMARY KEY, email TEXT, created_at TEXT)")
             _fp.init_family_plan_table(cx)
+            # The claim is committed together with the activation below, so a crash
+            # between them leaves nothing claimed and a retry fulfils (review round 2).
             claimed = cx.execute(
                 "INSERT OR IGNORE INTO family_sub_grants (session_id,email,created_at) VALUES (?,?,?)",
                 (session_id, email, _fp._now())).rowcount == 1
-            cx.commit()
             if not claimed:
+                cx.commit()
                 return {"ok": True, "reason": "already_fulfilled"}
-            _fp.activate(cx, email, next_charge_at=next_charge, customer_id=customer,
-                         payment_method_id=pm, source="stripe",
-                         amount_cents=tier["amount_cents"],
-                         cadence_months=tier["cadence_months"])
+            if term:
+                # A renewal of a term still running starts when that term ends, so no
+                # paid day is lost. No card is kept.
+                next_charge = _fp.activate_term(
+                    cx, email, months=int(tier["cadence_months"]),
+                    amount_cents=tier["amount_cents"], customer_id=customer)
+            elif _fp.term_ends(cx, email):
+                # A monthly checkout opened before an annual was bought, then paid:
+                # never overwrite the running annual. Keep the payment on record and
+                # ask Glen to refund it (review round 3).
+                _fp.record_charge(cx, caregiver_email=email,
+                                  amount_cents=int(sess.get("amount_total") or tier["amount_cents"]),
+                                  pi_id=pi_id, status="succeeded")
+                cx.commit()
+                try:
+                    _note = (f"<p>A monthly Household payment from {email} arrived while "
+                             f"their annual term is still running (payment {pi_id}). The "
+                             f"annual was left as it is. Please refund the monthly payment.</p>")
+                    send_evox_email(GLEN_CONSULT_EMAIL, "Glen",
+                                    f"Refund needed: monthly Household payment over an annual ({email})",
+                                    _note, _note, b"")
+                except Exception:
+                    app.logger.exception("household overlap refund notice failed for %s", email)
+                return {"ok": True, "reason": "annual_running_refund_needed"}
+            else:
+                next_charge = _subs.add_months(_fp._today(), int(tier["cadence_months"]))
+                _fp.activate(cx, email, next_charge_at=next_charge, customer_id=customer,
+                             payment_method_id=pm, source="stripe",
+                             amount_cents=tier["amount_cents"],
+                             cadence_months=tier["cadence_months"])
             _fp.record_charge(cx, caregiver_email=email,
                               amount_cents=int(sess.get("amount_total") or
                                                (tier["amount_cents"] -
@@ -38854,10 +38908,18 @@ def _fulfill_family_plan(session_id):
                 for individual in _subs.active_memberships_by_email(cx, email):
                     _subs.set_status(cx, int(individual["id"]), "cancelled")
         try:
-            html = ("<p>Your Family Plan is active. Everyone in your household with "
-                    "sharing on now has their full analysis unlocked. You can cancel "
-                    "any time from your portal.</p>")
-            send_evox_email(email, "", "Your Family Plan is active", html, html, b"")
+            if term:
+                html = ("<p>Your Household Membership is active through "
+                        f"{_fp.long_date(_fp.last_covered_day(next_charge))}. Everyone in "
+                        "your household with sharing on now has their full analysis "
+                        "unlocked. It is a single payment that does not renew.</p>")
+                send_evox_email(email, "", "Your Household Membership is active",
+                                html, html, b"")
+            else:
+                html = ("<p>Your Family Plan is active. Everyone in your household with "
+                        "sharing on now has their full analysis unlocked. You can cancel "
+                        "any time from your portal.</p>")
+                send_evox_email(email, "", "Your Family Plan is active", html, html, b"")
         except Exception:
             app.logger.exception("family plan confirmation failed")
         return {"ok": True}
@@ -39158,12 +39220,13 @@ def family_plan_charge_cron():
             fcx.row_factory = sqlite3.Row
             fresh = _fp.get(fcx, email)
         if (not fresh or fresh.get("status") not in _fp.ACTIVE_STATUSES
-                or not fresh.get("next_charge_at") or fresh["next_charge_at"][:10] > today):
+                or not fresh.get("next_charge_at") or fresh["next_charge_at"][:10] > today
+                or _fp.is_term(fresh)):
             continue
         try:
             res = _sp.charge_off_session(
                 sub["stripe_customer_id"], sub["payment_method_id"], sub["amount_cents"],
-                description=_fp.PLAN["label"],
+                description=_fp.label_for(fresh),
                 metadata={"kind": "family_plan_cycle", "email": email})
             ok = res.get("status") == "succeeded"
             pi_id = res.get("id") or ""
@@ -40991,6 +41054,13 @@ def api_console_family_plan():
         return jsonify({"error": "amount_cents must be an integer number of cents"}), 400
     if amount_cents is not None and amount_cents < 0:
         return jsonify({"error": "amount_cents must be non-negative"}), 400
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _fp.init_family_plan_table(cx)
+        if _fp.term_ends(cx, email):
+            # Re-enrolling would make a paid annual a billed monthly plan with no card.
+            return jsonify({"error": "this household holds a running annual term; "
+                                     "it needs no re-enrolment"}), 409
     with _db_lock:
         with db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
@@ -59812,6 +59882,105 @@ def coaching_studio_credit_post():
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
+def _membership_product_sources():
+    from dashboard import membership_products as _memprod
+    return set(_memprod._tier_sources())
+
+
+def _membership_continues(row):
+    """True when a /membership grant's expiry is not the end of the membership: an
+    active membership subscription is still billing, or a later grant outlasts it."""
+    email = (row["email"] or "").strip().lower()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        try:
+            from dashboard import subscriptions as _subs
+            if _subs.active_memberships_by_email(cx, email):
+                return True
+        except Exception:
+            try:
+                cx.rollback()
+            except Exception:
+                pass
+        later = cx.execute(
+            "SELECT 1 FROM memberships WHERE lower(email)=? AND id<>? AND expires_at > ? "
+            "LIMIT 1", (email, row["id"], row["expires_at"])).fetchone()
+    return later is not None
+
+
+def _family_long_date(value):
+    """A stored timestamp as the Hawaii calendar date it falls on, written out."""
+    from dashboard import family_plan as _fp
+    from zoneinfo import ZoneInfo
+    s = str(value).strip()
+    if "T" in s or " " in s:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        s = dt.astimezone(ZoneInfo("Pacific/Honolulu")).date().isoformat()
+    return _fp.long_date(s)
+
+
+def _remind_household_terms_ending(now_iso):
+    """The household annual is paid once and never renews (Glen, 2026-11-13). Remind
+    the holder once a day in the last 3 days, with the renewal link, like the prepaid
+    single terms. A renewal bought with the same email starts when this term ends.
+    Returns how many reminders were sent."""
+    if not _family_plan_enabled():
+        return 0
+    from dashboard import family_plan as _fp
+    today = _fp._today()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _fp.init_family_plan_table(cx)
+        rows = _fp.terms_ending(cx, today)
+    base = (PUBLIC_BASE_URL or "").rstrip("/")
+    renew_url = f"{base}/membership" if base else "your member portal"
+    price = _fp.TIERS["family_annual"]["amount_cents"]
+    sent = 0
+    from datetime import date as _date
+    for row in rows:
+        email = row["caregiver_email"]
+        end = row["next_charge_at"][:10]
+        # One conditional write claims today's reminder, and only while the term still
+        # ends on that date and is not cancelled. A renewal or cancel since the list was
+        # read, or a second run, sends nothing (review round 2).
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            prev = _fp.claim_reminder(cx, email, today, end)
+        if prev is False:
+            continue
+        days_left = (_date.fromisoformat(end) - _date.fromisoformat(today)).days
+        s_days = "s" if days_left != 1 else ""
+        last_day = _fp.long_date(_fp.last_covered_day(end))
+        subject = f"Your Household Membership ends in {days_left} day{s_days}"
+        body = (
+            f"Aloha,\n\n"
+            f"Your Household Membership covers your household through {last_day}. "
+            f"It does not renew by itself, and no card will be charged.\n\n"
+            f"When you're ready to keep your household covered, you can renew for "
+            f"another year (${price/100:,.0f}) here:\n{renew_url}\n\n"
+            f"Use this same email address. Your new year then starts when this one ends.\n\n"
+            f"Everyone in your household keeps their unlocked analysis right up to that date.\n\n"
+            f"In wellness,\nDr. Glen and Rae\n"
+            f"---\n"
+            f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
+        )
+        try:
+            ok_sent = _send_inquiry_email(to_email=email, subject=subject, body=body,
+                                          reply_to=RM_COACHING_REPLY_EMAIL)
+        except Exception as e:
+            print(f"[renewal-cron] household send failed: {e!r}", flush=True)
+            ok_sent = False
+        if ok_sent:
+            sent += 1
+        else:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                cx.row_factory = sqlite3.Row
+                _fp.release_reminder(cx, email, today, prev)
+    return sent
+
+
 @app.route("/api/cron/membership-renewals", methods=["POST"])
 @require_console_key
 def cron_membership_renewals():
@@ -59901,6 +60070,32 @@ def cron_membership_renewals():
                 f"---\n"
                 f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
             )
+        elif _src in _membership_product_sources() and _membership_continues(r):
+            # Still billed (Annual monthly: 12 charges) or already renewed: this grant
+            # ending is not the membership ending, so say nothing (review round 1).
+            continue
+        elif _src in _membership_product_sources():
+            # A membership bought at /membership is ending. These terms never renew by
+            # themselves, and before 2026-11-13 they fell through to the old coaching
+            # text below ("record a fresh video"). Point them at /membership instead.
+            _base = (PUBLIC_BASE_URL or "").rstrip("/")
+            _renew_url = f"{_base}/membership" if _base else "your member portal"
+            try:
+                _ends = _family_long_date(r["expires_at"])
+            except Exception:
+                _ends = r["expires_at"]
+            subject = f"Your Remedy Match membership ends in {days_left} day{s_days}"
+            body = (
+                f"Aloha,\n\n"
+                f"Your Remedy Match membership ends in {days_left} day{s_days}, on {_ends}. "
+                f"It does not renew by itself, so there is nothing to cancel.\n\n"
+                f"When you're ready to keep going, you can renew here:\n{_renew_url}\n\n"
+                f"Your membership and everything in your portal stay active right up "
+                f"to that date.\n\n"
+                f"In wellness,\nDr. Glen and Rae\n"
+                f"---\n"
+                f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
+            )
         else:
             subject = f"Your Remedy Match coaching access ends in {days_left} day{s_days}"
             body = (
@@ -59939,6 +60134,7 @@ def cron_membership_renewals():
             except Exception as e:
                 print(f"[renewal-cron] journey_events insert failed: {e!r}", flush=True)
             reminded += 1
+    reminded += _remind_household_terms_ending(now_iso)
     return jsonify({"reminded": reminded}), 200
 
 

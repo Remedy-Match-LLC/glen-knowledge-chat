@@ -74,7 +74,19 @@ def test_public_annual_checkout_uses_1497_and_annual_tier():
     args, kwargs = create.call_args
     assert args[0] == 149700
     assert kwargs["metadata"]["tier"] == "family_annual"
-    assert kwargs["save_card"] is True
+    # Glen, 2026-11-13: the household annual is paid once and never charged again,
+    # so no card is kept for it.
+    assert kwargs["save_card"] is False
+
+
+def test_public_monthly_checkout_still_saves_the_card():
+    with mock.patch.object(appmod, "_STRIPE_ACTIVE", True), \
+         mock.patch.object(appmod, "_family_plan_enabled", return_value=True), \
+         mock.patch.object(appmod, "_family_upgrade_credit", return_value=0), \
+         mock.patch("dashboard.stripe_pay.create_checkout_session",
+                    return_value={"id": "cs_m", "url": "https://stripe/cs_m"}) as create:
+        _client().post("/family-plan/checkout", json={"email": "m@x.com", "tier": "family_monthly"})
+    assert create.call_args.kwargs["save_card"] is True
 
 
 def test_public_household_upgrade_applies_99_credit():
