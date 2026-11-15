@@ -299,6 +299,10 @@ var document={activeElement:null,getElementById:function(id){return els[id]||nul
 function val(id){var e=document.getElementById(id);return e?e.value:''}
 var calls={post:[],saveNow:0,reloads:0};var _sess='',_dg=null;
 function scheduleSessionSave(){}
+// The full-session Record block is not loaded here, as in tests/test_layer_handsfree_js.py:
+// it is off, so keepTranscript keeps every word.
+function recAuto(){return null}
+function recCovers(){return false}
 async function saveSessionNow(){calls.saveNow++}
 function reloadKeepingView(){calls.reloads++}
 var answers={},stored={phase:null,location:'',bsi:[null,null,null,null],review:{},warnings:[]};
