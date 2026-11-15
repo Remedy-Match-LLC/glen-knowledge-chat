@@ -322,3 +322,24 @@ def test_stresses_on_a_layer_are_greyed_everywhere_and_still_pick():
     assert got["html"].count('title="Already on a layer"') == 3
     assert "class=locsub role=presentation>Causal chain<" in got["html"]
     assert got["value"] == "Skin & Gut" and got["changes"] == ["Skin & Gut"]
+
+
+@needs_node
+def test_a_layer_head_in_spirit_can_still_be_added_as_a_stress():
+    # Review of #2292: a head shows in SPIRIT (spirit_heads) but is not a stored stress.
+    got = _run("""
+      SERVER.spirit=['Grief','Liver Detox'];SERVER.spirit_heads=['Liver Detox'];
+      var inp=mkInput('spiritAdd',{'data-loccombo':''});els.spiritStat=El('SPAN','spiritStat');
+      locInit();await locLoad();
+      var real=post;
+      post=async function(u,b){var a=await real(u,b);
+        SERVER.spirit_heads=SERVER.spirit_heads.filter(function(h){return locNorm(h)!==locNorm(b.label)});
+        return a};
+      var out={};
+      inp.value='liver detox';await spiritAddNow();
+      out.added=els.spiritStat.textContent;out.posts=calls.post.length;
+      inp.value='Grief';await spiritAddNow();out.dup=els.spiritStat.textContent;
+      out.posts2=calls.post.length;
+      console.log(JSON.stringify(out))""")
+    assert got["posts"] == 1 and got["added"] == "Added to SPIRIT: liver detox"
+    assert got["dup"] == "Already in SPIRIT: Grief. Nothing added." and got["posts2"] == 1

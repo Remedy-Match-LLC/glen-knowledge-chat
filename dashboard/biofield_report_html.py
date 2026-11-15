@@ -2041,7 +2041,8 @@ async function loadLists(){
 // Glen, 15 Nov 2026: BODY has mixed-case subheads (Causal chain, Infoceuticals, Body
 // stresses, Psyche: the server's body_groups), the full list is headed ALL STRESSES,
 // and a stress already on a layer (on_layer) is greyed in every section, still pickable.
-var LOC_SECTIONS={spirit:[],mind:[],body:[],body_groups:[],on_layer:[],all:[],errors:{}};
+var LOC_SECTIONS={spirit:[],spirit_heads:[],mind:[],body:[],body_groups:[],on_layer:[],all:[],
+ errors:{}};
 var LOC_HEADS=[['spirit','SPIRIT'],['mind','MIND'],['body','BODY']];
 var LOC_COMBOS=[];
 // Case, spaces and punctuation ignored, as stress_key on the server: typing "ed1 so"
@@ -2143,7 +2144,8 @@ function locWatch(){if(typeof MutationObserver==='undefined'||!document.body)ret
  window.addEventListener('resize',function(){LOC_COMBOS.forEach(function(c){if(c.open)c.place()})})}
 async function locLoad(){
  try{var j=await (await fetch('/api/vocab?limit=5000&sections=1&test_id=__TID__')).json();
-  if(j&&j.all){LOC_SECTIONS={spirit:j.spirit||[],mind:j.mind||[],body:j.body||[],
+  if(j&&j.all){LOC_SECTIONS={spirit:j.spirit||[],spirit_heads:j.spirit_heads||[],
+   mind:j.mind||[],body:j.body||[],
    body_groups:j.body_groups||[],on_layer:j.on_layer||[],all:j.all||[],
    errors:j.errors||{}};locRefresh()}}catch(e){}
  return LOC_SECTIONS}
@@ -2153,7 +2155,9 @@ function spiritStat(t){var e=document.getElementById('spiritStat');if(e)e.textCo
 async function spiritAddNow(){var inp=document.getElementById('spiritAdd');if(!inp)return;
  var v=(inp.value||'').trim();
  if(!v){spiritStat('Type or pick a stress first. Nothing added.');return}
- var had={};(LOC_SECTIONS.spirit||[]).forEach(function(x){had[locNorm(x)]=1});
+ // A layer head shown in SPIRIT is not a stored stress yet, so it can still be added.
+ var head={};(LOC_SECTIONS.spirit_heads||[]).forEach(function(x){head[locNorm(x)]=1});
+ var had={};(LOC_SECTIONS.spirit||[]).forEach(function(x){if(!head[locNorm(x)])had[locNorm(x)]=1});
  if(had[locNorm(v)]){spiritStat('Already in SPIRIT: '+v+'. Nothing added.');return}
  spiritStat('Adding…');
  var j=null;try{j=await post('/author/__TID__/stress/add',{label:v})}catch(e){j=null}
@@ -2161,7 +2165,8 @@ async function spiritAddNow(){var inp=document.getElementById('spiritAdd');if(!i
  var name=j.label||v;
  if(had[locNorm(name)]){spiritStat('Already in SPIRIT: '+name+'. Nothing added.');return}
  await locLoad();
- var now=(LOC_SECTIONS.spirit||[]).some(function(x){return locNorm(x)===locNorm(name)});
+ var heads={};(LOC_SECTIONS.spirit_heads||[]).forEach(function(x){heads[locNorm(x)]=1});
+ var now=!heads[locNorm(name)]&&(LOC_SECTIONS.spirit||[]).some(function(x){return locNorm(x)===locNorm(name)});
  if(now){inp.value='';spiritStat('Added to SPIRIT: '+name)}
  else spiritStat('Already a stress on this test outside SPIRIT: '+name+'. Nothing added.');
  if(typeof loadStress==='function')try{loadStress()}catch(e){}}

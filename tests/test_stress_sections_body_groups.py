@@ -250,6 +250,7 @@ def test_an_old_cache_table_gains_the_column_and_reads_as_unknown(tmp_path):
 
 
 def test_an_older_good_read_stands_when_the_re_read_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(marks_mod, "_REREAD_FAILED", {})
     cx = sqlite3.connect(str(tmp_path / "chat_log.db"))
     e4l = _e4l(tmp_path)
     monkeypatch.setattr(marks_mod, "bar_colours", lambda p: {"Lead": {"purple"}})
@@ -310,6 +311,7 @@ def test_the_route_answers_body_groups_spirit_heads_and_on_layer(app):
     assert j["spirit"] == ["Grief", "Liver Detox", "Pressure 2"]
     assert "Liver Detox" in j["on_layer"] and "Skin & Gut Integrity" in j["on_layer"]
     assert "Grief" not in j["on_layer"]
+    assert j["spirit_heads"] == ["Liver Detox"]
     json.dumps(j)
 
 
@@ -328,3 +330,50 @@ def test_a_scan_infoceutical_on_a_layer_greys_its_code_form(tmp_path):
     assert "ED11: Liver" not in got["on_layer"]
     # MR is not an infoceutical: only its stored name is on the layer.
     assert "CNS-Heart-Matrix" in got["on_layer"] and "MR10" not in got["on_layer"]
+
+
+# ---- found in review of #2292 ----------------------------------------------------------
+
+def test_a_chain_name_folded_into_its_infoceutical_stays_in_the_causal_chain(tmp_path):
+    cx, tid = _seeded(tmp_path)
+    add_stress(cx, tid, "Source", source="chain")
+    got = sectioned_vocab(cx, tid, body=["ED1", "ED4"],
+                          code_names={"ED1": "Source", **NAMES})
+    groups = dict(got["body_groups"])
+    assert "ED1: Source" in groups["Causal chain"]
+    assert groups["Infoceuticals"] == ["ED4: Nerve"]
+
+
+def test_spirit_heads_are_the_heads_that_are_not_stored_stresses(tmp_path):
+    cx, tid = _seeded(tmp_path)
+    got = sectioned_vocab(cx, tid, code_names=NAMES)
+    assert got["spirit_heads"] == ["Liver Detox"]
+    add_stress(cx, tid, "Liver Detox", source="manual")
+    got = sectioned_vocab(cx, tid, code_names=NAMES)
+    assert got["spirit_heads"] == [] and "Liver Detox" in got["spirit"]
+
+
+def test_a_failed_re_read_is_not_repeated_on_every_call(tmp_path, monkeypatch):
+    monkeypatch.setattr(marks_mod, "_REREAD_FAILED", {})
+    cx = sqlite3.connect(str(tmp_path / "chat_log.db"))
+    e4l = _e4l(tmp_path)
+    monkeypatch.setattr(marks_mod, "bar_colours", lambda p: {"Lead": {"purple"}})
+    monkeypatch.setattr(marks_mod, "READER_VERSION", 2)
+    marks_mod.infoceutical_marks(cx, e4l, 7)
+    monkeypatch.setattr(marks_mod, "READER_VERSION", 3)
+    tries = []
+
+    def boom(path):
+        tries.append(path)
+        raise FileNotFoundError("the PDF moved")
+    monkeypatch.setattr(marks_mod, "bar_colours", boom)
+    for _ in range(3):
+        assert marks_mod.infoceutical_marks(cx, e4l, 7)["purple"] == {"Lead"}
+    assert len(tries) == 1
+    # After the interval it is tried again, and a good read clears the mark.
+    monkeypatch.setattr(marks_mod, "REREAD_RETRY_SECONDS", 0)
+    monkeypatch.setattr(marks_mod, "bar_colours", lambda p: _reading(
+        {"Lead": {"purple"}}, {"Lead": {"ENVIRONMENTAL"}}))
+    marks_mod.infoceutical_marks(cx, e4l, 7)
+    assert marks_mod.bar_sections(cx, 7) == {"Lead": ["ENVIRONMENTAL"]}
+    assert marks_mod._REREAD_FAILED == {}

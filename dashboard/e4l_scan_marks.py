@@ -25,6 +25,7 @@ import json
 import re
 import sqlite3
 import subprocess
+import time
 
 # Fill colours on E4L scan PDFs. Grey is an empty bar, and also the unfilled part
 # of a coloured one, so a bar is grey only when nothing else is on it.
@@ -47,6 +48,11 @@ READER_VERSION = 3
 PSYCHE_SECTIONS = ("MIND BODY", "LIFE JOURNEY", "LIFE PURPOSE", "HERO'S JOURNEY",
                    "ARCHETYPES", "BELIEFS", "EMOTIONAL ATTRACTION", "TRANSFORMATIONS",
                    "UNCONSCIOUS PATTERNS")
+# A scan whose re-read by this reader failed while an older good read stands: retried
+# at most once per this many seconds in this process, so a page load (three reads)
+# does not re-run pdftotext on the whole PDF each time. {scan_id: monotonic time}.
+REREAD_RETRY_SECONDS = 3600
+_REREAD_FAILED = {}
 _PAGE_TEXT = re.compile(r"<page [^>]*>(.*?)</page>", re.S)
 
 
@@ -203,6 +209,10 @@ def _read_once(cx, scan_id, pdf_path):
     # A good read by an older reader is kept if this re-read fails (the PDF may have
     # moved since): its colours stand, and its sections read as unknown.
     older_ok = bool(row and row[0])
+    failed_at = _REREAD_FAILED.get(scan_id)
+    if older_ok and failed_at is not None and \
+            time.monotonic() - failed_at < REREAD_RETRY_SECONDS:
+        return True, ""
     try:
         if not pdf_path:
             raise ValueError("no scan PDF is recorded for this scan")
@@ -214,9 +224,11 @@ def _read_once(cx, scan_id, pdf_path):
     except Exception as exc:  # a missing file, pdftotext or pypdf: say why
         error = str(exc)[:300] or exc.__class__.__name__
         if older_ok:
+            _REREAD_FAILED[scan_id] = time.monotonic()
             return True, ""
         # Not stored: the PDF may arrive later, so the next page load tries again.
         return False, error
+    _REREAD_FAILED.pop(scan_id, None)
     where = getattr(colours, "sections", None) or {}
     cx.execute("DELETE FROM biofield_scan_bar_colour WHERE scan_id=?", (scan_id,))
     for code, found in colours.items():

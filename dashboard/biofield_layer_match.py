@@ -354,7 +354,8 @@ def sectioned_vocab(cx, test_id, mind=(), body=(), limit=5000, code_names=None,
     purple bar that is not an infoceutical is Psyche when it is in `psyche` (the bars
     on the scan's psyche pages), else Body stresses. SPIRIT is the live session's own
     stresses plus each layer's head, a head left out when it is already in BODY or
-    MIND. `on_layer` lists the stresses already on a layer (on_layer_labels), which the
+    MIND; `spirit_heads` names the heads in SPIRIT that are not stored stresses.
+    `on_layer` lists the stresses already on a layer (on_layer_labels), which the
     page shows greyed in every section."""
     vocab, _client = client_first_vocab(cx, test_id, "", limit)
     chain = list(chain_stress_labels(cx, test_id))
@@ -367,7 +368,11 @@ def sectioned_vocab(cx, test_id, mind=(), body=(), limit=5000, code_names=None,
     groups = {g: [] for g in BODY_GROUPS}
     for d in out["body"]:
         k = stress_key(d)
-        group = ("Causal chain" if k in chain_keys else "Infoceuticals" if _info_match(d)
+        # A chain stress "Source" folds into "ED1: Source" (_display_list), so the
+        # folded item is still the chain's: match its name part too.
+        name = stress_key(d.split(":", 1)[1]) if ":" in d and _info_match(d) else ""
+        in_chain = k in chain_keys or (name and name in chain_keys)
+        group = ("Causal chain" if in_chain else "Infoceuticals" if _info_match(d)
                  else "Psyche" if k in psyche_keys else "Body stresses")
         groups[group].append(d)
     out["body_groups"] = [[g, groups[g]] for g in BODY_GROUPS if groups[g]]
@@ -375,16 +380,20 @@ def sectioned_vocab(cx, test_id, mind=(), body=(), limit=5000, code_names=None,
     taken = {stress_key(d) for d in out["body"] + out["mind"]}
     heads = [h for h in layer_heads(cx, test_id)
              if stress_key(stress_display(h, code_names)) not in taken]
-    out["spirit"] = natural_sorted(_display_list(
-        spirit_stress_labels(cx, test_id) + heads, code_names, True))
+    stored = spirit_stress_labels(cx, test_id)
+    out["spirit"] = natural_sorted(_display_list(stored + heads, code_names, True))
+    # The heads shown in SPIRIT that are not stored stresses: the page's Add SPIRIT
+    # stress box must still add one as a manual stress.
+    stored_keys = {stress_key(d) for d in _display_list(stored, code_names, True)}
+    out["spirit_heads"] = [d for d in out["spirit"] if stress_key(d) not in stored_keys]
     out["on_layer"] = natural_sorted(_display_list(
         on_layer_labels(cx, test_id), code_names, False))
     unnamed = set()
     for key in ("spirit", "mind", "body", "all"):
         unnamed |= {d for d in out[key] if _info_match(d) and ":" not in d}
     out["unnamed"] = sorted(unnamed, key=natural_key)
-    return {k: out[k] for k in ("spirit", "mind", "body", "body_groups", "on_layer",
-                                "all", "unnamed")}
+    return {k: out[k] for k in ("spirit", "spirit_heads", "mind", "body", "body_groups",
+                                "on_layer", "all", "unnamed")}
 
 
 def match_term(cx, kind, text, test_id=None, cues=True):
