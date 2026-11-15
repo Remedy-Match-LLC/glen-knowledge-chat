@@ -54,6 +54,10 @@ function type(id,v){els[id].value=v;listeners.input({target:els[id]})}
 var calls={post:[],saveLayer:[],addRemedy:[],sessionSaves:0,tracksStopped:0,wsClosed:0};
 var _sess='';
 function scheduleSessionSave(){calls.sessionSaves++}
+// The full-session Record block is not loaded here: tests/test_full_session_record_js.py
+// runs it with this one. Here it is off, so keepTranscript keeps every word.
+calls.recAuto=0;function recAuto(){calls.recAuto++;return null}
+function recCovers(){return false}
 async function saveLayer(gid,btn,voice){calls.saveLayer.push({gid:gid,voice:voice,
  head:els[gid+'_head'].value,most:els[gid+'_most'].value})}
 async function addRemedy(gid){calls.addRemedy.push({gid:gid,remedy:els[gid+'_nr_remedy'].value,
@@ -129,6 +133,8 @@ def test_final_segments_join_until_the_utterance_ends():
     assert r["sess"] == "rose essence two drops twice a day"
     assert r["calls"]["wsClosed"] == 1 and r["calls"]["tracksStopped"] == 1
     assert r["rfOpen"] is False and r["micOn"] == []
+    # The full session transcript starts beside it (Glen, 14 November 2026).
+    assert r["calls"]["recAuto"] == 1
     assert "endpointing=" in r["url"] and "utterance_end_ms=" in r["url"]
 
 
