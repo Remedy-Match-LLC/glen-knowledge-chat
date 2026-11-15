@@ -50,7 +50,7 @@ from dashboard.biofield_authoring import (
     remove_remedy_preserving_layer,
     remedy_dosing, resolve_remedy_name, resolve_stress_name, stress_suggestions,
     stress_vocab, update_chain_row, update_header, update_terrain,
-    set_terrain_field, terrain_state)
+    set_terrain_field, terrain_state, set_layer_balanced, set_row_confirmed)
 from dashboard.biofield_dimensions import (
     DEPTH_KEY, dimension_values, seed_dimensions, tag as dim_tag)
 from dashboard.biofield_interpret import interpret_transcript
@@ -2123,6 +2123,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                           for g in groups for r in g["rows"]]
             sdata = list_stresses(cx, test_id, chain_rows)
             covered = {L["layer"]: L["stresses"] for L in sdata.get("by_layer") or []}
+            # Ruling 8 (Glen, 14 November 2026): how many detected stresses no layer
+            # covers yet. The stress panel's own grouping, shown as a count only.
+            uncovered_count = len(sdata.get("unassigned") or [])
             narrative = get_narrative(cx, test_id)
             c_email = ((rep.get("client") or {}).get("email") or "").strip()
             # CI intentionally supplies a fake console secret.  Do not let the
@@ -2356,6 +2359,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception as _ne:
             print(f"[notified] {test_id}: not read: {_ne!r}", flush=True)
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
+                                           uncovered_count=uncovered_count,
                                            narrative=narrative, fee_state=fstate,
                                            narrative_warnings=_narr_warnings,
                                            clinical_checklist=clinical_checklist,
@@ -3981,6 +3985,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             gated = _ff_block(cx, test_id, refused) if refused else {}
             layer = _layer_int(d.get("layer"))
             confirmed, origin = 1, "live"
+            anchor, anchor_balanced = None, False
             anchor_rid = d.get("anchor_rid")
             if anchor_rid not in (None, ""):
                 try:
@@ -3992,7 +3997,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     "WHERE id=? AND test_id=?", (anchor_id, int(str(test_id).lstrip("a")))
                 ).fetchone() if anchor_id is not None else None)
                 if anchor:
+                    from dashboard.biofield_authoring import init_auth_tables
+                    init_auth_tables(cx)      # layer_balanced on an older table
                     layer, confirmed, origin = anchor[0], anchor[1], anchor[2]
+                    anchor_balanced = bool(cx.execute(
+                        "SELECT COALESCE(layer_balanced,0) FROM biofield_auth_chain "
+                        "WHERE id=?", (anchor_id,)).fetchone()[0])
                     if not (anchor[3] or "").strip():
                         update_chain_row(
                             cx, anchor_id, head=d.get("head", ""),
@@ -4000,12 +4010,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                             remedy=d.get("remedy", ""), dosage=d.get("dosage", ""),
                             frequency=d.get("frequency", ""), timing=d.get("timing", ""),
                         )
+                        if d.get("confirmed") in (0, 1, True, False):
+                            set_row_confirmed(cx, test_id, anchor_id, d.get("confirmed"))
                         return {"ok": True, "rid": anchor_id, "filled_anchor": True,
                                 **gated}
+            # A short voice recording says whether it matched (ruling 7): matched goes
+            # in confirmed, unmatched goes in for review. Typed rows send nothing.
+            if d.get("confirmed") in (0, 1, True, False):
+                confirmed = 1 if d.get("confirmed") else 0
             rid = add_chain_row(cx, test_id, layer, d.get("head", ""),
                                 d.get("most_affected", ""), d.get("remedy", ""),
                                 d.get("dosage", ""), d.get("frequency", ""), d.get("timing", ""),
                                 confirmed=confirmed, origin=origin)
+            # A remedy added to a card ticked Balanced joins it ticked, so every row of
+            # the card carries the card's mark, as head and tail do.
+            if anchor and anchor_balanced:
+                set_layer_balanced(cx, test_id, [rid], True)
         return {"ok": True, "rid": rid, **gated}
 
     @app.route("/author/<test_id>/row/<int:rid>", methods=["POST"])
@@ -4056,7 +4076,34 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": True, **gated}
         with sqlite3.connect(db_path) as cx:
             update_chain_row(cx, rid, **fields)
+            # A short voice recording into Head or Tail (ruling 7).
+            if d.get("confirmed") in (0, 1, True, False):
+                set_row_confirmed(cx, test_id, rid, d.get("confirmed"))
         return {"ok": True, **gated}
+
+    @app.route("/author/<test_id>/match", methods=["POST"])
+    def author_match(test_id):
+        """One short recording's phrase matched to one field (live session part 2a).
+        {kind: head|tail|remedy, text} -> match_term's answer. Writes nothing: the
+        page fills the field, then saves through the row routes."""
+        from dashboard.biofield_layer_match import match_term
+        d = request.get_json(silent=True) or {}
+        with sqlite3.connect(db_path) as cx:
+            try:
+                m = match_term(cx, d.get("kind"), d.get("text"), test_id=test_id)
+            except ValueError as e:
+                return {"ok": False, "error": str(e)}, 400
+        return {"ok": True, **m}
+
+    @app.route("/author/<test_id>/layer-balanced", methods=["POST"])
+    def author_layer_balanced(test_id):
+        """The Balanced box on one layer card: {rids, balanced}. Layer only (ruling 3):
+        no stress's balanced state changes."""
+        d = request.get_json(silent=True) or {}
+        rids = d.get("rids") if isinstance(d.get("rids"), list) else []
+        with sqlite3.connect(db_path) as cx:
+            n = set_layer_balanced(cx, test_id, rids, bool(d.get("balanced")))
+        return {"ok": True, "updated": n, "balanced": bool(d.get("balanced"))}
 
     @app.route("/author/<test_id>/row/<int:rid>/delete", methods=["POST"])
     def author_row_delete(test_id, rid):
@@ -4423,7 +4470,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     @app.route("/api/vocab")
     def api_vocab():
+        tid = request.args.get("test_id", "")
         with sqlite3.connect(db_path) as cx:
+            if tid:
+                # Ruling 6, "client first": this test's detected stresses, then the
+                # full vocabulary. Without test_id the answer is exactly as before.
+                from dashboard.biofield_layer_match import client_first_vocab
+                vocab, client = client_first_vocab(
+                    cx, tid, request.args.get("q", ""),
+                    _safe_int(request.args.get("limit"), 20))
+                return {"vocab": vocab, "client": client}
             return {"vocab": stress_vocab(cx, request.args.get("q", ""),
                                           _safe_int(request.args.get("limit"), 20))}
 

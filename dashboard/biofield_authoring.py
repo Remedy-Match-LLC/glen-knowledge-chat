@@ -103,6 +103,13 @@ def init_auth_tables(cx):
         cx.execute("ALTER TABLE biofield_auth_chain ADD COLUMN codes TEXT")
     except Exception:
         pass
+    try:
+        # Balanced mark for the LAYER (Glen, 14 November 2026: "layer only"). Set on
+        # every row of a card, the way head and tail are. It never touches a stress's
+        # balanced state: stresses stay marked by remedy coverage.
+        cx.execute("ALTER TABLE biofield_auth_chain ADD COLUMN layer_balanced INTEGER DEFAULT 0")
+    except Exception:
+        pass
     # Backfill: a pre-existing row was never edited, so updated_at == created_at.
     # Seeding it with _now() instead would mark every historical row as "edited".
     cx.execute("UPDATE biofield_auth_chain SET updated_at=created_at "
@@ -255,6 +262,38 @@ def set_no_charge(cx, tid, on):
 def confirm_row(cx, rid):
     cx.execute("UPDATE biofield_auth_chain SET confirmed=1 WHERE id=?", (rid,))
     cx.commit()
+
+
+def set_row_confirmed(cx, tid, rid, confirmed):
+    """confirmed=1 or 0 on one row of this test. Like confirm_row, it is not a value
+    edit, so updated_at is left alone. Returns the number of rows changed."""
+    init_auth_tables(cx)
+    n = cx.execute("UPDATE biofield_auth_chain SET confirmed=? WHERE id=? AND test_id=?",
+                   (1 if confirmed else 0, int(rid), _num(tid))).rowcount
+    cx.commit()
+    return n
+
+
+def set_layer_balanced(cx, tid, rids, balanced):
+    """Tick or clear the Balanced box of one layer card: layer_balanced on every row
+    id given that belongs to this test (Glen, 14 November 2026, rulings 2 and 3).
+
+    Layer only. This writes biofield_auth_chain and nothing else: no stress's
+    manual_balanced, no layer-stress link, no coverage row."""
+    init_auth_tables(cx)
+    ids = []
+    for r in rids or []:
+        try:
+            ids.append(int(r))
+        except (TypeError, ValueError):
+            continue
+    n = 0
+    for rid in ids:
+        n += cx.execute("UPDATE biofield_auth_chain SET layer_balanced=? "
+                        "WHERE id=? AND test_id=?",
+                        (1 if balanced else 0, rid, _num(tid))).rowcount
+    cx.commit()
+    return n
 
 
 def confirm_all(cx, tid):
@@ -540,9 +579,17 @@ def resolve_remedy_name(cx, spoken, cutoff=0.82):
     Deprecated duplicates (catalog `inactive`) are excluded from the candidate pool:
     FMP still marks them active, and their slugs are unsellable, so matching one would
     put a dead-end remedy on the chain."""
+    return resolve_remedy_match(cx, spoken, cutoff)[0]
+
+
+def resolve_remedy_match(cx, spoken, cutoff=0.82):
+    """resolve_remedy_name, plus whether a known name matched: (value, matched).
+    matched is False for the Title-Case fallback and for an ambiguous name left for a
+    person (live session part 2, Glen 14 November: an unmatched phrase is kept and
+    highlighted)."""
     spoken = (spoken or "").strip()
     if not spoken:
-        return spoken
+        return spoken, False
     suffix = ""
     core = spoken
     low = spoken.lower()
@@ -551,12 +598,12 @@ def resolve_remedy_name(cx, spoken, cutoff=0.82):
         suffix = " in Terrain Restore"
     # A name that means two products ("Seacure") is left for a person, before any step.
     if is_ambiguous_product_name(core):
-        return _title_case_name(core) + suffix
+        return _title_case_name(core) + suffix, False
     # An EXACT retired name is unambiguous: redirect to its survivor before any fuzzy
     # matching, or the excluded name drifts onto the nearest live stranger.
     redirect = _superseded_name_map().get(_norm_name(core)) or _catalog_exact_aliases().get(_norm_name(core))
     if redirect:
-        return redirect + suffix
+        return redirect + suffix, True
     if _has(cx, "fmp_snap_products"):
         names = _sellable_names([r[0] for r in cx.execute(
             "SELECT DISTINCT product_name FROM fmp_snap_products "
@@ -571,26 +618,37 @@ def resolve_remedy_name(cx, spoken, cutoff=0.82):
             match = _clean_product_name(match)   # drop discontinue-intent '*'
             # Don't double the suffix when the matched name already carries it.
             if suffix and match.lower().endswith("in terrain restore"):
-                return match
-            return match + suffix
-    return _title_case_name(core) + suffix
+                return match, True
+            return match + suffix, True
+    return _title_case_name(core) + suffix, False
 
 
 def resolve_stress_name(cx, spoken, cutoff=0.82):
     """Auto-correct a spoken stress / head-of-chain name to the closest stress term
     Glen has used before (case-insensitive), else Title Case the spoken name so stress
     names are always capitalized."""
+    return resolve_stress_match(cx, spoken, cutoff)[0]
+
+
+def resolve_stress_match(cx, spoken, cutoff=0.82, extra_names=()):
+    """resolve_stress_name, plus whether a known name matched: (value, matched).
+
+    extra_names join the pool AHEAD of the FileMaker terms, so their spelling wins a
+    tie. match_term passes this client's detected stresses and Glen's added terms
+    there; resolve_stress_name passes none, so its result is unchanged."""
     spoken = (spoken or "").strip()
     if not spoken:
-        return spoken
+        return spoken, False
+    names = [n for n in (extra_names or ()) if (n or "").strip()]
     if _has_col(cx, "fmp_snap_client_active_main_stress", "main_stress"):
-        names = [r[0] for r in cx.execute(
+        names += [r[0] for r in cx.execute(
             "SELECT DISTINCT main_stress FROM fmp_snap_client_active_main_stress "
             "WHERE TRIM(COALESCE(main_stress,''))<>''").fetchall()]
+    if names:
         match = _best_match(spoken, names, cutoff)
         if match:
-            return match
-    return _title_case_name(spoken)
+            return match, True
+    return _title_case_name(spoken), False
 
 
 def update_chain_row(cx, rid, **fields):
@@ -988,9 +1046,12 @@ def ordered_chain(cx, tid):
     the practitioner deliberately added after them (stored layer 7, say) was
     hoisted above them and renumbered to 1.  Display `layer` = 1..k."""
     cx.row_factory = sqlite3.Row
+    # layer_balanced arrives with init_auth_tables; a caller that never ran it reads 0.
+    lb = ("COALESCE(layer_balanced,0)" if _has_col(cx, "biofield_auth_chain", "layer_balanced")
+          else "0")
     rows = cx.execute(
         "SELECT id, layer, head, most_affected, remedy, dosage, frequency, timing, "
-        "schedule_slot, bottles, "
+        f"schedule_slot, bottles, {lb} AS layer_balanced, "
         "confirmed, origin FROM biofield_auth_chain "
         "WHERE test_id=? AND (TRIM(COALESCE(remedy,''))<>'' "
         "OR TRIM(COALESCE(head,''))<>'' OR TRIM(COALESCE(most_affected,''))<>'')",
@@ -1010,6 +1071,7 @@ def ordered_chain(cx, tid):
                     "schedule_slot": r["schedule_slot"] or "",
                     "bottles": r["bottles"],
                     "confirmed": 0 if r["confirmed"] == 0 else 1,
+                    "layer_balanced": 1 if r["layer_balanced"] else 0,
                     "origin": r["origin"] or "live",
                     "zone": "bottom" if unbalanced_scan(r) else "top"})
     return out
