@@ -46,6 +46,10 @@ function val(id){var e=document.getElementById(id);return e?e.value:''}
 var calls={post:[],sessionSaves:0,saveNow:0,reloads:0,tracksStopped:0,wsClosed:0};
 var _sess='',_dg=null;
 function scheduleSessionSave(){calls.sessionSaves++}
+// The full-session Record block is not loaded here: tests/test_full_session_record_js.py
+// runs it with this one. Here it is off, so keepTranscript keeps every word.
+calls.recAuto=0;function recAuto(){calls.recAuto++;return null}
+function recCovers(){return false}
 async function saveSessionNow(){calls.saveNow++}
 function reloadKeepingView(){calls.reloads++}
 var answers={},gates={},fails={},nextRid=100;
@@ -247,11 +251,15 @@ def test_an_open_field_and_a_dose_carry_to_the_next_utterance():
     assert "the next words go to Head." in r["stat"]
 
 
-def test_it_will_not_run_beside_the_whole_session_record():
+def test_it_runs_beside_the_whole_session_record_and_starts_it():
+    # Glen, 14 November 2026: the full transcript runs beside hands-free. It used to
+    # refuse with "Stop the Record first".
     r = _run("""
-      _dg={readyState:1};var me=await handsFree();
+      _dg={readyState:1};var me=await handsFree();me.ws.onopen();
     """ + DUMP)
-    assert me_none(r) and "Stop the Record first" in r["stat"]
+    assert r["hfOpen"] is True and "wss://" in r["url"]
+    assert "Stop the Record first" not in r["stat"]
+    assert r["calls"]["recAuto"] == 1
 
 
 def me_none(r):

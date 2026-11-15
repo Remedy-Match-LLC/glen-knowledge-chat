@@ -159,10 +159,10 @@ def test_authored_report_depth_match(tmp_path):
     seed_dimensions(cx)
     tid = create_test(cx, "J", "j@x.com", "2026-06-23")
     rid = add_chain_row(cx, tid, 1, "Mercury", "Brain", "Binder", "1 cap", "daily", "with food")
-    tag(cx, "auth_stress", rid, DEPTH_KEY, 5)   # stress acts at the nucleus
-    tag(cx, "auth_remedy", rid, DEPTH_KEY, 1)   # remedy only reaches the gut
+    tag(cx, "auth_stress", rid, DEPTH_KEY, 1)   # stress acts at the nucleus (1 = deep)
+    tag(cx, "auth_remedy", rid, DEPTH_KEY, 5)   # remedy only reaches the gut (5 = shallow)
     layer = authored_report(cx, tid)["layers"][0]
-    assert layer["stress_depth"] == 5 and layer["remedy_depth"] == 1
+    assert layer["stress_depth"] == 1 and layer["remedy_depth"] == 5
     assert layer["depth_status"] == "shallow"
     assert layer["depth_need"].lower().startswith("nucle")
 

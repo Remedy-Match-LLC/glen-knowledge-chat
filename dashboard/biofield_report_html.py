@@ -113,7 +113,7 @@ _STYLE = """
  #terrainSegs .tunconf{box-shadow:0 0 0 2px var(--accent);background:#1a160d}
  .mic{background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);
    cursor:pointer;padding:3px 6px;font-size:13px;line-height:1}
- .mic.on,#hfBtn.on{border-color:#e05050;color:#e05050}
+ .mic.on,#hfBtn.on,#recBtn.on{border-color:#e05050;color:#e05050}
  .htfields .fieldmic{display:flex;gap:4px;align-items:center}
  .lbal{display:inline-flex;gap:5px;align-items:center;margin:0}
  .lcard.lbalanced{border-color:#3a7a4a}
@@ -1193,15 +1193,14 @@ async function persistOrder(box){
 function focusCard(gid){var c=document.querySelector('.lcard[data-gid="'+gid+'"]');if(!c)return;
  c.scrollIntoView({behavior:'smooth',block:'center'});c.classList.add('over');
  setTimeout(function(){c.classList.remove('over')},900)}
-function rstat(t){document.getElementById('rstat').textContent=t}
-var _mr,_dg,_sess='';
+function rstat(t){var e=document.getElementById('rstat');if(e)e.textContent=t}
 var _sessSaveTimer=null,_sessSaving=null;
 function scheduleSessionSave(){
  clearTimeout(_sessSaveTimer);
  var ss=document.getElementById('sessSaved');if(ss)ss.textContent='Unsaved changes…';
- _sessSaveTimer=setTimeout(function(){saveSessionNow(false)},600)}
+ _sessSaveTimer=setTimeout(function(){_sessSaveTimer=null;saveSessionNow(false)},600)}
 async function saveSessionNow(showStatus){
- clearTimeout(_sessSaveTimer);
+ clearTimeout(_sessSaveTimer);_sessSaveTimer=null;
  var box=document.getElementById('sessText');if(!box)return {ok:true};
  var txt=box.value;if(!txt.trim())return {ok:true,skipped:'empty'};
  if(_sessSaving)await _sessSaving;
@@ -1211,42 +1210,107 @@ async function saveSessionNow(showStatus){
  if(ss&&sv&&sv.saved_label)ss.textContent='Autosaved: '+sv.saved_label;
  if(showStatus)rstat('Saved to Capture Stresses.');
  return sv||{ok:false}}
-async function recStart(){
- rstat('Getting token...');
- _sess=(document.getElementById('sessText').value||'');
- var t;try{t=await (await fetch('/api/deepgram-token')).json()}catch(e){rstat('Token fetch failed: '+e);return}
- if(!t.key){rstat('No Deepgram key: '+(t.error||''));return}
- var stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:true})}
- catch(e){rstat('Microphone blocked/denied: '+e.name);return}
- var mime='';['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'].forEach(
-  function(m){if(!mime&&window.MediaRecorder&&MediaRecorder.isTypeSupported(m))mime=m});
- if(!mime){rstat('No supported audio recording format in this browser. Use Chrome.');return}
+// Leaving the page (adding a remedy reloads it) must not lose words still waiting for
+// the autosave. keepalive lets the request finish after the page has gone.
+function flushSessionOnLeave(){if(!_sessSaveTimer)return;clearTimeout(_sessSaveTimer);_sessSaveTimer=null;
+ var box=document.getElementById('sessText'),txt=box?box.value:'';if(!txt.trim())return;
+ try{fetch('/author/__TID__/session',{method:'POST',keepalive:true,
+  headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:txt})})}catch(e){}}
+// The full session transcript (Glen, 14 November 2026): "full session transcript
+// should run in any case as a fallback record of what happened". The first recording
+// of any kind starts it: Record, a short field recording, or hands-free. It is its own
+// stream, with its own microphone stream, recorder and Deepgram socket, so a field or
+// hands-free stream failing never stops it, and it failing never stops them. Only
+// Stop & save, or leaving the page, stops it. A reload with it on starts it again.
+// No double text: while it is live, keepTranscript leaves a short or hands-free
+// recording's words to it (recCovers). Those words are held for REC_HOLD_MS, and an
+// unplanned end puts them back. While it is still connecting, or after it failed,
+// keepTranscript keeps the words as before: a duplicate is better than a loss.
+// tests/test_full_session_record_js.py runs this block under node.
+// fullRecord:begin
+var _mr,_dg,_sess='',_rec=null,_recHeld=[];
+var REC_HOLD_MS=15000,REC_DRAIN_MS=2000,REC_FLUSH_MS=100,REC_RESUME_MS=10000;
+var _recKey='biofield-rec-__TID__';
+function recOn(){return !!_rec&&!_rec.stopped}
+function recLive(){return recOn()&&_rec.live}
+function recNote(t){var e=document.getElementById('recNote');if(e)e.textContent=t}
+function recBtn(on){var b=document.getElementById('recBtn');if(!b)return;
+ if(on){b.classList.add('on');b.textContent='\\u25cf Recording'}
+ else{b.classList.remove('on');b.textContent='\\u25cf Record'}}
+// Re-reads the box each time, so words Glen typed into it are kept.
+function sessAppend(text){var box=document.getElementById('sessText');if(!box)return;
+ _sess=box.value||'';_sess+=(_sess?' ':'')+text;box.value=_sess;scheduleSessionSave()}
+// True: the full stream is live and hears these words itself, so they are only held.
+function recCovers(text){if(!recLive())return false;var now=Date.now();
+ _recHeld=_recHeld.filter(function(h){return now-h.t<REC_HOLD_MS});
+ _recHeld.push({t:now,text:text});return true}
+// A short recording or hands-free starting starts the full one, unless it is on.
+function recAuto(){if(recOn())return null;return recStart(true)}
+async function recStart(auto){
+ if(recOn()){if(!auto)rstat(_rec.live?'The full transcript is already recording.':'The full transcript is starting\\u2026');return _rec}
+ var me={stopped:false,live:false,ended:false,draining:false};
+ _rec=me;_recHeld=[];recBtn(true);recNote('');
+ rstat('Full transcript: getting token...');
+ var t;try{t=await (await fetch('/api/deepgram-token')).json()}catch(e){return recFail(me,'token fetch failed: '+e)}
+ if(_rec!==me)return me;
+ if(!t.key)return recFail(me,'no Deepgram key '+(t.error||''));
+ try{me.stream=await navigator.mediaDevices.getUserMedia({audio:true})}
+ catch(e){return recFail(me,'microphone blocked or denied: '+e.name)}
+ if(_rec!==me){recEnd(me);return me}
+ var mime=dgMime();if(!mime)return recFail(me,'no supported audio recording format in this browser. Use Chrome');
  rstat('Mic OK ('+mime+'). Connecting to Deepgram...');
- try{_dg=new WebSocket(dgUrl(t),['token',t.key])}
- catch(e){rstat('WebSocket create failed: '+e);return}
- _dg.onopen=function(){
-  try{_mr=new MediaRecorder(stream,{mimeType:mime})}catch(e){rstat('Recorder error: '+e);return}
-  _mr.ondataavailable=function(e){if(e.data.size>0&&_dg.readyState===1)_dg.send(e.data)};
-  _mr.start(250);rstat('Recording \\u2014 speak naturally. (codes: wear a lav/AirPods)');console.log('rec open, mime',mime)};
- _dg.onmessage=function(m){var d;try{d=JSON.parse(m.data)}catch(e){return}
-  console.log('dg msg',d.type,d);
+ try{me.ws=_dg=new WebSocket(dgUrl(t),['token',t.key])}
+ catch(e){return recFail(me,'could not connect: '+e)}
+ me.ws.onopen=function(){if(_rec!==me)return;
+  try{me.mr=_mr=new MediaRecorder(me.stream,{mimeType:mime})}catch(e){recLost(me,'recorder error: '+e);return}
+  me.mr.ondataavailable=function(e){if(e.data.size>0&&me.ws.readyState===1)me.ws.send(e.data)};
+  me.mr.start(250);me.live=true;
+  rstat('Recording the full transcript \\u2014 speak naturally. (codes: wear a lav/AirPods)')};
+ me.ws.onmessage=function(m){if(me.ended)return;var d;try{d=JSON.parse(m.data)}catch(e){return}
   if(d.type&&d.type!=='Results')return;
   var a=d.channel&&d.channel.alternatives&&d.channel.alternatives[0];if(!a)return;
-  if(d.is_final&&a.transcript){_sess+=(_sess?' ':'')+a.transcript;
-   document.getElementById('sessText').value=_sess;document.getElementById('interim').textContent='';
-   scheduleSessionSave()}
-  else if(a.transcript){document.getElementById('interim').textContent=a.transcript}};
- _dg.onerror=function(e){rstat('WebSocket error (see console).');console.log('dg error',e)};
- _dg.onclose=function(e){console.log('dg close',e.code,e.reason);
-  if(_mr&&_mr.state!=='inactive')_mr.stop();
-  if((_sess||'').length===0)rstat('Connection closed (code '+e.code+') '+(e.reason||'')+' \\u2014 nothing transcribed.')};
-}
-async function recStop(){
- if(_mr&&_mr.state!=='inactive')_mr.stop();
- if(_mr&&_mr.stream)_mr.stream.getTracks().forEach(function(t){t.stop()});
- if(_dg&&_dg.readyState===1){_dg.send(JSON.stringify({type:'CloseStream'}));_dg.close()}
+  var it=document.getElementById('interim');
+  if(d.is_final&&a.transcript){sessAppend(a.transcript);if(it)it.textContent=''}
+  else if(a.transcript&&it)it.textContent=a.transcript};
+ me.ws.onerror=function(){if(!me.draining&&_rec===me)recLost(me,'connection error')};
+ me.ws.onclose=function(e){if(me.draining){if(me.drained)me.drained();return}
+  if(_rec===me)recLost(me,'the connection closed'+(e&&e.code?' (code '+e.code+')':''))};
+ return me}
+// It did not start. A short or hands-free recording goes on without it.
+function recFail(me,why){recEnd(me);if(_rec!==me)return me;_rec=null;recBtn(false);
+ var msg='The full transcript is not running: '+why+'.';rstat(msg);recNote(msg);return me}
+// An unplanned end. Words a short or hands-free recording left to it in the last
+// REC_HOLD_MS go back into the transcript, as it may not have sent them.
+function recLost(me,why){var now=Date.now(),held=_rec===me?_recHeld:[];
+ recEnd(me);if(_rec!==me)return;_rec=null;_recHeld=[];recBtn(false);
+ held.forEach(function(h){if(now-h.t<REC_HOLD_MS)sessAppend(h.text)});
+ var msg='The full transcript stopped: '+why+'. Short and hands-free recordings still keep '+
+  'their words. Press Record to start it again.';rstat(msg);recNote(msg)}
+function recEnd(me){if(!me||me.ended)return;me.ended=true;me.stopped=true;me.live=false;
+ try{if(me.mr&&me.mr.state!=='inactive')me.mr.stop()}catch(e){}
+ try{if(me.stream)me.stream.getTracks().forEach(function(t){t.stop()})}catch(e){}
+ try{if(me.ws&&me.ws.readyState===1){me.ws.send(JSON.stringify({type:'CloseStream'}));me.ws.close()}}catch(e){}}
+// Stop & save: the stream closes gracefully (CloseStream, then up to REC_DRAIN_MS for
+// the last final results), then the transcript is saved.
+async function recStop(){var me=_rec;_rec=null;_recHeld=[];recBtn(false);recNote('');
+ if(me&&!me.ended){me.stopped=true;me.live=false;me.draining=true;
+  try{if(me.mr&&me.mr.state!=='inactive')me.mr.stop()}catch(e){}
+  if(me.ws&&me.ws.readyState===1){
+   await new Promise(function(r){setTimeout(r,REC_FLUSH_MS)});    // the recorder's last chunk
+   await new Promise(function(r){me.drained=r;setTimeout(r,REC_DRAIN_MS);
+    try{me.ws.send(JSON.stringify({type:'CloseStream'}))}catch(e){r()}})}
+  me.draining=false;recEnd(me)}
  rstat('Saving\\u2026');
  await saveSessionNow(true)}
+// Leaving the page with it on notes the time. A page loaded within REC_RESUME_MS of
+// that was a reload, so it starts again. Later than that, it was a new visit.
+function recLeave(){if(!recOn())return;try{sessionStorage.setItem(_recKey,String(Date.now()))}catch(e){}}
+function recResume(){var t=0;try{t=Number(sessionStorage.getItem(_recKey))||0;sessionStorage.removeItem(_recKey)}catch(e){}
+ if(t&&Date.now()-t<REC_RESUME_MS)return recStart(true);return null}
+// fullRecord:end
+if(typeof window!=='undefined'&&window.addEventListener){
+ window.addEventListener('pagehide',function(){recLeave();flushSessionOnLeave()});
+ window.addEventListener('load',function(){recResume()})}
 // Live session part 2a (plan 2026-11-07, Glen's rulings of 14 November): a short
 // recording per field. Tap the mic beside Head, Tail or a new remedy, speak, and the
 // first final result fills that one field. The words also join the full transcript.
@@ -1297,8 +1361,10 @@ function stopField(){var r=_rf;_rf=null;if(!r)return;r.stopped=true;
  try{if(r.ws&&r.ws.readyState===1){r.ws.send(JSON.stringify({type:'CloseStream'}));r.ws.close()}}catch(e){}
  var b=document.querySelector('[data-mic="'+r.id+'"]');if(b)b.classList.remove('on')}
 function current(me){return !me.stopped&&_fieldTok[me.id]===me.tok}
-// The full transcript keeps every short recording too.
-function keepTranscript(text){var box=document.getElementById('sessText');if(!box)return;
+// The full transcript keeps every short recording too. While the full-session stream
+// is live it hears the same words itself, so they are not added twice (recCovers).
+function keepTranscript(text){if(recCovers(text))return;
+ var box=document.getElementById('sessText');if(!box)return;
  _sess=box.value||'';_sess+=(_sess?' ':'')+text;box.value=_sess;scheduleSessionSave()}
 // The utterance is over (speech_final, UtteranceEnd, the socket closing, or the cap):
 // join its final segments and fill the field.
@@ -1312,6 +1378,7 @@ async function recField(id,kind){
  var el=document.getElementById(id);if(!el)return null;
  var me={id:id,kind:kind,done:false,stopped:false,heard:null,parts:[],tok:++_vSeq};
  _fieldTok[id]=me.tok;_rf=me;
+ recAuto();     // the full session transcript runs beside it
  var b=document.querySelector('[data-mic="'+id+'"]');if(b)b.classList.add('on');
  fstat('Listening for '+(_fieldNames[kind]||kind)+'…');
  var t;try{t=await (await fetch('/api/deepgram-token')).json()}
@@ -1430,10 +1497,10 @@ async function handsFree(){
  if(_hf){await hfStop();return null}
  if(_hfStale){hfStat('Reloading the page first.');return null}
  if(_rf)stopField();
- if(_dg&&_dg.readyState===1){hfStat('Stop the Record first. Hands-free keeps the transcript too.');return null}
  var me={tok:++_hfSeq,stopped:false,draining:false,parts:[],chain:Promise.resolve(),pending:null,
   afterRemedy:false,wrote:0,target:null};
  _hf=me;me.target=hfStartTarget(me);
+ recAuto();     // the full session transcript runs beside it, never instead
  var b=document.getElementById('hfBtn');if(b){b.classList.add('on');b.textContent='Hands-free: on'}
  hfStat('Starting hands-free…');
  var t;try{t=await (await fetch('/api/deepgram-token')).json()}
@@ -4055,7 +4122,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<button id=phaseBal class='btn ghost' onclick='setPhase(2)'>Step 2 &middot; Interpret</button>"
         "</div>"
         "<div class=btnrow>"
-        "<button class=btn onclick=recStart()>&#9679; Record</button>"
+        "<button id=recBtn class=btn onclick=recStart()>&#9679; Record</button>"
         "<button class='btn ghost' onclick=recStop()>&#9632; Stop &amp; save</button>"
         # Part 2b: one recording split by spoken cue words, for when nobody is at the
         # computer. Every row it writes goes in unconfirmed for review (ruling 7).
@@ -4064,7 +4131,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "onclick=handsFree()>Hands-free</button>"
         "<button id=phaseAct class=btn onclick=phaseRun()>Capture stresses &rarr; list</button>"
         "<span id=rstat class=food></span></div>"
-        "<div id=hfStat class=food></div><div id=hfLog class=food style='white-space:pre-line'></div>"
+        "<div id=recNote class=food></div><div id=hfStat class=food></div><div id=hfLog class=food style='white-space:pre-line'></div>"
         "<div class=food><em id=interim></em></div>"
         f"<textarea id=sessText rows=6 oninput='scheduleSessionSave()' "
         f"placeholder='Live transcript appears here as you speak..."
