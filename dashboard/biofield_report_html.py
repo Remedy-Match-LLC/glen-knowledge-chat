@@ -3639,11 +3639,14 @@ def _terrain_segments_html(report):
     Regulation. Every field saves on change through /author/<tid>/terrain. Regulation is
     read-only and recomputed live by regulationLevel() in the page JS, which mirrors
     dashboard.terrain_phase.regulation_level."""
-    from dashboard.terrain_phase import (PHASE_NAMES, bsi_num, bsi_warnings, phase_num,
-                                         regulation_display)
+    from dashboard.terrain_phase import (PHASE_CLINICAL_NAMES, PHASE_NAMES, bsi_num,
+                                         bsi_warnings, phase_num, regulation_display)
     p = phase_num(report.get("phase"))
     opts = "<option value=''></option>" + "".join(
-        f"<option value='{n}'{' selected' if n == p else ''}>{n} &middot; {_e(name)}</option>"
+        # Glen, 14 Nov 2026: "one dot, energize, dot, terrain revived": number, the
+        # phase's clinical name, then the consumer name. Display only; the value is n.
+        f"<option value='{n}'{' selected' if n == p else ''}>"
+        f"{n}. {_e(PHASE_CLINICAL_NAMES[n])}. {_e(name)}</option>"
         for n, name in sorted(PHASE_NAMES.items()))
     bsi = list(report.get("bsi") or [None] * 4)[:4]
     bsi += [None] * (4 - len(bsi))
