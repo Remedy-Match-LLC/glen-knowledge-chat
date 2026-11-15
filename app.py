@@ -10976,6 +10976,21 @@ def _bundle_parts_partial(p):
     return parts, unknown
 
 
+def _bundle_unknown_names(p):
+    """The component names or slugs of bundle p that do not resolve, for an error
+    message that names them (tests/test_bundle_packing_route.py pins this)."""
+    catalog = _catalog_products()
+    slug_comps = p.get("bundle_component_slugs")
+    if slug_comps:
+        known = {item.get("slug") for item in catalog}
+        return [str((c or {}).get("slug") if isinstance(c, dict) else c)
+                for c in slug_comps
+                if not (isinstance(c, dict) and c.get("slug") in known)]
+    known = {(item.get("name") or "").strip().lower() for item in catalog}
+    return [str(n) for n in (p.get("bundle_components") or [])
+            if not (isinstance(n, str) and n.strip().lower() in known)]
+
+
 def _cart_pickup_only_hits(cart, extra_products=None):
     """[(line_name, item_name)] for each cart line that is, or is a bundle holding, a
     pickup_only product. line_name is what the customer added; item_name is the pickup
@@ -11031,11 +11046,23 @@ def _pickup_only_refusal(cart, *, pickup_offered, extra_products=None):
     if not hits:
         return None
     line, item = hits[0]
+    unknown_names = ""
+    if item is None:
+        for c in (cart or []):
+            sl = c.get("slug") if isinstance(c, dict) else None
+            bp = (_get_product(sl.strip()) or (extra_products or {}).get(sl.strip())) \
+                if isinstance(sl, str) and sl.strip() else None
+            if bp and (bp.get("name") or sl) == line and bp.get("bundle"):
+                names = _bundle_unknown_names(bp)
+                if names:
+                    unknown_names = " (" + ", ".join(names) + ")"
+                break
     if item is None:
         if pickup_offered:
-            return (f"{line} lists a product that cannot be identified, so it cannot be "
+            return (f"{line} lists a product that cannot be identified{unknown_names}, so it cannot be "
                     "checked for pickup only. Fix the bundle or choose pickup.")
-        return f"{line} cannot be ordered online yet. Email support@remedymatch.com to order it."
+        return (f"{line} lists a product that cannot be identified{unknown_names}. "
+                "It cannot be ordered online yet. Email support@remedymatch.com to order it.")
     if pickup_offered:
         what = (f"{line} is pickup only, in Hilo." if line == item
                 else f"{line} contains {item}, which is pickup only, in Hilo.")
