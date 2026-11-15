@@ -1239,7 +1239,7 @@ function recBtn(on){var b=document.getElementById('recBtn');if(!b)return;
  else{b.classList.remove('on');b.textContent='\\u25cf Record'}}
 // Re-reads the box each time, so words Glen typed into it are kept.
 function sessAppend(text){var box=document.getElementById('sessText');if(!box)return;
- _sess=box.value||'';_sess+=(_sess?' ':'')+text;box.value=_sess;scheduleSessionSave()}
+ _sess=box.value||'';_sess+=(_sess&&!/\\n$/.test(_sess)?' ':'')+text;box.value=_sess;scheduleSessionSave()}
 // True: the full stream is live and hears these words itself, so they are only held.
 function recCovers(text){if(!recLive())return false;var now=Date.now();
  _recHeld=_recHeld.filter(function(h){return now-h.t<REC_HOLD_MS});
@@ -1264,10 +1264,12 @@ async function recStart(auto){
  me.ws.onopen=function(){if(_rec!==me)return;
   try{me.mr=_mr=new MediaRecorder(me.stream,{mimeType:mime})}catch(e){recLost(me,'recorder error: '+e);return}
   me.mr.ondataavailable=function(e){if(e.data.size>0&&me.ws.readyState===1)me.ws.send(e.data)};
-  me.mr.start(250);me.live=true;
+  me.mr.start(250);me.t0=Date.now();me.live=true;
   rstat('Recording the full transcript \\u2014 speak naturally. (codes: wear a lav/AirPods)')};
  me.ws.onmessage=function(m){if(me.ended)return;var d;try{d=JSON.parse(m.data)}catch(e){return}
   if(d.type&&d.type!=='Results')return;
+  // Emary's spoken question is never Glen's words (askMuted, in the handsFree block).
+  if(typeof askMuted==='function'&&askMuted(d,me.t0))return;
   var a=d.channel&&d.channel.alternatives&&d.channel.alternatives[0];if(!a)return;
   var it=document.getElementById('interim');
   if(d.is_final&&a.transcript){sessAppend(a.transcript);if(it)it.textContent=''}
@@ -1365,7 +1367,7 @@ function current(me){return !me.stopped&&_fieldTok[me.id]===me.tok}
 // is live it hears the same words itself, so they are not added twice (recCovers).
 function keepTranscript(text){if(recCovers(text))return;
  var box=document.getElementById('sessText');if(!box)return;
- _sess=box.value||'';_sess+=(_sess?' ':'')+text;box.value=_sess;scheduleSessionSave()}
+ _sess=box.value||'';_sess+=(_sess&&!/\\n$/.test(_sess)?' ':'')+text;box.value=_sess;scheduleSessionSave()}
 // The utterance is over (speech_final, UtteranceEnd, the socket closing, or the cap):
 // join its final segments and fill the field.
 function finishField(me){if(me.done||!current(me))return;me.done=true;
@@ -1498,7 +1500,7 @@ async function handsFree(){
  if(_hfStale){hfStat('Reloading the page first.');return null}
  if(_rf)stopField();
  var me={tok:++_hfSeq,stopped:false,draining:false,parts:[],chain:Promise.resolve(),pending:null,
-  afterRemedy:false,afterBsi:null,wrote:0,target:null};
+  afterRemedy:false,afterBsi:null,wrote:0,target:null,asks:[],ask:null,answering:null,heardAt:0};
  _hf=me;me.target=hfStartTarget(me);
  recAuto();     // the full session transcript runs beside it, never instead
  var b=document.getElementById('hfBtn');if(b){b.classList.add('on');b.textContent='Hands-free: on'}
@@ -1516,13 +1518,16 @@ async function handsFree(){
  me.ws.onopen=function(){if(!hfLive(me))return;
   try{me.mr=new MediaRecorder(me.stream,{mimeType:mime})}catch(e){hfFail(me,'Recorder error: '+e+'.');return}
   me.mr.ondataavailable=function(e){if(e.data.size>0&&me.ws.readyState===1)me.ws.send(e.data)};
-  me.mr.start(250);hfShow(me)};
+  me.mr.start(250);me.t0=Date.now();hfShow(me)};
  // While stopping (draining), final results still arrive and join the transcript.
  me.ws.onmessage=function(m){if(!(hfLive(me)||me.draining))return;var d;try{d=JSON.parse(m.data)}catch(e){return}
   if(d.type==='UtteranceEnd'){hfUtterance(me);return}
+  // Emary's own question, heard back through the microphone, is dropped (askMuted).
+  if(askMuted(d,me.t0))return;
+  if(d.type==='SpeechStarted'){me.heardAt=Date.now();return}
   if(d.type&&d.type!=='Results')return;
   var a=d.channel&&d.channel.alternatives&&d.channel.alternatives[0];if(!a)return;
-  var tx=(a.transcript||'').trim();
+  var tx=(a.transcript||'').trim();if(tx)me.heardAt=Date.now();
   if(d.is_final&&tx)me.parts.push(tx);
   if(d.is_final&&d.speech_final)hfUtterance(me)};
  me.ws.onerror=function(){if(me.draining){if(me.drained)me.drained();return}
@@ -1532,12 +1537,14 @@ async function handsFree(){
  return me}
 // One utterance is over: keep it in the full transcript, then queue it. All writes
 // run through me.chain, one after another, in the order spoken. While stopping, the
-// words go to the transcript only.
+// words go to the transcript only. Straight after Emary asked a question, the
+// utterance is read as its answer (askTake, hfAnswer).
 function hfUtterance(me){if(!me.parts.length||!(hfLive(me)||me.draining))return;
  var text=me.parts.join(' ').trim();me.parts=[];if(!text)return;
  keepTranscript(text);
  if(!hfLive(me))return;
- me.chain=me.chain.then(function(){return hfProcess(me,text)}).catch(function(e){
+ var q=askTake(me);
+ me.chain=me.chain.then(function(){return q?hfAnswer(me,q,text):hfProcess(me,text)}).catch(function(e){
   if(hfLive(me))hfStat('Not saved: '+e)});
  return me.chain}
 async function hfProcess(me,text){if(!hfLive(me))return;
@@ -1550,9 +1557,11 @@ async function hfProcess(me,text){if(!hfLive(me))return;
  var evs=j.events||[];
  for(var i=0;i<evs.length;i++){if(!hfLive(me))return;await hfApply(me,evs[i])}
  hfShow(me)}
-async function hfApply(me,ev){var tg=me.target,r;
- if(ev.terrain){await hfTerrain(me,ev);return}
- if(ev.also_balances){await hfAlsoBalances(me,ev);return}
+// tg0: the layer an answer belongs to, the one the question was asked about. Returns
+// true when the event was saved.
+async function hfApply(me,ev,tg0){var tg=tg0||me.target,r;
+ if(ev.terrain)return await hfTerrain(me,ev);
+ if(ev.also_balances)return await hfAlsoBalances(me,ev,tg);
  if(ev.next_layer){me.target=hfNewTarget(me);hfLog('Layer '+me.target.n+' started.');return}
  if(ev.balanced){if(!tg.rids.length){hfLog('Nothing to mark balanced yet on layer '+tg.n+'.');return}
   if(!hfLive(me))return;
@@ -1564,13 +1573,15 @@ async function hfApply(me,ev){var tg=me.target,r;
  if(ev.field==='dose'){var dz=[ev.dose,ev.frequency].filter(Boolean).join(', ');
   // A remedy that was not added leaves no lastRid, so its dose is dropped, never put
   // on the remedy before it.
-  if(!tg.lastRid){hfLog('Dose not saved: '+dz+'. No remedy was added for it.');return}
+  if(!tg.lastRid){hfLog('Dose not saved: '+dz+'. No remedy was added for it.');
+   hfAsk(me,{kind:'remedy',pending:'remedy',text:'Which remedy is that dose for?',
+    dose:ev.dose||'',frequency:ev.frequency||'',target:tg});return}
   var body={handsfree:true};
   if(ev.dose)body.dosage=ev.dose;if(ev.frequency)body.frequency=ev.frequency;
   if(!hfLive(me))return;
   r=await post('/author/__TID__/row/'+tg.lastRid,body);
-  if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' dose: '+dz)}
-  else hfLog('Dose not saved: '+dz+'.');
+  if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' dose: '+dz);return true}
+  hfLog('Dose not saved: '+dz+'.');
   return}
  var m=ev.match||{},v=m.value||'',ok=!!m.matched;if(!v)return;
  var mark=ok?'':' (not matched)';
@@ -1580,8 +1591,8 @@ async function hfApply(me,ev){var tg=me.target,r;
    most_affected:tg.most,remedy:v,dosage:ds.dosage||'',frequency:ds.frequency||'',
    timing:ds.timing||'',voice:{remedy:ok},handsfree:true});
   if(r&&r.ok&&r.rid){var rid=String(r.rid);if(tg.rids.indexOf(rid)<0)tg.rids.push(rid);
-   tg.lastRid=rid;me.wrote++;hfLog('Layer '+tg.n+' remedy: '+v+mark)}
-  else{tg.lastRid='';hfLog('Not added: '+v+((r&&r.error)?'. '+r.error:''))}
+   tg.lastRid=rid;me.wrote++;hfLog('Layer '+tg.n+' remedy: '+v+mark);return true}
+  tg.lastRid='';hfLog('Not added: '+v+((r&&r.error)?'. '+r.error:''));
   return}
  // Head, Tail, or both for "head and tail". The cached card and the page change
  // only once every row saved.
@@ -1605,7 +1616,7 @@ async function hfApply(me,ev){var tg=me.target,r;
  tg.head=nh;tg.most=nm;
  if(tg.gid){if(ev.field==='head'||ev.both)fillVoice(document.getElementById(tg.gid+'_head'),v,ok);
   if(ev.field==='tail'||ev.both)fillVoice(document.getElementById(tg.gid+'_most'),v,ok)}
- hfLog('Layer '+tg.n+' '+label+': '+v+mark)}
+ hfLog('Layer '+tg.n+' '+label+': '+v+mark);return true}
 // "terrain", "location" or "BSI": the terrain panel, through its own save chain
 // (tSave), with handsfree set so the value waits for review (ruling 7). The layer
 // target is not touched, so these work anywhere in the session.
@@ -1618,12 +1629,13 @@ async function hfTerrain(me,ev){var k=ev.terrain,body,shown;
   if(ev.conflict)hfLog('BSI location said twice: kept '+ev.text+', not '+ev.conflict+'.')}
  if(k==='bsi'){
   if(!ev.value){var why='BSI not understood: '+ev.text+(ev.error?' ('+ev.error+')':'')+'. Nothing saved.';
-   hfLog(why);tStat(why);return}
+   hfLog(why);tStat(why);hfAsk(me,askBsi(ev));return false}
   body={field:'bsi',value:ev.value};
   shown=ev.value[0]+' x '+ev.value[1]+' to '+ev.value[2]+' x '+ev.value[3]}
  else if(k==='phase'){
   if(!ev.value){var why2='Terrain phase not understood: '+ev.text+'. Nothing saved.';
-   hfLog(why2);tStat(why2);return}
+   hfLog(why2);tStat(why2);
+   hfAsk(me,{kind:'phase',pending:'terrain',text:'Which terrain phase, 1 to 5?'});return false}
   body={field:'phase',value:String(ev.value)};shown=ev.value+(ev.name?'. '+ev.name:'')}
  else{var m=ev.match||{},v=m.value||ev.text||'';if(!v)return;
   body={field:k,value:v,matched:!!m.matched};shown=v+(m.matched?'':' (not matched)')}
@@ -1631,22 +1643,25 @@ async function hfTerrain(me,ev){var k=ev.terrain,body,shown;
  if(!hfLive(me))return;
  var j=await tSave(body);
  if(j&&j.ok){me.wrote++;
-  hfLog(_hfTNames[k]+': '+shown+((k==='bsi'&&j.warnings&&j.warnings.length)?' ('+j.warnings.join('; ')+')':''))}
- else hfLog(_hfTNames[k]+' not saved: '+shown+((j&&j.error)?' ('+j.error+')':'')+'.')}
+  hfLog(_hfTNames[k]+': '+shown+((k==='bsi'&&j.warnings&&j.warnings.length)?' ('+j.warnings.join('; ')+')':''));
+  return true}
+ hfLog(_hfTNames[k]+' not saved: '+shown+((j&&j.error)?' ('+j.error+')':'')+'.')}
 // "also balances X": X joins the current layer's balanced stresses, through the same
 // route as the card's Add stress box. Only a matched name is added, since that route
 // would put an unknown name on the stress list. The layer's rows go to review
 // (handsfree, ruling 7). With no row on the layer yet there is nothing to add it to.
-async function hfAlsoBalances(me,ev){var tg=me.target,m=ev.match||{},v=m.value||ev.text||'';
+async function hfAlsoBalances(me,ev,tg0){var tg=tg0||me.target,m=ev.match||{},v=m.value||ev.text||'';
  if(!v)return;
- if(!m.matched){hfLog('Also balances not matched: '+ev.text+'. Not added.');return}
+ if(!m.matched){hfLog('Also balances not matched: '+ev.text+'. Not added.');
+  hfAsk(me,{kind:'also',pending:'also_balances',text:'Which stress does this layer also balance?',
+   target:tg});return false}
  if(!tg.rids.length){hfLog('No layer yet for: '+v+'. Not added.');return}
  if(!hfLive(me))return;
  var r=await post('/author/__TID__/stress/add',{label:v,layer:Number(tg.layer)||tg.layer,
   rids:tg.rids.map(Number),handsfree:true});
- if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' also balances: '+v)}
- else hfLog('Layer '+tg.n+' also balances '+v+': not added'+((r&&r.error)?'. '+r.error:'')+'.')}
-function hfEnd(me){if(!me)return;me.stopped=true;me.draining=false;if(_hf===me)_hf=null;
+ if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' also balances: '+v);return true}
+ hfLog('Layer '+tg.n+' also balances '+v+': not added'+((r&&r.error)?'. '+r.error:'')+'.')}
+function hfEnd(me){if(!me)return;askCancel(me);me.stopped=true;me.draining=false;if(_hf===me)_hf=null;
  try{if(me.mr&&me.mr.state!=='inactive')me.mr.stop()}catch(e){}
  try{if(me.stream)me.stream.getTracks().forEach(function(t){t.stop()})}catch(e){}
  try{if(me.ws&&me.ws.readyState===1){me.ws.send(JSON.stringify({type:'CloseStream'}));me.ws.close()}}catch(e){}
@@ -1663,7 +1678,7 @@ async function hfFail(me,why){if(!hfLive(me))return;hfFlush(me);hfEnd(me);_hfSta
 // Off: nothing more is applied. The stream closes gracefully: CloseStream, then up to
 // HF_DRAIN_MS for the last final results, which join the transcript. Then save the
 // transcript, and reload to show the rows when anything was written.
-async function hfStop(){var me=_hf;if(!me)return;_hf=null;me.draining=true;
+async function hfStop(){var me=_hf;if(!me)return;askCancel(me);_hf=null;me.draining=true;
  var b=document.getElementById('hfBtn');if(b){b.classList.remove('on');b.textContent='Hands-free'}
  hfStat('Hands-free off. Keeping the last words…');
  try{if(me.mr&&me.mr.state!=='inactive')me.mr.stop()}catch(e){}
@@ -1675,7 +1690,150 @@ async function hfStop(){var me=_hf;if(!me)return;_hf=null;me.draining=true;
  try{await me.chain}catch(e){}
  await saveSessionNow(false);
  if(me.wrote)reloadKeepingView()}
+// Questions back (Glen, 15 November 2026: "Can Emary ask questions if something is
+// said that is unclear?", then "spoken"). Only for a failure a short answer can fix: a
+// BSI with the wrong count or a number out of range, a terrain phase not understood,
+// "also balances" with no stress matched, a dose with no remedy. An unmatched name is
+// never asked about: it keeps its words, highlighted (ruling 4).
+// - One question at a time, queued, spoken only after ASK_PAUSE_MS with nothing heard.
+//   The browser's own voice (speechSynthesis), never /chat/tts, which is Glen's voice.
+//   With no speechSynthesis the question shows on screen only.
+// - Emary is never transcribed. While she speaks and for ASK_GUARD_MS after, every
+//   result is dropped, here and in the full transcript (askMuted). A late result whose
+//   audio falls in that time is dropped too, by its start and duration, since Deepgram
+//   answers a moment after the audio. Without headphones the microphone hears her.
+//   The transcript gets one line instead: [Emary asked: ...].
+// - The next utterance is the answer, through the same save path, for review. An
+//   answer that starts with a cue word is a new cue, and the question is dropped. Still
+//   unclear: asked once more, then given up, the words kept in the transcript.
+// - "Questions: off" (remembered in this browser) logs only, as before. Stopping
+//   hands-free cancels any question queued or speaking.
+// tests/test_handsfree_questions_js.py runs this under node.
+var ASK_PAUSE_MS=1500,ASK_GUARD_MS=500,ASK_WAIT_MS=20000,ASK_SPEAK_MAX_MS=12000;
+var ASK_STORE='biofield-hf-questions',_askOn=null,_askWins=[];
+function askOn(){if(_askOn!==null)return _askOn;
+ try{return localStorage.getItem(ASK_STORE)!=='0'}catch(e){return true}}
+function askBtnShow(){var b=document.getElementById('hfAskBtn');if(!b)return;var on=askOn();
+ b.textContent='Questions: '+(on?'on':'off');try{b.setAttribute('aria-pressed',on?'true':'false')}catch(e){}}
+function askToggle(){_askOn=!askOn();try{localStorage.setItem(ASK_STORE,_askOn?'1':'0')}catch(e){}
+ askBtnShow();if(!_askOn&&_hf)askCancel(_hf);
+ hfStat(_askOn?'Questions on: Emary asks when a number or phase is unclear.':
+  'Questions off: unclear words are logged only.')}
+function askShow(t){var e=document.getElementById('hfAsk');if(e)e.textContent=t?'Emary asks: '+t:''}
+function askSynth(){try{return (window.speechSynthesis&&typeof SpeechSynthesisUtterance!=='undefined')?
+ window.speechSynthesis:null}catch(e){return null}}
+// An English voice of the browser's own, a local one first.
+function askVoice(ss){var vs=[];try{vs=ss.getVoices()||[]}catch(e){}
+ var en=vs.filter(function(v){return /^en/i.test(v.lang||'')});
+ return en.filter(function(v){return v.localService&&/^en[-_]US/i.test(v.lang)})[0]||
+  en.filter(function(v){return v.localService})[0]||en[0]||null}
+// True: this result is Emary's own voice. now in a window, or its audio (start and
+// duration, seconds from t0) overlapping one.
+function askMuted(d,t0){var now=Date.now(),s=null,e=null;
+ if(d&&t0&&typeof d.start==='number'&&typeof d.duration==='number'){s=t0+d.start*1000;e=s+d.duration*1000}
+ for(var i=0;i<_askWins.length;i++){var w=_askWins[i];
+  if(now>=w.from&&now<w.to)return true;
+  if(s!==null&&s<w.to&&e>w.from)return true}
+ return false}
+// The transcript line. A line of its own: the next words start a new line.
+function askNote(t){var box=document.getElementById('sessText');if(!box)return;
+ _sess=box.value||'';_sess+=(_sess&&!/\\n$/.test(_sess)?'\\n':'')+'[Emary asked: '+t+']\\n';
+ box.value=_sess;scheduleSessionSave()}
+function askList(ns){return ns.length<2?String(ns[0]):ns.slice(0,-1).join(', ')+' and '+ns[ns.length-1]}
+var _askLast={1:'What is the fourth BSI number?',2:'What are the last two BSI numbers?',
+ 3:'What are the last three BSI numbers?'};
+// The question for a BSI not understood, from the numbers heard (bsi_heard).
+function askBsi(ev){var h=(ev.heard||[]).slice(),er=ev.error||'',q={kind:'bsi',pending:'bsi',
+  heard:h,loc:ev.heard_location||''};
+ var c=/^heard (\\d+) number/.exec(er);
+ if(c&&h.length>=1&&h.length<=3&&Number(c[1])===h.length){q.mode='missing';
+  q.text='I heard '+askList(h)+'. '+_askLast[4-h.length];return q}
+ var bad=-1;for(var i=0;i<h.length;i++)if(!(h[i]>=1&&h[i]<=21)){bad=i;break}
+ if(/is outside 1 to 21$/.test(er)&&h.length===4&&bad>=0){q.mode='range';q.idx=bad;
+  q.text='I heard '+h[bad]+'. BSI numbers go from 1 to 21. What was it?';return q}
+ q.mode='again';q.text='I did not catch the BSI. Please say all four numbers.';return q}
+// The four numbers once the answer's numbers are put in, or null.
+function askMergeBsi(q,got){var h=q.heard.slice();
+ if(q.mode==='missing'){if(got.length!==4-h.length)return null;return h.concat(got)}
+ if(q.mode==='range'){if(got.length!==1)return null;h[q.idx]=got[0];return h}
+ return got.length===4?got.slice():null}
+// A question is raised. While an answer is being applied, the same kind of question
+// is that answer still unclear: asked once more, then given up.
+function hfAsk(me,q){if(!hfLive(me)||!askOn()||!q)return;
+ var a=me.answering;q.tries=1;
+ if(a&&a.kind===q.kind){a.followed=true;q.tries=a.tries+1}
+ if(q.tries>2){hfLog('No clear answer to: '+a.text+' Kept the words in the transcript.');return}
+ if(q.tries>1)me.asks.unshift(q);else me.asks.push(q);
+ askNext(me)}
+// The same question again, or given up.
+function askAgain(me,q){me.answering=q;hfAsk(me,Object.assign({},q,{followed:false}));me.answering=null}
+// Speak the next question once Glen has paused, never over him.
+function askNext(me){if(!hfLive(me)||me.ask||!me.asks.length||me.askTimer)return;
+ var wait=ASK_PAUSE_MS-(Date.now()-(me.heardAt||0));
+ if(wait>0){me.askTimer=setTimeout(function(){me.askTimer=null;askNext(me)},Math.max(wait,20));return}
+ if(me.parts.length)hfUtterance(me);      // words heard before the pause are not the answer
+ askSpeak(me,me.asks.shift())}
+function askSpeak(me,q){me.ask=q;q.ready=false;
+ askShow(q.text);hfLog('Emary asked: '+q.text);askNote(q.text);
+ var ss=askSynth(),u=null;
+ if(ss){try{u=new SpeechSynthesisUtterance(q.text)}catch(e){u=null}}
+ if(!u){hfStat('Questions show on screen only: this browser cannot speak.');askReady(me,q);return}
+ u.lang='en-US';u.rate=1;var v=askVoice(ss);if(v){u.voice=v;u.lang=v.lang}
+ var w={from:Date.now(),to:Infinity};_askWins.push(w);if(_askWins.length>20)_askWins.shift();
+ me.askU=u;q.win=w;
+ var done=function(){if(q.spoke)return;q.spoke=true;clearTimeout(q.cap);w.to=Date.now()+ASK_GUARD_MS;
+  if(me.askU===u)me.askU=null;
+  if(me.ask===q)q.readyTimer=setTimeout(function(){if(me.ask===q)askReady(me,q)},ASK_GUARD_MS)};
+ u.onend=done;u.onerror=done;q.cap=setTimeout(done,ASK_SPEAK_MAX_MS);   // onend can go missing
+ try{ss.speak(u)}catch(e){done()}}
+function askReady(me,q){q.ready=true;q.readyAt=Date.now()}
+// The question this utterance answers, if one is waiting. One not answered within
+// ASK_WAIT_MS is dropped, so later talk is not taken for its answer.
+function askTake(me){var q=me.ask;if(!q||!q.ready)return null;me.ask=null;askShow('');
+ if(Date.now()-q.readyAt>ASK_WAIT_MS){hfLog('No answer to: '+q.text);askNext(me);return null}
+ return q}
+function askCancel(me){if(!me)return;try{clearTimeout(me.askTimer)}catch(e){}me.askTimer=null;
+ var q=me.ask;me.asks=[];me.ask=null;askShow('');
+ if(q){try{clearTimeout(q.cap);clearTimeout(q.readyTimer)}catch(e){}q.spoke=true;
+  if(q.win&&q.win.to===Infinity)q.win.to=Date.now()+ASK_GUARD_MS}
+ if(me.askU){me.askU=null;var ss=askSynth();try{if(ss)ss.cancel()}catch(e){}}}
+function askFits(q,e){return q.kind==='bsi'?e.terrain==='bsi':q.kind==='phase'?e.terrain==='phase':
+ q.kind==='also'?!!e.also_balances:e.field==='remedy'}
+async function askApplyAll(me,evs){for(var i=0;i<evs.length;i++){if(!hfLive(me))return;await hfApply(me,evs[i])}}
+// The utterance after a question. A cue word first: a new cue, the question dropped.
+async function hfAnswer(me,q,text){if(!hfLive(me))return;
+ var seg='/author/__TID__/handsfree-segment';
+ var j=await post(seg,{text:text,pending:q.pending,after_remedy:false});
+ if(!hfLive(me))return;
+ if(!(j&&j.ok)){hfLog('Answer not read: '+text+'.');askNext(me);return}
+ var evs=j.events||[],e0=evs[0];
+ if(e0?!askFits(q,e0):(j.pending&&j.pending!==q.pending)){
+  hfLog('New cue, so the question was dropped: '+q.text);
+  me.pending=j.pending||null;me.afterRemedy=!!j.after_remedy;me.afterBsi=j.after_bsi||null;
+  await askApplyAll(me,evs);hfShow(me);askNext(me);return}
+ if(!e0){hfLog('Answer not clear: '+text+'.');askAgain(me,q);hfShow(me);askNext(me);return}
+ me.pending=j.pending||null;me.afterRemedy=!!j.after_remedy;me.afterBsi=j.after_bsi||null;
+ var ok=false,rest=evs.slice(1);me.answering=q;
+ try{
+  if(q.kind==='bsi'&&!e0.value){var nums=askMergeBsi(q,e0.heard||[]);
+   if(!nums){hfLog('Answer not clear: '+text+'.');askAgain(me,q)}
+   else{var bt='BSI '+nums[0]+' by '+nums[1]+(q.loc?' '+q.loc:'')+' to '+nums[2]+' by '+nums[3];
+    var j2=await post(seg,{text:bt,pending:null,after_remedy:false});
+    if(!hfLive(me))return;
+    var e2=(j2&&j2.ok&&j2.events)||[];if(j2&&j2.ok)me.afterBsi=j2.after_bsi||null;
+    for(var i=0;i<e2.length;i++){if(!hfLive(me))return;var r2=await hfApply(me,e2[i]);if(i===0)ok=!!r2}}}
+  else if(q.kind==='remedy'){
+   if(!(e0.match&&e0.match.value)){hfLog('Answer not clear: '+text+'.');askAgain(me,q)}
+   else if(await hfApply(me,e0,q.target)){ok=true;
+    if(q.dose||q.frequency)await hfApply(me,{field:'dose',dose:q.dose,frequency:q.frequency},q.target)}}
+  else ok=!!(await hfApply(me,e0,q.target))
+ }finally{me.answering=null}
+ if(ok)hfLog('Answered: '+text);
+ await askApplyAll(me,rest);
+ hfShow(me);askNext(me)}
 // handsFree:end
+if(typeof window!=='undefined'&&window.addEventListener)
+ window.addEventListener('load',function(){askBtnShow()});
 async function interpret(){rstat('Interpreting transcript into chain rows\\u2026');
  await saveSessionNow(false);
  var r=await post('/author/__TID__/interpret',{});
@@ -4145,9 +4303,14 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<button id=hfBtn type=button class='btn ghost' title='Hands-free: say head, "
         "tail, remedy, balanced, also balances, next layer, terrain, location or BSI' "
         "onclick=handsFree()>Hands-free</button>"
+        # Glen, 15 November 2026: Emary asks aloud when a number or phase is unclear.
+        # The page sets the label from this browser's choice on load (askBtnShow).
+        "<button id=hfAskBtn type=button class='btn ghost' aria-pressed=true "
+        "title='Emary asks aloud when a BSI, terrain phase, also balances or dose is "
+        "unclear. Off: logged only.' onclick=askToggle()>Questions: on</button>"
         "<button id=phaseAct class=btn onclick=phaseRun()>Capture stresses &rarr; list</button>"
         "<span id=rstat class=food></span></div>"
-        "<div id=recNote class=food></div><div id=hfStat class=food></div><div id=hfLog class=food style='white-space:pre-line'></div>"
+        "<div id=recNote class=food></div><div id=hfStat class=food></div><div id=hfAsk class=food aria-live=polite style='font-weight:600'></div><div id=hfLog class=food style='white-space:pre-line'></div>"
         "<div class=food><em id=interim></em></div>"
         f"<textarea id=sessText rows=6 oninput='scheduleSessionSave()' "
         f"placeholder='Live transcript appears here as you speak..."
