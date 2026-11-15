@@ -32,7 +32,7 @@ def test_membership_line_flips_products_to_member(client):
     assert all(l["effective_unit_cents"] < l["list_cents"] for l in ff_lines2)
     # the membership line itself is priced at the tier price and is not FF
     mem = [l for l in withmem["lines"] if l["slug"] == "membership:month"][0]
-    assert mem["effective_unit_cents"] == 9900
+    assert mem["effective_unit_cents"] == 10000
     assert mem["is_ff"] is False
     assert mem["savings_cents"] == 0
     # subtotal includes the $99 membership on top of the (now discounted) products
@@ -56,8 +56,8 @@ def test_price_inhouse_invoice_membership_line_flips_products_to_member():
     assert len(mem_recs) == 1
     mem = mem_recs[0]
     assert mem["kind"] == "membership"
-    assert mem["line_cents"] == 9900
-    assert mem["unit_cents"] == 9900
+    assert mem["line_cents"] == 10000
+    assert mem["unit_cents"] == 10000
 
     ff_recs = [r for r in items_rec if r["slug"] != "membership:month"]
     assert len(ff_recs) == 6

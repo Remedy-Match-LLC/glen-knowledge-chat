@@ -607,6 +607,11 @@
   let currentLevel = 'self-healing';
 
   const BASE = window.location.origin;
+  // The page that embeds this chat, from widget.js (10 Nov 2026). Logged only.
+  const EMBED_PAGE = (function () {
+    try { return new URLSearchParams(window.location.search).get('page') || ''; }
+    catch (_) { return ''; }
+  })();
 
   // The landing page's invitation tile forwards its tap here. That tap is the
   // browser gesture that permits audio, so from this point on replies speak
@@ -991,7 +996,8 @@
           newsletter_optin: _newsletter_optin,
           images:    _att.images || [],
           documents: _att.documents || [],
-          images_consented: !!_att.consented
+          images_consented: !!_att.consented,
+          embed_page: EMBED_PAGE
         })
       });
       if (window.__chatAttach) window.__chatAttach.clear();

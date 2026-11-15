@@ -3,9 +3,9 @@ from dashboard import membership_products as mp
 
 def test_three_tiers_with_exact_amounts():
     assert set(mp.TIERS) == {"month", "year_monthly", "year_prepay"}
-    assert mp.get_tier("month")["price_cents"] == 9900
-    assert mp.get_tier("year_monthly")["price_cents"] == 9900
-    assert mp.get_tier("year_prepay")["price_cents"] == 99000
+    assert mp.get_tier("month")["price_cents"] == 10000
+    assert mp.get_tier("year_monthly")["price_cents"] == 10000
+    assert mp.get_tier("year_prepay")["price_cents"] == 100000
 
 def test_billing_types():
     assert mp.get_tier("month")["billing"] == "one_time"

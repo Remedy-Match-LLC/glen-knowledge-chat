@@ -1818,9 +1818,15 @@ def resolve_or_create_shortlink(product_name: str, alias_info: dict):
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         row = cx.execute(
-            "SELECT shortlink FROM shortlink_cache WHERE product_name = ?",
+            "SELECT shortlink, canonical FROM shortlink_cache WHERE product_name = ?",
             (product_name,)
         ).fetchone()
+    # A cached link made for an older destination is stale: the alias now points elsewhere
+    # ("Living Water" moved from the hydrogen bottle to the ionizers, Glen 2026-11-10).
+    # Treat it as a miss, so a fresh link is made for today's URL and replaces the row.
+    if row and (row["canonical"] or "") != canonical:
+        print(f"[shortlink] stale cache for {product_name!r}: destination changed", flush=True)
+        row = None
     if row:
         # Update last_used_at non-blocking
         try:
@@ -5528,6 +5534,16 @@ def begin_page():
     return _serve_funnel_home()
 
 
+@app.route("/begin/free")
+def begin_free_page():
+    """The free-membership page. truly.vip/help points here. Both join buttons open
+    the same "Send my link" form as /begin. Copy approved by Glen, 13 Nov 2026."""
+    resp = send_from_directory(STATIC, "begin-free.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
 @app.route("/purity-stat")
 def purity_stat_page():
     """Public embeddable widget rendering GET /api/purity/stats. iframe-friendly;
@@ -7234,7 +7250,8 @@ def prepay_checkout():
     data = request.get_json(silent=True) or request.form or {}
     email = (data.get("email") or "").strip().lower()
     tier_key = (data.get("tier_key") or "").strip()
-    tier = _pp.get_tier(tier_key)
+    # Only terms still sold: 3mo and 6mo are retired (Glen, 2026-11-12).
+    tier = _pp.get_tier(tier_key) if _pp.is_sold(tier_key) else None
     if not email or not tier:
         return jsonify({"ok": False, "error": "invalid"}), 200
     base = PUBLIC_BASE_URL.rstrip("/")
@@ -7266,6 +7283,18 @@ def prepay_return():
     res = _fulfill_prepay_term(sid) if sid else {"ok": False}
     ok = bool(res.get("ok"))
     return _redir(f"{PUBLIC_BASE_URL.rstrip('/')}/?prepay={'ok' if ok else 'err'}")
+
+
+def _month_one_cents(pi, fallback_cents):
+    """The monthly amount a card-on-file buyer agreed to: what month 1 actually
+    charged. A checkout opened at $99 and paid after the $100 change (2026-11-12)
+    keeps $99 for months 2..N. Callers pass the session's amount_total, then the
+    catalog price, as the fallback when the PaymentIntent gives no amount."""
+    try:
+        paid = int((pi or {}).get("amount_received") or (pi or {}).get("amount") or 0)
+    except (TypeError, ValueError):
+        paid = 0
+    return paid if paid > 0 else int(fallback_cents)
 
 
 def _continuous_care_checkout_session(email, term_months):
@@ -7335,7 +7364,7 @@ def membership_checkout():
 
 @app.route("/continuous-care/checkout", methods=["POST"])
 def continuous_care_checkout():
-    """Start a Stripe Checkout for Continuous Care MONTHLY (6 or 12 month fixed
+    """Start a Stripe Checkout for Continuous Care MONTHLY (12 month fixed
     term, card-on-file). Unlike the prepay ladder above, this VAULTS the card
     (save_card=True) — month 1 is charged now, and the charge cron bills months
     2..N off the vaulted card, capped at term_charges_total."""
@@ -7347,7 +7376,9 @@ def continuous_care_checkout():
         term_months = int(data.get("term_months") or 0)
     except (TypeError, ValueError):
         term_months = 0
-    if not email or term_months not in (6, 12):
+    # 12 only: the 6-month term is discontinued (Glen, 2026-11-12). Fulfilment still
+    # accepts 6 so a checkout already started completes.
+    if not email or term_months != 12:
         return jsonify({"ok": False, "error": "invalid"}), 200
     try:
         sess = _continuous_care_checkout_session(email, term_months)
@@ -8040,6 +8071,32 @@ def _velocity_guard(req, tier, session_id=""):
     return None
 
 
+_EMBED_PAGE_RE = re.compile(r"^https?://[A-Za-z0-9.-]+(:\d+)?(/[^\s?#]*)?$")
+
+
+def _chat_referer(header_referer, embed_page):
+    """What the chat log records as the page a chat came from.
+
+    A chat sent from the embed iframe carries the iframe's own address as its Referer,
+    so every embedded site looked alike. widget.js passes the page that holds it
+    (10 Nov 2026, refreshingvision.com), and that is logged as "embed <page>". Only a
+    request from /embed may claim one, and only a plain http(s) origin and path. The page
+    is the caller's own claim, so it is attribution, never proof of the site (review
+    round 2). An embed Referer is logged without its query, which carries the page."""
+    header_referer = str(header_referer or "")
+    page = str(embed_page or "").strip()[:300]
+    try:
+        from urllib.parse import urlparse as _up
+        from_embed = _up(header_referer).path == "/embed"
+    except Exception:
+        from_embed = False
+    if not from_embed:
+        return header_referer
+    if page and _EMBED_PAGE_RE.match(page):
+        return "embed " + page
+    return header_referer.split("?", 1)[0].split("#", 1)[0]
+
+
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
     if request.method == "OPTIONS":
@@ -8066,7 +8123,7 @@ def chat():
         or uuid.uuid4().hex
     )
     user_agent = request.headers.get("User-Agent", "")
-    referer    = request.headers.get("Referer", "")
+    referer    = _chat_referer(request.headers.get("Referer", ""), data.get("embed_page"))
     # Concierge — affiliate ref slug captured at entry (?ref=<slug> → rm_ref cookie)
     ref_slug   = (request.cookies.get("rm_ref") or "").strip()
 
@@ -10864,7 +10921,7 @@ def _cart_waitlist_refusal(lines, skip_zero_qty=True):
 # What a CUSTOMER is told: on the product page in place of its buy controls, and in a
 # customer checkout's refusal. One constant, so the wording changes in one place.
 # Not yet approved by Glen (2026-11-09).
-PICKUP_ONLY_CUSTOMER_LINE = "Pickup only, in Hilo. Call (808) 217-9647 to arrange pickup."
+PICKUP_ONLY_CUSTOMER_LINE = "Pickup only, in Hilo. Email support@remedymatch.com to arrange pickup."
 
 
 def _is_pickup_only_product(p):
@@ -10978,7 +11035,7 @@ def _pickup_only_refusal(cart, *, pickup_offered, extra_products=None):
         if pickup_offered:
             return (f"{line} lists a product that cannot be identified, so it cannot be "
                     "checked for pickup only. Fix the bundle or choose pickup.")
-        return f"{line} cannot be ordered online yet. Call (808) 217-9647 to order it."
+        return f"{line} cannot be ordered online yet. Email support@remedymatch.com to order it."
     if pickup_offered:
         what = (f"{line} is pickup only, in Hilo." if line == item
                 else f"{line} contains {item}, which is pickup only, in Hilo.")
@@ -11154,7 +11211,34 @@ class PickupOnlyError(CheckoutError):
 # USPS flat-rate box thresholds by total bottle count (Glen 2026-06-14): <=4 S, <=12 M, else L.
 # Used as a fail-safe when the box-fit catalog can't pick a box; the catalog (when Rae fills it
 # at /admin/shipping) takes precedence via shipping.quote().
-_SHIP_FALLBACK_HARD = {"S": 1300, "M": 2300, "L": 3200}   # rounded rates if even the rates table is down
+_SHIP_FALLBACK_HARD = {"S": 1300, "M": 2300, "L": 3300}   # rounded rates if even the rates table is down (L $33 since 2026-11-03)
+
+
+def _box_rate_cents(size, rates=None):
+    """The live charged rate for one USPS box size (S, M or L). Never raises.
+    Falls back to the rounded hard rate only when the rates table cannot answer.
+    Pass `rates` (one get_current_rates() snapshot) to price a whole cart at one rate."""
+    try:
+        if rates is None:
+            rates = _shipping.get_current_rates() or {}
+        r = rates.get(size) or {}
+        cents = int(r.get("charged_cents") or r.get("usps_retail_cents") or 0)
+        return cents or _SHIP_FALLBACK_HARD[size]
+    except Exception:
+        return _SHIP_FALLBACK_HARD[size]
+
+
+def _own_box_flat_cents(p, rates=None):
+    """Per-unit fixed shipping for an own-parcel product.
+    `flat_shipping_boxes` names USPS box sizes, charged at today's confirmed rate,
+    so a USPS price change carries through (Glen 2026-11-14: "large box").
+    `flat_shipping_cents` is a fixed amount added on top, for parcels with no box size."""
+    cents = int(p.get("flat_shipping_cents") or 0)
+    for size in (p.get("flat_shipping_boxes") or []):
+        if size not in _SHIP_FALLBACK_HARD:
+            raise CheckoutError(f"Unknown shipping box {size!r} for {p.get('name') or p.get('slug')}.")
+        cents += _box_rate_cents(size, rates)
+    return cents
 
 
 def _fallback_shipping_cents(total_bottles):
@@ -11163,13 +11247,7 @@ def _fallback_shipping_cents(total_bottles):
     if n <= 0:
         return 0
     size = "S" if n <= 4 else ("M" if n <= 12 else "L")
-    try:
-        rates = _shipping.get_current_rates() or {}
-        r = rates.get(size) or {}
-        cents = int(r.get("charged_cents") or r.get("usps_retail_cents") or 0)
-        return cents or _SHIP_FALLBACK_HARD[size]
-    except Exception:
-        return _SHIP_FALLBACK_HARD[size]
+    return _box_rate_cents(size)
 
 
 def _shipping_for_cart(box_counts, total_bottles):
@@ -11271,6 +11349,8 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     items, qbo_lines, items_rec, box_counts, subtotal_list, total_bottles = [], [], [], {}, 0, 0
     total_cello = 0
     flat_ship_cents = 0   # sum of per-product fixed shipping overrides (own-parcel items)
+    filler_alone_lines = 0   # shippable lines that pack as filler (ships_as_filler)
+    _rates_snapshot = None   # one usps_rates read per cart, so every line uses the same rate
     # Names of lines packed at FALLBACK_BOTTLE_TYPE because their real packaging is
     # unspecified. Returned so an operator surface can list what needs measuring.
     packaging_review = []
@@ -11314,8 +11394,19 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         # type would otherwise fail quote() and drop the whole cart to the qty rule.
         if p.get("pickup_only"):
             continue
-        if _shipping.is_shippable(p):
-            _flat = int(p.get("flat_shipping_cents") or 0)
+        if _shipping.is_shippable(p) and p.get("ships_as_filler") and not p.get("bundle"):
+            # Packs as filler inside another parcel (Glen 2026-11-14, Bamboo Sanctuary
+            # Cloth: it "will fit as part of the packing material, not take extra
+            # space"). It adds no space and no charge beside anything else that ships.
+            # Alone it needs a box of its own: see the Small-box charge after the loop.
+            filler_alone_lines += 1
+        elif _shipping.is_shippable(p):
+            if _rates_snapshot is None:
+                try:
+                    _rates_snapshot = _shipping.get_current_rates() or {}
+                except Exception:
+                    _rates_snapshot = {}
+            _flat = _own_box_flat_cents(p, _rates_snapshot)
             if _flat > 0 and not p.get("bundle"):
                 # Own-parcel item with a FIXED shipping charge (e.g. the water ionizers,
                 # which each ship in their own box). Bill the flat rate per unit and keep
@@ -11377,6 +11468,10 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                     total_bottles += qty * _per
     # US-only shipping — but only a cart with something to ship has an opinion
     # about the address. An overseas client buying a service prices fine.
+    if filler_alone_lines and not box_counts and not flat_ship_cents:
+        # Nothing else ships, so the filler goes alone: one Small box, whatever the
+        # quantity. Glen: "It would fit a small box." Longer cuts are not yet ruled.
+        flat_ship_cents = _box_rate_cents("S", _rates_snapshot)
     if (box_counts or flat_ship_cents) and country not in ("US", "USA", ""):
         raise CheckoutError("We ship to US addresses only — please use a US forwarding address.")
     tier_arg = subscriber_tier_pct
@@ -13463,8 +13558,25 @@ def _ingredient_kickoff_build(slug, name):
     _threading.Thread(target=_build, daemon=True).start()
 
 
+def _ingredient_moved(prefix, slug):
+    """A 302 to an old ingredient address's new home, or None (2026-11-10)."""
+    from dashboard import ingredients as _ing
+    from flask import redirect as _redirect
+    try:
+        new = _ing.moved_to(slug)
+    except Exception:
+        new = None
+    if not new:
+        return None
+    qs = request.query_string.decode("utf-8", "ignore")
+    return _redirect(prefix + new + ("?" + qs if qs else ""), code=302)
+
+
 @app.route("/begin/ingredient/<slug>")
 def begin_ingredient_page(slug):
+    moved = _ingredient_moved("/begin/ingredient/", slug)
+    if moved:
+        return moved
     return send_from_directory(STATIC, "begin-ingredient.html")
 
 
@@ -13473,6 +13585,9 @@ def begin_ingredient_page_data(slug):
     from dashboard import ingredients as _ing, ingredient_pages as _ip
     info = _ing.resolve(slug)
     if not info:
+        moved = _ingredient_moved("/begin/ingredient-page-data/", slug)
+        if moved:
+            return moved
         return jsonify({"state": "unknown"}), 404
     name = info["name"]
     email = _ingredient_viewer_email()
@@ -15968,6 +16083,9 @@ def _fulfill_prepay_term(session_id):
         if not (email and tier and pi_id):
             return {"ok": False, "reason": "incomplete"}
         pi = _sp.get_payment_intent(pi_id)
+        # What this buyer actually paid: a session opened before the 2026-11-12
+        # price change books its own price (review round 1).
+        paid_cents = _month_one_cents(pi, sess.get("amount_total") or tier["price_cents"])
         if pi.get("status") != "succeeded":
             return {"ok": False, "reason": "unpaid"}
         claimed = False
@@ -16035,7 +16153,7 @@ def _fulfill_prepay_term(session_id):
                         from dashboard import care_share as _cshare, wallet as _wallet
                         m = _cshare.modules_for_practitioner(disp_pid)
                         if m is not None:
-                            cents = _cshare.share_cents(int(tier["price_cents"]), m)
+                            cents = _cshare.share_cents(int(paid_cents), m)
                             if cents > 0:
                                 _wallet.earn_care_share(
                                     str(disp_pid), cents,
@@ -16072,7 +16190,7 @@ def _fulfill_prepay_term(session_id):
         # never undo the committed grant. Inside the won-claim path, so exactly once.
         try:
             _ingest_order(source="prepay_term", external_ref=pi_id, email=email,
-                          total_cents=tier["price_cents"], channel="retail", status="done")
+                          total_cents=paid_cents, channel="retail", status="done")
         except Exception as _oe:
             print(f"[prepay] order-ledger record failed: {_oe!r}", flush=True)
         try:
@@ -16082,7 +16200,7 @@ def _fulfill_prepay_term(session_id):
                 body = (
                     "Aloha,\n\n"
                     f"Your {tier['label']} of Continuous Care is active - you're all set. "
-                    f"That's ${tier['price_cents']/100:.0f} prepaid (about "
+                    f"That's ${paid_cents/100:,.0f} prepaid (about "
                     f"${per_mo/100:.0f}/mo). I'll keep re-matching your protocol as you "
                     "progress, with live group coaching, your AI ally, and Terrain Restore "
                     "the whole way.\n\n"
@@ -16094,7 +16212,7 @@ def _fulfill_prepay_term(session_id):
         except Exception as _e:
             print(f"[prepay] confirmation email failed: {_e!r}", flush=True)
         _notify_first_cc_signup(email, f"Continuous Care up front ({tier['label']})",
-                                tier["price_cents"])
+                                paid_cents)
         return {"ok": True, "created": True, "email": email}
     except Exception as e:
         print(f"[prepay] fulfill failed: {e!r}", flush=True)
@@ -16139,6 +16257,8 @@ def _fulfill_continuous_care_monthly(session_id):
         if not (email and term_months in (6, 12) and pi_id):
             return {"ok": False, "reason": "incomplete"}
         pi = _sp.get_payment_intent(pi_id)
+        # The price this buyer agreed to, kept for months 2..N and the books (round 1).
+        _cc_paid = _month_one_cents(pi, sess.get("amount_total") or _pp.MONTHLY_ANCHOR_CENTS)
         if pi.get("status") != "succeeded":
             return {"ok": False, "reason": "unpaid"}
         customer = pi.get("customer")
@@ -16222,7 +16342,8 @@ def _fulfill_continuous_care_monthly(session_id):
                 # at term_months total charges (the Task-2 cron cap stops it there).
                 new_sid = _subs.create_membership(
                     cx, email=email, stripe_customer_id=customer,
-                    stripe_payment_method_id=pm, amount_cents=_pp.MONTHLY_ANCHOR_CENTS,
+                    stripe_payment_method_id=pm,
+                    amount_cents=_cc_paid,
                     next_charge_date=next_charge, cadence_months=1,
                     term_charges_total=term_months, initial_order_count=1,
                     attributed_practitioner_id=disp_pid,
@@ -16285,19 +16406,19 @@ def _fulfill_continuous_care_monthly(session_id):
         # once.
         try:
             _ingest_order(source="continuous_care_monthly", external_ref=pi.get("id"),
-                          email=email, items=[], total_cents=_pp.MONTHLY_ANCHOR_CENTS,
+                          email=email, items=[], total_cents=_cc_paid,
                           address={}, channel="retail", status="done")
         except Exception as _oe:
             print(f"[continuous-care] order-ledger record failed: {_oe!r}", flush=True)
         try:
             _send_subscription_email(email, "receipt", {
                 "kind": "membership", "product": "continuous_care",
-                "total_cents": _pp.MONTHLY_ANCHOR_CENTS, "cancel_url": cancel_url,
+                "total_cents": _cc_paid, "cancel_url": cancel_url,
                 "next_charge_date": next_charge, "invoice_id": pi.get("id")})
         except Exception as _e:
             print(f"[continuous-care] confirmation email failed: {_e!r}", flush=True)
         _notify_first_cc_signup(email, f"Continuous Care monthly ({term_months}mo term)",
-                                _pp.MONTHLY_ANCHOR_CENTS)
+                                _cc_paid)
         return {"ok": True, "created": True, "email": email}
     except Exception as e:
         print(f"[continuous-care] fulfill failed: {e!r}", flush=True)
@@ -16441,7 +16562,8 @@ def _fulfill_membership_product(session_id):
                 # Capped at term_charges (the charge cron self-cancels there).
                 _subs.create_membership(
                     cx, email=email, stripe_customer_id=customer,
-                    stripe_payment_method_id=pm, amount_cents=tier["price_cents"],
+                    stripe_payment_method_id=pm,
+                    amount_cents=_month_one_cents(pi, sess.get("amount_total") or tier["price_cents"]),
                     next_charge_date=_subs.add_months(today_s, 1),
                     cadence_months=tier["cadence_months"],
                     term_charges_total=tier["term_charges"], initial_order_count=1)
@@ -19673,6 +19795,14 @@ def _order_has_supply_line(order):
         if not slug or it.get("gift") or _mp.tier_of_line(it):
             continue
         if "line_cents" in it and not int(it.get("line_cents") or 0):
+            continue
+        # A pet's line on its owner's invoice ("For Skylar") is not the owner's month
+        # of remedies (Glen 2026-11-14 plan). The owner's own lines still count.
+        from dashboard import biofield_invoice as _bfi_h
+        # Any source: a pet's line added by hand in Edit Invoice is the pet's too
+        # (2026-11-14 review, round 2).
+        if (_bfi_h.household_tag_of(it.get("note"))
+                and not (it.get("billed_for") or "").strip()):
             continue
         prod = _get_product(slug)
         if not prod or prod.get("service") or prod.get("digital"):
@@ -26736,7 +26866,10 @@ def dispensary_continuous_care(code):
         term_months = int(body.get("term_months") or 12)
     except (TypeError, ValueError):
         term_months = 12
-    if term_months not in (6, 12):
+    if term_months == 6:
+        # Discontinued (Glen, 2026-11-12). Refused, never silently made 12.
+        return jsonify({"ok": False, "error": "invalid term"}), 200
+    if term_months != 12:
         term_months = 12
 
     # Practitioner-share consent (Task 3): the "Start Continuous Care" card's
@@ -26754,7 +26887,10 @@ def dispensary_continuous_care(code):
     # with dispensary_pid + share_consent riding the metadata so
     # _fulfill_prepay_term can stamp attribution and credit the doctor.
     tier_key = (body.get("tier_key") or "1mo").strip()
-    if tier_key in ("6mo", "12mo"):
+    if tier_key not in ("1mo", "12mo"):
+        # 6mo is discontinued (Glen, 2026-11-12). Never fall through to monthly.
+        return jsonify({"ok": False, "error": "invalid tier"}), 200
+    if tier_key == "12mo":
         tier = _prepay.get_tier(tier_key)
         if not tier:
             return jsonify({"ok": False, "error": "invalid tier"}), 200
@@ -29334,7 +29470,16 @@ def _portal_options_for(email, holder_email=None):
                         # The SIGNED-IN person, not a member being viewed (?member=): a
                         # holder viewing her son keeps her own Cancel (review round 1).
                         "holder": bool(_fp.is_active(cx, holder_email or email)),
+                        # Set once the holder has cancelled: cover runs to this date.
+                        "ends": _fp.access_ends(cx, holder_email or email),
                     }
+                    # A household annual: paid once, no renewal, so no Cancel. The
+                    # portal names the last covered day (Glen, 2026-11-13).
+                    _own = _fp.get(cx, holder_email or email)
+                    _term_end = _fp.term_ends(cx, holder_email or email)
+                    if _term_end:
+                        opts["family_plan"]["label"] = _fp.label_for(_own)
+                        opts["family_plan"]["term_last_day"] = _fp.last_covered_day(_term_end)
             except Exception as _e:
                 print(f"[portal-options/family] {_e!r}", flush=True)
         return opts
@@ -29747,9 +29892,8 @@ def _portal_reorder_module(email):
             continue
         age_days = (now - seen_at).days
         tier = None
-        if 90 < age_days <= 180:
-            tier = "6mo"
-        elif 180 < age_days <= 365:
+        # 6mo is discontinued (Glen, 2026-11-12), so every lapsed item offers 12.
+        if 90 < age_days <= 365:
             tier = "12mo"
         if tier:
             locked_rows.append({
@@ -31426,6 +31570,125 @@ def api_ebook_optin():
     # below (unauthenticated caller, any email typed in = live bearer token).
     _send_library_ready(email, name, tok, meta["title"], slug)
     return _cors(jsonify({"ok": True}), 200)
+
+
+# Studio Black Friday 2026 (marketing tab design, Glen 2026-11-12). The page stays
+# unlinked until marketing's 17 Nov email. The offer copy was released on 12 Nov.
+@app.route("/studio-bf")
+def studio_bf_page():
+    resp = send_from_directory(STATIC, "studio-bf.html")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/api/studio-bf/claim", methods=["POST"])
+def api_studio_bf_claim():
+    """Public. Records one claim per email and, once the copy is released, sends the
+    offer email once. Echoes nothing about the claim: the last day to buy is in the
+    email, so the reply cannot tell anyone whether an address claimed earlier."""
+    from dashboard import studio_bf as _sbf
+    if not _sbf.is_open():
+        return jsonify({"ok": False, "error": "This offer closed on Sunday 6 December."}), 410
+    try:
+        claim = _sbf.clean_claim(request.get_json(silent=True) or request.form.to_dict())
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    # The auth routes' limiter: one caller typing many addresses is refused (round 1).
+    limited = _auth_rate_limited(claim["email"])
+    if limited:
+        return limited
+    with _db_lock, db.connect(LOG_DB) as cx:
+        row, _new = _sbf.save_claim(cx, claim)
+        msg = _sbf.offer_message(row)
+        send = bool(msg) and _sbf.claim_offer_send(cx, row["email"])
+    if send:
+        import threading
+        threading.Thread(target=_studio_bf_send_offer, args=(row["email"], msg),
+                         daemon=True).start()
+    return jsonify({"ok": True})
+
+
+def _studio_bf_send_offer(email, msg):
+    """Marketing mail through SES: the suppression list is checked and the footer
+    carries an unsubscribe link. A send that surely did not go out frees the mark."""
+    from dashboard import ses_mail as _ses, studio_bf as _sbf
+    try:
+        outcome, _mid = _ses.deliver(lambda: db.connect(LOG_DB), email, msg[0], msg[1],
+                                     marketing=True)
+    except Exception as e:
+        print(f"[studio-bf] send raised: {type(e).__name__}", flush=True)
+        outcome = "unknown"
+    print(f"[studio-bf] offer {outcome or 'not sent'}", flush=True)
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _sbf.record_offer_outcome(cx, email, outcome)
+    except Exception as e:
+        print(f"[studio-bf] outcome not recorded: {type(e).__name__}", flush=True)
+    return outcome
+
+
+@app.route("/admin/studio-bf")
+def admin_studio_bf_page():
+    """Rae's list. The page collects the console key; its API is console-gated."""
+    resp = send_from_directory(STATIC, "studio-bf-admin.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+def _studio_bf_console_ok():
+    """The console key or an owner token. Unlike _portal_console_ok, an unset secret
+    refuses: this list holds buyers' names and emails."""
+    import hmac
+    # The env var itself: CONSOLE_SECRET falls back to WEBHOOK_SECRET (review round 3).
+    secret = os.environ.get("CONSOLE_SECRET", "").strip()
+    key = _present_console_key()
+    if not key or not secret:
+        return False
+    if hmac.compare_digest(str(key).encode("utf-8"), secret.encode("utf-8")):
+        return True
+    return bool(_owner_token_ok(key))
+
+
+@app.route("/api/console/studio-bf", methods=["GET", "POST"])
+def api_console_studio_bf():
+    """GET: every claim. POST {email, status}: Rae's check against Studio's
+    Transactions table, one of pending, confirmed, rejected. POST
+    {action: "send_pending"}: send the offer to every claim it has not reached,
+    such as those made while the copy was held (review round 2). Console-gated."""
+    if not _studio_bf_console_ok():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    from dashboard import studio_bf as _sbf
+    body = request.get_json(silent=True) or {}
+    if request.method == "POST" and body.get("action") == "send_pending":
+        return _studio_bf_send_pending()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        if request.method == "GET":
+            return jsonify({"ok": True, "claims": _sbf.list_claims(cx)})
+        try:
+            row = _sbf.set_status(cx, body.get("email"), body.get("status"),
+                                  body.get("by") or "console")
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+    if row is None:
+        return jsonify({"ok": False, "error": "no claim for that email"}), 404
+    return jsonify({"ok": True, "claim": row})
+
+
+def _studio_bf_send_pending():
+    """Marks each unsent claim under the lock, then sends in turn outside it."""
+    from dashboard import studio_bf as _sbf
+    if _sbf.OFFER_SUBJECT is None or _sbf.OFFER_TEXT is None:
+        return jsonify({"ok": False, "error": "the offer copy is still held"}), 409
+    with _db_lock, db.connect(LOG_DB) as cx:
+        todo = []
+        for em in _sbf.pending_offer_emails(cx):
+            if _sbf.claim_offer_send(cx, em):
+                todo.append((em, _sbf.offer_message(_sbf.get_claim(cx, em))))
+    outcomes = {}
+    for em, msg in todo:
+        o = _studio_bf_send_offer(em, msg) or "not sent"
+        outcomes[o] = outcomes.get(o, 0) + 1
+    return jsonify({"ok": True, "tried": len(todo), "outcomes": outcomes})
 
 
 @app.route("/api/portal/<token>/folds", methods=["GET", "PUT"])
@@ -35862,6 +36125,131 @@ def api_invoice_open(token):
     return jsonify({"ok": True, "recorded": True, "open": st})
 
 
+def _portal_message_backstops(email, name, query):
+    """The checks every portal chat message gets before its reply streams, on the
+    ordinary path and on intake turns alike (review rounds 1 and 3). Returns
+    (warning_item_id, flagged).
+
+    The warning-sign keyword backstop is cheap and needs no model. Its item is stored and
+    handed to the email job HERE, so a client disconnect, a stream error or a slow model
+    can neither lose nor delay it. Without a warning sign, the healing-crisis watch runs,
+    only inside the 10 days after a Biofield delivery. A flagged message skips
+    _triage_portal_message, so the Biofield request check starts here instead, after the
+    warning delivery has been handed off. An unflagged message is the caller's to send to
+    _triage_portal_message after the reply."""
+    try:
+        from dashboard import portal_triage as _pt_ws
+        warning_keys = _pt_ws.warning_signs(query)
+    except Exception as e:
+        print(f"[triage] warning-sign check failed: {type(e).__name__}", flush=True)
+        warning_keys = []
+    item_id = None
+    flagged = False
+    if warning_keys:
+        item_id = _start_warning_sign_delivery(email, name, query, warning_keys)
+        flagged = True
+    else:
+        healing_keys, healing = _healing_crisis_check(email, query)
+        if healing:
+            item_id = _start_warning_sign_delivery(email, name, query, healing_keys,
+                                                   flag=healing)
+            flagged = True
+    if flagged:
+        _start_biofield_request_flag(email, name, query)
+    return item_id, flagged
+
+
+def _portal_intake_chat_response(email, portal, query, history, page_says_intake):
+    """One turn of the intake guide in the portal chat, as the same SSE stream the
+    concierge sends, or None when this turn is not an intake turn. See
+    dashboard/portal_intake_chat.py for the rules."""
+    from dashboard import intake as _intake, portal_intake_chat as _pic
+    if not email or not query:
+        return None
+    if not (page_says_intake or _pic.wants_intake(query)):
+        return None   # an ordinary question never touches the intake store
+    try:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _intake.init_intake_table(cx)
+            submitted = _intake.is_submitted(cx, email)
+            row = _intake.get_response(cx, email)
+            answers = dict((row["answers"] if row else {}) or {})
+    except Exception as e:
+        # The intake store failing must not take the ordinary chat down with it.
+        print(f"[portal-intake-chat] read failed: {type(e).__name__}", flush=True)
+        return None
+    if not _pic.should_run(submitted, page_says_intake, query):
+        return None
+    if not str(answers.get("first_name") or "").strip():
+        display = str(portal.get("name") or "").strip()
+        if display:
+            answers["first_name"] = display.split()[0]
+    # Every backstop the ordinary chat runs runs here too: symptoms are what an intake
+    # is about, and a client may name an urgent one, or ask for Glen, mid-form.
+    _warning_item_id, _flagged = _portal_message_backstops(
+        email, portal.get("name") or "", query)
+
+    def _call(system, messages):
+        resp = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=800,
+                                   system=system, messages=messages)
+        return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+
+    def generate():
+        try:
+            say, _merged, updates, done, stopped = _pic.run_turn(
+                answers, history, query, get_system_prompt("self-healing"), _call)
+        except Exception as e:
+            print(f"[portal-intake-chat] turn failed: {type(e).__name__}", flush=True)
+            yield sse({"error": "assistant temporarily unavailable"}); return
+        saved = None
+        try:
+            with _db_lock, db.connect(LOG_DB) as wcx:
+                wcx.row_factory = sqlite3.Row
+                _intake.init_intake_table(wcx)
+                saved = _pic.save_learned(wcx, email, updates, _hst_now().isoformat())
+        except Exception as e:
+            print(f"[portal-intake-chat] save failed: {type(e).__name__}", flush=True)
+        say = _strip_dash(say)
+        if updates and saved is None:
+            # Not saved, so not finished: she stays in the intake to say it again.
+            done = False
+            say += "\n\nI could not save that answer just now. Please say it again."
+        elif done:
+            say += "\n\n" + _pic.START_LINE_DONE
+        if _warning_item_id:
+            say += "\n\n" + PORTAL_WARNING_SIGN_LINE
+            try:
+                from dashboard import portal_triage as _pt_ws
+                with _db_lock, db.connect(LOG_DB) as _acx:
+                    _pt_ws.set_answer(_acx, _warning_item_id, say)
+            except Exception as e:
+                print(f"[triage] answer update failed: {type(e).__name__}", flush=True)
+        yield sse({"token": say})
+        yield sse({"intake": {"mode": not (done or stopped), "done": bool(done),
+                              "saved": list(saved[1]) if saved is not None else []}})
+        try:
+            from dashboard import portal_chat as _pchat
+            with _db_lock, db.connect(LOG_DB) as _pcx:
+                _pchat.record_exchange(_pcx, email, query, say,
+                                       client_name=(portal.get("name") or "You"))
+        except Exception as e:
+            print(f"[portal-chat] persist failed: {type(e).__name__}", flush=True)
+        # Triage, as on the ordinary path: a message that needs Glen reaches him.
+        if not _flagged:
+            try:
+                import threading as _tt
+                _tt.Thread(target=_triage_portal_message,
+                           args=(email, portal.get("name") or "", query, say),
+                           daemon=True).start()
+            except Exception as e:
+                print(f"[triage] start failed: {type(e).__name__}", flush=True)
+        yield sse({"done": True})
+
+    return Response(stream_with_context(generate()), content_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.route("/api/portal/<token>/chat", methods=["POST", "OPTIONS"])
 def api_portal_chat(token):
     if request.method == "OPTIONS":
@@ -35888,6 +36276,12 @@ def api_portal_chat(token):
         return jsonify({"error": "not found"}), 404
     email = (portal.get("email") or "").strip().lower()
     content = portal.get("content") or {}
+    # The intake by conversation (Glen, 2026-11-14): while her intake is unsubmitted, a
+    # client who asks for it, or is already in it, is walked through the form here.
+    _intake_turn = _portal_intake_chat_response(
+        email, portal, query, history, bool(data.get("intake_mode")))
+    if _intake_turn is not None:
+        return _intake_turn
     # The portal token authenticates this client's email. Only explicit order
     # verbs plus exact, currently available catalog names can mutate the cart.
     cart_added = []
@@ -35927,6 +36321,25 @@ def api_portal_chat(token):
     from dashboard import portal_concierge as _pcz
     ctx = _pcz.build_context(content, client_orders)
     _sys = _pcz.system_prompt(ctx) + _STANDING_USE_RULE
+    # Dr. Glen's numbered questions for this client (Glen, 2026-11-12). Best effort:
+    # a failed read leaves the chat as it was.
+    # The previous message is read from her stored thread, never from the
+    # browser-supplied history, so it cannot be steered (review round 2).
+    _open_qs, _q_prev = [], ""
+    try:
+        from dashboard import portal_questions as _pq
+        with db.connect(LOG_DB) as _qcx:
+            _open_qs = _pq.open_questions(_qcx, email)
+            if _open_qs:
+                from dashboard import portal_chat as _pqc
+                _last = _pqc.list_messages(_qcx, email, limit=1)
+                if _last and _last[-1].get("role") != _pqc.CLIENT:
+                    _q_prev = str(_last[-1].get("content") or "")
+        _qsec = _pq.prompt_section(_open_qs)
+        if _qsec:
+            _sys += "\n\n" + _qsec
+    except Exception as e:
+        print(f"[portal-questions] read failed: {type(e).__name__}", flush=True)
     if page_context:
         page_lines = [f"Current portal panel: {page_context.get('panel', 'unknown')}."]
         if page_context.get("title"):
@@ -35971,32 +36384,9 @@ def api_portal_chat(token):
     user_block = ((f"CONTEXT:\n{context_str}\n\n" if context_str else "") + query
                   + _approved_wording_reminder(context_str))
     messages.append({"role": "user", "content": user_block})
-    # Warning-sign keyword backstop on the client's own message (cheap, no model).
-    # Stored and handed to the email job HERE, before the reply streams, so a client
-    # disconnect, a stream error or a slow model can neither lose nor delay it.
-    try:
-        from dashboard import portal_triage as _pt_ws
-        _warning_keys = _pt_ws.warning_signs(query)
-    except Exception as e:
-        print(f"[triage] warning-sign check failed: {e!r}", flush=True)
-        _warning_keys = []
-    _warning_item_id = None
-    _healing_keys = []
-    if _warning_keys:
-        _warning_item_id = _start_warning_sign_delivery(
-            email, portal.get("name") or "", query, _warning_keys)
-    else:
-        # Healing-crisis watch: only inside the 10 days after a Biofield delivery.
-        _healing_keys, _healing = _healing_crisis_check(email, query)
-        if _healing:
-            _warning_item_id = _start_warning_sign_delivery(
-                email, portal.get("name") or "", query, _healing_keys, flag=_healing)
-        else:
-            _healing_keys = []
-    if _warning_keys or _healing_keys:
-        # These messages skip _triage_portal_message, so the Biofield request check
-        # starts here, after the warning delivery has already been handed off.
-        _start_biofield_request_flag(email, portal.get("name") or "", query)
+    # Warning-sign and healing-crisis backstops, handed off before the reply streams.
+    _warning_item_id, _flagged = _portal_message_backstops(
+        email, portal.get("name") or "", query)
 
     def generate():
         if cart_added:
@@ -36026,6 +36416,7 @@ def api_portal_chat(token):
             answer = answer + _line
             yield sse({"token": _line})
             try:
+                from dashboard import portal_triage as _pt_ws
                 with _db_lock, db.connect(LOG_DB) as _acx:
                     _pt_ws.set_answer(_acx, _warning_item_id, answer)
             except Exception as e:
@@ -36047,6 +36438,16 @@ def api_portal_chat(token):
                                        client_name=(portal.get("name") or "You"))
         except Exception as e:
             print(f"[portal-chat] persist failed: {e!r}", flush=True)
+        # Record which of Dr. Glen's numbered questions this message answers.
+        # Answered questions stay in: a later message may correct an answer.
+        if _open_qs:
+            try:
+                import threading as _th
+                _th.Thread(target=_record_portal_question_answers,
+                           args=(email, query, _q_prev, _open_qs, _client_msg_id),
+                           daemon=True).start()
+            except Exception as e:
+                print(f"[portal-questions] extract failed: {type(e).__name__}", flush=True)
         # Extract candidate health-record edits from the turn and queue them as
         # pending suggestions for the client to review (My Health Profile). Best
         # effort and flag-gated; must never break the chat stream.
@@ -36060,7 +36461,7 @@ def api_portal_chat(token):
                 print(f"[health-suggestions] extract failed: {e!r}", flush=True)
         # Triage: flag messages that need Dr. Glen's attention -> console + email him.
         # A warning sign or healing-crisis flag was already handed off before the stream.
-        if not (_warning_keys or _healing_keys):
+        if not _flagged:
             try:
                 import threading as _t2
                 _t2.Thread(target=_triage_portal_message,
@@ -36119,6 +36520,41 @@ def api_console_portal_messages(email):
         return jsonify({"error": "unauthorized"}), 401
     return jsonify({"email": (email or "").strip().lower(),
                     "messages": _portal_chat_thread(email)})
+
+
+@app.route("/api/console/portal/questions", methods=["GET", "POST"])
+def api_console_portal_questions():
+    """Console: Dr. Glen's numbered questions for one client's portal chat (Glen,
+    2026-11-12). POST {email, questions: [{n, text}]} replaces the open set, or
+    {email, clear: true} closes it. GET ?email= returns the questions and every answer
+    recorded, each with the question it answered. Answers are returned to the console
+    caller only and never logged."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import portal_questions as _pq
+    if request.method == "GET":
+        email = (request.args.get("email") or "").strip().lower()
+    else:
+        body = request.get_json(silent=True) or {}
+        email = (body.get("email") or "").strip().lower()
+    if "@" not in email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        # Tables first: on Postgres a failed read of a missing table aborts the
+        # transaction, and the answers read after it would fail (review round 3).
+        _pq.ensure_tables(cx)
+        if request.method == "POST":
+            if body.get("clear") is True:
+                _pq.clear_questions(cx, email)
+            else:
+                try:
+                    qs = _pq.clean_questions(body.get("questions"))
+                except ValueError as e:
+                    return jsonify({"ok": False, "error": str(e)}), 400
+                _pq.set_questions(cx, email, qs, set_by="console")
+        return jsonify({"ok": True, "email": email,
+                        "questions": _pq.open_questions(cx, email),
+                        "answers": _pq.answers(cx, email)})
 
 
 @app.route("/api/console/portal/inbound")
@@ -36304,6 +36740,32 @@ def api_console_portal_draft_reply(email):
 # triage item was actually stored, because its first sentence says so.
 PORTAL_WARNING_SIGN_LINE = ("I have passed this to Dr. Glen. This chat is for supporting your "
                             "self-healing as a supplement to your local health care.")
+
+
+def _record_portal_question_answers(email, query, previous_message, questions,
+                                    client_msg_id=None):
+    """Background: which of Dr. Glen's numbered questions the client's message
+    answers (portal_questions.extract_answers, Haiku). Her whole message is stored
+    against each one. Never logs the message or the answers. Her message is also in
+    her stored chat thread, so a lost background run loses no words."""
+    try:
+        from dashboard import portal_questions as _pq
+
+        def _complete(system, user):
+            m = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=1500,
+                                    system=system, messages=[{"role": "user", "content": user}])
+            return m.content[0].text
+
+        found = _pq.extract_answers(_complete, questions, query, previous_message)
+        if found:
+            with _db_lock, db.connect(LOG_DB) as _qcx:
+                n = _pq.record_answers(_qcx, email, found, query, questions,
+                                       source_msg_id=client_msg_id)
+            print(f"[portal-questions] recorded {n} answer(s)", flush=True)
+        return found
+    except Exception as e:
+        print(f"[portal-questions] record failed: {type(e).__name__}", flush=True)
+        return []
 
 
 def _extract_portal_health_suggestions(email, query, answer, client_msg_id=None):
@@ -36751,7 +37213,8 @@ def api_cron_sequence_tick():
         return jsonify({"ok": True, "dry_run": dry, **counts})
     except Exception as e:  # noqa: BLE001
         app.logger.exception("sequence tick failed")
-        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+        # The type only: a database error can quote an address, and the cron prints this.
+        return jsonify({"ok": False, "error": type(e).__name__}), 500
 
 
 @app.route("/api/cron/answer-audit", methods=["POST"])
@@ -38637,6 +39100,10 @@ def portal_family_plan_subscribe(token):
         if ident is None:
             return jsonify({"error": "not_found"}), 404
         email = ident.email
+        _fp.init_family_plan_table(cx)
+        if _fp.term_ends(cx, email):
+            # A running annual: a monthly plan would overwrite it (review round 3).
+            return jsonify({"error": "annual_running"}), 409
     from dashboard import stripe_pay as _sp
     base = PUBLIC_BASE_URL.rstrip("/")
     sess = _sp.create_checkout_session(
@@ -38675,6 +39142,18 @@ def family_plan_checkout():
         return jsonify({"ok": False, "error": "email required"}), 400
     if not tier:
         return jsonify({"ok": False, "error": "unknown tier"}), 400
+    if int(tier["cadence_months"]) < _fp.TERM_CADENCE_MONTHS:
+        # A monthly purchase would overwrite a running annual and lose its paid days
+        # (review round 1). Renewing the annual is still allowed.
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _fp.init_family_plan_table(cx)
+            _running = _fp.term_ends(cx, email)
+        if _running:
+            return jsonify({"ok": False, "error": (
+                "Your Household Annual membership is active through "
+                f"{_fp.long_date(_fp.last_covered_day(_running))}. "
+                "You can renew it here when it is close to ending.")}), 409
     credit = min(_family_upgrade_credit(email), tier["amount_cents"])
     amount = tier["amount_cents"] - credit
     base = PUBLIC_BASE_URL.rstrip("/")
@@ -38683,7 +39162,10 @@ def family_plan_checkout():
         metadata={"kind": "family_plan", "email": email, "tier": tier_key,
                   "upgrade_credit_cents": str(credit)},
         success_url=f"{base}/family-plan/return?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{base}/membership", save_card=True)
+        # The household annual is paid once and never charged again (Glen,
+        # 2026-11-13), so no card is kept for it. Monthly still vaults one.
+        cancel_url=f"{base}/membership",
+        save_card=int(tier["cadence_months"]) < _fp.TERM_CADENCE_MONTHS)
     return jsonify({"ok": True, "url": sess.get("url"), "upgrade_credit_cents": credit,
                     "amount_cents": amount})
 
@@ -38712,27 +39194,55 @@ def _fulfill_family_plan(session_id):
         pi = _sp.get_payment_intent(pi_id)
         if pi.get("status") != "succeeded":
             return {"ok": False, "reason": "unpaid"}
+        term = int(tier["cadence_months"]) >= _fp.TERM_CADENCE_MONTHS
         customer, pm = pi.get("customer"), pi.get("payment_method")
-        if not (customer and pm):
+        if term:
+            pm = None                     # a one-time term keeps no card to charge
+        elif not (customer and pm):
             return {"ok": False, "reason": "no_card"}
-        from datetime import date as _date
-        next_charge = _subs.add_months(
-            _date.today().isoformat(), int(tier["cadence_months"]))
         with _db_lock, db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
             cx.execute("CREATE TABLE IF NOT EXISTS family_sub_grants "
                        "(session_id TEXT PRIMARY KEY, email TEXT, created_at TEXT)")
             _fp.init_family_plan_table(cx)
+            # The claim is committed together with the activation below, so a crash
+            # between them leaves nothing claimed and a retry fulfils (review round 2).
             claimed = cx.execute(
                 "INSERT OR IGNORE INTO family_sub_grants (session_id,email,created_at) VALUES (?,?,?)",
                 (session_id, email, _fp._now())).rowcount == 1
-            cx.commit()
             if not claimed:
+                cx.commit()
                 return {"ok": True, "reason": "already_fulfilled"}
-            _fp.activate(cx, email, next_charge_at=next_charge, customer_id=customer,
-                         payment_method_id=pm, source="stripe",
-                         amount_cents=tier["amount_cents"],
-                         cadence_months=tier["cadence_months"])
+            if term:
+                # A renewal of a term still running starts when that term ends, so no
+                # paid day is lost. No card is kept.
+                next_charge = _fp.activate_term(
+                    cx, email, months=int(tier["cadence_months"]),
+                    amount_cents=tier["amount_cents"], customer_id=customer)
+            elif _fp.term_ends(cx, email):
+                # A monthly checkout opened before an annual was bought, then paid:
+                # never overwrite the running annual. Keep the payment on record and
+                # ask Glen to refund it (review round 3).
+                _fp.record_charge(cx, caregiver_email=email,
+                                  amount_cents=int(sess.get("amount_total") or tier["amount_cents"]),
+                                  pi_id=pi_id, status="succeeded")
+                cx.commit()
+                try:
+                    _note = (f"<p>A monthly Household payment from {email} arrived while "
+                             f"their annual term is still running (payment {pi_id}). The "
+                             f"annual was left as it is. Please refund the monthly payment.</p>")
+                    send_evox_email(GLEN_CONSULT_EMAIL, "Glen",
+                                    f"Refund needed: monthly Household payment over an annual ({email})",
+                                    _note, _note, b"")
+                except Exception:
+                    app.logger.exception("household overlap refund notice failed for %s", email)
+                return {"ok": True, "reason": "annual_running_refund_needed"}
+            else:
+                next_charge = _subs.add_months(_fp._today(), int(tier["cadence_months"]))
+                _fp.activate(cx, email, next_charge_at=next_charge, customer_id=customer,
+                             payment_method_id=pm, source="stripe",
+                             amount_cents=tier["amount_cents"],
+                             cadence_months=tier["cadence_months"])
             _fp.record_charge(cx, caregiver_email=email,
                               amount_cents=int(sess.get("amount_total") or
                                                (tier["amount_cents"] -
@@ -38747,10 +39257,18 @@ def _fulfill_family_plan(session_id):
                 for individual in _subs.active_memberships_by_email(cx, email):
                     _subs.set_status(cx, int(individual["id"]), "cancelled")
         try:
-            html = ("<p>Your Family Plan is active. Everyone in your household with "
-                    "sharing on now has their full analysis unlocked. You can cancel "
-                    "any time from your portal.</p>")
-            send_evox_email(email, "", "Your Family Plan is active", html, html, b"")
+            if term:
+                html = ("<p>Your Household Membership is active through "
+                        f"{_fp.long_date(_fp.last_covered_day(next_charge))}. Everyone in "
+                        "your household with sharing on now has their full analysis "
+                        "unlocked. It is a single payment that does not renew.</p>")
+                send_evox_email(email, "", "Your Household Membership is active",
+                                html, html, b"")
+            else:
+                html = ("<p>Your Family Plan is active. Everyone in your household with "
+                        "sharing on now has their full analysis unlocked. You can cancel "
+                        "any time from your portal.</p>")
+                send_evox_email(email, "", "Your Family Plan is active", html, html, b"")
         except Exception:
             app.logger.exception("family plan confirmation failed")
         return {"ok": True}
@@ -38885,8 +39403,9 @@ def caregiver_pay_return():
 
 @app.route("/api/portal/<token>/family-plan/cancel", methods=["POST"])
 def portal_family_plan_cancel(token):
-    """Caregiver self-cancel. Stops covers() for the household at the next read;
-    no refund, no proration (the current paid cycle simply is not renewed)."""
+    """Caregiver self-cancel. The plan is not renewed, and the household keeps its
+    cover until the paid period ends (Glen, 2026-11-13). An unpaid or comped plan
+    ends at once. No refund, no proration."""
     from dashboard import portal_identity as _pi, family_plan as _fp
     sess_cookie = request.cookies.get("rm_portal_session", "")
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -38898,13 +39417,14 @@ def portal_family_plan_cancel(token):
             return jsonify({"error": "not_found"}), 404
         # A member covered by someone else's plan holds no plan row: the update used to
         # change nothing and answer ok (money-07, 2026-09-28). Refuse instead.
+        own = _fp.get(cx, ident.email)
+        if own and own.get("status") in ("cancelled", _fp.CANCELLING):
+            # A retry after a lost reply (round 2).
+            return jsonify({"ok": True, "access_until": _fp.access_ends(cx, ident.email)})
         if not _fp.is_active(cx, ident.email):
-            own = _fp.get(cx, ident.email)
-            if own and own.get("status") == "cancelled":
-                return jsonify({"ok": True})      # a retry after a lost reply (round 2)
             return jsonify({"ok": False, "error": "The plan holder manages this plan."}), 409
-        _fp.set_status(cx, ident.email, "cancelled")
-    return jsonify({"ok": True})
+        until = _fp.cancel_at_period_end(cx, ident.email)
+    return jsonify({"ok": True, "access_until": until})
 
 
 @app.route("/api/community/coach-subscribe/cancel", methods=["POST"])
@@ -39043,10 +39563,19 @@ def family_plan_charge_cron():
         due_rows = _fp.due(rcx, today)
     for sub in due_rows:
         email = sub["caregiver_email"]
+        # Read the row again just before charging: a holder or the console may have
+        # cancelled it since the list was read (Glen, 2026-11-13, review round 2).
+        with db.connect(LOG_DB) as fcx:
+            fcx.row_factory = sqlite3.Row
+            fresh = _fp.get(fcx, email)
+        if (not fresh or fresh.get("status") not in _fp.ACTIVE_STATUSES
+                or not fresh.get("next_charge_at") or fresh["next_charge_at"][:10] > today
+                or _fp.is_term(fresh)):
+            continue
         try:
             res = _sp.charge_off_session(
                 sub["stripe_customer_id"], sub["payment_method_id"], sub["amount_cents"],
-                description=_fp.PLAN["label"],
+                description=_fp.label_for(fresh),
                 metadata={"kind": "family_plan_cycle", "email": email})
             ok = res.get("status") == "succeeded"
             pi_id = res.get("id") or ""
@@ -39059,8 +39588,9 @@ def family_plan_charge_cron():
             _fp.init_family_plan_table(cx)
             _fp.record_charge(cx, caregiver_email=email, amount_cents=sub["amount_cents"],
                               pi_id=pi_id, status="succeeded" if ok else "failed")
+            renewed_cancelled = False
             if ok:
-                _fp.mark_charged(
+                renewed_cancelled = not _fp.mark_charged(
                     cx, email,
                     _subs.add_months(today, int(sub.get("cadence_months") or 1)))
             else:
@@ -39071,13 +39601,36 @@ def family_plan_charge_cron():
                     was_cancelled = True
                 else:
                     was_cancelled = False
+        # A plan cancelled while its charge was declining is over: no "update your
+        # card" email for it (review round 3).
+        if not ok:
+            with db.connect(LOG_DB) as acx:
+                acx.row_factory = sqlite3.Row
+                after = _fp.get(acx, email)
+            if not after or (after.get("status") not in _fp.ACTIVE_STATUSES and not was_cancelled):
+                failed += 1
+                continue
+        if ok and renewed_cancelled:
+            # The card was charged, but the plan was cancelled while the charge ran.
+            # It stays cancelled; Glen refunds by hand.
+            app.logger.warning("family plan charged after cancel for %s (pi %s)", email, pi_id)
+            try:
+                _note = (f"<p>A Family Plan renewal for {email} was charged "
+                         f"(${sub['amount_cents'] / 100:.2f}, payment {pi_id}) while the plan "
+                         f"was being cancelled. The plan stays cancelled. "
+                         f"Please refund this charge in Stripe.</p>")
+                send_evox_email(GLEN_CONSULT_EMAIL, "Glen",
+                                f"Refund needed: Family Plan charged after cancel ({email})",
+                                _note, _note, b"")
+            except Exception:
+                app.logger.exception("family plan refund notice failed for %s", email)
         if ok:
             charged += 1
         else:
             failed += 1
             if was_cancelled:
                 cancelled += 1
-            html = (f"<p>We could not process this month's Family Plan charge for {email}. "
+            html = (f"<p>We could not process the latest Family Plan charge for {email}. "
                     f"Please update the card on file from your portal to keep the plan active.</p>")
             try:
                 send_evox_email(email, "", "Your Family Plan payment did not go through",
@@ -39992,10 +40545,18 @@ def intake_save_draft():
         ident = _evox_ident(cx, request.args.get("token", ""))
         if ident is None:
             return jsonify({"error": "not_found"}), 404
+        # The row lock holds from this read to the write, so a chat save in another
+        # worker cannot land in between (review rounds 1 and 3).
+        _intake.lock_row(cx, ident.email)
         if _intake.is_submitted(cx, ident.email):
+            cx.commit()
             return jsonify({"ok": True})
         answers = (request.get_json(silent=True) or {}).get("answers") or {}
-        _intake.save_draft(cx, ident.email, answers, _hst_now().isoformat())
+        # A stale open form must not save over what she just said in the portal chat.
+        from dashboard import portal_intake_chat as _pic
+        _row = _intake.get_response(cx, ident.email)
+        answers = _pic.protect((_row or {}).get("answers") or {}, answers)
+        _intake.save_draft_unless_submitted(cx, ident.email, answers, _hst_now().isoformat())
     return jsonify({"ok": True})
 
 
@@ -40023,6 +40584,15 @@ def intake_submit():
         if ident is None:
             return jsonify({"error": "not_found"}), 404
         answers = (request.get_json(silent=True) or {}).get("answers") or {}
+        # Chat answers a stale form never showed are kept, then the marker is dropped.
+        # The row stays locked until the submit commits, so no chat save lands between.
+        from dashboard import portal_intake_chat as _pic
+        _intake.lock_row(cx, ident.email)
+        _row = _intake.get_response(cx, ident.email)
+        if _row and _row.get("status") != "submitted":
+            answers = _pic.protect(_row.get("answers") or {}, answers)
+        answers.pop(_pic.CHAT_SAVED, None)
+        answers.pop(_pic.LOADED, None)
         errors = _intake.validate_response(answers)
         if errors:
             return jsonify({"error": "invalid", "errors": errors}), 400
@@ -40850,6 +41420,13 @@ def api_console_family_plan():
         return jsonify({"error": "amount_cents must be an integer number of cents"}), 400
     if amount_cents is not None and amount_cents < 0:
         return jsonify({"error": "amount_cents must be non-negative"}), 400
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _fp.init_family_plan_table(cx)
+        if _fp.term_ends(cx, email):
+            # Re-enrolling would make a paid annual a billed monthly plan with no card.
+            return jsonify({"error": "this household holds a running annual term; "
+                                     "it needs no re-enrolment"}), 409
     with _db_lock:
         with db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
@@ -59684,6 +60261,218 @@ def coaching_studio_credit_post():
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
+def _membership_product_sources():
+    from dashboard import membership_products as _memprod
+    return set(_memprod._tier_sources())
+
+
+def _membership_continues(row):
+    """True when a /membership grant's expiry is not the end of the membership: an
+    active membership subscription is still billing, or a later grant outlasts it."""
+    email = (row["email"] or "").strip().lower()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        try:
+            from dashboard import subscriptions as _subs
+            if _subs.active_memberships_by_email(cx, email):
+                return True
+        except Exception:
+            try:
+                cx.rollback()
+            except Exception:
+                pass
+        later = cx.execute(
+            "SELECT 1 FROM memberships WHERE lower(email)=? AND id<>? AND expires_at > ? "
+            "LIMIT 1", (email, row["id"], row["expires_at"])).fetchone()
+    return later is not None
+
+
+def _family_long_date(value):
+    """A stored timestamp as the Hawaii calendar date it falls on, written out."""
+    from dashboard import family_plan as _fp
+    from zoneinfo import ZoneInfo
+    s = str(value).strip()
+    if "T" in s or " " in s:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        s = dt.astimezone(ZoneInfo("Pacific/Honolulu")).date().isoformat()
+    return _fp.long_date(s)
+
+
+def _hawaii_date(value):
+    """A stored UTC timestamp (or a bare date) as the Hawaii calendar date."""
+    from zoneinfo import ZoneInfo
+    from datetime import date as _date
+    s = str(value).strip()
+    if "T" not in s and " " not in s:
+        return _date.fromisoformat(s[:10])
+    dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Pacific/Honolulu")).date()
+
+
+def _hawaii_hour(value):
+    from zoneinfo import ZoneInfo
+    dt = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Pacific/Honolulu")).hour
+
+
+def _reminded_today(email, today_h):
+    """True when any membership row for this email was reminded on this Hawaii date."""
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    with db.connect(LOG_DB) as cx:
+        vals = [r[0] for r in cx.execute(
+            "SELECT last_reminder_at FROM memberships WHERE lower(email)=? "
+            "AND last_reminder_at IS NOT NULL", (email,)).fetchall()]
+    for v in vals:
+        try:
+            if _hawaii_date(v) >= today_h:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _reminded_source(src):
+    """Grant sources that get a renewal reminder of their own."""
+    src = src or ""
+    return (src.startswith("prepay_") or src == CARE_TASTER_SOURCE
+            or src in _membership_product_sources())
+
+
+def _cover_continues(row):
+    """True when this grant ending does not end the person's care: a billing membership
+    subscription, a later grant that will itself be reminded, or a household plan that
+    covers them past this date. A later grant of a kind that is never reminded (such
+    as biofield_month_delivery) does not count, or no prompt would ever go out."""
+    email = (row["email"] or "").strip().lower()
+    expiry_h = _hawaii_date(row["expires_at"]).isoformat()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        try:
+            from dashboard import subscriptions as _subs
+            if _subs.active_memberships_by_email(cx, email):
+                return True
+        except Exception as e:
+            try:
+                cx.rollback()
+            except Exception:
+                pass
+            _m = str(e).lower()
+            if "no such table" not in _m and "does not exist" not in _m:
+                # Unknown is not "ended": no email rather than a wrong one (round 4).
+                # A missing table means no subscriptions exist, which is known.
+                print(f"[renewal-cron] subscription check failed: {e!r}", flush=True)
+                return True
+        later = cx.execute(
+            "SELECT source FROM memberships WHERE lower(email)=? AND id<>? AND expires_at > ?",
+            (email, row["id"], row["expires_at"])).fetchall()
+    if any(_reminded_source(l[0]) for l in later):
+        return True
+    if not _family_plan_enabled():
+        return False
+    try:
+        from dashboard import family_plan as _fp
+        from dashboard import household as _hh
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            holders = [email]
+            try:
+                holders += [(c["primary_email"] or "").strip().lower()
+                            for c in _hh.caregivers_for(cx, email)]
+            except Exception:
+                # No household links table yet: only their own plan can cover them.
+                try:
+                    cx.rollback()
+                except Exception:
+                    pass
+            for h in holders:
+                if not h or not _fp.is_active(cx, h):
+                    continue
+                end = _fp.term_ends(cx, h) or _fp.access_ends(cx, h)
+                # No end date: an ongoing monthly plan. Else it must outlast this grant.
+                if not end or str(end)[:10] > expiry_h:
+                    return True
+    except Exception as e:
+        print(f"[renewal-cron] household cover check failed: {e!r}", flush=True)
+        return True
+    return False
+
+
+def _remind_household_terms_ending(now_iso, sent_to=None):
+    """The household annual is paid once and never renews (Glen, 2026-11-13). Remind
+    the holder once a day in the last 3 days, with the renewal link, like the prepaid
+    single terms. A renewal bought with the same email starts when this term ends.
+    Returns how many reminders were sent."""
+    if not _family_plan_enabled():
+        return 0
+    from dashboard import family_plan as _fp
+    today = _fp._today()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _fp.init_family_plan_table(cx)
+        rows = _fp.terms_ending(cx, today)
+    base = (PUBLIC_BASE_URL or "").rstrip("/")
+    renew_url = f"{base}/membership" if base else "your member portal"
+    price = _fp.TIERS["family_annual"]["amount_cents"]
+    sent = 0
+    from datetime import date as _date
+    for row in rows:
+        email = row["caregiver_email"]
+        end = row["next_charge_at"][:10]
+        if ((sent_to is not None and (email or "").strip().lower() in sent_to)
+                or _reminded_today(email, _date.fromisoformat(today))):
+            # Already reminded today from their own membership row (review rounds 3, 4).
+            continue
+        # One conditional write claims today's reminder, and only while the term still
+        # ends on that date and is not cancelled. A renewal or cancel since the list was
+        # read, or a second run, sends nothing (review round 2).
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            prev = _fp.claim_reminder(cx, email, today, end)
+        if prev is False:
+            continue
+        # Counted to the last covered day, so the subject agrees with "covers your
+        # household through <date>": today, tomorrow, or in 2 days.
+        days_left = (_date.fromisoformat(_fp.last_covered_day(end))
+                     - _date.fromisoformat(today)).days
+        _when = ("today" if days_left <= 0 else
+                 "tomorrow" if days_left == 1 else f"in {days_left} days")
+        last_day = _fp.long_date(_fp.last_covered_day(end))
+        subject = f"Your Household Membership ends {_when}"
+        body = (
+            f"Aloha,\n\n"
+            f"Your Household Membership covers your household through {last_day}. "
+            f"It does not renew by itself, and no card will be charged.\n\n"
+            f"When you're ready to keep your household covered, you can renew for "
+            f"another year (${price/100:,.0f}) here:\n{renew_url}\n\n"
+            f"Use this same email address. Your new year then starts when this one ends.\n\n"
+            f"Everyone in your household keeps their unlocked analysis right up to that date.\n\n"
+            f"In wellness,\nDr. Glen and Rae\n"
+            f"---\n"
+            f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
+        )
+        try:
+            ok_sent = _send_inquiry_email(to_email=email, subject=subject, body=body,
+                                          reply_to=RM_COACHING_REPLY_EMAIL)
+        except Exception as e:
+            print(f"[renewal-cron] household send failed: {e!r}", flush=True)
+            ok_sent = False
+        if ok_sent:
+            sent += 1
+        else:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                cx.row_factory = sqlite3.Row
+                _fp.release_reminder(cx, email, today, prev)
+    return sent
+
+
 @app.route("/api/cron/membership-renewals", methods=["POST"])
 @require_console_key
 def cron_membership_renewals():
@@ -59698,35 +60487,58 @@ def cron_membership_renewals():
                 "SELECT id, email, expires_at, last_reminder_at, source FROM memberships "
                 "WHERE expires_at::timestamptz > now() "
                 "AND expires_at::timestamptz < now() + interval '3 days' "
-                "LIMIT 500"
+                "LIMIT 5000"
             ).fetchall()
         else:
             rows = cx.execute(
                 "SELECT id, email, expires_at, last_reminder_at, source FROM memberships "
                 "WHERE datetime(expires_at) > datetime('now') "
                 "AND datetime(expires_at) < datetime('now', '+3 days') "
-                "LIMIT 500"
+                "LIMIT 5000"
             ).fetchall()
     reminded = 0
+    _today_h = _hawaii_date(now_iso)
+    _sent_to = set()   # one reminder per person per run, even with two rows ending
     for r in rows:
         last = r["last_reminder_at"]
         if last:
+            # Once per Hawaii calendar day. A rolling 24 hours let a run that started
+            # a few minutes earlier than yesterday's skip a member's last reminder.
             try:
-                last_dt = datetime.fromisoformat(last.rstrip("Z"))
-                if (datetime.utcnow() - last_dt) < timedelta(hours=24):
+                if _hawaii_date(last) >= _today_h:
                     continue
             except Exception:
                 pass
         try:
-            exp_dt = _parse_utc(r["expires_at"])
-            days_left = max(0, (exp_dt - _now_utc()).days)
+            _ends_h = _hawaii_date(r["expires_at"])
+            days_left = max(0, (_ends_h - _today_h).days)
         except Exception:
             days_left = 0
-        s_days = "s" if days_left != 1 else ""
+        # "ends today" / "ends tomorrow" / "ends in 2 days", counted in Hawaii dates
+        # so the count matches the date printed beside it.
+        try:
+            _early = _hawaii_hour(r["expires_at"]) < 7
+        except Exception:
+            _early = False
+        if days_left > 3 or (days_left == 3 and not _early):
+            # Three emails, on the last three Hawaii days. The UTC window can reach a
+            # fourth day when the run time drifts (review round 3). An expiry before the
+            # 7 AM run is already over on its own date, so it starts a day earlier.
+            continue
+        _when = ("today" if days_left == 0 else
+                 "tomorrow" if days_left == 1 else f"in {days_left} days")
         _src = (r["source"] or "")
+        _email_lc = (r["email"] or "").strip().lower()
+        if _email_lc in _sent_to:
+            continue
+        _reminded_kind = _reminded_source(_src)
+        if _reminded_kind and _cover_continues(r):
+            # Renewed, still billed, moved on to another grant, or covered by a running
+            # household plan: this row ending is not their care ending. Say nothing.
+            continue
         if _src.startswith("prepay_"):
             # A prepaid term is ending. NEVER auto-charge — send a renewal PROMPT at
-            # the (shallower) loyalty renewal rate. Skip if the ladder is dark.
+            # the price checkout charges. Skip if the ladder is dark.
             if not PREPAY_LADDER_ENABLED:
                 continue
             _tier_key = _src[len("prepay_"):]
@@ -59734,16 +60546,22 @@ def cron_membership_renewals():
             _tier = _prepay.get_tier(_tier_key)
             _term_label = (_tier or {}).get("label", "term")
             _base = (PUBLIC_BASE_URL or "").rstrip("/")
-            _renew_url = f"{_base}/prepay?renew={_tier_key}" if _base else "your member portal"
-            _renew_line = (f"${_renew_cents/100:.0f} for another {_term_label}"
-                           if _renew_cents else "your loyalty renewal rate")
-            subject = f"Your Continuous Care renews in {days_left} day{s_days}"
+            # A retired term (6mo) renews onto the terms still sold, with no preselect.
+            _renew_q = f"?renew={_tier_key}" if _prepay.is_sold(_tier_key) else ""
+            _renew_url = f"{_base}/prepay{_renew_q}" if _base else "your member portal"
+            _renew_line = (f"${_renew_cents/100:,.0f} for another {_term_label}"
+                           if _renew_cents else "a new monthly or 12-month term")
+            try:
+                _ends = _family_long_date(r["expires_at"])
+            except Exception:
+                _ends = r["expires_at"]
+            subject = f"Your prepaid Continuous Care ends {_when}"
             body = (
                 f"Aloha,\n\n"
-                f"Your prepaid Continuous Care ends in {days_left} day{s_days}"
-                f" on {r['expires_at']}. There's nothing to cancel and no automatic "
+                f"Your prepaid Continuous Care ends {_when}"
+                f", on {_ends}. There's nothing to cancel and no automatic "
                 f"charge - your card was never kept on file for renewal.\n\n"
-                f"When you're ready to keep going, you can renew at your loyalty rate "
+                f"When you're ready to keep going, you can renew "
                 f"({_renew_line}) here:\n{_renew_url}\n\n"
                 f"Your care and everything in your portal stay active right up "
                 f"to that date.\n\n"
@@ -59757,12 +60575,16 @@ def cron_membership_renewals():
             if not PROGRAM_CARE_TASTER_ENABLED:
                 continue
             _base = (PUBLIC_BASE_URL or "").rstrip("/")
-            _renew_url = f"{_base}/prepay?renew=6mo" if _base else "your member portal"
-            subject = f"Your care window ends in {days_left} day{s_days} - keep your Continuous Care going"
+            _renew_url = f"{_base}/prepay" if _base else "your member portal"
+            try:
+                _ends = _family_long_date(r["expires_at"])
+            except Exception:
+                _ends = r["expires_at"]
+            subject = f"Your care window ends {_when} - keep your Continuous Care going"
             body = (
                 f"Aloha,\n\n"
-                f"Your 30-day Continuous Care window ends in {days_left} day{s_days}"
-                f" on {r['expires_at']}. There's nothing to cancel and no automatic charge - "
+                f"Your 30-day Continuous Care window ends {_when}"
+                f", on {_ends}. There's nothing to cancel and no automatic charge - "
                 f"your card was never kept on file.\n\n"
                 f"When you're ready to keep your care going, continue on Continuous Care here:\n"
                 f"{_renew_url}\n\n"
@@ -59771,18 +60593,52 @@ def cron_membership_renewals():
                 f"---\n"
                 f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
             )
-        else:
-            subject = f"Your Remedy Match coaching access ends in {days_left} day{s_days}"
+        elif _src in _membership_product_sources():
+            # A membership bought at /membership is ending. These terms never renew by
+            # themselves, and before 2026-11-13 they fell through to the old coaching
+            # text below ("record a fresh video"). Point them at /membership instead.
+            _base = (PUBLIC_BASE_URL or "").rstrip("/")
+            _renew_url = f"{_base}/membership" if _base else "your member portal"
+            try:
+                _ends = _family_long_date(r["expires_at"])
+            except Exception:
+                _ends = r["expires_at"]
+            subject = f"Your Remedy Match membership ends {_when}"
             body = (
-                f"Hi,\n\n"
-                f"Your Remedy Match coaching access ends in {days_left} day{s_days}"
-                f" on {r['expires_at']}.\n\n"
-                f"To renew for another 30 days, record a fresh 3-5 minute video at:\n"
-                f"https://truly.vip/Results\n\n"
-                f"Glen reviews each submission and re-opens access on acceptance.\n\n"
+                f"Aloha,\n\n"
+                f"Your Remedy Match membership ends {_when}, on {_ends}. "
+                f"It does not renew by itself, so there is nothing to cancel.\n\n"
+                f"When you're ready to keep going, you can renew here:\n{_renew_url}\n\n"
+                f"Your membership and everything in your portal stay active right up "
+                f"to that date.\n\n"
+                f"In wellness,\nDr. Glen and Rae\n"
                 f"---\n"
                 f"Remedy Match LLC, 351 Wailuku Drive, Hilo, Hawai'i 96720 USA\n"
             )
+        else:
+            # Every other grant (biofield_month_delivery, supply_months, video, comps,
+            # anything unknown) gets no email. Glen 2026-11-14, approving the daily
+            # schedule: reminders go only to prepay, the care taster, /membership terms
+            # and household annuals. This branch used to send the retired "record a
+            # fresh video at truly.vip/Results" coaching text to all of them.
+            continue
+        # Claim before sending: one conditional write, so two runs (or a retry after a
+        # partial run) cannot both send. Nobody is emailed twice on one Hawaii day,
+        # whichever of their rows was stamped (review round 4).
+        if _reminded_today(_email_lc, _today_h):
+            continue
+        with _db_lock, db.connect(LOG_DB) as cx:
+            # Two statements, not "? IS NULL": Postgres cannot type a bare NULL parameter.
+            if last is None:
+                cur = cx.execute("UPDATE memberships SET last_reminder_at=? WHERE id=? "
+                                 "AND last_reminder_at IS NULL", (now_iso, r["id"]))
+            else:
+                cur = cx.execute("UPDATE memberships SET last_reminder_at=? WHERE id=? "
+                                 "AND last_reminder_at=?", (now_iso, r["id"], last))
+            cx.commit()
+            claimed = (cur.rowcount or 0) == 1
+        if not claimed:
+            continue
         try:
             ok_sent = _send_inquiry_email(
                 to_email=r["email"], subject=subject, body=body,
@@ -59791,12 +60647,13 @@ def cron_membership_renewals():
         except Exception as e:
             print(f"[renewal-cron] send failed for {r['email']}: {e!r}", flush=True)
             ok_sent = False
-        if ok_sent:
+        if not ok_sent:
             with _db_lock, db.connect(LOG_DB) as cx:
-                cx.execute(
-                    "UPDATE memberships SET last_reminder_at=? WHERE id=?",
-                    (now_iso, r["id"])
-                )
+                cx.execute("UPDATE memberships SET last_reminder_at=? WHERE id=? "
+                           "AND last_reminder_at=?", (last, r["id"], now_iso))
+                cx.commit()
+        if ok_sent:
+            _sent_to.add(_email_lc)
             try:
                 with db.connect(LOG_DB) as cx:
                     cx.execute(
@@ -59809,6 +60666,7 @@ def cron_membership_renewals():
             except Exception as e:
                 print(f"[renewal-cron] journey_events insert failed: {e!r}", flush=True)
             reminded += 1
+    reminded += _remind_household_terms_ending(now_iso, sent_to=_sent_to)
     return jsonify({"reminded": reminded}), 200
 
 
@@ -62555,7 +63413,8 @@ def _capped_override_unit(unit_cents, *, product, slug, cprices, ff_flat, price_
 def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
                            discount_cents_in=None, points_redeem_cents_in=None,
                            adjustment_cents_in=None, shipping_override_cents_in=None,
-                           strict_packaging=False, allow_waitlist=False):
+                           strict_packaging=False, allow_waitlist=False,
+                           shipping_fallback_cents_in=None, shipping_typed=None):
     """Shared server-authoritative pricing for the in-house order builder AND the
     console invoice editor. Honors per-line unit_cents overrides; FF capsules get a
     volume rate — the order-wide mix/match rate for a paid member, the same-SKU
@@ -62734,11 +63593,19 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             extra_products=typed_products)
         shipping_cents = _bos_orders.effective_shipping_cents(pickup, pc.get("shipping_cents"))
         get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
+        _ship_fell_back = False
     except CheckoutError:
         raise
     except Exception as e:
         print(f"[inhouse-price] pricing fell back: {e!r}", flush=True)
         shipping_cents, get_cents = 0, 0
+        _ship_fell_back = True
+    computed_shipping_cents = shipping_cents
+    # A customer's edit recomputes shipping, but a rate error must never drop it to
+    # $0: the stored figure stands in (2026-11-14).
+    if (_ship_fell_back and shipping_fallback_cents_in not in (None, "") and not pickup
+            and shipping_override_cents_in in (None, "")):
+        shipping_cents = max(0, int(shipping_fallback_cents_in))
     # Owner-set manual shipping fee (Edit Invoice / order builder): when supplied, it
     # REPLACES the geometry-computed shipping — for products whose box dims aren't in the
     # catalog, or to match a hand-quoted rate. Non-negative; the address is still validated
@@ -62746,6 +63613,15 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     # the field under pickup, so this only guards a stray value).
     if shipping_override_cents_in not in (None, "") and not pickup:
         shipping_cents = max(0, int(shipping_override_cents_in))
+    # Typed by the owner: kept on a customer's edit. Edit Invoice says whether the
+    # figure was typed (shipping_typed), since it pre-fills the stored one and sends it
+    # back. Another caller gives no answer, so a figure the rates do not give counts.
+    _has_override = shipping_override_cents_in not in (None, "") and not pickup
+    if shipping_typed is not None:
+        shipping_hand_set = bool(_has_override and shipping_typed)
+    else:
+        shipping_hand_set = bool(_has_override and (
+            _ship_fell_back or shipping_cents != computed_shipping_cents))
     discount_cents = (max(0, int(discount_cents_in))
                       if discount_cents_in not in (None, "") else 0)
     # Manual adjustment is SIGNED: negative = credit (lowers total), positive =
@@ -62764,6 +63640,8 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
         total_cents -= points_redeemed_cents
     return {"items_rec": items_rec, "cart": cart, "subtotal_cents": subtotal_list,
             "shipping_cents": shipping_cents, "get_cents": get_cents,
+            "computed_shipping_cents": computed_shipping_cents,
+            "shipping_hand_set": shipping_hand_set,
             "discount_cents": discount_cents, "adjustment_cents": adjustment_cents,
             "points_redeemed_cents": points_redeemed_cents,
             "price_caps": price_caps,
@@ -62810,7 +63688,9 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
                                  adjustment_cents_in=None, invoice_note=None,
                                  address_override=None, shipping_override_cents_in=None,
                                  strict_packaging=False, points_redeem_cents_in=None,
-                                 allow_waitlist=False):
+                                 allow_waitlist=False, keep_hand_set=False,
+                                 shipping_fallback_cents_in=None, shipping_typed=None,
+                                 recompute_shipping=False):
     """Reprice an order's line items at the current pricing (membership-aware) and
     persist the invoice. Shared by the manual invoice editor (/api/orders/<oid>/edit)
     and the one-click grant-and-reprice button. Carries the order's existing points +
@@ -62819,8 +63699,20 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     when no line resolves to a real product. Raises CheckoutError on a rejected ship-to.
 
     invoice_note=None leaves the stored note untouched (upsert_order skips it on update);
-    pass a string to replace it."""
+    pass a string to replace it.
+
+    keep_hand_set=True leaves the order's shipping_hand_set flag as it is: for a caller
+    that passes the stored shipping back as the override, which says nothing about who
+    set it. Otherwise the flag follows this save.
+
+    A figure the owner typed survives a caller that recomputes (caregiver billing,
+    grant member access, a Biofield raise), unless recompute_shipping says the owner
+    cleared it in Edit Invoice (2026-11-14 review, round 1)."""
     email = order.get("email") or ""
+    if (shipping_override_cents_in in (None, "") and not recompute_shipping
+            and order.get("shipping_hand_set") and not pickup):
+        shipping_override_cents_in = order.get("shipping_cents")
+        keep_hand_set = True
     # address_override (from the editor form) makes the editor authoritative for the
     # ship-to: reprice AND persist against it. None -> use the order's stored address
     # and leave it untouched (the grant-and-reprice + membership-toggle callers pass
@@ -62845,7 +63737,10 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         points_redeem_cents_in=None,
         strict_packaging=strict_packaging,
         # Passed only when set, so a caller or spy written before 2026-10-20 still fits.
-        **({"allow_waitlist": True} if allow_waitlist else {}))
+        **({"allow_waitlist": True} if allow_waitlist else {}),
+        **({"shipping_fallback_cents_in": shipping_fallback_cents_in}
+           if shipping_fallback_cents_in not in (None, "") else {}),
+        **({"shipping_typed": bool(shipping_typed)} if shipping_typed is not None else {}))
     if priced is None:
         return None, None
     existing_points = int(order.get("points_redeemed_cents") or 0)
@@ -62903,7 +63798,9 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         shipping_cents=priced["shipping_cents"],
         ship_credit_applied_cents=existing_ship_credit,
         address=_persist_addr,
-        invoice_note=(invoice_note.strip() if isinstance(invoice_note, str) else None))
+        invoice_note=(invoice_note.strip() if isinstance(invoice_note, str) else None),
+        shipping_hand_set=(None if keep_hand_set
+                           else bool(priced.get("shipping_hand_set"))))
     _harvest_line_note_snippets(cx, priced["items_rec"])
     return priced, (order.get("pay_status") == "paid")
 
@@ -63086,6 +63983,10 @@ def api_orders_edit(oid):
                 discount_cents_in=body.get("discount_cents"),
                 adjustment_cents_in=body.get("adjustment_cents"),
                 shipping_override_cents_in=body.get("shipping_cents"),
+                shipping_typed=(bool(body.get("shipping_typed"))
+                                if "shipping_typed" in body else None),
+                # A blank field in Edit Invoice is the owner asking for the rates.
+                recompute_shipping=body.get("shipping_cents") in (None, ""),
                 invoice_note=body.get("invoice_note"),
                 address_override=(_addr_in if isinstance(_addr_in, dict) else None),
                 strict_packaging=True,
@@ -63944,7 +64845,9 @@ def api_orders_manual():
             adjustment_cents_in=body.get("adjustment_cents"),
             shipping_override_cents_in=body.get("shipping_cents"),
             points_redeem_cents_in=body.get("points_redeem_cents"),
-            strict_packaging=True)
+            strict_packaging=True,
+            **({"shipping_typed": bool(body.get("shipping_typed"))}
+               if "shipping_typed" in body else {}))
     except CheckoutError as e:
         return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     if priced is None:
@@ -64004,7 +64907,8 @@ def api_orders_manual():
             shipping_cents=shipping_cents,
             points_redeemed_cents=points_redeemed_cents,
             ship_credit_applied_cents=_sc_apply,
-            invoice_note=((body.get("invoice_note") or "").strip() or None))
+            invoice_note=((body.get("invoice_note") or "").strip() or None),
+            shipping_hand_set=bool(priced.get("shipping_hand_set")))
         _harvest_line_note_snippets(cx, items_rec)
         if _supply_months is not None and oid:
             _bos_orders.set_order_supply_months(cx, oid, _supply_months)
@@ -65497,6 +66401,7 @@ def api_invoice_membership(token):
                                else None),
             adjustment_cents_in=order.get("adjustment_cents"),
             shipping_override_cents_in=order.get("shipping_cents"),
+            keep_hand_set=True,
             # The order's own lines: a held not-ready line never blocks (2026-10-20).
             allow_waitlist=True)
     except CheckoutError as e:
@@ -65654,6 +66559,14 @@ def api_invoice_update(token):
                             refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}))
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
+    # Kept as stored, never recomputed by a customer: a figure the owner typed, a
+    # household's combined-shipment share (recomputed only for the whole group), a
+    # Hawaii shipment (always priced by hand), and a paid order (2026-11-14 review).
+    _ship_state = str((order.get("address") or {}).get("state") or "").strip().upper()
+    _hand_set = bool(order.get("shipping_hand_set") or order.get("group_shipment_id")
+                     or _ship_state in ("HI", "HAWAII")
+                     or (order.get("pay_status") or "") == "paid")
+    _ship_before = int(order.get("shipping_cents") or 0)
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
         priced, _was_paid = _reprice_and_persist_invoice(
@@ -65661,9 +66574,13 @@ def api_invoice_update(token):
             pickup=(order.get("channel") == "pickup"),
             discount_cents_in=order.get("discount_cents"),
             adjustment_cents_in=order.get("adjustment_cents"),
-            # The amount was quoted by the owner. Preserve it while a customer edits
-            # products instead of replacing it (or dropping it on a rate error).
-            shipping_override_cents_in=order.get("shipping_cents"),
+            # Glen 2026-11-14 ("recalculate"): a customer's edit recomputes shipping, so
+            # adding bottles can move to a bigger box. A figure the owner typed is kept
+            # (platform tab, "yes"). A rate error keeps the stored figure, never $0.
+            shipping_override_cents_in=(order.get("shipping_cents")
+                                        if _hand_set else None),
+            keep_hand_set=_hand_set,
+            shipping_fallback_cents_in=order.get("shipping_cents"),
             allow_waitlist=True)
         if priced is None:
             return jsonify({"ok": False, "error": "no valid items"}), 400
@@ -65674,10 +66591,14 @@ def api_invoice_update(token):
         cx.close()
     try:
         from dashboard import inbox as _inbox
+        _ship_after = int(priced.get("shipping_cents") or 0)
+        _ship_line = (f" Shipping changed from ${_ship_before/100:,.2f} to "
+                      f"${_ship_after/100:,.2f}; set it back in Edit Invoice if you had "
+                      "quoted it." if _ship_after != _ship_before else "")
         _inbox.send_email("drglenswartwout@gmail.com",
                           f"Invoice {order.get('external_ref')} changed by customer",
                           f"Customer updated invoice {order.get('external_ref')} — "
-                          f"new total ${priced['total_cents']/100:,.2f}.")
+                          f"new total ${priced['total_cents']/100:,.2f}.{_ship_line}")
     except Exception as _e:
         print(f"[invoice] owner notify skipped: {_e!r}", flush=True)
     return jsonify({"ok": True, "order": _invoice_summary(updated)})

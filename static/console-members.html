@@ -73,15 +73,20 @@ function day(s){return (s||"").slice(0,10);}
 function card(m){
   const credit = m.category==="trial"
     ? `<div class="credit ${(m.credit_cents||0)>0?"":"zero"}">${money(m.credit_cents)} credit waiting</div>` : "";
+  // A household annual (12 months) is paid once and never charged again: show when
+  // its cover ends, not a next charge (Glen, 2026-11-13).
+  const annual = (m.cadence_months||1) >= 12;
   const when = m.category==="paused"
     ? `<span>resumes ${esc(day(m.resume_date)) || "—"}</span>`
-    : `<span>next charge ${esc(day(m.next_charge_date)) || "—"}</span>`;
+    : annual
+      ? `<span>ends ${esc(day(m.next_charge_date)) || "—"}</span>`
+      : `<span>next charge ${esc(day(m.next_charge_date)) || "—"}</span>`;
   const nameLine = m.name ? esc(m.name) : `<span class="muted" style="color:#98a2b3">(no name)</span>`;
   return `<div class="card">
     <div class="name">${nameLine}</div>
     <div class="email"><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></div>
     <div class="meta">
-      <span>${money(m.plan_cents)}/mo</span>
+      <span>${money(m.plan_cents)}${annual ? "/yr" : "/mo"}</span>
       ${when}
       <span>started ${esc(day(m.started)) || "—"}</span>
       <span class="tier">tier ${esc(String(m.tier ?? 0))}</span>

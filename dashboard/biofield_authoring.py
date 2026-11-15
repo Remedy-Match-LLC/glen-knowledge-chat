@@ -60,7 +60,11 @@ def init_auth_tables(cx):
     # can key on the id after a reload instead of falling back to matching by
     # name -- Judith Tom is "Judith Ann Tom" on her own PDF, so the name is the
     # weaker key for exactly the clients who need it.
+    # bsi_a..bsi_d: the four Biological Score Index numbers, "A x B to C x D", each
+    # 1-21 or NULL (live session segments, plan 2026-11-07). Regulation is computed
+    # from them on read (terrain_phase.regulation_level), never stored.
     for col in ("phase INTEGER", "location TEXT",
+                "bsi_a INTEGER", "bsi_b INTEGER", "bsi_c INTEGER", "bsi_d INTEGER",
                 "e4l_client_id TEXT",
                 "no_charge INTEGER NOT NULL DEFAULT 0"):
         try:
@@ -138,11 +142,17 @@ def update_header(cx, tid, name=None, email=None, date=None, client_id=None):
     cx.commit()
 
 
-def update_terrain(cx, tid, phase=None, location=None):
+BSI_COLS = ("bsi_a", "bsi_b", "bsi_c", "bsi_d")
+
+
+def update_terrain(cx, tid, phase=None, location=None, bsi=None):
     """Persist the scan's terrain reading (BSI 'phase P' + 'location X') on the test.
     Per-field, like update_header: a pass that read no phase/location must not clobber
-    a value captured earlier. phase is coerced to an int 1-5 (else ignored)."""
-    from dashboard.terrain_phase import phase_num
+    a value captured earlier. phase is coerced to an int 1-5 (else ignored).
+    bsi is the four BSI numbers [A, B, C, D]. They are saved only when all four are
+    ints 1-21; otherwise all four stored values are left alone. The hand-set route
+    (set_terrain_field) stays per field."""
+    from dashboard.terrain_phase import phase_num, bsi_num
     init_auth_tables(cx)
     sets, vals = [], []
     p = phase_num(phase)
@@ -150,12 +160,59 @@ def update_terrain(cx, tid, phase=None, location=None):
         sets.append("phase=?"); vals.append(p)
     if (location or "").strip():
         sets.append("location=?"); vals.append(location.strip())
+    # All or nothing: a partial reading such as [15, 10, None, None] merged with the
+    # stored C and D would make a BSI nobody spoke, and a Regulation level from it.
+    nums = [bsi_num(v) for v in bsi] if isinstance(bsi, (list, tuple)) else []
+    if len(nums) == 4 and None not in nums:
+        for col, n in zip(BSI_COLS, nums):
+            sets.append(f"{col}=?"); vals.append(n)
     if not sets:
         return
     sets.append("updated_at=?"); vals.append(_now())
     vals.append(_num(tid))
     cx.execute(f"UPDATE biofield_auth_tests SET {','.join(sets)} WHERE id=?", vals)
     cx.commit()
+
+
+TERRAIN_FIELDS = ("phase", "location") + BSI_COLS
+
+
+def set_terrain_field(cx, tid, field, value):
+    """One terrain field, set by hand on the editor page. Unlike update_terrain, an
+    empty value CLEARS the field: Glen choosing blank is a decision, not a pass that
+    heard nothing. Raises ValueError on an unknown field or an out-of-range number."""
+    from dashboard.terrain_phase import phase_num, bsi_num
+    if field not in TERRAIN_FIELDS:
+        raise ValueError(f"unknown terrain field: {field}")
+    init_auth_tables(cx)
+    raw = "" if value is None else str(value).strip()
+    if raw == "":
+        stored = None
+    elif field == "location":
+        stored = raw
+    elif field == "phase":
+        stored = phase_num(raw)
+        if stored is None:
+            raise ValueError("phase must be 1 to 5")
+    else:
+        stored = bsi_num(raw)
+        if stored is None:
+            raise ValueError("each BSI number must be 1 to 21")
+    cx.execute(f"UPDATE biofield_auth_tests SET {field}=?,updated_at=? WHERE id=?",
+               (stored, _now(), _num(tid)))
+    cx.commit()
+    return stored
+
+
+def terrain_state(rep):
+    """The terrain fields of an authored_report, plus Regulation and its warnings."""
+    from dashboard.terrain_phase import regulation_level, bsi_warnings
+    bsi = list(rep.get("bsi") or [None] * 4)
+    r = regulation_level(*bsi)
+    return {"phase": rep.get("phase"), "location": rep.get("location") or "",
+            "bsi": bsi,
+            "regulation": ({"level": r[0], "name": r[1]} if r else None),
+            "warnings": bsi_warnings(*bsi)}
 
 
 def add_chain_row(cx, tid, layer, head, most_affected, remedy,
@@ -753,6 +810,10 @@ _DOSE_OVERRIDES = {
                 "timing": "with cooked food. " + _B17_MAX_STEPS},
     "breast support": {"dosage": "1 capsule", "frequency": "once a day",
                        "timing": "with food, or as guided."},
+    # Glen, 2026-11-10: "Take 1 capsule up to twice daily, between meals or at bedtime, or as
+    # guided." The capsule's FileMaker row (350) is named "Alkalize Powder", so the name never matched.
+    "alkalize bicarbonate blend": {"dosage": "1 capsule", "frequency": "up to twice daily",
+                                   "timing": "between meals or at bedtime, or as guided."},
 }
 
 
@@ -1014,4 +1075,5 @@ def authored_report(cx, tid):
             "date": (t["date_test"] if t else "") or "",
             "phase": (t["phase"] if "phase" in tk else None),
             "location": ((t["location"] if "location" in tk else "") or ""),
+            "bsi": [(t[c] if c in tk else None) for c in BSI_COLS],
             "layers": layers, "schedule": schedule}

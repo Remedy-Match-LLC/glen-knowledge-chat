@@ -1144,7 +1144,7 @@ TIER_CATALOG = {
     # ready to spend money had to schedule a call before they could.
     "membership": {"slug": "membership", "n": 3,
         "title": "Healing Oasis Membership",
-        "price": "$99/month", "value": "cancel anytime",
+        "price": "$100/month", "value": "cancel anytime",
         "included": "Member pricing on every formulation, your own client portal, "
                     "and the guidance to use them well.",
         "cta_label": "Start your membership",
@@ -1232,7 +1232,7 @@ TIER_PAGES = {
             ('Member pricing, and $200 on a Causal Biofield Analysis', 'Member pricing on every formulation, and the personal analysis at $200 instead of $300.'),
             ('Your personal health dashboard', 'Your context, your path and Dr. Glen\u2019s replies, held in one place between sessions.'),
         ],
-        "close": 'Ninety-nine dollars for a month, or $990 for a full year, which is the best value of the three. A household plan covers everyone connected to your household, each with their own private profile. Cancel from your portal. Stripe shows the exact price and renewal terms before you pay.',
+        "close": 'One hundred dollars for a month, or $1,000 for a full year, which is the best value of the three. A household plan covers everyone connected to your household, each with their own private profile. Cancel from your portal. Stripe shows the exact price and renewal terms before you pay.',
     },
     "biofield-analysis": {
         "lede": 'You have read enough to know the body has its own intelligence, and that treating a symptom often leaves the cause quietly running underneath. What you do not have yet is a clear way to hear what your body is asking for right now.',

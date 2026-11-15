@@ -94,7 +94,7 @@ def test_view_surfaces_first_eligible_offer(tmp_path):
     view = pv.get_portal_view(cx, pid, offers_enabled_keys={"live_group", "biofield"})
     assert view["upgrade"]["enabled"] is True
     assert view["upgrade"]["offer"]["key"] == "live_group"
-    assert view["upgrade"]["offer"]["price_cents"] == 9900
+    assert view["upgrade"]["offer"]["price_cents"] == 10000
 
 
 def test_orders_block_excludes_cancelled(tmp_path):

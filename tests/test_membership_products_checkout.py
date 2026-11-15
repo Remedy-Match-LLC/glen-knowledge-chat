@@ -27,7 +27,7 @@ def test_month_tier_builds_one_time_session(appmod, monkeypatch):
     r = appmod.app.test_client().post("/membership/checkout",
                                       json={"email": "a@x.com", "tier": "month"})
     assert r.status_code == 200 and r.get_json()["ok"] is True
-    assert cap["amount"] == 9900
+    assert cap["amount"] == 10000
     assert cap["kw"]["save_card"] is False
     assert cap["kw"]["metadata"]["kind"] == "membership_product"
     assert cap["kw"]["metadata"]["tier"] == "month"
@@ -41,7 +41,7 @@ def test_year_monthly_tier_vaults_card(appmod, monkeypatch):
     r = appmod.app.test_client().post("/membership/checkout",
                                       json={"email": "a@x.com", "tier": "year_monthly"})
     assert r.status_code == 200
-    assert cap["amount"] == 9900
+    assert cap["amount"] == 10000
     assert cap["kw"]["save_card"] is True
 
 def test_year_prepay_amount(appmod, monkeypatch):
@@ -51,7 +51,7 @@ def test_year_prepay_amount(appmod, monkeypatch):
                                               or {"id": "cs", "url": "u"}))
     appmod.app.test_client().post("/membership/checkout",
                                   json={"email": "a@x.com", "tier": "year_prepay"})
-    assert cap["amount"] == 99000
+    assert cap["amount"] == 100000
 
 def test_unknown_tier_rejected(appmod):
     r = appmod.app.test_client().post("/membership/checkout",

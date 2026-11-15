@@ -7,16 +7,23 @@ deliberate `set_active`.
 
 Order of operations is the safety design:
 
-  1. release stale claims  — a crash mid-send must not wedge a step forever
+  1. close stale claims    — a crash mid-send must not wedge a step forever. The
+                             step is closed as skipped, never reopened: SES may have
+                             taken it before the crash.
   2. skip long-overdue     — a backdated enrollment must not release a burst
   3. claim                 — UNIQUE(slug, step_no, email) arbitrates, not a read
   4. check suppression     — at SEND time; someone can opt out on day 2 of 25
-  5. send                  — through the same transport as every other bulk mail
-  6. record sent/failed
+  5. send                  — through Amazon SES, never GoHighLevel (Glen, 14 Nov 2026:
+                             GHL is being retired). SES adds the unsubscribe footer and
+                             the one-click headers, scoped to the sequence.
+  6. record sent/failed. A send SES surely did not make because it is switched off
+     frees its claim, so a later tick tries again inside the catch-up window. A
+     refusal while SES is on is recorded as failed and not retried. A send SES may have made is
+     recorded as sent and never retried: a duplicate cannot be recalled.
 
-Claim-before-send means a crash between 3 and 5 leaves a stuck row that step 1
-reopens. The alternative failure mode is a duplicate, and a duplicate cannot be
-recalled.
+Claim-before-send means a crash between 3 and 6 leaves a stuck row that step 1
+closes. That can cost one email. The alternative failure mode is a duplicate, and a
+duplicate cannot be recalled.
 
 Usage:
     python3 scripts/sequence_runner.py --dry-run
@@ -27,6 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -42,39 +50,91 @@ MAX_CATCHUP_DAYS = 2
 STALE_CLAIM_MINUTES = 60
 
 
-def _html(body_md, email, slug):
-    """Markdown-ish body to HTML, plus the unsubscribe footer.
-
-    The footer is appended AFTER escaping so its anchor survives as markup, the
-    same ordering weekly_live_invitation needs.
-    """
+def _html(body_md):
+    """Markdown-ish body to HTML. The unsubscribe footer is added by ses_mail, after
+    this escaping, so its anchor survives as markup."""
     import html as _h
-
-    from dashboard import unsubscribe as _un
     esc = _h.escape(body_md).replace("\n\n", "</p><p>").replace("\n", "<br>")
-    doc = ('<div style="font-family:Arial,sans-serif;font-size:16px;'
-           'line-height:1.55"><p>' + esc + "</p></div>")
-    return doc + _un.footer_html(email, slug)
+    return ('<div style="font-family:Arial,sans-serif;font-size:16px;'
+            'line-height:1.55"><p>' + esc + "</p></div>")
 
 
-def send_one(*, to_email, subject, html):
-    """Send one sequence email. Returns a message id, or None when guarded."""
+_FIRST_NAME = re.compile(r"\{\{\s*(contact\.)?first_name\s*\}\}")
+
+
+def _first_name(cx, email):
+    """The first name on her People record, or "" when there is none or it fails."""
+    try:
+        from dashboard import portal_welcome
+        row = cx.execute("SELECT name FROM people WHERE email=?",
+                         ((email or "").strip().lower(),)).fetchone()
+        return portal_welcome._first_name(row[0] if row else "")
+    except Exception:
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        return ""
+
+
+def personalise(text, first):
+    """Fill {{first_name}} (the steps' own merge field). With no name on file the
+    greeting reads "Aloha," and any other copy of the field is dropped, so nobody
+    ever sees the braces."""
+    text = str(text or "")
+    if first:
+        return _FIRST_NAME.sub(first, text)
+    text = re.sub(r"[ \t]+" + _FIRST_NAME.pattern + r"(?=\s*[,!.])", "", text)
+    return _FIRST_NAME.sub("", text)
+
+
+class _Lent:
+    """Lends the tick's open connection to ses_mail.deliver for its suppression check,
+    without closing it (closing a pooled connection returns it to the pool)."""
+    def __init__(self, cx):
+        self.cx = cx
+
+    def __enter__(self):
+        return self.cx
+
+    def __exit__(self, *exc):
+        return False
+
+
+def send_one(cx, *, to_email, subject, body_md, slug):
+    """Send one sequence email through SES, as marketing mail with an unsubscribe
+    scoped to the sequence. Returns ses_mail.deliver's (outcome, message_id):
+    "ses", "suppressed", "unknown", or None when SES surely sent nothing. There is
+    no GoHighLevel fallback. Under pytest it sends nothing and returns (None, None)."""
     if _UNDER_TEST:
-        return None
-    from dashboard import ghl_email
-    res = ghl_email.send_via_ghl(to_email, subject, html=html,
-                                 from_name="Dr. Glen Swartwout")
-    return (res or {}).get("id")
+        return None, None
+    from dashboard import ses_mail
+    return ses_mail.deliver(lambda: _Lent(cx), to_email, subject, body_md,
+                            _html(body_md), marketing=True, scope=slug,
+                            from_name="Dr. Glen Swartwout")
+
+
+def _release(cx, slug, step_no, email):
+    """Free this tick's claim on a send SES surely did not make. A failed query inside
+    deliver can leave a Postgres transaction aborted, so it is rolled back first (the
+    claim itself was committed by claim())."""
+    try:
+        cx.rollback()
+    except Exception:
+        pass
+    cx.execute("DELETE FROM sequence_sends WHERE slug=? AND step_no=? AND email=? "
+               "AND status='claimed'", (slug, int(step_no), (email or "").strip().lower()))
+    cx.commit()
 
 
 def run_once(cx, *, now=None, dry_run=False, max_catchup_days=MAX_CATCHUP_DAYS):
     from dashboard import email_suppression as _es, sequences as _seq
 
-    counts = {"released": 0, "skipped_stale": 0, "would_send": 0,
-              "sent": 0, "failed": 0, "suppressed": 0}
+    counts = {"abandoned": 0, "skipped_stale": 0, "would_send": 0,
+              "sent": 0, "failed": 0, "suppressed": 0, "unknown": 0, "not_sent": 0}
 
     if not dry_run:
-        counts["released"] = _seq.release_stale_claims(
+        counts["abandoned"] = _seq.abandon_stale_claims(
             cx, now=now, older_than_minutes=STALE_CLAIM_MINUTES)
 
     for s in _seq.stale_steps(cx, now=now, max_catchup_days=max_catchup_days):
@@ -88,7 +148,7 @@ def run_once(cx, *, now=None, dry_run=False, max_catchup_days=MAX_CATCHUP_DAYS):
     for d in _seq.due(cx, now=now, max_catchup_days=max_catchup_days):
         if dry_run:
             counts["would_send"] += 1
-            print(f"[dry] {d['email']} <- step {d['step_no']} \"{d['subject'][:50]}\"")
+            print(f"[dry] {d['slug']} step {d['step_no']} would send", flush=True)
             continue
         if not _seq.claim(cx, d["slug"], d["step_no"], d["email"]):
             continue                      # another process owns this send
@@ -98,16 +158,60 @@ def run_once(cx, *, now=None, dry_run=False, max_catchup_days=MAX_CATCHUP_DAYS):
             _seq.mark_skipped(cx, d["slug"], d["step_no"], d["email"],
                               "suppressed or unsubscribed")
             continue
+        if any(c in d["email"] for c in "\r\n\t ") or "@" not in d["email"]:
+            # A malformed address fails while the message is built, which SES reports
+            # as "unknown". Refused here, so it is never recorded as sent (round 3).
+            _seq.mark_failed(cx, d["slug"], d["step_no"], d["email"], "malformed address")
+            counts["failed"] += 1
+            continue
+        first = _first_name(cx, d["email"])
         try:
-            mid = send_one(to_email=d["email"], subject=d["subject"],
-                           html=_html(d["body_md"], d["email"], d["slug"]))
+            # End the read transaction first: no connection idles in one across the
+            # network call, and a failed read cannot leave the writes below aborted.
+            cx.rollback()
+        except Exception:
+            pass
+        try:
+            outcome, mid = send_one(cx, to_email=d["email"],
+                                    subject=personalise(d["subject"], first),
+                                    body_md=personalise(d["body_md"], first),
+                                    slug=d["slug"])
+        except Exception as e:  # noqa: BLE001 — one bad address must not stop the tick
+            _seq.mark_failed(cx, d["slug"], d["step_no"], d["email"], type(e).__name__)
+            counts["failed"] += 1
+            print(f"[seq] send failed step {d['step_no']}: {type(e).__name__}", flush=True)
+            continue
+        try:
+            cx.rollback()      # a failed query inside deliver must not abort the writes
+        except Exception:
+            pass
+        if outcome == "ses":
             _seq.mark_sent(cx, d["slug"], d["step_no"], d["email"], mid or "")
             counts["sent"] += 1
-        except Exception as e:  # noqa: BLE001 — one bad address must not stop the tick
-            _seq.mark_failed(cx, d["slug"], d["step_no"], d["email"], repr(e))
+        elif outcome == "unknown":
+            # SES may have taken it. Its own status: never resent, never called sent,
+            # and the tick reports it as a failure for someone to look at.
+            _seq.mark_unknown(cx, d["slug"], d["step_no"], d["email"],
+                              "SES may have taken it; not resent")
+            counts["unknown"] += 1
             counts["failed"] += 1
-            print(f"[seq] send failed {d['email']} step {d['step_no']}: {e!r}",
-                  flush=True)
+        elif outcome == "suppressed":
+            _seq.mark_skipped(cx, d["slug"], d["step_no"], d["email"],
+                              "suppressed (SES check)")
+            counts["suppressed"] += 1
+        else:
+            # SES surely sent nothing. Switched off: the claim is freed so the step
+            # goes out once SES is back on (inside the catch-up window). Switched on:
+            # SES refused or was unreachable, so it is recorded as failed with that
+            # reason and not retried every tick (review round 3).
+            from dashboard import ses_mail
+            if not ses_mail.enabled():
+                _release(cx, d["slug"], d["step_no"], d["email"])
+                counts["not_sent"] += 1
+            else:
+                _seq.mark_failed(cx, d["slug"], d["step_no"], d["email"],
+                                 "SES refused or unreachable; nothing sent")
+            counts["failed"] += 1
     return counts
 
 

@@ -265,6 +265,18 @@ def mark_failed(cx, slug, step_no, email, error):
     cx.commit()
 
 
+def mark_unknown(cx, slug, step_no, email, reason):
+    """SES may or may not have taken this send. Its own status, so it is never resent
+    (any row blocks a resend) and never counted as sent."""
+    e = (email or "").strip().lower()
+    cx.execute("""INSERT INTO sequence_sends
+        (slug, step_no, email, status, error) VALUES (?,?,?,'unknown',?)
+        ON CONFLICT(slug, step_no, email) DO UPDATE SET
+          status='unknown', error=excluded.error""",
+        (slug, int(step_no), e, str(reason)[:500]))
+    cx.commit()
+
+
 def mark_skipped(cx, slug, step_no, email, reason):
     e = (email or "").strip().lower()
     cx.execute("""INSERT INTO sequence_sends
@@ -273,6 +285,28 @@ def mark_skipped(cx, slug, step_no, email, reason):
           status='skipped', error=excluded.error""",
         (slug, int(step_no), e, str(reason)[:500]))
     cx.commit()
+
+
+def abandon_stale_claims(cx, now=None, older_than_minutes=60):
+    """Close rows claimed but never resolved, e.g. a crash mid-send, as skipped. The
+    process may have died after SES accepted the email and before mark_sent, so the
+    send is treated as possibly made and never retried: a duplicate cannot be
+    recalled, a missed step costs one email. A send the runner knows SES did not make
+    frees its own claim at once. Returns how many rows were closed."""
+    now = now or _utcnow()
+    cutoff = (now - _dt.timedelta(minutes=older_than_minutes)) \
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = cx.execute("SELECT slug, step_no, email, claimed_at FROM sequence_sends "
+                      "WHERE status='claimed'").fetchall()
+    closed = 0
+    for slug, step_no, email, claimed_at in rows:
+        if str(claimed_at or "") <= cutoff:
+            cx.execute("UPDATE sequence_sends SET status='skipped', error=? "
+                       "WHERE slug=? AND step_no=? AND email=? AND status='claimed'",
+                       ("claim abandoned mid-send; may have gone out", slug, step_no, email))
+            closed += 1
+    cx.commit()
+    return closed
 
 
 def release_stale_claims(cx, now=None, older_than_minutes=60):

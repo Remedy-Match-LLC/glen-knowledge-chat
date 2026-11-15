@@ -150,3 +150,15 @@ def test_a_form_the_answer_rules_out_is_not_flagged(products):
     # A ruled-out mention elsewhere does not hide a real claim.
     f = aa.audit("It has no K1. It may also include MK-4.", products, "claim")
     assert any("'mk-4'" in x for x in f), f
+
+
+def test_box_named_shipping_is_an_allowed_figure(products):
+    """Own-box items that name their boxes (Glen 2026-11-14) still justify their
+    shipping figure: $56 for the Photobiomodulation Package (L + M), $133 for the
+    Healing Tools Package (L + the ionizer's $100), $33 for a helmet."""
+    for name, dollars in (("Photobiomodulation Package", "56"), ("Healing Tools Package", "133")):
+        slug = next(s for s, p in products.items() if p.get("name", "").startswith(name))
+        ans = f"The {products[slug]['name']} ships for ${dollars}."
+        assert not [f for f in aa.audit(ans, products) if f.startswith("PRICE")], name
+    assert [f for f in aa.audit("The Photobiomodulation Package ships for $57.", products)
+            if f.startswith("PRICE")]

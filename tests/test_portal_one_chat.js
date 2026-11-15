@@ -150,6 +150,9 @@ function renderThread(history) {
   const msgs = El('chatMsgs');
   const sandbox = {
     chatHistory: history,
+    // The page's link renderer. Its own behaviour is pinned by
+    // tests/test_portal_chat_links.js; here only the bubble structure matters.
+    setChatText(el, text) { el.textContent = text; },
     document: {
       getElementById(id) { return id === 'chatMsgs' ? msgs : null; },
       createElement(tag) { return El('', tag); }

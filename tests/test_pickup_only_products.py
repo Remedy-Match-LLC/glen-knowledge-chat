@@ -48,7 +48,7 @@ _CAT = {
 SHIP = {"name": "T", "street": "1 A St", "city": "Hilo", "state": "HI", "zip": "96720",
         "country": "US"}
 IN_HOUSE_REFUSAL = f"{WATER_NAME} is pickup only, in Hilo. Choose pickup or remove it."
-CUSTOMER_LINE = "Pickup only, in Hilo. Call (808) 217-9647 to arrange pickup."
+CUSTOMER_LINE = "Pickup only, in Hilo. Email support@remedymatch.com to arrange pickup."
 CUSTOMER_REFUSAL = f"{WATER_NAME} cannot be shipped. {CUSTOMER_LINE}"
 BUNDLE_IN_HOUSE = (f"{BUNDLE_NAME} contains {WATER_NAME}, which is pickup only, in Hilo. "
                    "Choose pickup or remove it.")
@@ -444,7 +444,7 @@ def test_an_unknown_bundle_part_counts_as_possibly_pickup_only(env):
     assert env._cart_has_pickup_only(cart) is True
     assert env._cart_pickup_only_names(cart) == []
     assert "cannot be identified" in env._pickup_only_refusal(cart, pickup_offered=True)
-    assert "(808) 217-9647" in env._pickup_only_refusal(cart, pickup_offered=False)
+    assert "support@remedymatch.com" in env._pickup_only_refusal(cart, pickup_offered=False)
 
 
 def test_the_parts_that_resolve_are_still_walked(env, monkeypatch):

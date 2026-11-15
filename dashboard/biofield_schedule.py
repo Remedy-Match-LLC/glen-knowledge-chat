@@ -178,6 +178,20 @@ def _placement_core(freq, timing, dosage):
                             "oil-rich", "oil rich", "fattiest", "fatty meal",
                             "largest meal", "biggest meal")):
         return together("Dinner", "with the heaviest meal")
+    # "Between meals or at bedtime", taken up to twice a day: one dose mid-afternoon
+    # and/or one at bedtime, never the whole day's dose at bedtime (Glen, 2026-11-10,
+    # Alkalize Bicarbonate Blend: "and/or").
+    # Two doses whose timing is "between meals or at bedtime" never stack at bedtime.
+    # An optional second dose ("up to", "once or twice", "1 to 2") says and/or, so
+    # the two slots never read as two required doses (review rounds 2 and 3). Only
+    # Alkalize carries this timing (1,654 dose rows checked, 2026-11-10).
+    if (times == 2 and "between meal" in t
+            and any(k in t for k in ("or at bedtime", "or bedtime", "or before bed"))):
+        f = (freq or "").lower()
+        optional = ("up to" in f or "once or twice" in f
+                    or re.search(r"\b1\s*(?:to|-|or)\s*2\b", f) is not None)
+        return (["Mid-afternoon", "Bedtime"],
+                "between meals and/or at bedtime" if optional else "between meals", dose)
     if any(k in t for k in ("at night", "before bed", "bedtime", "evening")):
         return together("Bedtime", "")
     if any(k in t for k in ("on rising", "upon rising", "on waking",

@@ -170,8 +170,8 @@ def test_the_word_trial_is_not_used_as_an_offer():
 
 def test_membership_states_the_real_prices():
     t = all_text(bf.TIER_PAGES["membership"])
-    assert "ninety-nine dollars" in t.lower() or "$99" in t
-    assert "$990" in t, "the annual full-pay price is the best value and is missing"
+    assert "one hundred dollars" in t.lower() or "$100" in t
+    assert "$1,000" in t, "the annual full-pay price is the best value and is missing"
     assert "household" in t.lower()
 
 

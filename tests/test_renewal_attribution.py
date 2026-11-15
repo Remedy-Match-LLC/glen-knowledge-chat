@@ -118,7 +118,7 @@ def test_prepay_renewal_inherits_prior_attribution(monkeypatch, tmp_path):
     assert row["practitioner_share_consent"] == 1
 
     from dashboard import care_share
-    expected = care_share.share_cents(99000, 12)
+    expected = care_share.share_cents(100000, 12)
     assert rec == [("prac-42", expected, "care_share:prepay:cs_renew")]
 
 
@@ -233,7 +233,7 @@ def test_monthly_reenroll_inherits_prior_attribution(monkeypatch, tmp_path):
     assert row["attributed_practitioner_id"] == "prac-42"
     assert row["practitioner_share_consent"] == 1
 
-    assert rec == [("prac-42", 9900)]
+    assert rec == [("prac-42", 10000)]
 
 
 def test_monthly_explicit_dispensary_pid_wins(monkeypatch, tmp_path):

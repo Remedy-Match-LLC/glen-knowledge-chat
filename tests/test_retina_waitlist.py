@@ -226,12 +226,52 @@ def test_a_merged_address_tags_the_surviving_person(cx):
     assert _queued(cx) == [("new@x.com", {"tags": [TAG]})]
 
 
-def test_a_reservation_lookup_that_fails_stops_the_list(cx, monkeypatch):
-    """Round 2: failing open would email every reserver."""
+def test_a_table_without_founding_columns_means_no_reservers(cx):
+    """Production, 2026-11-12: subscriptions exists but the founding columns do not. The
+    reserve path adds them before writing any reservation, so none can exist. The old
+    check raised UndefinedColumn here, which stopped every launch email."""
     subs.init_subscriptions_table(cx)          # the table exists but has no founding columns
     _join(cx, "a@x.com")
-    with pytest.raises(Exception):
-        pw.waiters_to_email(cx, SLUG)
+    assert [w["email"] for w in pw.waiters_to_email(cx, SLUG)] == ["a@x.com"]
+
+
+def test_a_reservation_lookup_that_fails_otherwise_stops_the_list(cx):
+    """Round 2: failing open would email every reserver. Only a missing table or column
+    means no reservers; any other failure raises."""
+    import sqlite3 as _sq
+
+    class _Broken:
+        def __init__(self, real):
+            self.real = real
+
+        def execute(self, sql, *a):
+            if "FROM subscriptions" in sql:
+                raise _sq.OperationalError("database is locked")
+            return self.real.execute(sql, *a)
+
+        def __getattr__(self, name):
+            return getattr(self.real, name)
+
+    subs.init_subscriptions_table(cx)
+    subs.migrate_add_founding_columns(cx)
+    _join(cx, "a@x.com")
+    with pytest.raises(_sq.OperationalError):
+        pw.waiters_to_email(_Broken(cx), SLUG)
+
+
+def test_the_failed_lookup_keeps_earlier_writes(cx):
+    """The savepoint undoes only the failed SELECT, never the caller's open writes."""
+    subs.init_subscriptions_table(cx)          # no founding columns: the lookup fails
+    _join(cx, "a@x.com")
+    cx.execute("UPDATE product_waitlist SET first_name='Kept' WHERE email='a@x.com'")
+    assert cx.in_transaction                   # the write is still open, not committed
+    assert pw._reserved(cx, SLUG) == set()
+    cx.rollback()                              # nothing was committed, so this drops the write...
+    assert cx.execute("SELECT first_name FROM product_waitlist WHERE email='a@x.com'").fetchone()[0] != "Kept"
+    cx.execute("UPDATE product_waitlist SET first_name='Kept' WHERE email='a@x.com'")
+    pw._reserved(cx, SLUG)
+    cx.commit()                                # ...and here the lookup left it in place to commit
+    assert cx.execute("SELECT first_name FROM product_waitlist WHERE email='a@x.com'").fetchone()[0] == "Kept"
 
 
 def test_no_reservations_table_means_no_reservers(cx):
@@ -501,3 +541,60 @@ def test_once_confirmed_only_the_confirmation_line_shows(tmp_path):
     env = dict(os.environ, NODE_OPTIONS="")
     out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30, env=env)
     assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
+
+
+def test_a_suppression_lookup_that_fails_otherwise_stops_the_list(cx):
+    """Round 3: only a missing email_suppression table means nobody is suppressed. A lock
+    or timeout raises, or a bounced address would get the launch email."""
+    import sqlite3 as _sq
+
+    class _Locked:
+        def __init__(self, real):
+            self.real = real
+
+        def execute(self, sql, *a):
+            if "FROM email_suppression" in sql:
+                raise _sq.OperationalError("database is locked")
+            return self.real.execute(sql, *a)
+
+        def __getattr__(self, name):
+            return getattr(self.real, name)
+
+    cx.execute("CREATE TABLE IF NOT EXISTS email_suppression (email TEXT PRIMARY KEY)")
+    _join(cx, "a@x.com")
+    with pytest.raises(_sq.OperationalError):
+        pw.waiters_to_email(_Locked(cx), SLUG)
+
+
+def test_an_alias_lookup_that_fails_otherwise_raises(cx, monkeypatch):
+    """Round 3: a timeout on the alias lookup must not silently return the raw address."""
+    import sqlite3 as _sq
+    from dashboard import person_aliases as pa
+
+    def _boom(_cx, _e):
+        raise _sq.OperationalError("database is locked")
+    monkeypatch.setattr(pa, "canonical_email", _boom)
+    with pytest.raises(_sq.OperationalError):
+        pw._person_email(cx, "a@x.com")
+
+
+def test_a_missing_alias_table_returns_the_address(cx, monkeypatch):
+    import sqlite3 as _sq
+    from dashboard import person_aliases as pa
+
+    def _missing(_cx, _e):
+        raise _sq.OperationalError("no such table: email_aliases")
+    monkeypatch.setattr(pa, "canonical_email", _missing)
+    assert pw._person_email(cx, "a@x.com") == "a@x.com"
+
+
+def test_a_missing_alias_column_raises(cx, monkeypatch):
+    """Round 2: a missing column does not prove there are no aliases, so it raises."""
+    import sqlite3 as _sq
+    from dashboard import person_aliases as pa
+
+    def _nocol(_cx, _e):
+        raise _sq.OperationalError("no such column: canonical")
+    monkeypatch.setattr(pa, "canonical_email", _nocol)
+    with pytest.raises(_sq.OperationalError):
+        pw._person_email(cx, "a@x.com")

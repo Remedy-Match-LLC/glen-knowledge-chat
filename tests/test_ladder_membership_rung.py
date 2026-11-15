@@ -62,7 +62,7 @@ def test_membership_is_the_first_self_serve_rung():
 def test_the_price_gap_below_the_analysis_is_closed():
     """The specific complaint: nothing between free and $300."""
     t = _tiers()
-    assert "$99" in t["membership"]["price"]
+    assert "$100" in t["membership"]["price"]
     below = [x for x in t.values() if x["n"] < t["biofield-analysis"]["n"]]
     assert below, "still nothing between the free courses and $300"
 
@@ -108,7 +108,7 @@ def test_an_internal_cta_href_is_not_utm_threaded():
 def test_the_ascend_page_shows_the_membership_card():
     html = ASCEND.read_text(encoding="utf-8")
     assert "Healing Oasis Membership" in html
-    assert "$99/month" in html
+    assert "$100/month" in html
 
 
 def test_card_numbers_match_their_tiers_and_do_not_repeat():

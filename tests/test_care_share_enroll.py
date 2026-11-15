@@ -109,7 +109,7 @@ def test_enroll_attributes_membership_and_credits_doctor(monkeypatch, tmp_path):
     assert md["kind"] == "continuous_care_monthly"
     assert md["dispensary_pid"] == "prac-42"
     assert md["email"] == "pat@x.com"
-    assert cap["amount"] == 9900              # MONTHLY_ANCHOR_CENTS ($99)
+    assert cap["amount"] == 10000              # MONTHLY_ANCHOR_CENTS ($99)
     assert cap["kw"]["save_card"] is True     # card-on-file (months 2..N)
 
     # 2) Fulfilment (as the Stripe return / webhook would drive it): feed the
@@ -144,7 +144,7 @@ def test_enroll_attributes_membership_and_credits_doctor(monkeypatch, tmp_path):
     # The enrollment charge credited the doctor exactly once, at $99.
     assert len(rec) == 1
     credited_sub, credited_cents = rec[0]
-    assert credited_cents == 9900
+    assert credited_cents == 10000
     assert credited_sub["id"] == row["id"]
     assert credited_sub["attributed_practitioner_id"] == "prac-42"
 

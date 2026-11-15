@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Your Black Friday Offer from Dr. Glen</title>
+  <style>
+    :root { --ink:#1a2433; --muted:#5b6776; --line:#e3e8ef; --brand:#2f6f5e; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",
+      Roboto,Helvetica,Arial,sans-serif; color:var(--ink); background:#f6f8fa;
+      line-height:1.5; }
+    .wrap { max-width:560px; margin:0 auto; padding:40px 16px 64px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:14px;
+      padding:28px; box-shadow:0 1px 3px rgba(16,24,40,.06); }
+    h1 { font-size:1.5rem; margin:0 0 8px; }
+    .lede { color:var(--muted); margin:0 0 20px; }
+    label, legend { display:block; font-weight:600; font-size:.92rem; margin:16px 0 6px; }
+    fieldset { border:0; padding:0; margin:0; }
+    input[type=text], input[type=email], input[type=date] { width:100%; padding:11px 12px;
+      border:1px solid var(--line); border-radius:9px; font-size:1rem; background:#fff; }
+    .radio, .check { display:flex; gap:10px; align-items:flex-start; margin:8px 0 0;
+      font-weight:400; font-size:.95rem; }
+    .radio input, .check input { margin-top:4px; }
+    .check { margin-top:18px; }
+    button { margin-top:22px; width:100%; padding:13px 16px; border:0;
+      border-radius:10px; background:var(--brand); color:#fff; font-size:1.02rem;
+      font-weight:600; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .err { color:#b42318; font-size:.92rem; margin-top:12px; min-height:1.1em; }
+    .done { color:var(--brand); font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Claim your Black Friday offer</h1>
+      <p class="lede">Bought Dr. Glen's app on Studio between 17 and 27 November?
+        Tell us when, and we will email you the offer.</p>
+
+      <div id="done" class="done" hidden>
+        Thank you. We have your claim, and your offer will come to you by email.
+      </div>
+
+      <form id="claim" novalidate>
+        <label for="name">Your name</label>
+        <input id="name" name="name" type="text" autocomplete="name" maxlength="120" required>
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required>
+
+        <label for="bought_on">The date you bought the app on Studio</label>
+        <input id="bought_on" name="bought_on" type="date" min="2026-11-17" max="2026-11-27" required>
+
+        <fieldset>
+          <legend>Your plan</legend>
+          <label class="radio"><input type="radio" name="plan" value="3mo" required>
+            <span>3 months</span></label>
+          <label class="radio"><input type="radio" name="plan" value="1yr">
+            <span>1 year</span></label>
+        </fieldset>
+
+        <label class="check"><input id="list_optin" name="list_optin" type="checkbox">
+          <span>Yes, send me Dr. Glen's emails too. You can unsubscribe at any time.</span></label>
+
+        <button id="go" type="submit">Send me the offer</button>
+        <div id="err" class="err" role="alert"></div>
+      </form>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var f = document.getElementById('claim'), go = document.getElementById('go'),
+        err = document.getElementById('err');
+    f.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      err.textContent = '';
+      var plan = f.querySelector('input[name=plan]:checked');
+      var body = { name: f.name.value, email: f.email.value, bought_on: f.bought_on.value,
+                   plan: plan ? plan.value : '', list_optin: f.list_optin.checked };
+      go.disabled = true;
+      fetch('/api/studio-bf/claim', { method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
+        .then(function(r){ return r.json().catch(function(){ return {ok:false}; }); })
+        .then(function(j){
+          if (j && j.ok) {
+            f.hidden = true;
+            document.getElementById('done').hidden = false;
+          } else {
+            err.textContent = (j && j.error) || 'Something went wrong. Please try again.';
+            go.disabled = false;
+          }
+        })
+        .catch(function(){ err.textContent = 'Something went wrong. Please try again.';
+                           go.disabled = false; });
+    });
+  })();
+  </script>
+</body>
+</html>

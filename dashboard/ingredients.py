@@ -9,6 +9,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 _FMP = _ROOT / "data" / "fmp-ingredient-content.json"
 _PRODUCTS = _ROOT / "data" / "products.json"
 _GROUPS = _ROOT / "data" / "ingredient_formulations.json"
+_ALIASES = _ROOT / "data" / "ingredient-slug-aliases.json"
 
 
 def slugify(name):
@@ -72,6 +73,42 @@ def resolve(slug):
     if not name:
         return None
     return {"slug": slug, "name": name, "fmp": _fmp_for(name)}
+
+
+_ALIAS_CACHE = {}
+
+
+def _slug_aliases():
+    """{old slug: new slug}. Only a good read is cached, so one failed read never
+    turns the aliases off until a restart (review round 2)."""
+    if "v" in _ALIAS_CACHE:
+        return _ALIAS_CACHE["v"]
+    try:
+        raw = json.loads(_ALIASES.read_text()).get("aliases") or {}
+        out = {str(k): str(v) for k, v in raw.items() if k and v}
+    except Exception:
+        return {}
+    _ALIAS_CACHE["v"] = out
+    return out
+
+
+def moved_to(slug):
+    """The address an old ingredient page moved to, or None.
+
+    Only for a slug that no longer resolves on its own, so an alias never hides a live
+    page, and only to a slug that does resolve. Follows at most three hops (2026-11-10:
+    the phosphatides pages moved from 50% to 30%)."""
+    if not slug or resolve(slug):
+        return None
+    aliases, seen, cur = _slug_aliases(), {slug}, slug
+    for _ in range(3):
+        cur = aliases.get(cur)
+        if not cur or cur in seen:
+            return None
+        if resolve(cur):
+            return cur
+        seen.add(cur)
+    return None
 
 
 _GROUPS_CACHE = None

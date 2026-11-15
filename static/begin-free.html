@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Become a free member of Remedy Match</title>
+<meta name="description" content="Free membership is how you start. It costs nothing, and you are not asked for a card." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Raleway:wght@600;700&display=swap" rel="stylesheet" />
+<!--
+  The free-membership page, /begin/free. The truly.vip/help link points here.
+  Copy: marketing/04 Copy/free-membership-page-2026-11/page-copy-v4.md, word for word,
+  each sentence its own paragraph. Glen approved it in the marketing tab, 13 Nov 2026.
+  Both join buttons open the same "Send my link" form as /begin, posting to
+  /api/healing-oasis/request. The "How to join" steps describe that path only, so no
+  other sign-up path may be wired to these buttons. The look is borrowed from /begin.
+-->
+<style>
+  :root {
+    --bg: #0a150d;
+    --surface: #111f16;
+    --border: #21472d;
+    --cream: #fdf4d8;
+    --muted: #a89870;
+    --gold: #d4a843;
+    --green: #3d8a52;
+    --maxw: 680px;
+    --radius: 14px;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --serif: "Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg); color: var(--cream);
+    font-family: "Open Sans", system-ui, sans-serif; font-size: 17px; line-height: 1.7;
+    letter-spacing: 0.01em; -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(120% 80% at 50% -10%, rgba(212, 168, 67, 0.07), transparent 60%),
+      radial-gradient(100% 60% at 50% 110%, rgba(61, 138, 82, 0.05), transparent 60%);
+    background-attachment: fixed;
+  }
+  h1, h2, h3 { font-family: "Raleway", system-ui, sans-serif; font-weight: 600; line-height: 1.22; }
+  a { color: var(--gold); }
+  .brandbar { max-width: var(--maxw); margin: 0 auto; padding: 30px 24px 8px;
+    display: flex; align-items: center; justify-content: center; gap: 14px; }
+  .brand-mark { width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+    box-shadow: 0 0 0 4px rgba(212, 168, 67, 0.12); flex: none; }
+  .brand-name { font-family: "Raleway", sans-serif; font-weight: 600; font-size: 13px;
+    letter-spacing: 0.32em; color: var(--muted); }
+  main { max-width: var(--maxw); margin: 0 auto; padding: 24px 24px 64px; }
+  .intro { text-align: center; padding: 24px 0 8px; }
+  .intro h1 { font-family: var(--serif); font-size: clamp(30px, 4.2vw, 44px); line-height: 1.1;
+    margin-bottom: 18px; text-wrap: balance; }
+  .intro p { color: var(--muted); }
+  section { padding-top: 44px; }
+  h2 { color: var(--gold); font-size: 24px; margin-bottom: 14px; }
+  h3 { font-size: 19px; margin: 26px 0 8px; }
+  p + p { margin-top: 6px; }
+  .benefit { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+    padding: 4px 20px 18px; margin-top: 14px; }
+  .benefit h3 { margin-top: 16px; }
+  .join { text-align: center; margin-top: 26px; }
+  .join-btn { font-family: "Raleway", system-ui, sans-serif; font-weight: 600; font-size: 17px;
+    color: var(--bg); background: var(--gold); border: 1px solid var(--gold); border-radius: 999px;
+    padding: 13px 28px; cursor: pointer; transition: filter .18s var(--ease); }
+  .join-btn:hover { filter: brightness(1.08); }
+  .join-btn:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
+  .small-print { font-size: 14px; color: var(--muted); }
+  .small-print h2 { font-size: 16px; color: var(--muted); }
+  .oasis-overlay { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center;
+    justify-content: center; padding: 20px; background: rgba(5,10,7,.72); overflow-y: auto;
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+  .oasis-overlay[hidden] { display: none; }
+  .oasis-card { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 26px 24px 24px; position: relative;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5); margin: auto;
+    max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow-y: auto; }
+  .oasis-x { position: absolute; top: 10px; right: 14px; background: none; border: none;
+    color: var(--muted); font-size: 26px; line-height: 1; cursor: pointer; }
+  .oasis-x:hover { color: var(--cream); }
+  #oasis-title { color: var(--gold); font-size: 22px; margin-bottom: 6px; }
+  .oasis-lead { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+  .oasis-field { display: block; margin-bottom: 12px; }
+  .oasis-field span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; letter-spacing: .03em; }
+  .oasis-field input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 9px;
+    color: var(--cream); font-size: 16px; padding: 11px 12px; font-family: inherit; }
+  .oasis-field input:focus { outline: none; border-color: var(--gold); }
+  .oasis-submit { width: 100%; margin-top: 6px; background: #2d6b3f; color: #fdf4d8; border: none;
+    border-radius: 9px; padding: 12px; font-family: "Raleway", system-ui, sans-serif; font-weight: 600;
+    font-size: 15px; cursor: pointer; }
+  .oasis-submit:disabled { opacity: .6; cursor: default; }
+  .oasis-msg { min-height: 18px; margin-top: 11px; font-size: 13.5px; text-align: center; }
+  .oasis-msg.ok { color: #5fae74; } .oasis-msg.err { color: #e28b7b; }
+  /* Light theme (theme-toggle.js swaps the variables): keep text contrast at 4.5:1. */
+  :root[data-theme="light"] .join-btn { color: #1E2A2A; }
+  :root[data-theme="light"] .oasis-msg.err { color: #a3402c; }
+  :root[data-theme="light"] .oasis-msg.ok { color: #256b4a; }
+  @media (max-width: 560px) {
+    .brandbar { padding-top: 24px; }
+    main { padding: 16px 16px 48px; }
+    .benefit { padding: 2px 16px 16px; }
+  }
+</style>
+<script src="/static/theme-toggle.js"></script>
+</head>
+<body>
+  <div class="brandbar">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">Remedy&nbsp;Match &nbsp;·&nbsp; Healing&nbsp;Oasis</span>
+  </div>
+
+  <main id="free-copy">
+    <div class="intro">
+      <h1>Become a free member of Remedy Match</h1>
+      <p>Remedy Match helps you learn which natural remedies match your Bioenergetic Wellness Scan.</p>
+      <p>Free membership is how you start.</p>
+      <p>It costs nothing, and you are not asked for a card.</p>
+      <div class="join"><button class="join-btn" type="button" aria-haspopup="dialog" aria-controls="oasis-modal">Become a free member</button></div>
+    </div>
+
+    <section>
+      <h2>What a free member gets</h2>
+
+      <div class="benefit">
+        <h3>Your Bioenergetic Wellness Scan</h3>
+        <p>You set up a free scan account with our partner Energy4Life.</p>
+        <p>It takes a few minutes.</p>
+        <p>Then you count out loud from one to ten, somewhere quiet.</p>
+        <p>The scan itself takes about ten seconds.</p>
+        <p>Remedy Match then matches remedies to your scan.</p>
+      </div>
+
+      <div class="benefit">
+        <h3>One remedy revealed</h3>
+        <p>Your scan reading is reviewed and approved first.</p>
+        <p>Then you can reveal the top remedy matched to you.</p>
+        <p>Each email address gets one free reveal.</p>
+      </div>
+
+      <div class="benefit">
+        <h3>Personal guidance in the remedy chat</h3>
+        <p>The chat answers general questions for anyone who visits.</p>
+        <p>Once you agree to the terms, you can also ask about your own situation.</p>
+      </div>
+
+      <div class="benefit">
+        <h3>The Wellness Topics library</h3>
+        <p>You can read about 60 wellness topics in plain language.</p>
+        <p>A glossary explains the terms your scan uses.</p>
+      </div>
+
+      <div class="benefit">
+        <h3>Your journey map</h3>
+        <p>The map has four stages.</p>
+        <p>They are Scan and Find, then Heal and Give.</p>
+        <p>As a free member, you can see where you are and what comes next.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Who is behind it</h2>
+      <p>Remedy Match is guided by the lifework of Dr. Glen Swartwout.</p>
+      <p>He holds doctorates in optometry and naturopathic medicine.</p>
+      <p>At 25 he was diagnosed with glaucoma and told he would be blind by 50.</p>
+      <p>At 70 he reads at distance and near without glasses.</p>
+      <p>He built Remedy Match to share his lifework.</p>
+    </section>
+
+    <section>
+      <h2>How to join</h2>
+      <p>Enter your name and email.</p>
+      <p>We email you a private link to your personal healing home.</p>
+      <p>Agree to the terms when you first open your link.</p>
+      <p>Then take your scan.</p>
+      <div class="join"><button class="join-btn" type="button" aria-haspopup="dialog" aria-controls="oasis-modal">Become a free member</button></div>
+    </section>
+
+    <section>
+      <h2>Later</h2>
+      <p>Free members can move up to paid membership later, when it fits.</p>
+    </section>
+
+    <section class="small-print">
+      <h2>Small print</h2>
+      <p>Remedy Match is shared for education and self-understanding.</p>
+      <p>It does not diagnose or treat any condition.</p>
+      <p>Our formulations are a supplement to care from your own provider, never a substitute.</p>
+    </section>
+  </main>
+
+  <!-- The same "Send my link" form as /begin (static/begin.html, #oasis-form). -->
+  <div id="oasis-modal" class="oasis-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="oasis-title">
+    <div class="oasis-card" role="document">
+      <button class="oasis-x" type="button" aria-label="Close">&times;</button>
+      <h2 id="oasis-title">Your Healing Oasis</h2>
+      <p class="oasis-lead">Enter your name and email and we&rsquo;ll send a private link to your personal healing home.</p>
+      <form id="oasis-form" novalidate>
+        <label class="oasis-field"><span>Name</span>
+          <input id="oasis-name" name="name" type="text" autocomplete="name" required></label>
+        <label class="oasis-field"><span>Email</span>
+          <input id="oasis-email" name="email" type="email" autocomplete="email" required></label>
+        <button class="oasis-submit" type="submit">Send my link</button>
+        <p id="oasis-msg" class="oasis-msg" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    var modal=document.getElementById('oasis-modal'),
+        form=document.getElementById('oasis-form'),
+        msg=document.getElementById('oasis-msg'),
+        nameEl=document.getElementById('oasis-name'),
+        emailEl=document.getElementById('oasis-email'),
+        submit=form.querySelector('.oasis-submit'),
+        xBtn=modal.querySelector('.oasis-x'),
+        opener=null, sending=false, openSeq=0;
+
+    function setBusy(on){ sending=on; submit.disabled=on; nameEl.readOnly=on; emailEl.readOnly=on; }
+    function open(e){ opener=e&&e.currentTarget; openSeq++; modal.hidden=false;
+      if(!sending){ msg.textContent=''; msg.className='oasis-msg'; }
+      setTimeout(function(){ (nameEl.value?emailEl:nameEl).focus(); },30); }
+    function close(){ modal.hidden=true; openSeq++; if(opener&&opener.focus) opener.focus(); }
+    function focusables(){ return [xBtn,nameEl,emailEl,submit].filter(function(n){ return !n.disabled; }); }
+
+    var btns=document.querySelectorAll('.join-btn');
+    for(var i=0;i<btns.length;i++) btns[i].addEventListener('click',open);
+    // Like /begin: when sign-up is switched off, hide the join buttons.
+    fetch('/api/healing-oasis/status').then(function(r){return r.json();})
+      .then(function(d){ if(d&&d.enabled===false){
+        for(var j=0;j<btns.length;j++) btns[j].parentNode.hidden=true; } })
+      .catch(function(){});
+    xBtn.addEventListener('click',close);
+    modal.addEventListener('click',function(e){ if(e.target===modal) close(); });
+    document.addEventListener('keydown',function(e){
+      if(modal.hidden) return;
+      if(e.key==='Escape'){ close(); return; }
+      if(e.key!=='Tab') return;
+      // Keep keyboard focus inside the open dialog.
+      var f=focusables(), first=f[0], last=f[f.length-1], at=document.activeElement;
+      if(e.shiftKey&&(at===first||f.indexOf(at)<0)){ e.preventDefault(); last.focus(); }
+      else if(!e.shiftKey&&(at===last||f.indexOf(at)<0)){ e.preventDefault(); first.focus(); }
+    });
+
+    form.addEventListener('submit',function(e){
+      e.preventDefault();
+      if(sending) return;
+      var email=(emailEl.value||'').trim();
+      if(!nameEl.checkValidity()||!emailEl.checkValidity()||email.indexOf('@')<1){
+        if(!nameEl.checkValidity()){ form.reportValidity(); return; }
+        msg.className='oasis-msg err'; msg.textContent='Please enter a valid email address.'; return; }
+      var seq=openSeq;
+      setBusy(true); msg.className='oasis-msg'; msg.textContent='Sending…';
+      fetch('/api/healing-oasis/request',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:(nameEl.value||'').trim(),email:email})})
+        .then(function(r){return r.json().then(function(d){return {ok:r.ok,status:r.status,d:d};});})
+        .then(function(res){
+          if(res.ok&&res.d&&res.d.ok){ form.reset(); msg.className='oasis-msg ok'; msg.textContent=res.d.message||'Check your email.'; }
+          else { msg.className='oasis-msg err';
+            // Only the 400 reply carries wording meant for a person.
+            msg.textContent=(res.status===400&&res.d&&res.d.error)||'Something went wrong. Please try again.'; }
+        })
+        .catch(function(){ msg.className='oasis-msg err'; msg.textContent='Something went wrong. Please try again.'; })
+        .then(function(){ setBusy(false); if(seq!==openSeq&&modal.hidden){ msg.textContent=''; msg.className='oasis-msg'; } });
+    });
+  })();
+  </script>
+</body>
+</html>

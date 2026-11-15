@@ -28,6 +28,7 @@ HISTORY_TABLES = frozenset({
     "sms_consent_events",             # a text consent log keyed by phone; never rewritten
     # Found in production on 2026-09-27 (prod-queries/merge-unclassified-tables.py):
     "fmp_clients",                    # a FileMaker mirror; the next FileMaker sync rewrites it
+    "studio_bf_claims",               # one Studio offer claim per address (2026-11-12); kept as made
     "client_gmail_messages",          # a local cache of a client's own mail, keyed by sender
     "client_record_findings", "client_record_reads",   # read from that mail; same key
     "client_email_fills",             # the email found for a FileMaker row (2026-10-16); a
@@ -92,6 +93,7 @@ MOVE_TABLES = frozenset({
     "member_interest", "membership_product_grants", "memberships", "order_membership_grants",
     "order_payments", "peer_interest", "peer_matches", "portal_library", "prepay_term_grants",
     "portal_library_links",   # a client's Library links, keyed by address (2026-10-13)
+    "portal_open_questions", "portal_question_answers",  # Dr. Glen's numbered questions (2026-11-12)
     "quiz_responses", "studio_credit_intents", "voice_signals",
     # Rule C (2026-10-23): a supply grant and a courtesy follow their membership row.
     "order_supply_grants", "membership_courtesy_log",

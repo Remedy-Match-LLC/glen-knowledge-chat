@@ -27,7 +27,7 @@ def test_new_client_gets_live_group_first(tmp_path):
     cx = _conn(tmp_path)
     offers = po.next_offers(cx, "new@x.com", ["client"], enabled_keys=ALL)
     assert [o["key"] for o in offers] == ["live_group", "biofield"]
-    assert offers[0]["price_cents"] == 9900
+    assert offers[0]["price_cents"] == 10000
     assert offers[0]["checkout_path"] == "/portal/offer/live-group/checkout"
 
 

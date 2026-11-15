@@ -232,11 +232,14 @@ _RECORDS_HTML = ("<style>.records{margin-top:14px;padding:10px 12px;border:1px d
     # Escapes quotes too: the wording sits inside value="..." (review round 2).
     "function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;')"
     ".replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;')}"
-    "function src(f){return esc(f.filename)+(f.page?', page '+f.page:'')+' &middot; email '+esc(f.email_date)"
+    # Glen, 2026-11-04: a finding from pasted notes says so, with the day it was pasted.
+    "function src(f){if(f.pasted)return 'From pasted notes &middot; added '+esc(f.added);"
+    "return esc(f.filename)+(f.page?', page '+f.page:'')+' &middot; email '+esc(f.email_date)"
     "+(f.subject?' &ldquo;'+esc(f.subject)+'&rdquo;':'')+(f.date?' &middot; dated '+esc(f.date):'')}"
     "function render(j,note){if(!j.ok){box.innerHTML='<div class=food>'+esc(j.error||'Records unavailable')+'</div>';return}"
     "var h='';if(j.held)h+='<div class=food>Records were not read: E4L shows more than one person on this address.</div>';"
-    "var p='';if(j.pending.length){p+='<div class=proposal-head><b>Proposed from records</b>'"
+    "var p='';if(j.pending.length){var np=j.pending.filter(function(f){return f.pasted}).length;"
+    "p+='<div class=proposal-head><b>Proposed from '+(np===j.pending.length?'pasted notes':np?'records and pasted notes':'records')+'</b>'"
     "+'<span>Check each against the record. Edit the wording before you add it.</span></div>';"
     "j.pending.forEach(function(f){p+='<div class=\"proposal-row rf\" data-id='+f.id+'><div><span class=kind>'+esc(f.kind_label)+'</span>'"
     "+'<input value=\"'+esc(f.text)+'\" aria-label=\"Finding wording\"><div class=proposal-evidence>'+src(f)+'</div></div>'"
@@ -267,7 +270,7 @@ _RECORDS_HTML = ("<style>.records{margin-top:14px;padding:10px 12px;border:1px d
     "var r=await call(base+'/'+id,{decision:d,text:inp?inp.value:''});b.disabled=false;"
     "if(r.ok&&d!=='reject'&&/Diagnosis/.test(row.textContent)){location.reload();return}load(r.ok?'':r.error)}"
     "box.addEventListener('click',onClick);var pb=document.getElementById('recordProposals');if(pb)pb.addEventListener('click',onClick);"
-    "readAll()})();</script>")
+    "if(typeof window!=='undefined')window.refreshRecords=load;readAll()})();</script>")
 
 def _page(title, body, client_name="", client_email=""):
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
@@ -1239,6 +1242,62 @@ async function interpret(){rstat('Interpreting transcript into chain rows\\u2026
  if(r.error){rstat('Interpret: '+r.error);return}
  rstat('Filled '+r.added+' row(s) \\u2014 highlighted for review; reloading\\u2026');
  setTimeout(function(){location.reload()},800)}
+// Live session segments 1 to 3 (plan 2026-11-07). regulationLevel mirrors
+// dashboard.terrain_phase.regulation_level; tests/test_bsi_regulation.py runs both.
+// regulationLevel:begin
+function bsiNum(v){var s=String(v==null?'':v).trim();if(!/^[0-9]+$/.test(s))return null;
+ var n=parseInt(s,10);return (n>=1&&n<=21)?n:null}
+function regulationLevel(a,b,c,d){a=bsiNum(a);b=bsiNum(b);c=bsiNum(c);d=bsiNum(d);
+ if(a===null||b===null||c===null||d===null)return null;
+ var names={1:'Blocked',2:'Negative',3:'Mixed',4:'Positive',5:'Optimum'},l;
+ if(c===1&&d===1)l=5;
+ else if(c===a&&d===b)l=1;
+ else if((c>a&&d<b)||(c<a&&d>b))l=3;
+ else if(c>=a&&d>=b)l=2;
+ else if(c<=a&&d<=b)l=4;
+ else return null;
+ return [l,names[l]]}
+// regulationLevel:end
+// terrainSave:begin
+// Every terrain save goes through ONE promise chain, so the server applies them in the
+// order typed. The page shows what the server STORED (the response), never the inputs:
+// window._tStored is that state, and Regulation is always computed from it.
+var _tChain=Promise.resolve(),_tPending={};
+var _tLabels={phase:'Terrain phase',location:'Terrain location',bsi_a:'BSI A',bsi_b:'BSI B',
+ bsi_c:'BSI C',bsi_d:'BSI D'};
+function tStored(){return window._tStored||{phase:null,location:'',bsi:[null,null,null,null]}}
+function tStat(t){var e=document.getElementById('tstat');if(e)e.textContent=t}
+function renderRegulation(bsi){
+ bsi=bsi||[null,null,null,null];
+ var r=regulationLevel(bsi[0],bsi[1],bsi[2],bsi[3]);
+ var out=document.getElementById('t_regulation');
+ if(out)out.textContent=r?('Level '+r[0]+' · '+r[1]):'Enter all four numbers';
+ var w=[],na=bsiNum(bsi[0]),nb=bsiNum(bsi[1]),nc=bsiNum(bsi[2]),nd=bsiNum(bsi[3]);
+ if(na!==null&&nb!==null&&nb>na)w.push('B is greater than A');
+ if(nc!==null&&nd!==null&&nd>nc)w.push('D is greater than C');
+ var we=document.getElementById('t_warn');if(we)we.textContent=w.join('; ')}
+function renderTerrain(st){
+ window._tStored={phase:st.phase==null?null:st.phase,location:st.location||'',
+  bsi:(st.bsi||[null,null,null,null]).slice(0,4)};
+ var S=window._tStored,map={phase:['t_phase',S.phase],location:['t_location',S.location],
+  bsi_a:['bsi_a',S.bsi[0]],bsi_b:['bsi_b',S.bsi[1]],bsi_c:['bsi_c',S.bsi[2]],bsi_d:['bsi_d',S.bsi[3]]};
+ Object.keys(map).forEach(function(f){var el=document.getElementById(map[f][0]);if(!el)return;
+  // Leave an input alone while Glen is in it, or while a newer change to it is queued.
+  if(document.activeElement===el||(_tPending[f]||0)>0)return;
+  el.value=map[f][1]==null?'':String(map[f][1]);el.classList.remove('bad')});
+ renderRegulation(S.bsi)}
+function saveTerrain(field,el){
+ var v=el.value;_tPending[field]=(_tPending[field]||0)+1;tStat('Saving…');
+ var run=function(){
+  return Promise.resolve().then(function(){return post('/author/__TID__/terrain',{field:field,value:v})})
+   .catch(function(){return {ok:false}})
+   .then(function(j){_tPending[field]--;
+    if(j&&j.ok){renderTerrain(j);tStat('Saved.')}
+    else{el.classList.add('bad');
+     tStat('Not saved: '+(_tLabels[field]||field)+((j&&j.error)?' ('+j.error+')':''));
+     renderRegulation(tStored().bsi)}})};
+ _tChain=_tChain.then(run,run);return _tChain}
+// terrainSave:end
 async function delTest(){if(!confirm('Delete this entire test? This cannot be undone.'))return;
  await post('/author/__TID__/delete',{});location.href='/'}
 async function confirmAll(){await post('/author/__TID__/confirm-all',{});location.reload()}
@@ -1351,8 +1410,13 @@ async function minePaste(btn){var box=document.getElementById('pasteNotes'),text
   var sk=j.skipped?' Skipped '+j.skipped+' that looked like copied text.':'';
   if(j.added>0)loadStress();
   if(j.error){pstat('Pasted notes: '+j.error+(j.added>0?' Added '+j.added+' before that.':'')+sk);return}
-  if(box.value===text)box.value='';
-  pstat((j.added?'Added '+j.added+' stress(es) from the pasted notes.':'No new stresses found in the pasted notes.')+sk)}
+  // Conditions and medicines wait in the records box for Add or Not relevant.
+  var cl=j.offered?' Offered '+j.offered+' condition(s) or medicine(s) for review under the Clinical Summary.':'';
+  if(j.already)cl+=' Already listed: '+j.already+'.';
+  if(j.clinical_note)cl+=' '+j.clinical_note;
+  if(j.offered){try{window.refreshRecords&&window.refreshRecords()}catch(e){}}
+  if(box.value===text&&!j.keep_notes)box.value='';
+  pstat((j.added?'Added '+j.added+' stress(es) from the pasted notes.':'No new stresses found in the pasted notes.')+sk+cl)}
  finally{if(btn)btn.disabled=false}}
 async function loadClinicalProposals(){
  var box=document.getElementById('clinicalProposals');if(!box)return;
@@ -3395,6 +3459,54 @@ def _e4l_suggestion_html(sug):
             f" <span class=food>({_e(sug.get('email') or '')})</span></div>")
 
 
+
+def _terrain_segments_html(report):
+    """Live session segments 1 to 3 (plan 2026-11-07): Terrain, Biological Score Index,
+    Regulation. Every field saves on change through /author/<tid>/terrain. Regulation is
+    read-only and recomputed live by regulationLevel() in the page JS, which mirrors
+    dashboard.terrain_phase.regulation_level."""
+    from dashboard.terrain_phase import (PHASE_NAMES, bsi_num, bsi_warnings, phase_num,
+                                         regulation_display)
+    p = phase_num(report.get("phase"))
+    opts = "<option value=''></option>" + "".join(
+        f"<option value='{n}'{' selected' if n == p else ''}>{n} &middot; {_e(name)}</option>"
+        for n, name in sorted(PHASE_NAMES.items()))
+    bsi = list(report.get("bsi") or [None] * 4)[:4]
+    bsi += [None] * (4 - len(bsi))
+    bsi = [bsi_num(v) for v in bsi]
+
+    def box(i, letter):
+        v = "" if bsi[i] is None else str(bsi[i])
+        return (f"<input id=bsi_{letter} type=number min=1 max=21 step=1 inputmode=numeric "
+                f"aria-label='BSI {letter.upper()}' value='{v}' style='width:56px' "
+                f"onchange=\"saveTerrain('bsi_{letter}',this)\">")
+    warn = "; ".join(bsi_warnings(*bsi))
+    return (
+        "<div id=terrainSegs class=card style='margin-bottom:8px'>"
+        "<div class=btnrow style='align-items:center'>"
+        "<label for=t_phase style='min-width:150px'>Terrain</label>"
+        f"<select id=t_phase aria-label='Terrain phase' onchange=\"saveTerrain('phase',this)\">{opts}</select>"
+        "<input id=t_location placeholder='Location' aria-label='Terrain location' "
+        f"value=\"{_e(report.get('location') or '')}\" style='width:240px' "
+        "onchange=\"saveTerrain('location',this)\">"
+        "</div>"
+        "<div class=btnrow style='align-items:center'>"
+        "<label style='min-width:150px'>Biological Score Index</label>"
+        + box(0, "a") + " <span>x</span> " + box(1, "b") + " <span>to</span> "
+        + box(2, "c") + " <span>x</span> " + box(3, "d") +
+        "</div>"
+        "<div class=btnrow style='align-items:center'>"
+        "<label style='min-width:150px'>Regulation</label>"
+        f"<span id=t_regulation>{_e(regulation_display(*bsi))}</span>"
+        "</div>"
+        f"<div id=t_warn class=food>{_e(warn)}</div>"
+        "<span id=tstat class=food></span>"
+        # The stored state the page renders Regulation from (see renderTerrain).
+        "<script>window._tStored=" + json.dumps(
+            {"phase": p, "location": report.get("location") or "", "bsi": bsi}
+        ).replace("<", "\\u003c") + "</script>"
+        "</div>")
+
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
                        clinical_checklist=None, dispensed=None, dispensed_error=None,
@@ -3481,6 +3593,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<p class=sub>Record yourself narrating the test in your own voice &mdash; the live "
         "transcript saves to this test's notes and feeds the narrative. Wear a lav/AirPods for "
         "the codes.</p>"
+        + _terrain_segments_html(report) +
         "<div class=btnrow style='margin-bottom:6px'>"
         # Steps, not phases (Glen 2026-09-21). "Phase" collides with the 5 Phases of
         # Healing, and "Rejuvenate" is Phase 2 of the TERRAIN map, nothing to do with this
