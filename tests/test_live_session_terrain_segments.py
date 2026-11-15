@@ -267,3 +267,11 @@ def test_page_embeds_the_stored_state_it_renders_from():
     assert m and "</script>b" not in m.group(1)
     st = json.loads(m.group(1))
     assert st == {"phase": 2, "location": "a</script>b", "bsi": [13, 8, 5, 3]}
+
+
+def test_location_offers_the_stress_list():
+    """Glen 14 Nov: the location choices are the full stress list (the vocab datalist)."""
+    s = _page(location="kidney")
+    m = re.search(r"<input id=t_location[^>]*>", s)
+    assert m and " list=vocab " in m.group(0)
+    assert "<datalist id=vocab>" in s
