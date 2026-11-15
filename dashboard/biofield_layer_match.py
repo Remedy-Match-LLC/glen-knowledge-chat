@@ -293,6 +293,11 @@ def sectioned_vocab(cx, test_id, mind=(), body=(), limit=5000, code_names=None):
     for key in out:
         fold = key != "all"
         out[key] = natural_sorted(_display_list(out[key], code_names, fold))
+        if key == "body":
+            # Glen, 15 Nov 2026: "all purple, infoceutical list first, then other
+            # purples". Each group keeps its natural order.
+            out[key] = ([d for d in out[key] if _info_match(d)]
+                        + [d for d in out[key] if not _info_match(d)])
         unnamed |= {d for d in out[key] if _info_match(d) and ":" not in d}
     out["unnamed"] = sorted(unnamed, key=natural_key)
     return out
