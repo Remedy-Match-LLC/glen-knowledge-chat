@@ -147,11 +147,16 @@ def list_dimensions(cx):
              "has_match_check": r["has_match_check"]} for r in rows]
 
 
+LIST_SHALLOW_FIRST = frozenset({DEPTH_KEY})
+
+
 def dimension_values(cx, dim_key):
     init_dimension_tables(cx)
     cx.row_factory = sqlite3.Row
+    # Glen, 14 November 2026: "gut first". Depth lists shallow to deep, rank 5 down to 1.
+    order = "rank DESC" if dim_key in LIST_SHALLOW_FIRST else "rank"
     rows = cx.execute("SELECT rank, value, code FROM biofield_dimension_values "
-                      "WHERE dim_key=? ORDER BY rank", (dim_key,)).fetchall()
+                      "WHERE dim_key=? ORDER BY " + order, (dim_key,)).fetchall()
     return [{"rank": r["rank"], "value": r["value"], "code": r["code"]} for r in rows]
 
 

@@ -22,10 +22,10 @@ def test_seed_has_the_dimensions_with_depth_ordered_and_matchcheck(tmp_path):
     depth = next(d for d in dims if d["key"] == DEPTH_KEY)
     assert depth["has_match_check"] == 1 and depth["ordered"] == 1
     vals = dimension_values(cx, DEPTH_KEY)
-    assert [v["rank"] for v in vals] == [1, 2, 3, 4, 5]
-    # Glen, 14 November 2026: numbered 5 (shallow) to 1 (deep).
-    assert [v["code"] for v in vals] == ["nucleus", "cytoplasm", "ecf", "blood", "gut"]
-    assert vals[0]["value"].startswith("Nucleo") and vals[4]["value"].startswith("Gut")
+    # Glen, 14 November 2026: numbered 5 (shallow) to 1 (deep), and listed "gut first".
+    assert [v["rank"] for v in vals] == [5, 4, 3, 2, 1]
+    assert [v["code"] for v in vals] == ["gut", "blood", "ecf", "cytoplasm", "nucleus"]
+    assert vals[0]["value"].startswith("Gut") and vals[4]["value"].startswith("Nucleo")
 
 
 def test_pathology_and_prognosis_numbered_5_mild_to_1_grave(tmp_path):
