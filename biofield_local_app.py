@@ -50,7 +50,7 @@ from dashboard.biofield_authoring import (
     remove_remedy_preserving_layer,
     remedy_dosing, resolve_remedy_name, resolve_stress_name, stress_suggestions,
     stress_vocab, update_chain_row, update_header, update_terrain,
-    set_terrain_field, terrain_state, set_layer_balanced, set_row_confirmed)
+    set_terrain_field, terrain_state, set_layer_balanced, apply_voice_fields)
 from dashboard.biofield_dimensions import (
     DEPTH_KEY, dimension_values, seed_dimensions, tag as dim_tag)
 from dashboard.biofield_interpret import interpret_transcript
@@ -3986,6 +3986,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             layer = _layer_int(d.get("layer"))
             confirmed, origin = 1, "live"
             anchor, anchor_balanced = None, False
+            # {field: matched} for the fields a short recording filled (ruling 7).
+            voice = d.get("voice") if isinstance(d.get("voice"), dict) else {}
             anchor_rid = d.get("anchor_rid")
             if anchor_rid not in (None, ""):
                 try:
@@ -4000,9 +4002,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     from dashboard.biofield_authoring import init_auth_tables
                     init_auth_tables(cx)      # layer_balanced on an older table
                     layer, confirmed, origin = anchor[0], anchor[1], anchor[2]
-                    anchor_balanced = bool(cx.execute(
-                        "SELECT COALESCE(layer_balanced,0) FROM biofield_auth_chain "
-                        "WHERE id=?", (anchor_id,)).fetchone()[0])
+                    _ab, _au = cx.execute(
+                        "SELECT COALESCE(layer_balanced,0), unmatched_fields "
+                        "FROM biofield_auth_chain WHERE id=?", (anchor_id,)).fetchone()
+                    anchor_balanced = bool(_ab)
+                    # The new row copies the card's Head and Tail, so it copies their
+                    # unmatched marks too. What was just spoken wins.
+                    import json as _json
+                    try:
+                        _inh = [f for f in _json.loads(_au or "[]")
+                                if f in ("head", "most_affected")]
+                    except (TypeError, ValueError):
+                        _inh = []
+                    voice = {**{f: False for f in _inh}, **voice}
                     if not (anchor[3] or "").strip():
                         update_chain_row(
                             cx, anchor_id, head=d.get("head", ""),
@@ -4010,14 +4022,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                             remedy=d.get("remedy", ""), dosage=d.get("dosage", ""),
                             frequency=d.get("frequency", ""), timing=d.get("timing", ""),
                         )
-                        if d.get("confirmed") in (0, 1, True, False):
-                            set_row_confirmed(cx, test_id, anchor_id, d.get("confirmed"))
+                        apply_voice_fields(cx, test_id, anchor_id, voice)
                         return {"ok": True, "rid": anchor_id, "filled_anchor": True,
                                 **gated}
-            # A short voice recording says whether it matched (ruling 7): matched goes
-            # in confirmed, unmatched goes in for review. Typed rows send nothing.
-            if d.get("confirmed") in (0, 1, True, False):
-                confirmed = 1 if d.get("confirmed") else 0
             rid = add_chain_row(cx, test_id, layer, d.get("head", ""),
                                 d.get("most_affected", ""), d.get("remedy", ""),
                                 d.get("dosage", ""), d.get("frequency", ""), d.get("timing", ""),
@@ -4026,6 +4033,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # the card carries the card's mark, as head and tail do.
             if anchor and anchor_balanced:
                 set_layer_balanced(cx, test_id, [rid], True)
+            # A short recording: a matched field confirms only itself, an unmatched one
+            # holds the row for review (ruling 7). Typed rows send no voice.
+            apply_voice_fields(cx, test_id, rid, voice)
         return {"ok": True, "rid": rid, **gated}
 
     @app.route("/author/<test_id>/row/<int:rid>", methods=["POST"])
@@ -4076,9 +4086,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": True, **gated}
         with sqlite3.connect(db_path) as cx:
             update_chain_row(cx, rid, **fields)
-            # A short voice recording into Head or Tail (ruling 7).
-            if d.get("confirmed") in (0, 1, True, False):
-                set_row_confirmed(cx, test_id, rid, d.get("confirmed"))
+            # A short voice recording into Head or Tail (ruling 7): per field.
+            if isinstance(d.get("voice"), dict):
+                apply_voice_fields(cx, test_id, rid, d["voice"])
         return {"ok": True, **gated}
 
     @app.route("/author/<test_id>/match", methods=["POST"])

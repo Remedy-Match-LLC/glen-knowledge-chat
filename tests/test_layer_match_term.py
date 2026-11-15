@@ -66,9 +66,29 @@ def test_no_dose_spoken_takes_the_catalogue_default(cx):
     ("Rose essence, 3 drops daily", "Rose essence", "3 drops", "daily"),
     ("half teaspoon at bedtime Alkalize", "Alkalize", "1/2 teaspoon", "at bedtime"),
     ("Sulfur Syntropy", "Sulfur Syntropy", "", ""),
+    # Mixed numbers are one quantity, and leave no stray digit in the name.
+    ("Alkalize 1 1/2 teaspoons twice a day", "Alkalize", "1 1/2 teaspoons", "twice a day"),
+    ("one and a half capsules daily of Sobopla", "Sobopla", "1 1/2 capsules", "daily"),
+    ("Sobopla 2 and a half drops", "Sobopla", "2 1/2 drops", ""),
 ])
 def test_parse_dose(spoken, rest, dose, freq):
-    assert parse_dose(spoken) == (rest, dose, freq)
+    assert parse_dose(spoken) == (rest, dose, freq, False)
+
+
+@pytest.mark.parametrize("spoken", ["Sobopla 2 3 drops daily", "Sobopla two 3 drops",
+                                    "Sobopla 1.5 2 capsules"])
+def test_a_number_beside_the_quantity_is_refused(spoken):
+    rest, dose, _freq, unsure = parse_dose(spoken)
+    assert unsure is True and dose == ""
+    assert rest == "Sobopla"                     # the name still matches
+
+
+def test_a_refused_dose_leaves_the_remedy_unconfirmed(cx):
+    m = match_term(cx, "remedy", "sulfur syntropy 2 3 drops daily")
+    assert m["dose_unsure"] is True and m["matched"] is False
+    assert m["value"] == "Sulfur Syntropy"
+    assert m["dose"] == "" and m["dosing"]["dosage"] == ""   # blank, never a guess
+    assert m["dosing"]["frequency"] == "daily"
 
 
 # ---- head and tail ------------------------------------------------------------

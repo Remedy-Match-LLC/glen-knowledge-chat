@@ -40,8 +40,12 @@ _NUM_WORDS = {
 _UNITS = (r"drops?|capsules?|caps?|tablets?|tabs?|softgels?|lozenges?|pellets?|sprays?|"
           r"pumps?|squirts?|scoops?|teaspoons?|tsp|tablespoons?|tbsp|droppers?|"
           r"dropperfuls?|ml|millilit(?:er|re)s?|grams?|g|packets?|sachets?")
-_QTY = r"(?:\d+(?:\.\d+)?|\d+/\d+|half|a\s+half|" + "|".join(
-    k for k in _NUM_WORDS if k not in ("a", "an")) + r"|an?)"
+_WORDS = "|".join(k for k in _NUM_WORDS if k not in ("a", "an"))
+# Longest forms first: a mixed number ("1 1/2", "one and a half") must not be read as
+# its last part, which left "1" in the remedy name (review, 14 November 2026).
+_QTY = (r"(?:\d+\s+\d+/\d+|(?:\d+|" + _WORDS + r")\s+and\s+a\s+half|\d+/\d+|"
+        r"\d+(?:\.\d+)?|a\s+half|half|" + _WORDS + r"|an?)")
+_NUM_TOKEN = re.compile(r"(?:\d+(?:[./]\d+)?|" + _WORDS + r")$", re.I)
 _DOSE = re.compile(r"\b(" + _QTY + r")\s+(?:level\s+)?(" + _UNITS + r")\b\.?", re.I)
 _FREQ = re.compile(
     r"\b(?:(?:once|twice|thrice|(?:\d+|one|two|three|four|five|six)\s+times?)\s+"
@@ -61,21 +65,38 @@ def _qty_text(q):
     q = " ".join(q.lower().split())
     if q in ("half", "a half"):
         return "1/2"
+    m = re.match(r"^(\S+) and a half$", q)
+    if m:
+        whole = m.group(1)
+        return f"{_NUM_WORDS.get(whole, whole)} 1/2"
     if q in _NUM_WORDS:
         return str(_NUM_WORDS[q])
     return q
 
 
 def parse_dose(text):
-    """(rest, dose, frequency) from a spoken remedy phrase. dose and frequency are ''
-    when not spoken. "Liver Detox 10 drops twice a day" ->
-    ("Liver Detox", "10 drops", "twice a day")."""
+    """(rest, dose, frequency, unsure) from a spoken remedy phrase. dose and frequency
+    are '' when not spoken. "Liver Detox 10 drops twice a day" ->
+    ("Liver Detox", "10 drops", "twice a day", False).
+
+    unsure is True when another number sits right before the quantity ("2 3 drops"):
+    the dose is then left blank. The whole run of numbers and the unit still come out
+    of the name, so the remedy itself can be matched."""
     s = str(text or "")
     dose = freq = ""
+    unsure = False
     m = _DOSE.search(s)
     if m:
-        dose = f"{_qty_text(m.group(1))} {m.group(2).lower()}"
-        s = s[:m.start()] + " " + s[m.end():]
+        before = s[:m.start()].rstrip(" ,")
+        words = before.split()
+        if words and _NUM_TOKEN.search(words[-1]):
+            unsure = True
+            while words and _NUM_TOKEN.search(words[-1]):
+                words.pop()
+            s = " ".join(words) + " " + s[m.end():]
+        else:
+            dose = f"{_qty_text(m.group(1))} {m.group(2).lower()}"
+            s = s[:m.start()] + " " + s[m.end():]
     f = _FREQ.search(s)
     if f:
         freq = " ".join(f.group(0).lower().split())
@@ -84,7 +105,7 @@ def parse_dose(text):
     # Connector words left at either end once the dose is out: "of Sobopla", "Sobopla at".
     rest = re.sub(r"^(?:of|take|taking)\s+|\s+(?:at|of|with|take|taking)$", "", rest,
                   flags=re.I).strip(" ,.;:-")
-    return rest, dose, freq
+    return rest, dose, freq, unsure
 
 
 def _strip_cues(text):
@@ -151,6 +172,8 @@ def match_term(cx, kind, text, test_id=None):
       head/tail: "also_tail" True when "head and tail" was said before or after.
       remedy:    "dose" and "frequency" (spoken, else ''), and "dosing", the three
                  fields to fill: spoken values first, then the catalogue default.
+                 "dose_unsure" True when a number sat next to the quantity: the dose
+                 stays blank and matched is False, so the row waits for review.
       any kind:  "balanced": True when the phrase is only the cue word "balanced";
                  the page ticks the card's Balanced box and fills nothing.
     matched is False when nothing scored above the resolver's cutoff; value is then
@@ -161,12 +184,15 @@ def match_term(cx, kind, text, test_id=None):
     if is_balanced_cue(text):
         return {"value": "", "matched": True, "balanced": True}
     if kind == "remedy":
-        rest, dose, freq = parse_dose(text)
+        rest, dose, freq, unsure = parse_dose(text)
         value, matched = resolve_remedy_match(cx, rest)
-        out = {"value": value, "matched": bool(matched and value),
-               "dose": dose, "frequency": freq}
+        # A dose it could not read for certain holds the row for review.
+        out = {"value": value, "matched": bool(matched and value and not unsure),
+               "dose": dose, "frequency": freq, "dose_unsure": unsure}
         defaults = remedy_dosing(cx, value) if value else {}
         out["dosing"] = merge_dosing(dose, freq, "", defaults)
+        if unsure:
+            out["dosing"]["dosage"] = ""       # never the catalogue's in place of a misheard one
         return out
     phrase, also_tail, _cue = _strip_cues(text)
     extra = detected_stress_labels(cx, test_id)

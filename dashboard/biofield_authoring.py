@@ -110,6 +110,14 @@ def init_auth_tables(cx):
         cx.execute("ALTER TABLE biofield_auth_chain ADD COLUMN layer_balanced INTEGER DEFAULT 0")
     except Exception:
         pass
+    try:
+        # Which of a row's fields came from a short recording that matched nothing
+        # (JSON list of head, most_affected, remedy), plus "other" when the row was
+        # already unconfirmed for another reason (Interpret, a scan). The row stays
+        # unconfirmed while the list is not empty. See apply_voice_fields.
+        cx.execute("ALTER TABLE biofield_auth_chain ADD COLUMN unmatched_fields TEXT")
+    except Exception:
+        pass
     # Backfill: a pre-existing row was never edited, so updated_at == created_at.
     # Seeding it with _now() instead would mark every historical row as "edited".
     cx.execute("UPDATE biofield_auth_chain SET updated_at=created_at "
@@ -260,18 +268,52 @@ def set_no_charge(cx, tid, on):
 
 
 def confirm_row(cx, rid):
-    cx.execute("UPDATE biofield_auth_chain SET confirmed=1 WHERE id=?", (rid,))
-    cx.commit()
-
-
-def set_row_confirmed(cx, tid, rid, confirmed):
-    """confirmed=1 or 0 on one row of this test. Like confirm_row, it is not a value
-    edit, so updated_at is left alone. Returns the number of rows changed."""
     init_auth_tables(cx)
-    n = cx.execute("UPDATE biofield_auth_chain SET confirmed=? WHERE id=? AND test_id=?",
-                   (1 if confirmed else 0, int(rid), _num(tid))).rowcount
+    cx.execute("UPDATE biofield_auth_chain SET confirmed=1, unmatched_fields=NULL WHERE id=?",
+               (rid,))
     cx.commit()
-    return n
+
+
+VOICE_FIELDS = ("head", "most_affected", "remedy")
+
+
+def _unmatched(raw):
+    try:
+        v = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return set()
+    return {str(x) for x in v} if isinstance(v, list) else set()
+
+
+def apply_voice_fields(cx, tid, rid, voice):
+    """Record which fields of one row a short recording filled, and whether each
+    matched (Glen, 14 November 2026, ruling 7), then set confirmed from that.
+
+    voice = {field: matched} for head, most_affected or remedy. A match clears only
+    the field it filled. The row is confirmed only when no field is still unmatched,
+    and never by a match alone when it was unconfirmed for another reason: that
+    reason is kept as "other" until Glen confirms the row. Like confirm_row this is
+    not a value edit, so updated_at is left alone. Returns the new confirmed value,
+    or None when the row is not on this test or nothing was given."""
+    init_auth_tables(cx)
+    voice = {k: bool(v) for k, v in (voice or {}).items() if k in VOICE_FIELDS}
+    if not voice:
+        return None
+    row = cx.execute("SELECT confirmed, unmatched_fields FROM biofield_auth_chain "
+                     "WHERE id=? AND test_id=?", (int(rid), _num(tid))).fetchone()
+    if not row:
+        return None
+    left = _unmatched(row[1])
+    if row[0] == 0 and not left:
+        left.add("other")              # unconfirmed before any recording touched it
+    for f, ok in voice.items():
+        (left.discard if ok else left.add)(f)
+    confirmed = 0 if left else 1
+    cx.execute("UPDATE biofield_auth_chain SET confirmed=?, unmatched_fields=? "
+               "WHERE id=? AND test_id=?",
+               (confirmed, json.dumps(sorted(left)), int(rid), _num(tid)))
+    cx.commit()
+    return confirmed
 
 
 def set_layer_balanced(cx, tid, rids, balanced):
@@ -297,7 +339,9 @@ def set_layer_balanced(cx, tid, rids, balanced):
 
 
 def confirm_all(cx, tid):
-    cx.execute("UPDATE biofield_auth_chain SET confirmed=1 WHERE test_id=?", (_num(tid),))
+    init_auth_tables(cx)
+    cx.execute("UPDATE biofield_auth_chain SET confirmed=1, unmatched_fields=NULL "
+               "WHERE test_id=?", (_num(tid),))
     cx.commit()
 
 
@@ -1100,13 +1144,14 @@ def set_layer_order(cx, tid, groups):
     Deliberately placing a card also confirms its rows (confirmed=1) so an unbalanced
     scan row honours its new position instead of snapping back to the bottom zone --
     arranging a card counts as reviewing it. Rows already confirmed are unaffected."""
+    init_auth_tables(cx)               # unmatched_fields on an older table
     for i, rids in enumerate(groups or [], 1):
         for rid in rids or []:
             try:
                 rid = int(rid)
             except (TypeError, ValueError):
                 continue
-            cx.execute("UPDATE biofield_auth_chain SET layer=?, confirmed=1 "
+            cx.execute("UPDATE biofield_auth_chain SET layer=?, confirmed=1, unmatched_fields=NULL "
                        "WHERE id=? AND test_id=?", (i, rid, _num(tid)))
     cx.commit()
 

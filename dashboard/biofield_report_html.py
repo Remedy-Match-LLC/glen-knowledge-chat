@@ -1109,11 +1109,11 @@ async function saveRemedy(rid,btn){var card=btn.closest('.lcard');var gid=card.d
  setSaved(card.querySelector('.lfoot .savebtn'));astat('Remedy saved. Updating report and schedule…');
  rememberView(card);location.reload()}
  finally{btn.disabled=false}}
-async function saveLayer(gid,btn,confirmed){var card=document.querySelector('[data-gid="'+gid+'"]');if(!card)return;
+async function saveLayer(gid,btn,voice){var card=document.querySelector('[data-gid="'+gid+'"]');if(!card)return;
  var head=val(gid+'_head'),most=val(gid+'_most');if(btn)btn.disabled=true;
  try{var rids=(card.dataset.rids||'').split(',').filter(Boolean);
- // confirmed comes only from a short voice recording (ruling 7); typed saves send none.
- var body={head:head,most_affected:most};if(confirmed===0||confirmed===1)body.confirmed=confirmed;
+ // voice is {field: matched} from a short recording (ruling 7); typed saves send none.
+ var body={head:head,most_affected:most};if(voice&&typeof voice==='object')body.voice=voice;
  for(var i=0;i<rids.length;i++)await post('/author/__TID__/row/'+rids[i],body);
  setSaved(btn);pulse(card);astat('Layer saved.')}
  finally{if(btn)btn.disabled=false}}
@@ -1136,7 +1136,7 @@ async function addRemedy(gid){var rem=val(gid+'_nr_remedy');if(!rem){astat('Ente
  astat('Saving pending edits…');await savePendingEditor();
  await post('/author/__TID__/row',{layer:layer,anchor_rid:anchorRid,head:val(gid+'_head'),most_affected:val(gid+'_most'),
   remedy:rem,dosage:val(gid+'_nr_dosage'),frequency:val(gid+'_nr_frequency'),timing:val(gid+'_nr_timing'),
-  confirmed:voiceConfirmed(gid)});
+  voice:voiceFlags(gid)});
  reloadKeepingView()}
 var _viewKey='biofield-view-__TID__';
 function reloadKeepingView(){rememberScroll();location.reload()}
@@ -1253,11 +1253,21 @@ async function recStop(){
 // recField:begin
 function dgUrl(t){return 'wss://api.deepgram.com/v1/listen?model=nova-3&smart_format=true'+
  '&punctuate=true&interim_results=true'+(t.keyterms||'')}
+// A short recording ends at the end of the UTTERANCE, never at the end of a segment:
+// is_final closes a segment, so "Rose Essence ... two drops twice a day" arrives as
+// several. speech_final (endpointing) or UtteranceEnd says the speaker stopped.
+function dgShortUrl(t){return dgUrl(t)+'&endpointing=300&utterance_end_ms=1000&vad_events=true'}
+var FIELD_CAP_MS=15000;
 function dgMime(){var mime='';['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'].forEach(
  function(m){if(!mime&&window.MediaRecorder&&MediaRecorder.isTypeSupported(m))mime=m});return mime}
-var _rf=null;
+// _fieldTok[id] is the token of the one recording allowed to write that field. A new
+// recording on the field, or Glen typing into it, replaces it, so a stopped,
+// superseded or late recording writes nothing. _edited[id] is when Glen last typed.
+var _rf=null,_vSeq=0,_fieldTok={},_edited={};
 function fstat(t){var e=document.getElementById('astat');if(e)e.textContent=t}
 var _fieldNames={head:'Head',tail:'Tail',remedy:'Remedy'};
+var _voiceField={head:'head',most:'most_affected',nr_remedy:'remedy'};
+function voiceFieldOf(id){return _voiceField[id.slice(id.indexOf('_')+1)]}
 // A field filled by voice carries data-voice: 1 matched a known name, 0 did not.
 // An unmatched one keeps the words and the unmatched class (ruling 4) until Glen
 // types or picks from the drop-down, which clears both (clearVoice).
@@ -1265,30 +1275,42 @@ function fillVoice(el,v,matched){if(!el)return;el.value=v||'';el.dataset.voice=m
  if(matched){el.classList.remove('unmatched');el.title=v||''}
  else{el.classList.add('unmatched');el.title='Not matched. Pick the right name from the list.'}}
 function clearVoice(el){if(!el)return;if(el.dataset)delete el.dataset.voice;el.classList.remove('unmatched')}
-// Typing into, or picking from the list for, a voice-filled field: one listener for the
-// page, so the fields keep their own oninput handlers untouched.
-if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('input',
- function(e){var t=e&&e.target;if(t&&t.dataset&&t.dataset.voice!==undefined)clearVoice(t)},true);
-// The confirmed value a voice-filled add sends (ruling 7): 1 when every voice-filled
-// field matched, 0 when any did not, undefined when nothing was spoken (typed rows).
-// An existing card's Head and Tail were saved when spoken, so only its remedy counts.
-function voiceConfirmed(gid){
- var ids=gid==='gnew'?[gid+'_head',gid+'_most',gid+'_nr_remedy']:[gid+'_nr_remedy'],any=false,ok=true;
+// Typing into, or picking from the list for, a field: one listener for the page, so
+// the fields keep their own oninput handlers untouched.
+function handEdit(e){var t=e&&e.target;if(!t)return;
+ if(t.id){_edited[t.id]=++_vSeq;_fieldTok[t.id]=0}
+ if(t.dataset&&t.dataset.voice!==undefined)clearVoice(t)}
+if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('input',handEdit,true);
+// {field: matched} for what a voice-filled add carries (ruling 7); undefined when
+// nothing was spoken. An existing card's Head and Tail were saved when spoken, so
+// only its remedy counts there.
+function voiceFlags(gid){
+ var ids=gid==='gnew'?[gid+'_head',gid+'_most',gid+'_nr_remedy']:[gid+'_nr_remedy'],out={},any=false;
  ids.forEach(function(i){var e=document.getElementById(i);
-  if(e&&e.dataset&&e.dataset.voice!==undefined){any=true;if(e.dataset.voice!=='1')ok=false}});
- return any?(ok?1:0):undefined}
-function stopField(){var r=_rf;_rf=null;if(!r)return;
+  if(e&&e.dataset&&e.dataset.voice!==undefined){any=true;out[voiceFieldOf(i)]=e.dataset.voice==='1'}});
+ return any?out:undefined}
+function stopField(){var r=_rf;_rf=null;if(!r)return;r.stopped=true;
+ try{clearTimeout(r.timer)}catch(e){}
  try{if(r.mr&&r.mr.state!=='inactive')r.mr.stop()}catch(e){}
  try{if(r.stream)r.stream.getTracks().forEach(function(t){t.stop()})}catch(e){}
  try{if(r.ws&&r.ws.readyState===1){r.ws.send(JSON.stringify({type:'CloseStream'}));r.ws.close()}}catch(e){}
  var b=document.querySelector('[data-mic="'+r.id+'"]');if(b)b.classList.remove('on')}
+function current(me){return !me.stopped&&_fieldTok[me.id]===me.tok}
 // The full transcript keeps every short recording too.
 function keepTranscript(text){var box=document.getElementById('sessText');if(!box)return;
  _sess=box.value||'';_sess+=(_sess?' ':'')+text;box.value=_sess;scheduleSessionSave()}
+// The utterance is over (speech_final, UtteranceEnd, the socket closing, or the cap):
+// join its final segments and fill the field.
+function finishField(me){if(me.done||!current(me))return;me.done=true;
+ if(_rf===me)stopField();
+ var text=me.parts.join(' ').trim();
+ if(!text){fstat('Nothing heard.');return}
+ me.heard=fieldHeard(me,text)}
 async function recField(id,kind){
- if(_rf){var was=_rf.id;stopField();if(was===id){fstat('Stopped.');return null}}
+ if(_rf){var was=_rf.id;stopField();if(was===id){_fieldTok[id]=0;fstat('Stopped.');return null}}
  var el=document.getElementById(id);if(!el)return null;
- var me={id:id,kind:kind,done:false,heard:null};_rf=me;
+ var me={id:id,kind:kind,done:false,stopped:false,heard:null,parts:[],tok:++_vSeq};
+ _fieldTok[id]=me.tok;_rf=me;
  var b=document.querySelector('[data-mic="'+id+'"]');if(b)b.classList.add('on');
  fstat('Listening for '+(_fieldNames[kind]||kind)+'…');
  var t;try{t=await (await fetch('/api/deepgram-token')).json()}
@@ -1299,43 +1321,55 @@ async function recField(id,kind){
  catch(e){if(_rf===me)stopField();fstat('Microphone blocked: '+e.name);return me}
  if(_rf!==me){me.stream.getTracks().forEach(function(x){x.stop()});return me}
  var mime=dgMime();if(!mime){stopField();fstat('No supported audio format in this browser. Use Chrome.');return me}
- try{me.ws=new WebSocket(dgUrl(t),['token',t.key])}
+ try{me.ws=new WebSocket(dgShortUrl(t),['token',t.key])}
  catch(e){stopField();fstat('Could not connect: '+e);return me}
+ me.timer=setTimeout(function(){finishField(me)},FIELD_CAP_MS);
  me.ws.onopen=function(){if(_rf!==me)return;
   try{me.mr=new MediaRecorder(me.stream,{mimeType:mime})}catch(e){stopField();fstat('Recorder error: '+e);return}
   me.mr.ondataavailable=function(e){if(e.data.size>0&&me.ws.readyState===1)me.ws.send(e.data)};
   me.mr.start(250)};
- me.ws.onmessage=function(m){if(me.done)return;var d;try{d=JSON.parse(m.data)}catch(e){return}
+ me.ws.onmessage=function(m){if(me.done||!current(me))return;var d;try{d=JSON.parse(m.data)}catch(e){return}
+  if(d.type==='UtteranceEnd'){if(me.parts.length)finishField(me);return}
   if(d.type&&d.type!=='Results')return;
   var a=d.channel&&d.channel.alternatives&&d.channel.alternatives[0];if(!a)return;
   var tx=(a.transcript||'').trim();
-  // The first FINAL result is the whole recording: stop, then fill one field.
-  if(d.is_final&&tx){me.done=true;if(_rf===me)stopField();me.heard=fieldHeard(id,kind,tx)}
-  else if(tx)fstat('Heard: '+tx)};
+  if(d.is_final&&tx)me.parts.push(tx);
+  if(d.is_final&&d.speech_final&&me.parts.length){finishField(me);return}
+  var shown=me.parts.concat((!d.is_final&&tx)?[tx]:[]).join(' ');
+  if(shown)fstat('Heard: '+shown)};
  me.ws.onerror=function(){if(_rf===me){stopField();fstat('Recording error.')}};
- me.ws.onclose=function(){if(_rf===me){stopField();if(!me.done)fstat('Nothing heard.')}};
+ me.ws.onclose=function(){if(_rf===me){if(me.parts.length)finishField(me);
+  else{stopField();fstat('Nothing heard.')}}};
  return me}
-async function fieldHeard(id,kind,text){keepTranscript(text);
- var j;try{j=await post('/author/__TID__/match',{kind:kind,text:text})}catch(e){j=null}
- if(!(j&&j.ok)){fillVoice(document.getElementById(id),text,false);
+async function fieldHeard(me,text){keepTranscript(text);
+ var j;try{j=await post('/author/__TID__/match',{kind:me.kind,text:text})}catch(e){j=null}
+ // A late answer for a field Glen has since typed into, or recorded again, is dropped.
+ if(_fieldTok[me.id]!==me.tok)return null;
+ if(!(j&&j.ok)){fillVoice(document.getElementById(me.id),text,false);
   fstat('Not matched: '+text);return j}
- return applyMatch(id,kind,j)}
-async function applyMatch(id,kind,j){var gid=id.split('_')[0],el=document.getElementById(id);
+ return applyMatch(me,j)}
+async function applyMatch(me,j){var id=me.id,kind=me.kind,gid=id.split('_')[0],el=document.getElementById(id);
  if(j.balanced){var cb=document.getElementById(gid+'_balanced');
   if(!cb){fstat('Add a remedy to start this layer before marking it balanced.');return j}
   cb.checked=true;await setLayerBalanced(gid,true);return j}
  if(kind==='remedy'){fillVoice(el,j.value,j.matched);
-  var ds=j.dosing||{},spoken={dosage:j.dose||'',frequency:j.frequency||'',timing:''};
-  ['dosage','frequency','timing'].forEach(function(k){var e=document.getElementById(gid+'_nr_'+k);if(!e)return;
-   // A spoken dose wins (ruling 9); otherwise the catalogue fills an empty field, as fillDose does.
-   if(spoken[k])e.value=spoken[k];else if(!(e.value||'').trim()&&ds[k])e.value=ds[k]});
+  // Every remedy match starts from THAT remedy's catalogue dosing, never the previous
+  // product's; a spoken dose is already laid over it in j.dosing (ruling 9).
+  var ds=j.dosing||{};
+  ['dosage','frequency','timing'].forEach(function(k){var e=document.getElementById(gid+'_nr_'+k);
+   if(e)e.value=ds[k]||''});
   fstat(j.matched?('Remedy: '+j.value):('Not matched: '+j.value+'. Added for review.'));
   if(j.value)await addRemedy(gid);
   return j}
- var targets=j.also_tail?[gid+'_head',gid+'_most']:[id];
- targets.forEach(function(t){fillVoice(document.getElementById(t),j.value,j.matched)});
- fstat((j.matched?'':'Not matched: ')+j.value+(j.also_tail?' (Head and Tail)':''));
- if(gid!=='gnew')await saveLayer(gid,null,j.matched?1:0);
+ // "head and tail" fills both, except a field Glen typed into or recorded again since.
+ var targets=(j.also_tail?[gid+'_head',gid+'_most']:[id]).filter(function(t){
+  return t===id||((_edited[t]||0)<me.tok&&(_fieldTok[t]||0)<=me.tok)});
+ var voice={};
+ targets.forEach(function(t){fillVoice(document.getElementById(t),j.value,j.matched);
+  voice[voiceFieldOf(t)]=!!j.matched});
+ fstat((j.matched?'':'Not matched: ')+j.value+(targets.length>1?' (Head and Tail)':''));
+ // Each filled field carries its own match: a matched Head confirms only the Head.
+ if(gid!=='gnew')await saveLayer(gid,null,voice);
  return j}
 // Ruling 2 and 3: the Balanced box marks the layer only. Once ticked, the next layer's
 // Head takes the focus.

@@ -176,26 +176,80 @@ def test_layer_balanced_route_and_a_new_remedy_on_a_balanced_card(tmp_path):
     assert "id=g1_balanced checked" not in h
 
 
+def _conf(db, tid):
+    return {l["rid"]: l["confirmed"] for l in _rows(db, tid)}
+
+
 def test_a_short_recording_saves_confirmed_by_whether_it_matched(tmp_path):
     """Ruling 7: matched goes in confirmed, unmatched goes in for review."""
     db = _db(tmp_path)
     client, tid = _app(db)
-    ok = client.post(f"/author/{tid}/row", json={"layer": 1, "head": "Liver",
-                                                  "remedy": "Sulfur Syntropy",
-                                                  "confirmed": 1}).get_json()["rid"]
-    bad = client.post(f"/author/{tid}/row", json={"layer": 2, "head": "Zzqx",
-                                                   "remedy": "Florp", "confirmed": 0}).get_json()["rid"]
+    ok = client.post(f"/author/{tid}/row", json={
+        "layer": 1, "head": "Liver", "remedy": "Sulfur Syntropy",
+        "voice": {"head": True, "remedy": True}}).get_json()["rid"]
+    bad = client.post(f"/author/{tid}/row", json={
+        "layer": 2, "head": "Zzqx", "remedy": "Florp",
+        "voice": {"head": True, "remedy": False}}).get_json()["rid"]
     typed = client.post(f"/author/{tid}/row", json={"layer": 3, "head": "Lung",
                                                      "remedy": "TMG"}).get_json()["rid"]
-    by = {l["rid"]: l["confirmed"] for l in _rows(db, tid)}
-    assert by == {ok: 1, bad: 0, typed: 1}
-    # Head spoken into an existing card: the row save carries confirmed.
-    client.post(f"/author/{tid}/row/{ok}", json={"head": "Zzqx Florp", "most_affected": "",
-                                                 "confirmed": 0})
-    assert {l["rid"]: l["confirmed"] for l in _rows(db, tid)}[ok] == 0
-    # A typed save without confirmed leaves it as it was.
+    assert _conf(db, tid) == {ok: 1, bad: 0, typed: 1}
+    # A typed save sends no voice and leaves confirmed as it was.
     client.post(f"/author/{tid}/row/{bad}", json={"head": "Liver"})
-    assert {l["rid"]: l["confirmed"] for l in _rows(db, tid)}[bad] == 0
+    assert _conf(db, tid)[bad] == 0
+
+
+def test_a_matched_head_does_not_confirm_an_unmatched_remedy(tmp_path):
+    """Review 2026-11-14: confirmation is per field. The remedy came from an unmatched
+    phrase, so a matched Head later must leave the row unconfirmed."""
+    db = _db(tmp_path)
+    client, tid = _app(db)
+    rid = client.post(f"/author/{tid}/row", json={
+        "layer": 1, "head": "", "remedy": "Florp",
+        "voice": {"remedy": False}}).get_json()["rid"]
+    client.post(f"/author/{tid}/row/{rid}", json={"head": "Liver", "most_affected": "",
+                                                  "voice": {"head": True}})
+    assert _conf(db, tid)[rid] == 0
+    # An unmatched Tail, then a matched Tail: still held by the remedy.
+    client.post(f"/author/{tid}/row/{rid}", json={"head": "Liver", "most_affected": "Zz",
+                                                  "voice": {"most_affected": False}})
+    client.post(f"/author/{tid}/row/{rid}", json={"head": "Liver", "most_affected": "Gut",
+                                                  "voice": {"most_affected": True}})
+    assert _conf(db, tid)[rid] == 0
+    # Re-spoken and matched, the remedy was the last thing holding it.
+    with sqlite3.connect(db) as cx:
+        from dashboard.biofield_authoring import apply_voice_fields
+        assert apply_voice_fields(cx, tid, rid, {"remedy": True}) == 1
+
+
+def test_a_match_never_confirms_a_row_unconfirmed_for_another_reason(tmp_path):
+    """An Interpret row (confirmed=0, no recording) stays for review after a matched
+    Head: the match vouches only for the Head. Confirm clears it."""
+    db = _db(tmp_path)
+    client, tid = _app(db)
+    with sqlite3.connect(db) as cx:
+        rid = add_chain_row(cx, tid, 1, "Liver", "", "Sobopla", confirmed=0)
+    client.post(f"/author/{tid}/row/{rid}", json={"head": "Liver Congestion",
+                                                  "most_affected": "", "voice": {"head": True}})
+    assert _conf(db, tid)[rid] == 0
+    client.post(f"/author/{tid}/row/{rid}/confirm", json={})
+    assert _conf(db, tid)[rid] == 1
+    with sqlite3.connect(db) as cx:
+        assert cx.execute("SELECT unmatched_fields FROM biofield_auth_chain WHERE id=?",
+                          (rid,)).fetchone()[0] is None
+
+
+def test_a_remedy_added_to_a_card_carries_its_unmatched_head(tmp_path):
+    """The new row copies the card's Head, so a matched remedy alone cannot confirm it."""
+    db = _db(tmp_path)
+    client, tid = _app(db)
+    a = client.post(f"/author/{tid}/row", json={"layer": 1, "head": "Liver",
+                                                 "remedy": "TMG"}).get_json()["rid"]
+    client.post(f"/author/{tid}/row/{a}", json={"head": "Zzqx", "most_affected": "",
+                                                "voice": {"head": False}})
+    c = client.post(f"/author/{tid}/row", json={"anchor_rid": a, "head": "Zzqx",
+                                                 "remedy": "Sulfur Syntropy",
+                                                 "voice": {"remedy": True}}).get_json()["rid"]
+    assert _conf(db, tid) == {a: 0, c: 0}
 
 
 def test_vocab_lists_this_clients_stresses_first(tmp_path):
