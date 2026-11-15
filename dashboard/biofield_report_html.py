@@ -1418,11 +1418,16 @@ function hfStartTarget(me){var cards=hfCards();me.cards=cards.length;
    return {gid:g,rids:rids,head:val(g+'_head'),most:val(g+'_most'),
     layer:val(g+'_layer'),n:cards.length,lastRid:rids[rids.length-1]||''}}}
  return hfNewTarget(me)}
+// After an unplanned end the page reloads before hands-free can start again: the
+// cards on the page no longer show what was written, so a restart would aim at a
+// stale layer and could reuse a layer number.
+var _hfStale=false,HF_DRAIN_MS=2000,HF_FLUSH_MS=100;
 async function handsFree(){
  if(_hf){await hfStop();return null}
+ if(_hfStale){hfStat('Reloading the page first.');return null}
  if(_rf)stopField();
  if(_dg&&_dg.readyState===1){hfStat('Stop the Record first. Hands-free keeps the transcript too.');return null}
- var me={tok:++_hfSeq,stopped:false,parts:[],chain:Promise.resolve(),pending:null,
+ var me={tok:++_hfSeq,stopped:false,draining:false,parts:[],chain:Promise.resolve(),pending:null,
   afterRemedy:false,wrote:0,target:null};
  _hf=me;me.target=hfStartTarget(me);
  var b=document.getElementById('hfBtn');if(b){b.classList.add('on');b.textContent='Hands-free: on'}
@@ -1438,25 +1443,29 @@ async function handsFree(){
  try{me.ws=new WebSocket(dgHandsFreeUrl(t),['token',t.key])}
  catch(e){hfEnd(me);hfStat('Could not connect: '+e);return me}
  me.ws.onopen=function(){if(!hfLive(me))return;
-  try{me.mr=new MediaRecorder(me.stream,{mimeType:mime})}catch(e){hfEnd(me);hfStat('Recorder error: '+e);return}
+  try{me.mr=new MediaRecorder(me.stream,{mimeType:mime})}catch(e){hfFail(me,'Recorder error: '+e+'.');return}
   me.mr.ondataavailable=function(e){if(e.data.size>0&&me.ws.readyState===1)me.ws.send(e.data)};
   me.mr.start(250);hfShow(me)};
- me.ws.onmessage=function(m){if(!hfLive(me))return;var d;try{d=JSON.parse(m.data)}catch(e){return}
+ // While stopping (draining), final results still arrive and join the transcript.
+ me.ws.onmessage=function(m){if(!(hfLive(me)||me.draining))return;var d;try{d=JSON.parse(m.data)}catch(e){return}
   if(d.type==='UtteranceEnd'){hfUtterance(me);return}
   if(d.type&&d.type!=='Results')return;
   var a=d.channel&&d.channel.alternatives&&d.channel.alternatives[0];if(!a)return;
   var tx=(a.transcript||'').trim();
   if(d.is_final&&tx)me.parts.push(tx);
   if(d.is_final&&d.speech_final)hfUtterance(me)};
- me.ws.onerror=function(){if(hfLive(me)){hfUtterance(me);hfEnd(me);hfStat('Recording error. Tap Hands-free to start again.')}};
- me.ws.onclose=function(){if(hfLive(me)){hfUtterance(me);hfEnd(me);
-  hfStat('The connection closed. Tap Hands-free to start again.')}};
+ me.ws.onerror=function(){if(me.draining){if(me.drained)me.drained();return}
+  if(hfLive(me))hfFail(me,'Recording error.')};
+ me.ws.onclose=function(){if(me.draining){if(me.drained)me.drained();return}
+  if(hfLive(me))hfFail(me,'The connection closed.')};
  return me}
 // One utterance is over: keep it in the full transcript, then queue it. All writes
-// run through me.chain, one after another, in the order spoken.
-function hfUtterance(me){if(!hfLive(me)||!me.parts.length)return;
+// run through me.chain, one after another, in the order spoken. While stopping, the
+// words go to the transcript only.
+function hfUtterance(me){if(!me.parts.length||!(hfLive(me)||me.draining))return;
  var text=me.parts.join(' ').trim();me.parts=[];if(!text)return;
  keepTranscript(text);
+ if(!hfLive(me))return;
  me.chain=me.chain.then(function(){return hfProcess(me,text)}).catch(function(e){
   if(hfLive(me))hfStat('Not saved: '+e)});
  return me.chain}
@@ -1471,47 +1480,83 @@ async function hfProcess(me,text){if(!hfLive(me))return;
 async function hfApply(me,ev){var tg=me.target,r;
  if(ev.next_layer){me.target=hfNewTarget(me);hfLog('Layer '+me.target.n+' started.');return}
  if(ev.balanced){if(!tg.rids.length){hfLog('Nothing to mark balanced yet on layer '+tg.n+'.');return}
-  r=await post('/author/__TID__/layer-balanced',{rids:tg.rids,balanced:true});
-  if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' balanced.')}return}
- if(ev.field==='dose'){if(!tg.lastRid)return;var body={handsfree:true};
+  if(!hfLive(me))return;
+  // handsfree: a layer balanced by voice goes to review too (ruling 7).
+  r=await post('/author/__TID__/layer-balanced',{rids:tg.rids,balanced:true,handsfree:true});
+  if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' balanced.')}
+  else hfLog('Layer '+tg.n+' balanced: not saved.');
+  return}
+ if(ev.field==='dose'){var dz=[ev.dose,ev.frequency].filter(Boolean).join(', ');
+  // A remedy that was not added leaves no lastRid, so its dose is dropped, never put
+  // on the remedy before it.
+  if(!tg.lastRid){hfLog('Dose not saved: '+dz+'. No remedy was added for it.');return}
+  var body={handsfree:true};
   if(ev.dose)body.dosage=ev.dose;if(ev.frequency)body.frequency=ev.frequency;
+  if(!hfLive(me))return;
   r=await post('/author/__TID__/row/'+tg.lastRid,body);
-  if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' dose: '+[ev.dose,ev.frequency].filter(Boolean).join(', '))}
+  if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' dose: '+dz)}
+  else hfLog('Dose not saved: '+dz+'.');
   return}
  var m=ev.match||{},v=m.value||'',ok=!!m.matched;if(!v)return;
  var mark=ok?'':' (not matched)';
  if(ev.field==='remedy'){var ds=m.dosing||{};
+  if(!hfLive(me))return;
   r=await post('/author/__TID__/row',{layer:tg.layer,anchor_rid:tg.rids[0]||'',head:tg.head,
    most_affected:tg.most,remedy:v,dosage:ds.dosage||'',frequency:ds.frequency||'',
    timing:ds.timing||'',voice:{remedy:ok},handsfree:true});
   if(r&&r.ok&&r.rid){var rid=String(r.rid);if(tg.rids.indexOf(rid)<0)tg.rids.push(rid);
    tg.lastRid=rid;me.wrote++;hfLog('Layer '+tg.n+' remedy: '+v+mark)}
-  else hfLog('Not added: '+v+((r&&r.error)?'. '+r.error:''));
+  else{tg.lastRid='';hfLog('Not added: '+v+((r&&r.error)?'. '+r.error:''))}
   return}
- // Head, Tail, or both for "head and tail".
- var voice={};
- if(ev.field==='head'||ev.both){tg.head=v;voice.head=ok}
- if(ev.field==='tail'||ev.both){tg.most=v;voice.most_affected=ok}
- if(tg.gid){if(ev.field==='head'||ev.both)fillVoice(document.getElementById(tg.gid+'_head'),v,ok);
-  if(ev.field==='tail'||ev.both)fillVoice(document.getElementById(tg.gid+'_most'),v,ok)}
- var label=ev.both?'Head and Tail':(ev.field==='head'?'Head':'Tail');
+ // Head, Tail, or both for "head and tail". The cached card and the page change
+ // only once every row saved.
+ var voice={},nh=tg.head,nm=tg.most;
+ if(ev.field==='head'||ev.both){nh=v;voice.head=ok}
+ if(ev.field==='tail'||ev.both){nm=v;voice.most_affected=ok}
+ var label=ev.both?'Head and Tail':(ev.field==='head'?'Head':'Tail'),failed=false;
  if(tg.rids.length){
-  for(var i=0;i<tg.rids.length;i++)r=await post('/author/__TID__/row/'+tg.rids[i],
-   {head:tg.head,most_affected:tg.most,voice:voice,handsfree:true});
+  for(var i=0;i<tg.rids.length;i++){if(!hfLive(me))return;
+   r=await post('/author/__TID__/row/'+tg.rids[i],
+    {head:nh,most_affected:nm,voice:voice,handsfree:true});
+   if(r&&r.ok)me.wrote++;else failed=true}
  }else{
   // A new layer has no row yet: its Head or Tail starts one, and the first remedy
   // fills that row (the add route's anchor path).
-  r=await post('/author/__TID__/row',{layer:tg.layer,head:tg.head,most_affected:tg.most,
+  if(!hfLive(me))return;
+  r=await post('/author/__TID__/row',{layer:tg.layer,head:nh,most_affected:nm,
    remedy:'',voice:voice,handsfree:true});
-  if(r&&r.ok&&r.rid)tg.rids.push(String(r.rid))}
- if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' '+label+': '+v+mark)}}
-function hfEnd(me){if(!me)return;me.stopped=true;if(_hf===me)_hf=null;
+  if(r&&r.ok&&r.rid){me.wrote++;tg.rids.push(String(r.rid))}else failed=true}
+ if(failed){hfLog('Layer '+tg.n+' '+label+' not saved: '+v+'.');return}
+ tg.head=nh;tg.most=nm;
+ if(tg.gid){if(ev.field==='head'||ev.both)fillVoice(document.getElementById(tg.gid+'_head'),v,ok);
+  if(ev.field==='tail'||ev.both)fillVoice(document.getElementById(tg.gid+'_most'),v,ok)}
+ hfLog('Layer '+tg.n+' '+label+': '+v+mark)}
+function hfEnd(me){if(!me)return;me.stopped=true;me.draining=false;if(_hf===me)_hf=null;
  try{if(me.mr&&me.mr.state!=='inactive')me.mr.stop()}catch(e){}
  try{if(me.stream)me.stream.getTracks().forEach(function(t){t.stop()})}catch(e){}
  try{if(me.ws&&me.ws.readyState===1){me.ws.send(JSON.stringify({type:'CloseStream'}));me.ws.close()}}catch(e){}
  var b=document.getElementById('hfBtn');if(b){b.classList.remove('on');b.textContent='Hands-free'}}
-// Off: nothing more is applied. Save the transcript, then reload to show the rows.
-async function hfStop(){var me=_hf;if(!me)return;hfEnd(me);hfStat('Hands-free off.');
+// Words still buffered or in flight go to the transcript before the end.
+function hfFlush(me){if(!me.parts.length)return;var text=me.parts.join(' ').trim();me.parts=[];
+ if(text)keepTranscript(text)}
+// An unplanned end: keep the words, stop, then reload so the page shows what was saved.
+async function hfFail(me,why){if(!hfLive(me))return;hfFlush(me);hfEnd(me);_hfStale=true;
+ hfStat(why+' Reloading the page to show what was saved.');
+ try{await me.chain}catch(e){}
+ await saveSessionNow(false);
+ reloadKeepingView()}
+// Off: nothing more is applied. The stream closes gracefully: CloseStream, then up to
+// HF_DRAIN_MS for the last final results, which join the transcript. Then save the
+// transcript, and reload to show the rows when anything was written.
+async function hfStop(){var me=_hf;if(!me)return;_hf=null;me.draining=true;
+ var b=document.getElementById('hfBtn');if(b){b.classList.remove('on');b.textContent='Hands-free'}
+ hfStat('Hands-free off. Keeping the last words…');
+ try{if(me.mr&&me.mr.state!=='inactive')me.mr.stop()}catch(e){}
+ if(me.ws&&me.ws.readyState===1){
+  await new Promise(function(r){setTimeout(r,HF_FLUSH_MS)});    // the recorder's last chunk
+  await new Promise(function(r){me.drained=r;setTimeout(r,HF_DRAIN_MS);
+   try{me.ws.send(JSON.stringify({type:'CloseStream'}))}catch(e){r()}})}
+ hfFlush(me);hfEnd(me);hfStat('Hands-free off.');
  try{await me.chain}catch(e){}
  await saveSessionNow(false);
  if(me.wrote)reloadKeepingView()}

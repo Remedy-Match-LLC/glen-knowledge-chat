@@ -48,8 +48,9 @@ var _sess='',_dg=null;
 function scheduleSessionSave(){calls.sessionSaves++}
 async function saveSessionNow(){calls.saveNow++}
 function reloadKeepingView(){calls.reloads++}
-var answers={},gates={},nextRid=100;
+var answers={},gates={},fails={},nextRid=100;
 async function post(url,body){calls.post.push({url:url,body:JSON.parse(JSON.stringify(body))});
+ if(fails[url]&&fails[url]--)return {ok:false,error:'refused'};
  if(url.indexOf('/handsfree-segment')>=0){if(gates[body.text])await gates[body.text].p;
   return answers[body.text]||{ok:true,events:[],pending:null,after_remedy:false}}
  if(url.indexOf('/layer-balanced')>=0)return {ok:true,updated:body.rids.length};
@@ -74,6 +75,7 @@ function say(ws,text){ws.onmessage({data:JSON.stringify({type:'Results',is_final
 function part(ws,text){ws.onmessage({data:JSON.stringify({type:'Results',is_final:true,
  speech_final:false,channel:{alternatives:[{transcript:text}]}})})}
 function uend(ws){ws.onmessage({data:JSON.stringify({type:'UtteranceEnd'})})}
+function closeMsgs(ws){return ws.sent.filter(function(x){return typeof x==='string'&&x.indexOf('CloseStream')>=0}).length}
 function tick(ms){return new Promise(function(r){setTimeout(r,ms||0)})}
 function H(t,v,ok){return {field:'head',text:t,both:false,match:{value:v,matched:ok}}}
 function T(t,v,ok){return {field:'tail',text:t,both:false,match:{value:v,matched:ok}}}
@@ -90,7 +92,7 @@ DUMP = ("process.stdout.write(JSON.stringify({calls:calls,sess:els.sessText.valu
 
 def _run(scenario):
     script = (HARNESS + _block("recField") + _block("handsFree")
-              + "\n(async function(){\n" + scenario + "\n})()"
+              + "\nHF_DRAIN_MS=40;HF_FLUSH_MS=0;\n(async function(){\n" + scenario + "\n})()"
               ".catch(function(e){console.error(e);process.exit(1)});\n")
     out = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stderr
@@ -188,7 +190,8 @@ def test_an_event_queued_behind_the_off_switch_is_dropped_mid_utterance():
     """ + START + """
       say(me.ws,'three');await me.chain;await off;
     """ + DUMP)
-    assert [u for u, _ in _writes(r)] == ["/author/a7/row/7", "/author/a7/row/8"]
+    # Review: the off switch is checked before every row request, so row 8 never goes.
+    assert [u for u, _ in _writes(r)] == ["/author/a7/row/7"]
     assert r["calls"]["reloads"] == 1          # something was written, so the page reloads
 
 
@@ -200,7 +203,8 @@ def test_next_layer_starts_a_new_layer_and_balanced_ticks_the_current_one():
       say(me.ws,'u');await me.chain;
     """ + DUMP)
     assert _writes(r) == [
-        ("/author/a7/layer-balanced", {"rids": ["7", "8"], "balanced": True}),
+        ("/author/a7/layer-balanced", {"rids": ["7", "8"], "balanced": True,
+                                       "handsfree": True}),
         # The new layer goes after the highest stored layer (4), and its Head starts a row.
         ("/author/a7/row", {"layer": "5", "head": "Kidney", "most_affected": "",
                             "remedy": "", "voice": {"head": True}, "handsfree": True}),
@@ -208,7 +212,8 @@ def test_next_layer_starts_a_new_layer_and_balanced_ticks_the_current_one():
                             "most_affected": "", "remedy": "TMG", "dosage": "1 capsule",
                             "frequency": "daily", "timing": "", "voice": {"remedy": False},
                             "handsfree": True}),
-        ("/author/a7/layer-balanced", {"rids": ["100"], "balanced": True})]
+        ("/author/a7/layer-balanced", {"rids": ["100"], "balanced": True,
+                                       "handsfree": True})]
     assert "Layer 3 remedy: TMG (not matched)" in r["log"]
     assert "Layer 3 started." in r["log"]
 
@@ -251,3 +256,69 @@ def test_it_will_not_run_beside_the_whole_session_record():
 
 def me_none(r):
     return r["hfOpen"] is False and r["url"] == ""
+
+
+# ---- review round 1 of c031051e ----------------------------------------------------
+
+def test_a_dose_after_a_failed_remedy_is_dropped_not_put_on_the_one_before():
+    r = _run("""
+      fails['/author/a7/row']=1;
+      answers['u']=seg([R('tmg','TMG',true),{field:'dose',text:'two drops',dose:'2 drops',
+        frequency:''}],null,true);
+    """ + START + """
+      say(me.ws,'u');await me.chain;
+    """ + DUMP)
+    assert [u for u, _ in _writes(r)] == ["/author/a7/row"]      # the failed add only
+    assert "Not added: TMG. refused" in r["log"]
+    assert "Dose not saved: 2 drops. No remedy was added for it." in r["log"]
+
+
+def test_stopping_keeps_buffered_and_late_final_words():
+    r = _run(START + """
+      part(me.ws,'Head liver');               // final, but the utterance has not ended
+      var off=handsFree();await tick(5);
+      calls.closeSent=closeMsgs(me.ws);
+      part(me.ws,'and kidney');               // a late final result while draining
+      me.ws.onclose();await off;
+      part(me.ws,'too late');uend(me.ws);
+    """ + DUMP)
+    assert r["calls"]["closeSent"] == 1          # CloseStream went out before the end
+    assert r["sess"] == "Head liver and kidney"
+    assert [p for p in r["calls"]["post"] if "/handsfree-segment" in p["url"]] == []
+    assert r["hfOpen"] is False and r["calls"]["saveNow"] == 1
+
+
+def test_stopping_waits_no_longer_than_the_cap():
+    r = _run(START + """
+      part(me.ws,'Tail gut');var t0=Date.now();await handsFree();calls.ms=Date.now()-t0;
+    """ + DUMP)
+    assert r["sess"] == "Tail gut" and r["calls"]["ms"] < 1000
+
+
+def test_an_unplanned_close_keeps_the_words_reloads_and_blocks_a_restart():
+    r = _run(START + """
+      part(me.ws,'Remedy sobopla');me.ws.onclose();await tick(5);
+      var again=await handsFree();calls.again=again;
+    """ + DUMP)
+    assert r["sess"] == "Remedy sobopla"
+    assert r["calls"]["reloads"] == 1
+    assert r["calls"].get("again") is None and r["stat"] == "Reloading the page first."
+    assert len([1 for p in r["calls"]["post"] if "/handsfree-segment" in p["url"]]) == 0
+
+
+def test_an_unplanned_error_also_reloads():
+    r = _run(START + "me.ws.onerror();await tick(5);" + DUMP)
+    assert r["calls"]["reloads"] == 1 and "Recording error." in r["stat"]
+
+
+def test_a_failed_row_reports_the_layer_not_saved_and_keeps_the_old_head():
+    r = _run("""
+      fails['/author/a7/row/8']=1;
+      answers['u']=seg([H('liver','Liver',true),R('tmg','TMG',true)]);
+    """ + START + """
+      say(me.ws,'u');await me.chain;
+    """ + DUMP)
+    assert "Layer 2 Head not saved: Liver." in r["log"]
+    assert r["g1head"] == "Kidney"                       # the page was not changed
+    add = [b for u, b in _writes(r) if u == "/author/a7/row"][0]
+    assert add["head"] == "Kidney"                       # nor the cached card

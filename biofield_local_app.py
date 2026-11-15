@@ -4134,6 +4134,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rids = d.get("rids") if isinstance(d.get("rids"), list) else []
         with sqlite3.connect(db_path) as cx:
             n = set_layer_balanced(cx, test_id, rids, bool(d.get("balanced")))
+            # "balanced" said in the hands-free recording sends the layer to review
+            # like any other hands-free write (ruling 7).
+            if d.get("handsfree"):
+                for r in rids:
+                    try:
+                        mark_handsfree(cx, test_id, int(r))
+                    except (TypeError, ValueError):
+                        continue
         return {"ok": True, "updated": n, "balanced": bool(d.get("balanced"))}
 
     @app.route("/author/<test_id>/row/<int:rid>/delete", methods=["POST"])

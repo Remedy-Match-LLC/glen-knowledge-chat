@@ -135,7 +135,41 @@ def test_a_dose_in_the_next_utterance_is_a_dose_event():
     nxt = segment_utterance("Two drops twice a day.", after_remedy=first["after_remedy"])
     assert nxt["events"] == [{"field": "dose", "text": "Two drops twice a day",
                               "dose": "2 drops", "frequency": "twice a day"}]
-    assert nxt["after_remedy"] is False
+    assert nxt["after_remedy"] is True             # more dose may follow
+
+
+def test_dose_sentences_keep_attaching_to_the_remedy():
+    """Review of c031051e: "Twice a day" was lost after "Two drops"."""
+    assert ev("Remedy Sobopla. Two drops. Twice a day.") == [
+        f("remedy", "Sobopla Two drops Twice a day")]
+    nxt = segment_utterance("Two drops. Twice a day.", after_remedy=True)
+    assert nxt["events"] == [{"field": "dose", "text": "Two drops Twice a day",
+                              "dose": "2 drops", "frequency": "twice a day"}]
+    # Across utterances too.
+    a = segment_utterance("Remedy Sobopla. Two drops.")
+    b = segment_utterance("Twice a day.", after_remedy=a["after_remedy"])
+    assert b["events"] == [{"field": "dose", "text": "Twice a day", "dose": "",
+                            "frequency": "twice a day"}]
+
+
+def test_plain_talk_or_a_cue_ends_the_remedys_dose():
+    assert ev("How are you? Two drops.", after_remedy=True) == []
+    assert segment_utterance("How are you?", after_remedy=True)["after_remedy"] is False
+    assert segment_utterance("Remedy Sobopla. Head liver.")["after_remedy"] is False
+
+
+@pytest.mark.parametrize("said", ["Okay, head liver.", "ok head liver", "So head liver",
+                                  "Um, uh, head liver", "Alright now head liver",
+                                  "And head liver"])
+def test_a_filler_word_before_a_cue_is_skipped(said):
+    assert ev(said) == [f("head", "liver")]
+
+
+def test_filler_and_plain_talk_still_write_nothing():
+    assert ev("Okay, how are you feeling today?") == []
+    assert ev("So that is pressure in the head") == []
+    assert ev("Okay, balanced.") == [{"balanced": True}]
+    assert ev("Sobopla is good", ) == []
 
 
 def test_a_dose_with_no_remedy_before_it_writes_nothing():

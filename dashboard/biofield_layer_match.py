@@ -228,7 +228,9 @@ def match_term(cx, kind, text, test_id=None, cues=True):
 #     end. A dot inside a number ("2.5 ml") or a colon in a time ("8:30") does not split.
 #  2. A cue word counts only at a cue position: the start of a sentence, or straight
 #     after another cue ("Next layer, head liver"). Anywhere else it is just a word, so
-#     "Pressure in the Head" and "the head and tail of it" never split.
+#     "Pressure in the Head" and "the head and tail of it" never split. Filler words at
+#     a cue position are skipped first: okay, ok, alright, so, now, and, um, uh. So
+#     "Okay, head liver" splits.
 #  3. Cues are whole words, case-insensitive. At a cue position, "next layer" is read
 #     first, then "head and tail" (also "head & tail", "head n tail"), then "head",
 #     "tail" or "remedy". "Headache" and "remedies" are not cues.
@@ -241,14 +243,18 @@ def match_term(cx, kind, text, test_id=None, cues=True):
 #  6. A sentence with no cue at its start, after a remedy, that is only a dose ("Two
 #     drops twice a day.") is that remedy's dose. In the same utterance it joins the
 #     remedy's text; in a later one it comes out as a dose event for the last remedy.
+#     Dose sentences keep attaching to that remedy ("Two drops. Twice a day."), across
+#     utterances too, until a cue or a sentence that is not a dose.
 #  7. A sentence with no cue that ends in "head and tail" fills both (ruling 5: either
 #     order), when no field is open.
-#  8. Any other sentence goes to the full transcript only. Nothing is written from it.
+#  8. Any other sentence goes to the full transcript only. Nothing is written from it,
+#     and it ends the last remedy's dose (rule 6).
 
 _HF_SENTENCE = re.compile(r"[.!?;:]+(?=\s|$)")
 _HF_NEXT = re.compile(r"next\s+layer\b", re.I)
 _HF_BOTH = re.compile(_HEAD_AND_TAIL + r"\b", re.I)
 _HF_FIELD = re.compile(r"(head|tail|remedy)\b", re.I)
+_HF_FILLER = re.compile(r"^(?:(?:okay|ok|alright|so|now|and|um|uh)\b[\s,\-]*)*", re.I)
 _HF_SEP = re.compile(r"^[\s,\-]*(?:is\s+)?", re.I)
 _HF_TRAIL_BOTH = re.compile(r"^(.*?\S)[\s,\-]+(?:is\s+)?(?:the\s+)?" + _HEAD_AND_TAIL + r"$",
                             re.I)
@@ -298,6 +304,9 @@ def segment_utterance(text, pending=None, after_remedy=False):
     for sent in _hf_sentences(text):
         s = sent
         while s:
+            s = s[_HF_FILLER.match(s).end():].strip(" ,-")
+            if not s:
+                break
             if is_balanced_cue(s):
                 events.append({"balanced": True})
                 pending, after_remedy = None, False
@@ -334,11 +343,19 @@ def segment_utterance(text, pending=None, after_remedy=False):
                 last = events[-1] if events else None
                 if last and last.get("field") == "remedy":
                     last["text"] = f"{last['text']} {s}"
+                elif last and last.get("field") == "dose":
+                    last["text"] = f"{last['text']} {s}"
+                    both_dz = _dose_only(last["text"])
+                    if both_dz:
+                        last["dose"], last["frequency"] = both_dz
+                    else:
+                        last["dose"] = last["dose"] or dz[0]
+                        last["frequency"] = last["frequency"] or dz[1]
                 else:
                     events.append({"field": "dose", "text": s, "dose": dz[0],
                                    "frequency": dz[1]})
-                after_remedy = False
-                break
+                break                     # after_remedy stays on: more dose may follow
+            after_remedy = False          # plain talk ends the remedy's dose
             t = _HF_TRAIL_BOTH.match(s)
             if t:
                 field("head", t.group(1).strip(" ,-"), True)

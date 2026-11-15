@@ -185,3 +185,19 @@ def test_page_has_the_handsfree_toggle_and_status_line(tmp_path):
     i = h.index("id=hfBtn")
     visible = h[i:h.index("</button>", i)]
     assert "—" not in visible and "&mdash;" not in visible
+
+
+def test_balanced_by_voice_sends_the_layer_to_review(tmp_path):
+    """Review of c031051e, ruling 7: a layer ticked by voice goes in unconfirmed."""
+    db = _db(tmp_path)
+    client, tid = _app(db)
+    a = client.post(f"/author/{tid}/row", json={"layer": 1, "head": "Liver",
+                                                 "remedy": "TMG"}).get_json()["rid"]
+    b = client.post(f"/author/{tid}/row", json={"layer": 2, "head": "Lung",
+                                                 "remedy": "TMG"}).get_json()["rid"]
+    client.post(f"/author/{tid}/layer-balanced", json={"rids": [a], "balanced": True,
+                                                        "handsfree": True})
+    client.post(f"/author/{tid}/layer-balanced", json={"rids": [b], "balanced": True})
+    assert _marks(db, a) == (0, ["handsfree"])
+    assert _marks(db, b) == (1, [])                # a clicked box confirms nothing away
+    assert {r["rid"]: r["layer_balanced"] for r in _rows(db, tid)} == {a: 1, b: 1}
