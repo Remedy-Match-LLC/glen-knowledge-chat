@@ -96,8 +96,8 @@ def medium_rate(monkeypatch, tmp_path):
     return set_medium
 
 
-@pytest.mark.parametrize("slug", MEDIUM_BOX)
-def test_medium_box_items_charge_todays_medium_rate_per_unit(medium_rate, slug):
+@pytest.mark.parametrize("slug", ["capsule-filling-machine-100m", "capsule-filling-machine-120s"])
+def test_capsule_machines_charge_todays_medium_rate_per_unit(medium_rate, slug):
     import app
     seeded = shipping.get_current_rates()["M"]["charged_cents"]
     assert seeded == 2300
@@ -109,6 +109,60 @@ def test_medium_box_items_charge_todays_medium_rate_per_unit(medium_rate, slug):
     assert raised != seeded
     pc3 = app._price_cart([{"slug": slug, "qty": 1}], ship=US, channel="retail")
     assert pc3["shipping_cents"] == raised
+
+
+MIRON = "miron-violet-glass-water-bottle-1l"
+
+
+def _set_rate(size, retail_cents):
+    rid = shipping.propose_rate_update(size, retail_cents, "test", "2099-01-01")
+    shipping.confirm_rate_update(rid, "test")
+    return shipping.get_current_rates()[size]["charged_cents"]
+
+
+@pytest.mark.parametrize("qty,larges,mediums", [(1, 0, 1), (2, 1, 0), (3, 1, 1), (4, 2, 0)])
+def test_miron_two_to_a_large_box_leftover_in_a_medium(medium_rate, qty, larges, mediums):
+    # Glen, 2026-11-14: "two fit in one large box".
+    import app
+    assert PRODUCTS[MIRON]["pair_box"] == "L"
+    rates = shipping.get_current_rates()
+    want = larges * rates["L"]["charged_cents"] + mediums * rates["M"]["charged_cents"]
+    pc = app._price_cart([{"slug": MIRON, "qty": qty}], ship=US, channel="retail")
+    assert pc["shipping_cents"] == want
+
+
+def test_miron_pairs_follow_live_rates_and_pool_across_lines(medium_rate):
+    import app
+    large = _set_rate("L", 4075)
+    medium = medium_rate(2475)
+    assert (large, medium) != (3300, 2300)
+    pc = app._price_cart([{"slug": MIRON, "qty": 3}], ship=US, channel="retail")
+    assert pc["shipping_cents"] == large + medium
+    pc2 = app._price_cart([{"slug": MIRON, "qty": 1}, {"slug": MIRON, "qty": 1}],
+                          ship=US, channel="retail")
+    assert pc2["shipping_cents"] == large
+
+
+def test_miron_beside_a_capsule_machine_adds_both(medium_rate):
+    import app
+    rates = shipping.get_current_rates()
+    pc = app._price_cart([{"slug": MIRON, "qty": 2},
+                          {"slug": "capsule-filling-machine-100m", "qty": 1}],
+                         ship=US, channel="retail")
+    assert pc["shipping_cents"] == rates["L"]["charged_cents"] + rates["M"]["charged_cents"]
+
+
+def test_miron_is_still_us_only(medium_rate):
+    import app
+    with pytest.raises(app.CheckoutError):
+        app._price_cart([{"slug": MIRON, "qty": 2}], ship={"name": "T", "country": "AU"},
+                        channel="retail")
+
+
+def test_unknown_pair_box_is_refused_not_free():
+    import app
+    with pytest.raises(app.CheckoutError):
+        app._pair_box_cents({"name": "X", "pair_box": "XL", "flat_shipping_boxes": ["M"]}, 2)
 
 
 @pytest.mark.parametrize("name,slug", [

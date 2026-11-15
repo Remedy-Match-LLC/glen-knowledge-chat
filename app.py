@@ -11102,6 +11102,18 @@ def _own_box_flat_cents(p, rates=None):
     return cents
 
 
+def _pair_box_cents(p, units, rates=None):
+    """Shipping for `units` of a product two of which share one bigger box.
+    `pair_box` names that box (Glen 2026-11-14, Miron 1 L bottle: "two fit in one
+    large box"). Each pair ships in it; a leftover single ships as one unit of
+    `flat_shipping_boxes`. 1 = M, 2 = L, 3 = L + M, 4 = 2 L, at live rates."""
+    size = p.get("pair_box")
+    if size not in _SHIP_FALLBACK_HARD:
+        raise CheckoutError(f"Unknown pair box {size!r} for {p.get('name') or p.get('slug')}.")
+    units = int(units or 0)
+    return (units // 2) * _box_rate_cents(size, rates) + (units % 2) * _own_box_flat_cents(p, rates)
+
+
 def _fallback_shipping_cents(total_bottles):
     """Qty-based USPS box fallback (rounded charged rate). Never raises."""
     n = int(total_bottles or 0)
@@ -11198,6 +11210,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     items, qbo_lines, items_rec, box_counts, subtotal_list, total_bottles = [], [], [], {}, 0, 0
     total_cello = 0
     flat_ship_cents = 0   # sum of per-product fixed shipping overrides (own-parcel items)
+    pair_box_units = {}   # slug -> units, for products that ship two to a box (pair_box)
     filler_alone_lines = 0   # shippable lines that pack as filler (ships_as_filler)
     _rates_snapshot = None   # one usps_rates read per cart, so every line uses the same rate
     # Names of lines packed at FALLBACK_BOTTLE_TYPE because their real packaging is
@@ -11252,7 +11265,12 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                 except Exception:
                     _rates_snapshot = {}
             _flat = _own_box_flat_cents(p, _rates_snapshot)
-            if _flat > 0 and not p.get("bundle"):
+            if p.get("pair_box") and not p.get("bundle"):
+                # Two to a box: priced once the whole cart is counted, so two lines of
+                # one bottle each still share a box.
+                _prev = pair_box_units.get(slug, (p, 0))[1]
+                pair_box_units[slug] = (p, _prev + qty)
+            elif _flat > 0 and not p.get("bundle"):
                 # Own-parcel item with a FIXED shipping charge (e.g. the water ionizers,
                 # which each ship in their own box). Bill the flat rate per unit and keep
                 # it OUT of the box packer: its bottle_type is own-box, which quote()
@@ -11309,6 +11327,8 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                     total_cello += qty * _per
                 else:
                     total_bottles += qty * _per
+    for _pp, _units in pair_box_units.values():
+        flat_ship_cents += _pair_box_cents(_pp, _units, _rates_snapshot)
     # US-only shipping — but only a cart with something to ship has an opinion
     # about the address. An overseas client buying a service prices fine.
     if filler_alone_lines and not box_counts and not flat_ship_cents:
