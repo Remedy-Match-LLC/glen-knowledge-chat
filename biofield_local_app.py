@@ -49,7 +49,8 @@ from dashboard.biofield_authoring import (
     remedy_catalog, set_no_charge,
     remove_remedy_preserving_layer,
     remedy_dosing, resolve_remedy_name, resolve_stress_name, stress_suggestions,
-    stress_vocab, update_chain_row, update_header, update_terrain)
+    stress_vocab, update_chain_row, update_header, update_terrain,
+    set_terrain_field, terrain_state)
 from dashboard.biofield_dimensions import (
     DEPTH_KEY, dimension_values, seed_dimensions, tag as dim_tag)
 from dashboard.biofield_interpret import interpret_transcript
@@ -2520,6 +2521,20 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             state = biofield_fee.build_fee_state(email, fee_get, get_no_charge(cx, test_id))
         return {"ok": True, "html": render_fee_panel(state)}
+
+    @app.route("/author/<test_id>/terrain", methods=["POST"])
+    def author_terrain(test_id):
+        """One live-session terrain field set by hand: phase, location, or one of the
+        four BSI numbers (bsi_a..bsi_d). An empty value clears it. Answers with the
+        whole terrain state, so the page shows Regulation from the stored numbers."""
+        d = request.get_json(silent=True) or {}
+        with sqlite3.connect(db_path) as cx:
+            try:
+                set_terrain_field(cx, test_id, d.get("field"), d.get("value"))
+            except ValueError as e:
+                return {"ok": False, "error": str(e)}, 400
+            state = terrain_state(authored_report(cx, test_id))
+        return {"ok": True, **state}
 
     @app.route("/author/<test_id>/fee/no-charge", methods=["POST"])
     def author_fee_no_charge(test_id):
@@ -5313,9 +5328,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # Persist the scan's terrain reading (BSI 'phase P' + spoken location) on
             # the test. Per-field, so a re-interpret with no phase spoken won't wipe it.
             update_terrain(cx, test_id, phase=result.get("phase"),
-                           location=result.get("location"))
+                           location=result.get("location"), bsi=result.get("bsi"))
         out = {"added": added, "header": result.get("header", ""),
-               "phase": result.get("phase"), "location": result.get("location", "")}
+               "phase": result.get("phase"), "location": result.get("location", ""),
+               "bsi": result.get("bsi")}
         if refused:
             out.update(_ff_block(cx, test_id, refused))
         return out
@@ -5530,7 +5546,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # Terrain is its own write, after the chain: update_terrain commits.
             if spirit_meta:
                 update_terrain(cx, test_id, phase=spirit_meta.get("phase"),
-                               location=spirit_meta.get("location"))
+                               location=spirit_meta.get("location"),
+                               bsi=spirit_meta.get("bsi"))
         out = {"ok": True, "applied": True, "mode": mode, "layers_added": made}
         if refused:
             out.update(_ff_block(cx, test_id, refused))

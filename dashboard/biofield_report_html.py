@@ -1242,6 +1242,35 @@ async function interpret(){rstat('Interpreting transcript into chain rows\\u2026
  if(r.error){rstat('Interpret: '+r.error);return}
  rstat('Filled '+r.added+' row(s) \\u2014 highlighted for review; reloading\\u2026');
  setTimeout(function(){location.reload()},800)}
+// Live session segments 1 to 3 (plan 2026-11-07). regulationLevel mirrors
+// dashboard.terrain_phase.regulation_level; tests/test_bsi_regulation.py runs both.
+// regulationLevel:begin
+function bsiNum(v){var s=String(v==null?'':v).trim();if(!/^[0-9]+$/.test(s))return null;
+ var n=parseInt(s,10);return (n>=1&&n<=21)?n:null}
+function regulationLevel(a,b,c,d){a=bsiNum(a);b=bsiNum(b);c=bsiNum(c);d=bsiNum(d);
+ if(a===null||b===null||c===null||d===null)return null;
+ var names={1:'Blocked',2:'Negative',3:'Mixed',4:'Positive',5:'Optimum'},l;
+ if(c===1&&d===1)l=5;
+ else if(c===a&&d===b)l=1;
+ else if((c>a&&d<b)||(c<a&&d>b))l=3;
+ else if(c>=a&&d>=b)l=2;
+ else if(c<=a&&d<=b)l=4;
+ else return null;
+ return [l,names[l]]}
+// regulationLevel:end
+function showRegulation(){
+ var a=val('bsi_a'),b=val('bsi_b'),c=val('bsi_c'),d=val('bsi_d'),r=regulationLevel(a,b,c,d);
+ var out=document.getElementById('t_regulation');
+ if(out)out.textContent=r?('Level '+r[0]+' · '+r[1]):'Enter all four numbers';
+ var w=[],na=bsiNum(a),nb=bsiNum(b),nc=bsiNum(c),nd=bsiNum(d);
+ if(na!==null&&nb!==null&&nb>na)w.push('B is greater than A');
+ if(nc!==null&&nd!==null&&nd>nc)w.push('D is greater than C');
+ var we=document.getElementById('t_warn');if(we)we.textContent=w.join('; ')}
+async function saveTerrain(field,el){
+ var t=document.getElementById('tstat');if(t)t.textContent='Saving…';
+ var j=await post('/author/__TID__/terrain',{field:field,value:el.value});
+ if(t)t.textContent=(j&&j.ok)?'Saved.':((j&&j.error)||'Not saved.');
+ if(j&&j.ok){el.classList.remove('bad');showRegulation()}else{el.classList.add('bad')}}
 async function delTest(){if(!confirm('Delete this entire test? This cannot be undone.'))return;
  await post('/author/__TID__/delete',{});location.href='/'}
 async function confirmAll(){await post('/author/__TID__/confirm-all',{});location.reload()}
@@ -3403,6 +3432,50 @@ def _e4l_suggestion_html(sug):
             f" <span class=food>({_e(sug.get('email') or '')})</span></div>")
 
 
+
+def _terrain_segments_html(report):
+    """Live session segments 1 to 3 (plan 2026-11-07): Terrain, Biological Score Index,
+    Regulation. Every field saves on change through /author/<tid>/terrain. Regulation is
+    read-only and recomputed live by regulationLevel() in the page JS, which mirrors
+    dashboard.terrain_phase.regulation_level."""
+    from dashboard.terrain_phase import (PHASE_NAMES, bsi_num, bsi_warnings, phase_num,
+                                         regulation_display)
+    p = phase_num(report.get("phase"))
+    opts = "<option value=''></option>" + "".join(
+        f"<option value='{n}'{' selected' if n == p else ''}>{n} &middot; {_e(name)}</option>"
+        for n, name in sorted(PHASE_NAMES.items()))
+    bsi = list(report.get("bsi") or [None] * 4)[:4]
+    bsi += [None] * (4 - len(bsi))
+    bsi = [bsi_num(v) for v in bsi]
+
+    def box(i, letter):
+        v = "" if bsi[i] is None else str(bsi[i])
+        return (f"<input id=bsi_{letter} type=number min=1 max=21 step=1 inputmode=numeric "
+                f"aria-label='BSI {letter.upper()}' value='{v}' style='width:56px' "
+                f"oninput=showRegulation() onchange=\"saveTerrain('bsi_{letter}',this)\">")
+    warn = "; ".join(bsi_warnings(*bsi))
+    return (
+        "<div id=terrainSegs class=card style='margin-bottom:8px'>"
+        "<div class=btnrow style='align-items:center'>"
+        "<label for=t_phase style='min-width:150px'>Terrain</label>"
+        f"<select id=t_phase aria-label='Terrain phase' onchange=\"saveTerrain('phase',this)\">{opts}</select>"
+        "<input id=t_location placeholder='Location' aria-label='Terrain location' "
+        f"value=\"{_e(report.get('location') or '')}\" style='width:240px' "
+        "onchange=\"saveTerrain('location',this)\">"
+        "</div>"
+        "<div class=btnrow style='align-items:center'>"
+        "<label style='min-width:150px'>Biological Score Index</label>"
+        + box(0, "a") + " <span>x</span> " + box(1, "b") + " <span>to</span> "
+        + box(2, "c") + " <span>x</span> " + box(3, "d") +
+        "</div>"
+        "<div class=btnrow style='align-items:center'>"
+        "<label style='min-width:150px'>Regulation</label>"
+        f"<span id=t_regulation>{_e(regulation_display(*bsi))}</span>"
+        "</div>"
+        f"<div id=t_warn class=food>{_e(warn)}</div>"
+        "<span id=tstat class=food></span>"
+        "</div>")
+
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
                        clinical_checklist=None, dispensed=None, dispensed_error=None,
@@ -3489,6 +3562,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<p class=sub>Record yourself narrating the test in your own voice &mdash; the live "
         "transcript saves to this test's notes and feeds the narrative. Wear a lav/AirPods for "
         "the codes.</p>"
+        + _terrain_segments_html(report) +
         "<div class=btnrow style='margin-bottom:6px'>"
         # Steps, not phases (Glen 2026-09-21). "Phase" collides with the 5 Phases of
         # Healing, and "Rejuvenate" is Phase 2 of the TERRAIN map, nothing to do with this
