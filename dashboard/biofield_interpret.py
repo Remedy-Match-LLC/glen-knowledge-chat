@@ -28,8 +28,8 @@ _SYSTEM = (
     "leave `phase` null and `location` as an empty string.\n"
     "- The four BSI numbers in 'BSI N times A to B times C' -> top-level `bsi` as a list of 4 "
     "integers [N, A, B, C], in the order spoken (e.g. 'BSI 13 times 8 to 5 times 3' -> "
-    "[13, 8, 5, 3]). Each is 1 to 21. If the BSI is not spoken, set `bsi` to null; a number "
-    "that is not clear is null in its place. Never guess a number.\n"
+    "[13, 8, 5, 3]). Each is 1 to 21. If the BSI is not spoken, or any of the four numbers "
+    "is not clear, set `bsi` to null. Never guess a number.\n"
     "- 'X is the head and tail of the [first/second/...] causal chain' OR 'the [Nth] layer is X, head and "
     "tail' -> a layer at that number with head = most_affected = X ('head and tail' means the stress is both "
     "the head and the most-affected end of that layer).\n"
@@ -146,14 +146,13 @@ def interpret_transcript(transcript, complete, glossary=""):
 
 
 def _bsi(raw):
-    """[A, B, C, D] as ints 1-21 (an unclear one is None), or None when the model gave
-    no list of four. A partly heard BSI keeps its clear numbers: update_terrain saves
-    only those, so a stored number is never overwritten by a misheard one."""
+    """[A, B, C, D] as ints 1-21, or None unless all four are clear. A partial BSI is
+    dropped whole: mixed with stored numbers it would be a reading nobody spoke."""
     from dashboard.terrain_phase import bsi_num
     if not isinstance(raw, (list, tuple)) or len(raw) != 4:
         return None
     out = [bsi_num(v) for v in raw]
-    return out if any(v is not None for v in out) else None
+    return None if None in out else out
 
 
 _STRESS_SYSTEM = (

@@ -149,8 +149,9 @@ def update_terrain(cx, tid, phase=None, location=None, bsi=None):
     """Persist the scan's terrain reading (BSI 'phase P' + 'location X') on the test.
     Per-field, like update_header: a pass that read no phase/location must not clobber
     a value captured earlier. phase is coerced to an int 1-5 (else ignored).
-    bsi is the four BSI numbers [A, B, C, D]; each one that is an int 1-21 is saved,
-    and a missing or out-of-range one leaves its stored value alone."""
+    bsi is the four BSI numbers [A, B, C, D]. They are saved only when all four are
+    ints 1-21; otherwise all four stored values are left alone. The hand-set route
+    (set_terrain_field) stays per field."""
     from dashboard.terrain_phase import phase_num, bsi_num
     init_auth_tables(cx)
     sets, vals = [], []
@@ -159,11 +160,12 @@ def update_terrain(cx, tid, phase=None, location=None, bsi=None):
         sets.append("phase=?"); vals.append(p)
     if (location or "").strip():
         sets.append("location=?"); vals.append(location.strip())
-    if isinstance(bsi, (list, tuple)):
-        for col, v in zip(BSI_COLS, bsi):
-            n = bsi_num(v)
-            if n is not None:
-                sets.append(f"{col}=?"); vals.append(n)
+    # All or nothing: a partial reading such as [15, 10, None, None] merged with the
+    # stored C and D would make a BSI nobody spoke, and a Regulation level from it.
+    nums = [bsi_num(v) for v in bsi] if isinstance(bsi, (list, tuple)) else []
+    if len(nums) == 4 and None not in nums:
+        for col, n in zip(BSI_COLS, nums):
+            sets.append(f"{col}=?"); vals.append(n)
     if not sets:
         return
     sets.append("updated_at=?"); vals.append(_now())

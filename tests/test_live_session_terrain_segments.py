@@ -38,15 +38,22 @@ def test_init_twice_is_harmless(tmp_path):
     init_auth_tables(cx)
 
 
-def test_update_terrain_saves_bsi_per_field_and_never_clobbers(tmp_path):
+def test_update_terrain_saves_bsi_all_or_nothing_and_never_clobbers(tmp_path):
     cx = _cx(tmp_path)
     tid = create_test(cx, "J", "j@x.com", "2026-11-14")
     update_terrain(cx, tid, bsi=[13, 8, 5, 3])
     assert authored_report(cx, tid)["bsi"] == [13, 8, 5, 3]
-    # A pass that heard nothing, or only some numbers, keeps what was stored.
+    # A pass that heard nothing keeps what was stored.
     update_terrain(cx, tid, phase=None, location="", bsi=None)
-    update_terrain(cx, tid, bsi=[None, 9, 0, "x"])
-    assert authored_report(cx, tid)["bsi"] == [13, 9, 5, 3]
+    assert authored_report(cx, tid)["bsi"] == [13, 8, 5, 3]
+    # A partial or partly invalid reading never merges into a hybrid: all four stay.
+    for partial in ([15, 10, None, None], [None, 9, 5, 3], [15, 10, 0, 3], [15, 10, "x", 3],
+                    [15, 10, 5], [15, 10, 5, 3, 1]):
+        update_terrain(cx, tid, bsi=partial)
+        assert authored_report(cx, tid)["bsi"] == [13, 8, 5, 3], partial
+    # A full reading replaces all four.
+    update_terrain(cx, tid, bsi=["15", 10, 7, 2])
+    assert authored_report(cx, tid)["bsi"] == [15, 10, 7, 2]
     # A BSI-only pass leaves phase and location alone, and the reverse.
     update_terrain(cx, tid, phase=4, location="kidney")
     update_terrain(cx, tid, bsi=[12, 8, 5, 3])
@@ -90,8 +97,8 @@ def test_interpret_parses_bsi():
                                         "layers": []})
     assert interpret_transcript("t", fake([21, 1, 1, 1]))["bsi"] == [21, 1, 1, 1]
     assert interpret_transcript("t", fake(["13", 8, 5, 3]))["bsi"] == [13, 8, 5, 3]
-    assert interpret_transcript("t", fake([13, 30, 5, None]))["bsi"] == [13, None, 5, None]
-    for bad in (None, [], [1, 2, 3], "13 8 5 3", [None, None, None, None], [0, 0, 0, 0]):
+    for bad in (None, [], [1, 2, 3], "13 8 5 3", [None, None, None, None], [0, 0, 0, 0],
+                [13, 30, 5, None], [15, 10, None, None], [13, 8, 5, 22]):
         assert interpret_transcript("t", fake(bad))["bsi"] is None, bad
     assert interpret_transcript("", fake([1, 1, 1, 1]))["bsi"] is None
 
@@ -106,6 +113,18 @@ def _app(db, payload):
 def _report(db, tid):
     with sqlite3.connect(db) as cx:
         return authored_report(cx, tid)
+
+
+def test_interpret_route_partial_bsi_leaves_all_four_stored(tmp_path):
+    db = str(tmp_path / "chat_log.db")
+    _seed(db)
+    client, tid = _app(db, {"bsi": [13, 8, 5, 3], "layers": []})
+    client.post(f"/author/{tid}/interpret", json={})
+    client2 = create_app(db, interpret_complete=lambda s, u: json.dumps(
+        {"bsi": [15, 10, None, None], "layers": []})).test_client()
+    j = client2.post(f"/author/{tid}/interpret", json={}).get_json()
+    assert j["bsi"] is None
+    assert _report(db, tid)["bsi"] == [13, 8, 5, 3]
 
 
 def test_interpret_route_saves_bsi_and_a_later_pass_does_not_wipe_it(tmp_path):
@@ -237,5 +256,14 @@ def test_visible_text_has_no_em_dash_and_no_all_caps_label():
 
 def test_page_js_posts_the_field_to_the_terrain_route():
     h = _page()
-    assert "post('/author/a7/terrain',{field:field,value:el.value})" in h
-    assert "function regulationLevel(" in h and "function showRegulation(" in h
+    assert "post('/author/a7/terrain',{field:field,value:v})" in h
+    assert "function regulationLevel(" in h and "function renderTerrain(" in h
+    assert "window._tStored=" in h
+
+
+def test_page_embeds_the_stored_state_it_renders_from():
+    s = _session_block(_page(phase=2, location="a</script>b", bsi=[13, 8, 5, 3]))
+    m = re.search(r"<script>window._tStored=(\{.*?\})</script>", s)
+    assert m and "</script>b" not in m.group(1)
+    st = json.loads(m.group(1))
+    assert st == {"phase": 2, "location": "a</script>b", "bsi": [13, 8, 5, 3]}
