@@ -37,6 +37,7 @@ def test_new_entries_have_a_bottle_type_prod_knows():
 
 def test_old_entries_kept_so_links_still_work():
     assert PRODUCTS["capsule-filling-machine"]["price_cents"] == 19700
+    assert "aliases" not in PRODUCTS["capsule-filling-machine"]
     assert PRODUCTS["bioenergetic-wellness-scanner"]["price_cents"] == 10000
     assert PRODUCTS["biofield-analysis"]["price_cents"] == 30000
 
@@ -165,6 +166,23 @@ def test_unknown_pair_box_is_refused_not_free():
         app._pair_box_cents({"name": "X", "pair_box": "XL", "flat_shipping_boxes": ["M"]}, 2)
 
 
+def test_pair_box_without_a_single_box_refuses_the_odd_unit():
+    import app
+    p = {"name": "X", "pair_box": "L"}
+    with pytest.raises(app.CheckoutError):
+        app._pair_box_cents(p, 1)
+    with pytest.raises(app.CheckoutError):
+        app._pair_box_cents(p, 3)
+
+
+def test_pair_box_zero_or_negative_units_cost_nothing(medium_rate):
+    import app
+    p = PRODUCTS[MIRON]
+    assert app._pair_box_cents(p, 0) == 0
+    assert app._pair_box_cents(p, -2) == 0
+    assert app._pair_box_cents(p, -1) == 0
+
+
 @pytest.mark.parametrize("name,slug", [
     ("Miracule Water", "miracule-water"),
     ("Miracule Water 4 L", "miracule-water"),
@@ -176,6 +194,11 @@ def test_unknown_pair_box_is_refused_not_free():
     # Unchanged: the $1,497 system and the bare scanner keep their own names.
     ("Miracule Water System with Molecular Hydrogen", "miracule-water-system"),
     ("Bioenergetic Wellness Scanner", "bioenergetic-wellness-scanner"),
+    ("Capsule Filling Machine 100M", "capsule-filling-machine-100m"),
+    ("Capsule Filling Machine (100M)", "capsule-filling-machine-100m"),
+    ("Capsule Filling Machine 120S", "capsule-filling-machine-120s"),
+    ("Capsule Filling Machine (120S)", "capsule-filling-machine-120s"),
+    ("Capsule Filling Machine", "capsule-filling-machine"),
 ])
 def test_resolver_sends_short_names_to_the_new_entries(name, slug):
     from dashboard.practitioner_portal import exact_name_to_slug, name_to_slug

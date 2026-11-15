@@ -11111,7 +11111,16 @@ def _pair_box_cents(p, units, rates=None):
     if size not in _SHIP_FALLBACK_HARD:
         raise CheckoutError(f"Unknown pair box {size!r} for {p.get('name') or p.get('slug')}.")
     units = int(units or 0)
-    return (units // 2) * _box_rate_cents(size, rates) + (units % 2) * _own_box_flat_cents(p, rates)
+    if units < 1:
+        return 0
+    single = 0
+    if units % 2:
+        single = _own_box_flat_cents(p, rates)
+        if single <= 0:
+            # A leftover single needs its own box. No box named means no price, and
+            # $0 would ship it free (review, 2026-11-14).
+            raise CheckoutError(f"No single-unit box for {p.get('name') or p.get('slug')}.")
+    return (units // 2) * _box_rate_cents(size, rates) + single
 
 
 def _fallback_shipping_cents(total_bottles):

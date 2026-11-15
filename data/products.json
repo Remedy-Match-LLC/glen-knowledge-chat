@@ -25864,6 +25864,7 @@
   },
   "capsule-filling-machine-100m": {
    "name": "100M Capsule Filling Machine",
+   "aliases": ["Capsule Filling Machine 100M", "Capsule Filling Machine (100M)"],
    "price_cents": 19700,
    "fmp_id": "5",
    "bottle_type": "own-box",
@@ -25873,6 +25874,7 @@
   },
   "capsule-filling-machine-120s": {
    "name": "120S Capsule Filling Machine",
+   "aliases": ["Capsule Filling Machine 120S", "Capsule Filling Machine (120S)"],
    "price_cents": 19700,
    "fmp_id": "6",
    "bottle_type": "own-box",
