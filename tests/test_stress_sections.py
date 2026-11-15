@@ -115,6 +115,15 @@ def test_the_full_list_is_complete_sorted_and_keeps_plain_names(tmp_path):
     assert "ED1 Source" not in got["all"] and "ED1" not in got["all"]
 
 
+def test_body_lists_infoceuticals_first_then_other_purples(tmp_path):
+    # Glen, 15 Nov 2026: "all purple, infoceutical list first, then other purples".
+    cx, tid = _seeded(tmp_path)
+    got = sectioned_vocab(cx, tid, body=["Lead", "ED11", "Aluminum", "MR10 CNS-Heart-Matrix",
+                                         "ED4", "Zinc"], code_names=NAMES)
+    assert got["body"] == ["ED4: Nerve", "ED11: Liver", "Aluminum", "Lead",
+                           "MR10 CNS-Heart-Matrix", "Zinc"]
+
+
 def test_an_empty_section_is_an_empty_list(tmp_path):
     cx = sqlite3.connect(str(tmp_path / "chat_log.db"))
     init_auth_tables(cx)
