@@ -108,6 +108,14 @@ _STYLE = """
    border-radius:6px;padding:6px 8px;font:inherit;font-size:14px}
  .rline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:5px 0;padding:5px 6px;border-radius:6px}
  .rline.unconf{box-shadow:inset 3px 0 0 var(--accent);background:#1a160d}
+ input.unmatched,.htfields input.unmatched,.rline input.unmatched{border-color:#e0a030;
+   background:#2a1f08;text-decoration:underline wavy #e0a030}
+ .mic{background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);
+   cursor:pointer;padding:3px 6px;font-size:13px;line-height:1}
+ .mic.on{border-color:#e05050;color:#e05050}
+ .htfields .fieldmic{display:flex;gap:4px;align-items:center}
+ .lbal{display:inline-flex;gap:5px;align-items:center;margin:0}
+ .lcard.lbalanced{border-color:#3a7a4a}
  .rline input{background:#0c0e12;color:var(--fg);border:1px solid var(--line);border-radius:6px;
    padding:5px 7px;font:inherit;font-size:13px}
  .rline .rem{flex:1;min-width:200px}
@@ -1101,10 +1109,12 @@ async function saveRemedy(rid,btn){var card=btn.closest('.lcard');var gid=card.d
  setSaved(card.querySelector('.lfoot .savebtn'));astat('Remedy saved. Updating report and schedule…');
  rememberView(card);location.reload()}
  finally{btn.disabled=false}}
-async function saveLayer(gid,btn){var card=document.querySelector('[data-gid="'+gid+'"]');if(!card)return;
+async function saveLayer(gid,btn,voice){var card=document.querySelector('[data-gid="'+gid+'"]');if(!card)return;
  var head=val(gid+'_head'),most=val(gid+'_most');if(btn)btn.disabled=true;
  try{var rids=(card.dataset.rids||'').split(',').filter(Boolean);
- for(var i=0;i<rids.length;i++)await post('/author/__TID__/row/'+rids[i],{head:head,most_affected:most});
+ // voice is {field: matched} from a short recording (ruling 7); typed saves send none.
+ var body={head:head,most_affected:most};if(voice&&typeof voice==='object')body.voice=voice;
+ for(var i=0;i<rids.length;i++)await post('/author/__TID__/row/'+rids[i],body);
  setSaved(btn);pulse(card);astat('Layer saved.')}
  finally{if(btn)btn.disabled=false}}
 async function savePendingEditor(){
@@ -1125,7 +1135,8 @@ async function addRemedy(gid){var rem=val(gid+'_nr_remedy');if(!rem){astat('Ente
  var anchorRid=card&&((card.dataset.rids||'').split(',').filter(Boolean)[0]||'');
  astat('Saving pending edits…');await savePendingEditor();
  await post('/author/__TID__/row',{layer:layer,anchor_rid:anchorRid,head:val(gid+'_head'),most_affected:val(gid+'_most'),
-  remedy:rem,dosage:val(gid+'_nr_dosage'),frequency:val(gid+'_nr_frequency'),timing:val(gid+'_nr_timing')});
+  remedy:rem,dosage:val(gid+'_nr_dosage'),frequency:val(gid+'_nr_frequency'),timing:val(gid+'_nr_timing'),
+  voice:voiceFlags(gid)});
  reloadKeepingView()}
 var _viewKey='biofield-view-__TID__';
 function reloadKeepingView(){rememberScroll();location.reload()}
@@ -1210,8 +1221,7 @@ async function recStart(){
   function(m){if(!mime&&window.MediaRecorder&&MediaRecorder.isTypeSupported(m))mime=m});
  if(!mime){rstat('No supported audio recording format in this browser. Use Chrome.');return}
  rstat('Mic OK ('+mime+'). Connecting to Deepgram...');
- try{_dg=new WebSocket('wss://api.deepgram.com/v1/listen?model=nova-3&smart_format=true'+
-  '&punctuate=true&interim_results=true'+(t.keyterms||''),['token',t.key])}
+ try{_dg=new WebSocket(dgUrl(t),['token',t.key])}
  catch(e){rstat('WebSocket create failed: '+e);return}
  _dg.onopen=function(){
   try{_mr=new MediaRecorder(stream,{mimeType:mime})}catch(e){rstat('Recorder error: '+e);return}
@@ -1236,6 +1246,144 @@ async function recStop(){
  if(_dg&&_dg.readyState===1){_dg.send(JSON.stringify({type:'CloseStream'}));_dg.close()}
  rstat('Saving\\u2026');
  await saveSessionNow(true)}
+// Live session part 2a (plan 2026-11-07, Glen's rulings of 14 November): a short
+// recording per field. Tap the mic beside Head, Tail or a new remedy, speak, and the
+// first final result fills that one field. The words also join the full transcript.
+// tests/test_layer_short_recording_js.py runs this block under node.
+// recField:begin
+function dgUrl(t){return 'wss://api.deepgram.com/v1/listen?model=nova-3&smart_format=true'+
+ '&punctuate=true&interim_results=true'+(t.keyterms||'')}
+// A short recording ends at the end of the UTTERANCE, never at the end of a segment:
+// is_final closes a segment, so "Rose Essence ... two drops twice a day" arrives as
+// several. speech_final (endpointing) or UtteranceEnd says the speaker stopped.
+function dgShortUrl(t){return dgUrl(t)+'&endpointing=300&utterance_end_ms=1000&vad_events=true'}
+var FIELD_CAP_MS=15000;
+function dgMime(){var mime='';['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'].forEach(
+ function(m){if(!mime&&window.MediaRecorder&&MediaRecorder.isTypeSupported(m))mime=m});return mime}
+// _fieldTok[id] is the token of the one recording allowed to write that field. A new
+// recording on the field, or Glen typing into it, replaces it, so a stopped,
+// superseded or late recording writes nothing. _edited[id] is when Glen last typed.
+var _rf=null,_vSeq=0,_fieldTok={},_edited={};
+function fstat(t){var e=document.getElementById('astat');if(e)e.textContent=t}
+var _fieldNames={head:'Head',tail:'Tail',remedy:'Remedy'};
+var _voiceField={head:'head',most:'most_affected',nr_remedy:'remedy'};
+function voiceFieldOf(id){return _voiceField[id.slice(id.indexOf('_')+1)]}
+// A field filled by voice carries data-voice: 1 matched a known name, 0 did not.
+// An unmatched one keeps the words and the unmatched class (ruling 4) until Glen
+// types or picks from the drop-down, which clears both (clearVoice).
+function fillVoice(el,v,matched){if(!el)return;el.value=v||'';el.dataset.voice=matched?'1':'0';
+ if(matched){el.classList.remove('unmatched');el.title=v||''}
+ else{el.classList.add('unmatched');el.title='Not matched. Pick the right name from the list.'}}
+function clearVoice(el){if(!el)return;if(el.dataset)delete el.dataset.voice;el.classList.remove('unmatched')}
+// Typing into, or picking from the list for, a field: one listener for the page, so
+// the fields keep their own oninput handlers untouched.
+function handEdit(e){var t=e&&e.target;if(!t)return;
+ if(t.id){_edited[t.id]=++_vSeq;_fieldTok[t.id]=0}
+ if(t.dataset&&t.dataset.voice!==undefined)clearVoice(t)}
+if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('input',handEdit,true);
+// {field: matched} for what a voice-filled add carries (ruling 7); undefined when
+// nothing was spoken. An existing card's Head and Tail were saved when spoken, so
+// only its remedy counts there.
+function voiceFlags(gid){
+ var ids=gid==='gnew'?[gid+'_head',gid+'_most',gid+'_nr_remedy']:[gid+'_nr_remedy'],out={},any=false;
+ ids.forEach(function(i){var e=document.getElementById(i);
+  if(e&&e.dataset&&e.dataset.voice!==undefined){any=true;out[voiceFieldOf(i)]=e.dataset.voice==='1'}});
+ return any?out:undefined}
+function stopField(){var r=_rf;_rf=null;if(!r)return;r.stopped=true;
+ try{clearTimeout(r.timer)}catch(e){}
+ try{if(r.mr&&r.mr.state!=='inactive')r.mr.stop()}catch(e){}
+ try{if(r.stream)r.stream.getTracks().forEach(function(t){t.stop()})}catch(e){}
+ try{if(r.ws&&r.ws.readyState===1){r.ws.send(JSON.stringify({type:'CloseStream'}));r.ws.close()}}catch(e){}
+ var b=document.querySelector('[data-mic="'+r.id+'"]');if(b)b.classList.remove('on')}
+function current(me){return !me.stopped&&_fieldTok[me.id]===me.tok}
+// The full transcript keeps every short recording too.
+function keepTranscript(text){var box=document.getElementById('sessText');if(!box)return;
+ _sess=box.value||'';_sess+=(_sess?' ':'')+text;box.value=_sess;scheduleSessionSave()}
+// The utterance is over (speech_final, UtteranceEnd, the socket closing, or the cap):
+// join its final segments and fill the field.
+function finishField(me){if(me.done||!current(me))return;me.done=true;
+ if(_rf===me)stopField();
+ var text=me.parts.join(' ').trim();
+ if(!text){fstat('Nothing heard.');return}
+ me.heard=fieldHeard(me,text)}
+async function recField(id,kind){
+ if(_rf){var was=_rf.id;stopField();if(was===id){_fieldTok[id]=0;fstat('Stopped.');return null}}
+ var el=document.getElementById(id);if(!el)return null;
+ var me={id:id,kind:kind,done:false,stopped:false,heard:null,parts:[],tok:++_vSeq};
+ _fieldTok[id]=me.tok;_rf=me;
+ var b=document.querySelector('[data-mic="'+id+'"]');if(b)b.classList.add('on');
+ fstat('Listening for '+(_fieldNames[kind]||kind)+'…');
+ var t;try{t=await (await fetch('/api/deepgram-token')).json()}
+ catch(e){if(_rf===me)stopField();fstat('Token fetch failed: '+e);return me}
+ if(_rf!==me)return me;
+ if(!t.key){stopField();fstat('No Deepgram key: '+(t.error||''));return me}
+ try{me.stream=await navigator.mediaDevices.getUserMedia({audio:true})}
+ catch(e){if(_rf===me)stopField();fstat('Microphone blocked: '+e.name);return me}
+ if(_rf!==me){me.stream.getTracks().forEach(function(x){x.stop()});return me}
+ var mime=dgMime();if(!mime){stopField();fstat('No supported audio format in this browser. Use Chrome.');return me}
+ try{me.ws=new WebSocket(dgShortUrl(t),['token',t.key])}
+ catch(e){stopField();fstat('Could not connect: '+e);return me}
+ me.timer=setTimeout(function(){finishField(me)},FIELD_CAP_MS);
+ me.ws.onopen=function(){if(_rf!==me)return;
+  try{me.mr=new MediaRecorder(me.stream,{mimeType:mime})}catch(e){stopField();fstat('Recorder error: '+e);return}
+  me.mr.ondataavailable=function(e){if(e.data.size>0&&me.ws.readyState===1)me.ws.send(e.data)};
+  me.mr.start(250)};
+ me.ws.onmessage=function(m){if(me.done||!current(me))return;var d;try{d=JSON.parse(m.data)}catch(e){return}
+  if(d.type==='UtteranceEnd'){if(me.parts.length)finishField(me);return}
+  if(d.type&&d.type!=='Results')return;
+  var a=d.channel&&d.channel.alternatives&&d.channel.alternatives[0];if(!a)return;
+  var tx=(a.transcript||'').trim();
+  if(d.is_final&&tx)me.parts.push(tx);
+  if(d.is_final&&d.speech_final&&me.parts.length){finishField(me);return}
+  var shown=me.parts.concat((!d.is_final&&tx)?[tx]:[]).join(' ');
+  if(shown)fstat('Heard: '+shown)};
+ me.ws.onerror=function(){if(_rf===me){stopField();fstat('Recording error.')}};
+ me.ws.onclose=function(){if(_rf===me){if(me.parts.length)finishField(me);
+  else{stopField();fstat('Nothing heard.')}}};
+ return me}
+async function fieldHeard(me,text){keepTranscript(text);
+ var j;try{j=await post('/author/__TID__/match',{kind:me.kind,text:text})}catch(e){j=null}
+ // A late answer for a field Glen has since typed into, or recorded again, is dropped.
+ if(_fieldTok[me.id]!==me.tok)return null;
+ if(!(j&&j.ok)){fillVoice(document.getElementById(me.id),text,false);
+  fstat('Not matched: '+text);return j}
+ return applyMatch(me,j)}
+async function applyMatch(me,j){var id=me.id,kind=me.kind,gid=id.split('_')[0],el=document.getElementById(id);
+ if(j.balanced){var cb=document.getElementById(gid+'_balanced');
+  if(!cb){fstat('Add a remedy to start this layer before marking it balanced.');return j}
+  cb.checked=true;await setLayerBalanced(gid,true);return j}
+ if(kind==='remedy'){fillVoice(el,j.value,j.matched);
+  // Every remedy match starts from THAT remedy's catalogue dosing, never the previous
+  // product's; a spoken dose is already laid over it in j.dosing (ruling 9).
+  var ds=j.dosing||{};
+  ['dosage','frequency','timing'].forEach(function(k){var e=document.getElementById(gid+'_nr_'+k);
+   if(e)e.value=ds[k]||''});
+  fstat(j.matched?('Remedy: '+j.value):('Not matched: '+j.value+'. Added for review.'));
+  if(j.value)await addRemedy(gid);
+  return j}
+ // "head and tail" fills both, except a field Glen typed into or recorded again since.
+ var targets=(j.also_tail?[gid+'_head',gid+'_most']:[id]).filter(function(t){
+  return t===id||((_edited[t]||0)<me.tok&&(_fieldTok[t]||0)<=me.tok)});
+ var voice={};
+ targets.forEach(function(t){fillVoice(document.getElementById(t),j.value,j.matched);
+  voice[voiceFieldOf(t)]=!!j.matched});
+ fstat((j.matched?'':'Not matched: ')+j.value+(targets.length>1?' (Head and Tail)':''));
+ // Each filled field carries its own match: a matched Head confirms only the Head.
+ if(gid!=='gnew')await saveLayer(gid,null,voice);
+ return j}
+// Ruling 2 and 3: the Balanced box marks the layer only. Once ticked, the next layer's
+// Head takes the focus.
+async function setLayerBalanced(gid,on){var card=document.querySelector('.lcard[data-gid="'+gid+'"]');
+ if(!card)return null;var cb=document.getElementById(gid+'_balanced');
+ var rids=(card.dataset.rids||'').split(',').filter(Boolean);
+ var j;try{j=await post('/author/__TID__/layer-balanced',{rids:rids,balanced:!!on})}catch(e){j=null}
+ if(!(j&&j.ok)){if(cb)cb.checked=!on;fstat('Not saved: Balanced');return j}
+ if(on)card.classList.add('lbalanced');else card.classList.remove('lbalanced');
+ fstat(on?'Layer balanced.':'Balanced cleared.');
+ if(on){var n=document.getElementById('gnew_head');
+  if(n){try{n.scrollIntoView({behavior:'smooth',block:'center'})}catch(e){}n.focus()}}
+ return j}
+// recField:end
 async function interpret(){rstat('Interpreting transcript into chain rows\\u2026');
  await saveSessionNow(false);
  var r=await post('/author/__TID__/interpret',{});
@@ -1375,7 +1523,8 @@ async function importReveal0(){
 // term past it (a remedy/stress alphabetically beyond the cutoff just never appears).
 // Keep the limit well above the catalog (1190) and vocab (511) sizes.
 async function loadLists(){
- try{const v=await (await fetch('/api/vocab?limit=5000')).json();
+ // test_id puts this client's detected stresses first (ruling 6, "client first").
+ try{const v=await (await fetch('/api/vocab?limit=5000&test_id=__TID__')).json();
   document.getElementById('vocab').innerHTML=(v.vocab||[]).map(opt).join('')}catch(e){}
  try{const c=await (await fetch('/api/catalog?limit=5000')).json();
   document.getElementById('catalog').innerHTML=(c.catalog||[]).map(function(x){return opt(x.name||'')}).join('')}catch(e){}
@@ -2115,6 +2264,8 @@ def group_layers(layers):
         g["rows"].append(l)
     for i, g in enumerate(groups, 1):
         g["layer"] = i
+        # The card's Balanced box (Glen, 14 November 2026): ticked when every row is.
+        g["balanced"] = bool(g["rows"]) and all(r.get("layer_balanced") for r in g["rows"])
     return groups
 
 
@@ -2209,10 +2360,18 @@ def _remedy_line(l, depth_values, only_remedy=False, bottles_by_remedy=None):
             f"<span id=\"{p}_sug\" class=food style='flex-basis:100%'></span></div>")
 
 
+def _mic_button(input_id, kind, label):
+    """The small mic beside one field: a short recording fills that field alone
+    (live session part 2a, ruling 1)."""
+    return (f"<button type=button class=mic data-mic=\"{input_id}\" title=\"{label}\" "
+            f"aria-label=\"{label}\" onclick=\"recField('{input_id}','{kind}')\">&#127908;</button>")
+
+
 def _new_remedy_line(gid, add_label):
     return (f"<div class=rline data-new=1>"
             f"<input id={gid}_nr_remedy class=rem list=catalog placeholder='add a remedy…' "
             f"onchange=\"fillDose('{gid}_nr')\">"
+            + _mic_button(f"{gid}_nr_remedy", "remedy", "Speak a remedy") +
             f"<input id={gid}_nr_dosage class=dz placeholder=dose>"
             f"<input id={gid}_nr_frequency class=dz placeholder=freq>"
             f"<input id={gid}_nr_timing class=dz placeholder=timing>"
@@ -2310,8 +2469,18 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None,
         lines = "".join(_remedy_line(r, depth_values, only_remedy=only_remedy,
                                      bottles_by_remedy=bottles_by_remedy)
                         for r in g["rows"])
-        head_in = _xwrap(f'<input id={gid}_head list=vocab value="{he}" title="{he}" oninput="dirtyLayer(this)">')
-        tail_in = _xwrap(f'<input id={gid}_most list=vocab value="{me}" title="{me}" oninput="dirtyLayer(this)">')
+        head_in = ("<span class=fieldmic>" + _xwrap(
+            f'<input id={gid}_head list=vocab value="{he}" title="{he}" '
+            'oninput="dirtyLayer(this)">')
+            + _mic_button(f"{gid}_head", "head", "Speak the Head") + "</span>")
+        tail_in = ("<span class=fieldmic>" + _xwrap(
+            f'<input id={gid}_most list=vocab value="{me}" title="{me}" '
+            'oninput="dirtyLayer(this)">')
+            + _mic_button(f"{gid}_most", "tail", "Speak the Tail") + "</span>")
+        bal = " checked" if g.get("balanced") else ""
+        card_cls = "'lcard lbalanced'" if g.get("balanced") else "lcard"
+        balanced_box = (f"<label class=lbal><input type=checkbox id={gid}_balanced{bal} "
+                        f"onchange=\"setLayerBalanced('{gid}',this.checked)\"> Balanced</label>")
         source_layer = int(g.get("stored_layer") or n)
         # Glen, 2026-10-19: "show the name of the layer in addition to the number."
         # data-rids carries the destination card's rows: a card can span several
@@ -2327,7 +2496,8 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None,
             f"<button class='btn ghost' onclick=\"consolidateBalances({source_layer},{n},document.getElementById('{gid}_consolidate'))\">"
             "Consolidate balances</button></span>" if targets else "")
         cards += (
-            f"<div class=lcard draggable=true data-gid={gid} data-rids=\"{rids}\" "
+            f"<div class={card_cls} draggable=true "
+            f"data-gid={gid} data-rids=\"{rids}\" "
             "ondragstart=dragStart(event) ondragend=dragEnd(event) ondragover=dragOver(event) "
             "ondragleave=dragLeave(event) ondrop=drop(event)>"
             "<div class=lhdr><span class=grip title='Drag to reorder'>&#10303;</span>"
@@ -2337,15 +2507,19 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None,
             f"</div><input type=hidden id={gid}_layer value=\"{stored_layer}\"></div>"
             + _no_pattern_flag(g["head"], g["most_affected"], no_pattern_heads)
             + lines + _covered_html(covered_by_layer.get(n), n) + _new_remedy_line(gid, "Add remedy") +
-            f"<div class=lfoot><span class=food>Layer {n}</span>{consolidate}"
+            f"<div class=lfoot><span class=food>Layer {n}</span>{balanced_box}{consolidate}"
             f"<button class='btn ghost savebtn saved' data-dirty='Update layer' "
             f"onclick=\"saveLayer('{gid}',this)\">Saved &#10003;</button></div></div>")
     # trailing card to start a brand-new layer
     cards += (
         "<div class=lcard data-gid=gnew data-nodrop=1><div class=lhdr><span class=lnum>+</span>"
         "<div class=htfields>"
-        "<label>Head</label><input id=gnew_head list=vocab placeholder='new layer stress (head)'>"
-        "<label>Tail</label><input id=gnew_most list=vocab placeholder='most affected (tail)'>"
+        "<label>Head</label><span class=fieldmic><input id=gnew_head list=vocab "
+        "placeholder='new layer stress (head)'>"
+        + _mic_button("gnew_head", "head", "Speak the Head") + "</span>"
+        "<label>Tail</label><span class=fieldmic><input id=gnew_most list=vocab "
+        "placeholder='most affected (tail)'>"
+        + _mic_button("gnew_most", "tail", "Speak the Tail") + "</span>"
         "</div><input type=hidden id=gnew_layer value=''></div>"
         + _new_remedy_line("gnew", "Add layer") + "</div>")
     return cards
@@ -3507,6 +3681,17 @@ def _terrain_segments_html(report):
         ).replace("<", "\\u003c") + "</script>"
         "</div>")
 
+def _uncovered_count_html(n):
+    """Ruling 8 (Glen, 14 November 2026): how many detected stresses no layer covers
+    yet. A count only. Glen decides when the session is done, so it never blocks."""
+    if n is None:
+        return ""
+    n = int(n)
+    noun = "stress" if n == 1 else "stresses"
+    return (f"<p id=uncoveredCount class=food data-n={n}>{n} detected {noun} "
+            "not covered by any layer yet</p>")
+
+
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
                        clinical_checklist=None, dispensed=None, dispensed_error=None,
@@ -3514,7 +3699,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                        profile_unavailable=False, alias_map=None, display_map=None,
                        narrative_warnings=None, history_links_html="",
                        clinical_free_factors=None, clinical_botanical=None,
-                       client_notified=False, e4l_suggestion=None):
+                       client_notified=False, e4l_suggestion=None,
+                       uncovered_count=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -3579,7 +3765,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
              "Reorder layers by dragging in the numbered rail on the left (or drag a card by its "
              "&#10303; handle); &lsquo;add a remedy&rsquo; adds another remedy to a layer, and the "
              "last card starts a new layer.</p>"
-             + _render_fold_notice(groups) +
+             + _render_fold_notice(groups) + _uncovered_count_html(uncovered_count) +
              "<div class=chainlayout>" + _render_layer_rail(groups) +
              "<div id=chaintbl class=chain>"
              + _render_chain_cards(report, depth_values, covered_by_layer,
