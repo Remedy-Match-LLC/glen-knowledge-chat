@@ -414,6 +414,49 @@ def parse_bsi_parts(text):
     return nums, " ".join(loc), ""
 
 
+# Glen, 15 November 2026: Emary asks a spoken question back when a BSI is not
+# understood. The question names what was heard ("I heard 21, 3 and 1. What is the
+# fourth BSI number?") and the answer may be only the missing number ("the fourth is
+# 1"), so a failed BSI also carries every number heard, in order, in range or not.
+_BSI_ORDINALS = {"first", "second", "third", "fourth", "last", "other", "next"}
+
+
+def bsi_heard(text):
+    """(numbers, location): every number said, in order, whether in range or not, and
+    the words between the second and third numbers (rule 14 (a)). Never fails: other
+    words are skipped, and "one" straight after an ordinal ("the fourth one is 2") is
+    not a number. Only used to word a question and to read its answer."""
+    s = str(text or "").replace("\u00d7", " x ")
+    s = re.sub(r"(\d)\s*[xX]\s*(?=\d)", r"\1 x ", s)
+    raw = [w for w in re.split(r"[\s,.;:!?\-]+", s) if w]
+    words = [w.lower() for w in raw]
+    nums, loc = [], []
+    i = 0
+    while i < len(words):
+        w = words[i]
+        prev = words[i - 1] if i else ""
+        if w in _BSI_SEPS:
+            if len(nums) == 2 and loc:
+                loc.append(raw[i])
+        elif w.isdigit():
+            nums.append(int(w))
+        elif w in _TENS:
+            n = _TENS[w]
+            if i + 1 < len(words) and words[i + 1] in _UNITS_1_19 \
+                    and 1 <= _UNITS_1_19[words[i + 1]] <= 9:
+                n += _UNITS_1_19[words[i + 1]]
+                i += 1
+            nums.append(n)
+        elif w in _UNITS_1_19 and not (w == "one" and prev in _BSI_ORDINALS):
+            nums.append(_UNITS_1_19[w])
+        elif len(nums) == 2 and (loc or w not in _BSI_LOC_LEAD):
+            loc.append(raw[i])
+        i += 1
+    while loc and loc[-1].lower() in _BSI_SEPS:
+        loc.pop()
+    return nums, " ".join(loc)
+
+
 def _terrain_event(kind, words):
     """One terrain cue's event. Pure: the location is matched in handsfree_events."""
     from dashboard.terrain_phase import PHASE_CLINICAL_NAMES, bsi_warnings
@@ -428,6 +471,8 @@ def _terrain_event(kind, words):
         ev["value"] = nums
         ev["error"] = why
         ev["warnings"] = bsi_warnings(*nums) if nums else []
+        if not nums:                      # for the question back (bsi_heard)
+            ev["heard"], ev["heard_location"] = bsi_heard(words)
     return ev
 
 
