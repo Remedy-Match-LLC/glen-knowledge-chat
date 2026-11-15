@@ -66,7 +66,11 @@ def init_auth_tables(cx):
     for col in ("phase INTEGER", "location TEXT",
                 "bsi_a INTEGER", "bsi_b INTEGER", "bsi_c INTEGER", "bsi_d INTEGER",
                 "e4l_client_id TEXT",
-                "no_charge INTEGER NOT NULL DEFAULT 0"):
+                "no_charge INTEGER NOT NULL DEFAULT 0",
+                # terrain_review: JSON {field: "review"|"unmatched"} for terrain fields
+                # the hands-free recording wrote that Glen has not yet set or confirmed
+                # by hand (ruling 7). NULL or {} when there is nothing to review.
+                "terrain_review TEXT"):
         try:
             cx.execute(f"ALTER TABLE biofield_auth_tests ADD COLUMN {col}")
         except Exception:
@@ -192,10 +196,58 @@ def update_terrain(cx, tid, phase=None, location=None, bsi=None):
 TERRAIN_FIELDS = ("phase", "location") + BSI_COLS
 
 
-def set_terrain_field(cx, tid, field, value):
+def _terrain_review(raw):
+    try:
+        d = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return {k: v for k, v in d.items() if k in TERRAIN_FIELDS} if isinstance(d, dict) else {}
+
+
+def get_terrain_review(cx, tid):
+    """{field: "review"|"unmatched"} for the terrain fields waiting for Glen's review."""
+    init_auth_tables(cx)
+    row = cx.execute("SELECT terrain_review FROM biofield_auth_tests WHERE id=?",
+                     (_num(tid),)).fetchone()
+    return _terrain_review(row[0] if row else None)
+
+
+def mark_terrain_review(cx, tid, fields, status=None):
+    """Set (status "review" or "unmatched") or clear (status None) the review mark on
+    terrain fields. A hands-free write marks; a hand edit clears (ruling 7)."""
+    left = get_terrain_review(cx, tid)
+    for f in fields:
+        if status:
+            left[f] = status
+        else:
+            left.pop(f, None)
+    cx.execute("UPDATE biofield_auth_tests SET terrain_review=? WHERE id=?",
+               (json.dumps(left, sort_keys=True) if left else None, _num(tid)))
+    cx.commit()
+    return left
+
+
+def set_terrain_bsi(cx, tid, values, handsfree=False):
+    """All four BSI numbers at once, as the hands-free "BSI 12 by 8 to 9 by 6" says
+    them. All or nothing, like update_terrain: raises ValueError unless there are
+    exactly four numbers, each 1 to 21, and then writes nothing."""
+    from dashboard.terrain_phase import bsi_num
+    nums = [bsi_num(v) for v in values] if isinstance(values, (list, tuple)) else []
+    if len(nums) != 4 or None in nums:
+        raise ValueError("the BSI needs four numbers, each 1 to 21")
+    update_terrain(cx, tid, bsi=nums)
+    mark_terrain_review(cx, tid, BSI_COLS, "review" if handsfree else None)
+    return nums
+
+
+def set_terrain_field(cx, tid, field, value, handsfree=False, matched=True):
     """One terrain field, set by hand on the editor page. Unlike update_terrain, an
     empty value CLEARS the field: Glen choosing blank is a decision, not a pass that
-    heard nothing. Raises ValueError on an unknown field or an out-of-range number."""
+    heard nothing. Raises ValueError on an unknown field or an out-of-range number.
+
+    A hand edit clears the field's review mark. handsfree=True (the hands-free
+    recording) sets it instead: "unmatched" for a location not on the stress list
+    (matched=False), else "review"."""
     from dashboard.terrain_phase import phase_num, bsi_num
     if field not in TERRAIN_FIELDS:
         raise ValueError(f"unknown terrain field: {field}")
@@ -216,6 +268,10 @@ def set_terrain_field(cx, tid, field, value):
     cx.execute(f"UPDATE biofield_auth_tests SET {field}=?,updated_at=? WHERE id=?",
                (stored, _now(), _num(tid)))
     cx.commit()
+    status = None
+    if handsfree and stored is not None:
+        status = "unmatched" if (field == "location" and not matched) else "review"
+    mark_terrain_review(cx, tid, [field], status)
     return stored
 
 
@@ -225,7 +281,7 @@ def terrain_state(rep):
     bsi = list(rep.get("bsi") or [None] * 4)
     r = regulation_level(*bsi)
     return {"phase": rep.get("phase"), "location": rep.get("location") or "",
-            "bsi": bsi,
+            "bsi": bsi, "review": dict(rep.get("terrain_review") or {}),
             "regulation": ({"level": r[0], "name": r[1]} if r else None),
             "warnings": bsi_warnings(*bsi)}
 
@@ -364,6 +420,8 @@ def confirm_all(cx, tid):
     init_auth_tables(cx)
     cx.execute("UPDATE biofield_auth_chain SET confirmed=1, unmatched_fields=NULL "
                "WHERE test_id=?", (_num(tid),))
+    # Confirm all covers the terrain panel's hands-free values too.
+    cx.execute("UPDATE biofield_auth_tests SET terrain_review=NULL WHERE id=?", (_num(tid),))
     cx.commit()
 
 
@@ -1205,4 +1263,6 @@ def authored_report(cx, tid):
             "phase": (t["phase"] if "phase" in tk else None),
             "location": ((t["location"] if "location" in tk else "") or ""),
             "bsi": [(t[c] if c in tk else None) for c in BSI_COLS],
+            "terrain_review": _terrain_review(t["terrain_review"]
+                                              if "terrain_review" in tk else None),
             "layers": layers, "schedule": schedule}

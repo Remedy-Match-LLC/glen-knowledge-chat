@@ -110,6 +110,7 @@ _STYLE = """
  .rline.unconf{box-shadow:inset 3px 0 0 var(--accent);background:#1a160d}
  input.unmatched,.htfields input.unmatched,.rline input.unmatched{border-color:#e0a030;
    background:#2a1f08;text-decoration:underline wavy #e0a030}
+ #terrainSegs .tunconf{box-shadow:0 0 0 2px var(--accent);background:#1a160d}
  .mic{background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);
    cursor:pointer;padding:3px 6px;font-size:13px;line-height:1}
  .mic.on,#hfBtn.on,#recBtn.on{border-color:#e05050;color:#e05050}
@@ -1454,7 +1455,9 @@ async function setLayerBalanced(gid,on){var card=document.querySelector('.lcard[
 // Live session part 2b (Glen, 14 November 2026, "yes" to the cue words): hands-free.
 // One Deepgram stream runs until the toggle is turned off. Each finished utterance
 // joins the full transcript, then the server splits it on the cue words ("head",
-// "tail", "remedy", "head and tail", "balanced", "next layer"; the exact rule is in
+// "tail", "remedy", "head and tail", "balanced", "next layer", and "terrain",
+// "location" and "BSI" for the terrain panel, "also balances" for a stress the
+// layer covers; the exact rule is in
 // dashboard/biofield_layer_match.py) and matches each field. The page applies the
 // events in order, one at a time, through the same row routes a short recording uses,
 // with handsfree set, so every row goes in unconfirmed (ruling 7). Turned off, it
@@ -1467,7 +1470,8 @@ function hfLive(me){return !!me&&_hf===me&&!me.stopped}
 function hfStat(t){var e=document.getElementById('hfStat');if(e)e.textContent=t}
 function hfLog(t){var e=document.getElementById('hfLog');if(!e)return;
  e.textContent=(t+(e.textContent?'\\n'+e.textContent:'')).split('\\n').slice(0,8).join('\\n')}
-var _hfNames={head:'Head',tail:'Tail',remedy:'Remedy',head_tail:'Head and Tail'};
+var _hfNames={head:'Head',tail:'Tail',remedy:'Remedy',head_tail:'Head and Tail',
+ terrain:'Terrain',location:'Location',bsi:'BSI',also_balances:'Also balances'};
 function hfWhere(me){var tg=me.target,l='Layer '+tg.n+(tg.rids.length?'':' (new)');
  return l+': '+(me.pending?'the next words go to '+_hfNames[me.pending]+'.':
   'say head, tail or remedy.')}
@@ -1545,6 +1549,8 @@ async function hfProcess(me,text){if(!hfLive(me))return;
  for(var i=0;i<evs.length;i++){if(!hfLive(me))return;await hfApply(me,evs[i])}
  hfShow(me)}
 async function hfApply(me,ev){var tg=me.target,r;
+ if(ev.terrain){await hfTerrain(me,ev);return}
+ if(ev.also_balances){await hfAlsoBalances(me,ev);return}
  if(ev.next_layer){me.target=hfNewTarget(me);hfLog('Layer '+me.target.n+' started.');return}
  if(ev.balanced){if(!tg.rids.length){hfLog('Nothing to mark balanced yet on layer '+tg.n+'.');return}
   if(!hfLive(me))return;
@@ -1598,6 +1604,41 @@ async function hfApply(me,ev){var tg=me.target,r;
  if(tg.gid){if(ev.field==='head'||ev.both)fillVoice(document.getElementById(tg.gid+'_head'),v,ok);
   if(ev.field==='tail'||ev.both)fillVoice(document.getElementById(tg.gid+'_most'),v,ok)}
  hfLog('Layer '+tg.n+' '+label+': '+v+mark)}
+// "terrain", "location" or "BSI": the terrain panel, through its own save chain
+// (tSave), with handsfree set so the value waits for review (ruling 7). The layer
+// target is not touched, so these work anywhere in the session.
+var _hfTNames={phase:'Terrain',location:'Location',bsi:'BSI'};
+async function hfTerrain(me,ev){var k=ev.terrain,body,shown;
+ if(k==='bsi'){
+  if(!ev.value){var why='BSI not understood: '+ev.text+(ev.error?' ('+ev.error+')':'')+'. Nothing saved.';
+   hfLog(why);tStat(why);return}
+  body={field:'bsi',value:ev.value};
+  shown=ev.value[0]+' x '+ev.value[1]+' to '+ev.value[2]+' x '+ev.value[3]}
+ else if(k==='phase'){
+  if(!ev.value){var why2='Terrain phase not understood: '+ev.text+'. Nothing saved.';
+   hfLog(why2);tStat(why2);return}
+  body={field:'phase',value:String(ev.value)};shown=ev.value+(ev.name?'. '+ev.name:'')}
+ else{var m=ev.match||{},v=m.value||ev.text||'';if(!v)return;
+  body={field:'location',value:v,matched:!!m.matched};shown=v+(m.matched?'':' (not matched)')}
+ body.handsfree=true;
+ if(!hfLive(me))return;
+ var j=await tSave(body);
+ if(j&&j.ok){me.wrote++;
+  hfLog(_hfTNames[k]+': '+shown+((j.warnings&&j.warnings.length)?' ('+j.warnings.join('; ')+')':''))}
+ else hfLog(_hfTNames[k]+' not saved: '+shown+((j&&j.error)?' ('+j.error+')':'')+'.')}
+// "also balances X": X joins the current layer's balanced stresses, through the same
+// route as the card's Add stress box. Only a matched name is added, since that route
+// would put an unknown name on the stress list. The layer's rows go to review
+// (handsfree, ruling 7). With no row on the layer yet there is nothing to add it to.
+async function hfAlsoBalances(me,ev){var tg=me.target,m=ev.match||{},v=m.value||ev.text||'';
+ if(!v)return;
+ if(!m.matched){hfLog('Also balances not matched: '+ev.text+'. Not added.');return}
+ if(!tg.rids.length){hfLog('No layer yet for: '+v+'. Not added.');return}
+ if(!hfLive(me))return;
+ var r=await post('/author/__TID__/stress/add',{label:v,layer:Number(tg.layer)||tg.layer,
+  rids:tg.rids.map(Number),handsfree:true});
+ if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' also balances: '+v)}
+ else hfLog('Layer '+tg.n+' also balances '+v+': not added'+((r&&r.error)?'. '+r.error:'')+'.')}
 function hfEnd(me){if(!me)return;me.stopped=true;me.draining=false;if(_hf===me)_hf=null;
  try{if(me.mr&&me.mr.state!=='inactive')me.mr.stop()}catch(e){}
  try{if(me.stream)me.stream.getTracks().forEach(function(t){t.stop()})}catch(e){}
@@ -1656,8 +1697,18 @@ function regulationLevel(a,b,c,d){a=bsiNum(a);b=bsiNum(b);c=bsiNum(c);d=bsiNum(d
 // window._tStored is that state, and Regulation is always computed from it.
 var _tChain=Promise.resolve(),_tPending={};
 var _tLabels={phase:'Terrain phase',location:'Terrain location',bsi_a:'BSI A',bsi_b:'BSI B',
- bsi_c:'BSI C',bsi_d:'BSI D'};
-function tStored(){return window._tStored||{phase:null,location:'',bsi:[null,null,null,null]}}
+ bsi_c:'BSI C',bsi_d:'BSI D',bsi:'BSI'};
+var _tIds={phase:'t_phase',location:'t_location',bsi_a:'bsi_a',bsi_b:'bsi_b',bsi_c:'bsi_c',bsi_d:'bsi_d'};
+function tStored(){return window._tStored||{phase:null,location:'',bsi:[null,null,null,null],review:{}}}
+// A value the hands-free recording wrote waits for review (ruling 7): highlighted,
+// and an unmatched location keeps the unmatched mark too (ruling 4). The marks are
+// stored, so they survive the reload; a hand edit or Confirm clears them.
+function renderReview(rv){rv=rv||{};var any=false;
+ Object.keys(_tIds).forEach(function(f){var el=document.getElementById(_tIds[f]);if(!el)return;
+  if(rv[f]){any=true;el.classList.add('tunconf');el.title='From the hands-free recording. Check it, then edit or Confirm.'}
+  else{el.classList.remove('tunconf')}
+  if(f==='location'){if(rv[f]==='unmatched')el.classList.add('unmatched');else el.classList.remove('unmatched')}});
+ var b=document.getElementById('tConfirm');if(b)b.style.display=any?'':'none'}
 function tStat(t){var e=document.getElementById('tstat');if(e)e.textContent=t}
 function renderRegulation(bsi){
  bsi=bsi||[null,null,null,null];
@@ -1670,14 +1721,14 @@ function renderRegulation(bsi){
  var we=document.getElementById('t_warn');if(we)we.textContent=w.join('; ')}
 function renderTerrain(st){
  window._tStored={phase:st.phase==null?null:st.phase,location:st.location||'',
-  bsi:(st.bsi||[null,null,null,null]).slice(0,4)};
+  bsi:(st.bsi||[null,null,null,null]).slice(0,4),review:st.review||{}};
  var S=window._tStored,map={phase:['t_phase',S.phase],location:['t_location',S.location],
   bsi_a:['bsi_a',S.bsi[0]],bsi_b:['bsi_b',S.bsi[1]],bsi_c:['bsi_c',S.bsi[2]],bsi_d:['bsi_d',S.bsi[3]]};
  Object.keys(map).forEach(function(f){var el=document.getElementById(map[f][0]);if(!el)return;
   // Leave an input alone while Glen is in it, or while a newer change to it is queued.
   if(document.activeElement===el||(_tPending[f]||0)>0)return;
   el.value=map[f][1]==null?'':String(map[f][1]);el.classList.remove('bad')});
- renderRegulation(S.bsi)}
+ renderRegulation(S.bsi);if(st.review)renderReview(S.review)}
 function saveTerrain(field,el){
  var v=el.value;_tPending[field]=(_tPending[field]||0)+1;tStat('Saving…');
  var run=function(){
@@ -1689,6 +1740,24 @@ function saveTerrain(field,el){
      tStat('Not saved: '+(_tLabels[field]||field)+((j&&j.error)?' ('+j.error+')':''));
      renderRegulation(tStored().bsi)}})};
  _tChain=_tChain.then(run,run);return _tChain}
+// The hands-free recording's terrain save: the same route and the same chain, so it
+// lands in order with anything typed. body carries handsfree, and field 'bsi' sends
+// all four numbers at once. Answers with the server's reply.
+function tSave(body){
+ var run=function(){
+  return Promise.resolve().then(function(){return post('/author/__TID__/terrain',body)})
+   .catch(function(){return {ok:false}})
+   .then(function(j){if(j&&j.ok){renderTerrain(j);tStat('Saved from the hands-free recording. Check it.')}
+    else tStat('Not saved: '+(_tLabels[body.field]||body.field)+((j&&j.error)?' ('+j.error+')':''));
+    return j})};
+ var p=_tChain.then(run,run);_tChain=p.then(function(){},function(){});return p}
+// Confirm: Glen accepts the hands-free terrain values as they stand.
+function tConfirm(){
+ var run=function(){
+  return Promise.resolve().then(function(){return post('/author/__TID__/terrain/confirm',{})})
+   .catch(function(){return {ok:false}})
+   .then(function(j){if(j&&j.ok){renderTerrain(j);tStat('Confirmed.')}else tStat('Not confirmed.');return j})};
+ var p=_tChain.then(run,run);_tChain=p.then(function(){},function(){});return p}
 // terrainSave:end
 async function delTest(){if(!confirm('Delete this entire test? This cannot be undone.'))return;
  await post('/author/__TID__/delete',{});location.href='/'}
@@ -3886,6 +3955,16 @@ def _terrain_segments_html(report):
     from dashboard.terrain_phase import (PHASE_CLINICAL_NAMES, PHASE_NAMES, bsi_num,
                                          bsi_warnings, phase_num, regulation_display)
     p = phase_num(report.get("phase"))
+    # Ruling 7: values from the hands-free recording wait for review (renderReview).
+    review = dict(report.get("terrain_review") or {})
+
+    def mark(field):
+        cls = []
+        if review.get(field):
+            cls.append("tunconf")
+        if review.get(field) == "unmatched":
+            cls.append("unmatched")
+        return f" class='{' '.join(cls)}'" if cls else ""
     opts = "<option value=''></option>" + "".join(
         # Glen, 14 Nov 2026: "one dot, energize, dot, terrain revived": number, the
         # phase's clinical name, then the consumer name. Display only; the value is n.
@@ -3899,20 +3978,23 @@ def _terrain_segments_html(report):
     def box(i, letter):
         v = "" if bsi[i] is None else str(bsi[i])
         return (f"<input id=bsi_{letter} type=number min=1 max=21 step=1 inputmode=numeric "
-                f"aria-label='BSI {letter.upper()}' value='{v}' style='width:56px' "
+                f"aria-label='BSI {letter.upper()}' value='{v}' style='width:56px'{mark('bsi_' + letter)} "
                 f"onchange=\"saveTerrain('bsi_{letter}',this)\">")
     warn = "; ".join(bsi_warnings(*bsi))
     return (
         "<div id=terrainSegs class=card style='margin-bottom:8px'>"
         "<div class=btnrow style='align-items:center'>"
         "<label for=t_phase style='min-width:150px'>Terrain</label>"
-        f"<select id=t_phase aria-label='Terrain phase' onchange=\"saveTerrain('phase',this)\">{opts}</select>"
+        f"<select id=t_phase aria-label='Terrain phase'{mark('phase')} onchange=\"saveTerrain('phase',this)\">{opts}</select>"
         # Glen, 14 Nov 2026 (Bridge): locations use "the same list of stresses", "all
         # possible stresses on our list". The vocab drop-down the layer cards use;
         # typing a location not on it still saves.
         "<input id=t_location list=vocab placeholder='Location' aria-label='Terrain location' "
-        f"value=\"{_e(report.get('location') or '')}\" style='width:240px' "
+        f"value=\"{_e(report.get('location') or '')}\" style='width:240px'{mark('location')} "
         "onchange=\"saveTerrain('location',this)\">"
+        "<button id=tConfirm type=button class='btn ghost' onclick=tConfirm() "
+        "title='Accept the values the hands-free recording wrote' "
+        f"style='{'' if review else 'display:none'}'>Confirm</button>"
         "</div>"
         "<div class=btnrow style='align-items:center'>"
         "<label style='min-width:150px'>Biological Score Index</label>"
@@ -3927,7 +4009,8 @@ def _terrain_segments_html(report):
         "<span id=tstat class=food></span>"
         # The stored state the page renders Regulation from (see renderTerrain).
         "<script>window._tStored=" + json.dumps(
-            {"phase": p, "location": report.get("location") or "", "bsi": bsi}
+            {"phase": p, "location": report.get("location") or "", "bsi": bsi,
+             "review": review}
         ).replace("<", "\\u003c") + "</script>"
         "</div>")
 
@@ -4044,7 +4127,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         # Part 2b: one recording split by spoken cue words, for when nobody is at the
         # computer. Every row it writes goes in unconfirmed for review (ruling 7).
         "<button id=hfBtn type=button class='btn ghost' title='Hands-free: say head, "
-        "tail, remedy, balanced or next layer' onclick=handsFree()>Hands-free</button>"
+        "tail, remedy, balanced, also balances, next layer, terrain, location or BSI' "
+        "onclick=handsFree()>Hands-free</button>"
         "<button id=phaseAct class=btn onclick=phaseRun()>Capture stresses &rarr; list</button>"
         "<span id=rstat class=food></span></div>"
         "<div id=recNote class=food></div><div id=hfStat class=food></div><div id=hfLog class=food style='white-space:pre-line'></div>"

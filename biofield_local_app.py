@@ -2531,13 +2531,34 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_terrain(test_id):
         """One live-session terrain field set by hand: phase, location, or one of the
         four BSI numbers (bsi_a..bsi_d). An empty value clears it. Answers with the
-        whole terrain state, so the page shows Regulation from the stored numbers."""
+        whole terrain state, so the page shows Regulation from the stored numbers.
+
+        The hands-free recording sends handsfree=true (ruling 7: the value goes in for
+        review), matched=false for a location not on the stress list, and field "bsi"
+        with all four numbers at once, saved all or nothing. A hand edit clears that
+        field's review mark."""
+        from dashboard.biofield_authoring import set_terrain_bsi
         d = request.get_json(silent=True) or {}
+        hf = bool(d.get("handsfree"))
         with sqlite3.connect(db_path) as cx:
             try:
-                set_terrain_field(cx, test_id, d.get("field"), d.get("value"))
+                if d.get("field") == "bsi":
+                    set_terrain_bsi(cx, test_id, d.get("value"), handsfree=hf)
+                else:
+                    set_terrain_field(cx, test_id, d.get("field"), d.get("value"),
+                                      handsfree=hf, matched=d.get("matched") is not False)
             except ValueError as e:
                 return {"ok": False, "error": str(e)}, 400
+            state = terrain_state(authored_report(cx, test_id))
+        return {"ok": True, **state}
+
+    @app.route("/author/<test_id>/terrain/confirm", methods=["POST"])
+    def author_terrain_confirm(test_id):
+        """Glen confirms the terrain values the hands-free recording wrote, as they
+        stand: every review mark on the terrain panel clears."""
+        from dashboard.biofield_authoring import TERRAIN_FIELDS, mark_terrain_review
+        with sqlite3.connect(db_path) as cx:
+            mark_terrain_review(cx, test_id, TERRAIN_FIELDS, None)
             state = terrain_state(authored_report(cx, test_id))
         return {"ok": True, **state}
 
@@ -4289,6 +4310,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 rids = card_rids or _st.layer_chain_rids(cx, test_id, layer)
                 if rids:
                     _st.cover_stress(cx, test_id, sid, rids)
+                    # "also balances" said in the hands-free recording: the layer
+                    # goes to review like any other hands-free write (ruling 7).
+                    if d.get("handsfree"):
+                        for r in rids:
+                            mark_handsfree(cx, test_id, int(r))
                 else:
                     _st.set_manual_balanced(cx, test_id, sid, True)
                 try:
