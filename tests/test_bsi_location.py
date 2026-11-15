@@ -120,7 +120,7 @@ def test_the_input_sits_after_b_and_before_to(tmp_path):
     m = re.search(r"<input id=bsi_location [^>]*>", seg)
     assert m, "no BSI location input"
     tag = m.group(0)
-    assert " list=vocab " in tag and "value=\"Liver\"" in tag
+    assert " data-loccombo " in tag and "value=\"Liver\"" in tag
     assert "onchange=\"saveTerrain('bsi_location',this)\"" in tag
     # The row reads "A x B [BSI location] to C x D".
     order = [seg.index(x) for x in ("<input id=bsi_a ", "<input id=bsi_b ",

@@ -165,6 +165,139 @@ def client_first_vocab(cx, test_id, q="", limit=5000):
     return (client + rest)[:limit], client
 
 
+# Glen, 15 Nov 2026: the Location drop-down opens with three sections, "SPIRIT ...
+# stresses added in the live session, MIND ... the Clinical stress patterns, BODY ...
+# the purple findings from the E4L scan", then the full list. Spirit is the stress
+# panel's own Spirit group (stress_group in biofield_report_html): 'voice' (said in the
+# session, or captured from its transcript), 'manual' (added by hand on the page) and
+# 'chain' (written from a layer the session built).
+SPIRIT_STRESS_SOURCES = ("voice", "manual", "chain")
+
+
+def _dedupe(labels):
+    out, seen = [], set()
+    for label in labels or ():
+        lbl = " ".join(str(label or "").split())
+        if lbl and lbl.lower() not in seen:
+            seen.add(lbl.lower())
+            out.append(lbl)
+    return out
+
+
+_DIGITS = re.compile(r"(\d+)")
+
+
+def natural_key(label):
+    """Glen, 15 Nov 2026: "each sub-list is alphabetical, but numbers are in numerical
+    sequence not one digit at a time, e.g. ED4 before ED11." Case-insensitive, and each
+    run of digits compares as a number. re.split always starts with text, so every
+    position holds the same type in every key and the tuples always compare."""
+    parts = _DIGITS.split(" ".join(str(label or "").split()).casefold())
+    return tuple(int(p) if i % 2 else p for i, p in enumerate(parts))
+
+
+def natural_sorted(labels):
+    """Stable: labels with the same key keep their order."""
+    return sorted(labels, key=natural_key)
+
+
+# Glen, 15 Nov 2026: "For infoceuticals, use the full name starting with the code, e.g.
+# ED1: Source". Which codes are infoceuticals is biofield_clinical_sections' rule (ED,
+# EI, ES, ET, MB and BFA; not MR or ER). The name comes from e4l.db's e4l_items.
+def _info_match(label):
+    from dashboard.biofield_clinical_sections import _INFOCEUTICAL_CODE
+    return _INFOCEUTICAL_CODE.match(label)
+
+
+def infoceutical_codes(labels):
+    """The infoceutical codes the labels start with, upper case."""
+    out = set()
+    for label in labels or ():
+        m = _info_match(" ".join(str(label or "").split()))
+        if m:
+            out.add(m.group(1).upper())
+    return out
+
+
+def stress_display(label, code_names=None):
+    """"ED1", "ED1 Source" and "ED1: Source" -> "ED1: Source". The words after the code
+    are kept when there are any ("ED10 Skin Epigenetics" -> "ED10: Skin Epigenetics");
+    a bare code takes its name from `code_names` ({CODE: name}), and stays a bare code
+    when no name is known. Anything else is returned with its spaces tidied."""
+    lbl = " ".join(str(label or "").split())
+    m = _info_match(lbl)
+    if not m:
+        return lbl
+    code = m.group(1).upper()
+    rest = lbl[m.end(1):].lstrip(" :.-").strip()
+    name = rest or ((code_names or {}).get(code) or "").strip()
+    return f"{code}: {name}" if name else code
+
+
+def stress_key(label):
+    """The dedupe key: case, spaces and punctuation ignored ("ED1: Source" = "ed1 source")."""
+    return " ".join(re.sub(r"[^0-9a-z]+", " ", str(label or "").casefold()).split())
+
+
+def _display_list(labels, code_names, fold_names):
+    """Each label in its display form, each once. With `fold_names`, a plain name that
+    is the name of an infoceutical in the same list ("Source" beside "ED1: Source") is
+    the same item and is dropped."""
+    shown = [stress_display(l, code_names) for l in labels or ()]
+    info_names = set()
+    if fold_names:
+        info_names = {stress_key(d.split(":", 1)[1]) for d in shown
+                      if ":" in d and _info_match(d)}
+    out, seen = [], set()
+    for d in shown:
+        k = stress_key(d)
+        if not k or k in seen or (not _info_match(d) and k in info_names):
+            continue
+        seen.add(k)
+        out.append(d)
+    return out
+
+
+def spirit_stress_labels(cx, test_id):
+    """This test's live-session stresses, oldest first (sectioned_vocab sorts them).
+    [] when the table is missing."""
+    if test_id in (None, ""):
+        return []
+    try:
+        from dashboard.biofield_stress import _num
+        marks = ",".join("?" for _ in SPIRIT_STRESS_SOURCES)
+        rows = cx.execute(
+            f"SELECT label FROM biofield_auth_stress WHERE test_id=? AND source IN ({marks}) "
+            "ORDER BY id", (_num(test_id), *SPIRIT_STRESS_SOURCES)).fetchall()
+    except sqlite3.Error:
+        return []
+    return _dedupe(r[0] for r in rows)
+
+
+def sectioned_vocab(cx, test_id, mind=(), body=(), limit=5000, code_names=None):
+    """{"spirit", "mind", "body", "all", "unnamed"} for the sectioned stress drop-down.
+
+    `mind` (the Clinical Summary's stress patterns) and `body` (the scan's purple
+    findings) are read by the caller, which holds the profile and the scan.
+    `code_names` is {CODE: name} for the infoceuticals (e4l_scan_marks.e4l_code_names).
+    Each list is in display form ("ED1: Source"), deduped within itself, and in natural
+    order (natural_key); the page filters and never reorders. `all` is the full list
+    the plain drop-down held, so an item may sit in a section and in `all` too. In the
+    sections a plain name folds into its infoceutical ("Source" into "ED1: Source"); in
+    `all` it does not, since "Heart" there is a stress of its own beside "ED6: Heart".
+    `unnamed` lists the infoceutical codes shown bare because no name is known."""
+    vocab, _client = client_first_vocab(cx, test_id, "", limit)
+    out = {"spirit": spirit_stress_labels(cx, test_id), "mind": list(mind or ()),
+           "body": list(body or ()), "all": list(vocab)}
+    unnamed = set()
+    for key in out:
+        fold = key != "all"
+        out[key] = natural_sorted(_display_list(out[key], code_names, fold))
+        unnamed |= {d for d in out[key] if _info_match(d) and ":" not in d}
+    out["unnamed"] = sorted(unnamed, key=natural_key)
+    return out
+
+
 def match_term(cx, kind, text, test_id=None, cues=True):
     """One spoken phrase -> one field value.
 
