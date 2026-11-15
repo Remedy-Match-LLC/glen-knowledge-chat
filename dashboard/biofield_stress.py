@@ -173,6 +173,9 @@ def _norm(s):
     """Normalize a stress label for dedup/label-match: lowercase, collapse internal
     whitespace, strip surrounding non-word characters."""
     s = re.sub(r"\s+", " ", (s or "").strip().lower())
+    # "ED1: Source" is how the stress drop-down shows the infoceutical "ED1 Source"
+    # (Glen, 15 Nov 2026), so a picked one still matches the stored stress.
+    s = re.sub(r"^((?:ed|ei|es|et|mb)\d+|bfa)\s*:\s*", r"\1 ", s)
     return re.sub(r"^[^\w]+|[^\w]+$", "", s)
 
 

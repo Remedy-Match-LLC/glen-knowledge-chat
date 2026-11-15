@@ -212,7 +212,8 @@ def _session_block(h):
 def test_segments_sit_in_the_live_session_block_above_record():
     s = _session_block(_page())
     assert s.index("id=terrainSegs") < s.index("recStart()")
-    for label in (">Terrain<", ">Biological Score Index<", ">Regulation<"):
+    # Since 15 Nov 2026 Regulation ends the BSI row, so its label carries a colon.
+    for label in (">Terrain<", ">Biological Score Index<", ">Regulation:<"):
         assert label in s, label
     assert "Enter all four numbers" in s
 
@@ -253,8 +254,9 @@ def test_visible_text_has_no_em_dash_and_no_all_caps_label():
     seg = s[s.index("id=terrainSegs"):s.index("recStart()")]
     visible = re.sub(r"<[^>]+>", " ", seg)
     assert "—" not in visible and "&mdash;" not in visible
+    # Glen, 15 Nov 2026, asked for SPIRIT in capitals: "Add SPIRIT stress".
     for word in re.findall(r"[A-Za-z]{3,}", visible):
-        assert not word.isupper(), word
+        assert not word.isupper() or word == "SPIRIT", word
 
 
 def test_page_js_posts_the_field_to_the_terrain_route():
@@ -274,8 +276,9 @@ def test_page_embeds_the_stored_state_it_renders_from():
 
 
 def test_location_offers_the_stress_list():
-    """Glen 14 Nov: the location choices are the full stress list (the vocab datalist)."""
+    """Glen 14 Nov: the location choices are the full stress list. Since 15 Nov they
+    come from the sectioned drop-down (locCombo), and the vocab datalist is gone."""
     s = _page(location="kidney")
     m = re.search(r"<input id=t_location[^>]*>", s)
-    assert m and " list=vocab " in m.group(0)
-    assert "<datalist id=vocab>" in s
+    assert m and " data-loccombo " in m.group(0) and " list=" not in m.group(0)
+    assert "<datalist id=vocab>" not in s

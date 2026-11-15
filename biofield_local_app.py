@@ -4536,10 +4536,67 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             return remedy_dosing(cx, request.args.get("name", ""))
 
+    def _sectioned_vocab(cx, tid, limit):
+        """The Location drop-down's sections (Glen, 15 Nov 2026). MIND is every Clinical
+        Summary row's stress pattern, in the page's order. BODY is every bar purple on
+        the intake's own scan. A section that cannot be read comes back empty, with the
+        reason under "errors", so the drop-down never passes a failure off as "none"."""
+        from dashboard.biofield_layer_match import sectioned_vocab
+        errors, mind, body, scan_names = {}, [], [], {}
+        rep = None
+        try:
+            rep = _report_for(cx, tid)
+        except Exception as e:
+            errors["mind"] = errors["body"] = f"the test could not be read: {e!r}"[:200]
+        if rep is not None and not (using_default_fetch_profile and os.environ.get("CI")):
+            try:
+                mind = [(i.get("stress_pattern") or "").strip()
+                        for i in _clinical_items(cx, tid, rep)]
+            except Exception as e:
+                errors["mind"] = f"the Clinical Summary could not be read: {e!r}"[:200]
+        if rep is not None:
+            try:
+                from dashboard import e4l_scan_marks as _sm
+                ctx = _scan_for(rep) or {}
+                if ctx.get("found"):
+                    marks = _sm.infoceutical_marks(cx, e4l_db, ctx.get("scan_id")) or {}
+                    purple = marks.get("purple")
+                    if purple is None:
+                        errors["body"] = (marks.get("purple_error")
+                                          or "the scan's colours could not be read")
+                    else:
+                        # This test's own scan stresses name a code e4l_items lacks.
+                        try:
+                            from dashboard.biofield_stress import _num
+                            scan_names = {str(c).upper(): l for c, l in cx.execute(
+                                "SELECT code,label FROM biofield_auth_stress "
+                                "WHERE test_id=? AND source='scan'", (_num(tid),)) if c and l}
+                        except sqlite3.Error:
+                            scan_names = {}
+                        names = dict(scan_names)
+                        names.update(_sm.e4l_code_names(e4l_db, purple))
+                        body = _sm.purple_finding_names(purple, names)
+            except Exception as e:
+                errors["body"] = f"the scan could not be read: {e!r}"[:200]
+        # Names for every infoceutical code in any list, so "ED1" shows as "ED1: Source".
+        from dashboard.biofield_layer_match import (
+            client_first_vocab, infoceutical_codes, spirit_stress_labels)
+        from dashboard.e4l_scan_marks import e4l_code_names
+        codes = infoceutical_codes(list(mind) + list(body) + spirit_stress_labels(cx, tid)
+                                   + client_first_vocab(cx, tid, "", limit)[0])
+        code_names = dict(scan_names)
+        code_names.update(e4l_code_names(e4l_db, codes))
+        out = sectioned_vocab(cx, tid, mind=mind, body=body, limit=limit,
+                              code_names=code_names)
+        out["errors"] = errors
+        return out
+
     @app.route("/api/vocab")
     def api_vocab():
         tid = request.args.get("test_id", "")
         with sqlite3.connect(db_path) as cx:
+            if tid and request.args.get("sections"):
+                return _sectioned_vocab(cx, tid, _safe_int(request.args.get("limit"), 5000))
             if tid:
                 # Ruling 6, "client first": this test's detected stresses, then the
                 # full vocabulary. Without test_id the answer is exactly as before.

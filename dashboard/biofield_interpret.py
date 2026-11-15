@@ -22,11 +22,17 @@ _SYSTEM = (
     "plain `remedy` string only when a layer has exactly one. NEVER keep just the first "
     "remedy and drop the rest.\n"
     "Glen's grammar:\n"
-    "- 'BSI N times A to B times C, phase P' and 'the location of the N is X' -> set top-level "
-    "`phase` to the integer P (1-5) and top-level `location` to the spoken location X (a short "
-    "string, e.g. 'toxicity', 'kidney', 'large intestine meridian'); ALSO keep a short `header` "
-    "summary. Do NOT turn the BSI/phase/location into a layer. If no phase/location is spoken, "
-    "leave `phase` null and `location` as an empty string.\n"
+    "- 'BSI N times A to B times C, phase P' -> set top-level `phase` to the integer P (1-5). "
+    "'The location of phase P is X' or 'the location of the phase is X' -> top-level `location` "
+    "(the TERRAIN location) = X (a short string, e.g. 'toxicity', 'kidney', 'large intestine "
+    "meridian'). ALSO keep a short `header` summary. Do NOT turn the BSI/phase/location into a "
+    "layer. If no phase/location is spoken, leave `phase` null and `location` as an empty "
+    "string.\n"
+    "- 'The location of the N is X', where N is one of the four BSI numbers and the word "
+    "'phase' is not said ('the location of the 21 is Liver' after 'BSI 21 times 3 to 1 times "
+    "1') -> top-level `bsi_location` = X, NOT `location`. Only when all four BSI numbers are "
+    "clear. If N is not one of the BSI numbers, or could be either the phase or a BSI number, "
+    "it is ambiguous: set neither field from it.\n"
     "- The four BSI numbers in 'BSI N times A to B times C' -> top-level `bsi` as a list of 4 "
     "integers [N, A, B, C], in the order spoken (e.g. 'BSI 13 times 8 to 5 times 3' -> "
     "[13, 8, 5, 3]). Each is 1 to 21. If the BSI is not spoken, or any of the four numbers "
@@ -145,12 +151,55 @@ def interpret_transcript(transcript, complete, glossary=""):
     # Stable sort by layer keeps multiple remedies for the same layer in spoken order.
     layers.sort(key=lambda x: (x["layer"] is None, x["layer"] or 0))
     from dashboard.terrain_phase import phase_num
-    return {"header": (data.get("header") or "").strip(),
+    return _place_locations(transcript, {"header": (data.get("header") or "").strip(),
             "phase": phase_num(data.get("phase")),
             "location": (data.get("location") or "").strip(),
             "bsi": _bsi(data.get("bsi")),
             "bsi_location": (str(data.get("bsi_location") or "")).strip(),
-            "layers": layers}
+            "layers": layers})
+
+
+# Glen, 15 Nov 2026: "BSI. The terrain would be something like 'The location of Phase 5
+# is Liver.'" So "the location of the 21 is Liver" is the BSI location when 21 is one of
+# the four BSI numbers, and "the location of phase 5 (or of the phase) is Liver" is the
+# terrain location. Digits only: a number said in words is left to the model.
+_LOCATION_OF = re.compile(
+    r"\bthe\s+location\s+of\s+(?:the\s+)?(?:(phase)(?:\s+(\d+))?|(\d+))\s+is\s+"
+    r"([^.,;!?]+)", re.I)
+
+
+def _same(a, b):
+    k = lambda s: " ".join(re.sub(r"[^0-9a-z]+", " ", str(s or "").lower()).split())
+    return bool(k(a)) and k(a) == k(b)
+
+
+def _place_locations(transcript, out):
+    """Put each spoken "the location of ... is X" in the field its words name, whatever
+    the model did with it. A BSI number sends X to `bsi_location`, only with all four BSI
+    numbers clear; "phase" sends it to `location`. A number that is not a BSI number, or
+    is both a BSI number and the phase, is ambiguous: X is taken out of both fields and
+    stays only in the transcript. A field the phrase does not account for is left as the
+    model gave it. With no clear BSI, no BSI location is kept at all."""
+    bsi, phase = out.get("bsi"), out.get("phase")
+    for m in _LOCATION_OF.finditer(transcript or ""):
+        x = m.group(4).strip()
+        if m.group(1):
+            n = int(m.group(2)) if m.group(2) else None
+            target = "location" if n is None or phase is None or n == phase else None
+        else:
+            n = int(m.group(3))
+            target = "bsi_location" if (bsi and n in bsi and n != phase) else None
+        # Only X as the model read it is moved: the words after "is" run on to the next
+        # punctuation, so they are a check, never a value of their own.
+        moved = ""
+        for field in ("location", "bsi_location"):
+            if field != target and _same(out.get(field), x):
+                moved, out[field] = out[field], ""
+        if target and moved and not out.get(target):
+            out[target] = moved
+    if not bsi:
+        out["bsi_location"] = ""
+    return out
 
 
 def _bsi(raw):

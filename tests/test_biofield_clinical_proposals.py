@@ -205,7 +205,7 @@ def test_a_typed_stress_pattern_survives_the_reload_and_can_replace_the_remember
     client = create_app(db, fetch_profile=lambda email: {"conditions": ["Fatigue"]}).test_client()
 
     page = client.get(f"/author/{tid}").data.decode()
-    assert 'class=clinical-stress list=vocab value="Adrenal exhaustion"' in page
+    assert 'class=clinical-stress data-loccombo value="Adrenal exhaustion"' in page
     assert 'data-remembered="Adrenal exhaustion"' in page
 
     # Typing a different term holds for this test only until it is explicitly remembered.
@@ -306,7 +306,7 @@ def test_a_suggested_term_is_marked_and_a_recorded_one_is_not(tmp_path, monkeypa
         db, fetch_profile=lambda email: {"conditions": ["Sleep Difficulty"]}).test_client()
 
     page = client.get(f"/author/{tid}").data.decode()
-    assert 'class=clinical-stress list=vocab value="Sleep Regulation"' in page
+    assert 'class=clinical-stress data-loccombo value="Sleep Regulation"' in page
     assert "<span class=clinical-stress-hint>suggested</span>" in page
     # Nothing is recorded yet, so there is no standing term to offer to replace.
     assert 'data-remembered=""' in page

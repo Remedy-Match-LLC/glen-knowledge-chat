@@ -108,6 +108,15 @@ _STYLE = """
    border-radius:6px;padding:6px 8px;font:inherit;font-size:14px}
  .rline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:5px 0;padding:5px 6px;border-radius:6px}
  .rline.unconf{box-shadow:inset 3px 0 0 var(--accent);background:#1a160d}
+ .loclist{position:fixed;z-index:9600;max-height:320px;max-width:520px;overflow:auto;
+  background:var(--card);border:1px solid var(--line);border-radius:6px;padding:2px 0;
+  box-shadow:0 4px 14px rgba(0,0,0,.35)}
+ .loclist[hidden]{display:none}
+ .lochead{padding:4px 10px 2px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--accent)}
+ .locgap{height:10px}
+ .locnone{padding:2px 10px 4px;font-size:12px;color:var(--muted);font-style:italic}
+ .locopt{padding:4px 10px;cursor:pointer}
+ .locopt:hover,.locopt.locact{background:rgba(255,255,255,.08)}
  input.unmatched,.htfields input.unmatched,.rline input.unmatched{border-color:#e0a030;
    background:#2a1f08;text-decoration:underline wavy #e0a030}
  #terrainSegs .tunconf{box-shadow:0 0 0 2px var(--accent);background:#1a160d}
@@ -2006,10 +2015,140 @@ async function importReveal0(){
 async function loadLists(){
  // test_id puts this client's detected stresses first (ruling 6, "client first").
  try{const v=await (await fetch('/api/vocab?limit=5000&test_id=__TID__')).json();
-  document.getElementById('vocab').innerHTML=(v.vocab||[]).map(opt).join('')}catch(e){}
+  // The stress inputs' drop-down (locCombo). The full list shows at once; the
+  // sections follow, as they read the profile and the scan.
+  // In the server's natural order (numbers by value) until the sections arrive.
+  if(!LOC_SECTIONS.all.length){LOC_SECTIONS.all=(v.vocab||[]).slice().sort(
+   new Intl.Collator(undefined,{numeric:true,sensitivity:'base'}).compare);locRefresh()}}catch(e){}
+ locLoad();
  try{const c=await (await fetch('/api/catalog?limit=5000')).json();
   document.getElementById('catalog').innerHTML=(c.catalog||[]).map(function(x){return opt(x.name||'')}).join('')}catch(e){}
 }
+// locCombo:begin
+// Glen, 15 Nov 2026: the Location drop-down in three sections, "SPIRIT ... stresses
+// added in the live session, then a space, then MIND ... the Clinical stress patterns,
+// then another space, then BODY ... the purple findings from the E4L scan, then
+// another space before the full list". Glen then ruled "all": every stress input on
+// the page. A <datalist> cannot show headings or gaps, so this is a small drop-down of
+// its own. Any input with data-loccombo gets one, also inputs added later. Typing
+// filters every section; a heading stays only while its section has a match. Arrow
+// keys and Enter pick, a click picks, Escape closes. Headings, gaps and "none yet" are
+// never picked. A pick fires the input's change, so it saves as typing does, and text
+// not on the list still saves. The input itself is not moved or wrapped: the list hangs
+// off <body>, so mic buttons, expand buttons and drag targets beside it are untouched.
+var LOC_SECTIONS={spirit:[],mind:[],body:[],all:[],errors:{}};
+var LOC_HEADS=[['spirit','SPIRIT'],['mind','MIND'],['body','BODY']];
+var LOC_COMBOS=[];
+// Case, spaces and punctuation ignored, as stress_key on the server: typing "ed1 so"
+// finds "ED1: Source", and a stored "ED1 Source" is the same item.
+function locNorm(s){return String(s==null?'':s).toLowerCase().replace(/[^0-9a-z]+/g,' ').trim()}
+function locEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+ .replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function locUniq(list){var seen={},out=[];(list||[]).forEach(function(x){var k=locNorm(x);
+ if(k&&!seen[k]){seen[k]=1;out.push(String(x).trim())}});return out}
+// The rows to draw, in order: {kind:'head'|'opt'|'none'|'gap', text, sec}.
+function locRows(secs,q){secs=secs||{};var k=locNorm(q),rows=[],err=secs.errors||{};
+ function hit(x){return !k||locNorm(x).indexOf(k)>=0}
+ LOC_HEADS.forEach(function(h){var items=locUniq(secs[h[0]]).filter(hit);
+  if(k&&!items.length)return;
+  rows.push({kind:'head',text:h[1],sec:h[0]});
+  if(!items.length)rows.push({kind:'none',sec:h[0],
+   text:err[h[0]]?'could not be read':'none yet'});
+  items.forEach(function(x){rows.push({kind:'opt',text:x,sec:h[0]})});
+  rows.push({kind:'gap',sec:h[0]})});
+ var all=locUniq(secs.all).filter(hit);
+ if(all.length)rows.push({kind:'head',text:'All stresses',sec:'all'});
+ all.forEach(function(x){rows.push({kind:'opt',text:x,sec:'all'})});
+ if(k&&!rows.length)rows.push({kind:'none',text:'no match',sec:''});
+ return rows}
+// A pick is typing plus leaving the field: input handlers (dirtyLayer, clinicalStressTyped)
+// and change handlers (saveTerrain, saveClinicalStress) run as they would by hand.
+function locFire(inp){['input','change'].forEach(function(t){
+ try{inp.dispatchEvent(new Event(t,{bubbles:true}))}
+ catch(e){var f=inp['on'+t];if(typeof f==='function')f.call(inp)}})}
+function locCombo(inp,o){o=o||{};
+ var lb=document.createElement('div'),id=(inp.id||'loc')+'_lb';
+ lb.id=id;lb.className='loclist';lb.setAttribute('role','listbox');lb.hidden=true;
+ (document.body||document.documentElement).appendChild(lb);
+ if(inp.hasAttribute&&inp.hasAttribute('list'))inp.removeAttribute('list');
+ inp.setAttribute('role','combobox');inp.setAttribute('aria-autocomplete','list');
+ inp.setAttribute('aria-expanded','false');inp.setAttribute('aria-controls',id);
+ inp.setAttribute('autocomplete','off');
+ var c={inp:inp,lb:lb,rows:[],active:-1,open:false,picking:false};
+ function opts(){var out=[];c.rows.forEach(function(r,i){if(r.kind==='opt')out.push(i)});return out}
+ c.render=function(){c.rows=locRows(LOC_SECTIONS,inp.value);
+  if(c.active>=c.rows.length||(c.active>=0&&c.rows[c.active].kind!=='opt'))c.active=-1;
+  lb.innerHTML=c.rows.map(function(r,i){
+   if(r.kind==='head')return '<div class=lochead role=presentation>'+locEsc(r.text)+'</div>';
+   if(r.kind==='gap')return '<div class=locgap role=presentation aria-hidden=true></div>';
+   if(r.kind==='none')return '<div class=locnone role=presentation>'+locEsc(r.text)+'</div>';
+   return '<div class="locopt'+(i===c.active?' locact':'')+'" role=option id='+id+'_o'+i+
+    ' data-i='+i+' aria-selected='+(i===c.active?'true':'false')+'>'+locEsc(r.text)+'</div>'}).join('');
+  if(c.active>=0)inp.setAttribute('aria-activedescendant',id+'_o'+c.active);
+  else inp.removeAttribute('aria-activedescendant')};
+ c.place=function(){if(!inp.getBoundingClientRect)return;var r=inp.getBoundingClientRect();
+  lb.style.left=Math.round(r.left)+'px';lb.style.top=Math.round(r.bottom+2)+'px';
+  lb.style.minWidth=Math.round(Math.max(r.width,220))+'px'};
+ c.show=function(){if(!inp.isConnected&&inp.isConnected!==undefined){c.hide();return}
+  c.open=true;lb.hidden=false;inp.setAttribute('aria-expanded','true');c.place();c.render()};
+ c.hide=function(){c.open=false;lb.hidden=true;c.active=-1;inp.setAttribute('aria-expanded','false');
+  inp.removeAttribute('aria-activedescendant')};
+ c.pick=function(i){var r=c.rows[i];if(!r||r.kind!=='opt')return;
+  inp.value=r.text;c.hide();c.picking=true;try{locFire(inp)}finally{c.picking=false}};
+ c.move=function(d){var os=opts();if(!os.length)return;var at=os.indexOf(c.active);
+  at=at<0?(d>0?0:os.length-1):Math.max(0,Math.min(os.length-1,at+d));c.active=os[at];c.render()};
+ inp.addEventListener('focus',function(){c.show()});
+ inp.addEventListener('input',function(){if(c.picking)return;c.active=-1;c.show()});
+ inp.addEventListener('blur',function(){setTimeout(function(){c.hide()},150)});
+ // Capture phase: it runs before the input's own onkeydown, so Enter on a highlighted
+ // item picks it, and only Enter with nothing highlighted reaches that handler (add).
+ inp.addEventListener('keydown',function(e){
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!c.open)c.show();
+   c.move(e.key==='ArrowDown'?1:-1);return}
+  if(e.key==='Escape'){if(c.open){e.preventDefault();c.hide()}return}
+  if(e.key==='Enter'){if(c.open&&c.active>=0){e.preventDefault();
+    if(e.stopImmediatePropagation)e.stopImmediatePropagation();c.pick(c.active);return}
+   c.hide();if(o.onEnter){e.preventDefault();o.onEnter(inp)}}},true);
+ // mousedown, not click: it lands before the input's blur closes the list.
+ lb.addEventListener('mousedown',function(e){var t=e.target;
+  t=t&&t.closest?t.closest('[data-i]'):t;if(!t||!t.dataset||t.dataset.i==null)return;
+  e.preventDefault();c.pick(Number(t.dataset.i))});
+ LOC_COMBOS.push(c);return c}
+function locInit(){[].slice.call(document.querySelectorAll('input[data-loccombo]')).forEach(function(inp){
+ if(inp.dataset.locReady)return;inp.dataset.locReady='1';
+ locCombo(inp,inp.id==='spiritAdd'?{onEnter:function(){spiritAddNow()}}:{})})}
+function locRefresh(){LOC_COMBOS.forEach(function(c){if(c.open)c.render()})}
+// Layer cards, groups and the stress panel are drawn after load: give theirs one too.
+function locWatch(){if(typeof MutationObserver==='undefined'||!document.body)return;
+ var due=false;new MutationObserver(function(){if(due)return;due=true;
+  setTimeout(function(){due=false;locInit()},0)}).observe(document.body,{childList:true,subtree:true});
+ window.addEventListener('scroll',function(){LOC_COMBOS.forEach(function(c){if(c.open)c.place()})},true);
+ window.addEventListener('resize',function(){LOC_COMBOS.forEach(function(c){if(c.open)c.place()})})}
+async function locLoad(){
+ try{var j=await (await fetch('/api/vocab?limit=5000&sections=1&test_id=__TID__')).json();
+  if(j&&j.all){LOC_SECTIONS={spirit:j.spirit||[],mind:j.mind||[],body:j.body||[],all:j.all||[],
+   errors:j.errors||{}};locRefresh()}}catch(e){}
+ return LOC_SECTIONS}
+// Glen, 15 Nov 2026: "Add a section to add stresses to the SPIRIT stress list". The
+// same route as the stress panel's own Add (source 'manual', a SPIRIT source).
+function spiritStat(t){var e=document.getElementById('spiritStat');if(e)e.textContent=t}
+async function spiritAddNow(){var inp=document.getElementById('spiritAdd');if(!inp)return;
+ var v=(inp.value||'').trim();
+ if(!v){spiritStat('Type or pick a stress first. Nothing added.');return}
+ var had={};(LOC_SECTIONS.spirit||[]).forEach(function(x){had[locNorm(x)]=1});
+ if(had[locNorm(v)]){spiritStat('Already in SPIRIT: '+v+'. Nothing added.');return}
+ spiritStat('Adding…');
+ var j=null;try{j=await post('/author/__TID__/stress/add',{label:v})}catch(e){j=null}
+ if(!(j&&j.ok)){spiritStat('Not added: '+((j&&j.error)||'the server did not answer'));return}
+ var name=j.label||v;
+ if(had[locNorm(name)]){spiritStat('Already in SPIRIT: '+name+'. Nothing added.');return}
+ await locLoad();
+ var now=(LOC_SECTIONS.spirit||[]).some(function(x){return locNorm(x)===locNorm(name)});
+ if(now){inp.value='';spiritStat('Added to SPIRIT: '+name)}
+ else spiritStat('Already a stress on this test outside SPIRIT: '+name+'. Nothing added.');
+ if(typeof loadStress==='function')try{loadStress()}catch(e){}}
+// locCombo:end
+locInit();locWatch();
 function setPhase(p){window._phase=p;
  document.getElementById('phaseCap').className=(p==1?'btn':'btn ghost');
  document.getElementById('phaseBal').className=(p==2?'btn':'btn ghost');
@@ -2522,8 +2661,8 @@ def _row_inputs(p, l):
         return (f"<td class=wrapcell><span class=cellwrap>{inp}"
                 f"<button type=button class=xpand onclick=\"xpand(this)\" "
                 f"title=\"Show full text\">&#8690;</button><div class=full></div></span></td>")
-    head = f'<input id="{p}_head" list="vocab" value="{g("head")}" title="{g("head")}">'
-    most = f'<input id="{p}_most" list="vocab" value="{g("most_affected")}" title="{g("most_affected")}">'
+    head = f'<input id="{p}_head" data-loccombo value="{g("head")}" title="{g("head")}">'
+    most = f'<input id="{p}_most" data-loccombo value="{g("most_affected")}" title="{g("most_affected")}">'
     remedy = (f'<input id="{p}_remedy" list="catalog" value="{g("remedy")}" '
               f'title="{g("remedy")}" onchange="fillDose(\'{p}\')">')
     return (
@@ -2883,7 +3022,7 @@ def _covered_html(stresses, layer=None):
     shown = chips or "<span class=food>&mdash; drag an unbalanced stress here</span>"
     add = ""
     if layer is not None:
-        add = (f"<div class=stress-inline><input class=stress-add list=vocab "
+        add = (f"<div class=stress-inline><input class=stress-add data-loccombo "
                f"placeholder='add balanced stress to layer {int(layer)}…' "
                f"onkeydown=\"if(event.key==='Enter'){{event.preventDefault();"
                f"addLayerStress(this,{int(layer)})}}\">"
@@ -2951,11 +3090,11 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None,
                                      bottles_by_remedy=bottles_by_remedy)
                         for r in g["rows"])
         head_in = ("<span class=fieldmic>" + _xwrap(
-            f'<input id={gid}_head list=vocab value="{he}" title="{he}" '
+            f'<input id={gid}_head data-loccombo value="{he}" title="{he}" '
             'oninput="dirtyLayer(this)">')
             + _mic_button(f"{gid}_head", "head", "Speak the Head") + "</span>")
         tail_in = ("<span class=fieldmic>" + _xwrap(
-            f'<input id={gid}_most list=vocab value="{me}" title="{me}" '
+            f'<input id={gid}_most data-loccombo value="{me}" title="{me}" '
             'oninput="dirtyLayer(this)">')
             + _mic_button(f"{gid}_most", "tail", "Speak the Tail") + "</span>")
         bal = " checked" if g.get("balanced") else ""
@@ -2995,10 +3134,10 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None,
     cards += (
         "<div class=lcard data-gid=gnew data-nodrop=1><div class=lhdr><span class=lnum>+</span>"
         "<div class=htfields>"
-        "<label>Head</label><span class=fieldmic><input id=gnew_head list=vocab "
+        "<label>Head</label><span class=fieldmic><input id=gnew_head data-loccombo "
         "placeholder='new layer stress (head)'>"
         + _mic_button("gnew_head", "head", "Speak the Head") + "</span>"
-        "<label>Tail</label><span class=fieldmic><input id=gnew_most list=vocab "
+        "<label>Tail</label><span class=fieldmic><input id=gnew_most data-loccombo "
         "placeholder='most affected (tail)'>"
         + _mic_button("gnew_most", "tail", "Speak the Tail") + "</span>"
         "</div><input type=hidden id=gnew_layer value=''></div>"
@@ -3497,7 +3636,7 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
                  f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
                  f"<div class=clinical-stress-row><label class=clinical-stress-label>Stress pattern (head &amp; tail)"
                  f"{'<span class=clinical-stress-hint>suggested</span>' if item.get('pattern_is_suggested') else ''}"
-                 f"<input class=clinical-stress list=vocab value=\"{_e(item.get('stress_pattern') or '')}\" "
+                 f"<input class=clinical-stress data-loccombo value=\"{_e(item.get('stress_pattern') or '')}\" "
                  f"data-remembered=\"{_e(item.get('remembered_pattern') or '')}\" "
                  f"placeholder=\"Defaults to '{_e(_default_pattern(label))}'\" oninput=clinicalStressTyped(this) "
                  "onchange=saveClinicalStress(this)></label>"
@@ -4119,7 +4258,8 @@ def _terrain_segments_html(report):
     """Live session segments 1 to 3 (plan 2026-11-07): Terrain, Biological Score Index,
     Regulation. Every field saves on change through /author/<tid>/terrain. Regulation is
     read-only and recomputed live by regulationLevel() in the page JS, which mirrors
-    dashboard.terrain_phase.regulation_level."""
+    dashboard.terrain_phase.regulation_level. Since 15 Nov 2026 it ends the BSI row, and
+    the Add SPIRIT stress box sits below it."""
     from dashboard.terrain_phase import (PHASE_CLINICAL_NAMES, PHASE_NAMES, bsi_num,
                                          bsi_warnings, phase_num, regulation_display)
     p = phase_num(report.get("phase"))
@@ -4157,7 +4297,7 @@ def _terrain_segments_html(report):
         # Glen, 14 Nov 2026 (Bridge): locations use "the same list of stresses", "all
         # possible stresses on our list". The vocab drop-down the layer cards use;
         # typing a location not on it still saves.
-        "<input id=t_location list=vocab placeholder='Location' aria-label='Terrain location' "
+        "<input id=t_location data-loccombo placeholder='Location' aria-label='Terrain location' "
         f"value=\"{_e(report.get('location') or '')}\" style='width:240px'{mark('location')} "
         "onchange=\"saveTerrain('location',this)\">"
         "<button id=tConfirm type=button class='btn ghost' onclick=tConfirm() "
@@ -4169,15 +4309,23 @@ def _terrain_segments_html(report):
         + box(0, "a") + " <span>x</span> " + box(1, "b") + " "
         # Glen, 15 Nov 2026: "A x B [location] to C x D". Its own field, separate from
         # the terrain location above; the same stress-list drop-down.
-        "<input id=bsi_location list=vocab placeholder='Location' aria-label='BSI location' "
+        "<input id=bsi_location data-loccombo placeholder='Location' aria-label='BSI location' "
         f"value=\"{_e(report.get('bsi_location') or '')}\" style='width:180px'{mark('bsi_location')} "
         "onchange=\"saveTerrain('bsi_location',this)\">"
         " <span>to</span> "
         + box(2, "c") + " <span>x</span> " + box(3, "d") +
-        "</div>"
-        "<div class=btnrow style='align-items:center'>"
-        "<label style='min-width:150px'>Regulation</label>"
+        # Glen, 15 Nov 2026: "Regulation can go at the end of the BSI line."
+        "<span id=t_regulation_label style='margin-left:14px'>Regulation:</span> "
         f"<span id=t_regulation>{_e(regulation_display(*bsi))}</span>"
+        "</div>"
+        # Glen, 15 Nov 2026: "Add a section to add stresses to the SPIRIT stress list
+        # after Regulation." The stress panel's own Add route (spiritAddNow).
+        "<div id=spiritAddRow class=btnrow style='align-items:center'>"
+        "<label for=spiritAdd style='min-width:150px'>Add SPIRIT stress</label>"
+        "<input id=spiritAdd data-loccombo placeholder='Pick or type a stress' "
+        "aria-label='Add a SPIRIT stress' style='width:240px'>"
+        "<button type=button class='btn ghost' onclick=spiritAddNow()>Add</button>"
+        "<span id=spiritStat class=food role=status></span>"
         "</div>"
         f"<div id=t_warn class=food>{_e(warn)}</div>"
         "<span id=tstat class=food></span>"
@@ -4280,12 +4428,16 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                                    no_pattern_heads=_no_pattern_heads(clinical_checklist))
              + "</div>"
              "</div>"
-             "<datalist id=vocab></datalist><datalist id=catalog></datalist>")
+             "<datalist id=catalog></datalist>")
     session = (
         "<h2>Live session (voice)</h2>"
         "<p class=sub>Record yourself narrating the test in your own voice &mdash; the live "
         "transcript saves to this test's notes and feeds the narrative. Wear a lav/AirPods for "
         "the codes.</p>"
+        # Glen, 15 Nov 2026: "Include everything from Terrain to the Live transcript in
+        # the live session section". One wrapper, not a .card, so the fold treats the
+        # heading and all of this as one section.
+        "<div id=liveSession>"
         + _terrain_segments_html(report) +
         "<div class=btnrow style='margin-bottom:6px'>"
         # Steps, not phases (Glen 2026-09-21). "Phase" collides with the 5 Phases of
@@ -4315,7 +4467,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         f"<textarea id=sessText rows=6 oninput='scheduleSessionSave()' "
         f"placeholder='Live transcript appears here as you speak..."
         f"'>{_e(transcript)}</textarea>"
-        f"<div id=sessSaved class=food>{('Last saved: ' + _e(fmt_saved_hst(transcript_updated))) if transcript_updated else ''}</div>")
+        f"<div id=sessSaved class=food>{('Last saved: ' + _e(fmt_saved_hst(transcript_updated))) if transcript_updated else ''}</div>"
+        "</div>")
     narrative_section = (
         "<span id=narrative></span><h2>Narrative</h2>"
         "<p class=sub>Generate a plain-language narrative from the transcript above and the "
@@ -4368,7 +4521,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                                             free_factors=clinical_free_factors,
                                             botanical=clinical_botanical)
                  + history_links_html
-                 + chain + session + narrative_section
+                 # Glen, 15 Nov 2026: the live session section goes "above the causal chain".
+                 + session + chain + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
                  + _FOLD_JS.replace("__FOLDTID__", re.sub(r"[^A-Za-z0-9_-]", "", tid))
                            .replace("__FOLDDONE__", "true" if client_notified else "false")
@@ -4918,7 +5072,7 @@ def render_stress_panel(data):
             items = _list(L.get("stresses"))
             body = (f"<ul style='margin:4px 0;padding-left:18px'>{items}</ul>" if items
                     else "<div class=food style='margin:2px 0 6px'>No stresses on this layer.</div>")
-            add_in = (f"<input class=stress-add list=vocab placeholder='add balanced stress…' "
+            add_in = (f"<input class=stress-add data-loccombo placeholder='add balanced stress…' "
                       f"onkeydown=\"if(event.key==='Enter'){{addStress(this.value,{int(L.get('layer'))});this.value=''}}\" "
                       f"style='width:100%;margin:2px 0 8px;font-size:12px'>")
             parts.append(f"<div class=food style='font-weight:600;margin-top:6px'>"
@@ -4934,7 +5088,7 @@ def render_stress_panel(data):
                          " <span style='font-weight:400'>&mdash; or drag one onto a layer</span></div>"
                          f"<ul style='margin:4px 0;padding-left:18px'>{un}</ul>")
         parts.append("<div class=food style='font-weight:600;margin-top:8px'>Add active stress</div>"
-                     "<input class=stress-add list=vocab placeholder='add active stress…' "
+                     "<input class=stress-add data-loccombo placeholder='add active stress…' "
                      "onkeydown=\"if(event.key==='Enter'){addStress(this.value,null);this.value=''}\" "
                      "style='width:100%;margin:2px 0 6px;font-size:12px'>")
         inner = "".join(parts) or "<div class=food style='margin-top:6px'>No stresses yet.</div>"

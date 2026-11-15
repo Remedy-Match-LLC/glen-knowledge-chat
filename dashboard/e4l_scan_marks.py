@@ -181,3 +181,55 @@ def infoceutical_marks(cx, e4l_db, scan_id):
     return {"scan_id": scan_id, "recommended": recommended,
             "recommended_error": recommended_error, "purple": purple,
             "colours": colours, "purple_error": error}
+
+
+# "12. Choice Point", "8 - Humility": the bar's position on its page, not its name.
+_POSITION = re.compile(r"^\d+\s*(?:\.|-)\s+")
+
+
+def purple_finding_names(purple, code_names=None):
+    """Every bar purple on the scan, for the Location drop-down's BODY section (Glen,
+    15 Nov 2026: "the purple findings from the E4L scan").
+
+    `purple` is infoceutical_marks()["purple"]: bar labels, an E4L code ("ED4") or a
+    printed name ("Molybdenum", "12. Choice Point"). An infoceutical code stays a code:
+    the drop-down shows it as "ED4: Nerve" (biofield_layer_match.stress_display). Any
+    other code (ER, MR) is shown by its name from `code_names` ({CODE: name}), or as
+    the bare code when no name is known. A leading position number is dropped. Each
+    once; sectioned_vocab puts them in order."""
+    from dashboard.biofield_clinical_sections import _INFOCEUTICAL_CODE
+    names = {str(k).upper(): v for k, v in (code_names or {}).items() if v}
+    out, seen = [], set()
+    for label in purple or ():
+        label = str(label or "").strip()
+        code = _CODE.match(label)
+        if code and code.group(1) == label:
+            name = label.upper() if _INFOCEUTICAL_CODE.match(label) else (
+                names.get(label.upper()) or label).strip()
+        else:
+            name = _POSITION.sub("", label).strip()
+        key = re.sub(r"\s+", "", name.lower())
+        if name and key not in seen:
+            seen.add(key)
+            out.append(name)
+    return out
+
+
+def e4l_code_names(e4l_db, codes):
+    """{CODE: name} from e4l.db's e4l_items, read only. {} when it cannot be read."""
+    codes = sorted({str(c).upper() for c in codes or () if c})
+    if not codes or not e4l_db:
+        return {}
+    try:
+        ecx = sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True)  # raw-sqlite-ok: e4l.db, read only
+    except sqlite3.Error:
+        return {}
+    try:
+        marks = ",".join("?" for _ in codes)
+        return {str(c).upper(): n for c, n in ecx.execute(
+            f"SELECT code,name FROM e4l_items WHERE UPPER(code) IN ({marks})", codes)
+            if n}
+    except sqlite3.Error:
+        return {}
+    finally:
+        ecx.close()

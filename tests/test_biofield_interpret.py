@@ -70,15 +70,17 @@ def test_prompt_asks_for_structured_phase_and_location():
 
 
 def test_interpret_returns_top_level_phase_and_location():
+    """Glen, 15 Nov 2026: "the location of the 21" is the BSI location, not the terrain's.
+    Inverted from the old rule, which sent it to `location`."""
     def fake(system, user):
         return json.dumps({
             "header": "BSI 21x1 / 1x1; phase 2 = toxicity; location of 21 = toxicity",
-            "phase": 2, "location": "toxicity",
+            "phase": 2, "location": "toxicity", "bsi": [21, 1, 1, 1],
             "layers": [{"layer": 1, "head": "Acid", "most_affected": "Acid",
                         "remedy": "Sterol Max"}]})
     out = interpret_transcript(TRANSCRIPT, fake)
     assert out["phase"] == 2
-    assert out["location"] == "toxicity"
+    assert out["bsi_location"] == "toxicity" and out["location"] == ""
 
 
 def test_interpret_coerces_and_bounds_phase():
@@ -166,3 +168,66 @@ def test_the_prompt_asks_for_every_layer_with_a_stress():
     from dashboard.biofield_interpret import _SYSTEM
     assert "Emit every layer that has a stress (head)" in _SYSTEM
     assert "Emit a layer when it has a stress (head) and a remedy" not in _SYSTEM
+
+
+# ---- "the location of ..." (Glen, 15 Nov 2026) -------------------------------------------
+# "BSI. The terrain would be something like 'The location of Phase 5 is Liver.'"
+
+def _fixed(**reply):
+    return lambda system, user: json.dumps(dict({"layers": []}, **reply))
+
+
+def test_prompt_sends_a_bsi_number_to_bsi_location_and_phase_to_location():
+    sys = build_interpret_prompt("x")["system"]
+    assert "'The location of phase P is X'" in sys and "the TERRAIN location" in sys
+    assert "'The location of the N is X', where N is one of the four BSI numbers" in sys
+    assert "`bsi_location` = X, NOT `location`" in sys
+    assert "it is ambiguous: set neither field from it" in sys
+    # The old rule sent "the location of the N" to the terrain location.
+    assert "'the location of the N is X' -> set top-level" not in sys
+
+
+def test_location_of_a_bsi_number_is_the_bsi_location():
+    t = "BSI 21 times 3 to 1 times 1, phase 5. The location of the 21 is Liver."
+    for reply in ({"location": "Liver"}, {"bsi_location": "Liver"}):
+        out = interpret_transcript(t, _fixed(bsi=[21, 3, 1, 1], phase=5, **reply))
+        assert (out["bsi_location"], out["location"]) == ("Liver", ""), reply
+
+
+def test_location_of_phase_is_the_terrain_location():
+    for t in ("BSI 21 times 3 to 1 times 1, phase 5. The location of Phase 5 is Liver.",
+              "BSI 21 times 3 to 1 times 1, phase 5. The location of the phase is Liver."):
+        for reply in ({"location": "Liver"}, {"bsi_location": "Liver"}):
+            out = interpret_transcript(t, _fixed(bsi=[21, 3, 1, 1], phase=5, **reply))
+            assert (out["location"], out["bsi_location"]) == ("Liver", ""), (t, reply)
+
+
+def test_both_phrasings_in_one_session():
+    t = ("BSI 21 times 3 to 1 times 1, phase 5. The location of Phase 5 is Liver. "
+         "The location of the 21 is Kidney.")
+    out = interpret_transcript(t, _fixed(bsi=[21, 3, 1, 1], phase=5, location="Liver",
+                                         bsi_location="Kidney"))
+    assert (out["location"], out["bsi_location"]) == ("Liver", "Kidney")
+
+
+def test_ambiguous_location_saves_neither():
+    # 7 is not a BSI number.
+    t = "BSI 21 times 3 to 1 times 1, phase 5. The location of the 7 is Liver."
+    out = interpret_transcript(t, _fixed(bsi=[21, 3, 1, 1], phase=5, location="Liver"))
+    assert (out["location"], out["bsi_location"]) == ("", "")
+    # 3 is both the phase and a BSI number.
+    t = "BSI 21 times 3 to 1 times 1, phase 3. The location of the 3 is Liver."
+    out = interpret_transcript(t, _fixed(bsi=[21, 3, 1, 1], phase=3, bsi_location="Liver"))
+    assert (out["location"], out["bsi_location"]) == ("", "")
+
+
+def test_no_bsi_location_without_all_four_numbers():
+    t = "BSI 21 times 3 to something. The location of the 21 is Liver."
+    out = interpret_transcript(t, _fixed(bsi=[21, 3, None, None], bsi_location="Liver"))
+    assert out["bsi"] is None and out["bsi_location"] == ""
+
+
+def test_the_words_after_is_never_become_a_value_on_their_own():
+    t = "BSI 21 times 3 to 1 times 1. The location of the 21 is Liver and then grief"
+    out = interpret_transcript(t, _fixed(bsi=[21, 3, 1, 1]))
+    assert (out["location"], out["bsi_location"]) == ("", "")

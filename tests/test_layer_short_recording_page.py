@@ -21,7 +21,7 @@ def _page(layers=(), **kw):
 
 def _chain(h):
     i = h.index("id=chaintbl")
-    return h[i:h.index("<datalist id=vocab>", i)]
+    return h[i:h.index("<datalist id=catalog>", i)]
 
 
 LAYERS = [_layer(1, 1, "Liver", "Gut", "Sobopla", 1), _layer(2, 1, "Liver", "Gut", "TMG", 1),
