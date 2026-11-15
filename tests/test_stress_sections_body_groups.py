@@ -16,7 +16,7 @@ from dashboard import e4l_scan_marks as marks_mod
 from dashboard.biofield_authoring import add_chain_row, create_test, init_auth_tables
 from dashboard.biofield_layer_match import (BODY_GROUPS, chain_stress_labels, layer_heads,
                                             on_layer_labels, sectioned_vocab,
-                                            spirit_stress_labels)
+                                            natural_sorted, spirit_stress_labels)
 from dashboard.biofield_stress import add_stress, init_stress_tables
 from tests.test_biofield_local_app import _species_known, _no_console_gate  # noqa: F401
 
@@ -113,7 +113,7 @@ def test_layer_heads_join_spirit_unless_already_listed(tmp_path):
     assert layer_heads(cx, tid) == ["Liver Detox", "Rectum & Self-Worth"]
     got = sectioned_vocab(cx, tid, mind=["Pineal 2"], body=["Lead"], code_names=NAMES)
     # "Rectum & Self-Worth" is a head, but it is already in the Causal chain.
-    assert got["spirit"] == ["Grief", "Liver Detox", "Pressure 2"]
+    assert got["spirit"] == ["Grief", "Pressure 2", "Liver Detox"]
     # A head that is a Mind or Body item stays there and out of SPIRIT.
     cx.execute("UPDATE biofield_auth_chain SET head='lead' WHERE head='Liver Detox'")
     got = sectioned_vocab(cx, tid, mind=["Pineal 2"], body=["Lead"], code_names=NAMES)
@@ -308,7 +308,7 @@ def test_the_route_answers_body_groups_spirit_heads_and_on_layer(app):
         # Silica has no section known: Body stresses.
         ["Body stresses", ["Lead", "Silica"]],
         ["Psyche", ["Choice Point", "Humility"]]]
-    assert j["spirit"] == ["Grief", "Liver Detox", "Pressure 2"]
+    assert j["spirit"] == ["Grief", "Pressure 2", "Liver Detox"]
     assert "Liver Detox" in j["on_layer"] and "Skin & Gut Integrity" in j["on_layer"]
     assert "Grief" not in j["on_layer"]
     assert j["spirit_heads"] == ["Liver Detox"]
@@ -377,3 +377,38 @@ def test_a_failed_re_read_is_not_repeated_on_every_call(tmp_path, monkeypatch):
     marks_mod.infoceutical_marks(cx, e4l, 7)
     assert marks_mod.bar_sections(cx, 7) == {"Lead": ["ENVIRONMENTAL"]}
     assert marks_mod._REREAD_FAILED == {}
+
+
+def test_greyed_items_go_last_in_every_list_and_body_group(tmp_path):
+    # Glen, 15 Nov 2026: "The grayed items can also move to the bottom of their section
+    # list in alphabetical order."
+    cx, tid = _seeded(tmp_path)
+    t = int(str(tid).lstrip("a"))
+    rid = cx.execute("SELECT id FROM biofield_auth_chain WHERE head='Liver Detox'").fetchone()[0]
+    add_stress(cx, tid, "Apathy", source="voice")
+    add_stress(cx, tid, "Anger", source="manual")
+    from dashboard.biofield_stress import seed_from_scan
+    seed_from_scan(cx, tid, [{"code": "ED11", "name": "Liver Driver"}], {})
+    for label in ("Apathy", "Liver Driver"):
+        cx.execute("INSERT INTO biofield_auth_layer_stress VALUES(?,?,?)",
+                   (t, _sid(cx, tid, label), rid))
+    cx.execute("UPDATE biofield_auth_chain SET head='Rectum & Self-Worth' WHERE id=?", (rid,))
+    got = sectioned_vocab(cx, tid, mind=["Pineal 2", "Adrenal Fatigue"],
+                          body=["ED11", "ED4", "ED20", "Lead"],
+                          code_names={"ED20": "X", **NAMES})
+    # SPIRIT: Apathy is on the layer, so it follows Anger, Grief and Pressure 2.
+    assert got["spirit"] == ["Anger", "Grief", "Pressure 2", "Apathy"]
+    assert got["mind"] == ["Pineal 2", "Adrenal Fatigue"]
+    groups = dict(got["body_groups"])
+    # Linked chain stresses last in the chain group; ED11 last in Infoceuticals, and the
+    # rest keep the natural order (ED4 before ED20).
+    assert groups["Causal chain"] == ["Rectum & Self-Worth", "Shoulder, Arm & Emotional "
+                                      "Integration", "Skin & Gut Integrity"]
+    assert groups["Infoceuticals"] == ["ED4: Nerve", "ED20: X", "ED11: Liver"]
+    assert [g for g, _ in got["body_groups"]] == ["Causal chain", "Infoceuticals",
+                                                  "Body stresses"]
+    on = {d.lower() for d in got["on_layer"]}
+    first_on = next(i for i, d in enumerate(got["all"]) if d.lower() in on)
+    assert all(d.lower() in on for d in got["all"][first_on:])
+    assert all(d.lower() not in on for d in got["all"][:first_on])
+    assert got["all"][first_on:] == natural_sorted(got["all"][first_on:])

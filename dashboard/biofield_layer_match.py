@@ -354,7 +354,8 @@ def sectioned_vocab(cx, test_id, mind=(), body=(), limit=5000, code_names=None,
     purple bar that is not an infoceutical is Psyche when it is in `psyche` (the bars
     on the scan's psyche pages), else Body stresses. SPIRIT is the live session's own
     stresses plus each layer's head, a head left out when it is already in BODY or
-    MIND; `spirit_heads` names the heads in SPIRIT that are not stored stresses.
+    MIND; each list, and each Body group, puts its `on_layer` stresses last;
+    `spirit_heads` names the heads in SPIRIT that are not stored stresses.
     `on_layer` lists the stresses already on a layer (on_layer_labels), which the
     page shows greyed in every section."""
     vocab, _client = client_first_vocab(cx, test_id, "", limit)
@@ -388,6 +389,19 @@ def sectioned_vocab(cx, test_id, mind=(), body=(), limit=5000, code_names=None,
     out["spirit_heads"] = [d for d in out["spirit"] if stress_key(d) not in stored_keys]
     out["on_layer"] = natural_sorted(_display_list(
         on_layer_labels(cx, test_id), code_names, False))
+    # Glen, 15 Nov 2026: "The grayed items can also move to the bottom of their section
+    # list in alphabetical order." In each list, and in each Body group, the stresses
+    # on a layer follow the rest. A stable split, so each part keeps its natural order.
+    done = {stress_key(d) for d in out["on_layer"]}
+
+    def greyed_last(items):
+        return ([d for d in items if stress_key(d) not in done]
+                + [d for d in items if stress_key(d) in done])
+    for key in ("spirit", "mind", "all"):
+        out[key] = greyed_last(out[key])
+    out["body_groups"] = [[g, greyed_last(items)] for g, items in out["body_groups"]]
+    out["body"] = [d for _g, items in out["body_groups"] for d in items]
+    out["spirit_heads"] = [d for d in out["spirit"] if d in set(out["spirit_heads"])]
     unnamed = set()
     for key in ("spirit", "mind", "body", "all"):
         unnamed |= {d for d in out[key] if _info_match(d) and ":" not in d}
