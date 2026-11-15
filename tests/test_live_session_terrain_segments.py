@@ -222,7 +222,10 @@ def test_phase_dropdown_lists_blank_then_the_five_phases():
     sel = re.search(r"<select id=t_phase[^>]*>(.*?)</select>", s).group(1)
     opts = re.findall(r"<option value='([^']*)'( selected)?>([^<]*)</option>", sel)
     assert [o[0] for o in opts] == ["", "1", "2", "3", "4", "5"]
-    assert opts[1][2] == "1 &middot; Terrain Revive"
+    assert [o[2] for o in opts[1:]] == [
+        "1. Energize. Terrain Revive", "2. Rejuvenate. Terrain Repair",
+        "3. Regenerate. Terrain Renew", "4. Cleanse. Terrain Refresh",
+        "5. Balance. Terrain Relief"]
     assert [o[0] for o in opts if o[1]] == ["3"]
 
 
