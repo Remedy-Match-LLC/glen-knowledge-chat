@@ -134,7 +134,7 @@ def test_offer_injected_for_unpaid_nonmember(tmp_path, monkeypatch):
     offer = r.get_json()["order"].get("membership_offer")
     assert offer is not None
     assert offer["tier"] == "month"
-    assert offer["gross_cents"] == 9900
+    assert offer["gross_cents"] == 10000
     assert offer["savings_cents"] > 0
     assert "month" in offer["offered_tiers"]
 

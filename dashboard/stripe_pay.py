@@ -381,9 +381,12 @@ def shipping_details_to_address(shipping_details) -> dict:
 
 
 def get_payment_intent(pi_id: str) -> dict:
-    """Retrieve a PaymentIntent. Returns {id, customer, payment_method, status}."""
+    """Retrieve a PaymentIntent. Returns {id, customer, payment_method, status,
+    amount, amount_received}. The amounts let fulfilment keep the price a buyer
+    actually paid across a price change (2026-11-12)."""
     j = _get(f"/payment_intents/{pi_id}")
     return {"id": j.get("id"), "customer": j.get("customer"),
+            "amount": j.get("amount"), "amount_received": j.get("amount_received"),
             "payment_method": j.get("payment_method"), "status": j.get("status")}
 
 

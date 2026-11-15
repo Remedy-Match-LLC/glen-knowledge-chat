@@ -86,12 +86,12 @@
         var fineEl = document.getElementById("fine");
         if (fineEl) {
           fineEl.textContent = "Pay up front and no card is kept on file. Or choose monthly on a "
-            + "6 or 12 month plan: your card is kept on file and auto-charged $99 a month for your "
+            + "12 month plan: your card is kept on file and auto-charged $100 a month for your "
             + "committed term, then it stops. No auto-renewal either way, and you can cancel anytime.";
         }
       }
 
-      function fmt(cents) { return "$" + Math.round(cents / 100); }
+      function fmt(cents) { return "$" + Math.round(cents / 100).toLocaleString("en-US"); }
 
       function isDual(t) { return !!(t.commitment && careEnabled); }
 

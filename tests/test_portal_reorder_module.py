@@ -494,7 +494,7 @@ def test_locked_rows_tiered_by_age(client):
 
     j = c.get(f"/api/portal/{tok}").get_json()
     by_slug = {r["slug"]: r for r in j["locked_rows"]}
-    assert by_slug["nous-energy"]["tier"] == "6mo"
+    assert by_slug["nous-energy"]["tier"] == "12mo"   # 6mo discontinued 2026-11-12
     assert by_slug["neuro-magnesium"]["tier"] == "12mo"
     assert "terrain-restore" not in by_slug
 

@@ -437,8 +437,15 @@ def species_from_e4l(e4l_db, email):
 
 
 def _person_key(name):
-    return " ".join("".join(ch for ch in (name or "").lower()
-                            if ch.isalnum() or ch == " ").split())
+    """A name as a comparison key. E4L stores some names HTML-escaped ("Desiree&#39;
+    DallaGuardia", 9 of 952 clients on 2026-11-10), so the codes are decoded first.
+    Left in, "&#39;" keyed as "39" and the name matched nobody, which hid the photo."""
+    import html as _html
+    raw = _html.unescape(_html.unescape(name or ""))
+    # Any whitespace a code decodes to (&nbsp;, a tab) is a word break, never deleted:
+    # "Ann&nbsp;A Bell" must key as "ann a bell", not "anna bell" (round 2).
+    return " ".join("".join(ch if (ch.isalnum() or ch.isspace()) else ""
+                            for ch in raw.lower()).split())
 
 
 # --- Glen's species answers, one per subject (2026-11-06) ----------------------------
@@ -506,8 +513,11 @@ def _is_animal_species(sp):
 
 
 def subject_name(r):
-    """The name an E4L record's subject goes by: its animal_name, else its name."""
-    return (r[3] or "").strip() or (r[4] or "").strip()
+    """The name an E4L record's subject goes by: its animal_name, else its name.
+    Decoded, since E4L stores some names HTML-escaped: callers match this name
+    against FileMaker and show it on the page."""
+    import html as _html
+    return _html.unescape(_html.unescape((r[3] or "").strip() or (r[4] or "").strip()))
 
 
 def _subject_tokens(r):

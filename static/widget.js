@@ -37,10 +37,15 @@
   var targetSel  = (scriptEl && scriptEl.dataset.target)   || null;
   var iframeH    = (scriptEl && scriptEl.dataset.height)   || '560px';
 
+  // The page holding the widget, so the chat log can tell sites apart (10 Nov 2026,
+  // refreshingvision.com). Origin and path only: never the query string.
+  var embedSrc = serverOrigin + '/embed?page=' +
+    encodeURIComponent(window.location.origin + window.location.pathname);
+
   // ── Inline mode ─────────────────────────────────────────────────────────
   if (inlineMode) {
     var inlineIframe = document.createElement('iframe');
-    inlineIframe.src = serverOrigin + '/embed';
+    inlineIframe.src = embedSrc;
     inlineIframe.title = title;
     inlineIframe.allow = 'clipboard-write';
     inlineIframe.style.cssText = [
@@ -204,7 +209,7 @@
     if (iframeLoaded) return;
     iframeLoaded = true;
     var iframe = document.createElement('iframe');
-    iframe.src = serverOrigin + '/embed';
+    iframe.src = embedSrc;
     iframe.title = title;
     iframe.allow = 'clipboard-write';
     panel.appendChild(iframe);

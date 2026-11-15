@@ -136,17 +136,39 @@ def init_table(cx):
     cx.commit()
 
 
+def _table_missing(exc):
+    """True only for "this table does not exist", never a missing column or other failure."""
+    try:
+        import psycopg
+        if isinstance(exc, psycopg.errors.UndefinedTable):
+            return True
+    except ImportError:
+        pass
+    import sqlite3
+    return isinstance(exc, sqlite3.OperationalError) and "no such table" in str(exc).lower()
+
+
 def _person_email(cx, email):
     """The surviving person's address: a merged-away address tags the survivor (round 1)."""
+    from dashboard import person_aliases as _pa
+    cx.execute("SAVEPOINT waitlist_alias")
     try:
-        from dashboard import person_aliases as _pa
-        return _pa.canonical_email(cx, email) or email
-    except Exception:  # noqa: BLE001 - no alias table yet
+        out = _pa.canonical_email(cx, email) or email
+    except Exception as exc:  # noqa: BLE001
+        # Undo only this lookup: a full rollback would drop the caller's open writes.
         try:
-            cx.rollback()
+            cx.execute("ROLLBACK TO SAVEPOINT waitlist_alias")
+            cx.execute("RELEASE SAVEPOINT waitlist_alias")
         except Exception:  # noqa: BLE001
-            pass
-        return email
+            raise exc
+        # Only a missing alias TABLE means "no aliases". A missing column, timeout or lock
+        # raises, or _reserved could miss a reserver filed under a merged-away address
+        # (rounds 2 and 3).
+        if _table_missing(exc):
+            return email
+        raise
+    cx.execute("RELEASE SAVEPOINT waitlist_alias")
+    return out
 
 
 def _listed_row(cx, slug, email):
@@ -312,31 +334,55 @@ def confirm(cx, token):
 
 
 def _reserved(cx, slug):
-    """Emails holding a live founding reservation. A missing table means none exist; any
-    OTHER failure raises, because failing open would email every reserver (round 2)."""
+    """Emails holding a live founding reservation.
+
+    A missing subscriptions table, or a table without the founding columns, means none
+    exist: the reserve and ship paths add those columns before they write any
+    reservation (subscriptions.migrate_add_founding_columns). Production has the table
+    without the columns, and the old check raised UndefinedColumn there, so no launch
+    email could ever be sent (2026-11-12). Any OTHER failure still raises, because
+    failing open would email every reserver (round 2).
+
+    The lookup runs inside a savepoint, as count_founding does. On Postgres a failed
+    SELECT aborts the whole transaction; rolling back to the savepoint undoes only it."""
+    from dashboard import subscriptions as _subs   # lazy: avoids an import cycle
+    cx.execute("SAVEPOINT waitlist_reserved")
     try:
-        cx.execute("SELECT 1 FROM subscriptions LIMIT 0").fetchall()
-    except Exception:  # noqa: BLE001 - no reservations table on a fresh database
+        rows = cx.execute(
+            "SELECT email FROM subscriptions WHERE founding=1 AND founding_slug=? "
+            "AND status!='cancelled'", (slug,)).fetchall()
+    except Exception as exc:
         try:
-            cx.rollback()
-        except Exception:  # noqa: BLE001
-            pass
-        return set()
-    return {_norm(_person_email(cx, _norm(r[0]))) for r in cx.execute(
-        "SELECT email FROM subscriptions WHERE founding=1 AND founding_slug=? "
-        "AND status!='cancelled'", (slug,)).fetchall()}
+            cx.execute("ROLLBACK TO SAVEPOINT waitlist_reserved")
+            cx.execute("RELEASE SAVEPOINT waitlist_reserved")
+        except Exception:
+            raise exc       # a dead connection: report the lookup's own failure
+        if _subs._schema_missing(exc):
+            return set()
+        raise
+    cx.execute("RELEASE SAVEPOINT waitlist_reserved")
+    return {_norm(_person_email(cx, _norm(r[0]))) for r in rows}
 
 
 def _unmailable(cx):
     """Addresses the launch email must skip: suppressed (bounced) or unsubscribed."""
     out = set()
+    cx.execute("SAVEPOINT waitlist_suppression")
     try:
         out |= {_norm(r[0]) for r in cx.execute("SELECT email FROM email_suppression").fetchall()}
-    except Exception:  # noqa: BLE001 - no suppression table
+        cx.execute("RELEASE SAVEPOINT waitlist_suppression")
+    except Exception as exc:  # noqa: BLE001
+        # Undo only this lookup: a full rollback would drop the caller's open writes.
         try:
-            cx.rollback()
+            cx.execute("ROLLBACK TO SAVEPOINT waitlist_suppression")
+            cx.execute("RELEASE SAVEPOINT waitlist_suppression")
         except Exception:  # noqa: BLE001
-            pass
+            raise exc
+        # Only a missing table means "nobody suppressed". A timeout or lock raises, or a
+        # bounced address would get the launch email (round 3).
+        from dashboard import subscriptions as _subs
+        if not _subs._schema_missing(exc):
+            raise
     for e, t in cx.execute("SELECT email, tags FROM people WHERE tags LIKE ?",
                            ('%"consent:unsubscribed"%',)).fetchall():
         if "consent:unsubscribed" in json.loads(t or "[]"):

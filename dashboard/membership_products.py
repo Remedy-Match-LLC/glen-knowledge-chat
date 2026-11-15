@@ -12,19 +12,19 @@ GRACE_DAYS = 4
 
 TIERS = {
     "month": {
-        "key": "month", "label": "Monthly Membership", "price_cents": 9900,
+        "key": "month", "label": "Monthly Membership", "price_cents": 10000,
         "billing": "one_time", "source": "membership_month",
         "term_charges": 1, "cadence_months": 1, "grant_months": 1,
     },
     "year_monthly": {
         "key": "year_monthly", "label": "Annual Membership (monthly)",
-        "price_cents": 9900, "billing": "recurring_capped",
+        "price_cents": 10000, "billing": "recurring_capped",
         "source": "membership_year_monthly",
         "term_charges": 12, "cadence_months": 1, "grant_months": 12,
     },
     "year_prepay": {
         "key": "year_prepay", "label": "Annual Membership (full pay)",
-        "price_cents": 99000, "billing": "one_time",
+        "price_cents": 100000, "billing": "one_time",
         "source": "membership_year_prepay",
         "term_charges": 1, "cadence_months": 1, "grant_months": 12,
     },

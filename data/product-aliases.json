@@ -164,9 +164,8 @@
       "canonical_url": "https://myhealingoasis.com/begin/product/c15-syntropy"
     },
     "Living Water": {
-      "catalog_name": "Molecular Hydrogen (portable bottle)",
-      "note": "Living Water is the CONCEPT — alkaline ionized + molecular hydrogen. The recommended PRODUCT for clients is the portable Molecular Hydrogen bottle at the URL. The earlier 'Living Water Bottle' (prill-bead system) is DEPRECATED and no longer sold.",
-      "slug": "molecular-hydrogen-bottle"
+      "note": "Glen 2026-11-10 ('yes'): Living Water means the plate water ionizers (5, 9 and 15 plates), the primary recommendation. The portable Molecular Hydrogen bottle is the travel option, never called Living Water or alkaline ionized water. The URL is the Water & Hydrogen page, which lists all three ionizers and the bottle. The prill-bead 'Living Water Bottle' is discontinued.",
+      "url": "https://illtowell.com/solutions/water-hydrogen"
     },
     "Vitality": {
       "catalog_name": "Vitality",

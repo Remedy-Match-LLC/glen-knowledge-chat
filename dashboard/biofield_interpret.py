@@ -12,7 +12,7 @@ import re
 _SYSTEM = (
     "You convert a clinician's spoken biofield-testing transcript (Dr. Glen Swartwout) into a "
     "structured causal chain. Return STRICT JSON ONLY, no prose:\n"
-    '{"header": str, "phase": int, "location": str, '
+    '{"header": str, "phase": int, "location": str, "bsi": [int, int, int, int], '
     '"layers": [{"layer": int, "head": str, "most_affected": str, '
     '"remedy": str, "dosage": str, "frequency": str, "timing": str}]}\n'
     "A single causal layer can need MORE THAN ONE remedy to balance. When a layer is "
@@ -26,6 +26,10 @@ _SYSTEM = (
     "string, e.g. 'toxicity', 'kidney', 'large intestine meridian'); ALSO keep a short `header` "
     "summary. Do NOT turn the BSI/phase/location into a layer. If no phase/location is spoken, "
     "leave `phase` null and `location` as an empty string.\n"
+    "- The four BSI numbers in 'BSI N times A to B times C' -> top-level `bsi` as a list of 4 "
+    "integers [N, A, B, C], in the order spoken (e.g. 'BSI 13 times 8 to 5 times 3' -> "
+    "[13, 8, 5, 3]). Each is 1 to 21. If the BSI is not spoken, or any of the four numbers "
+    "is not clear, set `bsi` to null. Never guess a number.\n"
     "- 'X is the head and tail of the [first/second/...] causal chain' OR 'the [Nth] layer is X, head and "
     "tail' -> a layer at that number with head = most_affected = X ('head and tail' means the stress is both "
     "the head and the most-affected end of that layer).\n"
@@ -102,7 +106,7 @@ def interpret_transcript(transcript, complete, glossary=""):
     Optional `glossary` (comma-joined catalog terms) lets the model normalize a clearly
     misheard remedy to its catalog spelling; unmatched remedies are kept as spoken."""
     if not (transcript or "").strip():
-        return {"header": "", "phase": None, "location": "", "layers": []}
+        return {"header": "", "phase": None, "location": "", "bsi": None, "layers": []}
     p = build_interpret_prompt(transcript, glossary)
     data = _parse_json(complete(p["system"], p["user"]))
     layers = []
@@ -137,7 +141,18 @@ def interpret_transcript(transcript, complete, glossary=""):
     return {"header": (data.get("header") or "").strip(),
             "phase": phase_num(data.get("phase")),
             "location": (data.get("location") or "").strip(),
+            "bsi": _bsi(data.get("bsi")),
             "layers": layers}
+
+
+def _bsi(raw):
+    """[A, B, C, D] as ints 1-21, or None unless all four are clear. A partial BSI is
+    dropped whole: mixed with stored numbers it would be a reading nobody spoke."""
+    from dashboard.terrain_phase import bsi_num
+    if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+        return None
+    out = [bsi_num(v) for v in raw]
+    return None if None in out else out
 
 
 _STRESS_SYSTEM = (

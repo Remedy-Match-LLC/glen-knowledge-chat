@@ -10,6 +10,8 @@ invent URLs" rule left the bot with nothing, and it improvised a Practice Better
 referral from the clinical-qa corpus. Practice Better cannot sell products and
 is being deprecated.
 """
+import json
+
 import pytest
 
 import app
@@ -219,11 +221,53 @@ def test_pinned_slug_survives_naming_divergence():
     """Storefront and catalog are two naming universes; an explicit slug pins
     the mapping so a near-miss can't drop the product back to the storefront."""
     for alias, expected in (("Holy Grail Full Spectrum ORMUS", "holy-grail-ormus"),
-                            ("Scar Soft", "scar-soft-drink"),
-                            ("Living Water", "molecular-hydrogen-bottle")):
+                            ("Scar Soft", "scar-soft-drink")):
         info = app._PRODUCT_ALIASES["aliases"][alias]
         slug, retired = app._alias_catalog_slug(alias, info)
         assert slug == expected and not retired, (alias, slug, retired)
+
+
+def test_living_water_links_the_ionizers_not_the_bottle(monkeypatch):
+    """Glen 2026-11-10 ("yes"): Living Water means the plate ionizers. The alias pinned the
+    portable bottle, so chat answers called the bottle "Living Water" (marketing's
+    refreshingvision test, Q5 to Q7). It now links the Water & Hydrogen page."""
+    monkeypatch.setattr(app, "resolve_or_create_shortlink", lambda *a, **k: (None, None))
+    info = app._PRODUCT_ALIASES["aliases"]["Living Water"]
+    assert app._alias_catalog_slug("Living Water", info) == ("", False)
+    assert "molecular-hydrogen-bottle" not in json.dumps(info)
+    directive = app.build_product_directive(query_text="Should I drink Living Water?")
+    line = [l for l in directive.splitlines() if l.strip().startswith("• Living Water →")]
+    assert line == ["  • Living Water → https://illtowell.com/solutions/water-hydrogen"], line
+
+
+def test_a_cached_shortlink_for_an_old_destination_is_not_reused(monkeypatch):
+    """Review round 3: the cache kept "Living Water" -> a bottle shortlink. A row whose
+    destination differs from the alias's URL now counts as a miss."""
+    import sqlite3
+    made = []
+    monkeypatch.setattr(app, "_create_rebrandly_link",
+                        lambda slug, canonical, domain: (made.append(canonical) or
+                                                         ("https://truly.vip/new", "rid", None)))
+    monkeypatch.setattr(app, "_pick_domain_for_product", lambda *a: "truly.vip")
+    new = "https://illtowell.com/solutions/water-hydrogen"
+    with app.db.connect(app.LOG_DB) as cx:
+        cx.execute("DELETE FROM shortlink_cache WHERE product_name = ?", ("LW test",))
+        cx.execute("INSERT INTO shortlink_cache (product_name, shortlink, canonical, domain,"
+                   " created_at) VALUES (?,?,?,?,?)",
+                   ("LW test", "https://truly.vip/old-bottle",
+                    "https://illtowell.com/begin/product/molecular-hydrogen-bottle",
+                    "truly.vip", "2026-01-01"))
+        cx.commit()
+    try:
+        url, created = app.resolve_or_create_shortlink("LW test", {"url": new})
+        assert url == "https://truly.vip/new" and created and made == [new]
+        # The replaced row now matches, so the next call reuses it without a new link.
+        url2, created2 = app.resolve_or_create_shortlink("LW test", {"url": new})
+        assert url2 == "https://truly.vip/new" and not created2 and made == [new]
+    finally:
+        with app.db.connect(app.LOG_DB) as cx:
+            cx.execute("DELETE FROM shortlink_cache WHERE product_name = ?", ("LW test",))
+            cx.commit()
 
 
 def test_pinned_slug_that_does_not_exist_never_falls_back_to_storefront():

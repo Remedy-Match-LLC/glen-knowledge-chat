@@ -78,9 +78,9 @@ def _grant_row(db, session_id):
 
 
 def test_attributed_prepay_credits_doctor_on_lump(monkeypatch, tmp_path):
-    """A doctor's attributed 12-month prepay ($990 lump) stamps the grant row
+    """A doctor's attributed 12-month prepay ($1,000 lump) stamps the grant row
     with attribution + consent + term_end AND credits the doctor once, at the
-    cert-scaled share of the FULL lump (share_cents(99000, 12) = $495)."""
+    cert-scaled share of the FULL lump (share_cents(100000, 12) = $500)."""
     from dashboard import care_share
     A = _load_app()
     db = _fresh(A, monkeypatch, tmp_path)
@@ -91,8 +91,8 @@ def test_attributed_prepay_credits_doctor_on_lump(monkeypatch, tmp_path):
     res = A._fulfill_prepay_term("cs_1")
     assert res.get("ok") is True
 
-    expected = care_share.share_cents(99000, 12)
-    assert expected == 49500
+    expected = care_share.share_cents(100000, 12)
+    assert expected == 50000
     assert rec == [("prac-42", expected, "care_share:prepay:cs_1")]
 
     row = _grant_row(db, "cs_1")
@@ -174,7 +174,7 @@ def _stub_dispensary_code(app_module, monkeypatch, code="doc1", pid="prac-42"):
 
 def test_dispensary_12mo_tier_builds_attributed_prepay_session(monkeypatch, tmp_path):
     """tier_key='12mo' on the dispensary endpoint builds a prepay_term Stripe
-    session for the full $990 lump, carrying dispensary_pid + share_consent —
+    session for the full $1,000 lump, carrying dispensary_pid + share_consent —
     NOT the monthly card-on-file session."""
     A = _load_app()
     _fresh_dispensary(A, monkeypatch, tmp_path)
@@ -198,7 +198,7 @@ def test_dispensary_12mo_tier_builds_attributed_prepay_session(monkeypatch, tmp_
     assert body["ok"] is True
     assert body["url"] == "https://stripe/prepay"
 
-    assert cap["amount"] == 99000  # tier's full price_cents, no save_card lump
+    assert cap["amount"] == 100000  # tier's full price_cents, no save_card lump
     assert cap["kw"].get("save_card") is not True
 
     md = cap["kw"]["metadata"]
@@ -233,9 +233,58 @@ def test_dispensary_1mo_tier_stays_monthly_unchanged(monkeypatch, tmp_path):
     body = r.get_json()
     assert body["ok"] is True
 
-    assert cap["amount"] == 9900  # MONTHLY_ANCHOR_CENTS
+    assert cap["amount"] == 10000  # MONTHLY_ANCHOR_CENTS
     assert cap["kw"].get("save_card") is True
 
     md = cap["kw"]["metadata"]
     assert md["kind"] == "continuous_care_monthly"
     assert md["dispensary_pid"] == "prac-42"
+
+
+def test_dispensary_refuses_the_discontinued_six_month_term(monkeypatch, tmp_path):
+    """Glen, 2026-11-12: "discontinue the 6 month offer". Neither the 6-month
+    prepay nor the 6-month monthly term is sold, and neither falls through to
+    another term."""
+    A = _load_app()
+    _fresh_dispensary(A, monkeypatch, tmp_path)
+    _stub_dispensary_code(A, monkeypatch)
+    monkeypatch.setattr(A, "is_member", lambda sid, email: True, raising=False)
+    made = []
+    monkeypatch.setattr(A.stripe_pay, "create_checkout_session",
+                        lambda *a, **k: made.append(1) or {"id": "cs", "url": "u"})
+    c = A.app.test_client()
+    for body, err in (({"tier_key": "6mo"}, "invalid tier"),
+                      ({"tier_key": "1mo", "term_months": 6}, "invalid term")):
+        r = c.post("/dispensary/doc1/continuous-care",
+                   json={"email": "pat@x.com", "share_consent": True, **body})
+        assert r.get_json() == {"ok": False, "error": err}, body
+    assert made == []
+    # The same request for 12 months reaches checkout, so the refusal is the term's.
+    for body in ({"tier_key": "12mo"}, {"tier_key": "1mo", "term_months": 12}):
+        r = c.post("/dispensary/doc1/continuous-care",
+                   json={"email": "pat@x.com", "share_consent": True, **body})
+        assert r.get_json()["ok"] is True, body
+    assert len(made) == 2
+
+
+def test_a_prepay_opened_at_990_credits_on_what_was_paid(monkeypatch, tmp_path):
+    """Rounds 1 and 3, 2026-11-12: a 12-month session opened at $990 and paid after
+    the $1,000 change credits the doctor on $990. Runs through the real
+    stripe_pay helpers against faked Stripe JSON."""
+    from dashboard import care_share, stripe_pay
+    A = _load_app()
+    _fresh(A, monkeypatch, tmp_path)
+    rec = _patch_care_share(monkeypatch, modules=12)
+
+    def fake_get(path, version=""):
+        if path.startswith("/checkout/sessions/"):
+            return {"id": "cs_old", "payment_status": "paid", "amount_total": 99000,
+                    "payment_intent": "pi_1",
+                    "metadata": {"kind": "prepay_term", "email": "old@x.com",
+                                 "tier_key": "12mo", "dispensary_pid": "prac-42",
+                                 "share_consent": "1"}}
+        return {"id": "pi_1", "status": "succeeded", "customer": "cus_1",
+                "payment_method": "pm_1", "amount": 99000, "amount_received": 99000}
+    monkeypatch.setattr(stripe_pay, "_get", fake_get)
+    assert A._fulfill_prepay_term("cs_old").get("ok") is True
+    assert rec == [("prac-42", care_share.share_cents(99000, 12), "care_share:prepay:cs_old")]

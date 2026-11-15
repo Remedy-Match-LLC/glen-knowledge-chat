@@ -588,7 +588,8 @@
     "ingredients_source": "db-formulations-2026-06-25",
     "note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "vein-support": {
     "ingredients": [
@@ -807,7 +808,9 @@
       },
       {
         "name": "Vitamin D3: Cholecalciferol",
-        "dose": "1.33 mg"
+        "dose": "16.6 mcg (665 IU)",
+        "grade": "500,000 IU/g",
+        "compound_mg": 1.33
       },
       {
         "name": "Coenzyme Q10, CoQ10, Ubiquinone",
@@ -859,12 +862,56 @@
         "dose": "20 mg"
       },
       {
-        "name": "Bioavailability Blend",
-        "dose": "34.5 mg"
+        "name": "Phosphatides 30% (Helianthus annuus)",
+        "dose": "13 mg"
+      },
+      {
+        "name": "Ginkgo European Standard 10:1 (Ginkgo biloba)",
+        "dose": "8 mg",
+        "page_slug": "ginkgo-european-std-ginkgo-biloba"
+      },
+      {
+        "name": "Vitamin B3 (as Niacin)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Moringa 100:1 (Moringa oleifera)",
+        "dose": "3 mg"
+      },
+      {
+        "name": "DGL Licorice (Glycyrrhiza glabra)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Vinpocetine 99% (Vinca minor)",
+        "dose": "1 mg",
+        "page_slug": "vinpocetine-vinca-minor"
+      },
+      {
+        "name": "Gingerols 10% (Zingiber officinale)",
+        "dose": "0.5 mg",
+        "page_slug": "gingerols-10-zingiber-officinalis"
+      },
+      {
+        "name": "Piperine 95% (Piper nigrum)",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Humic Acid",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Fulvic Acid",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Spirit Minerals (ORMUS)",
+        "dose": "0.5 mg",
+        "page_slug": "11-spirit-minerals"
       }
     ],
     "ingredients_source": "db-formulations-2026-06-25",
-    "note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
+    "note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it. Glen 2026-11-10 ('yes'): the 34.5 mg Bioavailability Blend is listed line by line (blend run 107), so vinpocetine 1 mg shows; D3 is 1.33 mg of a 500,000 IU/g premix (FileMaker raw 5313), so 16.6 mcg (665 IU). Batch run 34, 14 March 2025.",
     "warning": "This formula contains vinpocetine. Do not use if you are pregnant, could become pregnant, or are breastfeeding. It is not for children. Consult your physician before use if you take any medicine, including aspirin or other pain relievers. This matters most with blood pressure, heart, blood thinning, blood sugar, cholesterol or immune-suppressing medicines. Also consult first if you have liver disease, gout, a stomach ulcer, low blood pressure, a bleeding disorder, an autoimmune condition or a seizure disorder, or are planning surgery. Niacin may cause a temporary flush. Stop use and consult your physician if you notice yellowing of the skin or eyes, or dark urine. This formula may change blood pressure and blood sugar, affect bleeding, and change how some medications are processed.",
     "chat_caution": true,
     "directions": "1 to 4 capsules daily in divided doses with food, or as guided.",
@@ -873,7 +920,7 @@
       "directions",
       "description"
     ],
-    "content_since": "2026-11-02T04:11:47+00:00"
+    "content_since": "2026-11-10T17:43:52+00:00"
   },
   "shields-up-cold-flu-formula": {
     "ingredients": [
@@ -1010,7 +1057,7 @@
         "dose": ""
       },
       {
-        "name": "Phosphatidylcholine 50% (from Sunflower, Helianthus annuus)",
+        "name": "Phosphatides 30% (Helianthus annuus)",
         "dose": ""
       },
       {
@@ -1067,7 +1114,8 @@
     "note": "Glen 2026-09-14: this slug is Vagus Nerve Support Drops (FMP 460). The T33 amounts are per-bottle batch figures, so they are not shown as doses. Directions wait for Glen.",
     "bottle_type": "Dropper 50 mL",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "cinnamon-blue": {
     "ingredients": [
@@ -1268,10 +1316,11 @@
     "ingredients_source": "label-read-2026-09-26",
     "description": "Each Acetaldehyde Detox vegicap combines vitamin B5 as calcium pantothenate and coenzyme A with reduced and S-acetyl glutathione, NAC and ATP. It also holds green clay, activated charcoal and 7-keto DHEA, with a blend that aids absorption. Take 1 to 3 capsules a day with food, or as guided.\n\nOther ingredients: Organic Pullulan Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
     "directions": "1 to 3 capsules a day with food, or as guided.",
-    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
+    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 30% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "aces-eye-drops": {
     "ingredients": [
@@ -1488,10 +1537,11 @@
     "ingredients_source": "label-read-2026-09-26",
     "description": "Each vegicap of Curcu Guard holds curcumin 95% (Curcuma longa) and phosphatides 30% (Helianthus annuus), with a blend that aids absorption. Take 1 capsule up to 3 times a day with food.\n\nOther ingredients: Chlorophyll vegicaps, Love. 30 vegicaps per bottle.",
     "directions": "1 capsule up to 3 times a day with food.",
-    "panel_note": "Bioavailability Blend contains: Vitamin B3 (as Niacin) 5 mg; Vitamin B13 (Phosphatides 50%, Helianthus annuus); EGb 761 (Ginkgo biloba: 24% flavone glycosides, 6% lactones, <0.0005% ginkgolic acid); Miracle Tree 100:1 (Moringa oleifera); Licorice Omnipotent (Glycyrrhiza glabra); Vinpocetine (Vinca minor); Gingerol 10% (Zingiber officinale); Piperine (Piper nigrum); Fulvic Acid; Humic Acid; 11 Spirit Minerals.",
+    "panel_note": "Bioavailability Blend contains: Vitamin B3 (as Niacin) 5 mg; Vitamin B13 (Phosphatides 30%, Helianthus annuus); EGb 761 (Ginkgo biloba: 24% flavone glycosides, 6% lactones, <0.0005% ginkgolic acid); Miracle Tree 100:1 (Moringa oleifera); Licorice Omnipotent (Glycyrrhiza glabra); Vinpocetine (Vinca minor); Gingerol 10% (Zingiber officinale); Piperine (Piper nigrum); Fulvic Acid; Humic Acid; 11 Spirit Minerals.",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "dht-blocker": {
     "ingredients": [
@@ -1591,10 +1641,11 @@
     "ingredients_source": "label-read-2026-09-26",
     "description": "DHT Blocker combines vitamin A, biotin, folate as 5-MTHF and vitamin E with copper, iodine, selenium, silica, MSM and zinc. Botanical factors include pygeum, MCT, saw palmetto, quercetin, trans-resveratrol, puerarin, DIM, curcumin and tetrahydrocurcumin, green tea polyphenols, reishi, asiaticosides and silymarin. A blend that aids absorption completes the formula. Take 1 to 2 capsules a day with food, or as guided.\n\nOther ingredients: Organic Pullulan Vegicaps, Healing Energy, Love and Prayer. 30 pullulan vegicaps per bottle.",
     "directions": "1 to 2 capsules a day with food, or as guided.",
-    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
+    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 30% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "energessence": {
     "ingredients": [
@@ -1860,10 +1911,11 @@
     "ingredients_source": "label-read-2026-09-26",
     "description": "Each vegicap of Lens Zyme combines vitamin B3 from nicotinamide riboside, B5 and E with zinc carnosine, NAC, MSM, EDTA, N-acetyl L-carnosine and glutathione. Botanical extracts are lutein, anthocyanidins, trans-pterostilbene, honokiol and TECA. Enzyme factors are yeast enzyme extract, SOD and catalase, with a blend that aids absorption. Take 1 to 3 capsules daily between meals, or as guided.\n\nOther ingredients: Phthalate-Free Enteric Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
     "directions": "1 to 3 capsules daily between meals, or as guided.",
-    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
+    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 30% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "migrafree": {
     "ingredients": [
@@ -1972,7 +2024,7 @@
         "dose": "1 mg"
       },
       {
-        "name": "Vitamin B13: Phosphatides 50% (Helianthus annuus)",
+        "name": "Vitamin B13: Phosphatides 30% (Helianthus annuus)",
         "dose": "13 mg"
       },
       {
@@ -2009,7 +2061,8 @@
     "directions": "1 to 3 capsules a day with food, or as guided.",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "moisture-eyes-night-oil": {
     "ingredients": [
@@ -2272,7 +2325,7 @@
         "dose": ""
       },
       {
-        "name": "Pacific Ocean ORMUS",
+        "name": "Volcanic Spring ORMUS Gold",
         "dose": ""
       },
       {
@@ -2288,10 +2341,10 @@
         "dose": ""
       }
     ],
-    "ingredients_source": "label-read-2026-09-26",
-    "description": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Pacific Ocean ORMUS, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day.\n\nOther ingredients: Healing Energy, Love and Prayer. 30 mL per bottle, about 60 servings of 10 drops.",
-    "directions": "Up to 10 drops 2 times a day.",
-    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+    "ingredients_source": "label-2026-11",
+    "description": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Volcanic Spring ORMUS Gold, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day, or as guided.\n\nOther ingredients: Healing Energy, Love and Prayer. 30 mL per bottle, about 60 servings of 10 drops.",
+    "directions": "Up to 10 drops 2 times a day, or as guided.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows. Updated to the November 2026 label (Glen 2026-11-05): Volcanic Spring ORMUS Gold (Exsula) replaces Pacific Ocean ORMUS; dose ends 'or as guided'."
   },
   "sinus-terrain-nasal-spray": {
     "ingredients": [
@@ -2455,7 +2508,7 @@
     "ingredients_source": "label-read-2026-09-26",
     "description": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 2 capsules a day with food, or as guided.\n\nOther ingredients: organic pullulan vegicaps, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.",
     "directions": "1 to 2 capsules a day with food, or as guided.",
-    "panel_note": "Bioavailability Blend (34.5 mg): Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
+    "panel_note": "Bioavailability Blend (34.5 mg): Phosphatides 30% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows. Glen 2026-10-26, platform tab: \"yes\" to \"1 to 2 capsules a day with food, or as guided.\"",
     "copy_pinned": [
       "directions",
@@ -2466,9 +2519,10 @@
       "benefits"
     ],
     "intro": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 2 capsules a day with food, or as guided.",
-    "learn_markdown": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 2 capsules a day with food, or as guided.\n\n- Vitamin A (Retinyl Palmitate) 5000 IU\n- Vitamin C (Ascorbyl Palmitate) 50 mg\n- Vitamin D3 (Cholecalciferol) 400 IU\n- Vitamin E (D-Alpha Tocopheryl Succinate) 15 IU\n- Coenzyme Q10 (Ubiquinone) 5 mg\n- Magnesium (Mg Acetyl Taurate) 3 mg\n- Zinc (Zinc Carnosine) 5 mg\n- Iodine (Laminaria digitata) 150 mcg\n- Selenium (Methylselenocysteine) 70 mcg\n- Carnosine (Zinc Carnosine) 17 mg\n- Acetyl Taurate (Mg Acetyl Taurate) 47 mg\n- NAC (N-Acetyl L-Cysteine) 90 mg\n- GSH (Reduced & S-Acetyl Glutathione) 5 mg\n- Rutin (Sophora japonica) 10 mg\n- Luteolin (Reseda spp.) 10 mg\n- Apigenin (Apium graveolens) 10 mg\n- Quercetin Dihydrate (Sophora japonica) 10 mg\n- Silymarin 80% (Silybum marianum) 10 mg\n- Ellagic Acid (Rubus spp.) 10 mg\n- Polyphenols (Camellia sinensis) 10 mg\n- Oat Straw 100:1 (Avena sativa) 15 mg\n- Mistletoe 4:1 (Viscum album) 5 mg\n- Withanolides 10% (Withania somnifera) 10 mg\n- Ginsenosides 80% (Panax ginseng) 7 mg\n- Noni (Morinda citrifolia) (fructus) 20 mg\n- AHCC 50% (Lentinula edodes) (mycelia) 20 mg\n- Berberine (Coptis chinensis) 15 mg\n- Curcumin (Curcuma longa) 10 mg\n- Chlorella (Chlorella spp.) (broken cell wall) 10 mg\n- Allicin 25% (Allium sativum) 10 mg\n- Phytoceramides (Amorphophallus konjac) 25 mg\n- Bioavailability Blend 34.5 mg\n\nBioavailability Blend (34.5 mg): Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
+    "learn_markdown": "Apoptogenesis supports the body's normal cell renewal and turnover. Each vegicap combines vitamins A, C, D3 and E with coenzyme Q10, zinc, selenium and iodine, the amino factors NAC, glutathione and carnosine, and the polyphenols rutin, luteolin, apigenin, quercetin, silymarin, ellagic acid and green tea. Other botanicals include oat straw, mistletoe, withanolides, ginsenosides, noni fruit, AHCC, berberine, curcumin, chlorella and allicin, with a blend that aids absorption. Take 1 to 2 capsules a day with food, or as guided.\n\n- Vitamin A (Retinyl Palmitate) 5000 IU\n- Vitamin C (Ascorbyl Palmitate) 50 mg\n- Vitamin D3 (Cholecalciferol) 400 IU\n- Vitamin E (D-Alpha Tocopheryl Succinate) 15 IU\n- Coenzyme Q10 (Ubiquinone) 5 mg\n- Magnesium (Mg Acetyl Taurate) 3 mg\n- Zinc (Zinc Carnosine) 5 mg\n- Iodine (Laminaria digitata) 150 mcg\n- Selenium (Methylselenocysteine) 70 mcg\n- Carnosine (Zinc Carnosine) 17 mg\n- Acetyl Taurate (Mg Acetyl Taurate) 47 mg\n- NAC (N-Acetyl L-Cysteine) 90 mg\n- GSH (Reduced & S-Acetyl Glutathione) 5 mg\n- Rutin (Sophora japonica) 10 mg\n- Luteolin (Reseda spp.) 10 mg\n- Apigenin (Apium graveolens) 10 mg\n- Quercetin Dihydrate (Sophora japonica) 10 mg\n- Silymarin 80% (Silybum marianum) 10 mg\n- Ellagic Acid (Rubus spp.) 10 mg\n- Polyphenols (Camellia sinensis) 10 mg\n- Oat Straw 100:1 (Avena sativa) 15 mg\n- Mistletoe 4:1 (Viscum album) 5 mg\n- Withanolides 10% (Withania somnifera) 10 mg\n- Ginsenosides 80% (Panax ginseng) 7 mg\n- Noni (Morinda citrifolia) (fructus) 20 mg\n- AHCC 50% (Lentinula edodes) (mycelia) 20 mg\n- Berberine (Coptis chinensis) 15 mg\n- Curcumin (Curcuma longa) 10 mg\n- Chlorella (Chlorella spp.) (broken cell wall) 10 mg\n- Allicin 25% (Allium sativum) 10 mg\n- Phytoceramides (Amorphophallus konjac) 25 mg\n- Bioavailability Blend 34.5 mg\n\nBioavailability Blend (34.5 mg): Phosphatides 30% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "pure--natural-msm-lotion": {
     "ingredients": [
@@ -3013,7 +3067,7 @@
       }
     ],
     "ingredients_source": "label-read-2026-09-27; vitamin A 12,200 IU from the 2026-10-26 reprint (Glen, 2026-10-26)",
-    "panel_note": "Bioavailability Blend contains: Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
+    "panel_note": "Bioavailability Blend contains: Phosphatides 30% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
     "note": "Label-read 2026-09-27 by production, approved by Glen 2026-09-28 ('approve'); renamed to the label name; replaces the old store list. Glen 2026-10-26, platform tab: \"yes\" to \"1 capsule daily before food, as guided.\" and vitamin A 3,660 mcg RAE (12,200 IU).",
     "copy_pinned": [
       "directions",
@@ -3024,9 +3078,10 @@
       "benefits"
     ],
     "intro": "Each Vitamin C Syntropy vegicap gives you vitamin C as magnesium ascorbate and ascorbyl palmitate. Alongside it you get natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, and glutathione in two forms, S-acetyl and reduced GSH. You also get coenzyme Q10 as ubiquinone, plus superoxide dismutase and catalase. Rounding it out are vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate, and vitamin B6 as pyridoxal 5'-phosphate. Then come the polyphenols: quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac. Magnesium threonate and magnesium ascorbate finish the formula, joined by a blend that aids absorption. Take 1 capsule daily before food, as guided.",
-    "learn_markdown": "Each Vitamin C Syntropy vegicap combines vitamin C as magnesium ascorbate and ascorbyl palmitate, natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, glutathione as S-acetyl and reduced GSH, coenzyme Q10 as ubiquinone, superoxide dismutase and catalase with vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate and vitamin B6 as pyridoxal 5'-phosphate. Polyphenols include quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac, joined by magnesium threonate and magnesium ascorbate with a blend that aids absorption. Take 1 capsule daily before food, as guided.\n\nEach vegicap contains: Vitamin C (Mg Ascorbate & Ascorbyl Palmitate) 200 mg; Natural Dry Vitamin E (D-Alpha Tocopherol Succinate) 10 IU; Na R-Lipoate (Stabilized, Bio-enhanced) 20 mg; Glutathione (S-Acetyl & Reduced GSH) 20 mg; Coenzyme Q10 (Ubiquinone) 5 mg; Superoxide Dismutase (SOD) 31,000 units 10 mg; Catalase 1,000 FIP 10 mg; Vitamin A (retinyl palmitate) 3,660 mcg RAE (12,200 IU); Vitamin B5 (Calcium Pantothenate) 3.3 mg; Vitamin B6 (Pyridoxal 5'-Phosphate) 0.7 mg; Quercetin Dihydrate (Sophora japonica) 10 mg; Hesperidin Methyl Chalcone (HMC) (Citrus spp.) 10 mg; Luteolin (Reseda spp.) 10 mg; Fisetin 50% (Cotinus coggygria) 20 mg; Sumac 50:1 (Cotinus coggygria) 20 mg; Magnesium Threonate 10 mg; Magnesium Ascorbate 193 mg; Magnesium (as Ascorbate & Threonate) 13.2 mg; Bioavailability Blend 34.5 mg. Bioavailability Blend contains: Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
+    "learn_markdown": "Each Vitamin C Syntropy vegicap combines vitamin C as magnesium ascorbate and ascorbyl palmitate, natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, glutathione as S-acetyl and reduced GSH, coenzyme Q10 as ubiquinone, superoxide dismutase and catalase with vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate and vitamin B6 as pyridoxal 5'-phosphate. Polyphenols include quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac, joined by magnesium threonate and magnesium ascorbate with a blend that aids absorption. Take 1 capsule daily before food, as guided.\n\nEach vegicap contains: Vitamin C (Mg Ascorbate & Ascorbyl Palmitate) 200 mg; Natural Dry Vitamin E (D-Alpha Tocopherol Succinate) 10 IU; Na R-Lipoate (Stabilized, Bio-enhanced) 20 mg; Glutathione (S-Acetyl & Reduced GSH) 20 mg; Coenzyme Q10 (Ubiquinone) 5 mg; Superoxide Dismutase (SOD) 31,000 units 10 mg; Catalase 1,000 FIP 10 mg; Vitamin A (retinyl palmitate) 3,660 mcg RAE (12,200 IU); Vitamin B5 (Calcium Pantothenate) 3.3 mg; Vitamin B6 (Pyridoxal 5'-Phosphate) 0.7 mg; Quercetin Dihydrate (Sophora japonica) 10 mg; Hesperidin Methyl Chalcone (HMC) (Citrus spp.) 10 mg; Luteolin (Reseda spp.) 10 mg; Fisetin 50% (Cotinus coggygria) 20 mg; Sumac 50:1 (Cotinus coggygria) 20 mg; Magnesium Threonate 10 mg; Magnesium Ascorbate 193 mg; Magnesium (as Ascorbate & Threonate) 13.2 mg; Bioavailability Blend 34.5 mg. Bioavailability Blend contains: Phosphatides 30% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "focus-neuro-magnesium-powder": {
     "description": "Focus Neuro-Magnesium is a drink mix built on three brain minerals together: lithium as lithium orotate, magnesium as magnesium threonate, and zinc as zinc bisglycinate. Around them, green tea L-theanine backs a polyphenol blend of celery seed apigenin and turmeric curcumin. Vitamin B6 as pyridoxal 5'-phosphate and vitamin D3 as cholecalciferol round out the formula, sweetened with monk fruit mogroside V. Take 2 scoops a day in water, or as guided.\n\nOther ingredients: Healing Energy, Love and Prayer. Contents: 30 grams, 60 scoops.",
@@ -3823,7 +3878,7 @@
         "dose": "15 mg"
       },
       {
-        "name": "Phosphatides 50% (Helianthus annuus)",
+        "name": "Phosphatides 30% (Helianthus annuus)",
         "dose": "13 mg"
       },
       {
@@ -3887,7 +3942,8 @@
       "intro",
       "description"
     ],
-    "note": "Glen 2026-10-26, platform tab: \"yes\" to the store page 315 caution, directions and 34-row panel (formulation spec production/05 Formulations/vitreous-vitality/2026-10-26/app-store-spec.md), with lutein out of the intro and floaters out of the overview."
+    "note": "Glen 2026-10-26, platform tab: \"yes\" to the store page 315 caution, directions and 34-row panel (formulation spec production/05 Formulations/vitreous-vitality/2026-10-26/app-store-spec.md), with lutein out of the intro and floaters out of the overview.",
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "breast-support": {
     "ingredients": [
@@ -4069,7 +4125,8 @@
   "bioavailability-blend": {
     "ingredients_source": "fmp_new",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "bioavailability-blend-powder": {
     "ingredients_source": "fmp-bom-2026-05-23",
@@ -4122,7 +4179,8 @@
   "muscle-mass": {
     "ingredients_source": "t33",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "one-step": {
     "ingredients_source": "t33",
@@ -4132,12 +4190,14 @@
   "seaamino-syntropy": {
     "ingredients_source": "t33",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "stone-solvent": {
     "ingredients_source": "t33",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "sustain": {
     "ingredients_source": "t33",
@@ -4160,14 +4220,64 @@
     "chat_caution": true
   },
   "mitochondrial-biogenesis": {
-    "ingredients_source": "fmp_new",
+    "ingredients_source": "label-2026-11-09",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "ingredients": [
+      {
+        "name": "Rhodiola rosea (root), 3% Salidroside",
+        "dose": "155 mg"
+      },
+      {
+        "name": "Nicotinamide Riboside (Vitamin B3)",
+        "dose": "66 mg"
+      },
+      {
+        "name": "Coenzyme Q10 (Ubiquinone)",
+        "dose": "66 mg"
+      },
+      {
+        "name": "Bioavailability Blend (proprietary formula)",
+        "dose": "34.5 mg"
+      },
+      {
+        "name": "NMN (Nicotinamide Mononucleotide)",
+        "dose": "34 mg"
+      },
+      {
+        "name": "Na RALA (Stabilized Bio-enhanced Na R-Lipoate)",
+        "dose": "33 mg"
+      },
+      {
+        "name": "Luteolin (Sophora japonica)",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Pterostilbene",
+        "dose": "20 mg"
+      },
+      {
+        "name": "PQQ (Pyrroloquinoline Quinone)",
+        "dose": "7 mg"
+      },
+      {
+        "name": "Riboflavin-5-Phosphate (Vitamin B2)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Vitamin B12 (as Adenosylcobalamin, Methylcobalamin)",
+        "dose": "60 mcg"
+      }
+    ],
+    "directions": "Take 1 to 3 capsules daily with food, or as guided.",
+    "description": "Each Certified Organic Pullulan Vegicap of Mitochondrial Biogenesis supplies rhodiola (3% salidroside) 155 mg, nicotinamide riboside 66 mg, CoQ10 66 mg, Bioavailability Blend 34.5 mg, NMN 34 mg, Na R-lipoate 33 mg, luteolin 30 mg, pterostilbene 20 mg, PQQ 7 mg, riboflavin-5-phosphate 5 mg and vitamin B12 60 mcg. Take 1 to 3 capsules daily with food, or as guided.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love and Prayer. 30 capsules per bottle.",
+    "note": "Glen approved the final formula 2026-11-09 (to-do #131): 11 actives, 450.56 mg; source ~/YouCloned/Production/mitochondrial-biogenesis-40-bottles-updated.pdf."
   },
   "night-vision": {
     "ingredients_source": "fmp_new",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "perfect-skin": {
     "ingredients_source": "fmp_new",
@@ -4177,7 +4287,8 @@
   "rescue": {
     "ingredients_source": "t33",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "content_since": "2026-11-10T17:19:24+00:00"
   },
   "rescue-phytochromotherapy": {
     "ingredients_source": "fmp-bom-2026-05-23",
@@ -4214,9 +4325,88 @@
     "chat_caution": true
   },
   "nerve-repair": {
-    "ingredients_source": "fmp_new",
+    "ingredients_source": "fmp-run-114",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "chat_caution": true,
+    "ingredients": [
+      {
+        "name": "ALCAR (Acetyl L-Carnitine)",
+        "dose": "160 mg"
+      },
+      {
+        "name": "Lion's Mane Polysaccharides 30% (Hericium erinaceus)",
+        "dose": "160 mg"
+      },
+      {
+        "name": "Na RALA (Stabilized Bio-enhanced Na R-Lipoate)",
+        "dose": "60 mg"
+      },
+      {
+        "name": "Vitamin B1 (as Benfotiamine)",
+        "dose": "60 mg"
+      },
+      {
+        "name": "Vitamin B6 (as Pyridoxal 5-Phosphate)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Vitamin B12 (as Methylcobalamin)",
+        "dose": "500 mcg",
+        "page_slug": "vitamin-b12-methylcobalamin"
+      },
+      {
+        "name": "Phosphatides 30% (Helianthus annuus)",
+        "dose": "13 mg"
+      },
+      {
+        "name": "Ginkgo European Standard 10:1 (Ginkgo biloba)",
+        "dose": "8 mg",
+        "page_slug": "ginkgo-european-std-ginkgo-biloba"
+      },
+      {
+        "name": "Vitamin B3 (as Niacin)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Moringa 100:1 (Moringa oleifera)",
+        "dose": "3 mg"
+      },
+      {
+        "name": "DGL Licorice (Glycyrrhiza glabra)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Vinpocetine 99% (Vinca minor)",
+        "dose": "1 mg",
+        "page_slug": "vinpocetine-vinca-minor"
+      },
+      {
+        "name": "Gingerols 10% (Zingiber officinale)",
+        "dose": "0.5 mg",
+        "page_slug": "gingerols-10-zingiber-officinalis"
+      },
+      {
+        "name": "Piperine 95% (Piper nigrum)",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Humic Acid",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Fulvic Acid",
+        "dose": "0.5 mg"
+      },
+      {
+        "name": "Spirit Minerals (ORMUS)",
+        "dose": "0.5 mg",
+        "page_slug": "11-spirit-minerals"
+      }
+    ],
+    "description": "Each capsule of Nerve Repair supplies ALCAR (acetyl L-carnitine) 160 mg, lion's mane polysaccharides 30% 160 mg, stabilized Na R-lipoate 60 mg, vitamin B1 as benfotiamine 60 mg, vitamin B6 as pyridoxal 5-phosphate 10 mg and vitamin B12 as methylcobalamin 500 mcg. It also holds 34.5 mg of our Bioavailability Blend, which includes vinpocetine 1 mg. Take 1 capsule up to 5 times daily with food, or as guided.",
+    "directions": "1 capsule up to 5 times daily with food, or as guided.",
+    "note": "Glen 2026-11-10 ('yes'): list the shelf batch, FileMaker run 114 (16 Nov 2025, 40 bottles), not the April 2026 next-batch recipe. The last 11 lines are the 34.5 mg Bioavailability Blend, amounts from blend run 107. Dose ruled by Glen 2026-10-24.",
+    "content_since": "2026-11-10T16:04:58+00:00"
   },
   "vitality": {
     "ingredients_source": "fmp_new",
@@ -4549,5 +4739,39 @@
     ],
     "content_since": "2026-11-01T07:29:48+00:00",
     "note": "Store page 117 panel and caution v7, approved by Glen 2026-10-31 (marketing/04 Copy/thyroid-support-panel-2026-10-31/). Iodine 150 mcg from potassium iodide; the old row read Potassium Iodide KI 194 mg, a wrong unit."
+  },
+  "man-manna": {
+    "ingredients": [
+      {
+        "name": "Swedish Flower Pollen extract, Cernitin, Cernilton",
+        "dose": "126 mg"
+      },
+      {
+        "name": "Pumpkin seed extract",
+        "dose": "250 mg"
+      },
+      {
+        "name": "Lycopene",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Stinging Nettle",
+        "dose": "60 mg"
+      },
+      {
+        "name": "Zinc (as Zinc Bisglycinate, 55 mg)",
+        "dose": "11 mg",
+        "page_slug": "zinc-glycinate"
+      }
+    ],
+    "ingredients_source": "db-formulations-2026-06-25",
+    "content_since": "2026-11-10T17:43:52+00:00",
+    "note": "Glen 2026-11-10 ('yes'): zinc is stated as elemental, 11 mg from 55 mg Zinc Bisglycinate (20% Zn, FileMaker raw 3587). Batch run 143, 20 January 2026. Directions: Glen's 24 Oct 2026 ruling (up to 3 a day; 33 mg zinc, under the 40 mg upper limit), added on his 'yes' 2026-11-10.",
+    "directions": "1 to 3 capsules a day with food, or as guided."
+  },
+  "alkalize-bicarbonate-blend": {
+    "ingredients_source": "db-formulations-2026-06-25",
+    "note": "Glen 2026-11-10: directions set (\"Make it up to twice daily\"). The capsule's FileMaker row (350) is named Alkalize Powder, so the name never matched and the capsule carried no dose.",
+    "directions": "Take 1 capsule up to twice daily, between meals or at bedtime, or as guided."
   }
 }

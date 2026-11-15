@@ -148,6 +148,16 @@ def init_orders_table(cx):
     # size the membership grant. NULL = 1 (every order raised before this existed).
     if not db.column_exists(cx, "orders", "supply_months"):
         cx.execute("ALTER TABLE orders ADD COLUMN supply_months INTEGER")
+    # 1 when the shipping figure was typed by the owner and differs from the computed
+    # one, 0 when computed, NULL for an order saved before 2026-11-14 (read as
+    # computed). A customer's invoice edit recomputes shipping unless 1 (Glen
+    # 2026-11-14, money tab: "recalculate"; platform tab: "yes").
+    if not db.column_exists(cx, "orders", "shipping_hand_set"):
+        cx.execute("ALTER TABLE orders ADD COLUMN shipping_hand_set INTEGER")
+    # The one figure on record as Glen's own (Mona's #300 at $33, kept on 11 Nov when
+    # the cloth raised the quote to $65). Only while it is still $33 and unmarked.
+    cx.execute("UPDATE orders SET shipping_hand_set=1 WHERE id=300 "
+               "AND shipping_hand_set IS NULL AND shipping_cents=3300")
     cx.commit()
 
 
@@ -176,7 +186,8 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
                  discount_cents=0, points_redeemed_cents=0, shipping_cents=0,
                  invoice_note=None, adjustment_cents=0,
                  pay_method=None, practitioner_id=None, margin_cents=None,
-                 ship_credit_applied_cents=None, recipient_email=None):
+                 ship_credit_applied_cents=None, recipient_email=None,
+                 shipping_hand_set=None):
     """Idempotent on (source, external_ref). Inserts a new order, or updates the
     soft fields of an existing one WITHOUT regressing its lifecycle status.
     items and address are only overwritten when explicitly provided (not None).
@@ -223,6 +234,9 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
         if recipient_email is not None:
             sets.append("recipient_email=?")
             vals.append(str(recipient_email))
+        if shipping_hand_set is not None:
+            sets.append("shipping_hand_set=?")
+            vals.append(1 if shipping_hand_set else 0)
         vals.append(row[0])
         cx.execute(f"UPDATE orders SET {', '.join(sets)} WHERE id=?", vals)
         cx.commit()
@@ -235,8 +249,9 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
         "INSERT INTO orders (created_at, source, external_ref, channel, email, name, "
         "phone, items_json, total_cents, address_json, status, get_cents, person_id, "
         "discount_cents, points_redeemed_cents, shipping_cents, invoice_note, adjustment_cents, "
-        "pay_method, practitioner_id, margin_cents, ship_credit_applied_cents, recipient_email) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "pay_method, practitioner_id, margin_cents, ship_credit_applied_cents, recipient_email, "
+        "shipping_hand_set) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (_now(), source, ref, channel, email, name, phone,
          json.dumps(items or []), int(total_cents or 0), json.dumps(address or {}),
          status, int(get_cents or 0),
@@ -247,7 +262,8 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
          (str(practitioner_id) if practitioner_id is not None else None),
          (int(margin_cents) if margin_cents is not None else None),
          max(0, int(ship_credit_applied_cents or 0)),
-         (str(recipient_email) if recipient_email else None)))
+         (str(recipient_email) if recipient_email else None),
+         (None if shipping_hand_set is None else (1 if shipping_hand_set else 0))))
     cx.commit()
     if items is not None:
         _emit_source_events(cx, oid, email, items)
