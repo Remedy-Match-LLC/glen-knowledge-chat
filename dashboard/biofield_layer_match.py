@@ -267,6 +267,22 @@ def match_term(cx, kind, text, test_id=None, cues=True):
 # 12. A "balanced" sentence is read before an open terrain field (rule 5 comes first),
 #     so "Terrain. Balanced." ticks the layer.
 #
+# Glen, 15 November 2026: "BSI 21 times 3 to 1 times 1, location Liver."
+# 14. A "location" cue straight after a BSI cue, with nothing between, is the BSI
+#     location, not the terrain location: in the same sentence after the four numbers,
+#     or the next sentence, or the next utterance (after_bsi carries it over). Any other
+#     sentence between ends it, so "Terrain 3, location liver" and a "location" on its
+#     own still fill the terrain location (rule 10). "Terrain 3, location liver" is
+#     read as the phase, then the terrain location, as "Terrain 3. Location liver." is. After a BSI that was not
+#     understood, the location is not saved either: the event says bsi_ok False.
+#     Glen, the same day: "Or I could say '21 x 3 Liver to 1 x 1'". Words between the
+#     second and third numbers are the BSI location too (parse_bsi_parts). Said both
+#     ways in one BSI, the words between the numbers win, and the event carries the
+#     other as "conflict" so the page can say so. Numbers without "BSI" are no BSI.
+# 15. "The score is", "score is", "the score", "The BSI is" and "BSI is" at a cue
+#     position are the "BSI" cue, with all its rules (Glen, 15 November 2026). "score"
+#     anywhere else is not a cue.
+#
 # Glen, 14 November 2026 (Bridge): "yes" to "also balances" + a stress name.
 # 13. "also balances" (also "it also balances", "also balance") at a cue position adds
 #     the stress to the current layer's balanced stresses, as the card's "Add stress"
@@ -282,8 +298,14 @@ _HF_FILLER = re.compile(r"^(?:(?:okay|ok|alright|so|now|and|um|uh)\b[\s,\-]*)*",
 _HF_SEP = re.compile(r"^[\s,\-]*(?:is\s+)?", re.I)
 _HF_TRAIL_BOTH = re.compile(r"^(.*?\S)[\s,\-]+(?:is\s+)?(?:the\s+)?" + _HEAD_AND_TAIL + r"$",
                             re.I)
-_HF_TERRAIN = re.compile(r"(terrain|location|bsi)\b", re.I)
+# Glen, 15 November 2026: "BSI" ("BSI is", "The BSI is") or "The score is" ("score is",
+# "the score"). The "is" after any of them is skipped by _hf_rest.
+_HF_TERRAIN = re.compile(r"(terrain|location|(?:the\s+)?bsi|the\s+score(?:\s+is)?|score\s+is)\b",
+                         re.I)
 _HF_ALSO = re.compile(r"(?:it\s+)?also\s+balances?\b", re.I)
+# Rule 14: "location" inside a BSI sentence, after the numbers.
+_HF_BSI_LOC = re.compile(r"[\s,\-]*\blocation\b", re.I)
+AFTER_BSI = ("ok", "bad")
 # "B.S.I." would otherwise end a sentence at its last dot, and "b s i" is three words.
 _HF_BSI_SPELLED = re.compile(r"\bb\.?\s?s\.?\s?i\b\.?", re.I)
 TERRAIN_CUES = ("terrain", "location", "bsi")
@@ -335,15 +357,34 @@ def parse_phase(text):
 
 def parse_bsi(text):
     """([A, B, C, D], '') from the words after "BSI", or (None, why) (rule 11)."""
+    nums, _loc, why = parse_bsi_parts(text)
+    return nums, why
+
+
+# Rule 14 (a): words a BSI location may start with, dropped: "12 by 8 at the liver".
+_BSI_LOC_LEAD = {"at", "in", "the", "on"}
+
+
+def parse_bsi_parts(text):
+    """([A, B, C, D], location, '') or (None, '', why) (rules 11 and 14).
+
+    location is the words said between the second and third numbers, as Glen says
+    "BSI 21 x 3 Liver to 1 x 1" (15 November 2026), '' when there are none. A leading
+    "at", "in", "the" or "on" and the separators around it are dropped. Words anywhere
+    else still mean the BSI is not understood."""
     from dashboard.terrain_phase import bsi_num
-    s = str(text or "").lower().replace("\u00d7", " x ")
-    s = re.sub(r"(\d)\s*x\s*(?=\d)", r"\1 x ", s)          # "12x8"
-    s = re.sub(r"^(?:is|reads?|of)\s+", "", s.strip())
-    nums, words = [], _words(s)
+    s = str(text or "").replace("\u00d7", " x ")
+    s = re.sub(r"(\d)\s*[xX]\s*(?=\d)", r"\1 x ", s)       # "12x8"
+    s = re.sub(r"^(?:is|reads?|of)\s+", "", s.strip(), flags=re.I)
+    raw = [w for w in re.split(r"[\s,.;:!?\-]+", s) if w]
+    words = [w.lower() for w in raw]
+    nums, loc = [], []
     i = 0
     while i < len(words):
         w = words[i]
         if w in _BSI_SEPS:
+            if len(nums) == 2 and loc:
+                loc.append(raw[i])        # "liver and kidney"; trailing "to" goes below
             i += 1
             continue
         if w.isdigit():
@@ -357,15 +398,20 @@ def parse_bsi(text):
             nums.append(n)
         elif w in _UNITS_1_19:
             nums.append(_UNITS_1_19[w])
+        elif len(nums) == 2:
+            if loc or w not in _BSI_LOC_LEAD:
+                loc.append(raw[i])
         else:
-            return None, f"'{w}' is not a number"
+            return None, "", f"'{w}' is not a number"
         i += 1
     if len(nums) != 4:
-        return None, f"heard {len(nums)} number{'' if len(nums) == 1 else 's'}, not 4"
+        return None, "", f"heard {len(nums)} number{'' if len(nums) == 1 else 's'}, not 4"
     bad = [n for n in nums if bsi_num(n) is None]
     if bad:
-        return None, f"{bad[0]} is outside 1 to 21"
-    return nums, ""
+        return None, "", f"{bad[0]} is outside 1 to 21"
+    while loc and loc[-1].lower() in _BSI_SEPS:
+        loc.pop()
+    return nums, " ".join(loc), ""
 
 
 def _terrain_event(kind, words):
@@ -408,7 +454,7 @@ def _dose_only(s):
     return dose, freq
 
 
-def segment_utterance(text, pending=None, after_remedy=False):
+def segment_utterance(text, pending=None, after_remedy=False, after_bsi=None):
     """One finalized utterance of the hands-free recording -> events, in order.
 
     Events: {"field": "head"|"tail"|"remedy", "text", "both"} ("both" True for "head
@@ -421,19 +467,57 @@ def segment_utterance(text, pending=None, after_remedy=False):
     pending is the field left open by a cue said with nothing after it (one of
     PENDING, or None). after_remedy is True when the last event was a remedy, so a
     dose said next belongs to it. Both carry over to the next utterance: they are
-    returned, and the page sends them back. Pure: no database, no side effects."""
+    returned, and the page sends them back. Pure: no database, no side effects.
+
+    after_bsi is "ok" or "bad" when the last thing said was a BSI (understood or not),
+    so a "location" said next is the BSI location (rule 14): that event carries
+    "of": "bsi" and "bsi_ok". It carries over like pending, and the result holds the
+    key only while it is set."""
     pending = pending if pending in PENDING else None
     after_remedy = bool(after_remedy)
+    after_bsi = after_bsi if after_bsi in AFTER_BSI else None
     events = []
+
+    def bsi_events(words, loc_b=None):
+        """The BSI event, then its location event if one was said (rule 14):
+        (a) between the numbers, or (b) after them as "location X". Both: (a) wins
+        and the event carries (b) as "conflict". Returns after_bsi for what follows."""
+        nonlocal pending
+        ev = _terrain_event("bsi", words)
+        events.append(ev)
+        state = "ok" if ev["value"] else "bad"
+        loc_a = parse_bsi_parts(words)[1] if ev["value"] else ""
+        if loc_a:
+            le = {"terrain": "location", "text": loc_a, "of": "bsi", "bsi_ok": True}
+            if loc_b:
+                le["conflict"] = loc_b
+            events.append(le)
+            return None
+        if loc_b:
+            events.append({"terrain": "location", "text": loc_b, "of": "bsi",
+                           "bsi_ok": state == "ok"})
+            return None
+        if loc_b is not None:
+            pending = "location"          # "..., location." the words come next
+        return state
+
+    def location_event(words):
+        ev = _terrain_event("location", words)
+        if after_bsi:
+            ev["of"] = "bsi"
+            ev["bsi_ok"] = after_bsi == "ok"
+        return ev
 
     def field(kind, words, both=False):
         events.append({"field": kind, "text": words, "both": both})
 
     for sent in _hf_sentences(text):
         s = sent
+        keep_bsi = False                  # rule 14: only a location cue keeps it
         while s:
             s = s[_HF_FILLER.match(s).end():].strip(" ,-")
             if not s:
+                keep_bsi = True           # "Okay." alone is nothing between
                 break
             if is_balanced_cue(s):
                 events.append({"balanced": True})
@@ -458,8 +542,35 @@ def segment_utterance(text, pending=None, after_remedy=False):
             m = _HF_TERRAIN.match(s)
             if m:
                 cue = m.group(1).lower()
+                if "score" in cue or "bsi" in cue:
+                    cue = "bsi"           # rule 15: "the BSI", "the score" are "BSI"
                 rest = _hf_rest(s, m)
-                if rest:
+                loc = None
+                if cue in ("bsi", "terrain") and rest:
+                    lm = _HF_BSI_LOC.search(rest)
+                    if lm:                # "BSI 21 by 3 to 1 by 1, location Liver"
+                        loc = _hf_rest(rest, lm)
+                        rest = rest[:lm.start()].strip(" ,-")
+                if cue == "location" and rest:
+                    events.append(location_event(rest))
+                    pending, after_bsi = None, None
+                elif cue == "location":
+                    pending = cue
+                    keep_bsi = True       # the words come next, still the BSI's
+                elif cue == "bsi" and (rest or loc is not None):
+                    pending = None
+                    after_bsi = bsi_events(rest, loc)
+                    keep_bsi = True
+                elif cue == "terrain" and loc is not None:
+                    # "Terrain 3, location liver": the phase, then the terrain location.
+                    if rest:
+                        events.append(_terrain_event(cue, rest))
+                    if loc:
+                        events.append(_terrain_event("location", loc))
+                        pending = None
+                    else:
+                        pending = "location"
+                elif rest:
                     events.append(_terrain_event(cue, rest))
                     pending = None
                 else:
@@ -486,7 +597,18 @@ def segment_utterance(text, pending=None, after_remedy=False):
                 pending = None
                 break
             if pending in TERRAIN_CUES:
-                events.append(_terrain_event(pending, s))
+                if pending == "location":
+                    events.append(location_event(s))
+                    after_bsi = None
+                elif pending == "bsi":
+                    pending = None
+                    lm = _HF_BSI_LOC.search(s)
+                    after_bsi = bsi_events(s[:lm.start()].strip(" ,-"), _hf_rest(s, lm)) \
+                        if lm else bsi_events(s)
+                    keep_bsi = True
+                    break
+                else:
+                    events.append(_terrain_event(pending, s))
                 pending = None
                 break
             if pending:
@@ -518,19 +640,25 @@ def segment_utterance(text, pending=None, after_remedy=False):
                 field("head", t.group(1).strip(" ,-"), True)
                 after_remedy = False
             break
-    return {"events": events, "pending": pending, "after_remedy": after_remedy}
+        if not keep_bsi:
+            after_bsi = None
+    out = {"events": events, "pending": pending, "after_remedy": after_remedy}
+    if after_bsi:
+        out["after_bsi"] = after_bsi
+    return out
 
 
-def handsfree_events(cx, text, pending=None, after_remedy=False, test_id=None):
+def handsfree_events(cx, text, pending=None, after_remedy=False, test_id=None,
+                     after_bsi=None):
     """segment_utterance, with each Head, Tail or Remedy event matched the way a short
     recording is (match_term, the cue words already off). Writes nothing: the page
     applies the events, in order, through the row routes, as hands-free rows."""
-    out = segment_utterance(text, pending, after_remedy)
+    out = segment_utterance(text, pending, after_remedy, after_bsi)
     for ev in out["events"]:
         kind = ev.get("field")
         if kind in KINDS:
             ev["match"] = match_term(cx, kind, ev["text"], test_id=test_id, cues=False)
         elif ev.get("terrain") == "location" or ev.get("also_balances"):
-            # Rule 10: the stress list the layer cards use, this client's first.
+            # Rules 10 and 14: the stress list the layer cards use, this client's first.
             ev["match"] = match_term(cx, "head", ev["text"], test_id=test_id, cues=False)
     return out

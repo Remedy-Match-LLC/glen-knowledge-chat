@@ -70,7 +70,11 @@ def init_auth_tables(cx):
                 # terrain_review: JSON {field: "review"|"unmatched"} for terrain fields
                 # the hands-free recording wrote that Glen has not yet set or confirmed
                 # by hand (ruling 7). NULL or {} when there is nothing to review.
-                "terrain_review TEXT"):
+                "terrain_review TEXT",
+                # bsi_location: where the BSI was read. Glen, 15 Nov 2026: shown "21 x 3
+                # Liver to 1 x 1", spoken "BSI 21 times 3 to 1 times 1, location Liver".
+                # Separate from `location`, the terrain location after the phase.
+                "bsi_location TEXT"):
         try:
             cx.execute(f"ALTER TABLE biofield_auth_tests ADD COLUMN {col}")
         except Exception:
@@ -164,13 +168,14 @@ def update_header(cx, tid, name=None, email=None, date=None, client_id=None):
 BSI_COLS = ("bsi_a", "bsi_b", "bsi_c", "bsi_d")
 
 
-def update_terrain(cx, tid, phase=None, location=None, bsi=None):
+def update_terrain(cx, tid, phase=None, location=None, bsi=None, bsi_location=None):
     """Persist the scan's terrain reading (BSI 'phase P' + 'location X') on the test.
     Per-field, like update_header: a pass that read no phase/location must not clobber
     a value captured earlier. phase is coerced to an int 1-5 (else ignored).
     bsi is the four BSI numbers [A, B, C, D]. They are saved only when all four are
-    ints 1-21; otherwise all four stored values are left alone. The hand-set route
-    (set_terrain_field) stays per field."""
+    ints 1-21; otherwise all four stored values are left alone. bsi_location is saved
+    with them and only with them: a location with no valid BSI is not saved. The
+    hand-set route (set_terrain_field) stays per field."""
     from dashboard.terrain_phase import phase_num, bsi_num
     init_auth_tables(cx)
     sets, vals = [], []
@@ -185,6 +190,8 @@ def update_terrain(cx, tid, phase=None, location=None, bsi=None):
     if len(nums) == 4 and None not in nums:
         for col, n in zip(BSI_COLS, nums):
             sets.append(f"{col}=?"); vals.append(n)
+        if (bsi_location or "").strip():
+            sets.append("bsi_location=?"); vals.append(bsi_location.strip())
     if not sets:
         return
     sets.append("updated_at=?"); vals.append(_now())
@@ -193,7 +200,9 @@ def update_terrain(cx, tid, phase=None, location=None, bsi=None):
     cx.commit()
 
 
-TERRAIN_FIELDS = ("phase", "location") + BSI_COLS
+TERRAIN_FIELDS = ("phase", "location") + BSI_COLS + ("bsi_location",)
+# The text fields matched against the stress list; the rest are numbers.
+LOCATION_FIELDS = ("location", "bsi_location")
 
 
 def _terrain_review(raw):
@@ -230,7 +239,8 @@ def mark_terrain_review(cx, tid, fields, status=None):
 def set_terrain_bsi(cx, tid, values, handsfree=False):
     """All four BSI numbers at once, as the hands-free "BSI 12 by 8 to 9 by 6" says
     them. All or nothing, like update_terrain: raises ValueError unless there are
-    exactly four numbers, each 1 to 21, and then writes nothing."""
+    exactly four numbers, each 1 to 21, and then writes nothing. The BSI location is
+    its own field (set_terrain_field "bsi_location"), sent after this one."""
     from dashboard.terrain_phase import bsi_num
     nums = [bsi_num(v) for v in values] if isinstance(values, (list, tuple)) else []
     if len(nums) != 4 or None in nums:
@@ -246,8 +256,8 @@ def set_terrain_field(cx, tid, field, value, handsfree=False, matched=True):
     heard nothing. Raises ValueError on an unknown field or an out-of-range number.
 
     A hand edit clears the field's review mark. handsfree=True (the hands-free
-    recording) sets it instead: "unmatched" for a location not on the stress list
-    (matched=False), else "review"."""
+    recording) sets it instead: "unmatched" for a location (terrain or BSI) not on the
+    stress list (matched=False), else "review"."""
     from dashboard.terrain_phase import phase_num, bsi_num
     if field not in TERRAIN_FIELDS:
         raise ValueError(f"unknown terrain field: {field}")
@@ -255,7 +265,7 @@ def set_terrain_field(cx, tid, field, value, handsfree=False, matched=True):
     raw = "" if value is None else str(value).strip()
     if raw == "":
         stored = None
-    elif field == "location":
+    elif field in LOCATION_FIELDS:
         stored = raw
     elif field == "phase":
         stored = phase_num(raw)
@@ -270,7 +280,7 @@ def set_terrain_field(cx, tid, field, value, handsfree=False, matched=True):
     cx.commit()
     status = None
     if handsfree and stored is not None:
-        status = "unmatched" if (field == "location" and not matched) else "review"
+        status = "unmatched" if (field in LOCATION_FIELDS and not matched) else "review"
     mark_terrain_review(cx, tid, [field], status)
     return stored
 
@@ -281,7 +291,8 @@ def terrain_state(rep):
     bsi = list(rep.get("bsi") or [None] * 4)
     r = regulation_level(*bsi)
     return {"phase": rep.get("phase"), "location": rep.get("location") or "",
-            "bsi": bsi, "review": dict(rep.get("terrain_review") or {}),
+            "bsi": bsi, "bsi_location": rep.get("bsi_location") or "",
+            "review": dict(rep.get("terrain_review") or {}),
             "regulation": ({"level": r[0], "name": r[1]} if r else None),
             "warnings": bsi_warnings(*bsi)}
 
@@ -1263,6 +1274,7 @@ def authored_report(cx, tid):
             "phase": (t["phase"] if "phase" in tk else None),
             "location": ((t["location"] if "location" in tk else "") or ""),
             "bsi": [(t[c] if c in tk else None) for c in BSI_COLS],
+            "bsi_location": ((t["bsi_location"] if "bsi_location" in tk else "") or ""),
             "terrain_review": _terrain_review(t["terrain_review"]
                                               if "terrain_review" in tk else None),
             "layers": layers, "schedule": schedule}

@@ -13,6 +13,7 @@ _SYSTEM = (
     "You convert a clinician's spoken biofield-testing transcript (Dr. Glen Swartwout) into a "
     "structured causal chain. Return STRICT JSON ONLY, no prose:\n"
     '{"header": str, "phase": int, "location": str, "bsi": [int, int, int, int], '
+    '"bsi_location": str, '
     '"layers": [{"layer": int, "head": str, "most_affected": str, '
     '"remedy": str, "dosage": str, "frequency": str, "timing": str}]}\n'
     "A single causal layer can need MORE THAN ONE remedy to balance. When a layer is "
@@ -30,6 +31,11 @@ _SYSTEM = (
     "integers [N, A, B, C], in the order spoken (e.g. 'BSI 13 times 8 to 5 times 3' -> "
     "[13, 8, 5, 3]). Each is 1 to 21. If the BSI is not spoken, or any of the four numbers "
     "is not clear, set `bsi` to null. Never guess a number.\n"
+    "- 'location X' said straight after the four BSI numbers, with nothing between "
+    "('BSI 21 times 3 to 1 times 1, location Liver') -> top-level `bsi_location` ('Liver'). "
+    "It is separate from `location`: a location said after the terrain phase stays "
+    "`location`. Never copy one into the other. If no location follows the BSI, "
+    "`bsi_location` is an empty string.\n"
     "- 'X is the head and tail of the [first/second/...] causal chain' OR 'the [Nth] layer is X, head and "
     "tail' -> a layer at that number with head = most_affected = X ('head and tail' means the stress is both "
     "the head and the most-affected end of that layer).\n"
@@ -106,7 +112,8 @@ def interpret_transcript(transcript, complete, glossary=""):
     Optional `glossary` (comma-joined catalog terms) lets the model normalize a clearly
     misheard remedy to its catalog spelling; unmatched remedies are kept as spoken."""
     if not (transcript or "").strip():
-        return {"header": "", "phase": None, "location": "", "bsi": None, "layers": []}
+        return {"header": "", "phase": None, "location": "", "bsi": None,
+                "bsi_location": "", "layers": []}
     p = build_interpret_prompt(transcript, glossary)
     data = _parse_json(complete(p["system"], p["user"]))
     layers = []
@@ -142,6 +149,7 @@ def interpret_transcript(transcript, complete, glossary=""):
             "phase": phase_num(data.get("phase")),
             "location": (data.get("location") or "").strip(),
             "bsi": _bsi(data.get("bsi")),
+            "bsi_location": (str(data.get("bsi_location") or "")).strip(),
             "layers": layers}
 
 
