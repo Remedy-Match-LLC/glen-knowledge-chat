@@ -4310,6 +4310,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 rids = card_rids or _st.layer_chain_rids(cx, test_id, layer)
                 if rids:
                     _st.cover_stress(cx, test_id, sid, rids)
+                    # "also balances" said in the hands-free recording: the layer
+                    # goes to review like any other hands-free write (ruling 7).
+                    if d.get("handsfree"):
+                        for r in rids:
+                            mark_handsfree(cx, test_id, int(r))
                 else:
                     _st.set_manual_balanced(cx, test_id, sid, True)
                 try:

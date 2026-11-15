@@ -122,6 +122,27 @@ def test_a_terrain_cue_ends_the_remedy_dose():
     assert out["after_remedy"] is False
 
 
+# ---- "also balances" (Glen, 14 November 2026, Bridge) ----------------------------------
+
+@pytest.mark.parametrize("said", ["Also balances liver congestion.",
+                                  "It also balances liver congestion",
+                                  "also balance, liver congestion"])
+def test_also_balances_carries_the_stress(said):
+    assert ev(said) == [{"also_balances": True, "text": "liver congestion"}]
+
+
+def test_also_balances_is_not_the_balanced_cue():
+    assert ev("Balanced.") == [{"balanced": True}]
+    assert ev("Also balances.") == []                     # waits for the stress instead
+    assert segment_utterance("Also balances.")["pending"] == "also_balances"
+    assert ev("Liver congestion", pending="also_balances") == [
+        {"also_balances": True, "text": "Liver congestion"}]
+    assert ev("Remedy Sobopla. Also balances gut. Balanced.") == [
+        {"field": "remedy", "text": "Sobopla", "both": False},
+        {"also_balances": True, "text": "gut"}, {"balanced": True}]
+    assert ev("It balances liver congestion.") == []      # no "also": plain talk
+
+
 def test_parse_phase_needs_one_answer():
     assert parse_phase("3 regenerate") == 3
     assert parse_phase("") is None
@@ -146,6 +167,12 @@ def test_location_is_matched_against_the_stress_list(cx):
     assert hit["match"]["value"] == "Liver Congestion" and hit["match"]["matched"] is True
     assert miss["match"]["matched"] is False
     assert miss["match"]["value"] == "Zzqx Florp"          # the words are kept
+
+
+def test_also_balances_is_matched_against_the_stress_list(cx):
+    hit, miss = handsfree_events(cx, "Also balances liver congestion. Also balances zzqx florp.")["events"]
+    assert hit["match"]["value"] == "Liver Congestion" and hit["match"]["matched"] is True
+    assert miss["match"]["matched"] is False
 
 
 # ---- the server: the stored review mark ---------------------------------------------
@@ -199,6 +226,28 @@ def test_route_keeps_an_unmatched_location_marked(tmp_path):
     assert j["location"] == "Zzqx Florp" and j["review"] == {"location": "unmatched"}
 
 
+def test_stress_add_route_with_handsfree_sends_the_layer_to_review(tmp_path):
+    db = str(tmp_path / "c.db")                     # a fresh db, as the stress route tests use
+    client = create_app(db).test_client()
+    tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
+    a = client.post(f"/author/{tid}/row", json={"layer": 1, "head": "Liver",
+                                                 "remedy": "TMG"}).get_json()["rid"]
+    b = client.post(f"/author/{tid}/row", json={"layer": 2, "head": "Lung",
+                                                 "remedy": "TMG"}).get_json()["rid"]
+    with sqlite3.connect(db) as cx:
+        cx.execute("UPDATE biofield_auth_chain SET confirmed=1")
+        cx.commit()
+    j = client.post(f"/author/{tid}/stress/add", json={
+        "label": "Liver Congestion", "layer": 1, "rids": [a], "handsfree": True}).get_json()
+    assert j["ok"] and j["layer"] == 1
+    client.post(f"/author/{tid}/stress/add", json={"label": "Gut", "layer": 2, "rids": [b]})
+    with sqlite3.connect(db) as cx:
+        got = dict(cx.execute("SELECT id, confirmed FROM biofield_auth_chain").fetchall())
+    assert got == {a: 0, b: 1}                 # the card's own box confirms nothing away
+    s_ = client.get(f"/author/{tid}/stresses").get_json()["data"]
+    assert {"Liver Congestion", "Gut"} <= {x["label"] for x in s_["balanced"]}
+
+
 def test_page_highlights_stored_review_marks(tmp_path):
     db, client, tid = _app(tmp_path)
     client.post(f"/author/{tid}/terrain", json={"field": "phase", "value": "2",
@@ -209,7 +258,8 @@ def test_page_highlights_stored_review_marks(tmp_path):
     assert "<select id=t_phase aria-label='Terrain phase' class='tunconf'" in h
     assert "class='tunconf unmatched'" in h
     assert re.search(r"id=tConfirm [^>]*style=''", h)
-    assert ("title='Hands-free: say head, tail, remedy, balanced, next layer, terrain, "
+    assert ("title='Hands-free: say head, tail, remedy, balanced, also balances, next layer, "
+            "terrain, "
             "location or BSI'") in h
     assert "id=bsi_a" in h and "bsi_a type=number min=1 max=21 step=1 inputmode=numeric " \
         "aria-label='BSI A' value='' style='width:56px' onchange" in h
@@ -289,9 +339,9 @@ DUMP = ("process.stdout.write(JSON.stringify({calls:calls,log:els.hfLog.textCont
         "confirm:els.tConfirm.style.display,target:_hf&&_hf.target}));")
 
 
-def _run(scenario):
+def _run(scenario, before=""):
     script = (HARNESS + _blocks("recField", "handsFree", "regulationLevel", "terrainSave")
-              + "\nHF_DRAIN_MS=10;HF_FLUSH_MS=0;\n(async function(){\n"
+              + "\nHF_DRAIN_MS=10;HF_FLUSH_MS=0;\n(async function(){\n" + before +
               "var me=await handsFree();me.ws.onopen();\n" + scenario + "\n})()"
               ".catch(function(e){console.error(e);process.exit(1)});\n")
     out = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=60)
@@ -366,3 +416,27 @@ def test_js_a_hand_edit_and_confirm_clear_the_highlight():
     """ + DUMP)
     assert r["calls"]["mid"] == {"phase": [], "loc": ["tunconf", "unmatched"]}
     assert r["cls"]["loc"] == {} and r["confirm"] == "none"
+
+
+@needs_node
+def test_js_also_balances_adds_a_matched_stress_to_the_current_layer():
+    r = _run("""
+      answers['u']=seg([{also_balances:true,text:'liver',match:{value:'Liver Congestion',matched:true}},
+        {also_balances:true,text:'zzqx florp',match:{value:'Zzqx Florp',matched:false}}]);
+      say(me.ws,'u');await me.chain;
+    """ + DUMP)
+    adds = [p["body"] for p in r["calls"]["post"] if "/stress/add" in p["url"]]
+    assert adds == [{"label": "Liver Congestion", "layer": 4, "rids": [7], "handsfree": True}]
+    assert "Layer 1 also balances: Liver Congestion" in r["log"]
+    assert "Also balances not matched: zzqx florp. Not added." in r["log"]
+    assert r["sess"] == "u"
+
+
+@needs_node
+def test_js_also_balances_with_no_layer_yet_adds_nothing():
+    r = _run("""
+      answers['u']=seg([{also_balances:true,text:'liver',match:{value:'Liver Congestion',matched:true}}]);
+      say(me.ws,'u');await me.chain;
+    """ + DUMP, before="cards.length=0;")
+    assert [p for p in r["calls"]["post"] if "/stress/add" in p["url"]] == []
+    assert "No layer yet for: Liver Congestion. Not added." in r["log"]

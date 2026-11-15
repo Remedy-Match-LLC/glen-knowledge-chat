@@ -266,6 +266,13 @@ def match_term(cx, kind, text, test_id=None, cues=True):
 #     is saved, and the page says so (parse_bsi). "B.S.I." and "b s i" count as "BSI".
 # 12. A "balanced" sentence is read before an open terrain field (rule 5 comes first),
 #     so "Terrain. Balanced." ticks the layer.
+#
+# Glen, 14 November 2026 (Bridge): "yes" to "also balances" + a stress name.
+# 13. "also balances" (also "it also balances", "also balance") at a cue position adds
+#     the stress to the current layer's balanced stresses, as the card's "Add stress"
+#     box does. The words are matched on the server against the stress list; the page
+#     adds only a matched name. It is a different cue from "balanced" (rule 5): that
+#     must be the whole sentence, and "also balances X" never is.
 
 _HF_SENTENCE = re.compile(r"[.!?;:]+(?=\s|$)")
 _HF_NEXT = re.compile(r"next\s+layer\b", re.I)
@@ -276,10 +283,11 @@ _HF_SEP = re.compile(r"^[\s,\-]*(?:is\s+)?", re.I)
 _HF_TRAIL_BOTH = re.compile(r"^(.*?\S)[\s,\-]+(?:is\s+)?(?:the\s+)?" + _HEAD_AND_TAIL + r"$",
                             re.I)
 _HF_TERRAIN = re.compile(r"(terrain|location|bsi)\b", re.I)
+_HF_ALSO = re.compile(r"(?:it\s+)?also\s+balances?\b", re.I)
 # "B.S.I." would otherwise end a sentence at its last dot, and "b s i" is three words.
 _HF_BSI_SPELLED = re.compile(r"\bb\.?\s?s\.?\s?i\b\.?", re.I)
 TERRAIN_CUES = ("terrain", "location", "bsi")
-PENDING = ("head", "tail", "remedy", "head_tail") + TERRAIN_CUES
+PENDING = ("head", "tail", "remedy", "head_tail", "also_balances") + TERRAIN_CUES
 
 _UNITS_1_19 = {
     "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
@@ -407,7 +415,8 @@ def segment_utterance(text, pending=None, after_remedy=False):
     and tail", which fills Head and Tail), {"field": "dose", "text", "dose",
     "frequency"} for the last remedy, {"balanced": True}, {"next_layer": True}, and
     the terrain panel's {"terrain": "phase"|"location"|"bsi", "text", ...} (rules 9-11:
-    "value" is the phase or the four BSI numbers, None when not understood).
+    "value" is the phase or the four BSI numbers, None when not understood), and
+    {"also_balances": True, "text"} for a stress the current layer also balances.
 
     pending is the field left open by a cue said with nothing after it (one of
     PENDING, or None). after_remedy is True when the last event was a remedy, so a
@@ -436,6 +445,16 @@ def segment_utterance(text, pending=None, after_remedy=False):
                 pending, after_remedy = None, False
                 s = _hf_rest(s, m)
                 continue                  # straight after a cue is a cue position
+            m = _HF_ALSO.match(s)
+            if m:
+                rest = _hf_rest(s, m)
+                if rest:
+                    events.append({"also_balances": True, "text": rest})
+                    pending = None
+                else:
+                    pending = "also_balances"
+                after_remedy = False
+                break
             m = _HF_TERRAIN.match(s)
             if m:
                 cue = m.group(1).lower()
@@ -462,6 +481,10 @@ def segment_utterance(text, pending=None, after_remedy=False):
                 after_remedy = kind == "remedy" and bool(rest)
                 break
             # No cue at the start of this sentence.
+            if pending == "also_balances":
+                events.append({"also_balances": True, "text": s})
+                pending = None
+                break
             if pending in TERRAIN_CUES:
                 events.append(_terrain_event(pending, s))
                 pending = None
@@ -507,7 +530,7 @@ def handsfree_events(cx, text, pending=None, after_remedy=False, test_id=None):
         kind = ev.get("field")
         if kind in KINDS:
             ev["match"] = match_term(cx, kind, ev["text"], test_id=test_id, cues=False)
-        elif ev.get("terrain") == "location":
+        elif ev.get("terrain") == "location" or ev.get("also_balances"):
             # Rule 10: the stress list the layer cards use, this client's first.
             ev["match"] = match_term(cx, "head", ev["text"], test_id=test_id, cues=False)
     return out

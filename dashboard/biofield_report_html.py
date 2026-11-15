@@ -1389,7 +1389,8 @@ async function setLayerBalanced(gid,on){var card=document.querySelector('.lcard[
 // One Deepgram stream runs until the toggle is turned off. Each finished utterance
 // joins the full transcript, then the server splits it on the cue words ("head",
 // "tail", "remedy", "head and tail", "balanced", "next layer", and "terrain",
-// "location" and "BSI" for the terrain panel; the exact rule is in
+// "location" and "BSI" for the terrain panel, "also balances" for a stress the
+// layer covers; the exact rule is in
 // dashboard/biofield_layer_match.py) and matches each field. The page applies the
 // events in order, one at a time, through the same row routes a short recording uses,
 // with handsfree set, so every row goes in unconfirmed (ruling 7). Turned off, it
@@ -1403,7 +1404,7 @@ function hfStat(t){var e=document.getElementById('hfStat');if(e)e.textContent=t}
 function hfLog(t){var e=document.getElementById('hfLog');if(!e)return;
  e.textContent=(t+(e.textContent?'\\n'+e.textContent:'')).split('\\n').slice(0,8).join('\\n')}
 var _hfNames={head:'Head',tail:'Tail',remedy:'Remedy',head_tail:'Head and Tail',
- terrain:'Terrain',location:'Location',bsi:'BSI'};
+ terrain:'Terrain',location:'Location',bsi:'BSI',also_balances:'Also balances'};
 function hfWhere(me){var tg=me.target,l='Layer '+tg.n+(tg.rids.length?'':' (new)');
  return l+': '+(me.pending?'the next words go to '+_hfNames[me.pending]+'.':
   'say head, tail or remedy.')}
@@ -1482,6 +1483,7 @@ async function hfProcess(me,text){if(!hfLive(me))return;
  hfShow(me)}
 async function hfApply(me,ev){var tg=me.target,r;
  if(ev.terrain){await hfTerrain(me,ev);return}
+ if(ev.also_balances){await hfAlsoBalances(me,ev);return}
  if(ev.next_layer){me.target=hfNewTarget(me);hfLog('Layer '+me.target.n+' started.');return}
  if(ev.balanced){if(!tg.rids.length){hfLog('Nothing to mark balanced yet on layer '+tg.n+'.');return}
   if(!hfLive(me))return;
@@ -1557,6 +1559,19 @@ async function hfTerrain(me,ev){var k=ev.terrain,body,shown;
  if(j&&j.ok){me.wrote++;
   hfLog(_hfTNames[k]+': '+shown+((j.warnings&&j.warnings.length)?' ('+j.warnings.join('; ')+')':''))}
  else hfLog(_hfTNames[k]+' not saved: '+shown+((j&&j.error)?' ('+j.error+')':'')+'.')}
+// "also balances X": X joins the current layer's balanced stresses, through the same
+// route as the card's Add stress box. Only a matched name is added, since that route
+// would put an unknown name on the stress list. The layer's rows go to review
+// (handsfree, ruling 7). With no row on the layer yet there is nothing to add it to.
+async function hfAlsoBalances(me,ev){var tg=me.target,m=ev.match||{},v=m.value||ev.text||'';
+ if(!v)return;
+ if(!m.matched){hfLog('Also balances not matched: '+ev.text+'. Not added.');return}
+ if(!tg.rids.length){hfLog('No layer yet for: '+v+'. Not added.');return}
+ if(!hfLive(me))return;
+ var r=await post('/author/__TID__/stress/add',{label:v,layer:Number(tg.layer)||tg.layer,
+  rids:tg.rids.map(Number),handsfree:true});
+ if(r&&r.ok){me.wrote++;hfLog('Layer '+tg.n+' also balances: '+v)}
+ else hfLog('Layer '+tg.n+' also balances '+v+': not added'+((r&&r.error)?'. '+r.error:'')+'.')}
 function hfEnd(me){if(!me)return;me.stopped=true;me.draining=false;if(_hf===me)_hf=null;
  try{if(me.mr&&me.mr.state!=='inactive')me.mr.stop()}catch(e){}
  try{if(me.stream)me.stream.getTracks().forEach(function(t){t.stop()})}catch(e){}
@@ -4045,7 +4060,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         # Part 2b: one recording split by spoken cue words, for when nobody is at the
         # computer. Every row it writes goes in unconfirmed for review (ruling 7).
         "<button id=hfBtn type=button class='btn ghost' title='Hands-free: say head, "
-        "tail, remedy, balanced, next layer, terrain, location or BSI' "
+        "tail, remedy, balanced, also balances, next layer, terrain, location or BSI' "
         "onclick=handsFree()>Hands-free</button>"
         "<button id=phaseAct class=btn onclick=phaseRun()>Capture stresses &rarr; list</button>"
         "<span id=rstat class=food></span></div>"
