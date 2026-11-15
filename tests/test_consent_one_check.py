@@ -236,8 +236,8 @@ def test_sequence_runner_skips_a_hub_unsubscribe(tmp_path, spy, monkeypatch):
     monkeypatch.setattr(runner, "_UNDER_TEST", False)
     monkeypatch.setattr(unsubscribe, "_SECRET", "test-secret-abc", raising=False)
     sent = []
-    monkeypatch.setattr(ghl_email, "send_via_ghl",
-                        lambda to, subject, **kw: sent.append(to) or {"id": "g", "via": "ghl"})
+    monkeypatch.setattr(runner, "send_one",
+                        lambda c, to_email, **kw: sent.append(to_email) or ("ses", "m"))
 
     cx = db.connect(str(tmp_path / "log.db"))
     sequences.init_tables(cx)

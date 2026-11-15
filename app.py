@@ -37023,7 +37023,8 @@ def api_cron_sequence_tick():
         return jsonify({"ok": True, "dry_run": dry, **counts})
     except Exception as e:  # noqa: BLE001
         app.logger.exception("sequence tick failed")
-        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+        # The type only: a database error can quote an address, and the cron prints this.
+        return jsonify({"ok": False, "error": type(e).__name__}), 500
 
 
 @app.route("/api/cron/answer-audit", methods=["POST"])
