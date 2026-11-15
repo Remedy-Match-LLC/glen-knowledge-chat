@@ -229,6 +229,7 @@
         return '<div class="line" data-slug="' + esc(i.slug) + '" data-format="' + esc(i.format) + '">' +
           '<a href="/begin/product/' + esc(i.slug) + '">' + esc(i.name) + '</a>' +
           (i.available ? '' : ' <span class="badge">No longer available</span>') +
+          (i.pickup_only ? ' <span class="badge">Pickup only, in Hilo</span>' : '') +
           '<span class="qty"><button type="button" data-d="-1" aria-label="One fewer ' + esc(i.name) + '">&minus;</button>' +
           '<span>' + i.qty + '</span><button type="button" data-d="1" aria-label="One more ' + esc(i.name) + '">+</button></span>' +
           '<button type="button" class="remove" aria-label="Remove ' + esc(i.name) + ' from cart">Remove</button></div>';

@@ -170,8 +170,9 @@ def test_the_page_shows_the_line_and_points_every_buy_link_at_it():
     assert 'id="product-out-of-stock"' in PAGE
     assert re.search(r"data\.out_of_stock_line \? '#product-out-of-stock'", PAGE)
     assert "oos.textContent = data.out_of_stock_line || '';" in PAGE
-    assert ("if (!data.waitlist_only && !data.out_of_stock_line && !data.enquiry) "
-            "{ renderCartControl(slug); }") in PAGE
+    # The pickup_only clause was added 2026-11-09; out of stock still blocks the control.
+    assert ("if (!data.waitlist_only && !data.out_of_stock_line && !data.enquiry"
+            " && !data.pickup_only_line) { renderCartControl(slug); }") in PAGE
 
 
 def test_a_bundle_page_holding_it_sells_nothing_and_names_it(client):
