@@ -85,7 +85,7 @@ def test_sections_in_order_with_headings_and_gaps():
     assert got == ["head:SPIRIT", "opt:Pressure 10", "opt:Grief", "opt:Pressure 2", "gap",
                    "head:MIND", "none:none yet", "gap",
                    "head:BODY", "opt:ED4: Nerve", "gap",
-                   "head:All stresses", "opt:Adrenal", "opt:Grief", "opt:Liver"]
+                   "head:ALL STRESSES", "opt:Adrenal", "opt:Grief", "opt:Liver"]
 
 
 @needs_node
@@ -101,7 +101,7 @@ def test_typing_filters_every_section_and_drops_a_heading_with_no_match():
       gr:rowsText(locRows({SECS},'gr')),
       ed:rowsText(locRows({SECS},'ed4 n')),
       none:rowsText(locRows({SECS},'zzz'))}}))""")
-    assert got["gr"] == ["head:SPIRIT", "opt:Grief", "gap", "head:All stresses", "opt:Grief"]
+    assert got["gr"] == ["head:SPIRIT", "opt:Grief", "gap", "head:ALL STRESSES", "opt:Grief"]
     # Punctuation is ignored, so "ed4 n" finds "ED4: Nerve".
     assert got["ed"] == ["head:BODY", "opt:ED4: Nerve", "gap"]
     assert got["none"] == ["none:no match"]
@@ -143,7 +143,7 @@ def test_keys_pick_only_items_and_fire_input_then_change():
     html = o["html"]
     assert html.index(">SPIRIT<") < html.index(">Grief<") < html.index("class=locgap") \
         < html.index(">MIND<") < html.index(">none yet<") < html.index(">BODY<") \
-        < html.index(">ED4: Nerve<") < html.index(">All stresses<") < html.index(">Adrenal<")
+        < html.index(">ED4: Nerve<") < html.index(">ALL STRESSES<") < html.index(">Adrenal<")
     assert html.count("role=option") == 3 and "class=lochead role=presentation" in html
     assert (got["first"], got["second"], got["top"]) == ("Grief", "ED4: Nerve", "Grief")
     assert got["value"] == "Grief" and got["changes"] == ["Grief"] and got["inputs"] == ["Grief"]
@@ -270,3 +270,76 @@ def test_the_stress_panel_inputs_get_it_too():
                                 "by_layer": [{"layer": 1, "head": "Liver", "rids": [1],
                                               "stresses": []}], "unassigned": []})
     assert "class=stress-add data-loccombo" in html and "list=vocab" not in html
+
+
+# ---- Glen, 15 Nov 2026: BODY's subheads and greyed stresses already on a layer -------
+
+GROUPS = ("{spirit:['Liver Detox'],mind:[],body:['Skin & Gut','ED4: Nerve','Lead','Humility'],"
+          "body_groups:[['Causal chain',['Skin & Gut']],['Infoceuticals',['ED4: Nerve']],"
+          "['Body stresses',['Lead']],['Psyche',['Humility']]],"
+          "on_layer:['Skin & Gut','liver detox'],all:['Lead','Skin & Gut'],errors:{}}")
+
+
+@needs_node
+def test_body_draws_its_subheads_in_the_servers_order():
+    got = _run(f"console.log(JSON.stringify(rowsText(locRows({GROUPS},''))))")
+    assert got == ["head:SPIRIT", "opt:Liver Detox", "gap",
+                   "head:MIND", "none:none yet", "gap",
+                   "head:BODY", "sub:Causal chain", "opt:Skin & Gut",
+                   "sub:Infoceuticals", "opt:ED4: Nerve",
+                   "sub:Body stresses", "opt:Lead", "sub:Psyche", "opt:Humility", "gap",
+                   "head:ALL STRESSES", "opt:Lead", "opt:Skin & Gut"]
+
+
+@needs_node
+def test_a_subhead_with_no_match_is_dropped_while_typing():
+    got = _run(f"console.log(JSON.stringify(rowsText(locRows({GROUPS},'hum'))))")
+    assert got == ["head:BODY", "sub:Psyche", "opt:Humility", "gap"]
+
+
+@needs_node
+def test_without_groups_body_is_the_flat_list():
+    got = _run("console.log(JSON.stringify(rowsText(locRows({spirit:[],mind:[],"
+               "body:['Lead'],all:[],errors:{}},''))))")
+    assert "head:BODY" in got and "opt:Lead" in got and not any(r.startswith("sub:") for r in got)
+
+
+@needs_node
+def test_stresses_on_a_layer_are_greyed_everywhere_and_still_pick():
+    got = _run(f"""
+      var rows=locRows({GROUPS},'');
+      var done=rows.filter(function(r){{return r.done}}).map(function(r){{return r.sec+':'+r.text}});
+      var inp=mkInput('t_location',{{'data-loccombo':''}});
+      inp.addEventListener('change',function(){{calls.changes.push(inp.value)}});
+      LOC_SECTIONS={GROUPS};
+      locInit();var c=LOC_COMBOS[0];fire(inp,'focus');
+      var html=c.lb.innerHTML;
+      var i=c.rows.findIndex(function(r){{return r.kind==='opt'&&r.text==='Skin & Gut'}});
+      mouse(c.lb,i);
+      console.log(JSON.stringify({{done:done,html:html,value:inp.value,changes:calls.changes}}));""")
+    assert got["done"] == ["spirit:Liver Detox", "body:Skin & Gut", "all:Skin & Gut"]
+    assert got["html"].count("locopt locdone") == 3
+    assert got["html"].count('title="Already on a layer"') == 3
+    assert "class=locsub role=presentation>Causal chain<" in got["html"]
+    assert got["value"] == "Skin & Gut" and got["changes"] == ["Skin & Gut"]
+
+
+@needs_node
+def test_a_layer_head_in_spirit_can_still_be_added_as_a_stress():
+    # Review of #2292: a head shows in SPIRIT (spirit_heads) but is not a stored stress.
+    got = _run("""
+      SERVER.spirit=['Grief','Liver Detox'];SERVER.spirit_heads=['Liver Detox'];
+      var inp=mkInput('spiritAdd',{'data-loccombo':''});els.spiritStat=El('SPAN','spiritStat');
+      locInit();await locLoad();
+      var real=post;
+      post=async function(u,b){var a=await real(u,b);
+        SERVER.spirit_heads=SERVER.spirit_heads.filter(function(h){return locNorm(h)!==locNorm(b.label)});
+        return a};
+      var out={};
+      inp.value='liver detox';await spiritAddNow();
+      out.added=els.spiritStat.textContent;out.posts=calls.post.length;
+      inp.value='Grief';await spiritAddNow();out.dup=els.spiritStat.textContent;
+      out.posts2=calls.post.length;
+      console.log(JSON.stringify(out))""")
+    assert got["posts"] == 1 and got["added"] == "Added to SPIRIT: liver detox"
+    assert got["dup"] == "Already in SPIRIT: Grief. Nothing added." and got["posts2"] == 1

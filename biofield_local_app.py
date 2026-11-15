@@ -4539,10 +4539,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def _sectioned_vocab(cx, tid, limit):
         """The Location drop-down's sections (Glen, 15 Nov 2026). MIND is every Clinical
         Summary row's stress pattern, in the page's order. BODY is every bar purple on
-        the intake's own scan. A section that cannot be read comes back empty, with the
+        the intake's own scan, with `psyche` the ones on its psyche pages (the causal
+        chain's stresses join BODY in sectioned_vocab). A section that cannot be read comes back empty, with the
         reason under "errors", so the drop-down never passes a failure off as "none"."""
         from dashboard.biofield_layer_match import sectioned_vocab
-        errors, mind, body, scan_names = {}, [], [], {}
+        errors, mind, body, psyche, scan_names = {}, [], [], [], {}
         rep = None
         try:
             rep = _report_for(cx, tid)
@@ -4576,18 +4577,25 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         names = dict(scan_names)
                         names.update(_sm.e4l_code_names(e4l_db, purple))
                         body = _sm.purple_finding_names(purple, names)
+                        # A section that cannot be read is Body stresses, not an error.
+                        where = _sm.bar_sections(cx, ctx.get("scan_id"))
+                        psyche = _sm.purple_finding_names(
+                            [p for p in purple if _sm.is_psyche(where.get(p))], names)
             except Exception as e:
                 errors["body"] = f"the scan could not be read: {e!r}"[:200]
         # Names for every infoceutical code in any list, so "ED1" shows as "ED1: Source".
         from dashboard.biofield_layer_match import (
-            client_first_vocab, infoceutical_codes, spirit_stress_labels)
+            chain_stress_labels, client_first_vocab, infoceutical_codes, layer_heads,
+            on_layer_labels, spirit_stress_labels)
         from dashboard.e4l_scan_marks import e4l_code_names
         codes = infoceutical_codes(list(mind) + list(body) + spirit_stress_labels(cx, tid)
+                                   + chain_stress_labels(cx, tid) + layer_heads(cx, tid)
+                                   + on_layer_labels(cx, tid)
                                    + client_first_vocab(cx, tid, "", limit)[0])
         code_names = dict(scan_names)
         code_names.update(e4l_code_names(e4l_db, codes))
         out = sectioned_vocab(cx, tid, mind=mind, body=body, limit=limit,
-                              code_names=code_names)
+                              code_names=code_names, psyche=psyche)
         out["errors"] = errors
         return out
 
