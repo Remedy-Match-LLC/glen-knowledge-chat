@@ -316,6 +316,28 @@ def apply_voice_fields(cx, tid, rid, voice):
     return confirmed
 
 
+HANDSFREE_MARK = "handsfree"
+
+
+def mark_handsfree(cx, tid, rid):
+    """A row written or changed by the hands-free recording goes in unconfirmed, even
+    when every field matched (Glen, 14 November 2026, ruling 7). The mark joins
+    unmatched_fields, so a later short recording that matches a field still leaves
+    the row for review; only Confirm, Confirm all or placing the card clears it.
+    Returns True when the row is on this test."""
+    init_auth_tables(cx)
+    row = cx.execute("SELECT unmatched_fields FROM biofield_auth_chain "
+                     "WHERE id=? AND test_id=?", (int(rid), _num(tid))).fetchone()
+    if not row:
+        return False
+    left = _unmatched(row[0])
+    left.add(HANDSFREE_MARK)
+    cx.execute("UPDATE biofield_auth_chain SET confirmed=0, unmatched_fields=? "
+               "WHERE id=? AND test_id=?", (json.dumps(sorted(left)), int(rid), _num(tid)))
+    cx.commit()
+    return True
+
+
 def set_layer_balanced(cx, tid, rids, balanced):
     """Tick or clear the Balanced box of one layer card: layer_balanced on every row
     id given that belongs to this test (Glen, 14 November 2026, rulings 2 and 3).
