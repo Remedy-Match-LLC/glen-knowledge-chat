@@ -110,7 +110,7 @@ def test_the_page_renders_the_stored_state_from_the_response():
     assert r["inputs"] == {"a": "13", "b": "8", "c": "5", "d": "3", "phase": "3",
                            "location": "kidney"}
     assert r["stored"] == {"phase": 3, "location": "kidney", "bsi": [13, 8, 5, 3],
-                           "review": {}}
+                           "bsi_location": "", "review": {}}
     assert r["reg"] == "Level 4 · Positive" and r["stat"] == "Saved."
 
 

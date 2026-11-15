@@ -1498,7 +1498,7 @@ async function handsFree(){
  if(_hfStale){hfStat('Reloading the page first.');return null}
  if(_rf)stopField();
  var me={tok:++_hfSeq,stopped:false,draining:false,parts:[],chain:Promise.resolve(),pending:null,
-  afterRemedy:false,wrote:0,target:null};
+  afterRemedy:false,afterBsi:null,wrote:0,target:null};
  _hf=me;me.target=hfStartTarget(me);
  recAuto();     // the full session transcript runs beside it, never instead
  var b=document.getElementById('hfBtn');if(b){b.classList.add('on');b.textContent='Hands-free: on'}
@@ -1541,10 +1541,12 @@ function hfUtterance(me){if(!me.parts.length||!(hfLive(me)||me.draining))return;
   if(hfLive(me))hfStat('Not saved: '+e)});
  return me.chain}
 async function hfProcess(me,text){if(!hfLive(me))return;
- var j=await post('/author/__TID__/handsfree-segment',{text:text,pending:me.pending,
-  after_remedy:me.afterRemedy});
+ // after_bsi (rule 14): a "location" said next is the BSI's. Sent only while set.
+ var q={text:text,pending:me.pending,after_remedy:me.afterRemedy};
+ if(me.afterBsi)q.after_bsi=me.afterBsi;
+ var j=await post('/author/__TID__/handsfree-segment',q);
  if(!hfLive(me)||!(j&&j.ok))return;
- me.pending=j.pending||null;me.afterRemedy=!!j.after_remedy;
+ me.pending=j.pending||null;me.afterRemedy=!!j.after_remedy;me.afterBsi=j.after_bsi||null;
  var evs=j.events||[];
  for(var i=0;i<evs.length;i++){if(!hfLive(me))return;await hfApply(me,evs[i])}
  hfShow(me)}
@@ -1607,8 +1609,13 @@ async function hfApply(me,ev){var tg=me.target,r;
 // "terrain", "location" or "BSI": the terrain panel, through its own save chain
 // (tSave), with handsfree set so the value waits for review (ruling 7). The layer
 // target is not touched, so these work anywhere in the session.
-var _hfTNames={phase:'Terrain',location:'Location',bsi:'BSI'};
+var _hfTNames={phase:'Terrain',location:'Location',bsi:'BSI',bsi_location:'BSI location'};
 async function hfTerrain(me,ev){var k=ev.terrain,body,shown;
+ // Rule 14: a location said with or straight after a BSI is the BSI location.
+ if(k==='location'&&ev.of==='bsi'){k='bsi_location';
+  if(!ev.bsi_ok){var why3='BSI location not saved: '+ev.text+'. The BSI before it was not understood.';
+   hfLog(why3);tStat(why3);return}
+  if(ev.conflict)hfLog('BSI location said twice: kept '+ev.text+', not '+ev.conflict+'.')}
  if(k==='bsi'){
   if(!ev.value){var why='BSI not understood: '+ev.text+(ev.error?' ('+ev.error+')':'')+'. Nothing saved.';
    hfLog(why);tStat(why);return}
@@ -1619,12 +1626,12 @@ async function hfTerrain(me,ev){var k=ev.terrain,body,shown;
    hfLog(why2);tStat(why2);return}
   body={field:'phase',value:String(ev.value)};shown=ev.value+(ev.name?'. '+ev.name:'')}
  else{var m=ev.match||{},v=m.value||ev.text||'';if(!v)return;
-  body={field:'location',value:v,matched:!!m.matched};shown=v+(m.matched?'':' (not matched)')}
+  body={field:k,value:v,matched:!!m.matched};shown=v+(m.matched?'':' (not matched)')}
  body.handsfree=true;
  if(!hfLive(me))return;
  var j=await tSave(body);
  if(j&&j.ok){me.wrote++;
-  hfLog(_hfTNames[k]+': '+shown+((j.warnings&&j.warnings.length)?' ('+j.warnings.join('; ')+')':''))}
+  hfLog(_hfTNames[k]+': '+shown+((k==='bsi'&&j.warnings&&j.warnings.length)?' ('+j.warnings.join('; ')+')':''))}
  else hfLog(_hfTNames[k]+' not saved: '+shown+((j&&j.error)?' ('+j.error+')':'')+'.')}
 // "also balances X": X joins the current layer's balanced stresses, through the same
 // route as the card's Add stress box. Only a matched name is added, since that route
@@ -1697,9 +1704,11 @@ function regulationLevel(a,b,c,d){a=bsiNum(a);b=bsiNum(b);c=bsiNum(c);d=bsiNum(d
 // window._tStored is that state, and Regulation is always computed from it.
 var _tChain=Promise.resolve(),_tPending={};
 var _tLabels={phase:'Terrain phase',location:'Terrain location',bsi_a:'BSI A',bsi_b:'BSI B',
- bsi_c:'BSI C',bsi_d:'BSI D',bsi:'BSI'};
-var _tIds={phase:'t_phase',location:'t_location',bsi_a:'bsi_a',bsi_b:'bsi_b',bsi_c:'bsi_c',bsi_d:'bsi_d'};
-function tStored(){return window._tStored||{phase:null,location:'',bsi:[null,null,null,null],review:{}}}
+ bsi_c:'BSI C',bsi_d:'BSI D',bsi:'BSI',bsi_location:'BSI location'};
+var _tIds={phase:'t_phase',location:'t_location',bsi_a:'bsi_a',bsi_b:'bsi_b',bsi_c:'bsi_c',bsi_d:'bsi_d',
+ bsi_location:'bsi_location'};
+function tStored(){return window._tStored||{phase:null,location:'',bsi:[null,null,null,null],
+ bsi_location:'',review:{}}}
 // A value the hands-free recording wrote waits for review (ruling 7): highlighted,
 // and an unmatched location keeps the unmatched mark too (ruling 4). The marks are
 // stored, so they survive the reload; a hand edit or Confirm clears them.
@@ -1707,7 +1716,7 @@ function renderReview(rv){rv=rv||{};var any=false;
  Object.keys(_tIds).forEach(function(f){var el=document.getElementById(_tIds[f]);if(!el)return;
   if(rv[f]){any=true;el.classList.add('tunconf');el.title='From the hands-free recording. Check it, then edit or Confirm.'}
   else{el.classList.remove('tunconf')}
-  if(f==='location'){if(rv[f]==='unmatched')el.classList.add('unmatched');else el.classList.remove('unmatched')}});
+  if(f==='location'||f==='bsi_location'){if(rv[f]==='unmatched')el.classList.add('unmatched');else el.classList.remove('unmatched')}});
  var b=document.getElementById('tConfirm');if(b)b.style.display=any?'':'none'}
 function tStat(t){var e=document.getElementById('tstat');if(e)e.textContent=t}
 function renderRegulation(bsi){
@@ -1721,9 +1730,10 @@ function renderRegulation(bsi){
  var we=document.getElementById('t_warn');if(we)we.textContent=w.join('; ')}
 function renderTerrain(st){
  window._tStored={phase:st.phase==null?null:st.phase,location:st.location||'',
-  bsi:(st.bsi||[null,null,null,null]).slice(0,4),review:st.review||{}};
+  bsi:(st.bsi||[null,null,null,null]).slice(0,4),bsi_location:st.bsi_location||'',review:st.review||{}};
  var S=window._tStored,map={phase:['t_phase',S.phase],location:['t_location',S.location],
-  bsi_a:['bsi_a',S.bsi[0]],bsi_b:['bsi_b',S.bsi[1]],bsi_c:['bsi_c',S.bsi[2]],bsi_d:['bsi_d',S.bsi[3]]};
+  bsi_a:['bsi_a',S.bsi[0]],bsi_b:['bsi_b',S.bsi[1]],bsi_location:['bsi_location',S.bsi_location],
+  bsi_c:['bsi_c',S.bsi[2]],bsi_d:['bsi_d',S.bsi[3]]};
  Object.keys(map).forEach(function(f){var el=document.getElementById(map[f][0]);if(!el)return;
   // Leave an input alone while Glen is in it, or while a newer change to it is queued.
   if(document.activeElement===el||(_tPending[f]||0)>0)return;
@@ -3998,7 +4008,13 @@ def _terrain_segments_html(report):
         "</div>"
         "<div class=btnrow style='align-items:center'>"
         "<label style='min-width:150px'>Biological Score Index</label>"
-        + box(0, "a") + " <span>x</span> " + box(1, "b") + " <span>to</span> "
+        + box(0, "a") + " <span>x</span> " + box(1, "b") + " "
+        # Glen, 15 Nov 2026: "A x B [location] to C x D". Its own field, separate from
+        # the terrain location above; the same stress-list drop-down.
+        "<input id=bsi_location list=vocab placeholder='Location' aria-label='BSI location' "
+        f"value=\"{_e(report.get('bsi_location') or '')}\" style='width:180px'{mark('bsi_location')} "
+        "onchange=\"saveTerrain('bsi_location',this)\">"
+        " <span>to</span> "
         + box(2, "c") + " <span>x</span> " + box(3, "d") +
         "</div>"
         "<div class=btnrow style='align-items:center'>"
@@ -4010,7 +4026,7 @@ def _terrain_segments_html(report):
         # The stored state the page renders Regulation from (see renderTerrain).
         "<script>window._tStored=" + json.dumps(
             {"phase": p, "location": report.get("location") or "", "bsi": bsi,
-             "review": review}
+             "bsi_location": report.get("bsi_location") or "", "review": review}
         ).replace("<", "\\u003c") + "</script>"
         "</div>")
 

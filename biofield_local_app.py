@@ -2535,8 +2535,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
         The hands-free recording sends handsfree=true (ruling 7: the value goes in for
         review), matched=false for a location not on the stress list, and field "bsi"
-        with all four numbers at once, saved all or nothing. A hand edit clears that
-        field's review mark."""
+        with all four numbers at once, saved all or nothing. The BSI location is the
+        field "bsi_location", like "location". A hand edit clears that field's review
+        mark."""
         from dashboard.biofield_authoring import set_terrain_bsi
         d = request.get_json(silent=True) or {}
         hf = bool(d.get("handsfree"))
@@ -4137,14 +4138,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     @app.route("/author/<test_id>/handsfree-segment", methods=["POST"])
     def author_handsfree_segment(test_id):
         """One finalized utterance of the hands-free recording (live session part 2b).
-        {text, pending, after_remedy} -> {events, pending, after_remedy}, each Head,
+        {text, pending, after_remedy, after_bsi} -> {events, pending, after_remedy,
+        after_bsi (only while set)}, each Head,
         Tail or Remedy event carrying match_term's answer. Writes nothing: the page
         applies the events in order through the row routes with handsfree set."""
         from dashboard.biofield_layer_match import handsfree_events
         d = request.get_json(silent=True) or {}
         with sqlite3.connect(db_path) as cx:
             out = handsfree_events(cx, d.get("text"), d.get("pending"),
-                                   d.get("after_remedy"), test_id=test_id)
+                                   d.get("after_remedy"), test_id=test_id,
+                                   after_bsi=d.get("after_bsi"))
         return {"ok": True, **out}
 
     @app.route("/author/<test_id>/layer-balanced", methods=["POST"])
@@ -5449,7 +5452,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # Persist the scan's terrain reading (BSI 'phase P' + spoken location) on
             # the test. Per-field, so a re-interpret with no phase spoken won't wipe it.
             update_terrain(cx, test_id, phase=result.get("phase"),
-                           location=result.get("location"), bsi=result.get("bsi"))
+                           location=result.get("location"), bsi=result.get("bsi"),
+                           bsi_location=result.get("bsi_location"))
         out = {"added": added, "header": result.get("header", ""),
                "phase": result.get("phase"), "location": result.get("location", ""),
                "bsi": result.get("bsi")}
@@ -5668,7 +5672,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if spirit_meta:
                 update_terrain(cx, test_id, phase=spirit_meta.get("phase"),
                                location=spirit_meta.get("location"),
-                               bsi=spirit_meta.get("bsi"))
+                               bsi=spirit_meta.get("bsi"),
+                               bsi_location=spirit_meta.get("bsi_location"))
         out = {"ok": True, "applied": True, "mode": mode, "layers_added": made}
         if refused:
             out.update(_ff_block(cx, test_id, refused))

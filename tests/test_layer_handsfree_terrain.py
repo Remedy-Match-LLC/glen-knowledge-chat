@@ -103,7 +103,10 @@ def test_terrain_words_mid_sentence_are_not_cues():
 
 def test_terrain_cues_mid_session_leave_the_layer_cues_alone():
     """A layer, then terrain, then more of the same layer: no next_layer appears, the
-    open field and the remedy's dose run on as before around the terrain cue."""
+    open field and the remedy's dose run on as before around the terrain cue.
+
+    Inverted 15 Nov 2026 (rule 14): "Location kidney" straight after the BSI is now
+    the BSI location, not the terrain location, so the event says "of": "bsi"."""
     assert ev("Head liver. Terrain 3. Tail gut. Remedy Sobopla. BSI 12 by 8 to 9 by 6. "
               "Location kidney. Balanced.") == [
         {"field": "head", "text": "liver", "both": False},
@@ -112,7 +115,7 @@ def test_terrain_cues_mid_session_leave_the_layer_cues_alone():
         {"field": "remedy", "text": "Sobopla", "both": False},
         {"terrain": "bsi", "text": "12 by 8 to 9 by 6", "value": [12, 8, 9, 6],
          "error": "", "warnings": []},
-        {"terrain": "location", "text": "kidney"},
+        {"terrain": "location", "text": "kidney", "of": "bsi", "bsi_ok": True},
         {"balanced": True}]
 
 
