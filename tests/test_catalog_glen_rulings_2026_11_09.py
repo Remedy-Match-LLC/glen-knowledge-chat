@@ -1,9 +1,15 @@
 """Glen's 2026-11-09 catalogue rulings: eight new entries at the prices he set."""
 import json
+import sqlite3
 from pathlib import Path
+
+import pytest
+
+from dashboard import shipping
 
 from dashboard.shipping import PROD_BOTTLE_NAMES
 
+US = {"name": "T", "state": "CA", "country": "US"}
 PRODUCTS = json.loads((Path(__file__).resolve().parent.parent / "data" / "products.json").read_text())["products"]
 
 EXPECTED = {
@@ -61,9 +67,76 @@ def test_waters_are_pickup_only():
         assert PRODUCTS[slug].get("pickup_only") is True, slug
 
 
-def test_miron_bottle_ships_flat_at_the_medium_box_charge():
-    # Glen, 2026-11-10: 11.75 x 3.5 in, and "It fits" a USPS Medium box when he tried it.
-    # The packer's Medium model is too short for it, so it ships flat at the Medium charge.
-    p = PRODUCTS["miron-violet-glass-water-bottle-1l"]
-    assert p["bottle_type"] == "own-box"
-    assert p["flat_shipping_cents"] == 2300
+MEDIUM_BOX = ("miron-violet-glass-water-bottle-1l",
+              "capsule-filling-machine-100m", "capsule-filling-machine-120s")
+
+
+def test_medium_box_items_name_the_box_not_a_typed_rate():
+    # Glen, 2026-11-10: Miron is 11.75 x 3.5 in, and "It fits" a USPS Medium box.
+    # The packer's Medium model is too short for it, so it ships flat at the Medium
+    # rate. Naming the box lets a USPS price change carry through.
+    for slug in MEDIUM_BOX:
+        p = PRODUCTS[slug]
+        assert p["bottle_type"] == "own-box", slug
+        assert p["flat_shipping_boxes"] == ["M"], slug
+        assert "flat_shipping_cents" not in p, slug
+
+
+@pytest.fixture
+def medium_rate(monkeypatch, tmp_path):
+    dbp = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(dbp) as cx:
+        shipping.init_shipping_schema(cx)
+    monkeypatch.setattr(shipping, "_default_db_path", lambda: dbp)
+
+    def set_medium(retail_cents):
+        rid = shipping.propose_rate_update("M", retail_cents, "test", "2099-01-01", db_path=dbp)
+        shipping.confirm_rate_update(rid, "test", db_path=dbp)
+        return shipping.get_current_rates(db_path=dbp)["M"]["charged_cents"]
+    return set_medium
+
+
+@pytest.mark.parametrize("slug", MEDIUM_BOX)
+def test_medium_box_items_charge_todays_medium_rate_per_unit(medium_rate, slug):
+    import app
+    seeded = shipping.get_current_rates()["M"]["charged_cents"]
+    assert seeded == 2300
+    pc = app._price_cart([{"slug": slug, "qty": 1}], ship=US, channel="retail")
+    assert pc["shipping_cents"] == seeded
+    pc2 = app._price_cart([{"slug": slug, "qty": 2}], ship=US, channel="retail")
+    assert pc2["shipping_cents"] == 2 * seeded, "per unit, no per-order cap"
+    raised = medium_rate(2475)
+    assert raised != seeded
+    pc3 = app._price_cart([{"slug": slug, "qty": 1}], ship=US, channel="retail")
+    assert pc3["shipping_cents"] == raised
+
+
+@pytest.mark.parametrize("name,slug", [
+    ("Miracule Water", "miracule-water"),
+    ("Miracule Water 4 L", "miracule-water"),
+    ("Miracule Water (4 L)", "miracule-water"),
+    ("Alkaline Microwater", "microwater-alkaline"),
+    ("Alkaline Microwater (4 L)", "microwater-alkaline"),
+    ("Bioenergetic Wellness Scanner (USB)", "bioenergetic-wellness-scanner-usb"),
+    ("Bioenergetic Wellness Scanner (Bluetooth)", "bioenergetic-wellness-scanner-bluetooth"),
+    # Unchanged: the $1,497 system and the bare scanner keep their own names.
+    ("Miracule Water System with Molecular Hydrogen", "miracule-water-system"),
+    ("Bioenergetic Wellness Scanner", "bioenergetic-wellness-scanner"),
+])
+def test_resolver_sends_short_names_to_the_new_entries(name, slug):
+    from dashboard.practitioner_portal import exact_name_to_slug, name_to_slug
+    assert name_to_slug(name, PRODUCTS) == slug
+    assert exact_name_to_slug(name, PRODUCTS) == slug
+
+
+def test_miracule_water_never_prices_as_the_system():
+    from dashboard.practitioner_portal import name_to_slug
+    for name in ("Miracule Water", "miracule water", "Miracule Water 4 L"):
+        slug = name_to_slug(name, PRODUCTS)
+        assert PRODUCTS[slug]["price_cents"] == 300, (name, slug)
+
+
+def test_bacterotox_carries_its_siblings_lookup_fields():
+    p = PRODUCTS["bacterotox-homeopathic-complex-in-terrain-restore"]
+    assert p["pinecone_title"] == p["name"]
+    assert p["ingredients_source"] == "fmp_snap"
