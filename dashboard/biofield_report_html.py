@@ -117,6 +117,8 @@ _STYLE = """
  .locnone{padding:2px 10px 4px;font-size:12px;color:var(--muted);font-style:italic}
  .locopt{padding:4px 10px;cursor:pointer}
  .locopt:hover,.locopt.locact{background:rgba(255,255,255,.08)}
+ .locsub{padding:4px 10px 2px 16px;font-size:12px;font-weight:600;color:var(--muted)}
+ .locopt.locdone{color:var(--muted);opacity:.65}
  input.unmatched,.htfields input.unmatched,.rline input.unmatched{border-color:#e0a030;
    background:#2a1f08;text-decoration:underline wavy #e0a030}
  #terrainSegs .tunconf{box-shadow:0 0 0 2px var(--accent);background:#1a160d}
@@ -2036,7 +2038,10 @@ async function loadLists(){
 // never picked. A pick fires the input's change, so it saves as typing does, and text
 // not on the list still saves. The input itself is not moved or wrapped: the list hangs
 // off <body>, so mic buttons, expand buttons and drag targets beside it are untouched.
-var LOC_SECTIONS={spirit:[],mind:[],body:[],all:[],errors:{}};
+// Glen, 15 Nov 2026: BODY has mixed-case subheads (Causal chain, Infoceuticals, Body
+// stresses, Psyche: the server's body_groups), the full list is headed ALL STRESSES,
+// and a stress already on a layer (on_layer) is greyed in every section, still pickable.
+var LOC_SECTIONS={spirit:[],mind:[],body:[],body_groups:[],on_layer:[],all:[],errors:{}};
 var LOC_HEADS=[['spirit','SPIRIT'],['mind','MIND'],['body','BODY']];
 var LOC_COMBOS=[];
 // Case, spaces and punctuation ignored, as stress_key on the server: typing "ed1 so"
@@ -2046,19 +2051,29 @@ function locEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</
  .replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function locUniq(list){var seen={},out=[];(list||[]).forEach(function(x){var k=locNorm(x);
  if(k&&!seen[k]){seen[k]=1;out.push(String(x).trim())}});return out}
-// The rows to draw, in order: {kind:'head'|'opt'|'none'|'gap', text, sec}.
-function locRows(secs,q){secs=secs||{};var k=locNorm(q),rows=[],err=secs.errors||{};
+// The rows to draw, in order: {kind:'head'|'sub'|'opt'|'none'|'gap', text, sec}, and
+// done:true on an option already on a layer.
+function locRows(secs,q){secs=secs||{};var k=locNorm(q),rows=[],err=secs.errors||{},done={};
+ (secs.on_layer||[]).forEach(function(x){var n=locNorm(x);if(n)done[n]=1});
  function hit(x){return !k||locNorm(x).indexOf(k)>=0}
- LOC_HEADS.forEach(function(h){var items=locUniq(secs[h[0]]).filter(hit);
-  if(k&&!items.length)return;
+ function opt(x,sec){var r={kind:'opt',text:x,sec:sec};if(done[locNorm(x)])r.done=true;return r}
+ LOC_HEADS.forEach(function(h){
+  // A subhead stays only while its group has a match, as a heading does.
+  var bg=h[0]==='body'?(secs.body_groups||[]):[];
+  var groups=bg.length?bg.map(function(g){return [g[0],locUniq(g[1]).filter(hit)]})
+   :[['',locUniq(secs[h[0]]).filter(hit)]];
+  var n=0;groups.forEach(function(g){n+=g[1].length});
+  if(k&&!n)return;
   rows.push({kind:'head',text:h[1],sec:h[0]});
-  if(!items.length)rows.push({kind:'none',sec:h[0],
+  if(!n)rows.push({kind:'none',sec:h[0],
    text:err[h[0]]?'could not be read':'none yet'});
-  items.forEach(function(x){rows.push({kind:'opt',text:x,sec:h[0]})});
+  groups.forEach(function(g){if(!g[1].length)return;
+   if(g[0])rows.push({kind:'sub',text:g[0],sec:h[0]});
+   g[1].forEach(function(x){rows.push(opt(x,h[0]))})});
   rows.push({kind:'gap',sec:h[0]})});
  var all=locUniq(secs.all).filter(hit);
- if(all.length)rows.push({kind:'head',text:'All stresses',sec:'all'});
- all.forEach(function(x){rows.push({kind:'opt',text:x,sec:'all'})});
+ if(all.length)rows.push({kind:'head',text:'ALL STRESSES',sec:'all'});
+ all.forEach(function(x){rows.push(opt(x,'all'))});
  if(k&&!rows.length)rows.push({kind:'none',text:'no match',sec:''});
  return rows}
 // A pick is typing plus leaving the field: input handlers (dirtyLayer, clinicalStressTyped)
@@ -2080,10 +2095,12 @@ function locCombo(inp,o){o=o||{};
   if(c.active>=c.rows.length||(c.active>=0&&c.rows[c.active].kind!=='opt'))c.active=-1;
   lb.innerHTML=c.rows.map(function(r,i){
    if(r.kind==='head')return '<div class=lochead role=presentation>'+locEsc(r.text)+'</div>';
+   if(r.kind==='sub')return '<div class=locsub role=presentation>'+locEsc(r.text)+'</div>';
    if(r.kind==='gap')return '<div class=locgap role=presentation aria-hidden=true></div>';
    if(r.kind==='none')return '<div class=locnone role=presentation>'+locEsc(r.text)+'</div>';
-   return '<div class="locopt'+(i===c.active?' locact':'')+'" role=option id='+id+'_o'+i+
-    ' data-i='+i+' aria-selected='+(i===c.active?'true':'false')+'>'+locEsc(r.text)+'</div>'}).join('');
+   return '<div class="locopt'+(i===c.active?' locact':'')+(r.done?' locdone':'')+
+    '" role=option id='+id+'_o'+i+' data-i='+i+(r.done?' title="Already on a layer"':'')+
+    ' aria-selected='+(i===c.active?'true':'false')+'>'+locEsc(r.text)+'</div>'}).join('');
   if(c.active>=0)inp.setAttribute('aria-activedescendant',id+'_o'+c.active);
   else inp.removeAttribute('aria-activedescendant')};
  c.place=function(){if(!inp.getBoundingClientRect)return;var r=inp.getBoundingClientRect();
@@ -2126,7 +2143,8 @@ function locWatch(){if(typeof MutationObserver==='undefined'||!document.body)ret
  window.addEventListener('resize',function(){LOC_COMBOS.forEach(function(c){if(c.open)c.place()})})}
 async function locLoad(){
  try{var j=await (await fetch('/api/vocab?limit=5000&sections=1&test_id=__TID__')).json();
-  if(j&&j.all){LOC_SECTIONS={spirit:j.spirit||[],mind:j.mind||[],body:j.body||[],all:j.all||[],
+  if(j&&j.all){LOC_SECTIONS={spirit:j.spirit||[],mind:j.mind||[],body:j.body||[],
+   body_groups:j.body_groups||[],on_layer:j.on_layer||[],all:j.all||[],
    errors:j.errors||{}};locRefresh()}}catch(e){}
  return LOC_SECTIONS}
 // Glen, 15 Nov 2026: "Add a section to add stresses to the SPIRIT stress list". The

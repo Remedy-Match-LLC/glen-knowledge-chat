@@ -169,9 +169,14 @@ def client_first_vocab(cx, test_id, q="", limit=5000):
 # stresses added in the live session, MIND ... the Clinical stress patterns, BODY ...
 # the purple findings from the E4L scan", then the full list. Spirit is the stress
 # panel's own Spirit group (stress_group in biofield_report_html): 'voice' (said in the
-# session, or captured from its transcript), 'manual' (added by hand on the page) and
-# 'chain' (written from a layer the session built).
-SPIRIT_STRESS_SOURCES = ("voice", "manual", "chain")
+# session, or captured from its transcript) and 'manual' (added by hand on the page).
+# Glen, 15 Nov 2026: the stresses written from a layer the session built ('chain')
+# "move to body", as Body's first group. Each layer's head joins Spirit instead.
+SPIRIT_STRESS_SOURCES = ("voice", "manual")
+CHAIN_STRESS_SOURCE = "chain"
+# BODY's subheads, in this order (Glen, 15 Nov 2026). "Causal chain" is our name for
+# the chain group; the other three are his.
+BODY_GROUPS = ("Causal chain", "Infoceuticals", "Body stresses", "Psyche")
 
 
 def _dedupe(labels):
@@ -258,24 +263,80 @@ def _display_list(labels, code_names, fold_names):
     return out
 
 
-def spirit_stress_labels(cx, test_id):
-    """This test's live-session stresses, oldest first (sectioned_vocab sorts them).
-    [] when the table is missing."""
+def _stress_labels(cx, test_id, sources):
     if test_id in (None, ""):
         return []
     try:
         from dashboard.biofield_stress import _num
-        marks = ",".join("?" for _ in SPIRIT_STRESS_SOURCES)
+        marks = ",".join("?" for _ in sources)
         rows = cx.execute(
             f"SELECT label FROM biofield_auth_stress WHERE test_id=? AND source IN ({marks}) "
-            "ORDER BY id", (_num(test_id), *SPIRIT_STRESS_SOURCES)).fetchall()
+            "ORDER BY id", (_num(test_id), *sources)).fetchall()
     except sqlite3.Error:
         return []
     return _dedupe(r[0] for r in rows)
 
 
-def sectioned_vocab(cx, test_id, mind=(), body=(), limit=5000, code_names=None):
-    """{"spirit", "mind", "body", "all", "unnamed"} for the sectioned stress drop-down.
+def spirit_stress_labels(cx, test_id):
+    """This test's live-session stresses, oldest first (sectioned_vocab sorts them).
+    [] when the table is missing."""
+    return _stress_labels(cx, test_id, SPIRIT_STRESS_SOURCES)
+
+
+def chain_stress_labels(cx, test_id):
+    """This test's stresses written from the causal chain, oldest first. BODY's first
+    group. [] when the table is missing."""
+    return _stress_labels(cx, test_id, (CHAIN_STRESS_SOURCE,))
+
+
+def layer_heads(cx, test_id):
+    """Each layer's Head text for this test, in layer order, each once. Glen, 15 Nov
+    2026: a head ("Liver Detox") shows as a stress in SPIRIT."""
+    if test_id in (None, ""):
+        return []
+    try:
+        from dashboard.biofield_stress import _num
+        rows = cx.execute("SELECT head FROM biofield_auth_chain WHERE test_id=? "
+                          "ORDER BY layer, sort_seq, id", (_num(test_id),)).fetchall()
+    except sqlite3.Error:
+        return []
+    return _dedupe(r[0] for r in rows)
+
+
+def on_layer_labels(cx, test_id):
+    """The stresses already on a layer: linked to a layer row that still exists
+    (biofield_auth_layer_stress, as list_stresses reads it), plus each layer's head.
+    Glen, 15 Nov 2026: "Grayed out means they're already balanced on a layer". The
+    layer's Balanced tick is not consulted: on test 67 it is off while its five chain
+    stresses sit on the layer. most_affected is never split on commas, since a label
+    can hold one ("Shoulder, Arm & Emotional Integration")."""
+    if test_id in (None, ""):
+        return []
+    linked = []
+    try:
+        from dashboard.biofield_stress import _num
+        rows = cx.execute(
+            "SELECT s.label, s.code FROM biofield_auth_layer_stress ls "
+            "JOIN biofield_auth_stress s ON s.id=ls.stress_id AND s.test_id=ls.test_id "
+            "JOIN biofield_auth_chain c ON c.id=ls.chain_rid AND c.test_id=ls.test_id "
+            "WHERE ls.test_id=? ORDER BY s.id", (_num(test_id),)).fetchall()
+    except sqlite3.Error:
+        rows = []
+    for label, code in rows:
+        linked.append(label)
+        # A scan stress is stored by its E4L name ("Nerve Driver") with its code
+        # ("ED4"); the drop-down shows that infoceutical as "ED4: Nerve", so the code
+        # is on the layer too.
+        m = _info_match(" ".join(str(code or "").split()))
+        if m:
+            linked.append(m.group(1).upper())
+    return _dedupe(linked + layer_heads(cx, test_id))
+
+
+def sectioned_vocab(cx, test_id, mind=(), body=(), limit=5000, code_names=None,
+                    psyche=()):
+    """{"spirit", "mind", "body", "body_groups", "on_layer", "all", "unnamed"} for the
+    sectioned stress drop-down.
 
     `mind` (the Clinical Summary's stress patterns) and `body` (the scan's purple
     findings) are read by the caller, which holds the profile and the scan.
@@ -285,22 +346,45 @@ def sectioned_vocab(cx, test_id, mind=(), body=(), limit=5000, code_names=None):
     the plain drop-down held, so an item may sit in a section and in `all` too. In the
     sections a plain name folds into its infoceutical ("Source" into "ED1: Source"); in
     `all` it does not, since "Heart" there is a stress of its own beside "ED6: Heart".
-    `unnamed` lists the infoceutical codes shown bare because no name is known."""
+    `unnamed` lists the infoceutical codes shown bare because no name is known.
+
+    Glen, 15 Nov 2026: BODY is the causal chain's stresses, then the purple bars, in
+    the groups of BODY_GROUPS. `body_groups` is [[subhead, [labels]]] for the groups
+    with anything in them; `body` is the same labels in one list, in that order. A
+    purple bar that is not an infoceutical is Psyche when it is in `psyche` (the bars
+    on the scan's psyche pages), else Body stresses. SPIRIT is the live session's own
+    stresses plus each layer's head, a head left out when it is already in BODY or
+    MIND. `on_layer` lists the stresses already on a layer (on_layer_labels), which the
+    page shows greyed in every section."""
     vocab, _client = client_first_vocab(cx, test_id, "", limit)
-    out = {"spirit": spirit_stress_labels(cx, test_id), "mind": list(mind or ()),
-           "body": list(body or ()), "all": list(vocab)}
-    unnamed = set()
+    chain = list(chain_stress_labels(cx, test_id))
+    out = {"mind": list(mind or ()), "body": chain + list(body or ()), "all": list(vocab)}
     for key in out:
-        fold = key != "all"
-        out[key] = natural_sorted(_display_list(out[key], code_names, fold))
-        if key == "body":
-            # Glen, 15 Nov 2026: "all purple, infoceutical list first, then other
-            # purples". Each group keeps its natural order.
-            out[key] = ([d for d in out[key] if _info_match(d)]
-                        + [d for d in out[key] if not _info_match(d)])
+        out[key] = natural_sorted(_display_list(out[key], code_names, key != "all"))
+    def keys(labels):
+        return {stress_key(stress_display(lbl, code_names)) for lbl in labels or ()}
+    chain_keys, psyche_keys = keys(chain), keys(psyche)
+    groups = {g: [] for g in BODY_GROUPS}
+    for d in out["body"]:
+        k = stress_key(d)
+        group = ("Causal chain" if k in chain_keys else "Infoceuticals" if _info_match(d)
+                 else "Psyche" if k in psyche_keys else "Body stresses")
+        groups[group].append(d)
+    out["body_groups"] = [[g, groups[g]] for g in BODY_GROUPS if groups[g]]
+    out["body"] = [d for _g, items in out["body_groups"] for d in items]
+    taken = {stress_key(d) for d in out["body"] + out["mind"]}
+    heads = [h for h in layer_heads(cx, test_id)
+             if stress_key(stress_display(h, code_names)) not in taken]
+    out["spirit"] = natural_sorted(_display_list(
+        spirit_stress_labels(cx, test_id) + heads, code_names, True))
+    out["on_layer"] = natural_sorted(_display_list(
+        on_layer_labels(cx, test_id), code_names, False))
+    unnamed = set()
+    for key in ("spirit", "mind", "body", "all"):
         unnamed |= {d for d in out[key] if _info_match(d) and ":" not in d}
     out["unnamed"] = sorted(unnamed, key=natural_key)
-    return out
+    return {k: out[k] for k in ("spirit", "mind", "body", "body_groups", "on_layer",
+                                "all", "unnamed")}
 
 
 def match_term(cx, kind, text, test_id=None, cues=True):

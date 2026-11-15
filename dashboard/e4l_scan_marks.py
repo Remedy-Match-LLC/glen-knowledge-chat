@@ -15,7 +15,13 @@ included in e4l scans, show their color as well." So every bar is read, grey
 A PDF is read once per scan and the colours are kept in chat_log.db, so a page
 load never re-reads it. A scan whose PDF cannot be read says so; it never reads
 as "nothing is purple".
+
+Glen, 15 Nov 2026: the drop-down's BODY section splits the purple bars that are not
+infoceuticals into "Body stresses" and "Psyche", by the scan section the bar sits on.
+So each bar's page heading is kept beside its colours (bar_sections).
 """
+import html
+import json
 import re
 import sqlite3
 import subprocess
@@ -31,14 +37,31 @@ _LINE = re.compile(r'<line xMin="([\d.]+)" yMin="[\d.]+" xMax="[\d.]+" yMax="([\
 _WORD = re.compile(r'>([^<]+)</word>')
 _CODE = re.compile(r"^([A-Z]{2,3}\d+|BFA)\b")
 # Bump when COLOURS or the matching changes: scans read by an older reader re-read.
-READER_VERSION = 2
+# 3: each bar's page section is stored too (15 Nov 2026).
+READER_VERSION = 3
+
+# Glen, 15 Nov 2026, measured on a real scan: these sections are the psyche pages. Every
+# other section (ENVIRONMENTAL, AGRICULTURE, NUTRITION, DIGESTION / METABOLISM,
+# SENSITIVITIES, and the rest) is the body. Matched at the start of the heading, so
+# "MIND BODY - CORE EMOTIONS" is MIND BODY.
+PSYCHE_SECTIONS = ("MIND BODY", "LIFE JOURNEY", "LIFE PURPOSE", "HERO'S JOURNEY",
+                   "ARCHETYPES", "BELIEFS", "EMOTIONAL ATTRACTION", "TRANSFORMATIONS",
+                   "UNCONSCIOUS PATTERNS")
+_PAGE_TEXT = re.compile(r"<page [^>]*>(.*?)</page>", re.S)
 
 
 def ensure_schema(cx):
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_scan_bar_colour (
         scan_id TEXT NOT NULL, code TEXT NOT NULL, colours TEXT NOT NULL,
+        sections TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (scan_id, code)
     )""")
+    # A table made before READER_VERSION 3 has no sections column. Added once; '' is
+    # "section unknown", which reads as Body stresses.
+    cols = {r[1] for r in cx.execute("PRAGMA table_info(biofield_scan_bar_colour)")}
+    if "sections" not in cols:
+        cx.execute("ALTER TABLE biofield_scan_bar_colour "
+                   "ADD COLUMN sections TEXT NOT NULL DEFAULT ''")
     # One row per scan read, so a scan with no coloured bars is not re-read and a
     # failed read keeps its reason.
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_scan_bar_read (
@@ -83,33 +106,93 @@ def _label(text):
     return found.group(1) if found else text
 
 
+def page_heading(lines):
+    """A scan page's section heading, or None for a continuation page.
+
+    `lines` are the page's text lines in pdftotext's order. The first two are the
+    header (the practitioner line, then the client and scan date). The heading is the
+    line after them when it is in capitals ("NUTRITION FIELDS - PROTEIN FIELDS"). A
+    continuation page starts with body text there instead ("easy. We mustn't ...").
+    A line that starts with a code ("ET0 - CNS") is a bar label, never a heading."""
+    if len(lines) < 3:
+        return None
+    text = " ".join(html.unescape(str(lines[2] or "")).split())
+    if not re.search(r"[A-Za-z]", text) or text != text.upper() or _CODE.match(text):
+        return None
+    return text
+
+
+def page_sections(headings):
+    """Each page's section: its own heading, else the last page's before it. A
+    continuation page inherits; pages before the first heading have None."""
+    out, current = [], None
+    for heading in headings:
+        current = heading or current
+        out.append(current)
+    return out
+
+
+def _heading_key(heading):
+    return " ".join(str(heading or "").replace("\u2019", "'").replace("\u2018", "'")
+                    .upper().split())
+
+
+def is_psyche_section(heading):
+    """True for a psyche page's heading (PSYCHE_SECTIONS, matched at the start)."""
+    key = _heading_key(heading)
+    return any(key == p or key.startswith(p + " ") for p in PSYCHE_SECTIONS)
+
+
+def is_psyche(sections):
+    """A bar is Psyche when any page it sits on is a psyche page. No sections known
+    (an older read, or a heading that could not be read) is not Psyche."""
+    return any(is_psyche_section(s) for s in sections or ())
+
+
+class BarColours(dict):
+    """bar_colours' answer: {label: {colour}}, with `.sections` = {label: {heading}}
+    for the labels whose page section is known."""
+    sections = None
+
+
 def bar_colours(path):
     """{label: {colour, ...}} for every bar in the PDF, by code or by nutrient field
     name. A label can carry more than one colour when it appears on several pages;
     "grey" means every bar it has is empty. Markers on the body diagrams are
-    skipped: their labels sit beside them, not above."""
+    skipped: their labels sit beside them, not above. The answer's `.sections` holds
+    each label's page sections (page_heading, inherited by continuation pages)."""
     from pypdf import PdfReader
     reader = PdfReader(path)
-    out = {}
-    for n, page in enumerate(reader.pages, start=1):
+    # One pdftotext run for the whole document: a continuation page needs the heading
+    # of the page before it, even when that page has no bars.
+    doc = subprocess.run(["pdftotext", "-bbox-layout", path, "-"],
+                         capture_output=True, text=True, check=True, timeout=120).stdout
+    pages = [(m.group(0), m.group(1)) for m in _PAGE_TEXT.finditer(doc)]
+    if len(pages) != len(reader.pages):
+        raise ValueError(f"pdftotext read {len(pages)} pages, pypdf {len(reader.pages)}")
+    lines = [[(" ".join(_WORD.findall(m.group(3))).strip(), float(m.group(1)),
+               float(m.group(2))) for m in _LINE.finditer(body)] for _, body in pages]
+    sections = page_sections([page_heading([t for t, _, _ in ls]) for ls in lines])
+    out, where = {}, {}
+    for n, page in enumerate(reader.pages):
         segments = []
         _segments(reader, page.get_contents(), page["/Resources"], [1, 0, 0, 1, 0, 0],
                   segments)
         if not segments:
             continue
-        text = subprocess.run(["pdftotext", "-f", str(n), "-l", str(n), "-bbox-layout",
-                               path, "-"],
-                              capture_output=True, text=True, check=True, timeout=20).stdout
-        height = float(_PAGE.search(text).group(1))
-        labels = [(_label(" ".join(_WORD.findall(m.group(3))).strip()),
-                   float(m.group(1)), float(m.group(2))) for m in _LINE.finditer(text)]
+        height = float(_PAGE.search(pages[n][0]).group(1))
+        labels = [(_label(t), x, y) for t, x, y in lines[n]]
         for colour, x, y in segments:
             top = height - y
             # The label sits just above its bar, starting at the bar's left edge.
             near = [lab for lab in labels if 0 <= top - lab[2] < 12 and abs(lab[1] - x) < 2]
             if len(near) == 1:
                 out.setdefault(near[0][0], set()).add(colour)
-    return {label: (found - {"grey"}) or {"grey"} for label, found in out.items()}
+                if sections[n]:
+                    where.setdefault(near[0][0], set()).add(sections[n])
+    found = BarColours({label: (c - {"grey"}) or {"grey"} for label, c in out.items()})
+    found.sections = where
+    return found
 
 
 def _read_once(cx, scan_id, pdf_path):
@@ -117,6 +200,9 @@ def _read_once(cx, scan_id, pdf_path):
                      (scan_id,)).fetchone()
     if row and row[2] == READER_VERSION:
         return bool(row[0]), row[1] or ""
+    # A good read by an older reader is kept if this re-read fails (the PDF may have
+    # moved since): its colours stand, and its sections read as unknown.
+    older_ok = bool(row and row[0])
     try:
         if not pdf_path:
             raise ValueError("no scan PDF is recorded for this scan")
@@ -127,12 +213,16 @@ def _read_once(cx, scan_id, pdf_path):
             raise ValueError("no coloured bars were found in the scan PDF")
     except Exception as exc:  # a missing file, pdftotext or pypdf: say why
         error = str(exc)[:300] or exc.__class__.__name__
+        if older_ok:
+            return True, ""
         # Not stored: the PDF may arrive later, so the next page load tries again.
         return False, error
+    where = getattr(colours, "sections", None) or {}
     cx.execute("DELETE FROM biofield_scan_bar_colour WHERE scan_id=?", (scan_id,))
     for code, found in colours.items():
-        cx.execute("INSERT INTO biofield_scan_bar_colour (scan_id,code,colours) "
-                   "VALUES (?,?,?)", (scan_id, code, ",".join(sorted(found))))
+        cx.execute("INSERT INTO biofield_scan_bar_colour (scan_id,code,colours,sections) "
+                   "VALUES (?,?,?,?)", (scan_id, code, ",".join(sorted(found)),
+                                        json.dumps(sorted(where.get(code) or ()))))
     cx.execute("INSERT OR REPLACE INTO biofield_scan_bar_read (scan_id,ok,error,version) "
                "VALUES (?,1,'',?)", (scan_id, READER_VERSION))
     cx.commit()
@@ -181,6 +271,29 @@ def infoceutical_marks(cx, e4l_db, scan_id):
     return {"scan_id": scan_id, "recommended": recommended,
             "recommended_error": recommended_error, "purple": purple,
             "colours": colours, "purple_error": error}
+
+
+def bar_sections(cx, scan_id):
+    """{label: [heading]} from the stored read of this scan, for labels whose page
+    section is known. {} when nothing is stored or the read predates sections. Call
+    after infoceutical_marks, which does the read."""
+    if not scan_id:
+        return {}
+    try:
+        ensure_schema(cx)
+        rows = cx.execute("SELECT code,sections FROM biofield_scan_bar_colour "
+                          "WHERE scan_id=?", (str(scan_id),)).fetchall()
+    except sqlite3.Error:
+        return {}
+    out = {}
+    for code, raw in rows:
+        try:
+            found = [str(s) for s in json.loads(raw or "[]") if s]
+        except (TypeError, ValueError):
+            found = []
+        if found:
+            out[code] = found
+    return out
 
 
 # "12. Choice Point", "8 - Humility": the bar's position on its page, not its name.
