@@ -3660,7 +3660,10 @@ def _terrain_segments_html(report):
         "<div class=btnrow style='align-items:center'>"
         "<label for=t_phase style='min-width:150px'>Terrain</label>"
         f"<select id=t_phase aria-label='Terrain phase' onchange=\"saveTerrain('phase',this)\">{opts}</select>"
-        "<input id=t_location placeholder='Location' aria-label='Terrain location' "
+        # Glen, 14 Nov 2026 (Bridge): locations use "the same list of stresses", "all
+        # possible stresses on our list". The vocab drop-down the layer cards use;
+        # typing a location not on it still saves.
+        "<input id=t_location list=vocab placeholder='Location' aria-label='Terrain location' "
         f"value=\"{_e(report.get('location') or '')}\" style='width:240px' "
         "onchange=\"saveTerrain('location',this)\">"
         "</div>"
