@@ -6,6 +6,10 @@ as data, so adding bespoke logic later is a code change with no schema churn. Ea
 dimension declares which entities it can tag (`applies_to`). Depth of Penetration is the
 one wired with a reach match-check: a remedy must reach at least as deep as the stress it
 treats, or it is flagged. Tags attach to authored chain rows (stress side / remedy side).
+
+Numbering (Glen, 14 November 2026): "Compartments, like all the dimensions, should be
+numbered from 5 (shallow) to 1 (deep)". Depth of Penetration, Pathology Types and Stages
+of Prognosis were flipped to that order, so a LOWER rank is DEEPER (or graver).
 """
 import json
 import sqlite3
@@ -15,10 +19,10 @@ DEPTH_KEY = "depth_of_penetration"
 # (key, name, ordered, applies_to, has_match_check, [(rank, value, code), ...])
 DIMENSIONS = [
     (DEPTH_KEY, "Depth of Penetration", 1, ["stress", "remedy"], 1, [
-        (1, "Gut / Environment", "gut"), (2, "Blood", "blood"),
+        (5, "Gut / Environment", "gut"), (4, "Blood", "blood"),
         (3, "Extra-cellular fluid (incl. lymph)", "ecf"),
-        (4, "Cytoplasm / cell metabolism", "cytoplasm"),
-        (5, "Nucleoplasm / epigenetic", "nucleus")]),
+        (2, "Cytoplasm / cell metabolism", "cytoplasm"),
+        (1, "Nucleoplasm / epigenetic", "nucleus")]),
     ("states_of_matter", "States of Matter", 1, ["stress"], 0, [
         (1, "Solid", "solid"), (2, "Liquid", "liquid"), (3, "Gas", "gas"),
         (4, "Plasma", "plasma"), (5, "Condensate", "condensate")]),
@@ -45,9 +49,9 @@ DIMENSIONS = [
         (3, "Regenerate", "regenerate"), (4, "Reclaim", "reclaim"),
         (5, "Regulate", "regulate")]),
     ("pathology_types", "5 Pathology Types", 1, ["stress"], 0, [
-        (1, "Hypertrophy", "hypertrophy"), (2, "Hyperplasia", "hyperplasia"),
-        (3, "Metaplasia", "metaplasia"), (4, "Dysplasia", "dysplasia"),
-        (5, "Neoplasia", "neoplasia")]),
+        (5, "Hypertrophy", "hypertrophy"), (4, "Hyperplasia", "hyperplasia"),
+        (3, "Metaplasia", "metaplasia"), (2, "Dysplasia", "dysplasia"),
+        (1, "Neoplasia", "neoplasia")]),
     ("levels_of_therapy", "5 Levels of Therapy (5 S's)", 1, ["remedy"], 0, [
         (1, "Surgery", "surgery"), (2, "Suppression", "suppression"),
         (3, "Substitution", "substitution"), (4, "Support", "support"),
@@ -56,9 +60,9 @@ DIMENSIONS = [
         (1, "Blocked", "blocked"), (2, "Negative", "negative"), (3, "Mixed", "mixed"),
         (4, "Positive", "positive"), (5, "Optimum", "optimum")]),
     ("stages_of_prognosis", "5 Stages of Prognosis", 1, ["stress"], 0, [
-        (1, "Self-Limiting", "self_limiting"), (2, "Serious", "serious"),
-        (3, "Degenerative", "degenerative"), (4, "Life-Threatening", "life_threatening"),
-        (5, "Certain Death", "certain_death")]),
+        (5, "Self-Limiting", "self_limiting"), (4, "Serious", "serious"),
+        (3, "Degenerative", "degenerative"), (2, "Life-Threatening", "life_threatening"),
+        (1, "Certain Death", "certain_death")]),
     ("tissue_layers", "5 Embryological Tissue Layers", 1, ["stress"], 0, [
         (1, "Compression", "compression"), (2, "Connection", "connection"),
         (3, "Conversion", "conversion"), (4, "Communication", "communication"),
@@ -87,9 +91,39 @@ def init_dimension_tables(cx):
     cx.commit()
 
 
+# Dimensions renumbered on 14 November 2026 by reversing 1..5 to 5..1. Tags store
+# value_rank, so a tag written under the old numbering must be flipped (r -> 6 - r).
+# Each entry is (dim_key, a code, its OLD rank): if the stored values table still
+# holds that code at its old rank, that dimension's tags have not been migrated yet.
+FLIPPED_2026_11_14 = (
+    (DEPTH_KEY, "gut", 1),
+    ("pathology_types", "hypertrophy", 1),
+    ("stages_of_prognosis", "self_limiting", 1),
+)
+
+
+def migrate_flipped_numbering(cx):
+    """Idempotent. Flip stored tag ranks for each dimension still seeded with the old
+    numbering. The detector is the values table itself, so this runs exactly once per
+    database: seed_dimensions re-seeds the values right after, inside the same
+    transaction, and then the detector no longer matches. Returns rows flipped."""
+    flipped = 0
+    for dim_key, code, old_rank in FLIPPED_2026_11_14:
+        r = cx.execute("SELECT rank FROM biofield_dimension_values WHERE dim_key=? AND code=?",
+                       (dim_key, code)).fetchone()
+        if not r or int(r[0]) != old_rank:
+            continue
+        cur = cx.execute("UPDATE biofield_dimension_tags SET value_rank = 6 - value_rank "
+                         "WHERE dim_key=? AND value_rank BETWEEN 1 AND 5", (dim_key,))
+        flipped += max(cur.rowcount or 0, 0)
+    return flipped
+
+
 def seed_dimensions(cx):
     from dashboard import dbwrite
     init_dimension_tables(cx)
+    # Must run BEFORE the re-seed below, which overwrites the old ranks it detects.
+    migrate_flipped_numbering(cx)
     for seq, (key, name, ordered, applies, mc, vals) in enumerate(DIMENSIONS):
         dbwrite.insert_or_replace(
             cx, "biofield_dimensions",
@@ -145,10 +179,11 @@ def get_tag(cx, target_type, target_id, dim_key):
 
 
 def depth_match(stress_rank, remedy_rank):
-    """A remedy must reach at least as deep as the stress it treats."""
+    """A remedy must reach at least as deep as the stress it treats.
+    Ranks run 5 (gut, shallow) to 1 (nucleus, deep), so deeper is a LOWER rank."""
     if stress_rank is None or remedy_rank is None:
         return "unknown"
-    return "ok" if remedy_rank >= stress_rank else "shallow"
+    return "ok" if int(remedy_rank) <= int(stress_rank) else "shallow"
 
 
 def depth_label(cx, rank):

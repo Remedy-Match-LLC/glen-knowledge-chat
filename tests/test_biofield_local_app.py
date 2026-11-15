@@ -313,8 +313,9 @@ def test_depth_match_flagged_in_report(tmp_path):
                       json={"layer": "1", "head": "Mercury", "most_affected": "Brain",
                             "remedy": "Gut Binder", "dosage": "1", "frequency": "daily",
                             "timing": "with food"}).get_json()["rid"]
-    client.post(f"/author/{tid}/depth", json={"rid": rid, "side": "stress", "rank": 5})
-    client.post(f"/author/{tid}/depth", json={"rid": rid, "side": "remedy", "rank": 1})
+    # 1 = nucleus (deep), 5 = gut (shallow): Glen, 14 November 2026.
+    client.post(f"/author/{tid}/depth", json={"rid": rid, "side": "stress", "rank": 1})
+    client.post(f"/author/{tid}/depth", json={"rid": rid, "side": "remedy", "rank": 5})
     assert b"may not reach" in client.get("/test/" + tid).data
     # Depth selects are present per remedy line (hidden by default, shown via toggle).
     ed = client.get("/author/" + tid)
