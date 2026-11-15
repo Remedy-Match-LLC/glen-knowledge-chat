@@ -165,7 +165,7 @@ def client_first_vocab(cx, test_id, q="", limit=5000):
     return (client + rest)[:limit], client
 
 
-def match_term(cx, kind, text, test_id=None):
+def match_term(cx, kind, text, test_id=None, cues=True):
     """One spoken phrase -> one field value.
 
     Returns {"value", "matched"} always, plus:
@@ -181,7 +181,9 @@ def match_term(cx, kind, text, test_id=None):
     if kind not in KINDS:
         raise ValueError(f"kind must be one of {', '.join(KINDS)}")
     text = " ".join(str(text or "").split())
-    if is_balanced_cue(text):
+    # cues=False: the hands-free segmenter has already taken the cue words off, so the
+    # words are matched exactly as they came ("Pressure in the Head" keeps its Head).
+    if cues and is_balanced_cue(text):
         return {"value": "", "matched": True, "balanced": True}
     if kind == "remedy":
         rest, dose, freq, unsure = parse_dose(text)
@@ -194,7 +196,7 @@ def match_term(cx, kind, text, test_id=None):
         if unsure:
             out["dosing"]["dosage"] = ""       # never the catalogue's in place of a misheard one
         return out
-    phrase, also_tail, _cue = _strip_cues(text)
+    phrase, also_tail, _cue = _strip_cues(text) if cues else (text, False, None)
     extra = detected_stress_labels(cx, test_id)
     try:
         from dashboard.biofield_stress import _table_exists
@@ -212,3 +214,163 @@ def match_term(cx, kind, text, test_id=None):
             return {"value": raw, "matched": True, "also_tail": False}
     value, matched = resolve_stress_match(cx, phrase, extra_names=extra)
     return {"value": value, "matched": bool(matched and value), "also_tail": also_tail}
+
+
+# ---- hands-free recording (live session part 2b) ----------------------------------
+#
+# Glen, 14 November 2026: "yes" to the cue words. In the hands-free recording "head",
+# "tail" and "remedy" each start that field, "head and tail" fills both, "balanced"
+# ticks the layer and "next layer" starts a new layer. Ruling 9: a dose spoken after a
+# remedy fills its dose and frequency.
+#
+# THE RULE, exactly:
+#  1. An utterance is split into sentences at . ! ? ; or : followed by a space or the
+#     end. A dot inside a number ("2.5 ml") or a colon in a time ("8:30") does not split.
+#  2. A cue word counts only at a cue position: the start of a sentence, or straight
+#     after another cue ("Next layer, head liver"). Anywhere else it is just a word, so
+#     "Pressure in the Head" and "the head and tail of it" never split. Filler words at
+#     a cue position are skipped first: okay, ok, alright, so, now, and, um, uh. So
+#     "Okay, head liver" splits.
+#  3. Cues are whole words, case-insensitive. At a cue position, "next layer" is read
+#     first, then "head and tail" (also "head & tail", "head n tail"), then "head",
+#     "tail" or "remedy". "Headache" and "remedies" are not cues.
+#  4. The words after a field cue, to the end of the sentence, are that field's text.
+#     A leading "is" is dropped ("Head is liver"). A cue with nothing after it ("Head.")
+#     leaves the field open: the next sentence, in this utterance or the next, fills it.
+#  5. "balanced" counts only as a whole sentence: "balanced", "layer balanced", "this
+#     layer is balanced" (is_balanced_cue). "Unbalanced hormones" or "balanced
+#     hormones" is not a cue.
+#  6. A sentence with no cue at its start, after a remedy, that is only a dose ("Two
+#     drops twice a day.") is that remedy's dose. In the same utterance it joins the
+#     remedy's text; in a later one it comes out as a dose event for the last remedy.
+#     Dose sentences keep attaching to that remedy ("Two drops. Twice a day."), across
+#     utterances too, until a cue or a sentence that is not a dose.
+#  7. A sentence with no cue that ends in "head and tail" fills both (ruling 5: either
+#     order), when no field is open.
+#  8. Any other sentence goes to the full transcript only. Nothing is written from it,
+#     and it ends the last remedy's dose (rule 6).
+
+_HF_SENTENCE = re.compile(r"[.!?;:]+(?=\s|$)")
+_HF_NEXT = re.compile(r"next\s+layer\b", re.I)
+_HF_BOTH = re.compile(_HEAD_AND_TAIL + r"\b", re.I)
+_HF_FIELD = re.compile(r"(head|tail|remedy)\b", re.I)
+_HF_FILLER = re.compile(r"^(?:(?:okay|ok|alright|so|now|and|um|uh)\b[\s,\-]*)*", re.I)
+_HF_SEP = re.compile(r"^[\s,\-]*(?:is\s+)?", re.I)
+_HF_TRAIL_BOTH = re.compile(r"^(.*?\S)[\s,\-]+(?:is\s+)?(?:the\s+)?" + _HEAD_AND_TAIL + r"$",
+                            re.I)
+PENDING = ("head", "tail", "remedy", "head_tail")
+
+
+def _hf_sentences(text):
+    out = []
+    for part in _HF_SENTENCE.split(" ".join(str(text or "").split())):
+        part = part.strip(" ,-")
+        if part:
+            out.append(part)
+    return out
+
+
+def _hf_rest(s, m):
+    rest = s[m.end():]
+    return rest[_HF_SEP.match(rest).end():].strip(" ,-")
+
+
+def _dose_only(s):
+    """(dose, frequency) when the sentence is a dose and nothing else, else None."""
+    rest, dose, freq, unsure = parse_dose(s)
+    if rest or unsure or not (dose or freq):
+        return None
+    return dose, freq
+
+
+def segment_utterance(text, pending=None, after_remedy=False):
+    """One finalized utterance of the hands-free recording -> events, in order.
+
+    Events: {"field": "head"|"tail"|"remedy", "text", "both"} ("both" True for "head
+    and tail", which fills Head and Tail), {"field": "dose", "text", "dose",
+    "frequency"} for the last remedy, {"balanced": True}, {"next_layer": True}.
+
+    pending is the field left open by a cue said with nothing after it (one of
+    PENDING, or None). after_remedy is True when the last event was a remedy, so a
+    dose said next belongs to it. Both carry over to the next utterance: they are
+    returned, and the page sends them back. Pure: no database, no side effects."""
+    pending = pending if pending in PENDING else None
+    after_remedy = bool(after_remedy)
+    events = []
+
+    def field(kind, words, both=False):
+        events.append({"field": kind, "text": words, "both": both})
+
+    for sent in _hf_sentences(text):
+        s = sent
+        while s:
+            s = s[_HF_FILLER.match(s).end():].strip(" ,-")
+            if not s:
+                break
+            if is_balanced_cue(s):
+                events.append({"balanced": True})
+                pending, after_remedy = None, False
+                break
+            m = _HF_NEXT.match(s)
+            if m:
+                events.append({"next_layer": True})
+                pending, after_remedy = None, False
+                s = _hf_rest(s, m)
+                continue                  # straight after a cue is a cue position
+            m = _HF_BOTH.match(s)
+            kind, both = ("head", True) if m else (None, False)
+            if not m:
+                m = _HF_FIELD.match(s)
+                kind = m.group(1).lower() if m else None
+            if kind:
+                rest = _hf_rest(s, m)
+                if rest:
+                    field(kind, rest, both)
+                    pending = None
+                else:
+                    pending = "head_tail" if both else kind
+                after_remedy = kind == "remedy" and bool(rest)
+                break
+            # No cue at the start of this sentence.
+            if pending:
+                kind = "head" if pending == "head_tail" else pending
+                field(kind, s, pending == "head_tail")
+                after_remedy = kind == "remedy"
+                pending = None
+                break
+            dz = _dose_only(s) if after_remedy else None
+            if dz:
+                last = events[-1] if events else None
+                if last and last.get("field") == "remedy":
+                    last["text"] = f"{last['text']} {s}"
+                elif last and last.get("field") == "dose":
+                    last["text"] = f"{last['text']} {s}"
+                    both_dz = _dose_only(last["text"])
+                    if both_dz:
+                        last["dose"], last["frequency"] = both_dz
+                    else:
+                        last["dose"] = last["dose"] or dz[0]
+                        last["frequency"] = last["frequency"] or dz[1]
+                else:
+                    events.append({"field": "dose", "text": s, "dose": dz[0],
+                                   "frequency": dz[1]})
+                break                     # after_remedy stays on: more dose may follow
+            after_remedy = False          # plain talk ends the remedy's dose
+            t = _HF_TRAIL_BOTH.match(s)
+            if t:
+                field("head", t.group(1).strip(" ,-"), True)
+                after_remedy = False
+            break
+    return {"events": events, "pending": pending, "after_remedy": after_remedy}
+
+
+def handsfree_events(cx, text, pending=None, after_remedy=False, test_id=None):
+    """segment_utterance, with each Head, Tail or Remedy event matched the way a short
+    recording is (match_term, the cue words already off). Writes nothing: the page
+    applies the events, in order, through the row routes, as hands-free rows."""
+    out = segment_utterance(text, pending, after_remedy)
+    for ev in out["events"]:
+        kind = ev.get("field")
+        if kind in KINDS:
+            ev["match"] = match_term(cx, kind, ev["text"], test_id=test_id, cues=False)
+    return out

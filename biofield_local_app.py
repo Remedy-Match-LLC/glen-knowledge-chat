@@ -50,7 +50,8 @@ from dashboard.biofield_authoring import (
     remove_remedy_preserving_layer,
     remedy_dosing, resolve_remedy_name, resolve_stress_name, stress_suggestions,
     stress_vocab, update_chain_row, update_header, update_terrain,
-    set_terrain_field, terrain_state, set_layer_balanced, apply_voice_fields)
+    set_terrain_field, terrain_state, set_layer_balanced, apply_voice_fields,
+    mark_handsfree)
 from dashboard.biofield_dimensions import (
     DEPTH_KEY, dimension_values, seed_dimensions, tag as dim_tag)
 from dashboard.biofield_interpret import interpret_transcript
@@ -4023,6 +4024,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                             frequency=d.get("frequency", ""), timing=d.get("timing", ""),
                         )
                         apply_voice_fields(cx, test_id, anchor_id, voice)
+                        if d.get("handsfree"):
+                            mark_handsfree(cx, test_id, anchor_id)   # ruling 7
                         return {"ok": True, "rid": anchor_id, "filled_anchor": True,
                                 **gated}
             rid = add_chain_row(cx, test_id, layer, d.get("head", ""),
@@ -4036,6 +4039,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # A short recording: a matched field confirms only itself, an unmatched one
             # holds the row for review (ruling 7). Typed rows send no voice.
             apply_voice_fields(cx, test_id, rid, voice)
+            # The hands-free recording: unconfirmed even when matched (ruling 7).
+            if d.get("handsfree"):
+                mark_handsfree(cx, test_id, rid)
         return {"ok": True, "rid": rid, **gated}
 
     @app.route("/author/<test_id>/row/<int:rid>", methods=["POST"])
@@ -4089,6 +4095,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # A short voice recording into Head or Tail (ruling 7): per field.
             if isinstance(d.get("voice"), dict):
                 apply_voice_fields(cx, test_id, rid, d["voice"])
+            if d.get("handsfree"):
+                mark_handsfree(cx, test_id, rid)          # ruling 7
         return {"ok": True, **gated}
 
     @app.route("/author/<test_id>/match", methods=["POST"])
@@ -4105,6 +4113,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"ok": False, "error": str(e)}, 400
         return {"ok": True, **m}
 
+    @app.route("/author/<test_id>/handsfree-segment", methods=["POST"])
+    def author_handsfree_segment(test_id):
+        """One finalized utterance of the hands-free recording (live session part 2b).
+        {text, pending, after_remedy} -> {events, pending, after_remedy}, each Head,
+        Tail or Remedy event carrying match_term's answer. Writes nothing: the page
+        applies the events in order through the row routes with handsfree set."""
+        from dashboard.biofield_layer_match import handsfree_events
+        d = request.get_json(silent=True) or {}
+        with sqlite3.connect(db_path) as cx:
+            out = handsfree_events(cx, d.get("text"), d.get("pending"),
+                                   d.get("after_remedy"), test_id=test_id)
+        return {"ok": True, **out}
+
     @app.route("/author/<test_id>/layer-balanced", methods=["POST"])
     def author_layer_balanced(test_id):
         """The Balanced box on one layer card: {rids, balanced}. Layer only (ruling 3):
@@ -4113,6 +4134,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         rids = d.get("rids") if isinstance(d.get("rids"), list) else []
         with sqlite3.connect(db_path) as cx:
             n = set_layer_balanced(cx, test_id, rids, bool(d.get("balanced")))
+            # "balanced" said in the hands-free recording sends the layer to review
+            # like any other hands-free write (ruling 7).
+            if d.get("handsfree"):
+                for r in rids:
+                    try:
+                        mark_handsfree(cx, test_id, int(r))
+                    except (TypeError, ValueError):
+                        continue
         return {"ok": True, "updated": n, "balanced": bool(d.get("balanced"))}
 
     @app.route("/author/<test_id>/row/<int:rid>/delete", methods=["POST"])
