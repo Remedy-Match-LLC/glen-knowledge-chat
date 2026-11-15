@@ -249,6 +249,23 @@ def match_term(cx, kind, text, test_id=None, cues=True):
 #     order), when no field is open.
 #  8. Any other sentence goes to the full transcript only. Nothing is written from it,
 #     and it ends the last remedy's dose (rule 6).
+#
+# Glen, 14 November 2026, "yes" to the terrain cue words too. "terrain", "location" and
+# "BSI" follow rules 2 to 4 (a cue position, whole words, the rest of the sentence is the
+# text, a bare cue leaves it open for the next sentence). They fill the terrain panel,
+# never a layer, so the current layer is left alone wherever they are said.
+#  9. "terrain" + a phase: 1 to 5 as a digit or a word ("three"), or a phase name,
+#     clinical or consumer ("Cleanse", "Terrain Refresh"). "phase", "is" and "number"
+#     are skipped. A number and a name that disagree, or anything else, is not
+#     understood: the value is None and nothing is saved (parse_phase).
+# 10. "location" + words: the words, matched on the server against the stress list the
+#     layer cards use. Unmatched words are kept, highlighted as unmatched (ruling 4).
+# 11. "BSI" + exactly four numbers, each 1 to 21, as digits or words ("twenty one"),
+#     separated by "by", "x", "times", "to", "and" or commas: "BSI 12 by 8 to 9 by 6"
+#     fills A, B, C and D. Anything else is not understood: the value is None, nothing
+#     is saved, and the page says so (parse_bsi). "B.S.I." and "b s i" count as "BSI".
+# 12. A "balanced" sentence is read before an open terrain field (rule 5 comes first),
+#     so "Terrain. Balanced." ticks the layer.
 
 _HF_SENTENCE = re.compile(r"[.!?;:]+(?=\s|$)")
 _HF_NEXT = re.compile(r"next\s+layer\b", re.I)
@@ -258,12 +275,112 @@ _HF_FILLER = re.compile(r"^(?:(?:okay|ok|alright|so|now|and|um|uh)\b[\s,\-]*)*",
 _HF_SEP = re.compile(r"^[\s,\-]*(?:is\s+)?", re.I)
 _HF_TRAIL_BOTH = re.compile(r"^(.*?\S)[\s,\-]+(?:is\s+)?(?:the\s+)?" + _HEAD_AND_TAIL + r"$",
                             re.I)
-PENDING = ("head", "tail", "remedy", "head_tail")
+_HF_TERRAIN = re.compile(r"(terrain|location|bsi)\b", re.I)
+# "B.S.I." would otherwise end a sentence at its last dot, and "b s i" is three words.
+_HF_BSI_SPELLED = re.compile(r"\bb\.?\s?s\.?\s?i\b\.?", re.I)
+TERRAIN_CUES = ("terrain", "location", "bsi")
+PENDING = ("head", "tail", "remedy", "head_tail") + TERRAIN_CUES
+
+_UNITS_1_19 = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+    "eighteen": 18, "nineteen": 19,
+}
+_TENS = {"twenty": 20, "thirty": 30}
+_BSI_SEPS = {"by", "x", "times", "to", "and"}
+_PHASE_SKIP = {"terrain", "phase", "is", "number", "the", "a", "dot", "it's", "its"}
+
+
+def _phase_stems():
+    from dashboard.terrain_phase import PHASE_CLINICAL_NAMES, PHASE_NAMES
+    stems = {}
+    for n in PHASE_NAMES:
+        for name in (PHASE_CLINICAL_NAMES[n], PHASE_NAMES[n].split()[-1]):
+            # A five-letter stem, so "revived", "energise" and "relieve" still count.
+            stems[name.lower()[:5]] = n
+    return stems
+
+
+def _words(text):
+    return [w for w in re.split(r"[\s,.;:!?\-]+", str(text or "").lower()) if w]
+
+
+def parse_phase(text):
+    """The terrain phase 1-5 from the words after "terrain", else None (rule 9)."""
+    stems = _phase_stems()
+    found = set()
+    for w in _words(text):
+        if w in _PHASE_SKIP:
+            continue
+        if w.isdigit():
+            n = int(w)
+        elif w in _UNITS_1_19:
+            n = _UNITS_1_19[w]
+        else:
+            n = stems.get(w[:5]) if len(w) >= 5 else None
+        if n is None or not 1 <= n <= 5:
+            return None
+        found.add(n)
+    return found.pop() if len(found) == 1 else None
+
+
+def parse_bsi(text):
+    """([A, B, C, D], '') from the words after "BSI", or (None, why) (rule 11)."""
+    from dashboard.terrain_phase import bsi_num
+    s = str(text or "").lower().replace("\u00d7", " x ")
+    s = re.sub(r"(\d)\s*x\s*(?=\d)", r"\1 x ", s)          # "12x8"
+    s = re.sub(r"^(?:is|reads?|of)\s+", "", s.strip())
+    nums, words = [], _words(s)
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if w in _BSI_SEPS:
+            i += 1
+            continue
+        if w.isdigit():
+            nums.append(int(w))
+        elif w in _TENS:
+            n = _TENS[w]
+            if i + 1 < len(words) and words[i + 1] in _UNITS_1_19 \
+                    and 1 <= _UNITS_1_19[words[i + 1]] <= 9:
+                n += _UNITS_1_19[words[i + 1]]
+                i += 1
+            nums.append(n)
+        elif w in _UNITS_1_19:
+            nums.append(_UNITS_1_19[w])
+        else:
+            return None, f"'{w}' is not a number"
+        i += 1
+    if len(nums) != 4:
+        return None, f"heard {len(nums)} number{'' if len(nums) == 1 else 's'}, not 4"
+    bad = [n for n in nums if bsi_num(n) is None]
+    if bad:
+        return None, f"{bad[0]} is outside 1 to 21"
+    return nums, ""
+
+
+def _terrain_event(kind, words):
+    """One terrain cue's event. Pure: the location is matched in handsfree_events."""
+    from dashboard.terrain_phase import PHASE_CLINICAL_NAMES, bsi_warnings
+    ev = {"terrain": kind, "text": words}
+    if kind == "terrain":
+        ev["terrain"] = "phase"
+        n = parse_phase(words)
+        ev["value"] = n
+        ev["name"] = PHASE_CLINICAL_NAMES.get(n, "")
+    elif kind == "bsi":
+        nums, why = parse_bsi(words)
+        ev["value"] = nums
+        ev["error"] = why
+        ev["warnings"] = bsi_warnings(*nums) if nums else []
+    return ev
 
 
 def _hf_sentences(text):
     out = []
-    for part in _HF_SENTENCE.split(" ".join(str(text or "").split())):
+    text = _HF_BSI_SPELLED.sub("BSI", " ".join(str(text or "").split()))
+    for part in _HF_SENTENCE.split(text):
         part = part.strip(" ,-")
         if part:
             out.append(part)
@@ -288,7 +405,9 @@ def segment_utterance(text, pending=None, after_remedy=False):
 
     Events: {"field": "head"|"tail"|"remedy", "text", "both"} ("both" True for "head
     and tail", which fills Head and Tail), {"field": "dose", "text", "dose",
-    "frequency"} for the last remedy, {"balanced": True}, {"next_layer": True}.
+    "frequency"} for the last remedy, {"balanced": True}, {"next_layer": True}, and
+    the terrain panel's {"terrain": "phase"|"location"|"bsi", "text", ...} (rules 9-11:
+    "value" is the phase or the four BSI numbers, None when not understood).
 
     pending is the field left open by a cue said with nothing after it (one of
     PENDING, or None). after_remedy is True when the last event was a remedy, so a
@@ -317,6 +436,17 @@ def segment_utterance(text, pending=None, after_remedy=False):
                 pending, after_remedy = None, False
                 s = _hf_rest(s, m)
                 continue                  # straight after a cue is a cue position
+            m = _HF_TERRAIN.match(s)
+            if m:
+                cue = m.group(1).lower()
+                rest = _hf_rest(s, m)
+                if rest:
+                    events.append(_terrain_event(cue, rest))
+                    pending = None
+                else:
+                    pending = cue
+                after_remedy = False      # a cue ends the remedy's dose (rule 6)
+                break
             m = _HF_BOTH.match(s)
             kind, both = ("head", True) if m else (None, False)
             if not m:
@@ -332,6 +462,10 @@ def segment_utterance(text, pending=None, after_remedy=False):
                 after_remedy = kind == "remedy" and bool(rest)
                 break
             # No cue at the start of this sentence.
+            if pending in TERRAIN_CUES:
+                events.append(_terrain_event(pending, s))
+                pending = None
+                break
             if pending:
                 kind = "head" if pending == "head_tail" else pending
                 field(kind, s, pending == "head_tail")
@@ -373,4 +507,7 @@ def handsfree_events(cx, text, pending=None, after_remedy=False, test_id=None):
         kind = ev.get("field")
         if kind in KINDS:
             ev["match"] = match_term(cx, kind, ev["text"], test_id=test_id, cues=False)
+        elif ev.get("terrain") == "location":
+            # Rule 10: the stress list the layer cards use, this client's first.
+            ev["match"] = match_term(cx, "head", ev["text"], test_id=test_id, cues=False)
     return out

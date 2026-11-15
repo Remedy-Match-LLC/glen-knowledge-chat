@@ -269,7 +269,7 @@ def test_page_embeds_the_stored_state_it_renders_from():
     m = re.search(r"<script>window._tStored=(\{.*?\})</script>", s)
     assert m and "</script>b" not in m.group(1)
     st = json.loads(m.group(1))
-    assert st == {"phase": 2, "location": "a</script>b", "bsi": [13, 8, 5, 3]}
+    assert st == {"phase": 2, "location": "a</script>b", "bsi": [13, 8, 5, 3], "review": {}}
 
 
 def test_location_offers_the_stress_list():
