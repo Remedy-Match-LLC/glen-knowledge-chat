@@ -1122,7 +1122,9 @@ def _ensure_portal_receipt(cx, order_id):
                    (tok, order_id))
         cx.commit()
     except Exception:
-        pass
+        # Postgres leaves a failed statement's transaction aborted. Roll back, so the
+        # ship-credit, stock and points steps after this still run.
+        _safe_rollback(cx)
 
 
 def _consume_ship_credit_on_pay(cx, order_id):
@@ -1173,6 +1175,102 @@ def set_order_payment(cx, order_id, *, method, amount_cents):
         _consume_ship_credit_on_pay(cx, order_id)
         _stock_sync(cx, order_id)
     return cur.rowcount > 0
+
+
+# pay_method stamped on an in-house order paid automatically because it costs nothing.
+ZERO_TOTAL_METHOD = "zero-total"
+# Every edit path refuses such an order with this, so the operator knows what to do.
+ZERO_TOTAL_EDIT_REFUSAL = ("This $0 order was marked paid automatically. "
+                           "Raise a new order for the added items.")
+
+
+def is_zero_total_order(order):
+    """True for an order the $0 auto-pay marked paid. It is never repriced, edited or
+    sent as an invoice: an edit would raise its total under a $0 payment."""
+    return (order or {}).get("pay_method") == ZERO_TOTAL_METHOD
+
+
+def _has_membership_or_biofield_line(items):
+    """True when a line is one the paid grants key on: a membership tier line
+    (membership_products.tier_of_line, as _grant_membership_line_on_paid reads it) or
+    the biofield-analysis line (_grant_biofield_line_on_paid, _supply_cap_end). A $0
+    paid Biofield would anchor the refill cap, so later paid refills would earn
+    membership months against a free order (Glen, 2026-11-16: $0 earns none)."""
+    from dashboard import membership_products as _mp
+    for it in (items or []):
+        if not isinstance(it, dict):
+            continue
+        if (it.get("slug") or "").strip().lower() == "biofield-analysis":
+            return True
+        if _mp.tier_of_line(it):
+            return True
+    return False
+
+
+def _mark_proposed_order_paid(cx, order_id, *, method, amount_cents):
+    """set_order_payment for a still-proposed, unpaid order only. The WHERE carries
+    the state, so a second request, or an order that moved on, changes nothing.
+    The receipt, ship-credit debit and stock move run only when this row changed."""
+    cur = cx.execute(
+        "UPDATE orders SET status='new', pay_status='paid', pay_method=?, "
+        "paid_cents=?, paid_at=?, updated_at=? WHERE id=? AND status='proposed' "
+        "AND COALESCE(pay_status,'')<>'paid'",
+        (str(method or ""), int(amount_cents or 0), _now(), _now(), order_id))
+    cx.commit()
+    if cur.rowcount != 1:
+        return False
+    _ensure_portal_receipt(cx, order_id)
+    _consume_ship_credit_on_pay(cx, order_id)
+    _stock_sync(cx, order_id)
+    return True
+
+
+def autopay_zero_total_order(cx, order_id):
+    """Mark a just-created $0 in-house order paid. Glen, 2026-11-16: "automatically
+    mark $0 invoices paid", and a $0 order earns no membership months ("no").
+
+    The caller decides the order is new and its $0 is genuine (not floored, not a
+    shipping-rate fallback). Here: only a 'proposed', unpaid order with at least one
+    line, a stored total of exactly 0 and no membership or Biofield line (those stay
+    unpaid for the operator).
+
+    Points it redeemed are debited FIRST. If that fails (balance gone), the order
+    stays proposed: no paid order carries an unfunded points discount. Then the
+    conditional paid UPDATE, which lands it in the Paid lane and, only if it changed
+    the row, makes the portal receipt, debits the shipping credit and moves stock.
+
+    Deliberately NOT run: the membership/Biofield/supply grant hook, referral and
+    scan-reward settlement, buyer points earn, fee-free points, dispensary settlement,
+    the QBO booking call and every email. Returns True when it marked the order paid."""
+    order = get_order(cx, order_id)
+    if not order or not (order.get("items") or []):
+        return False
+    if (order.get("pay_status") or "") == "paid" or order.get("status") != "proposed":
+        return False
+    if int(order.get("total_cents") or 0) != 0:
+        return False
+    if _has_membership_or_biofield_line(order.get("items")):
+        return False
+    redeemed = int(order.get("points_redeemed_cents") or 0)
+    if redeemed > 0:
+        from dashboard import points as _points
+        email = (order.get("email") or "").strip().lower()
+        ref = (order.get("external_ref") or "").strip()
+        if not email or not ref:
+            print(f"[orders] zero-total auto-pay skipped for #{order_id}: points "
+                  "redeemed but no email or reference to debit", flush=True)
+            return False
+        try:
+            _points.init_points_table(cx)
+            if not _points.has_entry(cx, order_ref=ref, reason="redeem", scope="rm"):
+                _points.redeem(cx, email, value_cents=redeemed, order_ref=ref, scope="rm")
+        except Exception as e:  # noqa: BLE001 - ValueError: balance spent elsewhere
+            _safe_rollback(cx)
+            print(f"[orders] zero-total auto-pay skipped for #{order_id}: points "
+                  f"redeem failed: {e!r}", flush=True)
+            return False
+    return _mark_proposed_order_paid(cx, order_id, method=ZERO_TOTAL_METHOD,
+                                     amount_cents=0)
 
 
 def set_order_supply_months(cx, order_id, months):
@@ -1341,6 +1439,10 @@ def _send_invoice_exec(params, ctx):
     order = get_order(cx, oid)
     if not order:
         raise ValueError(f"order #{oid} not found")
+    if is_zero_total_order(order):
+        # Sending would email the customer a $0 receipt (Glen, 2026-11-16).
+        raise ValueError(f"order #{oid} was paid automatically at $0; there is no "
+                         "invoice to send")
     if order.get("status") not in _SENDABLE_INVOICE:
         raise ValueError(f"order #{oid} is '{order.get('status')}' — an invoice can only be "
                          "sent before it ships")

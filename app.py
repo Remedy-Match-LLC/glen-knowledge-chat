@@ -15981,6 +15981,8 @@ def _order_slugs_since(cx, email, window_days):
     rows = cx.execute(
         "SELECT items_json FROM orders WHERE lower(email)=? "
         "AND (pay_status='paid' OR status IN ('paid','shipped','delivered','done')) "
+        # A $0 auto-paid order earns no reorder price (Glen, 2026-11-16).
+        "AND COALESCE(pay_method,'') <> 'zero-total' "
         "AND created_at>=?",
         ((email or "").strip().lower(), cutoff)).fetchall()
     out = []
@@ -19887,11 +19889,13 @@ def _supply_cap_end(cx, email):
     if not email:
         return None
     rows = cx.execute(
-        "SELECT items_json, status, pay_status, paid_at, created_at FROM orders "
+        "SELECT items_json, status, pay_status, paid_at, created_at, pay_method FROM orders "
         "WHERE lower(email)=lower(?) AND status!='cancelled'", (email,)).fetchall()
     latest = None
     for r in rows:
         items_json, status, pay_status, paid_at, created_at = (r[0], r[1], r[2], r[3], r[4])
+        if (r[5] or "") == _bos_orders.ZERO_TOTAL_METHOD:
+            continue          # a $0 order never anchors the refill cap (2026-11-16)
         try:
             items = json.loads(items_json or "[]")
         except Exception:
@@ -21398,6 +21402,8 @@ def _qualifying_biofield_order(cx, email):
     for o in sorted(rows, key=lambda r: str(r.get("created_at") or "")):
         if (o.get("status") or "") == "cancelled":
             continue
+        if _bos_orders.is_zero_total_order(o):
+            continue          # a $0 order never earns a Biofield month (2026-11-16)
         for it in (o.get("items") or []):
             if (it.get("slug") or "").strip() != "biofield-analysis":
                 continue
@@ -21434,6 +21440,9 @@ def _extend_biofield_month_on_delivery(cx, email, delivered_order):
                    "(biofield_ref TEXT PRIMARY KEY, email TEXT, delivered_ref TEXT, "
                    " granted_at TEXT, days INTEGER)")
         if not (email and _order_has_remedy_line(delivered_order)):
+            return "none"
+        # A $0 order paid automatically earns no membership time (Glen, 2026-11-16).
+        if (delivered_order or {}).get("pay_method") == _bos_orders.ZERO_TOTAL_METHOD:
             return "none"
         bo = _qualifying_biofield_order(cx, email)
         if not bo:
@@ -63391,7 +63400,9 @@ def _earned_reorder_slugs(cx, email):
                 f"SELECT items_json FROM orders WHERE lower(email) IN ({_ph}) AND "
                 "(pay_status='paid' OR status IN ('shipped','delivered','done')) AND "
                 "lower(coalesce(status,'')) NOT IN ('cancelled','canceled','refunded') AND "
-                "lower(coalesce(pay_status,'')) <> 'refunded'",
+                "lower(coalesce(pay_status,'')) <> 'refunded' AND "
+                # A $0 auto-paid order earns no reward price (Glen, 2026-11-16).
+                "coalesce(pay_method,'') <> 'zero-total'",
                 tuple(sorted(emails))).fetchall():
             try:
                 items = json.loads((r["items_json"] if isinstance(r, _sqlite3.Row) else r[0]) or "[]")
@@ -63697,6 +63708,14 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     return {"items_rec": items_rec, "cart": cart, "subtotal_cents": subtotal_list,
             "shipping_cents": shipping_cents, "get_cents": get_cents,
             "computed_shipping_cents": computed_shipping_cents,
+            # For the $0 auto-pay: a total floored up from below zero, and a shipped
+            # order whose shipping is 0 only because the rate lookup failed (no stored
+            # or typed figure stood in), are not a genuine $0 (2026-11-16 review).
+            "total_floored": (subtotal_list - discount_cents + adjustment_cents) < 0,
+            "shipping_fell_back": bool(
+                _ship_fell_back and not pickup
+                and shipping_override_cents_in in (None, "")
+                and shipping_fallback_cents_in in (None, "")),
             "shipping_hand_set": shipping_hand_set,
             "discount_cents": discount_cents, "adjustment_cents": adjustment_cents,
             "points_redeemed_cents": points_redeemed_cents,
@@ -63764,6 +63783,9 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     A figure the owner typed survives a caller that recomputes (caregiver billing,
     grant member access, a Biofield raise), unless recompute_shipping says the owner
     cleared it in Edit Invoice (2026-11-14 review, round 1)."""
+    if _bos_orders.is_zero_total_order(order):
+        # Backstop for every caller: an auto-paid $0 order is never repriced.
+        raise CheckoutError(_bos_orders.ZERO_TOTAL_EDIT_REFUSAL)
     email = order.get("email") or ""
     if (shipping_override_cents_in in (None, "") and not recompute_shipping
             and order.get("shipping_hand_set") and not pickup):
@@ -64027,6 +64049,10 @@ def api_orders_edit(oid):
             return jsonify({"ok": False, "error": "order not found"}), 404
         if order.get("status") == "cancelled":
             return jsonify({"ok": False, "error": "a cancelled order can't be edited"}), 400
+        if _bos_orders.is_zero_total_order(order):
+            # Auto-paid at $0: an edit would raise its total under a $0 payment.
+            return jsonify({"ok": False,
+                            "error": _bos_orders.ZERO_TOTAL_EDIT_REFUSAL}), 409
         # A not-ready product may stay on an order that already holds it; adding one,
         # or raising its quantity, is refused (review round 1, 2026-10-20).
         _wl = _waitlist_increase_refusal(lines_in, order.get("items"))
@@ -64511,6 +64537,10 @@ def api_orders_grant_member_access(oid):
             return jsonify({"ok": False, "error": "order not found"}), 404
         if order.get("status") == "cancelled":
             return jsonify({"ok": False, "error": "a cancelled order can't be repriced"}), 400
+        if _bos_orders.is_zero_total_order(order):
+            # Before the grant: a $0 order earns no membership time (Glen, 2026-11-16).
+            return jsonify({"ok": False,
+                            "error": _bos_orders.ZERO_TOTAL_EDIT_REFUSAL}), 409
         email = (order.get("email") or "").strip().lower()
         if not email:
             return jsonify({"ok": False, "error": "this order has no client email to grant access to"}), 400
@@ -64777,6 +64807,10 @@ def api_orders_manual():
             stored_email = (order.get("email") or "").strip().lower()
             if not posted_email or posted_email != stored_email:
                 return jsonify({"ok": False, "error": "order customer mismatch"}), 409
+            if _bos_orders.is_zero_total_order(order):
+                # Auto-paid at $0 (Glen, 2026-11-16): still refused, with the way forward.
+                return jsonify({"ok": False,
+                                "error": _bos_orders.ZERO_TOTAL_EDIT_REFUSAL}), 409
             if (order.get("pay_status") == "paid" or
                     order.get("status") in ("cancelled", "delivered", "done")):
                 return jsonify({"ok": False, "error": "this order can no longer be updated"}), 409
@@ -64844,6 +64878,8 @@ def api_orders_manual():
             return jsonify({
                 "ok": True, "order_id": _first["id"], "external_ref": _ext_fixed,
                 "idempotent_repeat": True, "method": (body.get("method") or ""),
+                "auto_paid": (_first.get("pay_status") == "paid" and
+                              _first.get("pay_method") == _bos_orders.ZERO_TOTAL_METHOD),
                 "totals": {
                     "subtotal_cents": sum(int(i.get("line_cents") or 0) for i in _items),
                     "discount_cents": int(_first.get("discount_cents") or 0),
@@ -64950,6 +64986,11 @@ def api_orders_manual():
         # Derived from the token when the caller sent one (see above); otherwise a
         # fresh random ref, which is what every caller that sends no token still gets.
         ext = _ext_fixed or ("INH-" + uuid.uuid4().hex[:10].upper())
+        # upsert_order UPDATEs a row that already holds this reference. Only an order
+        # THIS request inserted may be auto-paid; an existing one (#310) never is.
+        _row_existed = cx.execute(
+            "SELECT 1 FROM orders WHERE source=? AND external_ref=?",
+            ("in-house", ext)).fetchone() is not None
         oid = _bos_orders.upsert_order(
             cx, source="in-house", external_ref=ext, status="proposed",
             email=(customer.get("email") or ""), name=(customer.get("name") or ""),
@@ -64983,9 +65024,21 @@ def api_orders_manual():
             from dashboard import review_gifts as _rg2
             for _g in _gift_rows:
                 _rg2.mark_fulfilled(cx, _g["id"], oid)
+        # A $0 order is paid as created (Glen, 2026-11-16), so its bottles leave the
+        # shelf count. Last, after the replace and hold steps, which may re-split
+        # shipping; it reads the stored total. No grant, no reward, no email.
+        _auto_paid = False
+        if (oid and not _row_existed and not priced.get("total_floored")
+                and not priced.get("shipping_fell_back")):
+            try:
+                _auto_paid = _bos_orders.autopay_zero_total_order(cx, oid)
+            except Exception as _e:  # noqa: BLE001 - the order itself is saved
+                print(f"[orders.manual] zero-total auto-pay skipped for #{oid}: {_e!r}",
+                      flush=True)
     finally:
         cx.close()
     return jsonify({"ok": True, "order_id": oid, "external_ref": ext,
+                    "auto_paid": _auto_paid,
                     "method": (body.get("method") or ""),
                     "totals": {"subtotal_cents": subtotal_list, "discount_cents": discount_cents,
                                "adjustment_cents": adjustment_cents,
