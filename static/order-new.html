@@ -863,7 +863,8 @@ async function loadOrderForEdit(oid){
   // Edit mode: the order already exists, so it can be emailed straight from here
   // (turns green + "Invoice Sent" once it's already gone out).
   var _sib = $("send-inv-btn");
-  _sib.style.display = "inline-block";
+  // An auto-paid $0 order is never sent: it would email the customer a $0 receipt.
+  _sib.style.display = (o.pay_method==="zero-total") ? "none" : "inline-block";
   $("print-inv-btn").style.display = "inline-block";
   $("grant-member-btn").style.display = "inline-block";
   loadReviewHold();
@@ -1091,8 +1092,11 @@ async function createInvoice(){
     // Every new in-house order is created proposed and unpaid; a repeat of the same
     // submit returns the first order, whose state is not in the reply.
     INV_STATUS = j.idempotent_repeat ? null : "proposed"; INV_PAY = j.idempotent_repeat ? null : "unpaid";
+    // A genuine $0 order is paid as it is created (Glen, 2026-11-16).
+    if (j.auto_paid){ INV_STATUS = "new"; INV_PAY = "paid"; }
     LAST_ORDER=j; showInvoice(j);
-    toast(j.warning || "Proposed invoice created", j.warning ? "error" : "ok");
+    toast(j.warning || (j.auto_paid ? "Order created and paid automatically, $0" : "Proposed invoice created"),
+          j.warning ? "error" : "ok");
     if (j.warning) alert(j.warning);   // special pricing missed: catch it before it's sent
   }catch(e){ toast(e.message,"error"); }
 }
@@ -1104,7 +1108,8 @@ function showInvoice(j){
   $("t-points").textContent = t.points_redeemed_cents? "-"+dollars(t.points_redeemed_cents):"—";
   $("t-total").textContent= dollars(t.total_cents);
   const lines=(j.lines||[]).map(l=>`  ${l.qty} × ${l.name}  @ ${dollars(l.unit_cents)} = ${dollars(l.line_cents)}`).join("\n");
-  const summary=`PROPOSED INVOICE  ${j.external_ref}\nCustomer: ${$("c-name").value} <${$("c-email").value}>\n\n${lines}\n\n`
+  const autoPaid = !!j.auto_paid;
+  const summary=`${autoPaid?'PAID ORDER':'PROPOSED INVOICE'}  ${j.external_ref}\nCustomer: ${$("c-name").value} <${$("c-email").value}>\n\n${lines}\n\n`
     +`Subtotal: ${dollars(t.subtotal_cents)}\nDiscount: ${t.discount_cents?'-'+dollars(t.discount_cents):'$0.00'}\n`
     +(t.adjustment_cents?`Adjustment: ${t.adjustment_cents<0?'−':'+'}${dollars(Math.abs(t.adjustment_cents))}\n`:'')
     +`Shipping: ${dollars(t.shipping_cents)}\nGET (absorbed): ${dollars(t.get_cents)}\n`
@@ -1113,16 +1118,22 @@ function showInvoice(j){
   const inv=$("invoice");
   // The method line is live (Glen 2026-10-03): it was a snapshot of the dropdown when the
   // card was drawn, so a Zelle payment recorded later still read "Credit card".
-  inv.innerHTML=`<h2>Proposed invoice ${esc(j.external_ref)} created</h2><pre>${esc(summary)}<span id="inv-method"></span></pre>`
+  // An auto-paid $0 order offers no Confirm, Send invoice or Record payment: sending
+  // would email the customer a $0 receipt, and there is nothing to collect.
+  inv.innerHTML=(autoPaid
+      ? `<h2>Order ${esc(j.external_ref)} created, paid automatically ($0)</h2>`
+      : `<h2>Proposed invoice ${esc(j.external_ref)} created</h2>`)
+    +`<pre>${esc(summary)}<span id="inv-method"></span></pre>`
     +`<div class="inv-actions">`
-    +`<button class="primary" id="inv-confirm-btn" onclick="lifecycle('orders.confirm',{})">Confirm</button>`
+    +(autoPaid ? `` :
+     `<button class="primary" id="inv-confirm-btn" onclick="lifecycle('orders.confirm',{})">Confirm</button>`
     +`<button class="ghost inv-send-btn${INV_SENT_AT?' inv-sent':''}" onclick="sendInvoice(this, LAST_ORDER&&LAST_ORDER.order_id)">${INV_SENT_AT?'Invoice Sent '+invSentStr(INV_SENT_AT)+' (re-send)':'Send invoice'}</button>`
     +`<button class="ghost" onclick="recordPayment()">Record payment</button>`
     +`<span id="rp-form" style="display:none;align-items:end;gap:6px;flex-wrap:wrap">`
     +`<label style="text-transform:none">Amount $ <input id="rp-amt" type="number" step="0.01" placeholder="invoice total" style="width:110px"></label>`
     +`<label style="text-transform:none">Method <select id="rp-method"></select></label>`
     +`<button class="primary" onclick="submitRecordPayment()">Record</button>`
-    +`<button class="mini" onclick="$('rp-form').style.display='none'">Cancel</button></span>`
+    +`<button class="mini" onclick="$('rp-form').style.display='none'">Cancel</button></span>`)
     +`<button class="ghost" onclick="printInvoiceFor(LAST_ORDER&&LAST_ORDER.order_id)">Print invoice</button>`
     +`<button class="mini" onclick="copyInv()">Copy</button>`
     +`<a class="mini" href="/console/orders?key=${encodeURIComponent(KEY)}" style="text-decoration:none">Open orders board</a></div>`
@@ -1155,6 +1166,7 @@ function invMsg(text, isError){
 let RECORDED_METHOD = "";
 function refreshInvMethod(){
   const el=$("inv-method"); if(!el) return;
+  if (LAST_ORDER && LAST_ORDER.auto_paid){ el.textContent = "Paid automatically, $0"; return; }
   const paid=Object.values(PAY_ROWS).filter(r=>r.kind==='payment' && r.status!=='void').map(r=>r.method||'').filter(Boolean);
   const uniq=[...new Set(paid)];
   el.textContent = uniq.length ? `Payment method: ${uniq.join(", ")} (recorded)`
@@ -1296,7 +1308,7 @@ function invSendStatus(btn, text, kind){
 // Replies that prove no email was attempted: the route or the dispatcher refused, or
 // _send_invoice_exec raised one of its checks that run before send_email. Any other
 // failure may follow a send that went, so it is reported as uncertain.
-const INV_PRE_SEND = /^(no db connection|invoice pay-link is disabled|order #\d+ (not found|is '|has no customer email))/;
+const INV_PRE_SEND = /^(no db connection|invoice pay-link is disabled|order #\d+ (not found|is '|has no customer email|was paid automatically at \$0))/;
 function invRefusedBeforeEmail(j){
   if (!j) return null;
   if (j.ok === false && j.error === "unauthorized") return "the page's access key was refused. Reopen this page from the console.";

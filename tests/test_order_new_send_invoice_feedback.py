@@ -213,7 +213,8 @@ def test_the_pre_send_list_matches_the_servers_checks_and_nothing_after():
     assert src_pattern.startswith("^(")
     pattern = re.compile(src_pattern)
     raised = re.findall(r'raise ValueError\(f?"([^"]*)"', before)
-    assert len(raised) == 5, raised
+    # 6 since 2026-11-16: an auto-paid $0 order has no invoice to send.
+    assert len(raised) == 6, raised
     for msg in raised:
         example = re.sub(r"\{oid\}", "196", msg)
         example = re.sub(r"\{[^}]*\}", "done", example)
