@@ -43,6 +43,13 @@
       color:var(--muted); text-decoration:line-through; opacity:0.7; }
     .p-compare{ margin-top:10px; font-size:13px; line-height:1.5; color:var(--muted); }
     .p-compare b{ color:var(--cream); font-weight:600; }
+    /* Reference colour of the latest powder batch (Glen, 2026-11-16). The border is the
+       --muted token, so a dark brown swatch stays visible on the dark surface and a pale
+       one on the light surface. */
+    .p-colour{ display:flex; align-items:center; gap:8px; margin-top:10px; font-size:13px;
+      line-height:1.5; color:var(--muted); }
+    .p-colour-chip{ flex:none; width:16px; height:16px; border-radius:4px;
+      border:1px solid var(--muted); }
     .p-price{ display:inline-block; margin-top:14px; font-family:var(--heading); font-weight:600; font-size:14px;
       letter-spacing:0.04em; color:var(--gold); border:1px solid rgba(212,168,67,0.4); border-radius:999px; padding:5px 16px; }
     .sp-wish{ display:inline-flex; align-items:center; gap:6px; margin-top:14px; margin-left:8px;
@@ -300,6 +307,7 @@
       <span class="p-price" id="sp-price"></span>
       <span class="p-regular hidden" id="sp-regular"></span>
       <div class="p-compare hidden" id="sp-compare"></div>
+      <div class="p-colour hidden" id="sp-colour"><span class="p-colour-chip" id="sp-colour-chip" aria-hidden="true"></span><span id="sp-colour-label"></span></div>
 
       <div id="founding-video" style="display:none;margin:1rem 0;">
         <video controls playsinline style="width:100%;border-radius:24px;"></video>
@@ -1804,6 +1812,16 @@
         cmp.appendChild(document.createTextNode(': ' + c.price + '  →  ours '));
         cmp.appendChild(ours);
         cmp.classList.remove('hidden');
+      }
+
+      // Reference colour of the latest batch: a swatch only, never the batch photo.
+      var pcol = data.powder_colour;
+      if (pcol && /^#[0-9a-fA-F]{6}$/.test(pcol.hex || '') && pcol.label){
+        document.getElementById('sp-colour-chip').style.backgroundColor = pcol.hex;
+        var pcolEl = document.getElementById('sp-colour');
+        pcolEl.title = pcol.hex;
+        document.getElementById('sp-colour-label').textContent = pcol.label;
+        pcolEl.classList.remove('hidden');
       }
 
       var wishBtn = renderWishlistButton(data);
