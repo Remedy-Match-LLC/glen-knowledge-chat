@@ -139,3 +139,19 @@ def test_the_page_renders_the_swatch_only_from_page_data():
     assert "border:1px solid var(--muted)" in rule
     assert "REFERENCE COLOUR" not in PAGE
     assert "uppercase" not in re.search(r"\.p-colour\{[^}]*\}", PAGE).group(0)
+
+
+@pytest.mark.parametrize("bad_date", ["20270101", "2027-W05-3", "2027-1-5"])
+def test_a_compact_or_week_date_is_rejected(colours, bad_date):
+    """Python's fromisoformat accepts these; the date regex must not (round 3)."""
+    colours({"reverse-age": [{"hex": "#a37850", "batch_date": bad_date}]})
+    assert PC.colour_for("reverse-age") is None
+
+
+def test_a_raising_loader_still_serves_the_page(monkeypatch, client):
+    def boom(*a, **k):
+        raise RuntimeError("loader broke")
+    monkeypatch.setattr(PC, "colour_for", boom)
+    r = client.get("/begin/product-page-data/reverse-age")
+    assert r.status_code == 200
+    assert "powder_colour" not in r.get_json()
