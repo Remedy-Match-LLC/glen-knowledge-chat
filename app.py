@@ -13422,6 +13422,16 @@ def begin_product_page_data(slug):
         "open_sections": _read_open_sections(request.cookies.get("amg_session", ""),
                                              (get_authenticated_user(request) or {}).get("email", "")),
     }
+    # Reference colour of the latest powder batch (Glen, 2026-11-16): the average colour
+    # of the batch photo, never the photo. No entry means no key, so the page is unchanged.
+    # Only these three keys leave the server.
+    try:
+        from dashboard.powder_colours import colour_for as _colour_for
+        _pc_col = _colour_for(slug)
+        if _pc_col:
+            _page_data["powder_colour"] = {k: _pc_col[k] for k in ("hex", "batch_date", "label")}
+    except Exception as _ce:
+        print(f"[powder-colour] page-data skipped: {_ce!r}", flush=True)
     try:
         from dashboard import founding as _founding2
         _launch2 = _founding2.get_launch(slug)
