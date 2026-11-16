@@ -63,8 +63,9 @@ def _valid(entry):
 
 
 def label_for(d):
-    """Sentence-case label, e.g. 'Reference colour, batch of 16 November 2026'."""
-    return f"Reference colour, batch of {d.day} {_MONTHS[d.month - 1]} {d.year}"
+    """Sentence-case label in Glen's spelling and US date order, e.g.
+    'Reference color, batch of November 16, 2026'."""
+    return f"Reference color, batch of {_MONTHS[d.month - 1]} {d.day}, {d.year}"
 
 
 def colour_for(slug, path=None):

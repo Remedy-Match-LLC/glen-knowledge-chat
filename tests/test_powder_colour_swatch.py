@@ -34,22 +34,27 @@ def colours(monkeypatch, tmp_path):
     return write
 
 
-def test_the_live_file_carries_the_first_two_batches():
-    assert PC.colour_for("reverse-age") == {
-        "hex": "#a37850", "batch_date": "2026-11-16",
-        "label": "Reference colour, batch of 16 November 2026"}
-    assert PC.colour_for("microbiome")["hex"] == "#8f8475"
+def test_the_live_file_is_valid_and_names_live_slugs():
+    """Checks the shape, never the values: production appends a line per batch."""
     products = json.load(open(os.path.join(os.path.dirname(__file__), "..", "data",
                                            "products.json")))["products"]
     live = json.load(open(PC._PATH))
-    assert [s for s in live if not s.startswith("_") and s not in products] == []
+    slugs = [s for s in live if not s.startswith("_")]
+    assert slugs, "the live file carries no batches"
+    for s in slugs:
+        assert s in products, s
+        # A colour under a retired slug would never show: the page resolves the survivor.
+        assert not products[s].get("superseded_by"), s
+        assert PC.colour_for(s) is not None, s
+        assert all(PC._valid(e) for e in live[s]), s
 
 
-def test_reverse_age_page_data_carries_the_swatch(client):
+def test_reverse_age_page_data_carries_the_swatch(colours, client):
+    colours({"reverse-age": [{"hex": "#a37850", "batch_date": "2026-11-16"}]})
     d = client.get("/begin/product-page-data/reverse-age").get_json()
     assert d["powder_colour"] == {
         "hex": "#a37850", "batch_date": "2026-11-16",
-        "label": "Reference colour, batch of 16 November 2026"}
+        "label": "Reference color, batch of November 16, 2026"}
 
 
 def test_latest_batch_wins_whatever_the_order(colours, client):
@@ -59,7 +64,7 @@ def test_latest_batch_wins_whatever_the_order(colours, client):
         {"hex": "#333333", "batch_date": "2026-12-01"}]})
     d = client.get("/begin/product-page-data/reverse-age").get_json()
     assert d["powder_colour"]["hex"] == "#222222"
-    assert d["powder_colour"]["label"] == "Reference colour, batch of 3 February 2027"
+    assert d["powder_colour"]["label"] == "Reference color, batch of February 3, 2027"
 
 
 @pytest.mark.parametrize("bad", [
@@ -105,14 +110,14 @@ def test_only_the_three_keys_leave_the_server(colours, client):
                               "photo": "/private/batch.jpg", "note": "internal"}]})
     d = client.get("/begin/product-page-data/reverse-age").get_json()
     assert d["powder_colour"] == {"hex": "#a37850", "batch_date": "2026-11-16",
-                                  "label": "Reference colour, batch of 16 November 2026"}
+                                  "label": "Reference color, batch of November 16, 2026"}
 
 
 def test_the_label_is_sentence_case_with_no_dash():
     from datetime import date
     for d in (date(2026, 11, 16), date(2027, 1, 1), date(2027, 5, 31)):
         label = PC.label_for(d)
-        assert label.startswith("Reference colour, batch of ")
+        assert label.startswith("Reference color, batch of ")
         words = label.split()
         assert words[0] == "Reference"
         # Only the first word and the month name are capitalised.
