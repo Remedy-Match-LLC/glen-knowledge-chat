@@ -15997,7 +15997,7 @@ def _order_slugs_since(cx, email, window_days):
         "SELECT items_json FROM orders WHERE lower(email)=? "
         "AND (pay_status='paid' OR status IN ('paid','shipped','delivered','done')) "
         # A $0 auto-paid order earns no reorder price (Glen, 2026-11-16).
-        "AND COALESCE(pay_method,'') NOT IN ('zero-total','no charge') "
+        "AND LOWER(TRIM(COALESCE(pay_method,''))) NOT IN ('zero-total','no charge') "
         "AND created_at>=?",
         ((email or "").strip().lower(), cutoff)).fetchall()
     out = []
@@ -63420,7 +63420,7 @@ def _earned_reorder_slugs(cx, email):
                 "lower(coalesce(status,'')) NOT IN ('cancelled','canceled','refunded') AND "
                 "lower(coalesce(pay_status,'')) <> 'refunded' AND "
                 # A $0 auto-paid order earns no reward price (Glen, 2026-11-16).
-                "coalesce(pay_method,'') NOT IN ('zero-total','no charge')",
+                "lower(trim(coalesce(pay_method,''))) NOT IN ('zero-total','no charge')",
                 tuple(sorted(emails))).fetchall():
             try:
                 items = json.loads((r["items_json"] if isinstance(r, _sqlite3.Row) else r[0]) or "[]")
@@ -64898,6 +64898,10 @@ def api_orders_manual():
                 "idempotent_repeat": True, "method": (body.get("method") or ""),
                 "auto_paid": (_first.get("pay_status") == "paid" and
                               _first.get("pay_method") == _bos_orders.ZERO_TOTAL_METHOD),
+                # A retry keeps the first reply's instruction (review round 1).
+                "settle_with_no_charge": bool(
+                    _bos_orders.wants_already_taken(body.get("already_taken"))
+                    and _bos_orders.can_settle_as_no_charge(_first)),
                 "totals": {
                     "subtotal_cents": sum(int(i.get("line_cents") or 0) for i in _items),
                     "discount_cents": int(_first.get("discount_cents") or 0),
@@ -65052,7 +65056,7 @@ def api_orders_manual():
         # Bottles already taken off the shelf by hand (body "already_taken") must not
         # be taken again, and the auto-pay cannot tell. Such an order stays proposed
         # for the owner's No charge action, which records them as held (2026-11-16).
-        _defer_to_no_charge = body.get("already_taken") not in (None, False, "", [])
+        _defer_to_no_charge = _bos_orders.wants_already_taken(body.get("already_taken"))
         if (oid and not _row_existed and not _defer_to_no_charge
                 and not priced.get("total_floored")
                 and not priced.get("shipping_fell_back")):
@@ -65061,12 +65065,21 @@ def api_orders_manual():
             except Exception as _e:  # noqa: BLE001 - the order itself is saved
                 print(f"[orders.manual] zero-total auto-pay skipped for #{oid}: {_e!r}",
                       flush=True)
+        # Only when the No charge action would accept the order as stored: a new $0
+        # order with no credit or points behind its $0 (review round 1).
+        _settle_flag = False
+        if _defer_to_no_charge and oid and not _row_existed and not _auto_paid:
+            try:
+                _settle_flag = _bos_orders.can_settle_as_no_charge(
+                    _bos_orders.get_order(cx, oid))
+            except Exception as _e:  # noqa: BLE001
+                print(f"[orders.manual] no-charge check skipped for #{oid}: {_e!r}",
+                      flush=True)
     finally:
         cx.close()
     return jsonify({"ok": True, "order_id": oid, "external_ref": ext,
                     "auto_paid": _auto_paid,
-                    "settle_with_no_charge": bool(_defer_to_no_charge and oid
-                                                  and not _auto_paid),
+                    "settle_with_no_charge": _settle_flag,
                     "method": (body.get("method") or ""),
                     "totals": {"subtotal_cents": subtotal_list, "discount_cents": discount_cents,
                                "adjustment_cents": adjustment_cents,

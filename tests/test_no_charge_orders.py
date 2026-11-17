@@ -508,7 +508,7 @@ def test_already_taken_raises_an_existing_row_with_less_taken(env):
 
 # ── After #2293: a $0 order with bottles already taken waits for No charge ─────
 
-@pytest.mark.parametrize("taken", [["microbiome"], True, "all"])
+@pytest.mark.parametrize("taken", [["microbiome"], True, "all", 1, "yes"])
 def test_already_taken_on_create_skips_the_auto_pay(manual, taken):
     """Auto-pay would take a bottle money already took by hand (2026-11-16)."""
     appmod, db, holds = manual
@@ -523,7 +523,7 @@ def test_already_taken_on_create_skips_the_auto_pay(manual, taken):
     assert o["status"] == "proposed" and o.get("pay_status") != "paid"
 
 
-@pytest.mark.parametrize("taken", [None, [], "", False])
+@pytest.mark.parametrize("taken", [None, [], "", False, "false", "FALSE", " No ", "none", 0, [""]])
 def test_without_already_taken_a_bottle_order_is_auto_paid(manual, taken):
     appmod, db, holds = manual
     extra = {} if taken is None else {"already_taken": taken}
@@ -533,3 +533,155 @@ def test_without_already_taken_a_bottle_order_is_auto_paid(manual, taken):
     with sqlite3.connect(db) as cx:
         cx.row_factory = sqlite3.Row
         assert O.get_order(cx, j["order_id"])["pay_method"] == "zero-total"
+
+
+# ── Review rounds 1 and 2 ──────────────────────────────────────────────────────
+
+def test_an_items_edit_after_the_read_is_not_settled_over(env, monkeypatch):
+    """The markers are written from the items read. An edit landing after that read
+    would leave them describing the wrong lines, so the guard refuses the settle."""
+    cx = env["cx"]
+    SC.set_count(cx, "lymph-flow", 10, who="t", reason="shelf")
+    SC.set_count(cx, "microbiome", 10, who="t", reason="shelf")
+    oid = _order(cx, [{"slug": "lymph-flow", "qty": 1}])
+    stale = O.get_order(cx, oid)
+    stale_json = cx.execute("SELECT items_json FROM orders WHERE id=?", (oid,)).fetchone()[0]
+    real = O.get_order
+
+    def _get(c, i):
+        return dict(stale)
+    monkeypatch.setattr(O, "get_order", _get)
+    # The editor lands between the item read and the guarded UPDATE.
+    orig = cx.execute
+    state = {"done": False}
+
+    class _Cx:
+        def __getattr__(self, n):
+            return getattr(cx, n)
+
+        def execute(self, sql, *a):
+            out = orig(sql, *a)
+            if "SELECT COALESCE(items_json" in sql and not state["done"]:
+                state["done"] = True
+                orig("UPDATE orders SET items_json=? WHERE id=?",
+                     ('[{"slug": "microbiome", "qty": 2}]', oid))
+            return out
+    with pytest.raises(ValueError, match="changed while"):
+        O.mark_no_charge(_Cx(), oid, already_taken=True)
+    monkeypatch.setattr(O, "get_order", real)
+    o = real(cx, oid)
+    assert o["pay_status"] != "paid"
+    assert _moves(cx, oid) == []
+    assert SC.get_count(cx, "lymph-flow") == 10 and SC.get_count(cx, "microbiome") == 10
+    assert stale_json != '[{"slug": "microbiome", "qty": 2}]'
+
+
+def test_a_retry_after_a_cancel_returns_nothing_twice(env, monkeypatch):
+    """A retry read the order as paid; a cancel lands before its write. The guard
+    sees the cancel and refuses, so the markers are not raised again."""
+    cx = env["cx"]
+    SC.set_count(cx, "lymph-flow", 10, who="t", reason="shelf")
+    oid = _order(cx, [{"slug": "lymph-flow", "qty": 1}])
+    O.mark_no_charge(cx, oid, already_taken=True)
+    stale = O.get_order(cx, oid)
+    O.set_order_status(cx, oid, "cancelled")
+    after_cancel = SC.get_count(cx, "lymph-flow")
+    real = O.get_order
+    monkeypatch.setattr(O, "get_order",
+                        lambda c, i: dict(stale) if i == oid else real(c, i))
+    with pytest.raises(ValueError, match="changed while"):
+        O.mark_no_charge(cx, oid, already_taken=True)
+    monkeypatch.setattr(O, "get_order", real)
+    assert SC.get_count(cx, "lymph-flow") == after_cancel
+
+
+@pytest.mark.parametrize("method", ["no charge", "No Charge", " zero-total "])
+def test_record_payment_refuses_a_free_method(env, method):
+    cx = env["cx"]
+    oid = _order(cx, [{"slug": "lymph-flow", "qty": 1}], points_redeemed_cents=4500)
+    with pytest.raises(ValueError, match="not a payment method"):
+        O._record_payment_exec({"order_id": oid, "method": method}, {"cx": cx})
+    assert O.get_order(cx, oid)["pay_status"] != "paid"
+
+
+def test_the_flag_is_not_raised_for_an_order_no_charge_would_refuse(manual):
+    appmod, db, holds = manual
+    r = _manual(appmod, [{"slug": "microbiome", "qty": 1, "unit_cents": 4500}],
+                already_taken=True)
+    j = r.get_json()
+    assert j["settle_with_no_charge"] is False
+
+
+def test_a_retried_create_keeps_the_flag(manual):
+    appmod, db, holds = manual
+    lines = [{"slug": "microbiome", "qty": 1, "unit_cents": 0}]
+    first = _manual(appmod, lines, already_taken=True, idempotency_key="k-1").get_json()
+    again = _manual(appmod, lines, already_taken=True, idempotency_key="k-1").get_json()
+    assert again.get("idempotent_repeat") is True, again
+    assert first["settle_with_no_charge"] is True and again["settle_with_no_charge"] is True
+
+
+def test_history_sql_ignores_case_and_spaces_in_the_gift_method():
+    import re as _re
+    src = Path(__file__).resolve().parents[1]
+    for rel in ("app.py", "dashboard/scan_reward.py"):
+        text = (src / rel).read_text()
+        hits = _re.findall(r"(?i)(\S+)\s+NOT IN \('zero-total','no charge'\)", text)
+        assert hits, rel
+        assert all(h.lstrip("\"'(+ ").lower().startswith("lower(trim(") for h in hits), (rel, hits)
+
+
+def test_a_retried_create_of_a_priced_order_does_not_raise_the_flag(manual):
+    appmod, db, holds = manual
+    lines = [{"slug": "microbiome", "qty": 1, "unit_cents": 4500}]
+    _manual(appmod, lines, already_taken=True, idempotency_key="k-45")
+    again = _manual(appmod, lines, already_taken=True, idempotency_key="k-45").get_json()
+    assert again.get("idempotent_repeat") is True, again
+    assert again["settle_with_no_charge"] is False
+
+
+def test_a_resumed_retry_refuses_when_items_changed(env, monkeypatch):
+    """A settled order whose items changed after the retry's read is not re-marked."""
+    cx = env["cx"]
+    SC.set_count(cx, "lymph-flow", 10, who="t", reason="shelf")
+    oid = _order(cx, [{"slug": "lymph-flow", "qty": 1}])
+    O.mark_no_charge(cx, oid, already_taken=True)
+    before = _moves(cx, oid)
+    orig = cx.execute
+
+    class _Cx:
+        def __getattr__(self, n):
+            return getattr(cx, n)
+
+        def execute(self, sql, *a):
+            out = orig(sql, *a)
+            if "SELECT COALESCE(items_json" in sql:
+                orig("UPDATE orders SET items_json=? WHERE id=?",
+                     ('[{"slug": "lymph-flow", "qty": 3}]', oid))
+            return out
+    with pytest.raises(ValueError, match="changed while"):
+        O.mark_no_charge(_Cx(), oid, already_taken=True)
+    assert _moves(cx, oid) == before
+
+
+def test_markers_come_from_the_pinned_read(env, monkeypatch):
+    """An edit between get_order and the pinned read: the markers follow the pinned
+    lines, never the stale ones, so no removed line is put back on the shelf."""
+    cx = env["cx"]
+    SC.set_count(cx, "lymph-flow", 10, who="t", reason="shelf")
+    SC.set_count(cx, "microbiome", 10, who="t", reason="shelf")
+    oid = _order(cx, [{"slug": "lymph-flow", "qty": 1}])
+    stale = O.get_order(cx, oid)
+    cx.execute("UPDATE orders SET items_json=? WHERE id=?",
+               ('[{"slug": "microbiome", "qty": 2}]', oid))
+    cx.commit()
+    real = O.get_order
+    reads = []
+
+    def _get(c, i):
+        reads.append(i)
+        return dict(stale) if len(reads) == 1 else real(c, i)
+    monkeypatch.setattr(O, "get_order", _get)
+    O.mark_no_charge(cx, oid, already_taken=True)
+    assert _moves(cx, oid) == [("microbiome", 2, 2)]
+    assert SC.get_count(cx, "lymph-flow") == 10 and SC.get_count(cx, "microbiome") == 10

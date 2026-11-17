@@ -252,7 +252,7 @@ def _purchase_times(cx, ids):
         f"AND (pay_status='paid' OR status IN ('paid','shipped','delivered','done')) "
         f"AND COALESCE(status,'')<>'cancelled'"
         # A $0 auto-paid order is not a purchase for the referral hold (2026-11-16).
-        + (" AND COALESCE(pay_method,'') NOT IN ('zero-total','no charge')"
+        + (" AND LOWER(TRIM(COALESCE(pay_method,''))) NOT IN ('zero-total','no charge')"
            if _has_column(cx, "orders", "pay_method") else ""), vals).fetchall()
     return [r[0] for r in rows if r[0]]
 

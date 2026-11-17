@@ -1764,6 +1764,10 @@ def _record_payment_exec(params, ctx):
     if order.get("pay_status") == "paid":
         raise ValueError(f"order #{oid} is already marked paid")
     method = str(params.get("method", "")).strip()
+    if method.lower() in FREE_METHODS:
+        # These mark a free order and switch off the points redeem and the paid-order
+        # hooks. Only their own actions may write them (review round 1).
+        raise ValueError(f"'{method}' is not a payment method. Use Settle as no charge.")
     amount_cents = int(params.get("amount_cents") or order.get("total_cents") or 0)
     set_order_payment(cx, oid, method=method, amount_cents=amount_cents)
     # Settle points now that it's paid: redeem applied points + earn (idempotent).
@@ -1819,11 +1823,40 @@ action(key="orders.record_payment", module="orders", title="Record payment",
        description="Record payment on a proposed/confirmed invoice or an unpaid Cart "
                    "order (e.g. in-person check/cash) and move it into fulfillment.",
        risk_tier=LOW_WRITE, permission=(OWNER,))(_record_payment_exec)
+_NO_TAKEN_WORDS = ("", "false", "no", "0", "none")
+
+
+def wants_already_taken(value):
+    """True when a request's already_taken names any line: True, "all", a slug or a
+    non-empty list. False, 0, blank and the words false, no or none mean nothing was
+    taken by hand (review round 1)."""
+    if value is None or isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, (int, float)):
+        return value != 0          # a non-zero number defers; the settle then asks for slugs
+    if isinstance(value, str):
+        return value.strip().lower() not in _NO_TAKEN_WORDS
+    if isinstance(value, (list, tuple)):
+        return any(str(v or "").strip() for v in value)
+    return True
+
+
+def can_settle_as_no_charge(order):
+    """Whether mark_no_charge would accept this order as it stands: unpaid, live, $0,
+    not GrooveKart, and not made $0 by credit or points."""
+    o = order or {}
+    return (o.get("pay_status") != "paid" and (o.get("status") or "") != "cancelled"
+            and int(o.get("total_cents") or 0) == 0
+            and (o.get("source") or "") != "groovekart"
+            and int(o.get("ship_credit_applied_cents") or 0) == 0
+            and int(o.get("points_redeemed_cents") or 0) == 0)
+
+
 def _no_charge_taken_slugs(order, already_taken, units):
     """The slugs whose bottles were already taken off the shelf by hand. `already_taken`
     is True or "all" for every counted line, else a list of slugs. A slug that is not a
     counted line of this order is refused, so a typo cannot pass unnoticed."""
-    if already_taken in (None, False, "", []):
+    if not wants_already_taken(already_taken):
         return []
     if already_taken is True or (isinstance(already_taken, str)
                                  and already_taken.strip().lower() == "all"):
@@ -1908,15 +1941,31 @@ def mark_no_charge(cx, order_id, *, already_taken=None, catalog=None):
             or int(order.get("points_redeemed_cents") or 0) > 0):
         raise ValueError(f"order #{oid} is $0 because credit or points cover it; "
                          "record it as a payment so the credit is spent")
-    units = _stock.units_for_items(order.get("items") or [], _stock._catalog(catalog))
+    # The markers are written from these items, so the guarded UPDATE below also pins
+    # them: an edit that lands after this read refuses the settle (review round 2).
+    _raw = cx.execute("SELECT COALESCE(items_json,'') FROM orders WHERE id=?",
+                      (oid,)).fetchone()
+    items_seen = str(_raw[0]) if _raw else ""
+    # Units come from the same read the guard pins, so the markers and the pin
+    # describe one set of lines (review round 3).
+    units = _stock.units_for_items(_stock._parse_items(items_seen), _stock._catalog(catalog))
     taken = _no_charge_taken_slugs(order, already_taken, units)
     now = _now()
+    if taken:
+        _stock.ensure_tables(cx)   # before the lock: table setup must not end the transaction
     try:
         changed = []
-        if taken:
-            _stock.ensure_tables(cx)
-            changed = _no_charge_mark_taken(cx, oid, taken, units, now)
-        if not resumed:
+        # The order row is locked first (a row lock on Postgres, the write lock on
+        # SQLite), so a cancel or edit cannot land between the guard and the markers.
+        if resumed:
+            cur = cx.execute(
+                "UPDATE orders SET updated_at=updated_at WHERE id=? "
+                "AND COALESCE(pay_status,'')='paid' "
+                "AND LOWER(TRIM(COALESCE(pay_method,'')))=? "
+                "AND COALESCE(status,'')<>'cancelled' "
+                "AND COALESCE(items_json,'')=?",
+                (oid, NO_CHARGE_METHOD, items_seen))
+        else:
             cur = cx.execute(
                 "UPDATE orders SET status=CASE WHEN status IN ('proposed','confirmed') "
                 "THEN 'new' ELSE status END, pay_status='paid', pay_method=?, "
@@ -1925,10 +1974,13 @@ def mark_no_charge(cx, order_id, *, already_taken=None, catalog=None):
                 "AND COALESCE(status,'')<>'cancelled' AND COALESCE(total_cents,0)=0 "
                 "AND COALESCE(ship_credit_applied_cents,0)=0 "
                 "AND COALESCE(points_redeemed_cents,0)=0 "
-                "AND COALESCE(source,'')<>'groovekart'",
-                (NO_CHARGE_METHOD, now, now, oid))
-            if cur.rowcount != 1:
-                raise ValueError(f"order #{oid} changed while it was being settled")
+                "AND COALESCE(source,'')<>'groovekart' "
+                "AND COALESCE(items_json,'')=?",
+                (NO_CHARGE_METHOD, now, now, oid, items_seen))
+        if cur.rowcount != 1:
+            raise ValueError(f"order #{oid} changed while it was being settled")
+        if taken:
+            changed = _no_charge_mark_taken(cx, oid, taken, units, now)
         cx.commit()
     except Exception:
         _safe_rollback(cx)
