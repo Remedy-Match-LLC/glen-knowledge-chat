@@ -11723,6 +11723,8 @@ def _credit_course_referral(cx, ref, buyer_email, product_cents, order_ref):
 def _settle_referral(order, *, order_ref: str) -> None:
     """Credit the referrer (points or cash) on a full-price referred sale.
     Idempotent per order_ref. Best-effort -- never raises."""
+    if _bos_orders.is_no_charge(order):
+        return   # a no-charge gift earns no referral or scan reward (Glen, 2026-11-09)
     _scan_reward_on_paid_order(order, order_ref)
     if not _rewards_enabled():
         return
@@ -11852,7 +11854,7 @@ def _raise_settlement_skip_todo(order_ref, kind, skipped):
 def _settle_referrer_reward(cx, order, order_ref):
     """On a paid referral order: credit the referrer pct% of the referee's product spend.
     Returns cents credited (0 if none). Idempotent per referee; never raises into the caller."""
-    if not _REFERRALS:
+    if not _REFERRALS or _bos_orders.is_no_charge(order):
         return 0
     from dashboard import referrals as _rf, points as _points
     _points.init_points_table(cx)
@@ -11911,6 +11913,8 @@ def _settle_order_points(order, *, order_ref):
     Idempotent per order_ref. Best-effort -- never raises into the return handler.
     Buyer earn is suppressed on an affiliate-acquired first order (REWARDS_TIERS_ENABLED)."""
     from dashboard import points as _points
+    if _bos_orders.is_no_charge(order):
+        return   # a no-charge gift earns no points (Glen, 2026-11-09)
     email = (order.get("email") or "").strip().lower()
     if not email:
         return
@@ -12235,8 +12239,9 @@ def _grant_membership_line_dep(order):
     _grant_group_bundle's convention -- deps must not share the caller's cx) and
     delegates to _grant_membership_line_on_paid, which is idempotent per order_ref
     and commits its own write. No-op (returns "none") when there's no membership
-    line, so it's safe to call for every paid order."""
-    if not order:
+    line, so it's safe to call for every paid order. A no-charge gift grants nothing:
+    no membership, no Biofield month, no supply months (Glen, 2026-11-09)."""
+    if not order or _bos_orders.is_no_charge(order):
         return
     # Cheap pre-check BEFORE opening a connection: the card path already gates on
     # cart_has_membership_tier before invoking the grant, so mirror it here -- most
@@ -15992,7 +15997,7 @@ def _order_slugs_since(cx, email, window_days):
         "SELECT items_json FROM orders WHERE lower(email)=? "
         "AND (pay_status='paid' OR status IN ('paid','shipped','delivered','done')) "
         # A $0 auto-paid order earns no reorder price (Glen, 2026-11-16).
-        "AND COALESCE(pay_method,'') <> 'zero-total' "
+        "AND LOWER(TRIM(COALESCE(pay_method,''))) NOT IN ('zero-total','no charge') "
         "AND created_at>=?",
         ((email or "").strip().lower(), cutoff)).fetchall()
     out = []
@@ -19899,13 +19904,16 @@ def _supply_cap_end(cx, email):
     if not email:
         return None
     rows = cx.execute(
-        "SELECT items_json, status, pay_status, paid_at, created_at, pay_method FROM orders "
+        "SELECT items_json, status, pay_status, paid_at, created_at, "
+        "COALESCE(pay_method,'') FROM orders "
         "WHERE lower(email)=lower(?) AND status!='cancelled'", (email,)).fetchall()
     latest = None
     for r in rows:
         items_json, status, pay_status, paid_at, created_at = (r[0], r[1], r[2], r[3], r[4])
-        if (r[5] or "") == _bos_orders.ZERO_TOTAL_METHOD:
-            continue          # a $0 order never anchors the refill cap (2026-11-16)
+        # A $0 order anchors no supply months, whether the auto-pay settled it
+        # (2026-11-16) or the operator marked it no charge (2026-11-09).
+        if _bos_orders.is_free_order({"pay_method": r[5]}):
+            continue
         try:
             items = json.loads(items_json or "[]")
         except Exception:
@@ -21412,7 +21420,7 @@ def _qualifying_biofield_order(cx, email):
     for o in sorted(rows, key=lambda r: str(r.get("created_at") or "")):
         if (o.get("status") or "") == "cancelled":
             continue
-        if _bos_orders.is_zero_total_order(o):
+        if _bos_orders.is_free_order(o):
             continue          # a $0 order never earns a Biofield month (2026-11-16)
         for it in (o.get("items") or []):
             if (it.get("slug") or "").strip() != "biofield-analysis":
@@ -21452,7 +21460,7 @@ def _extend_biofield_month_on_delivery(cx, email, delivered_order):
         if not (email and _order_has_remedy_line(delivered_order)):
             return "none"
         # A $0 order paid automatically earns no membership time (Glen, 2026-11-16).
-        if (delivered_order or {}).get("pay_method") == _bos_orders.ZERO_TOTAL_METHOD:
+        if _bos_orders.is_free_order(delivered_order):
             return "none"
         bo = _qualifying_biofield_order(cx, email)
         if not bo:
@@ -63412,7 +63420,7 @@ def _earned_reorder_slugs(cx, email):
                 "lower(coalesce(status,'')) NOT IN ('cancelled','canceled','refunded') AND "
                 "lower(coalesce(pay_status,'')) <> 'refunded' AND "
                 # A $0 auto-paid order earns no reward price (Glen, 2026-11-16).
-                "coalesce(pay_method,'') <> 'zero-total'",
+                "lower(trim(coalesce(pay_method,''))) NOT IN ('zero-total','no charge')",
                 tuple(sorted(emails))).fetchall():
             try:
                 items = json.loads((r["items_json"] if isinstance(r, _sqlite3.Row) else r[0]) or "[]")
@@ -63793,9 +63801,9 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     A figure the owner typed survives a caller that recomputes (caregiver billing,
     grant member access, a Biofield raise), unless recompute_shipping says the owner
     cleared it in Edit Invoice (2026-11-14 review, round 1)."""
-    if _bos_orders.is_zero_total_order(order):
-        # Backstop for every caller: an auto-paid $0 order is never repriced.
-        raise CheckoutError(_bos_orders.ZERO_TOTAL_EDIT_REFUSAL)
+    if _bos_orders.is_free_order(order):
+        # Backstop for every caller: a settled $0 order is never repriced.
+        raise CheckoutError(_bos_orders.free_order_edit_refusal(order))
     email = order.get("email") or ""
     if (shipping_override_cents_in in (None, "") and not recompute_shipping
             and order.get("shipping_hand_set") and not pickup):
@@ -64059,10 +64067,10 @@ def api_orders_edit(oid):
             return jsonify({"ok": False, "error": "order not found"}), 404
         if order.get("status") == "cancelled":
             return jsonify({"ok": False, "error": "a cancelled order can't be edited"}), 400
-        if _bos_orders.is_zero_total_order(order):
+        if _bos_orders.is_free_order(order):
             # Auto-paid at $0: an edit would raise its total under a $0 payment.
             return jsonify({"ok": False,
-                            "error": _bos_orders.ZERO_TOTAL_EDIT_REFUSAL}), 409
+                            "error": _bos_orders.free_order_edit_refusal(order)}), 409
         # A not-ready product may stay on an order that already holds it; adding one,
         # or raising its quantity, is refused (review round 1, 2026-10-20).
         _wl = _waitlist_increase_refusal(lines_in, order.get("items"))
@@ -64547,10 +64555,10 @@ def api_orders_grant_member_access(oid):
             return jsonify({"ok": False, "error": "order not found"}), 404
         if order.get("status") == "cancelled":
             return jsonify({"ok": False, "error": "a cancelled order can't be repriced"}), 400
-        if _bos_orders.is_zero_total_order(order):
+        if _bos_orders.is_free_order(order):
             # Before the grant: a $0 order earns no membership time (Glen, 2026-11-16).
             return jsonify({"ok": False,
-                            "error": _bos_orders.ZERO_TOTAL_EDIT_REFUSAL}), 409
+                            "error": _bos_orders.free_order_edit_refusal(order)}), 409
         email = (order.get("email") or "").strip().lower()
         if not email:
             return jsonify({"ok": False, "error": "this order has no client email to grant access to"}), 400
@@ -64817,10 +64825,10 @@ def api_orders_manual():
             stored_email = (order.get("email") or "").strip().lower()
             if not posted_email or posted_email != stored_email:
                 return jsonify({"ok": False, "error": "order customer mismatch"}), 409
-            if _bos_orders.is_zero_total_order(order):
+            if _bos_orders.is_free_order(order):
                 # Auto-paid at $0 (Glen, 2026-11-16): still refused, with the way forward.
                 return jsonify({"ok": False,
-                                "error": _bos_orders.ZERO_TOTAL_EDIT_REFUSAL}), 409
+                                "error": _bos_orders.free_order_edit_refusal(order)}), 409
             if (order.get("pay_status") == "paid" or
                     order.get("status") in ("cancelled", "delivered", "done")):
                 return jsonify({"ok": False, "error": "this order can no longer be updated"}), 409
@@ -64890,6 +64898,10 @@ def api_orders_manual():
                 "idempotent_repeat": True, "method": (body.get("method") or ""),
                 "auto_paid": (_first.get("pay_status") == "paid" and
                               _first.get("pay_method") == _bos_orders.ZERO_TOTAL_METHOD),
+                # A retry keeps the first reply's instruction (review round 1).
+                "settle_with_no_charge": bool(
+                    _bos_orders.wants_already_taken(body.get("already_taken"))
+                    and _bos_orders.can_settle_as_no_charge(_first)),
                 "totals": {
                     "subtotal_cents": sum(int(i.get("line_cents") or 0) for i in _items),
                     "discount_cents": int(_first.get("discount_cents") or 0),
@@ -65025,8 +65037,11 @@ def api_orders_manual():
                 _took_hold = _replace_order(cx, _left_shipments, oid)
             except Exception as _e:
                 print(f"[replace] swap skipped for #{oid}: {_e!r}", flush=True)
+        # A $0 order that no credit paid for is a gift (Glen, 2026-11-09). It is not
+        # held for a household parcel and opens no group, so no caregiver invite goes out.
+        _gift_order = (total_cents == 0 and not _sc_apply and not points_redeemed_cents)
         try:
-            if not _took_hold:
+            if not _took_hold and not _gift_order:
                 _hold_new_order_and_invite(cx, oid)
         except Exception as _e:
             print(f"[hold] hold+invite skipped: {_e!r}", flush=True)
@@ -65038,17 +65053,33 @@ def api_orders_manual():
         # shelf count. Last, after the replace and hold steps, which may re-split
         # shipping; it reads the stored total. No grant, no reward, no email.
         _auto_paid = False
-        if (oid and not _row_existed and not priced.get("total_floored")
+        # Bottles already taken off the shelf by hand (body "already_taken") must not
+        # be taken again, and the auto-pay cannot tell. Such an order stays proposed
+        # for the owner's No charge action, which records them as held (2026-11-16).
+        _defer_to_no_charge = _bos_orders.wants_already_taken(body.get("already_taken"))
+        if (oid and not _row_existed and not _defer_to_no_charge
+                and not priced.get("total_floored")
                 and not priced.get("shipping_fell_back")):
             try:
                 _auto_paid = _bos_orders.autopay_zero_total_order(cx, oid)
             except Exception as _e:  # noqa: BLE001 - the order itself is saved
                 print(f"[orders.manual] zero-total auto-pay skipped for #{oid}: {_e!r}",
                       flush=True)
+        # Only when the No charge action would accept the order as stored: a new $0
+        # order with no credit or points behind its $0 (review round 1).
+        _settle_flag = False
+        if _defer_to_no_charge and oid and not _row_existed and not _auto_paid:
+            try:
+                _settle_flag = _bos_orders.can_settle_as_no_charge(
+                    _bos_orders.get_order(cx, oid))
+            except Exception as _e:  # noqa: BLE001
+                print(f"[orders.manual] no-charge check skipped for #{oid}: {_e!r}",
+                      flush=True)
     finally:
         cx.close()
     return jsonify({"ok": True, "order_id": oid, "external_ref": ext,
                     "auto_paid": _auto_paid,
+                    "settle_with_no_charge": _settle_flag,
                     "method": (body.get("method") or ""),
                     "totals": {"subtotal_cents": subtotal_list, "discount_cents": discount_cents,
                                "adjustment_cents": adjustment_cents,
