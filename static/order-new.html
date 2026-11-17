@@ -356,8 +356,11 @@ async function loadTypedBottleTypes(){
   try{
     const r=await fetch("/api/orders/typed-items",{headers:HEADERS}); const j=await r.json();
     if(!j.ok) return;
-    $("new-item-bt").innerHTML=(j.bottle_types||[]).map(t=>
-      `<option value="${esc(t)}"${t==="30 g"?" selected":""}>${esc(t)}</option>`).join("");
+    // Never default to "service": a bottle left on it would ship free (review round 1).
+    const bts=(j.bottle_types||[]);
+    const pick=bts.includes("30 g")?"30 g":(bts.find(t=>t!=="service")||"");
+    $("new-item-bt").innerHTML=bts.map(t=>
+      `<option value="${esc(t)}"${t===pick?" selected":""}>${esc(t)}</option>`).join("");
   }catch(e){ /* the box just has no packages; the server refuses an add without one */ }
 }
 async function addNewItem(btn){
