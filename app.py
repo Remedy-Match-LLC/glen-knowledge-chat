@@ -10667,6 +10667,10 @@ def _order_physical_units(order):
             items = []
     try:
         catalog = {p.get("slug"): p for p in _catalog_products()}
+        # Typed New Order items are not in the catalog: add them, so a typed service
+        # counts as nothing to pack (2026-11-16).
+        catalog.update({k: v for k, v in _typed_products_in(items).items()
+                        if k not in catalog})
         return _bos_orders.physical_units(items, catalog)
     except Exception:
         return 0
@@ -10688,6 +10692,10 @@ def _order_pack_breakdown(order):
             items = []
     try:
         catalog = {p.get("slug"): p for p in _catalog_products()}
+        # Typed New Order items are not in the catalog: add them, so a typed service
+        # counts as nothing to pack (2026-11-16).
+        catalog.update({k: v for k, v in _typed_products_in(items).items()
+                        if k not in catalog})
         return _bos_orders.pack_breakdown(items, catalog)
     except Exception:
         return {"bottle_units": 0, "cello_pack_units": 0}
@@ -10784,7 +10792,10 @@ def _typed_item_product(slug):
         return None
     out = {"slug": t["slug"], "name": t["name"], "price_cents": t["price_cents"],
            "typed": True, "volume_eligible": False}
-    if t.get("bottle_type"):
+    if t.get("bottle_type") == _TYPED_SERVICE:
+        # A service has no package: never packed, weighed or shipped (2026-11-16).
+        out["service"] = True
+    elif t.get("bottle_type"):
         out["bottle_type"] = t["bottle_type"]
     return out
 
@@ -67784,12 +67795,19 @@ def bos_products_list():
     return jsonify({"products": _prods})
 
 
+# The package a typed service carries: no box, no weight, no shipping (money, for the
+# "Remedy Match" line, 2026-11-16). Listed first so it is never mistaken for a bottle.
+_TYPED_SERVICE = "service"
+
+
 def _typed_item_bottle_types():
     """Package types a typed item may carry: the ones catalog products already use,
-    except own-box, which ships at a flat rate a typed item does not carry."""
-    return sorted({(p.get("bottle_type") or "").strip()
-                   for p in (_PRODUCTS.get("products") or {}).values()
-                   if (p.get("bottle_type") or "").strip()} - {"own-box"})
+    except own-box, which ships at a flat rate a typed item does not carry, plus
+    "service" for an item that ships nothing."""
+    return [_TYPED_SERVICE] + sorted(
+        {(p.get("bottle_type") or "").strip()
+         for p in (_PRODUCTS.get("products") or {}).values()
+         if (p.get("bottle_type") or "").strip()} - {"own-box", _TYPED_SERVICE})
 
 
 @app.route("/api/orders/typed-items", methods=["GET", "POST"])

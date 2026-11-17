@@ -388,3 +388,62 @@ def test_the_shipping_preview_packs_a_typed_item():
         assert r.status_code == 200, r.data
         return r.get_json()["shipping_cents"]
     assert quote(it["slug"]) == quote("pterostilbene-pure-powder") > 0
+
+
+# ── A typed service (money, 2026-11-16: the "Remedy Match" line) ───────────────
+
+def test_service_is_offered_first_and_accepted():
+    types = _client().get("/api/orders/typed-items", headers=HDR).get_json()["bottle_types"]
+    assert types[0] == "service" and types.count("service") == 1
+    it = _new("Typed Service", cents=10000, bt="service")
+    assert it["bottle_type"] == "service"
+
+
+def test_a_typed_service_ships_nothing():
+    """Alone it costs no postage; beside a bottle it adds none."""
+    svc = _new("Typed Svc Ship", cents=10000, bt="service")
+    kw = dict(email=EMAIL, pickup=False, ship=SHIP, strict_packaging=True)
+    alone = app_mod._price_inhouse_invoice([{"slug": svc["slug"], "qty": 1}], **kw)
+    assert alone["shipping_cents"] == 0
+    jar = [{"slug": "pterostilbene-pure-powder", "qty": 1}]
+    with_svc = app_mod._price_inhouse_invoice(jar + [{"slug": svc["slug"], "qty": 1}], **kw)
+    without = app_mod._price_inhouse_invoice(jar, **kw)
+    assert with_svc["shipping_cents"] == without["shipping_cents"] > 0
+    assert _recs(with_svc)[svc["slug"]].get("service") is True
+
+
+def test_a_typed_service_at_zero_keeps_a_zero_total():
+    """At $0 on the line, a service order totals $0, so No charge can settle it."""
+    svc = _new("Typed Svc Zero", cents=10000, bt="service")
+    out = app_mod._price_inhouse_invoice([{"slug": svc["slug"], "qty": 1, "unit_cents": 0}],
+                                         email=EMAIL, pickup=False, ship=SHIP,
+                                         strict_packaging=True)
+    assert out["shipping_cents"] == 0
+    assert sum(int(r.get("line_cents") or 0) for r in out["items_rec"]) == 0
+    # The amount payable, and the two flags that stop the $0 auto-pay (round 2).
+    assert out["total_cents"] == 0
+    assert out["shipping_fell_back"] is False and out["total_floored"] is False
+
+
+def test_a_bottle_package_is_still_not_a_service():
+    it = _new("Typed Jar", cents=4000, bt="30 g")
+    p = app_mod._typed_item_product(it["slug"])
+    assert not p.get("service") and p["bottle_type"] == "30 g"
+
+
+def test_a_typed_service_counts_as_nothing_to_pack():
+    """The order form, card and combine total must not show a service as a bottle
+    (review round 1). Raw form lines carry no service flag, so the lookup must."""
+    svc = _new("Typed Svc Count", cents=10000, bt="service")
+    jar = _new("Typed Svc Jar", cents=4000, bt="30 g")
+    raw = [{"slug": svc["slug"], "qty": 2}]
+    assert app_mod._order_physical_units({"items": raw}) == 0
+    assert app_mod._order_pack_breakdown({"items": raw})["bottle_units"] == 0
+    mixed = raw + [{"slug": jar["slug"], "qty": 1}]
+    assert app_mod._order_physical_units({"items": mixed}) == 1
+    assert app_mod._order_pack_breakdown({"items": mixed})["bottle_units"] == 1
+    # A stored line marked service also counts nothing, with no catalog entry at all.
+    from dashboard import orders as _O
+    assert _O.physical_units([{"slug": "not-in-any-catalog", "qty": 1, "service": True}], {}) == 0
+    assert _O.pack_breakdown([{"slug": "not-in-any-catalog", "qty": 1, "service": True}],
+                             {})["bottle_units"] == 0

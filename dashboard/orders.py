@@ -941,7 +941,8 @@ def physical_units(items, catalog):
         if it.get("kind") == "membership" or str(it.get("slug") or "").startswith("membership:"):
             continue
         p = catalog.get(it.get("slug") or "") or {}
-        if not _sh.is_shippable(p):
+        # A typed service is never in the catalog; its stored line says service.
+        if it.get("service") or not _sh.is_shippable(p):
             continue  # service / info-only -> 0
         if p.get("bundle"):
             if catalog_list is None:
@@ -1000,7 +1001,8 @@ def pack_breakdown(items, catalog):
         if it.get("kind") == "membership" or str(it.get("slug") or "").startswith("membership:"):
             continue
         p = catalog.get(it.get("slug") or "") or {}
-        if not _sh.is_shippable(p):
+        # A typed service is never in the catalog; its stored line says service.
+        if it.get("service") or not _sh.is_shippable(p):
             continue  # service / info-only -> 0
         if p.get("bundle"):
             if catalog_list is None:
