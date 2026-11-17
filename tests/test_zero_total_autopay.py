@@ -729,3 +729,93 @@ def test_the_board_offers_no_send_for_an_auto_paid_order(method, offered):
                 "console.log(JSON.stringify({b: sendInvBtn({id: 3, pay_method: %s})}));"
                 % json.dumps(method))
     assert ("orders.send_invoice" in got["b"]) is offered
+
+
+# ── A no-charge order (2026-11-09) follows every $0 rule the auto-pay set ───
+# Glen, 2026-11-16: a $0 order earns no membership months, with no exceptions.
+
+def _no_charge(db):
+    oid = _autopaid(db)
+    with sqlite3.connect(db) as cx:
+        cx.execute("UPDATE orders SET pay_method=? WHERE id=?", (O.NO_CHARGE_METHOD, oid))
+        cx.commit()
+    return oid
+
+
+def test_the_free_order_predicate_covers_both_methods():
+    for m in ("zero-total", "no charge", "No Charge"):
+        assert O.is_free_order({"pay_method": m}), m
+    for m in ("Zelle", "", None, "card"):
+        assert not O.is_free_order({"pay_method": m}), m
+    assert O.free_order_edit_refusal({"pay_method": "zero-total"}) == O.ZERO_TOTAL_EDIT_REFUSAL
+    assert O.free_order_edit_refusal({"pay_method": "no charge"}) == O.NO_CHARGE_EDIT_REFUSAL
+    assert O.free_order_edit_refusal({"pay_method": "Zelle"}) is None
+
+
+def test_every_edit_path_refuses_a_no_charge_order(env):
+    db, calls = env
+    oid = _no_charge(db)
+    before = _row(db, oid)
+    c = appmod.app.test_client()
+    r = c.post(f"/api/orders/{oid}/edit", json={"lines": [{"slug": "mix", "qty": 3}],
+                                                "pickup": True})
+    assert (r.status_code, r.get_json()["error"]) == (409, O.NO_CHARGE_EDIT_REFUSAL)
+    r = c.post(f"/api/orders/{oid}/grant-member-access", json={})
+    assert (r.status_code, r.get_json()["error"]) == (409, O.NO_CHARGE_EDIT_REFUSAL)
+    r = _edit(oid)
+    assert (r.status_code, r.get_json()["error"]) == (409, O.NO_CHARGE_EDIT_REFUSAL)
+    with sqlite3.connect(db) as cx:
+        cx.row_factory = sqlite3.Row
+        with pytest.raises(appmod.CheckoutError):
+            appmod._reprice_and_persist_invoice(cx, O.get_order(cx, oid),
+                                                [{"slug": "mix", "qty": 3}], pickup=True)
+        assert cx.execute("SELECT COUNT(*) FROM memberships").fetchone()[0] == 0
+    assert _row(db, oid) == before
+
+
+def test_a_no_charge_biofield_earns_no_month_and_anchors_no_cap(env):
+    db, calls = env
+    _zero_biofield(db, "INH-NCB", O.NO_CHARGE_METHOD)
+    with sqlite3.connect(db) as cx:
+        cx.execute("CREATE TABLE IF NOT EXISTS biofield_month_grants (biofield_ref TEXT "
+                   "PRIMARY KEY, email TEXT, delivered_ref TEXT, granted_at TEXT, days INTEGER)")
+        cx.commit()
+        assert appmod._qualifying_biofield_order(cx, EMAIL) is None
+        assert appmod._supply_cap_end(cx, EMAIL) is None
+        cx.execute("UPDATE orders SET pay_method='Zelle' WHERE external_ref='INH-NCB'")
+        cx.commit()
+        assert appmod._qualifying_biofield_order(cx, EMAIL)              # control
+        assert appmod._supply_cap_end(cx, EMAIL) is not None             # control
+
+
+def test_a_delivered_no_charge_order_starts_no_biofield_month(env, monkeypatch):
+    db, calls = env
+    monkeypatch.setattr(appmod, "_active_membership_for_email", lambda e: None)
+    _insert(db, "INH-BF-NC", items=[{"slug": "biofield-analysis", "qty": 1,
+                                     "unit_cents": 30000, "line_cents": 30000}],
+            total=30000)
+    with sqlite3.connect(db) as cx:
+        cx.execute("UPDATE orders SET pay_status='paid', status='done', created_at=? "
+                   "WHERE external_ref='INH-BF-NC'", (_iso(-20),))
+        cx.commit()
+    oid = _no_charge(db)
+    _deliver(db, oid)
+    assert _row(db, oid)["status"] == "delivered"
+    assert _biofield_months(db) == 0
+
+
+def test_a_no_charge_order_earns_no_reorder_price_or_referral_hold(env, monkeypatch):
+    db, calls = env
+    monkeypatch.setattr(appmod, "_has_paid_biofield", lambda e: True)
+    monkeypatch.setattr(appmod, "_qty_eligible", lambda p: True)
+    oid = _no_charge(db)
+    with sqlite3.connect(db) as cx:
+        cx.row_factory = sqlite3.Row
+        assert appmod._earned_reorder_slugs(cx, EMAIL) == set()
+        assert appmod._order_slugs_since(cx, EMAIL, 90) == []
+        assert SR._purchase_times(cx, [EMAIL]) == []
+        cx.execute("UPDATE orders SET pay_method='Zelle' WHERE id=?", (oid,))
+        cx.commit()
+        assert appmod._earned_reorder_slugs(cx, EMAIL) == {"mix"}         # control
+        assert appmod._order_slugs_since(cx, EMAIL, 90) == ["mix"]        # control
+        assert len(SR._purchase_times(cx, [EMAIL])) == 1                  # control

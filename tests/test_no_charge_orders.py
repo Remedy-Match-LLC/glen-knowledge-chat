@@ -504,3 +504,32 @@ def test_already_taken_raises_an_existing_row_with_less_taken(env):
     assert SC.get_count(cx, "lymph-flow") == 39
     O.set_order_status(cx, oid, "cancelled")             # returned once, like any paid order
     assert SC.get_count(cx, "lymph-flow") == 40
+
+
+# ── After #2293: a $0 order with bottles already taken waits for No charge ─────
+
+@pytest.mark.parametrize("taken", [["microbiome"], True, "all"])
+def test_already_taken_on_create_skips_the_auto_pay(manual, taken):
+    """Auto-pay would take a bottle money already took by hand (2026-11-16)."""
+    appmod, db, holds = manual
+    r = _manual(appmod, [{"slug": "microbiome", "qty": 1, "unit_cents": 0}],
+                already_taken=taken)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    j = r.get_json()
+    assert (j["auto_paid"], j["settle_with_no_charge"]) == (False, True)
+    with sqlite3.connect(db) as cx:
+        cx.row_factory = sqlite3.Row
+        o = O.get_order(cx, j["order_id"])
+    assert o["status"] == "proposed" and o.get("pay_status") != "paid"
+
+
+@pytest.mark.parametrize("taken", [None, [], "", False])
+def test_without_already_taken_a_bottle_order_is_auto_paid(manual, taken):
+    appmod, db, holds = manual
+    extra = {} if taken is None else {"already_taken": taken}
+    r = _manual(appmod, [{"slug": "microbiome", "qty": 1, "unit_cents": 0}], **extra)
+    j = r.get_json()
+    assert (j["auto_paid"], j["settle_with_no_charge"]) == (True, False)
+    with sqlite3.connect(db) as cx:
+        cx.row_factory = sqlite3.Row
+        assert O.get_order(cx, j["order_id"])["pay_method"] == "zero-total"

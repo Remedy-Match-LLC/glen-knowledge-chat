@@ -1201,6 +1201,27 @@ def is_zero_total_order(order):
     return (order or {}).get("pay_method") == ZERO_TOTAL_METHOD
 
 
+NO_CHARGE_EDIT_REFUSAL = ("This order was settled at no charge. "
+                          "Raise a new order for the added items.")
+# Every pay_method a settled $0 order carries. SQL filters list both.
+FREE_METHODS = (ZERO_TOTAL_METHOD, NO_CHARGE_METHOD)
+
+
+def is_free_order(order):
+    """True for a $0 order settled either way: the auto-pay (2026-11-16) or the
+    operator's No charge (2026-11-09). Both earn nothing and are never edited."""
+    return is_zero_total_order(order) or is_no_charge(order)
+
+
+def free_order_edit_refusal(order):
+    """The refusal text for editing a settled $0 order, or None if it is not one."""
+    if is_zero_total_order(order):
+        return ZERO_TOTAL_EDIT_REFUSAL
+    if is_no_charge(order):
+        return NO_CHARGE_EDIT_REFUSAL
+    return None
+
+
 def _has_membership_or_biofield_line(items):
     """True when a line is one the paid grants key on: a membership tier line
     (membership_products.tier_of_line, as _grant_membership_line_on_paid reads it) or
