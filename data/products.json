@@ -6454,6 +6454,7 @@
    "description": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided."
   },
   "mb7-peace": {
+   "content_since": "2026-11-20T19:57:14+00:00",
    "name": "MB7 Peace Infoceutical",
    "directions": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided.",
    "copy_pinned": ["directions"],
@@ -13313,6 +13314,7 @@
    "superseded_by": "wholomega-120-gelcaps"
   },
   "ed9-muscle-driver": {
+   "content_since": "2026-11-20T19:57:14+00:00",
    "name": "ED9 Muscle Energetic Driver Infoceutical",
    "directions": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided.",
    "copy_pinned": ["directions"],
@@ -14415,6 +14417,7 @@
    "bottle_type": "Small powder jar"
   },
   "ed14-spleenthymus-driver": {
+   "content_since": "2026-11-20T19:57:14+00:00",
    "name": "ED14 Spleen Energetic Driver Infoceutical",
    "directions": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided.",
    "copy_pinned": ["directions"],
@@ -24214,6 +24217,7 @@
    "superseded_by": "pl-polarity"
   },
   "mb5-esr-emotional-stress-release-infoceutical": {
+   "content_since": "2026-11-20T19:57:14+00:00",
    "name": "MB5 ESR Emotional Stress Release Infoceutical",
    "directions": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided.",
    "copy_pinned": ["directions"],
