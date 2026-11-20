@@ -63,7 +63,7 @@ def test_open_mints_a_pass_for_the_owner_and_this_tool(app_mod, monkeypatch, pat
     u = urlsplit(loc)
     assert (u.scheme, u.netloc, u.path) == ("http", "100.85.193.57:8011", tpath)
     tok = parse_qs(u.query)["pass"][0]
-    assert ltp.redeem_pass(tok, slug, ltp.ReplayGuard()) == "owner-a"
+    assert ltp.redeem_pass(tok, slug, ltp.ReplayGuard(not_before=0)) == "owner-a"
     assert r.headers.get("Referrer-Policy") == "no-referrer"
     assert "no-store" in r.headers.get("Cache-Control", "")
 
