@@ -31,6 +31,7 @@ from flask import Flask, Response, jsonify, redirect, request, send_from_directo
 
 from dashboard import (biofield_fee, biofield_handoff, biofield_invoice, biofield_progress,
                        biofield_requests)
+from dashboard import local_tool_pass as _ltp
 from dashboard.biofield_report import causal_chain_report, list_tests
 from dashboard.biofield_report_html import (
     render_author_html, render_e4l_panel, render_fee_panel, render_invoice_page,
@@ -668,7 +669,7 @@ def _redact_key_in_path(line: str) -> str:
     The redirect below takes the key out of the URL after the first request, but
     that FIRST request still carries it, and a log is forever. Redacting here
     means the secret never reaches the file at all."""
-    return re.sub(r"(?i)([?&]key=)[^&\s]*", r"\1REDACTED", line)
+    return re.sub(r"(?i)([?&](?:key|pass)=)[^&\s]*", r"\1REDACTED", line)
 
 
 def _url_without_key() -> str:
@@ -676,6 +677,69 @@ def _url_without_key() -> str:
     args = {k: v for k, v in request.args.items(True) if k != "key"}
     qs = urlencode(args)
     return request.path + (("?" + qs) if qs else "")
+
+
+# ── The private link (Tailscale). Glen, 2026-11-19: "Give Rae's computer a private,
+#    locked link to your Mac." The tool also listens on the Mac's Tailscale address,
+#    never 0.0.0.0 and never the home network. A request that came in that way is
+#    marked in its WSGI environ, and _tailnet_gate alone decides whether it gets in.
+_TAILNET_ENVIRON = "rm.local_tool.tailnet"
+_TAILNET_HOST_ENVIRON = "rm.local_tool.tailnet_host"
+
+_TAILNET_STYLE = ("<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:48px 16px;"
+                  "background:#faf8f4;color:#2b2b2b}main{max-width:34rem;margin:0 auto}"
+                  "a{color:#2f6b4f}@media (prefers-color-scheme:dark){body{background:"
+                  "#1c1d1f;color:#e8e6e1}a{color:#8fc9a8}}</style>")
+
+_TAILNET_REFUSED = ("<!doctype html><html lang=en><head><meta charset=utf-8>"
+                    "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                    "<meta name=referrer content=no-referrer><title>Open from the console"
+                    "</title>" + _TAILNET_STYLE + "</head><body><main>"
+                    "<h1>Open this from the console</h1><p>This link works once and only "
+                    "for two minutes. Go back to the console and click the tab again.</p>"
+                    "</main></body></html>")
+
+_TAILNET_OPENING = ("<!doctype html><html lang=en><head><meta charset=utf-8>"
+                    "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                    "<meta name=referrer content=no-referrer>"
+                    "<meta http-equiv=refresh content='0;url={href}'><title>Opening</title>"
+                    + _TAILNET_STYLE + "</head><body><main><p>Opening. "
+                    "<a href='{href}'>Continue</a> if nothing happens.</p></main>"
+                    "<script>location.replace({js})</script></body></html>")
+
+
+class _TailnetMarker:
+    """WSGI wrapper for the Tailscale listener: marks each request as remote."""
+
+    def __init__(self, app, host):
+        self.app, self.host = app, host
+
+    def __call__(self, environ, start_response):
+        environ[_TAILNET_ENVIRON] = True
+        environ[_TAILNET_HOST_ENVIRON] = self.host
+        return self.app(environ, start_response)
+
+
+def _serve_tailnet(app, host, port, retry_s=30):
+    """Listen on the Tailscale address in a daemon thread. Tailscale may come up after
+    launchd starts this server, so a bind that fails is retried, not fatal."""
+    import threading
+    from werkzeug.serving import make_server
+
+    def _loop():
+        while True:
+            try:
+                srv = make_server(host, port, _TailnetMarker(app, host), threaded=True)
+            except (OSError, SystemExit) as e:
+                # werkzeug's make_server turns a bind failure into SystemExit,
+                # which would end this thread for good (round-2 review).
+                print(f"[tailnet] cannot listen on {host}:{port} yet ({e}); "
+                      f"retrying in {retry_s}s", flush=True)
+                time.sleep(retry_s)
+                continue
+            print(f"[tailnet] listening on http://{host}:{port}", flush=True)
+            srv.serve_forever()
+    threading.Thread(target=_loop, daemon=True).start()
 
 
 HEARTBEAT = os.path.expanduser("~/AI-Training/00 System/biofield-local-server-heartbeat.json")
@@ -1483,8 +1547,60 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             print(f"[fold] {tid}: skipped: {e!r}", flush=True)
         return resp
 
+    _pass_guard = _ltp.ReplayGuard()
+
+    def _tailnet_gate():
+        """The gate for a request that arrived over the private link (Rae's computer).
+
+        Only a one-time pass from the hosted console, or the session cookie it buys,
+        gets in. The master key is not accepted here, and with no pass secret set
+        nothing is: an absent secret closes this gate rather than opening it."""
+        def _refuse(status, why):
+            print(f"[tailnet] refused {request.method} {request.path}: {why}", flush=True)
+            return Response(_TAILNET_REFUSED, status=status, mimetype="text/html")
+        bound = request.environ.get(_TAILNET_HOST_ENVIRON, "")
+        host = (request.host or "").rsplit(":", 1)[0] if request.host else ""
+        if not bound or host != bound:
+            # A DNS-rebinding page would arrive with its own hostname here.
+            return _refuse(421, "host")
+        secret = _ltp.pass_secret()
+        if not secret:
+            return _refuse(401, "no pass secret")
+        token = request.args.get("pass", "")
+        if token:
+            if request.method != "GET":
+                return _refuse(405, "pass on " + request.method)
+            tool = _ltp.tool_for_path(request.path)
+            try:
+                owner = _ltp.redeem_pass(token, tool, _pass_guard, secret=secret)
+            except _ltp.PassError as e:
+                return _refuse(401, str(e))
+            # Answer with a page, not a redirect. The browser arrived here from the
+            # hosted console, and a redirect would still count as that cross-site
+            # navigation, so the SameSite=Strict cookie set here would not be sent
+            # with it. A navigation this page starts is same-site.
+            import html as _html
+            import json as _json
+            rest = [(k, v) for k, v in request.args.items(True) if k != "pass"]
+            clean = request.path + (("?" + urlencode(rest)) if rest else "")
+            page = (_TAILNET_OPENING
+                    .replace("{href}", _html.escape(clean, quote=True))
+                    .replace("{js}", _json.dumps(clean).replace("<", "\\u003c")))
+            resp = Response(page, status=200, mimetype="text/html")
+            resp.set_cookie(_ltp.SESSION_COOKIE, _ltp.mint_session(owner, secret=secret),
+                            max_age=_ltp.SESSION_TTL_S, httponly=True, samesite="Strict")
+            resp.headers["Cache-Control"] = "no-store"
+            resp.headers["Referrer-Policy"] = "no-referrer"
+            print(f"[tailnet] pass redeemed for {owner}", flush=True)
+            return resp
+        if _ltp.session_owner(request.cookies.get(_ltp.SESSION_COOKIE, ""), secret=secret):
+            return None
+        return _refuse(401, "no session")
+
     @app.before_request
     def _console_gate():
+        if request.environ.get(_TAILNET_ENVIRON):
+            return _tailnet_gate()
         if not _secret:
             return None
         url_key = request.args.get("key", "")
@@ -4627,6 +4743,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             key = deepgram_token()
         except Exception as e:  # no key / network / Deepgram error
             return {"error": str(e)[:200]}
+        # The long-lived key is a fallback for Glen's own browser on this Mac. A
+        # browser on the private link gets only a short-lived key.
+        if (request.environ.get(_TAILNET_ENVIRON)
+                and key == (os.environ.get("DEEPGRAM_API_KEY") or None)):
+            return {"error": "no short-lived Deepgram key available"}
         # Bias the ASR toward Glen's coined remedy / formulation / clinical terms.
         # Best-effort: a catalog-lookup failure must never block recording.
         keyterms = ""
@@ -6118,7 +6239,10 @@ if __name__ == "__main__":
                     help="(re)load the snapshot from --export-dir before serving")
     ap.add_argument("--export-dir", default="/tmp/fmp-export/newapp")
     ap.add_argument("--port", type=int, default=8011)
+    ap.add_argument("--tailnet-host", default="",
+                    help="also listen on this Tailscale address (100.64.0.0/10 only)")
     args = ap.parse_args()
+    tailnet_host = _ltp.check_tailnet_host(args.tailnet_host) if args.tailnet_host else ""
     if args.load:
         from dashboard.biofield_fmp_snapshot import snapshot_csv_dir
         counts = snapshot_csv_dir(args.export_dir, DEFAULT_DB)
@@ -6126,4 +6250,11 @@ if __name__ == "__main__":
     print(f"Biofield Analysis viewer -> http://127.0.0.1:{args.port}  (local only; Ctrl-C to stop)")
     _install_log_redaction()
     _start_heartbeat(args.port)
-    create_app().run(host="127.0.0.1", port=args.port, debug=False)
+    app = create_app()
+    if tailnet_host and not _ltp.pass_secret():
+        # The gate would refuse every request anyway. Not listening is the plainer fact.
+        print(f"[tailnet] {_ltp.SECRET_ENV} is unset or short: not listening on "
+              f"{tailnet_host}", flush=True)
+    elif tailnet_host:
+        _serve_tailnet(app, tailnet_host, args.port)
+    app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)

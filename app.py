@@ -25156,17 +25156,27 @@ def api_guide():
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
-def _local_tool_only_response(tool, owner_ok):
+def _local_tool_only_response(tool, owner_ok, open_href=""):
     """What a console tab that launches a tool on Glen's Mac shows to anyone without the
     master secret. A browser always gets one plain page saying where the tool runs, and
     never a key prompt, whether its sign-in is an owner token or has lapsed (Rae,
-    2026-11-19: Match: Intake asked her for a console key). The page names no credential
-    and links nowhere, so it is safe unauthenticated. A script keeps the JSON answers:
-    409 local_tool for an owner token, 401 otherwise."""
+    2026-11-19: Match: Intake asked her for a console key). The page names no credential.
+    A script keeps the JSON answers: 409 local_tool for an owner token, 401 otherwise.
+
+    `open_href` is the private-link launcher, offered only to an owner token when the
+    pass secret is set. The plain message stays beside it, because no page served from
+    here can tell whether her computer reaches the Mac: a request from an https page
+    to the Mac's http address is blocked as mixed content."""
     detail = ("This tab opens a tool that runs on Glen's own Mac, so it only works "
               "from that machine. Nothing is wrong with your sign-in.")
     if "text/html" in (request.headers.get("Accept", "") or ""):
         import html as _html
+        if open_href:
+            body = (f"<p><a href='{_html.escape(open_href, quote=True)}'>Open it over the "
+                    "private link</a></p><p>If that does not open, Glen's Mac is asleep "
+                    "or your private link is off. Nothing is wrong with your sign-in.</p>")
+        else:
+            body = f"<p>{_html.escape(detail)}</p>"
         page = ("<!doctype html><html lang=en><head><meta charset=utf-8>"
                 "<meta name=viewport content='width=device-width,initial-scale=1'>"
                 f"<title>{_html.escape(tool)}</title>"
@@ -25176,12 +25186,57 @@ def _local_tool_only_response(tool, owner_ok):
                 "@media (prefers-color-scheme:dark){body{background:#1c1d1f;color:#e8e6e1}"
                 "a{color:#8fc9a8}}</style></head><body><main>"
                 f"<h1>{_html.escape(tool)} runs on Glen's Mac</h1>"
-                f"<p>{_html.escape(detail)}</p>"
-                "<p><a href='/console'>Back to the console</a></p></main></body></html>")
-        return Response(page, status=200, mimetype="text/html")
+                + body
+                + "<p><a href='/console'>Back to the console</a></p></main></body></html>")
+        resp = Response(page, status=200, mimetype="text/html")
+        resp.headers["Cache-Control"] = "private, no-store, max-age=0"
+        return resp
     if owner_ok:
         return jsonify({"error": "local_tool", "tool": tool, "detail": detail}), 409
     return jsonify({"error": "Unauthorized"}), 401
+
+
+LOCAL_TOOL_TAILNET_DEFAULT = "http://100.85.193.57:8011"
+
+
+def _owner_name_for_token(token):
+    """The workspace user name an owner token belongs to, for the pass to name."""
+    try:
+        with db.connect(LOG_DB) as cx:
+            row = cx.execute(
+                "SELECT u.name FROM access_tokens t "
+                "JOIN workspace_users u ON u.id = t.user_id "
+                "WHERE t.token = ? AND t.revoked_at IS NULL", (token,)).fetchone()
+    except Exception:
+        return ""
+    return (row[0] or "").strip() if row else ""
+
+
+def _local_tool_owner_response(tool, slug, back=""):
+    """An owner token on a local-tool tab. With ?open=1 and the pass secret set, mint a
+    one-time pass and send the browser over the private link. Otherwise the plain page,
+    with the launcher on it when a pass could be minted. The master key never appears:
+    the pass is signed with LOCAL_TOOL_PASS_SECRET and carries only owner, tool, expiry
+    and a one-use id."""
+    from dashboard import local_tool_pass as _ltp
+    from dashboard.console_launcher import tailnet_tool_url
+    if not _ltp.pass_secret():
+        return _local_tool_only_response(tool, True)
+    if request.args.get("open") != "1":
+        from urllib.parse import quote as _q
+        href = request.path + "?open=1" + (("&back=" + _q(back, safe="")) if back else "")
+        return _local_tool_only_response(tool, True, open_href=href)
+    owner = _owner_name_for_token(_present_console_key()) or "owner"
+    try:
+        tok = _ltp.mint_pass(owner, slug)
+    except _ltp.PassError:
+        return _local_tool_only_response(tool, True)
+    resp = redirect(tailnet_tool_url("LOCAL_TOOL_TAILNET_URL", LOCAL_TOOL_TAILNET_DEFAULT,
+                                     _ltp.TOOLS[slug], tok, back=back), code=302)
+    resp.headers["Cache-Control"] = "private, no-store, max-age=0"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    print(f"[local-tool-pass] minted {slug} for {owner}", flush=True)
+    return resp
 
 
 @app.route("/console/biofield-intake")
@@ -25190,17 +25245,26 @@ def console_biofield_intake():
     testing tool runs on Glen's Mac so patient PHI never reaches this server). Carries
     the console key through so the local tool can gate on it."""
     import dashboard as _dashboard
+    from dashboard.console_launcher import local_tool_url, console_back_path
     if _dashboard.CONSOLE_SECRET:
         _key = _present_console_key()
         if _key != _dashboard.CONSOLE_SECRET:
             # An OWNER token is a real console credential, so this must not be a key
-            # prompt. It must also not be a redirect: local_tool_url puts the MASTER
-            # secret in the URL, and the owner token exists precisely so it can be
-            # revoked without ever escalating to that secret. So: say what this tab is.
+            # prompt. It must never be a redirect carrying the master secret either:
+            # the owner token exists so it can be revoked without ever escalating to
+            # that secret. It gets the plain page, or a one-time pass (2026-11-19).
             if _owner_token_ok(_key):
-                return _local_tool_only_response("Biofield Intake", True)
+                # The launcher link loads this route again, so the page it was
+                # first clicked from rides along as ?back=, checked the same way.
+                _back = (console_back_path(request.referrer, request.host)
+                         or console_back_path(request.host_url.rstrip("/")
+                                              + (request.args.get("back") or "/x"),
+                                              request.host))
+                # Never carry the query: it holds the owner token as ?key=.
+                _back = (_back or "").split("?", 1)[0]
+                return _local_tool_owner_response("Biofield Intake", "biofield-intake",
+                                                  back=_back)
             return _local_tool_only_response("Biofield Intake", False)
-    from dashboard.console_launcher import local_tool_url, console_back_path
     # Hand over the key THIS SERVER holds, not the one the browser sent. op-nav.js
     # builds its ?key= from localStorage, so after the 2026-09-16 rotation every
     # browser was forwarding a dead key and the local app refused the only link its
@@ -25219,12 +25283,9 @@ def console_clinical_tags():
     if _dashboard.CONSOLE_SECRET:
         _key = _present_console_key()
         if _key != _dashboard.CONSOLE_SECRET:
-            # An OWNER token is a real console credential, so this must not be a key
-            # prompt. It must also not be a redirect: local_tool_url puts the MASTER
-            # secret in the URL, and the owner token exists precisely so it can be
-            # revoked without ever escalating to that secret. So: say what this tab is.
+            # See console_biofield_intake: the plain page, or a one-time pass.
             if _owner_token_ok(_key):
-                return _local_tool_only_response("Clinical Tags", True)
+                return _local_tool_owner_response("Clinical Tags", "clinical-tags")
             return _local_tool_only_response("Clinical Tags", False)
     from dashboard.console_launcher import local_tool_url
     return redirect(local_tool_url("BIOFIELD_LOCAL_URL", "http://127.0.0.1:8011",
