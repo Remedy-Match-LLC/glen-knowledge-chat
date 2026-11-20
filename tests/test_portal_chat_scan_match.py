@@ -185,3 +185,50 @@ def test_console_draft_reply_reads_the_scan_for_its_client(app_mod, monkeypatch)
     with app_mod.app.test_client() as client:
         client.post("/api/console/portal/Owner@X.com/draft-reply")
     assert seen == ["owner@x.com"]
+
+
+def test_the_prompt_asks_for_each_remedy_by_name():
+    sp = pcz.system_prompt(_ctx())
+    assert "name each one from this list" in sp
+
+
+def test_every_live_infoceutical_but_sleep_night_and_energy_has_the_approved_direction():
+    import pathlib
+    P = json.loads(pathlib.Path(__file__).resolve().parents[1].joinpath(
+        "data", "products.json").read_text())["products"]
+    want = ("Build up 1 drop a day to 15 drops, stirred into a little water without "
+            "touching metal, daily on rising, or as guided.")
+    live = {s: p for s, p in P.items() if "infoceutical" in (p.get("name") or "").lower()
+            and not (p.get("retired") or p.get("superseded_by") or p.get("inactive"))}
+    for s, p in live.items():
+        # Energy's own text says to use it before and during activity (review round 1).
+        if p["name"] in ("Sleep Infoceutical", "Night Infoceutical",
+                         "Energy/Source Infoceutical Feelgood"):
+            assert not p.get("directions"), s
+        else:
+            assert p.get("directions") == want and "directions" in p.get("copy_pinned", []), s
+
+
+def test_the_infoceutical_directions_survive_a_corrections_replay():
+    """The enrichment replay must keep the 80 approved directions and their pins, and must
+    not newly mark an Infoceutical's formula Glen-verified (review round 2)."""
+    import copy
+    import pathlib
+    import sys as _sys
+    root = pathlib.Path(__file__).resolve().parents[1]
+    _sys.path.insert(0, str(root / "scripts"))
+    import apply_enrichment as ae
+    P = json.loads((root / "data" / "products.json").read_text())["products"]
+    C = json.loads((root / "data" / "products-manual-corrections.json").read_text())
+    want = ("Build up 1 drop a day to 15 drops, stirred into a little water without "
+            "touching metal, daily on rising, or as guided.")
+    mine = sorted(s for s, p in P.items() if p.get("directions") == want)
+    assert len(mine) == 80
+    assert sorted(s for s, c in C.items() if isinstance(c, dict) and c.get("directions") == want) == mine
+    before = copy.deepcopy(P)
+    ae.apply_corrections(P, C)
+    for s in mine:
+        assert P[s].get("directions") == want and P[s].get("copy_pinned") == ["directions"]
+        assert P[s].get("ingredients_source") == before[s].get("ingredients_source")
+        assert P[s].get("ingredients_source") != "manual"
+
