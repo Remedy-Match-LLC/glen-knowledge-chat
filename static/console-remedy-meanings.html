@@ -83,8 +83,15 @@ async function api(method, path, body){
   return { ok: r.ok, status: r.status, json: await r.json().catch(function(){ return {}; }) };
 }
 
-function boot(){
-  if(!key()){ document.getElementById('gate').style.display = 'flex'; return; }
+// Rae signs in with a login cookie and her browser holds no key. Ask the server
+// before showing the key box (Glen, 2026-11-20: "She should have access to all the tabs").
+function rmCookieSignedIn(){
+  return fetch('/api/console/auth-status', {credentials:'same-origin'})
+    .then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+
+async function boot(){
+  if(!key() && !(await rmCookieSignedIn())){ document.getElementById('gate').style.display = 'flex'; return; }
   document.getElementById('app').style.display = 'block';
   loadList();
 }

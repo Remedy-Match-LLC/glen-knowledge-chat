@@ -51,7 +51,7 @@
   </div>
 
   <div id="tableWrap">
-    <p style="color:#888">Enter your console key and click Load.</p>
+    <p style="color:#888">Loading…</p>
   </div>
 
   <div class="import-section">
@@ -86,6 +86,8 @@
     })();
 
     function getKey() {
+      // The typed key only. With none, a signed-in owner's cookie is enough (Glen,
+      // 2026-11-20, for Rae). A stored key is not used: it would go in the URL (round 1).
       return document.getElementById("consoleKey").value.trim();
     }
 
@@ -185,6 +187,7 @@
         resultDiv.innerHTML = `<span class="error">Network error: ${e.message}</span>`;
       }
     }
+    loadTable();
   </script>
 </body>
 </html>

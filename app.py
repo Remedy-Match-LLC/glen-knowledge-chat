@@ -50082,7 +50082,9 @@ def _present_console_key():
     call, which locked Glen and Rae out of Sell: Orders after the 2026-09-16
     rotation while their login cookies were valid. A VALID key (master, owner or
     VA token) always keeps its own identity."""
-    k = request.headers.get("X-Console-Key", "") or request.args.get("key", "")
+    # Stripped, as _auth always did: a padded VA key must keep its own identity rather
+    # than fail the lookup and yield to an owner cookie (round 1).
+    k = (request.headers.get("X-Console-Key", "") or request.args.get("key", "")).strip()
     if k:
         if not CONSOLE_SECRET or k == CONSOLE_SECRET or _role_for_token(k):
             return k
@@ -54743,8 +54745,13 @@ def _auth(required_scope=None):
 
     If required_scope is set, the caller's scope must equal it OR be 'admin'.
     """
-    key = (request.headers.get("X-Console-Key","")
-           or request.args.get("key","")).strip()
+    # _present_console_key: the header or ?key=, else a valid login cookie. Rae signs in
+    # with an owner-token cookie and her browser holds no key, so reading only the header
+    # and ?key= refused her on Home, the dashboard cards and /api/me (Glen, 2026-11-20:
+    # "several other tabs ... ask for the secret key still"). The cookie is SameSite=Lax
+    # and stands only for the master key or an OWNER token, never a VA token, which is
+    # the same rule require_console_key already applies to 153 routes.
+    key = (_present_console_key() or "").strip()
     if not key:
         return False, None, 401
 

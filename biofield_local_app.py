@@ -24,7 +24,7 @@ import sys
 import re
 import sqlite3
 import time
-from urllib.parse import urlencode
+from urllib.parse import quote, quote_plus, urlencode
 import requests
 
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory
@@ -1549,6 +1549,77 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     _pass_guard = _ltp.ReplayGuard()
 
+    def _tailnet_scrub_master_key(resp):
+        """No page sent over the private link may hold the master console key.
+
+        The Match strip (_workflow_nav) puts ?key=<master> on its links so Glen's own
+        pages land signed in, and Clinical Tags draws it seven times. Over the private
+        link that would hand Rae's browser the master key, which #2300 promised never
+        happens. Strip the key from links, then refuse anything that still holds it,
+        in any form, so a new page that embeds it some other way is caught too."""
+        if not _secret:
+            return resp
+        forms = {_secret, quote(_secret, safe=""), quote_plus(_secret)}
+
+        def _strip(text):
+            for f in forms:
+                for amp in ("&amp;amp;", "&amp;", "&"):
+                    text = text.replace("?key=" + f + amp, "?").replace(amp + "key=" + f, "")
+                text = text.replace("?key=" + f, "")
+            return text
+
+        def _refuse():
+            print(f"[tailnet] refused {request.method} {request.path}: "
+                  "response holds the master key", flush=True)
+            return Response(_TAILNET_REFUSED, status=500, mimetype="text/html")
+
+        # Headers first: a redirect's Location, a cookie, anything (round 2).
+        for name, value in list(resp.headers.items()):
+            if any(f in value for f in forms):
+                resp.headers[name] = _strip(value)
+        if any(f in v for _, v in resp.headers.items() for f in forms):
+            return _refuse()
+        if not (resp.mimetype or "").startswith(("text/", "application/json",
+                                                  "application/javascript")):
+            return resp
+        if resp.direct_passthrough:
+            # A text file sent by send_file is read like any other body (round 2).
+            resp.direct_passthrough = False
+        body = resp.get_data(as_text=True)
+        if not any(f in body for f in forms):
+            return resp
+        body = _strip(body)
+        if any(f in body for f in forms):
+            return _refuse()
+        resp.set_data(body)
+        return resp
+
+    @app.after_request
+    def _tailnet_nav_bar(resp):
+        """Put the console's tab bar on each page Rae opens over the private link.
+
+        Glen, 2026-11-20: "Once she connects to one, she also needs the navigation
+        header to all the tabs." The bar's links point at the hosted console, whose own
+        login cookie signs her in there; op-nav.js puts no key in them in this mode.
+        Glen's own localhost pages are left as they were."""
+        if not request.environ.get(_TAILNET_ENVIRON):
+            return resp
+        resp = _tailnet_scrub_master_key(resp)
+        if (request.method != "GET" or request.args.get("pass") or resp.status_code != 200
+                or resp.mimetype != "text/html" or resp.direct_passthrough):
+            return resp
+        body = resp.get_data(as_text=True)
+        m = re.search(r"<body[^>]*>", body, re.I)
+        if not m or "/static/op-nav.js" in body:
+            return resp
+        import html as _html
+        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+        sub = "tags" if request.path.startswith("/clinical-tags") else "intake"
+        tag = ('<script src="/static/op-nav.js" data-base="%s" data-active="clinical" '
+               'data-sub="%s"></script>' % (_html.escape(base, quote=True), sub))
+        resp.set_data(body[:m.end()] + tag + body[m.end():])
+        return resp
+
     def _tailnet_gate():
         """The gate for a request that arrived over the private link (Rae's computer).
 
@@ -1558,6 +1629,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         def _refuse(status, why):
             print(f"[tailnet] refused {request.method} {request.path}: {why}", flush=True)
             return Response(_TAILNET_REFUSED, status=status, mimetype="text/html")
+        # No byte ranges over the private link: two ranges could split the master key
+        # across responses so the scrub never sees it whole (round 2).
+        request.environ.pop("HTTP_RANGE", None)
+        request.environ.pop("HTTP_IF_RANGE", None)
         bound = request.environ.get(_TAILNET_HOST_ENVIRON, "")
         host = (request.host or "").rsplit(":", 1)[0] if request.host else ""
         if not bound or host != bound:
@@ -1594,6 +1669,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             print(f"[tailnet] pass redeemed for {owner}", flush=True)
             return resp
         if _ltp.session_owner(request.cookies.get(_ltp.SESSION_COOKIE, ""), secret=secret):
+            if request.path.startswith("/static/") and request.path.lower().endswith(
+                    (".html", ".htm")):
+                # The console's own pages belong on the hosted console. Served from
+                # here they would run with local links and no sign-in (round 1).
+                return _refuse(404, "console page")
             return None
         return _refuse(401, "no session")
 
