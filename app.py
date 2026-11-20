@@ -54745,13 +54745,8 @@ def _auth(required_scope=None):
 
     If required_scope is set, the caller's scope must equal it OR be 'admin'.
     """
-    # _present_console_key: the header or ?key=, else a valid login cookie. Rae signs in
-    # with an owner-token cookie and her browser holds no key, so reading only the header
-    # and ?key= refused her on Home, the dashboard cards and /api/me (Glen, 2026-11-20:
-    # "several other tabs ... ask for the secret key still"). The cookie is SameSite=Lax
-    # and stands only for the master key or an OWNER token, never a VA token, which is
-    # the same rule require_console_key already applies to 153 routes.
-    key = (_present_console_key() or "").strip()
+    key = (request.headers.get("X-Console-Key","")
+           or request.args.get("key","")).strip()
     if not key:
         return False, None, 401
 
