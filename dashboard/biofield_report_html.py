@@ -4752,35 +4752,194 @@ _REQ_JS = (
     "}\n</script>")
 
 
+_GROUPS = (("requested", "Requested"), ("possible", "Possible"),
+           ("started", "Started, not finished"), ("finished", "Finished"))
+# Inside a card the plan's order: Possible first (Glen, 2026-11-20; round 2).
+_CARD_GROUPS = (_GROUPS[1], _GROUPS[0], _GROUPS[2], _GROUPS[3])
+
+
+def _person_key(email, name):
+    """Cards are grouped by email, ignoring case and spaces (Glen, 2026-11-20)."""
+    e = "".join((email or "").split()).lower()
+    return e or "name:" + " ".join((name or "").lower().split())
+
+
+def _authored_row(t):
+    atid = _e(str(t.get("test_id") or ""))
+    p = t.get("progress") or {}
+    email = t.get("email") or ""
+    return (f"<tr{' class=finished' if p.get('all_done') else ''}>"
+            f"<td><a href='/author/{atid}'>{_e(t.get('name') or '(unnamed)')}</a> "
+            f"<a class=food href='/test/{atid}'>(report)</a>"
+            + (f"<div class=food>{_e(email)}</div>" if email else "") + "</td>"
+            f"<td>{_e(t.get('date') or '')}</td>"
+            + _progress_cells(t) + "</tr>")
+
+
+_TABLE_HEAD = ("<table class=progress><tr><th rowspan=2>Client</th><th rowspan=2>Date</th>"
+               "<th colspan=3>Report</th><th colspan=4>Invoice</th></tr>"
+               "<tr><th>Done</th><th>Uploaded</th><th>Emailed</th>"
+               "<th>Amount</th><th>Uploaded</th><th>Emailed</th><th>Paid</th></tr>")
+
+_CARD_CSS = ("<style>.intake-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;"
+             "margin:12px 0}.intake-tools input{flex:1;min-width:200px}"
+             ".pcard{border:1px solid var(--line);border-radius:10px;padding:10px 12px;"
+             "margin:10px 0}.pcard>summary{cursor:pointer;list-style:none}"
+             ".pcard h3{display:inline;margin:0;font-size:16px}"
+             ".pcard tr.grp td{font-weight:600;padding-top:8px;opacity:1}"
+             "[data-view=status] #intake-cards,[data-view=cards] #intake-status{display:none}"
+             "</style>")
+
+_CARD_JS = (
+    "<script>\n"
+    "(function(){\n"
+    "  var root=document.getElementById('intake');if(!root)return;\n"
+    "  var btn=document.getElementById('intake-view');\n"
+    # One set of rows, moved between the two views, so no button exists twice.
+    "  var rows=Array.prototype.slice.call(root.querySelectorAll('tr[data-ord]'));\n"
+    "  rows.sort(function(a,b){return a.dataset.ord-b.dataset.ord;});\n"
+    "  function place(v){rows.forEach(function(r){var to=document.getElementById("
+    "v==='status'?'st-'+r.dataset.group:r.dataset.home);if(to)to.appendChild(r);});\n"
+    "    root.querySelectorAll('#intake-status tbody').forEach(function(tb){"
+    "tb.style.display=tb.querySelector('tr[data-ord]')?'':'none';});}\n"
+    "  function set(v){root.setAttribute('data-view',v);place(v);btn.textContent=v==='cards'?"
+    "'Show by status':'Show by person';try{localStorage.setItem('intake_view',v);}catch(e){}filter();}\n"
+    "  var box=document.getElementById('intake-search');\n"
+    "  function filter(){var q=box.value.trim().toLowerCase();"
+    "var sel=root.getAttribute('data-view')==='cards'?'.pcard':'#intake-status tr[data-ord]';\n"
+    "    root.querySelectorAll('.pcard,tr[data-ord]').forEach(function(el){el.style.display='';});\n"
+    "    root.querySelectorAll(sel).forEach(function(el){"
+    "el.style.display=(!q||el.getAttribute('data-search').indexOf(q)>=0)?'':'none';"
+    "if(q&&el.tagName==='DETAILS')el.open=true;});\n"
+    "    document.querySelectorAll('.fmrow').forEach(function(el){"
+    "el.style.display=(!q||el.getAttribute('data-search').indexOf(q)>=0)?'':'none';});}\n"
+    "  box.addEventListener('input',filter);\n"
+    "  btn.addEventListener('click',function(){set(root.getAttribute('data-view')==='cards'?'status':'cards');});\n"
+    "  var v='cards';try{if(localStorage.getItem('intake_view')==='status')v='status';}catch(e){}\n"
+    "  set(v);\n"
+    "})();\n</script>")
+
+
+def _search_attr(*parts):
+    return " data-search=\"" + _e(" ".join(p for p in parts if p).lower()) + "\""
+
+
+def _intake_items(authored, requests):
+    """Every item once: (key, name, email, group, row html), in list order."""
+    items = []
+    for r in requests or []:
+        g = "possible" if r.get("status") == "pending_yes" else "requested"
+        items.append((_person_key(r.get("email"), r.get("name")), r.get("name") or "",
+                      r.get("email") or "", g, _request_row(r)))
+    for t in authored or []:
+        g = "finished" if (t.get("progress") or {}).get("all_done") else "started"
+        items.append((_person_key(t.get("email"), t.get("name")), t.get("name") or "",
+                      t.get("email") or "", g, _authored_row(t)))
+    return items
+
+
+def _person_cards(items):
+    """One card per person (Glen, 2026-11-20). Cards that need Glen come first, then
+    open tests, newest first; people with only finished tests come last, folded."""
+    people = {}
+    for idx, (key, name, email, g, row) in enumerate(items):
+        p = people.setdefault(key, {"name": "", "names": [], "emails": [],
+                                    "rows": {k: [] for k, _ in _GROUPS},
+                                    "order": {k: [] for k, _ in _GROUPS}, "first": len(people)})
+        p["order"][g].append(idx)
+        p["name"] = p["name"] or name
+        # Every name the person appears under is searchable (round 2).
+        if name and name not in p["names"]:
+            p["names"].append(name)
+        if email and email not in p["emails"]:
+            p["emails"].append(email)
+        p["rows"][g].append((g, row))
+    # One name under two emails: link the cards, never merge them.
+    by_name = {}
+    for key, p in people.items():
+        for nm in {" ".join(x.lower().split()) for x in p["names"]}:
+            if nm:
+                by_name.setdefault(nm, []).append(key)
+    ids = {key: f"pc-{i}" for i, key in enumerate(people)}
+    # Tag each row with where it lives in the cards and its place in the list.
+    ordn = 0
+    for key, p in people.items():
+        for g in p["rows"]:
+            tagged = []
+            for _g, row in p["rows"][g]:
+                end = row.index(">")      # the row's own attributes stay first
+                tagged.append(row[:end] + f" data-ord={p['order'][_g].pop(0)} "
+                              f"data-group={g} data-home={ids[key]}-{g}"
+                              + _search_attr(*p["names"], *p["emails"]) + row[end:])
+            p["rows"][g] = tagged
+
+    def rank(item):
+        key, p = item
+        r = p["rows"]
+        tier = 0 if (r["requested"] or r["possible"]) else (1 if r["started"] else 2)
+        return (tier, p["first"])
+
+    cards = []
+    for key, p in sorted(people.items(), key=rank):
+        r = p["rows"]
+        n_items = sum(len(v) for v in r.values())
+        only_done = not (r["requested"] or r["possible"] or r["started"])
+        others = sorted({k for nm in p["names"]
+                         for k in by_name.get(" ".join(nm.lower().split()), []) if k != key},
+                        key=lambda k: people[k]["first"])
+        also = "".join(
+            f"<div class=food>Also under another email: <a href='#{ids[k]}'>"
+            f"{_e(', '.join(people[k]['emails']) or people[k]['name'])}</a></div>" for k in others)
+        body = "".join(
+            f"<tbody id={ids[key]}-{g}><tr class=grp><td colspan=9>{label}</td></tr>"
+            + "".join(r[g]) + "</tbody>"
+            for g, label in _CARD_GROUPS if r[g])
+        cards.append(
+            f"<details class=pcard id={ids[key]}{'' if only_done else ' open'}"
+            + _search_attr(*p["names"], *p["emails"]) + ">"
+            f"<summary><h3>{_e(p['name'] or (p['emails'] or ['(unnamed)'])[0])}</h3> "
+            f"<span class=food>{_e(', '.join(p['emails']))} &middot; "
+            f"{n_items} item{'' if n_items == 1 else 's'}</span></summary>"
+            + also + _TABLE_HEAD + body + "</table></details>")
+    return "".join(cards)
+
+
+def _status_table():
+    """The status view (Glen, 2026-11-20): Requested, Possible, Started, Finished. It
+    starts empty; the page moves each card's rows here, so no button exists twice."""
+    return (_TABLE_HEAD + "".join(f"<tbody id=st-{g}><tr class=grp><td colspan=9>{label}"
+                                  "</td></tr></tbody>" for g, label in _GROUPS) + "</table>")
+
+
 def render_list_html(tests, q="", authored=None, requests=None):
     authored = authored or []
-    arows = "".join(_request_row(r) for r in requests or [])
-    errs = set()
-    for t in authored:
-        atid = _e(str(t.get("test_id") or ""))
-        p = t.get("progress") or {}
-        if p.get("orders_error"):
-            errs.add(p["orders_error"])
-        email = t.get("email") or ""
-        arows += (f"<tr{' class=finished' if p.get('all_done') else ''}>"
-                  f"<td><a href='/author/{atid}'>{_e(t.get('name') or '(unnamed)')}</a> "
-                  f"<a class=food href='/test/{atid}'>(report)</a>"
-                  + (f"<div class=food>{_e(email)}</div>" if email else "") + "</td>"
-                  f"<td>{_e(t.get('date') or '')}</td>"
-                  + _progress_cells(t) + "</tr>")
+    items = _intake_items(authored, requests)
+    errs = {(t.get("progress") or {}).get("orders_error") for t in authored} - {None, ""}
     note = "".join(f"<p class=food>Invoice columns unavailable: {_e(e)}.</p>" for e in sorted(errs))
-    asection = ("<h2>Your authored tests</h2>" + note +
-                "<table class=progress><tr><th rowspan=2>Client</th><th rowspan=2>Date</th>"
-                "<th colspan=3>Report</th><th colspan=4>Invoice</th></tr>"
-                "<tr><th>Done</th><th>Uploaded</th><th>Emailed</th>"
-                "<th>Amount</th><th>Uploaded</th><th>Emailed</th><th>Paid</th></tr>"
-                + (arows or "<tr><td colspan=9 class=food>None yet — click New test.</td></tr>")
-                + "</table>" + ((_STEP_CSS + _STEP_JS + (_REQ_JS if requests else ""))
-                                if arows else ""))
+    if items:
+        asection = (
+            "<h2>Your authored tests</h2>" + note
+            + "<div id=intake data-view=cards>"
+            "<div class=intake-tools><input type=search id=intake-search "
+            "placeholder='Find a person by name or email' autocomplete=off>"
+            "<button type=button class=btn id=intake-view>Show by status</button></div>"
+            "<div id=intake-cards>" + _person_cards(items) + "</div>"
+            "<div id=intake-status>" + _status_table() + "</div></div>"
+            + _STEP_CSS + _CARD_CSS + _STEP_JS + (_REQ_JS if requests else "") + _CARD_JS)
+    else:
+        asection = ("<h2>Your authored tests</h2>" + note + _TABLE_HEAD
+                    + "<tr><td colspan=9 class=food>None yet — click New test.</td></tr></table>")
+        if tests:
+            # Round 2: the FileMaker rows stay searchable with no new items.
+            asection += ("<div id=intake data-view=cards><div class=intake-tools>"
+                         "<input type=search id=intake-search placeholder='Find a person by "
+                         "name or email' autocomplete=off><button type=button class=btn "
+                         "id=intake-view hidden>Show by status</button></div></div>"
+                         + _CARD_CSS + _CARD_JS)
     rows = ""
     for t in tests or []:
         rows += (
-            "<tr>"
+            "<tr class=fmrow" + _search_attr(t.get("name"), t.get("email")) + ">"
             f"<td><a href='/test/{_e(str(t.get('test_id') or ''))}'>{_e(t.get('name') or '(unknown)')}</a></td>"
             f"<td>{_e(t.get('email') or '')}</td>"
             f"<td>{_e(t.get('date') or '')}</td>"
