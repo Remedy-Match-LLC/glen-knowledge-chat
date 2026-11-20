@@ -163,6 +163,10 @@ def system_prompt(ctx):
             rows.append(seg)
         parts.append("Their scan match, most important first" + when + ": "
                      + "; ".join(rows) + ".")
+        # Live read-back, 2026-11-19: asked how to take them, the chat said "eight
+        # Energetic Driver infoceuticals" and named none.
+        parts.append("When they ask about their remedies, name each one from this list "
+                     "by its name, with its directions when they are given here.")
     if ctx.get("mihealth"):
         parts.append("Their scan also lists miHealth device cycles, which Dr. Glen runs "
                      "for them; these are not remedies to take: " + ", ".join(ctx["mihealth"]) + ".")
