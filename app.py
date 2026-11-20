@@ -29090,6 +29090,47 @@ def _scan_rec_label(code, label):
     return f"{code} {label}".strip()
 
 
+def _portal_chat_product_name(slug_or_code):
+    """A catalogue name for an order line that carries only a slug or code."""
+    key = (slug_or_code or "").strip()
+    if not key:
+        return ""
+    p = _get_product(key)
+    if not p:
+        slug = _resolve_remedy_slug({"name": key}) or ""
+        p = _get_product(slug) if slug else None
+    return ((p or {}).get("name") or "").strip()
+
+
+def _portal_chat_approved_directions(name_or_slug):
+    """A remedy's Directions, only when Glen pinned its directions section (the #2020
+    rule). A dict {directions, caution} when the product carries a caution, so the dose
+    and its caution reach the prompt together. "" for an unknown remedy or unapproved
+    directions."""
+    key = (name_or_slug or "").strip()
+    if not key:
+        return ""
+    p = _get_product(key)
+    if not p:
+        slug = _resolve_remedy_slug({"name": key}) or ""
+        p = _get_product(slug) if slug else None
+    # The directions section itself must be pinned, not just any section (round 1:
+    # 32 live products pin other sections and carry unapproved directions).
+    if not p or "directions" not in _pinned_copy(p):
+        return ""
+    d = (p.get("directions") or "").strip()
+    if not d:
+        return ""
+    # A dose never travels without its caution (round 1: B17 Max, Brain Cleanse).
+    # chat_caution is a flag in the catalogue (True shows `warning` in chat), not text
+    # (round 3: 17 of 25 pinned products raised on .strip()). The warning goes with the
+    # dose whenever there is one.
+    _cc = p.get("chat_caution")
+    caution = (_cc if isinstance(_cc, str) and _cc.strip() else (p.get("warning") or ""))
+    caution = str(caution).strip()
+    return {"directions": d, "caution": caution} if caution else d
+
+
 def _scan_recommendations_for(email, scan_date=None):
     """The client's own E4L scan recommendations. None when off, unknown, or broken.
 
@@ -36413,7 +36454,11 @@ def api_portal_chat(token):
     except Exception:
         client_orders = []
     from dashboard import portal_concierge as _pcz
-    ctx = _pcz.build_context(content, client_orders)
+    # The portal token authenticates this email, so the client's own scan match may
+    # reach the chat, free or paid (Glen, 2026-11-19). Never from a typed email.
+    ctx = _pcz.build_context(content, client_orders, scan=_scan_recommendations_for(email),
+                             product_name=_portal_chat_product_name,
+                             directions_for=_portal_chat_approved_directions)
     _sys = _pcz.system_prompt(ctx) + _STANDING_USE_RULE
     # Dr. Glen's numbered questions for this client (Glen, 2026-11-12). Best effort:
     # a failed read leaves the chat as it was.
@@ -36489,7 +36534,7 @@ def api_portal_chat(token):
             yield sse({"related": community_related})
         full = []
         try:
-            with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=700,
+            with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=1200,
                                      system=_sys, messages=messages) as stream:
                 def _toks():
                     for tok in stream.text_stream:
@@ -36797,7 +36842,10 @@ def api_console_portal_draft_reply(email):
             orders = _o.list_orders_by_email(ocx, email)
     except Exception:
         orders = []
-    ctx = _pcz.build_context(rec.get("content") or {}, orders)
+    ctx = _pcz.build_context(rec.get("content") or {}, orders,
+                             scan=_scan_recommendations_for((email or "").strip().lower()),
+                             product_name=_portal_chat_product_name,
+                             directions_for=_portal_chat_approved_directions)
     # Glen's drafted reply follows the same CDS rule as the portal chat (review, #2143).
     # The shared base prompt tells the portal concierge to sign off as Dr. Glen. A staff
     # draft is signed at send time instead, so that one sentence is removed here
@@ -36821,7 +36869,7 @@ def api_console_portal_draft_reply(email):
                            else "Assistant"))
     convo = "\n".join(f"{who(m)}: {m['content']}" for m in msgs[-12:])
     try:
-        r = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=500, system=sys,
+        r = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=1000, system=sys,
                                 messages=[{"role": "user",
                                            "content": "CONVERSATION:\n" + convo + "\n\nDraft the team's reply:"}])
         draft = _strip_dash(r.content[0].text.strip())
