@@ -4715,7 +4715,7 @@ def _request_row(r):
     payer = r.get("payer_email") or ""
     quote = r.get("quote") or ""
     src = _REQ_SOURCE.get(r.get("source"), r.get("source") or "")
-    pill = "Possible" if r.get("status") == "pending_yes" else "Requested"
+    pill = {"pending_yes": "Possible", "done": "Done"}.get(r.get("status"), "Requested")
     who = (f"<span class=pill>{pill}</span> {_e(r.get('name') or email or '(unnamed)')}"
            + (f"<div class=food>{_e(email)}</div>" if email else "")
            + (f"<div class=food>Asked by {_e(payer)}</div>" if payer and payer != email else "")
@@ -4726,11 +4726,19 @@ def _request_row(r):
               if quote and r.get("source") != "order" else ""))
     when = (f"{_e(short_date(r.get('requested_at')) or str(r.get('requested_at') or '')[:10])}"
             f"<div class=food>by {_e(src)}</div>")
+    if r.get("status") == "done":
+        # Handled elsewhere (Glen, 2026-11-20): no buttons, it is finished.
+        return (f"<tr id=req-{rid} class=finished><td>{who}</td><td>{when}</td>"
+                "<td class=food>Done without a test here</td>"
+                + "".join(_step_none() for _ in range(6)) + "</tr>")
     if r.get("status") == "pending_yes":
         act = (f"<td><button type=button class=step data-url=\"/request/{rid}/yes\" "
                f"onclick=\"reqAct(this)\">Yes</button> "
                f"<button type=button class=step data-url=\"/request/{rid}/no\" "
-               f"onclick=\"reqAct(this)\">No</button></td>")
+               f"onclick=\"reqAct(this)\">No</button> "
+               f"<button type=button class=step data-url=\"/request/{rid}/done\" "
+               f"title=\"Handled elsewhere: moves to Finished\" "
+               f"onclick=\"reqAct(this)\">Done</button></td>")
     else:
         act = (f"<td><button type=button class=step data-url=\"/request/{rid}/start\" "
                f"onclick=\"reqAct(this)\">Start test</button></td>")
@@ -4828,7 +4836,7 @@ def _intake_items(authored, requests):
     """Every item once: (key, name, email, group, row html), in list order."""
     items = []
     for r in requests or []:
-        g = "possible" if r.get("status") == "pending_yes" else "requested"
+        g = {"pending_yes": "possible", "done": "finished"}.get(r.get("status"), "requested")
         items.append((_person_key(r.get("email"), r.get("name")), r.get("name") or "",
                       r.get("email") or "", g, _request_row(r)))
     for t in authored or []:

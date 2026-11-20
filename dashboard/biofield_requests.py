@@ -502,6 +502,24 @@ def decline(cx, rid):
     return (True, "") if n == 1 else (False, "This request is no longer waiting for a yes.")
 
 
+def mark_done(cx, rid):
+    """Glen's Done (2026-11-20): a possible request was handled elsewhere. It leaves the
+    open list and shows under Finished on the person's card. Nothing is sent. (ok, msg)."""
+    ensure_schema(cx)
+    n = cx.execute(f"UPDATE {TABLE} SET status='done', decided_at=? "
+                   "WHERE id=? AND status='pending_yes'", (_now(), int(rid))).rowcount
+    cx.commit()
+    return (True, "") if n == 1 else (False, "This request is no longer waiting for a yes.")
+
+
+def list_done(cx):
+    """Requests Glen marked Done, newest first, for the Finished group. Reads only."""
+    if not _has_table(cx, TABLE):
+        return []
+    return _rows(cx, f"SELECT * FROM {TABLE} WHERE status='done' "
+                     "ORDER BY decided_at DESC, id DESC")
+
+
 def today_hst():
     return _dt.datetime.now(HST).date().isoformat()
 

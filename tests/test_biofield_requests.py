@@ -847,3 +847,20 @@ def test_a_name_with_a_newline_stays_on_one_line_in_the_email(cx):
     br.record(cx, br.order_to_request(o))
     _, body = br.compose_alert(br.unalerted(cx), "http://127.0.0.1:8011")
     assert "\nLine: http://evil" not in body
+
+
+def test_the_done_route_moves_a_possible_line_to_finished(tmp_path):
+    """Glen, 2026-11-20: "for Possible items, add a Done button"."""
+    client, db = _client(tmp_path)
+    with sqlite3.connect(db) as cx:
+        a = br.record(cx, req("m1"))
+        b = br.record(cx, req("m2", certainty="possible", email="bob@x.com", name="Bob"))
+    assert client.post(f"/request/{a['id']}/done", json={}).status_code == 409
+    assert client.post(f"/request/{b['id']}/done", json={}).get_json()["ok"]
+    assert client.post(f"/request/{b['id']}/done", json={}).status_code == 409
+    with sqlite3.connect(db) as cx:
+        assert br.get(cx, b["id"])["status"] == "done"
+        assert br.get(cx, a["id"])["status"] == "requested"
+    html = client.get("/").get_data(as_text=True)
+    assert "<span class=pill>Done</span> Bob" in html and "Done without a test here" in html
+    assert f"/request/{b['id']}/" not in html
