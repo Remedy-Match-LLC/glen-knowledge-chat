@@ -278,3 +278,26 @@ def test_the_corrections_replay_restores_the_new_line_from_blank():
     ae.apply_corrections(P, C)
     assert all(P[s]["directions"] == new for s in dirs)
     assert all(P[s]["description"] == new for s in descs)
+
+
+def test_intros_drafted_with_the_old_dose_are_redrafted():
+    """Glen, 2026-11-20: four AI intros still said "building up gradually" after the
+    directions moved to the new line. `content_since` drops drafts older than it, so
+    the page drafts them again from the new directions. Both files carry it, so the
+    corrections replay cannot take it away."""
+    import json
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    prods = json.loads((root / "data/products.json").read_text())["products"]
+    corr = json.loads((root / "data/products-manual-corrections.json").read_text())
+    for slug in ("ed14-spleenthymus-driver", "mb5-esr-emotional-stress-release-infoceutical",
+                 "mb7-peace", "ed9-muscle-driver"):
+        for src in (prods[slug], corr[slug]):
+            from datetime import datetime, timezone
+            raw = str(src.get("content_since", ""))
+            # Round 2: parse it, so "invalid" cannot sort past the date. Drafts are
+            # stamped in UTC and compared as strings, so the offset must be +00:00.
+            when = datetime.fromisoformat(raw)
+            assert raw.endswith("+00:00"), slug
+            assert when >= datetime(2026, 11, 20, 19, 57, tzinfo=timezone.utc), slug
+            assert when <= datetime.now(timezone.utc), "a future date redrafts on every view"
