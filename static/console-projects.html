@@ -370,8 +370,9 @@ function submitKey() {
 }
 
 async function load() {
+  // No stored key: a signed-in owner's cookie still works, so try the server first
+  // and let a 401 bring the prompt (Glen, 2026-11-20, for Rae).
   const key = consoleKey();
-  if (!key) { showKeyPrompt(); return; }
 
   setStatus("");
   try {
@@ -402,7 +403,6 @@ async function addIdea() {
   const text = input.value.trim();
   if (!text) return;
   const key = consoleKey();
-  if (!key) { showKeyPrompt(); return; }
   input.disabled = btn.disabled = true;
   try {
     const r = await fetch("/api/projects/add-idea", {

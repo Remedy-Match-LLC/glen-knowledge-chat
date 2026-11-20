@@ -50082,7 +50082,9 @@ def _present_console_key():
     call, which locked Glen and Rae out of Sell: Orders after the 2026-09-16
     rotation while their login cookies were valid. A VALID key (master, owner or
     VA token) always keeps its own identity."""
-    k = request.headers.get("X-Console-Key", "") or request.args.get("key", "")
+    # Stripped, as _auth always did: a padded VA key must keep its own identity rather
+    # than fail the lookup and yield to an owner cookie (round 1).
+    k = (request.headers.get("X-Console-Key", "") or request.args.get("key", "")).strip()
     if k:
         if not CONSOLE_SECRET or k == CONSOLE_SECRET or _role_for_token(k):
             return k

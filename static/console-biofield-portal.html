@@ -247,8 +247,15 @@ let CAT_BY_NAME = {};
 let FINDINGS = {}; let FINDINGS_LIST = [];
 let _legacyFfCents = null;   // special_price_cents from an older portal, for the FF-price bridge
 
-function boot(){
-  if(!key()){ $('gate').style.display='flex'; return; }
+// Rae signs in with a login cookie and her browser holds no key. Ask the server
+// before showing the key box (Glen, 2026-11-20: "She should have access to all the tabs").
+function rmCookieSignedIn(){
+  return fetch('/api/console/auth-status', {credentials:'same-origin'})
+    .then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+
+async function boot(){
+  if(!key() && !(await rmCookieSignedIn())){ $('gate').style.display='flex'; return; }
   $('app').style.display='block';
   loadCatalog();
   loadTriage();

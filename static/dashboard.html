@@ -593,6 +593,7 @@ async function tryKey(v){
     });
     if(res.status === 200){
       consoleKey = v;
+      signedIn = true;
       localStorage.setItem(KEY_STORAGE, v);
       msg.textContent = "Welcome.";
       msg.style.color = "var(--green)";
@@ -621,7 +622,14 @@ document.getElementById("keyBtn").addEventListener("click", () => {
 document.getElementById("keyInput").addEventListener("keydown", e => {
   if(e.key === "Enter") document.getElementById("keyBtn").click();
 });
-if(!consoleKey) showLockout();
+// A signed-in owner's login cookie is enough even with no stored key (Glen,
+// 2026-11-20, for Rae). signedIn gates the cards; the key is sent when there is one.
+let signedIn = !!consoleKey;
+if(!consoleKey){
+  fetch("/api/console/auth-status", {credentials: "same-origin", cache: "no-store"})
+    .then(r => { if(r.ok){ signedIn = true; refreshAll(); } else showLockout(); })
+    .catch(() => showLockout());
+}
 
 // ── clock ─────────────────────────────────────────────────────────────────
 function updateClock(){
@@ -1105,7 +1113,7 @@ async function fetchCard(card){
 const cards = Array.from(document.querySelectorAll(".card"));
 
 function refreshAll(){
-  if(!consoleKey){ showLockout(); return; }
+  if(!signedIn){ showLockout(); return; }
   cards.forEach(fetchCard);
 }
 
@@ -1126,7 +1134,7 @@ cards.forEach(card => {
     fetchCard(card);
   });
   setInterval(() => {
-    if(!consoleKey) return;
+    if(!signedIn) return;
     // Don't refetch a card while the user is mid-edit inside an open panel.
     if(typeof window.cardHasOpenPanel === "function" && window.cardHasOpenPanel(card)) return;
     if(hasActiveSelectionIn(card)) return;
@@ -1139,7 +1147,7 @@ document.getElementById("refreshAll").addEventListener("click", refreshAll);
 // Manual briefings regen — POSTs /api/regenerate-briefings, then refetches
 // the intelligence cards so the new markdown shows immediately.
 document.getElementById("regenIntel").addEventListener("click", async () => {
-  if(!consoleKey){ showLockout(); return; }
+  if(!signedIn){ showLockout(); return; }
   const btn = document.getElementById("regenIntel");
   const orig = btn.textContent;
   btn.disabled = true;

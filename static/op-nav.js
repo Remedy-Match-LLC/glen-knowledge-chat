@@ -98,7 +98,16 @@
   // Resolve the console key: a URL ?key= wins and is persisted; otherwise fall
   // back to a previously-stored key. This lets every internal link carry the key
   // even when the current page's URL doesn't have it (e.g. unlocked via a gate).
-  var urlKey = new URLSearchParams(location.search).get("key") || "";
+  // data-base: the bar is drawn on a page served from somewhere else (the local tools on
+  // Glen's Mac, opened over the private link), so every tab must point back at the hosted
+  // console. Only a bare https origin is accepted. In this mode no key is read, stored or
+  // put in a link: the hosted console's own login cookie signs the tab in (Glen,
+  // 2026-11-20: "she also needs the navigation header to all the tabs").
+  var BASE = (script && script.dataset && script.dataset.base) || "";
+  // Asked for but not a bare https origin: draw no bar at all, never fall back to the
+  // keyed mode (round 2).
+  if (BASE && !/^https:\/\/[a-z0-9.-]+$/i.test(BASE)) return;
+  var urlKey = BASE ? "" : (new URLSearchParams(location.search).get("key") || "");
   if (urlKey) { try { localStorage.setItem("console_key", urlKey); } catch (e) {} }
 
   // On a PUBLIC page (e.g. the chatbot at /), only render the nav when a key is in
@@ -120,12 +129,18 @@
   } catch (e) {}
 
   var storedKey = "";
-  try { storedKey = localStorage.getItem("console_key") || ""; } catch (e) {}
+  if (!BASE) { try { storedKey = localStorage.getItem("console_key") || ""; } catch (e) {} }
   var effKey = urlKey || storedKey;
   var qs = effKey ? ("?key=" + encodeURIComponent(effKey)) : "";
 
   var PILLARS = buildPillars(qs);
   var PILLAR_PAGES = buildPillarPages(qs);
+  if (BASE) {
+    PILLARS.forEach(function (t) { t.href = BASE + t.href; });
+    Object.keys(PILLAR_PAGES).forEach(function (k) {
+      PILLAR_PAGES[k].forEach(function (m) { m.href = BASE + m.href; });
+    });
+  }
 
   var styles = ''
     + '<style id="op-nav-styles">'
@@ -278,11 +293,11 @@
     + '<button type="button" class="op-nav-tab op-nav-more-btn">More ▾</button>'
     + '<span class="op-nav-more-menu"></span></span>';
   bar += '<span class="op-nav-spacer"></span>';
-  if (!effKey) {
+  if (!effKey && !BASE) {
     bar += '<span class="op-nav-key-warn">no ?key — paste &amp; reload</span>';
   }
   bar += '<span class="op-nav-theme" id="op-nav-theme" role="group" aria-label="Theme mode"></span>';
-  bar += '<span class="op-nav-search-wrap">'
+  if (!BASE) bar += '<span class="op-nav-search-wrap">'
     + '<span class="op-nav-mode-toggle" id="op-nav-mode">'
     +   '<button type="button" data-mode="pages">Pages</button>'
     +   '<button type="button" data-mode="records">Records</button>'
@@ -345,10 +360,12 @@
   var NAV_CACHE_KEY = "op_nav_profile";
   try {
     var cached = localStorage.getItem(NAV_CACHE_KEY);
-    if (cached === "rae" || cached === "shaira" || cached === "glen") applyNavProfile(cached);
+    // Away from the hosted console nothing can correct a cached profile: keep the full bar.
+    if (!BASE && (cached === "rae" || cached === "shaira" || cached === "glen")) applyNavProfile(cached);
   } catch (e) {}
 
-  fetch("/api/me" + (effKey ? "?key=" + encodeURIComponent(effKey) : ""),
+  // Away from the hosted console there is no /api/me to ask: keep the full bar.
+  if (!BASE) fetch("/api/me" + (effKey ? "?key=" + encodeURIComponent(effKey) : ""),
         { headers: effKey ? { "X-Console-Key": effKey } : {} })
     .then(function (r) { return r.json(); })
     .then(function (me) {
@@ -622,7 +639,8 @@
 
   // Load the Ask & Guide panel on every console page (browser only).
   try {
-    if (!document.querySelector('script[src="/static/ask-guide.js"]')) {
+    // Not away from the hosted console: the panel's routes live there only (round 1).
+    if (!BASE && !document.querySelector('script[src="/static/ask-guide.js"]')) {
       var _ag = document.createElement("script");
       _ag.src = "/static/ask-guide.js"; _ag.defer = true;
       document.body.appendChild(_ag);

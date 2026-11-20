@@ -126,7 +126,11 @@
     function $(id){ return document.getElementById(id); }
     function showForm(){ $('key-card').style.display='none'; $('form-card').style.display='block'; }
 
+    // A signed-in owner's cookie is enough: ask the server before showing the key box
+    // (Glen, 2026-11-20, for Rae).
     if (KEY) showForm();
+    else fetch('/api/console/auth-status', {credentials:'same-origin'})
+      .then(function(r){ if (r.ok) showForm(); }).catch(function(){});
     $('key-save').addEventListener('click', function(){
       KEY = ($('key').value||'').trim();
       if (KEY){ localStorage.setItem('console_key', KEY); showForm(); }
