@@ -137,9 +137,15 @@ def test_a_launcher_never_hands_the_master_secret_to_an_owner_token(name):
 
 @pytest.mark.parametrize("name", LAUNCHERS)
 def test_a_launcher_still_refuses_an_unknown_caller(name):
-    """Widening must not have opened the door to someone holding nothing at all."""
+    """Widening must not have opened the door to someone holding nothing at all. Since
+    2026-11-19 both refusals go through _local_tool_only_response, which keeps the 401
+    for a script and shows a browser a plain page with no redirect and no key."""
     body = dict(_functions())[name]
-    assert '"Unauthorized"' in body and "401" in body
+    assert "_local_tool_only_response(" in body and ", False)" in body
+    helper = dict(_functions())["_local_tool_only_response"]
+    assert '"Unauthorized"' in helper and "401" in helper
+    assert "local_tool_url" not in helper and "redirect" not in helper
+    assert "CONSOLE_SECRET" not in helper
 
 
 def test_the_secret_bearing_helper_is_still_the_reason_for_that_care():

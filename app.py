@@ -25156,6 +25156,34 @@ def api_guide():
         return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
+def _local_tool_only_response(tool, owner_ok):
+    """What a console tab that launches a tool on Glen's Mac shows to anyone without the
+    master secret. A browser always gets one plain page saying where the tool runs, and
+    never a key prompt, whether its sign-in is an owner token or has lapsed (Rae,
+    2026-11-19: Match: Intake asked her for a console key). The page names no credential
+    and links nowhere, so it is safe unauthenticated. A script keeps the JSON answers:
+    409 local_tool for an owner token, 401 otherwise."""
+    detail = ("This tab opens a tool that runs on Glen's own Mac, so it only works "
+              "from that machine. Nothing is wrong with your sign-in.")
+    if "text/html" in (request.headers.get("Accept", "") or ""):
+        import html as _html
+        page = ("<!doctype html><html lang=en><head><meta charset=utf-8>"
+                "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                f"<title>{_html.escape(tool)}</title>"
+                "<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:48px 16px;"
+                "background:#faf8f4;color:#2b2b2b}main{max-width:34rem;margin:0 auto}"
+                "h1{font-size:1.3rem;margin:0 0 .75rem}a{color:#2f6b4f}"
+                "@media (prefers-color-scheme:dark){body{background:#1c1d1f;color:#e8e6e1}"
+                "a{color:#8fc9a8}}</style></head><body><main>"
+                f"<h1>{_html.escape(tool)} runs on Glen's Mac</h1>"
+                f"<p>{_html.escape(detail)}</p>"
+                "<p><a href='/console'>Back to the console</a></p></main></body></html>")
+        return Response(page, status=200, mimetype="text/html")
+    if owner_ok:
+        return jsonify({"error": "local_tool", "tool": tool, "detail": detail}), 409
+    return jsonify({"error": "Unauthorized"}), 401
+
+
 @app.route("/console/biofield-intake")
 def console_biofield_intake():
     """Launcher: bounce the browser to the LOCAL Biofield Intake portal (the voice
@@ -25170,13 +25198,8 @@ def console_biofield_intake():
             # secret in the URL, and the owner token exists precisely so it can be
             # revoked without ever escalating to that secret. So: say what this tab is.
             if _owner_token_ok(_key):
-                return jsonify({
-                    "error": "local_tool", "tool": "Biofield Intake",
-                    "detail": ("This tab launches a tool running on Glen's own Mac, "
-                               "so it only works from that machine. Nothing is wrong "
-                               "with your sign-in."),
-                }), 409
-            return jsonify({"error": "Unauthorized"}), 401
+                return _local_tool_only_response("Biofield Intake", True)
+            return _local_tool_only_response("Biofield Intake", False)
     from dashboard.console_launcher import local_tool_url, console_back_path
     # Hand over the key THIS SERVER holds, not the one the browser sent. op-nav.js
     # builds its ?key= from localStorage, so after the 2026-09-16 rotation every
@@ -25201,13 +25224,8 @@ def console_clinical_tags():
             # secret in the URL, and the owner token exists precisely so it can be
             # revoked without ever escalating to that secret. So: say what this tab is.
             if _owner_token_ok(_key):
-                return jsonify({
-                    "error": "local_tool", "tool": "Clinical Tags",
-                    "detail": ("This tab launches a tool running on Glen's own Mac, "
-                               "so it only works from that machine. Nothing is wrong "
-                               "with your sign-in."),
-                }), 409
-            return jsonify({"error": "Unauthorized"}), 401
+                return _local_tool_only_response("Clinical Tags", True)
+            return _local_tool_only_response("Clinical Tags", False)
     from dashboard.console_launcher import local_tool_url
     return redirect(local_tool_url("BIOFIELD_LOCAL_URL", "http://127.0.0.1:8011",
                                    _dashboard.CONSOLE_SECRET, path="/clinical-tags"))
