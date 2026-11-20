@@ -285,7 +285,8 @@ def test_a_line_with_every_step_done_is_grey_and_stays_listed(tmp_path):
         bp.link_order(cx, tid, 5)
     client, _ = _app(db, orders=[_full_order(5)])
     row = _row(client.get("/").get_data(as_text=True), tid)
-    assert row.startswith("<tr class=finished>")
+    # The row also carries the person-card attributes (2026-11-20); the grey mark comes first.
+    assert re.match(r"<tr class=finished[ >]", row)
 
 
 def _all_done():
