@@ -100,7 +100,9 @@ def test_only_the_dosing_line_is_carried_as_a_description():
     else a twin held (ES10's product copy) is not carried."""
     P = _products()
     dosing = [r["survivor"] for r in ROWS if (P[r["survivor"]].get("description") or "")
-              .startswith("build up 1 drop a day to 15 drops")]
+              .startswith(("build up 1 drop a day to 15 drops",
+                           # Glen, 2026-11-20: the new wording of the same line.
+                           "Start with 1 drop and add 1 drop each day, up to 15 drops"))]
     assert len(dosing) >= 73, len(dosing)
     assert not P["es10-video"].get("description")
 
