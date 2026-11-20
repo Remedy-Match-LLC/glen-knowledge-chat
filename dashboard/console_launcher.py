@@ -53,3 +53,20 @@ def local_tool_url(base_env, default_base, secret, path="/", back=""):
     if back:
         params.append("back=" + urllib.parse.quote(back, safe=""))
     return base + path + ("?" + "&".join(params) if params else "")
+
+
+def tailnet_tool_url(base_env, default_base, path, one_time_pass, back=""):
+    """Where to send an OWNER's browser for a local tool over the private link.
+
+    It carries a one-time pass and nothing else that authenticates. There is no
+    `secret` argument on purpose, so the master key cannot be passed in by mistake."""
+    base = (os.environ.get(base_env) or default_base).rstrip("/")
+    path = "/" + (path or "").strip("/")
+    params = ["pass=" + urllib.parse.quote(one_time_pass or "", safe="")]
+    # Drop the query: op-nav.js puts the owner token in every console link as
+    # ?key=, so a Referer-derived back path would carry it to the Mac's log and
+    # the tailnet origin's history (round-1 review, 2026-11-19).
+    back = (back or "").split("?", 1)[0].split("#", 1)[0]
+    if back:
+        params.append("back=" + urllib.parse.quote(back, safe=""))
+    return base + path + "?" + "&".join(params)
