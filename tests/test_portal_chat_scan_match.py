@@ -196,8 +196,9 @@ def test_every_live_infoceutical_but_sleep_night_and_energy_has_the_approved_dir
     import pathlib
     P = json.loads(pathlib.Path(__file__).resolve().parents[1].joinpath(
         "data", "products.json").read_text())["products"]
-    want = ("Build up 1 drop a day to 15 drops, stirred into a little water without "
-            "touching metal, daily on rising, or as guided.")
+    # Glen, 2026-11-20: "Start with 1 drop and add 1 drop each day, up to 15 drops."
+    want = ("Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a "
+            "little water without touching metal, daily on rising, or as guided.")
     live = {s: p for s, p in P.items() if "infoceutical" in (p.get("name") or "").lower()
             and not (p.get("retired") or p.get("superseded_by") or p.get("inactive"))}
     for s, p in live.items():
@@ -220,8 +221,9 @@ def test_the_infoceutical_directions_survive_a_corrections_replay():
     import apply_enrichment as ae
     P = json.loads((root / "data" / "products.json").read_text())["products"]
     C = json.loads((root / "data" / "products-manual-corrections.json").read_text())
-    want = ("Build up 1 drop a day to 15 drops, stirred into a little water without "
-            "touching metal, daily on rising, or as guided.")
+    # Glen, 2026-11-20: "Start with 1 drop and add 1 drop each day, up to 15 drops."
+    want = ("Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a "
+            "little water without touching metal, daily on rising, or as guided.")
     mine = sorted(s for s, p in P.items() if p.get("directions") == want)
     assert len(mine) == 80
     assert sorted(s for s, c in C.items() if isinstance(c, dict) and c.get("directions") == want) == mine
@@ -232,3 +234,47 @@ def test_the_infoceutical_directions_survive_a_corrections_replay():
         assert P[s].get("ingredients_source") == before[s].get("ingredients_source")
         assert P[s].get("ingredients_source") != "manual"
 
+
+
+def test_no_live_page_shows_the_old_build_up_wording():
+    """Glen, 2026-11-20: "Start with 1 drop and add 1 drop each day, up to 15 drops."
+    The old "build up 1 drop a day" could be read as one drop a day. Night keeps it until
+    Glen gives Sleep, Night and Energy their own direction."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    P = json.loads((root / "data" / "products.json").read_text())["products"]
+    C = json.loads((root / "data" / "products-manual-corrections.json").read_text())
+    new = ("Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a "
+           "little water without touching metal, daily on rising, or as guided.")
+    old = [s for s, p in P.items() if not p.get("inactive") and s != "night"
+           and "build up 1 drop a day" in json.dumps(p).lower()]
+    assert old == []
+    # Night waits for its own direction; changing it must be a deliberate edit (round 3).
+    assert P["night"]["description"].startswith("build up 1 drop a day")
+    moved = [s for s, p in P.items() if p.get("description") == new]
+    assert len(moved) == 78
+    assert all(C[s].get("description") == new for s in moved)
+    mine = [s for s, p in P.items() if p.get("directions") == new]
+    assert all(C[s].get("copy_pinned") == ["directions"] for s in mine)
+
+
+def test_the_corrections_replay_restores_the_new_line_from_blank():
+    """Round 3: replaying onto a catalogue that already holds the text proves nothing."""
+    import pathlib
+    import sys as _sys
+    root = pathlib.Path(__file__).resolve().parents[1]
+    _sys.path.insert(0, str(root / "scripts"))
+    import apply_enrichment as ae
+    P = json.loads((root / "data" / "products.json").read_text())["products"]
+    C = json.loads((root / "data" / "products-manual-corrections.json").read_text())
+    new = ("Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a "
+           "little water without touching metal, daily on rising, or as guided.")
+    dirs = [s for s, p in P.items() if p.get("directions") == new]
+    descs = [s for s, p in P.items() if p.get("description") == new]
+    assert len(dirs) == 80 and len(descs) == 78
+    for s in dirs:
+        P[s]["directions"] = ""
+        P[s]["description"] = "build up 1 drop a day to 15 drops"
+    ae.apply_corrections(P, C)
+    assert all(P[s]["directions"] == new for s in dirs)
+    assert all(P[s]["description"] == new for s in descs)
