@@ -1722,6 +1722,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             tests = list_tests(cx, q)
             # Biofield test requests (Glen, 2026-10-23): open "Requested" lines.
             requests_open = biofield_requests.list_open(cx)
+            # Done requests sit under Finished on the person's card (Glen, 2026-11-20).
+            requests_open += biofield_requests.list_done(cx)
         if authored:
             # ONE orders call for the whole list, never one per line.
             orders, orders_err = progress_orders(sorted(set(links.values())))
@@ -2258,6 +2260,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def request_no(rid):
         with sqlite3.connect(db_path) as cx:
             ok, err = biofield_requests.decline(cx, rid)
+        return ({"ok": True}, 200) if ok else ({"ok": False, "error": err}, 409)
+
+    @app.route("/request/<int:rid>/done", methods=["POST"])
+    def request_done(rid):
+        with sqlite3.connect(db_path) as cx:
+            ok, err = biofield_requests.mark_done(cx, rid)
         return ({"ok": True}, 200) if ok else ({"ok": False, "error": err}, 409)
 
     # --- Authoring (Increment 4a) ---

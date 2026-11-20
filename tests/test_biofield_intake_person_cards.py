@@ -129,3 +129,26 @@ def test_filemaker_rows_stay_searchable_with_no_new_items():
                               "date": "2025", "layer_count": 1}], "", [], [])
     assert "id=intake-search" in html and "class=fmrow" in html
     assert "id=intake-view hidden" in html
+
+
+# ── Done on a Possible item (Glen, 2026-11-20: "for Possible items, add a Done button") ──
+
+def test_a_possible_item_has_a_done_button_beside_yes_and_no():
+    html = render_list_html([], "", [], [_req(1, "a@x.com", "A")])
+    assert html.count('data-url="/request/1/done"') == 1
+    assert "/request/1/yes" in html and "/request/1/no" in html
+
+
+def test_a_requested_item_has_no_done_button():
+    html = render_list_html([], "", [], [_req(2, "a@x.com", "A", "requested")])
+    assert "/request/2/done" not in html
+
+
+def test_a_done_item_sits_under_finished_without_buttons():
+    html = render_list_html([], "", [_test("a1", "a@x.com", "A")],
+                            [_req(3, "a@x.com", "A", "done")])
+    body = _cards(html)[0][1]
+    fin = body[body.index(">Finished<"):]
+    assert "id=req-3" in fin and "Done without a test here" in fin
+    assert "/request/3/" not in html
+    assert "data-group=finished" in re.search(r"<tr id=req-3[^>]*>", html).group(0)
