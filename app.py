@@ -68170,6 +68170,26 @@ def api_orders_typed_items():
         cx.close()
 
 
+@app.route("/api/orders/typed-items/<slug>/retire", methods=["POST"])
+def api_orders_typed_item_retire(slug):
+    """OWNER: take a typed item off the New Order list (Glen, 2026-11-20, platform tab,
+    "ok to build the retire button"). The row stays, so an order that already carries
+    the item keeps pricing at its typed price. A retired name cannot be typed back in."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import typed_items as _ti
+    cx = db.connect(LOG_DB)
+    try:
+        _ti.init_table(cx)
+        item = _ti.retire(cx, slug)
+        if not item:
+            return jsonify({"ok": False, "error": "No such new item."}), 404
+        return jsonify({"ok": True, "item": item})
+    finally:
+        cx.close()
+
+
 @app.route("/api/products/stale")
 def bos_products_stale():
     if _bos_actor() is None:

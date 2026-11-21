@@ -140,6 +140,7 @@
       <div><label>Qty</label><input id="prod-qty" type="number" min="1" value="1"></div>
       <div><label>Unit $ (override)</label><input id="prod-unit" type="number" step="0.01" placeholder="catalog"></div>
       <div><button class="ghost" onclick="addLine()">Add</button></div>
+      <div><button class="ghost" id="retire-item-btn" style="display:none" onclick="retireTypedItem(this)">Retire new item</button></div>
     </div>
     <div class="addline newitem">
       <div><label>New item (not in the list yet)</label><input id="new-item-name" type="text" placeholder="name, e.g. Quercetin Pure Powder" autocomplete="off" style="width:100%"></div>
@@ -289,13 +290,36 @@ async function loadCatalog(){
   if (r.status===401){ $("auth-warn").style.display="block"; throw new Error("unauthorized"); }
   CATALOG = ((await r.json()).products)||[];
   renderProdPick();
-  if (!loadCatalog.wired){ $("prod-search").addEventListener("input", renderProdPick); loadCatalog.wired=true; }
+  if (!loadCatalog.wired){ $("prod-search").addEventListener("input", renderProdPick);
+    $("prod-pick").addEventListener("change", showRetireButton); loadCatalog.wired=true; }
+}
+// Retire shows only for a typed new item: a catalog product is never retired here.
+function showRetireButton(){
+  const p=CATALOG.find(x=>x.slug===$("prod-pick").value);
+  $("retire-item-btn").style.display=(p&&p.typed)?"":"none";
+}
+async function retireTypedItem(btn){
+  const p=CATALOG.find(x=>x.slug===$("prod-pick").value);
+  if(!p||!p.typed) return;
+  if(!confirm("Retire "+p.name+" from the list? Orders that already have it keep their price.")) return;
+  btn.disabled=true;
+  try{
+    const r=await fetch("/api/orders/typed-items/"+encodeURIComponent(p.slug)+"/retire",
+      {method:"POST",headers:HEADERS});
+    const j=await r.json();
+    if(!j.ok){ toast(j.error||"Could not retire the item","error"); return; }
+    toast(p.name+" is retired from the list");
+    await loadCatalog();
+  } catch(e){
+    toast("Could not reach the server. Press Retire again; a repeat is safe.","error");
+  } finally { btn.disabled=false; }
 }
 function renderProdPick(){
   const q = ($("prod-search").value||"").trim().toLowerCase();
   const list = q ? CATALOG.filter(p => ((p.name||"")+" "+(p.slug||"")).toLowerCase().includes(q)) : CATALOG;
   $("prod-pick").innerHTML = list.map(p=>
     `<option value="${esc(p.slug)}">${esc(p.name)} — ${dollars(p.price_cents)}${p.typed?" (new item)":""}</option>`).join("");
+  showRetireButton();
 }
 
 // ── customer search ──
