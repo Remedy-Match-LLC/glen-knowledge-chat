@@ -2393,6 +2393,24 @@ _SENTENCE_START_CUE_NAMES = frozenset({"clarity", "moisturize"}) | _VINPOCETINE_
 # cost: "how much muscle mass is safe while pregnant?" brings Muscle Mass's caution, because
 # a missed pregnancy line costs more than an extra caution block (review round 2).
 _VINPOCETINE_LINE = "contains vinpocetine, so do not use it if you are pregnant"
+# Heart Health and Perfect Skin lost vinpocetine with the formulas Glen approved on
+# 2026-11-20. Their new cautions open with "Don't use this if you're pregnant or
+# breastfeeding", so they keep the any-case match for a pregnancy or safety question.
+_PREGNANCY_LINE_FORMER_VINPOCETINE = {
+    "heart-health": "Don't use this if you're pregnant or breastfeeding.",
+    "perfect-skin": "Don't use this if you're pregnant or breastfeeding.",
+}
+
+
+def _carries_pregnancy_line(slug, product):
+    """The product's caution carries a pregnancy line that a lowercase question must reach."""
+    warning = (product or {}).get("warning") or ""
+    if _VINPOCETINE_LINE in warning:
+        return True
+    line = _PREGNANCY_LINE_FORMER_VINPOCETINE.get(slug)
+    return bool(line) and warning.startswith(line)
+
+
 _PREGNANCY_OR_SAFETY_CUE = re.compile(
     r"pregnan|breast[\s-]*feed|nursing|conceiv|trying\s+for\s+a\s+baby|\bsafe|"
     r"caution|side[\s-]+effect", re.IGNORECASE)
@@ -2666,7 +2684,7 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                     m = mi
                     break
         if (not m and slug not in _ALWAYS_CUE_NAMES
-                and _VINPOCETINE_LINE in (p.get("warning") or "")
+                and _carries_pregnancy_line(slug, p)
                 and _PREGNANCY_OR_SAFETY_CUE.search(query_text)):
             # After "a" or "an" the name is a kind of thing, not the product: "Is a DHT
             # blocker safe for women" names nothing (test_named_product_facts).
@@ -2793,7 +2811,7 @@ def _former_name_match(query_text, slug, former, products):
     # A vinpocetine formula asked about with a pregnancy or safety cue counts in any
     # casing, as its catalog name does: "is synergy c safe while pregnant?" gets the
     # caution (review round 3b).
-    vinpo = (_VINPOCETINE_LINE in ((products.get(slug) or {}).get("warning") or "")
+    vinpo = (_carries_pregnancy_line(slug, products.get(slug))
              and bool(_PREGNANCY_OR_SAFETY_CUE.search(query_text)))
     # The longest first, so "Vitamin D Synergy Powder" is quoted whole (review round 3b).
     for alias in sorted(names, key=len, reverse=True):

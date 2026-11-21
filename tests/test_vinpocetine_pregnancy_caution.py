@@ -20,13 +20,13 @@ SOLO = "Do not use vinpocetine if you are pregnant or could become pregnant."
 # Brain Boost left the list: its July 2026 label has no vinpocetine, and no older bottle is
 # for sale (Glen, 30 October, "no"; spec 2026-10-30-brain-boost-one-record).
 OWN_ROW = ["bioavailability-blend", "bioavailability-blend-powder",
-           "heart-health", "iron-out", "iron-syntropy", "longevity", "melatonin-max",
+           "iron-out", "iron-syntropy", "longevity", "melatonin-max",
            "migrafree", "muscle-mass", "one-step", "seaamino-syntropy", "stone-solvent",
            "sustain", "vagus-nerve-support"]
 BLEND_ROW = ["acetaldehyde-detox", "apoptogenesis", "appestat", "blood-cleanse",
              "c15-syntropy", "c15-syntropy-pentadecanoic-acid", "curcu-guard", "dht-blocker",
              "lens-zyme", "magnesium-syntropy", "mitochondrial-biogenesis", "night-vision",
-             "perfect-skin", "rescue", "rescue-phytochromotherapy", "rise--shine",
+             "rescue", "rescue-phytochromotherapy", "rise--shine",
              "thermogenesis", "three-treasures", "tmg-syntropy-powder", "vein-support",
              "vital-energy-be", "vitamin-c-syntropy"]
 DESCRIPTION_ONLY = ["nerve-repair", "nerve-pulse"]
@@ -92,7 +92,24 @@ def _products():
 
 
 def test_the_list_is_the_spec_list():
-    assert len(ALL) == len(set(ALL)) == 42
+    # 42 in the spec. Heart Health and Perfect Skin left on 2026-11-20: Glen approved
+    # formulas without vinpocetine (test_catalog_batch1_panels_2026_11_20).
+    assert len(ALL) == len(set(ALL)) == 40
+    assert not set(ALL) & set(FORMER)
+
+
+# They keep a pregnancy line, so a lowercase pregnancy question still reaches it.
+FORMER = {"heart-health": "Don't use this if you're pregnant or breastfeeding.",
+          "perfect-skin": "Don't use this if you're pregnant or breastfeeding."}
+
+
+@pytest.mark.parametrize("slug", sorted(FORMER))
+def test_a_former_vinpocetine_formula_keeps_a_pregnancy_line(slug):
+    p, c = _products()[slug], _data("products-manual-corrections.json")[slug]
+    assert p["chat_caution"] is True and c["chat_caution"] is True
+    assert c["warning"] == p["warning"] and p["warning"].startswith(FORMER[slug])
+    assert "vinpocetine" not in p["warning"].lower()
+    assert app._PREGNANCY_LINE_FORMER_VINPOCETINE == FORMER
 
 
 @pytest.mark.parametrize("slug", ALL)
@@ -198,6 +215,7 @@ def test_a_capitalised_sentence_start_needs_a_product_cue(slug, name):
     ("is vitality ok while breastfeeding?", "vitality"),
     ("longevity side effects when trying to conceive?", "longevity"),
     ("Heart Health while pregnant?", "heart-health"),
+    ("is perfect skin safe while breastfeeding?", "perfect-skin"),
 ])
 def test_a_pregnancy_or_safety_question_counts_in_any_case(q, slug):
     """Review rounds 1 and 2: lowercase pregnancy questions got no caution. Formulation,
