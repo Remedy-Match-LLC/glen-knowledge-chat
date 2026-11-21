@@ -94,9 +94,10 @@ def dropship_line_cents(*, retail_cents, qty, modules, settings, wholesale_disco
     """Per-line drop-ship economics. Fee is 33% of (retail - base) — RM's standard cut,
     since the patient price is private in practitioner-paid mode. Reuses Plan 1's
     quote_line with selling=retail."""
-    base = (None if (wholesale_discount_pct is None and is_ff and bottle_share == 1) else
-            _pp.sku_base_cents(qty, modules, retail_cents, wholesale_discount_pct, is_ff,
-                               bottle_share=bottle_share))
+    # Always through sku_base_cents, which caps the curve at retail (Glen, 2026-11-20,
+    # "capped"). A None shortcut here sent every whole-bottle FF to the uncapped curve.
+    base = _pp.sku_base_cents(qty, modules, retail_cents, wholesale_discount_pct, is_ff,
+                              bottle_share=bottle_share)
     q = _pp.quote_line(selling_cents=int(retail_cents), qty=int(qty),
                        modules=int(modules), settings=settings, base_cents=base,
                        charge_fee=is_ff)
@@ -424,9 +425,9 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
         _pct, _ff, _share = terms[slug]
         q = _pp.quote_line(selling_cents=s_cents, qty=curve_bottles,
                            modules=modules, settings=settings,
-                           base_cents=(None if (_pct is None and _ff and _share == 1) else _pp.sku_base_cents(
+                           base_cents=_pp.sku_base_cents(   # capped at retail, as above
                                curve_bottles, modules, _retail_for(slug), _pct, _ff,
-                               bottle_share=_share)),
+                               bottle_share=_share),
                            charge_fee=_ff)
         if eff:
             prod = _app._get_product(slug) or {}

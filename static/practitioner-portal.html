@@ -1638,7 +1638,7 @@ function render(d){
   }); });
   var q = d.quote;
   if(q){
-    $('quote').innerHTML = '<div class="muted" style="font-size:13px;margin-top:10px">'+q.total_bottles+' bottles · '+money(q.blended_unit_price_cents)+' per bottle</div>';
+    $('quote').innerHTML = '<div class="muted" style="font-size:13px;margin-top:10px">'+q.total_bottles+' bottles · '+money(q.blended_unit_price_cents)+' per bottle, never above a product\'s retail</div>';
     $('total').textContent = 'Order total: ' + money(q.subtotal_cents);
     if(q.margin_warnings && q.margin_warnings.length){ $('quote').innerHTML += '<div class="warn">'+q.margin_warnings.join('<br>')+'</div>'; }
   } else { $('quote').innerHTML=''; $('total').textContent=''; }

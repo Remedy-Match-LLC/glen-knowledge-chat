@@ -69,7 +69,13 @@ def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=
     if is_ff:
         base = drop_ship_base_cents(qty, modules_completed)
         # A product that is part of one bottle (the CDS pair) takes its share of the base.
-        return base if bottle_share == 1 else _wp.whole_dollar_cents(int(round(base * bottle_share)))
+        if bottle_share != 1:
+            base = _wp.whole_dollar_cents(int(round(base * bottle_share)))
+        # Then never above this product's own retail (Glen, 2026-11-20, "capped"): the
+        # curve starts at $50. The share comes first, or a half-bottle is cut twice.
+        # A zero or missing retail never caps.
+        r = int(retail_cents or 0)
+        return min(base, r) if r > 0 else base
     return int(retail_cents)
 
 def service_fee_cents(selling_cents, base_cents, settings):

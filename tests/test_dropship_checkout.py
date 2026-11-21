@@ -211,10 +211,12 @@ def test_flat_price_does_not_reach_a_larger_bottle(monkeypatch):
 
 
 def test_flat_price_still_covers_items_below_the_ff_price(monkeypatch):
-    """Her $39.97 items (CoQ10, ESR, NAC...) keep the flat. Glen chose this line."""
+    """Her $39.97 items (CoQ10, ESR, NAC...) stay under the flat line. Glen chose this line.
+    Since 2026-11-20 ("capped") the standard base never exceeds retail, so a $39.97 item
+    is $39.97: the flat only ever lowers a line, and here the standard price is lower."""
     ashley = _ashley(monkeypatch, {"coq10": 3997, "clear-the-way": 6997})
     cart = [{"slug": "coq10", "qty": 1}, {"slug": "clear-the-way", "qty": 1}]
-    assert [l["unit_cents"] for l in dc.quote_dropship_cart(cart, ashley)["lines"]] == [4000, 4000]
+    assert [l["unit_cents"] for l in dc.quote_dropship_cart(cart, ashley)["lines"]] == [3997, 4000]
 
 
 def test_checkout_charges_what_the_quote_showed(monkeypatch):

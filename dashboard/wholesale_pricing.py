@@ -185,7 +185,13 @@ def order_quote(
         qty = int(it.get("qty", 0))
         p = _product_pricing(slug, catalog)
         discount = p.get("wholesale_discount_pct")
-        line_unit = unit
+        # Glen, 2026-11-20, money and platform tabs: a practitioner never pays more
+        # than retail ("$40 items at $40"). The curve starts at $50, so it is capped
+        # at the product's retail; volume and modules can still take it lower.
+        # A zero or missing retail is not a price, so it never caps (a $0 line would
+        # give the bottle away).
+        _retail = int(p["retail_cents"] or 0)
+        line_unit = min(unit, _retail) if _retail > 0 else unit
         if discount is not None:
             discount = max(0, min(100, int(discount)))
             line_unit = whole_dollar_cents(

@@ -309,3 +309,52 @@ def test_order_quote_margin_not_ok_when_cost_exceeds_blended(tmp_path):
                     db_path=db, catalog=catalog)
     assert q["margin_ok"] is False
     assert q["margin_warnings"]
+
+
+# ── Capped at retail (Glen, 2026-11-20, money and platform tabs: "capped") ──
+
+def _cat(**prices):
+    return {slug: {"name": slug, "price_cents": c, "bottle_type": "default"}
+            for slug, c in prices.items()}
+
+
+def test_a_40_dollar_bottle_never_quotes_above_40():
+    from dashboard import wholesale_pricing as wp
+    q = wp.order_quote([{"slug": "forty", "qty": 1}], {"modules_completed": 0},
+                       catalog=_cat(forty=4000))
+    assert q["blended_unit_price_cents"] == 5000
+    assert q["lines"][0]["unit_price_cents"] == 4000
+
+
+def test_volume_still_takes_a_capped_bottle_below_retail():
+    from dashboard import wholesale_pricing as wp
+    q = wp.order_quote([{"slug": "forty", "qty": 200}], {"modules_completed": 12},
+                       catalog=_cat(forty=4000))
+    assert q["lines"][0]["unit_price_cents"] == q["blended_unit_price_cents"] < 4000
+
+
+def test_the_cap_is_per_line_and_leaves_dearer_bottles_on_the_curve():
+    from dashboard import wholesale_pricing as wp
+    q = wp.order_quote([{"slug": "forty", "qty": 1}, {"slug": "seventy", "qty": 1},
+                        {"slug": "ten", "qty": 1}], {"modules_completed": 0},
+                       catalog=_cat(forty=4000, seventy=7000, ten=1000))
+    u = {ln["slug"]: ln["unit_price_cents"] for ln in q["lines"]}
+    b = q["blended_unit_price_cents"]
+    assert b > 4000 and u == {"forty": 4000, "seventy": b, "ten": 1000}
+    assert q["subtotal_cents"] == 4000 + b + 1000
+
+
+def test_a_zero_retail_never_caps_a_line_to_free():
+    from dashboard import wholesale_pricing as wp
+    q = wp.order_quote([{"slug": "zero", "qty": 1}], {"modules_completed": 0},
+                       catalog=_cat(zero=0))
+    assert q["lines"][0]["unit_price_cents"] == 5000
+
+
+def test_the_margin_floor_checks_the_capped_price():
+    from dashboard import wholesale_pricing as wp
+    cat = {"cheap": {"name": "cheap", "price_cents": 1000, "bottle_type": "default",
+                     "cogs_cents": 1500, "fulfillment_cents": 500}}
+    q = wp.order_quote([{"slug": "cheap", "qty": 1}], {"modules_completed": 0}, catalog=cat)
+    assert q["lines"][0]["unit_price_cents"] == 1000
+    assert q["margin_ok"] is False and any("cheap" in w for w in q["margin_warnings"])
