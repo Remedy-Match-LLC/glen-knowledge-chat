@@ -22,6 +22,9 @@ review screen; see list_visible_for_email() for the client-facing read.
 import hashlib
 from datetime import datetime, timezone
 
+# Sources a client uploaded themselves: visible to them immediately.
+SELF_SOURCES = ("portal-self", "portal-chat")
+
 _COLS = ("id", "email", "filename", "content_type", "byte_size", "sha256",
          "source", "uploaded_at", "extract_status", "client_visible")
 
@@ -111,7 +114,9 @@ def put(cx, email, blob, filename, content_type, source):
         return None
     init_table(cx)
     digest = hashlib.sha256(blob).hexdigest()
-    visible = 1 if source == "portal-self" else 0
+    # A file the client sends in the portal chat is their own upload too (Glen,
+    # 2026-11-20), so it is visible to them at once, like 'portal-self'.
+    visible = 1 if source in SELF_SOURCES else 0
     cur = cx.execute(
         "INSERT OR IGNORE INTO client_documents"
         "(email, filename, content_type, byte_size, sha256, blob, source,"
