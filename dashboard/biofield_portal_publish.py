@@ -296,11 +296,12 @@ def _with_share_note(dosing, slug):
     note = SHARED_DEVICE_NOTES.get(slug or "")
     if not note:
         return dosing
-    d = (dosing or "").strip()
+    d = (dosing or "").strip().rstrip(":;,").rstrip()
     if not d:
         return note
-    # A sentence already ends at . ! or ?, even inside a closing quote or bracket.
-    ended = re.search(r"[.!?][\"')\]\u201d\u2019]*$", d)
+    # A sentence already ends at . ! ? or an ellipsis, even inside a closing quote or
+    # bracket.
+    ended = re.search(r"[.!?\u2026][\"')\]\u201d\u2019]*$", d)
     return d + ("" if ended else ".") + " " + note
 
 
