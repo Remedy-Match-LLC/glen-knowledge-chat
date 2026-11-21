@@ -47,6 +47,12 @@ def test_an_ff_base_is_capped_at_its_retail():
     assert pp.sku_base_cents(1, 0, 0, None) == 5000   # a zero retail never caps
 
 
+def test_a_half_bottle_takes_its_share_before_the_cap():
+    # Round 2 review: capping first then halving cut a CDS half twice ($10, not $20).
+    assert pp.sku_base_cents(1, 0, 2000, None, bottle_share=0.5) == 2000
+    assert pp.sku_base_cents(1, 0, 4000, None, bottle_share=0.5) == 2500
+
+
 # ── drop-ship quote (practitioner pays) ──────────────────────────────────────
 
 def _stub_cart(monkeypatch, retail, pct, ff=("ff",)):
@@ -346,3 +352,32 @@ def test_vitamin_e_120_gelcaps_is_priced_like_wholomega_120():
     keys = ("price_cents", "regular_cents", "ff_larger_size", "qty_pricing", "bottle_type")
     assert {k: big.get(k) for k in keys} == {k: omega.get(k) for k in keys}
     assert not big.get("inactive")
+
+
+# ── Capped at retail through the paths production uses (round 1 review) ──
+
+def test_a_40_dollar_formulation_drop_ships_at_40_not_50(monkeypatch):
+    _stub_cart(monkeypatch, {"ff": 4000}, {})
+    q = dc.quote_dropship_cart([{"slug": "ff", "qty": 1}], {"id": "p1", "modules_completed": 0})
+    assert q["lines"][0]["unit_cents"] == 4000
+    line = dc.dropship_line_cents(retail_cents=4000, qty=1, modules=0,
+                                  settings=pp.load_settings({}))
+    assert line["base_cents"] == 4000
+
+
+def test_a_40_dollar_formulation_leaves_no_negative_dispensary_margin(monkeypatch):
+    monkeypatch.setattr(dc, "_retail_for", lambda slug: 4000)
+    monkeypatch.setattr(dc, "_wholesale_pct_for", lambda slug: None)
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: True)
+    monkeypatch.setattr(dc, "practitioner_price_for", lambda pid, slug: 4000)
+    import dashboard.tax as _tax
+    monkeypatch.setattr(_tax, "compute_get_cents",
+                        lambda s, *, channel, ship_to_state, resale_ok=False: 0)
+    out = dc.build_client_order(
+        [{"slug": "ff", "qty": 1}], {"id": "p1", "modules_completed": 0},
+        patient={"email": "pat@x.com", "ship": {"name": "Pat", "state": "CA", "country": "US"}},
+        method="card")
+    assert out["subtotal_cents"] == 4000
+    q = out.get("lines") or out.get("items") or []
+    assert out["margin_cents"] == 0 and all(
+        (ln.get("base_cents", 4000) <= 4000) for ln in q if isinstance(ln, dict))
