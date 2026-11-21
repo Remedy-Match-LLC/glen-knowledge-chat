@@ -39,3 +39,14 @@ def test_ships_as_the_5ml_dropper():
 def test_ingredient_is_quinton_isotonic():
     assert [i["name"] for i in PRODUCTS[SLUG]["ingredients"]] == ["Quinton Isotonic"]
     assert PRODUCTS[SLUG]["no_groovekart"] is True
+
+
+def test_cart_total_is_40_per_bottle():
+    # Round 2 review: check the payable total, not only the item flags.
+    import app
+    from dashboard import pricing
+    p = dict(PRODUCTS[SLUG], slug=SLUG)
+    for qty in (1, 2, 5):
+        out = pricing.compute([app._engine_item(p, qty)], settings=pricing.load_settings({}))
+        assert out["discount_cents"] == 0, qty
+        assert out["total_cents"] == 4000 * qty, qty
