@@ -472,9 +472,13 @@ def test_a_retired_item_leaves_the_order_list():
 
 def test_a_retired_item_still_prices_an_order_that_has_it():
     it = _new("Typed Retire Price", cents=4000)
-    _retire(it["slug"])
-    rec = _recs(_priced({"slug": it["slug"], "qty": 2}))[it["slug"]]
-    assert rec["unit_cents"] == 4000
+    before = _recs(_priced({"slug": it["slug"], "qty": 2}))[it["slug"]]
+    r = _retire(it["slug"])
+    assert r.status_code == 200 and r.get_json()["item"]["retired"] is True
+    assert it["slug"] not in _picker_slugs()
+    after = _recs(_priced({"slug": it["slug"], "qty": 2}))[it["slug"]]
+    assert before["unit_cents"] == after["unit_cents"] == 4000
+    assert after["qty"] == 2 and after["line_cents"] == 8000
 
 
 def test_a_retired_name_cannot_be_typed_back_in():
