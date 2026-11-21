@@ -447,3 +447,154 @@ def test_a_typed_service_counts_as_nothing_to_pack():
     assert _O.physical_units([{"slug": "not-in-any-catalog", "qty": 1, "service": True}], {}) == 0
     assert _O.pack_breakdown([{"slug": "not-in-any-catalog", "qty": 1, "service": True}],
                              {})["bottle_units"] == 0
+
+
+# ── Retire (Glen, 2026-11-20, platform tab, "ok to build the retire button") ──
+
+def _retire(slug, headers=HDR):
+    return _client().post("/api/orders/typed-items/%s/retire" % slug, headers=headers)
+
+
+def _picker_slugs():
+    rows = _client().get("/api/products?all=1&typed=1", headers=HDR).get_json()["products"]
+    return {p["slug"] for p in rows}
+
+
+def test_a_retired_item_leaves_the_order_list():
+    it = _new("Typed Retire")
+    assert it["slug"] in _picker_slugs()
+    r = _retire(it["slug"])
+    assert r.status_code == 200 and r.get_json()["item"]["retired"] is True
+    assert it["slug"] not in _picker_slugs()
+    listed = _client().get("/api/orders/typed-items", headers=HDR).get_json()["items"]
+    assert not any(i["slug"] == it["slug"] for i in listed)
+
+
+def test_a_retired_item_still_prices_an_order_that_has_it():
+    it = _new("Typed Retire Price", cents=4000)
+    before = _recs(_priced({"slug": it["slug"], "qty": 2}))[it["slug"]]
+    r = _retire(it["slug"])
+    assert r.status_code == 200 and r.get_json()["item"]["retired"] is True
+    assert it["slug"] not in _picker_slugs()
+    after = _recs(_priced({"slug": it["slug"], "qty": 2}))[it["slug"]]
+    assert before["unit_cents"] == after["unit_cents"] == 4000
+    assert after["qty"] == 2 and after["line_cents"] == 8000
+
+
+def test_a_retired_name_cannot_be_typed_back_in():
+    it = _new("Typed Retire Back")
+    _retire(it["slug"])
+    r = _add(it["name"])
+    assert r.status_code == 400 and "retired" in r.get_json()["error"]
+
+
+def test_retiring_twice_is_safe_and_an_unknown_slug_is_404():
+    it = _new("Typed Retire Twice")
+    assert _retire(it["slug"]).status_code == 200
+    assert _retire(it["slug"]).status_code == 200
+    assert _retire("no-such-typed-item-%s" % uuid.uuid4().hex[:8]).status_code == 404
+
+
+def test_only_the_owner_can_retire(monkeypatch):
+    it = _new("Typed Retire Owner")
+    assert _retire(it["slug"], headers={}).status_code == 401
+    from dashboard import rbac
+    monkeypatch.setattr(app_mod, "_bos_actor", lambda: rbac.Actor(role="va"))
+    assert _retire(it["slug"]).status_code == 401
+    monkeypatch.undo()
+    assert it["slug"] in _picker_slugs()
+
+
+def test_the_retired_column_is_added_to_an_old_table():
+    import sqlite3
+    from dashboard import typed_items as ti
+    cx = sqlite3.connect(":memory:")
+    cx.execute("CREATE TABLE typed_order_items (slug TEXT PRIMARY KEY, name TEXT NOT NULL, "
+               "price_cents INTEGER NOT NULL, bottle_type TEXT, created_by TEXT, "
+               "created_at TEXT NOT NULL)")
+    cx.execute("INSERT INTO typed_order_items VALUES ('old-one','Old One',500,'30 g',NULL,'x')")
+    cx.commit()
+    ti.init_table(cx)
+    ti.init_table(cx)   # a second start is a no-op
+    assert [i["slug"] for i in ti.list_all(cx)] == ["old-one"]
+    assert ti.retire(cx, "old-one")["retired"] is True
+    assert ti.list_all(cx) == [] and ti.get(cx, "old-one")["price_cents"] == 500
+
+
+def test_the_new_order_page_offers_retire_only_for_a_new_item():
+    html = open("static/order-new.html").read()
+    assert 'id="retire-item-btn"' in html
+    assert '(p&&p.typed)?"":"none"' in html
+    assert "/retire\"" in html or "/retire\"," in html
+
+
+def test_retiring_one_item_leaves_the_others_on_the_list():
+    a, b = _new("Typed Retire A"), _new("Typed Retire B")
+    assert _retire(a["slug"]).status_code == 200
+    slugs = _picker_slugs()
+    assert a["slug"] not in slugs and b["slug"] in slugs
+
+
+def _old_style_cx():
+    import sqlite3
+    from dashboard import typed_items as ti
+    cx = sqlite3.connect(":memory:")
+    ti.init_table(cx)
+    ti.add(cx, "Stamp One", 500, bottle_type="30 g")
+    return cx, ti
+
+
+def test_a_second_retire_keeps_the_first_retirement_time():
+    cx, ti = _old_style_cx()
+    ti.retire(cx, "stamp-one")
+    first = cx.execute("SELECT retired_at FROM typed_order_items").fetchone()[0]
+    cx.execute("UPDATE typed_order_items SET retired_at='2000-01-01'")
+    cx.commit()
+    ti.retire(cx, "stamp-one")
+    assert first and cx.execute("SELECT retired_at FROM typed_order_items").fetchone()[0] \
+        == "2000-01-01"
+
+
+def test_a_retired_name_is_refused_when_two_adds_race(monkeypatch):
+    cx, ti = _old_style_cx()
+    ti.retire(cx, "stamp-one")
+    real_get, calls = ti.get, []
+
+    def first_miss(c, slug):   # the request read before the row existed
+        calls.append(slug)
+        return None if len(calls) == 1 else real_get(c, slug)
+    monkeypatch.setattr(ti, "get", first_miss)
+    with pytest.raises(ValueError, match="retired"):
+        ti.add(cx, "Stamp One", 500, bottle_type="30 g")
+
+
+def test_a_failed_column_add_is_not_swallowed():
+    import sqlite3
+    from dashboard import typed_items as ti
+    real = sqlite3.connect(":memory:")
+
+    class NoAlter:
+        def execute(self, sql, *a):
+            if sql.lstrip().upper().startswith("ALTER"):
+                raise sqlite3.OperationalError("locked")
+            return real.execute(sql, *a)
+
+        def commit(self):
+            real.commit()
+
+        def rollback(self):
+            real.rollback()
+    real.execute("CREATE TABLE typed_order_items (slug TEXT PRIMARY KEY, name TEXT NOT NULL, "
+                 "price_cents INTEGER NOT NULL, bottle_type TEXT, created_by TEXT, "
+                 "created_at TEXT NOT NULL)")
+    with pytest.raises(sqlite3.OperationalError):
+        ti.init_table(NoAlter())
+
+
+def test_the_page_retires_the_picked_typed_item_only():
+    html = open("static/order-new.html").read()
+    fn = html[html.index("async function retireTypedItem"):]
+    fn = fn[:fn.index("\n}\n")]
+    assert 'CATALOG.find(x=>x.slug===$("prod-pick").value)' in fn
+    assert "if(!p||!p.typed) return;" in fn
+    assert 'encodeURIComponent(p.slug)+"/retire"' in fn

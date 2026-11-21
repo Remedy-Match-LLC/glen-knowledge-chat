@@ -40,6 +40,23 @@ def init_table(cx):
         )
     """)
     cx.commit()
+    _add_retired_column(cx)
+
+
+def _add_retired_column(cx):
+    """retired_at: set when the item is retired from the New Order list (Glen,
+    2026-11-20, platform tab, "ok to build the retire button"). Race-safe: the loser
+    of two concurrent ALTERs rolls back and re-checks."""
+    from dashboard import db as _db
+    if _db.column_exists(cx, "typed_order_items", "retired_at"):
+        return
+    try:
+        cx.execute("ALTER TABLE typed_order_items ADD COLUMN retired_at TEXT")
+        cx.commit()
+    except Exception:
+        cx.rollback()
+        if not _db.column_exists(cx, "typed_order_items", "retired_at"):
+            raise
 
 
 def clean(name, price_cents):
@@ -65,21 +82,37 @@ def clean(name, price_cents):
     return n, cents
 
 
+_COLS = "slug, name, price_cents, bottle_type, retired_at"
+
+
 def _row(r):
     return {"slug": r[0], "name": r[1], "price_cents": int(r[2]),
-            "bottle_type": r[3] or None}
+            "bottle_type": r[3] or None, "retired": bool(r[4])}
 
 
 def get(cx, slug):
-    r = cx.execute("SELECT slug, name, price_cents, bottle_type FROM typed_order_items "
+    """The item, retired or not. A retired item still prices an order that already
+    carries it, so the invoice pricer must keep finding it."""
+    r = cx.execute("SELECT " + _COLS + " FROM typed_order_items "
                    "WHERE slug=?", ((slug or "").strip(),)).fetchone()
     return _row(r) if r else None
 
 
 def list_all(cx):
+    """The items the New Order list offers: retired ones are left out."""
     return [_row(r) for r in cx.execute(
-        "SELECT slug, name, price_cents, bottle_type FROM typed_order_items "
-        "ORDER BY name").fetchall()]
+        "SELECT " + _COLS + " FROM typed_order_items "
+        "WHERE retired_at IS NULL ORDER BY name").fetchall()]
+
+
+def retire(cx, slug):
+    """Take one item off the New Order list and return it, or None if no such item.
+    Retiring twice is a no-op. The row stays, so old orders keep their price."""
+    slug = (slug or "").strip()
+    cx.execute("UPDATE typed_order_items SET retired_at=? "
+               "WHERE slug=? AND retired_at IS NULL", (_now(), slug))
+    cx.commit()
+    return get(cx, slug)
 
 
 def _same_or_refuse(have, name, cents, bottle_type):
@@ -100,6 +133,9 @@ def add(cx, name, price_cents, *, created_by=None, bottle_type=None):
     slug = slugify(n)
     bt = (bottle_type or "").strip() or None
     have = get(cx, slug)
+    if have and have["retired"]:
+        raise ValueError("%s was retired from the list. It cannot be typed back in."
+                         % have["name"])
     if have:
         return _same_or_refuse(have, n, cents, bt)
     try:
@@ -113,5 +149,8 @@ def add(cx, name, price_cents, *, created_by=None, bottle_type=None):
         have = get(cx, slug)
         if not have:
             raise
+        if have["retired"]:
+            raise ValueError("%s was retired from the list. It cannot be typed back in."
+                             % have["name"])
         return _same_or_refuse(have, n, cents, bt)
     return get(cx, slug)
