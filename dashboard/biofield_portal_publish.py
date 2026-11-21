@@ -284,6 +284,27 @@ def segment_narrative(narrative, layers):
     return segs
 
 
+# A device one household shares, and the line the portal shows after its dose. Glen,
+# 2026-11-21: "Same laser can be shared by multiple people and animals", then "add the
+# line" to this wording.
+SHARED_DEVICE_NOTES = {
+    "harmony-laser": "One laser can be shared by everyone in your household.",
+}
+
+
+def _with_share_note(dosing, slug):
+    note = SHARED_DEVICE_NOTES.get(slug or "")
+    if not note:
+        return dosing
+    d = (dosing or "").strip().rstrip(":;,").rstrip()
+    if not d:
+        return note
+    # A sentence already ends at . ! ? or an ellipsis, even inside a closing quote or
+    # bracket.
+    ended = re.search(r"[.!?\u2026][\"')\]\u201d\u2019]*$", d)
+    return d + ("" if ended else ".") + " " + note
+
+
 def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
                          audio_url=None, report_pdf_url=None, findings_provider=None,
                          primary_on=None):
@@ -341,10 +362,10 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
             # over the standard.
             dose = merge_dosing(L.get("dosage"), L.get("frequency"), L.get("timing"),
                                 remedy_dosing(cx, remedy))
+            slug = resolve_remedy_slug(remedy, cat)
             if remedy not in names:
                 names.append(remedy)
-                dosings.append((remedy, _dosing(dose)))
-            slug = resolve_remedy_slug(remedy, cat)
+                dosings.append((remedy, _with_share_note(_dosing(dose), slug)))
             if slug is None:
                 if remedy not in unresolved:
                     unresolved.append(remedy)
