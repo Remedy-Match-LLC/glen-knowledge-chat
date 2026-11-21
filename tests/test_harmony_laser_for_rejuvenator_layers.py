@@ -166,3 +166,42 @@ def test_rae_handoff_never_invoices_or_carts_the_laser(tmp_path, monkeypatch):
     assert "liver-support" in slugs and "harmony-laser" not in slugs
     assert "harmony-laser" not in repr(pushed)
     assert "Harmony Laser" in repr(pushed)           # still on the report
+
+
+# Glen, 2026-11-21: "Same laser can be shared by multiple people and animals", then
+# "add the line" to this wording, shown on the portal after the laser's dose.
+SHARE = "One laser can be shared by everyone in your household."
+
+
+def test_the_portal_says_one_laser_serves_the_household():
+    from dashboard import biofield_portal_publish as bpp
+    from dashboard.biofield_authoring import create_test, add_chain_row, init_auth_tables
+    cx = sqlite3.connect(":memory:")
+    init_auth_tables(cx)
+    aid = f"a{create_test(cx, 'C', 'c@x.com', '2026-10-01')}"
+    add_chain_row(cx, aid, layer=1, head="Layer 1", most_affected="x", remedy="WholOmega",
+                  dosage="1 capsule", frequency="twice daily")
+    add_chain_row(cx, aid, layer=1, head="Layer 1", most_affected="x", remedy="Harmony Laser",
+                  timing=CAUTION)
+    add_chain_row(cx, aid, layer=2, head="Layer 2", most_affected="y", remedy="Kloud PEMF Mini")
+    catalog = {"harmony-laser": {"name": "Harmony Laser"}, "wholomega": {"name": "WholOmega"},
+               "kloud-pemf-mini": {"name": "Kloud PEMF Mini"}}
+    layers = bpp.build_portal_content(cx, aid, special_price_cents=0, catalog=catalog)["content"]["layers"]
+    d1 = layers[0]["dosing"]
+    laser = d1.split("Harmony Laser:", 1)[1]
+    assert SHARE in laser and CAUTION in laser          # the caution stays, the line follows
+    assert laser.strip().endswith(SHARE)
+    assert SHARE not in d1.split("Harmony Laser:", 1)[0]  # never on WholOmega
+    assert d1.count(SHARE) == 1
+    assert SHARE not in layers[1]["dosing"]               # the mats are not shared devices
+
+
+def test_a_laser_with_no_dose_still_gets_the_line():
+    from dashboard import biofield_portal_publish as bpp
+    from dashboard.biofield_authoring import create_test, add_chain_row, init_auth_tables
+    cx = sqlite3.connect(":memory:")
+    init_auth_tables(cx)
+    aid = f"a{create_test(cx, 'C', 'c@x.com', '2026-10-01')}"
+    add_chain_row(cx, aid, layer=1, head="Layer 1", most_affected="x", remedy="Harmony Laser")
+    out = bpp.build_portal_content(cx, aid, special_price_cents=0, catalog={"harmony-laser": {"name": "Harmony Laser"}})
+    assert out["content"]["layers"][0]["dosing"].endswith(SHARE)
