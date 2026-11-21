@@ -24,10 +24,14 @@ BLEND = ("These are the current label amounts for {n}. They override every retri
 # Brain Boost's label rows are pinned (2026-10-30 spec). The retired brain-boost-nootropic
 # record's name, "Brain Boost Nootropic", names the survivor, so it brings the same block.
 # gastrozyme: its label rows are pinned (spec 2026-10-31-gastrozyme-contents).
+# Store batch 1, Glen 2026-11-20: heart-health, perfect-skin and glucose-tolerance panels
+# are pinned. "Glucose Tolerance Program" names Glucose Tolerance, so it brings that block,
+# as Brain Boost Nootropic brings Brain Boost's.
 WITH_LINE = sorted([
     "adrenal-syntropy", "angiogenx", "angiostasis", "b17-max", "b17-syntropy",
     "brain-boost", "brain-boost-nootropic", "clarity",
     "clear-the-way", "crystalline-clarity", "estro-clear", "fibrolysis-factors", "gastrozyme",
+    "glucose-tolerance", "glucose-tolerance-program", "heart-health", "perfect-skin",
     "lcarnosine",
     "melissa-20-1-extract-powder", "moisture-eyes-night-oil", "moisturize",
     "n-acetyl-l-carnosine", "neuro-magnesium", "pterostilbene-pure-powder",
