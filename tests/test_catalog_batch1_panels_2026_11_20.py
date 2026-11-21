@@ -151,20 +151,88 @@ def test_dropped_ingredients_are_gone_from_the_entry(slug):
             assert name not in text, (slug, name)
 
 
-def test_descriptions_use_the_spec_wording_not_the_old_formula():
-    ps = "Support your skin's barrier as it holds onto moisture, for a healthier and more radiant look."
-    gt = ("Chromium helps insulin carry glucose into your cells. Refining grains and sugar "
-          "strips out much of the chromium in whole foods.")
-    for entry in (PRODUCTS["perfect-skin"], CORRECTIONS["perfect-skin"]):
-        assert entry["description"] == ps
-    for entry in (PRODUCTS["glucose-tolerance"], CORRECTIONS["glucose-tolerance"]):
-        assert entry["description"] == gt
-        assert "5 years" not in entry["description"]
+# Copied word for word from each spec's "Proposed page text" and "Caution section"
+# (production/05 Formulations/<slug>/<date>/<slug>-store-page.md), Glen approved 2026-11-20.
+# Whole-string equality, so an inverted or trimmed caution fails (review round 2).
+SPEC_WARNING = {
+    "heart-health": ("Don't use this if you're pregnant or breastfeeding. Consult your health "
+        "professional before use if you take prescription medications. This matters most with "
+        "warfarin or other blood thinners, digoxin, nitrates and blood pressure medicines. It "
+        "also applies to thyroid medicine and some antibiotics, so take those apart from this. "
+        "Also consult first if you have kidney disease. Keep your total selenium from all "
+        "sources under 400 mcg a day."),
+    "perfect-skin": ("Don't use this if you're pregnant or breastfeeding. Consult your health "
+        "professional before use if you take prescription medications. This matters most with "
+        "blood thinners, immune-suppressing drugs, sedatives and blood sugar medicines. Also "
+        "consult first if you have liver disease or a bleeding disorder. Stop 2 weeks before "
+        "planned surgery. Ask first too if you are allergic to ferns or pine."),
+    "glucose-tolerance": ("Do not use if you are pregnant or breastfeeding. It is not for "
+        "children. Consult your health professional before use if you take prescription "
+        "medications, especially blood sugar, blood pressure or thyroid medicines. Also consult "
+        "first if you are prone to low blood sugar, or have kidney or liver disease. Avoid it "
+        "with G6PD deficiency. Stop 2 weeks before planned surgery. Ask first too if you are "
+        "allergic to legumes or gourds. This formula may lower blood sugar and change how some "
+        "medications are processed."),
+}
+SPEC_DESCRIPTION = {
+    "heart-health": ("Your heart never clocks out. It beats around 100,000 times a day, awake or "
+        "asleep. Every beat takes energy. Your cells build that energy fresh from food and "
+        "oxygen, nonstop. Coenzyme Q10 and magnesium help keep that energy work running. "
+        "Selenium supports the antioxidant enzymes that protect heart cells.\n\n"
+        "It can be taken alongside Rhythm Restore."),
+    "perfect-skin": ("Support your skin's barrier as it holds onto moisture, for a healthier and "
+        "more radiant look.\n\nYour skin is your largest organ. Its outer layer locks water in "
+        "with ceramides, the fats between skin cells. Beneath it, the skin's own collagen and "
+        "hyaluronic acid keep it firm and supple."),
+    "glucose-tolerance": ("Chromium helps insulin carry glucose into your cells. Refining grains "
+        "and sugar strips out much of the chromium in whole foods.\n\nThis formula supplies "
+        "chromium as chromium polynicotinate, often sold as GTF chromium. Poly means many. "
+        "Nicotinate refers to vitamin B3, also known as niacin or nicotinic acid."),
+}
+SPEC_DIRECTIONS = {
+    "heart-health": "1 to 3 capsules daily with a meal containing fat, or as guided.",
+    "perfect-skin": "1 to 2 capsules daily with food, or as guided.",
+    "glucose-tolerance": ("Take 1 capsule daily with food, or with cravings for sugar or "
+                          "stimulants, or as guided."),
+}
 
 
 @pytest.mark.parametrize("slug", sorted(PANELS))
-def test_old_generated_drafts_are_reset(slug):
+def test_the_warning_is_the_whole_spec_caution(slug):
+    for entry in (PRODUCTS[slug], CORRECTIONS[slug]):
+        assert entry["warning"] == SPEC_WARNING[slug]
+
+
+@pytest.mark.parametrize("slug", sorted(PANELS))
+def test_the_page_text_is_the_spec_and_pinned_against_ai_drafts(slug):
+    # Round 1 review: without copy_pinned an AI draft could replace the approved text.
+    for entry in (PRODUCTS[slug], CORRECTIONS[slug]):
+        assert entry["description"] == SPEC_DESCRIPTION[slug]
+        assert entry["directions"] == SPEC_DIRECTIONS[slug]
+        assert entry["directions"].endswith(", or as guided.")
+        assert set(entry["copy_pinned"]) == {"ingredients", "directions", "description"}
+    assert "5 years" not in PRODUCTS["glucose-tolerance"]["description"]
+
+
+@pytest.mark.parametrize("slug", sorted(PANELS))
+def test_old_generated_drafts_are_reset(slug, monkeypatch):
     assert PRODUCTS[slug]["content_since"] == CORRECTIONS[slug]["content_since"] >= "2026-11-20"
+    # Round 2 review: drive the cache reader. A draft from before the stamp is regenerated;
+    # one from after it is served as is.
+    from dashboard import product_content as pc
+    product = dict(PRODUCTS[slug], slug=slug)
+    since = product["content_since"]
+    made = []
+    monkeypatch.setattr(pc, "_page_text_from_product", lambda p: {"text": "x", "url": ""})
+    monkeypatch.setattr(pc, "_page_text", lambda p: None)
+    monkeypatch.setattr(pc, "_generate_card", lambda p, page: made.append(1) or "NEW")
+    monkeypatch.setattr(pc, "_cache_put", lambda *a, **k: None)
+    monkeypatch.setattr(pc, "_cache_get", lambda s, t: {
+        "content": "OLD vinpocetine", "sources": [], "generated_at": "2026-11-01T00:00:00+00:00"})
+    assert pc.get_or_generate(product, "card")["content"] == "NEW" and made == [1]
+    monkeypatch.setattr(pc, "_cache_get", lambda s, t: {
+        "content": "FRESH", "sources": [], "generated_at": since[:4] + "-12-31T00:00:00+00:00"})
+    assert pc.get_or_generate(product, "card")["content"] == "FRESH" and made == [1]
 
 
 @pytest.mark.parametrize("slug", sorted(PANELS))
