@@ -297,8 +297,8 @@ def apply(cx, test_id, items, digest, chosen, resolve=None, dosing=None, now="",
     `chosen` is the list of change ids Glen ticked. One that is not in the plan is
     refused as stale too: it can only come from an older preview.
 
-    `refuse(name)` True leaves a remedy off: an animal gets infoceuticals only (Glen,
-    2026-11-06). The caller collects the names."""
+    `refuse(name)` True leaves a remedy off. The caller collects the names. A hand
+    layer is never refused now (Glen, 2026-11-21), so the app's refuse is empty."""
     dosing = dosing or (lambda cx, name: {})
     refuse = refuse or (lambda name: False)
     from dashboard.biofield_clinical_head_term import card_rids, link_wording
