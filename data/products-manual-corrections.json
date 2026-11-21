@@ -4162,9 +4162,32 @@
     "note": "Label-read 2026-10-30 by formulation from brain-boost-label-selected-draft.pdf (July 2026), rows per 2-capsule serving. Glen 2026-10-30: Brain Boost and Brain Boost Nootropic are \"one product\"; the shelf bottle lists \"citicoline, L-theanine, PS\" (\"July label\"); no older bottle is for sale (\"no\"), so the vinpocetine line is removed; \"pin\". PS is from soy (Glen 2026-09-21). Directions per Glen 2026-10-31 (production tab; \"yes\" for app and store, formulation tab). Spec production/05 Formulations/_store-updates/2026-10-30-brain-boost-one-record.md."
   },
   "heart-health": {
-    "ingredients_source": "manual",
-    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "ingredients_source": "store spec production/05 Formulations/heart-health/2026-09-27 (Glen approved 2026-11-20)",
+    "ingredients": [
+      {
+        "name": "Magnesium (as dimagnesium malate)",
+        "dose": "49 mg, 12% of the Daily Value"
+      },
+      {
+        "name": "Selenium (as methylselenocysteine)",
+        "dose": "67 mcg, 122% of the Daily Value"
+      },
+      {
+        "name": "Coenzyme Q10 98% (ubiquinone)",
+        "dose": "102 mg"
+      },
+      {
+        "name": "Hawthorn flavonoids 85% (Crataegus oxyacantha)",
+        "dose": "170 mg"
+      }
+    ],
+    "warning": "Don't use this if you're pregnant or breastfeeding. Consult your health professional before use if you take prescription medications. This matters most with warfarin or other blood thinners, digoxin, nitrates and blood pressure medicines. It also applies to thyroid medicine and some antibiotics, so take those apart from this. Also consult first if you have kidney disease. Keep your total selenium from all sources under 400 mcg a day.",
+    "chat_caution": true,
+    "content_since": "2026-11-21T08:34:00+00:00",
+    "note": "Glen approved the store-page spec 2026-11-20 in the production tab: 4 actives, batch HH-20260927-40. Source: production/05 Formulations/heart-health/2026-09-27/heart-health-store-page.md. Rhythm Restore (TCM Wenxin Keli) is a separate product; its ingredients are not included here.",
+    "description": "Your heart never clocks out. It beats around 100,000 times a day, awake or asleep. Every beat takes energy. Your cells build that energy fresh from food and oxygen, nonstop. Coenzyme Q10 and magnesium help keep that energy work running. Selenium supports the antioxidant enzymes that protect heart cells.\n\nIt can be taken alongside Rhythm Restore.",
+    "directions": "1 to 3 capsules daily with a meal containing fat, or as guided.",
+    "copy_pinned": ["ingredients", "directions", "description"]
   },
   "longevity": {
     "ingredients_source": "t33",
@@ -4280,9 +4303,40 @@
     "content_since": "2026-11-10T17:19:24+00:00"
   },
   "perfect-skin": {
-    "ingredients_source": "fmp_new",
-    "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true
+    "ingredients_source": "store spec production/05 Formulations/perfect-skin/2026-09-27 (Glen approved 2026-11-20)",
+    "ingredients": [
+      {
+        "name": "Golden serpent fern 30:1 (Polypodium leucotomos)",
+        "dose": "240 mg"
+      },
+      {
+        "name": "Gotu kola TECA: asiaticosides 80% (Centella asiatica) (herb)",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Pine bark OPCs 95% (oligomeric proanthocyanidins) (Pinus pinaster) (bark)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Rice phytoceramides 10% (Oryza sativa)",
+        "dose": "46 mg"
+      },
+      {
+        "name": "Hyaluronic acid, high molecular weight, vegan source",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Astaxanthin 96% (Haematococcus pluvialis)",
+        "dose": "2.1 mg"
+      }
+    ],
+    "warning": "Don't use this if you're pregnant or breastfeeding. Consult your health professional before use if you take prescription medications. This matters most with blood thinners, immune-suppressing drugs, sedatives and blood sugar medicines. Also consult first if you have liver disease or a bleeding disorder. Stop 2 weeks before planned surgery. Ask first too if you are allergic to ferns or pine.",
+    "chat_caution": true,
+    "content_since": "2026-11-21T08:34:00+00:00",
+    "note": "Glen approved the store-page spec 2026-11-20 in the production tab: 6 actives, batch PS-20260927-40. Source: production/05 Formulations/perfect-skin/2026-09-27/perfect-skin-store-page.md.",
+    "description": "Support your skin's barrier as it holds onto moisture, for a healthier and more radiant look.\n\nYour skin is your largest organ. Its outer layer locks water in with ceramides, the fats between skin cells. Beneath it, the skin's own collagen and hyaluronic acid keep it firm and supple.",
+    "directions": "1 to 2 capsules daily with food, or as guided.",
+    "copy_pinned": ["ingredients", "directions", "description"]
   },
   "rescue": {
     "ingredients_source": "t33",
@@ -5495,5 +5549,49 @@
     "copy_pinned": [
       "directions"
     ]
+  },
+  "glucose-tolerance": {
+    "ingredients_source": "store spec production/05 Formulations/glucose-tolerance/2026-10-24 (Glen approved 2026-11-20)",
+    "ingredients": [
+      {
+        "name": "Dihydroberberine 99% (Phellodendron chinense)",
+        "dose": "100 mg"
+      },
+      {
+        "name": "French lilac 20:1 (Galega officinalis)",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Benfotiamine 99%",
+        "dose": "125 mg (about 70 mg thiamine, about 5,900% of the Daily Value)"
+      },
+      {
+        "name": "Chromium (as chromium polynicotinate)",
+        "dose": "200 mcg, 571% of the Daily Value"
+      },
+      {
+        "name": "Stabilized Bio-Enhanced® Na R-lipoate",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Pterostilbene 98%",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Bitter melon charantin 10% (Momordica charantia)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Banaba corosolic acid 20% (Lagerstroemia speciosa)",
+        "dose": "50 mg"
+      }
+    ],
+    "warning": "Do not use if you are pregnant or breastfeeding. It is not for children. Consult your health professional before use if you take prescription medications, especially blood sugar, blood pressure or thyroid medicines. Also consult first if you are prone to low blood sugar, or have kidney or liver disease. Avoid it with G6PD deficiency. Stop 2 weeks before planned surgery. Ask first too if you are allergic to legumes or gourds. This formula may lower blood sugar and change how some medications are processed.",
+    "chat_caution": true,
+    "content_since": "2026-11-21T08:34:00+00:00",
+    "note": "Glen approved the store-page spec 2026-11-20 in the production tab: 8 actives, from the June 2026 label (run 187); the bottles hold no gymnema (Glen). Source: production/05 Formulations/glucose-tolerance/2026-10-24/glucose-tolerance-store-page.md.",
+    "description": "Chromium helps insulin carry glucose into your cells. Refining grains and sugar strips out much of the chromium in whole foods.\n\nThis formula supplies chromium as chromium polynicotinate, often sold as GTF chromium. Poly means many. Nicotinate refers to vitamin B3, also known as niacin or nicotinic acid.",
+    "directions": "Take 1 capsule daily with food, or with cravings for sugar or stimulants, or as guided.",
+    "copy_pinned": ["ingredients", "directions", "description"]
   }
 }

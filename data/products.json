@@ -3265,80 +3265,40 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Biotin, Vitamin B7",
-     "dose": "1 mg"
+     "name": "Golden serpent fern 30:1 (Polypodium leucotomos)",
+     "dose": "240 mg"
     },
     {
-     "name": "Bamboo Silica Botanical quartz",
+     "name": "Gotu kola TECA: asiaticosides 80% (Centella asiatica) (herb)",
+     "dose": "100 mg"
+    },
+    {
+     "name": "Pine bark OPCs 95% (oligomeric proanthocyanidins) (Pinus pinaster) (bark)",
      "dose": "50 mg"
     },
     {
-     "name": "Polygoni multiflori Reynoutria multiflora Fallopia multiflora He Shou Wu Polygonum multiflorum",
-     "dose": "33 mg"
-    },
-    {
-     "name": "Gypenosides 98%; AMPK Activator Jiaogulan Gynostemma pentaphyllum",
-     "dose": "17 mg"
-    },
-    {
-     "name": "Bioavailability Blend",
-     "dose": "34.5 mg"
-    },
-    {
-     "name": "Rice Ceramides",
+     "name": "Rice phytoceramides 10% (Oryza sativa)",
      "dose": "46 mg"
     },
     {
-     "name": "ORGONO® Living Silica™ Acacia Gum-MMST powder",
-     "dose": ""
+     "name": "Hyaluronic acid, high molecular weight, vegan source",
+     "dose": "30 mg"
     },
     {
-     "name": "Hyaluronic Acid (vegan) - MicroIngredients",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Gotu kola, TECA",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Astaxanthin",
-     "dose": "13 mg"
-    },
-    {
-     "name": "Green Tea; Organic; 98% Polyphenols/50% EGCG Standardized Extract",
-     "dose": "132 mg"
-    },
-    {
-     "name": "Pterostilbene; Trans Pterostilbene",
-     "dose": "17 mg"
-    },
-    {
-     "name": "Calaguala, Golden Serpent Fern, Golden Polypody, Anapsos, not common polypody fern",
-     "dose": "3 mg"
-    },
-    {
-     "name": "Pomegranate Punicalagins 70% (Punica granatum) (semen)*",
-     "dose": "47 mg"
-    },
-    {
-     "name": "Astaxanthin 98% Haematococcus pluvialis",
-     "dose": ""
-    },
-    {
-     "name": "Fo-ti Tetrahydroxy Stilbene 10% He shou wu Shen Min Elixir of Life",
-     "dose": ""
-    },
-    {
-     "name": "Lychee, Litchi pericarp extract",
-     "dose": "16 mg"
+     "name": "Astaxanthin 96% (Haematococcus pluvialis)",
+     "dose": "2.1 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Perfect Skin . Perfect Skin Perfect Skin Enhance the barrier function of your skin to build a healthier, glowing, youthful look... from the inside out. Perfect Skin . Concentrated Traditional Herbal Health Food Source Restores Skin Hydration and Barrier Function: Hydrates skin from inside for soft, smooth, supple feel, often starting in days - Babies are born with 75% water protected by a coating of ceramides, both of which are lost as you age Starts restoring visible glow and improves complexion in as little as 2-5 weeks - Our unique botanical source is a traditional health food in the...",
+   "ingredients_source": "store spec production/05 Formulations/perfect-skin/2026-09-27 (Glen approved 2026-11-20)",
    "bottle_type": "30 Caps",
    "fmp_id": "195",
-   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "warning": "Don't use this if you're pregnant or breastfeeding. Consult your health professional before use if you take prescription medications. This matters most with blood thinners, immune-suppressing drugs, sedatives and blood sugar medicines. Also consult first if you have liver disease or a bleeding disorder. Stop 2 weeks before planned surgery. Ask first too if you are allergic to ferns or pine.",
+   "chat_caution": true,
+   "enrichment_note": "Glen approved the store-page spec 2026-11-20 in the production tab: 6 actives, batch PS-20260927-40. Source: production/05 Formulations/perfect-skin/2026-09-27/perfect-skin-store-page.md.",
+   "content_since": "2026-11-21T08:34:00+00:00",
+   "description": "Support your skin's barrier as it holds onto moisture, for a healthier and more radiant look.\n\nYour skin is your largest organ. Its outer layer locks water in with ceramides, the fats between skin cells. Beneath it, the skin's own collagen and hyaluronic acid keep it firm and supple.",
+   "directions": "1 to 2 capsules daily with food, or as guided.",
+   "copy_pinned": ["ingredients", "directions", "description"]
   },
   "phytolacca-oil": {
    "name": "Phytolacca Oil",
@@ -7200,108 +7160,32 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Selenium (as Methylselenocysteine)",
-     "dose": "100 mcg"
+     "name": "Magnesium (as dimagnesium malate)",
+     "dose": "49 mg, 12% of the Daily Value"
     },
     {
-     "name": "Magnesium (as Taurate and Ascorbate)",
-     "dose": "8.2 mg"
+     "name": "Selenium (as methylselenocysteine)",
+     "dose": "67 mcg, 122% of the Daily Value"
     },
     {
-     "name": "Vitamin C (as Magnesium Ascorbate)",
-     "dose": "60 mg"
+     "name": "Coenzyme Q10 98% (ubiquinone)",
+     "dose": "102 mg"
     },
     {
-     "name": "Vitamin D3 (Cholecalciferol)",
-     "dose": "1000 IU"
-    },
-    {
-     "name": "Vitamin E (Mixed Tocopherols)",
-     "dose": "30 IU"
-    },
-    {
-     "name": "CoQ10 (Ultra Absorption)",
-     "dose": "10 mg"
-    },
-    {
-     "name": "DHEA-S (Dehydroepiandrosterone Sulfate)",
-     "dose": "5 mg"
-    },
-    {
-     "name": "Lumbrokinase (Lumbricus rubellus) 178,000 LKU",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Curcumin (Curcuma longa)",
-     "dose": "50 mg"
-    },
-    {
-     "name": "Inosine",
-     "dose": "10 mg"
-    },
-    {
-     "name": "MCP (Modified Citrus Pectin)",
-     "dose": "30 mg"
-    },
-    {
-     "name": "Salvianolic Acid 20% (Salvia miltiorrhiza)",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Astaxanthin (Haematococcus pluvialis)",
-     "dose": "4 mg"
-    },
-    {
-     "name": "Flavonoids 85% (Crataegus oxyacantha)",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Reishi 30:1 (Ganoderma lucidum)",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Catechins 80% (Camelia sinensis)",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Humic Acid",
-     "dose": "1 mg"
-    },
-    {
-     "name": "EGb 761 (Ginkgo biloba)",
-     "dose": "13 mg"
-    },
-    {
-     "name": "Vitamin B3 (as Niacin)",
-     "dose": "8 mg"
-    },
-    {
-     "name": "Moringa 100:1 (Moringa oleifera)",
-     "dose": "5 mg"
-    },
-    {
-     "name": "Licorice Omnipotent (Glycyrrhiza glabra)",
-     "dose": "3 mg"
-    },
-    {
-     "name": "Gingerol 10% (Zingiber officinalis)",
-     "dose": "2 mg"
-    },
-    {
-     "name": "Piperine (Piper nigrum)",
-     "dose": "1 mg"
-    },
-    {
-     "name": "Vinpocetine (Vinca minor)",
-     "dose": "1 mg"
+     "name": "Hawthorn flavonoids 85% (Crataegus oxyacantha)",
+     "dose": "170 mg"
     }
    ],
-   "ingredients_source": "manual",
-   "enrichment_note": "Section B: replaced with Glen's authoritative 'Heart Health 4' formula (Formulations DB 6/14/23). NOTE: Rhythm Restore (TCM Wenxin Keli) is a SEPARATE product needing its own catalog entry - ingredients: Codonopsis pilosula, Polygonatum sibiricum, Panax notoginseng (Notoginsenosides 80%), Amber (Succinic Acid), Nardostachys jatamansi (Spikenard). Those are NOT included here. Source: Glen's Products-Worklist.md.",
+   "ingredients_source": "store spec production/05 Formulations/heart-health/2026-09-27 (Glen approved 2026-11-20)",
+   "enrichment_note": "Glen approved the store-page spec 2026-11-20 in the production tab: 4 actives, batch HH-20260927-40. Source: production/05 Formulations/heart-health/2026-09-27/heart-health-store-page.md. Rhythm Restore (TCM Wenxin Keli) is a separate product; its ingredients are not included here.",
    "bottle_type": "30 Caps",
    "fmp_id": "363",
-   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-   "chat_caution": true
+   "warning": "Don't use this if you're pregnant or breastfeeding. Consult your health professional before use if you take prescription medications. This matters most with warfarin or other blood thinners, digoxin, nitrates and blood pressure medicines. It also applies to thyroid medicine and some antibiotics, so take those apart from this. Also consult first if you have kidney disease. Keep your total selenium from all sources under 400 mcg a day.",
+   "chat_caution": true,
+   "content_since": "2026-11-21T08:34:00+00:00",
+   "description": "Your heart never clocks out. It beats around 100,000 times a day, awake or asleep. Every beat takes energy. Your cells build that energy fresh from food and oxygen, nonstop. Coenzyme Q10 and magnesium help keep that energy work running. Selenium supports the antioxidant enzymes that protect heart cells.\n\nIt can be taken alongside Rhythm Restore.",
+   "directions": "1 to 3 capsules daily with a meal containing fat, or as guided.",
+   "copy_pinned": ["ingredients", "directions", "description"]
   },
   "rise--shine": {
    "name": "Rise & Shine",
@@ -9319,46 +9203,48 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Chromium Polynicotinate",
-     "dose": "1.6 mg"
+     "name": "Dihydroberberine 99% (Phellodendron chinense)",
+     "dose": "100 mg"
     },
     {
-     "name": "Bio-Enhanced™ R-Lipoic Acid",
+     "name": "French lilac 20:1 (Galega officinalis)",
+     "dose": "100 mg"
+    },
+    {
+     "name": "Benfotiamine 99%",
+     "dose": "125 mg (about 70 mg thiamine, about 5,900% of the Daily Value)"
+    },
+    {
+     "name": "Chromium (as chromium polynicotinate)",
+     "dose": "200 mcg, 571% of the Daily Value"
+    },
+    {
+     "name": "Stabilized Bio-Enhanced® Na R-lipoate",
      "dose": "10 mg"
     },
     {
-     "name": "French Lilac; source of idea for synthetic Metformin",
-     "dose": "100 mg"
-    },
-    {
-     "name": "Pterostilbene; Trans Pterostilbene",
+     "name": "Pterostilbene 98%",
      "dose": "50 mg"
     },
     {
-     "name": "Gymnemic Acid",
-     "dose": "100 mg"
-    },
-    {
-     "name": "Banaba leaf",
+     "name": "Bitter melon charantin 10% (Momordica charantia)",
      "dose": "50 mg"
     },
     {
-     "name": "Bitter Melon 10% Bitters Momordica charantia",
-     "dose": ""
-    },
-    {
-     "name": "Benfotiamine",
-     "dose": "75 mg"
-    },
-    {
-     "name": "5x more bioavailable active berberine metabolite; 2x longer lasting; 20x greater area under the curve (AUC) DHB",
-     "dose": "100 mg"
+     "name": "Banaba corosolic acid 20% (Lagerstroemia speciosa)",
+     "dose": "50 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Glucose Tolerance . Glucose Tolerance Glucose Tolerance Chromium is the only essential mineral that your body cannot conserve. The kidneys selectively reabsorb all the others. Chromium is also the first to be lost to food processing. Those factors combine to make Chromium and important mineral to supplement and replete for many in our culture. ​Restoring healthy Chromium levels adds about 5 years to expected longevity. ​The active cofactor and preferred supplement form of Chromium is called Glucose Tolerance Factor (GTF) Chromium. It's identity as a chemical compound is Chromium...",
+   "ingredients_source": "store spec production/05 Formulations/glucose-tolerance/2026-10-24 (Glen approved 2026-11-20)",
    "bottle_type": "30 Caps",
-   "fmp_id": "343"
+   "fmp_id": "343",
+   "enrichment_note": "Glen approved the store-page spec 2026-11-20 in the production tab: 8 actives, from the June 2026 label (run 187); the bottles hold no gymnema (Glen). Source: production/05 Formulations/glucose-tolerance/2026-10-24/glucose-tolerance-store-page.md.",
+   "warning": "Do not use if you are pregnant or breastfeeding. It is not for children. Consult your health professional before use if you take prescription medications, especially blood sugar, blood pressure or thyroid medicines. Also consult first if you are prone to low blood sugar, or have kidney or liver disease. Avoid it with G6PD deficiency. Stop 2 weeks before planned surgery. Ask first too if you are allergic to legumes or gourds. This formula may lower blood sugar and change how some medications are processed.",
+   "chat_caution": true,
+   "content_since": "2026-11-21T08:34:00+00:00",
+   "description": "Chromium helps insulin carry glucose into your cells. Refining grains and sugar strips out much of the chromium in whole foods.\n\nThis formula supplies chromium as chromium polynicotinate, often sold as GTF chromium. Poly means many. Nicotinate refers to vitamin B3, also known as niacin or nicotinic acid.",
+   "directions": "Take 1 capsule daily with food, or with cravings for sugar or stimulants, or as guided.",
+   "copy_pinned": ["ingredients", "directions", "description"]
   },
   "gut-terrain-program": {
    "name": "Gut Terrain Program",
