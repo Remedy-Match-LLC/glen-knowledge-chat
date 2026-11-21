@@ -526,3 +526,75 @@ def test_the_new_order_page_offers_retire_only_for_a_new_item():
     assert 'id="retire-item-btn"' in html
     assert '(p&&p.typed)?"":"none"' in html
     assert "/retire\"" in html or "/retire\"," in html
+
+
+def test_retiring_one_item_leaves_the_others_on_the_list():
+    a, b = _new("Typed Retire A"), _new("Typed Retire B")
+    assert _retire(a["slug"]).status_code == 200
+    slugs = _picker_slugs()
+    assert a["slug"] not in slugs and b["slug"] in slugs
+
+
+def _old_style_cx():
+    import sqlite3
+    from dashboard import typed_items as ti
+    cx = sqlite3.connect(":memory:")
+    ti.init_table(cx)
+    ti.add(cx, "Stamp One", 500, bottle_type="30 g")
+    return cx, ti
+
+
+def test_a_second_retire_keeps_the_first_retirement_time():
+    cx, ti = _old_style_cx()
+    ti.retire(cx, "stamp-one")
+    first = cx.execute("SELECT retired_at FROM typed_order_items").fetchone()[0]
+    cx.execute("UPDATE typed_order_items SET retired_at='2000-01-01'")
+    cx.commit()
+    ti.retire(cx, "stamp-one")
+    assert first and cx.execute("SELECT retired_at FROM typed_order_items").fetchone()[0] \
+        == "2000-01-01"
+
+
+def test_a_retired_name_is_refused_when_two_adds_race(monkeypatch):
+    cx, ti = _old_style_cx()
+    ti.retire(cx, "stamp-one")
+    real_get, calls = ti.get, []
+
+    def first_miss(c, slug):   # the request read before the row existed
+        calls.append(slug)
+        return None if len(calls) == 1 else real_get(c, slug)
+    monkeypatch.setattr(ti, "get", first_miss)
+    with pytest.raises(ValueError, match="retired"):
+        ti.add(cx, "Stamp One", 500, bottle_type="30 g")
+
+
+def test_a_failed_column_add_is_not_swallowed():
+    import sqlite3
+    from dashboard import typed_items as ti
+    real = sqlite3.connect(":memory:")
+
+    class NoAlter:
+        def execute(self, sql, *a):
+            if sql.lstrip().upper().startswith("ALTER"):
+                raise sqlite3.OperationalError("locked")
+            return real.execute(sql, *a)
+
+        def commit(self):
+            real.commit()
+
+        def rollback(self):
+            real.rollback()
+    real.execute("CREATE TABLE typed_order_items (slug TEXT PRIMARY KEY, name TEXT NOT NULL, "
+                 "price_cents INTEGER NOT NULL, bottle_type TEXT, created_by TEXT, "
+                 "created_at TEXT NOT NULL)")
+    with pytest.raises(sqlite3.OperationalError):
+        ti.init_table(NoAlter())
+
+
+def test_the_page_retires_the_picked_typed_item_only():
+    html = open("static/order-new.html").read()
+    fn = html[html.index("async function retireTypedItem"):]
+    fn = fn[:fn.index("\n}\n")]
+    assert 'CATALOG.find(x=>x.slug===$("prod-pick").value)' in fn
+    assert "if(!p||!p.typed) return;" in fn
+    assert 'encodeURIComponent(p.slug)+"/retire"' in fn
