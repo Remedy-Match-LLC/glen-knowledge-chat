@@ -18,7 +18,16 @@ def test_fixed_like_single_ingredient_bottles():
     # Same pricing shape as the $40 single-ingredient powders: no remedy volume curve.
     p = PRODUCTS[SLUG]
     assert p["qty_pricing"] is False
-    assert PRODUCTS["bitter-melon-tea-powder-momordica-charantia"]["qty_pricing"] is False
+    assert p["volume_eligible"] is False
+
+
+def test_cart_price_stays_40_at_any_quantity():
+    # Without volume_eligible false, the cart engine treats a non-"pure powder" name as
+    # volume-eligible and discounts 2+ bottles. Glen ruled the price fixed.
+    import app
+    item = app._engine_item(dict(PRODUCTS[SLUG], slug=SLUG), 5)
+    assert item["volume_eligible"] is False
+    assert item["unit_cents"] == 4000
 
 
 def test_ships_as_the_5ml_dropper():

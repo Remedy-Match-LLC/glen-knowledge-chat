@@ -26081,6 +26081,7 @@
    "price_cents": 4000,
    "regular_cents": 8000,
    "qty_pricing": false,
+   "volume_eligible": false,
    "no_groovekart": true,
    "bottle_type": "Dropper 5 mL",
    "ingredients": [{"name": "Quinton Isotonic", "dose": ""}],
