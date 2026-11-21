@@ -116,8 +116,9 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
     So the FF-only synthesis and the layer ordering run exactly as before. For an animal,
     each layer's remedy becomes the function it already names -- its primary pattern label,
     which is the E4L infoceutical -- and the FF alternatives are dropped, because an animal
-    report recommends only infoceuticals (the same rule the publish gate enforces in
-    dashboard/analysis_autoconfirm.animal_formulation_reasons). A human is unchanged.
+    report's AUTOMATED suggestions are infoceuticals only (the rule the auto-confirm hold
+    enforces in dashboard/analysis_autoconfirm.animal_formulation_reasons). What Glen
+    adds by hand is kept (2026-11-21). A human is unchanged.
 
     Glen, 2026-10-01: the remedy is the remedy-list entry FOR THE CODE, never E4L's own label.
     E4L's labels differ from the product names in ways no text match survives ("Love

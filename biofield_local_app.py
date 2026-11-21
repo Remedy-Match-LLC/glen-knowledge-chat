@@ -794,8 +794,8 @@ _SPECIES_UNKNOWN = ("This client's species is unknown, so Functional Formulation
                     "were left off. Record person or animal, then add them again "
                     "(Glen, 2026-10-01: ask me first).")
 
-_ANIMAL_ONLY = ("This client is an animal. An animal gets infoceuticals only, "
-                "never a Functional Formulation (Glen, 2026-11-06).")
+_ANIMAL_ONLY = ("This client is an animal. The automated program suggests infoceuticals "
+                "only for an animal, never a Functional Formulation (Glen, 2026-11-21).")
 
 
 def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
@@ -875,7 +875,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return _intake_subject(cx, tid)["species"]
 
     def _intake_is_animal(cx, tid):
-        """THE animal predicate for a Biofield Intake. An animal gets infoceuticals only."""
+        """THE animal predicate for a Biofield Intake. The automated program suggests
+        infoceuticals only for an animal (Glen, 2026-11-21)."""
         from dashboard import client_species as _cspec
         return _cspec.is_animal(_intake_species(cx, tid))
 
@@ -920,9 +921,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return "unknown"
         return None
 
-    def _animal_refused(cx, tid, rems):
-        """The remedies this intake may not take now: anything not an infoceutical,
-        for an animal or a species nobody knows. Empty for a person."""
+    def _animal_refused(cx, tid, rems, automated=False):
+        """The remedies an AUTOMATED pick may not add now: anything not an infoceutical,
+        for an animal or a species nobody knows. Empty for a person.
+
+        Glen, 2026-11-21: "I can recommend anything if I want to for an animal and it
+        shouldn't stop it from publishing the report. It's that the automated analysis
+        only recommends infoceuticals." So a remedy he enters, applies or publishes by
+        hand is never refused, and only automated=True applies the limit. This reverses
+        the 2026-11-06 rule for hand entries and the publish."""
+        if not automated:
+            return []
         rems = [(r or "").strip() for r in (rems or []) if (r or "").strip()]
         if not rems or not _ff_gate(cx, tid):
             return []
@@ -4192,8 +4201,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return {"ok": True}
 
     def _gate_row_fields(cx, test_id, d):
-        """A hand-typed row for an animal keeps its layer and tail but drops an FF and
-        its dosing. Returns the names left off (2026-11-06 review)."""
+        """A hand-typed row keeps every remedy now (Glen, 2026-11-21), so this returns
+        an empty list. Kept as the hook for the hand-entry check."""
         rem = (d.get("remedy") or "").strip()
         if not rem:
             return []
@@ -4287,8 +4296,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             with sqlite3.connect(db_path) as cx:
                 refused = _animal_refused(cx, test_id, [d["remedy"]])
             if refused:
-                # An edit never puts an FF on an animal's row. The rest of the edit
-                # stands; the row keeps the remedy it had.
+                # A hand edit is never refused now (Glen, 2026-11-21), so this
+                # branch does not run. It would keep the rest of the edit.
                 for k in ("remedy", "dosage", "frequency", "timing"):
                     d.pop(k, None)
                 gated = _ff_block(cx, test_id, refused)
@@ -5624,8 +5633,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         refused = []
         try:
             with sqlite3.connect(db_path) as cx:
-                # An animal gets infoceuticals only (2026-11-06 review): checked by the
-                # text and by the name balance_item will store.
+                # A hand balance is never refused (Glen, 2026-11-21), so this check
+                # always passes; only an automated pick keeps the animal limit.
                 for r in list(remedies):
                     bad = (_animal_refused(cx, test_id, [str(r or "")]) or
                            _animal_refused(cx, test_id,
@@ -5692,8 +5701,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return out, result
 
     def _gate_layers(cx, test_id, layers):
-        """Transcript layers for an animal keep their head and tail, but an FF and its
-        dosing are left off. Returns the names left off (2026-11-06 review)."""
+        """Transcript layers are what Glen spoke, so nothing is left off them (Glen,
+        2026-11-21). Kept as a hook for the hand-entry check, which is now empty."""
         refused = _animal_refused(cx, test_id, [l.get("remedy") for l in layers])
         for l in layers:
             if (l.get("remedy") or "").strip() in refused:
@@ -5897,8 +5906,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             init_auth_tables(cx)
             _st.init_stress_tables(cx)
             n, made = _last_layer_no(rep), 0
-            # An animal gets infoceuticals only, on this path too (2026-11-06 review):
-            # a transcript layer keeps its head without the FF, an FF pick is skipped.
+            # Transcript layers are what Glen spoke, so they keep every remedy. An
+            # automated FF pick is skipped for an animal (Glen, 2026-11-21).
             refused = _gate_layers(cx, test_id, interpreted)
             try:
                 # The transcript's layers land exactly as the Interpret button writes
@@ -5917,8 +5926,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 for st in prog["stages"]:
                     for p in st["picks"]:
                         pick = resolve_remedy_name(cx, p["remedy"])
-                        bad = (_animal_refused(cx, test_id, [p["remedy"]])
-                               or _animal_refused(cx, test_id, [pick]))
+                        # A program pick is automated, so it keeps the animal limit
+                        # (Glen, 2026-11-21).
+                        bad = (_animal_refused(cx, test_id, [p["remedy"]], automated=True)
+                               or _animal_refused(cx, test_id, [pick], automated=True))
                         if bad:
                             refused.extend(x for x in bad if x not in refused)
                             continue
@@ -6118,16 +6129,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                            [(test_id, n, now) for n in names])
             cx.commit()
 
-    def _publish_block(cx, test_id, refused):
-        out = _ff_block(cx, test_id, refused)
-        why = ("this client's species is unknown" if out["species_unknown"]
-               else "an animal gets infoceuticals only")
-        out["error"] = (f"Not published: {why}, and these are on the chain: "
-                        + ", ".join(refused) + ". Take them off"
-                        + (" or record person or animal" if out["species_unknown"] else "")
-                        + ", then publish again.")
-        return out
-
     def _do_publish(test_id, special, send, send_if_new=False, own_remedies=(),
                     primary_on=None):
         """Build + upload PDF/audio assets + upsert the portal for a test. Returns the
@@ -6142,16 +6143,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         # portal content, because authored_report strips the "a" (2026-10-13).
         if not re.fullmatch(r"a+\d+", str(test_id)):
             raise ValueError(f"only an authored report (a<number>) can be published, not {test_id!r}")
-        # An animal's portal carries infoceuticals only, and an unknown species carries
-        # no FF either (2026-11-06 review, round 3). An FF already on the chain from
-        # before the rule blocks the publish and is named, so it never reaches her.
-        with sqlite3.connect(db_path) as cx:
-            _own = _own_remedies(test_id) | {str(n).strip() for n in (own_remedies or ())}
-            _names = [l.get("remedy") for l in (_report_for(cx, test_id).get("layers") or [])
-                      if (l.get("remedy") or "").strip() not in _own]
-            _bad = _animal_refused(cx, test_id, _names)
-            if _bad:
-                return {"blocked": True, **_publish_block(cx, test_id, _bad)}
+        # No species gate on the publish. Glen, 2026-11-21: "When I've made a report
+        # and I say publish it to portal, that should be published to the portal."
         from dashboard import biofield_portal_publish as _bpp
         # The portal and its PDF follow the Biofield Analysis's section buttons, as
         # the invoice does (Glen, 2026-10-19).
@@ -6232,8 +6225,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 test_id, int((special or [0])[0] or 0), send=False, send_if_new=True, **extra)
             if isinstance(res, dict) and res.get("unresolved"):
                 print(f"[auto-publish] {test_id}: unresolved {res['unresolved']}", flush=True)
-            if isinstance(res, dict) and res.get("blocked"):
-                print(f"[auto-publish] {test_id}: blocked: {res.get('error')}", flush=True)
             return res
         except Exception as e:
             print(f"[auto-publish] {test_id} skipped: {e!r}", flush=True)
@@ -6257,9 +6248,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": str(e)[:300]}, 502
         if res.get("unresolved"):
             return {"ok": False, "unresolved": res["unresolved"]}, 409
-        if res.get("blocked"):
-            return {"ok": False, "animal_refused": res["animal_refused"],
-                    "species_unknown": res["species_unknown"], "error": res["error"]}, 409
         _mark_published(test_id, special)   # remember for auto-attach on later audio
         return {"ok": True, "url": res.get("url", ""),
                 "updated": bool(res.get("updated")), "note": res.get("note", ""),

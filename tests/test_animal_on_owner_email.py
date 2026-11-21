@@ -11,6 +11,7 @@ the same email, where FileMaker holds two people, so it showed nothing.
 The fixture is that shape with invented people: a Human owner on the owner's email, a
 Dog with her own E4L record and email, and an intake for the dog on the owner's email.
 """
+import json
 import sqlite3
 
 import pytest
@@ -148,14 +149,34 @@ def _layers(db, tid):
         (int(tid.lstrip("a")),))]
 
 
-def test_the_plus_button_refuses_an_ff_for_the_pet(tmp_path):
+def _stub_publish(monkeypatch):
+    """The real portal build runs; only the upload and the send are stubbed.
+    Returns the payloads that would have gone to the portal."""
+    import biofield_local_app as BLA
+    from dashboard import biofield_portal_publish as BPP
+    sent = []
+    monkeypatch.setattr(BPP, "load_catalog", lambda: {
+        "immune-modulation": {"name": FF}, "es1": {"name": INFO}})
+    monkeypatch.setattr(BPP, "upload_asset",
+                        lambda data, name, **kw: f"https://illtowell.com/portal-asset/{name}")
+    monkeypatch.setattr(BPP, "publish_to_portal",
+                        lambda payload, **kw: sent.append(payload) or
+                        {"ok": True, "updated": False, "note": "portal created"})
+    monkeypatch.setattr(BLA, "report_pdf_bytes", lambda html: b"%PDF-FAKE")
+    monkeypatch.setattr(BLA, "_fetch_life_stress_curation", lambda email: None, raising=False)
+    monkeypatch.setenv("PORTAL_PUBLISH_BASE_URL", "https://illtowell.com")
+    monkeypatch.setenv("CONSOLE_SECRET", "")
+    return sent
+
+
+# Glen, 2026-11-21: "I can recommend anything if I want to for an animal." A hand
+# entry is never refused; only the automated program pick keeps the animal limit.
+def test_the_plus_button_adds_an_ff_for_the_pet(tmp_path):
     client, db = _app(tmp_path)
     tid = _pet(client)
     j = client.post(f"/author/{tid}/remedy-set/add-one", json={"remedy": FF}).get_json()
-    assert j["ok"] is False and j["animal_refused"] == [FF]
-    assert _layers(db, tid) == []
-    j = client.post(f"/author/{tid}/remedy-set/add-one", json={"remedy": INFO}).get_json()
-    assert j["ok"] is True and len(_layers(db, tid)) == 1
+    assert j["ok"] is True and not j.get("animal_refused")
+    assert _layers(db, tid) == [FF]
 
 
 def test_the_plus_button_still_adds_an_ff_for_a_person(tmp_path):
@@ -165,21 +186,24 @@ def test_the_plus_button_still_adds_an_ff_for_a_person(tmp_path):
     assert j["ok"] is True and len(_layers(db, tid)) == 1
 
 
-def test_apply_to_chain_drops_the_ffs_for_the_pet(tmp_path):
+def test_apply_to_chain_keeps_the_ffs_glen_chose_for_the_pet(tmp_path):
     client, db = _app(tmp_path)
     tid = _pet(client)
     j = client.post(f"/author/{tid}/remedy-set/apply-to-chain",
                     json={"remedies": [FF, INFO]}).get_json()
-    assert j["animal_refused"] == [FF] and j["added"] == 1
-    assert all(is_infoceutical_remedy(r) for r in _layers(db, tid))
+    assert not j.get("animal_refused") and j["added"] == 2
+    assert FF in _layers(db, tid)
 
 
-def test_a_layer_pick_refuses_an_ff_for_the_pet(tmp_path):
+def test_a_layer_pick_takes_an_ff_for_the_pet(tmp_path, monkeypatch):
+    import biofield_local_app as BLA
+    monkeypatch.setattr(BLA, "remedy_dosing", lambda cx, n: {})
     client, db = _app(tmp_path)
     tid = _pet(client)
-    j = client.post(f"/author/{tid}/layer/1/select", json={"remedy": FF}).get_json()
-    assert j["ok"] is False and j["animal_refused"] == [FF]
-    assert _layers(db, tid) == []
+    _chain(db, tid, [INFO])
+    r = client.post(f"/author/{tid}/layer/1/select", json={"remedy": FF})
+    assert r.status_code == 200 and not r.get_json().get("animal_refused"), r.get_json()
+    assert _layers(db, tid) == [FF]
 
 
 def _invoice_app(tmp_path):
@@ -693,38 +717,30 @@ def test_only_whole_infoceutical_names_pass(name, ok):
     assert is_infoceutical_remedy(name) is ok
 
 
-def test_the_layer_pick_checks_the_name_that_is_stored(tmp_path, monkeypatch):
+def test_a_resolved_ff_name_is_kept_for_the_pet(tmp_path, monkeypatch):
     import biofield_local_app as BLA
     monkeypatch.setattr(BLA, "resolve_remedy_name",
                         lambda cx, n: FF if n == INFO.lower() else n)
     monkeypatch.setattr(BLA, "remedy_dosing", lambda cx, n: {})
     client, db = _app(tmp_path)
     tid = _pet(client)
-    j = client.post(f"/author/{tid}/layer/1/select",
-                    json={"remedy": INFO.lower()}).get_json()
-    assert j["ok"] is False and j["animal_refused"] == [FF]
     j = client.post(f"/author/{tid}/remedy-set/add-one", json={"remedy": INFO.lower()}).get_json()
-    assert j["ok"] is False and j["animal_refused"] == [FF]
-    assert _layers(db, tid) == []
+    assert j["ok"] is True and _layers(db, tid) == [FF]
 
 
 # -- 11. the other ways into the chain ----------------------------------------------
 
-def test_a_hand_typed_row_for_the_pet_leaves_the_ff_off(tmp_path):
+def test_a_hand_typed_row_for_the_pet_keeps_the_ff(tmp_path):
     client, db = _app(tmp_path)
     tid = _pet(client)
     j = client.post(f"/author/{tid}/row", json={"layer": 1, "head": "Liver",
                                                "remedy": FF, "dosage": "2 caps"}).get_json()
-    assert j["animal_refused"] == [FF]
-    assert _layers(db, tid) == [""]
+    assert not j.get("animal_refused") and _layers(db, tid) == [FF]
     rid = j["rid"]
-    j = client.post(f"/author/{tid}/row/{rid}", json={"remedy": FF, "head": "Kidney"}).get_json()
-    assert j["animal_refused"] == [FF]
-    row = sqlite3.connect(db).execute("SELECT head, remedy, dosage FROM biofield_auth_chain "
-                                      "WHERE id=?", (rid,)).fetchone()
-    assert row == ("Kidney", "", "")
-    client.post(f"/author/{tid}/row/{rid}", json={"remedy": INFO})
+    client.post(f"/author/{tid}/row/{rid}", json={"remedy": INFO, "head": "Kidney"})
     assert _layers(db, tid) == [INFO]
+    client.post(f"/author/{tid}/row/{rid}", json={"remedy": FF})
+    assert _layers(db, tid) == [FF]
 
 
 def test_a_persons_hand_typed_ff_is_kept(tmp_path):
@@ -734,7 +750,7 @@ def test_a_persons_hand_typed_ff_is_kept(tmp_path):
     assert "animal_refused" not in j and _layers(db, tid) == [FF]
 
 
-def test_interpret_leaves_the_ff_off_for_the_pet(tmp_path, monkeypatch):
+def test_interpret_keeps_the_ff_glen_spoke_for_the_pet(tmp_path, monkeypatch):
     import biofield_local_app as BLA
     from dashboard.biofield_narrative import save_notes
     monkeypatch.setattr(BLA, "interpret_transcript", lambda *a, **k: {"layers": [
@@ -746,8 +762,8 @@ def test_interpret_leaves_the_ff_off_for_the_pet(tmp_path, monkeypatch):
     with sqlite3.connect(db) as cx:
         save_notes(cx, tid, "spoken session")
     j = client.post(f"/author/{tid}/interpret", json={}).get_json()
-    assert j["animal_refused"] == [FF] and j["added"] == 2
-    assert _layers(db, tid) == ["", INFO]
+    assert not j.get("animal_refused") and j["added"] == 2
+    assert _layers(db, tid) == [FF, INFO]
 
 
 def test_the_program_apply_leaves_the_ff_off_for_the_pet(tmp_path, monkeypatch):
@@ -767,7 +783,7 @@ def test_the_program_apply_leaves_the_ff_off_for_the_pet(tmp_path, monkeypatch):
     assert _layers(db, tid) == [INFO]
 
 
-def test_a_clinical_balance_leaves_the_ff_off_for_the_pet(tmp_path, monkeypatch):
+def test_a_clinical_balance_keeps_the_ff_for_the_pet(tmp_path, monkeypatch):
     import biofield_local_app as BLA
     monkeypatch.setattr(BLA, "resolve_remedy_name", lambda cx, n: n)
     client, db = _app(tmp_path)
@@ -775,8 +791,8 @@ def test_a_clinical_balance_leaves_the_ff_off_for_the_pet(tmp_path, monkeypatch)
     j = client.post(f"/author/{tid}/clinical-items/balance",
                     json={"label": "Itchy skin", "layer": 1,
                           "remedies": [FF, INFO]}).get_json()
-    assert j["animal_refused"] == [FF]
-    assert FF not in _layers(db, tid) and INFO in _layers(db, tid)
+    assert not j.get("animal_refused")
+    assert FF in _layers(db, tid) and INFO in _layers(db, tid)
 
 
 # -- 12. one resolution per request, and no full-name scan on a normal request ------
@@ -886,18 +902,16 @@ def _unknown_app(tmp_path, **kw):
     return _app(tmp_path, e4l=str(tmp_path / "missing-e4l.db"), **kw)
 
 
-def test_a_name_that_does_not_match_tells_the_operator(tmp_path):
-    """Bob for Robert: the FF is left off, and the reply says why."""
+def test_a_name_that_does_not_match_still_takes_a_hand_ff(tmp_path):
+    """Bob for Robert: nobody knows the species, and a hand-typed FF still stands."""
     p = _e4l_rows(tmp_path, [(1001, "Robert Smith", OWNER, "", "")])
     client, db = _real_app(tmp_path, p)
     tid = _intake(client, "Bob Smith", OWNER)
     j = client.post(f"/author/{tid}/row", json={"layer": 1, "remedy": FF}).get_json()
-    assert j["animal_refused"] == [FF] and j["species_unknown"] is True
-    assert "species is unknown" in j["error"]
+    assert not j.get("animal_refused") and _layers(db, tid) == [FF]
 
 
-def test_an_unknown_species_keeps_ffs_off_rows_interpret_balance_and_program(
-        tmp_path, monkeypatch):
+def test_an_unknown_species_limits_only_the_program_pick(tmp_path, monkeypatch):
     import biofield_local_app as BLA
     from dashboard import biofield_program as BP
     from dashboard.biofield_narrative import save_notes
@@ -911,19 +925,20 @@ def test_an_unknown_species_keeps_ffs_off_rows_interpret_balance_and_program(
     tid = _intake(client, "Ann Owner", OWNER)
     with sqlite3.connect(db) as cx:
         save_notes(cx, tid, "spoken")
-    replies = [
+    hand = [
         client.post(f"/author/{tid}/row", json={"layer": 1, "remedy": FF}).get_json(),
         client.post(f"/author/{tid}/interpret", json={}).get_json(),
         client.post(f"/author/{tid}/clinical-items/balance",
-                    json={"label": "Itch", "layer": 1, "remedies": [FF]}).get_json(),
-        client.post(f"/author/{tid}/program", json={"apply": True, "force": True,
-                                                    "include": {"spirit": False}}).get_json()]
-    for j in replies:
-        assert j["animal_refused"] == [FF] and j["species_unknown"] is True, j
-    assert FF not in _layers(db, tid)
+                    json={"label": "Itch", "layer": 1, "remedies": [FF]}).get_json()]
+    for j in hand:
+        assert not j.get("animal_refused"), j
+    assert _layers(db, tid) == [FF, FF]          # the typed row and the spoken layer
+    prog = client.post(f"/author/{tid}/program", json={"apply": True, "force": True,
+                                                       "include": {"spirit": False}}).get_json()
+    assert prog["animal_refused"] == [FF] and prog["species_unknown"] is True
 
 
-def test_an_unknown_species_keeps_ffs_off_the_layer_sync(tmp_path, monkeypatch):
+def test_an_unknown_species_keeps_a_hand_ff_on_the_layer_sync(tmp_path, monkeypatch):
     from dashboard import biofield_e4l as BE
     from tests.test_clinical_layer_sync import _app as sync_app, _apply, _chain as sync_chain
     from tests.test_clinical_layer_sync import _gut_by_hand, _preview
@@ -931,28 +946,31 @@ def test_an_unknown_species_keeps_ffs_off_the_layer_sync(tmp_path, monkeypatch):
     db, tid, client = sync_app(tmp_path, monkeypatch, ["Gut"], _gut_by_hand)
     j = _preview(client, tid)
     r = _apply(client, tid, j, [c["id"] for c in j["changes"]]).get_json()
-    assert r["animal_refused"] == ["Transform"] and r["species_unknown"] is True
-    assert "Transform" not in {row[3] for row in sync_chain(db, tid)}
+    assert not r.get("animal_refused")
+    assert "Transform" in {row[3] for row in sync_chain(db, tid)}
 
 
-def test_an_ff_already_on_the_pets_chain_never_reaches_her_portal(tmp_path, monkeypatch):
-    monkeypatch.setenv("PORTAL_PUBLISH_BASE_URL", "http://portal.invalid")
+def test_the_pets_report_publishes_whatever_glen_put_in_it(tmp_path, monkeypatch):
+    """Hershey Connoir, 2026-11-21: the Harmony laser blocked the publish. Glen: "When
+    I've made a report and I say publish it to portal, that should be published."
+    Putting the old publish gate back turns this red."""
+    sent = _stub_publish(monkeypatch)
     client, db = _app(tmp_path)
     tid = _pet(client)
-    _chain(db, tid, [FF, INFO])               # written before the rule existed
+    _chain(db, tid, [FF, INFO])
     r = client.post(f"/test/{tid}/publish-portal", json={})
-    j = r.get_json()
-    assert r.status_code == 409 and j["animal_refused"] == [FF]
-    assert "Not published" in j["error"] and FF in j["error"]
+    assert r.status_code == 200 and r.get_json()["ok"] is True, r.get_json()
+    assert len(sent) == 1 and FF in json.dumps(sent[0]) and INFO in json.dumps(sent[0])
 
 
-def test_an_unknown_species_blocks_the_publish_too(tmp_path, monkeypatch):
-    monkeypatch.setenv("PORTAL_PUBLISH_BASE_URL", "http://portal.invalid")
+def test_an_unknown_species_does_not_block_the_publish(tmp_path, monkeypatch):
+    sent = _stub_publish(monkeypatch)
     client, db = _unknown_app(tmp_path)
     tid = _intake(client, "Ann Owner", OWNER)
     _chain(db, tid, [FF])
-    j = client.post(f"/test/{tid}/publish-portal", json={}).get_json()
-    assert j["species_unknown"] is True and j["animal_refused"] == [FF]
+    r = client.post(f"/test/{tid}/publish-portal", json={})
+    assert r.status_code == 200 and r.get_json()["ok"] is True, r.get_json()
+    assert len(sent) == 1 and FF in json.dumps(sent[0])
 
 
 def test_the_invoice_pay_card_is_checked_for_an_ff(tmp_path):
@@ -1122,11 +1140,11 @@ def test_the_pet_never_publishes_the_owners_order(tmp_path):
     assert published == []
 
 
-def test_no_email_is_no_exemption_from_the_species_gate(tmp_path):
+def test_no_email_still_asks_the_species_before_the_plus_button(tmp_path):
     client, db = _unknown_app(tmp_path)
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
     j = client.post(f"/author/{tid}/row", json={"layer": 1, "remedy": FF}).get_json()
-    assert j["animal_refused"] == [FF] and j["species_unknown"] is True
+    assert not j.get("animal_refused") and _layers(db, tid) == [FF]
     assert client.post(f"/author/{tid}/remedy-set/add-one",
                        json={"remedy": FF}).get_json().get("needs_species") is True
 
