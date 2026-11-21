@@ -205,3 +205,16 @@ def test_a_laser_with_no_dose_still_gets_the_line():
     add_chain_row(cx, aid, layer=1, head="Layer 1", most_affected="x", remedy="Harmony Laser")
     out = bpp.build_portal_content(cx, aid, special_price_cents=0, catalog={"harmony-laser": {"name": "Harmony Laser"}})
     assert out["content"]["layers"][0]["dosing"].endswith(SHARE)
+
+
+@pytest.mark.parametrize("dose,want", [
+    ("Use daily", "Use daily. " + SHARE),
+    ("Use daily.", "Use daily. " + SHARE),
+    ("(Use with care.)", "(Use with care.) " + SHARE),
+    ('Say "slowly."', 'Say "slowly." ' + SHARE),
+    ("", SHARE),
+])
+def test_the_line_joins_the_dose_with_one_full_stop(dose, want):
+    from dashboard.biofield_portal_publish import _with_share_note
+    assert _with_share_note(dose, "harmony-laser") == want
+    assert _with_share_note(dose, "wholomega") == dose

@@ -299,7 +299,9 @@ def _with_share_note(dosing, slug):
     d = (dosing or "").strip()
     if not d:
         return note
-    return d + ("" if d.endswith((".", "!", "?")) else ".") + " " + note
+    # A sentence already ends at . ! or ?, even inside a closing quote or bracket.
+    ended = re.search(r"[.!?][\"')\]\u201d\u2019]*$", d)
+    return d + ("" if ended else ".") + " " + note
 
 
 def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
