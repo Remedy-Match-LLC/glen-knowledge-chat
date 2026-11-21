@@ -4201,8 +4201,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return {"ok": True}
 
     def _gate_row_fields(cx, test_id, d):
-        """A hand-typed row for an animal keeps its layer and tail but drops an FF and
-        its dosing. Returns the names left off (2026-11-06 review)."""
+        """A hand-typed row keeps every remedy now (Glen, 2026-11-21), so this returns
+        an empty list. Kept as the hook for the hand-entry check."""
         rem = (d.get("remedy") or "").strip()
         if not rem:
             return []
@@ -4296,8 +4296,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             with sqlite3.connect(db_path) as cx:
                 refused = _animal_refused(cx, test_id, [d["remedy"]])
             if refused:
-                # An edit never puts an FF on an animal's row. The rest of the edit
-                # stands; the row keeps the remedy it had.
+                # A hand edit is never refused now (Glen, 2026-11-21), so this
+                # branch does not run. It would keep the rest of the edit.
                 for k in ("remedy", "dosage", "frequency", "timing"):
                     d.pop(k, None)
                 gated = _ff_block(cx, test_id, refused)
