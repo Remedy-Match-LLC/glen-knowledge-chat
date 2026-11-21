@@ -545,6 +545,14 @@
   .five-voice-summary{padding:.7rem .85rem;border-radius:10px;background:var(--brand-soft);margin:.8rem 0}
   .chat-input-row input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
   .chat-input-row input::placeholder{color:var(--muted)}
+  /* Portal chat paperclip (static/js/portal-chat-attach.js) */
+  .chat-attach-btn{background:transparent;border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:9px 11px;font-size:1rem;cursor:pointer;line-height:1}
+  .chat-attach-btn:hover,.chat-attach-btn:focus{border-color:var(--brand)}
+  .chat-attach-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chat-attach-chips:empty{display:none}
+  .chat-attach-chip{font-size:.85rem;background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:3px 6px 3px 10px;color:var(--ink)}
+  .chat-attach-chip.err{border-color:#c0504d}
+  .chat-attach-x{background:none;border:0;color:var(--muted);cursor:pointer;font-size:1rem;margin-left:4px}
   .chat-sugg{background:var(--brand-soft);border:1px solid var(--line);border-radius:10px;padding:10px 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .chat-sugg-name{font-weight:600;font-size:.9rem}
   .chat-sugg-price{color:var(--muted);font-size:.86rem}
@@ -9714,7 +9722,7 @@ function _wireChatCardBoxOnce(){
     var real = document.getElementById("chatInput");
     if(!box || !real) return;
     var text = (box.value || "").trim();
-    if(!text) return;
+    if(!text && !(window.PortalChatAttach && window.PortalChatAttach.ready().length)) return;
     real.value = text;
     box.value = "";
     sendChatMessage();
@@ -9803,7 +9811,26 @@ async function sendChatMessage(){
   var sendBtn = document.getElementById("chatSend");
   if(!input || !sendBtn) return;
   var query = (input.value || "").trim();
-  if(!query) return;
+  // Files from the paperclip (Glen, 2026-11-20). A file still uploading is waited for,
+  // up to a minute, so it goes with this message rather than the next one. The box and
+  // button are disabled while waiting, so a second Enter cannot send twice (round 1).
+  var _att = window.PortalChatAttach;
+  if(window.__chatSendWaiting) return;
+  if(_att && _att.busy()){
+    window.__chatSendWaiting = true;
+    input.disabled = true; sendBtn.disabled = true;
+    try{
+      for(var _w = 0; _w < 200 && _att.busy(); _w++){
+        await new Promise(function(r){ setTimeout(r, 300); });
+      }
+    } finally {
+      window.__chatSendWaiting = false;
+      input.disabled = false; sendBtn.disabled = false;
+    }
+  }
+  if(!query && !(_att && _att.ready().length)) return;
+  var sentFiles = _att ? _att.take() : {new_files: [], files: [], names: []};
+  if(!query) query = sentFiles.names.length > 1 ? "I have attached some files." : "I have attached a file.";
   // Task 9 (portal-shell-ia), redesigned at final review I4. This used to open the
   // matched door, write "Taking you to X." and RETURN, so the client's message was
   // never sent and never answered. Adversarial probing found 119 of 147 sentences
@@ -9838,7 +9865,7 @@ async function sendChatMessage(){
   }
   var assistantBubble = null;
   try{
-    appendChatBubble("user", query);
+    appendChatBubble("user", query + sentFiles.names.map(function(n){ return "\n\u{1F4CE} " + n; }).join(""));
     assistantBubble = appendChatBubble("assistant", "");
     // An empty bubble reads as nothing happening. Carry a visible waiting state until the
     // first token lands, then hand the bubble over to the answer. Glen, 2026-09-16:
@@ -9855,6 +9882,7 @@ async function sendChatMessage(){
         credentials: "same-origin",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({query: query, intake_mode: !!window.__intakeChatMode,
+          files: sentFiles.files, new_files: sentFiles.new_files,
           history: chatHistory.map(function(m){
           return {role: (m.role==="user"||m.role==="client") ? "user" : "assistant",
                   content: m.content || ""};
@@ -9958,6 +9986,7 @@ async function sendChatMessage(){
 load();
 loadClientZone();
 </script>
+<script src="/static/js/portal-chat-attach.js"></script>
 <script src="/static/portal-mentor.js"></script>
 <script src="/static/tts-output.js"></script>
 <script type="module">
