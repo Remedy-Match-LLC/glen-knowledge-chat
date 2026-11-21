@@ -34,8 +34,17 @@ def test_sku_base_uses_the_products_own_wholesale_discount():
 
 
 def test_sku_base_without_a_discount_is_the_blended_curve_for_an_ff_only():
-    assert pp.sku_base_cents(1, 0, 4000, None) == pp.drop_ship_base_cents(1, 0) == 5000
+    assert pp.sku_base_cents(1, 0, 7000, None) == pp.drop_ship_base_cents(1, 0) == 5000
     assert pp.sku_base_cents(1, 0, 4000, None, is_ff=False) == 4000
+
+
+def test_an_ff_base_is_capped_at_its_retail():
+    # Glen, 2026-11-20, "capped": the curve starts at $50, so a $40 bottle was based
+    # at $50, above its own retail. It is capped at retail; volume still lowers it.
+    assert pp.drop_ship_base_cents(1, 0) == 5000
+    assert pp.sku_base_cents(1, 0, 4000, None) == 4000
+    assert pp.sku_base_cents(200, 12, 4000, None) == pp.drop_ship_base_cents(200, 12) < 4000
+    assert pp.sku_base_cents(1, 0, 0, None) == 5000   # a zero retail never caps
 
 
 # ── drop-ship quote (practitioner pays) ──────────────────────────────────────

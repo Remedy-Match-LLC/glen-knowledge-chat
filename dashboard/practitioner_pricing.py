@@ -67,7 +67,9 @@ def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=
         pct = max(0, min(100, int(wholesale_discount_pct)))
         return _wp.whole_dollar_cents((int(retail_cents) * (100 - pct) + 50) // 100)  # as stocking
     if is_ff:
-        base = drop_ship_base_cents(qty, modules_completed)
+        # Never above retail (Glen, 2026-11-20, "capped"): the curve starts at $50.
+        base = min(drop_ship_base_cents(qty, modules_completed), int(retail_cents)) \
+            if int(retail_cents or 0) > 0 else drop_ship_base_cents(qty, modules_completed)
         # A product that is part of one bottle (the CDS pair) takes its share of the base.
         return base if bottle_share == 1 else _wp.whole_dollar_cents(int(round(base * bottle_share)))
     return int(retail_cents)
