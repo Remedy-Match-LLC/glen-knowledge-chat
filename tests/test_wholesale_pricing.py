@@ -349,3 +349,12 @@ def test_a_zero_retail_never_caps_a_line_to_free():
     q = wp.order_quote([{"slug": "zero", "qty": 1}], {"modules_completed": 0},
                        catalog=_cat(zero=0))
     assert q["lines"][0]["unit_price_cents"] == 5000
+
+
+def test_the_margin_floor_checks_the_capped_price():
+    from dashboard import wholesale_pricing as wp
+    cat = {"cheap": {"name": "cheap", "price_cents": 1000, "bottle_type": "default",
+                     "cogs_cents": 1500, "fulfillment_cents": 500}}
+    q = wp.order_quote([{"slug": "cheap", "qty": 1}], {"modules_completed": 0}, catalog=cat)
+    assert q["lines"][0]["unit_price_cents"] == 1000
+    assert q["margin_ok"] is False and any("cheap" in w for w in q["margin_warnings"])

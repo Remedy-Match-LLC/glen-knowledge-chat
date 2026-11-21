@@ -365,11 +365,13 @@ def test_a_40_dollar_formulation_drop_ships_at_40_not_50(monkeypatch):
     assert line["base_cents"] == 4000
 
 
-def test_a_40_dollar_formulation_leaves_no_negative_dispensary_margin(monkeypatch):
+def test_a_40_dollar_formulation_credits_margin_off_the_capped_base(monkeypatch):
+    # Round 3: patient pays $60 for a $40 formulation. Capped base $40: fee $7 (33% of
+    # $20, whole dollars), margin $13. The uncapped $50 base would give $4 and $6.
     monkeypatch.setattr(dc, "_retail_for", lambda slug: 4000)
     monkeypatch.setattr(dc, "_wholesale_pct_for", lambda slug: None)
     monkeypatch.setattr(dc, "_is_ff", lambda slug: True)
-    monkeypatch.setattr(dc, "practitioner_price_for", lambda pid, slug: 4000)
+    monkeypatch.setattr(dc, "practitioner_price_for", lambda pid, slug: 6000)
     import dashboard.tax as _tax
     monkeypatch.setattr(_tax, "compute_get_cents",
                         lambda s, *, channel, ship_to_state, resale_ok=False: 0)
@@ -377,7 +379,5 @@ def test_a_40_dollar_formulation_leaves_no_negative_dispensary_margin(monkeypatc
         [{"slug": "ff", "qty": 1}], {"id": "p1", "modules_completed": 0},
         patient={"email": "pat@x.com", "ship": {"name": "Pat", "state": "CA", "country": "US"}},
         method="card")
-    assert out["subtotal_cents"] == 4000
-    q = out.get("lines") or out.get("items") or []
-    assert out["margin_cents"] == 0 and all(
-        (ln.get("base_cents", 4000) <= 4000) for ln in q if isinstance(ln, dict))
+    assert out["subtotal_cents"] == 6000
+    assert out["margin_cents"] == 1300
