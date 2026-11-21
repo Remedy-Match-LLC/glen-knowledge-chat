@@ -329,3 +329,11 @@ def test_a_full_enrichment_run_twice_keeps_every_line(tmp_path, monkeypatch):
                     assert out[s].get(k) == control[s].get(k), (s, k)
         assert out["vinpocetine"]["ingredients_source"] == "manual"
     assert open(os.path.join(ROOT, "data", "products.json"), "rb").read() == repo_bytes
+
+
+def test_a_former_vinpocetine_formula_counts_only_with_its_pregnancy_line():
+    # Round 3: the slug alone must not count; its warning must open with the line.
+    assert app._carries_pregnancy_line("heart-health", {"warning": FORMER["heart-health"] + " More."})
+    assert not app._carries_pregnancy_line("heart-health", {"warning": "Consult first."})
+    assert not app._carries_pregnancy_line("glucose-tolerance",
+                                           {"warning": "Don't use this if you're pregnant or breastfeeding."})
