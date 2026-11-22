@@ -41,6 +41,27 @@ from pathlib import Path
 
 from dashboard import db
 
+
+def hst_today() -> str:
+    """Today's date in Hilo, as YYYY-MM-DD. A delivery dated today is due today."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Pacific/Honolulu")).date().isoformat()
+
+
+# stock_order_moves row for a settled $0 order whose bottles wait for their
+# delivered date. It holds nothing, and it is removed when the bottles go out.
+HELD_MARK = "~held"
+
+
+def delivery_due(total_cents, delivered_on, today=None) -> bool:
+    """Whether a $0 order's bottles should be off the shelf yet. A $0 order with a
+    delivered date leaves the shelf on that date (Glen, 2026-11-22: "all"). With no
+    date, or any order that costs money, it leaves when it is paid, as before."""
+    d = str(delivered_on or "").strip()[:10]
+    if int(total_cents or 0) != 0 or not d:
+        return True
+    return d <= (today or hst_today())
+
 FLAG = "STOCK_COUNTS_ENABLED"
 LOW_STOCK_AT = 3                  # Glen, 2026-11-06: "yes" to 3 bottles or fewer
 
@@ -223,6 +244,13 @@ def init_tables(cx):
         delivery_key TEXT PRIMARY KEY,
         seen_at      TEXT NOT NULL)""")
     cx.commit()
+    # sync_order reads orders.delivered_on, so it must exist before the first sync
+    # after a deploy, whoever creates the orders table (review round 1).
+    try:
+        cx.execute("ALTER TABLE orders ADD COLUMN delivered_on TEXT")
+        cx.commit()
+    except Exception:  # noqa: BLE001  already there, or no orders table yet
+        _safe_rollback(cx)
 
 
 # ── the predicate ───────────────────────────────────────────────────────────────
@@ -469,19 +497,39 @@ def sync_order(cx, order_id, catalog=None):
             cx.commit()
             return {}
         r = cx.execute("SELECT status, pay_status, source, items_json, "
-                       "COALESCE(paid_at, created_at) FROM orders WHERE id=?",
-                       (int(order_id),)).fetchone()
-        status, pay, source, items_json, now_sold = tuple(r)
+                       "COALESCE(paid_at, created_at), total_cents, delivered_on "
+                       "FROM orders WHERE id=?", (int(order_id),)).fetchone()
+        status, pay, source, items_json, now_sold, total, delivered_on = tuple(r)
         gk = source == "groovekart"
-        live = (status or "") != "cancelled" and (pay == "paid" or gk)
-        who = "groovekart" if gk else "order"
-        want = units_for_items(_parse_items(items_json), cat) if live else {}
         rows = cx.execute("SELECT slug, qty, taken, sold_at FROM stock_order_moves "
                           "WHERE order_id=?", (int(order_id),)).fetchall()
-        held = {row[0]: (int(row[1]), int(row[2])) for row in rows if row[0]}
+        real = [row for row in rows if row[0] and row[0] != HELD_MARK]
+        was_held = any(row[0] == HELD_MARK for row in rows)
+        held = {row[0]: (int(row[1]), int(row[2])) for row in real}
+        live = (status or "") != "cancelled" and (pay == "paid" or gk)
+        # A $0 order dated for a later day keeps its bottles on the shelf until then.
+        # Only one whose bottles have not yet left: once out, its date labels the
+        # statement and moves nothing (review round 3).
+        dated = not gk and int(total or 0) == 0 and bool(str(delivered_on or "").strip())
+        if (live and dated and not delivery_due(total, delivered_on)
+                and not any(int(row[1]) > 0 for row in real)):
+            cx.execute("INSERT INTO stock_order_moves (order_id, slug, qty, taken, "
+                       "sold_at, updated_at) VALUES (?,?,?,?,?,?) "
+                       "ON CONFLICT (order_id, slug) DO NOTHING",
+                       (int(order_id), HELD_MARK, 0, 0, str(now_sold or ""), _now()))
+            cx.commit()
+            return {}
+        who = "groovekart" if gk else "order"
+        want = units_for_items(_parse_items(items_json), cat) if live else {}
         # When the order first went live, from this log, not orders.paid_at, which a
         # second payment re-stamps (review round 3).
-        sold_at = min([str(row[3]) for row in rows] or [str(now_sold or "")])
+        sold_at = min([str(row[3]) for row in rows if row[0] != HELD_MARK]
+                      or [str(now_sold or "")])
+        # Held bottles stayed on the shelf through any recount, so when they go out
+        # they come off the count as it stands now.
+        release = live and was_held
+        if release:
+            sold_at = _now()
         moved = {}
         for slug in sorted(set(want) | set(held)):
             q, t = held.get(slug, (0, 0))
@@ -514,7 +562,14 @@ def sync_order(cx, order_id, catalog=None):
                 cx.execute("INSERT INTO stock_order_moves (order_id, slug, qty, taken, "
                            "sold_at, updated_at) VALUES (?,?,?,?,?,?)",
                            (int(order_id), slug, new_q, new_t, sold_at, _now()))
-        if live and not rows and not want:
+        if release:
+            # Every row now dates from the release, or an older empty row would make
+            # the order look sold before a recount and a cancel return nothing.
+            cx.execute("UPDATE stock_order_moves SET sold_at=? WHERE order_id=?",
+                       (sold_at, int(order_id)))
+            cx.execute("DELETE FROM stock_order_moves WHERE order_id=? AND slug=?",
+                       (int(order_id), HELD_MARK))
+        if live and not real and not want:
             # Live with nothing to count: mark it, so the self-heal skips it.
             cx.execute("INSERT INTO stock_order_moves (order_id, slug, qty, taken, "
                        "sold_at, updated_at) VALUES (?,?,?,?,?,?) "
@@ -569,6 +624,35 @@ def reconcile(cx, *, days=RECONCILE_DAYS, catalog=None):
     for oid in sorted(set(ids)):
         sync_order(cx, oid, catalog)
     return sorted(set(ids))
+
+
+def _dated_delivery_ids(cx, days=RECONCILE_DAYS):
+    """Live $0 orders still holding bottles for a delivered date. Only these: a wider
+    sweep would re-sync old orders against today's catalog every hour. A crash between
+    a date change and its sync leaves the hold in place, so it is healed here too.
+    `days` is unused and kept for the caller's signature."""
+    return [int(r[0]) for r in cx.execute(
+        "SELECT DISTINCT o.id FROM orders o JOIN stock_order_moves m ON m.order_id=o.id "
+        "WHERE m.slug=? AND COALESCE(o.status,'') <> 'cancelled' "
+        "AND o.pay_status='paid' ORDER BY o.id", (HELD_MARK,)).fetchall()]
+
+
+def sync_due_deliveries(cx, *, days=RECONCILE_DAYS, catalog=None):
+    """Take the bottles of every $0 delivery that has come due. Runs hourly, so a
+    delivery dated today leaves the shelf within the hour. Returns the order ids."""
+    if not enabled():
+        return []
+    try:
+        ensure_tables(cx)
+        ids = _dated_delivery_ids(cx, days)
+        cx.commit()
+    except Exception as e:  # noqa: BLE001
+        _safe_rollback(cx)
+        print(f"[stock] due deliveries skipped: {e!r}", flush=True)
+        return []
+    for oid in ids:
+        sync_order(cx, oid, catalog)
+    return ids
 
 
 # ── GrooveKart ─────────────────────────────────────────────────────────────────
