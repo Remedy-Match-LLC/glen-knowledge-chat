@@ -68,17 +68,22 @@ def _photo(client, tok, data=JPG, ctype="image/jpeg", name="me.jpg"):
 
 # ── 1. Intake form upload ────────────────────────────────────────────────────
 
-def test_intake_photo_is_stored_as_the_clients_own_and_counts_for_biofield(env):
+def test_intake_photo_waits_in_the_photo_inbox_and_counts_once_used(env):
+    # Anyone can open an intake for any address, so the photo never lands on a record
+    # by itself (review round 1, 2026-11-23): it waits for staff to click Use as photo.
     appmod, c = env
     tok = _intake_token(c)
-    with _cx(appmod) as cx:
-        assert bp.has_photo(cx, "pat@x.com") is False
     r = _photo(c, tok)
-    assert r.status_code == 200 and r.get_json() == {"ok": True, "stored": True}
+    assert r.status_code == 200 and r.get_json()["stored"] is True
     assert b"base64" not in r.data and len(r.data) < 200      # never echoes the image
     with _cx(appmod) as cx:
+        assert cph.get(cx, "pat@x.com") is None and bp.has_photo(cx, "pat@x.com") is False
+        iid, src = cx.execute("SELECT id, source FROM photo_inbox WHERE email='pat@x.com'").fetchone()
+    assert src == "intake"
+    assert c.post(f"/api/console/photo-inbox/{iid}/use", headers=OWNER).status_code == 200
+    with _cx(appmod) as cx:
         rec = cph.get(cx, "pat@x.com")
-        assert rec["blob"] == JPG and rec["source"] == "portal-self"
+        assert rec["blob"] == JPG and rec["source"] == "console"   # staff-reviewed, not the client's own upload
         assert bp.has_photo(cx, "pat@x.com") is True
 
 
@@ -117,14 +122,13 @@ def test_intake_photo_is_capped_per_token(env):
     assert codes[:-1] == [200] * appmod._INTAKE_PHOTOS_PER_TOKEN and codes[-1] == 429
 
 
-def test_a_new_intake_session_never_replaces_a_photo_already_on_file(env):
+def test_an_intake_photo_never_touches_a_photo_already_on_file(env):
     appmod, c = env
     with _cx(appmod) as cx:
         cph.put(cx, "pat@x.com", PNG, "image/png", source="fmp")
     tok = _intake_token(c)
-    for _ in range(2):                     # a retry must not get through either
-        j = _photo(c, tok).get_json()
-        assert j["ok"] and j["stored"] is False
+    for _ in range(2):
+        assert _photo(c, tok).get_json()["ok"]
     with _cx(appmod) as cx:
         assert cph.get(cx, "pat@x.com")["blob"] == PNG
 
@@ -329,7 +333,7 @@ def test_use_stores_the_photo_and_flips_status(scan_env):
     assert r.status_code == 200 and r.get_json()["status"] == "used"
     with _cx(appmod) as cx:
         rec = cph.get(cx, "pat@x.com")
-        assert rec["blob"] == JPG and rec["source"] == "portal-self"
+        assert rec["blob"] == JPG and rec["source"] == "console"   # an emailed photo is not the client's own upload
         assert bp.has_photo(cx, "pat@x.com")
         row = pin.get(cx, pat["id"])
         assert row["status"] == "used" and row["decided_by_role"] == "owner"
@@ -419,3 +423,47 @@ def test_client_thumb_uses_a_filemaker_photo_only_when_one_person_has_the_email(
     with _cx(appmod) as cx:
         cph.put_for_client(cx, "102", "fam@x.com", WEBP, "image/webp", source="portal-self")
     assert c.get("/api/console/client-thumb?email=fam@x.com", headers=OWNER).status_code == 404
+
+
+def test_client_thumb_shows_no_face_when_two_people_share_the_email(env):
+    appmod, c = env
+    with _cx(appmod) as cx:
+        cph.put(cx, "fam2@x.com", JPG, "image/jpeg", source="console")
+        cx.execute("CREATE TABLE IF NOT EXISTS fmp_clients (id_pk TEXT, email TEXT)")
+        cx.execute("INSERT INTO fmp_clients VALUES ('1','fam2@x.com'), ('2','Fam2@x.com ')")
+        cx.commit()
+    assert c.get("/api/console/client-thumb?email=fam2@x.com", headers=OWNER).status_code == 404
+
+
+def test_a_use_after_dismiss_is_refused(env):
+    appmod, c = env
+    with _cx(appmod) as cx:
+        assert pin.enqueue(cx, email="d@x.com", source="portal-chat", source_ref="doc-9",
+                           filename="f.jpg", mime="image/jpeg", blob=JPG)
+        iid = cx.execute("SELECT id FROM photo_inbox WHERE source_ref='doc-9'").fetchone()[0]
+    assert c.post(f"/api/console/photo-inbox/{iid}/dismiss", headers=OWNER).status_code == 200
+    assert c.post(f"/api/console/photo-inbox/{iid}/use", headers=OWNER).status_code == 409
+    with _cx(appmod) as cx:
+        assert cph.get(cx, "d@x.com") is None
+
+
+def test_a_forged_sender_is_not_taken_as_the_client():
+    class Exec:
+        def __init__(self, v): self.v = v
+        def execute(self): return self.v
+    msg = {"id": "m1", "internalDate": "1763900000000", "payload": {
+        "headers": [{"name": "From", "value": "Pat <pat@x.com>"},
+                    {"name": "Authentication-Results", "value": "mx.google.com; dmarc=fail"}],
+        "parts": [{"partId": "1", "mimeType": "image/jpeg", "filename": "me.jpg",
+                   "body": {"attachmentId": "a1", "size": 20000}}]}}
+    class Msgs:
+        def list(self, **k): return Exec({"messages": [{"id": "m1"}]})
+        def get(self, **k): return Exec(msg)
+        def attachments(self): raise AssertionError("a forged sender's attachment was fetched")
+    class Users:
+        def messages(self): return Msgs()
+    class Svc:
+        def users(self): return Users()
+    with sqlite3.connect(":memory:") as cx:
+        counts = pin.scan_gmail(cx, Svc(), lambda e: e)
+        assert counts["added"] == 0 and counts["unknown_sender"] == 1

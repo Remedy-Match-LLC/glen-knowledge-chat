@@ -72,8 +72,11 @@
     try { r = await fetch('/api/console/photo-inbox', {headers: hdr(), credentials: 'same-origin'}); }
     catch(e){ say('Could not reach the server.', true); return; }
     if(r.status === 401){ document.getElementById('keybox').style.display = 'block'; return; }
-    var j = await r.json().catch(function(){ return {}; });
-    var items = j.items || [];
+    var j = await r.json().catch(function(){ return null; });
+    // A failed read is an error, never an empty inbox (review round 2, 2026-11-23).
+    if(!r.ok || !j || j.ok === false || !Array.isArray(j.items)){
+      say('The photo list could not be read (HTTP ' + r.status + '). Try again in a minute.', true); return; }
+    var items = j.items;
     var host = document.getElementById('list');
     if(!items.length){ host.innerHTML = '<p class="empty">No photos are waiting.</p>'; return; }
     host.innerHTML = items.map(function(it){
@@ -142,7 +145,8 @@
     if(r && r.status === 401){ document.getElementById('keybox').style.display = 'block'; say(''); return; }
     if(!r || !r.ok || !j.ok){ say((j && j.error) || 'Checking email failed.', true); return; }
     say('Found '+j.added+' new photo'+(j.added === 1 ? '' : 's')+' from clients. '
-        + j.already+' were already listed.');
+        + j.already+' were already listed.'
+        + (j.truncated ? ' It stopped at the newest 200 emails, so older ones were not checked.' : ''));
     load();
   }
 

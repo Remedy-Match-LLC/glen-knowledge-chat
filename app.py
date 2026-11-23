@@ -41228,20 +41228,20 @@ def intake_public_photo():
         email = _ip.resolve_session(cx, tok, now)
         if not email:
             return jsonify({"ok": False, "error": "expired"}), 401
-        used, stored_before = _intake_photo_usage(cx, token_hash)
+        used, _stored_before = _intake_photo_usage(cx, token_hash)
         if used >= _INTAKE_PHOTOS_PER_TOKEN:
             return jsonify({"ok": False, "error": "That is the most photos this form "
                             "can take. We have the ones you sent."}), 429
-        # A fresh intake session can be opened for any address that has no intake yet.
-        # So a session replaces only a photo it stored itself, never one already on
-        # file: that photo may be the real client's, and this visitor may not be them.
-        if not stored_before and _cph.has_any_for_email(cx, email):
-            _intake_photo_usage(cx, token_hash, bump=True)
-            return jsonify({"ok": True, "stored": False,
-                            "message": "We already have a photo on file. Thank you."})
-        _cph.put(cx, email, blob, ctype, source="portal-self")
+        # Anyone can open an intake for any address, so an intake photo never goes
+        # straight onto a record: it waits in the Photo Inbox for staff to click Use as
+        # photo, like an emailed one (review round 1, 2026-11-23).
+        from dashboard import photo_inbox as _pin
+        _pin.enqueue(cx, email=email, source="intake",
+                     source_ref=token_hash[:24] + ":" + hashlib.sha256(blob).hexdigest()[:24],
+                     blob=blob, mime=ctype, filename=(getattr(f, "filename", "") or "")[:120])
         _intake_photo_usage(cx, token_hash, bump=True, stored=True)
-    return jsonify({"ok": True, "stored": True})
+    return jsonify({"ok": True, "stored": True,
+                    "message": "Thank you. We'll add your photo to your file."})
 
 
 @app.route("/api/intake/public/chat", methods=["POST"])
@@ -41691,7 +41691,9 @@ def api_console_photo_inbox_scan():
         days = max(1, min(60, int(body.get("days") or 14)))
     except (TypeError, ValueError):
         days = 14
-    with _db_lock, db.connect(LOG_DB) as cx:
+    # No global lock: the scan waits on Gmail, and enqueue is insert-or-ignore, so two
+    # scans at once only skip each other's rows (review round 1, 2026-11-23).
+    with db.connect(LOG_DB) as cx:
         _pin.init_table(cx)
         try:
             counts = _pin.scan_gmail(cx, svc, _photo_inbox_known_client(cx), days=days)
@@ -41732,12 +41734,41 @@ def api_console_photo_inbox_decide(item_id, action):
             return jsonify({"ok": False, "error": "not found"}), 404
         if item["status"] != "pending":
             return jsonify({"ok": False, "error": f"already {item['status']}"}), 409
+        # Claim the item first, in the database, so a Dismiss and a Use racing on two
+        # workers can never both act (review round 2, 2026-11-23).
+        if not _pin.decide(cx, item_id, "used" if action == "use" else "dismissed", role):
+            return jsonify({"ok": False, "error": "already decided"}), 409
         if action == "use":
-            if not _cph.put(cx, item["email"], item["image_blob"], item["mime"],
-                            source="portal-self"):
+            ok = False
+            try:
+                # Only a photo sent from the client's own portal counts as theirs; an
+                # emailed or intake photo is staff-reviewed, filed as a console photo.
+                ok = bool(_cph.put(cx, item["email"], item["image_blob"], item["mime"],
+                                   source="portal-self" if item["source"] == "portal-chat"
+                                   else "console"))
+            finally:
+                if not ok:
+                    cx.execute("UPDATE photo_inbox SET status='pending', decided_by_role='', "
+                               "decided_at=NULL WHERE id=?", (int(item_id),))
+                    cx.commit()
+            if not ok:
                 return jsonify({"ok": False, "error": "could not store the photo"}), 500
-        _pin.decide(cx, item_id, "used" if action == "use" else "dismissed", role)
     return jsonify({"ok": True, "status": "used" if action == "use" else "dismissed"})
+
+
+def _client_thumb_bytes(blob, ctype, side=128):
+    """A small JPEG of a stored photo for a console card, so a page of cards never pulls
+    full photos (review round 1, 2026-11-23). The original when it can't be resized."""
+    try:
+        import io as _io
+        from PIL import Image as _Image, ImageOps as _ImageOps
+        im = _ImageOps.exif_transpose(_Image.open(_io.BytesIO(bytes(blob))))
+        im.thumbnail((side * 2, side * 2))
+        out = _io.BytesIO()
+        im.convert("RGB").save(out, "JPEG", quality=82)
+        return out.getvalue(), "image/jpeg"
+    except Exception:  # noqa: BLE001 - display only
+        return bytes(blob), ctype
 
 
 @app.route("/api/console/client-thumb", methods=["GET"])
@@ -41755,8 +41786,9 @@ def api_console_client_thumb():
         rec = _cph.for_console_card(cx, email)
     if not rec:
         return jsonify({"ok": False, "error": "not found"}), 404
-    resp = jsonify({"ok": True, "image": _b64.b64encode(rec["blob"]).decode(),
-                    "content_type": rec["content_type"], "focus_x": rec["focus_x"],
+    img, ctype = _client_thumb_bytes(rec["blob"], rec["content_type"])
+    resp = jsonify({"ok": True, "image": _b64.b64encode(img).decode(),
+                    "content_type": ctype, "focus_x": rec["focus_x"],
                     "focus_y": rec["focus_y"], "zoom": rec["zoom"]})
     resp.headers["Cache-Control"] = "private, no-store"
     return resp

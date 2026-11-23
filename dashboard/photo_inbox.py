@@ -11,7 +11,7 @@ import base64
 import datetime
 import re
 
-SOURCES = ("email", "portal-chat")
+SOURCES = ("email", "portal-chat", "intake")
 STATUSES = ("pending", "used", "dismissed")
 IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp")
 MAX_BYTES = 5 * 1024 * 1024
@@ -167,7 +167,9 @@ def scan_gmail(cx, svc, is_known_client, days=14, max_messages=200):
               "unknown_sender": 0, "skipped": 0}
     msgs_api = svc.users().messages()
     since = (datetime.datetime.utcnow() - datetime.timedelta(days=int(days))).strftime("%Y/%m/%d")
-    q = f"has:attachment after:{since}"
+    # Only mail with a picture attached, so the 200-message cap covers far more days.
+    q = (f"has:attachment (filename:jpg OR filename:jpeg OR filename:png OR filename:webp) "
+         f"after:{since}")
     ids, page = [], None
     while len(ids) < max_messages:
         kw = {"userId": "me", "q": q, "maxResults": min(100, max_messages - len(ids))}
@@ -178,6 +180,8 @@ def scan_gmail(cx, svc, is_known_client, days=14, max_messages=200):
         page = res.get("nextPageToken")
         if not page:
             break
+    # Say when the cap cut the scan short, so older photos are never missed in silence.
+    counts["truncated"] = bool(page) and len(ids) >= max_messages
     for mid in ids:
         msg = msgs_api.get(userId="me", id=mid, format="full").execute() or {}
         counts["messages"] += 1
@@ -188,6 +192,12 @@ def scan_gmail(cx, svc, is_known_client, days=14, max_messages=200):
         headers = {(h.get("name") or "").lower(): h.get("value") or ""
                    for h in (payload.get("headers") or [])}
         sender = sender_address(headers.get("from", ""))
+        # A From line Gmail saw fail its sender checks is not taken as the client's
+        # (review round 1, 2026-11-23): staff would otherwise review a forged photo.
+        auth = headers.get("authentication-results", "").lower()
+        if "dmarc=fail" in auth or ("spf=fail" in auth and "dkim=pass" not in auth):
+            counts["unknown_sender"] += len(parts)
+            continue
         email = is_known_client(sender) if sender else None
         if not email:
             counts["unknown_sender"] += len(parts)

@@ -184,6 +184,24 @@ def set_framing_for_client(cx, client_id, focus_x, focus_y, zoom):
     return cur.rowcount > 0
 
 
+def _people_on_email(cx, e):
+    """How many FileMaker client records carry this email: the local snapshot
+    (fmp_snap_clients) or the copy the web app holds (fmp_clients). 0 when neither table
+    can be read. An unreadable table never blocks a card on its own."""
+    best = 0
+    for table in ("fmp_snap_clients", "fmp_clients"):
+        try:
+            n = cx.execute(f"SELECT COUNT(*) FROM {table} WHERE lower(trim(email))=?",
+                           (e,)).fetchone()[0]
+            best = max(best, int(n or 0))
+        except Exception:  # noqa: BLE001 - table absent on this database
+            try:
+                cx.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+    return best
+
+
 def for_console_card(cx, email):
     """The photo a CONSOLE card shows for an email, or None (Glen, 2026-11-23: show the
     client's photo on their console pages and cards). The email row first; otherwise the
@@ -191,6 +209,10 @@ def for_console_card(cx, email):
     one address shows nothing rather than a guess at whose face it is."""
     e = _norm(email)
     if not e:
+        return None
+    # Two FileMaker people on one address (a family): show no one's face, since the card
+    # can't say whose it is (review round 2, 2026-11-23).
+    if _people_on_email(cx, e) > 1:
         return None
     rec = get(cx, e)
     if rec:
