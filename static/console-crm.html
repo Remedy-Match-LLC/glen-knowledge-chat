@@ -136,7 +136,7 @@
       var host = document.getElementById('queue');
       if (!items.length){ host.innerHTML = '<div class="row meta">Nothing waiting to sync.</div>'; return; }
       host.innerHTML = items.map(function(q){
-        return '<div class="row"><span>'+(window.ClientPhotoThumb?ClientPhotoThumb.html(q.email,28):'')+'<span class="op">'+esc(q.op)+'</span>'+esc(q.email)+'</span>'
+        return '<div class="row"><span>'+((typeof ClientPhotoThumb!=="undefined")?ClientPhotoThumb.html(q.email,28):'')+'<span class="op">'+esc(q.op)+'</span>'+esc(q.email)+'</span>'
              + '<span class="meta">'+esc((q.created_at||'').slice(0,16).replace('T',' '))
              + ' <button onclick="cancelQ('+Number(q.id)+')">Cancel</button>'
              + ' <button onclick="retryQ('+Number(q.id)+')">Retry</button></span></div>';
@@ -165,7 +165,7 @@
       if(!people.length){ crmAcHide(); return; }
       d.innerHTML=people.map(function(p){
         var nm=esc(p.name || [p.first_name,p.last_name].filter(Boolean).join(' ') || '(no name)');
-        return '<div class="ac-item" data-email="'+esc(p.email||'')+'" style="padding:7px 12px;cursor:pointer">'+(window.ClientPhotoThumb?ClientPhotoThumb.html(p.email,28):'')+nm+' <span class="meta">'+esc(p.email||'')+'</span></div>';
+        return '<div class="ac-item" data-email="'+esc(p.email||'')+'" style="padding:7px 12px;cursor:pointer">'+((typeof ClientPhotoThumb!=="undefined")?ClientPhotoThumb.html(p.email,28):'')+nm+' <span class="meta">'+esc(p.email||'')+'</span></div>';
       }).join('');
       d.style.display='block';
       d.querySelectorAll('.ac-item').forEach(function(it){ it.onclick=function(){ document.getElementById('email').value=it.dataset.email; crmAcHide(); updateHubLink(); }; });

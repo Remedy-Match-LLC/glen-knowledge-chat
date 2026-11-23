@@ -286,7 +286,7 @@ function clientSearch(ev){
     d.innerHTML=people.map(p=>{
       const nm=esc(p.name || [p.first_name,p.last_name].filter(Boolean).join(' ') || '(no name)');
       return `<div class="ac-item" data-email="${esc(p.email||'')}" data-name="${esc(p.name||'')}">`
-           + `${(window.ClientPhotoThumb?ClientPhotoThumb.html(p.email,28):'')}${nm} <span class="em">${esc(p.email||'')}</span></div>`;
+           + `${((typeof ClientPhotoThumb!=="undefined")?ClientPhotoThumb.html(p.email,28):'')}${nm} <span class="em">${esc(p.email||'')}</span></div>`;
     }).join('');
     const rect=input.getBoundingClientRect();
     d.style.left=(rect.left+window.scrollX)+'px';
@@ -942,7 +942,7 @@ async function loadTriage(){
     card.style.display='';
     list.innerHTML = items.map(function(it){
       return '<div style="border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin:.5rem 0">'
-        + '<div>'+(window.ClientPhotoThumb?ClientPhotoThumb.html(it.email,32):'')+'<b>'+esc(it.name||it.email)+'</b> <span class="muted small">&lt;'+esc(it.email)+'&gt;</span> '
+        + '<div>'+((typeof ClientPhotoThumb!=="undefined")?ClientPhotoThumb.html(it.email,32):'')+'<b>'+esc(it.name||it.email)+'</b> <span class="muted small">&lt;'+esc(it.email)+'&gt;</span> '
         + '<span class="muted small">· '+esc(it.category)+' · '+esc(it.urgency)+'</span></div>'
         + '<div style="margin:.2rem 0"><b>'+esc(it.summary||'')+'</b></div>'
         + '<div class="muted small" style="margin-bottom:.3rem">↳ '+esc(it.recommendation||'')+'</div>'
