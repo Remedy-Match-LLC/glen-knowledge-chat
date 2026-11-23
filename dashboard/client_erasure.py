@@ -50,6 +50,7 @@ HEALTH_TABLES = {
     "portal_health_history": "email",
     "portal_extended_history": "email",
     "body_map_photos": "email",
+    "photo_inbox": "email",            # face photos waiting for staff review (2026-11-23)
     "purity_photos": "email",
     "client_conditions": "email",
     "client_facts": "email",
