@@ -52975,6 +52975,80 @@ def console_statement_page():
     return resp
 
 
+@app.route("/console/paylink")
+def console_paylink_page():
+    resp = send_from_directory(STATIC, "console-paylink.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+def _paylink_row(cx, o):
+    """What Rae's pay-link page shows for one unpaid order. No token, no order link."""
+    from dashboard import paylink as _pl
+    from dashboard import order_payments as _opx
+    _opx.ensure_table(cx)
+    owed = int(_opx.balance(cx, int(o["id"]))["balance_cents"])
+    ship = _pl.ship_to(o, _order_physical_units(o))
+    return {"id": int(o["id"]), "name": o.get("name") or o.get("email") or "",
+            "email": o.get("email") or "", "date": str(o.get("created_at") or "")[:10],
+            "owed_cents": owed, "total_cents": int(o.get("total_cents") or 0),
+            "state": _pl.state(o), "sent_on": str(o.get("invoice_sent_at") or "")[:10],
+            "household": bool(o.get("household")), "ship": ship}
+
+
+@app.route("/api/console/paylink/search", methods=["GET"])
+def console_paylink_search():
+    """Rae types a name: that client's unpaid app orders, plus their household's.
+    Read only. Glen, 2026-11-22."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import paylink as _pl
+    q = (request.args.get("q") or "").strip()
+    cx = db.connect(LOG_DB)
+    cx.row_factory = _sqlite3.Row
+    try:
+        rows = [_paylink_row(cx, o) for o in _pl.find(cx, q, _bos_orders.search_client_orders)]
+    finally:
+        cx.close()
+    return jsonify({"ok": True, "rows": [r for r in rows if r["owed_cents"] > 0]})
+
+
+@app.route("/api/console/paylink/<int:oid>/draft", methods=["POST"])
+def console_paylink_draft(oid):
+    """The pay-link email for Rae to send from her own mail. Sends nothing, and does not
+    mark the invoice sent: Rae clicks Mark sent after she sends it."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import paylink as _pl
+    from dashboard.practitioner_portal import create_order_invoice_token
+    cx = db.connect(LOG_DB)
+    cx.row_factory = _sqlite3.Row
+    try:
+        order = _bos_orders.get_order(cx, oid)
+        if not order or not _pl.is_open(order):
+            return jsonify({"ok": False, "error": "This invoice is not open."}), 404
+        row = _paylink_row(cx, order)
+    finally:
+        cx.close()
+    if row["owed_cents"] <= 0:
+        return jsonify({"ok": False, "error": "Nothing is owed on this invoice."}), 409
+    link = f"{PUBLIC_BASE_URL.rstrip('/')}/invoice/{create_order_invoice_token(oid)}"
+    subject, body = _pl.email(order, link, row["owed_cents"], row["ship"])
+    return jsonify({"ok": True, "to": row["email"], "subject": subject, "body": body})
+
+
+@app.route("/api/console/paylink/<int:oid>/sent", methods=["POST"])
+def console_paylink_sent(oid):
+    """Rae clicks Mark sent after she has sent the pay-link email herself."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    with _db_lock, db.connect(LOG_DB) as cx:
+        ok = _bos_orders.mark_invoice_sent(cx, oid)
+    if not ok:
+        return jsonify({"ok": False, "error": "order not found"}), 404
+    return jsonify({"ok": True})
+
+
 @app.route("/api/households/<slug>/statement", methods=["GET"])
 def household_statement(slug):
     """A household's deliveries for one month (?month=YYYY-MM), for Rae to print.
@@ -66611,6 +66685,17 @@ def _record_invoice_balance_payment(md, amount_cents, pi_id):
         return False
 
 
+def _invoice_ship_to(order):
+    """{"kind", "lines"} for the invoice's Ships to block: the stored address, the
+    pickup place, a request for an address, or nothing when nothing ships. Only these
+    two keys leave the server. Never raises."""
+    try:
+        from dashboard import paylink as _pl
+        return _pl.ship_to(order, _order_physical_units(order))
+    except Exception:  # noqa: BLE001 - display only
+        return {"kind": "none", "lines": []}
+
+
 def _invoice_summary(order):
     """Customer-safe view — no person_id, notes, phone, or full address."""
     lines = order.get("items") or []
@@ -66639,6 +66724,7 @@ def _invoice_summary(order):
         "external_ref": order.get("external_ref"),
         "created_at": order.get("created_at"),
         "name": _invoice_display_name(order),
+        "ship_to": _invoice_ship_to(order),   # Glen 2026-11-23: confirm where it goes
         "invoice_note": order.get("invoice_note") or "",
         "lines": [_invoice_line_view(l) for l in lines],
         "physical_units": _order_physical_units(order),

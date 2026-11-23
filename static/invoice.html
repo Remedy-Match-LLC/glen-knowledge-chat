@@ -109,6 +109,7 @@
 <div class="wrap">
   <h1>Your Remedy Match invoice</h1>
   <div class="billto" id="billto" style="display:none"><span class="billto-k">Billed to</span><span class="billto-nm" id="billto-nm"></span></div>
+  <div class="billto" id="shipto" style="display:none"><span class="billto-k" id="shipto-k">Ships to</span><span id="shipto-v" style="white-space:pre-line"></span></div>
   <div class="ref" id="ref">Loading…</div>
   <button class="ghost" id="print-btn" onclick="printInvoice()" style="display:none;margin-bottom:16px">🖨 Save Invoice as PDF</button>
 
@@ -219,6 +220,8 @@ async function load() {
   if (!r.ok) { $('ref').textContent = 'This invoice link is invalid or expired.'; return; }
   const j = await r.json(); ORDER = j.order;
   if (ORDER.name){ $('billto-nm').textContent = ORDER.name; $('billto').style.display = ''; }
+  { const st = shipToText(ORDER.ship_to);
+    if (st){ $('shipto-k').textContent = st.k; $('shipto-v').textContent = st.v; $('shipto').style.display = ''; } }
   $('ref').textContent = 'Invoice ' + (ORDER.external_ref||'');
   LINES = linesFromOrder();
   // "Paid" banner only when the invoice is actually settled. A legacy order can be
@@ -325,6 +328,7 @@ function buildInvoicePrintHtml(o){
     <div class="pd-meta">
       ${o.external_ref?`<div><span class="pd-k">Invoice</span> ${esc(o.external_ref)}</div>`:""}
       <div><span class="pd-k">Date</span> ${esc(invoiceDate)}</div>
+      ${(function(){ const st = shipToText(o.ship_to); return st ? `<div><span class="pd-k">${esc(st.k)}</span> <span style="white-space:pre-line">${esc(st.v)}</span></div>` : ""; })()}
     </div>
     <table class="pd-lines"><thead><tr><th>Item</th><th class="num">Value</th><th class="num">Regular</th><th class="num">Price</th><th class="num">Qty</th><th class="num">Amount</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6">No items.</td></tr>'}</tbody></table>
@@ -489,6 +493,15 @@ async function applyPlan(forever, btn){
 // (already a member, or nothing to save). When the membership line is already on the
 // order, the card flips to a Remove state. Copy follows the house rule: no em dashes,
 // no shouting.
+// Ships to (Glen, 2026-11-23): the address so the client can confirm it, the pickup
+// plan, or a request for an address. Nothing when nothing ships.
+function shipToText(st){
+  if (!st || !st.kind || st.kind === 'none') return null;
+  if (st.kind === 'ship') return {k:'Ships to', v:(st.lines||[]).join('\n')};
+  if (st.kind === 'pickup') return {k:'Pickup', v:'You can arrange to pick up your order at '+((st.lines||[])[0]||'')+'.'};
+  if (st.kind === 'missing') return {k:'Ships to', v:'We need your shipping address. Please reply to our email with it.'};
+  return null;
+}
 function renderMembershipOffer(){
   const el=$('membership-offer'), o=ORDER.membership_offer;
   const hasLine=(ORDER.lines||[]).some(l=>String(l.slug||'').indexOf('membership:')===0);

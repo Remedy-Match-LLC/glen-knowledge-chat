@@ -61,7 +61,7 @@
                        {id:"portal-links",label:"Portal Links",href:"/console/portal-links"+qs} ],
       rnd:           [ {id:"rnd",label:"R&D Home",href:"/console/rnd"+qs}, {id:"taskboard",label:"Task Board",href:"/console/taskboard"+qs} ],
       production:    [ {id:"products",label:"Products",href:"/console/products"+qs}, {id:"ingredients",label:"Ingredients",href:"/admin/ingredients"+qs} ],
-      finance:       [ {id:"money",label:"Money",href:"/console/money"+qs}, {id:"pricing",label:"Pricing",href:"/console/pricing-settings"+qs},
+      finance:       [ {id:"money",label:"Money",href:"/console/money"+qs}, {id:"paylink",label:"Pay Link",href:"/console/paylink"+qs}, {id:"pricing",label:"Pricing",href:"/console/pricing-settings"+qs},
                        {id:"studio-credits",label:"Studio Credits",href:"/console/studio-credits"+qs}, {id:"tax",label:"Tax",href:"/admin/tax"+qs} ],
       admin:         [ {id:"approvals",label:"Approvals",href:"/console/approvals"+qs}, {id:"projects",label:"Projects",href:"/console/projects"+qs},
                        {id:"stock",label:"Stock",href:"/console/stock"+qs}, {id:"formula-reviews",label:"Formula reviews",href:"/console/formula-reviews"+qs}, {id:"settings",label:"Settings",href:"/console/settings"+qs} ]

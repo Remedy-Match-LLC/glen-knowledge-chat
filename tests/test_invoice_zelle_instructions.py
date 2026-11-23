@@ -167,7 +167,7 @@ def test_screen_block_escapes_its_values():
 @pytest.mark.skipif(node is None, reason="node not installed")
 def test_printed_invoice_carries_the_zelle_line():
     deps = "\n".join([_const("money"), _fn("esc"), _fn("svcFirst"), _fn("totalSavings"),
-                      _fn("svcAnchor"), _const("PRINT_HEADER"), _fn("zellePrintLine"),
+                      _fn("svcAnchor"), _const("PRINT_HEADER"), _fn("zellePrintLine"), _fn("shipToText"),
                       _fn("buildInvoicePrintHtml")])
     o = {"lines": [], "total_cents": 47300, "balance_due_cents": 4000,
          "external_ref": "DS-230", "created_at": "2026-10-01", "zelle_pay": ZP}
