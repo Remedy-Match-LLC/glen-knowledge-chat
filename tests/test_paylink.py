@@ -140,6 +140,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(appmod, "CONSOLE_SECRET", "test-secret")
     monkeypatch.setattr(_dashboard, "CONSOLE_SECRET", "test-secret")
     monkeypatch.setattr(_pp, "create_order_invoice_token", lambda oid, **k: "TOK")
+    monkeypatch.setattr(appmod, "INVOICE_PAYLINK_ENABLED", True)
     sent = []
     import dashboard.inbox as _inbox
     monkeypatch.setattr(_inbox, "send_email", lambda *a, **k: sent.append(a) or True)
@@ -229,3 +230,61 @@ def test_ships_to_text_runs_in_the_page():
                            "351 Wailuku Drive in Hilo.")
     assert out[2]["v"] == "We need your shipping address. Please reply to our email with it."
     assert out[3] is None
+
+
+def test_names_get_their_capitals():
+    assert PL.first_name({"name": "linda maher"}) == "Linda"
+    assert PL.first_name({"name": "Ann &amp; Bob"}) == "Ann"
+    assert PL.ship_to({"address": dict(ADDR, name="donna banks")}, 1)["lines"][0] == "Donna Banks"
+
+
+def test_address1_counts_as_a_street():
+    a = {"name": "Jo", "address1": "1 A St", "city": "Hilo", "state": "HI", "zip": "96720"}
+    assert PL.ship_to({"address": a}, 1)["kind"] == "ship"
+
+
+def test_draft_reuses_one_link_and_refuses_when_payment_is_off(client, monkeypatch):
+    import app as appmod
+    n = []
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "create_order_invoice_token", lambda oid, **k: n.append(1) or "TOK%d" % len(n))
+    monkeypatch.setattr(appmod, "INVOICE_PAYLINK_ENABLED", True)
+    a = client.post(f"/api/console/paylink/{client.oid}/draft", headers=H).get_json()
+    b = client.post(f"/api/console/paylink/{client.oid}/draft", headers=H).get_json()
+    assert "/invoice/TOK1" in a["body"] and "/invoice/TOK1" in b["body"] and len(n) == 1
+    with sqlite3.connect(client.db) as c:
+        assert c.execute("SELECT invoice_token FROM orders WHERE id=?",
+                         (client.oid,)).fetchone() == ("TOK1",)
+    monkeypatch.setattr(appmod, "INVOICE_PAYLINK_ENABLED", False)
+    r = client.post(f"/api/console/paylink/{client.oid}/draft", headers=H)
+    assert r.status_code == 409
+
+
+def test_owed_matches_the_pay_button_after_a_refund(client):
+    import app as appmod
+    from dashboard import order_payments as OP
+    with sqlite3.connect(client.db) as c:
+        c.row_factory = sqlite3.Row
+        OP.ensure_table(c)
+        order = O.get_order(c, client.oid)
+    rows = client.get("/api/console/paylink/search?q=donna", headers=H).get_json()["rows"]
+    assert rows[0]["owed_cents"] == appmod._invoice_balance_cents(order)
+
+
+def test_mark_sent_refuses_a_closed_order(client):
+    with sqlite3.connect(client.db) as c:
+        c.execute("UPDATE orders SET status='cancelled' WHERE id=?", (client.oid,))
+        c.commit()
+    assert client.post(f"/api/console/paylink/{client.oid}/sent", headers=H).status_code == 404
+
+
+def test_invoice_asks_for_an_address_only_while_open(client, monkeypatch):
+    import app as appmod
+    monkeypatch.setattr(appmod, "_order_physical_units", lambda o: 1)
+    with sqlite3.connect(client.db) as c:
+        c.execute("UPDATE orders SET address_json='{}' WHERE id=?", (client.oid,))
+        c.commit()
+        c.row_factory = sqlite3.Row
+        o = O.get_order(c, client.oid)
+    assert appmod._invoice_ship_to(o)["kind"] == "missing"
+    assert appmod._invoice_ship_to(dict(o, status="shipped"))["kind"] == "none"

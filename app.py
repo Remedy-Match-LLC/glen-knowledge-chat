@@ -52985,9 +52985,9 @@ def console_paylink_page():
 def _paylink_row(cx, o):
     """What Rae's pay-link page shows for one unpaid order. No token, no order link."""
     from dashboard import paylink as _pl
-    from dashboard import order_payments as _opx
-    _opx.ensure_table(cx)
-    owed = int(_opx.balance(cx, int(o["id"]))["balance_cents"])
+    # The invoice's own owed rule, so the email asks for what the Pay button charges
+    # (a refund is never asked for again). None when the ledger can't be read: show 0.
+    owed = int(_invoice_balance_cents(o) or 0)
     ship = _pl.ship_to(o, _order_physical_units(o))
     return {"id": int(o["id"]), "name": o.get("name") or o.get("email") or "",
             "email": o.get("email") or "", "date": str(o.get("created_at") or "")[:10],
@@ -53032,7 +53032,21 @@ def console_paylink_draft(oid):
         cx.close()
     if row["owed_cents"] <= 0:
         return jsonify({"ok": False, "error": "Nothing is owed on this invoice."}), 409
-    link = f"{PUBLIC_BASE_URL.rstrip('/')}/invoice/{create_order_invoice_token(oid)}"
+    if not INVOICE_PAYLINK_ENABLED:      # the email promises a page that takes payment
+        return jsonify({"ok": False, "error": "Online payment is switched off."}), 409
+    # One stable link per order, kept on the order as the app's own invoice send does,
+    # so the Orders board's open tracking and household payer links can find it. Setting
+    # the token does not publish the order to the client's portal (portal_published).
+    tok = str(order.get("invoice_token") or "").strip()
+    if not tok:
+        tok = create_order_invoice_token(oid)
+        with _db_lock, db.connect(LOG_DB) as _cxw:
+            _cxw.execute("UPDATE orders SET invoice_token=? WHERE id=? "
+                         "AND coalesce(invoice_token,'')=''", (tok, oid))
+            _cxw.commit()
+            _row = _cxw.execute("SELECT invoice_token FROM orders WHERE id=?", (oid,)).fetchone()
+            tok = str(_row[0] or tok)
+    link = f"{PUBLIC_BASE_URL.rstrip('/')}/invoice/{tok}"
     subject, body = _pl.email(order, link, row["owed_cents"], row["ship"])
     return jsonify({"ok": True, "to": row["email"], "subject": subject, "body": body})
 
@@ -53042,10 +53056,14 @@ def console_paylink_sent(oid):
     """Rae clicks Mark sent after she has sent the pay-link email herself."""
     if _bos_actor() is None:
         return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import paylink as _pl
     with _db_lock, db.connect(LOG_DB) as cx:
-        ok = _bos_orders.mark_invoice_sent(cx, oid)
-    if not ok:
-        return jsonify({"ok": False, "error": "order not found"}), 404
+        cx.row_factory = _sqlite3.Row
+        order = _bos_orders.get_order(cx, oid)
+        if not order or not _pl.is_open(order):
+            return jsonify({"ok": False, "error": "This invoice is not open."}), 404
+        _bos_orders.mark_invoice_sent(cx, oid)
+    print(f"[paylink] order #{oid} marked sent by {_bos_actor()}", flush=True)
     return jsonify({"ok": True})
 
 
@@ -66691,13 +66709,19 @@ def _invoice_ship_to(order):
     two keys leave the server. Never raises."""
     try:
         from dashboard import paylink as _pl
-        return _pl.ship_to(order, _order_physical_units(order))
+        st = _pl.ship_to(order, _order_physical_units(order))
+        # Ask for an address only while the order is still open: never on a receipt
+        # or an order already sent on its way.
+        if st["kind"] == "missing" and not _pl.is_open(order):
+            return {"kind": "none", "lines": []}
+        return st
     except Exception:  # noqa: BLE001 - display only
         return {"kind": "none", "lines": []}
 
 
 def _invoice_summary(order):
-    """Customer-safe view — no person_id, notes, phone, or full address."""
+    """Customer-safe view: no person_id, notes or phone. The ship-to address shows only as
+    ship_to {kind, lines}, so the client can confirm where it goes (Glen, 2026-11-23)."""
     lines = order.get("items") or []
     subtotal = sum(int(l.get("line_cents") or 0) for l in lines)
     member_credit_cents = 0

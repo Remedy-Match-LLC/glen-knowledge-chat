@@ -30,7 +30,7 @@ const money = c => "$" + (Number(c||0)/100).toLocaleString("en-US",{minimumFract
 const out = document.getElementById("out");
 const STATE = {not_sent:"Not sent yet", sent:"Sent, waiting", claimed:"Client says paid, to confirm"};
 const SHIP = {none:"Nothing to ship", pickup:"Pickup", missing:"No address on file: the email asks for one"};
-let ROWS = {};
+let ROWS = {}, SEQ = 0;
 
 function fail(r){
   out.innerHTML = `<p class="err">${r.status === 401
@@ -56,9 +56,12 @@ async function find(){
   const q = document.getElementById("q").value.trim();
   if (q.length < 2) { out.innerHTML = "<p>Type at least two letters of the name.</p>"; return; }
   out.innerHTML = "<p>Looking…</p>";
+  const mine = ++SEQ;      // a slower earlier search must not replace a newer one
   const r = await fetch("/api/console/paylink/search?q=" + encodeURIComponent(q), {headers: H});
+  if (mine !== SEQ) return;
   if (!r.ok) return fail(r);
   const j = await r.json();
+  if (mine !== SEQ) return;
   ROWS = {};
   (j.rows || []).forEach(x => { ROWS[x.id] = x; });
   out.innerHTML = j.rows && j.rows.length ? j.rows.map(card).join("")

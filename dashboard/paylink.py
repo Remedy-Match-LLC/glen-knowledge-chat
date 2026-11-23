@@ -38,7 +38,8 @@ def ship_to(order, physical_units):
     if (order.get("channel") or "") == "pickup":
         return {"kind": "pickup", "lines": [PICKUP_PLACE]}
     a = _addr(order)
-    street = " ".join(s for s in (str(a.get("street") or "").strip(),
+    street = " ".join(s for s in (str(a.get("street") or a.get("address1")
+                                      or a.get("line1") or "").strip(),
                                   str(a.get("address2") or "").strip()) if s)
     city = str(a.get("city") or "").strip()
     state = str(a.get("state") or "").strip()
@@ -46,7 +47,7 @@ def ship_to(order, physical_units):
     if not (street and city):
         return {"kind": "missing", "lines": []}
     place = ", ".join(s for s in (city, " ".join(s for s in (state, zp) if s)) if s)
-    name = str(a.get("name") or order.get("name") or "").strip()
+    name = _clean(a.get("name") or order.get("name"))
     lines = [s for s in (name, street, place) if s]
     country = str(a.get("country") or "").strip()
     if country and country.upper() not in ("US", "USA", "UNITED STATES"):
@@ -54,8 +55,15 @@ def ship_to(order, physical_units):
     return {"kind": "ship", "lines": lines}
 
 
+def _clean(name):
+    """A stored name as it should read: entities decoded, capitals fixed ("linda" -> "Linda")."""
+    import html
+    from dashboard.name_case import normalize_name
+    return normalize_name(html.unescape(str(name or "")).strip())
+
+
 def first_name(order):
-    n = str(order.get("name") or "").strip()
+    n = _clean(order.get("name"))
     return n.split()[0] if n else ""
 
 
@@ -141,6 +149,9 @@ def find(cx, q, search):
     seen = {int(o["id"]) for o in found}
     for e in sorted(_household_emails(cx, [o.get("email") or "" for o in found])):
         for o in search(cx, e):
+            # Only the member's own orders: never a stranger's matched another way.
+            if (o.get("email") or "").strip().lower() != e:
+                continue
             if int(o["id"]) not in seen:
                 seen.add(int(o["id"]))
                 o["household"] = True
