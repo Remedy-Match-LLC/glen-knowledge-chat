@@ -49,6 +49,7 @@
 <body>
 <div class="wrap">
   <script src="/static/op-nav.js" data-active="people" data-sub="client"></script>
+  <script src="/static/client-photo-thumb.js"></script>
   <script src="/static/js/console-documents.js"></script>
   <div id="gate"></div>
   <div id="picker" style="display:none">
@@ -504,6 +505,7 @@ function load(email){
       document.getElementById("picker").style.display="none";
       document.getElementById("hub").style.display="block";
       document.getElementById("c-name").textContent = d.person.name || email;
+      if(window.ClientPhotoThumb) document.getElementById("c-name").insertAdjacentHTML("afterbegin", ClientPhotoThumb.html(email, 36));
       document.getElementById("c-meta").textContent =
         [email, d.person.phone, d.person.location, d.person.profession].filter(Boolean).join(" · ");
       renderStrip(d.process); renderClinical(d.clinical); renderTests(d.tests);

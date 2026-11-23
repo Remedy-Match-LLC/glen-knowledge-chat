@@ -53,7 +53,7 @@
                        {id:"client-orders",label:"Client Orders",href:"/console/client-orders"+qs} ],
       fulfillment:   [ {id:"shipping",label:"Shipping",href:"/admin/shipping"+qs}, {id:"household",label:"Household",href:"/console/household"+qs},
                        {id:"statement",label:"Family Statement",href:"/console/statement"+qs} ],
-      people:        [ {id:"client",label:"Client",href:"/console/client"+qs}, {id:"crm",label:"CRM",href:"/console/crm"+qs}, {id:"members",label:"Members",href:"/console/members"+qs},
+      people:        [ {id:"client",label:"Client",href:"/console/client"+qs}, {id:"crm",label:"CRM",href:"/console/crm"+qs}, {id:"members",label:"Members",href:"/console/members"+qs}, {id:"photo-inbox",label:"Photo Inbox",href:"/console/photo-inbox"+qs},
                        {id:"membership",label:"Membership",href:"/admin/membership"+qs}, {id:"practitioners",label:"Practitioners",href:"/console/practitioners"+qs},
                        {id:"practitioner-drafts",label:"Profile Drafts",href:"/console/practitioner-drafts"+qs},
                        {id:"coaching",label:"Coaching",href:"/console/coaching-cohort"+qs}, {id:"cert",label:"Cert",href:"/console/cert"+qs} ],

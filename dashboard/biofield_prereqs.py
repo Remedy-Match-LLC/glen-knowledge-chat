@@ -11,7 +11,7 @@ of the records that can show it. Never raises: an unreadable record counts as no
 """
 from datetime import date, datetime, timedelta, timezone
 
-from dashboard import client_photos, client_scans, intake, scan_freshness
+from dashboard import client_photos, client_scans, intake, person_aliases, scan_freshness
 
 SCAN_WINDOW_DAYS = 7
 INTAKE_LEAD_SOURCES = ("scoreapp", "practice-better", "concierge")
@@ -80,14 +80,23 @@ def is_paid(cx, email):
     return bool(r and r[0])
 
 
-def has_photo(cx, email):
-    e = _norm(email)
-    if not e:
-        return False
+def _photo_on_one_email(cx, e):
     # Per-person uploads count too (2026-10-09). This gate is email-scoped like the
     # intake and scan checks beside it, so a family sharing one email shares it.
     return bool(_readiness(cx, e).get("photo_on_file")) or bool(
         _guard(cx, lambda: client_photos.has_any_for_email(cx, e), False))
+
+
+def has_photo(cx, email):
+    """A photo is on file under this email, or under any address merged into the
+    same person (Glen, 2026-11-23: two accounts, one person)."""
+    e = _norm(email)
+    if not e:
+        return False
+    if _photo_on_one_email(cx, e):
+        return True
+    group = _guard(cx, lambda: person_aliases.same_person_emails(cx, e), None) or [e]
+    return any(_photo_on_one_email(cx, other) for other in group if other != e)
 
 
 def has_intake(cx, email):

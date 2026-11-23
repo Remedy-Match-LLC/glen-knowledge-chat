@@ -7790,6 +7790,7 @@ function renderIntakeField(f, val, getters, fieldEls, onChange, suggestions, sav
     wrap.appendChild(ta);
     getters[f.id] = ()=> ta.value;
     fieldEls[f.id] = ta;
+    if(f.id === "portrait") wrap.appendChild(intakePhotoUploader(ta, onChange));
     return wrap;
   }
 
@@ -10198,6 +10199,39 @@ loadClientZone();
   };
   syncBtn();
   if (window.__pendingBackdrop !== undefined) window.applyElementBackdrop(window.__pendingBackdrop, window.__serverScenePref);
+</script>
+<script>
+// Intake form: the photo field gets its own upload button (Glen, 2026-11-23). It uses
+// the same portal photo route as the photo card, so it is the client's own upload.
+function intakePhotoUploader(ta, onChange){
+  const box = document.createElement("div"); box.style.marginTop = "8px";
+  const lab = document.createElement("label"); lab.className = "btn ghost";
+  lab.style.cssText = "display:inline-block;cursor:pointer";
+  lab.textContent = "Add a photo of your face";
+  const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/jpeg,image/png,image/webp";
+  inp.style.cssText = "position:absolute;left:-9999px;width:1px;height:1px";
+  lab.appendChild(inp); box.appendChild(lab);
+  const stat = document.createElement("div"); stat.className = "small"; stat.setAttribute("role", "status");
+  stat.style.marginTop = "4px"; box.appendChild(stat);
+  inp.addEventListener("change", async function(){
+    const file = inp.files && inp.files[0]; if(!file) return;
+    if(file.size > 5*1024*1024){ stat.textContent = "That photo is over 5 MB. Please choose a smaller one."; inp.value = ""; return; }
+    stat.textContent = "Sending your photo…";
+    const fd = new FormData(); fd.append("photo", file);
+    try {
+      const r = await fetch("/api/portal/" + encodeURIComponent(token) + "/photo",
+                            {method: "POST", body: fd, credentials: "same-origin"});
+      const j = await r.json().catch(function(){ return {}; });
+      if(r.ok && j.ok){
+        stat.textContent = "Thank you. Your photo was sent.";
+        if(!ta.value.trim()){ ta.value = "Photo uploaded with this form."; if(onChange) onChange(); }
+        if(window.refreshPortalOnboarding) window.refreshPortalOnboarding();
+      } else { stat.textContent = j.error || "The photo did not send. Please try again."; }
+    } catch(e){ stat.textContent = "The photo did not send. Please try again."; }
+    inp.value = "";
+  });
+  return box;
+}
 </script>
 </body>
 </html>

@@ -47,6 +47,7 @@
                   background:var(--gold); color:#0a150d; font-weight:600; cursor:pointer; }
 </style>
 <script src="/static/op-nav.js" data-active="communication" data-sub="handoffs"></script>
+<script src="/static/client-photo-thumb.js"></script>
 <h1>Biofield pipeline</h1>
 <p class="sub">Every manual Biofield from request to fulfillment, one client per card. Filled dots are done; the highlighted step is what's next. Click the action on each step to do it.</p>
 <div class="bar"><a id="toggle" onclick="toggleAll()"></a></div>
@@ -110,7 +111,7 @@
       return '<li class="'+cls+'"><span class="dot"></span><a class="slabel" href="'+step.href(c,s)+'">'+step.label+'</a>'+step.act(c,s)+'</li>';
     }).join('');
     var done = c.done_count!=null ? c.done_count : 0;
-    return '<div class="pcard"><div class="phead"><div><b>'+esc(c.name||'(unnamed)')+'</b>'
+    return '<div class="pcard"><div class="phead"><div>'+(window.ClientPhotoThumb?ClientPhotoThumb.html(c.email,32):'')+'<b>'+esc(c.name||'(unnamed)')+'</b>'
       +'<span class="email">'+esc(c.email)+'</span>'
       +" <a href='/console/client?email="+encodeURIComponent(c.email)+"&key="+encodeURIComponent(key())+"'>Client hub</a>"
       +'</div>'
