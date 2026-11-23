@@ -856,3 +856,25 @@ def test_a_retired_twin_does_not_show_its_count_beside_the_survivor(env):
                    (slug, "2026-11-06T00:00:00", "2026-11-06T00:00:00"))
     cx.commit()
     assert [r["slug"] for r in SC.console_rows(cx, cat)] == ["serenity"]
+
+
+def test_a_filemaker_line_counts_its_quantity(env):
+    # Production pillar, 2026-11-23: a 20-bottle practitioner invoice line counted 1.
+    from dashboard import fmp_orders as FO
+    cx = env["cx"]
+    FO.ensure_tables(cx)
+    cx.execute("INSERT INTO fmp_invoices (id_pk, id_fk_client, invoice_date, status, subtotal, "
+               "total, shipping, outstanding) VALUES ('900','c1',?,'','','','','0')",
+               (_iso(20)[:10],))
+    cx.executemany("INSERT INTO fmp_invoice_items (id_pk, id_fk_invoice, id_fk_product, "
+                   "description, qty, price, ext_price) VALUES (?,?,?,?,?,?,?)",
+                   [("L1", "900", "p", "", "20", "", ""), ("L2", "900", "p", "", "", "", ""),
+                    ("L3", "900", "p", "", "0", "", "")])
+    cx.commit()
+    _ph(cx, [("prac@x.com", "scar-silk", _iso(20)[:10], "fmp", "L1"),
+             ("prac@x.com", "moisturize", _iso(20)[:10], "fmp", "L2"),   # no qty: 1
+             ("prac@x.com", "made-one", _iso(20)[:10], "fmp", "L3"),     # qty 0: none
+             ("solo@x.com", "moisturize", _iso(20)[:10], "fmp", "L9")])  # no line: 1
+    avg = SC.monthly_sales(cx, CAT)
+    assert avg["scar-silk"] == pytest.approx(20 / _months())
+    assert avg["moisturize"] == pytest.approx(2 / _months())
