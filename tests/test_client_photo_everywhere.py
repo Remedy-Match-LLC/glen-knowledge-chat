@@ -467,3 +467,47 @@ def test_a_forged_sender_is_not_taken_as_the_client():
     with sqlite3.connect(":memory:") as cx:
         counts = pin.scan_gmail(cx, Svc(), lambda e: e)
         assert counts["added"] == 0 and counts["unknown_sender"] == 1
+
+
+# ── review round 3 ─────────────────────────────────────────────────────────
+
+def test_use_files_a_portal_chat_photo_on_the_portals_person(env):
+    appmod, c = env
+    with _cx(appmod) as cx:
+        assert pin.enqueue(cx, "fam3@x.com", "portal-chat", "doc:77", JPG, "image/jpeg",
+                           client_id="5150")
+        iid = cx.execute("SELECT id FROM photo_inbox WHERE source_ref='doc:77'").fetchone()[0]
+    assert c.post(f"/api/console/photo-inbox/{iid}/use", headers=OWNER).status_code == 200
+    with _cx(appmod) as cx:
+        assert cph.get_for_client(cx, "5150")["blob"] == JPG
+        assert cph.get(cx, "fam3@x.com") is None          # the shared address is untouched
+
+
+def test_the_list_says_when_a_photo_is_already_on_file(env):
+    appmod, c = env
+    with _cx(appmod) as cx:
+        cph.put(cx, "has@x.com", PNG, "image/png", source="fmp")
+        pin.enqueue(cx, "has@x.com", "intake", "t:1", JPG, "image/jpeg")
+        pin.enqueue(cx, "none@x.com", "intake", "t:2", JPG, "image/jpeg")
+    items = c.get("/api/console/photo-inbox", headers=OWNER).get_json()["items"]
+    assert {i["email"]: i["has_photo"] for i in items} == {"has@x.com": True, "none@x.com": False}
+
+
+def test_intake_photos_stop_at_the_pending_cap(env, monkeypatch):
+    appmod, c = env
+    monkeypatch.setattr(appmod, "_INTAKE_PHOTOS_PENDING_MAX", 1)
+    assert _photo(c, _intake_token(c, "a1@x.com")).status_code == 200
+    assert _photo(c, _intake_token(c, "a2@x.com")).status_code == 503
+
+
+def test_a_failed_use_puts_the_item_back(env, monkeypatch):
+    appmod, c = env
+    with _cx(appmod) as cx:
+        pin.enqueue(cx, "f@x.com", "email", "m:1", JPG, "image/jpeg")
+        iid = cx.execute("SELECT id FROM photo_inbox WHERE source_ref='m:1'").fetchone()[0]
+    def boom(*a, **k):
+        raise RuntimeError("store down")
+    monkeypatch.setattr(cph, "put", boom)
+    assert c.post(f"/api/console/photo-inbox/{iid}/use", headers=OWNER).status_code == 500
+    with _cx(appmod) as cx:
+        assert pin.get(cx, iid)["status"] == "pending"

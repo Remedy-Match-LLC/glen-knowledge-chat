@@ -35,13 +35,14 @@
   #keybox{ display:none; margin:20px 0; }
   #keybox input{ padding:8px 11px; border-radius:8px; border:1px solid var(--line);
                  background:var(--card); color:var(--fg); min-width:260px; }
+.warn{color:#a4471b}
 </style>
 <script src="/static/op-nav.js" data-active="people" data-sub="photo-inbox"></script>
 </head>
 <body>
 <main>
   <h1>Photo Inbox</h1>
-  <p class="sub">Photos clients sent by email or in their portal chat. A photo reaches the
+  <p class="sub">Photos sent by email, in portal chat or on the intake form. A photo reaches the
     client's record only when you click "Use as photo".</p>
   <div id="keybox">
     <input id="key-input" type="password" placeholder="Console key">
@@ -63,7 +64,8 @@
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function say(text, isErr){ var m = document.getElementById('msg'); m.textContent = text || '';
     m.className = isErr ? 'err' : ''; }
-  var FROM = {'email': 'Sent by email', 'portal-chat': 'Sent in portal chat'};
+  var FROM = {'email': 'Sent by email', 'portal-chat': 'Sent in portal chat',
+              'intake': 'Intake form (not verified: anyone can type an email there)'};
   function when(iso){ if(!iso) return ''; var d = new Date(iso);
     return isNaN(d) ? String(iso).slice(0,16) : d.toLocaleString(); }
 
@@ -86,6 +88,7 @@
         + '<div class="who">'+name+'<br><a href="/console/client?email='+encodeURIComponent(it.email)+'">'+esc(it.email)+'</a></div>'
         + '<div class="meta">'+esc(FROM[it.source] || it.source)+' · '+esc(when(it.received_at))+'</div>'
         + (it.filename ? '<div class="meta">'+esc(it.filename)+'</div>' : '')
+        + (it.has_photo ? '<div class="meta warn">A photo is already on file. Use as photo replaces it.</div>' : '')
         + '<div class="acts"><button onclick="decide('+Number(it.id)+',\'use\')">Use as photo</button>'
         + '<button class="ghost" onclick="decide('+Number(it.id)+',\'dismiss\')">Dismiss</button></div>'
         + '</div>';
@@ -117,6 +120,8 @@
 
   async function decide(id, action){
     var card = document.getElementById('item-'+id);
+    if(action === 'use' && card && card.querySelector('.warn')
+       && !window.confirm('This client already has a photo on file. Replace it with this one?')) return;
     if(card) card.querySelectorAll('button').forEach(function(b){ b.disabled = true; });
     var r, j = {};
     try { r = await fetch('/api/console/photo-inbox/'+id+'/'+action, {method: 'POST', headers: hdr(true), credentials: 'same-origin'});

@@ -33308,7 +33308,8 @@ def api_portal_chat_upload(token):
             from dashboard import photo_inbox as _pin
             with _db_lock, db.connect(LOG_DB) as pcx:
                 _pin.enqueue(pcx, email, "portal-chat", f"doc:{body['id']}", blob, ctype,
-                             filename=getattr(f, "filename", "") or "")
+                             filename=getattr(f, "filename", "") or "",
+                             client_id=_portal_photo_identity(portal))
         except Exception as e:                      # noqa: BLE001 - best effort
             print(f"[photo-inbox] chat enqueue failed for doc {body.get('id')}: {e!r}",
                   flush=True)
@@ -41205,6 +41206,9 @@ def _intake_photo_usage(cx, token_hash, bump=False, stored=False):
     return (int(row[0]), bool(row[1])) if row else (0, False)
 
 
+_INTAKE_PHOTOS_PENDING_MAX = 100
+
+
 @app.route("/api/intake/public/photo", methods=["POST"])
 def intake_public_photo():
     from dashboard import intake as _intake, intake_public as _ip
@@ -41236,12 +41240,16 @@ def intake_public_photo():
         # straight onto a record: it waits in the Photo Inbox for staff to click Use as
         # photo, like an emailed one (review round 1, 2026-11-23).
         from dashboard import photo_inbox as _pin
+        # A cap on unreviewed intake photos, so a script opening intakes for made-up
+        # addresses cannot fill the inbox or the database (review round 3).
+        if _pin.pending_count(cx, "intake") >= _INTAKE_PHOTOS_PENDING_MAX:
+            return jsonify({"ok": False, "error": "We can't take photos here just now. "
+                            "Please send yours by email instead."}), 503
         _pin.enqueue(cx, email=email, source="intake",
                      source_ref=token_hash[:24] + ":" + hashlib.sha256(blob).hexdigest()[:24],
                      blob=blob, mime=ctype, filename=(getattr(f, "filename", "") or "")[:120])
         _intake_photo_usage(cx, token_hash, bump=True, stored=True)
-    return jsonify({"ok": True, "stored": True,
-                    "message": "Thank you. We'll add your photo to your file."})
+    return jsonify({"ok": True, "stored": True})
 
 
 @app.route("/api/intake/public/chat", methods=["POST"])
@@ -41669,8 +41677,11 @@ def api_console_photo_inbox_list():
     with db.connect(LOG_DB) as cx:
         items = _pin.list_items(cx, status)
         names = _photo_inbox_names(cx, {i["email"] for i in items})
+        from dashboard import client_photos as _cph
+        on_file = {e: bool(_cph.has_any_for_email(cx, e)) for e in {i["email"] for i in items}}
     for i in items:
         i["name"] = names.get(i["email"], "")
+        i["has_photo"] = on_file.get(i["email"], False)
     return jsonify({"ok": True, "items": items})
 
 
@@ -41740,18 +41751,31 @@ def api_console_photo_inbox_decide(item_id, action):
             return jsonify({"ok": False, "error": "already decided"}), 409
         if action == "use":
             ok = False
+            src = "portal-self" if item["source"] == "portal-chat" else "console"
+            cid = (item.get("client_id") or "").strip()
             try:
-                # Only a photo sent from the client's own portal counts as theirs; an
-                # emailed or intake photo is staff-reviewed, filed as a console photo.
-                ok = bool(_cph.put(cx, item["email"], item["image_blob"], item["mime"],
-                                   source="portal-self" if item["source"] == "portal-chat"
-                                   else "console"))
-            finally:
-                if not ok:
-                    cx.execute("UPDATE photo_inbox SET status='pending', decided_by_role='', "
-                               "decided_at=NULL WHERE id=?", (int(item_id),))
-                    cx.commit()
+                # A portal that names one person files the photo on that person, so a
+                # family sharing an address keeps their own faces (review round 3).
+                # Only a photo sent from the client's own portal counts as theirs.
+                if cid:
+                    ok = bool(_cph.put_for_client(cx, cid, item["email"], item["image_blob"],
+                                                  item["mime"], source=src))
+                else:
+                    ok = bool(_cph.put(cx, item["email"], item["image_blob"], item["mime"],
+                                       source=src))
+            except Exception:  # noqa: BLE001
+                app.logger.exception("photo-inbox use failed for item %s", item_id)
+                ok = False
             if not ok:
+                # Postgres aborts the transaction on an error: roll back first, then
+                # release the claim so the item can be tried again (review round 3).
+                try:
+                    cx.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                cx.execute("UPDATE photo_inbox SET status='pending', decided_by_role='', "
+                           "decided_at=NULL WHERE id=?", (int(item_id),))
+                cx.commit()
                 return jsonify({"ok": False, "error": "could not store the photo"}), 500
     return jsonify({"ok": True, "status": "used" if action == "use" else "dismissed"})
 

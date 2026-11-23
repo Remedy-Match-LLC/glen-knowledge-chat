@@ -48,13 +48,14 @@ def init_table(cx):
         "source TEXT NOT NULL, source_ref TEXT NOT NULL, filename TEXT, mime TEXT, "
         "image_blob BYTEA, byte_size INTEGER, received_at TEXT, "
         "status TEXT NOT NULL DEFAULT 'pending', decided_by_role TEXT, decided_at TEXT, "
-        "created_at TEXT)")
+        "created_at TEXT, client_id TEXT)")
     cx.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_photo_inbox_src "
                "ON photo_inbox(source, source_ref)")
     cx.execute("CREATE INDEX IF NOT EXISTS ix_photo_inbox_status ON photo_inbox(status)")
 
 
-def enqueue(cx, email, source, source_ref, blob, mime, filename="", received_at=None):
+def enqueue(cx, email, source, source_ref, blob, mime, filename="", received_at=None,
+            client_id=""):
     """Add one item. Returns True when a new row was written, False when it was
     already there (same source and source_ref) or refused."""
     e = _norm(email)
@@ -67,16 +68,22 @@ def enqueue(cx, email, source, source_ref, blob, mime, filename="", received_at=
     init_table(cx)
     cur = cx.execute(
         "INSERT INTO photo_inbox(email, source, source_ref, filename, mime, image_blob, "
-        "byte_size, received_at, status, created_at) VALUES(?,?,?,?,?,?,?,?,?,?) "
+        "byte_size, received_at, status, created_at, client_id) VALUES(?,?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(source, source_ref) DO NOTHING",
         (e, source, ref, (filename or "")[:200], mime, blob, len(blob),
-         received_at or _now(), "pending", _now()))
+         received_at or _now(), "pending", _now(), str(client_id or "").strip()[:64]))
     cx.commit()
     return (cur.rowcount or 0) > 0
 
 
-_COLS = ("id", "email", "source", "source_ref", "filename", "mime", "byte_size",
+_COLS = ("id", "email", "source", "source_ref", "filename", "mime", "byte_size", "client_id",
          "received_at", "status", "decided_by_role", "decided_at")
+
+
+def pending_count(cx, source):
+    init_table(cx)
+    return int(cx.execute("SELECT COUNT(*) FROM photo_inbox WHERE source=? AND status='pending'",
+                          (source,)).fetchone()[0] or 0)
 
 
 def list_items(cx, status="pending", limit=200):
