@@ -141,6 +141,7 @@
 </head>
 <body>
 <script src="/static/op-nav.js" data-active="sales" data-sub="orders"></script>
+<script src="/static/client-photo-thumb.js"></script>
   <div id="gate"><div style="text-align:center">
     <p style="margin-bottom:10px;color:var(--muted)">Enter console key</p>
     <input id="key" type="password" placeholder="console key" />
@@ -362,7 +363,7 @@
     var gb = (o.group_shipment_id!=null)
       ? '<span class="hh-badge">shipment #'+Number(o.group_shipment_id)+'</span>' : '';
     var head = '<div class="card-head" onclick="toggleCard(this)">'
-      + '<div class="who">'+sel+esc(displayName)+gb+badge+'<span class="chev">&#9656;</span></div>'
+      + '<div class="who">'+sel+((typeof ClientPhotoThumb!=="undefined")?ClientPhotoThumb.html(o.email,28):'')+esc(displayName)+gb+badge+'<span class="chev">&#9656;</span></div>'
       + numberHitHtml(o)
       + '<div class="meta"><span class="onum">#'+Number(o.id)+'</span>'
         + (o.external_ref?' &middot; '+esc(o.external_ref):'')

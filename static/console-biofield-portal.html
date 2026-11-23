@@ -68,6 +68,7 @@
 </head>
 <body>
 <script src="/static/op-nav.js" data-active="clinical" data-sub="biofield"></script>
+<script src="/static/client-photo-thumb.js"></script>
   <div id="gate" style="display:none"><div class="card" style="min-width:300px">
     <h2>Console key</h2>
     <input id="key" type="password" placeholder="CONSOLE_SECRET">
@@ -285,7 +286,7 @@ function clientSearch(ev){
     d.innerHTML=people.map(p=>{
       const nm=esc(p.name || [p.first_name,p.last_name].filter(Boolean).join(' ') || '(no name)');
       return `<div class="ac-item" data-email="${esc(p.email||'')}" data-name="${esc(p.name||'')}">`
-           + `${nm} <span class="em">${esc(p.email||'')}</span></div>`;
+           + `${((typeof ClientPhotoThumb!=="undefined")?ClientPhotoThumb.html(p.email,28):'')}${nm} <span class="em">${esc(p.email||'')}</span></div>`;
     }).join('');
     const rect=input.getBoundingClientRect();
     d.style.left=(rect.left+window.scrollX)+'px';
@@ -941,7 +942,7 @@ async function loadTriage(){
     card.style.display='';
     list.innerHTML = items.map(function(it){
       return '<div style="border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin:.5rem 0">'
-        + '<div><b>'+esc(it.name||it.email)+'</b> <span class="muted small">&lt;'+esc(it.email)+'&gt;</span> '
+        + '<div>'+((typeof ClientPhotoThumb!=="undefined")?ClientPhotoThumb.html(it.email,32):'')+'<b>'+esc(it.name||it.email)+'</b> <span class="muted small">&lt;'+esc(it.email)+'&gt;</span> '
         + '<span class="muted small">· '+esc(it.category)+' · '+esc(it.urgency)+'</span></div>'
         + '<div style="margin:.2rem 0"><b>'+esc(it.summary||'')+'</b></div>'
         + '<div class="muted small" style="margin-bottom:.3rem">↳ '+esc(it.recommendation||'')+'</div>'

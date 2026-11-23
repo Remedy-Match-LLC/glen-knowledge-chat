@@ -82,3 +82,22 @@ def remove_merge_aliases(cx, merge_id):
 def all_aliases(cx):
     return [(r[0], r[1]) for r in cx.execute(
         "SELECT alias_email, canonical_email FROM email_aliases")]
+
+
+def same_person_emails(cx, email):
+    """Every address merged into the same person as `email`, the given one first.
+
+    The survivor plus every alias that resolves to it, through chains too. Each
+    address appears once. Returns [email] when nothing is merged."""
+    e = _norm(email)
+    if not e:
+        return []
+    canon = canonical_email(cx, e)
+    out = [e]
+    if canon not in out:
+        out.append(canon)
+    for alias, _target in all_aliases(cx):
+        a = _norm(alias)
+        if a not in out and canonical_email(cx, a) == canon:
+            out.append(a)
+    return out

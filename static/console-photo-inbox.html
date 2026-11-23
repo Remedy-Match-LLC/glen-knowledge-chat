@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photo Inbox</title>
+<style>
+  :root{ --bg:#0a150d; --card:#0f1f14; --line:#21472d; --fg:#eaf3ec; --mut:#8aa594;
+         --gold:#d4a843; --link:#9db4ff; --err:#f0a08f; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--fg);
+        font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main{ max-width:980px; margin:0 auto; padding:0 16px 48px; }
+  h1{ margin:18px 0 2px; font-size:22px; }
+  .sub{ margin:0 0 14px; color:var(--mut); font-size:13px; }
+  .bar{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:0 0 16px; }
+  button{ padding:8px 13px; border-radius:8px; border:1px solid var(--gold); background:var(--gold);
+          color:#0a150d; font-weight:600; cursor:pointer; font-size:14px; }
+  button.ghost{ background:transparent; color:var(--fg); border-color:var(--line); }
+  button:disabled{ opacity:.6; cursor:default; }
+  #msg{ color:var(--mut); font-size:13px; }
+  #msg.err{ color:var(--err); }
+  .list{ display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .thumb{ width:100%; aspect-ratio:1/1; border-radius:10px; background:rgba(127,127,127,.12);
+          display:flex; align-items:center; justify-content:center; overflow:hidden;
+          color:var(--mut); font-size:12px; }
+  .thumb img{ width:100%; height:100%; object-fit:cover; }
+  .who{ margin:10px 0 2px; font-weight:600; }
+  .who a{ color:var(--link); text-decoration:none; font-weight:400; font-size:13px; }
+  .meta{ color:var(--mut); font-size:12px; }
+  .acts{ display:flex; gap:8px; margin-top:10px; }
+  .empty{ color:var(--mut); font-size:15px; margin:20px 0; }
+  #keybox{ display:none; margin:20px 0; }
+  #keybox input{ padding:8px 11px; border-radius:8px; border:1px solid var(--line);
+                 background:var(--card); color:var(--fg); min-width:260px; }
+.warn{color:#a4471b}
+</style>
+<script src="/static/op-nav.js" data-active="people" data-sub="photo-inbox"></script>
+</head>
+<body>
+<main>
+  <h1>Photo Inbox</h1>
+  <p class="sub">Photos sent by email, in portal chat or on the intake form. A photo reaches the
+    client's record only when you click "Use as photo".</p>
+  <div id="keybox">
+    <input id="key-input" type="password" placeholder="Console key">
+    <button onclick="unlock()">Unlock</button>
+  </div>
+  <div class="bar">
+    <button id="scan-btn" onclick="scan()">Check email for photos</button>
+    <span id="msg"></span>
+  </div>
+  <div id="list" class="list"></div>
+</main>
+<script>
+  function key(){ try { return localStorage.getItem('console_key') || ''; } catch(e){ return ''; } }
+  function hdr(json){ var h = {}; var k = key(); if(k) h['X-Console-Key'] = k;
+    if(json) h['Content-Type'] = 'application/json'; return h; }
+  function unlock(){ try { localStorage.setItem('console_key', document.getElementById('key-input').value); } catch(e){}
+    document.getElementById('keybox').style.display = 'none'; load(); }
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function say(text, isErr){ var m = document.getElementById('msg'); m.textContent = text || '';
+    m.className = isErr ? 'err' : ''; }
+  var FROM = {'email': 'Sent by email', 'portal-chat': 'Sent in portal chat',
+              'intake': 'Intake form (not verified: anyone can type an email there)'};
+  function when(iso){ if(!iso) return ''; var d = new Date(iso);
+    return isNaN(d) ? String(iso).slice(0,16) : d.toLocaleString(); }
+
+  async function load(){
+    var r;
+    try { r = await fetch('/api/console/photo-inbox', {headers: hdr(), credentials: 'same-origin'}); }
+    catch(e){ say('Could not reach the server.', true); return; }
+    if(r.status === 401){ document.getElementById('keybox').style.display = 'block'; return; }
+    var j = await r.json().catch(function(){ return null; });
+    // A failed read is an error, never an empty inbox (review round 2, 2026-11-23).
+    if(!r.ok || !j || j.ok === false || !Array.isArray(j.items)){
+      say('The photo list could not be read (HTTP ' + r.status + '). Try again in a minute.', true); return; }
+    var items = j.items;
+    var host = document.getElementById('list');
+    if(!items.length){ host.innerHTML = '<p class="empty">No photos are waiting.</p>'; return; }
+    host.innerHTML = items.map(function(it){
+      var name = it.name ? esc(it.name) : esc(it.email);
+      return '<div class="card" id="item-'+Number(it.id)+'">'
+        + '<div class="thumb" data-item="'+Number(it.id)+'">Loading</div>'
+        + '<div class="who">'+name+'<br><a href="/console/client?email='+encodeURIComponent(it.email)+'">'+esc(it.email)+'</a></div>'
+        + '<div class="meta">'+esc(FROM[it.source] || it.source)+' · '+esc(when(it.received_at))+'</div>'
+        + (it.filename ? '<div class="meta">'+esc(it.filename)+'</div>' : '')
+        + (it.has_photo ? '<div class="meta warn">A photo is already on file. Use as photo replaces it.</div>' : '')
+        + '<div class="acts"><button onclick="decide('+Number(it.id)+',\'use\')">Use as photo</button>'
+        + '<button class="ghost" onclick="decide('+Number(it.id)+',\'dismiss\')">Dismiss</button></div>'
+        + '</div>';
+    }).join('');
+    loadImages(items.map(function(it){ return Number(it.id); }));
+  }
+
+  async function loadImages(ids){
+    // Four at a time, so a long list does not fire every request at once.
+    var i = 0;
+    async function worker(){
+      while(i < ids.length){
+        var id = ids[i++];
+        var box = document.querySelector('.thumb[data-item="'+id+'"]');
+        if(!box) continue;
+        try {
+          var r = await fetch('/api/console/photo-inbox/'+id+'/image', {headers: hdr(), credentials: 'same-origin'});
+          var j = r.ok ? await r.json() : null;
+          if(j && j.ok && /^image\/(jpeg|png|webp)$/.test(j.content_type || '')){
+            box.textContent = '';
+            var img = document.createElement('img'); img.alt = '';
+            img.src = 'data:'+j.content_type+';base64,'+j.image; box.appendChild(img);
+          } else { box.textContent = 'No preview'; }
+        } catch(e){ box.textContent = 'No preview'; }
+      }
+    }
+    await Promise.all([worker(), worker(), worker(), worker()]);
+  }
+
+  async function decide(id, action){
+    var card = document.getElementById('item-'+id);
+    if(action === 'use' && card && card.querySelector('.warn')
+       && !window.confirm('This client already has a photo on file. Replace it with this one?')) return;
+    if(card) card.querySelectorAll('button').forEach(function(b){ b.disabled = true; });
+    var r, j = {};
+    try { r = await fetch('/api/console/photo-inbox/'+id+'/'+action, {method: 'POST', headers: hdr(true), credentials: 'same-origin'});
+          j = await r.json().catch(function(){ return {}; }); }
+    catch(e){ r = null; }
+    if(r && r.ok && j.ok){
+      say(action === 'use' ? 'Saved as the client\'s photo.' : 'Dismissed.');
+      if(card) card.remove();
+      if(!document.querySelector('#list .card')) document.getElementById('list').innerHTML = '<p class="empty">No photos are waiting.</p>';
+      return;
+    }
+    if(r && r.status === 401){ document.getElementById('keybox').style.display = 'block'; }
+    say((j && j.error) || 'That did not work. Please try again.', true);
+    if(card) card.querySelectorAll('button').forEach(function(b){ b.disabled = false; });
+  }
+
+  async function scan(){
+    var btn = document.getElementById('scan-btn'); btn.disabled = true;
+    say('Checking the last 14 days of email…');
+    var r, j = {};
+    try { r = await fetch('/api/console/photo-inbox/scan', {method: 'POST', headers: hdr(true),
+            credentials: 'same-origin', body: JSON.stringify({days: 14})});
+          j = await r.json().catch(function(){ return {}; }); }
+    catch(e){ r = null; }
+    btn.disabled = false;
+    if(r && r.status === 401){ document.getElementById('keybox').style.display = 'block'; say(''); return; }
+    if(!r || !r.ok || !j.ok){ say((j && j.error) || 'Checking email failed.', true); return; }
+    say('Found '+j.added+' new photo'+(j.added === 1 ? '' : 's')+' from clients. '
+        + j.already+' were already listed.'
+        + (j.truncated ? ' It stopped at the newest 200 emails, so older ones were not checked.' : ''));
+    load();
+  }
+
+  load();
+</script>
+</body>
+</html>

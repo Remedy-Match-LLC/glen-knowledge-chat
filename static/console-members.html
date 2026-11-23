@@ -36,6 +36,7 @@
 </head>
 <body>
 <script src="/static/op-nav.js" data-active="people" data-sub="members"></script>
+<script src="/static/client-photo-thumb.js"></script>
 <header>
   Members
   <span class="sub" id="summary">loading…</span>
@@ -83,7 +84,7 @@ function card(m){
       : `<span>next charge ${esc(day(m.next_charge_date)) || "—"}</span>`;
   const nameLine = m.name ? esc(m.name) : `<span class="muted" style="color:#98a2b3">(no name)</span>`;
   return `<div class="card">
-    <div class="name">${nameLine}</div>
+    <div class="name">${((typeof ClientPhotoThumb!=="undefined")?ClientPhotoThumb.html(m.email,32):'')}${nameLine}</div>
     <div class="email"><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></div>
     <div class="meta">
       <span>${money(m.plan_cents)}${annual ? "/yr" : "/mo"}</span>
