@@ -52975,6 +52975,106 @@ def console_statement_page():
     return resp
 
 
+@app.route("/console/paylink")
+def console_paylink_page():
+    resp = send_from_directory(STATIC, "console-paylink.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+def _paylink_row(cx, o):
+    """What Rae's pay-link page shows for one unpaid order. No token, no order link."""
+    from dashboard import paylink as _pl
+    # The invoice's own owed rule, so the email asks for what the Pay button charges
+    # (a refund is never asked for again). None when the ledger can't be read: show 0.
+    owed = int(_invoice_balance_cents(o) or 0)
+    ship = _pl.ship_to(o, _order_physical_units(o))
+    return {"id": int(o["id"]), "name": o.get("name") or o.get("email") or "",
+            "email": o.get("email") or "", "date": str(o.get("created_at") or "")[:10],
+            "owed_cents": owed, "total_cents": int(o.get("total_cents") or 0),
+            "state": _pl.state(o), "sent_on": str(o.get("invoice_sent_at") or "")[:10],
+            "household": bool(o.get("household")), "ship": ship}
+
+
+@app.route("/api/console/paylink/search", methods=["GET"])
+def console_paylink_search():
+    """Rae types a name: that client's unpaid app orders, plus their household's.
+    Read only. Glen, 2026-11-22."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import paylink as _pl
+    q = (request.args.get("q") or "").strip()
+    cx = db.connect(LOG_DB)
+    cx.row_factory = _sqlite3.Row
+    try:
+        rows = [_paylink_row(cx, o) for o in _pl.find(cx, q, _bos_orders.search_client_orders)]
+    finally:
+        cx.close()
+    return jsonify({"ok": True, "rows": [r for r in rows if r["owed_cents"] > 0]})
+
+
+@app.route("/api/console/paylink/<int:oid>/draft", methods=["POST"])
+def console_paylink_draft(oid):
+    """The pay-link email for Rae to send from her own mail. Sends nothing, and does not
+    mark the invoice sent: Rae clicks Mark sent after she sends it."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import paylink as _pl
+    from dashboard.practitioner_portal import create_order_invoice_token
+    cx = db.connect(LOG_DB)
+    cx.row_factory = _sqlite3.Row
+    try:
+        order = _bos_orders.get_order(cx, oid)
+        if not order or not _pl.is_open(order):
+            return jsonify({"ok": False, "error": "This invoice is not open."}), 404
+        row = _paylink_row(cx, order)
+    finally:
+        cx.close()
+    if row["owed_cents"] <= 0:
+        return jsonify({"ok": False, "error": "Nothing is owed on this invoice."}), 409
+    if not INVOICE_PAYLINK_ENABLED:      # the email promises a page that takes payment
+        return jsonify({"ok": False, "error": "Online payment is switched off."}), 409
+    # Reuse the order's stored link while it is still valid. A new one is NOT stored here:
+    # a stored token lists the invoice to a consented payer's portal (portal_view), so it
+    # is kept only when Rae clicks Mark sent. The page hands it back as `ref` for that.
+    from dashboard.practitioner_portal import order_id_from_invoice_token
+    tok = str(order.get("invoice_token") or "").strip()
+    if not tok or str(order_id_from_invoice_token(tok) or "") != str(oid):
+        tok = create_order_invoice_token(oid)
+    link = f"{PUBLIC_BASE_URL.rstrip('/')}/invoice/{tok}"
+    subject, body = _pl.email(order, link, row["owed_cents"], row["ship"])
+    return jsonify({"ok": True, "to": row["email"], "subject": subject, "body": body, "ref": tok})
+
+
+@app.route("/api/console/paylink/<int:oid>/sent", methods=["POST"])
+def console_paylink_sent(oid):
+    """Rae clicks Mark sent after she has sent the pay-link email herself."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import paylink as _pl
+    from dashboard.practitioner_portal import order_id_from_invoice_token
+    actor = _bos_actor()
+    ref = str((request.get_json(silent=True) or {}).get("ref") or "").strip()
+    # Keep the link Rae sent, as the app's own invoice send does, so open tracking and the
+    # household payer links find it. Only a valid token for THIS order is stored.
+    keep = ref if ref and str(order_id_from_invoice_token(ref) or "") == str(oid) else ""
+    with _db_lock:
+        cx = db.connect(LOG_DB)
+        cx.row_factory = _sqlite3.Row
+        try:
+            order = _bos_orders.get_order(cx, oid)
+            if not order or not _pl.is_open(order):
+                return jsonify({"ok": False, "error": "This invoice is not open."}), 404
+            if keep:
+                cx.execute("UPDATE orders SET invoice_token=? WHERE id=?", (keep, oid))
+                cx.commit()
+            _bos_orders.mark_invoice_sent(cx, oid)
+        finally:
+            cx.close()
+    print(f"[paylink] order #{oid} marked sent by role {getattr(actor, 'role', '?')}", flush=True)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/households/<slug>/statement", methods=["GET"])
 def household_statement(slug):
     """A household's deliveries for one month (?month=YYYY-MM), for Rae to print.
@@ -66611,8 +66711,25 @@ def _record_invoice_balance_payment(md, amount_cents, pi_id):
         return False
 
 
+def _invoice_ship_to(order):
+    """{"kind", "lines"} for the invoice's Ships to block: the stored address, the
+    pickup place, a request for an address, or nothing when nothing ships. Only these
+    two keys leave the server. Never raises."""
+    try:
+        from dashboard import paylink as _pl
+        st = _pl.ship_to(order, _order_physical_units(order))
+        # Ask for an address only while the order is still open: never on a receipt
+        # or an order already sent on its way.
+        if st["kind"] == "missing" and not _pl.is_open(order):
+            return {"kind": "none", "lines": []}
+        return st
+    except Exception:  # noqa: BLE001 - display only
+        return {"kind": "none", "lines": []}
+
+
 def _invoice_summary(order):
-    """Customer-safe view — no person_id, notes, phone, or full address."""
+    """Customer-safe view: no person_id, notes or phone. The ship-to address shows only as
+    ship_to {kind, lines}, so the client can confirm where it goes (Glen, 2026-11-23)."""
     lines = order.get("items") or []
     subtotal = sum(int(l.get("line_cents") or 0) for l in lines)
     member_credit_cents = 0
@@ -66639,6 +66756,7 @@ def _invoice_summary(order):
         "external_ref": order.get("external_ref"),
         "created_at": order.get("created_at"),
         "name": _invoice_display_name(order),
+        "ship_to": _invoice_ship_to(order),   # Glen 2026-11-23: confirm where it goes
         "invoice_note": order.get("invoice_note") or "",
         "lines": [_invoice_line_view(l) for l in lines],
         "physical_units": _order_physical_units(order),
