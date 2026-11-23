@@ -146,7 +146,7 @@ THUMB_PAGES = ["console-client.html", "console-crm.html", "console-members.html"
 def test_thumb_script_sends_the_key_in_a_header_never_a_url():
     js = (STATIC / "client-photo-thumb.js").read_text()
     code = re.sub(r"/\*.*?\*/", "", js, flags=re.S)
-    assert '"X-Console-Key"' in code and "/api/console/client-photo?email=" in code
+    assert "\"X-Console-Key\"" in code and "/api/console/client-thumb?email=" in code
     assert "key=" not in code and "console_key=" not in code
     assert "MAX_IN_FLIGHT = 4" in code and "IntersectionObserver" in code
 
@@ -397,3 +397,25 @@ def test_photo_inbox_page_is_served(env):
     _a, c = env
     r = c.get("/console/photo-inbox")
     assert r.status_code == 200 and b"Photo Inbox" in r.data
+
+
+# ── console card thumbnails: any signed-in console user, never a guess ──────
+
+def test_client_thumb_needs_sign_in_and_serves_the_email_photo(env):
+    appmod, c = env
+    assert c.get("/api/console/client-thumb?email=t@x.com").status_code == 401
+    with _cx(appmod) as cx:
+        cph.put(cx, "t@x.com", JPG, "image/jpeg", source="console")
+    r = c.get("/api/console/client-thumb?email=T@x.com", headers=OWNER)
+    assert r.status_code == 200 and base64.b64decode(r.get_json()["image"]) == JPG
+    assert "no-store" in r.headers.get("Cache-Control", "")
+
+
+def test_client_thumb_uses_a_filemaker_photo_only_when_one_person_has_the_email(env):
+    appmod, c = env
+    with _cx(appmod) as cx:
+        cph.put_for_client(cx, "101", "fam@x.com", JPG, "image/jpeg", source="portal-self")
+    assert c.get("/api/console/client-thumb?email=fam@x.com", headers=OWNER).status_code == 200
+    with _cx(appmod) as cx:
+        cph.put_for_client(cx, "102", "fam@x.com", WEBP, "image/webp", source="portal-self")
+    assert c.get("/api/console/client-thumb?email=fam@x.com", headers=OWNER).status_code == 404

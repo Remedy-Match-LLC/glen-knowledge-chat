@@ -31,7 +31,7 @@
       var headers = {};
       var k = consoleKey();
       if (k) headers["X-Console-Key"] = k;
-      fetch("/api/console/client-photo?email=" + encodeURIComponent(job.email),
+      fetch("/api/console/client-thumb?email=" + encodeURIComponent(job.email),
             { headers: headers, credentials: "same-origin" })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) {

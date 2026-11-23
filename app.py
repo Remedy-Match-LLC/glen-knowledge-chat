@@ -41740,6 +41740,28 @@ def api_console_photo_inbox_decide(item_id, action):
     return jsonify({"ok": True, "status": "used" if action == "use" else "dismissed"})
 
 
+@app.route("/api/console/client-thumb", methods=["GET"])
+def api_console_client_thumb():
+    """A console card's client photo (base64 JSON), for any signed-in console user,
+    Rae included (_bos_actor). Read only; never a public link."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    import base64 as _b64
+    from dashboard import client_photos as _cph
+    email = (request.args.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+    with db.connect(LOG_DB) as cx:
+        rec = _cph.for_console_card(cx, email)
+    if not rec:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    resp = jsonify({"ok": True, "image": _b64.b64encode(rec["blob"]).decode(),
+                    "content_type": rec["content_type"], "focus_x": rec["focus_x"],
+                    "focus_y": rec["focus_y"], "zoom": rec["zoom"]})
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
+
+
 @app.route("/api/console/client-photo", methods=["GET", "POST"])
 def api_console_client_photo():
     """Store a client's photo (base64), keyed by email. Pushed from the local intake

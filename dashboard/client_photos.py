@@ -184,6 +184,24 @@ def set_framing_for_client(cx, client_id, focus_x, focus_y, zoom):
     return cur.rowcount > 0
 
 
+def for_console_card(cx, email):
+    """The photo a CONSOLE card shows for an email, or None (Glen, 2026-11-23: show the
+    client's photo on their console pages and cards). The email row first; otherwise the
+    FileMaker-person row only when exactly one person has that email. A family sharing
+    one address shows nothing rather than a guess at whose face it is."""
+    e = _norm(email)
+    if not e:
+        return None
+    rec = get(cx, e)
+    if rec:
+        return rec
+    init_table(cx)
+    ids = [r[0] for r in cx.execute(
+        "SELECT client_id FROM client_identity_photos WHERE lower(trim(email))=? "
+        "AND image_blob IS NOT NULL", (e,)).fetchall()]
+    return get_for_client(cx, ids[0]) if len(ids) == 1 else None
+
+
 def for_client_surface(cx, email, client_id=None):
     """The photo a CLIENT-facing page (portal, Body Map) may show, or None.
 
