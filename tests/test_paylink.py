@@ -238,6 +238,12 @@ def test_names_get_their_capitals():
     assert PL.ship_to({"address": dict(ADDR, name="donna banks")}, 1)["lines"][0] == "Donna Banks"
 
 
+def test_every_stored_address_shape_reads():
+    a = {"name": "Jo", "street1": "1 A St", "street2": "Apt 2", "city": "Hilo",
+         "state": "HI", "postal": "96720"}
+    assert PL.ship_to({"address": a}, 1)["lines"] == ["Jo", "1 A St Apt 2", "Hilo, HI 96720"]
+
+
 def test_address1_counts_as_a_street():
     a = {"name": "Jo", "address1": "1 A St", "city": "Hilo", "state": "HI", "zip": "96720"}
     assert PL.ship_to({"address": a}, 1)["kind"] == "ship"
@@ -249,12 +255,20 @@ def test_draft_reuses_one_link_and_refuses_when_payment_is_off(client, monkeypat
     from dashboard import practitioner_portal as _pp
     monkeypatch.setattr(_pp, "create_order_invoice_token", lambda oid, **k: n.append(1) or "TOK%d" % len(n))
     monkeypatch.setattr(appmod, "INVOICE_PAYLINK_ENABLED", True)
+    monkeypatch.setattr(_pp, "order_id_from_invoice_token",
+                        lambda t, **k: str(client.oid) if t.startswith("TOK") else None)
     a = client.post(f"/api/console/paylink/{client.oid}/draft", headers=H).get_json()
+    tok = lambda: sqlite3.connect(client.db).execute(
+        "SELECT invoice_token FROM orders WHERE id=?", (client.oid,)).fetchone()[0]
+    assert "/invoice/TOK1" in a["body"] and a["ref"] == "TOK1"
+    assert tok() in (None, "")                      # opening the email stores nothing
+    client.post(f"/api/console/paylink/{client.oid}/sent", headers=H,
+                json={"ref": "BOGUS"})
+    assert tok() in (None, "")                      # a token for no order is not kept
+    client.post(f"/api/console/paylink/{client.oid}/sent", headers=H, json={"ref": "TOK1"})
+    assert tok() == "TOK1"
     b = client.post(f"/api/console/paylink/{client.oid}/draft", headers=H).get_json()
-    assert "/invoice/TOK1" in a["body"] and "/invoice/TOK1" in b["body"] and len(n) == 1
-    with sqlite3.connect(client.db) as c:
-        assert c.execute("SELECT invoice_token FROM orders WHERE id=?",
-                         (client.oid,)).fetchone() == ("TOK1",)
+    assert "/invoice/TOK1" in b["body"] and len(n) == 1   # the sent link is reused
     monkeypatch.setattr(appmod, "INVOICE_PAYLINK_ENABLED", False)
     r = client.post(f"/api/console/paylink/{client.oid}/draft", headers=H)
     assert r.status_code == 409

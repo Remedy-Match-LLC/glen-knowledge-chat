@@ -53034,21 +53034,16 @@ def console_paylink_draft(oid):
         return jsonify({"ok": False, "error": "Nothing is owed on this invoice."}), 409
     if not INVOICE_PAYLINK_ENABLED:      # the email promises a page that takes payment
         return jsonify({"ok": False, "error": "Online payment is switched off."}), 409
-    # One stable link per order, kept on the order as the app's own invoice send does,
-    # so the Orders board's open tracking and household payer links can find it. Setting
-    # the token does not publish the order to the client's portal (portal_published).
+    # Reuse the order's stored link while it is still valid. A new one is NOT stored here:
+    # a stored token lists the invoice to a consented payer's portal (portal_view), so it
+    # is kept only when Rae clicks Mark sent. The page hands it back as `ref` for that.
+    from dashboard.practitioner_portal import order_id_from_invoice_token
     tok = str(order.get("invoice_token") or "").strip()
-    if not tok:
+    if not tok or str(order_id_from_invoice_token(tok) or "") != str(oid):
         tok = create_order_invoice_token(oid)
-        with _db_lock, db.connect(LOG_DB) as _cxw:
-            _cxw.execute("UPDATE orders SET invoice_token=? WHERE id=? "
-                         "AND coalesce(invoice_token,'')=''", (tok, oid))
-            _cxw.commit()
-            _row = _cxw.execute("SELECT invoice_token FROM orders WHERE id=?", (oid,)).fetchone()
-            tok = str(_row[0] or tok)
     link = f"{PUBLIC_BASE_URL.rstrip('/')}/invoice/{tok}"
     subject, body = _pl.email(order, link, row["owed_cents"], row["ship"])
-    return jsonify({"ok": True, "to": row["email"], "subject": subject, "body": body})
+    return jsonify({"ok": True, "to": row["email"], "subject": subject, "body": body, "ref": tok})
 
 
 @app.route("/api/console/paylink/<int:oid>/sent", methods=["POST"])
@@ -53057,13 +53052,26 @@ def console_paylink_sent(oid):
     if _bos_actor() is None:
         return jsonify({"ok": False, "error": "unauthorized"}), 401
     from dashboard import paylink as _pl
-    with _db_lock, db.connect(LOG_DB) as cx:
+    from dashboard.practitioner_portal import order_id_from_invoice_token
+    actor = _bos_actor()
+    ref = str((request.get_json(silent=True) or {}).get("ref") or "").strip()
+    # Keep the link Rae sent, as the app's own invoice send does, so open tracking and the
+    # household payer links find it. Only a valid token for THIS order is stored.
+    keep = ref if ref and str(order_id_from_invoice_token(ref) or "") == str(oid) else ""
+    with _db_lock:
+        cx = db.connect(LOG_DB)
         cx.row_factory = _sqlite3.Row
-        order = _bos_orders.get_order(cx, oid)
-        if not order or not _pl.is_open(order):
-            return jsonify({"ok": False, "error": "This invoice is not open."}), 404
-        _bos_orders.mark_invoice_sent(cx, oid)
-    print(f"[paylink] order #{oid} marked sent by {_bos_actor()}", flush=True)
+        try:
+            order = _bos_orders.get_order(cx, oid)
+            if not order or not _pl.is_open(order):
+                return jsonify({"ok": False, "error": "This invoice is not open."}), 404
+            if keep:
+                cx.execute("UPDATE orders SET invoice_token=? WHERE id=?", (keep, oid))
+                cx.commit()
+            _bos_orders.mark_invoice_sent(cx, oid)
+        finally:
+            cx.close()
+    print(f"[paylink] order #{oid} marked sent by role {getattr(actor, 'role', '?')}", flush=True)
     return jsonify({"ok": True})
 
 

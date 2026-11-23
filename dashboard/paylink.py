@@ -38,12 +38,14 @@ def ship_to(order, physical_units):
     if (order.get("channel") or "") == "pickup":
         return {"kind": "pickup", "lines": [PICKUP_PLACE]}
     a = _addr(order)
-    street = " ".join(s for s in (str(a.get("street") or a.get("address1")
-                                      or a.get("line1") or "").strip(),
-                                  str(a.get("address2") or "").strip()) if s)
+    # Every key the app's own address normaliser accepts (app._normalize_ship_address).
+    street = " ".join(s for s in (
+        str(a.get("street") or a.get("street1") or a.get("address") or a.get("address1")
+            or a.get("line1") or "").strip(),
+        str(a.get("address2") or a.get("street2") or "").strip()) if s)
     city = str(a.get("city") or "").strip()
     state = str(a.get("state") or "").strip()
-    zp = str(a.get("zip") or "").strip()
+    zp = str(a.get("zip") or a.get("postal") or a.get("zipcode") or "").strip()
     if not (street and city):
         return {"kind": "missing", "lines": []}
     place = ", ".join(s for s in (city, " ".join(s for s in (state, zp) if s)) if s)

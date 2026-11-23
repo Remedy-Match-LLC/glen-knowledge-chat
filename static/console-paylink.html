@@ -30,7 +30,7 @@ const money = c => "$" + (Number(c||0)/100).toLocaleString("en-US",{minimumFract
 const out = document.getElementById("out");
 const STATE = {not_sent:"Not sent yet", sent:"Sent, waiting", claimed:"Client says paid, to confirm"};
 const SHIP = {none:"Nothing to ship", pickup:"Pickup", missing:"No address on file: the email asks for one"};
-let ROWS = {}, SEQ = 0;
+let ROWS = {}, SEQ = 0, REF = {};
 
 function fail(r){
   out.innerHTML = `<p class="err">${r.status === 401
@@ -83,6 +83,7 @@ out.addEventListener("click", async e => {
   const prev = b.closest(".card").querySelector(".preview");
   if (act === "open" || act === "copy") {
     const d = await draft(k); if (!d) return;
+    REF[k] = d.ref || "";
     prev.style.display = "block";
     prev.textContent = "To: " + (d.to || "") + "\nSubject: " + d.subject + "\n\n" + d.body;
     if (act === "open") {
@@ -93,7 +94,8 @@ out.addEventListener("click", async e => {
       catch (err) { b.textContent = "Select the text below to copy"; }
     }
   } else if (act === "sent") {
-    const r = await fetch("/api/console/paylink/" + k + "/sent", {method: "POST", headers: H});
+    const r = await fetch("/api/console/paylink/" + k + "/sent", {method: "POST", headers: H,
+      body: JSON.stringify({ref: REF[k] || ""})});
     if (!r.ok) return alertIn(k, "Could not mark it sent (HTTP " + r.status + ").");
     find();
   }
