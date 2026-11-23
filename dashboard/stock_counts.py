@@ -762,7 +762,10 @@ def monthly_sales(cx, catalog=None, *, now=None) -> dict:
     - `orders` lines: slug + qty (no qty is 1). Counted when paid, or
       shipped/delivered/done, and not cancelled. GrooveKart orders count unless
       cancelled, by stock_slug/stock_qty, else by an EXACT name match, 1 each.
-    - `purchase_history` lines (FileMaker 'fmp', older 'groovekart'): no qty, 1 each.
+    - `purchase_history` lines: a FileMaker 'fmp' line takes the qty of its invoice line
+      in fmp_invoice_items (source_ref is that line's id), so a 20-bottle practitioner
+      order counts 20 (production pillar, 2026-11-23). No qty, or no matching line, is
+      1; an explicit 0 or less is none. Older 'groovekart' history has no qty: 1 each.
 
     A line with the same lowercase email and slug as a line from ANOTHER source within
     DEDUPE_DAYS is the same sale, and counts once: orders vs history, and fmp vs
@@ -805,13 +808,27 @@ def monthly_sales(cx, catalog=None, *, now=None) -> dict:
                 if slug and qty > 0:
                     seen.setdefault((em, slug), []).append((d, "orders"))
                     _count(slug, qty, d)
+    fmp_qty = {}
+    if _table_exists(cx, "fmp_invoice_items") and _table_exists(cx, "fmp_invoices"):
+        try:
+            for item_id, q in cx.execute(
+                    "SELECT it.id_pk, it.qty FROM fmp_invoice_items it "
+                    "JOIN fmp_invoices inv ON inv.id_pk = it.id_fk_invoice "
+                    "WHERE inv.invoice_date >= ?", (cutoff,)).fetchall():
+                fmp_qty[str(item_id)] = _parse_qty(q, 1)
+        except Exception:  # noqa: BLE001 - fall back to 1 a line, as before
+            _safe_rollback(cx)
+            fmp_qty = {}
     if _table_exists(cx, "purchase_history"):
         for r in cx.execute(
-                "SELECT email, slug, purchased_at, source FROM purchase_history "
+                "SELECT email, slug, purchased_at, source, source_ref FROM purchase_history "
                 "WHERE source IN ('fmp','groovekart') AND purchased_at >= ? "
                 "ORDER BY purchased_at", (cutoff,)).fetchall():
             em, slug, at, src = (str(r[0] or "").strip().lower(), str(r[1] or ""), r[2],
                                  str(r[3] or ""))
+            qty = fmp_qty.get(str(r[4] or ""), 1) if src == "fmp" else 1
+            if qty <= 0:
+                continue
             d = _day(at)
             if not d or not slug:
                 continue
@@ -819,7 +836,7 @@ def monthly_sales(cx, catalog=None, *, now=None) -> dict:
             if any(s != src and abs((d - od).days) <= DEDUPE_DAYS for od, s in prior):
                 continue
             prior.append((d, src))
-            _count(slug, 1, d)
+            _count(slug, qty, d)
     months = AVG_WINDOW_DAYS / _DAYS_PER_MONTH
     return {s: n / months for s, n in totals.items()}
 
