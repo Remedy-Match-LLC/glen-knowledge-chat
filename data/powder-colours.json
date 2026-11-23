@@ -5,5 +5,8 @@
   ],
   "microbiome": [
     {"hex": "#8f8475", "batch_date": "2026-11-16"}
+  ],
+  "dental-powder": [
+    {"hex": "#998975", "batch_date": "2026-11-23"}
   ]
 }
