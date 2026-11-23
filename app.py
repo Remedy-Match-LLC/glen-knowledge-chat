@@ -52968,6 +52968,27 @@ def create_household():
     })
 
 
+@app.route("/console/statement")
+def console_statement_page():
+    resp = send_from_directory(STATIC, "console-statement.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+@app.route("/api/households/<slug>/statement", methods=["GET"])
+def household_statement(slug):
+    """A household's deliveries for one month (?month=YYYY-MM), for Rae to print.
+    Owner only, read only, emails nobody (dashboard/family_statement.py)."""
+    auth_err = _check_console_auth()
+    if auth_err: return auth_err
+    from dashboard import family_statement as _fs
+    with db.connect(LOG_DB) as cx:
+        try:
+            return jsonify({"ok": True, **_fs.build(cx, slug, request.args.get("month", ""))})
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+
 @app.route("/api/households", methods=["GET"])
 def list_households():
     auth_err = _check_console_auth()
@@ -56246,6 +56267,19 @@ def _run_cron():
         print(f"[CRON] Exception: {e}")
 
 
+def _run_due_deliveries():
+    try:
+        cx = db.connect(LOG_DB)
+        try:
+            ids = _stock_counts.sync_due_deliveries(cx)
+        finally:
+            cx.close()
+        if ids:
+            print(f"[stock] due deliveries synced: {ids}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[stock] due deliveries failed: {e!r}", flush=True)
+
+
 def _start_scheduler():
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
@@ -56270,6 +56304,10 @@ def _start_scheduler():
         # Safe to repeat, the job deletes only what is already due.
         scheduler.add_job(_expire_appointment_clips, "date", id="appointment_clip_expiry_boot",
                           run_date=datetime.now(timezone.utc) + timedelta(minutes=10))
+        # A $0 delivery dated for today leaves the shelf within the hour. Safe to
+        # repeat, and safe in both workers: each order sync locks its row.
+        scheduler.add_job(_run_due_deliveries, "interval", hours=1, id="stock_due_deliveries",
+                          next_run_time=datetime.now(timezone.utc) + timedelta(minutes=7))
         scheduler.add_job(_drain_sales_image_queue, "interval", minutes=1, id="sales_image_gen")
         scheduler.add_job(_drain_review_videos, "interval", minutes=1, id="review_videos")
         # Portal triage: retry any high-urgency email that did not deliver. Rows are

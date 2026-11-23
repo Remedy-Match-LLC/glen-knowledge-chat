@@ -1,0 +1,109 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Family statement</title>
+<style>
+body{font-family:-apple-system,sans-serif;max-width:820px;margin:24px auto;padding:0 16px;color:#222}
+input,select,button{padding:6px 8px;margin:2px;font-size:14px}
+table{border-collapse:collapse;width:100%;margin:8px 0 18px}
+td,th{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;vertical-align:top}
+th{background:#f4f4f4}.num{text-align:right}.err{color:#b00}.meta{color:#666;font-size:13px}
+h2{margin:18px 0 4px}h3{margin:16px 0 4px}
+@media print{.noprint,#op-nav,nav{display:none!important}body{margin:0;max-width:none}}
+</style></head>
+<body>
+<script src="/static/op-nav.js" data-active="fulfillment" data-sub="statement"></script>
+<div class="noprint">
+<h1>Family statement</h1>
+<p>Household <select id="hh"></select>
+Month <input id="month" type="month">
+<label><input type="checkbox" id="bymember"> Group by member</label>
+<button id="show">Show</button> <button id="print">Print</button></p>
+<p class="meta">A delivery is a paid order for a household member, dated by its delivered
+date, or by the day it was paid. This page sends nothing.</p>
+</div>
+<div id="out"></div>
+<script>
+const KEY = (function(){
+  const k = new URLSearchParams(location.search).get("key");
+  if (k) { try { localStorage.setItem("console_key", k); } catch(e){} }
+  try { return localStorage.getItem("console_key") || k || ""; } catch(e){ return k || ""; }
+})();
+const H = {"X-Console-Key": KEY};
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money = c => "$" + (Number(c||0)/100).toFixed(2);
+const out = document.getElementById("out");
+function fail(r){
+  out.innerHTML = `<p class="err">${r.status === 401
+    ? "Unauthorized. Unlock the main console (/console) and reload this page."
+    : "Load failed (HTTP " + r.status + ")."}</p>`;
+}
+function monthName(m){
+  const [y, mo] = m.split("-").map(Number);
+  return new Date(y, mo-1, 1).toLocaleString("en-US", {month:"long", year:"numeric"});
+}
+function rowsFor(ds, withMember){
+  let h = `<table><tr><th>Date</th>${withMember ? "<th>Member</th>" : ""}<th>Item</th><th class="num">Qty</th><th class="num">Order total</th></tr>`;
+  for (const d of ds){
+    const items = d.items.length ? d.items : [{name:"(no items)", qty:0}];
+    items.forEach((it, i) => {
+      h += `<tr>${i===0 ? `<td rowspan="${items.length}">${esc(d.date)}</td>` : ""}`
+        + (withMember && i===0 ? `<td rowspan="${items.length}">${esc(d.member)}</td>` : "")
+        + `<td>${esc(it.name)}</td><td class="num">${Number(it.qty)}</td>`
+        + (i===0 ? `<td class="num" rowspan="${items.length}">${money(d.total_cents)}<br><span class="meta">#${Number(d.order_id)}</span></td>` : "")
+        + `</tr>`;
+    });
+  }
+  return h + "</table>";
+}
+// Only the latest request may draw, and the old statement is cleared while one loads,
+// so Print can never show another household's deliveries (review round 2).
+let SEQ = 0;
+async function show(){
+  const slug = document.getElementById("hh").value, month = document.getElementById("month").value;
+  const mine = ++SEQ;
+  out.innerHTML = '<p class="meta">Loading\u2026</p>';
+  if (!slug || !month){ out.innerHTML = '<p class="err">Choose a household and a month.</p>'; return; }
+  let r, j;
+  try {
+    r = await fetch("/api/households/"+encodeURIComponent(slug)+"/statement?month="+encodeURIComponent(month), {headers:H});
+    if (mine !== SEQ) return;
+    if (!r.ok && r.status !== 400) return fail(r);
+    j = await r.json();
+  } catch(e) {
+    if (mine === SEQ) out.innerHTML = '<p class="err">Load failed. Check the connection and try again.</p>';
+    return;
+  }
+  if (mine !== SEQ) return;
+  if (!j.ok){ out.innerHTML = `<p class="err">${esc(j.error || "failed")}</p>`; return; }
+  const ds = j.deliveries || [];
+  let h = `<h2>${esc(j.household.name)}</h2><p>Statement for ${esc(monthName(j.month))}<br>`
+    + `Members: ${(j.members||[]).map(m => esc(m.name)).join(", ") || "none"}</p>`;
+  if (!ds.length) h += "<p>No deliveries this month.</p>";
+  else if (document.getElementById("bymember").checked){
+    for (const m of j.members){
+      const mine = ds.filter(d => d.person_id === m.id);
+      if (!mine.length) continue;
+      h += `<h3>${esc(m.name)}</h3>` + rowsFor(mine, false)
+        + `<p>Subtotal: ${money(mine.reduce((a,d) => a + d.total_cents, 0))}</p>`;
+    }
+  } else h += rowsFor(ds, true);
+  h += `<p><strong>Total for the month: ${money(j.total_cents)}</strong></p>`;
+  out.innerHTML = h;
+}
+async function init(){
+  const now = new Date();
+  document.getElementById("month").value = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0");
+  const r = await fetch("/api/households", {headers:H});
+  if (!r.ok) return fail(r);
+  const j = await r.json();
+  const sel = document.getElementById("hh");
+  sel.innerHTML = (j.households||[]).map(x => `<option value="${esc(x.slug)}">${esc(x.name)}</option>`).join("");
+  const want = new URLSearchParams(location.search).get("household");
+  if (want) sel.value = want;
+}
+document.getElementById("show").addEventListener("click", show);
+["hh","month","bymember"].forEach(id => document.getElementById(id).addEventListener("change", () => {
+  SEQ++; out.innerHTML = '<p class="meta">Press Show to load this statement.</p>';
+}));
+document.getElementById("print").addEventListener("click", () => window.print());
+init();
+</script>
+</body></html>

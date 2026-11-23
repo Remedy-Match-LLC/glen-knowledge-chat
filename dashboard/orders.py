@@ -108,6 +108,10 @@ def init_orders_table(cx):
         # debit/surcharge. Applied to the total on top of the rule-based discount;
         # shown as its own line on the invoice + QBO. 0 = none.
         "ALTER TABLE orders ADD COLUMN adjustment_cents INTEGER NOT NULL DEFAULT 0",
+        # The day a $0 order was handed over, YYYY-MM-DD, set by the owner. Its
+        # bottles leave the shelf on that day (stock_counts.delivery_due), and the
+        # family statement dates the delivery by it. Blank = the day it was paid.
+        "ALTER TABLE orders ADD COLUMN delivered_on TEXT",
         "ALTER TABLE orders ADD COLUMN practitioner_id TEXT",
         "ALTER TABLE orders ADD COLUMN margin_cents INTEGER DEFAULT 0",
         # Shipping-overpayment credit owed to an already-PAID combined-shipment
@@ -1990,6 +1994,70 @@ def mark_no_charge(cx, order_id, *, already_taken=None, catalog=None):
     _ensure_portal_receipt(cx, oid)
     _stock_sync(cx, oid)
     return get_order(cx, oid), taken, changed, resumed
+
+
+def set_delivered_on(cx, order_id, delivered_on):
+    """Set or clear the day a $0 order was delivered, then sync its stock.
+    Set before its bottles leave, a later date keeps them on the shelf until that day,
+    and a past or blank date lets them go now. Once they have left, the date only
+    dates the delivery on the family statement. Refused for an order that costs money
+    or is paid with credit or points, a cancelled order and a GrooveKart order.
+    Returns the order."""
+    import re as _re
+    oid = int(order_id)
+    order = get_order(cx, oid)
+    if not order:
+        raise ValueError(f"order #{oid} not found")
+    if (order.get("status") or "") == "cancelled":
+        raise ValueError(f"order #{oid} is cancelled")
+    if (order.get("source") or "") == "groovekart":
+        raise ValueError(f"order #{oid} is a GrooveKart order")
+    if int(order.get("total_cents") or 0) != 0:
+        raise ValueError(f"order #{oid} is not a $0 order; only a $0 order takes a "
+                         "delivered date")
+    if (int(order.get("ship_credit_applied_cents") or 0) > 0
+            or int(order.get("points_redeemed_cents") or 0) > 0):
+        raise ValueError(f"order #{oid} is paid with credit or points; only a gift at "
+                         "$0 takes a delivered date")
+    d = str(delivered_on or "").strip()
+    if d:
+        if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
+            raise ValueError("delivered date must be YYYY-MM-DD")
+        try:
+            datetime.strptime(d, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError(f"{d} is not a real date")
+    try:
+        cur = cx.execute("UPDATE orders SET delivered_on=?, updated_at=? WHERE id=? "
+                         "AND COALESCE(total_cents,0)=0 "
+                         "AND COALESCE(status,'')<>'cancelled'",
+                         (d or None, _now(), oid))
+        if cur.rowcount != 1:
+            raise ValueError(f"order #{oid} changed while its date was being set")
+        cx.commit()
+    except Exception:
+        _safe_rollback(cx)
+        raise
+    _stock_sync(cx, oid)
+    return get_order(cx, oid)
+
+
+def _set_delivered_on_exec(params, ctx):
+    cx = (ctx or {}).get("cx") or (params or {}).get("cx")
+    if cx is None:
+        raise ValueError("no db connection")
+    oid = int(params["order_id"])
+    o = set_delivered_on(cx, oid, params.get("delivered_on"))
+    d = o.get("delivered_on") or ""
+    return {"order_id": oid, "delivered_on": d,
+            "message": (f"Order #{oid} delivered on {d}." if d
+                        else f"Order #{oid} delivered date cleared.")}
+
+
+action(key="orders.set_delivered_on", module="orders", title="Set delivered date",
+       description="Set the day a $0 order was delivered. Its bottles leave the shelf "
+                   "on that day, and the family statement lists it in that month.",
+       risk_tier=LOW_WRITE, permission=(OWNER,))(_set_delivered_on_exec)
 
 
 def _mark_no_charge_exec(params, ctx):
