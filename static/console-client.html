@@ -100,6 +100,8 @@
 
     <details id="sec-clinical"><summary>Clinical <span class="head-note" id="h-clinical"></span></summary>
       <div class="sec-body" id="b-clinical"></div></details>
+    <details id="sec-fmpnotes" style="display:none"><summary>FileMaker notes <span class="head-note" id="h-fmpnotes"></span></summary>
+      <div class="sec-body" id="b-fmpnotes"></div></details>
     <details id="sec-tests"><summary>Tests <span class="head-note" id="h-tests"></span></summary>
       <div class="sec-body" id="b-tests"></div></details>
     <details id="sec-reports"><summary>Biofield reports <span class="head-note" id="h-reports"></span></summary>
@@ -177,6 +179,19 @@ function renderClinical(c){
   document.getElementById("b-clinical").innerHTML = rows.length
     ? "<table>"+rows.map(function(t){return "<tr><td><code>"+esc(t.tag)+"</code></td><td>"+esc(t.axis)+"</td></tr>";}).join("")+"</table>"
     : "<p class=empty>No tags yet.</p>";
+}
+function renderFmpNotes(ns){
+  // Owner only: the route leaves fmp_notes out for anyone else, so the section stays hidden.
+  var sec=document.getElementById("sec-fmpnotes");
+  if(!Array.isArray(ns)){ sec.style.display="none"; return; }
+  sec.style.display="";
+  document.getElementById("h-fmpnotes").textContent = ns.length ? ns.length+(ns.length==1?" note":" notes") : "none";
+  document.getElementById("b-fmpnotes").innerHTML = ns.length
+    ? ns.map(function(n){
+        var head = n.kind=="test" ? "Biofield test"+(n.date?" · "+esc(n.date):"") : "Client notes";
+        return "<div class=fmp-note><div class=head-note>"+head+"</div><div style=\"white-space:pre-wrap\">"+esc(n.text)+"</div></div>";
+      }).join("")
+    : "<p class=empty>No FileMaker notes.</p>";
 }
 function renderTests(ts){
   document.getElementById("h-tests").textContent = ts.length
@@ -508,7 +523,7 @@ function load(email){
       if(window.ClientPhotoThumb) document.getElementById("c-name").insertAdjacentHTML("afterbegin", ClientPhotoThumb.html(email, 36));
       document.getElementById("c-meta").textContent =
         [email, d.person.phone, d.person.location, d.person.profession].filter(Boolean).join(" · ");
-      renderStrip(d.process); renderClinical(d.clinical); renderTests(d.tests);
+      renderStrip(d.process); renderClinical(d.clinical); renderFmpNotes(d.fmp_notes); renderTests(d.tests);
       renderReports(d.reports); renderInvoices(d.invoices); renderComms(d.comms); renderRecommendations(d.recommendations);
       var portalBtn=document.getElementById("open-portal");
       portalBtn.style.display="inline-block";

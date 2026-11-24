@@ -63098,6 +63098,12 @@ def console_client_360():
                 cx.rollback()
         cx.row_factory = sqlite3.Row   # ingest readers may reset it; restore before bundle
         data = client_360.bundle(cx, email)
+        # FileMaker notes: owner role only (Glen and Rae), never a VA and never the portal.
+        # Glen, 2026-11-23: "console only". Kept out of bundle() so no other caller gets them.
+        if email and getattr(actor, "role", None) == _bos_rbac.OWNER:
+            from dashboard import fmp_notes as _fmp_notes
+            data["fmp_notes"] = _fmp_notes.notes_for_email(cx, email)
+            cx.row_factory = sqlite3.Row
         if email and not (data.get("person") or {}).get("name"):
             from dashboard import client_portal as _cp
             _cp.init_client_portal_table(cx)
@@ -68058,6 +68064,24 @@ def api_console_legacy_fmp_reports_ingest():
     commit = request.args.get("commit", "0") == "1"
     with _db_lock, db.connect(LOG_DB) as cx:
         result = _legacy.ingest_payload(cx, payload, commit=commit)
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/console/fmp-notes-ingest", methods=["POST"])
+def api_console_fmp_notes_ingest():
+    """Merge FileMaker client and Biofield test notes (dashboard/fmp_notes.py).
+    A dry run by default; ?commit=1 writes. Owner role only, because these are notes."""
+    actor = _bos_actor()
+    if actor is None or getattr(actor, "role", None) != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import fmp_notes as _fmp_notes
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload.get("notes"), list):
+        return jsonify({"ok": False, "error": "notes[] required"}), 400
+    commit = request.args.get("commit", "0") == "1"
+    prune = request.args.get("prune", "0") == "1"   # only with a full export
+    with _db_lock, db.connect(LOG_DB) as cx:
+        result = _fmp_notes.ingest(cx, payload, commit=commit, prune=prune)
     return jsonify({"ok": True, **result})
 
 
