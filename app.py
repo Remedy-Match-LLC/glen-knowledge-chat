@@ -2731,13 +2731,18 @@ def _former_name_table(products):
         # (review round 2b).
         s = html.unescape(s or "").replace("\u2122", "").lower()
         return " ".join(re.split(r"\s*-\s*|\s+", s.strip())) if s.strip() else ""
-    taken = {}
+    # A retired twin keeps its old name. It must not make a live product's former name
+    # look shared, so live products are checked against live products only (infoceutical
+    # renames, review round 1, 2026-11-23). A retired product is checked against all.
+    taken, taken_live = {}, {}
     for o, op in products.items():
         if not isinstance(op, dict):
             continue
         for n in [op.get("name")] + list(op.get("aliases") or []):
             if _norm(n):
                 taken.setdefault(_norm(n), set()).add(o)
+                if not op.get("inactive"):
+                    taken_live.setdefault(_norm(n), set()).add(o)
     table = {}
     for o, op in products.items():
         if not isinstance(op, dict):
@@ -2749,7 +2754,7 @@ def _former_name_table(products):
             # "Energy" and "Fat Metabolism" are everyday words, and the catalog name's own
             # rules already cover a short form (review round 3, 2026-11-03).
             if (len(a.split()) >= 2 and f" {_norm(a)} " not in own
-                    and taken.get(_norm(a)) == {o}):
+                    and (taken if op.get("inactive") else taken_live).get(_norm(a)) == {o}):
                 table.setdefault(o, []).append(a)
     return table
 

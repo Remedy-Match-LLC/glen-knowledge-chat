@@ -80,15 +80,20 @@ def test_ordinary_phrases_name_nothing(question):
 
 
 def test_an_alias_another_product_shares_is_never_a_former_name():
-    taken = {}
+    # A live product is checked against live products only: a retired twin that keeps
+    # the old name does not share it (infoceutical renames, 2026-11-23).
+    taken, taken_live = {}, {}
     for slug, p in PRODUCTS.items():
         for n in [p.get("name")] + list(p.get("aliases") or []):
             if n:
                 taken.setdefault(" ".join(n.lower().split()), set()).add(slug)
+                if not p.get("inactive"):
+                    taken_live.setdefault(" ".join(n.lower().split()), set()).add(slug)
     checked = 0
     for slug, p in PRODUCTS.items():
+        pool = taken if p.get("inactive") else taken_live
         for a in app._former_names(slug, PRODUCTS):
-            assert taken[" ".join(a.lower().split())] == {slug}, (slug, a)
+            assert pool[" ".join(a.lower().split())] == {slug}, (slug, a)
             checked += 1
     assert checked >= 10
     assert "CDS" not in app._former_names("cds-water-purifier--activator", PRODUCTS)
@@ -183,3 +188,9 @@ def test_a_hyphen_spelling_on_a_second_product_counts_as_shared():
     products = copy.deepcopy(PRODUCTS)
     products["zinc-syntropy"]["aliases"] = ["Synergy-C"]
     assert app._named_product_spans("How much Synergy C should I take?", products) == {}
+
+
+def test_a_renamed_product_keeps_its_old_name_beside_a_retired_twin():
+    # mb6-liberator-infoceutical is retired and still carries the old name.
+    assert "MB6 Liberator Infoceutical" in app._former_names("mb6-liberator", PRODUCTS)
+    assert app.named_product_facts_block("How do I take MB6 Liberator Infoceutical?")
