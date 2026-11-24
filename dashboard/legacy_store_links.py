@@ -20,6 +20,13 @@ for an id the catalog does not carry, the segment minus its "<id>-" may name a l
 exactly. Products on dashboard.related_products.DO_NOT_RECOMMEND are never linked, whatever
 their inactive flag says.
 
+Our own product pages, /begin/product/<slug> on illtowell.com, myhealingoasis.com or a
+relative path, are checked too (2026-11-24). Knowledge text still names retired products,
+and the chat linked Lymph Support's page, which is a 404. A link whose slug is a live,
+recommendable product, directly or through `superseded_by` or `page_redirect`, is left
+exactly as written. Any other one is treated like a dead store link: a markdown link keeps
+its text only, and a bare link becomes the browse entry page.
+
 Answers stream, so `rewrite_stream` holds back only a tail that could still become a store
 link (a trailing token that is or could grow into one, or an open markdown link) and
 rewrites each released segment whole.
@@ -37,12 +44,24 @@ _TAIL = r"(?:[/?#][^\s<>\"'\]\)]*)?"
 _URL = re.compile(
     r"(?:(?<![\w@./-])https?://" + _HOST + r"|(?<![\w@./:-])" + _HOST + r"(?=[/?#]))" + _TAIL,
     re.I)
+# Our own product page. A host, when present, must be one of ours; a relative path must not
+# follow a word, dot or slash, so another site's /begin/product/ path is never touched.
+_OWN_HOST = r"(?:www\.)?(?:illtowell|myhealingoasis)\.com"
+_OWN = re.compile(
+    r"(?:(?<![\w@./-])https?://" + _OWN_HOST + r"|(?<![\w@./:-])" + _OWN_HOST
+    + r"|(?<![\w.:/-]))/begin/product/([A-Za-z0-9_-]+)/?(?![\w-])(?:[?#][^\s<>\"'\]\)]*)?",
+    re.I)
+_OWN_MARK = "/begin/product/"
 _MD = re.compile(r"\[([^\]\n]*)\]\(\s*([^)\s]+)\s*\)")
 _ID = re.compile(r"^(\d+)-")
 _TRAILING = ".,;:!?"
 _TARGETS = ("https://www.remedymatch.com", "http://www.remedymatch.com",
             "https://remedymatch.com", "http://remedymatch.com",
-            "www.remedymatch.com", "remedymatch.com")
+            "www.remedymatch.com", "remedymatch.com",
+            "https://illtowell.com/begin/product/", "https://myhealingoasis.com/begin/product/",
+            "https://www.illtowell.com/begin/product/",
+            "https://www.myhealingoasis.com/begin/product/",
+            "illtowell.com/begin/product/", "myhealingoasis.com/begin/product/", _OWN_MARK)
 _OPEN_MD = (re.compile(r"\[[^\]\n]*"), re.compile(r"\[[^\]\n]*\]"),
             re.compile(r"\[[^\]\n]*\]\([^)\s]*"))
 _MAX_HOLD = 600
@@ -127,6 +146,25 @@ def _new_url(url, base_url, mp, products):
     return (base_url or "").rstrip("/") + path if path else None
 
 
+def own_page_is_live(slug, products):
+    """True when /begin/product/<slug> reaches a live, recommendable product page: the slug
+    itself, its `superseded_by` survivor, or a retired record's `page_redirect`, the same
+    steps the page route takes. Anything else is a 404 or a product we must not offer."""
+    if not products:
+        return True  # no catalog to judge by: never strip every buy link on a read failure
+    if not slug or slug not in products:
+        return False
+    if _page_for(slug, products):
+        return True
+    rec = products.get(slug) or {}
+    to = rec.get("page_redirect") if rec.get("inactive") else None
+    return bool(to and to != slug and to in products and _page_for(to, products))
+
+
+def _own_ok(m, products):
+    return own_page_is_live(m.group(1), products)
+
+
 def rewrite_text(text, base_url, products=None):
     if not text:
         return ""
@@ -135,6 +173,9 @@ def rewrite_text(text, base_url, products=None):
 
     def _markdown(m):
         label, target = m.group(1), m.group(2)
+        own = _OWN.fullmatch(target)
+        if own:
+            return m.group(0) if _own_ok(own, products) else label
         if not _URL.fullmatch(target):
             return m.group(0)
         new = _new_url(target, base_url, mp, products)
@@ -146,7 +187,12 @@ def rewrite_text(text, base_url, products=None):
             url, trail = url[:-1], url[-1] + trail
         return (_new_url(url, base_url, mp, products) or entry) + trail
 
-    return _URL.sub(_bare, _MD.sub(_markdown, text))
+    def _own_bare(m):
+        return m.group(0) if _own_ok(m, products) else entry
+
+    # Markdown first, so a dead link's label survives. A live markdown target is seen again
+    # by the bare pass and left as it is, so the second pass cannot change it.
+    return _OWN.sub(_own_bare, _URL.sub(_bare, _MD.sub(_markdown, text)))
 
 
 def _hold_from(buf):
@@ -156,7 +202,7 @@ def _hold_from(buf):
     j = max(buf.rfind(c) for c in (" ", "\n", "\t", "\r")) + 1
     tok = buf[j:].lower()
     if tok:
-        if "remedymatch" in tok:
+        if "remedymatch" in tok or _OWN_MARK in tok:
             hold = j
         else:
             for k in range(len(tok)):
