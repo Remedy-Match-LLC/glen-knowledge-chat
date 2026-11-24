@@ -49,7 +49,7 @@ _URL = re.compile(
 _OWN_HOST = r"(?:www\.)?(?:illtowell|myhealingoasis)\.com"
 _OWN = re.compile(
     r"(?:(?<![\w@./-])https?://" + _OWN_HOST + r"|(?<![\w@./:-])" + _OWN_HOST
-    + r"|(?<![\w.:/-]))/begin/product/([A-Za-z0-9_-]+)/?(?![\w-])(?:[?#][^\s<>\"'\]\)]*)?",
+    + r"|(?<![\w.:/-]))/begin/product/([A-Za-z0-9_-]+)(/?)(?![\w%-])(?:[?#][^\s<>\"'\]\)]*)?",
     re.I)
 _OWN_MARK = "/begin/product/"
 _MD = re.compile(r"\[([^\]\n]*)\]\(\s*([^)\s]+)\s*\)")
@@ -61,6 +61,10 @@ _TARGETS = ("https://www.remedymatch.com", "http://www.remedymatch.com",
             "https://illtowell.com/begin/product/", "https://myhealingoasis.com/begin/product/",
             "https://www.illtowell.com/begin/product/",
             "https://www.myhealingoasis.com/begin/product/",
+            "http://illtowell.com/begin/product/", "http://myhealingoasis.com/begin/product/",
+            "http://www.illtowell.com/begin/product/",
+            "http://www.myhealingoasis.com/begin/product/",
+            "www.illtowell.com/begin/product/", "www.myhealingoasis.com/begin/product/",
             "illtowell.com/begin/product/", "myhealingoasis.com/begin/product/", _OWN_MARK)
 _OPEN_MD = (re.compile(r"\[[^\]\n]*"), re.compile(r"\[[^\]\n]*\]"),
             re.compile(r"\[[^\]\n]*\]\([^)\s]*"))
@@ -152,7 +156,8 @@ def own_page_is_live(slug, products):
     steps the page route takes. Anything else is a 404 or a product we must not offer."""
     if not products:
         return True  # no catalog to judge by: never strip every buy link on a read failure
-    if not slug or slug not in products:
+    from dashboard.related_products import DO_NOT_RECOMMEND
+    if not slug or slug not in products or slug in DO_NOT_RECOMMEND:
         return False
     if _page_for(slug, products):
         return True
@@ -165,6 +170,16 @@ def _own_ok(m, products):
     return own_page_is_live(m.group(1), products)
 
 
+def _own_kept(m):
+    """A live link as written, minus a trailing slash after the slug: the page route has
+    strict slashes, so /begin/product/<slug>/ is a 404 while the bare slug works."""
+    url = m.group(0)
+    if not m.group(2):
+        return url
+    i = m.start(2) - m.start(0)
+    return url[:i] + url[i + 1:]
+
+
 def rewrite_text(text, base_url, products=None):
     if not text:
         return ""
@@ -175,7 +190,7 @@ def rewrite_text(text, base_url, products=None):
         label, target = m.group(1), m.group(2)
         own = _OWN.fullmatch(target)
         if own:
-            return m.group(0) if _own_ok(own, products) else label
+            return f"[{label}]({_own_kept(own)})" if _own_ok(own, products) else label
         if not _URL.fullmatch(target):
             return m.group(0)
         new = _new_url(target, base_url, mp, products)
@@ -188,7 +203,12 @@ def rewrite_text(text, base_url, products=None):
         return (_new_url(url, base_url, mp, products) or entry) + trail
 
     def _own_bare(m):
-        return m.group(0) if _own_ok(m, products) else entry
+        if _own_ok(m, products):
+            return _own_kept(m)
+        url, trail = m.group(0), ""
+        while url and url[-1] in _TRAILING:
+            url, trail = url[:-1], url[-1] + trail
+        return entry + trail
 
     # Markdown first, so a dead link's label survives. A live markdown target is seen again
     # by the bare pass and left as it is, so the second pass cannot change it.
@@ -208,7 +228,9 @@ def _hold_from(buf):
             for k in range(len(tok)):
                 s = tok[k:]
                 if any(t.startswith(s) for t in _TARGETS):
-                    hold = j + k
+                    # The whole token, not just the matching tail: a host held apart
+                    # from its path loses the look-behind that keeps other sites out.
+                    hold = j
                     break
         if hold < n and "](" in tok:
             k = buf.rfind("[", 0, j)

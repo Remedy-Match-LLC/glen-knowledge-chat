@@ -93,3 +93,35 @@ def test_lymph_support_is_not_a_live_page_in_the_real_catalog():
     real = json.loads(path.read_text(encoding="utf-8"))["products"]
     assert not lsl.own_page_is_live("lymph-support", real)
     assert lsl.own_page_is_live("lymph-flow", real)
+
+
+def test_a_do_not_recommend_slug_with_a_page_redirect_still_loses_its_link():
+    from dashboard.related_products import DO_NOT_RECOMMEND
+    slug = sorted(DO_NOT_RECOMMEND)[0]
+    products = dict(PRODUCTS, **{slug: {"name": "No", "inactive": True,
+                                        "page_redirect": "lymph-flow"}})
+    assert rw(f"[No](/begin/product/{slug})", products) == "No"
+
+
+def test_an_http_dead_link_split_in_the_stream_is_not_corrupted():
+    deltas = ["Go http://illtowell.com/begin/pro", "duct/lymph-support now"]
+    assert stream(deltas) == f"Go {ENTRY} now"
+
+
+def test_a_percent_escaped_slug_is_left_alone_not_cut_short():
+    text = "[Flow](/begin/product/lymph%2Dflow)"
+    assert rw(text) == text
+
+
+def test_another_sites_link_split_in_the_stream_is_not_touched():
+    deltas = ["Visit https://example.com/begin/prod", "uct/lymph-support now"]
+    assert stream(deltas) == "Visit https://example.com/begin/product/lymph-support now"
+
+
+def test_a_trailing_slash_on_a_live_link_is_removed_because_the_route_404s_on_it():
+    assert rw("See /begin/product/lymph-flow/ now") == "See /begin/product/lymph-flow now"
+    assert rw("[F](/begin/product/lymph-flow/?a=1)") == "[F](/begin/product/lymph-flow?a=1)"
+
+
+def test_a_dead_link_with_a_query_keeps_the_sentence_stop():
+    assert rw("Go /begin/product/lymph-support?a=1. Next") == f"Go {ENTRY}. Next"
