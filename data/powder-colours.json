@@ -1,12 +1,27 @@
 {
   "_readme": "Average photo colour of each powder batch, shown on its product page as a reference swatch. To record a batch, append {\"hex\": \"#rrggbb\", \"batch_date\": \"YYYY-MM-DD\"} to the product's list (key = slug in products.json). The latest batch_date is shown. A bad entry is skipped. Loader: dashboard/powder_colours.py.",
   "reverse-age": [
-    {"hex": "#a37850", "batch_date": "2026-11-16"}
+    {
+      "hex": "#a37850",
+      "batch_date": "2026-11-16"
+    }
   ],
   "microbiome": [
-    {"hex": "#8f8475", "batch_date": "2026-11-16"}
+    {
+      "hex": "#8f8475",
+      "batch_date": "2026-11-16"
+    }
   ],
   "dental-powder": [
-    {"hex": "#998975", "batch_date": "2026-11-23"}
+    {
+      "hex": "#998975",
+      "batch_date": "2026-11-23"
+    }
+  ],
+  "ocuflow-bedtime": [
+    {
+      "hex": "#91816e",
+      "batch_date": "2026-11-23"
+    }
   ]
 }
