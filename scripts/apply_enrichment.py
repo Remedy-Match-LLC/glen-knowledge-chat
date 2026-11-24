@@ -55,7 +55,22 @@ def apply_corrections(products, corr):
         p = products[slug]
         if c.get("ingredients"):
             p["ingredients"] = c["ingredients"]
-        p["ingredients_source"] = c.get("ingredients_source", "manual")
+        # A dose-only fix patches the named lines and leaves the rest of the list, and its
+        # source tag, to the upstream import. Pinning the whole list to fix one line would
+        # restore today's unverified values over a later correction (Bone Builder D3,
+        # review round 2, 2026-11-23).
+        dose_only = bool(c.get("ingredient_doses")) and not c.get("ingredients")
+        for _name, _dose in (c.get("ingredient_doses") or {}).items():
+            # Names match with case and punctuation ignored: the enrichment file writes
+            # "Vitamin D3 (Cholecalciferol)" where the catalogue has "Vitamin D3: Cholecalciferol".
+            _key = re.sub(r"[^a-z0-9]", "", _name.lower())
+            _hits = [i for i in p.get("ingredients") or []
+                     if re.sub(r"[^a-z0-9]", "", str(i.get("name") or "").lower()) == _key]
+            if len(_hits) != 1:
+                raise ValueError(f"{slug}: ingredient_doses names {_name!r}, found {len(_hits)}")
+            _hits[0]["dose"] = _dose
+        if not dose_only:
+            p["ingredients_source"] = c.get("ingredients_source", "manual")
         # description/bottle_type are corrected here too, or the GK-scraped
         # description above wins on the next run and silently reverts the fix.
         # fibrolysis-factors reverted to the "Fibrolysis Factors . Price: $69.97."
@@ -97,7 +112,7 @@ def apply_corrections(products, corr):
         # Only a MANUAL correction clears the flag: a record that pins one label name but
         # keeps its original source (the nine garlic products, 2026-09-14) must not
         # silently mark its GrooveKart page as current.
-        if p["ingredients_source"] == "manual":
+        if p.get("ingredients_source") == "manual":
             p.pop("gk_stale", None)
             p.pop("gk_stale_reason", None)
         corrected.append(slug)

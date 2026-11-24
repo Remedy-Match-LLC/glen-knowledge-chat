@@ -285,7 +285,7 @@
     },
     {
      "name": "Vitamin D3: Cholecalciferol",
-     "dose": "5 mg"
+     "dose": "6.25 mcg (250 IU)"
     },
     {
      "name": "Mk-7",
@@ -386,7 +386,8 @@
    "gk_stale_reason": "GK page missing: Chlorogenic Acid, Isoflavones, Dihydroberberine (GlucoVantage), Pyridoxamine, Ketosterone (3-Ketosteroid)",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "366"
+   "fmp_id": "366",
+   "enrichment_note": "D3 corrected 23 Nov 2026: the recipe uses 0.5 mg of a 500,000 IU/g premix, so 250 IU (6.25 mcg) per capsule. The old '5 mg' line read as 2,500 IU. Only that line changed; the rest keeps its original source."
   },
   "brain-boost": {
    "name": "Brain Boost",
@@ -6460,63 +6461,58 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "NAC",
-     "dose": ""
+     "name": "Butcher's broom extract (Ruscus aculeatus)",
+     "dose": "150 mg"
     },
     {
-     "name": "Phytolacca americana",
-     "dose": "1.7 mg"
+     "name": "Hesperidin methyl chalcone 98% (Citrus aurantium)",
+     "dose": "150 mg"
     },
     {
-     "name": "Red Root 4:1 New Jersey Tea",
-     "dose": "82 mg"
+     "name": "Gotu kola TECA (titrated extract) (Centella asiatica)",
+     "dose": "75 mg"
     },
     {
-     "name": "Galium aparine",
-     "dose": "330 mg"
+     "name": "Red root 4:1 (Ceanothus americanus) (root)",
+     "dose": "25 mg"
     },
     {
-     "name": "Burdock Root 10:1",
-     "dose": ""
+     "name": "Vitamin C (L-ascorbic acid)",
+     "dose": "100 mg"
     },
     {
-     "name": "Dandelion Root extract",
-     "dose": "70 mg"
-    },
-    {
-     "name": "Taraxsterols",
-     "dose": ""
-    },
-    {
-     "name": "Isoflaones v8% (Trifolium praetense)",
-     "dose": ""
-    },
-    {
-     "name": "Isoflavones",
-     "dose": ""
-    },
-    {
-     "name": "Chicoric Acid",
-     "dose": ""
-    },
-    {
-     "name": "Gingerol; Sabinsa GingerMax® or BioPerine Ginger 20-25% gingerols; Indena GingerSelect® 20% gingerols",
-     "dose": ""
-    },
-    {
-     "name": "Gingerols",
-     "dose": "16 mg"
-    },
-    {
-     "name": "Gum Arabic ratios range from 20-40% for good encapsulation and stability",
-     "dose": ""
+     "name": "Selenium (as methylselenocysteine)",
+     "dose": "100 mcg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Lymph Flow . Lymph Flow Lymph Flow Lymph Flow features N-Acetyl Cysteine (NAC) which helps liquify and move the lymph fluid. NAC also helps boost cellular levels of Glutathione, along with hard-to-find S-Acetyl Glutathione and synergist Pyridoxal 5'-Phosphate (P5P), the active coenzyme form of Vitamin B6. Lymph Flow . Each excipient-free Chlorophyll Vegicap of Lymph Support supplies: Nutritional Support: NAC (N-Acetyl Cysteine) 400 mg * S-Acetyl Glutathione 30 mg * Coenzyme Vitamin B6 (as Pyridoxal 5-Phosphate) 10 mg 500% Botanical Support: Poke Root ( Phytolacca americana ) 10 mg * Rehmannia...",
+   "ingredients_source": "manual",
+   "description": "Lymph Flow supports healthy lymphatic tone and the movement of fluid out of the tissues.\n\nThe lymphatic system has no central pump. Lymph moves by the rhythmic contraction of the lymph vessels themselves, helped along by breathing, movement and massage.\n\nLymph Flow combines butcher's broom, hesperidin methyl chalcone and vitamin C, the trio studied alongside lymphatic drainage massage. Gotu kola, selenium and red root complete the formula.\n\nLymph Flow is designed to accompany movement, lymphatic massage and compression, never to replace them.",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "475"
+   "fmp_id": "475",
+   "intro": "Lymph Flow supports healthy lymphatic tone and the movement of fluid out of the tissues.",
+   "how_it_works": "\"All patients also underwent manual lymphatic drainage twice a week for at least one month. With CYCLO 3 FORT, the reduction in volume of arm edema, the main assessment criteria, was 12.9% after 3 months of treatment as compared with a placebo (p=0.009).\"\n\nThe study product was Cyclo 3 Fort, which combines a Ruscus extract with hesperidin methyl chalcone and vitamin C. This product itself has not been tested.\n\nSource: Treatment of secondary lymphedema of the upper limb with CYCLO 3 FORT\n\n\"A significant difference (p less than 0.05) in favor of TECA was shown for the symptoms of heaviness in the lower limbs and edema, as well as for the overall evaluation by the patient.\"\n\nThe study used 60 or 120 mg a day for two months.\n\nSource: Titrated extract of Centella asiatica (TECA) in the treatment of venous insufficiency of the lower limbs",
+   "copy_pinned": [
+    "intro",
+    "description",
+    "directions",
+    "research",
+    "ingredients"
+   ],
+   "research_links": [
+    {
+     "label": "Treatment of secondary lymphedema of the upper limb with CYCLO 3 FORT",
+     "url": "https://pubmed.ncbi.nlm.nih.gov/8721977/"
+    },
+    {
+     "label": "Titrated extract of Centella asiatica (TECA) in the treatment of venous insufficiency of the lower limbs",
+     "url": "https://pubmed.ncbi.nlm.nih.gov/3544968/"
+    }
+   ],
+   "content_since": "2026-11-24T03:42:34+00:00",
+   "directions": "Take 1 vegicap with food, up to 2 times a day, or as guided.",
+   "panel_note": "Other ingredients: certified organic pullulan vegicaps, Healing Energy, Love, and Prayer. 30 vegicaps. Vegan.",
+   "enrichment_note": "October 2026 formula (FileMaker 475), per the store page Glen approved 23 Nov 2026 in the production tab. Source: production/05 Formulations/lymph-flow/2026-10-24/lymph-flow-store-page.md."
   },
   "stamina-plus": {
    "name": "Stamina Plus",

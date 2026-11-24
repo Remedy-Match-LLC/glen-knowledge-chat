@@ -33,6 +33,9 @@ WITH_LINE = sorted([
     "clear-the-way", "crystalline-clarity", "estro-clear", "fibrolysis-factors", "gastrozyme",
     "glucose-tolerance", "glucose-tolerance-program", "heart-health", "perfect-skin",
     "lcarnosine",
+    # Lymph Flow's October panel was pinned on 2026-11-23, so retrieved NAC/poke-root
+    # snippets from the old formula are overridden.
+    "lymph-flow",
     "melissa-20-1-extract-powder", "moisture-eyes-night-oil", "moisturize",
     "n-acetyl-l-carnosine", "neuro-magnesium", "pterostilbene-pure-powder",
     "thyroid-support", "vitamin-d-syntropy", "wash--rinse", "zinc-taste-test", "zinc-taste-test-drops"])
