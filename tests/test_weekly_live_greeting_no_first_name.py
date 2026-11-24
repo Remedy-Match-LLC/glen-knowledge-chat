@@ -78,3 +78,7 @@ def test_a_name_in_another_alphabet_copied_from_the_address_is_dropped():
     assert first_line("Grünewaldhofer", "grünewaldhofer@example.org")[0] == "Aloha,"
     assert first_line("李", "李@example.org")[0] == "Aloha 李,"
     assert first_line("José", "jose.garcia@example.org")[0] == "Aloha José,"
+
+
+def test_letters_are_counted_as_written_not_after_case_folding():
+    assert first_line("Weißbacher", "weißbacher@example.de")[0] == "Aloha Weißbacher,"

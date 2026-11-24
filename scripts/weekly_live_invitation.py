@@ -360,7 +360,8 @@ def _built_from_address(first_name, email):
     # Glen, 2026-11-24: drop it only when it cannot pass for a name, past 10 letters or
     # holding a digit. 23 of the 25 matches on 23 Nov were plain words of 3 to 8 letters,
     # such as "Mary" for mary@, which may be her real name and reads correctly either way.
-    return len(name) > 10 or any(ch.isdigit() for ch in name)
+    shown = re.sub(r"[\W_]", "", str(first_name or ""))   # counted as written: ß stays 1
+    return len(shown) > 10 or any(ch.isdigit() for ch in shown)
 
 
 def _copy(first_name, portal_url, eligible, target_date, email=""):
