@@ -32,14 +32,26 @@ def test_glens_own_copy_opens_with_aloha_alone():
     assert "Drglenswartwout" not in body
 
 
-def test_a_name_from_a_plus_tag_is_dropped_too():
-    assert first_line("Rmtest", "drglenswartwout+rmtest1007@gmail.com")[0] == "Aloha,"
+def test_a_name_from_a_plus_tag_with_a_digit_is_dropped():
     assert first_line("Rmtest1007b", "drglenswartwout+rmtest1007b@gmail.com")[0] == "Aloha,"
+    assert first_line("Jsmith1985", "jsmith1985@example.com")[0] == "Aloha,"
+
+
+def test_a_short_plain_word_from_the_address_is_kept_as_it_may_be_a_real_name():
+    # Glen's 10-letter rule, 2026-11-24: "Mary" for mary@ reads correctly either way.
+    assert first_line("Mary", "mary@gmail.com")[0] == "Aloha Mary,"
+    assert first_line("Rmtest", "drglenswartwout+rmtest1007@gmail.com")[0] == "Aloha Rmtest,"
+    assert first_line("Christine", "christine@example.com")[0] == "Aloha Christine,"
+
+
+def test_the_ten_letter_boundary():
+    assert first_line("Abcdefghij", "abcdefghij@x.com")[0] == "Aloha Abcdefghij,"
+    assert first_line("Abcdefghijk", "abcdefghijk@x.com")[0] == "Aloha,"
 
 
 def test_a_dotted_address_matches_without_its_punctuation():
-    assert first_line("Jsmith", "j.smith@example.com")[0] == "Aloha,"
-    assert first_line("J.Smith", "j.smith@example.com")[0] == "Aloha,"
+    assert first_line("Johnsmithson", "john.smithson@example.com")[0] == "Aloha,"
+    assert first_line("John.Smithson", "john.smithson@example.com")[0] == "Aloha,"
 
 
 def test_a_real_first_name_is_kept_even_when_the_address_contains_it():
@@ -60,3 +72,9 @@ def test_the_correction_email_uses_the_same_rule():
     text, _ = weekly._correction_copy("Glen", "https://h/portal/t#calendar", False,
                                       DAY, "drglenswartwout@gmail.com")
     assert text.split("\n", 1)[0].startswith("Aloha Glen,")
+
+
+def test_a_name_in_another_alphabet_copied_from_the_address_is_dropped():
+    assert first_line("Grünewaldhofer", "grünewaldhofer@example.org")[0] == "Aloha,"
+    assert first_line("李", "李@example.org")[0] == "Aloha 李,"
+    assert first_line("José", "jose.garcia@example.org")[0] == "Aloha José,"

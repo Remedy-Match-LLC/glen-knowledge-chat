@@ -342,18 +342,25 @@ def _html_body(text, portal_url):
 
 def _built_from_address(first_name, email):
     """True when a contact's stored first name is only its email address's local part,
-    or the tag after a "+", which GoHighLevel fills in when a contact has no name. Glen,
-    2026-11-24: such a contact is greeted "Aloha," and never by a name built from the
-    address. His own copy opened "Aloha Drglenswartwout". Letters and digits are
-    compared, case aside, so "john.smith" still keeps a real first name "John"."""
-    name = re.sub(r"[^a-z0-9]", "", (first_name or "").lower())
-    local = (email or "").lower().split("@", 1)[0]
+    or the tag after a "+", which GoHighLevel fills in when a contact has no name, AND it
+    runs past 10 letters or holds a digit. Glen, 2026-11-24: such a contact is greeted
+    "Aloha," and never by a name built from the address. His own copy opened "Aloha Drglenswartwout". Letters of any alphabet and
+    digits are compared, case aside, so "john.smith" still keeps a real first name "John"."""
+    def keep(text, digits=True):   # letters (any alphabet) and digits, case folded
+        return re.sub(r"[\W_]" if digits else r"[\W\d_]", "", str(text or "").casefold())
+
+    name = keep(first_name)
+    local = str(email or "").casefold().split("@", 1)[0]
     if not name or not local:
         return False
     base, _, tag = local.partition("+")
-    forms = {re.sub(r"[^a-z0-9]", "", local), re.sub(r"[^a-z0-9]", "", base),
-             re.sub(r"[^a-z0-9]", "", tag), re.sub(r"[^a-z]", "", tag)}
-    return name in forms - {""}
+    forms = {keep(local), keep(base), keep(tag), keep(tag, digits=False)}
+    if name not in forms - {""}:
+        return False
+    # Glen, 2026-11-24: drop it only when it cannot pass for a name, past 10 letters or
+    # holding a digit. 23 of the 25 matches on 23 Nov were plain words of 3 to 8 letters,
+    # such as "Mary" for mary@, which may be her real name and reads correctly either way.
+    return len(name) > 10 or any(ch.isdigit() for ch in name)
 
 
 def _copy(first_name, portal_url, eligible, target_date, email=""):
