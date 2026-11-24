@@ -6415,7 +6415,7 @@
   },
   "mb7-peace": {
    "content_since": "2026-11-20T19:57:14+00:00",
-   "name": "MB7 Peace Infoceutical",
+   "name": "MB7 Peace Hologram Infoceutical",
    "directions": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided.",
    "copy_pinned": ["directions"],
    "enrichment_note": "Glen 2026-11-19: approved this wording as the standard Infoceutical direction (first approved 2026-11-16). Sleep, Night and Energy Infoceuticals are left out, because 'daily on rising' does not fit them.",
@@ -6426,7 +6426,8 @@
    "bottle_type": "30ml",
    "fmp_id": "267",
    "aliases": [
-    "MB7"
+    "MB7",
+    "MB7 Peace Infoceutical"
    ],
    "report_aliases": true,
    "description": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided."
@@ -8715,7 +8716,7 @@
    "description": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided."
   },
   "mb6-liberator": {
-   "name": "MB6 Liberator Infoceutical",
+   "name": "MB6 Liberator Hologram Infoceutical",
    "directions": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided.",
    "copy_pinned": ["directions"],
    "enrichment_note": "Glen 2026-11-19: approved this wording as the standard Infoceutical direction (first approved 2026-11-16). Sleep, Night and Energy Infoceuticals are left out, because 'daily on rising' does not fit them.",
@@ -8726,7 +8727,8 @@
    "bottle_type": "30ml",
    "fmp_id": "261",
    "aliases": [
-    "MB6"
+    "MB6",
+    "MB6 Liberator Infoceutical"
    ],
    "report_aliases": true,
    "description": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided."
@@ -8767,7 +8769,7 @@
    "qty_pricing": true
   },
   "mb8-love": {
-   "name": "MB8 Love Infoceutical",
+   "name": "MB8 Love Hologram Infoceutical",
    "directions": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided.",
    "copy_pinned": ["directions"],
    "enrichment_note": "Glen 2026-11-19: approved this wording as the standard Infoceutical direction (first approved 2026-11-16). Sleep, Night and Energy Infoceuticals are left out, because 'daily on rising' does not fit them.",
@@ -8779,7 +8781,8 @@
    "fmp_id": "269",
    "aliases": [
     "MB 8",
-    "MB8 Love Hologram"
+    "MB8 Love Hologram",
+    "MB8 Love Infoceutical"
    ],
    "report_aliases": true,
    "description": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided."
@@ -9467,7 +9470,7 @@
    "legacy_store_url": "https://remedymatch.com/remedies/503-coq10"
   },
   "et16-glial-cell": {
-   "name": "ET16 Glial Cell Terrain Infoceutical",
+   "name": "ET16 Glial Cell Energetic Terrain Infoceutical",
    "directions": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided.",
    "copy_pinned": ["directions"],
    "enrichment_note": "Glen 2026-11-19: approved this wording as the standard Infoceutical direction (first approved 2026-11-16). Sleep, Night and Energy Infoceuticals are left out, because 'daily on rising' does not fit them.",
@@ -9478,7 +9481,8 @@
    "bottle_type": "30ml",
    "fmp_id": "462",
    "aliases": [
-    "ET16"
+    "ET16",
+    "ET16 Glial Cell Terrain Infoceutical"
    ],
    "report_aliases": true,
    "description": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided."
@@ -13449,7 +13453,9 @@
    "bottle_type": "30ml",
    "fmp_id": "202",
    "aliases": [
-    "ED2 Imprinter Driver"
+    "ED2 Imprinter Driver",
+    "ED2 Heart Imprinter",
+    "ED2 Imprinter"
    ],
    "report_aliases": true,
    "description": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided."
@@ -24104,7 +24110,7 @@
   },
   "mb5-esr-emotional-stress-release-infoceutical": {
    "content_since": "2026-11-20T19:57:14+00:00",
-   "name": "MB5 ESR Emotional Stress Release Infoceutical",
+   "name": "MB5 ESR Emotional Stress Release Hologram Infoceutical",
    "directions": "Start with 1 drop and add 1 drop each day, up to 15 drops, stirred into a little water without touching metal, daily on rising, or as guided.",
    "copy_pinned": ["directions"],
    "enrichment_note": "Glen 2026-11-19: approved this wording as the standard Infoceutical direction (first approved 2026-11-16). Sleep, Night and Energy Infoceuticals are left out, because 'daily on rising' does not fit them.",
@@ -24119,7 +24125,8 @@
    "aliases": [
     "Emotional Stress Release (MB5)",
     "MB5 Emotional Stress Release Hologram",
-    "MB 5"
+    "MB 5",
+    "MB5 ESR Emotional Stress Release Infoceutical"
    ],
    "report_aliases": true,
    "qbo_item_id": "26"

@@ -728,13 +728,14 @@
  {
   "code": "ET16",
   "survivor": "et16-glial-cell",
-  "name": "ET16 Glial Cell Terrain Infoceutical",
+  "name": "ET16 Glial Cell Energetic Terrain Infoceutical",
   "fmp_id": "462",
   "retire": [
    "et16-glial-cell-terrain-infoceutical"
   ],
   "aliases": [
-   "ET16"
+   "ET16",
+   "ET16 Glial Cell Terrain Infoceutical"
   ],
   "note": ""
  },
@@ -905,7 +906,7 @@
  {
   "code": "MB5",
   "survivor": "mb5-esr-emotional-stress-release-infoceutical",
-  "name": "MB5 ESR Emotional Stress Release Infoceutical",
+  "name": "MB5 ESR Emotional Stress Release Hologram Infoceutical",
   "fmp_id": "200",
   "retire": [
    "mb5-emotional-stress-release-hologram",
@@ -913,40 +914,43 @@
   ],
   "aliases": [
    "Emotional Stress Release (MB5)",
-   "MB5 Emotional Stress Release Hologram"
+   "MB5 Emotional Stress Release Hologram",
+   "MB5 ESR Emotional Stress Release Infoceutical"
   ],
   "note": ""
  },
  {
   "code": "MB6",
   "survivor": "mb6-liberator",
-  "name": "MB6 Liberator Infoceutical",
+  "name": "MB6 Liberator Hologram Infoceutical",
   "fmp_id": "261",
   "retire": [
    "mb6-liberator-infoceutical"
   ],
   "aliases": [
-   "MB6"
+   "MB6",
+   "MB6 Liberator Infoceutical"
   ],
   "note": ""
  },
  {
   "code": "MB7",
   "survivor": "mb7-peace",
-  "name": "MB7 Peace Infoceutical",
+  "name": "MB7 Peace Hologram Infoceutical",
   "fmp_id": "267",
   "retire": [
    "mb7-peace-infoceutical"
   ],
   "aliases": [
-   "MB7"
+   "MB7",
+   "MB7 Peace Infoceutical"
   ],
   "note": ""
  },
  {
   "code": "MB8",
   "survivor": "mb8-love",
-  "name": "MB8 Love Infoceutical",
+  "name": "MB8 Love Hologram Infoceutical",
   "fmp_id": "269",
   "retire": [
    "mb8-love-hologram",
@@ -954,7 +958,8 @@
   ],
   "aliases": [
    "MB 8",
-   "MB8 Love Hologram"
+   "MB8 Love Hologram",
+   "MB8 Love Infoceutical"
   ],
   "note": ""
  },
