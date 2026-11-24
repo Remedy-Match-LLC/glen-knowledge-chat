@@ -10,6 +10,7 @@ import argparse
 import html
 import http.client
 import json
+import re
 import os
 import sys
 import time
@@ -339,8 +340,34 @@ def _html_body(text, portal_url):
     return '<div style="font-family:Arial,sans-serif;font-size:16px;line-height:1.55"><p>' + escaped + "</p></div>"
 
 
+def _built_from_address(first_name, email):
+    """True when a contact's stored first name is only its email address's local part,
+    or the tag after a "+", which GoHighLevel fills in when a contact has no name, AND it
+    runs past 10 letters or holds a digit. Glen, 2026-11-24: such a contact is greeted
+    "Aloha," and never by a name built from the address. His own copy opened "Aloha Drglenswartwout". Letters of any alphabet and
+    digits are compared, case aside, so "john.smith" still keeps a real first name "John"."""
+    def keep(text, digits=True):   # letters (any alphabet) and digits, case folded
+        return re.sub(r"[\W_]" if digits else r"[\W\d_]", "", str(text or "").casefold())
+
+    name = keep(first_name)
+    local = str(email or "").casefold().split("@", 1)[0]
+    if not name or not local:
+        return False
+    base, _, tag = local.partition("+")
+    forms = {keep(local), keep(base), keep(tag), keep(tag, digits=False)}
+    if name not in forms - {""}:
+        return False
+    # Glen, 2026-11-24: drop it only when it cannot pass for a name, past 10 letters or
+    # holding a digit. 23 of the 25 matches on 23 Nov were plain words of 3 to 8 letters,
+    # such as "Mary" for mary@, which may be her real name and reads correctly either way.
+    shown = re.sub(r"[\W_]", "", str(first_name or ""))   # counted as written: ß stays 1
+    return len(shown) > 10 or any(ch.isdigit() for ch in shown)
+
+
 def _copy(first_name, portal_url, eligible, target_date, email=""):
     date_label = target_date.strftime("%A, %B %-d")
+    if _built_from_address(first_name, email):
+        first_name = ""
     greeting = f"Aloha {first_name}," if first_name else "Aloha,"
     access = _access(eligible)
     text = (f"{greeting}\n\nThis {date_label}, our MentorshipU community activities are:\n\n"
@@ -645,17 +672,19 @@ def _correction_subject(target_date):
     return f"Corrected link: the Live Calendar for Wednesday, {target_date.strftime('%B %-d')}"
 
 
-def _greeting_name(first_name):
+def _greeting_name(first_name, email=""):
     """A usable first name, or "". Six contacts carry a tapped chip label as their name
     ("Sharper vision"); a name with a space, a digit or odd characters is not a name."""
     name = (first_name or "").strip()
+    if _built_from_address(name, email):
+        return ""
     if not (name and len(name) <= 20 and name.replace("-", "").replace("'", "").isalpha()):
         return ""
     return name.title() if name.isupper() else name
 
 
 def _correction_copy(first_name, portal_url, eligible, target_date, email=""):
-    name = _greeting_name(first_name)
+    name = _greeting_name(first_name, email)
     greeting = f"Aloha {name}," if name else "Aloha,"
     mc = session_times(target_date, appmod.LIVE_MASTERCLASS_HOUR)
     gc = session_times(target_date, appmod.LIVE_GROUP_COACHING_HOUR)
