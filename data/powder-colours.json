@@ -8,5 +8,8 @@
   ],
   "dental-powder": [
     {"hex": "#998975", "batch_date": "2026-11-23"}
+  ],
+  "ocuflow-bedtime": [
+    {"hex": "#91816e", "batch_date": "2026-11-23"}
   ]
 }
