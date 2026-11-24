@@ -55,17 +55,6 @@ _OWN_MARK = "/begin/product/"
 _MD = re.compile(r"\[([^\]\n]*)\]\(\s*([^)\s]+)\s*\)")
 _ID = re.compile(r"^(\d+)-")
 _TRAILING = ".,;:!?"
-_TARGETS = ("https://www.remedymatch.com", "http://www.remedymatch.com",
-            "https://remedymatch.com", "http://remedymatch.com",
-            "www.remedymatch.com", "remedymatch.com",
-            "https://illtowell.com/begin/product/", "https://myhealingoasis.com/begin/product/",
-            "https://www.illtowell.com/begin/product/",
-            "https://www.myhealingoasis.com/begin/product/",
-            "http://illtowell.com/begin/product/", "http://myhealingoasis.com/begin/product/",
-            "http://www.illtowell.com/begin/product/",
-            "http://www.myhealingoasis.com/begin/product/",
-            "www.illtowell.com/begin/product/", "www.myhealingoasis.com/begin/product/",
-            "illtowell.com/begin/product/", "myhealingoasis.com/begin/product/", _OWN_MARK)
 _OPEN_MD = (re.compile(r"\[[^\]\n]*"), re.compile(r"\[[^\]\n]*\]"),
             re.compile(r"\[[^\]\n]*\]\([^)\s]*"))
 _MAX_HOLD = 600
@@ -222,17 +211,11 @@ def _hold_from(buf):
     j = max(buf.rfind(c) for c in (" ", "\n", "\t", "\r")) + 1
     tok = buf[j:].lower()
     if tok:
-        if "remedymatch" in tok or _OWN_MARK in tok:
-            hold = j
-        else:
-            for k in range(len(tok)):
-                s = tok[k:]
-                if any(t.startswith(s) for t in _TARGETS):
-                    # The whole token, not just the matching tail: a host held apart
-                    # from its path loses the look-behind that keeps other sites out.
-                    hold = j
-                    break
-        if hold < n and "](" in tok:
+        # Hold the whole unfinished last word. Any word can still grow into a link (a host
+        # now, its /begin/product/ path in the next delta), and a host released apart from
+        # its path loses the look-behind that keeps other sites out (review round 3).
+        hold = j
+        if "](" in tok:
             k = buf.rfind("[", 0, j)
             if k != -1 and "\n" not in buf[k:j] and j - k <= _MAX_HOLD:
                 hold = min(hold, k)

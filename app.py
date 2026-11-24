@@ -8685,14 +8685,22 @@ def _store_links_stream(deltas, chat=True):
     page section passes chat=False: it is not a chat answer (review round 2)."""
     from dashboard import legacy_store_links as _lsl, rule_sources as _rs
     return _lsl.rewrite_stream(_rs.rewrite_stream(deltas) if chat else deltas,
-                               PUBLIC_BASE_URL)
+                               PUBLIC_BASE_URL, products=_link_catalog())
 
 
 def _store_links_text(text, chat=True):
     """The same rewrite for a whole answer: what gets logged or cached is what the
     client was shown."""
     from dashboard import legacy_store_links as _lsl, rule_sources as _rs
-    return _lsl.rewrite_text(_rs.rewrite_text(text) if chat else text, PUBLIC_BASE_URL)
+    return _lsl.rewrite_text(_rs.rewrite_text(text) if chat else text, PUBLIC_BASE_URL,
+                             products=_link_catalog())
+
+
+def _link_catalog():
+    """The catalog the product page route reads (_PRODUCTS, the repo file), so the link
+    guard and the page can never disagree. dashboard.products prefers DATA_DIR's copy,
+    which on Render is the persistent disk (review round 3, 2026-11-24)."""
+    return (_PRODUCTS.get("products") or {}) or None
 
 
 from dashboard.portal_concierge import ROLE_AND_CLAIMS as _ROLE_AND_CLAIMS

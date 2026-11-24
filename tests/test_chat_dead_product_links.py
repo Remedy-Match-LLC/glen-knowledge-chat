@@ -125,3 +125,13 @@ def test_a_trailing_slash_on_a_live_link_is_removed_because_the_route_404s_on_it
 
 def test_a_dead_link_with_a_query_keeps_the_sentence_stop():
     assert rw("Go /begin/product/lymph-support?a=1. Next") == f"Go {ENTRY}. Next"
+
+
+def test_another_sites_host_released_before_its_path_is_not_touched():
+    deltas = ["See https://foo.org", "/begin/product/lymph-support now"]
+    assert stream(deltas) == "See https://foo.org/begin/product/lymph-support now"
+
+
+def test_the_chat_wrappers_judge_links_by_the_page_routes_own_catalog():
+    import app
+    assert app._link_catalog() is app._PRODUCTS["products"]
