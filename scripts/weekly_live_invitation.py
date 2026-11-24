@@ -10,6 +10,7 @@ import argparse
 import html
 import http.client
 import json
+import re
 import os
 import sys
 import time
@@ -339,8 +340,26 @@ def _html_body(text, portal_url):
     return '<div style="font-family:Arial,sans-serif;font-size:16px;line-height:1.55"><p>' + escaped + "</p></div>"
 
 
+def _built_from_address(first_name, email):
+    """True when a contact's stored first name is only its email address's local part,
+    or the tag after a "+", which GoHighLevel fills in when a contact has no name. Glen,
+    2026-11-24: such a contact is greeted "Aloha," and never by a name built from the
+    address. His own copy opened "Aloha Drglenswartwout". Letters and digits are
+    compared, case aside, so "john.smith" still keeps a real first name "John"."""
+    name = re.sub(r"[^a-z0-9]", "", (first_name or "").lower())
+    local = (email or "").lower().split("@", 1)[0]
+    if not name or not local:
+        return False
+    base, _, tag = local.partition("+")
+    forms = {re.sub(r"[^a-z0-9]", "", local), re.sub(r"[^a-z0-9]", "", base),
+             re.sub(r"[^a-z0-9]", "", tag), re.sub(r"[^a-z]", "", tag)}
+    return name in forms - {""}
+
+
 def _copy(first_name, portal_url, eligible, target_date, email=""):
     date_label = target_date.strftime("%A, %B %-d")
+    if _built_from_address(first_name, email):
+        first_name = ""
     greeting = f"Aloha {first_name}," if first_name else "Aloha,"
     access = _access(eligible)
     text = (f"{greeting}\n\nThis {date_label}, our MentorshipU community activities are:\n\n"
@@ -645,17 +664,19 @@ def _correction_subject(target_date):
     return f"Corrected link: the Live Calendar for Wednesday, {target_date.strftime('%B %-d')}"
 
 
-def _greeting_name(first_name):
+def _greeting_name(first_name, email=""):
     """A usable first name, or "". Six contacts carry a tapped chip label as their name
     ("Sharper vision"); a name with a space, a digit or odd characters is not a name."""
     name = (first_name or "").strip()
+    if _built_from_address(name, email):
+        return ""
     if not (name and len(name) <= 20 and name.replace("-", "").replace("'", "").isalpha()):
         return ""
     return name.title() if name.isupper() else name
 
 
 def _correction_copy(first_name, portal_url, eligible, target_date, email=""):
-    name = _greeting_name(first_name)
+    name = _greeting_name(first_name, email)
     greeting = f"Aloha {name}," if name else "Aloha,"
     mc = session_times(target_date, appmod.LIVE_MASTERCLASS_HOUR)
     gc = session_times(target_date, appmod.LIVE_GROUP_COACHING_HOUR)
