@@ -5652,8 +5652,7 @@
   "dental-powder": {
     "ingredients_source": "production-sheet-2026-07-06",
     "warning": "If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it.",
-    "chat_caution": true,
-    "note": "Vitamin K caution, Glen yes 31 Oct 2026 (production spec 2026-10-31-vitamin-k-blood-thinner-caution, moved from Dental Regen Powder). Pinned so a rerun of apply_enrichment cannot drop it."
+    "chat_caution": true
   },
   "bone-builder": {
     "ingredient_doses": {
