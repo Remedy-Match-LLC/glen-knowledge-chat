@@ -38515,8 +38515,13 @@ def api_console_biofield_publish():
         if scan_date:
             from dashboard import portal_biofield_reports as _pbr
             _pbr.init_table(cx)
+            # The publisher may say what made the report. A FileMaker or hand-built
+            # Biofield test carries a numeric E4L scan_id, which the rule reads as Remedy
+            # Match (Linda Maher, test 263, 2026-11-25). normalize_kind drops anything
+            # but the two kinds; absent, the rule and the stored kind apply as before.
             _pbr.upsert_report(cx, email, scan_date,
-                               (body.get("scan_id") or ""), content, "confirmed")
+                               (body.get("scan_id") or ""), content, "confirmed",
+                               report_kind=_pbr.normalize_kind(body.get("report_kind")))
             from dashboard import report_holds as _rh
             _rh.init_table(cx)
             _rh.release(cx, email, scan_date)   # the owner published this date again
