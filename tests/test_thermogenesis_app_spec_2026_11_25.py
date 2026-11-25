@@ -143,6 +143,10 @@ def test_the_product_page_data_carries_the_approved_page(appmod):
     d = appmod.app.test_client().get("/begin/product-page-data/thermogenesis").get_json()
     s = json.dumps(d, ensure_ascii=False)
     assert next(x for x in d["sections"] if x["id"] == "caution")["body"] == WARNING
+    body = next(x for x in d["sections"] if x["id"] == "ingredients")["body"]
+    assert [(i["name"], i["dose"]) for i in body["ingredients"]] == ROWS
+    assert body["directions"] == DIRECTIONS
+    assert body["note"] == PANEL_NOTE
     for want in ("15 mcg", DIRECTIONS, "Fucoxanthin", "less than 1 mg of caffeine"):
         assert want in s, want
     for gone in ("120 mcg", "195 mcg", "Kelp", "caffeine-free"):
@@ -153,8 +157,10 @@ def test_the_product_data_route_lists_the_fourteen_rows(appmod):
     d = appmod.app.test_client().get("/begin/product-data/thermogenesis").get_json()
     s = json.dumps(d, ensure_ascii=False)
     assert "15 mcg" in s and "120 mcg" not in s
-    for name, _ in ROWS:
-        assert name in s, name
+    rows = [(i["name"], i["dose"]) for i in d["ingredients"]]
+    assert rows == ROWS
+    for absent in ("directions", "panel_note", "warning"):
+        assert absent not in d, absent
 
 
 # The spec also names "thermogenesis dose". Lowercase "thermogenesis" is an everyday biology
