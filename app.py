@@ -31488,7 +31488,9 @@ def api_client_portal(token):
                                     for d in (bf_scan_dates or []) if _byk.get(_op.report_key(email_for_reports, d))}
         except Exception as _e:
             print(f"[opens] payload {_e!r}", flush=True)
-            payload["opens"] = {}
+            # Omit, never {}: an empty map reads as "nothing opened" and would show
+            # every client the Home "Your new report" link (review, 2026-11-25).
+            payload.pop("opens", None)
     if _scan_list_enabled():
         try:
             from dashboard import client_scans as _cs

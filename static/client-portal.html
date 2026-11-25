@@ -1638,7 +1638,7 @@ const PORTAL_HASH_ROUTES = {
   "biofield-latest": {panel:"current", target:"biofield-section", latest:true},
   // Home's "Your new report" link: the newest report, expanded as if its header
   // were clicked, which records the open (Glen, 2026-11-25).
-  "report-new": {panel:"current", target:"biofield-section", latest:true, expandReport:true},
+  "report-new": {panel:"current", target:"biofield-section", latest:true, expandReport:true, openCard:true},
   "biofield-order": {panel:"current", target:"biofield-order-card"},
   // #recs is the practice's primary next-step call to action: dashboard/portal_view.py,
   // dashboard/portal_onboarding.py and dashboard/eye_vision_report.py all emit it, and
@@ -1844,11 +1844,8 @@ function backToHome(){
 // (Orders & Invoices reads d.invoices; the Live Calendar card reads
 // v.calendar.events) -- this only re-shapes it for the thin Home-door landing.
 //
-// A report published since the client's last visit was left out: the portal
-// payload carries a report's scan_date (when the scan was taken) but no
-// publish timestamp, and no last-visited timestamp scoped to the report
-// itself, so there is nothing here to compare against without adding new
-// fields to the payload, which Task 12a's brief rules out.
+// A report the client has not opened is read from the read-receipt map
+// (d.opens) by homeNewReport below (Glen, 2026-11-25).
 function buildHomeView(d, v){
   const invoices = Array.isArray(d && d.invoices) ? d.invoices : [];
   const unpaid_invoice = invoices.length
@@ -1876,10 +1873,18 @@ function homeNewReport(d, v){
   const bfv = (v && v.biofield && v.biofield.visible) ? v.biofield : null;
   const shown = bfv || (Array.isArray(d.layers) && d.layers.length);
   if(!shown || d.biofield_status === "pending") return null;
+  // A missing status is treated as confirmed, exactly as the report renderer does
+  // (older token links render fully), so the link and the report agree.
   const status = (bfv ? bfv.status : d.biofield_status) || "confirmed";
   if(status !== "confirmed") return null;
   const sd = String(d.scan_date || "");
   if(!/^\d{4}-\d{2}-\d{2}$/.test(sd) || d.opens[sd]) return null;
+  // Only the newest report: #report-new opens the newest, so an older scan picked
+  // in Scan History must never be advertised under it (review rounds 1 and 2).
+  if(typeof selectedScanDate !== "undefined" && selectedScanDate) return null;
+  const dates = (Array.isArray(d.scan_dates) ? d.scan_dates : []).map(String)
+    .filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
+  if(dates.length && dates[dates.length - 1] !== sd) return null;
   return { when: homeDayFmt(sd), href: "#report-new" };
 }
 function homeDayFmt(ymd){
@@ -2883,7 +2888,7 @@ function invoiceTrackingHtml(inv){
 // Invoices). Same card as buildOrdersHtml's, under its own fold ids.
 function unpaidInvoiceCardsHtml(invs){
   return (Array.isArray(invs) ? invs : []).map(inv =>
-    `<div class="card invoice-card" data-fold-id="remedies-invoice-${foldSlug(inv.url || "")}" data-fold-open="1">
+    `<div class="card invoice-card" data-fold-id="remedies-invoice-${foldSlug(inv.token || "")}" data-fold-open="1">
       <h2>Your invoice</h2>
       <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
       <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
@@ -3143,7 +3148,10 @@ document.addEventListener("change", function(ev){
 // render()'s wireRemediesPanel, via delegation on the panel container so a
 // redraw after any action never orphans its own listeners.
 function buildRemediesHtml(v, d){
-  const invoiceCards = unpaidInvoiceCardsHtml(d && d.invoices);
+  // Not on a household member's tab: v.remedies is the token holder's, while
+  // d.invoices follows ?member=, and the two must not share one panel (review).
+  const invoiceCards = new URLSearchParams(location.search).get("member")
+    ? "" : unpaidInvoiceCardsHtml(d && d.invoices);
   const rem = (v && v.remedies) || {};
   // The recommendations endpoint is fetched independently alongside /view.
   // Keep it as a display fallback: one defensive failure inside the combined
@@ -5391,6 +5399,9 @@ function render(d, v){
           if (body) body.style.display = "";
           const badge = document.getElementById("rr-new");
           if (badge) badge.remove();
+          // The Home "Your new report" link goes at once, not at the next poll.
+          if (d.opens && scanDate) d.opens[scanDate] = new Date().toISOString();
+          document.querySelectorAll('[data-home-alert="report"]').forEach(n => n.remove());
         };
         part("scans", `<div class="card" id="biofield-section" data-fold-id="biofield-${foldSlug(d.scan_date || "")}-path">
           <div class="rr-header" data-scan="${esc(sd)}" style="display:flex;align-items:center;gap:10px;cursor:pointer">

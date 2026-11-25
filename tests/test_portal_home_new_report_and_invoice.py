@@ -94,10 +94,17 @@ def _fn(name):
       "v": {"biofield": {"visible": True, "status": "confirmed"}}}, "#report-new"),
     ({"d": {"opens": {}, "scan_date": "2026-11-23"},
       "v": {"biofield": {"visible": True, "status": "interested"}}}, None),
+    # Review rounds 1 and 2: only the newest report is ever advertised.
+    ({"d": {"opens": {}, "scan_date": "2026-05-01", "layers": [1],
+            "scan_dates": ["2026-11-23", "2026-05-01"]}}, None),
+    ({"d": {"opens": {}, "scan_date": "2026-11-23", "layers": [1],
+            "scan_dates": ["2026-05-01", "2026-11-23"]}}, "#report-new"),
+    ({"d": {"opens": {}, "scan_date": "2026-11-23", "layers": [1]}, "picked": "2026-11-23"}, None),
 ])
 def test_home_new_report_only_for_an_unopened_confirmed_own_report(case, expect):
     js = f"""
       globalThis.location = {{search: {json.dumps(case.get("search", ""))}}};
+      var selectedScanDate = {json.dumps(case.get("picked"))};
       {_fn("homeDayFmt")}
       {_fn("homeNewReport")}
       const r = homeNewReport({json.dumps(case["d"])}, {json.dumps(case.get("v"))});
@@ -112,8 +119,10 @@ def test_home_new_report_only_for_an_unopened_confirmed_own_report(case, expect)
 
 
 def test_report_new_route_expands_the_report_and_keeps_its_own_hash():
+    # openCard: a folded report card is opened over the saved fold state, so the
+    # client sees the report the click records as opened (review round 1).
     assert ('"report-new": {panel:"current", target:"biofield-section", latest:true, '
-            'expandReport:true}') in PORTAL
+            'expandReport:true, openCard:true}') in PORTAL
     assert "latestUrl.hash = key;" in PORTAL
     assert 'latestUrl.hash = "biofield-latest";' not in PORTAL
     block = PORTAL[PORTAL.index("if(followed && route.expandReport){"):][:200]
@@ -129,6 +138,22 @@ def test_remedies_panel_shows_the_unpaid_invoice_cards_first():
     calls = re.findall(r"buildRemediesHtml\([^)]*\)", PORTAL.replace(fn, ""))
     assert calls and set(calls) == {"buildRemediesHtml(v, d)"}, calls
     assert "unpaidInvoiceCardsHtml" not in _fn("buildOrdersHtml")
+    # Never on a household member's tab (review round 1).
+    assert 'get("member")\n    ? "" : unpaidInvoiceCardsHtml(d && d.invoices)' in fn
+
+
+def test_opening_the_report_removes_the_home_alert_at_once():
+    block = PORTAL[PORTAL.index("window.__openReport = async (scanDate) => {"):][:1200]
+    assert "d.opens[scanDate] = " in block
+    assert 'querySelectorAll(\'[data-home-alert="report"]\').forEach(n => n.remove())' in block
+
+
+def test_a_failed_opens_lookup_omits_opens_rather_than_sending_empty():
+    app = (ROOT / "app.py").read_text(encoding="utf-8")
+    i = app.index('payload["opens"] = {d: _byk.get(')
+    tail = app[i:i + 900]
+    assert 'payload.pop("opens", None)' in tail
+    assert 'payload["opens"] = {}' not in tail
 
 
 @node
@@ -138,10 +163,11 @@ def test_invoice_cards_render_and_escape():
       function foldSlug(s){{return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-');}}
       function invoiceTrackingHtml(){{return '';}}
       {_fn("unpaidInvoiceCardsHtml")}
-      console.log(JSON.stringify([unpaidInvoiceCardsHtml([{{amount_dollars:'1546.00', link:'https://x/i?a=1&b=2'}}]),
+      console.log(JSON.stringify([unpaidInvoiceCardsHtml([{{amount_dollars:'1546.00', link:'https://x/i?a=1&b=2', token:'TokA'}}]),
                                   unpaidInvoiceCardsHtml(undefined)]));
     """
     one, none = json.loads(_run(js))
     assert "Amount due: <strong>$1546.00</strong>" in one
-    assert 'href="https://x/i?a=1&amp;b=2"' in one and 'data-fold-id="remedies-invoice-' in one
+    assert 'href="https://x/i?a=1&amp;b=2"' in one
+    assert 'data-fold-id="remedies-invoice-toka"' in one   # one fold per invoice
     assert none == ""
