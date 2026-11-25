@@ -4355,6 +4355,9 @@
     "chat_caution": true
   },
   "thermogenesis": {
+    "ingredients_source": "store-page-2026-11-25",
+    "warning": "Do not use if you are pregnant or breastfeeding, or if you are under 18. Synephrine, from bitter orange, may raise heart rate and blood pressure. Do not combine with additional caffeine or other stimulants, such as energy drinks, decongestants or ADHD medicine. Stop use and get medical help right away if you notice chest pain or an irregular heartbeat. Stop use if you notice a racing heartbeat or dizziness. Consult your health professional before use if you have high blood pressure or a heart condition, or take any prescription medicine. This formula contains ginkgo, which may increase bleeding with blood thinners such as warfarin, aspirin or clopidogrel. If you are planning surgery, tell your surgical team you take it and ask when to stop. Green tea extract and garcinia are rare causes of liver injury. Do not use if you have liver disease. Stop use and consult your physician if you notice yellowing of the skin or eyes, dark urine, or abdominal pain. Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have a thyroid condition or take other iodine products, consult your health professional before use. This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+    "chat_caution": true,
     "ingredients": [
       {
         "name": "Chromium (as GTF chromium polynicotinate)",
@@ -4413,15 +4416,13 @@
         "dose": "34.5 mg"
       }
     ],
-    "ingredients_source": "manual",
-    "description": "A Healing Sacrament, handcrafted with Aloha on the Healing Island of Hawaiʻi.",
-    "intro": "A Healing Sacrament, handcrafted with Aloha on the Healing Island of Hawaiʻi.",
     "directions": "1 to 3 capsules daily, 30 to 60 minutes before meals, or as guided.",
-    "content_since": "2026-11-25T21:41:54+00:00",
-    "warning": "Do not use if you are pregnant or breastfeeding, or if you are under 18. Synephrine, from bitter orange, may raise heart rate and blood pressure. Do not combine with additional caffeine or other stimulants, such as energy drinks, decongestants or ADHD medicine. Stop use and get medical help right away if you notice chest pain or an irregular heartbeat. Stop use if you notice a racing heartbeat or dizziness. Consult your health professional before use if you have high blood pressure or a heart condition, or take any prescription medicine. This formula contains ginkgo, which may increase bleeding with blood thinners such as warfarin, aspirin or clopidogrel. If you are planning surgery, tell your surgical team you take it and ask when to stop. Green tea extract and garcinia are rare causes of liver injury. Do not use if you have liver disease. Stop use and consult your physician if you notice yellowing of the skin or eyes, dark urine, or abdominal pain. Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have a thyroid condition or take other iodine products, consult your health professional before use. This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
-    "chat_caution": true,
-    "panel_note": "Bioavailability Blend, 34.5 mg: Phosphatides (Helianthus annuus), humic and fulvic acids, moringa 100:1 (Moringa oleifera), gingerol 10% (Zingiber officinale), piperine (Piper nigrum), EGb 761 (Ginkgo biloba), niacin 5 mg, vinpocetine (Vinca minor), licorice (Glycyrrhiza glabra) and Spirit Minerals. Other ingredients: organic pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps. Vegetarian and vegan. Contains less than 1 mg of caffeine per capsule.",
-    "note": "Run 63 formula, per the store page Glen approved 25 Nov 2026 in the production tab (v4, caffeine line v5). Source: production/05 Formulations/thermogenesis/2026-10-31/thermogenesis-store-page.md."
+    "copy_pinned": [
+      "directions",
+      "ingredients"
+    ],
+    "panel_note": "Bioavailability Blend contains: Phosphatides (Helianthus annuus), humic and fulvic acids, moringa 100:1 (Moringa oleifera), gingerol 10% (Zingiber officinale), piperine (Piper nigrum), EGb 761 (Ginkgo biloba), niacin 5 mg, vinpocetine (Vinca minor), licorice (Glycyrrhiza glabra) and Spirit Minerals. Other ingredients: organic pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps. Vegetarian and vegan. Contains less than 1 mg of caffeine per capsule.",
+    "content_since": "2026-11-25T22:57:24+00:00"
   },
   "three-treasures": {
     "ingredients_source": "fmp-bom-2026-05-23",
