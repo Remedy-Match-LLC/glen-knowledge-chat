@@ -1957,55 +1957,55 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Chromium Polynicotinate",
-     "dose": "120 mcg"
+     "name": "Chromium (as GTF chromium polynicotinate)",
+     "dose": "15 mcg"
     },
     {
-     "name": "Vanadium AAC (Amino Acid Chelate)",
-     "dose": "50 mg"
+     "name": "Iodine (as potassium iodide)",
+     "dose": "150 mcg"
     },
     {
-     "name": "Potassium Iodide KI",
-     "dose": "195 mcg"
+     "name": "Vanadium (as amino acid chelate)",
+     "dose": "100 mcg"
     },
     {
-     "name": "L-Carnitine",
+     "name": "L-carnitine",
      "dose": "100 mg"
     },
     {
-     "name": "Lipase Enzyme",
+     "name": "Lipase (Aspergillus niger)",
      "dose": "5 mg"
     },
     {
-     "name": "Garcinia Cambogia 60% Hydroxycitric Acid HCA Organic Extract",
+     "name": "Hydroxycitric acid 60% (Garcinia cambogia)",
      "dose": "100 mg"
     },
     {
-     "name": "Green Tea; Organic; 98% Polyphenols/50% EGCG Standardized Extract",
+     "name": "Green tea polyphenols 98%, EGCG 50% (Camellia sinensis)",
      "dose": "50 mg"
     },
     {
-     "name": "Atractylodes macrocephala 30:1 Rhizoma Atractylodis large-headed atractylodes, white atractylodes",
+     "name": "Bai zhu 30:1 (Atractylodes macrocephala) (root)",
      "dose": "50 mg"
     },
     {
-     "name": "Naringen",
+     "name": "Naringin 98% (Citrus spp.)",
      "dose": "50 mg"
     },
     {
-     "name": "Salidroside 1% Rosavin 3% Rhodiola rosea",
+     "name": "Rhodiola: rosavins 3%, salidroside 1% (Rhodiola rosea) (root)",
      "dose": "40 mg"
     },
     {
-     "name": "Hesperidin Methyl Chalcone HMC 5, 7, 3'-trihydroxy-4'-methoxyflavanone hesperitin-7-O-rutinoside Hesperitin glycoside glucosyl hesperidin Vitamin P hesperitin G-hesperidin Diosmin",
+     "name": "Hesperidin methyl chalcone 98% (Citrus aurantium)",
      "dose": "10 mg"
     },
     {
-     "name": "Synephrine",
+     "name": "Synephrine 99% (Citrus aurantium)",
      "dose": "2 mg"
     },
     {
-     "name": "Kelp",
+     "name": "Fucoxanthin 85% (brown seaweed, Laminaria spp.)",
      "dose": "2 mg"
     },
     {
@@ -2013,12 +2013,15 @@
      "dose": "34.5 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Thermogenesis . Price: $70.",
+   "ingredients_source": "manual",
+   "description": "A Healing Sacrament, handcrafted with Aloha on the Healing Island of Hawaiʻi.",
    "bottle_type": "30 Caps",
    "fmp_id": "383",
-   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant. Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have a thyroid condition or take other iodine products, consult your health professional before use.",
-   "chat_caution": true
+   "warning": "Do not use if you are pregnant or breastfeeding, or if you are under 18. Synephrine, from bitter orange, may raise heart rate and blood pressure. Do not combine with additional caffeine or other stimulants, such as energy drinks, decongestants or ADHD medicine. Stop use and get medical help right away if you notice chest pain or an irregular heartbeat. Stop use if you notice a racing heartbeat or dizziness. Consult your health professional before use if you have high blood pressure or a heart condition, or take any prescription medicine. This formula contains ginkgo, which may increase bleeding with blood thinners such as warfarin, aspirin or clopidogrel. If you are planning surgery, tell your surgical team you take it and ask when to stop. Green tea extract and garcinia are rare causes of liver injury. Do not use if you have liver disease. Stop use and consult your physician if you notice yellowing of the skin or eyes, dark urine, or abdominal pain. Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have a thyroid condition or take other iodine products, consult your health professional before use. This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "chat_caution": true,
+   "intro": "A Healing Sacrament, handcrafted with Aloha on the Healing Island of Hawaiʻi.",
+   "directions": "1 to 3 capsules daily, 30 to 60 minutes before meals, or as guided.",
+   "panel_note": "Bioavailability Blend, 34.5 mg: Phosphatides (Helianthus annuus), humic and fulvic acids, moringa 100:1 (Moringa oleifera), gingerol 10% (Zingiber officinale), piperine (Piper nigrum), EGb 761 (Ginkgo biloba), niacin 5 mg, vinpocetine (Vinca minor), licorice (Glycyrrhiza glabra) and Spirit Minerals. Other ingredients: organic pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps. Vegetarian and vegan. Contains about 3 mg caffeine per capsule, from the green tea extract."
   },
   "vitamin-e-spectrum": {
    "name": "Vitamin E Spectrum",
