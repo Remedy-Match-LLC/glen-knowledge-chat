@@ -362,8 +362,10 @@ assert.ok(bannerPos !== -1 && bannerPos < slotPos,
   'the onboarding slot must come after the where-you-are banner, not before it');
 assert.ok(stepsListPos !== -1 && slotPos < stepsListPos,
   'the onboarding slot must come before the step list');
-assert.ok(invoicePos !== -1 && slotPos < invoicePos,
-  'the onboarding slot must come before time-sensitive items');
+// Glen, 2026-11-24 and 25: an unpaid invoice is the first thing a member sees,
+// above the banner and the onboarding slot (was: the slot came first).
+assert.ok(invoicePos !== -1 && invoicePos < bannerPos && invoicePos < slotPos,
+  'an unpaid invoice must come first, above the banner and the onboarding slot');
 // A settled Home (no step list) and a wholly empty payload (no banner) must
 // still carry the slot, so the reparent never no-ops in any Home state.
 assert.ok(settled.indexOf('id="portal-onboarding-slot"') !== -1,

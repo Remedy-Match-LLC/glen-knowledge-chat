@@ -1636,6 +1636,9 @@ function portalPanelFor(route){
 const PORTAL_HASH_ROUTES = {
   biofield: {panel:"current", target:"biofield-section"},
   "biofield-latest": {panel:"current", target:"biofield-section", latest:true},
+  // Home's "Your new report" link: the newest report, expanded as if its header
+  // were clicked, which records the open (Glen, 2026-11-25).
+  "report-new": {panel:"current", target:"biofield-section", latest:true, expandReport:true, openCard:true},
   "biofield-order": {panel:"current", target:"biofield-order-card"},
   // #recs is the practice's primary next-step call to action: dashboard/portal_view.py,
   // dashboard/portal_onboarding.py and dashboard/eye_vision_report.py all emit it, and
@@ -1720,7 +1723,7 @@ function applyPortalHash(userAction, fromHistory){
     const latestUrl = new URL(location.href);
     if(latestUrl.searchParams.has("scan_date")){
       latestUrl.searchParams.delete("scan_date");
-      latestUrl.hash = "biofield-latest";
+      latestUrl.hash = key;
       location.replace(latestUrl.toString());
       return true;
     }
@@ -1772,6 +1775,14 @@ function applyPortalHash(userAction, fromHistory){
     }
     // The box to write in, first one present. Never on a re-render, or every poll
     // would pull the cursor back while the client types somewhere else.
+    if(followed && route.expandReport){
+      // Skip when the report already shows (opened before, or Back re-applied the
+      // route after a poll rebuilt the header): a second click would count a second open.
+      const rr = document.querySelector(".rr-header");
+      const rrBody = document.getElementById("rr-body");
+      const showing = rrBody && rrBody.style.display !== "none";
+      if(rr && rr.dataset.opened !== "1" && !showing) rr.click();
+    }
     if(followed && route.focus){
       const box = route.focus.map(id => document.getElementById(id)).find(Boolean);
       if(box) box.focus({preventScroll:true});
@@ -1837,11 +1848,8 @@ function backToHome(){
 // (Orders & Invoices reads d.invoices; the Live Calendar card reads
 // v.calendar.events) -- this only re-shapes it for the thin Home-door landing.
 //
-// A report published since the client's last visit was left out: the portal
-// payload carries a report's scan_date (when the scan was taken) but no
-// publish timestamp, and no last-visited timestamp scoped to the report
-// itself, so there is nothing here to compare against without adding new
-// fields to the payload, which Task 12a's brief rules out.
+// A report the client has not opened is read from the read-receipt map
+// (d.opens) by homeNewReport below (Glen, 2026-11-25).
 function buildHomeView(d, v){
   const invoices = Array.isArray(d && d.invoices) ? d.invoices : [];
   const unpaid_invoice = invoices.length
@@ -1856,7 +1864,38 @@ function buildHomeView(d, v){
     if (Number.isNaN(t) || t < now || t - now > sevenDaysMs) return;
     if (t < soonest) { soonest = t; appointment = { title: e.title || "Appointment", when: homeDateFmt(e.start) }; }
   });
-  return { journey: (v && v.journey) || {}, unpaid_invoice, appointment };
+  return { journey: (v && v.journey) || {}, unpaid_invoice, appointment,
+           new_report: homeNewReport(d, v) };
+}
+// Glen, 2026-11-25: a report the client has not opened shows on Home, right under
+// the unpaid invoice, and the link opens the report itself (#report-new expands it).
+// Only with read receipts on (d.opens present), only the client's own confirmed
+// report (never a household member's tab), and only until they open it.
+function homeNewReport(d, v){
+  if(!d || d.opens === undefined || d.opens === null) return null;
+  if(new URLSearchParams(location.search).get("member")) return null;
+  const bfv = (v && v.biofield && v.biofield.visible) ? v.biofield : null;
+  const shown = bfv || (Array.isArray(d.layers) && d.layers.length);
+  if(!shown || d.biofield_status === "pending") return null;
+  // A missing status is treated as confirmed, exactly as the report renderer does
+  // (older token links render fully), so the link and the report agree.
+  const status = (bfv ? bfv.status : d.biofield_status) || "confirmed";
+  if(status !== "confirmed") return null;
+  const sd = String(d.scan_date || "");
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(sd) || d.opens[sd]) return null;
+  // Only the newest report: #report-new opens the newest, so an older scan picked
+  // in Scan History must never be advertised under it (review rounds 1 and 2).
+  if(typeof selectedScanDate !== "undefined" && selectedScanDate) return null;
+  const dates = (Array.isArray(d.scan_dates) ? d.scan_dates : []).map(String)
+    .filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
+  if(dates.length && dates[dates.length - 1] !== sd) return null;
+  return { when: homeDayFmt(sd), href: "#report-new" };
+}
+function homeDayFmt(ymd){
+  const t = new Date(ymd + "T00:00:00Z");
+  if (Number.isNaN(t.getTime())) return ymd;
+  return new Intl.DateTimeFormat(undefined, {day:"numeric", month:"long", year:"numeric",
+    timeZone:"UTC"}).format(t);
 }
 function homeDateFmt(value){
   const d = new Date(value);
@@ -2848,6 +2887,18 @@ function invoiceTrackingHtml(inv){
     : esc(tn);
   return `<p class="small invoice-tracking" style="margin:.1rem 0 .5rem .6rem">Tracking: ${num}</p>`;
 }
+// The unpaid, portal-published invoices as pay cards at the top of My Remedies
+// (Glen, 2026-11-24: an open invoice belongs there as well as under Orders &
+// Invoices). Same card as buildOrdersHtml's, under its own fold ids.
+function unpaidInvoiceCardsHtml(invs){
+  return (Array.isArray(invs) ? invs : []).map(inv =>
+    `<div class="card invoice-card" data-fold-id="remedies-invoice-${foldSlug(inv.token || "")}" data-fold-open="1">
+      <h2>Your invoice</h2>
+      <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
+      <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
+      ${invoiceTrackingHtml(inv)}
+    </div>`).join("");
+}
 function buildOrdersHtml(d){
   const invs = Array.isArray(d.invoices) ? d.invoices : [];
   const past = Array.isArray(d.past_invoices) ? d.past_invoices : [];
@@ -3100,7 +3151,11 @@ document.addEventListener("change", function(ev){
 // function renders markup and data-hooks only — the fetch/POST wiring lives in
 // render()'s wireRemediesPanel, via delegation on the panel container so a
 // redraw after any action never orphans its own listeners.
-function buildRemediesHtml(v){
+function buildRemediesHtml(v, d){
+  // Not on a household member's tab: v.remedies is the token holder's, while
+  // d.invoices follows ?member=, and the two must not share one panel (review).
+  const invoiceCards = new URLSearchParams(location.search).get("member")
+    ? "" : unpaidInvoiceCardsHtml(d && d.invoices);
   const rem = (v && v.remedies) || {};
   // The recommendations endpoint is fetched independently alongside /view.
   // Keep it as a display fallback: one defensive failure inside the combined
@@ -3226,7 +3281,7 @@ function buildRemediesHtml(v){
     ? `<div class="card" data-fold-id="remedies-suggested-from-history"><h2>Suggested remedies from your history</h2><p class="muted small">Matched from your history and symptoms. Your biofield scan will personalize these.</p><div>${fromHistoryRows}</div></div>`
     : "";
 
-  return `<div class="card" data-fold-id="remedies-top-recommended"><h2>Top recommended for you</h2><div>${rankedRows}</div></div>
+  return invoiceCards + `<div class="card" data-fold-id="remedies-top-recommended"><h2>Top recommended for you</h2><div>${rankedRows}</div></div>
     ${fromHistoryCard}
     <div class="card" data-fold-id="remedies-products-you-take"><h2>Products and supplements you take</h2><div>${externalRows}</div>${addForm}</div>`;
 }
@@ -5348,6 +5403,9 @@ function render(d, v){
           if (body) body.style.display = "";
           const badge = document.getElementById("rr-new");
           if (badge) badge.remove();
+          // The Home "Your new report" link goes at once, not at the next poll.
+          if (d.opens && scanDate) d.opens[scanDate] = new Date().toISOString();
+          document.querySelectorAll('[data-home-alert="report"]').forEach(n => n.remove());
         };
         part("scans", `<div class="card" id="biofield-section" data-fold-id="biofield-${foldSlug(d.scan_date || "")}-path">
           <div class="rr-header" data-scan="${esc(sd)}" style="display:flex;align-items:center;gap:10px;cursor:pointer">
@@ -6170,7 +6228,7 @@ function render(d, v){
       <section data-panel="account" hidden data-door="account">${_back("account")}${_accountHtml}</section>
       <section data-panel="refer" hidden data-door="account">${_back("refer")}${_referHtml || '<div class="card quiet" data-fold-id="account-ambassador-empty"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
       <section data-panel="referrals" hidden data-door="account">${_back("referrals")}${_referralsHtml}</section>
-      ${_hub && v.remedies && v.remedies.enabled ? `<section id="remedies-panel" data-panel="remedies" hidden data-door="remedies">${_back("remedies")}${buildRemediesHtml(v)}</section>` : ""}
+      ${_hub && v.remedies && v.remedies.enabled ? `<section id="remedies-panel" data-panel="remedies" hidden data-door="remedies">${_back("remedies")}${buildRemediesHtml(v, d)}</section>` : ""}
       <section data-panel="scan-report" hidden data-door="scans">${_back("scan-report")}${_doors ? partsFor("scans") : ""}</section>
       <section data-panel="billing-detail" hidden data-door="billing">${_back("billing-detail")}${_doors ? partsFor("billing") : ""}</section>
       <section data-panel="remedy-detail" hidden data-door="remedies">${_back("remedy-detail")}${_doors ? partsFor("remedies") : ""}</section>
@@ -6551,7 +6609,7 @@ function render(d, v){
   // remove/meta all return the FULL refreshed remedies block (dashboard/
   // remedies_block.build_block — {enabled, ranked, external, from_history})
   // and this handler redraws the panel from it (v.remedies = <response>; panel.innerHTML
-  // = backToHub() + buildRemediesHtml(v)); a per-element binding would be
+  // = backToHub() + buildRemediesHtml(v, d)); a per-element binding would be
   // orphaned by that redraw, so delegation is used for every action here,
   // including the ranked-row hand-off, to keep the pattern consistent.
   (function wireRemediesPanel(){
@@ -6561,7 +6619,7 @@ function render(d, v){
       const s = panel.querySelector("#ext-add-status");
       if(s) s.textContent = msg || "";
     };
-    const redraw = () => { panel.innerHTML = backToHub() + buildRemediesHtml(v); };
+    const redraw = () => { panel.innerHTML = backToHub() + buildRemediesHtml(v, d); };
     panel.addEventListener("click", async (ev) => {
       // Ranked row hand-off: data-oasis-add carries a real catalog slug
       // (ranked items' product_key IS the slug — see

@@ -192,7 +192,7 @@ def test_the_calendar_route_exists_in_the_portal():
                              "static", "client-portal.html")).read()
     assert 'calendar: {panel:"calendar", target:"calendar-card", alt:"calendar-summary", openCard:true}' in html
     # #chat (the Plan report's "let us know" link, 2026-10-20) and #orders (2026-10-21).
-    assert html.count("openCard:true") == 3, "only #calendar, #chat and #orders open their card"
+    assert html.count("openCard:true") == 4, "only #calendar, #chat, #orders and #report-new open their card"
     assert 'chat:     {panel:"ask", target:"chatCard", openCard:true,' in html
 
 
@@ -228,7 +228,7 @@ def test_a_deep_link_opens_its_card_over_the_fold_state():
     assert "window._foldDeepLinkOpen = null" in apply_fn
     assert 'calendar: {panel:"calendar", target:"calendar-card", alt:"calendar-summary", openCard:true}' in html
     # #chat (the Plan report's "let us know" link, 2026-10-20) and #orders (2026-10-21).
-    assert html.count("openCard:true") == 3, "only #calendar, #chat and #orders open their card"
+    assert html.count("openCard:true") == 4, "only #calendar, #chat, #orders and #report-new open their card"
     assert 'chat:     {panel:"ask", target:"chatCard", openCard:true,' in html
 
 
