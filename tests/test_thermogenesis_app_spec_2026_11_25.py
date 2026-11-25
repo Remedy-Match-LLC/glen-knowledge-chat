@@ -91,40 +91,52 @@ def test_both_files_carry_the_eight_keys(name):
     assert p["chat_caution"] is True
 
 
-def test_only_the_eight_keys_change_against_main():
-    for name in ("products.json", "products-manual-corrections.json"):
-        try:
-            base = subprocess.run(["git", "show", f"origin/main:data/{name}"], cwd=ROOT,
-                                  capture_output=True, text=True, check=True).stdout
-        except Exception:
-            pytest.skip("origin/main not available")
-        old = json.loads(base)
-        old = old.get("products", old)
-        if old["thermogenesis"].get("panel_note") == PANEL_NOTE:
-            pytest.skip("already merged")
-        new = _load(name)
-        changed = {k for k in set(old["thermogenesis"]) | set(new["thermogenesis"])
-                   if old["thermogenesis"].get(k) != new["thermogenesis"].get(k)}
-        assert changed <= KEYS, (name, changed)
+def _main(name):
+    try:
+        base = subprocess.run(["git", "show", f"origin/main:data/{name}"], cwd=ROOT,
+                              capture_output=True, text=True, check=True).stdout
+    except Exception:
+        pytest.skip("origin/main not available")
+    d = json.loads(base)
+    return d.get("products", d)
 
 
-def test_the_replay_restores_the_rows_and_fails_without_the_pin():
+@pytest.mark.parametrize("name", ["products.json", "products-manual-corrections.json"])
+def test_no_other_product_or_key_changes(name):
+    # Review round 2: compare every product, not only this one.
+    old, new = _main(name), _load(name)
+    assert set(old) == set(new)
+    for slug in old:
+        if slug != "thermogenesis":
+            assert old[slug] == new[slug], slug
+    changed = {k for k in set(old["thermogenesis"]) | set(new["thermogenesis"])
+               if old["thermogenesis"].get(k) != new["thermogenesis"].get(k)}
+    assert changed <= KEYS, changed
+
+
+def test_a_rebuild_restores_all_eight_keys_from_the_pin():
+    # Review round 2: start from the old raw record with every approved key gone, as a
+    # rebuild from the store scrape leaves it, and require the replay to restore each.
     import sys
     sys.path.insert(0, os.path.join(ROOT, "scripts"))
     import apply_enrichment as ae
     corr = _load("products-manual-corrections.json")
-    stale = [{"name": "Chromium Polynicotinate", "dose": "120 mcg"},
-             {"name": "Kelp", "dose": "2 mg"}]
-    products = {"thermogenesis": dict(copy.deepcopy(_load("products.json")["thermogenesis"]),
-                                      ingredients=stale)}
+    want = _load("products.json")["thermogenesis"]
+    raw = {k: v for k, v in want.items() if k not in KEYS}
+    raw["ingredients"] = [{"name": "Chromium Polynicotinate", "dose": "120 mcg"},
+                          {"name": "Kelp", "dose": "2 mg"}]
+    raw["ingredients_source"] = "db-formulations-2026-06-25"
+    products = {"thermogenesis": copy.deepcopy(raw)}
     ae.apply_corrections(products, corr)
-    assert [(i["name"], i["dose"]) for i in products["thermogenesis"]["ingredients"]] == ROWS
-    no_rows = copy.deepcopy(corr)
-    del no_rows["thermogenesis"]["ingredients"]
-    products = {"thermogenesis": dict(copy.deepcopy(_load("products.json")["thermogenesis"]),
-                                      ingredients=stale)}
-    ae.apply_corrections(products, no_rows)
-    assert [(i["name"], i["dose"]) for i in products["thermogenesis"]["ingredients"]] != ROWS
+    for k in sorted(KEYS):
+        assert products["thermogenesis"].get(k) == want[k], k
+    # Each pinned key is what protects its field: drop it from the pin and it is lost.
+    for k in sorted(KEYS - {"chat_caution"}):
+        thin = copy.deepcopy(corr)
+        del thin["thermogenesis"][k]
+        products = {"thermogenesis": copy.deepcopy(raw)}
+        ae.apply_corrections(products, thin)
+        assert products["thermogenesis"].get(k) != want[k], k
 
 
 def test_the_product_page_data_carries_the_approved_page(appmod):
