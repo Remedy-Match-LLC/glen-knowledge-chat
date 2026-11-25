@@ -386,6 +386,8 @@
    "gk_stale_reason": "GK page missing: Chlorogenic Acid, Isoflavones, Dihydroberberine (GlucoVantage), Pyridoxamine, Ketosterone (3-Ketosteroid)",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
+   "warning": "If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it.",
+   "chat_caution": true,
    "fmp_id": "366",
    "enrichment_note": "D3 corrected 23 Nov 2026: the recipe uses 0.5 mg of a 500,000 IU/g premix, so 250 IU (6.25 mcg) per capsule. The old '5 mg' line read as 2,500 IU. Only that line changed; the rest keeps its original source."
   },
@@ -682,6 +684,8 @@
    "ingredients_source": "production-sheet-2026-07-06",
    "description": "Dental Powder . Dental Powder Dental Powder Brush with this potent soothing, healing, regenerating and remineralizing powder, and leave it in your mouth while you sleep to experience the full magic... Or blend it with coconut oil for an oil-pulling dentrifice... ​A little goes a long, long way... And our new formula now includes over 50 beneficial flora. Here are the details of our popular Proprietary Blend: Minerals: Nanocrystalline Hydroxyapatite (botanical source NCHA, aka MCHA or MCHC, but a thousand times smaller particles) Meta‑analyses of randomized trials in generally healthy...",
    "bottle_type": "30 g",
+   "warning": "If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it.",
+   "chat_caution": true,
    "fmp_id": "327",
    "qty_pricing": true
   },
