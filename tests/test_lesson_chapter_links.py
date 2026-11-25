@@ -103,7 +103,7 @@ def _need_node():
     pytest.skip("node not installed")
 
 
-def _run_handler(frames, href, link_at=None):
+def _run_handler(frames, href, link_at=None, yt_bound=None):
     """Run the shipped script in node against a small DOM.
 
     frames: iframe srcs in page order. link_at: how many frames come before the link
@@ -121,17 +121,24 @@ var frames=srcs.map(function(s,i){return {src:s, pos:i<linkAt?i:i+1,
   scrollIntoView:function(){scrolled=i;},
   compareDocumentPosition:function(o){return o.pos>this.pos?4:2;}};});
 var link={pos:linkAt, getAttribute:function(){return %s;}};
+var calls=[], ytAt=%s;
+global.window={};
+if(ytAt!==null)window.__muYT={getIframe:function(){return frames[ytAt];},
+  seekTo:function(n,a){calls.push(["seekTo",n,a]);}, playVideo:function(){calls.push(["play"]);}};
 global.location={href:"https://mentorshipu.com/learn/x/y/z"};
 global.document={addEventListener:function(t,f){handler=f;},
   querySelectorAll:function(sel){
-    var want=[], re=/iframe\[src\*="([^"]+)"\]/g, m;
-    while((m=re.exec(sel)))want.push(m[1]);
-    return frames.filter(function(f){return want.some(function(w){return f.src.indexOf(w)>=0;});});}};
+    var want=[], re=/iframe\\[src\\*="([^"]+)"( i)?\\]/g, m;
+    while((m=re.exec(sel)))want.push([m[1], !!m[2]]);
+    return frames.filter(function(f){return want.some(function(w){
+      return (w[1]?f.src.toLowerCase():f.src).indexOf(w[1]?w[0].toLowerCase():w[0])>=0;});});}};
 %s
 handler({target:{closest:function(s){return s==='a[href^="#t="]'?link:null;}},
   preventDefault:function(){prevented=true;}});
-console.log(JSON.stringify({srcs:frames.map(function(f){return f.src;}), scrolled:scrolled, prevented:prevented}));
-""" % (json.dumps(frames), link_at, json.dumps(href), js)
+var out={srcs:frames.map(function(f){return f.src;}), scrolled:scrolled, prevented:prevented};
+if(calls.length)out.calls=calls;
+console.log(JSON.stringify(out));
+""" % (json.dumps(frames), link_at, json.dumps(href), json.dumps(yt_bound), js)
     out = subprocess.run(["node", "-e", harness], capture_output=True, text=True, check=True)
     return json.loads(out.stdout)
 
@@ -142,7 +149,7 @@ def test_a_click_restarts_rumble_at_that_second():
                  "scrolled": 0, "prevented": True}
 
 
-def test_a_second_click_replaces_the_start_and_youtube_autoplays():
+def test_an_existing_start_is_replaced_and_an_unbound_youtube_autoplays():
     r = _run_handler(["https://www.youtube.com/embed/abc?start=10&enablejsapi=1"], "#t=90")
     assert r["srcs"] == ["https://www.youtube.com/embed/abc?start=90&enablejsapi=1&autoplay=1"]
 
@@ -170,3 +177,25 @@ def test_a_malformed_link_or_no_video_leaves_the_page_alone():
     assert _run_handler(["https://rumble.com/embed/v1/"], "#t=9x") == {
         "srcs": ["https://rumble.com/embed/v1/"], "scrolled": None, "prevented": False}
     assert _run_handler([], "#t=90")["prevented"] is False
+
+
+def test_a_bound_youtube_player_seeks_in_place_so_the_watched_hook_survives():
+    # Review round 2 v2: reloading the iframe would detach the auto-mark-watched hook.
+    src = "https://www.youtube.com/embed/abc?enablejsapi=1"
+    r = _run_handler([src], "#t=90", yt_bound=0)
+    assert r["srcs"] == [src]
+    assert r["calls"] == [["seekTo", 90, True], ["play"]]
+    # A player bound to a different video does not hijack this one.
+    r = _run_handler([src, "https://rumble.com/embed/v1/"], "#t=7", yt_bound=0)
+    assert r["srcs"] == [src, "https://rumble.com/embed/v1/?start=7"] and "calls" not in r
+
+
+def test_a_mixed_case_embed_is_still_controlled():
+    r = _run_handler(["https://RUMBLE.COM/embed/v1/"], "#t=3")
+    assert r["srcs"] == ["https://rumble.com/embed/v1/?start=3"]
+
+
+def test_the_watched_hook_exposes_its_player():
+    import courses_blueprint as cb
+    import inspect
+    assert "window.__muYT=new YT.Player(" in inspect.getsource(cb.lesson_page)

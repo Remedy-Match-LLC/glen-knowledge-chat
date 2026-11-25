@@ -408,18 +408,22 @@ _MODULE_TOOL = {"02-body": "bodymap"}
 # both read ?start=N (Rumble checked in a browser 2026-11-25: ?start=90 played from 1:30).
 # Only the sanitizer's exact #t=N form is handled (teaching, chapter links). A link
 # controls the nearest video above it, so a lesson with several videos works; with none
-# above, the first video. Reloading a YouTube iframe may detach the auto-mark-watched
-# hook below; Rumble, which the class replays use, has no such hook.
+# above, the first video. A YouTube video that the auto-mark-watched hook below has
+# bound (window.__muYT) seeks in place, so the hook keeps firing; any other video
+# reloads with ?start=N.
 _CHAPTER_JS = (
     '<script>document.addEventListener("click",function(e){'
     'var a=e.target.closest&&e.target.closest(\'a[href^="#t="]\');if(!a)return;'
     'var m=/^#t=(\\d{1,5})$/.exec(a.getAttribute("href")||"");if(!m)return;'
-    'var fs=document.querySelectorAll(\'iframe[src*="rumble.com/embed/"],iframe[src*="youtube"]\');'
+    'var fs=document.querySelectorAll(\'iframe[src*="rumble.com/embed/" i],iframe[src*="youtube" i]\');'
     'var f=null;for(var i=0;i<fs.length;i++){if(fs[i].compareDocumentPosition(a)&4)f=fs[i];}'
-    'if(!f)f=fs[0];if(!f)return;e.preventDefault();var u=new URL(f.src,location.href);'
-    'u.searchParams.set("start",m[1]);'
-    'if(/youtube/.test(u.hostname))u.searchParams.set("autoplay","1");'
-    'f.src=u.toString();f.scrollIntoView({behavior:"smooth",block:"center"});});</script>')
+    'if(!f)f=fs[0];if(!f)return;e.preventDefault();var n=+m[1];'
+    'f.scrollIntoView({behavior:"smooth",block:"center"});'
+    'var y=window.__muYT;if(y&&y.seekTo&&y.getIframe&&y.getIframe()===f){'
+    'y.seekTo(n,true);if(y.playVideo)y.playVideo();return;}'
+    'var u=new URL(f.src,location.href);u.searchParams.set("start",m[1]);'
+    'if(/youtube/i.test(u.hostname))u.searchParams.set("autoplay","1");'
+    'f.src=u.toString();});</script>')
 
 
 @courses_bp.route("/learn/<course_slug>/<module_slug>/<lesson_slug>")
@@ -485,7 +489,7 @@ def lesson_page(course_slug, module_slug, lesson_slug):
         f'(function(){{var t=document.createElement("script");t.src="https://www.youtube.com/iframe_api";'
         f'document.head.appendChild(t);window.onYouTubeIframeAPIReady=function(){{'
         f'var f=document.querySelector("iframe[src*=\\"youtube\\"]");if(!f)return;'
-        f'try{{new YT.Player(f,{{events:{{onStateChange:function(e){{if(e.data===0)muWatched();}}}}}});}}catch(_){{}}}};}})();'
+        f'try{{window.__muYT=new YT.Player(f,{{events:{{onStateChange:function(e){{if(e.data===0)muWatched();}}}}}});}}catch(_){{}}}};}})();'
         f'</script>')
     body += watch_js
     assignment = escape(_HOMEWORK_ASSIGNMENT.get(module_slug, _HOMEWORK_DEFAULT))
