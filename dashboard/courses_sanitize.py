@@ -56,6 +56,7 @@ _SAFE_URL_SCHEMES = ("http", "https")
 # restarts the lesson's video at that second. Only this exact form is kept; any other
 # fragment or relative href is still dropped (teaching, chapter links, 2026-11-25).
 _CHAPTER_HREF = re.compile(r"#t=[0-9]{1,5}")
+_UNSAFE_SRC_CHARS = re.compile(r"[\\@\x00-\x20\x7f]")
 
 
 def _safe_url(value: str) -> bool:
@@ -138,7 +139,17 @@ def sanitize_html(html: str) -> str:
     #    other attributes. Anything not youtube/youtube-nocookie/rumble is
     #    dropped whole, not just neutered.
     for tag in list(soup.find_all("iframe")):
-        host = _hostname(tag.get("src", ""))
+        src = tag.get("src", "")
+        src = src.strip() if isinstance(src, str) else ""
+        tag["src"] = src
+        host = _hostname(src)
+        # Python's urlparse and a browser disagree on a backslash and "@": a src of
+        # https://evil.example\@www.youtube.com/ reads as youtube here and loads
+        # evil.example in the browser (chapter-links review, 2026-11-25). Allow only
+        # https: or protocol-relative addresses with none of those characters.
+        if (_UNSAFE_SRC_CHARS.search(src)
+                or not (src.lower().startswith("https://") or src.startswith("//"))):
+            host = ""
         if host not in IFRAME_ALLOWED_HOSTS:
             tag.decompose()
 

@@ -406,13 +406,17 @@ _MODULE_TOOL = {"02-body": "bodymap"}
 # Chapter links in a lesson body, <a href="#t=754">12:34 Topic</a>, restart the lesson's
 # embedded video at that second instead of jumping the page. Rumble and YouTube embeds
 # both read ?start=N (Rumble checked in a browser 2026-11-25: ?start=90 played from 1:30).
-# Only the sanitizer's exact #t=N form is handled (teaching, chapter links).
+# Only the sanitizer's exact #t=N form is handled (teaching, chapter links). A link
+# controls the nearest video above it, so a lesson with several videos works; with none
+# above, the first video. Reloading a YouTube iframe may detach the auto-mark-watched
+# hook below; Rumble, which the class replays use, has no such hook.
 _CHAPTER_JS = (
     '<script>document.addEventListener("click",function(e){'
     'var a=e.target.closest&&e.target.closest(\'a[href^="#t="]\');if(!a)return;'
     'var m=/^#t=(\\d{1,5})$/.exec(a.getAttribute("href")||"");if(!m)return;'
-    'var f=document.querySelector(\'iframe[src*="rumble.com/embed/"],iframe[src*="youtube"]\');'
-    'if(!f)return;e.preventDefault();var u=new URL(f.src,location.href);'
+    'var fs=document.querySelectorAll(\'iframe[src*="rumble.com/embed/"],iframe[src*="youtube"]\');'
+    'var f=null;for(var i=0;i<fs.length;i++){if(fs[i].compareDocumentPosition(a)&4)f=fs[i];}'
+    'if(!f)f=fs[0];if(!f)return;e.preventDefault();var u=new URL(f.src,location.href);'
     'u.searchParams.set("start",m[1]);'
     'if(/youtube/.test(u.hostname))u.searchParams.set("autoplay","1");'
     'f.src=u.toString();f.scrollIntoView({behavior:"smooth",block:"center"});});</script>')
@@ -468,7 +472,7 @@ def lesson_page(course_slug, module_slug, lesson_slug):
     dls = f"<h3>Resources</h3><ul>{dls}</ul>" if dls else ""
     body = (f'<p><a href="/learn/{course.slug}">← {escape(course.title)}</a></p>'
             f'<h1>{escape(lesson.title)}</h1><div>{safe_body}</div>{dls}')
-    if 'href="#t=' in safe_body:
+    if '<a href="#t=' in safe_body:
         body += _CHAPTER_JS
     watch_js = (
         f'<p><button type="button" id="mu-watched" onclick="muWatched()">Mark watched</button> '
