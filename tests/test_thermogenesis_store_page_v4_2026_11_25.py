@@ -61,7 +61,7 @@ BLEND = (
 PANEL_NOTE = (
     "Bioavailability Blend, 34.5 mg: " + BLEND + " Other ingredients: organic pullulan "
     "vegicaps, Healing Energy, Love and Prayer. 30 vegicaps. Vegetarian and vegan. Contains "
-    "about 3 mg caffeine per capsule, from the green tea extract.")
+    "less than 1 mg of caffeine per capsule.")   # v5, Glen 2026-11-25
 SPEC = os.path.expanduser("~/AI-Training/production/05 Formulations/thermogenesis/"
                           "2026-10-31/thermogenesis-store-page.md")
 
@@ -101,6 +101,7 @@ def test_the_old_values_are_gone():
     p = _load("products.json")["thermogenesis"]
     s = json.dumps(p)
     assert "120 mcg" not in s and "Kelp" not in s and "Price: $70" not in s
+    assert "about 3 mg caffeine" not in s   # superseded by v5
 
 
 def test_the_replay_restores_every_field():
@@ -143,6 +144,5 @@ def test_the_pinned_text_is_the_approved_spec_text():
     assert '"' + WARNING + '"' in spec
     assert BLEND in plain
     assert "Other ingredients: organic pullulan vegicaps, Healing Energy, Love and Prayer." in plain
-    assert ("30 vegicaps. Vegetarian and vegan. Contains about 3 mg caffeine per capsule, from "
-            "the green tea extract.") in plain
+    assert "30 vegicaps. Vegetarian and vegan. Contains less than 1 mg of caffeine per capsule." in plain
     assert INTRO in spec and ("Sacramental Healing use: " + DIRECTIONS) in plain
