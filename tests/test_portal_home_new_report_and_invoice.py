@@ -125,9 +125,11 @@ def test_report_new_route_expands_the_report_and_keeps_its_own_hash():
             'expandReport:true, openCard:true}') in PORTAL
     assert "latestUrl.hash = key;" in PORTAL
     assert 'latestUrl.hash = "biofield-latest";' not in PORTAL
-    block = PORTAL[PORTAL.index("if(followed && route.expandReport){"):][:200]
+    block = PORTAL[PORTAL.index("if(followed && route.expandReport){"):][:600]
     assert 'document.querySelector(".rr-header")' in block and "rr.click()" in block
     assert 'rr.dataset.opened !== "1"' in block
+    # Round 3: never a second open when the report already shows.
+    assert 'rrBody.style.display !== "none"' in block and "!showing) rr.click()" in block
 
 
 def test_remedies_panel_shows_the_unpaid_invoice_cards_first():

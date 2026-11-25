@@ -1776,8 +1776,12 @@ function applyPortalHash(userAction, fromHistory){
     // The box to write in, first one present. Never on a re-render, or every poll
     // would pull the cursor back while the client types somewhere else.
     if(followed && route.expandReport){
+      // Skip when the report already shows (opened before, or Back re-applied the
+      // route after a poll rebuilt the header): a second click would count a second open.
       const rr = document.querySelector(".rr-header");
-      if(rr && rr.dataset.opened !== "1") rr.click();
+      const rrBody = document.getElementById("rr-body");
+      const showing = rrBody && rrBody.style.display !== "none";
+      if(rr && rr.dataset.opened !== "1" && !showing) rr.click();
     }
     if(followed && route.focus){
       const box = route.focus.map(id => document.getElementById(id)).find(Boolean);
