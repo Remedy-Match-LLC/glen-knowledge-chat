@@ -92,6 +92,9 @@ def test_record_and_pin_carry_the_approved_page(name):
     assert p["warning"] == WARNING and p["chat_caution"] is True
     assert p["warning"].startswith(OPENS) and p["warning"].endswith(ENDS)
     assert p["panel_note"] == PANEL_NOTE
+    # Newer than any cached research text, so the page regenerates from this record
+    # rather than the old store scrape with kelp and "caffeine-free" (review round 1).
+    assert p["content_since"] >= "2026-11-25"
 
 
 def test_the_old_values_are_gone():
