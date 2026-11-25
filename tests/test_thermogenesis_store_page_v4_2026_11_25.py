@@ -42,6 +42,30 @@ PANEL = [
 ]
 
 
+# The approved caution and panel note in full (review round 2). The last test checks them
+# against the vault spec when it is on this machine.
+WARNING = (
+    OPENS + " Do not combine with additional caffeine or other stimulants, such as energy "
+    "drinks, decongestants or ADHD medicine. Stop use and get medical help right away if you "
+    "notice chest pain or an irregular heartbeat. Stop use if you notice a racing heartbeat or "
+    "dizziness. Consult your health professional before use if you have high blood pressure or "
+    "a heart condition, or take any prescription medicine. " + GINKGO + " If you are planning "
+    "surgery, tell your surgical team you take it and ask when to stop. " + LIVER + " Do not "
+    "use if you have liver disease. Stop use and consult your physician if you notice yellowing "
+    "of the skin or eyes, dark urine, or abdominal pain. " + ENDS)
+BLEND = (
+    "Phosphatides (Helianthus annuus), humic and fulvic acids, moringa 100:1 (Moringa "
+    "oleifera), gingerol 10% (Zingiber officinale), piperine (Piper nigrum), EGb 761 (Ginkgo "
+    "biloba), niacin 5 mg, vinpocetine (Vinca minor), licorice (Glycyrrhiza glabra) and Spirit "
+    "Minerals.")
+PANEL_NOTE = (
+    "Bioavailability Blend, 34.5 mg: " + BLEND + " Other ingredients: organic pullulan "
+    "vegicaps, Healing Energy, Love and Prayer. 30 vegicaps. Vegetarian and vegan. Contains "
+    "about 3 mg caffeine per capsule, from the green tea extract.")
+SPEC = os.path.expanduser("~/AI-Training/production/05 Formulations/thermogenesis/"
+                          "2026-10-31/thermogenesis-store-page.md")
+
+
 def _load(name):
     d = json.load(open(os.path.join(ROOT, "data", name), encoding="utf-8"))
     return d.get("products", d)
@@ -64,11 +88,10 @@ def test_record_and_pin_carry_the_approved_page(name):
     assert p["ingredients_source"] == "manual"
     assert p["description"] == INTRO and p["intro"] == INTRO
     assert p["directions"] == DIRECTIONS
-    w = p["warning"]
-    assert w.startswith(OPENS) and w.endswith(ENDS) and GINKGO in w and LIVER in w
-    assert "—" not in w and p["chat_caution"] is True
-    assert "Contains about 3 mg caffeine per capsule" in p["panel_note"]
-    assert "EGb 761 (Ginkgo biloba)" in p["panel_note"]
+    # Word for word (review round 2): a dropped sentence or a changed count fails here.
+    assert p["warning"] == WARNING and p["chat_caution"] is True
+    assert p["warning"].startswith(OPENS) and p["warning"].endswith(ENDS)
+    assert p["panel_note"] == PANEL_NOTE
 
 
 def test_the_old_values_are_gone():
@@ -96,6 +119,7 @@ def test_the_replay_restores_every_field():
 def test_the_chat_quotes_the_new_caution_once(appmod):
     block = appmod.named_product_facts_block("What is Thermogenesis?")
     assert "### Thermogenesis" in block
+    assert block.count(WARNING) == 1   # the whole approved caution, once (review round 2)
     assert block.count(GINKGO) == 1 and block.count(LIVER) == 1
 
 
@@ -107,3 +131,15 @@ def test_the_store_page_shows_the_caution(appmod, monkeypatch):
     d = appmod.app.test_client().get("/begin/product-page-data/thermogenesis").get_json()
     body = next(s for s in d["sections"] if s["id"] == "caution")["body"]
     assert body == _load("products.json")["thermogenesis"]["warning"]
+
+
+@pytest.mark.skipif(not os.path.exists(SPEC), reason="the vault spec is not on this machine")
+def test_the_pinned_text_is_the_approved_spec_text():
+    spec = open(SPEC, encoding="utf-8").read()
+    plain = spec.replace("*", "")
+    assert '"' + WARNING + '"' in spec
+    assert BLEND in plain
+    assert "Other ingredients: organic pullulan vegicaps, Healing Energy, Love and Prayer." in plain
+    assert ("30 vegicaps. Vegetarian and vegan. Contains about 3 mg caffeine per capsule, from "
+            "the green tea extract.") in plain
+    assert INTRO in spec and ("Sacramental Healing use: " + DIRECTIONS) in plain
