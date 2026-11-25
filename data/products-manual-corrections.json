@@ -5649,10 +5649,17 @@
       }
     ]
   },
+  "dental-powder": {
+    "ingredients_source": "production-sheet-2026-07-06",
+    "warning": "If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it.",
+    "chat_caution": true
+  },
   "bone-builder": {
     "ingredient_doses": {
       "Vitamin D3: Cholecalciferol": "6.25 mcg (250 IU)"
     },
+    "warning": "If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it.",
+    "chat_caution": true,
     "note": "D3 corrected 23 Nov 2026: the recipe uses 0.5 mg of a 500,000 IU/g premix, so 250 IU (6.25 mcg) per capsule. The old '5 mg' line read as 2,500 IU. Only that line changed; the rest keeps its original source."
   }
 }
