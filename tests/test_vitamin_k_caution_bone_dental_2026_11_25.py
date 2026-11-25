@@ -64,6 +64,8 @@ def test_the_replay_restores_the_caution(catalogue, corrections):
     for slug, _ in PRODUCTS:
         assert products[slug]["warning"] == WARNING
         assert products[slug]["chat_caution"] is True
+        # The replay keeps each record's ingredient source tag (review round 1).
+        assert products[slug]["ingredients_source"] == catalogue[slug]["ingredients_source"]
     # Bone Builder's D3 dose fix is still applied alongside.
     d3 = [i for i in products["bone-builder"]["ingredients"]
           if "cholecalciferol" in str(i.get("name", "")).lower()]
