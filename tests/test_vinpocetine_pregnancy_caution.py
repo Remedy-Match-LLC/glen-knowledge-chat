@@ -35,10 +35,7 @@ DESCRIPTION_ONLY = ["nerve-repair", "nerve-pulse"]
 # the directions carry the dose (Glen "yes", 2026-11-01, platform tab).
 APPENDED = {"sleep-syntropy": None, "vitality": None}
 # A later caution line follows the vinpocetine line (iodine, Glen "yes" 2026-10-31).
-FOLLOWED = {"thermogenesis": (
-    "Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have a "
-    "thyroid condition or take other iodine products, consult your health professional before "
-    "use."),
+FOLLOWED = {
     # Glen "yes" in the marketing tab, 2026-11-04 (marketing/04 Copy/
     # vein-support-caution-2026-11-02/change-v3.md, three review rounds).
     "vein-support": (
@@ -58,7 +55,10 @@ ALL = (OWN_ROW + BLEND_ROW + ["vinpocetine"] + DESCRIPTION_ONLY + ["sleep-syntro
        + LABEL_ONLY)
 # Blood Cleanse's store caution v2 opens with its own vinpocetine sentence and adds
 # breastfeeding (marketing/04 Copy/blood-cleanse-niacin-2026-10-31/change-v2.md).
-REPLACED = {"blood-cleanse": (
+REPLACED = {
+    # Store page v4, Glen "approve" 2026-11-25: the vinpocetine line now ends it.
+    "thermogenesis": "Do not use if you are pregnant or breastfeeding, or if you are under 18. Synephrine, from bitter orange, may raise heart rate and blood pressure. Do not combine with additional caffeine or other stimulants, such as energy drinks, decongestants or ADHD medicine. Stop use and get medical help right away if you notice chest pain or an irregular heartbeat. Stop use if you notice a racing heartbeat or dizziness. Consult your health professional before use if you have high blood pressure or a heart condition, or take any prescription medicine. This formula contains ginkgo, which may increase bleeding with blood thinners such as warfarin, aspirin or clopidogrel. If you are planning surgery, tell your surgical team you take it and ask when to stop. Green tea extract and garcinia are rare causes of liver injury. Do not use if you have liver disease. Stop use and consult your physician if you notice yellowing of the skin or eyes, dark urine, or abdominal pain. Each capsule contains about 150 mcg of iodine, the adult daily requirement. If you have a thyroid condition or take other iodine products, consult your health professional before use. This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+    "blood-cleanse": (
     "This formula contains vinpocetine. Do not use if you are pregnant, could become "
     "pregnant, or are breastfeeding. It is not for children. Consult your physician before "
     "use if you take any medicine, including aspirin or other pain relievers. This matters "

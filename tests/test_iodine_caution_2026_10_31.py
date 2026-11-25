@@ -25,7 +25,8 @@ L150 = "Each capsule contains about 150 mcg of iodine, the adult daily requireme
 VIN = ("This formula contains vinpocetine, so do not use it if you are pregnant or could "
        "become pregnant.")
 WARNING = {
-    "thermogenesis": VIN + " " + L150,
+    # Store page v4, Glen "approve" 2026-11-25: the iodine line, then the vinpocetine line.
+    "thermogenesis": "Do not use if you are pregnant or breastfeeding, or if you are under 18. Synephrine, from bitter orange, may raise heart rate and blood pressure. Do not combine with additional caffeine or other stimulants, such as energy drinks, decongestants or ADHD medicine. Stop use and get medical help right away if you notice chest pain or an irregular heartbeat. Stop use if you notice a racing heartbeat or dizziness. Consult your health professional before use if you have high blood pressure or a heart condition, or take any prescription medicine. This formula contains ginkgo, which may increase bleeding with blood thinners such as warfarin, aspirin or clopidogrel. If you are planning surgery, tell your surgical team you take it and ask when to stop. Green tea extract and garcinia are rare causes of liver injury. Do not use if you have liver disease. Stop use and consult your physician if you notice yellowing of the skin or eyes, dark urine, or abdominal pain. " + L150 + " " + VIN,
     "vitamin-d-syntropy": (
         "If you take a blood thinner such as warfarin, consult your physician before use, "
         "because vitamin K affects it. Consult your physician before use if you are pregnant. "
