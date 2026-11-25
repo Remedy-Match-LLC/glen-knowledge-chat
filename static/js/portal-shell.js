@@ -287,6 +287,8 @@ function intentLinkLabel(text) {
 //     label, done, in_progress, href}] }] }
 //   view.unpaid_invoice = { amount_dollars, link } -- the client's own single
 //     unpaid, portal-published invoice, if there is one
+//   view.new_report = { when, href } -- the newest confirmed report, while the
+//     client has not opened it yet; `when` is pre-formatted by the caller
 //   view.appointment = { title, when } -- a booked appointment already known
 //     to fall within the next seven days, pre-formatted by the caller (this
 //     module does no date math, matching the rest of portal-shell.js)
@@ -344,6 +346,24 @@ function _homeIndexHtml() {
   return '<nav class="home-index" aria-label="All portal sections">' + items + '</nav>';
 }
 
+function _homeAlertsHtml(view) {
+  var html = '';
+  var inv = view.unpaid_invoice;
+  if (inv && inv.amount_dollars != null) {
+    var invoiceText = 'Unpaid invoice, $' + escapeHtml(inv.amount_dollars) + '.';
+    html += '<div class="home-item home-alert" data-home-alert="invoice">' + (inv.link
+      ? '<a href="' + escapeHtml(inv.link) + '">' + invoiceText + '</a>'
+      : invoiceText) + '</div>';
+  }
+  var rep = view.new_report;
+  if (rep && rep.href) {
+    var repText = 'Your new report' + (rep.when ? ', ' + escapeHtml(rep.when) : '') + '.';
+    html += '<div class="home-item home-alert" data-home-alert="report"><a href="' +
+      escapeHtml(rep.href) + '">' + repText + '</a></div>';
+  }
+  return html;
+}
+
 function renderHome(view) {
   view = view || {};
   var journey = view.journey || {};
@@ -352,7 +372,11 @@ function renderHome(view) {
   // No journey data at all (a failed/empty build_status) -- render nothing
   // but the reparent slot and the index, rather than guess at a phase that
   // was never computed.
-  if (!current) return '<div class="portal-hub home-landing">' + _ONBOARDING_SLOT +
+  // Glen, 2026-11-24 and 25: an unpaid invoice and a report the client has not
+  // opened are the first things they see, above the journey. Shown even when no
+  // journey was computed, so a failed build_status cannot hide either.
+  var alertsHtml = _homeAlertsHtml(view);
+  if (!current) return '<div class="portal-hub home-landing">' + alertsHtml + _ONBOARDING_SLOT +
     _homeIndexHtml() + '</div>';
 
   var phase = current.phase;
@@ -399,19 +423,13 @@ function renderHome(view) {
   }
 
   var itemsHtml = '';
-  if (view.unpaid_invoice && view.unpaid_invoice.amount_dollars != null) {
-    var invoiceText = 'Unpaid invoice, $' + escapeHtml(view.unpaid_invoice.amount_dollars) + '.';
-    itemsHtml += '<div class="home-item">' + (view.unpaid_invoice.link
-      ? '<a href="' + escapeHtml(view.unpaid_invoice.link) + '">' + invoiceText + '</a>'
-      : invoiceText) + '</div>';
-  }
   if (view.appointment && view.appointment.title) {
     var apptText = escapeHtml(view.appointment.title) +
       (view.appointment.when ? ', ' + escapeHtml(view.appointment.when) + '.' : '.');
     itemsHtml += '<div class="home-item">' + apptText + '</div>';
   }
 
-  return '<div class="portal-hub home-landing">' + banner + _ONBOARDING_SLOT + stepsHtml + itemsHtml +
+  return '<div class="portal-hub home-landing">' + alertsHtml + banner + _ONBOARDING_SLOT + stepsHtml + itemsHtml +
     _homeIndexHtml() + '</div>';
 }
 
