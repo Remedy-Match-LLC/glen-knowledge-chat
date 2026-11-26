@@ -411,19 +411,56 @@ _MODULE_TOOL = {"02-body": "bodymap"}
 # above, the first video. A YouTube video that the auto-mark-watched hook below has
 # bound (window.__muYT) seeks in place, so the hook keeps firing; any other video
 # reloads with ?start=N.
-_CHAPTER_JS = (
-    '<script>document.addEventListener("click",function(e){'
-    'var a=e.target.closest&&e.target.closest(\'a[href^="#t="]\');if(!a)return;'
-    'var m=/^#t=(\\d{1,5})$/.exec(a.getAttribute("href")||"");if(!m)return;'
-    'var fs=document.querySelectorAll(\'iframe[src*="rumble.com/embed/" i],iframe[src*="youtube" i]\');'
-    'var f=null;for(var i=0;i<fs.length;i++){if(fs[i].compareDocumentPosition(a)&4)f=fs[i];}'
-    'if(!f)f=fs[0];if(!f)return;e.preventDefault();var n=+m[1];'
-    'f.scrollIntoView({behavior:"smooth",block:"center"});'
-    'var y=window.__muYT;if(y&&y.seekTo&&y.getIframe&&y.getIframe()===f){'
-    'y.seekTo(n,true);if(y.playVideo)y.playVideo();return;}'
-    'var u=new URL(f.src,location.href);u.searchParams.set("start",m[1]);'
-    'if(/youtube/i.test(u.hostname))u.searchParams.set("autoplay","1");'
-    'f.src=u.toString();});</script>')
+# A reloaded Rumble frame showed its cover and waited for play (Glen: "click and double
+# click fail to open the chapter or start the video"). Glen, platform tab, 25 Nov 2026:
+# "yes" to Rumble's own player on lesson pages. On a page with chapter links, each Rumble
+# frame becomes Rumble's player (rumble.com/embedJS/u4), which runs in the page and seeks
+# in place. A cold player needs its own play button pressed first (teaching's hand test,
+# 2026-11-25). If the player is not ready in 8 s, or does not start in 8 s after a click,
+# the original frame comes back, at that second when a chapter was clicked.
+_CHAPTER_JS ="<script>" + r"""(function(){
+var RSEL='iframe[src*="rumble.com/embed/" i]';
+function restore(d,n){var f=d.__muFrame;if(!f||!d.parentNode)return;
+if(n!=null){var u=new URL(f.src,location.href);u.searchParams.set("start",String(n));f.src=u.toString();}
+d.parentNode.replaceChild(f,d);}
+function seekRumble(d,n){var api=d.__muApi;
+if(d.__muPlayed){try{api.setCurrentTime(n);api.play();}catch(x){}return;}
+var b=d.querySelector&&d.querySelector(".bigPlayUI");
+try{if(b&&b.offsetParent!==null)b.click();else api.play();}catch(x){}
+var k=0,t=setInterval(function(){k++;var p=true;try{p=api.getPaused();}catch(x){}
+if(!p){clearInterval(t);d.__muPlayed=true;try{api.setCurrentTime(n);api.play();}catch(x){}}
+else if(k>=80){clearInterval(t);restore(d,n);}},100);}
+document.addEventListener("click",function(e){
+var a=e.target.closest&&e.target.closest('a[href^="#t="]');if(!a)return;
+var m=/^#t=(\d{1,5})$/.exec(a.getAttribute("href")||"");if(!m)return;
+var fs=document.querySelectorAll(RSEL+',iframe[src*="youtube" i],[data-mu-rumble]');
+var f=null;for(var i=0;i<fs.length;i++){if(fs[i].compareDocumentPosition(a)&4)f=fs[i];}
+if(!f)f=fs[0];if(!f)return;e.preventDefault();var n=+m[1];
+f.scrollIntoView({behavior:"smooth",block:"center"});
+if(f.__muApi){seekRumble(f,n);return;}
+if(f.__muFrame){restore(f,n);return;}
+var y=window.__muYT;if(y&&y.seekTo&&y.getIframe&&y.getIframe()===f){
+y.seekTo(n,true);if(y.playVideo)y.playVideo();return;}
+var u=new URL(f.src,location.href);u.searchParams.set("start",m[1]);
+if(/youtube/i.test(u.hostname))u.searchParams.set("autoplay","1");
+f.src=u.toString();});
+function swap(){var fs=document.querySelectorAll(RSEL);
+if(!fs.length||!document.createElement||!document.head)return;
+var s=document.createElement("script");s.src="https://rumble.com/embedJS/u4";s.async=true;
+s.onload=function(){if(typeof window.Rumble!=="function")return;
+for(var i=0;i<fs.length;i++)(function(f,i){var m=/\/embed\/(v[0-9a-z]+)\//i.exec(f.src);
+if(!m||!f.parentNode)return;var d=document.createElement("div");
+d.id="mu-rplay-"+i;d.setAttribute("data-mu-rumble",m[1]);
+d.style.width=(parseInt(f.getAttribute("width"),10)||640)+"px";
+d.style.maxWidth="100%";d.style.aspectRatio="16 / 9";
+d.__muFrame=f;f.parentNode.replaceChild(d,f);var done=false;
+setTimeout(function(){if(!done){done=true;restore(d,null);}},8000);
+try{window.Rumble("play",{video:m[1],div:d.id,api:function(api){
+if(done)return;done=true;d.__muApi=api;}});}catch(x){done=true;restore(d,null);}
+})(fs[i],i);};
+document.head.appendChild(s);}
+try{swap();}catch(x){}
+})();""" + "</script>"
 
 
 @courses_bp.route("/learn/<course_slug>/<module_slug>/<lesson_slug>")

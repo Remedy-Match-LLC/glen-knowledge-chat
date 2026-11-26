@@ -199,3 +199,117 @@ def test_the_watched_hook_exposes_its_player():
     import courses_blueprint as cb
     import inspect
     assert "window.__muYT=new YT.Player(" in inspect.getsource(cb.lesson_page)
+
+
+# Glen, platform tab, 25 Nov 2026: "yes" to Rumble's own player on lesson pages, so one
+# click jumps and plays. Teaching's hand test on the live lesson the same day: through
+# rumble.com/embedJS/u4 the api has play, setCurrentTime and getPaused; on a cold player
+# seek-and-play does nothing until the big play button is clicked; after that it works.
+_RUMBLE_HARNESS = """
+var timers=[], log=[], handler=null, appended=null, rumbleCalls=[];
+global.setTimeout=function(f,ms){timers.push({f:f,ms:ms,every:false});return timers.length;};
+global.setInterval=function(f,ms){timers.push({f:f,ms:ms,every:true});return timers.length;};
+global.clearInterval=function(id){if(timers[id-1])timers[id-1].dead=true;};
+function runTimers(rounds){for(var r=0;r<rounds;r++){var live=timers.filter(function(t){return !t.dead;});
+  if(!live.length)return;live.forEach(function(t){if(t.dead)return;if(!t.every)t.dead=true;t.f();});}}
+function node(src,width){var n={src:src,attrs:{width:width},style:{},
+  getAttribute:function(k){return this.attrs[k];},setAttribute:function(k,v){this.attrs[k]=v;},
+  scrollIntoView:function(){},compareDocumentPosition:function(){return 2;}};return n;}
+var parent={replaceChild:function(a,b){log.push(["replace",a.id||a.src,b.id||b.src]);
+  a.parentNode=parent;b.parentNode=null;var i=kids.indexOf(b);kids[i]=a;}};
+var kids=%(frames)s.map(function(s){var f=node(s,"640");f.parentNode=parent;return f;});
+global.location={href:"https://courses.mentorshipu.com/learn/x/y/z"};
+global.window={};
+global.document={head:{appendChild:function(s){appended=s;}},
+  createElement:function(t){var n=node("",null);n.tag=t;return n;},
+  addEventListener:function(t,f){handler=f;},
+  querySelectorAll:function(sel){return kids.filter(function(k){
+    if(k.tag==="div")return sel.indexOf("[data-mu-rumble]")>=0;
+    return /rumble\\.com\\/embed\\//i.test(k.src)||(sel.indexOf("youtube")>=0&&/youtube/i.test(k.src));});}};
+var api={paused:true,time:0,calls:[],
+  play:function(){this.calls.push("play");if(%(play_starts)s)this.paused=false;},
+  setCurrentTime:function(n){this.calls.push(["seek",n]);this.time=n;},
+  getPaused:function(){return this.paused;}};
+var big={offsetParent:%(big_visible)s,click:function(){api.calls.push("big");api.paused=false;}};
+%(js)s
+if(appended){window.Rumble=%(rumble)s;appended.onload();}
+var d=kids[0];if(d&&d.tag==="div")d.querySelector=function(s){return s===".bigPlayUI"?big:null;};
+%(before_click)s
+function click(href){handler({target:{closest:function(s){return s==='a[href^="#t="]'?{getAttribute:function(){return href;},pos:9}:null;}},
+  preventDefault:function(){}});}
+%(clicks)s
+console.log(JSON.stringify({appended:appended&&appended.src, rumble:rumbleCalls, log:log,
+  kids:kids.map(function(k){return k.tag==="div"?{div:k.attrs["data-mu-rumble"],width:k.style.width}:{src:k.src};}),
+  api:api.calls}));
+"""
+
+_RUMBLE_READY = ("function(cmd,o){rumbleCalls.push([cmd,o.video,o.div]);o.api(api);}")
+_RUMBLE_SILENT = "function(cmd,o){rumbleCalls.push([cmd,o.video,o.div]);}"
+
+
+def _run_rumble(frames, rumble=_RUMBLE_READY, clicks="", before_click="", big_visible="{}",
+                play_starts="false"):
+    import courses_blueprint as cb
+    _need_node()
+    js = cb._CHAPTER_JS.replace("<script>", "").replace("</script>", "")
+    src = _RUMBLE_HARNESS % {"frames": json.dumps(frames), "js": js, "rumble": rumble,
+                             "clicks": clicks, "before_click": before_click,
+                             "big_visible": big_visible, "play_starts": play_starts}
+    out = subprocess.run(["node", "-e", src], capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+
+
+RUMBLE = "https://rumble.com/embed/v7gqoze/?pub=4"
+
+
+def test_a_rumble_frame_becomes_rumbles_player():
+    r = _run_rumble([RUMBLE])
+    assert r["appended"] == "https://rumble.com/embedJS/u4"
+    assert r["rumble"] == [["play", "v7gqoze", "mu-rplay-0"]]
+    assert r["kids"] == [{"div": "v7gqoze", "width": "640px"}]
+
+
+def test_a_cold_click_presses_play_then_seeks():
+    r = _run_rumble([RUMBLE], clicks='click("#t=451");runTimers(3);')
+    assert r["api"] == ["big", ["seek", 451], "play"]
+
+
+def test_a_hidden_play_button_falls_back_to_api_play():
+    r = _run_rumble([RUMBLE], big_visible="null", play_starts="true",
+                    clicks='click("#t=60");runTimers(3);')
+    assert r["api"] == ["play", ["seek", 60], "play"]
+
+
+def test_after_it_has_played_a_click_seeks_directly():
+    r = _run_rumble([RUMBLE], clicks='click("#t=451");runTimers(3);click("#t=830");')
+    assert r["api"] == ["big", ["seek", 451], "play", ["seek", 830], "play"]
+
+
+def test_a_player_that_never_starts_goes_back_to_the_frame_at_that_second():
+    r = _run_rumble([RUMBLE], big_visible="null",
+                    clicks='click("#t=90");runTimers(90);')
+    assert r["kids"] == [{"src": RUMBLE + "&start=90"}]
+
+
+def test_a_player_that_never_loads_gives_back_the_frame():
+    r = _run_rumble([RUMBLE], rumble=_RUMBLE_SILENT, before_click="runTimers(1);")
+    assert r["kids"] == [{"src": RUMBLE}]
+    # The restored frame then works as before: reload at the second.
+    r = _run_rumble([RUMBLE], rumble=_RUMBLE_SILENT,
+                    before_click="runTimers(1);", clicks='click("#t=5");')
+    assert r["kids"] == [{"src": RUMBLE + "&start=5"}]
+
+
+def test_a_click_before_the_player_is_ready_restores_the_frame_at_that_second():
+    r = _run_rumble([RUMBLE], rumble=_RUMBLE_SILENT, clicks='click("#t=7");')
+    assert r["kids"] == [{"src": RUMBLE + "&start=7"}]
+
+
+def test_no_rumble_frame_loads_no_rumble_script():
+    r = _run_rumble(["https://www.youtube.com/embed/abc?enablejsapi=1"])
+    assert r["appended"] is None and r["rumble"] == []
+
+
+def test_a_rumble_failure_without_the_script_leaves_the_frame():
+    r = _run_rumble([RUMBLE], rumble="undefined")
+    assert r["kids"] == [{"src": RUMBLE}]
