@@ -12,6 +12,22 @@ CAUTION_HEAD = "St. John's wort interacts with many medicines."
 CAUTION_TAIL = "Stop 2 weeks before planned surgery. Keep out of reach of children."
 
 
+ROWS = [
+    ("Huperzine A 5% (Huperzia serrata), supplying 35 mcg huperzine A", "700 mcg"),
+    ("Vitamin B1 (as Benfotiamine)", "100 mg"),
+    ("Vitamin B12 (as methylcobalamin)", "1,000 mcg"),
+    ("Vitamin D3 (Cholecalciferol)", "650 IU"),
+    ("Na RALA (R-Lipoate) (Stabilized Bioenhanced)", "200 mg"),
+    ("Garlic Allicin 25% (Allium sativum)", "16 mg"),
+    ("Turmeric Tetrahydrocurcumin (Curcuma longa)", "100 mg"),
+    ("Pterostilbene", "50 mg"),
+    ("St. John's wort Hypericin 0.3% (Hypericum perforatum)", "30 mg"),
+]
+DESC = ("Nerve Pulse is ideally taken in a cycle of a week on and a week off to support healthy "
+        "peripheral nerve function.\n\nOtherwise, if taken continuously, most ingredients will "
+        "continue working well, but the body will adapt to the Huperzine A, reducing its benefits.")
+
+
 def _rec(f):
     d = json.load(open(os.path.join(ROOT, "data", f)))
     return (d["products"] if f == "products.json" else d)["nerve-pulse"]
@@ -22,8 +38,8 @@ def test_the_record_is_the_store_page(f):
     p = _rec(f)
     assert p["directions"] == DIRS
     assert p["warning"].startswith(CAUTION_HEAD) and p["warning"].endswith(CAUTION_TAIL)
-    assert ("Huperzine A 5% (Huperzia serrata), supplying 35 mcg huperzine A", "700 mcg") in [
-        (i["name"], i["dose"]) for i in p["ingredients"]]
+    assert [(i["name"], i["dose"]) for i in p["ingredients"]] == ROWS
+    assert p["description"] == DESC
     assert set(p["copy_pinned"]) == {"description", "directions", "ingredients"}
     assert p["chat_caution"] is True
 
