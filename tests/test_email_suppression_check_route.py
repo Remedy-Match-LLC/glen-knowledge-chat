@@ -251,9 +251,9 @@ def test_the_route_makes_a_bounded_number_of_queries(client, monkeypatch):
             return getattr(self._in, name)
 
     monkeypatch.setattr(app.db, "connect", lambda *a, **k: Counting(real(*a, **k)))
-    emails = [f"p{i}@x.com" for i in range(300)] + [f"dup{i}@x.com" for i in range(50)] \
+    emails = [f"p{i}@x.com" for i in range(600)]   # two batches of 500 + [f"dup{i}@x.com" for i in range(50)] \
         + list(EXPECTED)
     r = _post(client, emails)
     assert r.status_code == 200
     assert r.get_json()["blocked"] == EXPECTED
-    assert n["q"] <= 4
+    assert n["q"] <= 4   # 2 batches x 2 stores; one at a time would be about 1,300

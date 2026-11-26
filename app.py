@@ -49467,8 +49467,10 @@ def api_console_email_suppression_check():
     """Read-only: which of these addresses must not be emailed, and why.
 
     For senders outside this app. Body {"emails": [...]}. Each address is trimmed and
-    lowercased, then run through email_suppression.suppression_reason, the same
-    function is_suppressed calls. Response {"ok", "checked", "blocked"}: checked is
+    lowercased, then run through email_suppression.suppression_reasons: the answer
+    suppression_reason (the function is_suppressed calls) gives, in batched queries,
+    stricter in two ways: any People row's unsubscribe tag blocks, and a database
+    error is a 500, never "not blocked". Response {"ok", "checked", "blocked"}: checked is
     the count of distinct normalised addresses, blocked maps each address exactly as
     sent to its reason. More than 1000 addresses is 413 and checks nothing. Any
     exception is 500 with no blocked map. Never logs an address."""
