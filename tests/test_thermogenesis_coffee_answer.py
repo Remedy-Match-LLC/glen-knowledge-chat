@@ -214,4 +214,5 @@ def test_a_contents_question_still_copies_the_caution():
 def test_the_contents_answer_shape_keeps_the_caution():
     # Review: the block's contents-question shape listed only text, Sources and CTA.
     block = app.named_product_facts_block("Does Thermogenesis have caffeine?")
-    assert "briefly, with any caution it gives copied as above, then the Sources line" in block
+    assert ("briefly, with any caution it gives copied word for word as the caution rules "
+            "below say, then the Sources line") in block
