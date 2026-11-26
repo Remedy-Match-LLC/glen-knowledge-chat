@@ -67,7 +67,7 @@ COPY = {
             "Each capsule holds 5-HTP, GABA, ashwagandha root extract, honokiol, hops "
             "(xanthohumol) and bacosides from bacopa, with konjac glucomannan and xanthan gum.",
         ]),
-        "directions": "1 capsule at bedtime. Turn the lights out within 30 minutes, and avoid "
+        "directions": "1 capsule at bedtime, or as guided. Turn the lights out within 30 minutes, and avoid "
                       "turning lights on during the night.",
     },
     "sleep-syntropy": {
@@ -86,7 +86,7 @@ COPY = {
             "absorption.",
             "Brain Cleanse carries a larger melatonin dose, 20 mg.",
         ]),
-        "directions": "1 capsule in the middle of the night, to help you fall back to sleep. "
+        "directions": "1 capsule in the middle of the night, to help you fall back to sleep, or as guided. "
                       "You may also take 1 at bedtime, or at both times.",
     },
 }
@@ -236,6 +236,7 @@ def test_the_block_holds_the_approved_description_directions_and_caution(slug):
         f"### {NAMES[slug]}", f"Page: {app._catalog_page_url(slug)}",
         COPY[slug]["description"],
         f"Directions: {COPY[slug]['directions']}",
+        app._AS_GUIDED_RULE.format(name=NAMES[slug]),   # its Directions now say "or as guided"
         app._PINNED_DOSE_RULE.format(name=NAMES[slug],
                                      example=app._WITHDRAWN_DOSE_EXAMPLE[slug]),
         app._CAUTION_COPY_REMINDER,

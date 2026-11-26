@@ -18,7 +18,7 @@ M = PRODUCTS["microbiome"]
 
 
 def test_the_catalog_carries_the_approved_wording_exactly():
-    assert M["directions"] == "1 capsule on rising.\n\n" + S1 + "\n\n" + S2
+    assert M["directions"] == "1 capsule on rising, or as guided.\n\n" + S1 + "\n\n" + S2
     assert M["order_note"] == S1 + "\n\n" + S2
     assert M["copy_pinned"] == ["directions"]
     assert "—" not in M["directions"] + M["order_note"]
@@ -41,7 +41,7 @@ def test_the_page_shows_each_sentence_as_its_own_paragraph():
     out = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0, out.stderr
     micro, single = json.loads(out.stdout)
-    assert micro == ["Suggested use: 1 capsule on rising.", S1, S2]
+    assert micro == ["Suggested use: 1 capsule on rising, or as guided.", S1, S2]
     assert single == ["Suggested use: 1 capsule daily."]
 
 

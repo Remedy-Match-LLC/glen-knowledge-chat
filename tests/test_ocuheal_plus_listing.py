@@ -35,7 +35,7 @@ PANEL = [
     ("Silver (Nano)", "0.0001%"),
     ("Serrapeptase (Serratia marcescens)", "5C"),
 ]
-DIRECTIONS = "1 drop in each eye 2 times a day."
+DIRECTIONS = "1 drop in each eye 2 times a day, or as guided."
 
 
 @pytest.fixture(scope="module")

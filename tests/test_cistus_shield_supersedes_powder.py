@@ -146,4 +146,4 @@ def test_the_capsules_carry_glens_dosage_line(catalog):
     what the page shows under "Suggested use". `description` now carries the dose basis
     instead. The wording is Glen's and unchanged."""
     assert catalog[SHIELD]["directions"] == (
-        "Build up to 2 capsules 3 times a day according to tolerance, with food.")
+        "Build up to 2 capsules 3 times a day according to tolerance, with food, or as guided.")

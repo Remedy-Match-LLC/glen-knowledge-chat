@@ -15,7 +15,7 @@ import pytest
 import app
 
 SLUG = "vitreous-vitality"
-DIRECTIONS = "1 capsule daily with food, as guided."
+DIRECTIONS = "1 capsule daily with food, or as guided."
 VITAMIN_A = {"name": "Vitamin A (retinyl acetate)",
              "dose": "8,520 mcg RAE (28,400 IU), 947% of the Daily Value"}
 CAUTION_START = "Each capsule supplies 8,520 mcg RAE (28,400 IU) of preformed vitamin A."

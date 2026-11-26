@@ -16,7 +16,7 @@ import app
 from dashboard import biofield_authoring as ba
 
 DATA = os.path.join(os.path.dirname(__file__), "..", "data")
-B17_TIMING = ("with cooked food. Increase slowly, as guided, up to 1 level scoop once a day. "
+B17_TIMING = ("with cooked food, or as guided. Increase slowly, as guided, up to 1 level scoop once a day. "
               "Do not exceed 1 level scoop a day. If you also take B17 Syntropy, take no "
               "more than 1 capsule a day, and count it as half a scoop toward the 1-scoop "
               "limit.")
@@ -25,7 +25,10 @@ DIRECTIONS = {
     "breast-support": "Take 1 capsule once a day with food, or as guided.",
 }
 SPLITS = {
-    "B17 Max": {"dosage": "1/4 level scoop", "frequency": "once a day", "timing": B17_TIMING},
+    # The Biofield split keeps its own wording: the 26 Nov "or as guided" lines changed
+    # the catalogue Directions only (Glen "approve", production tab).
+    "B17 Max": {"dosage": "1/4 level scoop", "frequency": "once a day",
+                "timing": B17_TIMING.replace("with cooked food, or as guided.", "with cooked food.")},
     "Breast Support": {"dosage": "1 capsule", "frequency": "once a day",
                        "timing": "with food, or as guided."},
 }

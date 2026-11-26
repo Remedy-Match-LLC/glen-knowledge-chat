@@ -17,7 +17,7 @@ import app
 from dashboard import biofield_portal_publish as bpp
 from dashboard import products as products_mod
 
-LINE = "1 scoop (500 mg) 2 times a day in drinks."
+LINE = "1 scoop (500 mg) 2 times a day in drinks, or as guided."
 FORBIDDEN = ("capsule", "1 to 2 scoops", "3 times")
 SIX_PAGES = ("binder-complex", "cocos-nucifera", "fiber-cleanse", "gut-terrain-program",
              "terrain-restore", "vitreous-vitality")
@@ -44,7 +44,8 @@ def _strings(value, path="soothe-powder"):
 def test_directions_and_description_are_the_approved_line(catalog):
     p = catalog["soothe-powder"]
     assert p["directions"] == LINE
-    assert p["description"] == LINE
+    # The description kept its wording: the 26 Nov change approved Directions only.
+    assert p["description"] == "1 scoop (500 mg) 2 times a day in drinks."
 
 
 def test_no_value_in_soothe_powder_gives_the_old_dose(catalog):

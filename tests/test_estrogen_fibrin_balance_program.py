@@ -30,7 +30,7 @@ FF_DESC = ("Botanical formula, five standardized actives at 487.5 mg per capsule
 FF_DIR = "Take 1 to 3 capsules a day with food, or as guided."
 EC_DESC = ("Estrogen metabolism and clearance support, nine actives at about 497 mg per capsule. "
            "Third SKU of the Fibrolysis line, alongside Fibrosolve and Fibrolysis Factors.")
-EC_DIR = ("Take 1 capsule 1 to 2 times daily with oils or a fatty meal. Keep the bottle tightly "
+EC_DIR = ("Take 1 capsule 1 to 2 times daily with oils or a fatty meal, or as guided. Keep the bottle tightly "
           "closed and dry.")
 # Iodine line merged 2026-10-31: Glen "yes" in the marketing tab
 # (marketing/04 Copy/iodine-caution-merge-2026-10-31/).

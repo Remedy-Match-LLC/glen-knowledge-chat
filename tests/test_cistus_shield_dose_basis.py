@@ -30,7 +30,7 @@ import pytest
 
 SHIELD = "cistus-shield"
 POWDER = "cistus-syntropy-immunitea"
-DOSING = "Build up to 2 capsules 3 times a day according to tolerance, with food."
+DOSING = "Build up to 2 capsules 3 times a day according to tolerance, with food, or as guided."
 
 
 @pytest.fixture(scope="module")

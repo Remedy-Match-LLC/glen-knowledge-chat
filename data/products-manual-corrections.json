@@ -278,7 +278,7 @@
     ],
     "ingredients_source": "fmp-bom-2026-08-31",
     "description": "Estrogen metabolism and clearance support, nine actives at about 497 mg per capsule. Third SKU of the Fibrolysis line, alongside Fibrosolve and Fibrolysis Factors.",
-    "directions": "Take 1 capsule 1 to 2 times daily with oils or a fatty meal. Keep the bottle tightly closed and dry.",
+    "directions": "Take 1 capsule 1 to 2 times daily with oils or a fatty meal, or as guided. Keep the bottle tightly closed and dry.",
     "warning": "Contains piperine, which can raise blood levels of some medications. Consult your health professional before use with medications, hormone-sensitive conditions, pregnancy, or nursing. Each capsule contains about 150 mcg of iodine, the adult daily requirement. At 2 capsules daily this is about 300 mcg. If you have a thyroid condition or take other iodine products, consult your health professional before use.",
     "chat_caution": true,
     "bottle_type": "30 Caps",
@@ -1018,6 +1018,7 @@
     "note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "vagus-nerve-support": {
+    "directions": "10 drops up to 3 times a day before meals, or as guided.",
     "ingredients": [
       {
         "name": "Coenzyme A (Adenosine Monophosphate)",
@@ -1543,7 +1544,7 @@
     ],
     "ingredients_source": "label-read-2026-09-26",
     "description": "Each vegicap of Curcu Guard holds curcumin 95% (Curcuma longa) and phosphatides 30% (Helianthus annuus), with a blend that aids absorption. Take 1 capsule up to 3 times a day with food.\n\nOther ingredients: Chlorophyll vegicaps, Love. 30 vegicaps per bottle.",
-    "directions": "1 capsule up to 3 times a day with food.",
+    "directions": "1 capsule up to 3 times a day with food, or as guided.",
     "panel_note": "Bioavailability Blend contains: Vitamin B3 (as Niacin) 5 mg; Vitamin B13 (Phosphatides 30%, Helianthus annuus); EGb 761 (Ginkgo biloba: 24% flavone glycosides, 6% lactones, <0.0005% ginkgolic acid); Miracle Tree 100:1 (Moringa oleifera); Licorice Omnipotent (Glycyrrhiza glabra); Vinpocetine (Vinca minor); Gingerol 10% (Zingiber officinale); Piperine (Piper nigrum); Fulvic Acid; Humic Acid; 11 Spirit Minerals.",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows.",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
@@ -2092,7 +2093,7 @@
     ],
     "ingredients_source": "label-read-2026-09-26",
     "description": "Moisture-Eyes Night Oil is a topical oil for use around the eyes. It blends sea buckthorn berry oil 40%, medium chain triglycerides 30%, kukui nut oil 20% and emu oil 10%. Shake well, then apply topically around eyes.\n\nOther ingredients: 172 Hz Healing Energy, Love & Prayer. 15 mL per bottle.",
-    "directions": "Shake well, then apply topically around eyes.",
+    "directions": "Shake well, then apply topically around eyes, or as guided.",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
   },
   "moisturize": {
@@ -2321,7 +2322,7 @@
     ],
     "ingredients_source": "label-read-2026-09-26",
     "description": "Each vegicap of Reverse AGE combines DHB (dihydroberberine), zinc carnosine and Na RALA. It adds benfotiamine and a 260 mg polyphenol complex of curcumin, rosmarinic acid and EMIQ. Take 1 to 3 capsules a day with food, as guided.\n\nOther ingredients: Organic Pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
-    "directions": "1 to 3 capsules a day with food, as guided.",
+    "directions": "1 to 3 capsules a day with food, or as guided.",
     "panel_note": "Polyphenols (Proprietary Complex) contains: Curcumin (Curcuma longa), Rosmarinic Acid 50% (Salvia rosmarinus), EMIQ (Enzymatically Modified Isoquercetin) (Sophora japonica).",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
   },
@@ -2994,7 +2995,7 @@
   },
   "vitamin-c-syntropy": {
     "description": "Each Vitamin C Syntropy vegicap gives you vitamin C as magnesium ascorbate and ascorbyl palmitate. Alongside it you get natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, and glutathione in two forms, S-acetyl and reduced GSH. You also get coenzyme Q10 as ubiquinone, plus superoxide dismutase and catalase. Rounding it out are vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate, and vitamin B6 as pyridoxal 5'-phosphate. Then come the polyphenols: quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac. Magnesium threonate and magnesium ascorbate finish the formula, joined by a blend that aids absorption. Take 1 capsule daily before food, as guided.\n\nOther ingredients: Phthalate-free enteric vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
-    "directions": "1 capsule daily before food, as guided.",
+    "directions": "1 capsule daily before food, or as guided.",
     "ingredients": [
       {
         "name": "Vitamin C (Mg Ascorbate & Ascorbyl Palmitate)",
@@ -3240,7 +3241,7 @@
     ],
     "ingredients_source": "label-read-2026-09-30",
     "description": "Each Vitamin A Syntropy vegicap gives you 25,000 IU of vitamin A as retinyl acetate/palmitate, plus beta carotene from Dunaliella salina carotenoids. You're also getting vitamins B1, B2, B5 and B6, phosphatidyl choline from egg, vitamin C as zinc ascorbate and vitamin E as mixed tocopherols. The minerals are magnesium as threonate, manganese as glycinate, phosphorus as ATP, potassium as orotate, selenium as methylselenocysteine and zinc as ascorbate. Then aloe vera inner-leaf polysaccharides, humic and fulvic acids and cilantro juice powder work alongside a group of bioavailability factors. Take 1 capsule daily with food, as guided.\n\nOther ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
-    "directions": "1 capsule daily with food, as guided.",
+    "directions": "1 capsule daily with food, or as guided.",
     "warning": "Avoid during pregnancy or when planning a pregnancy.",
     "chat_caution": true,
     "note": "Replaces a 21-line gut and H. pylori formula matched from the old Formulations table row 'Vitamin U Complex'. Source: Vitamin_A_Syntropy_0124_1.88x6in_30v.ai, (c) January 2024, named by Glen 2026-09-30. Zingiber officinalis corrected to Zingiber officinale; Vinpocetin to Vinpocetine. Glen 2026-10-26, platform tab: \"yes\" to \"1 capsule daily with food, as guided.\", dropping the one-month and Phase 1 terrain lines.",
@@ -3407,7 +3408,7 @@
   },
   "microbiome": {
     "ingredients_source": "production-sheet-2026-07-08",
-    "directions": "1 capsule on rising.\n\nIt is beneficial to open the capsule and take a small amount of the powder straight into your mouth.\n\nThen close the capsule and swallow it, so the rest of the powder reaches your intestines.",
+    "directions": "1 capsule on rising, or as guided.\n\nIt is beneficial to open the capsule and take a small amount of the powder straight into your mouth.\n\nThen close the capsule and swallow it, so the rest of the powder reaches your intestines.",
     "copy_pinned": [
       "directions"
     ],
@@ -3420,7 +3421,7 @@
     "chat_caution": true,
     "intro": "One capsule at bedtime, to support the cleansing of the brain and nervous system while you sleep.",
     "description": "Brain Cleanse is a bedtime formula. It pairs 20 mg of melatonin with calming botanicals and amino acids.\n\nThe brain clears the day's waste during deep sleep, through its own drainage network, the glymphatic system. Brain Cleanse is made to support the relaxation and deep sleep that this work depends on.\n\nEach capsule holds 5-HTP, GABA, ashwagandha root extract, honokiol, hops (xanthohumol) and bacosides from bacopa, with konjac glucomannan and xanthan gum.",
-    "directions": "1 capsule at bedtime. Turn the lights out within 30 minutes, and avoid turning lights on during the night.",
+    "directions": "1 capsule at bedtime, or as guided. Turn the lights out within 30 minutes, and avoid turning lights on during the night.",
     "copy_pinned": [
       "intro",
       "description",
@@ -3455,7 +3456,7 @@
     "chat_caution": true,
     "intro": "A gentle formula to help you fall back to sleep in the middle of the night, or to relax and fall asleep at bedtime.",
     "description": "Sleep Syntropy brings together nutritional and botanical factors that help relax the mind and nervous system for sleep. A small amount of melatonin, 250 mcg, supports the pineal gland's own rhythm.\n\nIt leaves out valerian, which most herbal sleep remedies include. Some people feel more wakeful, not less, after valerian.\n\nEach capsule holds 5-HTP, GABA, L-theanine, magnesium L-threonate, ashwagandha root extract, lemon balm, passionflower, hops (xanthohumol), bacosides from bacopa, phellodendron, honokiol and CBD. Vitamin B1 as benfotiamine, active forms of B6, folate and B12, zinc and chromium round it out, along with a blend that aids absorption.\n\nBrain Cleanse carries a larger melatonin dose, 20 mg.",
-    "directions": "1 capsule in the middle of the night, to help you fall back to sleep. You may also take 1 at bedtime, or at both times.",
+    "directions": "1 capsule in the middle of the night, to help you fall back to sleep, or as guided. You may also take 1 at bedtime, or at both times.",
     "copy_pinned": [
       "intro",
       "description",
@@ -3715,7 +3716,7 @@
     ],
     "ingredients_source": "label-2026-09-27",
     "description": "Each level 500 mg scoop supplies 450 mg amygdalin 98% and 50 mg pangamic acid 99%. There are no fillers or excipients.\n\nOther ingredients: Healing Energy, Love, and Prayer. 30 g jar, 60 servings. Store tightly closed, cool and dry.\n\nCaution: amygdalin can release cyanide in the body. Read the full warning on the label and the product page before use, and do not combine with apricot kernels, fruit pits or high-dose vitamin C.",
-    "directions": "Start with a quarter of a level scoop once a day with cooked food. Increase slowly, as guided, up to 1 level scoop once a day. Do not exceed 1 level scoop a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 1-scoop limit.",
+    "directions": "Start with a quarter of a level scoop once a day with cooked food, or as guided. Increase slowly, as guided, up to 1 level scoop once a day. Do not exceed 1 level scoop a day. If you also take B17 Syntropy, take no more than 1 capsule a day, and count it as half a scoop toward the 1-scoop limit.",
     "copy_pinned": [
       "ingredients",
       "intro",
@@ -3940,7 +3941,7 @@
     "ingredients_source": "store page remedymatch.com 315, run 99 and the v2 label (Glen, 2026-10-26)",
     "description": "Vitreous Vitality is an Energetically Correct™ Functional Formulation designed to support the health and structural integrity of the vitreous body, the clear gel-like tissue that fills the back of your eye and helps it maintain its shape. This formulation works with your body's natural systems to promote resilience in the connective tissues of the eye while helping defend against everyday oxidative stress.\n\nThe formula brings together three complementary layers of support. Antioxidant botanicals including grape seed proanthocyanidins, trans-resveratrol, luteolin, crocin, and black goji help protect against free radical damage. Structural building blocks like high-molecular-weight hyaluronic acid, L-lysine, and rice ceramides provide the raw materials your body needs to maintain connective tissue integrity. Targeted minerals including zinc, manganese, chromium, and magnesium, along with taurine, work synergistically to support the tissues that keep your eye functioning optimally. The formula contains no fillers or preservatives, only what your eye health needs.\n\nVitreous Vitality is for anyone looking to proactively support their eye health and maintain clear vision as they age. Whether you want to support vitreous structure or give your eyes comprehensive nutritional support, this formulation provides clinically selected nutrients in the specific forms and amounts your body can use most effectively.",
     "intro": "Vitreous Vitality combines nutrients that support the structural and functional integrity of your eyes, from the retina to the lens to the vitreous fluid itself. Retinyl acetate, zinc carnosine and crocin work together to help maintain visual clarity and comfort, while magnesium threonate and taurine support the neural pathways that let you see and process what you're looking at. The formula also includes proteolytic enzymes and compounds like hyaluronic acid and rice ceramides that help maintain tissue hydration and flexibility, which matters because your eyes need fluidity and elasticity to function well. This is the kind of targeted, multi-system support your vision deserves as you age.",
-    "directions": "1 capsule daily with food, as guided.",
+    "directions": "1 capsule daily with food, or as guided.",
     "warning": "Each capsule supplies 8,520 mcg RAE (28,400 IU) of preformed vitamin A. That is nearly 3 times the adult daily upper limit of 3,000 mcg RAE (10,000 IU). The limit counts preformed vitamin A from food and supplements together. The jar label says retinyl palmitate 2,500 IU and up to 3 capsules a day. That label is wrong for this batch. Follow this page instead. Take no more than 1 capsule a day, and only as guided by your health professional. Do not take it for longer than 6 months unless your health professional advises it. Do not add other sources of preformed vitamin A. These include multivitamins, cod liver oil, liver and other formulas that list vitamin A, including our own. Do not use with retinoid medicines such as isotretinoin or acitretin. Do not use with tetracycline antibiotics such as doxycycline or minocycline. Do not use if you are pregnant, may become pregnant or are breastfeeding. Do not give it to anyone under 18. Stop and seek advice if you notice headache, blurred vision, nausea, dizziness, bone or joint pain, or dry, peeling skin. Do not use if you have Stargardt disease or another ABCA4 retinal condition. Do not use if you are allergic to pineapple. Consult your health professional before use if you have liver or kidney disease or drink alcohol daily. Consult your health professional before long-term use if you have osteoporosis or low bone density. Also consult first if you take any medicine, especially blood-thinning or blood-sugar medicines. This includes aspirin and ibuprofen. Consult first too if you have a bleeding disorder, or before planned surgery. Keep out of reach of children.",
     "chat_caution": true,
     "copy_pinned": [
@@ -5733,5 +5734,33 @@
     "warning": "If you take a blood thinner such as warfarin, consult your physician before use, because vitamin K affects it.",
     "chat_caution": true,
     "note": "D3 corrected 23 Nov 2026: the recipe uses 0.5 mg of a 500,000 IU/g premix, so 250 IU (6.25 mcg) per capsule. The old '5 mg' line read as 2,500 IU. Only that line changed; the rest keeps its original source."
+  },
+  "soothe-powder": {
+    "directions": "1 scoop (500 mg) 2 times a day in drinks, or as guided.",
+    "ingredients_source": "fmp-bom-2026-05-23"
+  },
+  "allerfree-homeoenergetic-drops": {
+    "directions": "10 drops 3 times a day or as needed, or as guided.",
+    "ingredients_source": "fmp_snap"
+  },
+  "cistus-shield": {
+    "directions": "Build up to 2 capsules 3 times a day according to tolerance, with food, or as guided.",
+    "ingredients_source": "fmp_snap"
+  },
+  "gerd-guard": {
+    "directions": "Take 1 capsule before each meal that could cause symptoms, or even when symptoms begin, or as guided.",
+    "ingredients_source": "capsule-label-2026-09-21"
+  },
+  "gerd-guard-powder": {
+    "directions": "Stir 1 level scoop into a little water and sip slowly before each meal that could cause symptoms, or even when symptoms begin, or as guided.",
+    "ingredients_source": "powder-label-2026-09-21"
+  },
+  "ocuheal-eye-drops": {
+    "directions": "1 drop in each eye 2 times a day, or as guided.",
+    "ingredients_source": "glen-panel-2026-09-24, carnosine 1% 2026-09-25"
+  },
+  "ocuheal-plus-eye-drops": {
+    "directions": "1 drop in each eye 2 times a day, or as guided.",
+    "ingredients_source": "production-listing-spec-2026-09-24, carnosine 1% 2026-09-25"
   }
 }

@@ -15,20 +15,14 @@ def test_the_rule_follows_a_directions_line_with_or_as_guided(q, name):
     assert app._AS_GUIDED_RULE.format(name=name) in block
 
 
-def test_no_rule_without_the_words():
-    products = app._PRODUCTS["products"]
-    checked = 0
-    for slug, p in products.items():
-        d = (p.get("directions") or "").strip()
-        if not ("directions" in app._pinned_copy(p) and d and p.get("name")
-                and "or as guided" not in d):
-            continue
-        block = app.named_product_facts_block(f"How do I take {p['name'].strip()}?")
-        if f"Directions: {d}" not in block:
-            continue        # its directions sit in the description, or the name needs a cue
-        assert 'keeping "or as guided"' not in block, slug
-        checked += 1
-    assert checked >= 1   # review round 2: the absence must be exercised on a real line
+def test_no_rule_without_the_words(monkeypatch):
+    # Since 26 Nov every catalogue line says "or as guided", so one is stripped here.
+    p = app._PRODUCTS["products"]["vitamin-a-syntropy"]
+    assert "directions" in app._pinned_copy(p)
+    monkeypatch.setitem(p, "directions", "1 capsule daily with food.")
+    block = app.named_product_facts_block("How do I take Vitamin A Syntropy?")
+    assert "Directions: 1 capsule daily with food." in block
+    assert 'keeping "or as guided"' not in block
 
 
 def test_no_restated_dose():
