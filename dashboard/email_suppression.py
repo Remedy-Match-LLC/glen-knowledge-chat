@@ -98,10 +98,13 @@ def suppression_reasons(cx, emails):
 
     The console check called suppression_reason per address, two queries each, about
     0.22 s an address on prod (2026-11-26), so 505 addresses ran past a 90 s client
-    timeout. This reads both stores in two IN queries per 500 addresses and gives the
-    same answer as suppression_reason for every address: an address held by more than
-    one People row goes back through suppression_reason itself, because that function
-    reads whichever row comes first."""
+    timeout. This reads both stores in two IN queries per 500 addresses.
+
+    It gives suppression_reason's answer for every address, with two differences, both
+    stricter. An address held by more than one People row is blocked if ANY row carries
+    the tag, where suppression_reason reads whichever row comes first. And a database
+    error raises, where suppression_reason reads it as "no row"; the console route turns
+    that into a 500, so the caller fails closed (review, 2026-11-26)."""
     wanted = sorted({normalize(e) for e in emails} - {""})
     out = {e: None for e in wanted}
     if not wanted:
@@ -109,11 +112,10 @@ def suppression_reasons(cx, emails):
     for i in range(0, len(wanted), _BATCH_IN):
         part = wanted[i:i + _BATCH_IN]
         marks = ",".join("?" * len(part))
-        try:
-            rows = cx.execute(f"SELECT email, bounce_type FROM email_suppression "
-                              f"WHERE email IN ({marks})", part).fetchall()
-        except db.OperationalError:
-            rows = []
+        # No except: a timeout or lock here must reach the route as a 500, so the caller
+        # fails closed. A swallowed error would answer "not blocked" for the whole batch.
+        rows = cx.execute(f"SELECT email, bounce_type FROM email_suppression "
+                          f"WHERE email IN ({marks})", part).fetchall()
         for r in rows:
             key = normalize(r[0])
             if key in out:
@@ -122,20 +124,13 @@ def suppression_reasons(cx, emails):
         if not rest:
             continue
         marks = ",".join("?" * len(rest))
-        try:
-            rows = cx.execute(f"SELECT lower(email), tags FROM people "
-                              f"WHERE lower(email) IN ({marks})", rest).fetchall()
-        except db.OperationalError:
-            rows = []
+        rows = cx.execute(f"SELECT lower(email), tags FROM people "
+                          f"WHERE lower(email) IN ({marks})", rest).fetchall()
         seen = {}
         for r in rows:
             seen.setdefault(normalize(r[0]), []).append(r[1])
         for em, all_tags in seen.items():
-            if em not in out:
-                continue
-            if len(all_tags) > 1:
-                out[em] = suppression_reason(cx, em)
-            elif has_unsubscribed_tag(_tags_of(all_tags[0])):
+            if em in out and any(has_unsubscribed_tag(_tags_of(t)) for t in all_tags):
                 out[em] = UNSUBSCRIBED_TAG
     return out
 

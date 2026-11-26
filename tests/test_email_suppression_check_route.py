@@ -170,23 +170,69 @@ def test_batch_equals_one_at_a_time(tmp_path, monkeypatch, batch):
     cx = _seeded(tmp_path)
     got = es.suppression_reasons(cx, ADDRS)
     want = {es.normalize(a): es.suppression_reason(cx, a) for a in ADDRS if es.normalize(a)}
+    # One deliberate difference: two People rows block if either carries the tag.
+    assert want.pop("twice@x.com") in (None, "consent:unsubscribed")
+    assert got.pop("twice@x.com") == "consent:unsubscribed"
     assert got == want
     assert got["hard@x.com"] == "hard" and got["blank@x.com"] == "suppressed"
     assert got["hub@x.com"] == "consent:unsubscribed"
     assert got["clean@x.com"] is None and got["sms@x.com"] is None
 
 
-def test_two_people_rows_go_through_the_single_check(tmp_path, monkeypatch):
+def test_never_looser_than_the_single_check(tmp_path):
     cx = _seeded(tmp_path)
-    calls = []
-    real = es.suppression_reason
-    monkeypatch.setattr(es, "suppression_reason", lambda c, e: calls.append(e) or real(c, e))
-    es.suppression_reasons(cx, ["twice@x.com", "hub@x.com"])
-    assert calls == ["twice@x.com"]
+    got = es.suppression_reasons(cx, ADDRS)
+    for a in ADDRS:
+        if es.normalize(a) and es.suppression_reason(cx, a) is not None:
+            assert got[es.normalize(a)] is not None, a
+
+
+class _Failing:
+    """A connection whose query on one table raises, as a Postgres timeout would."""
+    def __init__(self, cx, table):
+        self._cx, self._table = cx, table
+    def execute(self, sql, *a):
+        if f"FROM {self._table}" in sql:
+            raise sqlite3.OperationalError("canceling statement due to statement timeout")
+        return self._cx.execute(sql, *a)
+
+
+@pytest.mark.parametrize("table", ["email_suppression", "people"])
+def test_a_failed_query_raises_never_answers_clean(tmp_path, table):
+    cx = _seeded(tmp_path)
+    with pytest.raises(sqlite3.OperationalError):
+        es.suppression_reasons(_Failing(cx, table), ["hub@x.com", "hard@x.com"])
+
+
+@pytest.mark.parametrize("table", ["email_suppression", "people"])
+def test_a_failed_query_is_a_500(client, monkeypatch, table):
+    import app
+    real = app.db.connect
+
+    class Wrap:
+        def __init__(self, c):
+            self._c = c
+        def __enter__(self):
+            return _Failing(self._c.__enter__(), table)
+        def __exit__(self, *a):
+            return self._c.__exit__(*a)
+
+    monkeypatch.setattr(app.db, "connect", lambda *a, **k: Wrap(real(*a, **k)))
+    r = _post(client, ["hub@x.com", "hard@x.com"])
+    assert r.status_code == 500
+    assert "blocked" not in r.get_json()
 
 
 def test_the_route_makes_a_bounded_number_of_queries(client, monkeypatch):
     import app
+    path = app.LOG_DB
+    with sqlite3.connect(path) as cx:   # duplicate People rows must not add queries
+        for i in range(50):
+            for em, tags in ((f"dup{i}@x.com", ["consent:opted-in"]),
+                             (f"DUP{i}@x.com", ["type:client"])):  # email is UNIQUE; case differs
+                cx.execute("INSERT INTO people (email, tags, created_at, updated_at) "
+                           "VALUES (?,?,?,?)", (em, json.dumps(tags), "", ""))
+        cx.commit()
     n = {"q": 0}
     real = app.db.connect
 
@@ -205,7 +251,8 @@ def test_the_route_makes_a_bounded_number_of_queries(client, monkeypatch):
             return getattr(self._in, name)
 
     monkeypatch.setattr(app.db, "connect", lambda *a, **k: Counting(real(*a, **k)))
-    emails = [f"p{i}@x.com" for i in range(300)] + list(EXPECTED)
+    emails = [f"p{i}@x.com" for i in range(300)] + [f"dup{i}@x.com" for i in range(50)] \
+        + list(EXPECTED)
     r = _post(client, emails)
     assert r.status_code == 200
     assert r.get_json()["blocked"] == EXPECTED
