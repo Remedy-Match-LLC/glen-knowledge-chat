@@ -416,20 +416,32 @@ _MODULE_TOOL = {"02-body": "bodymap"}
 # "yes" to Rumble's own player on lesson pages. On a page with chapter links, each Rumble
 # frame becomes Rumble's player (rumble.com/embedJS/u4), which runs in the page and seeks
 # in place. A cold player needs its own play button pressed first (teaching's hand test,
-# 2026-11-25). If the player is not ready in 8 s, or does not start in 8 s after a click,
-# the original frame comes back, at that second when a chapter was clicked.
-_CHAPTER_JS ="<script>" + r"""(function(){
+# 2026-11-25). Then it seeks, and seeks again every 0.5 s until the time lands, which
+# covers a preroll ad (review round 1). One poll per player follows the latest chapter
+# clicked (review round 2). If the player is not ready in 8 s, does not start within 20
+# s of a click, does not land within 20 s, or throws, the original frame comes back, at
+# the chapter's second when one was clicked.
+_CHAPTER_JS = "<script>" + r"""(function(){
 var RSEL='iframe[src*="rumble.com/embed/" i]';
-function restore(d,n){var f=d.__muFrame;if(!f||!d.parentNode)return;
+function restore(d,n){if(d.__muPoll){clearInterval(d.__muPoll);d.__muPoll=null;}
+var f=d.__muFrame;if(!f||!d.parentNode)return;
 if(n!=null){var u=new URL(f.src,location.href);u.searchParams.set("start",String(n));f.src=u.toString();}
 d.parentNode.replaceChild(f,d);}
-function seekRumble(d,n){var api=d.__muApi;
-if(d.__muPlayed){try{api.setCurrentTime(n);api.play();}catch(x){}return;}
+function land(d){var api=d.__muApi,k=0;
+d.__muPoll=setInterval(function(){k++;var n=d.__muWant,c=-1;
+try{c=api.getCurrentTime();}catch(x){}
+if(c>=n-1&&c<=n+5){clearInterval(d.__muPoll);d.__muPoll=null;return;}
+if(k>=40){restore(d,n);return;}
+try{api.setCurrentTime(n);api.play();}catch(x){restore(d,n);}},500);}
+function seekRumble(d,n){var api=d.__muApi;d.__muWant=n;
+if(d.__muPoll)return;
+if(d.__muPlayed){try{api.setCurrentTime(n);api.play();}catch(x){restore(d,n);return;}land(d);return;}
 var b=d.querySelector&&d.querySelector(".bigPlayUI");
-try{if(b&&b.offsetParent!==null)b.click();else api.play();}catch(x){}
-var k=0,t=setInterval(function(){k++;var p=true;try{p=api.getPaused();}catch(x){}
-if(!p){clearInterval(t);d.__muPlayed=true;try{api.setCurrentTime(n);api.play();}catch(x){}}
-else if(k>=80){clearInterval(t);restore(d,n);}},100);}
+try{if(b&&b.offsetParent!==null)b.click();else api.play();}catch(x){restore(d,n);return;}
+var k=0;d.__muPoll=setInterval(function(){k++;var p=true;try{p=api.getPaused();}catch(x){}
+if(!p){clearInterval(d.__muPoll);d.__muPoll=null;d.__muPlayed=true;
+try{api.setCurrentTime(d.__muWant);api.play();}catch(x){restore(d,d.__muWant);return;}land(d);}
+else if(k>=200){restore(d,d.__muWant);}},100);}
 document.addEventListener("click",function(e){
 var a=e.target.closest&&e.target.closest('a[href^="#t="]');if(!a)return;
 var m=/^#t=(\d{1,5})$/.exec(a.getAttribute("href")||"");if(!m)return;
@@ -441,17 +453,18 @@ if(f.__muApi){seekRumble(f,n);return;}
 if(f.__muFrame){restore(f,n);return;}
 var y=window.__muYT;if(y&&y.seekTo&&y.getIframe&&y.getIframe()===f){
 y.seekTo(n,true);if(y.playVideo)y.playVideo();return;}
-var u=new URL(f.src,location.href);u.searchParams.set("start",m[1]);
+f.__muKeep=true;var u=new URL(f.src,location.href);u.searchParams.set("start",m[1]);
 if(/youtube/i.test(u.hostname))u.searchParams.set("autoplay","1");
 f.src=u.toString();});
 function swap(){var fs=document.querySelectorAll(RSEL);
 if(!fs.length||!document.createElement||!document.head)return;
 var s=document.createElement("script");s.src="https://rumble.com/embedJS/u4";s.async=true;
 s.onload=function(){if(typeof window.Rumble!=="function")return;
-for(var i=0;i<fs.length;i++)(function(f,i){var m=/\/embed\/(v[0-9a-z]+)\//i.exec(f.src);
-if(!m||!f.parentNode)return;var d=document.createElement("div");
+for(var i=0;i<fs.length;i++)(function(f,i){
+var m=/\/embed\/(v[0-9a-z]+)(?:[\/?#]|$)/i.exec(f.src);
+if(!m||!f.parentNode||f.__muKeep)return;var d=document.createElement("div");
 d.id="mu-rplay-"+i;d.setAttribute("data-mu-rumble",m[1]);
-d.style.width=(parseInt(f.getAttribute("width"),10)||640)+"px";
+var w=f.getAttribute("width")||"";d.style.width=/^\d+$/.test(w)?w+"px":"100%";
 d.style.maxWidth="100%";d.style.aspectRatio="16 / 9";
 d.__muFrame=f;f.parentNode.replaceChild(d,f);var done=false;
 setTimeout(function(){if(!done){done=true;restore(d,null);}},8000);

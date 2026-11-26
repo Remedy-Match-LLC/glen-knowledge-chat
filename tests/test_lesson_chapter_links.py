@@ -205,61 +205,71 @@ def test_the_watched_hook_exposes_its_player():
 # click jumps and plays. Teaching's hand test on the live lesson the same day: through
 # rumble.com/embedJS/u4 the api has play, setCurrentTime and getPaused; on a cold player
 # seek-and-play does nothing until the big play button is clicked; after that it works.
-_RUMBLE_HARNESS = """
-var timers=[], log=[], handler=null, appended=null, rumbleCalls=[];
-global.setTimeout=function(f,ms){timers.push({f:f,ms:ms,every:false});return timers.length;};
-global.setInterval=function(f,ms){timers.push({f:f,ms:ms,every:true});return timers.length;};
+_RUMBLE_HARNESS = r"""
+var now=0, timers=[], log=[], handler=null, appended=null, rumbleCalls=[];
+global.setTimeout=function(f,ms){timers.push({f:f,at:now+ms,every:0});return timers.length;};
+global.setInterval=function(f,ms){timers.push({f:f,at:now+ms,every:ms});return timers.length;};
 global.clearInterval=function(id){if(timers[id-1])timers[id-1].dead=true;};
-function runTimers(rounds){for(var r=0;r<rounds;r++){var live=timers.filter(function(t){return !t.dead;});
-  if(!live.length)return;live.forEach(function(t){if(t.dead)return;if(!t.every)t.dead=true;t.f();});}}
-function node(src,width){var n={src:src,attrs:{width:width},style:{},
+function advance(ms){var end=now+ms;for(;;){var due=timers.filter(function(t){return !t.dead&&t.at<=end;});
+  if(!due.length)break;due.sort(function(a,b){return a.at-b.at;});var t=due[0];now=t.at;
+  if(t.every)t.at+=t.every;else t.dead=true;t.f();}now=end;}
+function node(src,width,pos){return {src:src,pos:pos,attrs:{width:width},style:{},
   getAttribute:function(k){return this.attrs[k];},setAttribute:function(k,v){this.attrs[k]=v;},
-  scrollIntoView:function(){},compareDocumentPosition:function(){return 2;}};return n;}
+  scrollIntoView:function(){},compareDocumentPosition:function(o){return o.pos>this.pos?4:2;}};}
 var parent={replaceChild:function(a,b){log.push(["replace",a.id||a.src,b.id||b.src]);
-  a.parentNode=parent;b.parentNode=null;var i=kids.indexOf(b);kids[i]=a;}};
-var kids=%(frames)s.map(function(s){var f=node(s,"640");f.parentNode=parent;return f;});
+  a.parentNode=parent;a.pos=b.pos;b.parentNode=null;kids[kids.indexOf(b)]=a;}};
+var kids=%(frames)s.map(function(s,i){var f=node(s,%(width)s,i*10);f.parentNode=parent;return f;});
 global.location={href:"https://courses.mentorshipu.com/learn/x/y/z"};
 global.window={};
 global.document={head:{appendChild:function(s){appended=s;}},
-  createElement:function(t){var n=node("",null);n.tag=t;return n;},
+  createElement:function(t){var n=node("",null,0);n.tag=t;return n;},
   addEventListener:function(t,f){handler=f;},
   querySelectorAll:function(sel){return kids.filter(function(k){
     if(k.tag==="div")return sel.indexOf("[data-mu-rumble]")>=0;
-    return /rumble\\.com\\/embed\\//i.test(k.src)||(sel.indexOf("youtube")>=0&&/youtube/i.test(k.src));});}};
-var api={paused:true,time:0,calls:[],
+    return /rumble\.com\/embed\//i.test(k.src)||(sel.indexOf("youtube")>=0&&/youtube/i.test(k.src));});}};
+function mkapi(name){return {name:name,paused:true,time:0,drop:%(drop_seeks)s,calls:[],
   play:function(){this.calls.push("play");if(%(play_starts)s)this.paused=false;},
-  setCurrentTime:function(n){this.calls.push(["seek",n]);this.time=n;},
-  getPaused:function(){return this.paused;}};
-var big={offsetParent:%(big_visible)s,click:function(){api.calls.push("big");api.paused=false;}};
+  setCurrentTime:function(n){this.calls.push(["seek",n]);if(this.drop>0)this.drop--;else this.time=n;},
+  getCurrentTime:function(){return this.time;},
+  getPaused:function(){return this.paused;}};}
+var apis=[];
 %(js)s
+%(before_load)s
 if(appended){window.Rumble=%(rumble)s;appended.onload();}
-var d=kids[0];if(d&&d.tag==="div")d.querySelector=function(s){return s===".bigPlayUI"?big:null;};
-%(before_click)s
-function click(href){handler({target:{closest:function(s){return s==='a[href^="#t="]'?{getAttribute:function(){return href;},pos:9}:null;}},
-  preventDefault:function(){}});}
+kids.forEach(function(d,i){if(d.tag!=="div")return;var big={offsetParent:%(big_visible)s,
+  click:function(){var a=d.__muApi;a.calls.push("big");if(%(big_starts_after)s>=0)
+    setTimeout(function(){a.paused=false;},%(big_starts_after)s);}};
+  d.querySelector=function(s){return s===".bigPlayUI"?big:null;};});
+function click(href,pos){handler({target:{closest:function(s){return s==='a[href^="#t="]'?
+  {getAttribute:function(){return href;},pos:pos===undefined?999:pos}:null;}},preventDefault:function(){}});}
 %(clicks)s
-console.log(JSON.stringify({appended:appended&&appended.src, rumble:rumbleCalls, log:log,
+console.log(JSON.stringify({appended:appended&&appended.src, rumble:rumbleCalls,
   kids:kids.map(function(k){return k.tag==="div"?{div:k.attrs["data-mu-rumble"],width:k.style.width}:{src:k.src};}),
-  api:api.calls}));
+  api:apis.map(function(a){return a.calls;})}));
 """
 
-_RUMBLE_READY = ("function(cmd,o){rumbleCalls.push([cmd,o.video,o.div]);o.api(api);}")
+_RUMBLE_READY = ("function(cmd,o){rumbleCalls.push([cmd,o.video,o.div]);"
+                 "var a=mkapi(o.video);apis.push(a);o.api(a);}")
 _RUMBLE_SILENT = "function(cmd,o){rumbleCalls.push([cmd,o.video,o.div]);}"
+_RUMBLE_THROWS = "function(cmd,o){throw new Error('x');}"
 
 
-def _run_rumble(frames, rumble=_RUMBLE_READY, clicks="", before_click="", big_visible="{}",
-                play_starts="false"):
+def _run_rumble(frames, rumble=_RUMBLE_READY, clicks="", before_load="", big_visible="{}",
+                play_starts="false", big_starts_after=300, drop_seeks=0, width='"640"'):
     import courses_blueprint as cb
     _need_node()
     js = cb._CHAPTER_JS.replace("<script>", "").replace("</script>", "")
     src = _RUMBLE_HARNESS % {"frames": json.dumps(frames), "js": js, "rumble": rumble,
-                             "clicks": clicks, "before_click": before_click,
-                             "big_visible": big_visible, "play_starts": play_starts}
+                             "clicks": clicks, "before_load": before_load,
+                             "big_visible": big_visible, "play_starts": play_starts,
+                             "big_starts_after": big_starts_after, "drop_seeks": drop_seeks,
+                             "width": width}
     out = subprocess.run(["node", "-e", src], capture_output=True, text=True, check=True)
     return json.loads(out.stdout)
 
 
 RUMBLE = "https://rumble.com/embed/v7gqoze/?pub=4"
+RUMBLE2 = "https://rumble.com/embed/v1abc/"
 
 
 def test_a_rumble_frame_becomes_rumbles_player():
@@ -270,39 +280,84 @@ def test_a_rumble_frame_becomes_rumbles_player():
 
 
 def test_a_cold_click_presses_play_then_seeks():
-    r = _run_rumble([RUMBLE], clicks='click("#t=451");runTimers(3);')
-    assert r["api"] == ["big", ["seek", 451], "play"]
+    r = _run_rumble([RUMBLE], clicks='click("#t=451");advance(2000);')
+    assert r["api"] == [["big", ["seek", 451], "play"]]
+    assert r["kids"] == [{"div": "v7gqoze", "width": "640px"}]
 
 
 def test_a_hidden_play_button_falls_back_to_api_play():
     r = _run_rumble([RUMBLE], big_visible="null", play_starts="true",
-                    clicks='click("#t=60");runTimers(3);')
-    assert r["api"] == ["play", ["seek", 60], "play"]
+                    clicks='click("#t=60");advance(2000);')
+    assert r["api"] == [["play", ["seek", 60], "play"]]
 
 
 def test_after_it_has_played_a_click_seeks_directly():
-    r = _run_rumble([RUMBLE], clicks='click("#t=451");runTimers(3);click("#t=830");')
-    assert r["api"] == ["big", ["seek", 451], "play", ["seek", 830], "play"]
+    r = _run_rumble([RUMBLE], clicks='click("#t=451");advance(2000);click("#t=830");advance(2000);')
+    assert r["api"] == [["big", ["seek", 451], "play", ["seek", 830], "play"]]
+
+
+def test_a_seek_an_ad_swallows_is_retried_until_it_lands():
+    # Review round 1: a preroll may report playing and drop the first seeks.
+    r = _run_rumble([RUMBLE], drop_seeks=2, clicks='click("#t=451");advance(5000);')
+    assert r["api"] == [["big", ["seek", 451], "play", ["seek", 451], "play",
+                         ["seek", 451], "play"]]
+    assert r["kids"] == [{"div": "v7gqoze", "width": "640px"}]
+
+
+def test_a_seek_that_never_lands_gives_back_the_frame_at_that_second():
+    r = _run_rumble([RUMBLE], drop_seeks=999, clicks='click("#t=451");advance(30000);')
+    assert r["kids"] == [{"src": RUMBLE + "&start=451"}]
+
+
+def test_a_second_click_during_a_cold_start_keeps_one_poll_and_the_latest_second():
+    # Review rounds 1 and 2: no second play press, and the last chapter wins.
+    r = _run_rumble([RUMBLE], clicks='click("#t=451");advance(100);click("#t=830");advance(2000);')
+    assert r["api"] == [["big", ["seek", 830], "play"]]
+
+
+def test_a_second_click_on_a_player_that_never_starts_restores_the_latest_second():
+    r = _run_rumble([RUMBLE], big_starts_after=-1,
+                    clicks='click("#t=451");advance(5000);click("#t=830");advance(30000);')
+    assert r["kids"] == [{"src": RUMBLE + "&start=830"}]
 
 
 def test_a_player_that_never_starts_goes_back_to_the_frame_at_that_second():
-    r = _run_rumble([RUMBLE], big_visible="null",
-                    clicks='click("#t=90");runTimers(90);')
+    r = _run_rumble([RUMBLE], big_starts_after=-1, clicks='click("#t=90");advance(19000);')
+    assert r["kids"] == [{"div": "v7gqoze", "width": "640px"}]
+    r = _run_rumble([RUMBLE], big_starts_after=-1, clicks='click("#t=90");advance(21000);')
     assert r["kids"] == [{"src": RUMBLE + "&start=90"}]
 
 
+def test_a_seek_that_throws_gives_back_the_frame():
+    # Review round 2: an exception after playing must not leave a dead player.
+    r = _run_rumble([RUMBLE], clicks='click("#t=451");advance(2000);'
+                    'apis[0].setCurrentTime=function(){throw new Error("x");};'
+                    'click("#t=830");')
+    assert r["kids"] == [{"src": RUMBLE + "&start=830"}]
+
+
 def test_a_player_that_never_loads_gives_back_the_frame():
-    r = _run_rumble([RUMBLE], rumble=_RUMBLE_SILENT, before_click="runTimers(1);")
-    assert r["kids"] == [{"src": RUMBLE}]
-    # The restored frame then works as before: reload at the second.
-    r = _run_rumble([RUMBLE], rumble=_RUMBLE_SILENT,
-                    before_click="runTimers(1);", clicks='click("#t=5");')
+    r = _run_rumble([RUMBLE], rumble=_RUMBLE_SILENT, clicks="advance(7000);")
+    assert r["kids"] == [{"div": "v7gqoze", "width": "640px"}]
+    r = _run_rumble([RUMBLE], rumble=_RUMBLE_SILENT, clicks='advance(8000);click("#t=5");')
     assert r["kids"] == [{"src": RUMBLE + "&start=5"}]
 
 
 def test_a_click_before_the_player_is_ready_restores_the_frame_at_that_second():
     r = _run_rumble([RUMBLE], rumble=_RUMBLE_SILENT, clicks='click("#t=7");')
     assert r["kids"] == [{"src": RUMBLE + "&start=7"}]
+
+
+def test_a_click_while_the_script_downloads_is_kept():
+    # Review round 2: the frame reloaded at ?start= is not swapped when the script lands.
+    r = _run_rumble([RUMBLE], before_load='click("#t=12");')
+    assert r["kids"] == [{"src": RUMBLE + "&start=12"}]
+    assert r["rumble"] == []
+
+
+def test_rumble_throwing_leaves_the_frame():
+    r = _run_rumble([RUMBLE], rumble=_RUMBLE_THROWS)
+    assert r["kids"] == [{"src": RUMBLE}]
 
 
 def test_no_rumble_frame_loads_no_rumble_script():
@@ -313,3 +368,22 @@ def test_no_rumble_frame_loads_no_rumble_script():
 def test_a_rumble_failure_without_the_script_leaves_the_frame():
     r = _run_rumble([RUMBLE], rumble="undefined")
     assert r["kids"] == [{"src": RUMBLE}]
+
+
+def test_two_rumble_videos_each_follow_their_own_chapters():
+    # Review round 1: links control the nearest player above them.
+    r = _run_rumble([RUMBLE, RUMBLE2], clicks='click("#t=30",5);advance(2000);'
+                    'click("#t=40",15);advance(2000);')
+    assert r["rumble"] == [["play", "v7gqoze", "mu-rplay-0"], ["play", "v1abc", "mu-rplay-1"]]
+    assert r["api"] == [["big", ["seek", 30], "play"], ["big", ["seek", 40], "play"]]
+
+
+@pytest.mark.parametrize("width,expect", [('"640"', "640px"), ('"100%"', "100%"),
+                                          ("null", "100%")])
+def test_the_player_width_follows_a_pixel_width_only(width, expect):
+    assert _run_rumble([RUMBLE], width=width)["kids"][0]["width"] == expect
+
+
+def test_an_embed_without_a_trailing_slash_still_swaps():
+    r = _run_rumble(["https://rumble.com/embed/v7gqoze"])
+    assert r["rumble"] == [["play", "v7gqoze", "mu-rplay-0"]]
