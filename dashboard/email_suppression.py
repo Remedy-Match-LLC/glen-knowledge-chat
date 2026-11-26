@@ -89,6 +89,57 @@ def suppression_reason(cx, email):
     return None
 
 
+# Addresses per IN (...) query. Postgres takes far more; this keeps one statement small.
+_BATCH_IN = 500
+
+
+def suppression_reasons(cx, emails):
+    """suppression_reason for many addresses at once: {normalised address: reason or None}.
+
+    The console check called suppression_reason per address, two queries each, about
+    0.22 s an address on prod (2026-11-26), so 505 addresses ran past a 90 s client
+    timeout. This reads both stores in two IN queries per 500 addresses and gives the
+    same answer as suppression_reason for every address: an address held by more than
+    one People row goes back through suppression_reason itself, because that function
+    reads whichever row comes first."""
+    wanted = sorted({normalize(e) for e in emails} - {""})
+    out = {e: None for e in wanted}
+    if not wanted:
+        return out
+    for i in range(0, len(wanted), _BATCH_IN):
+        part = wanted[i:i + _BATCH_IN]
+        marks = ",".join("?" * len(part))
+        try:
+            rows = cx.execute(f"SELECT email, bounce_type FROM email_suppression "
+                              f"WHERE email IN ({marks})", part).fetchall()
+        except db.OperationalError:
+            rows = []
+        for r in rows:
+            key = normalize(r[0])
+            if key in out:
+                out[key] = str(r[1] or "").strip() or "suppressed"
+        rest = [e for e in part if out[e] is None]
+        if not rest:
+            continue
+        marks = ",".join("?" * len(rest))
+        try:
+            rows = cx.execute(f"SELECT lower(email), tags FROM people "
+                              f"WHERE lower(email) IN ({marks})", rest).fetchall()
+        except db.OperationalError:
+            rows = []
+        seen = {}
+        for r in rows:
+            seen.setdefault(normalize(r[0]), []).append(r[1])
+        for em, all_tags in seen.items():
+            if em not in out:
+                continue
+            if len(all_tags) > 1:
+                out[em] = suppression_reason(cx, em)
+            elif has_unsubscribed_tag(_tags_of(all_tags[0])):
+                out[em] = UNSUBSCRIBED_TAG
+    return out
+
+
 def is_suppressed(cx, email):
     return suppression_reason(cx, email) is not None
 

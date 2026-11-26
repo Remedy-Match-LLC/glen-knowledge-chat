@@ -49485,14 +49485,13 @@ def api_console_email_suppression_check():
         from dashboard import email_suppression as _es
         reasons, blocked = {}, {}
         with db.connect(LOG_DB) as cx:
-            for raw in emails:
-                norm = _es.normalize(raw)
-                if not norm:
-                    continue
-                if norm not in reasons:
-                    reasons[norm] = _es.suppression_reason(cx, norm)
-                if reasons[norm] is not None:
-                    blocked[raw] = reasons[norm]
+            # Two queries per 500 addresses, not two per address (2026-11-26: 505
+            # addresses took about 111 s and timed out marketing's run).
+            reasons = _es.suppression_reasons(cx, emails)
+        for raw in emails:
+            norm = _es.normalize(raw)
+            if norm and reasons.get(norm) is not None:
+                blocked[raw] = reasons[norm]
         return jsonify({"ok": True, "checked": len(reasons), "blocked": blocked})
     except Exception as e:
         app.logger.error("email-suppression check failed: %s", type(e).__name__)
