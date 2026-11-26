@@ -207,3 +207,27 @@ def test_a_code_written_reply_for_one_caution_stays_as_written(chat):
     text, _done, _user = chat(q)
     assert _warning("nerve-repair") not in text
     assert text.rstrip().endswith(app._PRE_TERMS_CAUTION_INVITE)
+
+
+def test_no_caution_text_means_no_rule_to_leave_them_out(monkeypatch):
+    # Review round 2: the model must never be told to leave the cautions out when code
+    # could not build them.
+    monkeypatch.setattr(app, "_verbatim_caution_paras",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    assert app._compare_cautions(Q) == []
+    assert app._compare_answer_rules(Q) == ""
+    assert app._compare_caution_tail(Q, "Answer.") == ""
+
+
+def test_a_missing_paragraph_means_no_rule(monkeypatch):
+    real = app._verbatim_caution_paras
+    monkeypatch.setattr(app, "_verbatim_caution_paras",
+                        lambda *a, **k: real(*a, **k)[:1])
+    assert app._compare_cautions(Q) == []
+    assert app._compare_answer_rules(Q) == ""
+
+
+def test_the_rule_and_tail_fail_open(monkeypatch):
+    bad = [(object(), "w", "p")]
+    assert app._compare_answer_rules(Q, cautions=[(1, "w", "p"), (None, "v", "q")]) == ""
+    assert app._compare_caution_tail(Q, "Answer.", cautions=bad + [None]) == ""
