@@ -188,3 +188,13 @@ def test_the_drink_rule_needs_caffeine_in_the_caution(monkeypatch):
     rec["warning"] = rec["warning"].replace("caffeine or other stimulants", "stimulants")
     monkeypatch.setattr(app, "_PRODUCTS", products)
     assert "caffeinated drink" not in app.named_product_facts_block("How do I take Thermogenesis?")
+
+
+def test_the_line_is_never_attributed_to_the_caution():
+    # Knowledge's read-back after #2331: one contents answer called it the caution's.
+    rule = app._CAFFEINE_DRINK_RULE.format(name="Thermogenesis")
+    assert rule.endswith(app._CAUTION_NOT_OURS)
+    assert "whether it has caffeine, does not get this sentence" in rule
+    instr = app._caution_synth_instr("Can I take Thermogenesis with my coffee?", member=True)
+    assert app._CAUTION_NOT_OURS in instr
+    assert "not part of the caution" in app._CAUTION_NOT_OURS
