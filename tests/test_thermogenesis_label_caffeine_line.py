@@ -78,3 +78,13 @@ def test_caffeine_about_another_product_brings_no_line():
     # Review round 2.
     q = "Does Stress Release contain caffeine? Also, what is in Thermogenesis?"
     assert app._label_caffeine_lines(q) == []
+
+
+@pytest.mark.parametrize("q", [
+    "What's the caffeine content of Thermogenesis?",
+    "Does Thermogenesis have caffeine or green tea?",
+    "Does Thermogenesis have caffeine? Ok thanks",
+])
+def test_these_contents_questions_get_the_opening(q):
+    # Review round 3.
+    assert app._label_caffeine_instr(q).startswith("Before everything below")

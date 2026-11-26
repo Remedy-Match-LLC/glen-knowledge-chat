@@ -3745,11 +3745,11 @@ _CAFFEINE_ASKED = re.compile(r"caffein|decaf", re.IGNORECASE)
 # (review round 1).
 _CAFFEINE_CONTENT_Q = re.compile(
     r"\b(?:have|has|contain|contains|containing|is\s+there|are\s+there|how\s+much|amount"
-    r"|any)\b[^.?!;]{0,40}\bcaffein|caffein\w*[\s-]+free|\bdecaf(?:feinated)?\s*\?"
+    r"|any)\b[^.?!;]{0,40}\bcaffein|caffein\w*[\s-]+(?:free|content)|\bdecaf(?:feinated)?\s*\?"
     r"|\bcaffeinated\s*\?", re.IGNORECASE)
 _CAFFEINE_USE_Q = re.compile(
-    r"\b(?:can\s+i|could\s+i|should\s+i|may\s+i|is\s+it\s+(?:ok|okay|safe)|ok|okay|safe"
-    r"|sensitive|sensitivity|avoid|allerg|heart|pregnan|breastfeed|nursing|drink|coffee|tea"
+    r"\b(?:can\s+i|could\s+i|should\s+i|may\s+i|is\s+it\s+(?:ok|okay|safe)|safe"
+    r"|sensitive|sensitivity|avoid|allerg|heart|pregnan|breastfeed|nursing|drink|coffee"
     r"|better|worse|compared?|versus|vs)\b", re.IGNORECASE)
 
 
