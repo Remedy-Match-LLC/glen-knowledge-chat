@@ -4598,48 +4598,79 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
 _NAMED_DIRECTIONS_ONLY = ("allerfree-homeoenergetic-drops",)
 _ALLERFREE_NAME = re.compile(r"(?<![\w])aller[\s\-\u2010-\u2015]*free(?![\w])", re.I)
 _DOSE_ASK = re.compile(
-    r"\b(?:how\s+(?:do|should|would|can|could|often|much|many)\b|how\s+to\s+(?:take|use)"
-    r"|doses?|dosage|dosing|directions?|drops?\s+(?:a|per)\s+day|times\s+a\s+day"
-    r"|take\s+it|use\s+it)", re.I)
+    r"\b(?:how\s+(?:do|does|should|would|can|could|is|are|often|much|many|long)\b"
+    r"|how\s+to\s+(?:take|use)|when\s+(?:do|should|can|to)\b|doses?\b|dosage|dosing"
+    r"|directions?\b|drops?\b|times\s+(?:a|per)\s+day|per\s+day|daily|at\s+once"
+    r"|take\s+(?:it|them|this)|use\s+(?:it|them|this)|taken\b)", re.I)
 _DIRECTIONS_ONLY_RULES = (
     "DIRECTIONS ONLY: {name}. The user named this product. Its approved dose text is its "
     "Directions: \"{directions}\" {opening}Give these Directions word for word whenever you "
-    "say how to take it, keeping \"or as guided\". Add no other sentence on how to take "
-    "it: no dilution, no succussion, no opening a capsule, no water, no doubling, and no "
-    "timing or amount of your own, even where a snippet gives one. Name no other product, "
-    "water, device or formula anywhere in this answer. Add no claim about side effects, "
-    "safety, absorption or how it works. Do not say it suits or helps any condition, and "
-    "never suggest it to anyone. This replaces any snippet about how to take it.\n\n")
+    "say how to take it{keep}. Add no other sentence on how to take it: no dilution, no "
+    "succussion, no opening a capsule, no water, no doubling, and no timing or amount of "
+    "your own, even where a snippet gives one. Name no other product, water, device or "
+    "formula anywhere in this answer. Add no claim about side effects, safety, absorption "
+    "or how it works. Do not say it suits or helps any condition, and never suggest it to "
+    "anyone. This replaces any snippet about how to take it.\n\n")
+_DIRECTIONS_ONLY_OPENED = (
+    "Your answer already opens with this sentence, written for you: \"{sentence}\" Do not "
+    "write it again. Continue after it. ")
 
 
-def _directions_only_block(query_text: str, prior_user_turns=None) -> str:
-    """The Directions-only rule for a never-recommended product the user names
-    (_NAMED_DIRECTIONS_ONLY), or "". A follow-up with no product name ("How do I take
-    it?") carries it from the previous user turn. A dose question opens with the
-    Directions sentence word for word. Fails open to ""."""
+def _directions_only_record(query_text: str, prior_user_turns=None):
+    """(name, directions) for the never-recommended product the user names
+    (_NAMED_DIRECTIONS_ONLY), or None. A follow-up with no product name ("How do I take
+    it?") carries it from the previous user turn."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    q = str(query_text or "")
+    named = bool(_ALLERFREE_NAME.search(q))
+    if not named and prior_user_turns and not _named_product_spans(q, products) \
+            and _is_follow_up(q):
+        turns = [t for t in prior_user_turns if isinstance(t, str) and t.strip()]
+        named = bool(turns) and bool(_ALLERFREE_NAME.search(turns[-1]))
+    if not named:
+        return None
+    pr = products.get(_NAMED_DIRECTIONS_ONLY[0]) or {}
+    name = html.unescape(str(pr.get("name") or "")).replace("\u2122", "").strip()
+    directions = " ".join(str(pr.get("directions") or "").split())
+    if not name or not directions or pr.get("inactive"):
+        return None
+    return name, directions
+
+
+def _directions_only_opening(query_text: str, prior_user_turns=None) -> str:
+    """The sentence code writes at the top of a dose answer about that product: "The label
+    directions for <name> are: <Directions>". "" otherwise, or on any failure. Code writes
+    it because a rule alone held 1 of 8 (review round 2)."""
     try:
-        products = (_PRODUCTS or {}).get("products", {}) or {}
-        q = str(query_text or "")
-        named = bool(_ALLERFREE_NAME.search(q))
-        if not named and prior_user_turns and not _named_product_spans(q, products) \
-                and _is_follow_up(q):
-            turns = [t for t in prior_user_turns if isinstance(t, str) and t.strip()]
-            named = bool(turns) and bool(_ALLERFREE_NAME.search(turns[-1]))
-        if not named:
+        rec = _directions_only_record(query_text, prior_user_turns)
+        if not rec or not _DOSE_ASK.search(str(query_text or "")):
             return ""
-        pr = products.get(_NAMED_DIRECTIONS_ONLY[0]) or {}
-        name = html.unescape(str(pr.get("name") or "")).replace("\u2122", "").strip()
-        directions = " ".join(str(pr.get("directions") or "").split())
-        if not name or not directions or pr.get("inactive"):
+        return f"The label directions for {rec[0]} are: {rec[1]}"
+    except Exception as e:
+        print(f"[chat] directions-only opening skipped: {e!r}", flush=True)
+        return ""
+
+
+def _directions_only_block(query_text: str, prior_user_turns=None, opening=None) -> str:
+    """The Directions-only rule for that product, or "". `opening` is the sentence code
+    already wrote (_directions_only_opening); the rule tells the model not to repeat it.
+    Fails open to ""."""
+    try:
+        rec = _directions_only_record(query_text, prior_user_turns)
+        if not rec:
             return ""
-        opening = ("Open the answer with this sentence, word for word: \"The label "
-                   f"directions for {name} are: {directions}\" "
-                   if _DOSE_ASK.search(q) else "")
-        return _DIRECTIONS_ONLY_RULES.format(name=name, directions=directions,
-                                             opening=opening)
+        name, directions = rec
+        if opening is None:
+            opening = _directions_only_opening(query_text, prior_user_turns)
+        # Keep "or as guided" only while the Directions carry it (review round 2).
+        keep = (', keeping "or as guided"' if "or as guided" in directions.lower() else "")
+        return _DIRECTIONS_ONLY_RULES.format(
+            name=name, directions=directions, keep=keep,
+            opening=_DIRECTIONS_ONLY_OPENED.format(sentence=opening) if opening else "")
     except Exception as e:
         print(f"[chat] directions-only block skipped: {e!r}", flush=True)
         return ""
+
 
 # In place of the usual answer structure when a passage from one of Glen's clinical
 # protocols is in the sources. Knowledge's check on 2026-11-05 (chats 2709-2711, the
@@ -8790,6 +8821,9 @@ def chat():
         )
         product_block = f"{product_directive}\n\n" if product_directive else ""
 
+        # AllerFree dose question: code writes the Directions sentence first (Glen, "yes,
+        # fix the AllerFree directions", 2026-11-26).
+        _dir_open = _directions_only_opening(query, _prior_user)
         messages.append({"role": "user", "content":
             f"USER QUESTION: {query}\n\n"
             f"{attachment_context}"
@@ -8798,7 +8832,7 @@ def chat():
             f"{synth_instr}"
             f"{named_product_facts_block(query, prior_user_turns=_prior_user, member=_tos_member)}"
             f"{_approved_wording_reminder(context_str)}"
-            f"{_directions_only_block(query, _prior_user)}"
+            f"{_directions_only_block(query, _prior_user, opening=_dir_open)}"
         })
 
         # ── Consent gate (Tier-0 Visitor → Tier-1 Member) ────────────────────
@@ -8845,6 +8879,9 @@ def chat():
                     full_answer.append(_pre_terms_caution)
                     yield _pre_terms_caution
                     return
+                if _dir_open:
+                    full_answer.append(_dir_open + "\n\n")
+                    yield _dir_open + "\n\n"
                 with _cl.messages.stream(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=max_tok,
@@ -18498,6 +18535,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
                    or (_opening_instr(query)
                        + (_protocol_synth_instr(sources_list, long_form=True)
                           or _long_form_synth_instr(is_logged_in))))
+    _dir_open = _directions_only_opening(query, _prior_user)
     user_msg = (
         f"USER QUESTION: {query}\n\n"
         f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
@@ -18505,7 +18543,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"{synth_instr}"
         f"{named_product_facts_block(query, prior_user_turns=_prior_user, long_form=True)}"
         f"{_approved_wording_reminder(context_str)}"
-        f"{_directions_only_block(query, _prior_user)}"
+        f"{_directions_only_block(query, _prior_user, opening=_dir_open)}"
     )
 
     answer = ""
@@ -18517,6 +18555,8 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
     )
     if msg.content:
         answer = msg.content[0].text
+    if _dir_open:
+        answer = _dir_open + "\n\n" + answer
     return (answer, sources_list, len(matches))
 
 
@@ -18705,6 +18745,7 @@ def _full_report_stream(log_id, query, level, session_id,
                        or (_opening_instr(query)
                            + (_protocol_synth_instr(sources_list, long_form=True)
                               or _long_form_synth_instr(is_logged_in))))
+        _dir_open = _directions_only_opening(query, _prior_user)
         user_msg = (
             f"USER QUESTION: {query}\n\n"
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
@@ -18712,9 +18753,11 @@ def _full_report_stream(log_id, query, level, session_id,
             f"{synth_instr}"
             f"{named_product_facts_block(query, prior_user_turns=_prior_user, long_form=True)}"
             f"{_approved_wording_reminder(context_str)}"
-            f"{_directions_only_block(query, _prior_user)}"
+            f"{_directions_only_block(query, _prior_user, opening=_dir_open)}"
         )
 
+        if _dir_open:
+            yield sse({"token": _dir_open + "\n\n"})
         try:
             with _cl.messages.stream(
                 model="claude-haiku-4-5-20251001",

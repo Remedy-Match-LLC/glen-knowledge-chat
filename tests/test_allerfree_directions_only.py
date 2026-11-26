@@ -28,15 +28,34 @@ def test_still_never_recommended():
     assert app._named_product_spans(Q, app._PRODUCTS["products"]) == {}
 
 
-def test_a_dose_question_opens_with_the_directions_word_for_word():
-    b = app._directions_only_block(Q)
+OPEN = "The label directions for Aller-Free HomeoEnergetic Drops are: "
+
+
+def test_a_dose_question_gets_the_directions_sentence_from_code():
     assert _dirs() == "10 drops 3 times a day or as needed, or as guided."
-    assert ('Open the answer with this sentence, word for word: "The label directions for '
-            'Aller-Free HomeoEnergetic Drops are: ' + _dirs() + '"') in b
+    assert app._directions_only_opening(Q) == OPEN + _dirs()
+    b = app._directions_only_block(Q)
+    assert ('Your answer already opens with this sentence, written for you: "'
+            + OPEN + _dirs() + '" Do not write it again.') in b
     for ban in ("no dilution", "no succussion", "no opening a capsule", "no water",
                 "no doubling", "Name no other product, water, device or formula",
                 "never suggest it to anyone", 'keeping "or as guided"'):
         assert ban in b, ban
+
+
+@pytest.mark.parametrize("q", ["When should I take AllerFree?", "How is AllerFree taken?",
+                               "Can I take 20 drops of AllerFree at once?",
+                               "AllerFree dosage", "How many drops of Aller-Free a day?"])
+def test_dose_questions_get_the_sentence(q):
+    assert app._directions_only_opening(q) == OPEN + _dirs(), q
+
+
+def test_the_directions_come_from_the_record(monkeypatch):
+    rec = dict(app._PRODUCTS["products"][SLUG], directions="5 drops daily.")
+    monkeypatch.setitem(app._PRODUCTS["products"], SLUG, rec)
+    assert app._directions_only_opening(Q) == OPEN + "5 drops daily."
+    b = app._directions_only_block(Q)
+    assert "5 drops daily." in b and "or as guided" not in b and "10 drops" not in b
 
 
 @pytest.mark.parametrize("q", ["What is AllerFree?", "allerfree dosage",
@@ -52,13 +71,14 @@ def test_no_name_no_block(q):
 
 
 def test_not_a_dose_question_has_no_opening():
+    assert app._directions_only_opening("What is AllerFree?") == ""
     b = app._directions_only_block("What is AllerFree?")
-    assert b and "Open the answer" not in b and _dirs() in b
+    assert b and "already opens" not in b and _dirs() in b
 
 
 def test_a_follow_up_carries_it():
-    assert "Open the answer" in app._directions_only_block("How do I take it?",
-                                                           ["What is AllerFree?"])
+    assert app._directions_only_opening("How do I take it?", ["What is AllerFree?"]) == (
+        OPEN + _dirs())
     assert app._directions_only_block("How do I take it?", ["What is Vitamin C?"]) == ""
 
 
@@ -84,7 +104,7 @@ class _FakeStream:
         return iter([self.text])
 
 
-def test_chat_gives_the_model_the_block(monkeypatch, tmp_path):
+def test_chat_writes_the_sentence_then_the_model_answer(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     importlib.reload(app)
     monkeypatch.setattr(app._cl.messages, "create", lambda **kw: (_ for _ in ()).throw(
@@ -103,8 +123,15 @@ def test_chat_gives_the_model_the_block(monkeypatch, tmp_path):
     monkeypatch.setattr(app._cl.messages, "stream", _stream)
     r = app.app.test_client().post("/chat", json={"query": Q, "level": "self-healing",
                                                   "mode": "brief"}, buffered=True)
-    r.get_data()
+    events = [json.loads(line[6:]) for line in r.get_data(as_text=True).splitlines()
+              if line.startswith("data: ") and line[6:].strip()]
+    text = "".join(e.get("token", "") for e in events)
+    assert text == OPEN + _dirs() + "\n\nAnswer."
     assert seen["user"].rstrip().endswith(app._directions_only_block(Q).rstrip())
+    import sqlite3
+    with sqlite3.connect(app.LOG_DB) as cx:
+        logged = cx.execute("SELECT answer FROM query_log ORDER BY id DESC LIMIT 1").fetchone()[0]
+    assert logged.startswith(OPEN + _dirs())
 
 
 def test_full_report_gives_the_model_the_block(monkeypatch):
@@ -118,13 +145,17 @@ def test_full_report_gives_the_model_the_block(monkeypatch):
         seen["user"] = kw["messages"][-1]["content"]
         return SimpleNamespace(content=[SimpleNamespace(text="Long.")])
     monkeypatch.setattr(app._cl.messages, "create", _create)
-    app._generate_full_answer(Q, "self-healing")
+    answer, _s, _n = app._generate_full_answer(Q, "self-healing")
+    assert answer == OPEN + _dirs() + "\n\nLong."
     assert app._directions_only_block(Q) in seen["user"]
     monkeypatch.setattr(app._cl.messages, "stream", lambda **kw: (
         seen.__setitem__("s", kw["messages"][-1]["content"]) or _FakeStream("L.")))
     with app.app.test_request_context("/"):
-        "".join(c.decode() if isinstance(c, bytes) else c
-                for c in app._full_report_stream(1, Q, "self-healing", "s1").response)
+        body = "".join(c.decode() if isinstance(c, bytes) else c
+                       for c in app._full_report_stream(1, Q, "self-healing", "s1").response)
+    toks = "".join(json.loads(line[6:]).get("token", "") for line in body.splitlines()
+                   if line.startswith("data: ") and line[6:].strip())
+    assert toks == OPEN + _dirs() + "\n\nL."
     assert app._directions_only_block(Q) in seen["s"]
 
 
