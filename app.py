@@ -3519,7 +3519,9 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         + _NO_SAFETY_VERDICT + "\n"
         "When the question asks what the product is, what is in it, how to take it or "
         "whether it is safe, skip any consensus or mainstream-view structure. Answer "
-        "directly from this text, briefly, then the Sources line and the CTA line. Do not "
+        "directly from this text, briefly, with any caution it gives copied word for "
+        "word as the caution rules below say, "
+        "then the Sources line and the CTA line. Do not "
         "describe what mainstream medicine says about related conditions, and do not list "
         "diseases or conditions as examples of where it helps, even in passing. The Sources "
         "line names this product text only, and a page CTA links this product's Page.\n"
@@ -3711,7 +3713,8 @@ _CAFFEINE_DRINK_RULE = (
     + _CAUTION_SUBJECT_OPENING["caffeine"] + " Never answer yes, and never say the two "
     "can be taken together, spaced apart or kept to a small amount. A question about "
     "what {name} contains and nothing else, such as whether it has caffeine, does not "
-    "get this sentence and is answered as usual. A question that also asks about "
+    "get this sentence, and its caution is still copied in full as the rules here say. "
+    "A question that also asks about "
     "having it with a caffeinated drink still opens with it. " + _CAUTION_NOT_OURS)
 
 # Dose wording that holds a subject word and asks nothing about the subject: "How many
