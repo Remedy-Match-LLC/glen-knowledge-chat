@@ -56,6 +56,7 @@ def test_the_section_is_exactly_the_approved_lines(question):
         "### Free & Easy", f"Page: {app._catalog_page_url('free-and-easy')}",
         app._NO_DESCRIPTION.format(name="Free & Easy"),
         f"Directions: {DIRECTIONS}",
+        app._AS_GUIDED_RULE.format(name='Free & Easy'),
         app._PINNED_DOSE_RULE.format(name="Free & Easy", example=""),
         app._CAUTION_COPY_REMINDER,
         f"Caution: {CAUTION}",

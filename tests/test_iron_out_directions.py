@@ -67,6 +67,7 @@ def test_the_section_is_exactly_the_approved_lines(question):
         "### Iron Out", f"Page: {app._catalog_page_url('iron-out')}",
         app._NO_DESCRIPTION.format(name="Iron Out"),
         f"Directions: {DIRECTIONS}",
+        app._AS_GUIDED_RULE.format(name='Iron Out'),
         app._PINNED_DOSE_RULE.format(name="Iron Out", example=""),
         app._CAUTION_COPY_REMINDER,
         f"Caution: {CAUTION}",
