@@ -3703,8 +3703,17 @@ _CAUTION_SUBJECT_NOT = {
                      " pills per day", " pills daily", " pills should i take"),
     # What the formula is made with, and drinks with no caffeine (review round 1).
     "caffeine": (" come with caffeine", " comes with caffeine", " made with caffeine",
-                 " formulated with caffeine", " tea in ", " tea extract", " herbal tea",
-                 " tea tree", " baking soda", " club soda"),
+                 " formulated with caffeine", " herbal tea", " tea tree", " baking soda",
+                 " club soda"),
+}
+
+# A subject here counts only beside a word for taking the two together. Thermogenesis
+# holds green tea, so "Does Thermogenesis have green tea?" asks what is in it, not
+# whether to drink tea with it (review round 3).
+_CAUTION_SUBJECT_CUES = {
+    "caffeine": (" with ", " drink", " while ", " alongside", " together", " combine",
+                 " combining", " mix", " after my", " before my", " plus ", " cup",
+                 " on it ", " taking it"),
 }
 
 
@@ -3713,6 +3722,9 @@ def _asks_subject(key: str, words, q: str) -> bool:
     dose wording above."""
     for phrase in _CAUTION_SUBJECT_NOT.get(key, ()):
         q = q.replace(phrase, " ")
+    cues = _CAUTION_SUBJECT_CUES.get(key)
+    if cues and not any(c in q for c in cues):
+        return False
     return any(w in q for w in words)
 
 

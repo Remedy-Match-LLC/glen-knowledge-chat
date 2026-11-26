@@ -27,6 +27,9 @@ OPENING = "Avoid coffee and other caffeinated drinks while taking Thermogenesis.
     "Can I take Thermogenesis with a latte?",
     "Can I take Thermogenesis with a soda?",
     "Is it ok to have caffeine while on Thermogenesis?",
+    # Review round 3.
+    "Can I drink green tea in the morning with Thermogenesis?",
+    "Can I take Thermogenesis with green tea extract?",
 ])
 def test_a_caffeinated_drink_question_opens_with_glens_sentence(q):
     assert app._caution_link_slugs(q) == ["thermogenesis"]
@@ -53,6 +56,13 @@ def test_the_sentence_is_glens_wording():
     "Can I use tea tree oil with Thermogenesis?",
     "Can I take Thermogenesis with baking soda?",
     "Which is better, Thermogenesis or the latter?",
+    # Review round 3: what is in it.
+    "Does Thermogenesis have green tea?",
+    "How much green tea is in Thermogenesis?",
+    "Does Thermogenesis contain guarana?",
+    "Is there matcha in Thermogenesis?",
+    "Does Thermogenesis contain green coffee bean extract?",
+    "Does Thermogenesis have yerba mate in it?",
     "How many Thermogenesis capsules can I take a day?",
     "Can I take Thermogenesis with chocolate?",
 ])
