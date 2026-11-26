@@ -3711,7 +3711,8 @@ _CAFFEINE_DRINK_RULE = (
     + _CAUTION_SUBJECT_OPENING["caffeine"] + " Never answer yes, and never say the two "
     "can be taken together, spaced apart or kept to a small amount. A question about "
     "what {name} contains and nothing else, such as whether it has caffeine, does not "
-    "get this sentence and is answered as usual. A question that also asks about "
+    "get this sentence, and its caution is still copied in full as the rules here say. "
+    "A question that also asks about "
     "having it with a caffeinated drink still opens with it. " + _CAUTION_NOT_OURS)
 
 # Dose wording that holds a subject word and asks nothing about the subject: "How many

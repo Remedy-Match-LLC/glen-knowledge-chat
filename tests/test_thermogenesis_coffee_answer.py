@@ -199,3 +199,13 @@ def test_the_line_is_never_attributed_to_the_caution():
     instr = app._caution_synth_instr("Can I take Thermogenesis with my coffee?", member=True)
     assert app._CAUTION_NOT_OURS in instr
     assert "not part of the caution" in app._CAUTION_NOT_OURS
+
+
+def test_a_contents_question_still_copies_the_caution():
+    # Knowledge's read-back after #2333: one "Does Thermogenesis have caffeine?" answer
+    # carried no caution, read as leave to answer "as usual" without it.
+    rule = app._CAFFEINE_DRINK_RULE.format(name="Thermogenesis")
+    assert "answered as usual" not in rule
+    assert "its caution is still copied in full" in rule
+    block = app.named_product_facts_block("Does Thermogenesis have caffeine?")
+    assert app._PRODUCTS["products"]["thermogenesis"]["warning"].strip() in block
