@@ -122,6 +122,7 @@ def test_the_chatbot_carries_the_directions_and_the_caution_once(q):
         "### Scar Silk", f"Page: {app._catalog_page_url('scar-silk')}",
         *PRODUCTS["scar-silk"]["description"].split("\n"),
         f"Directions: {DIRECTIONS}",
+        app._AS_GUIDED_RULE.format(name='Scar Silk'),
         app._PINNED_DOSE_RULE.format(name="Scar Silk", example=""),
         app._CAUTION_COPY_REMINDER, f"Caution: {APPROVED}",
         # The stay line after the caution and the closing reminder (cautionadd, 2026-10-21).
@@ -142,6 +143,7 @@ def test_a_caution_question_gets_the_directions_and_the_link(q):
         "### Scar Silk", f"Page: {app._catalog_page_url('scar-silk')}",
         *PRODUCTS["scar-silk"]["description"].split("\n"),
         f"Directions: {DIRECTIONS}",
+        app._AS_GUIDED_RULE.format(name='Scar Silk'),
         # A linked caution is not given, so the dose rule asks only for those given here.
         app._PINNED_DOSE_RULE.format(name="Scar Silk", example="").replace(
             "copy every caution in full,", "copy in full every caution given here,"),

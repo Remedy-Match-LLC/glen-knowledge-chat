@@ -2980,6 +2980,8 @@ _ONE_CAUTION_RULE = (
 # Sleep Bundle). Live read-back on 087e718f, 2026-10-15: "try two or more capsules during
 # that first week" came from old knowledge-base advice, and a long answer merged the two
 # cautions into one "Safety:" summary.
+_AS_GUIDED_RULE = ('When you give the dose of {name}, give its Directions word for word, '
+                   'keeping "or as guided". Do not reword, shorten or merge them.')
 _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The snippets may "
                      "hold older advice to take more than these Directions give{example}. "
                      "That advice is withdrawn: never give it, "
@@ -3303,6 +3305,11 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         _dirs_line = bool(val and (val not in desc or slug in _DOSE_RULE_WITHOUT_CAUTION))
         if _dirs_line:
             parts.append(f"Directions: {val}")
+            # Glen 2026-10-31: every dose line keeps "or as guided". Knowledge's read-back of
+            # #2338: "1 capsule up to 3 times daily with food, taken one week on, then one
+            # week off" dropped it.
+            if "or as guided" in val:
+                parts.append(_AS_GUIDED_RULE.format(name=name))
         _note = (product.get("panel_note") or "").strip()
         if (pinned and slug in _PANEL_NOTE_FACTS and _note
                 and "ingredients" in _pinned_copy(product)):
