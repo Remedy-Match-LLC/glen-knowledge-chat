@@ -88,3 +88,17 @@ def test_caffeine_about_another_product_brings_no_line():
 def test_these_contents_questions_get_the_opening(q):
     # Review round 3.
     assert app._label_caffeine_instr(q).startswith("Before everything below")
+
+
+@pytest.mark.parametrize("q", ["Is Thermogenesis caffeine-free?", "Does Thermogenesis have caffeine?"])
+def test_the_answer_is_tightened(q):
+    # Glen "yes, tighten the caffeine answer" 2026-11-26.
+    instr = app._chat_synth_instr(q, None, "brief", False)
+    assert app._CAFFEINE_ANSWER_TIGHT in instr
+    assert "Add no yes or no before or after the label's caffeine sentence" in instr
+    assert "let it stand as the answer" not in instr
+    assert "negligible, trace or insignificant" in instr
+    assert "Never call any other product caffeine-free or low in caffeine, even when the user asks" in instr
+    assert ("Suggest no other product as an alternative unless the user asks for one and no "
+            "caution rule here forbids it.") in instr
+    assert app._CAFFEINE_ANSWER_TIGHT in app.named_product_facts_block(q)
