@@ -311,8 +311,8 @@ def test_a_seek_that_never_lands_keeps_the_playing_player():
     assert r["api"][0].count(["seek", 451]) == 40
 
 
-def test_a_pause_during_landing_stops_it():
-    # Review round 3: the member's pause is not overridden.
+def test_a_pause_during_landing_is_not_overridden():
+    # Review round 3: no play, and no seek, while the member has it paused.
     r = _run_rumble([RUMBLE], drop_seeks=999, clicks='click("#t=451");advance(1200);'
                     'apis[0].paused=true;advance(10000);')
     assert r["api"][0].count(["seek", 451]) == 2
@@ -403,3 +403,18 @@ def test_the_player_width_follows_a_pixel_width_only(width, expect):
 def test_an_embed_without_a_trailing_slash_still_swaps():
     r = _run_rumble(["https://rumble.com/embed/v7gqoze"])
     assert r["rumble"] == [["play", "v7gqoze", "mu-rplay-0"]]
+
+
+def test_a_click_on_a_paused_player_during_landing_seeks_and_plays():
+    # Confirm round: the click must not be swallowed by the running poll.
+    r = _run_rumble([RUMBLE], drop_seeks=3, clicks='click("#t=451");advance(1200);'
+                    'apis[0].paused=true;click("#t=830");advance(3000);')
+    assert ["seek", 830] in r["api"][0]
+    assert r["api"][0].count("play") == 2
+
+
+def test_landing_waits_out_a_pause_then_lands():
+    # Confirm round: an ad that pauses the video does not end landing early.
+    r = _run_rumble([RUMBLE], drop_seeks=2, clicks='click("#t=451");advance(600);'
+                    'apis[0].paused=true;advance(4000);apis[0].paused=false;advance(3000);')
+    assert r["api"][0][-1] == ["seek", 451]

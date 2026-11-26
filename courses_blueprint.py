@@ -418,7 +418,7 @@ _MODULE_TOOL = {"02-body": "bodymap"}
 # in place. A cold player needs its own play button pressed first (teaching's hand test,
 # 2026-11-25). Then it seeks, and seeks again every 0.5 s for up to 20 s until the time
 # lands, which covers a preroll ad (review round 1). A playing player is never taken
-# away: landing stops on a pause or at 20 s (review round 3). One poll per player follows
+# away: landing ends at 20 s, and waits without seeking while paused (review round 3). One poll per player follows
 # the latest chapter clicked, and a new click restarts its 20 s (review rounds 2 and 3).
 # If the player is not ready in 8 s, does not start within 20 s of a click, or throws,
 # the original frame comes back, at the chapter's second when one was clicked.
@@ -431,10 +431,11 @@ d.parentNode.replaceChild(f,d);}
 function land(d){var api=d.__muApi;d.__muK=0;
 d.__muPoll=setInterval(function(){d.__muK++;var n=d.__muWant,c=-1,p=false;
 try{c=api.getCurrentTime();p=api.getPaused();}catch(x){}
-if((c>=n-1&&c<=n+5)||p||d.__muK>=40){clearInterval(d.__muPoll);d.__muPoll=null;return;}
-try{api.setCurrentTime(n);}catch(x){restore(d,n);}},500);}
+if((c>=n-1&&c<=n+5)||d.__muK>=40){clearInterval(d.__muPoll);d.__muPoll=null;return;}
+if(p)return;try{api.setCurrentTime(n);}catch(x){restore(d,n);}},500);}
 function seekRumble(d,n){var api=d.__muApi;d.__muWant=n;
-if(d.__muPoll){d.__muK=0;return;}
+if(d.__muPoll){d.__muK=0;if(d.__muPlayed){try{if(api.getPaused()){api.setCurrentTime(n);
+api.play();}}catch(x){restore(d,n);}}return;}
 if(d.__muPlayed){try{api.setCurrentTime(n);api.play();}catch(x){restore(d,n);return;}land(d);return;}
 var b=d.querySelector&&d.querySelector(".bigPlayUI");
 try{if(b&&b.offsetParent!==null)b.click();else api.play();}catch(x){restore(d,n);return;}
