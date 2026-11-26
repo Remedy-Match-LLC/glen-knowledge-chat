@@ -3674,6 +3674,21 @@ _CAUTION_SUBJECT_WORDS = {
     "thiazide": ("thiazide", "hctz", "chlorthalidone", "indapamide", "metolazone",
                  "water pill"),
     "digoxin": ("digoxin", "lanoxin", "digitalis"),
+    # Thermogenesis says "Do not combine with additional caffeine". Live, 2026-11-25, "Can I
+    # take Thermogenesis with my coffee?" opened "Yes" 4 of 4 (production). Drinks and
+    # combining words only, so "Does Thermogenesis have caffeine?" still gets its
+    # "less than 1 mg" answer. A leading space starts a word: "chocolate" is no cola.
+    "caffeine": (" coffee", " espresso", " latte", " cappuccino", " mocha", " tea ",
+                 " teas ", " matcha", " yerba mate", " guarana", " cola ", " colas ",
+                 " soda", " energy drink", " pre workout", " preworkout", " caffeinated",
+                 " with caffeine", " and caffeine", " caffeine pill", " caffeine tablet"),
+}
+
+# The first sentence of the answer when the question names one of these subjects and the
+# product's own caution names it. Glen, production tab, 2026-11-25: the coffee answer is
+# "avoid coffee and other caffeinated drinks", and it never opens with yes.
+_CAUTION_SUBJECT_OPENING = {
+    "caffeine": "Avoid coffee and other caffeinated drinks while taking {name}.",
 }
 
 # Dose wording that holds a subject word and asks nothing about the subject: "How many
@@ -3803,6 +3818,31 @@ def _caution_link_slugs(query_text: str, prior_user_turns=None) -> list:
         return []
 
 
+def _caution_openings(query_text: str, prior_user_turns=None) -> list:
+    """The opening sentences (_CAUTION_SUBJECT_OPENING) for each product whose own caution
+    the question touches on a subject that has one, in slug order. Fails open to none."""
+    try:
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        slugs = _caution_link_slugs(query_text, prior_user_turns)
+        if not slugs:
+            return []
+        q = _subject_text(_without_product_names(query_text, slugs, products))
+        out = []
+        for slug in slugs:
+            pr = products.get(slug) or {}
+            caution = _subject_text(pr.get("warning") or "")
+            name = html.unescape(pr.get("name") or slug).replace("\u2122", "").strip()
+            for key, line in _CAUTION_SUBJECT_OPENING.items():
+                if key in caution and _asks_subject(key, _CAUTION_SUBJECT_WORDS[key], q):
+                    sentence = line.format(name=name)
+                    if sentence not in out:
+                        out.append(sentence)
+        return out
+    except Exception as e:
+        print(f"[chat] caution openings skipped: {e!r}", flush=True)
+        return []
+
+
 def _caution_link_url(slug: str) -> str:
     """The product page, scrolled to its Caution section and opened."""
     return _catalog_page_url(slug) + "#caution"
@@ -3858,7 +3898,10 @@ def _pre_terms_caution_reply(query_text: str, prior_user_turns=None) -> str:
                   if s not in slugs]
         paras = [p for _, p in _verbatim_caution_paras(query_text, prior_user_turns,
                                                        slugs=slugs)]
-        return "\n\n".join(paras + [_PRE_TERMS_CAUTION_INVITE]) if paras else ""
+        if not paras:
+            return ""
+        return "\n\n".join(_caution_openings(query_text, prior_user_turns) + paras
+                            + [_PRE_TERMS_CAUTION_INVITE])
     except Exception as e:
         print(f"[chat] pre-Terms caution reply skipped: {e!r}", flush=True)
         return ""
@@ -4187,6 +4230,15 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
     # Read here: the note is imported further down the module.
     head = (_CAUTION_ANSWER_RULES.replace(_CAUTION_ANSWER_POINT, _CAUTION_ANSWER_QUOTE)
             if member else _CAUTION_ANSWER_RULES)
+    openings = _caution_openings(query_text, prior_user_turns)
+    if openings:
+        first = ("Before step 1, open the answer with "
+                 + ("this sentence" if len(openings) == 1 else "these sentences")
+                 + ", word for word: " + " ".join(openings) + " Never answer yes, and "
+                 "never say they can be taken together, spaced apart or kept to a small "
+                 "amount.\n")
+        head = (head.replace("\n1. Open", "\n" + first + "1. Open", 1)
+                if "\n1. Open" in head else first + head)
     rules = (head + "Keep every other rule: product links only from the "
              "injection table, and product claims only from sources ("
              + _SOURCED_PRODUCT_NOTE + ").\n\n")
