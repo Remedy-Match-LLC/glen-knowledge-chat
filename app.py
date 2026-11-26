@@ -3344,6 +3344,10 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         # Syntropy's pinned description, 2026-10-25); the rule still follows it.
         if "Poison Control" in val or any("Poison Control" in c.text for c in cautions):
             parts.append(_STOP_AT_SYMPTOM_RULE)
+        # Every answer that carries a caffeine caution, so a coffee question the word
+        # lists miss still opens with Glen's line (second confirm round, 2026-11-25).
+        if product.get("chat_caution") and " caffeine " in _subject_text(val):
+            parts.append(_CAFFEINE_DRINK_RULE.format(name=name))
         # A waiting-list product: the same sentence checkout gives. Unpinned, it has no
         # approved dose, so the block says so rather than ask for one it lacks.
         refusal = _waitlist_refusal(slug)
@@ -3682,7 +3686,7 @@ _CAUTION_SUBJECT_WORDS = {
     # Whole words where a longer word starts the same: "latter" is no latte (review round 1).
     "caffeine": (" coffee", " espresso", " latte ", " lattes ", " cappuccino", " mocha ",
                  " tea ", " teas ", " chai ", " matcha", " yerba", " guarana", " cola ",
-                 " colas ", " coke ", " soda ", " sodas ", " red bull", " monster energy",
+                 " colas ", " coke ", " soda ", " sodas ", " red bull", " monster ",
                  " energy drink", " pre workout", " preworkout", " caffeinated drink",
                  " caffeinated beverage", " with caffeine", " and caffeine",
                  " plus caffeine", " caffeine while", " caffeine with", " caffeine pill",
@@ -3695,6 +3699,13 @@ _CAUTION_SUBJECT_WORDS = {
 _CAUTION_SUBJECT_OPENING = {
     "caffeine": "Avoid coffee and other caffeinated drinks while taking {name}.",
 }
+# In the facts block of a product whose caution names caffeine.
+_CAFFEINE_DRINK_RULE = (
+    "If the user asks about having {name} with coffee, tea, an energy drink or any "
+    "other caffeinated drink, open the answer with this sentence, word for word: "
+    + _CAUTION_SUBJECT_OPENING["caffeine"] + " Never answer yes, and never say the two "
+    "can be taken together, spaced apart or kept to a small amount. A question about "
+    "what {name} contains is answered as usual.")
 
 # Dose wording that holds a subject word and asks nothing about the subject: "How many
 # pills of Stress Release a day?" is a dose question (review rounds 1 and 3, 2026-10-24).
@@ -3716,11 +3727,16 @@ _CAUTION_SUBJECT_CONTENT = {
     "caffeine": (" contain", " is there ", " are there ", " does have ", " do have ",
                  " does it have ", " do they have ", " is in ", " are in ", " made with ",
                  " made from ", " formulated with ", " come with ", " comes with ",
-                 " does mix ", " ingredient", " what tea ", " which tea ", " tea in "),
+                 " does mix ", " ingredient", " what tea ", " which tea ", " tea in ",
+                 " include", " kind of ", " based ", " stronger than ", " compared to "),
 }
-_CAUTION_SUBJECT_USE = (" can i ", " could i ", " should i ", " may i ", " do i ",
-                        " ok ", " okay ", " fine ", " alright ", " still ", " avoid ",
-                        " stop ", " allowed ")
+# Words that ask about the reader's own use, so a contents word beside them still counts.
+# "ok", "fine" and "still" alone matched "Is it ok that it contains green tea?" (second
+# confirm round), so they count only before "to".
+_CAUTION_SUBJECT_USE = (" can i ", " could i ", " should i ", " may i ", " ok to ",
+                        " okay to ", " fine to ", " alright to ", " avoid ", " stop ",
+                        " allowed ", " problem", " issue", " risk", " drinking ",
+                        " drink a", " drink my", " drink coffee", " drink tea")
 
 
 def _asks_subject(key: str, words, q: str) -> bool:

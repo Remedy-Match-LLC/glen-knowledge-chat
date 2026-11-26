@@ -44,6 +44,12 @@ OPENING = "Avoid coffee and other caffeinated drinks while taking Thermogenesis.
     "Can I open Thermogenesis capsules into my coffee?",
     "Can I take Thermogenesis and then have coffee?",
     "Does Thermogenesis contain caffeine, and can I drink coffee with it?",
+    # Second confirm round.
+    "Is there a problem with coffee and Thermogenesis?",
+    "Is there any issue taking Thermogenesis with coffee?",
+    "Is there a risk with Thermogenesis and coffee?",
+    "Are there any problems drinking coffee with Thermogenesis?",
+    "Can I drink a monster with Thermogenesis?",
 ])
 def test_a_caffeinated_drink_question_opens_with_glens_sentence(q):
     assert app._caution_link_slugs(q) == ["thermogenesis"]
@@ -85,6 +91,16 @@ def test_the_sentence_is_glens_wording():
     "Does Thermogenesis mix green tea and guarana?",
     "Does Thermogenesis have caffeine like a cup of coffee?",
     "What tea is in Thermogenesis plus what else?",
+    # Second confirm round.
+    "What kind of green tea does Thermogenesis use?",
+    "Is Thermogenesis green tea based?",
+    "Does Thermogenesis include guarana?",
+    "Is Thermogenesis stronger than coffee?",
+    "Is it ok that Thermogenesis contains green tea?",
+    "Do I get caffeine from the green tea in Thermogenesis?",
+    "Does Thermogenesis still contain green tea?",
+    "Okay, what tea is in Thermogenesis?",
+    "Is the green tea in Thermogenesis fine for kids?",
     "How many Thermogenesis capsules can I take a day?",
     "Can I take Thermogenesis with chocolate?",
 ])
@@ -148,3 +164,27 @@ def test_a_caution_linked_for_another_reason_gets_no_coffee_sentence():
 def test_a_caffeinated_drink_still_counts():
     q = "Can I take Thermogenesis with a caffeinated drink?"
     assert app._caution_openings(q) == [OPENING]
+
+
+@pytest.mark.parametrize("q", ["How do I take Thermogenesis?",
+                               "Is Thermogenesis stronger than coffee?"])
+def test_every_thermogenesis_block_carries_the_drink_rule(q):
+    # Second confirm round: a coffee question the word lists miss still gets the line.
+    block = app.named_product_facts_block(q)
+    assert "### Thermogenesis" in block
+    assert app._CAFFEINE_DRINK_RULE.format(name="Thermogenesis") in block
+    assert OPENING in app._CAFFEINE_DRINK_RULE.format(name="Thermogenesis")
+
+
+def test_no_other_block_carries_the_drink_rule():
+    for q in ["How many Stress Release a day?", "How do I take Moisturize?"]:
+        block = app.named_product_facts_block(q)
+        assert block and "caffeinated drink" not in block, q
+
+
+def test_the_drink_rule_needs_caffeine_in_the_caution(monkeypatch):
+    products = copy.deepcopy(app._PRODUCTS)
+    rec = products["products"]["thermogenesis"]
+    rec["warning"] = rec["warning"].replace("caffeine or other stimulants", "stimulants")
+    monkeypatch.setattr(app, "_PRODUCTS", products)
+    assert "caffeinated drink" not in app.named_product_facts_block("How do I take Thermogenesis?")
