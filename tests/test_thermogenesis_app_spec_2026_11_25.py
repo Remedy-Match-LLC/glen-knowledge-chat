@@ -106,8 +106,10 @@ def test_no_other_product_or_key_changes(name):
     # Review round 2: compare every product, not only this one.
     old, new = _main(name), _load(name)
     assert set(old) == set(new)
+    # Later approved changes to other records (Nerve Pulse, Glen "yes" 2026-11-26).
+    later = {"nerve-pulse"}
     for slug in old:
-        if slug != "thermogenesis":
+        if slug != "thermogenesis" and slug not in later:
             assert old[slug] == new[slug], slug
     changed = {k for k in set(old["thermogenesis"]) | set(new["thermogenesis"])
                if old["thermogenesis"].get(k) != new["thermogenesis"].get(k)}
