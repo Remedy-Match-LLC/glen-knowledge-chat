@@ -411,19 +411,70 @@ _MODULE_TOOL = {"02-body": "bodymap"}
 # above, the first video. A YouTube video that the auto-mark-watched hook below has
 # bound (window.__muYT) seeks in place, so the hook keeps firing; any other video
 # reloads with ?start=N.
-_CHAPTER_JS = (
-    '<script>document.addEventListener("click",function(e){'
-    'var a=e.target.closest&&e.target.closest(\'a[href^="#t="]\');if(!a)return;'
-    'var m=/^#t=(\\d{1,5})$/.exec(a.getAttribute("href")||"");if(!m)return;'
-    'var fs=document.querySelectorAll(\'iframe[src*="rumble.com/embed/" i],iframe[src*="youtube" i]\');'
-    'var f=null;for(var i=0;i<fs.length;i++){if(fs[i].compareDocumentPosition(a)&4)f=fs[i];}'
-    'if(!f)f=fs[0];if(!f)return;e.preventDefault();var n=+m[1];'
-    'f.scrollIntoView({behavior:"smooth",block:"center"});'
-    'var y=window.__muYT;if(y&&y.seekTo&&y.getIframe&&y.getIframe()===f){'
-    'y.seekTo(n,true);if(y.playVideo)y.playVideo();return;}'
-    'var u=new URL(f.src,location.href);u.searchParams.set("start",m[1]);'
-    'if(/youtube/i.test(u.hostname))u.searchParams.set("autoplay","1");'
-    'f.src=u.toString();});</script>')
+# A reloaded Rumble frame showed its cover and waited for play (Glen: "click and double
+# click fail to open the chapter or start the video"). Glen, platform tab, 25 Nov 2026:
+# "yes" to Rumble's own player on lesson pages. On a page with chapter links, each Rumble
+# frame becomes Rumble's player (rumble.com/embedJS/u4), which runs in the page and seeks
+# in place. A cold player needs its own play button pressed first (teaching's hand test,
+# 2026-11-25). Then it seeks, and seeks again every 0.5 s for up to 20 s until the time
+# lands, which covers a preroll ad (review round 1). A playing player is never taken
+# away: landing ends at 20 s, and waits without seeking while paused (review round 3). One poll per player follows
+# the latest chapter clicked, and a new click restarts its 20 s (review rounds 2 and 3).
+# If the player is not ready in 8 s, does not start within 20 s of a click, or throws,
+# the original frame comes back, at the chapter's second when one was clicked.
+_CHAPTER_JS = "<script>" + r"""(function(){
+var RSEL='iframe[src*="rumble.com/embed/" i]';
+function restore(d,n){if(d.__muPoll){clearInterval(d.__muPoll);d.__muPoll=null;}
+var f=d.__muFrame;if(!f||!d.parentNode)return;
+if(n!=null){var u=new URL(f.src,location.href);u.searchParams.set("start",String(n));f.src=u.toString();}
+d.parentNode.replaceChild(f,d);}
+function land(d){var api=d.__muApi;d.__muK=0;
+d.__muPoll=setInterval(function(){d.__muK++;var n=d.__muWant,c=-1,p=false;
+try{c=api.getCurrentTime();p=api.getPaused();}catch(x){}
+if((c>=n-1&&c<=n+5)||d.__muK>=40){clearInterval(d.__muPoll);d.__muPoll=null;return;}
+if(p)return;try{api.setCurrentTime(n);}catch(x){restore(d,n);}},500);}
+function seekRumble(d,n){var api=d.__muApi;d.__muWant=n;
+if(d.__muPoll){d.__muK=0;if(d.__muPlayed){try{if(api.getPaused()){api.setCurrentTime(n);
+api.play();}}catch(x){restore(d,n);}}return;}
+if(d.__muPlayed){try{api.setCurrentTime(n);api.play();}catch(x){restore(d,n);return;}land(d);return;}
+var b=d.querySelector&&d.querySelector(".bigPlayUI");
+try{if(b&&b.offsetParent!==null)b.click();else api.play();}catch(x){restore(d,n);return;}
+d.__muK=0;d.__muPoll=setInterval(function(){d.__muK++;var p=true;try{p=api.getPaused();}catch(x){}
+if(!p){clearInterval(d.__muPoll);d.__muPoll=null;d.__muPlayed=true;
+try{api.setCurrentTime(d.__muWant);api.play();}catch(x){restore(d,d.__muWant);return;}land(d);}
+else if(d.__muK>=200){restore(d,d.__muWant);}},100);}
+document.addEventListener("click",function(e){
+var a=e.target.closest&&e.target.closest('a[href^="#t="]');if(!a)return;
+var m=/^#t=(\d{1,5})$/.exec(a.getAttribute("href")||"");if(!m)return;
+var fs=document.querySelectorAll(RSEL+',iframe[src*="youtube" i],[data-mu-rumble]');
+var f=null;for(var i=0;i<fs.length;i++){if(fs[i].compareDocumentPosition(a)&4)f=fs[i];}
+if(!f)f=fs[0];if(!f)return;e.preventDefault();var n=+m[1];
+f.scrollIntoView({behavior:"smooth",block:"center"});
+if(f.__muApi){seekRumble(f,n);return;}
+if(f.__muFrame){restore(f,n);return;}
+var y=window.__muYT;if(y&&y.seekTo&&y.getIframe&&y.getIframe()===f){
+y.seekTo(n,true);if(y.playVideo)y.playVideo();return;}
+f.__muKeep=true;var u=new URL(f.src,location.href);u.searchParams.set("start",m[1]);
+if(/youtube/i.test(u.hostname))u.searchParams.set("autoplay","1");
+f.src=u.toString();});
+function swap(){var fs=document.querySelectorAll(RSEL);
+if(!fs.length||!document.createElement||!document.head)return;
+var s=document.createElement("script");s.src="https://rumble.com/embedJS/u4";s.async=true;
+s.onload=function(){if(typeof window.Rumble!=="function")return;
+for(var i=0;i<fs.length;i++)(function(f,i){
+var m=/\/embed\/(v[0-9a-z]+)(?:[\/?#]|$)/i.exec(f.src);
+if(!m||!f.parentNode||f.__muKeep)return;var d=document.createElement("div");
+d.id="mu-rplay-"+i;d.setAttribute("data-mu-rumble",m[1]);
+var w=f.getAttribute("width")||"";d.style.width=/^\d+$/.test(w)?w+"px":"100%";
+d.style.maxWidth="100%";d.style.aspectRatio="16 / 9";
+d.__muFrame=f;f.parentNode.replaceChild(d,f);var done=false;
+setTimeout(function(){if(!done){done=true;restore(d,null);}},8000);
+try{window.Rumble("play",{video:m[1],div:d.id,api:function(api){
+if(done)return;done=true;d.__muApi=api;}});}catch(x){done=true;restore(d,null);}
+})(fs[i],i);};
+document.head.appendChild(s);}
+try{swap();}catch(x){}
+})();""" + "</script>"
 
 
 @courses_bp.route("/learn/<course_slug>/<module_slug>/<lesson_slug>")
