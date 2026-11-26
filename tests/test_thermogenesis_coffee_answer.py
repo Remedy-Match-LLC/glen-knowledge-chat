@@ -20,6 +20,13 @@ OPENING = "Avoid coffee and other caffeinated drinks while taking Thermogenesis.
     "Can I drink decaf coffee on Thermogenesis?",
     "Can I have an espresso after my Thermogenesis?",
     "Can I take Thermogenesis with a caffeine pill?",
+    # Review round 1.
+    "Can I take Thermogenesis with Red Bull?",
+    "Can I take Thermogenesis with a Coke?",
+    "Can I take Thermogenesis with chai?",
+    "Can I take Thermogenesis with a latte?",
+    "Can I take Thermogenesis with a soda?",
+    "Is it ok to have caffeine while on Thermogenesis?",
 ])
 def test_a_caffeinated_drink_question_opens_with_glens_sentence(q):
     assert app._caution_link_slugs(q) == ["thermogenesis"]
@@ -34,6 +41,18 @@ def test_the_sentence_is_glens_wording():
 @pytest.mark.parametrize("q", [
     "Does Thermogenesis have caffeine?",
     "Is Thermogenesis caffeine free?",
+    "Is Thermogenesis caffeinated?",
+    "Are Thermogenesis capsules caffeinated?",
+    "How much caffeine is in a capsule of Thermogenesis?",
+    # Review round 1: what it is made with, and drinks or words with no caffeine.
+    "Does Thermogenesis come with caffeine?",
+    "Is Thermogenesis made with caffeine?",
+    "Does the green tea in Thermogenesis have caffeine?",
+    "Does Thermogenesis contain green tea extract?",
+    "Can I take Thermogenesis with herbal tea?",
+    "Can I use tea tree oil with Thermogenesis?",
+    "Can I take Thermogenesis with baking soda?",
+    "Which is better, Thermogenesis or the latter?",
     "How many Thermogenesis capsules can I take a day?",
     "Can I take Thermogenesis with chocolate?",
 ])
@@ -58,7 +77,7 @@ def test_before_the_terms_the_reply_opens_with_it_then_quotes_the_caution():
 def test_the_model_is_told_to_open_with_it_and_never_say_yes(member, long_form):
     instr = app._caution_synth_instr("Can I take Thermogenesis with my coffee?",
                                      long_form=long_form, member=member)
-    assert instr and "word for word: " + OPENING + " Never answer yes" in instr
+    assert instr and "word for word: " + OPENING + " For the product it names, never answer yes" in instr
     assert instr.index(OPENING) < instr.index("1. Open")
 
 
@@ -92,3 +111,8 @@ def test_a_caution_linked_for_another_reason_gets_no_coffee_sentence():
     q = "Is Stress Release safe with my coffee?"
     assert app._caution_link_slugs(q) == ["stress-release"]
     assert app._caution_openings(q) == []
+
+
+def test_a_caffeinated_drink_still_counts():
+    q = "Can I take Thermogenesis with a caffeinated drink?"
+    assert app._caution_openings(q) == [OPENING]

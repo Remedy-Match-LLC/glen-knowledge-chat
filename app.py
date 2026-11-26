@@ -3676,12 +3676,17 @@ _CAUTION_SUBJECT_WORDS = {
     "digoxin": ("digoxin", "lanoxin", "digitalis"),
     # Thermogenesis says "Do not combine with additional caffeine". Live, 2026-11-25, "Can I
     # take Thermogenesis with my coffee?" opened "Yes" 4 of 4 (production). Drinks and
-    # combining words only, so "Does Thermogenesis have caffeine?" still gets its
-    # "less than 1 mg" answer. A leading space starts a word: "chocolate" is no cola.
-    "caffeine": (" coffee", " espresso", " latte", " cappuccino", " mocha", " tea ",
-                 " teas ", " matcha", " yerba mate", " guarana", " cola ", " colas ",
-                 " soda", " energy drink", " pre workout", " preworkout", " caffeinated",
-                 " with caffeine", " and caffeine", " caffeine pill", " caffeine tablet"),
+    # combining words only, so "Does Thermogenesis have caffeine?" and "Is it
+    # caffeinated?" (review round 2) still get the "less than 1 mg" answer. A leading
+    # space starts a word: "chocolate" is no cola.
+    # Whole words where a longer word starts the same: "latter" is no latte (review round 1).
+    "caffeine": (" coffee", " espresso", " latte ", " lattes ", " cappuccino", " mocha ",
+                 " tea ", " teas ", " chai ", " matcha", " yerba", " guarana", " cola ",
+                 " colas ", " coke ", " soda ", " sodas ", " red bull", " monster energy",
+                 " energy drink", " pre workout", " preworkout", " caffeinated drink",
+                 " caffeinated beverage", " with caffeine", " and caffeine",
+                 " plus caffeine", " caffeine while", " caffeine with", " caffeine pill",
+                 " caffeine tablet"),
 }
 
 # The first sentence of the answer when the question names one of these subjects and the
@@ -3696,6 +3701,10 @@ _CAUTION_SUBJECT_OPENING = {
 _CAUTION_SUBJECT_NOT = {
     "prescription": (" how many pill", " pills of ", " pill of ", " pills a day",
                      " pills per day", " pills daily", " pills should i take"),
+    # What the formula is made with, and drinks with no caffeine (review round 1).
+    "caffeine": (" come with caffeine", " comes with caffeine", " made with caffeine",
+                 " formulated with caffeine", " tea in ", " tea extract", " herbal tea",
+                 " tea tree", " baking soda", " club soda"),
 }
 
 
@@ -4234,9 +4243,10 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
     if openings:
         first = ("Before step 1, open the answer with "
                  + ("this sentence" if len(openings) == 1 else "these sentences")
-                 + ", word for word: " + " ".join(openings) + " Never answer yes, and "
-                 "never say they can be taken together, spaced apart or kept to a small "
-                 "amount.\n")
+                 + ", word for word: " + " ".join(openings) + " For the product "
+                 "it names, never answer yes, and never say the two can be taken "
+                 "together, spaced apart or kept to a small amount. Answer about any "
+                 "other product as usual.\n")
         head = (head.replace("\n1. Open", "\n" + first + "1. Open", 1)
                 if "\n1. Open" in head else first + head)
     rules = (head + "Keep every other rule: product links only from the "
