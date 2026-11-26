@@ -2980,8 +2980,16 @@ _ONE_CAUTION_RULE = (
 # Sleep Bundle). Live read-back on 087e718f, 2026-10-15: "try two or more capsules during
 # that first week" came from old knowledge-base advice, and a long answer merged the two
 # cautions into one "Safety:" summary.
+# Production's read-back of #2341: 3 of 4 Thermogenesis answers added "This means you can
+# take 1, 2, or 3 capsules per day depending on your need and tolerance", and one "start at
+# the lower end and adjust within this range". A restated dose is a dose line too.
 _AS_GUIDED_RULE = ('When you give the dose of {name}, give its Directions word for word, '
-                   'keeping "or as guided". Do not reword, shorten or merge them.')
+                   'keeping "or as guided". Do not reword, shorten or merge them. Add no '
+                   'other sentence about how many, how often or when to take it: do not '
+                   'restate, explain, range or adjust the dose, and do not suggest starting '
+                   'low or working up. The one exception: when the user asks about an '
+                   'amount, you may say whether it is within these Directions, as the dose '
+                   'rule below says.')
 _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The snippets may "
                      "hold older advice to take more than these Directions give{example}. "
                      "That advice is withdrawn: never give it, "
