@@ -3711,7 +3711,7 @@ _CAUTION_SUBJECT_OPENING = {
 # answer said the caution on the product page carries this sentence. It does not.
 _CAUTION_NOT_OURS = ("That opening sentence is not part of the caution: never say the "
                      "caution or the product page says it, and put nothing before it. It is "
-                     "the one line allowed beside the caution on this subject.")
+                     "the one line allowed before the caution.")
 # Products whose approved label note reaches the chat, word for word. Glen, 2026-11-26,
 # in the platform tab ("yes" to "add the caffeine note to the chat"): a live answer
 # invented "about 6% of the original caffeine level, so it's largely caffeine-free"

@@ -61,3 +61,9 @@ def test_an_unpinned_ingredients_section_keeps_the_note_out(monkeypatch):
     monkeypatch.setattr(app, "_PRODUCTS", prods)
     block = app.named_product_facts_block("Does Thermogenesis have caffeine?")
     assert "Label note for" not in block
+
+
+def test_the_coffee_rule_does_not_forbid_the_amount_after_the_caution():
+    # Review round 3: "the one line allowed beside the caution" barred the amount.
+    assert "allowed beside the caution" not in app._CAUTION_NOT_OURS
+    assert "the one line allowed before the caution" in app._CAUTION_NOT_OURS
