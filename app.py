@@ -3344,6 +3344,10 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         # Syntropy's pinned description, 2026-10-25); the rule still follows it.
         if "Poison Control" in val or any("Poison Control" in c.text for c in cautions):
             parts.append(_STOP_AT_SYMPTOM_RULE)
+        # Every answer that carries a caffeine caution, so a coffee question the word
+        # lists miss still opens with Glen's line (second confirm round, 2026-11-25).
+        if product.get("chat_caution") and " caffeine " in _subject_text(val):
+            parts.append(_CAFFEINE_DRINK_RULE.format(name=name))
         # A waiting-list product: the same sentence checkout gives. Unpinned, it has no
         # approved dose, so the block says so rather than ask for one it lacks.
         refusal = _waitlist_refusal(slug)
@@ -3674,14 +3678,65 @@ _CAUTION_SUBJECT_WORDS = {
     "thiazide": ("thiazide", "hctz", "chlorthalidone", "indapamide", "metolazone",
                  "water pill"),
     "digoxin": ("digoxin", "lanoxin", "digitalis"),
+    # Thermogenesis says "Do not combine with additional caffeine". Live, 2026-11-25, "Can I
+    # take Thermogenesis with my coffee?" opened "Yes" 4 of 4 (production). Drinks and
+    # combining words only, so "Does Thermogenesis have caffeine?" and "Is it
+    # caffeinated?" (review round 2) still get the "less than 1 mg" answer. A leading
+    # space starts a word: "chocolate" is no cola.
+    # Whole words where a longer word starts the same: "latter" is no latte (review round 1).
+    "caffeine": (" coffee", " espresso", " latte ", " lattes ", " cappuccino", " mocha ",
+                 " tea ", " teas ", " chai ", " matcha", " yerba", " guarana", " cola ",
+                 " colas ", " coke ", " soda ", " sodas ", " red bull", " monster ",
+                 " energy drink", " pre workout", " preworkout", " caffeinated drink",
+                 " caffeinated beverage", " with caffeine", " and caffeine",
+                 " plus caffeine", " caffeine while", " caffeine with", " caffeine pill",
+                 " caffeine tablet"),
 }
+
+# The first sentence of the answer when the question names one of these subjects and the
+# product's own caution names it. Glen, production tab, 2026-11-25: the coffee answer is
+# "avoid coffee and other caffeinated drinks", and it never opens with yes.
+_CAUTION_SUBJECT_OPENING = {
+    "caffeine": "Avoid coffee and other caffeinated drinks while taking {name}.",
+}
+# In the facts block of a product whose caution names caffeine.
+_CAFFEINE_DRINK_RULE = (
+    "If the user asks about having {name} with coffee, tea, an energy drink or any "
+    "other caffeinated drink, open the answer with this sentence, word for word: "
+    + _CAUTION_SUBJECT_OPENING["caffeine"] + " Never answer yes, and never say the two "
+    "can be taken together, spaced apart or kept to a small amount. A question about "
+    "what {name} contains is answered as usual.")
 
 # Dose wording that holds a subject word and asks nothing about the subject: "How many
 # pills of Stress Release a day?" is a dose question (review rounds 1 and 3, 2026-10-24).
 _CAUTION_SUBJECT_NOT = {
     "prescription": (" how many pill", " pills of ", " pill of ", " pills a day",
                      " pills per day", " pills daily", " pills should i take"),
+    # What the formula is made with, and drinks with no caffeine (review round 1).
+    "caffeine": (" come with caffeine", " comes with caffeine", " made with caffeine",
+                 " formulated with caffeine", " herbal tea", " tea tree", " baking soda",
+                 " club soda"),
 }
+
+# Thermogenesis holds green tea, so "Does Thermogenesis have green tea?" asks what is in
+# it, not whether to drink tea with it (review round 3). A subject here does not count in
+# a question about contents, unless it also asks about the reader's own use. Requiring a
+# word for taking the two together instead missed "Is coffee ok on Thermogenesis?" and
+# eleven more (confirm round).
+_CAUTION_SUBJECT_CONTENT = {
+    "caffeine": (" contain", " is there ", " are there ", " does have ", " do have ",
+                 " does it have ", " do they have ", " is in ", " are in ", " made with ",
+                 " made from ", " formulated with ", " come with ", " comes with ",
+                 " does mix ", " ingredient", " what tea ", " which tea ", " tea in ",
+                 " include", " kind of ", " based ", " stronger than ", " compared to "),
+}
+# Words that ask about the reader's own use, so a contents word beside them still counts.
+# "ok", "fine" and "still" alone matched "Is it ok that it contains green tea?" (second
+# confirm round), so they count only before "to".
+_CAUTION_SUBJECT_USE = (" can i ", " could i ", " should i ", " may i ", " ok to ",
+                        " okay to ", " fine to ", " alright to ", " avoid ", " stop ",
+                        " allowed ", " problem", " issue", " risk", " drinking ",
+                        " drink a", " drink my", " drink coffee", " drink tea")
 
 
 def _asks_subject(key: str, words, q: str) -> bool:
@@ -3689,6 +3744,9 @@ def _asks_subject(key: str, words, q: str) -> bool:
     dose wording above."""
     for phrase in _CAUTION_SUBJECT_NOT.get(key, ()):
         q = q.replace(phrase, " ")
+    content = _CAUTION_SUBJECT_CONTENT.get(key, ())
+    if any(c in q for c in content) and not any(u in q for u in _CAUTION_SUBJECT_USE):
+        return False
     return any(w in q for w in words)
 
 
@@ -3803,6 +3861,31 @@ def _caution_link_slugs(query_text: str, prior_user_turns=None) -> list:
         return []
 
 
+def _caution_openings(query_text: str, prior_user_turns=None) -> list:
+    """The opening sentences (_CAUTION_SUBJECT_OPENING) for each product whose own caution
+    the question touches on a subject that has one, in slug order. Fails open to none."""
+    try:
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        slugs = _caution_link_slugs(query_text, prior_user_turns)
+        if not slugs:
+            return []
+        q = _subject_text(_without_product_names(query_text, slugs, products))
+        out = []
+        for slug in slugs:
+            pr = products.get(slug) or {}
+            caution = _subject_text(pr.get("warning") or "")
+            name = html.unescape(pr.get("name") or slug).replace("\u2122", "").strip()
+            for key, line in _CAUTION_SUBJECT_OPENING.items():
+                if key in caution and _asks_subject(key, _CAUTION_SUBJECT_WORDS[key], q):
+                    sentence = line.format(name=name)
+                    if sentence not in out:
+                        out.append(sentence)
+        return out
+    except Exception as e:
+        print(f"[chat] caution openings skipped: {e!r}", flush=True)
+        return []
+
+
 def _caution_link_url(slug: str) -> str:
     """The product page, scrolled to its Caution section and opened."""
     return _catalog_page_url(slug) + "#caution"
@@ -3858,7 +3941,10 @@ def _pre_terms_caution_reply(query_text: str, prior_user_turns=None) -> str:
                   if s not in slugs]
         paras = [p for _, p in _verbatim_caution_paras(query_text, prior_user_turns,
                                                        slugs=slugs)]
-        return "\n\n".join(paras + [_PRE_TERMS_CAUTION_INVITE]) if paras else ""
+        if not paras:
+            return ""
+        return "\n\n".join(_caution_openings(query_text, prior_user_turns) + paras
+                            + [_PRE_TERMS_CAUTION_INVITE])
     except Exception as e:
         print(f"[chat] pre-Terms caution reply skipped: {e!r}", flush=True)
         return ""
@@ -4187,6 +4273,16 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
     # Read here: the note is imported further down the module.
     head = (_CAUTION_ANSWER_RULES.replace(_CAUTION_ANSWER_POINT, _CAUTION_ANSWER_QUOTE)
             if member else _CAUTION_ANSWER_RULES)
+    openings = _caution_openings(query_text, prior_user_turns)
+    if openings:
+        first = ("Before step 1, open the answer with "
+                 + ("this sentence" if len(openings) == 1 else "these sentences")
+                 + ", word for word: " + " ".join(openings) + " For the product "
+                 "it names, never answer yes, and never say the two can be taken "
+                 "together, spaced apart or kept to a small amount. Answer about any "
+                 "other product as usual.\n")
+        head = (head.replace("\n1. Open", "\n" + first + "1. Open", 1)
+                if "\n1. Open" in head else first + head)
     rules = (head + "Keep every other rule: product links only from the "
              "injection table, and product claims only from sources ("
              + _SOURCED_PRODUCT_NOTE + ").\n\n")
