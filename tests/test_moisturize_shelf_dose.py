@@ -133,12 +133,23 @@ def test_no_amount_rule_for_another_product():
     assert "### B17 Syntropy" in b and "Give no percent Daily Value" not in b
 
 
-def test_a_long_message_is_read_quickly():
+def _read_time(n):
     import time
-    t = time.monotonic()
-    app._named_product_facts("Moisturize? " * 20000)
-    app._named_product_facts("Clarity? " * 20000)
-    assert time.monotonic() - t < 5
+    best = None
+    for _ in range(2):
+        t = time.monotonic()
+        app._named_product_facts("Moisturize? " * n)
+        app._named_product_facts("Clarity? " * n)
+        best = min(best or 1e9, time.monotonic() - t)
+    return best
+
+
+def test_a_long_message_is_read_quickly():
+    # The cost must grow in step with the message, not with its square. A wall-clock
+    # bound flaked on slow runners: 40,000 words took 3.4 s locally and over 5 s in CI.
+    # Eight times the words: linear reads about 8x, a quadratic scan about 64x.
+    small, large = _read_time(1000), _read_time(8000)
+    assert large / small < 24, (small, large)
 
 
 def test_the_directions_are_pinned_for_the_chat():
