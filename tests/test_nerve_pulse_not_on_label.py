@@ -22,15 +22,18 @@ def test_a_contents_question_opens_with_the_line(q, line):
         assert instr.startswith(
             "Before everything below, make this the answer's first sentence, word for word: "
             + line)
-        assert "Never say the product contains it" in instr
+        assert "Never say Nerve Pulse contains " in instr
+        assert app._SEPARATE_PRODUCT_NOTE in instr
 
 
 def test_the_pre_terms_and_member_answers_carry_it():
     q = "Does Nerve Pulse contain vinpocetine? I am pregnant."
     reply = app._pre_terms_caution_reply(q)
-    assert VINPO in reply and reply.index(VINPO) < reply.index(app._PRE_TERMS_CAUTION_INVITE)
-    assert "Before step 1, state, word for word: " + VINPO in app._caution_synth_instr(
-        q, member=True)
+    vcaution = app._PRODUCTS["products"]["vinpocetine"]["warning"].strip()
+    assert VINPO in reply and reply.index(VINPO) < reply.index(vcaution)
+    member = app._caution_synth_instr(q, member=True)
+    assert "Before step 1, state, word for word: " + VINPO in member
+    assert app._SEPARATE_PRODUCT_NOTE in member
 
 
 @pytest.mark.parametrize("q", [
@@ -43,7 +46,10 @@ def test_the_pre_terms_and_member_answers_carry_it():
     "Does Nerve Pulse have ginkgo, and can I take it with ginkgo?",   # combination
     "Nerve Pulse vinpocetine?",                                     # no contents word
     "Is vinpocetine safe? Does Nerve Pulse have huperzine?",          # another clause
+    "Does Nerve Pulse have side effects like ginkgo does?",           # effects, not contents
+    "Does Nerve Pulse contain huperzine, and does Nerve Repair contain vinpocetine?",
 ])
+
 def test_no_line_elsewhere(q):
     assert app._not_on_label_lines(q) == []
 
@@ -54,3 +60,20 @@ def test_the_listed_ingredients_are_truly_absent_from_the_label():
     text = " ".join(i["name"] for i in p["ingredients"]) + " " + p["description"]
     for _label, pat in app._NOT_ON_LABEL["nerve-pulse"]:
         assert not re.search(pat, text, re.IGNORECASE), _label
+
+
+@pytest.mark.parametrize("q", [
+    "Is Nerve Pulse made with vinpocetine?",
+    "Does Nerve Pulse contain vinpocetine? I take prenatal vitamins.",
+])
+def test_these_contents_questions_still_get_it(q):
+    # Review round 2: the combination veto reads only the ingredient's own sentence.
+    assert app._not_on_label_lines(q) == [VINPO]
+
+
+def test_both_openings_merge_into_one_instruction():
+    q = "Does Nerve Pulse contain vinpocetine, and does Thermogenesis have caffeine?"
+    instr = app._chat_synth_instr(q, None, "brief", False)
+    assert instr.count("Before everything below") == 1
+    assert VINPO in instr and "The Thermogenesis label says:" in instr
+    assert "Never say Nerve Pulse contains vinpocetine" in instr

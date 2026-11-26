@@ -3806,20 +3806,28 @@ _NOT_ON_LABEL = {
 
 
 _CONTENTS_Q = re.compile(r"\b(?:contain|contains|containing|have|has|include|includes|"
-                         r"is\s+there|are\s+there|any|ingredients?|made\s+with)\b",
+                         r"is\s+there|are\s+there|any|ingredients?)\b",
                          re.IGNORECASE)
 _COMBINATION_Q = re.compile(r"\b(?:take|taking|with|combine|combined|mix|mixed|together|"
                             r"alongside|plus)\b", re.IGNORECASE)
+# "Does Nerve Pulse have side effects like ginkgo does?" asks about effects, not contents
+# (review round 1).
+_NOT_CONTENTS_Q = re.compile(r"side[\s-]*effects?|interact|\blike\b[^.?!;]*\bdoes\b|"
+                             r"\bsimilar\b|\bwork\b", re.IGNORECASE)
+
+
+def _clause_of(text: str, i: int) -> str:
+    """The sentence of `text` holding position i."""
+    lo = max(text.rfind(c, 0, i) for c in ".?!;") + 1
+    his = [h for h in (text.find(c, i) for c in ".?!;") if h != -1]
+    return text[lo:(min(his) if his else len(text))]
 
 
 def _not_on_label_lines(query_text: str) -> list:
     """'The current <name> label does not list <ingredient>.' for each _NOT_ON_LABEL
     ingredient the question names in the same clause as the product. Fails open to none."""
     try:
-        # A contents question only: "Can I take Nerve Pulse with ginkgo?" asks about a
-        # combination, and "does not list ginkgo" first would read as permission.
-        if (not query_text or not _CONTENTS_Q.search(query_text)
-                or _COMBINATION_Q.search(query_text)):
+        if not query_text:
             return []
         products = (_PRODUCTS or {}).get("products", {}) or {}
         spans = _named_product_spans(query_text, products)
@@ -3832,7 +3840,17 @@ def _not_on_label_lines(query_text: str) -> list:
             for label, pat in items:
                 for m in re.finditer(pat, query_text, re.IGNORECASE):
                     lo, hi = (b, m.start()) if m.start() >= b else (m.end(), a)
-                    if not re.search(r"[.?!;]", query_text[lo:hi]):
+                    # A contents question in this clause only: "Can I take Nerve Pulse
+                    # with ginkgo?" asks about a combination, and "does not list ginkgo"
+                    # first would read as permission. "made with" is a contents phrase
+                    # (review rounds 1 and 2).
+                    clause = re.sub(r"\bmade\s+with\b", "contains",
+                                    _clause_of(query_text, m.start()), flags=re.IGNORECASE)
+                    if (not re.search(r"[.?!;]", query_text[lo:hi])
+                            and not any(lo <= spans[o][0] < hi for o in spans if o != slug)
+                            and _CONTENTS_Q.search(clause)
+                            and not _COMBINATION_Q.search(clause)
+                            and not _NOT_CONTENTS_Q.search(clause)):
                         line = f"The current {name} label does not list {label}."
                         if line not in out:
                             out.append(line)
@@ -3843,6 +3861,21 @@ def _not_on_label_lines(query_text: str) -> list:
         return []
 
 
+_SEPARATE_PRODUCT_NOTE = ("Facts or a caution for a separate product of that name are about "
+                          "that product only.")
+
+
+def _not_on_label_bans(lines) -> str:
+    """'Never say Nerve Pulse contains vinpocetine, and give no amount of it.' per line."""
+    out = []
+    for ln in lines:
+        m = re.match(r"The current (.+?) label does not list (.+)\.$", ln)
+        if m:
+            out.append(f"Never say {m.group(1)} contains {m.group(2)}, and give no amount "
+                       f"of it for {m.group(1)}.")
+    return " ".join(out)
+
+
 def _not_on_label_instr(query_text: str) -> str:
     """The instruction to open a model answer with the not-on-label sentences."""
     lines = _not_on_label_lines(query_text)
@@ -3850,9 +3883,23 @@ def _not_on_label_instr(query_text: str) -> str:
         return ""
     return ("Before everything below, make this the answer's first "
             + ("sentence" if len(lines) == 1 else "sentences") + ", word for word: "
-            + " ".join(lines) + " Never say the product contains it, and give no amount of it "
-            "for the product. Facts or a caution for a separate product of that name are "
-            "about that product only.\n")
+            + " ".join(lines) + " " + _not_on_label_bans(lines) + " " + _SEPARATE_PRODUCT_NOTE
+            + "\n")
+
+
+def _opening_instr(query_text: str) -> str:
+    """One opening instruction for both the not-on-label and the label caffeine lines, so
+    a question that brings both gets one first-sentence rule (review round 1)."""
+    absent = _not_on_label_instr(query_text)
+    caffeine = _label_caffeine_instr(query_text)
+    if not (absent and caffeine):
+        return absent or caffeine
+    lines = _not_on_label_lines(query_text) + _label_caffeine_lines(query_text)
+    caff_rules = caffeine.split(" It does not count toward any word limit below. ", 1)[-1]
+    return ("Before everything below, make these the answer's first sentences, word for "
+            "word: " + " ".join(lines) + " They do not count toward any word limit below. "
+            + _not_on_label_bans(_not_on_label_lines(query_text)) + " "
+            + _SEPARATE_PRODUCT_NOTE + " " + caff_rules)
 
 
 def _label_caffeine_instr(query_text: str) -> str:
@@ -4119,9 +4166,9 @@ def _pre_terms_caution_reply(query_text: str, prior_user_turns=None) -> str:
                                                        slugs=slugs)]
         if not paras:
             return ""
-        return "\n\n".join(_caution_openings(query_text, prior_user_turns) + paras
+        return "\n\n".join(_caution_openings(query_text, prior_user_turns)
+                            + _not_on_label_lines(query_text) + paras
                             + _label_caffeine_lines(query_text)
-                            + _not_on_label_lines(query_text)
                             + [_PRE_TERMS_CAUTION_INVITE])
     except Exception as e:
         print(f"[chat] pre-Terms caution reply skipped: {e!r}", flush=True)
@@ -4463,8 +4510,8 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
                 if "\n1. Open" in head else first + head)
     _absent = _not_on_label_lines(query_text)
     if _absent:
-        first_abs = ("Before step 1, state, word for word: " + " ".join(_absent)
-                     + " Never say the product contains it.\n")
+        first_abs = ("Before step 1, state, word for word: " + " ".join(_absent) + " "
+                     + _not_on_label_bans(_absent) + " " + _SEPARATE_PRODUCT_NOTE + "\n")
         head = (head.replace("\n1. Open", "\n" + first_abs + "1. Open", 1)
                 if "\n1. Open" in head else first_abs + head)
     _label = _label_caffeine_lines(query_text)
@@ -4578,7 +4625,7 @@ def _chat_synth_instr(query_text, prior_user_turns, mode, logged_in, member=Fals
                                    sources_list)
     if caution:
         return caution
-    return (_not_on_label_instr(query_text) + _label_caffeine_instr(query_text)
+    return (_opening_instr(query_text)
             + (_protocol_synth_instr(sources_list, long_form=full)
                or (_long_form_synth_instr(logged_in) if full else _brief_synth_instruction())))
 
@@ -18339,7 +18386,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
 
     synth_instr = (_with_protocol_steps(_caution_synth_instr(query, _prior_user,
                                                              long_form=True), sources_list)
-                   or (_not_on_label_instr(query) + _label_caffeine_instr(query)
+                   or (_opening_instr(query)
                        + (_protocol_synth_instr(sources_list, long_form=True)
                           or _long_form_synth_instr(is_logged_in))))
     user_msg = (
@@ -18545,7 +18592,7 @@ def _full_report_stream(log_id, query, level, session_id,
 
         synth_instr = (_with_protocol_steps(_caution_synth_instr(query, _prior_user,
                                                                  long_form=True), sources_list)
-                       or (_not_on_label_instr(query) + _label_caffeine_instr(query)
+                       or (_opening_instr(query)
                            + (_protocol_synth_instr(sources_list, long_form=True)
                               or _long_form_synth_instr(is_logged_in))))
         user_msg = (
