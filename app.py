@@ -2987,10 +2987,13 @@ _AS_GUIDED_RULE = ('When you give the dose of {name}, give its Directions word f
                    'keeping "or as guided". Do not reword, shorten or merge them. Add no '
                    'other sentence about how many, how often or when to take it: do not '
                    'restate, explain, range or adjust the dose, and do not suggest starting '
-                   'low or working up. The one exception: when the user asks about an '
-                   'amount within these Directions, you may say "That is within the '
-                   'Directions." in those words, without repeating the amount, then give '
-                   'the Directions word for word.')
+                   'low or working up. Two exceptions. When the user asks about an amount '
+                   'within these Directions, say "That is within the Directions." in those '
+                   'words, without repeating the amount, then give the Directions word for '
+                   'word; but if the user names a medicine, pregnancy, surgery or condition, '
+                   'never answer whether they may take it. And keep the sentence saying to '
+                   'ask Dr. Glen about anything beyond these Directions. This rule never '
+                   'shortens a caution.')
 _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The snippets may "
                      "hold older advice to take more than these Directions give{example}. "
                      "That advice is withdrawn: never give it, "
