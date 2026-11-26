@@ -3719,8 +3719,10 @@ _CAUTION_NOT_OURS = ("That opening sentence is not part of the caution: never sa
 _PANEL_NOTE_FACTS = frozenset({"thermogenesis"})
 _PANEL_NOTE_CAFFEINE_RULE = (
     "When asked whether {name} contains caffeine or how much, give the amount in the label "
-    "note's own words. Never call it caffeine-free or decaffeinated, never answer no, and "
-    "never give a percentage or another figure.")
+    "note's own words. Never call it caffeine-free or decaffeinated, never say it has no "
+    "caffeine, and never give a percentage or another figure. When the answer also opens "
+    "with the sentence about avoiding coffee, keep that opening and the caution as they "
+    "are, then give the amount in one sentence after the caution.")
 # In the facts block of a product whose caution names caffeine.
 _CAFFEINE_DRINK_RULE = (
     "If the user asks about having {name} with coffee, tea, an energy drink or any "

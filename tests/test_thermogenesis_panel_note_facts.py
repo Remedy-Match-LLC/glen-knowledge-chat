@@ -36,6 +36,17 @@ def test_the_rule_forbids_the_live_failure():
     rule = app._PANEL_NOTE_CAFFEINE_RULE.format(name="Thermogenesis")
     assert "Never call it caffeine-free" in rule
     assert "never give a percentage" in rule
+    assert "never answer no" not in rule
+    assert "never say it has no caffeine" in rule
+    assert "then give the amount in one sentence after the caution" in rule
+
+
+def test_a_mixed_question_keeps_the_coffee_opening():
+    q = "How much caffeine is in Thermogenesis, and can I take it with coffee?"
+    instr = app._caution_synth_instr(q, member=True)
+    assert app._CAUTION_SUBJECT_OPENING["caffeine"].format(name="Thermogenesis") in instr
+    block = app.named_product_facts_block(q)
+    assert app._PANEL_NOTE_CAFFEINE_RULE.format(name="Thermogenesis") in block
 
 
 def test_no_other_product_gets_a_label_note():
