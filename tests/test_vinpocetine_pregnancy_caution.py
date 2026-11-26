@@ -29,7 +29,9 @@ BLEND_ROW = ["acetaldehyde-detox", "apoptogenesis", "appestat", "blood-cleanse",
              "rescue", "rescue-phytochromotherapy", "rise--shine",
              "thermogenesis", "three-treasures", "tmg-syntropy-powder", "vein-support",
              "vital-energy-be", "vitamin-c-syntropy"]
-DESCRIPTION_ONLY = ["nerve-repair", "nerve-pulse"]
+# Nerve Pulse left the list: its "description" was Nerve Repair's copy, and run 140 has no
+# Bioavailability Blend (Glen "yes" 2026-11-26, platform tab: match the store page).
+DESCRIPTION_ONLY = ["nerve-repair"]
 # Their earlier warning stays first, then one space and the line.
 # Iron Out's "Take up to 4 capsules a day." left its warning, so it carries the line alone:
 # the directions carry the dose (Glen "yes", 2026-11-01, platform tab).
@@ -93,8 +95,10 @@ def _products():
 
 def test_the_list_is_the_spec_list():
     # 42 in the spec. Heart Health and Perfect Skin left on 2026-11-20: Glen approved
-    # formulas without vinpocetine (test_catalog_batch1_panels_2026_11_20).
-    assert len(ALL) == len(set(ALL)) == 40
+    # formulas without vinpocetine (test_catalog_batch1_panels_2026_11_20). Nerve Pulse left
+    # on 2026-11-26: run 140 has none. Its St. John's wort caution keeps a pregnancy
+    # sentence mid-text, so it is not in FORMER.
+    assert len(ALL) == len(set(ALL)) == 39
     assert not set(ALL) & set(FORMER)
 
 
@@ -337,3 +341,12 @@ def test_a_former_vinpocetine_formula_counts_only_with_its_pregnancy_line():
     assert not app._carries_pregnancy_line("heart-health", {"warning": "Consult first."})
     assert not app._carries_pregnancy_line("glucose-tolerance",
                                            {"warning": "Don't use this if you're pregnant or breastfeeding."})
+
+
+def test_nerve_pulse_carries_no_vinpocetine_line():
+    for f in ("products.json", "products-manual-corrections.json"):
+        d = json.load(open(os.path.join(ROOT, "data", f)))
+        p = (d["products"] if f == "products.json" else d)["nerve-pulse"]
+        assert "vinpocetine" not in p["warning"].lower(), f
+        assert p["warning"].startswith("St. John's wort interacts with many medicines."), f
+        assert "Lion's Mane" not in p["description"] and "ALCAR" not in p["description"], f

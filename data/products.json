@@ -6794,53 +6794,59 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Bio-Enhanced™ R-Lipoic Acid",
+     "name": "Huperzine A 5% (Huperzia serrata), supplying 35 mcg huperzine A",
+     "dose": "700 mcg"
+    },
+    {
+     "name": "Vitamin B1 (as Benfotiamine)",
      "dose": "100 mg"
     },
     {
-     "name": "Benfotiamine",
-     "dose": "100 mg"
+     "name": "Vitamin B12 (as methylcobalamin)",
+     "dose": "1,000 mcg"
     },
     {
-     "name": "Tetrahydrocurcumin, water soluble Curcuminoid",
-     "dose": "100 mg"
+     "name": "Vitamin D3 (Cholecalciferol)",
+     "dose": "650 IU"
     },
     {
-     "name": "Vitamin B12, Methylcobalamin",
-     "dose": "1 mg"
+     "name": "Na RALA (R-Lipoate) (Stabilized Bioenhanced)",
+     "dose": "200 mg"
     },
     {
-     "name": "Vitamin D3: Cholecalciferol",
-     "dose": "1.3 mg"
-    },
-    {
-     "name": "Huperzine A",
-     "dose": "7 mg"
-    },
-    {
-     "name": "Allicin 25% (Allium sativum)",
+     "name": "Garlic Allicin 25% (Allium sativum)",
      "dose": "16 mg"
     },
     {
-     "name": "Hypericin",
+     "name": "Turmeric Tetrahydrocurcumin (Curcuma longa)",
      "dose": "100 mg"
     },
     {
-     "name": "Pterostilbene; Trans Pterostilbene",
+     "name": "Pterostilbene",
      "dose": "50 mg"
+    },
+    {
+     "name": "St. John's wort Hypericin 0.3% (Hypericum perforatum)",
+     "dose": "30 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Nerve Pulse . Price: $70. Nerve Pulse . Nerve Pulse Nerve Pulse One organic Pullulan capsule of Nerve Pulse supplies: ALCAR (Acetyl L-Carnitine) 160 mg Na RALA (Stabilized Bioenhanced Na R-Alpha Lipoate) 60 mg Lion's Mane Polysaccharides 30% ( Hericium erinaceus ) 160 mg Vitamin B1: Benfotiamine 60 mg Vitamin B6: P5P (Pyridoxal 5-Phosphate) 10 mg Vitamin B12: Methylcobalamin 500 mcg Bioavailability Proprietary Blend 34.5 mg Vitamin B13: Phosphatides 30% ( Helianthus annua ) EGb 761 ( Ginkgo biloba ) (24% Flavone Glycosides, 6% Lactones, <0.0005% Ginkgolic Acid) Vitamin B3 (as Niacin)...",
+   "ingredients_source": "store-page-2026-11-26-run-140",
+   "description": "Nerve Pulse is ideally taken in a cycle of a week on and a week off to support healthy peripheral nerve function.\n\nOtherwise, if taken continuously, most ingredients will continue working well, but the body will adapt to the Huperzine A, reducing its benefits.",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Pyridoxal-5-Phosphate (P5P), Baicalein, Riboflavin-5-Phosphate (Coenzyme B2), 5-MTHF (Methylfolate), Mixed Tocopherols, Tocotrienols, Copper Glycinate",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
    "fmp_id": "1104",
-   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it.",
-   "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it. Matched to the published store page (run 140, label Nerve_Pulse_0126), Glen 'yes' 2026-11-26 in the platform tab. The old description was Nerve Repair's copy and the vinpocetine line was wrong: run 140 has no Bioavailability Blend.",
+   "warning": "St. John's wort interacts with many medicines. Do not use this product with antidepressants, birth control pills, blood thinners, HIV or transplant medicines, or other prescription drugs unless your physician approves. Also avoid it with triptans, dextromethorphan, 5-HTP or other serotonin-raising products. Do not use if you are pregnant or breastfeeding. Consult your health professional before use if you take memory medicines such as donepezil, rivastigmine or galantamine, prescription eye drops for eye pressure, or beta-blockers. Also consult first if you have a slow heart rate, asthma, seizures, a stomach ulcer, or a bowel or urinary blockage. R-lipoate may lower blood sugar. Consult first if you have diabetes or episodes of low blood sugar, or take diabetes medicines. If you feel shaky, sweaty or confused, stop use. If you are alert and can swallow, take something sugary. Seek medical help if symptoms persist or return. Get emergency help for fainting, a seizure or severe confusion. St. John's wort may trigger mania in some people. Consult first if you have bipolar disorder or a history of mania. Stop use and seek medical advice if your mood becomes unusually high or irritable, or you need much less sleep than usual. St. John's wort may increase sensitivity to sunlight. Stop 2 weeks before planned surgery. Keep out of reach of children.",
    "chat_caution": true,
-   "content_since": "2026-11-10T17:19:24+00:00"
+   "content_since": "2026-11-26T17:05:02+00:00",
+   "directions": "1 capsule up to 3 times daily with food, or as guided. Take it one week on, then one week off.",
+   "copy_pinned": [
+    "description",
+    "directions",
+    "ingredients"
+   ]
   },
   "hydrolyzed-collagen": {
    "name": "Hydrolyzed Collagen Powder",

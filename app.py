@@ -2401,6 +2401,13 @@ _PREGNANCY_LINE_FORMER_VINPOCETINE = {
     "perfect-skin": "Don't use this if you're pregnant or breastfeeding.",
 }
 
+# Nerve Pulse lost its vinpocetine line with run 140, which has no blend (Glen "yes"
+# 2026-11-26). Its St. John's wort caution holds this sentence mid-text, so "can i take
+# nerve pulse while pregnant?" keeps the any-case match it had (review round 1).
+_PREGNANCY_LINE_WITHIN = {
+    "nerve-pulse": "Do not use if you are pregnant or breastfeeding.",
+}
+
 
 def _carries_pregnancy_line(slug, product):
     """The product's caution carries a pregnancy line that a lowercase question must reach."""
@@ -2408,7 +2415,10 @@ def _carries_pregnancy_line(slug, product):
     if _VINPOCETINE_LINE in warning:
         return True
     line = _PREGNANCY_LINE_FORMER_VINPOCETINE.get(slug)
-    return bool(line) and warning.startswith(line)
+    if line and warning.startswith(line):
+        return True
+    line = _PREGNANCY_LINE_WITHIN.get(slug)
+    return bool(line) and line in warning
 
 
 _PREGNANCY_OR_SAFETY_CUE = re.compile(
