@@ -3701,8 +3701,9 @@ _CAUTION_SUBJECT_OPENING = {
 }
 # Knowledge's read-back after #2331: asked "Does Thermogenesis have caffeine?", one
 # answer said the caution on the product page carries this sentence. It does not.
-_CAUTION_NOT_OURS = ("That opening sentence is Dr. Glen's guidance, not part of the caution: "
-                     "never say the caution or the product page says it.")
+_CAUTION_NOT_OURS = ("That opening sentence is not part of the caution: never say the "
+                     "caution or the product page says it, and put nothing before it. It is "
+                     "the one line allowed beside the caution on this subject.")
 # In the facts block of a product whose caution names caffeine.
 _CAFFEINE_DRINK_RULE = (
     "If the user asks about having {name} with coffee, tea, an energy drink or any "
