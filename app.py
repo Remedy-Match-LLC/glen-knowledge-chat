@@ -3293,6 +3293,12 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         _dirs_line = bool(val and (val not in desc or slug in _DOSE_RULE_WITHOUT_CAUTION))
         if _dirs_line:
             parts.append(f"Directions: {val}")
+        _note = (product.get("panel_note") or "").strip()
+        if (pinned and slug in _PANEL_NOTE_FACTS and _note
+                and "ingredients" in _pinned_copy(product)):
+            parts.append(f"Label note for {name}, word for word: {_note}")
+            if "caffeine" in _note.lower():
+                parts.append(_PANEL_NOTE_CAFFEINE_RULE.format(name=name))
         bundle_cautions = bool(product.get("bundle") and _bundle_bot_cautions(product, products))
         copy_block = pinned and bool(product.get("chat_caution") or bundle_cautions)
         if ((copy_block or (pinned and slug in _DOSE_RULE_WITHOUT_CAUTION))
@@ -3706,6 +3712,15 @@ _CAUTION_SUBJECT_OPENING = {
 _CAUTION_NOT_OURS = ("That opening sentence is not part of the caution: never say the "
                      "caution or the product page says it, and put nothing before it. It is "
                      "the one line allowed beside the caution on this subject.")
+# Products whose approved label note reaches the chat, word for word. Glen, 2026-11-26,
+# in the platform tab ("yes" to "add the caffeine note to the chat"): a live answer
+# invented "about 6% of the original caffeine level, so it's largely caffeine-free"
+# because the facts held no amount. Only a product whose ingredients section is pinned.
+_PANEL_NOTE_FACTS = frozenset({"thermogenesis"})
+_PANEL_NOTE_CAFFEINE_RULE = (
+    "When asked whether {name} contains caffeine or how much, give the amount in the label "
+    "note's own words. Never call it caffeine-free or decaffeinated, never answer no, and "
+    "never give a percentage or another figure.")
 # In the facts block of a product whose caution names caffeine.
 _CAFFEINE_DRINK_RULE = (
     "If the user asks about having {name} with coffee, tea, an energy drink or any "
