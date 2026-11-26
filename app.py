@@ -3727,10 +3727,18 @@ _CAUTION_NOT_OURS = ("That opening sentence is not part of the caution: never sa
 # invented "about 6% of the original caffeine level, so it's largely caffeine-free"
 # because the facts held no amount. Only a product whose ingredients section is pinned.
 _PANEL_NOTE_FACTS = frozenset({"thermogenesis"})
+# Glen "yes, tighten the caffeine answer" 2026-11-26, after production's read-back of #2337:
+# "Yes, Thermogenesis is not caffeine-free", "the trace amount is negligible", and unasked
+# "caffeine-free" alternatives (Rise & Shine, Vital Energy B, Sustain) in 3 of 6.
+_CAFFEINE_ANSWER_TIGHT = (
+    " Do not answer yes or no before or after it: let it stand as the answer. Never call the "
+    "amount negligible, trace or insignificant. Do not suggest or recommend any other product "
+    "as caffeine-free or as an alternative unless the user asks for one.")
 _PANEL_NOTE_CAFFEINE_RULE = (
     "When asked whether {name} contains caffeine or how much, give the amount in the label "
     "note's own words. Never call it caffeine-free or decaffeinated, never say it has no "
-    "caffeine, and never give a percentage or another figure. When the answer also opens "
+    "caffeine, and never give a percentage or another figure." + _CAFFEINE_ANSWER_TIGHT
+    + " When the answer also opens "
     "with the sentence about avoiding coffee, keep that opening and the caution as they "
     "are, then give the amount in one sentence after the caution.")
 # Production's live read-back after #2335 (18 answers): "Is Thermogenesis caffeine-free?"
@@ -3807,7 +3815,7 @@ def _label_caffeine_instr(query_text: str) -> str:
             + " ".join(lines) + " It does not count toward any word limit below. Never call "
             + who + " caffeine-free, nearly caffeine-free or decaffeinated, never say it has "
             "no caffeine, and never give a percentage or any other figure for its caffeine."
-            "\n")
+            + _CAFFEINE_ANSWER_TIGHT + "\n")
 # In the facts block of a product whose caution names caffeine.
 _CAFFEINE_DRINK_RULE = (
     "If the user asks about having {name} with coffee, tea, an energy drink or any "
