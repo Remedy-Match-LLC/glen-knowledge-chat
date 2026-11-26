@@ -20,8 +20,8 @@ def test_a_contents_question_opens_with_the_line(q, line):
     for mode in ("brief", "full"):
         instr = app._chat_synth_instr(q, None, mode, False)
         assert instr.startswith(
-            "Before everything below, make this the answer's first sentence, word for word: "
-            + line)
+            "Before everything below, make this the answer's first sentence, word for word, "
+            f'without the quotation marks: "{line}" It does not count toward any word limit')
         assert "Never say Nerve Pulse contains " in instr
         assert app._SEPARATE_PRODUCT_NOTE in instr
 
@@ -32,7 +32,7 @@ def test_the_pre_terms_and_member_answers_carry_it():
     vcaution = app._PRODUCTS["products"]["vinpocetine"]["warning"].strip()
     assert VINPO in reply and reply.index(VINPO) < reply.index(vcaution)
     member = app._caution_synth_instr(q, member=True)
-    assert "Before step 1, state, word for word: " + VINPO in member
+    assert f'Before step 1, state, word for word, without the quotation marks: "{VINPO}"' in member
     assert app._SEPARATE_PRODUCT_NOTE in member
 
 
@@ -77,3 +77,15 @@ def test_both_openings_merge_into_one_instruction():
     assert instr.count("Before everything below") == 1
     assert VINPO in instr and "The Thermogenesis label says:" in instr
     assert "Never say Nerve Pulse contains vinpocetine" in instr
+
+
+def test_an_ingredient_goes_with_the_nearest_product():
+    # Review round 3.
+    q = "Does Thermogenesis contain vinpocetine, and does Nerve Pulse have ginkgo?"
+    assert app._not_on_label_lines(q) == ["The current Nerve Pulse label does not list ginkgo."]
+
+
+def test_a_combination_anywhere_in_the_sentence_blocks_it():
+    # Safety over reach: a "with" in the same sentence may be about this product.
+    q = "Does Nerve Pulse contain vinpocetine, and can I drink coffee with Thermogenesis?"
+    assert app._not_on_label_lines(q) == []

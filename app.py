@@ -3816,10 +3816,13 @@ _NOT_CONTENTS_Q = re.compile(r"side[\s-]*effects?|interact|\blike\b[^.?!;]*\bdoe
                              r"\bsimilar\b|\bwork\b", re.IGNORECASE)
 
 
-def _clause_of(text: str, i: int) -> str:
-    """The sentence of `text` holding position i."""
-    lo = max(text.rfind(c, 0, i) for c in ".?!;") + 1
-    his = [h for h in (text.find(c, i) for c in ".?!;") if h != -1]
+def _clause_of(text: str, i: int, commas: bool = True) -> str:
+    """The clause of `text` holding position i: split at .?!; and, with `commas`, at
+    ", and" / ", but"."""
+    seps = [".", "?", "!", ";"] + ([", and ", ", but "] if commas else [])
+    low = text.lower()
+    lo = max((low.rfind(c, 0, i) + len(c)) if low.rfind(c, 0, i) != -1 else 0 for c in seps)
+    his = [h for h in (low.find(c, i) for c in seps) if h != -1]
     return text[lo:(min(his) if his else len(text))]
 
 
@@ -3846,10 +3849,27 @@ def _not_on_label_lines(query_text: str) -> list:
                     # (review rounds 1 and 2).
                     clause = re.sub(r"\bmade\s+with\b", "contains",
                                     _clause_of(query_text, m.start()), flags=re.IGNORECASE)
+                    # The ingredient goes with the nearest named product: "Does
+                    # Thermogenesis contain vinpocetine, and does Nerve Pulse have ginkgo?"
+                    # asks about vinpocetine in Thermogenesis (review round 3).
+                    def _dist(o, m=m):
+                        oa, ob = spans[o]
+                        return (m.start() - ob) if m.start() >= ob else (oa - m.end())
+                    # A span over the ingredient itself (the Vinpocetine product) is not
+                    # another product asked about.
+                    others = [o for o in spans
+                              if not (spans[o][0] < m.end() and m.start() < spans[o][1])]
+                    nearest = min(others, key=_dist) if others else slug
                     if (not re.search(r"[.?!;]", query_text[lo:hi])
+                            and nearest == slug
                             and not any(lo <= spans[o][0] < hi for o in spans if o != slug)
                             and _CONTENTS_Q.search(clause)
-                            and not _COMBINATION_Q.search(clause)
+                            # The whole sentence: "Does Nerve Pulse have ginkgo, and can I
+                            # take it with ginkgo?" still asks about a combination.
+                            and not _COMBINATION_Q.search(re.sub(
+                                r"\bmade\s+with\b", "contains",
+                                _clause_of(query_text, m.start(), commas=False),
+                                flags=re.IGNORECASE))
                             and not _NOT_CONTENTS_Q.search(clause)):
                         line = f"The current {name} label does not list {label}."
                         if line not in out:
@@ -3881,10 +3901,12 @@ def _not_on_label_instr(query_text: str) -> str:
     lines = _not_on_label_lines(query_text)
     if not lines:
         return ""
-    return ("Before everything below, make this the answer's first "
-            + ("sentence" if len(lines) == 1 else "sentences") + ", word for word: "
-            + " ".join(lines) + " " + _not_on_label_bans(lines) + " " + _SEPARATE_PRODUCT_NOTE
-            + "\n")
+    one = len(lines) == 1
+    return ("Before everything below, make " + ("this the answer's first sentence" if one
+            else "these the answer's first sentences") + ", word for word, without the "
+            "quotation marks: " + " ".join(f'"{ln}"' for ln in lines) + " "
+            + ("It does" if one else "They do") + " not count toward any word limit below. "
+            + _not_on_label_bans(lines) + " " + _SEPARATE_PRODUCT_NOTE + "\n")
 
 
 def _opening_instr(query_text: str) -> str:
@@ -3897,7 +3919,8 @@ def _opening_instr(query_text: str) -> str:
     lines = _not_on_label_lines(query_text) + _label_caffeine_lines(query_text)
     caff_rules = caffeine.split(" It does not count toward any word limit below. ", 1)[-1]
     return ("Before everything below, make these the answer's first sentences, word for "
-            "word: " + " ".join(lines) + " They do not count toward any word limit below. "
+            "word, without the quotation marks: " + " ".join(f'"{ln}"' for ln in lines)
+            + " They do not count toward any word limit below. "
             + _not_on_label_bans(_not_on_label_lines(query_text)) + " "
             + _SEPARATE_PRODUCT_NOTE + " " + caff_rules)
 
@@ -4510,7 +4533,8 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
                 if "\n1. Open" in head else first + head)
     _absent = _not_on_label_lines(query_text)
     if _absent:
-        first_abs = ("Before step 1, state, word for word: " + " ".join(_absent) + " "
+        first_abs = ("Before step 1, state, word for word, without the quotation marks: "
+                     + " ".join(f'"{ln}"' for ln in _absent) + " "
                      + _not_on_label_bans(_absent) + " " + _SEPARATE_PRODUCT_NOTE + "\n")
         head = (head.replace("\n1. Open", "\n" + first_abs + "1. Open", 1)
                 if "\n1. Open" in head else first_abs + head)
