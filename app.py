@@ -3699,13 +3699,20 @@ _CAUTION_SUBJECT_WORDS = {
 _CAUTION_SUBJECT_OPENING = {
     "caffeine": "Avoid coffee and other caffeinated drinks while taking {name}.",
 }
+# Knowledge's read-back after #2331: asked "Does Thermogenesis have caffeine?", one
+# answer said the caution on the product page carries this sentence. It does not.
+_CAUTION_NOT_OURS = ("That opening sentence is not part of the caution: never say the "
+                     "caution or the product page says it, and put nothing before it. It is "
+                     "the one line allowed beside the caution on this subject.")
 # In the facts block of a product whose caution names caffeine.
 _CAFFEINE_DRINK_RULE = (
     "If the user asks about having {name} with coffee, tea, an energy drink or any "
     "other caffeinated drink, open the answer with this sentence, word for word: "
     + _CAUTION_SUBJECT_OPENING["caffeine"] + " Never answer yes, and never say the two "
     "can be taken together, spaced apart or kept to a small amount. A question about "
-    "what {name} contains is answered as usual.")
+    "what {name} contains and nothing else, such as whether it has caffeine, does not "
+    "get this sentence and is answered as usual. A question that also asks about "
+    "having it with a caffeinated drink still opens with it. " + _CAUTION_NOT_OURS)
 
 # Dose wording that holds a subject word and asks nothing about the subject: "How many
 # pills of Stress Release a day?" is a dose question (review rounds 1 and 3, 2026-10-24).
@@ -4280,7 +4287,7 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
                  + ", word for word: " + " ".join(openings) + " For the product "
                  "it names, never answer yes, and never say the two can be taken "
                  "together, spaced apart or kept to a small amount. Answer about any "
-                 "other product as usual.\n")
+                 "other product as usual. " + _CAUTION_NOT_OURS + "\n")
         head = (head.replace("\n1. Open", "\n" + first + "1. Open", 1)
                 if "\n1. Open" in head else first + head)
     rules = (head + "Keep every other rule: product links only from the "
