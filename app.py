@@ -3791,6 +3791,70 @@ def _label_caffeine_lines(query_text: str) -> list:
         return []
 
 
+# Ingredients a product's current label does not list, though old copy said it did.
+# Production's read-back after #2336: "Does Nerve Pulse contain vinpocetine?" got "Yes, Nerve
+# Pulse contains vinpocetine, 1 mg per capsule" 4 of 4, merging the Vinpocetine product's
+# block. The app had held Nerve Repair's copy for Nerve Pulse (ALCAR, Lion's Mane, the
+# Bioavailability Blend), and run 140 has none of it (Glen "yes" 2026-11-26).
+_NOT_ON_LABEL = {
+    "nerve-pulse": (("vinpocetine", r"vinpocetin"), ("ginkgo", r"ginkgo|\begb\b"),
+                    ("Lion's Mane", r"lion['\u2019]?s\s+mane|hericium"),
+                    ("acetyl-L-carnitine (ALCAR)", r"\balcar\b|acetyl[\s-]*l?[\s-]*carnitine"),
+                    ("P5P", r"\bp5p\b|pyridoxal"),
+                    ("the Bioavailability Blend", r"bioavailability")),
+}
+
+
+_CONTENTS_Q = re.compile(r"\b(?:contain|contains|containing|have|has|include|includes|"
+                         r"is\s+there|are\s+there|any|ingredients?|made\s+with)\b",
+                         re.IGNORECASE)
+_COMBINATION_Q = re.compile(r"\b(?:take|taking|with|combine|combined|mix|mixed|together|"
+                            r"alongside|plus)\b", re.IGNORECASE)
+
+
+def _not_on_label_lines(query_text: str) -> list:
+    """'The current <name> label does not list <ingredient>.' for each _NOT_ON_LABEL
+    ingredient the question names in the same clause as the product. Fails open to none."""
+    try:
+        # A contents question only: "Can I take Nerve Pulse with ginkgo?" asks about a
+        # combination, and "does not list ginkgo" first would read as permission.
+        if (not query_text or not _CONTENTS_Q.search(query_text)
+                or _COMBINATION_Q.search(query_text)):
+            return []
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        spans = _named_product_spans(query_text, products)
+        out = []
+        for slug, items in _NOT_ON_LABEL.items():
+            if slug not in spans or "ingredients" not in _pinned_copy(products.get(slug) or {}):
+                continue
+            a, b = spans[slug]
+            name = html.unescape(products[slug].get("name") or slug).strip()
+            for label, pat in items:
+                for m in re.finditer(pat, query_text, re.IGNORECASE):
+                    lo, hi = (b, m.start()) if m.start() >= b else (m.end(), a)
+                    if not re.search(r"[.?!;]", query_text[lo:hi]):
+                        line = f"The current {name} label does not list {label}."
+                        if line not in out:
+                            out.append(line)
+                        break
+        return out
+    except Exception as e:
+        print(f"[chat] not-on-label lines skipped: {e!r}", flush=True)
+        return []
+
+
+def _not_on_label_instr(query_text: str) -> str:
+    """The instruction to open a model answer with the not-on-label sentences."""
+    lines = _not_on_label_lines(query_text)
+    if not lines:
+        return ""
+    return ("Before everything below, make this the answer's first "
+            + ("sentence" if len(lines) == 1 else "sentences") + ", word for word: "
+            + " ".join(lines) + " Never say the product contains it, and give no amount of it "
+            "for the product. Facts or a caution for a separate product of that name are "
+            "about that product only.\n")
+
+
 def _label_caffeine_instr(query_text: str) -> str:
     """The instruction to open a model answer with the label's caffeine sentence, for a
     question about what the product holds and nothing about using it."""
@@ -4057,6 +4121,7 @@ def _pre_terms_caution_reply(query_text: str, prior_user_turns=None) -> str:
             return ""
         return "\n\n".join(_caution_openings(query_text, prior_user_turns) + paras
                             + _label_caffeine_lines(query_text)
+                            + _not_on_label_lines(query_text)
                             + [_PRE_TERMS_CAUTION_INVITE])
     except Exception as e:
         print(f"[chat] pre-Terms caution reply skipped: {e!r}", flush=True)
@@ -4396,6 +4461,12 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
                  "other product as usual. " + _CAUTION_NOT_OURS + "\n")
         head = (head.replace("\n1. Open", "\n" + first + "1. Open", 1)
                 if "\n1. Open" in head else first + head)
+    _absent = _not_on_label_lines(query_text)
+    if _absent:
+        first_abs = ("Before step 1, state, word for word: " + " ".join(_absent)
+                     + " Never say the product contains it.\n")
+        head = (head.replace("\n1. Open", "\n" + first_abs + "1. Open", 1)
+                if "\n1. Open" in head else first_abs + head)
     _label = _label_caffeine_lines(query_text)
     if _label:
         head += ("Right after the caution, add " + ("this sentence" if len(_label) == 1
@@ -4507,7 +4578,7 @@ def _chat_synth_instr(query_text, prior_user_turns, mode, logged_in, member=Fals
                                    sources_list)
     if caution:
         return caution
-    return (_label_caffeine_instr(query_text)
+    return (_not_on_label_instr(query_text) + _label_caffeine_instr(query_text)
             + (_protocol_synth_instr(sources_list, long_form=full)
                or (_long_form_synth_instr(logged_in) if full else _brief_synth_instruction())))
 
@@ -18268,7 +18339,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
 
     synth_instr = (_with_protocol_steps(_caution_synth_instr(query, _prior_user,
                                                              long_form=True), sources_list)
-                   or (_label_caffeine_instr(query)
+                   or (_not_on_label_instr(query) + _label_caffeine_instr(query)
                        + (_protocol_synth_instr(sources_list, long_form=True)
                           or _long_form_synth_instr(is_logged_in))))
     user_msg = (
@@ -18474,7 +18545,7 @@ def _full_report_stream(log_id, query, level, session_id,
 
         synth_instr = (_with_protocol_steps(_caution_synth_instr(query, _prior_user,
                                                                  long_form=True), sources_list)
-                       or (_label_caffeine_instr(query)
+                       or (_not_on_label_instr(query) + _label_caffeine_instr(query)
                            + (_protocol_synth_instr(sources_list, long_form=True)
                               or _long_form_synth_instr(is_logged_in))))
         user_msg = (
