@@ -30,6 +30,20 @@ OPENING = "Avoid coffee and other caffeinated drinks while taking Thermogenesis.
     # Review round 3.
     "Can I drink green tea in the morning with Thermogenesis?",
     "Can I take Thermogenesis with green tea extract?",
+    # Confirm round: everyday phrasings with no "with".
+    "Is coffee ok on Thermogenesis?",
+    "Can I still have coffee on Thermogenesis?",
+    "Can I have coffee and Thermogenesis?",
+    "Should I avoid coffee on Thermogenesis?",
+    "Should I stop coffee when taking Thermogenesis?",
+    "Is coffee okay if I am taking Thermogenesis?",
+    "Coffee and Thermogenesis at the same time?",
+    "Can I take Thermogenesis and a red bull?",
+    "Is tea fine on Thermogenesis?",
+    "Can I take Thermogenesis in my coffee?",
+    "Can I open Thermogenesis capsules into my coffee?",
+    "Can I take Thermogenesis and then have coffee?",
+    "Does Thermogenesis contain caffeine, and can I drink coffee with it?",
 ])
 def test_a_caffeinated_drink_question_opens_with_glens_sentence(q):
     assert app._caution_link_slugs(q) == ["thermogenesis"]
@@ -63,6 +77,14 @@ def test_the_sentence_is_glens_wording():
     "Is there matcha in Thermogenesis?",
     "Does Thermogenesis contain green coffee bean extract?",
     "Does Thermogenesis have yerba mate in it?",
+    # Confirm round: content phrasings beside "with".
+    "Is Thermogenesis made with green tea?",
+    "Is Thermogenesis formulated with green tea?",
+    "Does Thermogenesis come with green tea?",
+    "Is Thermogenesis made with guarana?",
+    "Does Thermogenesis mix green tea and guarana?",
+    "Does Thermogenesis have caffeine like a cup of coffee?",
+    "What tea is in Thermogenesis plus what else?",
     "How many Thermogenesis capsules can I take a day?",
     "Can I take Thermogenesis with chocolate?",
 ])

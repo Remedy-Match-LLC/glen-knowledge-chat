@@ -3707,14 +3707,20 @@ _CAUTION_SUBJECT_NOT = {
                  " club soda"),
 }
 
-# A subject here counts only beside a word for taking the two together. Thermogenesis
-# holds green tea, so "Does Thermogenesis have green tea?" asks what is in it, not
-# whether to drink tea with it (review round 3).
-_CAUTION_SUBJECT_CUES = {
-    "caffeine": (" with ", " drink", " while ", " alongside", " together", " combine",
-                 " combining", " mix", " after my", " before my", " plus ", " cup",
-                 " on it ", " taking it"),
+# Thermogenesis holds green tea, so "Does Thermogenesis have green tea?" asks what is in
+# it, not whether to drink tea with it (review round 3). A subject here does not count in
+# a question about contents, unless it also asks about the reader's own use. Requiring a
+# word for taking the two together instead missed "Is coffee ok on Thermogenesis?" and
+# eleven more (confirm round).
+_CAUTION_SUBJECT_CONTENT = {
+    "caffeine": (" contain", " is there ", " are there ", " does have ", " do have ",
+                 " does it have ", " do they have ", " is in ", " are in ", " made with ",
+                 " made from ", " formulated with ", " come with ", " comes with ",
+                 " does mix ", " ingredient", " what tea ", " which tea ", " tea in "),
 }
+_CAUTION_SUBJECT_USE = (" can i ", " could i ", " should i ", " may i ", " do i ",
+                        " ok ", " okay ", " fine ", " alright ", " still ", " avoid ",
+                        " stop ", " allowed ")
 
 
 def _asks_subject(key: str, words, q: str) -> bool:
@@ -3722,8 +3728,8 @@ def _asks_subject(key: str, words, q: str) -> bool:
     dose wording above."""
     for phrase in _CAUTION_SUBJECT_NOT.get(key, ()):
         q = q.replace(phrase, " ")
-    cues = _CAUTION_SUBJECT_CUES.get(key)
-    if cues and not any(c in q for c in cues):
+    content = _CAUTION_SUBJECT_CONTENT.get(key, ())
+    if any(c in q for c in content) and not any(u in q for u in _CAUTION_SUBJECT_USE):
         return False
     return any(w in q for w in words)
 
