@@ -38,9 +38,20 @@ def test_a_dose_question_gets_the_directions_sentence_from_code():
     assert ('Your answer already opens with this sentence, written for you: "'
             + OPEN + _dirs() + '" Do not write it again.') in b
     for ban in ("no dilution", "no succussion", "no opening a capsule", "no water",
-                "no doubling", "Name no other product, water, device or formula",
-                "never suggest it to anyone", 'keeping "or as guided"'):
+                "no doubling", "Name no water, device or formula",
+                "do not tell the client to adjust the dose to how they feel",
+                "Do not state the Directions again", "do not recommend it"):
         assert ban in b, ban
+    # Glen's standing rule: AllerFree goes to Immune Modulation (review round 3).
+    assert 'no product except one the user named and "Immune Modulation"' in b
+    assert "give its product page link" in b
+
+
+def test_without_the_opening_the_directions_stay_word_for_word():
+    b = app._directions_only_block("What is AllerFree?")
+    assert ('Give these Directions word for word whenever you say how to take it, '
+            'keeping "or as guided".') in b
+    assert "Do not state the Directions again" not in b
 
 
 @pytest.mark.parametrize("q", ["When should I take AllerFree?", "How is AllerFree taken?",
@@ -56,12 +67,24 @@ def test_the_directions_come_from_the_record(monkeypatch):
     assert app._directions_only_opening(Q) == OPEN + "5 drops daily."
     b = app._directions_only_block(Q)
     assert "5 drops daily." in b and "or as guided" not in b and "10 drops" not in b
+    b2 = app._directions_only_block("What is AllerFree?")
+    assert "5 drops daily." in b2 and 'keeping "or as guided"' not in b2
 
 
 @pytest.mark.parametrize("q", ["What is AllerFree?", "allerfree dosage",
                                "Tell me about Aller Free drops", "aller‑free?"])
 def test_any_spelling_of_the_name(q):
     assert app._directions_only_block(q)
+
+
+@pytest.mark.parametrize("q", ["What is Aller-Free HomeoEnergetic Drops?",
+                               "How does AllerFree work?", "Is AllerFree vegan?",
+                               "How is AllerFree different from Immune Modulation?",
+                               "How can AllerFree work so gently?",
+                               "How do I take Immune Modulation and AllerFree together?"])
+def test_not_dose_questions_get_no_sentence(q):
+    assert app._directions_only_block(q)
+    assert app._directions_only_opening(q) == "", q
 
 
 @pytest.mark.parametrize("q", ["I have allergies, what helps?", "Is it allergy-free?",
@@ -77,8 +100,10 @@ def test_not_a_dose_question_has_no_opening():
 
 
 def test_a_follow_up_carries_it():
-    assert app._directions_only_opening("How do I take it?", ["What is AllerFree?"]) == (
-        OPEN + _dirs())
+    # Carried: the rule, never the code-written sentence (review round 1).
+    assert app._directions_only_opening("How do I take it?", ["What is AllerFree?"]) == ""
+    b = app._directions_only_block("How do I take it?", ["What is AllerFree?"])
+    assert b and 'keeping "or as guided"' in b
     assert app._directions_only_block("How do I take it?", ["What is Vitamin C?"]) == ""
 
 

@@ -4598,43 +4598,51 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
 _NAMED_DIRECTIONS_ONLY = ("allerfree-homeoenergetic-drops",)
 _ALLERFREE_NAME = re.compile(r"(?<![\w])aller[\s\-\u2010-\u2015]*free(?![\w])", re.I)
 _DOSE_ASK = re.compile(
-    r"\b(?:how\s+(?:do|does|should|would|can|could|is|are|often|much|many|long)\b"
-    r"|how\s+to\s+(?:take|use)|when\s+(?:do|should|can|to)\b|doses?\b|dosage|dosing"
-    r"|directions?\b|drops?\b|times\s+(?:a|per)\s+day|per\s+day|daily|at\s+once"
-    r"|take\s+(?:it|them|this)|use\s+(?:it|them|this)|taken\b)", re.I)
+    r"\b(?:how\s+(?:do|should|would|can|could|often|much|many|long)\s+"
+    r"(?!.*\b(?:work|differ|compare))|how\s+to\s+(?:take|use)|when\s+(?:do|should|can|to)\b|doses?\b"
+    r"|dosage|dosing|directions?\b|how\s+many\s+drops|drops?\s+(?:a|per|each)\b"
+    r"|times\s+(?:a|per)\s+day|per\s+day|daily|at\s+once|take\s+(?:it|them|this)\b"
+    r"|use\s+(?:it|them|this)\b|taken\b)", re.I)
+# Review round 3 (and production-88): keep the system prompt's AllerFree rule, which gives
+# its page link and lets the answer say Immune Modulation is Glen's current preference.
 _DIRECTIONS_ONLY_RULES = (
     "DIRECTIONS ONLY: {name}. The user named this product. Its approved dose text is its "
-    "Directions: \"{directions}\" {opening}Give these Directions word for word whenever you "
-    "say how to take it{keep}. Add no other sentence on how to take it: no dilution, no "
-    "succussion, no opening a capsule, no water, no doubling, and no timing or amount of "
-    "your own, even where a snippet gives one. Name no other product, water, device or "
-    "formula anywhere in this answer. Add no claim about side effects, safety, absorption "
-    "or how it works. Do not say it suits or helps any condition, and never suggest it to "
-    "anyone. This replaces any snippet about how to take it.\n\n")
+    "Directions: \"{directions}\" {opening}{repeat} Add no other sentence on how to take "
+    "it: no dilution, no succussion, no opening a capsule, no water, no doubling, no timing "
+    "or amount of your own, even where a snippet gives one, and do not tell the client to "
+    "adjust the dose to how they feel. Name no water, device or formula, and no product "
+    "except one the user named and \"Immune Modulation\", which you may name once as Glen's "
+    "current preference. "
+    "Add no claim about side effects, safety, absorption or how it works. You may say what "
+    "it is in the words of its product page, and give its product page link. Do not say it "
+    "suits or helps any condition, and do not recommend it. This replaces any snippet about "
+    "how to take it.\n\n")
 _DIRECTIONS_ONLY_OPENED = (
     "Your answer already opens with this sentence, written for you: \"{sentence}\" Do not "
     "write it again. Continue after it. ")
 
 
 def _directions_only_record(query_text: str, prior_user_turns=None):
-    """(name, directions) for the never-recommended product the user names
+    """(name, directions, direct) for the never-recommended product the user names
     (_NAMED_DIRECTIONS_ONLY), or None. A follow-up with no product name ("How do I take
-    it?") carries it from the previous user turn."""
+    it?") carries it from the previous user turn; `direct` is False then, and also when
+    the question names another product too (review round 1)."""
     products = (_PRODUCTS or {}).get("products", {}) or {}
     q = str(query_text or "")
     named = bool(_ALLERFREE_NAME.search(q))
-    if not named and prior_user_turns and not _named_product_spans(q, products) \
-            and _is_follow_up(q):
+    others = bool(_named_product_spans(q, products))
+    direct = named and not others
+    if not named and prior_user_turns and not others and _is_follow_up(q):
         turns = [t for t in prior_user_turns if isinstance(t, str) and t.strip()]
         named = bool(turns) and bool(_ALLERFREE_NAME.search(turns[-1]))
     if not named:
         return None
     pr = products.get(_NAMED_DIRECTIONS_ONLY[0]) or {}
     name = html.unescape(str(pr.get("name") or "")).replace("\u2122", "").strip()
-    directions = " ".join(str(pr.get("directions") or "").split())
+    directions = " ".join(html.unescape(str(pr.get("directions") or "")).split())
     if not name or not directions or pr.get("inactive"):
         return None
-    return name, directions
+    return name, directions, direct
 
 
 def _directions_only_opening(query_text: str, prior_user_turns=None) -> str:
@@ -4643,7 +4651,9 @@ def _directions_only_opening(query_text: str, prior_user_turns=None) -> str:
     it because a rule alone held 1 of 8 (review round 2)."""
     try:
         rec = _directions_only_record(query_text, prior_user_turns)
-        if not rec or not _DOSE_ASK.search(str(query_text or "")):
+        # Only when this message names it and no other product: a carried follow-up may
+        # be about something else, so it gets the rule without a code-written sentence.
+        if not rec or not rec[2] or not _DOSE_ASK.search(str(query_text or "")):
             return ""
         return f"The label directions for {rec[0]} are: {rec[1]}"
     except Exception as e:
@@ -4659,13 +4669,18 @@ def _directions_only_block(query_text: str, prior_user_turns=None, opening=None)
         rec = _directions_only_record(query_text, prior_user_turns)
         if not rec:
             return ""
-        name, directions = rec
+        name, directions, _direct = rec
         if opening is None:
             opening = _directions_only_opening(query_text, prior_user_turns)
         # Keep "or as guided" only while the Directions carry it (review round 2).
         keep = (', keeping "or as guided"' if "or as guided" in directions.lower() else "")
+        # Round 3: once code wrote the Directions, the model states them no second time.
+        repeat = ("Do not state the Directions again or say anything else about how to "
+                  "take it." if opening else
+                  "Give these Directions word for word whenever you say how to take it"
+                  + keep + ".")
         return _DIRECTIONS_ONLY_RULES.format(
-            name=name, directions=directions, keep=keep,
+            name=name, directions=directions, repeat=repeat,
             opening=_DIRECTIONS_ONLY_OPENED.format(sentence=opening) if opening else "")
     except Exception as e:
         print(f"[chat] directions-only block skipped: {e!r}", flush=True)
