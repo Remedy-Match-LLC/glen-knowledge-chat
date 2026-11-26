@@ -4587,6 +4587,60 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
             + _CTA_DIRECTIVE_SPEC + "\n\n")
 
 
+
+# Production read-back, 2026-11-26: "How do I take Aller-Free HomeoEnergetic Drops?" gave
+# the approved Directions word for word in 1 of 8 answers. Others dropped "or as guided",
+# told the client to open a capsule of another formula and succuss it, doubled the dose,
+# or suggested Living Water. AllerFree is never recommended (DO_NOT_RECOMMEND), so it gets
+# no facts block and the answer was built from snippets. Glen, platform tab: "yes, fix the
+# AllerFree directions". When a client names it, the answer gets its Directions only, and
+# it is still never suggested to anyone who did not name it.
+_NAMED_DIRECTIONS_ONLY = ("allerfree-homeoenergetic-drops",)
+_ALLERFREE_NAME = re.compile(r"(?<![\w])aller[\s\-\u2010-\u2015]*free(?![\w])", re.I)
+_DOSE_ASK = re.compile(
+    r"\b(?:how\s+(?:do|should|would|can|could|often|much|many)\b|how\s+to\s+(?:take|use)"
+    r"|doses?|dosage|dosing|directions?|drops?\s+(?:a|per)\s+day|times\s+a\s+day"
+    r"|take\s+it|use\s+it)", re.I)
+_DIRECTIONS_ONLY_RULES = (
+    "DIRECTIONS ONLY: {name}. The user named this product. Its approved dose text is its "
+    "Directions: \"{directions}\" {opening}Give these Directions word for word whenever you "
+    "say how to take it, keeping \"or as guided\". Add no other sentence on how to take "
+    "it: no dilution, no succussion, no opening a capsule, no water, no doubling, and no "
+    "timing or amount of your own, even where a snippet gives one. Name no other product, "
+    "water, device or formula anywhere in this answer. Add no claim about side effects, "
+    "safety, absorption or how it works. Do not say it suits or helps any condition, and "
+    "never suggest it to anyone. This replaces any snippet about how to take it.\n\n")
+
+
+def _directions_only_block(query_text: str, prior_user_turns=None) -> str:
+    """The Directions-only rule for a never-recommended product the user names
+    (_NAMED_DIRECTIONS_ONLY), or "". A follow-up with no product name ("How do I take
+    it?") carries it from the previous user turn. A dose question opens with the
+    Directions sentence word for word. Fails open to ""."""
+    try:
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        q = str(query_text or "")
+        named = bool(_ALLERFREE_NAME.search(q))
+        if not named and prior_user_turns and not _named_product_spans(q, products) \
+                and _is_follow_up(q):
+            turns = [t for t in prior_user_turns if isinstance(t, str) and t.strip()]
+            named = bool(turns) and bool(_ALLERFREE_NAME.search(turns[-1]))
+        if not named:
+            return ""
+        pr = products.get(_NAMED_DIRECTIONS_ONLY[0]) or {}
+        name = html.unescape(str(pr.get("name") or "")).replace("\u2122", "").strip()
+        directions = " ".join(str(pr.get("directions") or "").split())
+        if not name or not directions or pr.get("inactive"):
+            return ""
+        opening = ("Open the answer with this sentence, word for word: \"The label "
+                   f"directions for {name} are: {directions}\" "
+                   if _DOSE_ASK.search(q) else "")
+        return _DIRECTIONS_ONLY_RULES.format(name=name, directions=directions,
+                                             opening=opening)
+    except Exception as e:
+        print(f"[chat] directions-only block skipped: {e!r}", flush=True)
+        return ""
+
 # In place of the usual answer structure when a passage from one of Glen's clinical
 # protocols is in the sources. Knowledge's check on 2026-11-05 (chats 2709-2711, the
 # earthing protocol): the consensus / limitation / assumption beats were filled with
@@ -8744,6 +8798,7 @@ def chat():
             f"{synth_instr}"
             f"{named_product_facts_block(query, prior_user_turns=_prior_user, member=_tos_member)}"
             f"{_approved_wording_reminder(context_str)}"
+            f"{_directions_only_block(query, _prior_user)}"
         })
 
         # ── Consent gate (Tier-0 Visitor → Tier-1 Member) ────────────────────
@@ -18450,6 +18505,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"{synth_instr}"
         f"{named_product_facts_block(query, prior_user_turns=_prior_user, long_form=True)}"
         f"{_approved_wording_reminder(context_str)}"
+        f"{_directions_only_block(query, _prior_user)}"
     )
 
     answer = ""
@@ -18656,6 +18712,7 @@ def _full_report_stream(log_id, query, level, session_id,
             f"{synth_instr}"
             f"{named_product_facts_block(query, prior_user_turns=_prior_user, long_form=True)}"
             f"{_approved_wording_reminder(context_str)}"
+            f"{_directions_only_block(query, _prior_user)}"
         )
 
         try:
