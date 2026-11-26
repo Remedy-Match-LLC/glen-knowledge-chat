@@ -3733,6 +3733,81 @@ _PANEL_NOTE_CAFFEINE_RULE = (
     "caffeine, and never give a percentage or another figure. When the answer also opens "
     "with the sentence about avoiding coffee, keep that opening and the caution as they "
     "are, then give the amount in one sentence after the caution.")
+# Production's live read-back after #2335 (18 answers): "Is Thermogenesis caffeine-free?"
+# opened "Yes, Thermogenesis is nearly caffeine-free" in 3 of 6, and the pre-Terms reply to
+# an amount-and-coffee question never gave the amount, because code writes that reply.
+# So the label's caffeine sentence is written by code too: as the opening a model answer
+# must use, and after the caution in the pre-Terms reply. An opening sentence held 6 of 6.
+_CAFFEINE_ASKED = re.compile(r"caffein|decaf", re.IGNORECASE)
+# A model answer opens with the line only for a question about what the product holds.
+# "I'm sensitive to caffeine, is Thermogenesis ok?" and "Does Thermogenesis work better than
+# caffeine?" ask something else, and "less than 1 mg" first would read as reassurance
+# (review round 1).
+_CAFFEINE_CONTENT_Q = re.compile(
+    r"\b(?:have|has|contain|contains|containing|is\s+there|are\s+there|how\s+much|amount"
+    r"|any)\b[^.?!;]{0,40}\bcaffein|caffein\w*[\s-]+(?:free|content)|\bdecaf(?:feinated)?\s*\?"
+    r"|\bcaffeinated\s*\?", re.IGNORECASE)
+_CAFFEINE_USE_Q = re.compile(
+    r"\b(?:can\s+i|could\s+i|should\s+i|may\s+i|is\s+it\s+(?:ok|okay|safe)|safe"
+    r"|sensitive|sensitivity|avoid|allerg|heart|pregnan|breastfeed|nursing|drink|coffee"
+    r"|better|worse|compared?|versus|vs)\b", re.IGNORECASE)
+
+
+def _label_caffeine_lines(query_text: str) -> list:
+    """'The <name> label says: "<sentence>"' for each product named in the question whose
+    label note reaches the chat (_PANEL_NOTE_FACTS) and holds a caffeine sentence, when the
+    question mentions caffeine. Fails open to none."""
+    try:
+        if not query_text or not _CAFFEINE_ASKED.search(query_text):
+            return []
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        spans = _named_product_spans(query_text, products)
+        out = []
+        for slug in sorted(spans, key=lambda s: spans[s][0]):
+            # The caffeine word in the same clause as this name, with no other named
+            # product between: "Does Stress Release contain caffeine? Also, what is in
+            # Thermogenesis?" is about Stress Release (review round 2).
+            a, b = spans[slug]
+            def _near(m, a=a, b=b, slug=slug):
+                lo, hi = (b, m.start()) if m.start() >= b else (m.end(), a)
+                gap = query_text[lo:hi]
+                return (not re.search(r"[.?!;]", gap)
+                        and not any(lo <= spans[o][0] < hi for o in spans if o != slug))
+            if not any(_near(m) for m in _CAFFEINE_ASKED.finditer(query_text)):
+                continue
+            p = products.get(slug) or {}
+            note = (p.get("panel_note") or "").strip()
+            if (slug not in _PANEL_NOTE_FACTS or not note
+                    or "ingredients" not in _pinned_copy(p)):
+                continue
+            sent = next((x.strip() for x in re.split(r"(?<=\.)\s+", note)
+                         if "caffeine" in x.lower()), "")
+            if sent:
+                name = html.unescape(p.get("name") or slug).replace("\u2122", "").strip()
+                out.append(f'The {name} label says: "{sent}"')
+        return out
+    except Exception as e:
+        print(f"[chat] label caffeine lines skipped: {e!r}", flush=True)
+        return []
+
+
+def _label_caffeine_instr(query_text: str) -> str:
+    """The instruction to open a model answer with the label's caffeine sentence, for a
+    question about what the product holds and nothing about using it."""
+    if (not _CAFFEINE_CONTENT_Q.search(query_text or "")
+            or _CAFFEINE_USE_Q.search(query_text or "")):
+        return ""
+    lines = _label_caffeine_lines(query_text)
+    if not lines:
+        return ""
+    names = [ln.split(" label says:", 1)[0][4:] for ln in lines]
+    who = " or ".join(names)
+    return ("Before everything below, make this the answer's first "
+            + ("sentence" if len(lines) == 1 else "sentences") + ", word for word: "
+            + " ".join(lines) + " It does not count toward any word limit below. Never call "
+            + who + " caffeine-free, nearly caffeine-free or decaffeinated, never say it has "
+            "no caffeine, and never give a percentage or any other figure for its caffeine."
+            "\n")
 # In the facts block of a product whose caution names caffeine.
 _CAFFEINE_DRINK_RULE = (
     "If the user asks about having {name} with coffee, tea, an energy drink or any "
@@ -3981,6 +4056,7 @@ def _pre_terms_caution_reply(query_text: str, prior_user_turns=None) -> str:
         if not paras:
             return ""
         return "\n\n".join(_caution_openings(query_text, prior_user_turns) + paras
+                            + _label_caffeine_lines(query_text)
                             + [_PRE_TERMS_CAUTION_INVITE])
     except Exception as e:
         print(f"[chat] pre-Terms caution reply skipped: {e!r}", flush=True)
@@ -4320,6 +4396,11 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
                  "other product as usual. " + _CAUTION_NOT_OURS + "\n")
         head = (head.replace("\n1. Open", "\n" + first + "1. Open", 1)
                 if "\n1. Open" in head else first + head)
+    _label = _label_caffeine_lines(query_text)
+    if _label:
+        head += ("Right after the caution, add " + ("this sentence" if len(_label) == 1
+                 else "these sentences") + ", word for word, as the only sentence about "
+                 "the caffeine amount: " + " ".join(_label) + "\n")
     rules = (head + "Keep every other rule: product links only from the "
              "injection table, and product claims only from sources ("
              + _SOURCED_PRODUCT_NOTE + ").\n\n")
@@ -4421,11 +4502,14 @@ def _chat_synth_instr(query_text, prior_user_turns, mode, logged_in, member=Fals
     protocol answer when a protocol is a source, else the long form in full mode and the
     brief otherwise."""
     full = mode == "full"
-    return (_with_protocol_steps(_caution_synth_instr(query_text, prior_user_turns,
-                                                      long_form=full, member=member),
-                                 sources_list)
-            or _protocol_synth_instr(sources_list, long_form=full)
-            or (_long_form_synth_instr(logged_in) if full else _brief_synth_instruction()))
+    caution = _with_protocol_steps(_caution_synth_instr(query_text, prior_user_turns,
+                                                        long_form=full, member=member),
+                                   sources_list)
+    if caution:
+        return caution
+    return (_label_caffeine_instr(query_text)
+            + (_protocol_synth_instr(sources_list, long_form=full)
+               or (_long_form_synth_instr(logged_in) if full else _brief_synth_instruction())))
 
 
 def build_product_directive(snippets_text: str = "", query_text: str = ""):
@@ -18184,8 +18268,9 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
 
     synth_instr = (_with_protocol_steps(_caution_synth_instr(query, _prior_user,
                                                              long_form=True), sources_list)
-                   or _protocol_synth_instr(sources_list, long_form=True)
-                   or _long_form_synth_instr(is_logged_in))
+                   or (_label_caffeine_instr(query)
+                       + (_protocol_synth_instr(sources_list, long_form=True)
+                          or _long_form_synth_instr(is_logged_in))))
     user_msg = (
         f"USER QUESTION: {query}\n\n"
         f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
@@ -18389,8 +18474,9 @@ def _full_report_stream(log_id, query, level, session_id,
 
         synth_instr = (_with_protocol_steps(_caution_synth_instr(query, _prior_user,
                                                                  long_form=True), sources_list)
-                       or _protocol_synth_instr(sources_list, long_form=True)
-                       or _long_form_synth_instr(is_logged_in))
+                       or (_label_caffeine_instr(query)
+                           + (_protocol_synth_instr(sources_list, long_form=True)
+                              or _long_form_synth_instr(is_logged_in))))
         user_msg = (
             f"USER QUESTION: {query}\n\n"
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
