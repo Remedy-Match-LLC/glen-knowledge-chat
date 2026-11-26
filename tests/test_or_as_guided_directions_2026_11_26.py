@@ -44,6 +44,10 @@ def test_a_rebuild_keeps_the_lines_and_each_ingredient_source():
     # (Glen-verified), so a directions-only entry would wrongly clear gk_stale.
     from scripts.apply_enrichment import apply_corrections
     products = copy.deepcopy(P)
+    # Start from stale upstream values, so only the replay can restore them (round 2).
+    for slug in APPROVED:
+        products[slug]["directions"] = "STALE"
+        products[slug]["ingredients_source"] = "STALE-SOURCE"
     apply_corrections(products, C)
     for slug, line in APPROVED.items():
         assert products[slug]["directions"] == line, slug

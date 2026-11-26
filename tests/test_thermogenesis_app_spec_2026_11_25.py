@@ -109,14 +109,24 @@ def test_no_other_product_or_key_changes(name):
     # directions-only correction entries.
     from tests.test_or_as_guided_directions_2026_11_26 import APPROVED as _AS_GUIDED
     added = set(new) - set(old)
-    assert added <= set(_AS_GUIDED), added
     assert set(old) <= set(new)
+    if name == "products-manual-corrections.json":
+        # Exactly the seven new entries, each with only these two keys (round 2).
+        seven = {"soothe-powder", "allerfree-homeoenergetic-drops", "cistus-shield",
+                 "gerd-guard", "gerd-guard-powder", "ocuheal-eye-drops",
+                 "ocuheal-plus-eye-drops"}
+        assert added == seven, added
+        for s in seven:
+            assert set(new[s]) == {"directions", "ingredients_source"}, s
+            assert new[s]["directions"] == _AS_GUIDED[s], s
+    else:
+        assert added == set(), added
     # Later approved changes to other records, each held to its approved keys (Nerve Pulse,
     # Glen "yes" 2026-11-26; review round 2).
     later = {"nerve-pulse": {"ingredients", "ingredients_source", "description", "directions",
                              "warning", "copy_pinned", "content_since", "enrichment_note",
                              "note"}}
-    later.update({s: {"directions", "ingredients_source"} for s in _AS_GUIDED})
+    later.update({s: {"directions"} for s in _AS_GUIDED})
     for slug in old:
         if slug in later:
             moved = {k for k in set(old[slug]) | set(new[slug])
