@@ -32,6 +32,7 @@ EXPECTED = [
     "2026-09-23-group-coaching",
     "2026-09-30-free-wellness-whispering-masterclass",
     "2026-09-30-group-coaching",
+    "2026-10-28-free-wellness-whispering-masterclass",
 ]
 
 
