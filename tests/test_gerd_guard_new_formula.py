@@ -28,7 +28,7 @@ SEVEN = [
 ]
 RETIRED_2023 = ("gentian", "artemisinin", "vitamin b6", "p5p")
 CAPSULE_DIRECTIONS = ("Take 1 capsule before each meal that could cause symptoms, "
-                      "or even when symptoms begin.")
+                      "or even when symptoms begin, or as guided.")
 OVERVIEW = ("GERD Guard comes in two forms with the same formula and the same amount per dose. "
             "The capsules hold 30 doses. The powder holds 60 scoops in 30 g. Stir one level "
             "scoop into a little water and sip it slowly. Some people prefer the powder for its "
@@ -82,7 +82,7 @@ def test_the_capsules_keep_their_identity():
 
 POWDER = "gerd-guard-powder"
 POWDER_DIRECTIONS = ("Stir 1 level scoop into a little water and sip slowly before each meal "
-                     "that could cause symptoms, or even when symptoms begin.")
+                     "that could cause symptoms, or even when symptoms begin, or as guided.")
 
 
 def _pw():

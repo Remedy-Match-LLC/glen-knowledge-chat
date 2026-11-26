@@ -29,7 +29,7 @@ def test_the_survivors_carry_the_filemaker_ids():
 
 def test_vagus_has_glens_directions_and_no_struck_price():
     v = _p()["vagus-nerve-support"]
-    assert v["directions"] == "10 drops up to 3 times a day before meals."
+    assert v["directions"] == "10 drops up to 3 times a day before meals, or as guided."
     assert "answered the directions on 2026-09-30" in v["enrichment_note"]
     assert not v.get("regular_cents")
     assert v["price_cents"] == 7000 and v["bottle_type"] == "Dropper 50 mL"

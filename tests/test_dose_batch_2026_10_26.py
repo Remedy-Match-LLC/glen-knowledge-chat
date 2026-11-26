@@ -17,8 +17,8 @@ import app
 
 DATA = os.path.join(os.path.dirname(__file__), "..", "data")
 DOSES = {
-    "vitamin-c-syntropy": "1 capsule daily before food, as guided.",
-    "vitamin-a-syntropy": "1 capsule daily with food, as guided.",
+    "vitamin-c-syntropy": "1 capsule daily before food, or as guided.",
+    "vitamin-a-syntropy": "1 capsule daily with food, or as guided.",
     "apoptogenesis": "1 to 2 capsules a day with food, or as guided.",
     "appestat": "1 capsule 30 to 45 minutes before meals, up to 2 a day, or as guided.",
     # One dose a day from 2026-10-31 (Glen, production tab).

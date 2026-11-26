@@ -41,7 +41,7 @@ def test_the_record_carries_the_label():
                                    "dose": "200 mg"}
     assert p["ingredients"][-1] == {"name": "Bioavailability Blend", "dose": "34.5 mg"}
     # Glen, 2026-10-26 (platform tab, "yes").
-    assert p["directions"] == "1 capsule daily before food, as guided."
+    assert p["directions"] == "1 capsule daily before food, or as guided."
     assert set(p["copy_pinned"]) >= {"ingredients", "intro", "description", "research", "benefits"}
     assert p["how_it_works"] == ""
     for k in ("note", "notes", "rename_work", "apply_as"):

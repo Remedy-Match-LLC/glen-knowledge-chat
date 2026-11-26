@@ -16,7 +16,7 @@ GUT = ("mastic", "bismuth", "berberine", "slippery elm", "vitamin u", "intestina
 # move to the directions, since the chat now copies the caution word for word.
 WARNING = "Avoid during pregnancy or when planning a pregnancy."
 # Glen, 2026-10-26 (platform tab, "yes"): 1 capsule daily, and the two dose lines go.
-DIRECTIONS = "1 capsule daily with food, as guided."
+DIRECTIONS = "1 capsule daily with food, or as guided."
 
 
 @pytest.fixture(scope="module")

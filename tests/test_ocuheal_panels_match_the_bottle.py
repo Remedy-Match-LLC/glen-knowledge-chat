@@ -102,7 +102,7 @@ def test_ocuheal_serves_its_approved_text_over_a_stale_draft(appmod):
         sec = _section(data, sid)
         assert "ai" not in sec, f"{sid} must be pinned"
         assert sec["body"] == OCU_TEXT, sid   # equality: extra words must fail (round 3)
-    assert _section(data, "ingredients")["body"]["directions"] == "1 drop in each eye 2 times a day."
+    assert _section(data, "ingredients")["body"]["directions"] == "1 drop in each eye 2 times a day, or as guided."
     shown = str([_section(data, s)["body"] for s in ("intro", "description", "ingredients")])
     for stale in ("levetates", "Quintessential Terrain Restore) 96%", "(10 ppm)", "mirifica"):
         assert stale not in shown, stale

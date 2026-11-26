@@ -134,7 +134,7 @@ _BASE = (
 # only come from old knowledge-base snippets (2026-11-19).
 DOSE_RULE = (
     "Dose rule: give an amount or timing for a remedy only from its approved directions "
-    "listed here, in their words, and end it with \", or as guided\" unless they already end with \"as guided\". These directions outrank any dose in a retrieved snippet. A remedy with no approved "
+    "listed here, in their words, and end it with \", or as guided\" unless they already contain \"as guided\" anywhere: never repeat it. These directions outrank any dose in a retrieved snippet. A remedy with no approved "
     "directions listed here gets no amount from you, even if a snippet gives one: say to "
     "follow the directions on its label, or that Dr. Glen will guide them."
 )
