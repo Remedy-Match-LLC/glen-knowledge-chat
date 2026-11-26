@@ -84,7 +84,11 @@ def test_the_rules_name_both_products_and_ban_added_claims():
     assert "Skip any consensus" in r
     assert "never say anyone recommends taking them together" in r
     assert "Never say who a product is ideal or best for" in r
-    assert "each caution is added after your answer, word for word" in r
+    assert "Code adds each caution after your answer, word for word." in r
+    assert "including the Caution reminder" in r
+    assert "keep any instruction to open with a sentence about a caution" in r
+    assert "Answer directly and briefly." in r
+    assert "Answer directly. Skip" in app._compare_answer_rules(Q, long_form=True)
 
 
 # ---- the routes ----------------------------------------------------------------------
@@ -180,7 +184,7 @@ def test_the_full_report_appends_the_tail(monkeypatch):
     monkeypatch.setattr(app._cl.messages, "create", _create)
     answer, _src, _n = app._generate_full_answer(Q, "self-healing")
     assert answer == "Long answer." + app._compare_caution_tail(Q, "Long answer.")
-    assert app._compare_answer_rules(Q) in seen["user"]
+    assert app._compare_answer_rules(Q, long_form=True) in seen["user"]
 
 
 def test_the_full_report_stream_appends_the_tail(monkeypatch):
@@ -231,3 +235,27 @@ def test_the_rule_and_tail_fail_open(monkeypatch):
     bad = [(object(), "w", "p")]
     assert app._compare_answer_rules(Q, cautions=[(1, "w", "p"), (None, "v", "q")]) == ""
     assert app._compare_caution_tail(Q, "Answer.", cautions=bad + [None]) == ""
+
+
+def test_a_bundle_is_not_two_named_products():
+    # Review round 1: a bundle's component cautions join the facts block, but the
+    # question named one product.
+    for q in ("What is the Sleep Bundle?", "Is Brain Cleanse in the Sleep Bundle?"):
+        assert app._compare_caution_slugs(q) == [], q
+        assert app._compare_answer_rules(q) == "", q
+
+
+def test_the_full_report_keeps_its_length(monkeypatch):
+    monkeypatch.setattr(app, "embed", lambda text: [0.0] * 1536)
+    one = [SimpleNamespace(id="m0", score=0.8, metadata={"text": "x", "_source_ns": "x"})]
+    monkeypatch.setattr(app, "query_all_namespaces", lambda vec: one)
+    monkeypatch.setattr(app, "build_context", lambda m: ("snippet text", []))
+    seen = {}
+
+    def _create(**kw):
+        seen["user"] = kw["messages"][-1]["content"]
+        return SimpleNamespace(content=[SimpleNamespace(text="Long answer.")])
+    monkeypatch.setattr(app._cl.messages, "create", _create)
+    app._generate_full_answer(Q, "self-healing")
+    assert "Answer directly. Skip" in seen["user"]
+    assert "and briefly" not in seen["user"].split("MORE THAN ONE PRODUCT")[1]

@@ -4596,17 +4596,19 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
 # names two or more products that carry a caution, code writes each caution after the
 # answer, and the answer gets the direct style and the no-added-claims rule.
 _COMPARE_ANSWER_RULES = (
-    "MORE THAN ONE PRODUCT WITH A CAUTION. The question names {names}. Answer directly "
-    "and briefly. Skip any consensus, mainstream-view, limitation or hidden-assumption "
+    "MORE THAN ONE PRODUCT WITH A CAUTION. The question names {names}. Answer "
+    "directly{brief}. Skip any consensus, mainstream-view, limitation or hidden-assumption "
     "structure. Describe each product only by what its own PRODUCT FACTS text above says, "
     "or a snippet that names that product. Never carry a claim from one product to the "
-    "other. Add no use, condition, symptom, mechanism, benefit or result that this text "
-    "does not state for that product. Never say who a product is ideal or best for, never "
-    "say anyone recommends taking them together, and never suggest taking them together, "
-    "unless that text says so. If a product's text does not answer part of the question, "
-    "say so for that product. Do not copy, reword or summarise any caution's text: each "
-    "caution is added after your answer, word for word. This replaces the rule above to "
-    "copy each caution into the answer.\n\n")
+    "other. Add no use, condition, symptom, mechanism, benefit or result that this product "
+    "text or that snippet does not state in its own words. Never say who a product is "
+    "ideal or best for, never say anyone recommends taking them together, and never "
+    "suggest taking them together, unless that text says so. If a product's text does not "
+    "answer part of the question, say that its product page does not cover that. Every "
+    "instruction above to copy, repeat or give a caution is replaced here, including the "
+    "Caution reminder. Write no caution paragraph and no line starting \"Caution for\". "
+    "Code adds each caution after your answer, word for word. This changes only where the "
+    "caution text goes: keep any instruction to open with a sentence about a caution.\n\n")
 
 
 def _compare_caution_slugs(query_text: str, prior_user_turns=None) -> list:
@@ -4621,8 +4623,8 @@ def _compare_caution_slugs(query_text: str, prior_user_turns=None) -> list:
         given = set()
         _named_product_facts(asked, given_out=given)
         spans = _named_product_spans(asked, products)
-        out = [k for k in given
-               if (products.get(k) or {}).get("chat_caution")
+        out = [k for k in given if k in spans
+               and (products.get(k) or {}).get("chat_caution")
                and ((products.get(k) or {}).get("warning") or "").strip()]
         if len(out) < 2:
             return []
@@ -4658,8 +4660,10 @@ def _compare_cautions(query_text: str, prior_user_turns=None) -> list:
         return []
 
 
-def _compare_answer_rules(query_text: str, prior_user_turns=None, cautions=None) -> str:
-    """_COMPARE_ANSWER_RULES with the product names, or "" (_compare_cautions)."""
+def _compare_answer_rules(query_text: str, prior_user_turns=None, cautions=None,
+                          long_form=False) -> str:
+    """_COMPARE_ANSWER_RULES with the product names, or "" (_compare_cautions). The long
+    form keeps its length (review round 1)."""
     try:
         if cautions is None:
             cautions = _compare_cautions(query_text, prior_user_turns)
@@ -4667,7 +4671,8 @@ def _compare_answer_rules(query_text: str, prior_user_turns=None, cautions=None)
             return ""
         names = [n for n, _w, _p in cautions]
         return _COMPARE_ANSWER_RULES.format(
-            names=", ".join(names[:-1]) + " and " + names[-1])
+            names=", ".join(names[:-1]) + " and " + names[-1],
+            brief="" if long_form else " and briefly")
     except Exception as e:
         print(f"[chat] comparison rule skipped: {e!r}", flush=True)
         return ""
@@ -8847,7 +8852,8 @@ def chat():
             f"{synth_instr}"
             f"{named_product_facts_block(query, prior_user_turns=_prior_user, member=_tos_member)}"
             f"{_approved_wording_reminder(context_str)}"
-            f"{_compare_answer_rules(query, _prior_user, cautions=_compare)}"
+            f"{_compare_answer_rules(query, _prior_user, cautions=_compare,
+                                     long_form=mode == 'full')}"
         })
 
         # ── Consent gate (Tier-0 Visitor → Tier-1 Member) ────────────────────
@@ -18563,7 +18569,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"{synth_instr}"
         f"{named_product_facts_block(query, prior_user_turns=_prior_user, long_form=True)}"
         f"{_approved_wording_reminder(context_str)}"
-        f"{_compare_answer_rules(query, _prior_user, cautions=_compare)}"
+        f"{_compare_answer_rules(query, _prior_user, cautions=_compare, long_form=True)}"
     )
 
     answer = ""
@@ -18772,7 +18778,8 @@ def _full_report_stream(log_id, query, level, session_id,
             f"{synth_instr}"
             f"{named_product_facts_block(query, prior_user_turns=_prior_user, long_form=True)}"
             f"{_approved_wording_reminder(context_str)}"
-            f"{_compare_answer_rules(query, _prior_user, cautions=_compare)}"
+            f"{_compare_answer_rules(query, _prior_user, cautions=_compare,
+                                     long_form=True)}"
         )
 
         try:
