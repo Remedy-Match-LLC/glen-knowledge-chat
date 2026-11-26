@@ -3732,8 +3732,9 @@ _PANEL_NOTE_FACTS = frozenset({"thermogenesis"})
 # "caffeine-free" alternatives (Rise & Shine, Vital Energy B, Sustain) in 3 of 6.
 _CAFFEINE_ANSWER_TIGHT = (
     " Do not answer yes or no before or after it: let it stand as the answer. Never call the "
-    "amount negligible, trace or insignificant. Do not suggest or recommend any other product "
-    "as caffeine-free or as an alternative unless the user asks for one.")
+    "amount negligible, trace or insignificant. Never call any other product caffeine-free "
+    "or low in caffeine, even when the user asks: no other product's caffeine is approved "
+    "text here. Suggest no other product as an alternative unless the user asks for one.")
 _PANEL_NOTE_CAFFEINE_RULE = (
     "When asked whether {name} contains caffeine or how much, give the amount in the label "
     "note's own words. Never call it caffeine-free or decaffeinated, never say it has no "

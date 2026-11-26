@@ -97,5 +97,6 @@ def test_the_answer_is_tightened(q):
     assert app._CAFFEINE_ANSWER_TIGHT in instr
     assert "Do not answer yes or no before or after it" in instr
     assert "negligible, trace or insignificant" in instr
-    assert "Do not suggest or recommend any other product as caffeine-free" in instr
+    assert "Never call any other product caffeine-free or low in caffeine, even when the user asks" in instr
+    assert "Suggest no other product as an alternative unless the user asks for one." in instr
     assert app._CAFFEINE_ANSWER_TIGHT in app.named_product_facts_block(q)
