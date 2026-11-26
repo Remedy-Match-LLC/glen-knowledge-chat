@@ -29,3 +29,16 @@ def test_no_rule_without_the_words():
         assert 'keeping "or as guided"' not in block, slug
         checked += 1
     assert checked >= 1   # review round 2: the absence must be exercised on a real line
+
+
+def test_no_restated_dose():
+    # Production's read-back of #2341: a second dose sentence dropped "or as guided".
+    block = app.named_product_facts_block("How do I take Thermogenesis?")
+    rule = app._AS_GUIDED_RULE.format(name="Thermogenesis")
+    assert rule in block
+    assert "Add no other sentence about how many, how often or when to take it" in rule
+    assert "do not suggest starting low or working up" in rule
+    assert 'say "That is within the Directions." in those words, without repeating the amount' in rule
+    assert "if the user names a medicine, pregnancy, surgery or condition" in rule
+    assert "keep the sentence saying to ask Dr. Glen" in rule
+    assert "This rule never shortens a caution." in rule
