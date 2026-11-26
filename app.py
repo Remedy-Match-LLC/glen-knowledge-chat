@@ -49474,8 +49474,10 @@ def api_console_email_suppression_check():
     """Read-only: which of these addresses must not be emailed, and why.
 
     For senders outside this app. Body {"emails": [...]}. Each address is trimmed and
-    lowercased, then run through email_suppression.suppression_reason, the same
-    function is_suppressed calls. Response {"ok", "checked", "blocked"}: checked is
+    lowercased, then run through email_suppression.suppression_reasons: the answer
+    suppression_reason (the function is_suppressed calls) gives, in batched queries,
+    stricter in two ways: any People row's unsubscribe tag blocks, and a database
+    error is a 500, never "not blocked". Response {"ok", "checked", "blocked"}: checked is
     the count of distinct normalised addresses, blocked maps each address exactly as
     sent to its reason. More than 1000 addresses is 413 and checks nothing. Any
     exception is 500 with no blocked map. Never logs an address."""
@@ -49492,14 +49494,13 @@ def api_console_email_suppression_check():
         from dashboard import email_suppression as _es
         reasons, blocked = {}, {}
         with db.connect(LOG_DB) as cx:
-            for raw in emails:
-                norm = _es.normalize(raw)
-                if not norm:
-                    continue
-                if norm not in reasons:
-                    reasons[norm] = _es.suppression_reason(cx, norm)
-                if reasons[norm] is not None:
-                    blocked[raw] = reasons[norm]
+            # Two queries per 500 addresses, not two per address (2026-11-26: 505
+            # addresses took about 111 s and timed out marketing's run).
+            reasons = _es.suppression_reasons(cx, emails)
+        for raw in emails:
+            norm = _es.normalize(raw)
+            if norm and reasons.get(norm) is not None:
+                blocked[raw] = reasons[norm]
         return jsonify({"ok": True, "checked": len(reasons), "blocked": blocked})
     except Exception as e:
         app.logger.error("email-suppression check failed: %s", type(e).__name__)
