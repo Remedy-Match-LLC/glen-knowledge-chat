@@ -3701,16 +3701,17 @@ _CAUTION_SUBJECT_OPENING = {
 }
 # Knowledge's read-back after #2331: asked "Does Thermogenesis have caffeine?", one
 # answer said the caution on the product page carries this sentence. It does not.
-_CAUTION_NOT_OURS = ("This sentence is Dr. Glen's guidance, not part of the caution: never "
-                     "say the caution or the product page says it.")
+_CAUTION_NOT_OURS = ("That opening sentence is Dr. Glen's guidance, not part of the caution: "
+                     "never say the caution or the product page says it.")
 # In the facts block of a product whose caution names caffeine.
 _CAFFEINE_DRINK_RULE = (
     "If the user asks about having {name} with coffee, tea, an energy drink or any "
     "other caffeinated drink, open the answer with this sentence, word for word: "
     + _CAUTION_SUBJECT_OPENING["caffeine"] + " Never answer yes, and never say the two "
     "can be taken together, spaced apart or kept to a small amount. A question about "
-    "what {name} contains, such as whether it has caffeine, does not get this sentence "
-    "and is answered as usual. " + _CAUTION_NOT_OURS)
+    "what {name} contains and nothing else, such as whether it has caffeine, does not "
+    "get this sentence and is answered as usual. A question that also asks about "
+    "having it with a caffeinated drink still opens with it. " + _CAUTION_NOT_OURS)
 
 # Dose wording that holds a subject word and asks nothing about the subject: "How many
 # pills of Stress Release a day?" is a dose question (review rounds 1 and 3, 2026-10-24).
