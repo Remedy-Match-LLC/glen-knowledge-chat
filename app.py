@@ -3739,6 +3739,18 @@ _PANEL_NOTE_CAFFEINE_RULE = (
 # So the label's caffeine sentence is written by code too: as the opening a model answer
 # must use, and after the caution in the pre-Terms reply. An opening sentence held 6 of 6.
 _CAFFEINE_ASKED = re.compile(r"caffein|decaf", re.IGNORECASE)
+# A model answer opens with the line only for a question about what the product holds.
+# "I'm sensitive to caffeine, is Thermogenesis ok?" and "Does Thermogenesis work better than
+# caffeine?" ask something else, and "less than 1 mg" first would read as reassurance
+# (review round 1).
+_CAFFEINE_CONTENT_Q = re.compile(
+    r"\b(?:have|has|contain|contains|containing|is\s+there|are\s+there|how\s+much|amount"
+    r"|any)\b[^.?!;]{0,40}\bcaffein|caffein\w*[\s-]+free|\bdecaf(?:feinated)?\s*\?"
+    r"|\bcaffeinated\s*\?", re.IGNORECASE)
+_CAFFEINE_USE_Q = re.compile(
+    r"\b(?:can\s+i|could\s+i|should\s+i|may\s+i|is\s+it\s+(?:ok|okay|safe)|ok|okay|safe"
+    r"|sensitive|sensitivity|avoid|allerg|heart|pregnan|breastfeed|nursing|drink|coffee|tea"
+    r"|better|worse|compared?|versus|vs)\b", re.IGNORECASE)
 
 
 def _label_caffeine_lines(query_text: str) -> list:
@@ -3752,6 +3764,17 @@ def _label_caffeine_lines(query_text: str) -> list:
         spans = _named_product_spans(query_text, products)
         out = []
         for slug in sorted(spans, key=lambda s: spans[s][0]):
+            # The caffeine word in the same clause as this name, with no other named
+            # product between: "Does Stress Release contain caffeine? Also, what is in
+            # Thermogenesis?" is about Stress Release (review round 2).
+            a, b = spans[slug]
+            def _near(m, a=a, b=b, slug=slug):
+                lo, hi = (b, m.start()) if m.start() >= b else (m.end(), a)
+                gap = query_text[lo:hi]
+                return (not re.search(r"[.?!;]", gap)
+                        and not any(lo <= spans[o][0] < hi for o in spans if o != slug))
+            if not any(_near(m) for m in _CAFFEINE_ASKED.finditer(query_text)):
+                continue
             p = products.get(slug) or {}
             note = (p.get("panel_note") or "").strip()
             if (slug not in _PANEL_NOTE_FACTS or not note
@@ -3769,14 +3792,22 @@ def _label_caffeine_lines(query_text: str) -> list:
 
 
 def _label_caffeine_instr(query_text: str) -> str:
-    """The instruction to open a model answer with the label's caffeine sentence."""
+    """The instruction to open a model answer with the label's caffeine sentence, for a
+    question about what the product holds and nothing about using it."""
+    if (not _CAFFEINE_CONTENT_Q.search(query_text or "")
+            or _CAFFEINE_USE_Q.search(query_text or "")):
+        return ""
     lines = _label_caffeine_lines(query_text)
     if not lines:
         return ""
-    return ("Open the answer with " + ("this sentence" if len(lines) == 1 else "these sentences")
-            + ", word for word: " + " ".join(lines) + " Never call the product caffeine-free, "
-            "nearly caffeine-free or decaffeinated, never say it has no caffeine, and never "
-            "give a percentage or another figure.\n")
+    names = [ln.split(" label says:", 1)[0][4:] for ln in lines]
+    who = " or ".join(names)
+    return ("Before everything below, make this the answer's first "
+            + ("sentence" if len(lines) == 1 else "sentences") + ", word for word: "
+            + " ".join(lines) + " It does not count toward any word limit below. Never call "
+            + who + " caffeine-free, nearly caffeine-free or decaffeinated, never say it has "
+            "no caffeine, and never give a percentage or any other figure for its caffeine."
+            "\n")
 # In the facts block of a product whose caution names caffeine.
 _CAFFEINE_DRINK_RULE = (
     "If the user asks about having {name} with coffee, tea, an energy drink or any "
@@ -4368,7 +4399,8 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
     _label = _label_caffeine_lines(query_text)
     if _label:
         head += ("Right after the caution, add " + ("this sentence" if len(_label) == 1
-                 else "these sentences") + ", word for word: " + " ".join(_label) + "\n")
+                 else "these sentences") + ", word for word, as the only sentence about "
+                 "the caffeine amount: " + " ".join(_label) + "\n")
     rules = (head + "Keep every other rule: product links only from the "
              "injection table, and product claims only from sources ("
              + _SOURCED_PRODUCT_NOTE + ").\n\n")
