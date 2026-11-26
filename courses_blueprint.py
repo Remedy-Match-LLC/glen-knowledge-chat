@@ -416,32 +416,32 @@ _MODULE_TOOL = {"02-body": "bodymap"}
 # "yes" to Rumble's own player on lesson pages. On a page with chapter links, each Rumble
 # frame becomes Rumble's player (rumble.com/embedJS/u4), which runs in the page and seeks
 # in place. A cold player needs its own play button pressed first (teaching's hand test,
-# 2026-11-25). Then it seeks, and seeks again every 0.5 s until the time lands, which
-# covers a preroll ad (review round 1). One poll per player follows the latest chapter
-# clicked (review round 2). If the player is not ready in 8 s, does not start within 20
-# s of a click, does not land within 20 s, or throws, the original frame comes back, at
-# the chapter's second when one was clicked.
+# 2026-11-25). Then it seeks, and seeks again every 0.5 s for up to 20 s until the time
+# lands, which covers a preroll ad (review round 1). A playing player is never taken
+# away: landing stops on a pause or at 20 s (review round 3). One poll per player follows
+# the latest chapter clicked, and a new click restarts its 20 s (review rounds 2 and 3).
+# If the player is not ready in 8 s, does not start within 20 s of a click, or throws,
+# the original frame comes back, at the chapter's second when one was clicked.
 _CHAPTER_JS = "<script>" + r"""(function(){
 var RSEL='iframe[src*="rumble.com/embed/" i]';
 function restore(d,n){if(d.__muPoll){clearInterval(d.__muPoll);d.__muPoll=null;}
 var f=d.__muFrame;if(!f||!d.parentNode)return;
 if(n!=null){var u=new URL(f.src,location.href);u.searchParams.set("start",String(n));f.src=u.toString();}
 d.parentNode.replaceChild(f,d);}
-function land(d){var api=d.__muApi,k=0;
-d.__muPoll=setInterval(function(){k++;var n=d.__muWant,c=-1;
-try{c=api.getCurrentTime();}catch(x){}
-if(c>=n-1&&c<=n+5){clearInterval(d.__muPoll);d.__muPoll=null;return;}
-if(k>=40){restore(d,n);return;}
-try{api.setCurrentTime(n);api.play();}catch(x){restore(d,n);}},500);}
+function land(d){var api=d.__muApi;d.__muK=0;
+d.__muPoll=setInterval(function(){d.__muK++;var n=d.__muWant,c=-1,p=false;
+try{c=api.getCurrentTime();p=api.getPaused();}catch(x){}
+if((c>=n-1&&c<=n+5)||p||d.__muK>=40){clearInterval(d.__muPoll);d.__muPoll=null;return;}
+try{api.setCurrentTime(n);}catch(x){restore(d,n);}},500);}
 function seekRumble(d,n){var api=d.__muApi;d.__muWant=n;
-if(d.__muPoll)return;
+if(d.__muPoll){d.__muK=0;return;}
 if(d.__muPlayed){try{api.setCurrentTime(n);api.play();}catch(x){restore(d,n);return;}land(d);return;}
 var b=d.querySelector&&d.querySelector(".bigPlayUI");
 try{if(b&&b.offsetParent!==null)b.click();else api.play();}catch(x){restore(d,n);return;}
-var k=0;d.__muPoll=setInterval(function(){k++;var p=true;try{p=api.getPaused();}catch(x){}
+d.__muK=0;d.__muPoll=setInterval(function(){d.__muK++;var p=true;try{p=api.getPaused();}catch(x){}
 if(!p){clearInterval(d.__muPoll);d.__muPoll=null;d.__muPlayed=true;
 try{api.setCurrentTime(d.__muWant);api.play();}catch(x){restore(d,d.__muWant);return;}land(d);}
-else if(k>=200){restore(d,d.__muWant);}},100);}
+else if(d.__muK>=200){restore(d,d.__muWant);}},100);}
 document.addEventListener("click",function(e){
 var a=e.target.closest&&e.target.closest('a[href^="#t="]');if(!a)return;
 var m=/^#t=(\d{1,5})$/.exec(a.getAttribute("href")||"");if(!m)return;

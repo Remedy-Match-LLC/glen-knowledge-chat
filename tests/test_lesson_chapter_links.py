@@ -299,14 +299,30 @@ def test_after_it_has_played_a_click_seeks_directly():
 def test_a_seek_an_ad_swallows_is_retried_until_it_lands():
     # Review round 1: a preroll may report playing and drop the first seeks.
     r = _run_rumble([RUMBLE], drop_seeks=2, clicks='click("#t=451");advance(5000);')
-    assert r["api"] == [["big", ["seek", 451], "play", ["seek", 451], "play",
-                         ["seek", 451], "play"]]
+    assert r["api"] == [["big", ["seek", 451], "play", ["seek", 451], ["seek", 451]]]
     assert r["kids"] == [{"div": "v7gqoze", "width": "640px"}]
 
 
-def test_a_seek_that_never_lands_gives_back_the_frame_at_that_second():
-    r = _run_rumble([RUMBLE], drop_seeks=999, clicks='click("#t=451");advance(30000);')
-    assert r["kids"] == [{"src": RUMBLE + "&start=451"}]
+def test_a_seek_that_never_lands_keeps_the_playing_player():
+    # Review round 3: a long preroll, or a chapter past the end, must not bring back the
+    # cover. Landing gives up after 20 s and leaves the player playing.
+    r = _run_rumble([RUMBLE], drop_seeks=999, clicks='click("#t=451");advance(60000);')
+    assert r["kids"] == [{"div": "v7gqoze", "width": "640px"}]
+    assert r["api"][0].count(["seek", 451]) == 40
+
+
+def test_a_pause_during_landing_stops_it():
+    # Review round 3: the member's pause is not overridden.
+    r = _run_rumble([RUMBLE], drop_seeks=999, clicks='click("#t=451");advance(1200);'
+                    'apis[0].paused=true;advance(10000);')
+    assert r["api"][0].count(["seek", 451]) == 2
+    assert r["api"][0].count("play") == 1
+
+
+def test_a_later_click_restarts_the_landing_window():
+    r = _run_rumble([RUMBLE], drop_seeks=999, clicks='click("#t=451");advance(18000);'
+                    'click("#t=830");advance(15000);')
+    assert r["api"][0].count(["seek", 830]) >= 30
 
 
 def test_a_second_click_during_a_cold_start_keeps_one_poll_and_the_latest_second():
