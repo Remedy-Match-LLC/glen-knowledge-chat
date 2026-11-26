@@ -58,3 +58,11 @@ def test_every_directions_line_now_says_or_as_guided():
     missing = [s for s, p in P.items()
                if (p.get("directions") or "").strip() and "or as guided" not in p["directions"]]
     assert missing == []
+
+
+def test_the_portal_chat_never_repeats_or_as_guided():
+    # Review round 3: four lines carry "or as guided" mid-line (B17 Max, Brain Cleanse,
+    # Microbiome, Sleep Syntropy), and the old rule appended it unless the line ENDED so.
+    from dashboard import portal_concierge as pc
+    assert 'unless they already contain "as guided" anywhere: never repeat it.' in pc.DOSE_RULE
+    assert "unless they already end with" not in pc.DOSE_RULE
