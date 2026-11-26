@@ -2988,8 +2988,9 @@ _AS_GUIDED_RULE = ('When you give the dose of {name}, give its Directions word f
                    'other sentence about how many, how often or when to take it: do not '
                    'restate, explain, range or adjust the dose, and do not suggest starting '
                    'low or working up. The one exception: when the user asks about an '
-                   'amount, you may say whether it is within these Directions, as the dose '
-                   'rule below says.')
+                   'amount within these Directions, you may say "That is within the '
+                   'Directions." in those words, without repeating the amount, then give '
+                   'the Directions word for word.')
 _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The snippets may "
                      "hold older advice to take more than these Directions give{example}. "
                      "That advice is withdrawn: never give it, "
