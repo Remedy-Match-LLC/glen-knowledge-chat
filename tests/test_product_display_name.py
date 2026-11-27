@@ -32,7 +32,9 @@ def test_display_name_is_optional():
     withdisp = sorted(s for s, v in prods.items() if v.get("display_name"))
     # Sulfur Syntropy joined 2026-09-24 (#1810): public pages use the new name while
     # invoices keep matching QuickBooks by `name`.
-    assert withdisp == ["immune-intelligence", "sulfur-syntropy"], withdisp
+    # The USB scanner joined 2026-11-26: marketing's title, QBO name unchanged (#2351).
+    assert withdisp == ["bioenergetic-wellness-scanner-usb", "immune-intelligence",
+                        "sulfur-syntropy"], withdisp
     for slug, v in prods.items():
         if v.get("name"):
             assert (v.get("display_name") or v["name"]), slug
