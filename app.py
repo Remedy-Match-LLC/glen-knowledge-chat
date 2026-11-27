@@ -2987,27 +2987,138 @@ _ONE_CAUTION_RULE = (
 # Production's read-back of #2341: 3 of 4 Thermogenesis answers added "This means you can
 # take 1, 2, or 3 capsules per day depending on your need and tolerance", and one "start at
 # the lower end and adjust within this range". A restated dose is a dose line too.
-_AS_GUIDED_RULE = ('When you give the dose of {name}, give its Directions word for word, '
+_AS_GUIDED_HEAD = ('When you give the dose of {name}, give its Directions word for word, '
                    'keeping "or as guided". Do not reword, shorten or merge them. Add no '
                    'other sentence about how many, how often or when to take it: do not '
                    'restate, explain, range or adjust the dose, and do not suggest starting '
-                   'low or working up. Two exceptions. When the user asks about an amount '
-                   'within these Directions, say "That is within the Directions." in those '
-                   'words, without repeating the amount, then give the Directions word for '
-                   'word; but if the user names a medicine, pregnancy, surgery or condition, '
-                   'never answer whether they may take it. And keep the sentence saying to '
-                   'ask Dr. Glen about anything beyond these Directions. This rule never '
+                   'low or working up. ')
+# Knowledge's read-back of #2352 (2026-11-26): asked "Can I take 10 Nerve Repair a day?",
+# 5 of 6 answers said "That is within the Directions." when 5 a day is the most. The model
+# judged the amount itself. Now code compares the number and the rule says what it found.
+_AS_GUIDED_OVER = ('Two exceptions. Code has checked that the amount the user asks about '
+                   '({asked}) is MORE than these Directions allow ({most} a day at most): '
+                   'never say it is within the Directions, and never say they can take it. '
+                   'Say it is more than the Directions, give the Directions word for word, '
+                   'and say to ask Dr. Glen about it. If the user names a '
+                   'medicine, pregnancy, surgery or condition, never answer whether they '
+                   'may take it. And keep the sentence saying '
+                   'to ask Dr. Glen about anything beyond these Directions. This rule never '
                    'shortens a caution.')
+_AS_GUIDED_UNCHECKED = ('One exception. If the user asks about an amount, never say whether '
+                        'it is within these Directions or that they can take it: give the Directions word for word '
+                        'and say to ask Dr. Glen about anything beyond them. If the user '
+                        'names a medicine, pregnancy, surgery or condition, never answer '
+                        'whether they may take it. Keep the '
+                        'sentence saying to ask Dr. Glen about anything beyond these '
+                        'Directions. This rule never shortens a caution.')
+# Kept for callers and tests that format the plain rule: the unchecked form.
+_AS_GUIDED_RULE = _AS_GUIDED_HEAD + _AS_GUIDED_UNCHECKED
+
+_DOSE_UNIT = r"(?:capsules?|vegicaps?|vcaps?|caps?|tablets?|softgels?)"
+_DOSE_NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+                   "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+                   "twelve": 12, "fifteen": 15, "twenty": 20}
+
+
+def _directions_most(directions: str):
+    """(most per dose, most per day) a capsule-type Directions allows, or None when code
+    cannot read it for certain. Every dose phrase must carry a clear daily frequency."""
+    try:
+        d = html.unescape(str(directions or "")).lower()
+        d = re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty)\b",
+                   lambda m: str(_DOSE_NUM_WORDS[m.group(1)]), d)
+        if re.search(r"\d\s*[/.]\s*\d|\bhalf\b|\bmax", d):
+            return None        # fractions, decimals, "maximum": not read (round 2)
+        hits = list(re.finditer(r"(?<![\d/.])(\d+)(?:\s*(?:to|-|\u2013)\s*(\d+))?\s*" + _DOSE_UNIT
+                                + r"\b(.{0,60}?)(?=[.;]|,\s*or as guided|$)", d))
+        if not hits:
+            return None
+        per_dose = per_day = 0
+        for m in hits:
+            q = int(m.group(2) or m.group(1))
+            tail = m.group(3)
+            f = re.search(r"(?:up to\s+)?(\d+)(?:\s*(?:to|-|\u2013)\s*(\d+))?\s*times?"
+                          r"\s+(?:daily|a day|per day|each day)", tail)
+            cap = re.search(r"\bup to\s+(\d+)\s+(?:a day|daily|per day)", tail)
+            if cap:          # "1 capsule before meals, up to 2 a day": 2 is the day's most
+                per_dose, per_day = max(per_dose, q), max(per_day, int(cap.group(1)))
+                continue
+            if f:
+                k = int(f.group(2) or f.group(1))
+            elif re.search(r"\btwice\s+(?:daily|a day|per day)", tail):
+                k = 2
+            elif re.search(r"\b(?:once\s+)?(?:daily|a day|per day|each day)\b", tail):
+                k = 1
+            else:
+                return None       # "with each meal", "at bedtime": not certain
+            per_dose, per_day = max(per_dose, q), max(per_day, q * k)
+        return (per_dose, per_day) if per_day else None
+    except Exception:
+        return None
+
+
+def _asked_amount(query_text: str, name: str = ""):
+    """(number, per_day) for a capsule count the user asks about, or None. Round 1: a
+    number counts only when a capsule word or the product's own name follows it within
+    three words, or "a day"/"daily"/"at once" follows it at once. So "B17", "30 minutes",
+    "8 oz", "I'm 70" and "400 mg" are not read, and in "3 Nerve Repair and Moisturize"
+    the 3 belongs to Nerve Repair alone. Two different counts give None."""
+    q = html.unescape(str(query_text or "")).lower()
+    q = re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty)\b",
+               lambda m: str(_DOSE_NUM_WORDS[m.group(1)]), q)
+    # Round 3: the product's whole name, so "4 Nerve Repair" is never read for Nerve Pulse.
+    full = re.sub(r"[^a-z0-9]+", " ", html.unescape(str(name or "")).lower()).strip()
+    follow = _DOSE_UNIT + (r"|" + r"\s+".join(map(re.escape, full.split())) if full else "")
+    found = set()
+    for m in re.finditer(r"(?<![\w.$/])(\d{1,3})(?![\w.%/])", q):
+        rest = q[m.end():]
+        if re.match(r"\s+(?:[\w'\-]+\s+){0,2}?(?:" + follow + r")\b", rest) or \
+           re.match(r"\s+(?:a day|per day|daily|at once|at a time)\b", rest):
+            found.add(int(m.group(1)))
+    if len(found) != 1:
+        return None
+    n = found.pop()
+    per_day = bool(re.search(r"(?<![\w.$/])" + str(n) + r"(?![\w.%/])(?:\s+[\w'\-]+)"
+                             r"{0,6}?\s+(?:(?:a|per|each|every)\s+day|daily)\b", q))
+    # Round 3: only a dose the user would TAKE. "a 60 capsule bottle", "10 this week",
+    # "my 2 children", "order 3 bottles" are not doses.
+    if not re.search(r"\b(?:take|taking|have|use|using|swallow)\s+(?:up\s+to\s+|about\s+)?"
+                     + str(n) + r"\b", q):
+        return None
+    return n, per_day
+
+
+def _amount_verdict(query_text: str, directions: str, name: str = ""):
+    """("over", asked, most per day) when code is sure the number asked is more than the
+    label allows in a day, else None. Code never certifies an amount as within: round 2
+    found schedules, units and other directions a number check cannot see, so only
+    "more than the label" is safe to state."""
+    most = _directions_most(directions)
+    asked = _asked_amount(query_text, name)
+    if not most or not asked:
+        return None
+    n, per_day = asked
+    if per_day and n > most[1]:       # round 3: an explicit daily amount only
+        return ("over", n, most[1])
+    return None
+
+
+def _as_guided_rule_for(name: str, query_text: str, directions: str) -> str:
+    v = _amount_verdict(query_text, directions, name)
+    if v and v[0] == "over":
+        return _AS_GUIDED_HEAD.format(name=name) + _AS_GUIDED_OVER.format(
+            asked=v[1], most=v[2])
+    return _AS_GUIDED_HEAD.format(name=name) + _AS_GUIDED_UNCHECKED
 _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The snippets may "
                      "hold older advice to take more than these Directions give{example}. "
                      "That advice is withdrawn: never give it, "
                      "even when the user asks about taking more. Answer such a question with "
                      "these directions, and say to ask Dr. Glen about anything beyond them. "
                      "Never answer yes, or say they can, to taking more than these "
-                     "Directions: open with the Directions instead. If the amount asked is "
-                     "within these Directions, say so, unless the user names a medicine, "
-                     "pregnancy, surgery or condition: then never answer whether they may "
-                     "take it. Do not bring up the "
+                     "Directions: open with the Directions instead. Never say an amount is "
+                     "within these Directions; "
+                     "if the user names a medicine, pregnancy, surgery or condition, never "
+                     "answer whether they may take it. Do not bring up the "
                      "older advice yourself. This rule never shortens a caution: copy every "
                      "caution in full, including any sentence that names the older label.")
 # Live read-back of #2150, 2026-10-26: asked "Can I take 2 Moisturize a day?", the bot
@@ -3194,7 +3305,7 @@ _UMBRELLA_ROW = re.compile(
 
 def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                          no_caution_out=None, link_cautions=(), long_form=False,
-                         caution_out=None, quote_cautions=False) -> str:
+                         caution_out=None, quote_cautions=False, amount_text=None) -> str:
     """Approved store text for the catalog products the user names in the question.
 
     The chat does not search `specific-formulations`, so a product whose facts live
@@ -3333,7 +3444,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             # #2338: "1 capsule up to 3 times daily with food, taken one week on, then one
             # week off" dropped it.
             if "or as guided" in val:
-                parts.append(_AS_GUIDED_RULE.format(name=name))
+                parts.append(_as_guided_rule_for(
+                    name, query_text if amount_text is None else amount_text, val))
         _note = (product.get("panel_note") or "").strip()
         if (pinned and slug in _PANEL_NOTE_FACTS and _note
                 and "ingredients" in _pinned_copy(product)):
@@ -3643,7 +3755,7 @@ def named_product_facts_block(query_text: str, gated: bool = False,
     as label information (Glen, 2026-10-09). `prior_user_turns` lets a short follow-up
     with no product name carry the product the previous question named."""
     carried = _carried_query(query_text, prior_user_turns)
-    facts = _named_product_facts(carried, gated,
+    facts = _named_product_facts(carried, gated, amount_text=query_text,
                                  link_cautions=_caution_link_slugs(query_text, prior_user_turns),
                                  long_form=long_form, quote_cautions=member)
     if facts and carried != query_text:
