@@ -31,7 +31,7 @@ EXPECTED = {
 OCU_TEXT = ("OcuHeal Eye Drops carry botanical and nutritional ingredients for the whole eye, "
             "including the retina, lens, cornea, conjunctiva, lacrimal glands and tear film. The "
             "base is Quinton sea water (Quintessential Bioterrain Restore). Use 1 drop in each "
-            "eye 2 times a day.")
+            "eye 2 times a day, or as guided.")   # "or as guided": Glen 2026-11-26
 
 
 STALE = "STALE AI DRAFT TEXT"

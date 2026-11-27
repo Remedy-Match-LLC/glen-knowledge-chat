@@ -1000,7 +1000,7 @@ _B17_MAX_STEPS = ("Increase slowly, as guided, up to 1 level scoop once a day. D
                   "limit.")
 _DOSE_OVERRIDES = {
     "b17 max": {"dosage": "1/4 level scoop", "frequency": "once a day",
-                "timing": "with cooked food. " + _B17_MAX_STEPS},
+                "timing": "with cooked food, or as guided. " + _B17_MAX_STEPS},
     "breast support": {"dosage": "1 capsule", "frequency": "once a day",
                        "timing": "with food, or as guided."},
     # Glen, 2026-11-10: "Take 1 capsule up to twice daily, between meals or at bedtime, or as

@@ -10,7 +10,8 @@ from dashboard import biofield_authoring as ba
 from dashboard.biofield_schedule import build_schedule
 
 # One dose a day from 2026-10-31 (Glen, production tab); it had allowed 2 scoops.
-TIMING = ("with cooked food. Increase slowly, as guided, up to 1 level scoop once a day. Do "
+# "or as guided" added 2026-11-26 (Glen, platform tab: "yes, apply the or-as-guided prose copies").
+TIMING = ("with cooked food, or as guided. Increase slowly, as guided, up to 1 level scoop once a day. Do "
           "not exceed 1 level scoop a day. If you also take B17 Syntropy, take no more than 1 "
           "capsule a day, and count it as half a scoop toward the 1-scoop limit.")
 B17_MAX = {"dosage": "1/4 level scoop", "frequency": "once a day", "timing": TIMING}

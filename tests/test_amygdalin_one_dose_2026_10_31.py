@@ -25,10 +25,10 @@ DIRECTIONS = {
     "breast-support": "Take 1 capsule once a day with food, or as guided.",
 }
 SPLITS = {
-    # The Biofield split keeps its own wording: the 26 Nov "or as guided" lines changed
-    # the catalogue Directions only (Glen "approve", production tab).
+    # The Biofield split now ends "or as guided" too (Glen, platform tab, 2026-11-26:
+    # "yes, apply the or-as-guided prose copies").
     "B17 Max": {"dosage": "1/4 level scoop", "frequency": "once a day",
-                "timing": B17_TIMING.replace("with cooked food, or as guided.", "with cooked food.")},
+                "timing": B17_TIMING},
     "Breast Support": {"dosage": "1 capsule", "frequency": "once a day",
                        "timing": "with food, or as guided."},
 }
