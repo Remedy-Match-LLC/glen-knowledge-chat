@@ -433,7 +433,20 @@
       // Only an approved (copy_pinned) description keeps its paragraph breaks.
       p.className = keepBreaks === true ? 'sp-text sp-breaks' : 'sp-text';
       p.setAttribute('data-ai-text', '1');
-      p.textContent = typeof body === 'string' ? body : '';
+      var text = typeof body === 'string' ? body : '';
+      if (keepBreaks !== true) { p.textContent = text; return p; }
+      // An approved description may link to another page of this store with
+      // [words](/begin/...). Only same-site paths become links; anything else stays text.
+      var re = /\[([^\]\n]{1,120})\]\((\/begin\/[A-Za-z0-9\/_-]{1,200})\)/g, last = 0, m;
+      while ((m = re.exec(text))) {
+        p.appendChild(document.createTextNode(text.slice(last, m.index)));
+        var a = document.createElement('a');
+        a.href = m[2];
+        a.textContent = m[1];
+        p.appendChild(a);
+        last = re.lastIndex;
+      }
+      p.appendChild(document.createTextNode(text.slice(last)));
       return p;
     }
 

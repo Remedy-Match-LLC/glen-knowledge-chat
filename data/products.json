@@ -26055,8 +26055,8 @@
    "source": "glen-ruling-2026-11-09"
   },
   "bioenergetic-wellness-scanner-usb": {
-   "name": "Bioenergetic Wellness Scanner - USB",
-   "aliases": ["Bioenergetic Wellness Scanner USB", "Bioenergetic Wellness Scanner (USB)"],
+   "name": "Energy4Life (E4L) Bioenergetic Wellness Scanner, USB",
+   "aliases": ["Bioenergetic Wellness Scanner USB", "Bioenergetic Wellness Scanner (USB)", "Bioenergetic Wellness Scanner - USB"],
    "price_cents": 20000,
    "sale": {
     "price_cents": 10000,
@@ -26065,7 +26065,10 @@
    },
    "fmp_id": "970",
    "bottle_type": "handcradle",
-   "intro": "The USB model, for indoor use with people and indoor pets.",
+   "intro": "The original wired USB Energy4Life (E4L) Bioenergetic Wellness Scanner reads over 150 Biofield energy patterns in about 20 seconds.",
+   "description": "This is the original USB version of the Energy4Life (E4L) Bioenergetic Wellness Scanner.\n\nIt plugs into your Mac or PC and comes with free desktop software.\n\nA scan takes about 20 seconds and reads over 150 Biofield energy patterns.\n\nYour scan results reach us without any extra step.\n\nWith one click, you can request a free Remedy Match analysis.\n\nThe newer Bluetooth version scans from your phone and suits outdoor animals and remote places.\n\nSee the [Bluetooth version](/begin/product/bioenergetic-wellness-scanner-bluetooth) on its own page.\n\nI recommend this wired version for people with young children, non-verbal individuals and indoor pets.\n\nThe wired connection avoids the Bluetooth model's wireless signal.\n\nThe USB model is available while our supply lasts.",
+   "copy_pinned": ["intro", "description"],
+   "copy_source": "marketing/04 Copy/scanner-127-2026-11-26/change.md; Glen 2026-11-26, platform tab: yes, publish marketing's USB page text",
    "source": "glen-ruling-2026-11-09"
   },
   "bioenergetic-wellness-scanner-bluetooth": {

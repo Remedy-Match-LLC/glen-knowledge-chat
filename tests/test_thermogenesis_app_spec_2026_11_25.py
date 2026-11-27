@@ -132,7 +132,10 @@ def test_no_other_product_or_key_changes(name):
     # defaults", platform tab, 2026-11-26) adds only its `sale` record.
     later["pollen-power"] = {"sale"}
     # The USB scanner's sale, and the two scanner pages retired to it (same ruling).
-    later["bioenergetic-wellness-scanner-usb"] = {"sale"}
+    # Plus marketing's page text, Glen 2026-11-26 platform tab: "yes, publish marketing's
+    # USB page text".
+    later["bioenergetic-wellness-scanner-usb"] = {"sale", "name", "aliases", "intro",
+                                                  "description", "copy_pinned", "copy_source"}
     later["nes-scanner"] = {"inactive", "superseded_by", "retired_note"}
     later["bioenergetic-wellness-scanner"] = {"inactive", "superseded_by", "retired_note"}
     for slug in old:
