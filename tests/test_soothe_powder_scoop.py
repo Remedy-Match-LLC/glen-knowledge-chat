@@ -44,8 +44,9 @@ def _strings(value, path="soothe-powder"):
 def test_directions_and_description_are_the_approved_line(catalog):
     p = catalog["soothe-powder"]
     assert p["directions"] == LINE
-    # The description kept its wording: the 26 Nov change approved Directions only.
-    assert p["description"] == "1 scoop (500 mg) 2 times a day in drinks."
+    # The description now ends "or as guided" too (Glen, platform tab, 2026-11-26:
+    # "yes, apply the or-as-guided prose copies").
+    assert p["description"] == "1 scoop (500 mg) 2 times a day in drinks, or as guided."
 
 
 def test_no_value_in_soothe_powder_gives_the_old_dose(catalog):

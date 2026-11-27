@@ -121,8 +121,8 @@ APPROVED_INTRO = (
     "nutritional ingredients for the whole eye, including the retina, lens, cornea, "
     "conjunctiva, lacrimal glands and tear film. DMSO rises from 0.5% to 10%, and the "
     "Quinton sea water base (Quintessential Bioterrain Restore) makes room for it, from "
-    "96% to 86.5%. Use 1 drop in each eye 2 times a day."
-)
+    "96% to 86.5%. Use 1 drop in each eye 2 times a day, or as guided."
+)   # "or as guided" added 2026-11-26 (Glen, platform tab, the prose copies)
 
 
 def test_the_description_is_glens_approved_intro(products):

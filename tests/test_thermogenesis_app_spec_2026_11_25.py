@@ -139,7 +139,12 @@ def test_no_other_product_or_key_changes(name):
         if slug in later:
             moved = {k for k in set(old[slug]) | set(new[slug])
                      if old[slug].get(k) != new[slug].get(k)}
-            assert moved <= later[slug], (slug, moved)
+            assert moved <= later[slug] | _PROSE_COPIES.get(slug, set()), (slug, moved)
+            for k in moved & _PROSE_COPIES.get(slug, set()):
+                # Only the approved sentence may differ (review round 2).
+                from tests.test_or_as_guided_prose_copies_2026_11_26 import PAIRS as _PP
+                o, n = _PP[slug]
+                assert new[slug].get(k) == (old[slug].get(k) or "").replace(o, n), (slug, k)
         elif slug != "thermogenesis":
             assert old[slug] == new[slug], slug
     changed = {k for k in set(old["thermogenesis"]) | set(new["thermogenesis"])
@@ -217,3 +222,10 @@ def test_the_pinned_text_is_the_spec_text():
     rows = [(n.replace("*", ""), d) for n, d in
             re.findall(r"^\d+\. (.+), ([\d.]+ (?:mcg|mg))$", spec, re.M)]
     assert rows == ROWS
+
+
+# The "or as guided" prose copies (Glen, platform tab, 2026-11-26: "yes, apply the
+# or-as-guided prose copies") change only these fields of these eight records.
+_PROSE_COPIES = {s: {"description", "intro", "learn_markdown"} for s in (
+    "soothe-powder", "vitamin-a-syntropy", "vitamin-c-syntropy", "curcu-guard",
+    "moisture-eyes-night-oil", "ocuheal-eye-drops", "ocuheal-plus-eye-drops", "reverse-age")}
