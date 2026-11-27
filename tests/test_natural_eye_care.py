@@ -1,7 +1,7 @@
 """Natural Eye Care: public education on eye conditions.
 
 Glen approved the drusen text on 2026-10-30 and named the course. He approved the macular
-degeneration, cataract and glaucoma texts on 2026-10-31. The lesson is education
+degeneration, cataract and glaucoma texts on 2026-10-31, and Posner-Schlossman on 2026-11-27. The lesson is education
 only. A product link, product name or price beside drusen or AMD would be a drug claim, so
 these tests hold the lesson to PubMed links and no product language.
 """
@@ -17,16 +17,18 @@ _MHOST = "http://mentorshipu.test"
 REPO_COURSES = os.path.join(os.path.dirname(os.path.dirname(__file__)), "courses")
 SLUG = "natural-eye-care"
 # PubMed links per lesson, as approved. A change here means the approved text changed.
-PUBMED_LINKS = {"macular-degeneration": 21, "drusen": 22, "cataract": 22, "glaucoma": 27, "diabetic-retinopathy": 23, "dry-eye": 36, "retinitis-pigmentosa": 28, "night-vision": 24}
+PUBMED_LINKS = {"macular-degeneration": 21, "drusen": 22, "cataract": 22, "glaucoma": 27, "diabetic-retinopathy": 23, "dry-eye": 36, "retinitis-pigmentosa": 28, "posner-schlossman": 19, "night-vision": 24}
 # Non-PubMed links allowed: the practitioner finder, and a symptom page's links to its
 # condition pages. Neither carries products.
 OTHER_LINKS = {
     "night-vision": ["https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/cataract", "https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/macular-degeneration", "https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/retinitis-pigmentosa", "https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/diabetic-retinopathy", "https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/glaucoma", "https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/dry-eye"],
     "cataract": ["https://courses.mentorshipu.com/practitioner-finder"],
     "glaucoma": ["https://courses.mentorshipu.com/practitioner-finder"],
+    "posner-schlossman": ["https://courses.mentorshipu.com/learn/natural-eye-care/01-conditions/glaucoma"] * 2,
 }
 CLOSING_LINE = "Keep working with your own eye doctor throughout."
-CLOSING = {"diabetic-retinopathy": "Keep working with your own eye doctor and diabetes doctor throughout."}
+CLOSING = {"diabetic-retinopathy": "Keep working with your own eye doctor and diabetes doctor throughout.",
+           "posner-schlossman": "See an eye doctor that day if an eye blurs or you see halos."}
 PRODUCT_WORDS = re.compile(
     r"remedy ?match|healing oasis|macular wellness|lipid[- ]?(cleanse|zyme)|ocuheal|ocuflow|iop program|lens-?zyme|curcu-guard|iron ?out|retina renew|blood cleanse|aces eye|wholomega|nerve pulse|moisture eyes"
     r"|neuro ?magnesium|\bbuy\b|add to cart|\$\d", re.I)
