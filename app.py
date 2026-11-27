@@ -11701,6 +11701,8 @@ def _buyer_chosen_cents(p, raw):
     except (TypeError, ValueError):
         v = float("nan")
     if not math.isfinite(v) or v != int(v) or int(v) % 100 or not lo <= int(v) <= hi:
+        if (p.get("slug") or "") == MEMBERSHIP_MONTH_SLUG:
+            raise CheckoutError(MONTH_PRICE_MESSAGE)   # Glen's approved words
         raise CheckoutError(
             f"Please choose a whole-dollar price from ${lo // 100} to ${hi // 100} "
             f"for {p.get('name') or 'this item'}.")
@@ -11716,14 +11718,18 @@ def _buyer_priced(p, chosen_cents):
                 buyer_priced=True)
 
 
+MONTH_PRICE_MESSAGE = ("Please choose a whole-dollar price from $1 to $100 for the month "
+                       "of membership, or untick it.")
 _MONTH_NO_SUBSCRIBE_MESSAGE = ("The month of membership is a one-time purchase. Please "
                                "untick it to subscribe, or order once.")
 _MONTH_OFF_MESSAGE = ("The month of membership is not offered right now. Please untick "
                       "it and place your order again.")
-# The add-on's words. Glen approves them before MEMBERSHIP_MONTH_OFFER is turned on.
+# The add-on's words, approved. Still hidden until MEMBERSHIP_MONTH_OFFER is turned on.
 MONTH_ADDON_LINE = "Add one month of membership at a price you choose"
-MONTH_ADDON_HELP = ("Whole dollars, $1 to $100. It adds 30 days after any membership "
-                    "you already have.")
+# Glen, platform tab, 2026-11-26: "yes, approve the membership month wording".
+MONTH_ADDON_HELP = ["One month of live group coaching and member pricing.",
+                    "Choose any whole dollar amount from $1 to $100.",
+                    "It starts the day any membership you already have ends."]
 
 
 @app.route("/begin/membership-month-offer")

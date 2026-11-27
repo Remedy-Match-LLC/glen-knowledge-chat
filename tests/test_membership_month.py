@@ -442,3 +442,34 @@ def test_every_requote_path_keeps_the_stored_month():
     import inspect
     assert "_requote_line(it)" in inspect.getsource(app._recompute_combined_shipping)
     assert inspect.getsource(app).count("_requote_line(") >= 5
+
+
+# ---- Glen's approved words, 2026-11-26 -------------------------------------------------
+# "yes, approve the membership month wording" (plans/2026-11-26-membership-month-wording.md)
+
+def test_the_words_are_the_approved_ones():
+    rec = app._PRODUCTS["products"][SLUG]
+    assert rec["name"] == "One Month of Membership"
+    assert rec["intro"] == ("One month of live group coaching and member pricing, "
+                            "at a price you choose.")
+    assert rec["description"].split("\n\n") == [
+        "Choose any whole dollar amount from $1 to $100.",
+        "Your month includes live group coaching every week and member pricing on your orders.",
+        "If you are already a member, your month starts the day your current membership ends.",
+        "Nothing ships, and it does not renew."]
+    assert set(rec["copy_pinned"]) == {"intro", "description"}
+    assert app.MONTH_ADDON_LINE == "Add one month of membership at a price you choose"
+    assert app.MONTH_ADDON_HELP == [
+        "One month of live group coaching and member pricing.",
+        "Choose any whole dollar amount from $1 to $100.",
+        "It starts the day any membership you already have ends."]
+    assert app.MONTH_PRICE_MESSAGE == ("Please choose a whole-dollar price from $1 to $100 "
+                                       "for the month of membership, or untick it.")
+    assert app._MONTH_OFF_MESSAGE == ("The month of membership is not offered right now. "
+                                      "Please untick it and place your order again.")
+    assert app._MONTH_NO_SUBSCRIBE_MESSAGE == ("The month of membership is a one-time "
+                                               "purchase. Please untick it to subscribe, "
+                                               "or order once.")
+    js = (__import__("pathlib").Path(app.__file__).resolve().parent / "static" /
+          "membership-month-addon.js").read_text()
+    assert "' for the month of membership' + (forced ? '.' : ', or untick it.')" in js

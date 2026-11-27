@@ -111,7 +111,11 @@
    "qty_pricing": false,
    "volume_eligible": false,
    "source": "glen-ruling-2026-11-26",
-   "_note": "Glen, platform tab, 2026-11-26: a month of membership at a whole-dollar price the buyer chooses, $1 to $100; an unticked add-on at every checkout and its own store page. Adds 30 days after any current term, outside the remedy cap. Hidden until MEMBERSHIP_MONTH_OFFER is true. Name and wording pending Glen."
+   "_note": "Glen, platform tab, 2026-11-26: a month of membership at a whole-dollar price the buyer chooses, $1 to $100; an unticked add-on at every checkout and its own store page. Adds 30 days after any current term, outside the remedy cap. Hidden until MEMBERSHIP_MONTH_OFFER is true. Wording approved: Glen \"yes, approve the membership month wording\", platform tab, 2026-11-26.",
+   "intro": "One month of live group coaching and member pricing, at a price you choose.",
+   "description": "Choose any whole dollar amount from $1 to $100.\n\nYour month includes live group coaching every week and member pricing on your orders.\n\nIf you are already a member, your month starts the day your current membership ends.\n\nNothing ships, and it does not renew.",
+   "copy_pinned": ["intro", "description"],
+   "copy_source": "platform/plans/2026-11-26-membership-month-wording.md"
   },
   "family-membership": {
    "name": "Family Membership",

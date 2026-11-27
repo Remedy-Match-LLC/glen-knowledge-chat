@@ -40,7 +40,10 @@
         var amt = el('input', { type: 'number', id: 'month-addon-dollars', min: String(o.min_cents / 100),
                                 max: String(o.max_cents / 100), step: '1', inputmode: 'numeric' });
         row.appendChild(amt);
-        var help = el('p', { 'class': 'month-addon-help' }, o.help);
+        var help = el('div', { 'class': 'month-addon-help' });
+        (Array.isArray(o.help) ? o.help : [o.help]).forEach(function (t) {
+          help.appendChild(el('p', null, t));
+        });
         cb.checked = kept.checked; amt.value = kept.dollars;
         if (kept.checked) row.removeAttribute('hidden');
         cb.addEventListener('change', function () {
