@@ -19,6 +19,7 @@ def env(tmp_path, monkeypatch):
                          email="t@example.com", total_cents=4000, status="new")
     cx.commit()
     cx.close()
+    app._t_db = db
     return app, app.app.test_client(), oid
 
 
@@ -43,3 +44,37 @@ def test_an_unknown_order_is_404(env):
     _app, c, _oid = env
     assert c.get("/api/console/invoice/999999/pdf",
                  headers={"X-Console-Key": "k-test"}).status_code == 404
+
+
+def test_the_pdf_is_drawn_from_this_orders_summary(env, monkeypatch):
+    """The renderer gets the same summary the email attachment uses, for this order."""
+    app, c, oid = env
+    from dashboard import invoice_pdf as P
+    seen = []
+    monkeypatch.setattr(P, "render_invoice_pdf", lambda o: seen.append(o) or b"%PDF-x")
+    r = c.get(f"/api/console/invoice/{oid}/pdf", headers={"X-Console-Key": "k-test"})
+    assert r.status_code == 200 and len(seen) == 1
+    assert seen[0].get("external_ref") == "DS-331"
+    assert seen[0].get("total_cents") == 4000
+
+
+def test_a_superseded_order_prints_its_successor(env, monkeypatch):
+    app, c, oid = env
+    from dashboard import orders as O, invoice_pdf as P
+    cx = sqlite3.connect(app._t_db); cx.row_factory = sqlite3.Row
+    new = O.upsert_order(cx, source="dropship", external_ref="DS-332",
+                         email="t@example.com", total_cents=5000, status="new")
+    cx.execute("UPDATE orders SET superseded_by_order_id=? WHERE id=?", (new, oid))
+    cx.commit(); cx.close()
+    seen = []
+    monkeypatch.setattr(P, "render_invoice_pdf", lambda o: seen.append(o) or b"%PDF-x")
+    assert c.get(f"/api/console/invoice/{oid}/pdf",
+                 headers={"X-Console-Key": "k-test"}).status_code == 200
+    assert seen[0].get("external_ref") == "DS-332"
+
+
+def test_refusals_are_not_cached(env):
+    _app, c, _oid = env
+    r = c.get("/api/console/invoice/999999/pdf", headers={"X-Console-Key": "k-test"})
+    assert r.status_code == 404 and r.headers["Cache-Control"] == "no-store"
+    assert c.get("/api/console/invoice/1/pdf").headers["Cache-Control"] == "no-store"

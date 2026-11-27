@@ -68749,11 +68749,17 @@ def api_console_invoice_pdf(order_id):
     Nov: headless printing of the invoice page came out blank or with the nav and chat).
     The same document the invoice email attaches (dashboard/invoice_pdf.py), drawn from
     the customer-safe summary. X-Console-Key header only; read-only."""
+    def _refuse(msg, code):
+        r = jsonify({"ok": False, "error": msg})
+        r.headers["Cache-Control"] = "no-store"
+        return r, code
     if not _cadence_admin_ok():
-        return jsonify({"ok": False, "error": "unauthorized"}), 401
+        return _refuse("unauthorized", 401)
     from dashboard import invoice_pdf as _ipdf
-    cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
+    # The same connection pattern _invoice_order_for_token uses in production (Postgres).
+    cx = db.connect(LOG_DB)
     try:
+        cx.row_factory = _sqlite3.Row
         order = _bos_orders.get_order(cx, int(order_id))
         seen = set()   # the same superseded-order walk the invoice page makes
         while order and order.get("superseded_by_order_id") and order["id"] not in seen:
@@ -68765,7 +68771,7 @@ def api_console_invoice_pdf(order_id):
     finally:
         cx.close()
     if not order:
-        return jsonify({"ok": False, "error": "no such order"}), 404
+        return _refuse("no such order", 404)
     summary = _invoice_summary_with_ledger(order)
     body = _ipdf.render_invoice_pdf(summary)
     resp = Response(body, mimetype="application/pdf")
