@@ -105,11 +105,7 @@ def test_the_chat_facts_show_the_link_words_not_the_syntax():
 def test_the_quickbooks_name_is_unchanged():
     # QBO finds the sales item by `name`; the new title lives in display_name so the
     # Black Friday sales do not open a second QBO item (review round 1).
-    import json
-    import subprocess
+    # The name QuickBooks already holds for this item (CI has no origin/main to read).
     rec = app._PRODUCTS["products"][SLUG]
-    main = json.loads(subprocess.check_output(
-        ["git", "show", "origin/main:data/products.json"],
-        cwd=pathlib.Path(__file__).resolve().parents[1]))["products"][SLUG]
-    assert rec["name"] == main["name"] == "Bioenergetic Wellness Scanner - USB"
+    assert rec["name"] == "Bioenergetic Wellness Scanner - USB"
     assert rec["display_name"] == "Energy4Life (E4L) Bioenergetic Wellness Scanner, USB"
