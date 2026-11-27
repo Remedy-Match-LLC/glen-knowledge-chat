@@ -142,20 +142,6 @@ def chat(monkeypatch, tmp_path):
     return _post
 
 
-def test_chat_streams_and_logs_both_cautions_after_the_answer(chat):
-    text, done, user = chat(Q)
-    tail = app._compare_caution_tail(Q, "Short answer.")
-    assert tail and text.endswith(tail)
-    assert text.index("Short answer.") < text.index(_warning("nerve-pulse"))
-    assert app._compare_answer_rules(Q) in user
-    assert user.rstrip().endswith(app._compare_answer_rules(Q).rstrip())
-    assert done.get("cta", {}).get("target") == "https://example.test/own"
-    import sqlite3  # the logged answer carries the cautions
-    with sqlite3.connect(app.LOG_DB) as cx:
-        logged = cx.execute("SELECT answer FROM query_log ORDER BY id DESC LIMIT 1").fetchone()[0]
-    assert logged.endswith(_warning("nerve-repair"))
-
-
 def test_one_product_chat_gets_no_tail_and_no_rules(chat):
     text, _done, user = chat("What is Nerve Pulse?")
     assert _warning("nerve-pulse") not in text
@@ -169,37 +155,6 @@ def test_a_code_written_reply_gets_no_second_copy(chat):
     text, _done, user = chat(q)
     assert user is None  # the model was never called
     assert text.count(_warning("nerve-repair")) == 1
-
-
-def test_the_full_report_appends_the_tail(monkeypatch):
-    monkeypatch.setattr(app, "embed", lambda text: [0.0] * 1536)
-    one = [SimpleNamespace(id="m0", score=0.8, metadata={"text": "x", "_source_ns": "x"})]
-    monkeypatch.setattr(app, "query_all_namespaces", lambda vec: one)
-    monkeypatch.setattr(app, "build_context", lambda m: ("snippet text", []))
-    seen = {}
-
-    def _create(**kw):
-        seen["user"] = kw["messages"][-1]["content"]
-        return SimpleNamespace(content=[SimpleNamespace(text="Long answer.")])
-    monkeypatch.setattr(app._cl.messages, "create", _create)
-    answer, _src, _n = app._generate_full_answer(Q, "self-healing")
-    assert answer == "Long answer." + app._compare_caution_tail(Q, "Long answer.")
-    assert app._compare_answer_rules(Q, long_form=True) in seen["user"]
-
-
-def test_the_full_report_stream_appends_the_tail(monkeypatch):
-    monkeypatch.setattr(app, "embed", lambda text: [0.0] * 1536)
-    one = [SimpleNamespace(id="m0", score=0.8, metadata={"text": "x", "_source_ns": "x"})]
-    monkeypatch.setattr(app, "query_all_namespaces", lambda vec: one)
-    monkeypatch.setattr(app, "build_context", lambda m: ("snippet text", []))
-    monkeypatch.setattr(app._cl.messages, "stream", lambda **kw: _FakeStream("Long."))
-    with app.app.test_request_context("/"):
-        resp = app._full_report_stream(1, Q, "self-healing", "s1")
-        body = "".join(c.decode() if isinstance(c, bytes) else c
-                       for c in resp.response)
-    toks = "".join(json.loads(line[6:]).get("token", "") for line in body.splitlines()
-                   if line.startswith("data: ") and line[6:].strip())
-    assert toks == "Long." + app._compare_caution_tail(Q, "Long.")
 
 
 def test_a_code_written_reply_for_one_caution_stays_as_written(chat):
@@ -245,17 +200,37 @@ def test_a_bundle_is_not_two_named_products():
         assert app._compare_answer_rules(q) == "", q
 
 
-def test_the_full_report_keeps_its_length(monkeypatch):
+def _no_model(monkeypatch):
+    def _boom(**kw):
+        raise AssertionError("the model must not be called for a code-written reply")
+    monkeypatch.setattr(app._cl.messages, "create", _boom)
+    monkeypatch.setattr(app._cl.messages, "stream", _boom)
+
+
+def test_chat_gives_the_code_written_reply_and_logs_it(chat, monkeypatch):
+    # Glen, platform tab, 2026-11-26: "yes, code writes both answers".
+    _no_model(monkeypatch)
+    text, done, user = chat(Q)
+    reply = app._coded_compare_reply(Q)
+    assert reply and text == reply and user is None
+    assert text.index(_warning("nerve-pulse")) < text.index(_warning("nerve-repair"))
+    import sqlite3
+    with sqlite3.connect(app.LOG_DB) as cx:
+        logged = cx.execute("SELECT answer FROM query_log ORDER BY id DESC LIMIT 1").fetchone()[0]
+    assert logged == reply
+
+
+def test_the_full_reports_are_the_code_written_reply(monkeypatch):
     monkeypatch.setattr(app, "embed", lambda text: [0.0] * 1536)
     one = [SimpleNamespace(id="m0", score=0.8, metadata={"text": "x", "_source_ns": "x"})]
     monkeypatch.setattr(app, "query_all_namespaces", lambda vec: one)
     monkeypatch.setattr(app, "build_context", lambda m: ("snippet text", []))
-    seen = {}
-
-    def _create(**kw):
-        seen["user"] = kw["messages"][-1]["content"]
-        return SimpleNamespace(content=[SimpleNamespace(text="Long answer.")])
-    monkeypatch.setattr(app._cl.messages, "create", _create)
-    app._generate_full_answer(Q, "self-healing")
-    assert "Answer directly. Skip" in seen["user"]
-    assert "and briefly" not in seen["user"].split("MORE THAN ONE PRODUCT")[1]
+    _no_model(monkeypatch)
+    answer, _src, _n = app._generate_full_answer(Q, "self-healing")
+    assert answer == app._coded_compare_reply(Q)
+    with app.app.test_request_context("/"):
+        body = "".join(c.decode() if isinstance(c, bytes) else c
+                       for c in app._full_report_stream(1, Q, "self-healing", "s1").response)
+    toks = "".join(json.loads(line[6:]).get("token", "") for line in body.splitlines()
+                   if line.startswith("data: ") and line[6:].strip())
+    assert toks == app._coded_compare_reply(Q)
