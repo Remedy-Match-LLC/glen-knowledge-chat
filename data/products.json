@@ -26055,8 +26055,9 @@
    "source": "glen-ruling-2026-11-09"
   },
   "bioenergetic-wellness-scanner-usb": {
-   "name": "Energy4Life (E4L) Bioenergetic Wellness Scanner, USB",
-   "aliases": ["Bioenergetic Wellness Scanner USB", "Bioenergetic Wellness Scanner (USB)", "Bioenergetic Wellness Scanner - USB"],
+   "name": "Bioenergetic Wellness Scanner - USB",
+   "display_name": "Energy4Life (E4L) Bioenergetic Wellness Scanner, USB",
+   "aliases": ["Bioenergetic Wellness Scanner USB", "Bioenergetic Wellness Scanner (USB)", "Energy4Life (E4L) Bioenergetic Wellness Scanner, USB"],
    "price_cents": 20000,
    "sale": {
     "price_cents": 10000,

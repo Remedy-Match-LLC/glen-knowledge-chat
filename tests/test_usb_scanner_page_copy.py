@@ -16,7 +16,8 @@ def _rec():
 
 def test_name_and_text():
     r = _rec()
-    assert r["name"] == "Energy4Life (E4L) Bioenergetic Wellness Scanner, USB"
+    assert r["display_name"] == "Energy4Life (E4L) Bioenergetic Wellness Scanner, USB"
+
     assert r["intro"].startswith("The original wired USB Energy4Life (E4L)")
     assert set(r["copy_pinned"]) >= {"intro", "description"}
     paras = r["description"].split("\n\n")
@@ -98,3 +99,17 @@ def test_the_chat_facts_show_the_link_words_not_the_syntax():
     text = out if isinstance(out, str) else repr(out)
     assert "Bluetooth version" in text
     assert "](/begin/" not in text
+    assert "Energy4Life (E4L) Bioenergetic Wellness Scanner, USB" in text
+
+
+def test_the_quickbooks_name_is_unchanged():
+    # QBO finds the sales item by `name`; the new title lives in display_name so the
+    # Black Friday sales do not open a second QBO item (review round 1).
+    import json
+    import subprocess
+    rec = app._PRODUCTS["products"][SLUG]
+    main = json.loads(subprocess.check_output(
+        ["git", "show", "origin/main:data/products.json"],
+        cwd=pathlib.Path(__file__).resolve().parents[1]))["products"][SLUG]
+    assert rec["name"] == main["name"] == "Bioenergetic Wellness Scanner - USB"
+    assert rec["display_name"] == "Energy4Life (E4L) Bioenergetic Wellness Scanner, USB"
