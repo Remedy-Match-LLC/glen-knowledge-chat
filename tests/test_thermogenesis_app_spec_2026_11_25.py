@@ -111,11 +111,12 @@ def test_no_other_product_or_key_changes(name):
     added = set(new) - set(old)
     assert set(old) <= set(new)
     if name == "products-manual-corrections.json":
-        # Exactly the seven new entries, each with only these two keys (round 2).
+        # Only these seven may be new, each with only these two keys (round 2). Once
+        # #2344 is on main they are in origin/main too, so none is new: still checked.
         seven = {"soothe-powder", "allerfree-homeoenergetic-drops", "cistus-shield",
                  "gerd-guard", "gerd-guard-powder", "ocuheal-eye-drops",
                  "ocuheal-plus-eye-drops"}
-        assert added == seven, added
+        assert added <= seven, added
         for s in seven:
             assert set(new[s]) == {"directions", "ingredients_source"}, s
             assert new[s]["directions"] == _AS_GUIDED[s], s
