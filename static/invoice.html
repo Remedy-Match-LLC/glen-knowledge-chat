@@ -353,7 +353,11 @@ function zelleInstrHtml(p){
     + '<div>To: <b>'+esc(p.name)+'</b>, '+esc(p.to)+'</div>'
     + '<div>Amount: <b>'+money(p.amount_cents)+'</b></div>'
     + '<div>Memo: <b>'+esc(p.memo)+'</b></div>';
-  if(p.pay_link) h += '<div><a href="'+esc(p.pay_link)+'" target="_blank" rel="noopener">Open the Zelle QR code</a></div>';
+  // Pamela Kirkpatrick, 27 Nov: a link to the QR page cannot start a payment; a Zelle
+  // QR works only when scanned in the bank's app. Glen "sure" to showing the image.
+  if(p.pay_link) h += '<div><img class="zelle-qr" src="/api/invoice/'+encodeURIComponent(TOKEN)
+    + '/zelle-qr.png" alt="Zelle QR code" width="180" height="180"></div>'
+    + '<div>Scan this in your bank\u2019s Zelle app.</div>';
   if(p.note) h += '<div class="muted">'+esc(p.note)+'</div>';
   return h + '<div class="muted">Then tap “I’ve sent payment”.</div>';
 }

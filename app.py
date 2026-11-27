@@ -68772,6 +68772,24 @@ def api_invoice_get(token):
     return resp
 
 
+@app.route("/api/invoice/<token>/zelle-qr.png", methods=["GET"])
+def api_invoice_zelle_qr(token):
+    """The Zelle QR image for an invoice page (Glen "sure", 27 Nov). Same image as the
+    portal's: it encodes only the payee's Zelle QR link, never the amount or memo."""
+    if not _invoice_order_for_token(token):
+        return ("", 404)
+    pay_link = (_ALT_PAY["zelle"].get("pay_link") or "").strip()
+    if not pay_link.startswith("https://"):
+        return ("", 404)
+    import io
+    import qrcode
+    buf = io.BytesIO()
+    qrcode.make(pay_link).save(buf, format="PNG")
+    response = Response(buf.getvalue(), mimetype="image/png")
+    response.headers["Cache-Control"] = "private, max-age=3600"
+    return response
+
+
 @app.route("/api/invoice/<token>/products", methods=["GET"])
 def api_invoice_products(token):
     """Token-scoped, customer-safe product picker for an editable invoice.
