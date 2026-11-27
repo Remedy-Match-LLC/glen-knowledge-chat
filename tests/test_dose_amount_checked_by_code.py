@@ -99,3 +99,41 @@ def test_a_named_pregnancy_never_gets_within():
 def test_a_number_inside_a_word_is_not_a_count():
     # "B12 capsules" must not read as 12 capsules.
     assert app._asked_amount("Can I take Nerve Repair with B12 capsules?", "Nerve Repair") is None
+
+
+@pytest.mark.parametrize("q,name", [
+    ("How long does a 60 capsule bottle of Nerve Repair last?", "Nerve Repair"),
+    ("I've taken 10 Nerve Repair capsules this week, is that ok?", "Nerve Repair"),
+    ("After 6 weeks on Nerve Repair, should I stop?", "Nerve Repair"),
+    ("Can my 2 children take Moisturize?", "Moisturize"),
+    ("Can I order 3 bottles of Moisturize?", "Moisturize"),
+    ("Can I take 4 Nerve Repair with my Nerve Pulse?", "Nerve Pulse"),
+])
+def test_round3_a_number_that_is_not_a_daily_dose_never_reads_over(q, name):
+    p = next(x for x in app._PRODUCTS["products"].values() if x.get("name", "").startswith(name))
+    assert app._amount_verdict(q, p.get("directions"), name) is None
+
+
+def test_fifteen_a_day_reads_over():
+    assert app._amount_verdict("Can I take fifteen Nerve Repair a day?", NR, "Nerve Repair") \
+        == ("over", 15, 5)
+
+
+def test_the_unchecked_rule_forbids_a_yes():
+    assert "or that they can take it" in app._AS_GUIDED_UNCHECKED
+
+
+def test_only_a_taken_number_counts():
+    q = "I bought 10 Nerve Repair capsules a day ago. How do I take them?"
+    assert app._amount_verdict(q, NR, "Nerve Repair") is None
+
+
+def test_only_a_daily_amount_reads_over():
+    assert app._amount_verdict("Can I take 6 Nerve Repair this week?", NR, "Nerve Repair") is None
+
+
+def test_a_count_for_nerve_repair_is_never_read_for_nerve_pulse():
+    pulse = app._PRODUCTS["products"]["nerve-pulse"]["directions"]
+    q = "Can I take 4 Nerve Repair a day with my Nerve Pulse?"
+    assert app._amount_verdict(q, pulse, "Nerve Pulse") is None
+    assert app._amount_verdict(q, NR, "Nerve Repair") is None     # 4 is within 5

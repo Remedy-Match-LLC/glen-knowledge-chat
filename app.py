@@ -2999,13 +2999,13 @@ _AS_GUIDED_OVER = ('Two exceptions. Code has checked that the amount the user as
                    '({asked}) is MORE than these Directions allow ({most} a day at most): '
                    'never say it is within the Directions, and never say they can take it. '
                    'Say it is more than the Directions, give the Directions word for word, '
-                   'and say to ask Dr. Glen before taking more. If the user names a '
+                   'and say to ask Dr. Glen about it. If the user names a '
                    'medicine, pregnancy, surgery or condition, never answer whether they '
                    'may take it. And keep the sentence saying '
                    'to ask Dr. Glen about anything beyond these Directions. This rule never '
                    'shortens a caution.')
 _AS_GUIDED_UNCHECKED = ('One exception. If the user asks about an amount, never say whether '
-                        'it is within these Directions: give the Directions word for word '
+                        'it is within these Directions or that they can take it: give the Directions word for word '
                         'and say to ask Dr. Glen about anything beyond them. If the user '
                         'names a medicine, pregnancy, surgery or condition, never answer '
                         'whether they may take it. Keep the '
@@ -3017,7 +3017,7 @@ _AS_GUIDED_RULE = _AS_GUIDED_HEAD + _AS_GUIDED_UNCHECKED
 _DOSE_UNIT = r"(?:capsules?|vegicaps?|vcaps?|caps?|tablets?|softgels?)"
 _DOSE_NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
                    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
-                   "twelve": 12}
+                   "twelve": 12, "fifteen": 15, "twenty": 20}
 
 
 def _directions_most(directions: str):
@@ -3025,7 +3025,7 @@ def _directions_most(directions: str):
     cannot read it for certain. Every dose phrase must carry a clear daily frequency."""
     try:
         d = html.unescape(str(directions or "")).lower()
-        d = re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b",
+        d = re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty)\b",
                    lambda m: str(_DOSE_NUM_WORDS[m.group(1)]), d)
         if re.search(r"\d\s*[/.]\s*\d|\bhalf\b|\bmax", d):
             return None        # fractions, decimals, "maximum": not read (round 2)
@@ -3064,14 +3064,11 @@ def _asked_amount(query_text: str, name: str = ""):
     "8 oz", "I'm 70" and "400 mg" are not read, and in "3 Nerve Repair and Moisturize"
     the 3 belongs to Nerve Repair alone. Two different counts give None."""
     q = html.unescape(str(query_text or "")).lower()
-    q = re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b",
+    q = re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty)\b",
                lambda m: str(_DOSE_NUM_WORDS[m.group(1)]), q)
-    first = ""
-    for w in re.findall(r"[a-z0-9]+", html.unescape(str(name or "")).lower()):
-        if len(w) >= 3 and not w.isdigit():
-            first = w
-            break
-    follow = _DOSE_UNIT + (r"|" + re.escape(first) if first else "")
+    # Round 3: the product's whole name, so "4 Nerve Repair" is never read for Nerve Pulse.
+    full = re.sub(r"[^a-z0-9]+", " ", html.unescape(str(name or "")).lower()).strip()
+    follow = _DOSE_UNIT + (r"|" + r"\s+".join(map(re.escape, full.split())) if full else "")
     found = set()
     for m in re.finditer(r"(?<![\w.$/])(\d{1,3})(?![\w.%/])", q):
         rest = q[m.end():]
@@ -3083,6 +3080,11 @@ def _asked_amount(query_text: str, name: str = ""):
     n = found.pop()
     per_day = bool(re.search(r"(?<![\w.$/])" + str(n) + r"(?![\w.%/])(?:\s+[\w'\-]+)"
                              r"{0,6}?\s+(?:(?:a|per|each|every)\s+day|daily)\b", q))
+    # Round 3: only a dose the user would TAKE. "a 60 capsule bottle", "10 this week",
+    # "my 2 children", "order 3 bottles" are not doses.
+    if not re.search(r"\b(?:take|taking|have|use|using|swallow)\s+(?:up\s+to\s+|about\s+)?"
+                     + str(n) + r"\b", q):
+        return None
     return n, per_day
 
 
@@ -3095,8 +3097,8 @@ def _amount_verdict(query_text: str, directions: str, name: str = ""):
     asked = _asked_amount(query_text, name)
     if not most or not asked:
         return None
-    n, _per_day = asked
-    if n > most[1]:
+    n, per_day = asked
+    if per_day and n > most[1]:       # round 3: an explicit daily amount only
         return ("over", n, most[1])
     return None
 
