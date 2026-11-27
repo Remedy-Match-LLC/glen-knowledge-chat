@@ -473,3 +473,33 @@ def test_the_words_are_the_approved_ones():
     js = (__import__("pathlib").Path(app.__file__).resolve().parent / "static" /
           "membership-month-addon.js").read_text()
     assert "' for the month of membership' + (forced ? '.' : ', or untick it.')" in js
+
+
+# ---- review round 3 ----------------------------------------------------------------------
+
+def test_the_store_page_shows_no_list_price():
+    d = app.app.test_client().get(f"/begin/product-page-data/{SLUG}").get_json()
+    assert d["price"] == ""
+    np = app.app.test_client().get("/begin/product-page-data/nerve-pulse").get_json()
+    assert np["price"].startswith("$")
+
+
+def test_the_month_alone_needs_no_address():
+    pc = app._price_cart([_line(2500)], ship={})
+    assert pc["priced"]["lines"][0]["line_total_cents"] == 2500
+    src = (__import__("pathlib").Path(app.__file__).resolve().parent / "static" /
+           "begin-buy.html").read_text()
+    assert "if (slug !== 'membership-month' && (!_street" in src
+    prod = (__import__("pathlib").Path(app.__file__).resolve().parent / "static" /
+            "begin-product.html").read_text()
+    assert "if (slug === 'membership-month') return;" in prod
+
+
+def test_a_revoked_month_no_longer_stretches_the_cap(filecx):
+    assert app._grant_bought_month_on_paid(filecx, _order("RV-1")) == "granted"
+    filecx.commit()
+    assert 29 <= app._bought_month_days_active(filecx, EMAIL) <= 31
+    filecx.execute("UPDATE memberships SET expires_at=? WHERE source=?",
+                   (datetime.utcnow().isoformat() + "Z", app.MEMBERSHIP_MONTH_SOURCE))
+    filecx.commit()
+    assert app._bought_month_days_active(filecx, EMAIL) == 0

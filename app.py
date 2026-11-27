@@ -14643,7 +14643,9 @@ def begin_product_page_data(slug):
         # is a different endpoint and patching that one alone changed nothing on screen.
         "slug": slug, "name": p.get("display_name") or p["name"],
         "price_cents": p["price_cents"],
-        "price": f"${p['price_cents']/100:.2f}", "cta_url": f"/begin/buy/{slug}",
+        # A price the buyer chooses shows no list price (round 3).
+        "price": ("" if _buyer_price_range(p) else f"${p['price_cents']/100:.2f}"),
+        "cta_url": f"/begin/buy/{slug}",
         # Real product photo (physical goods only), compare-at SRP, and named-competitor anchor.
         "image": p.get("image", ""),
         # Real photo gallery, shown uncropped under the hero. Only src and alt leave the server.
@@ -21224,9 +21226,11 @@ def _bought_month_days_active(cx, email):
     try:
         now = datetime.utcnow()
         days = 0
+        # The membership row's own expiry, so a revoked month stretches nothing (round 3).
         for (st, en) in cx.execute(
-                "SELECT starts_at, ends_at FROM order_month_grants WHERE lower(email)=lower(?)",
-                (email,)).fetchall():
+                "SELECT g.starts_at, m.expires_at FROM order_month_grants g "
+                "JOIN memberships m ON m.id = g.membership_id "
+                "WHERE lower(g.email)=lower(?)", (email,)).fetchall():
             a, b = _supply_naive(st), _supply_naive(en)
             if a and b and b > now:
                 days += max(0, round((b - a).total_seconds() / 86400))

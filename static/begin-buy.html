@@ -523,6 +523,10 @@
         // The buyer chooses the price (Glen, 2026-11-26): no list price, one at a time.
         hide('p-price');
         var _qr = document.querySelector('.qty-row'); if (_qr) _qr.style.display = 'none';
+        var _sf = document.getElementById('ship-street');
+        if (_sf && _sf.closest('.field')) _sf.closest('.field').style.display = 'none';
+        var _sc = document.getElementById('ship-city');
+        if (_sc && _sc.closest('.qty-row')) _sc.closest('.qty-row').style.display = 'none';
       } else if (p.price) { document.getElementById('p-price').textContent = p.price; }
       else { hide('p-price'); }
 
@@ -766,7 +770,8 @@
       var _city = (document.getElementById('ship-city').value || '').trim();
       var _state = (document.getElementById('ship-state').value || '').trim();
       var _zip = (document.getElementById('ship-zip').value || '').trim();
-      if (!_street || !_city || !_state || !_zip) {
+      // The month ships nothing, so its own page asks for no address (round 3).
+      if (slug !== 'membership-month' && (!_street || !_city || !_state || !_zip)) {
         setInlineMsg('Please add your shipping address so we can send your order.');
         document.getElementById('ship-street').focus();
         return;
