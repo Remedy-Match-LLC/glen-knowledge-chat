@@ -1548,6 +1548,8 @@
     function renderCartControl(slug){
       var CART_PAGE = "/begin/cart";
       if (!CART_ENABLED) return;
+      // The month is bought on its own page or as the checkout add-on, never in the cart.
+      if (slug === 'membership-month') return;
       var host = document.getElementById('buy-actions');
       if (!host) return;
       // The View cart link reuses #buy-actions .btn-secondary's own gold/focus

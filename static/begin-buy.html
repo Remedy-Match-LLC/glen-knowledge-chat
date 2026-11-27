@@ -216,6 +216,7 @@
   <script src="/static/text-size.js"></script>
   <script src="/static/theme-toggle.js"></script>
 <script src="/static/js/order-notes.js"></script>
+  <script src="/static/membership-month-addon.js"></script>
 </head>
 <body>
   <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode" style="position:fixed;top:14px;right:14px;z-index:9999;"></span>
@@ -444,6 +445,12 @@
     // ── State ──────────────────────────────────────────────────────────────
     var BASE = window.location.origin;
     var slug = location.pathname.split('/').filter(Boolean).pop() || '';
+    // The unticked month add-on, above the order button (Glen, 2026-11-26). Not on the
+    // month's own page, where the month is the purchase.
+    if (window.MonthAddon) {
+      MonthAddon.mount(document.getElementById('buy-btn'), BASE,
+                       { forced: slug === 'membership-month' });
+    }
     var product = null;
     var chosenMethod = '';
     var chosenFormat = '';
@@ -512,7 +519,15 @@
       }
 
       // Purchasable product.
-      if (p.price) { document.getElementById('p-price').textContent = p.price; }
+      if (slug === 'membership-month') {
+        // The buyer chooses the price (Glen, 2026-11-26): no list price, one at a time.
+        hide('p-price');
+        var _qr = document.querySelector('.qty-row'); if (_qr) _qr.style.display = 'none';
+        var _sf = document.getElementById('ship-street');
+        if (_sf && _sf.closest('.field')) _sf.closest('.field').style.display = 'none';
+        var _sc = document.getElementById('ship-city');
+        if (_sc && _sc.closest('.qty-row')) _sc.closest('.qty-row').style.display = 'none';
+      } else if (p.price) { document.getElementById('p-price').textContent = p.price; }
       else { hide('p-price'); }
 
       if (Array.isArray(p.benefits) && p.benefits.length) {
@@ -755,7 +770,8 @@
       var _city = (document.getElementById('ship-city').value || '').trim();
       var _state = (document.getElementById('ship-state').value || '').trim();
       var _zip = (document.getElementById('ship-zip').value || '').trim();
-      if (!_street || !_city || !_state || !_zip) {
+      // The month ships nothing, so its own page asks for no address (round 3).
+      if (slug !== 'membership-month' && (!_street || !_city || !_state || !_zip)) {
         setInlineMsg('Please add your shipping address so we can send your order.');
         document.getElementById('ship-street').focus();
         return;
@@ -785,6 +801,15 @@
       if (_rc && _rc.value.trim()) { payload.referral_code = _rc.value.trim(); }
       var _gift = new URLSearchParams(location.search).get("gift");
       if (_gift) payload.gift = _gift;
+      try {
+        var _month = window.MonthAddon ? MonthAddon.value() : null;
+        if (_month && slug === 'membership-month') payload.price_cents = _month;
+        else if (_month) payload.membership_month_cents = _month;
+      } catch (e) {
+        ordering = false; buyBtn.disabled = false; buyBtn.textContent = 'Place your order';
+        document.getElementById('inline-msg').textContent = e.message;
+        return;
+      }
 
       fetch(BASE + '/begin/checkout/' + encodeURIComponent(slug), {
         method: 'POST',
@@ -867,6 +892,13 @@
 
     function placeSubscription(){
       if (ordering) return;
+      // A ticked month never rides a subscription; say so, never drop it (round 1).
+      try {
+        if (window.MonthAddon && MonthAddon.value()) {
+          setInlineMsg('The month of membership is a one-time purchase. Please untick it to subscribe, or order once.');
+          return;
+        }
+      } catch (e) { setInlineMsg(e.message); return; }
       var _street = (document.getElementById('ship-street').value || '').trim();
       var _city = (document.getElementById('ship-city').value || '').trim();
       var _state = (document.getElementById('ship-state').value || '').trim();

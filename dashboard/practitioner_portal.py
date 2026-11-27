@@ -590,8 +590,10 @@ def is_orderable(slug, catalog=None) -> bool:
     bundle component (`waitlist_only`: Scar Soft Drink, 2026-10-09)."""
     cat = catalog if catalog is not None else pricing._load_catalog()
     p = cat.get(slug)
+    # A price the buyer chooses (the membership month, 2026-11-26) is sold only on its
+    # own page and as the checkout add-on: never in a practitioner or portal catalog.
     return (bool(p) and not p.get("info_only") and not p.get("inactive")
-            and waitlist_block(slug, cat) is None)
+            and not p.get("buyer_price") and waitlist_block(slug, cat) is None)
 
 
 def resolve_named_products(items, catalog=None) -> List[dict]:
