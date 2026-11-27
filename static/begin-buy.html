@@ -887,6 +887,13 @@
 
     function placeSubscription(){
       if (ordering) return;
+      // A ticked month never rides a subscription; say so, never drop it (round 1).
+      try {
+        if (window.MonthAddon && MonthAddon.value()) {
+          setInlineMsg('The month of membership is a one-time purchase. Please untick it to subscribe, or order once.');
+          return;
+        }
+      } catch (e) { setInlineMsg(e.message); return; }
       var _street = (document.getElementById('ship-street').value || '').trim();
       var _city = (document.getElementById('ship-city').value || '').trim();
       var _state = (document.getElementById('ship-state').value || '').trim();

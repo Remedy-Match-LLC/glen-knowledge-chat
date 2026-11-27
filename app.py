@@ -11716,6 +11716,8 @@ def _buyer_priced(p, chosen_cents):
                 buyer_priced=True)
 
 
+_MONTH_NO_SUBSCRIBE_MESSAGE = ("The month of membership is a one-time purchase. Please "
+                               "untick it to subscribe, or order once.")
 _MONTH_OFF_MESSAGE = ("The month of membership is not offered right now. Please untick "
                       "it and place your order again.")
 # The add-on's words. Glen approves them before MEMBERSHIP_MONTH_OFFER is turned on.
@@ -11735,6 +11737,25 @@ def begin_membership_month_offer():
                     "line": MONTH_ADDON_LINE, "help": MONTH_ADDON_HELP})
 
 
+# Marks a month line re-quoted from a stored order (an invoice edit, a combined
+# shipment, a reissue). An object, so no posted JSON can carry it (review round 1).
+_REQUOTE = object()
+
+
+def _requote_line(it):
+    """A stored order line as a re-quote cart line. A bought month keeps the price it
+    was sold at and is priced even after the offer is turned off; its range is not
+    checked again, because the buyer already paid it."""
+    slug = (it.get("slug") or "").strip()
+    line = {"slug": slug, "qty": int(it.get("qty", 1) or 1)}
+    if it.get("format"):
+        line["format"] = it.get("format")
+    if slug == MEMBERSHIP_MONTH_SLUG:
+        unit = it.get("issued_unit_cents") or it.get("unit_cents")
+        line.update(qty=1, price_cents=unit, _requote=_REQUOTE)
+    return line
+
+
 def _with_month_addon(cart, data):
     """The cart plus the ticked membership-month add-on, if the checkout asked for
     one. The amount is checked by the pricer, never here, so every checkout refuses
@@ -11748,6 +11769,14 @@ def _with_month_addon(cart, data):
         raise CheckoutError(_MONTH_OFF_MESSAGE)
     rest = [c for c in (cart or []) if (c.get("slug") or "") != MEMBERSHIP_MONTH_SLUG]
     return rest + [{"slug": MEMBERSHIP_MONTH_SLUG, "qty": 1, "price_cents": raw}]
+
+
+def _buyer_priced_priced_cents(pc) -> int:
+    """What a priced cart's buyer-priced lines cost: kept out of what shipping credit
+    may pay (review round 1)."""
+    return sum(int(l.get("line_total_cents") or 0)
+               for l in ((pc or {}).get("priced") or {}).get("lines") or []
+               if _buyer_price_range((_PRODUCTS.get("products") or {}).get(l.get("slug") or "")))
 
 
 def _buyer_priced_line_cents(order) -> int:
@@ -12498,10 +12527,13 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     packaging_review = []
     for c in (cart or []):
         _cslug = (c.get("slug") or "").strip()
-        if _cslug == MEMBERSHIP_MONTH_SLUG and not _month_offer_on():
+        _stored = c.get("_requote") is _REQUOTE
+        if _cslug == MEMBERSHIP_MONTH_SLUG and not _month_offer_on() and not _stored:
             # Refused, never dropped: the buyer chose it (review round 2).
             raise CheckoutError(_MONTH_OFF_MESSAGE)
         p = _get_product(_cslug) or (extra_products or {}).get(_cslug)
+        if not p and _stored and _cslug == MEMBERSHIP_MONTH_SLUG:
+            p = dict((_PRODUCTS.get("products") or {}).get(_cslug) or {}, slug=_cslug)
         if not p:
             continue
         # Full-member SKU price (Biofield $200 vs $300). Keyed off the REAL
@@ -12510,8 +12542,13 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         p = _member_priced_product(p, email)
         qty = max(1, min(int(c.get("qty", 1) or 1), 99))
         if _buyer_price_range(p):
-            # One at a time, at the price the buyer chose (2026-11-26).
-            p = _buyer_priced(p, _buyer_chosen_cents(p, c.get("price_cents")))
+            # One at a time, at the price the buyer chose (2026-11-26). A stored line
+            # keeps what it was sold at.
+            _chosen = (int(c.get("price_cents") or 0) if _stored
+                       else _buyer_chosen_cents(p, c.get("price_cents")))
+            if _chosen <= 0:
+                raise CheckoutError("This order's month of membership has no price.")
+            p = _buyer_priced(p, _chosen)
             qty = 1
         it = _engine_item(p, qty)
         items.append(it)
@@ -12983,7 +13020,8 @@ def _settle_referrer_reward(cx, order, order_ref):
         return 0
     product_cents = max(0, int(order.get("total_cents") or 0)
                         - int(order.get("shipping_cents") or 0)
-                        - int(order.get("get_cents") or 0))
+                        - int(order.get("get_cents") or 0)
+                        - _buyer_priced_line_cents(order))   # the month earns no reward
     reward = product_cents * pct // 100
     # Drop-ship / portal sales are paid at wholesale (the practitioner's markup IS their pay),
     # so NO L1 is credited on them — only the L2 override below. Ambassador referrals
@@ -16940,7 +16978,8 @@ def begin_checkout(slug):
     # ship_credit balance to this order, bounded by the payable (net product + shipping;
     # GET is absorbed, not charged). Folded into the invoice discount so the charge
     # drops; the ledger is debited centrally at payment settle.
-    _sc_apply = _plan_ship_credit(email, int(pc["priced"]["subtotal_cents"]) + int(pc["shipping_cents"]))
+    _sc_apply = _plan_ship_credit(email, int(pc["priced"]["subtotal_cents"]) + int(pc["shipping_cents"])
+                                  - _buyer_priced_priced_cents(pc))   # never pays the month
     # The charge must match the booked receipt: receipt total is subtotal + shipping
     # (via the discount above, which already folds in _sc_apply) so the actual card
     # charge -- and the order's stored total -- must be reduced by _sc_apply too,
@@ -16958,7 +16997,9 @@ def begin_checkout(slug):
         # Referral, coupon and journey records. They name checkout_ref, so on the
         # Zelle / Wise path they run only once the order is saved (review round 1).
         _gift_won = bool(_gift_coupon and _gift_pct >= max(_ref_pct or 0, _self_pct or 0))
-        if not _gift_won:
+        # The month's own page takes no referral discount, so it must not spend the
+        # buyer's one lifetime referral (review round 1).
+        if not _gift_won and not _buyer_price_range(p):
             _record_referral_if_any(_ref_ctx, email, checkout_ref)
         if _self_coupon and _self_pct >= (_ref_pct or 0) and _self_pct > (_gift_pct or 0):
             try:
@@ -21165,7 +21206,27 @@ def _supply_cap_end(cx, email):
             anchor = _supply_naive(created_at)
         if anchor is not None and (latest is None or anchor > latest):
             latest = anchor
-    return latest + timedelta(days=SUPPLY_CAP_DAYS) if latest is not None else None
+    if latest is None:
+        return None
+    # A bought month sits outside the cap (Glen, 2026-11-26): its days stretch the cap,
+    # so a supply grant stacked after it still reaches its full length (round 1).
+    return latest + timedelta(days=SUPPLY_CAP_DAYS + _bought_month_days_active(cx, email))
+
+
+def _bought_month_days_active(cx, email):
+    """Days of bought membership months still running for this email, 0 when none."""
+    try:
+        now = datetime.utcnow()
+        days = 0
+        for (st, en) in cx.execute(
+                "SELECT starts_at, ends_at FROM order_month_grants WHERE lower(email)=lower(?)",
+                (email,)).fetchall():
+            a, b = _supply_naive(st), _supply_naive(en)
+            if a and b and b > now:
+                days += max(0, round((b - a).total_seconds() / 86400))
+        return days
+    except Exception:
+        return 0     # no table yet: no bought months
 
 
 def _supply_prior_end(cx, email, now, exclude_id=None, granted_before=None):
@@ -47911,7 +47972,8 @@ def api_console_dropship_reissue():
         }
         try:
             shipping_cents = int(_price_cart(
-                old.get("items") or [], ship=old.get("address") or {}
+                [_requote_line(it) for it in (old.get("items") or [])],
+                ship=old.get("address") or {}
             )["shipping_cents"])
         except CheckoutError as e:
             return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
@@ -48513,7 +48575,8 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
     # Shipping credit (slice 2b, flag-gated) — same fold as the funnel: auto-apply the
     # customer's ship_credit balance (bounded by net product + shipping) into the
     # invoice discount; the ledger is debited at payment settle.
-    _sc_apply = _plan_ship_credit(email, int(pc["priced"]["subtotal_cents"]) + int(pc["shipping_cents"]))
+    _sc_apply = _plan_ship_credit(email, int(pc["priced"]["subtotal_cents"]) + int(pc["shipping_cents"])
+                                  - _buyer_priced_priced_cents(pc))   # never pays the month
     checkout_ref = checkout_ref or _uuid.uuid4().hex   # stable order key (no QBO invoice yet)
     qbo_payload = {
         "lines": pc["qbo_lines"] + _shipping_line(pc["shipping_cents"]),
@@ -49115,6 +49178,12 @@ def reorder_subscribe():
     if _cart_has_noautoship_bundle(cart):
         return jsonify({"ok": False,
                         "error": "This item is available for one-time purchase only, not autoship."}), 400
+    # A price the buyer chooses never renews: a subscription would charge it every
+    # cycle and no grant hook would ever give the month (review round 1).
+    if any(_buyer_price_range((_PRODUCTS.get("products") or {}).get(
+            ((c or {}).get("slug") or "").strip())) for c in cart if isinstance(c, dict)) \
+            or (body.get("membership_month_cents") not in (None, "", False)):
+        return jsonify({"ok": False, "error": _MONTH_NO_SUBSCRIBE_MESSAGE}), 400
 
     # ── Pricing-engine path (required for subscribe) ──────────────────────────
     if not os.environ.get("PRICING_ENGINE_CHECKOUT", "").strip().lower() in ("1", "true", "yes", "on"):
@@ -65098,8 +65167,8 @@ def _recompute_combined_shipping(cx, sid):
         pass
 
     def _cart(o):
-        return [{"slug": (it.get("slug") or "").strip(), "qty": int(it.get("qty", 1) or 1)}
-                for it in (o.get("items") or []) if (it.get("slug") or "").strip()]
+        return [_requote_line(it) for it in (o.get("items") or [])
+                if (it.get("slug") or "").strip()]
 
     def _ship_of(cart):
         if not cart:
@@ -65641,6 +65710,20 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
                 _mrec["note"] = _mnote   # customer-facing per-line note (rides in items_json)
             items_rec.append(_mrec)
             subtotal_list += t["price_cents"]
+            continue
+        if slug == MEMBERSHIP_MONTH_SLUG:
+            # A bought month on an order being edited keeps its sold price. It is
+            # sold only at checkout, so a new line here is refused (review round 1).
+            _rl = _requote_line(ln)
+            if not _rl.get("price_cents"):
+                raise CheckoutError("A month of membership is sold only at checkout.")
+            _u = int(_rl["price_cents"])
+            cart.append(_rl)
+            items_rec.append({"slug": slug, "name": (_PRODUCTS.get("products") or {})
+                              .get(slug, {}).get("name") or "One Month of Membership",
+                              "qty": 1, "unit_cents": _u, "line_cents": _u,
+                              "issued_unit_cents": _u})
+            subtotal_list += _u
             continue
         p = _invoice_product(slug)
         if not p:
@@ -67310,8 +67393,9 @@ def api_orders_shipping_preview():
             "country": (a.get("country") or "US").upper()}
     # Only real catalog products carry a bottle; membership/unknown slugs are skipped by
     # _price_cart, matching how shipping is computed at create/edit.
-    cart = [{"slug": (l.get("slug") or "").strip(), "qty": l.get("qty"),
-             "format": (l.get("format") or "")}
+    cart = [(_requote_line(l) if (l.get("slug") or "").strip() == MEMBERSHIP_MONTH_SLUG
+             else {"slug": (l.get("slug") or "").strip(), "qty": l.get("qty"),
+                   "format": (l.get("format") or "")})
             for l in lines_in if (l.get("slug") or "").strip()]
     if pickup:
         return jsonify({"ok": True, "shipping_cents": 0, "get_cents": 0, "pickup": True})

@@ -338,3 +338,107 @@ def test_a_bought_month_gets_member_pricing(filecx):
     # A grant-only member is "none" by design and still paid; never "trial".
     assert app.membership_category(EMAIL) != "trial"
     assert app._active_membership_for_email(EMAIL)   # the paid-coaching gate
+
+
+# ---- re-quotes of a stored order (review round 1) --------------------------------------
+
+def _stored():
+    return [{"slug": "nerve-pulse", "qty": 1,
+             "unit_cents": app._PRODUCTS["products"]["nerve-pulse"]["price_cents"]},
+            {"slug": SLUG, "qty": 1, "unit_cents": 2500, "line_cents": 2500}]
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_a_stored_month_requotes_at_its_sold_price(monkeypatch, on):
+    if not on:
+        monkeypatch.delenv("MEMBERSHIP_MONTH_OFFER")
+    pc = app._price_cart([app._requote_line(i) for i in _stored()], ship=SHIP)
+    m = [l for l in pc["priced"]["lines"] if l["slug"] == SLUG][0]
+    assert m["line_total_cents"] == 2500
+    alone = app._price_cart([app._requote_line(_stored()[0])], ship=SHIP)
+    assert pc["shipping_cents"] == alone["shipping_cents"] > 0
+
+
+def test_a_posted_line_cannot_pretend_to_be_stored(monkeypatch):
+    monkeypatch.delenv("MEMBERSHIP_MONTH_OFFER")
+    with pytest.raises(app.CheckoutError):
+        app._price_cart([{"slug": SLUG, "qty": 1, "price_cents": 2500,
+                          "_requote": True}], ship=SHIP)
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_edit_invoice_keeps_the_month(monkeypatch, on):
+    if not on:
+        monkeypatch.delenv("MEMBERSHIP_MONTH_OFFER")
+    import inspect
+    kw = {k: None for k in ("email",)}
+    sig = inspect.signature(app._price_inhouse_invoice)
+    args = {"email": EMAIL, "pickup": False, "ship": SHIP}
+    for name, prm in sig.parameters.items():
+        if prm.kind == prm.KEYWORD_ONLY and prm.default is prm.empty and name not in args:
+            args[name] = None
+    out = app._price_inhouse_invoice(_stored(), **args)
+    recs = out[1] if isinstance(out, tuple) else out.get("items_rec") or out.get("items")
+    m = [r for r in recs if r["slug"] == SLUG][0]
+    assert m["unit_cents"] == 2500 and m["qty"] == 1
+    with pytest.raises(app.CheckoutError, match="sold only at checkout"):
+        app._price_inhouse_invoice([{"slug": SLUG, "qty": 1}], **args)
+
+
+def test_a_subscription_refuses_the_month(monkeypatch):
+    monkeypatch.setenv("PRICING_ENGINE_CHECKOUT", "1")
+    monkeypatch.setattr(app, "_reorder_email_from_cookie", lambda: EMAIL)
+    monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
+    monkeypatch.setattr(app, "_subscriptions_enabled", lambda: True)
+    monkeypatch.setattr(app, "_STRIPE_ACTIVE", True)
+    c = app.app.test_client()
+    for body in ({"items": [{"slug": SLUG, "qty": 1, "price_cents": 100}], "address": SHIP, "cadence_months": 1},
+                 {"items": [{"slug": "nerve-pulse", "qty": 1}], "address": SHIP, "cadence_months": 1,
+                  "membership_month_cents": 100}):
+        r = c.post("/reorder/subscribe", json=body)
+        assert r.status_code == 400 and "one-time purchase" in r.get_json()["error"]
+    src = (__import__("pathlib").Path(app.__file__).resolve().parent / "static" /
+           "begin-buy.html").read_text()
+    fn = src[src.index("function placeSubscription(){"):][:600]
+    assert "MonthAddon.value()" in fn
+
+
+# ---- credits and rewards (review round 1) ----------------------------------------------
+
+def test_the_referrer_earns_nothing_on_the_month(monkeypatch, tmp_path):
+    from dashboard import points, referrals as rf
+    monkeypatch.setattr(app, "_REFERRALS", True)
+    monkeypatch.setattr(app, "_referrer_reward_pct", lambda: 10)
+    monkeypatch.setattr(rf, "redemption_by_order_ref", lambda cx, ref: {
+        "owner_email": "owner@example.test", "referee_email": EMAIL, "kind": "referral"})
+    got = []
+    monkeypatch.setattr(points, "credit", lambda cx, em, **k: got.append(k["value_cents"]))
+    monkeypatch.setattr(app, "REFERRAL_TIER2_ENABLED", False)
+    c = sqlite3.connect(str(tmp_path / "r.db"))
+    order = {"total_cents": 7000 + 5000, "shipping_cents": 0, "get_cents": 0,
+             "items": [{"slug": "nerve-pulse", "qty": 1, "unit_cents": 7000, "line_cents": 7000},
+                       {"slug": SLUG, "qty": 1, "unit_cents": 5000, "line_cents": 5000}]}
+    app._settle_referrer_reward(c, order, "R-1")
+    assert got == [700]
+
+
+def test_shipping_credit_never_pays_the_month():
+    pc = app._price_cart([_line(4000), {"slug": "nerve-pulse", "qty": 1}], ship=SHIP)
+    assert app._buyer_priced_priced_cents(pc) == 4000
+    import inspect
+    src = inspect.getsource(app.begin_checkout) + inspect.getsource(app._checkout_cart)
+    assert src.count("- _buyer_priced_priced_cents(pc)") == 2
+
+
+def test_the_months_own_page_keeps_the_buyers_referral():
+    import inspect
+    src = inspect.getsource(app.begin_checkout)
+    assert "if not _gift_won and not _buyer_price_range(p):" in src
+
+
+def test_every_requote_path_keeps_the_stored_month():
+    # A tripwire, not a behaviour test: combined shipping, the drop-ship reissue and the
+    # invoice quote each build their cart through _requote_line (review round 1).
+    import inspect
+    assert "_requote_line(it)" in inspect.getsource(app._recompute_combined_shipping)
+    assert inspect.getsource(app).count("_requote_line(") >= 5

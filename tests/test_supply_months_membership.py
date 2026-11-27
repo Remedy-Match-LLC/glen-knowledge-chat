@@ -742,3 +742,19 @@ def test_the_waiting_pass_skips_an_order_that_was_refused_as_a_member(cx):
     cx.commit()
     appmod._grant_membership_line_dep(_biofield(cx, ref="BF-NEW"))
     assert _grant_row(cx, "INH-MEM") is None
+
+
+def test_a_bought_month_does_not_use_up_the_cap(cx):
+    # Glen 2026-11-26: "a bought month adds 30 days after any current term, outside
+    # the cap". Biofield today caps supply at day 90; one month adds 30 to the cap.
+    _biofield(cx)
+    first = _order(cx, "INH-A", REMEDY, months=1)
+    assert appmod._grant_supply_membership_on_paid(cx, first) == "granted"
+    month = {"id": 99, "external_ref": "BM-1", "email": EMAIL, "status": "paid",
+             "items": [{"slug": appmod.MEMBERSHIP_MONTH_SLUG, "qty": 1, "unit_cents": 500}]}
+    assert appmod._grant_bought_month_on_paid(cx, month) == "granted"
+    cx.commit()
+    second = _order(cx, "INH-B", REMEDY, months=2)
+    appmod._grant_supply_membership_on_paid(cx, second)
+    end = _expiry(cx, _grant_row(cx, "INH-B")["membership_id"])
+    assert abs(_days_from_now(end) - 120) < 1
