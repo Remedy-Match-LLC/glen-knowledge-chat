@@ -16,13 +16,19 @@ from datetime import date
 
 from dashboard.invoice_pdf import FONT_DIR, FOOT, GOLD, GREEN, GREY, INK, LOGO, RULE, clean
 
-# Header details: confirm with Glen. Our company block and the default "Ship to".
+# Glen, platform tab, 2026-11-26: "yes, PO Box header with Wailuku ship-to". The header
+# is the mailing address FileMaker's POs used; goods are delivered to the building.
 # Never put any other phone number here.
 PO_COMPANY = {
     "name": "Remedy Match LLC",
     "address_lines": ["PO Box 126", "Hilo, HI 96721"],
     "phone": "(808) 217-9647",
     "email": "support@remedymatch.com",
+}
+PO_SHIP_TO = {
+    "name": "Remedy Match LLC",
+    "address_lines": ["351 Wailuku Drive", "Hilo, Hawaiʻi 96720"],
+    "phone": "(808) 217-9647",
 }
 
 # Qty, Description, Unit cost, Amount, in mm across a Letter page's body.
@@ -118,11 +124,11 @@ def _company_lines(company):
 
 
 def render_po_pdf(po, items, supplier=None, company=None, ship_to=None) -> bytes:
-    """One purchase order as PDF bytes. `ship_to` defaults to the company block."""
+    """One purchase order as PDF bytes. `ship_to` defaults to the Wailuku Drive building."""
     from fpdf import FPDF
 
     company = company or PO_COMPANY
-    ship_to = ship_to or company
+    ship_to = ship_to or PO_SHIP_TO
     items = list(items or [])
 
     pdf = FPDF(format="Letter", unit="mm")

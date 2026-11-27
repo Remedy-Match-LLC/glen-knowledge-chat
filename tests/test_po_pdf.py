@@ -287,3 +287,18 @@ def test_console_has_make_pdf_and_new_po_form():
     html = (Path(__file__).resolve().parents[1] / "static" / "admin-ingredients.html").read_text()
     assert 'onclick="makePoPdf()"' in html and '"/api/po/" + id + "/pdf"' in html
     assert 'id="new-po-form"' in html and 'api("/api/po", {' in html
+
+
+def test_header_is_the_po_box_and_goods_ship_to_wailuku_drive():
+    # Glen, platform tab, 2026-11-26: "yes, PO Box header with Wailuku ship-to".
+    from dashboard import po_pdf
+    po_row = {"po_number": 1120, "supplier_name": "Lonza", "po_date": "2026-11-26"}
+    t = _text(po_pdf.render_po_pdf(po_row, [{"item_label": "Pullulan 00", "qty": 1,
+                                              "cost": 1}]))
+    head, _, ship = t.partition("Ship to")
+    assert "PO Box 126" in head and "Hilo, HI 96721" in head
+    assert "support@remedymatch.com" in head.lower()
+    assert "351 Wailuku Drive" in ship and "96720" in ship
+    assert "PO Box" not in ship
+    assert t.count("(808) 217-9647") >= 1
+    assert "Wailuku" not in head
