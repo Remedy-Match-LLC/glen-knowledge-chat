@@ -4804,6 +4804,48 @@ _CODED_PREFERENCE_LINE = "Immune Modulation is Dr. Glen's current preference: {u
 _CODED_PRODUCT_PAGE_LINE = "Product page: {url}"
 _CODED_DIRECTIONS_LINE = "Directions: {directions}"
 _CODED_CTA_LABEL = "See {name}"
+# Review rounds 1 and 3: code writes the reply only for a plain question. A question that
+# also names a never-recommended product the matcher skips, asks about price or buying,
+# or states a situation (a child, a pet, a medicine, pregnancy, a reaction, an overdose)
+# goes on to the model path with its rules, as before. So does a question whose caution
+# subject, label line or do-not-use situation has its own handling.
+_CODED_OTHER_NAMES = re.compile(
+    r"aller[\s\-\u2010-\u2015]*free\s+aid|mineral\s+manna|food[\s\-]*tolerance|fungifuge",
+    re.I)
+_CODED_NOT_DOSE = re.compile(r"\b(?:cost|costs|price|prices|buy|order|purchase|ship|"
+                             r"shipping|refund|discount|coupon)\b", re.I)
+_CODED_SITUATION = re.compile(
+    r"\bmy\s+(?:son|daughter|child|children|kids?|baby|toddler|teen\w*|dog|cat|pet|"
+    r"husband|wife|partner|mother|father|mom|dad|mum)\b|\b\d+\s*(?:years?|yrs?|months?)"
+    r"[\s\-]*old\b|\b(?:with|while|took|overdos\w*|too\s+much|dangerous|safe|safety|"
+    r"side[\s\-]+effects?|reactions?|swell\w*|swollen|rash|hives|medicat\w*|medicines?|"
+    r"prescri\w*|drugs?|pills?|taper\w*|pregnan\w*|breast[\s\-]*feed\w*|nursing|"
+    r"lactat\w*|surgery|doctor|allergic|child|children|kids?|baby|infant|pet|dog|cat)\b",
+    re.I)
+
+
+def _coded_question_is_plain(query_text: str, prior_user_turns=None) -> bool:
+    """True when no situation, price question or skipped product name is in this message
+    or an earlier user turn, and no do-not-use reply applies. Fails closed to False."""
+    try:
+        turns = [str(query_text or "")] + [t for t in (prior_user_turns or [])
+                                           if isinstance(t, str)]
+        words = {w for _s, visitor, _i in _DO_NOT_USE_SITUATIONS for w in visitor}
+        words |= {w for ws in _CAUTION_SUBJECT_WORDS.values() for w in ws}
+        for t in turns:
+            if _CODED_OTHER_NAMES.search(t) or _CODED_SITUATION.search(t):
+                return False
+            padded = _subject_text(t)
+            if any(w in padded for w in words):
+                return False
+        if _CODED_NOT_DOSE.search(str(query_text or "")):
+            return False
+        if _do_not_use_caution_reply(query_text, prior_user_turns):
+            return False
+        return True
+    except Exception as e:
+        print(f"[chat] coded reply check skipped: {e!r}", flush=True)
+        return False
 
 
 def _coded_name(pr, slug) -> str:
@@ -4817,7 +4859,7 @@ def _coded_directions_reply(query_text: str, prior_user_turns=None, opening=None
     try:
         if opening is None:
             opening = _directions_only_opening(query_text, prior_user_turns)
-        if not opening:
+        if not opening or not _coded_question_is_plain(query_text, prior_user_turns):
             return ""
         products = (_PRODUCTS or {}).get("products", {}) or {}
         lines = [opening, _CODED_PAGE_LINE.format(
@@ -4838,7 +4880,7 @@ def _coded_description(pr) -> str:
     if "description" not in _pinned_copy(pr):
         return ""
     desc = _PRICE_SENTENCE.sub("", html.unescape(str(pr.get("description") or "")))
-    warn = str(pr.get("warning") or "").strip()
+    warn = html.unescape(str(pr.get("warning") or "")).strip()
     if warn:
         desc = desc.replace(f"Caution: {warn}", " ").replace(warn, " ")
     paras = [re.sub(r"[ \t]+", " ", x).strip() for x in re.split(r"\n\s*\n", desc)]
@@ -4859,6 +4901,15 @@ def _coded_compare_reply(query_text: str, prior_user_turns=None, cautions=None) 
         slugs = _compare_caution_slugs(query_text, prior_user_turns)
         products = (_PRODUCTS or {}).get("products", {}) or {}
         if len(slugs) != len(cautions):
+            return ""
+        # Every product the question names is in the reply (review round 1), and a
+        # question with its own caution lines keeps them (round 3).
+        asked = _carried_query(query_text, prior_user_turns)
+        if set(_named_product_spans(asked, products)) != set(slugs):
+            return ""
+        if (_caution_subjects_asked(query_text, prior_user_turns)
+                or _not_on_label_lines(query_text) or _label_caffeine_lines(query_text)
+                or not _coded_question_is_plain(query_text, prior_user_turns)):
             return ""
         out = []
         for slug, (name, _warn, para) in zip(slugs, cautions):
@@ -4883,19 +4934,20 @@ def _coded_compare_reply(query_text: str, prior_user_turns=None, cautions=None) 
 
 def _coded_reply(query_text: str, prior_user_turns=None, opening=None, cautions=None):
     """(reply, cta) when code writes the whole reply (_coded_directions_reply, then
-    _coded_compare_reply), else ("", None). The AllerFree reply's button opens its page."""
-    reply = _coded_directions_reply(query_text, prior_user_turns, opening=opening)
-    if reply:
-        try:
+    _coded_compare_reply), else ("", None). The AllerFree reply's button opens its page;
+    if the button cannot be built, the model path answers instead (review round 2)."""
+    try:
+        reply = _coded_directions_reply(query_text, prior_user_turns, opening=opening)
+        if reply:
             products = (_PRODUCTS or {}).get("products", {}) or {}
             slug = _NAMED_DIRECTIONS_ONLY[0]
             return reply, {"type": "page", "target": _catalog_page_url(slug),
                            "label": _CODED_CTA_LABEL.format(
                                name=_coded_name(products.get(slug), slug))}
-        except Exception as e:
-            print(f"[chat] coded reply button skipped: {e!r}", flush=True)
-            return reply, None
-    return _coded_compare_reply(query_text, prior_user_turns, cautions=cautions), None
+        return _coded_compare_reply(query_text, prior_user_turns, cautions=cautions), None
+    except Exception as e:
+        print(f"[chat] coded reply skipped: {e!r}", flush=True)
+        return "", None
 
 # In place of the usual answer structure when a passage from one of Glen's clinical
 # protocols is in the sources. Knowledge's check on 2026-11-05 (chats 2709-2711, the
@@ -9220,7 +9272,7 @@ def chat():
         next_question = ""
         try:
             # A model-written follow-up would be commentary before the Terms.
-            nq_msg = None if _pre_terms_caution else _cl.messages.create(
+            nq_msg = None if (_pre_terms_caution or _coded) else _cl.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=80,
                 system="Generate a single Socratic follow-up question for a healing wisdom chatbot. Output only the question, nothing else.",
