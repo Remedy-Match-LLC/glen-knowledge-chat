@@ -40,7 +40,36 @@ def test_the_label_maximum_is_read_only_when_certain(d, most):
     ("How do I take Nerve Repair?", None),
 ])
 def test_the_verdict(q, verdict):
-    assert app._amount_verdict(q, NR) == verdict
+    assert app._amount_verdict(q, NR, "Nerve Repair") == verdict
+
+
+@pytest.mark.parametrize("q", [
+    "How do I take B17 Syntropy?",
+    "Can I take 1 Thermogenesis 30 minutes before meals?",
+    "Can I take Nerve Repair for 30 days?",
+    "Should I take Nerve Repair with 8 oz of water?",
+    "I'm 70. Can I take Nerve Repair?",
+    "Can I take Nerve Repair with 400 mg magnesium?",
+])
+def test_a_number_that_is_not_a_capsule_count_is_not_read(q):
+    assert app._asked_amount(q, "Nerve Repair") is None or \
+        app._asked_amount(q, "Nerve Repair")[0] <= 1
+
+
+def test_b17_never_reads_as_17():
+    assert app._asked_amount("How do I take B17 Syntropy?", "B17 Syntropy") is None
+
+
+def test_a_count_belongs_only_to_the_product_it_sits_beside():
+    q = "Can I take 3 Nerve Repair and Moisturize a day?"
+    assert app._asked_amount(q, "Nerve Repair") == (3, True)
+    assert app._asked_amount(q, "Moisturize") is None
+
+
+def test_a_follow_up_is_checked_on_its_own_words():
+    block = app.named_product_facts_block(
+        "How do I take it?", prior_user_turns=["Can I take 10 Nerve Repair a day?"])
+    assert "is MORE than these Directions allow" not in block
 
 
 def test_the_facts_block_says_10_is_over_and_never_within():
@@ -65,3 +94,8 @@ def test_code_never_certifies_within():
 def test_a_named_pregnancy_never_gets_within():
     block = app.named_product_facts_block("I am pregnant. Can I take 2 Thermogenesis a day?")
     assert 'say "That is within the Directions."' not in block
+
+
+def test_a_number_inside_a_word_is_not_a_count():
+    # "B12 capsules" must not read as 12 capsules.
+    assert app._asked_amount("Can I take Nerve Repair with B12 capsules?", "Nerve Repair") is None

@@ -3057,29 +3057,42 @@ def _directions_most(directions: str):
         return None
 
 
-def _asked_amount(query_text: str):
-    """(number, per_day) the user asks about: "10 a day" gives (10, True), "3 Nerve
-    Repair" gives (3, False). None when no single number is asked."""
+def _asked_amount(query_text: str, name: str = ""):
+    """(number, per_day) for a capsule count the user asks about, or None. Round 1: a
+    number counts only when a capsule word or the product's own name follows it within
+    three words, or "a day"/"daily"/"at once" follows it at once. So "B17", "30 minutes",
+    "8 oz", "I'm 70" and "400 mg" are not read, and in "3 Nerve Repair and Moisturize"
+    the 3 belongs to Nerve Repair alone. Two different counts give None."""
     q = html.unescape(str(query_text or "")).lower()
     q = re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b",
                lambda m: str(_DOSE_NUM_WORDS[m.group(1)]), q)
-    nums = re.findall(r"(?<![\d.$])(\d{1,3})(?![\d.%])", q)
-    if len(set(nums)) != 1:
+    first = ""
+    for w in re.findall(r"[a-z0-9]+", html.unescape(str(name or "")).lower()):
+        if len(w) >= 3 and not w.isdigit():
+            first = w
+            break
+    follow = _DOSE_UNIT + (r"|" + re.escape(first) if first else "")
+    found = set()
+    for m in re.finditer(r"(?<![\w.$/])(\d{1,3})(?![\w.%/])", q):
+        rest = q[m.end():]
+        if re.match(r"\s+(?:[\w'\-]+\s+){0,2}?(?:" + follow + r")\b", rest) or \
+           re.match(r"\s+(?:a day|per day|daily|at once|at a time)\b", rest):
+            found.add(int(m.group(1)))
+    if len(found) != 1:
         return None
-    n = int(nums[0])
-    per_day = bool(re.search(r"\b" + nums[0] + r"\b(?:\s+[\w'\-]+){0,6}?\s+"
-                             r"(?:a|per|each|every)\s+day\b|\b" + nums[0]
-                             + r"\b(?:\s+[\w'\-]+){0,6}?\s+daily\b", q))
+    n = found.pop()
+    per_day = bool(re.search(r"(?<![\w.$/])" + str(n) + r"(?![\w.%/])(?:\s+[\w'\-]+)"
+                             r"{0,6}?\s+(?:(?:a|per|each|every)\s+day|daily)\b", q))
     return n, per_day
 
 
-def _amount_verdict(query_text: str, directions: str):
+def _amount_verdict(query_text: str, directions: str, name: str = ""):
     """("over", asked, most per day) when code is sure the number asked is more than the
     label allows in a day, else None. Code never certifies an amount as within: round 2
     found schedules, units and other directions a number check cannot see, so only
     "more than the label" is safe to state."""
     most = _directions_most(directions)
-    asked = _asked_amount(query_text)
+    asked = _asked_amount(query_text, name)
     if not most or not asked:
         return None
     n, _per_day = asked
@@ -3089,7 +3102,7 @@ def _amount_verdict(query_text: str, directions: str):
 
 
 def _as_guided_rule_for(name: str, query_text: str, directions: str) -> str:
-    v = _amount_verdict(query_text, directions)
+    v = _amount_verdict(query_text, directions, name)
     if v and v[0] == "over":
         return _AS_GUIDED_HEAD.format(name=name) + _AS_GUIDED_OVER.format(
             asked=v[1], most=v[2])
@@ -3290,7 +3303,7 @@ _UMBRELLA_ROW = re.compile(
 
 def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
                          no_caution_out=None, link_cautions=(), long_form=False,
-                         caution_out=None, quote_cautions=False) -> str:
+                         caution_out=None, quote_cautions=False, amount_text=None) -> str:
     """Approved store text for the catalog products the user names in the question.
 
     The chat does not search `specific-formulations`, so a product whose facts live
@@ -3429,7 +3442,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
             # #2338: "1 capsule up to 3 times daily with food, taken one week on, then one
             # week off" dropped it.
             if "or as guided" in val:
-                parts.append(_as_guided_rule_for(name, query_text, val))
+                parts.append(_as_guided_rule_for(
+                    name, query_text if amount_text is None else amount_text, val))
         _note = (product.get("panel_note") or "").strip()
         if (pinned and slug in _PANEL_NOTE_FACTS and _note
                 and "ingredients" in _pinned_copy(product)):
@@ -3739,7 +3753,7 @@ def named_product_facts_block(query_text: str, gated: bool = False,
     as label information (Glen, 2026-10-09). `prior_user_turns` lets a short follow-up
     with no product name carry the product the previous question named."""
     carried = _carried_query(query_text, prior_user_turns)
-    facts = _named_product_facts(carried, gated,
+    facts = _named_product_facts(carried, gated, amount_text=query_text,
                                  link_cautions=_caution_link_slugs(query_text, prior_user_turns),
                                  long_form=long_form, quote_cautions=member)
     if facts and carried != query_text:
