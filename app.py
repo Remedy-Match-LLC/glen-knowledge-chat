@@ -4687,6 +4687,111 @@ def _directions_only_block(query_text: str, prior_user_turns=None, opening=None)
         return ""
 
 
+# Knowledge read-back, 2026-11-26: "What is the difference between Nerve Pulse and Nerve
+# Repair?" carried both cautions in its facts block, and the answer gave neither. It also
+# said Nerve Repair "rebuilds nerve tissue", that Nerve Pulse is "ideal for numbness,
+# tingling" and that "many practitioners recommend starting with both". No approved text
+# says any of that. Glen "yes, fix the comparison answer" (platform tab): when a question
+# names two or more products that carry a caution, code writes each caution after the
+# answer, and the answer gets the direct style and the no-added-claims rule.
+_COMPARE_ANSWER_RULES = (
+    "MORE THAN ONE PRODUCT WITH A CAUTION. The question names {names}. Answer "
+    "directly{brief}. Skip any consensus, mainstream-view, limitation or hidden-assumption "
+    "structure. Describe each product only by what its own PRODUCT FACTS text above says, "
+    "or a snippet that names that product. Never carry a claim from one product to the "
+    "other. Add no use, condition, symptom, mechanism, benefit or result that this product "
+    "text or that snippet does not state in its own words. Never say who a product is "
+    "ideal or best for, never say anyone recommends taking them together, and never "
+    "suggest taking them together, unless that text says so. If a product's text does not "
+    "answer part of the question, say that its product page does not cover that. Every "
+    "instruction above to copy, repeat or give a caution is replaced here, including the "
+    "Caution reminder. Write no caution paragraph and no line starting \"Caution for\". "
+    "Code adds each caution after your answer, word for word. This changes only where the "
+    "caution text goes: keep any instruction to open with a sentence about a caution.\n\n")
+
+
+def _compare_caution_slugs(query_text: str, prior_user_turns=None) -> list:
+    """The products this message names that carry an opted-in caution, in the order the
+    question names them, when there are two or more. Empty otherwise. Fails open to none,
+    so the answer goes on as before."""
+    try:
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        if not query_text or not products:
+            return []
+        asked = _carried_query(query_text, prior_user_turns)
+        given = set()
+        _named_product_facts(asked, given_out=given)
+        spans = _named_product_spans(asked, products)
+        out = [k for k in given if k in spans
+               and (products.get(k) or {}).get("chat_caution")
+               and ((products.get(k) or {}).get("warning") or "").strip()]
+        if len(out) < 2:
+            return []
+        return sorted(out, key=lambda k: ((spans.get(k) or (10 ** 9,))[0], k))
+    except Exception as e:
+        print(f"[chat] comparison cautions skipped: {e!r}", flush=True)
+        return []
+
+
+def _compare_cautions(query_text: str, prior_user_turns=None) -> list:
+    """(name, warning, paragraph) for each product _compare_caution_slugs finds: the
+    paragraph is the lead line, then the record's warning verbatim
+    (_verbatim_caution_paras). Built before the model is called, so the rule that tells
+    it to leave the cautions out is given only when they are ready (review round 2).
+    Empty when fewer than two, or on any failure."""
+    try:
+        slugs = _compare_caution_slugs(query_text, prior_user_turns)
+        if not slugs:
+            return []
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        paras = dict(_verbatim_caution_paras(query_text, prior_user_turns, slugs=slugs))
+        out = []
+        for slug in slugs:
+            pr = products.get(slug) or {}
+            warn = str(pr.get("warning") or "").strip()
+            if not warn or not paras.get(slug):
+                return []
+            out.append((html.unescape(str(pr.get("name") or slug)).strip(), warn,
+                        paras[slug]))
+        return out if len(out) >= 2 else []
+    except Exception as e:
+        print(f"[chat] comparison cautions skipped: {e!r}", flush=True)
+        return []
+
+
+def _compare_answer_rules(query_text: str, prior_user_turns=None, cautions=None,
+                          long_form=False) -> str:
+    """_COMPARE_ANSWER_RULES with the product names, or "" (_compare_cautions). The long
+    form keeps its length (review round 1)."""
+    try:
+        if cautions is None:
+            cautions = _compare_cautions(query_text, prior_user_turns)
+        if not cautions:
+            return ""
+        names = [n for n, _w, _p in cautions]
+        return _COMPARE_ANSWER_RULES.format(
+            names=", ".join(names[:-1]) + " and " + names[-1],
+            brief="" if long_form else " and briefly")
+    except Exception as e:
+        print(f"[chat] comparison rule skipped: {e!r}", flush=True)
+        return ""
+
+
+def _compare_caution_tail(query_text: str, answer_text: str, prior_user_turns=None,
+                          cautions=None) -> str:
+    """The cautions code adds after an answer about two or more caution products, each
+    with a blank line before (_compare_cautions). A caution the answer already holds word
+    for word is not repeated. "" otherwise."""
+    try:
+        if cautions is None:
+            cautions = _compare_cautions(query_text, prior_user_turns)
+        have = " ".join(str(answer_text or "").split())
+        paras = [p for _n, w, p in cautions if " ".join(w.split()) not in have]
+        return ("\n\n" + "\n\n".join(paras)) if paras else ""
+    except Exception as e:
+        print(f"[chat] comparison caution tail skipped: {e!r}", flush=True)
+        return ""
+
 # In place of the usual answer structure when a passage from one of Glen's clinical
 # protocols is in the sources. Knowledge's check on 2026-11-05 (chats 2709-2711, the
 # earthing protocol): the consensus / limitation / assumption beats were filled with
@@ -8839,6 +8944,8 @@ def chat():
         # AllerFree dose question: code writes the Directions sentence first (Glen, "yes,
         # fix the AllerFree directions", 2026-11-26).
         _dir_open = _directions_only_opening(query, _prior_user)
+        # Two or more caution products: built before the model call (review round 2).
+        _compare = _compare_cautions(query, _prior_user)
         messages.append({"role": "user", "content":
             f"USER QUESTION: {query}\n\n"
             f"{attachment_context}"
@@ -8848,6 +8955,8 @@ def chat():
             f"{named_product_facts_block(query, prior_user_turns=_prior_user, member=_tos_member)}"
             f"{_approved_wording_reminder(context_str)}"
             f"{_directions_only_block(query, _prior_user, opening=_dir_open)}"
+            f"{_compare_answer_rules(query, _prior_user, cautions=_compare,
+                                     long_form=mode == 'full')}"
         })
 
         # ── Consent gate (Tier-0 Visitor → Tier-1 Member) ────────────────────
@@ -8913,6 +9022,13 @@ def chat():
             yield sse({"error": f"Claude error: {e}"})
             return
 
+        # Two or more caution products: code writes each caution after the answer (Glen,
+        # "yes, fix the comparison answer", 2026-11-26). A code-written reply has its own.
+        _compare_tail = "" if _pre_terms_caution else _compare_caution_tail(
+            query, "".join(full_answer), _prior_user, cautions=_compare)
+        if _compare_tail:
+            yield sse({"token": _compare_tail})
+
         # Upgrade nudge when the registered ceiling was hit and we downgraded
         # to brief — render as a trailing italic line before the done event.
         if _ceiling_hit:
@@ -8923,6 +9039,7 @@ def chat():
         except Exception:
             _clean, _cta = "".join(full_answer), None
         _clean = _store_links_text(_clean)  # log and downstream use what the client saw
+        _clean += _compare_tail
         # A question that touches a caution ends with the link that opens it (Glen,
         # 2026-10-24). It replaces the model's button: the answer only points to it.
         _caution_ctas = []
@@ -18551,6 +18668,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
                        + (_protocol_synth_instr(sources_list, long_form=True)
                           or _long_form_synth_instr(is_logged_in))))
     _dir_open = _directions_only_opening(query, _prior_user)
+    _compare = _compare_cautions(query, _prior_user)
     user_msg = (
         f"USER QUESTION: {query}\n\n"
         f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
@@ -18559,6 +18677,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"{named_product_facts_block(query, prior_user_turns=_prior_user, long_form=True)}"
         f"{_approved_wording_reminder(context_str)}"
         f"{_directions_only_block(query, _prior_user, opening=_dir_open)}"
+        f"{_compare_answer_rules(query, _prior_user, cautions=_compare, long_form=True)}"
     )
 
     answer = ""
@@ -18572,6 +18691,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         answer = msg.content[0].text
     if _dir_open:
         answer = _dir_open + "\n\n" + answer
+    answer += _compare_caution_tail(query, answer, _prior_user, cautions=_compare)
     return (answer, sources_list, len(matches))
 
 
@@ -18761,6 +18881,7 @@ def _full_report_stream(log_id, query, level, session_id,
                            + (_protocol_synth_instr(sources_list, long_form=True)
                               or _long_form_synth_instr(is_logged_in))))
         _dir_open = _directions_only_opening(query, _prior_user)
+        _compare = _compare_cautions(query, _prior_user)
         user_msg = (
             f"USER QUESTION: {query}\n\n"
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
@@ -18769,6 +18890,8 @@ def _full_report_stream(log_id, query, level, session_id,
             f"{named_product_facts_block(query, prior_user_turns=_prior_user, long_form=True)}"
             f"{_approved_wording_reminder(context_str)}"
             f"{_directions_only_block(query, _prior_user, opening=_dir_open)}"
+            f"{_compare_answer_rules(query, _prior_user, cautions=_compare,
+                                     long_form=True)}"
         )
 
         if _dir_open:
@@ -18780,11 +18903,16 @@ def _full_report_stream(log_id, query, level, session_id,
                 system=get_system_prompt(level),
                 messages=[{"role": "user", "content": user_msg}],
             ) as stream:
+                _said = []
                 for delta in _store_links_stream(stream.text_stream):
+                    _said.append(delta)
                     yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"})
             return
+        _tail = _compare_caution_tail(query, "".join(_said), _prior_user, cautions=_compare)
+        if _tail:
+            yield sse({"token": _tail})
 
         yield sse({"done": True, "sources": sources_list,
                    "chunks_retrieved": len(matches), "log_id": log_id,
