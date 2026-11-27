@@ -4588,6 +4588,105 @@ def _caution_synth_instr(query_text: str, prior_user_turns=None, long_form=False
 
 
 
+# Production read-back, 2026-11-26: "How do I take Aller-Free HomeoEnergetic Drops?" gave
+# the approved Directions word for word in 1 of 8 answers. Others dropped "or as guided",
+# told the client to open a capsule of another formula and succuss it, doubled the dose,
+# or suggested Living Water. AllerFree is never recommended (DO_NOT_RECOMMEND), so it gets
+# no facts block and the answer was built from snippets. Glen, platform tab: "yes, fix the
+# AllerFree directions". When a client names it, the answer gets its Directions only, and
+# it is still never suggested to anyone who did not name it.
+_NAMED_DIRECTIONS_ONLY = ("allerfree-homeoenergetic-drops",)
+_ALLERFREE_NAME = re.compile(r"(?<![\w])aller[\s\-\u2010-\u2015]*free(?![\w])", re.I)
+_DOSE_ASK = re.compile(
+    r"\b(?:how\s+(?:do|should|would|can|could|often|much|many|long)\s+"
+    r"(?!.*\b(?:work|differ|compare))|how\s+to\s+(?:take|use)|when\s+(?:do|should|can|to)\b|doses?\b"
+    r"|dosage|dosing|directions?\b|how\s+many\s+drops|drops?\s+(?:a|per|each)\b"
+    r"|times\s+(?:a|per)\s+day|per\s+day|daily|at\s+once|take\s+(?:it|them|this)\b"
+    r"|use\s+(?:it|them|this)\b|taken\b)", re.I)
+# Review round 3 (and production-88): keep the system prompt's AllerFree rule, which gives
+# its page link and lets the answer say Immune Modulation is Glen's current preference.
+_DIRECTIONS_ONLY_RULES = (
+    "DIRECTIONS ONLY: {name}. The user named this product. Its approved dose text is its "
+    "Directions: \"{directions}\" {opening}{repeat} Add no other sentence on how to take "
+    "it: no dilution, no succussion, no opening a capsule, no water, no doubling, no timing "
+    "or amount of your own, even where a snippet gives one, and do not tell the client to "
+    "adjust the dose to how they feel. Name no water, device or formula, and no product "
+    "except one the user named and \"Immune Modulation\", which you may name once as Glen's "
+    "current preference. "
+    "Add no claim about side effects, safety, absorption or how it works. You may say what "
+    "it is in the words of its product page, and give its product page link. Do not say it "
+    "suits or helps any condition, and do not recommend it. This replaces any snippet about "
+    "how to take it.\n\n")
+_DIRECTIONS_ONLY_OPENED = (
+    "Your answer already opens with this sentence, written for you: \"{sentence}\" Do not "
+    "write it again. Continue after it. ")
+
+
+def _directions_only_record(query_text: str, prior_user_turns=None):
+    """(name, directions, direct) for the never-recommended product the user names
+    (_NAMED_DIRECTIONS_ONLY), or None. A follow-up with no product name ("How do I take
+    it?") carries it from the previous user turn; `direct` is False then, and also when
+    the question names another product too (review round 1)."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    q = str(query_text or "")
+    named = bool(_ALLERFREE_NAME.search(q))
+    others = bool(_named_product_spans(q, products))
+    direct = named and not others
+    if not named and prior_user_turns and not others and _is_follow_up(q):
+        turns = [t for t in prior_user_turns if isinstance(t, str) and t.strip()]
+        named = bool(turns) and bool(_ALLERFREE_NAME.search(turns[-1]))
+    if not named:
+        return None
+    pr = products.get(_NAMED_DIRECTIONS_ONLY[0]) or {}
+    name = html.unescape(str(pr.get("name") or "")).replace("\u2122", "").strip()
+    directions = " ".join(html.unescape(str(pr.get("directions") or "")).split())
+    if not name or not directions or pr.get("inactive"):
+        return None
+    return name, directions, direct
+
+
+def _directions_only_opening(query_text: str, prior_user_turns=None) -> str:
+    """The sentence code writes at the top of a dose answer about that product: "The label
+    directions for <name> are: <Directions>". "" otherwise, or on any failure. Code writes
+    it because a rule alone held 1 of 8 (review round 2)."""
+    try:
+        rec = _directions_only_record(query_text, prior_user_turns)
+        # Only when this message names it and no other product: a carried follow-up may
+        # be about something else, so it gets the rule without a code-written sentence.
+        if not rec or not rec[2] or not _DOSE_ASK.search(str(query_text or "")):
+            return ""
+        return f"The label directions for {rec[0]} are: {rec[1]}"
+    except Exception as e:
+        print(f"[chat] directions-only opening skipped: {e!r}", flush=True)
+        return ""
+
+
+def _directions_only_block(query_text: str, prior_user_turns=None, opening=None) -> str:
+    """The Directions-only rule for that product, or "". `opening` is the sentence code
+    already wrote (_directions_only_opening); the rule tells the model not to repeat it.
+    Fails open to ""."""
+    try:
+        rec = _directions_only_record(query_text, prior_user_turns)
+        if not rec:
+            return ""
+        name, directions, _direct = rec
+        if opening is None:
+            opening = _directions_only_opening(query_text, prior_user_turns)
+        # Keep "or as guided" only while the Directions carry it (review round 2).
+        keep = (', keeping "or as guided"' if "or as guided" in directions.lower() else "")
+        # Round 3: once code wrote the Directions, the model states them no second time.
+        repeat = ("Do not state the Directions again or say anything else about how to "
+                  "take it." if opening else
+                  "Give these Directions word for word whenever you say how to take it"
+                  + keep + ".")
+        return _DIRECTIONS_ONLY_RULES.format(
+            name=name, directions=directions, repeat=repeat,
+            opening=_DIRECTIONS_ONLY_OPENED.format(sentence=opening) if opening else "")
+    except Exception as e:
+        print(f"[chat] directions-only block skipped: {e!r}", flush=True)
+        return ""
+
+
 # Knowledge read-back, 2026-11-26: "What is the difference between Nerve Pulse and Nerve
 # Repair?" carried both cautions in its facts block, and the answer gave neither. It also
 # said Nerve Repair "rebuilds nerve tissue", that Nerve Pulse is "ideal for numbness,
@@ -8842,6 +8941,9 @@ def chat():
         )
         product_block = f"{product_directive}\n\n" if product_directive else ""
 
+        # AllerFree dose question: code writes the Directions sentence first (Glen, "yes,
+        # fix the AllerFree directions", 2026-11-26).
+        _dir_open = _directions_only_opening(query, _prior_user)
         # Two or more caution products: built before the model call (review round 2).
         _compare = _compare_cautions(query, _prior_user)
         messages.append({"role": "user", "content":
@@ -8852,6 +8954,7 @@ def chat():
             f"{synth_instr}"
             f"{named_product_facts_block(query, prior_user_turns=_prior_user, member=_tos_member)}"
             f"{_approved_wording_reminder(context_str)}"
+            f"{_directions_only_block(query, _prior_user, opening=_dir_open)}"
             f"{_compare_answer_rules(query, _prior_user, cautions=_compare,
                                      long_form=mode == 'full')}"
         })
@@ -8900,6 +9003,9 @@ def chat():
                     full_answer.append(_pre_terms_caution)
                     yield _pre_terms_caution
                     return
+                if _dir_open:
+                    full_answer.append(_dir_open + "\n\n")
+                    yield _dir_open + "\n\n"
                 with _cl.messages.stream(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=max_tok,
@@ -18561,6 +18667,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
                    or (_opening_instr(query)
                        + (_protocol_synth_instr(sources_list, long_form=True)
                           or _long_form_synth_instr(is_logged_in))))
+    _dir_open = _directions_only_opening(query, _prior_user)
     _compare = _compare_cautions(query, _prior_user)
     user_msg = (
         f"USER QUESTION: {query}\n\n"
@@ -18569,6 +18676,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"{synth_instr}"
         f"{named_product_facts_block(query, prior_user_turns=_prior_user, long_form=True)}"
         f"{_approved_wording_reminder(context_str)}"
+        f"{_directions_only_block(query, _prior_user, opening=_dir_open)}"
         f"{_compare_answer_rules(query, _prior_user, cautions=_compare, long_form=True)}"
     )
 
@@ -18581,6 +18689,8 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
     )
     if msg.content:
         answer = msg.content[0].text
+    if _dir_open:
+        answer = _dir_open + "\n\n" + answer
     answer += _compare_caution_tail(query, answer, _prior_user, cautions=_compare)
     return (answer, sources_list, len(matches))
 
@@ -18770,6 +18880,7 @@ def _full_report_stream(log_id, query, level, session_id,
                        or (_opening_instr(query)
                            + (_protocol_synth_instr(sources_list, long_form=True)
                               or _long_form_synth_instr(is_logged_in))))
+        _dir_open = _directions_only_opening(query, _prior_user)
         _compare = _compare_cautions(query, _prior_user)
         user_msg = (
             f"USER QUESTION: {query}\n\n"
@@ -18778,10 +18889,13 @@ def _full_report_stream(log_id, query, level, session_id,
             f"{synth_instr}"
             f"{named_product_facts_block(query, prior_user_turns=_prior_user, long_form=True)}"
             f"{_approved_wording_reminder(context_str)}"
+            f"{_directions_only_block(query, _prior_user, opening=_dir_open)}"
             f"{_compare_answer_rules(query, _prior_user, cautions=_compare,
                                      long_form=True)}"
         )
 
+        if _dir_open:
+            yield sse({"token": _dir_open + "\n\n"})
         try:
             with _cl.messages.stream(
                 model="claude-haiku-4-5-20251001",
