@@ -4452,6 +4452,10 @@
     "chat_caution": true
   },
   "nerve-repair": {
+    "copy_pinned": [
+      "description",
+      "directions"
+    ],
     "ingredients_source": "fmp-run-114",
     "warning": "This formula contains vinpocetine, so do not use it if you are pregnant or could become pregnant.",
     "chat_caution": true,

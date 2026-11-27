@@ -124,7 +124,8 @@ def test_no_other_product_or_key_changes(name):
         assert added == set(), added
     # Later approved changes to other records, each held to its approved keys (Nerve Pulse,
     # Glen "yes" 2026-11-26; review round 2).
-    later = {"nerve-pulse": {"ingredients", "ingredients_source", "description", "directions",
+    later = {"nerve-repair": {"copy_pinned", "copy_pinned_note"},  # Glen 2026-11-26
+             "nerve-pulse": {"ingredients", "ingredients_source", "description", "directions",
                              "warning", "copy_pinned", "content_since", "enrichment_note",
                              "note"}}
     later.update({s: {"directions"} for s in _AS_GUIDED})

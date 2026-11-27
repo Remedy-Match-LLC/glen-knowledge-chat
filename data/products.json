@@ -9353,6 +9353,8 @@
   },
   "nerve-repair": {
    "name": "Nerve Repair",
+   "copy_pinned": ["description", "directions"],
+   "copy_pinned_note": "Glen 2026-11-26, platform tab: yes, approve Nerve Repair's description and directions as they stand",
    "price_cents": 7000,
    "pinecone_title": "Nerve Repair",
    "url": "https://myhealingoasis.com/begin/product/nerve-repair",
