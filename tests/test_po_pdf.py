@@ -151,6 +151,7 @@ def test_create_po_stores_draft_and_lines(cx):
     ("S", [{"label": "x", "qty": 1, "cost": "Infinity"}], "too large"),
     ("S", [{"label": "x", "qty": 1, "material_id": "abc"}], "bad material"),
     ("S", {"label": "x"}, "must be a list"),
+    ("S", [1], "must be an object"),
     (2**40, [LINE], "pick a supplier"),
 ])
 def test_create_po_validation(cx, sid, lines, msg):
@@ -224,12 +225,9 @@ def _client(tmp_path, monkeypatch, secret=""):
     repo = Path(__file__).resolve().parent.parent
     if str(repo) not in sys.path:
         sys.path.insert(0, str(repo))
-    try:
-        import app as appmod
-        importlib.reload(appmod)
-    except ImportError as e:
-        # Only a missing optional dependency skips; any other startup error fails.
-        pytest.skip(f"app not importable: {e}")
+    # No skip: an app that fails to import must fail these route tests.
+    import app as appmod
+    importlib.reload(appmod)
     with sqlite3.connect(db) as c:
         sid = c.execute("SELECT id FROM suppliers WHERE company='Lonza'").fetchone()[0]
     return appmod.app.test_client(), sid
@@ -357,6 +355,10 @@ def test_a_reorder_line_prices_by_the_pack():
     t = _text(po_pdf.render_po_pdf({"po_number": 1120, "supplier_name": "Lonza",
                                     "po_date": "2026-11-26"}, [it]))
     assert "$334,000" not in t and "$334.00" in t
+    for bad in ({"unit_size": 1000, "packs": 0}, {"unit_size": 1000, "packs": 1.5},
+                {"unit_size": 1000}):
+        it2 = dict(it, extras=json.dumps(bad))
+        assert po_pdf._amount(it2) == 334, bad
 
 
 def test_a_filemaker_date_prints_as_its_own_date():

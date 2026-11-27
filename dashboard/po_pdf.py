@@ -100,12 +100,15 @@ def _pack(it):
         return None
     if not size > 0 or not math.isfinite(size):
         return None
-    packs = ex.get("packs")
+    # A line with a pack size is pack-priced. A missing, zero or fractional pack count
+    # is worked out from the quantity rather than falling back to per-gram pricing.
     try:
-        packs = int(packs)
+        packs = float(ex.get("packs"))
     except (TypeError, ValueError):
+        packs = 0.0
+    if not (math.isfinite(packs) and packs > 0 and packs == int(packs)):
         packs = math.ceil(float(it.get("qty") or 0) / size)
-    return (packs, size) if packs > 0 else None
+    return (int(packs), size) if packs > 0 else (1, size)
 
 
 def _cents(v) -> Decimal:

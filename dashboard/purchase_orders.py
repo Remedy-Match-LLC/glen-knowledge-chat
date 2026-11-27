@@ -175,6 +175,8 @@ def _clean_lines(lines):
     out = []
     for i, ln in enumerate(lines, 1):
         ln = ln or {}
+        if not isinstance(ln, dict):
+            raise ValueError(f"line {i}: must be an object")
         label = str(ln.get("label") or "").strip()
         if not label:
             raise ValueError(f"line {i}: description is required")
