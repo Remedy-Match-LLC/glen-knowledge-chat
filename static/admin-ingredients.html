@@ -798,6 +798,36 @@
   <!-- ── Purchase Orders tab ─────────────────────────────────────────────────── -->
   <div id="tab-po" class="tab-panel">
 
+    <!-- New purchase order (collapsed by default) -->
+    <div id="new-po-form" style="display:none" class="section">
+      <h2>New purchase order</h2>
+      <div class="section-label">Supplier</div>
+      <div style="margin-bottom:10px">
+        <input type="text" id="new-po-sup-search" placeholder="Search suppliers…" autocomplete="off" style="width:100%;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px" oninput="poSupSearch()">
+        <ul id="new-po-sup-results" style="list-style:none;background:#0d1117;border:1px solid var(--border);border-radius:6px;margin-top:4px;display:none"></ul>
+        <div id="new-po-sup-chosen" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>
+      </div>
+      <div class="section-label" style="margin-top:8px">Lines</div>
+      <table id="new-po-lines-table">
+        <thead><tr><th>Description</th><th>Quantity</th><th>Unit</th><th>Unit cost (optional)</th><th></th></tr></thead>
+        <tbody id="new-po-lines"></tbody>
+      </table>
+      <div style="margin-top:8px"><button class="secondary save-btn" onclick="addPoLine()">+ Add line</button></div>
+      <div class="field-grid" style="margin-top:14px">
+        <div class="field-block field-full">
+          <label for="new-po-notes">Notes (not printed)</label>
+          <textarea id="new-po-notes" placeholder="Internal notes about this purchase order…"></textarea>
+        </div>
+      </div>
+      <div class="save-row">
+        <button class="secondary save-btn" onclick="toggleNewPoForm()">Cancel</button>
+        <button class="save-btn confirm" onclick="createPo()">Save purchase order</button>
+      </div>
+    </div>
+    <div id="new-po-btn-row" style="margin-bottom:14px">
+      <button class="secondary save-btn" onclick="toggleNewPoForm()">+ New purchase order</button>
+    </div>
+
     <!-- Search -->
     <div class="section" id="po-search-section">
       <h2>Search Purchase Orders</h2>
@@ -821,6 +851,10 @@
 
         <div class="section-label">FMP Fields (read-only)</div>
         <div class="field-grid">
+          <div class="field-block">
+            <label>PO number</label>
+            <div class="ro-val" id="po-number">Assigned when the PDF is made</div>
+          </div>
           <div class="field-block">
             <label>Vendor PO No</label>
             <div class="ro-val" id="po-fmp-vendor-po-no">—</div>
@@ -856,6 +890,7 @@
         </div>
         <div class="save-row">
           <button class="save-btn" onclick="savePoNotes()">Save notes</button>
+          <button class="save-btn confirm" id="po-pdf-btn" onclick="makePoPdf()">Make PDF</button>
         </div>
       </div>
 
@@ -2520,7 +2555,7 @@ async function doPoSearch(q) {
       const sup = po.supplier_company ? escapeHtml(po.supplier_company) : "";
       const date = po.po_date ? " · " + escapeHtml(po.po_date) : "";
       li.innerHTML = `
-        <div class="frm-name">${escapeHtml(po.vendor_po_no || po.fmp_id || "PO #" + po.id)}</div>
+        <div class="frm-name">${escapeHtml(po.po_number ? "PO " + po.po_number : (po.vendor_po_no || po.fmp_id || "PO #" + po.id))}</div>
         <div class="frm-meta">${sup}${date}${po.status ? " · " + escapeHtml(po.status) : ""}</div>`;
       li.addEventListener("mouseover", function() { this.style.background = "rgba(212,168,67,0.08)"; this.style.color = "var(--accent-light)"; });
       li.addEventListener("mouseout",  function() { this.style.background = ""; this.style.color = ""; });
@@ -2547,7 +2582,8 @@ async function openPo(id) {
     const { po, items, receiving } = await api("/api/po/" + id);
 
     // FMP read-only
-    document.getElementById("po-detail-title").textContent = po.vendor_po_no || po.fmp_id || "PO #" + po.id;
+    document.getElementById("po-detail-title").textContent = po.po_number ? "PO " + po.po_number : (po.vendor_po_no || po.fmp_id || "PO #" + po.id);
+    document.getElementById("po-number").textContent = po.po_number ? String(po.po_number) : "Assigned when the PDF is made";
     document.getElementById("po-fmp-vendor-po-no").textContent = po.vendor_po_no || "—";
     document.getElementById("po-fmp-supplier").textContent     = po.supplier_company || "—";
     document.getElementById("po-fmp-po-date").textContent      = po.po_date || "—";
@@ -2591,6 +2627,126 @@ async function savePoNotes() {
     });
     toast("PO notes saved");
   } catch (e) { toast(e.message, "error"); }
+}
+
+// Make PDF: assigns the PO number (continuing FileMaker's) and downloads the file.
+async function makePoPdf() {
+  if (!_currentPoId) return;
+  const id = _currentPoId;
+  const btn = document.getElementById("po-pdf-btn");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/po/" + id + "/pdf", { method: "POST", headers: { "X-Console-Key": KEY } });
+    if (r.status === 401) { document.getElementById("auth-warn").style.display = "block"; throw new Error("unauthorized"); }
+    if (!r.ok) {
+      let msg = "PDF failed";
+      try { msg = (await r.json()).error || msg; } catch (_) {}
+      throw new Error(msg);
+    }
+    const blob = await r.blob();
+    const cd = r.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename="([^"]+)"/);
+    const name = m ? m[1] : "PO " + id + ".pdf";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    const num = r.headers.get("X-PO-Number");
+    if (num && _currentPoId === id) {
+      document.getElementById("po-number").textContent = num;
+      document.getElementById("po-detail-title").textContent = "PO " + num;
+    }
+    toast("PDF ready: " + name);
+  } catch (e) {
+    if (e.message !== "unauthorized") toast(e.message, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── New purchase order ──────────────────────────────────────────────────────
+let _poSupTimer = null, _poSupResults = [], _poSupPickedId = null;
+
+function toggleNewPoForm() {
+  const form = document.getElementById("new-po-form");
+  const btnRow = document.getElementById("new-po-btn-row");
+  const visible = form.style.display !== "none";
+  form.style.display = visible ? "none" : "block";
+  btnRow.style.display = visible ? "block" : "none";
+  if (!visible) {
+    _poSupPickedId = null;
+    document.getElementById("new-po-sup-search").value = "";
+    document.getElementById("new-po-sup-chosen").textContent = "";
+    document.getElementById("new-po-sup-results").style.display = "none";
+    document.getElementById("new-po-notes").value = "";
+    document.getElementById("new-po-lines").innerHTML = "";
+    addPoLine();
+  }
+}
+
+function poSupSearch() {
+  clearTimeout(_poSupTimer);
+  const q = document.getElementById("new-po-sup-search").value.trim();
+  const ul = document.getElementById("new-po-sup-results");
+  _poSupPickedId = null;
+  document.getElementById("new-po-sup-chosen").textContent = "";
+  if (!q) { ul.style.display = "none"; return; }
+  _poSupTimer = setTimeout(async function() {
+    try {
+      _poSupResults = (await api("/api/ingredients/suppliers?q=" + encodeURIComponent(q) + "&limit=15")).slice(0, 15);
+      if (!_poSupResults.length) { ul.style.display = "none"; return; }
+      ul.innerHTML = _poSupResults.map(function(sup, i) {
+        return '<li style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px" onclick="poSupPick(' + i + ')">' +
+               escapeHtml(sup.company) + '</li>';
+      }).join("");
+      ul.style.display = "block";
+    } catch (e) {
+      if (e.message !== "unauthorized") toast(e.message, "error");
+    }
+  }, 280);
+}
+
+function poSupPick(i) {
+  const sup = _poSupResults[i];
+  if (!sup) return;
+  _poSupPickedId = sup.id;
+  document.getElementById("new-po-sup-search").value = sup.company || "";
+  document.getElementById("new-po-sup-results").style.display = "none";
+  document.getElementById("new-po-sup-chosen").textContent = "Selected: " + (sup.company || "") + " (id " + sup.id + ")";
+}
+
+function addPoLine() {
+  const tr = document.createElement("tr");
+  const cell = (cls, ph, w) => '<td><input type="text" class="' + cls + '" placeholder="' + ph + '" style="width:' + w + ';background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px"></td>';
+  tr.innerHTML = cell("pol-label", "Description", "100%") + cell("pol-qty", "e.g. 5", "80px") +
+                 cell("pol-unit", "kg", "70px") + cell("pol-cost", "per unit", "90px") +
+                 '<td><button class="secondary save-btn" type="button">Remove</button></td>';
+  tr.querySelector("button").addEventListener("click", () => tr.remove());
+  document.getElementById("new-po-lines").appendChild(tr);
+}
+
+async function createPo() {
+  if (!_poSupPickedId) { toast("Pick a supplier from the list", "error"); return; }
+  const lines = [];
+  for (const tr of document.querySelectorAll("#new-po-lines tr")) {
+    const v = cls => tr.querySelector("." + cls).value.trim();
+    if (!v("pol-label") && !v("pol-qty") && !v("pol-cost")) continue;
+    lines.push({ label: v("pol-label"), qty: v("pol-qty"), qty_unit: v("pol-unit"), cost: v("pol-cost") || null });
+  }
+  if (!lines.length) { toast("Add at least one line", "error"); return; }
+  try {
+    const d = await api("/api/po", {
+      method: "POST",
+      body: JSON.stringify({ supplier_id: _poSupPickedId, lines,
+                             notes: document.getElementById("new-po-notes").value.trim() || null }),
+    });
+    toast("Purchase order saved");
+    toggleNewPoForm();
+    openPo(d.id);
+  } catch (e) {
+    if (e.message !== "unauthorized") toast(e.message, "error");
+  }
 }
 
 function renderPoItems(items) {

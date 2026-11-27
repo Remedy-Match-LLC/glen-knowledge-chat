@@ -59774,6 +59774,64 @@ def api_po_patch(pid):
     except Exception as e: return fail(e)
 
 
+@app.route("/api/po", methods=["POST"])
+@require_console_key
+def api_po_create():
+    """Create a draft purchase order by hand: {supplier_id, lines, notes?, po_date?}."""
+    try:
+        b = request.get_json(silent=True) or {}
+        with _po._connect() as cx:
+            pid = _po.create_po(cx, b.get("supplier_id"), b.get("lines"),
+                                notes=b.get("notes"), po_date=b.get("po_date"))
+        return ok({"id": pid})
+    except ValueError as e:
+        return fail(str(e), status=400)
+    except Exception as e: return fail(e)
+
+
+@app.route("/api/po/<int:pid>/lines", methods=["PUT"])
+@require_console_key
+def api_po_replace_lines(pid):
+    """Replace a draft PO's lines. Drafts only."""
+    try:
+        b = request.get_json(silent=True) or {}
+        with _po._connect() as cx:
+            n = _po.replace_draft_lines(cx, pid, b.get("lines"))
+        return ok({"id": pid, "line_count": n})
+    except LookupError:
+        return fail("not found", status=404)
+    except ValueError as e:
+        return fail(str(e), status=400)
+    except Exception as e: return fail(e)
+
+
+@app.route("/api/po/<int:pid>/pdf", methods=["POST"])
+@require_console_key
+def api_po_pdf(pid):
+    """The PO as a PDF to attach to a supplier email. Assigns its PO number on first
+    use (continuing FileMaker's). Nothing is sent from here."""
+    from dashboard import po_pdf as _po_pdf
+    from dashboard.ingredient_catalog import get_supplier as _get_supplier
+    try:
+        with _po._connect() as cx:
+            _po.assign_po_number(cx, pid)
+    except LookupError:
+        return fail("not found", status=404)
+    except Exception as e: return fail(e)
+    try:
+        p = _po.get_purchase_order(pid)
+        if not p: return fail("not found", status=404)
+        sup = _get_supplier(p["supplier_id"]) if p.get("supplier_id") else None
+        body = _po_pdf.render_po_pdf(p, _po.list_po_items(pid), sup, _po_pdf.PO_COMPANY)
+        name = _po_pdf.filename(p, sup)
+        resp = Response(body, mimetype="application/pdf")
+        resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
+        resp.headers["X-PO-Number"] = str(p.get("po_number") or "")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    except Exception as e: return fail(e)
+
+
 @app.route("/api/po/items/<int:item_id>", methods=["PATCH"])
 @require_console_key
 def api_po_item_patch(item_id):
