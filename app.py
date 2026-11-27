@@ -3101,7 +3101,7 @@ _PINNED_DOSE_RULE = ("The Directions above are the only dose for {name}. The sni
                      "these directions, and say to ask Dr. Glen about anything beyond them. "
                      "Never answer yes, or say they can, to taking more than these "
                      "Directions: open with the Directions instead. Never say an amount is "
-                     "within these Directions unless a rule here says code has checked it; "
+                     "within these Directions; "
                      "if the user names a medicine, pregnancy, surgery or condition, never "
                      "answer whether they may take it. Do not bring up the "
                      "older advice yourself. This rule never shortens a caution: copy every "
