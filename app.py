@@ -4925,7 +4925,10 @@ def _coded_compare_reply(query_text: str, prior_user_turns=None, cautions=None) 
             if desc:
                 block.append(desc)
             dirs = " ".join(html.unescape(str(pr.get("directions") or "")).split())
-            if dirs and "directions" in _pinned_copy(pr):
+            # A description that already states the directions is not followed by
+            # them a second time (Nerve Repair, 2026-11-26).
+            if (dirs and "directions" in _pinned_copy(pr)
+                    and dirs.lower() not in " ".join((desc or "").split()).lower()):
                 block.append(_CODED_DIRECTIONS_LINE.format(directions=dirs))
             block.append(para)
             block.append(_CODED_PRODUCT_PAGE_LINE.format(url=_catalog_page_url(slug)))

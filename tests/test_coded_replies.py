@@ -76,9 +76,15 @@ def test_compare_reply_has_each_product_in_order_with_its_caution():
 
 def test_approved_description_and_directions_only():
     r = app._coded_compare_reply(Q_CMP)
-    # Nerve Pulse pins description and directions; Nerve Repair pins neither.
+    # Nerve Pulse pins description and directions. An unpinned product shows neither.
     assert "Directions: " + " ".join(_p("nerve-pulse")["directions"].split()) in r
     assert _p("nerve-pulse")["description"].split("\n")[0].strip() in r
+
+
+def test_an_unpinned_product_shows_no_description_or_directions(monkeypatch):
+    nr = {k: v for k, v in _p("nerve-repair").items() if k != "copy_pinned"}
+    monkeypatch.setitem(app._PRODUCTS["products"], "nerve-repair", nr)
+    r = app._coded_compare_reply(Q_CMP)
     repair = r[r.index("**Nerve Repair**"):]
     assert "Directions:" not in repair
     assert _p("nerve-repair")["description"][:40] not in r
@@ -213,3 +219,15 @@ def test_a_do_not_use_reply_means_no_coded_reply(monkeypatch):
     monkeypatch.setattr(app, "_do_not_use_caution_reply", lambda *a, **k: "caution")
     assert app._coded_reply(Q_AF) == ("", None)
     assert app._coded_compare_reply(Q_CMP) == ""
+
+
+# ---- Nerve Repair pinned, Glen 2026-11-26 platform tab ---------------------------------
+
+def test_nerve_repair_half_carries_its_approved_text_once():
+    r = app._coded_compare_reply(Q_CMP)
+    repair = r[r.index("**Nerve Repair**"):]
+    assert repair.count("1 capsule up to 5 times daily with food, or as guided.") == 1
+    assert "Each capsule of Nerve Repair supplies ALCAR" in repair
+    assert "Directions:" not in repair
+    pulse = r[:r.index("**Nerve Repair**")]
+    assert "Directions: " in pulse
