@@ -101,6 +101,18 @@
    "source": "manual-add-2026-07-26-membership-services",
    "_note": "Invoiceable individual membership service. Kept out of self-checkout and shipping while remaining selectable in the in-house order builder."
   },
+  "membership-month": {
+   "name": "One Month of Membership",
+   "price_cents": 100,
+   "buyer_price": {"min_cents": 100, "max_cents": 10000, "step_cents": 100},
+   "service": true,
+   "digital": true,
+   "fixed_price": true,
+   "qty_pricing": false,
+   "volume_eligible": false,
+   "source": "glen-ruling-2026-11-26",
+   "_note": "Glen, platform tab, 2026-11-26: a month of membership at a whole-dollar price the buyer chooses, $1 to $100; an unticked add-on at every checkout and its own store page. Adds 30 days after any current term, outside the remedy cap. Hidden until MEMBERSHIP_MONTH_OFFER is true. Name and wording pending Glen."
+  },
   "family-membership": {
    "name": "Family Membership",
    "price_cents": 14900,

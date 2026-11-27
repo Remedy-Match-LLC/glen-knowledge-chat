@@ -11660,6 +11660,74 @@ def _sale_price_for(slug):
 
 # Shown when a cart asks for more sale bottles than the shelf count holds. Not yet
 # approved by Glen (2026-11-26).
+# ── A price the buyer chooses (Glen, platform tab, 2026-11-26) ──────────────────────
+# "one month of membership, set your own price ... one dollar to a hundred dollars",
+# then "offer the one month name your own price as an upsell to any other purchase" and
+# "yes, unticked add-on at every checkout, store page kept". A product with a
+# `buyer_price` block is priced at the whole-dollar amount the buyer typed, inside its
+# range. Nothing discounts it, no points pay for it, and it earns none.
+MEMBERSHIP_MONTH_SLUG = "membership-month"
+MEMBERSHIP_MONTH_SOURCE = "bought_month"
+MEMBERSHIP_MONTH_DAYS = 30
+
+
+def _month_offer_on() -> bool:
+    """The month is offered only once Glen approves its wording: off unless the flag
+    reads true, so an absent setting keeps it closed."""
+    return (os.environ.get("MEMBERSHIP_MONTH_OFFER") or "").strip().lower() == "true"
+
+
+def _buyer_price_range(p):
+    """(min_cents, max_cents) for a buyer-priced product, else None."""
+    bp = (p or {}).get("buyer_price")
+    if not isinstance(bp, dict):
+        return None
+    try:
+        lo, hi = int(bp["min_cents"]), int(bp["max_cents"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (lo, hi) if 0 < lo <= hi else None
+
+
+def _buyer_chosen_cents(p, raw):
+    """The buyer's chosen price in cents, checked: whole dollars inside the range.
+    Raises CheckoutError with a plain line otherwise."""
+    import math
+    lo, hi = _buyer_price_range(p)
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        v = float("nan")
+    if not math.isfinite(v) or v != int(v) or int(v) % 100 or not lo <= int(v) <= hi:
+        raise CheckoutError(
+            f"Please choose a whole-dollar price from ${lo // 100} to ${hi // 100} "
+            f"for {p.get('name') or 'this item'}.")
+    return int(v)
+
+
+def _buyer_priced(p, chosen_cents):
+    """The product record priced at the buyer's amount, with every discount and every
+    points payment off: the engine's fixed_price and full floors do that."""
+    return dict(p, price_cents=int(chosen_cents), fixed_price=True, qty_pricing=False,
+                volume_eligible=False, counts_toward_volume=False,
+                sku_discount_floor_pct=1.0, sku_points_floor_pct=1.0,
+                buyer_priced=True)
+
+
+def _buyer_priced_line_cents(order) -> int:
+    """What the order's buyer-priced lines cost, kept out of its points earn."""
+    tot = 0
+    for it in (order or {}).get("items") or []:
+        if not _buyer_price_range(_regular_product(it.get("slug") or "")):
+            continue
+        try:
+            tot += int(it.get("line_cents") if it.get("line_cents") not in (None, "")
+                       else int(it.get("unit_cents") or 0) * int(it.get("qty") or 1))
+        except (TypeError, ValueError):
+            continue
+    return tot
+
+
 SALE_STOCK_LINE = "Only {n} bottles of {name} are left. Please lower the quantity."
 SALE_STOCK_LINE_ONE = "Only 1 bottle of {name} is left. Please lower the quantity."
 
@@ -12401,6 +12469,12 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         # _member_price_cents for why that distinction matters.
         p = _member_priced_product(p, email)
         qty = max(1, min(int(c.get("qty", 1) or 1), 99))
+        if _buyer_price_range(p):
+            if p.get("slug") == MEMBERSHIP_MONTH_SLUG and not _month_offer_on():
+                raise CheckoutError("That item is not available yet.")
+            # One at a time, at the price the buyer chose (2026-11-26).
+            p = _buyer_priced(p, _buyer_chosen_cents(p, c.get("price_cents")))
+            qty = 1
         it = _engine_item(p, qty)
         items.append(it)
         subtotal_list += it["unit_cents"] * qty
@@ -12974,7 +13048,8 @@ def _settle_order_points(order, *, order_ref):
                 except Exception as _se:
                     print(f"[rewards] suppression check failed: {_se!r}", flush=True)
             if not suppress:
-                _earn_on = product_cents - _sale_line_cents(order)
+                _earn_on = (product_cents - _sale_line_cents(order)
+                            - _buyer_priced_line_cents(order))
                 if _earn_on > 0:
                     _points.earn(cx, email, full_price_cents=_earn_on, earn_pct=earn_pct,
                                  order_ref=order_ref)
@@ -13260,7 +13335,8 @@ def _grant_membership_line_dep(order):
                         for it in _items)
     # Rule C: a remedy order from a qualifying source earns its supply months too.
     _supply = _supply_source_qualifies(order) and bool(_items)
-    if not (_mp.cart_has_membership_tier(_items) or _has_biofield or _supply):
+    _month = _order_month_count(order) > 0
+    if not (_mp.cart_has_membership_tier(_items) or _has_biofield or _supply or _month):
         return
     with db.connect(LOG_DB) as _mcx:
         _mcx.row_factory = sqlite3.Row
@@ -13269,8 +13345,73 @@ def _grant_membership_line_dep(order):
         # After the two above, so a membership bought on this order makes the buyer
         # a paid member first and the supply grant then stands aside.
         _grant_supply_membership_on_paid(_mcx, order)
+        # Last, so its 30 days start after every term granted above (2026-11-26).
+        if _month:
+            _grant_bought_month_on_paid(_mcx, order)
         if _has_biofield:
             _grant_waiting_supply_orders(_mcx, order.get("email"))
+
+
+def _order_month_count(order):
+    """How many bought membership months the order holds."""
+    n = 0
+    for it in (order or {}).get("items") or []:
+        if (it.get("slug") or "").strip() == MEMBERSHIP_MONTH_SLUG:
+            try:
+                n += max(1, int(it.get("qty") or 1))
+            except (TypeError, ValueError):
+                n += 1
+    return n
+
+
+def _grant_bought_month_on_paid(cx, order):
+    """A paid order holding the name-your-price month adds 30 days per month after
+    the buyer's furthest current membership end, of any source except the $1
+    Biofield trial's 100-year unlock (Glen, 2026-11-26: "a bought month adds 30 days
+    after any current term, outside the cap"). No Biofield is needed and no supply
+    cap applies. Idempotent per order. Returns granted / already / none."""
+    months = _order_month_count(order)
+    if not months or (order.get("status") or "") == "cancelled":
+        return "none"
+    email = (order.get("email") or "").strip().lower()
+    if not email:
+        return "none"
+    ref = order.get("external_ref") or f"id:{order.get('id')}"
+    cx.execute("CREATE TABLE IF NOT EXISTS order_month_grants ("
+               " order_ref TEXT PRIMARY KEY, email TEXT, months INTEGER,"
+               " membership_id TEXT, starts_at TEXT, ends_at TEXT, created_at TEXT)")
+    if cx.execute("SELECT 1 FROM order_month_grants WHERE order_ref=?", (ref,)).fetchone():
+        return "already"
+    try:
+        from dashboard import customers as _customers
+        _customers.find_or_create_by_email(cx, email=email)   # commits (new person only)
+    except Exception as _e:
+        print(f"[bought-month] people upsert skipped: {_e!r}", flush=True)
+    now = datetime.utcnow()
+    prior = None
+    for (exp, src) in cx.execute(
+            "SELECT expires_at, source FROM memberships WHERE lower(email)=lower(?) "
+            "AND expires_at IS NOT NULL", (email,)).fetchall():
+        if (src or "") == "biofield_trial":
+            continue
+        d = _supply_naive(exp)
+        if d is not None and d > now and (prior is None or d > prior):
+            prior = d
+    start = max(now, prior) if prior else now
+    end = start + timedelta(days=MEMBERSHIP_MONTH_DAYS * months)
+    claim = cx.execute(
+        "INSERT INTO order_month_grants (order_ref, email, months, membership_id, "
+        "starts_at, ends_at, created_at) VALUES (?,?,?,?,?,?,?) "
+        "ON CONFLICT(order_ref) DO NOTHING",
+        (ref, email, months, None, _supply_iso(start), _supply_iso(end), _supply_iso(now)))
+    if not claim.rowcount:
+        return "already"
+    mid = _grant_membership(cx, email, 0, MEMBERSHIP_MONTH_SOURCE,
+                            skip_customer_upsert=True, expires_at=end)
+    cx.execute("UPDATE order_month_grants SET membership_id=? WHERE order_ref=?",
+               (str(mid), ref))
+    cx.commit()
+    return "granted"
 
 
 def _grant_waiting_supply_orders(cx, email):
