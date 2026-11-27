@@ -3027,7 +3027,7 @@ def _directions_most(directions: str):
         d = html.unescape(str(directions or "")).lower()
         d = re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty)\b",
                    lambda m: str(_DOSE_NUM_WORDS[m.group(1)]), d)
-        if re.search(r"\d\s*[/.]\s*\d|\bhalf\b|\bmax", d):
+        if re.search(r"\d\s*[/.]\s*\d|\bhalf\b|\bmax|as needed|\bor with\b", d):
             return None        # fractions, decimals, "maximum": not read (round 2)
         hits = list(re.finditer(r"(?<![\d/.])(\d+)(?:\s*(?:to|-|\u2013)\s*(\d+))?\s*" + _DOSE_UNIT
                                 + r"\b(.{0,60}?)(?=[.;]|,\s*or as guided|$)", d))
@@ -5061,6 +5061,94 @@ def _coded_compare_reply(query_text: str, prior_user_turns=None, cautions=None) 
         return ""
 
 
+# Knowledge's read-back of #2354 (2026-11-27): told never to say "within", the model still
+# said it for 5 Nerve Repair a day in 8 of 18 answers, and invented "1 to 3 capsules
+# daily". Glen, platform tab, "yes" to these lines as the code-written reply to every
+# "how many can I take" question. The model is not called for a plain one.
+_CODED_AMOUNT_OPEN = "The label directions for {name} are: {directions}"
+_CODED_AMOUNT_OVER = "That is more than these directions."
+_CODED_AMOUNT_ASK = "For anything beyond these directions, please ask Dr. Glen."
+_AMOUNT_NUM = (r"(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
+               r"twelve|fifteen|twenty)")
+_AMOUNT_WHEN = r"(?:\s+(?:a|per|each|every)\s+day|\s+daily|\s+at\s+once|\s+at\s+a\s+time)?"
+_AMOUNT_CAPS = r"(?:capsules?|caps|vegicaps?|tablets?)"
+
+
+def _plain_amount_question(query_text: str, name: str) -> bool:
+    """True only when the WHOLE message is one of a few plain dose questions about this
+    product: "Can I take 5 Nerve Repair a day?", "How many Nerve Repair can I take?",
+    "What is the maximum dose of Nerve Repair?". Reviews 1 to 3 found situations a word
+    list misses (a grandson, "I take Xanax", "I feel dizzy", "I've been taking 4") and
+    non-dose questions ("How many capsules are in a bottle?"), so anything else goes to
+    the model path."""
+    q = " ".join(html.unescape(str(query_text or "")).replace("\u2019", "'").split())
+    words = re.sub(r"[^a-z0-9]+", " ", html.unescape(str(name or "")).lower()).split()
+    if not words:
+        return False
+    nm = (r"(?:the\s+)?(?:" + _AMOUNT_CAPS + r"\s+of\s+)?" + r"[\s\-]+".join(map(re.escape, words))
+          + r"(?:\s+" + _AMOUNT_CAPS + r")?")
+    ask = r"(?:can|could|may|should|do)\s+i\s+take"
+    forms = (
+        r"(?:" + ask + r"|is\s+it\s+(?:ok|okay|fine|alright|all\s+right)\s+to\s+take)\s+"
+        + _AMOUNT_NUM + r"\s+" + nm + _AMOUNT_WHEN,
+        r"how\s+(?:many|much)\s+" + nm + r"\s+" + ask + _AMOUNT_WHEN,
+        r"what(?:'s|\s+is)\s+the\s+(?:max|maximum|most)\s+(?:daily\s+)?(?:dose|amount)\s+"
+        r"(?:of|for)\s+" + nm,
+    )
+    return any(re.fullmatch(r"(?:(?:hi|hello|aloha)[,!.]?\s+)?" + f + r"\s*[?.!]*", q, re.I)
+               for f in forms)
+
+
+def _coded_amount_reply(query_text: str, prior_user_turns=None):
+    """(reply, slug) for a plain amount question that names one product in this message
+    and no other: its approved label Directions word for word, "more than these
+    directions" when code is sure the daily amount is over (_amount_verdict), ask Dr.
+    Glen, its caution word for word, its page. ("", None) otherwise, or on any failure."""
+    try:
+        q = str(query_text or "")
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        slugs = set(_named_product_spans(q, products))
+        if len(slugs) != 1:
+            return "", None
+        slug = next(iter(slugs))
+        pr = products.get(slug) or {}
+        if pr.get("inactive") or slug in _NAMED_DIRECTIONS_ONLY:
+            return "", None
+        if "directions" not in _pinned_copy(pr):
+            return "", None
+        dirs = " ".join(html.unescape(str(pr.get("directions") or "")).split())
+        name = _coded_name(pr, slug)
+        if not dirs or not name:
+            return "", None
+        if not _plain_amount_question(q, name):
+            return "", None
+        # Round 1: "I am on lithium" in an earlier turn. Any earlier turn that tells about
+        # the person ("I", "I'm", "my", "me") sends the question to the model path.
+        for t in prior_user_turns or []:
+            if isinstance(t, str) and re.search(r"\b(?:i|i'm|im|i've|ive|my|me|we|our)\b",
+                                                t.replace("\u2019", "'"), re.I):
+                return "", None
+        if (not _coded_question_is_plain(query_text, prior_user_turns)
+                or _caution_subjects_asked(query_text, prior_user_turns)
+                or _not_on_label_lines(query_text) or _label_caffeine_lines(query_text)):
+            return "", None
+        lines = [_CODED_AMOUNT_OPEN.format(name=name, directions=dirs)]
+        v = _amount_verdict(q, dirs, name)
+        if v and v[0] == "over":
+            lines.append(_CODED_AMOUNT_OVER)
+        lines.append(_CODED_AMOUNT_ASK)
+        if str(pr.get("warning") or "").strip():
+            paras = dict(_verbatim_caution_paras(query_text, prior_user_turns, slugs=[slug]))
+            if not paras.get(slug):
+                return "", None        # a caution that cannot be quoted: the model path
+            lines.append(paras[slug])
+        lines.append(_CODED_PAGE_LINE.format(url=_catalog_page_url(slug)))
+        return "\n\n".join(lines), slug
+    except Exception as e:
+        print(f"[chat] coded amount reply skipped: {e!r}", flush=True)
+        return "", None
+
+
 def _coded_reply(query_text: str, prior_user_turns=None, opening=None, cautions=None):
     """(reply, cta) when code writes the whole reply (_coded_directions_reply, then
     _coded_compare_reply), else ("", None). The AllerFree reply's button opens its page;
@@ -5073,7 +5161,16 @@ def _coded_reply(query_text: str, prior_user_turns=None, opening=None, cautions=
             return reply, {"type": "page", "target": _catalog_page_url(slug),
                            "label": _CODED_CTA_LABEL.format(
                                name=_coded_name(products.get(slug), slug))}
-        return _coded_compare_reply(query_text, prior_user_turns, cautions=cautions), None
+        reply = _coded_compare_reply(query_text, prior_user_turns, cautions=cautions)
+        if reply:
+            return reply, None
+        reply, slug = _coded_amount_reply(query_text, prior_user_turns)
+        if reply:
+            products = (_PRODUCTS or {}).get("products", {}) or {}
+            return reply, {"type": "page", "target": _catalog_page_url(slug),
+                           "label": _CODED_CTA_LABEL.format(
+                               name=_coded_name(products.get(slug), slug))}
+        return "", None
     except Exception as e:
         print(f"[chat] coded reply skipped: {e!r}", flush=True)
         return "", None
