@@ -2995,13 +2995,6 @@ _AS_GUIDED_HEAD = ('When you give the dose of {name}, give its Directions word f
 # Knowledge's read-back of #2352 (2026-11-26): asked "Can I take 10 Nerve Repair a day?",
 # 5 of 6 answers said "That is within the Directions." when 5 a day is the most. The model
 # judged the amount itself. Now code compares the number and the rule says what it found.
-_AS_GUIDED_WITHIN = ('Two exceptions. Code has checked that the amount the user asks '
-                     'about is within these Directions: say "That is within the '
-                     'Directions." in those words, without repeating the amount, then give '
-                     'the Directions word for word; but if the user names a medicine, '
-                     'pregnancy, surgery or condition, never answer whether they may take '
-                     'it. And keep the sentence saying to ask Dr. Glen about anything beyond '
-                     'these Directions. This rule never shortens a caution.')
 _AS_GUIDED_OVER = ('Two exceptions. Code has checked that the amount the user asks about '
                    '({asked}) is MORE than these Directions allow ({most} a day at most): '
                    'never say it is within the Directions, and never say they can take it. '
@@ -3034,7 +3027,9 @@ def _directions_most(directions: str):
         d = html.unescape(str(directions or "")).lower()
         d = re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b",
                    lambda m: str(_DOSE_NUM_WORDS[m.group(1)]), d)
-        hits = list(re.finditer(r"(\d+)(?:\s*(?:to|-|\u2013)\s*(\d+))?\s*" + _DOSE_UNIT
+        if re.search(r"\d\s*[/.]\s*\d|\bhalf\b|\bmax", d):
+            return None        # fractions, decimals, "maximum": not read (round 2)
+        hits = list(re.finditer(r"(?<![\d/.])(\d+)(?:\s*(?:to|-|\u2013)\s*(\d+))?\s*" + _DOSE_UNIT
                                 + r"\b(.{0,60}?)(?=[.;]|,\s*or as guided|$)", d))
         if not hits:
             return None
@@ -3079,28 +3074,22 @@ def _asked_amount(query_text: str):
 
 
 def _amount_verdict(query_text: str, directions: str):
-    """("within" | "over", asked, most per day), or None when code cannot be sure."""
+    """("over", asked, most per day) when code is sure the number asked is more than the
+    label allows in a day, else None. Code never certifies an amount as within: round 2
+    found schedules, units and other directions a number check cannot see, so only
+    "more than the label" is safe to state."""
     most = _directions_most(directions)
     asked = _asked_amount(query_text)
     if not most or not asked:
         return None
-    n, per_day = asked
-    if n <= 0:
-        return None
+    n, _per_day = asked
     if n > most[1]:
         return ("over", n, most[1])
-    if n <= (most[1] if per_day else most[0]):
-        return ("within", n, most[1])
-    return None              # e.g. 3 at once of a 1-capsule dose: not certain
+    return None
 
 
 def _as_guided_rule_for(name: str, query_text: str, directions: str) -> str:
     v = _amount_verdict(query_text, directions)
-    # A named pregnancy, medicine or condition never gets the "within" sentence.
-    if v and v[0] == "within" and _CODED_SITUATION.search(str(query_text or "")):
-        v = None
-    if v and v[0] == "within":
-        return _AS_GUIDED_HEAD.format(name=name) + _AS_GUIDED_WITHIN
     if v and v[0] == "over":
         return _AS_GUIDED_HEAD.format(name=name) + _AS_GUIDED_OVER.format(
             asked=v[1], most=v[2])
