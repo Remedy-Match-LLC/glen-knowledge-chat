@@ -4792,6 +4792,111 @@ def _compare_caution_tail(query_text: str, answer_text: str, prior_user_turns=No
         print(f"[chat] comparison caution tail skipped: {e!r}", flush=True)
         return ""
 
+
+# Live read-backs after #2345 and #2346 (2026-11-26): rules given to the model still
+# leaked. 5 of 6 comparison answers invented claims, and 4 of 8 AllerFree answers said
+# "gentle, with no known side effects". Glen, platform tab: "yes, code writes both
+# answers". So for these two questions code writes the whole reply and the model is not
+# called. Every line below is approved text or a fixed line Glen approves.
+_CODED_PREFERENCE_SLUG = "immune-modulation"
+_CODED_PAGE_LINE = "Its product page: {url}"
+_CODED_PREFERENCE_LINE = "Immune Modulation is Dr. Glen's current preference: {url}"
+_CODED_PRODUCT_PAGE_LINE = "Product page: {url}"
+_CODED_DIRECTIONS_LINE = "Directions: {directions}"
+_CODED_CTA_LABEL = "See {name}"
+
+
+def _coded_name(pr, slug) -> str:
+    return html.unescape(str((pr or {}).get("name") or slug)).replace("\u2122", "").strip()
+
+
+def _coded_directions_reply(query_text: str, prior_user_turns=None, opening=None) -> str:
+    """The whole reply to a dose question that names AllerFree and no other product
+    (_directions_only_opening): its label Directions, its page, and Immune Modulation as
+    Glen's current preference. "" otherwise, or on any failure."""
+    try:
+        if opening is None:
+            opening = _directions_only_opening(query_text, prior_user_turns)
+        if not opening:
+            return ""
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        lines = [opening, _CODED_PAGE_LINE.format(
+            url=_catalog_page_url(_NAMED_DIRECTIONS_ONLY[0]))]
+        im = products.get(_CODED_PREFERENCE_SLUG) or {}
+        if im and not im.get("inactive"):
+            lines.append(_CODED_PREFERENCE_LINE.format(
+                url=_catalog_page_url(_CODED_PREFERENCE_SLUG)))
+        return "\n\n".join(lines)
+    except Exception as e:
+        print(f"[chat] coded directions reply skipped: {e!r}", flush=True)
+        return ""
+
+
+def _coded_description(pr) -> str:
+    """The product's approved description, with price sentences and its own caution
+    taken out (the caution follows on its own). "" when the description is not pinned."""
+    if "description" not in _pinned_copy(pr):
+        return ""
+    desc = _PRICE_SENTENCE.sub("", html.unescape(str(pr.get("description") or "")))
+    warn = str(pr.get("warning") or "").strip()
+    if warn:
+        desc = desc.replace(f"Caution: {warn}", " ").replace(warn, " ")
+    paras = [re.sub(r"[ \t]+", " ", x).strip() for x in re.split(r"\n\s*\n", desc)]
+    return "\n\n".join(x for x in paras if x)
+
+
+def _coded_compare_reply(query_text: str, prior_user_turns=None, cautions=None) -> str:
+    """The whole reply to a question that names two or more caution products
+    (_compare_cautions): for each, in the order named, its name, its approved
+    description, its approved Directions, its caution word for word, and its page. A
+    description or Directions not approved is left out, and the page link covers it.
+    "" otherwise, or on any failure."""
+    try:
+        if cautions is None:
+            cautions = _compare_cautions(query_text, prior_user_turns)
+        if not cautions:
+            return ""
+        slugs = _compare_caution_slugs(query_text, prior_user_turns)
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        if len(slugs) != len(cautions):
+            return ""
+        out = []
+        for slug, (name, _warn, para) in zip(slugs, cautions):
+            pr = products.get(slug) or {}
+            if _coded_name(pr, slug) != html.unescape(name).replace("\u2122", "").strip():
+                return ""
+            block = [f"**{_coded_name(pr, slug)}**"]
+            desc = _coded_description(pr)
+            if desc:
+                block.append(desc)
+            dirs = " ".join(html.unescape(str(pr.get("directions") or "")).split())
+            if dirs and "directions" in _pinned_copy(pr):
+                block.append(_CODED_DIRECTIONS_LINE.format(directions=dirs))
+            block.append(para)
+            block.append(_CODED_PRODUCT_PAGE_LINE.format(url=_catalog_page_url(slug)))
+            out.append("\n\n".join(block))
+        return "\n\n".join(out)
+    except Exception as e:
+        print(f"[chat] coded comparison reply skipped: {e!r}", flush=True)
+        return ""
+
+
+def _coded_reply(query_text: str, prior_user_turns=None, opening=None, cautions=None):
+    """(reply, cta) when code writes the whole reply (_coded_directions_reply, then
+    _coded_compare_reply), else ("", None). The AllerFree reply's button opens its page."""
+    reply = _coded_directions_reply(query_text, prior_user_turns, opening=opening)
+    if reply:
+        try:
+            products = (_PRODUCTS or {}).get("products", {}) or {}
+            slug = _NAMED_DIRECTIONS_ONLY[0]
+            return reply, {"type": "page", "target": _catalog_page_url(slug),
+                           "label": _CODED_CTA_LABEL.format(
+                               name=_coded_name(products.get(slug), slug))}
+        except Exception as e:
+            print(f"[chat] coded reply button skipped: {e!r}", flush=True)
+            return reply, None
+    return _coded_compare_reply(query_text, prior_user_turns, cautions=cautions), None
+
 # In place of the usual answer structure when a passage from one of Glen's clinical
 # protocols is in the sources. Knowledge's check on 2026-11-05 (chats 2709-2711, the
 # earthing protocol): the consensus / limitation / assumption beats were filled with
@@ -8975,6 +9080,11 @@ def chat():
         # no dose (knowledge tab, 2026-11-01).
         _pre_terms_caution = (_do_not_use_caution_reply(query, _prior_user) if _tos_member
                               else _pre_terms_caution_reply(query, _prior_user))
+        # Code writes the whole reply for an AllerFree dose question or a question naming
+        # two or more caution products (Glen, "yes, code writes both answers").
+        _coded, _coded_cta = (("", None) if _pre_terms_caution else
+                              _coded_reply(query, _prior_user, opening=_dir_open,
+                                           cautions=_compare))
         if _pre_terms_caution and not _tos_member:
             yield sse({"gate": True})
         elif not _tos_member and _is_gated_question(query):
@@ -9016,15 +9126,22 @@ def chat():
                         full_answer.append(token)
                         yield token
 
-            for delta in _store_links_stream(stream_visible(strip_leading_label(_toks()))):
-                yield sse({"token": delta})
+            if _coded:
+                # Code-written text skips the link guard: the guard strips every
+                # never-recommended product's link, and Glen's rule gives AllerFree's
+                # page to a client who names it.
+                full_answer.append(_coded)
+                yield sse({"token": _coded})
+            else:
+                for delta in _store_links_stream(stream_visible(strip_leading_label(_toks()))):
+                    yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"})
             return
 
         # Two or more caution products: code writes each caution after the answer (Glen,
         # "yes, fix the comparison answer", 2026-11-26). A code-written reply has its own.
-        _compare_tail = "" if _pre_terms_caution else _compare_caution_tail(
+        _compare_tail = "" if (_pre_terms_caution or _coded) else _compare_caution_tail(
             query, "".join(full_answer), _prior_user, cautions=_compare)
         if _compare_tail:
             yield sse({"token": _compare_tail})
@@ -9038,8 +9155,11 @@ def chat():
             _clean, _cta = parse_cta(strip_leading_label_text("".join(full_answer)))
         except Exception:
             _clean, _cta = "".join(full_answer), None
-        _clean = _store_links_text(_clean)  # log and downstream use what the client saw
+        if not _coded:
+            _clean = _store_links_text(_clean)  # log and downstream use what the client saw
         _clean += _compare_tail
+        if _coded and not _cta:
+            _cta = _coded_cta
         # A question that touches a caution ends with the link that opens it (Glen,
         # 2026-10-24). It replaces the model's button: the answer only points to it.
         _caution_ctas = []
@@ -18680,6 +18800,9 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"{_compare_answer_rules(query, _prior_user, cautions=_compare, long_form=True)}"
     )
 
+    _coded, _ = _coded_reply(query, _prior_user, opening=_dir_open, cautions=_compare)
+    if _coded:
+        return (_coded, sources_list, len(matches))
     answer = ""
     msg = _cl.messages.create(
         model="claude-haiku-4-5-20251001",
@@ -18894,6 +19017,13 @@ def _full_report_stream(log_id, query, level, session_id,
                                      long_form=True)}"
         )
 
+        _coded, _ = _coded_reply(query, _prior_user, opening=_dir_open, cautions=_compare)
+        if _coded:
+            yield sse({"token": _coded})
+            yield sse({"done": True, "sources": sources_list,
+                       "chunks_retrieved": len(matches), "log_id": log_id,
+                       "mode": "full"})
+            return
         if _dir_open:
             yield sse({"token": _dir_open + "\n\n"})
         try:

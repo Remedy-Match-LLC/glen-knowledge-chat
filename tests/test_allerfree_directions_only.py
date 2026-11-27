@@ -129,59 +129,55 @@ class _FakeStream:
         return iter([self.text])
 
 
-def test_chat_writes_the_sentence_then_the_model_answer(monkeypatch, tmp_path):
+def _no_model(monkeypatch):
+    def _boom(**kw):
+        raise AssertionError("the model must not be called for a code-written reply")
+    monkeypatch.setattr(app._cl.messages, "create", _boom)
+    monkeypatch.setattr(app._cl.messages, "stream", _boom)
+
+
+def test_chat_writes_the_whole_reply(monkeypatch, tmp_path):
+    # Glen, platform tab, 2026-11-26: "yes, code writes both answers".
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     importlib.reload(app)
-    monkeypatch.setattr(app._cl.messages, "create", lambda **kw: (_ for _ in ()).throw(
-        RuntimeError("no live calls in tests")))
     monkeypatch.setattr(app, "embed", lambda text: [0.0] * 1536)
     one = [SimpleNamespace(id="m0", score=0.8, metadata={"text": "x", "_source_ns": "x"})]
     monkeypatch.setattr(app, "query_all_namespaces", lambda vec: one)
     monkeypatch.setattr(app, "build_context", lambda m: ("snippet text", []))
     monkeypatch.setattr(app, "_is_gated_question", lambda *a, **k: False)
     monkeypatch.setattr(app, "is_member", lambda *a, **k: False)
-    seen = {}
-
-    def _stream(**kw):
-        seen["user"] = kw["messages"][-1]["content"]
-        return _FakeStream("Answer.")
-    monkeypatch.setattr(app._cl.messages, "stream", _stream)
+    _no_model(monkeypatch)
     r = app.app.test_client().post("/chat", json={"query": Q, "level": "self-healing",
                                                   "mode": "brief"}, buffered=True)
     events = [json.loads(line[6:]) for line in r.get_data(as_text=True).splitlines()
               if line.startswith("data: ") and line[6:].strip()]
     text = "".join(e.get("token", "") for e in events)
-    assert text == OPEN + _dirs() + "\n\nAnswer."
-    assert seen["user"].rstrip().endswith(app._directions_only_block(Q).rstrip())
+    reply = app._coded_directions_reply(Q)
+    assert reply.startswith(OPEN + _dirs())
+    assert text == reply
+    done = [e for e in events if e.get("done")][-1]
+    assert done["cta"]["target"] == app._catalog_page_url(SLUG)
     import sqlite3
     with sqlite3.connect(app.LOG_DB) as cx:
         logged = cx.execute("SELECT answer FROM query_log ORDER BY id DESC LIMIT 1").fetchone()[0]
-    assert logged.startswith(OPEN + _dirs())
+    assert logged == reply
 
 
-def test_full_report_gives_the_model_the_block(monkeypatch):
+def test_full_report_is_the_code_written_reply(monkeypatch):
     monkeypatch.setattr(app, "embed", lambda text: [0.0] * 1536)
     one = [SimpleNamespace(id="m0", score=0.8, metadata={"text": "x", "_source_ns": "x"})]
     monkeypatch.setattr(app, "query_all_namespaces", lambda vec: one)
     monkeypatch.setattr(app, "build_context", lambda m: ("snippet text", []))
-    seen = {}
-
-    def _create(**kw):
-        seen["user"] = kw["messages"][-1]["content"]
-        return SimpleNamespace(content=[SimpleNamespace(text="Long.")])
-    monkeypatch.setattr(app._cl.messages, "create", _create)
+    _no_model(monkeypatch)
     answer, _s, _n = app._generate_full_answer(Q, "self-healing")
-    assert answer == OPEN + _dirs() + "\n\nLong."
-    assert app._directions_only_block(Q) in seen["user"]
-    monkeypatch.setattr(app._cl.messages, "stream", lambda **kw: (
-        seen.__setitem__("s", kw["messages"][-1]["content"]) or _FakeStream("L.")))
+    assert answer == app._coded_directions_reply(Q)
     with app.app.test_request_context("/"):
         body = "".join(c.decode() if isinstance(c, bytes) else c
                        for c in app._full_report_stream(1, Q, "self-healing", "s1").response)
-    toks = "".join(json.loads(line[6:]).get("token", "") for line in body.splitlines()
-                   if line.startswith("data: ") and line[6:].strip())
-    assert toks == OPEN + _dirs() + "\n\nL."
-    assert app._directions_only_block(Q) in seen["s"]
+    events = [json.loads(line[6:]) for line in body.splitlines()
+              if line.startswith("data: ") and line[6:].strip()]
+    assert "".join(e.get("token", "") for e in events) == app._coded_directions_reply(Q)
+    assert events[-1].get("done")
 
 
 def test_an_inactive_or_unnamed_record_gives_none(monkeypatch):
