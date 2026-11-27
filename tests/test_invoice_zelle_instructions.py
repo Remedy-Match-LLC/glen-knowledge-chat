@@ -148,7 +148,7 @@ ZP = {"name": "Susan Luscombe", "to": TO, "amount_cents": 4000,
 
 @pytest.mark.skipif(node is None, reason="node not installed")
 def test_screen_block_shows_payee_amount_and_memo():
-    out = _run("%s\n%s\n%s\nconsole.log(JSON.stringify(zelleInstrHtml(%s)));" % (
+    out = _run("const TOKEN='tok';\n%s\n%s\n%s\nconsole.log(JSON.stringify(zelleInstrHtml(%s)));" % (
         _const("money"), _fn("esc"), _fn("zelleInstrHtml"), json.dumps(ZP)))
     t = _text(out)
     assert "To: Susan Luscombe, payee@example.com" in t
@@ -159,9 +159,10 @@ def test_screen_block_shows_payee_amount_and_memo():
 @pytest.mark.skipif(node is None, reason="node not installed")
 def test_screen_block_escapes_its_values():
     bad = dict(ZP, name="<img src=x onerror=alert(1)>", pay_link='https://x/"><b>')
-    out = _run("%s\n%s\n%s\nconsole.log(JSON.stringify(zelleInstrHtml(%s)));" % (
+    out = _run("const TOKEN='tok';\n%s\n%s\n%s\nconsole.log(JSON.stringify(zelleInstrHtml(%s)));" % (
         _const("money"), _fn("esc"), _fn("zelleInstrHtml"), json.dumps(bad)))
-    assert "<img" not in out and '"><b>' not in out
+    # Since 27 Nov the block carries the QR <img>; the payee name must still be escaped.
+    assert "<img src=x" not in out and '"><b>' not in out
 
 
 @pytest.mark.skipif(node is None, reason="node not installed")
@@ -499,3 +500,47 @@ def test_an_old_zelle_reply_cannot_paint_once_nothing_is_owed():
     """))
     assert out["calls"] == 1
     assert out["after"] == "" and out["claim"] == "none"
+
+
+
+# Pamela Kirkpatrick, 27 Nov: the link to the Zelle QR page could not start a payment.
+# Glen "sure": show the QR image, with "Scan this in your bank's Zelle app".
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_the_block_shows_the_qr_image_and_the_scan_line_not_the_link():
+    zp = dict(ZP, pay_link="https://enroll.zellepay.com/qr-codes?data=x")
+    out = (_run("const TOKEN='tok 1';\n%s\n%s\n%s\nconsole.log(JSON.stringify(zelleInstrHtml(%s)));" % (
+        _const("money"), _fn("esc"), _fn("zelleInstrHtml"), json.dumps(zp))))
+    assert 'src="/api/invoice/tok%201/zelle-qr.png"' in out
+    assert "Scan this in your bank\u2019s Zelle app." in _text(out)
+    assert ("On a phone? Send to the address above in your bank\u2019s app, with the amount "
+            "and memo shown.") in _text(out)
+    assert "Open the Zelle QR code" not in out
+    assert "enroll.zellepay.com" not in out
+    assert "onerror=\"this.parentNode.style.display='none'\"" in out
+
+
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_no_pay_link_no_image():
+    out = (_run("const TOKEN='tok';\n%s\n%s\n%s\nconsole.log(JSON.stringify(zelleInstrHtml(%s)));" % (
+        _const("money"), _fn("esc"), _fn("zelleInstrHtml"), json.dumps(ZP))))
+    assert "zelle-qr" not in out and "Scan this" not in out
+
+
+def test_the_qr_route_serves_a_png_for_a_real_invoice(env):
+    env["mp"].setitem(env["app"]._ALT_PAY["zelle"], "pay_link",
+                      "https://enroll.zellepay.com/qr-codes?data=x")
+    _oid, tok = env["order"](ref="DS-901", total=4000)
+    r = env["c"].get(f"/api/invoice/{tok}/zelle-qr.png")
+    assert r.status_code == 200 and r.mimetype == "image/png"
+    assert r.data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert r.headers["Cache-Control"] == "no-store"
+
+
+def test_the_qr_route_refuses_a_bad_token_or_no_link(env):
+    env["mp"].setitem(env["app"]._ALT_PAY["zelle"], "pay_link",
+                      "https://enroll.zellepay.com/qr-codes?data=x")
+    assert env["c"].get("/api/invoice/not-a-token/zelle-qr.png").status_code == 404
+    _oid, tok = env["order"](ref="DS-902", total=4000)
+    for bad in ("javascript:alert(1)", "", "   ", "http://enroll.zellepay.com/qr-codes?data=x"):
+        env["mp"].setitem(env["app"]._ALT_PAY["zelle"], "pay_link", bad)
+        assert env["c"].get(f"/api/invoice/{tok}/zelle-qr.png").status_code == 404, bad
