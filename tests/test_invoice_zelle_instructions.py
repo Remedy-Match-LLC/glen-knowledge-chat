@@ -512,6 +512,8 @@ def test_the_block_shows_the_qr_image_and_the_scan_line_not_the_link():
         _const("money"), _fn("esc"), _fn("zelleInstrHtml"), json.dumps(zp))))
     assert 'src="/api/invoice/tok%201/zelle-qr.png"' in out
     assert "Scan this in your bank\u2019s Zelle app." in _text(out)
+    assert ("On a phone? Send to the address above in your bank\u2019s app, with the amount "
+            "and memo shown.") in _text(out)
     assert "Open the Zelle QR code" not in out
     assert "enroll.zellepay.com" not in out
     assert "onerror=\"this.parentNode.style.display='none'\"" in out

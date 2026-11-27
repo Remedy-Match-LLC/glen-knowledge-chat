@@ -359,7 +359,9 @@ function zelleInstrHtml(p){
   if(p.pay_link) h += '<div class="zelle-qr-wrap"><img class="zelle-qr" src="/api/invoice/'
     + encodeURIComponent(TOKEN) + '/zelle-qr.png" alt="Zelle QR code" width="220" height="220"'
     + ' style="max-width:100%;height:auto" onerror="this.parentNode.style.display=\'none\'">'
-    + '<div>Scan this in your bank\u2019s Zelle app.</div></div>';
+    + '<div>Scan this in your bank\u2019s Zelle app.</div>'
+    // Glen "yes", 27 Nov: a phone cannot scan its own screen.
+    + '<div>On a phone? Send to the address above in your bank\u2019s app, with the amount and memo shown.</div></div>';
   if(p.note) h += '<div class="muted">'+esc(p.note)+'</div>';
   return h + '<div class="muted">Then tap “I’ve sent payment”.</div>';
 }
