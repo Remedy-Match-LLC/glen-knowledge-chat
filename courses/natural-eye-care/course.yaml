@@ -13,6 +13,7 @@ modules:
       - diabetic-retinopathy
       - dry-eye
       - retinitis-pigmentosa
+      - posner-schlossman
   - slug: 02-symptoms
     title: Symptoms
     lessons:
