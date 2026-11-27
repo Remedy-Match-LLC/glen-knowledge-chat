@@ -68743,6 +68743,37 @@ def _invoice_summary_with_ledger(order):
     return summary
 
 
+@app.route("/api/console/invoice/<int:order_id>/pdf", methods=["GET"])
+def api_console_invoice_pdf(order_id):
+    """The formal invoice PDF for one order, for scripts that print it (youcloned-6d, 27
+    Nov: headless printing of the invoice page came out blank or with the nav and chat).
+    The same document the invoice email attaches (dashboard/invoice_pdf.py), drawn from
+    the customer-safe summary. X-Console-Key header only; read-only."""
+    if not _cadence_admin_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import invoice_pdf as _ipdf
+    cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
+    try:
+        order = _bos_orders.get_order(cx, int(order_id))
+        seen = set()   # the same superseded-order walk the invoice page makes
+        while order and order.get("superseded_by_order_id") and order["id"] not in seen:
+            seen.add(order["id"])
+            nxt = _bos_orders.get_order(cx, int(order["superseded_by_order_id"]))
+            if not nxt:
+                break
+            order = nxt
+    finally:
+        cx.close()
+    if not order:
+        return jsonify({"ok": False, "error": "no such order"}), 404
+    summary = _invoice_summary_with_ledger(order)
+    body = _ipdf.render_invoice_pdf(summary)
+    resp = Response(body, mimetype="application/pdf")
+    resp.headers["Content-Disposition"] = 'inline; filename="%s"' % _ipdf.filename(summary)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/api/invoice/<token>", methods=["GET"])
 def api_invoice_get(token):
     order = _invoice_order_for_token(token)
