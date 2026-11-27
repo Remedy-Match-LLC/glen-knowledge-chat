@@ -327,3 +327,14 @@ def test_the_cart_will_not_hold_it(monkeypatch):
     r = app.app.test_client().post("/api/cart/add", json={"slug": SLUG, "qty": 1})
     assert r.status_code == 400 and "not available" in r.get_json()["error"]
     assert app._is_orderable(SLUG, app._get_product(SLUG)) is False
+
+
+def test_a_bought_month_gets_member_pricing(filecx):
+    # The page will say a month brings member pricing; this proves it does.
+    assert app._is_paid_member(EMAIL) is False
+    assert app._grant_bought_month_on_paid(filecx, _order("MP-1")) == "granted"
+    filecx.commit()
+    assert app._is_paid_member(EMAIL) is True
+    # A grant-only member is "none" by design and still paid; never "trial".
+    assert app.membership_category(EMAIL) != "trial"
+    assert app._active_membership_for_email(EMAIL)   # the paid-coaching gate
