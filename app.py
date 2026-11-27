@@ -68786,7 +68786,8 @@ def api_invoice_zelle_qr(token):
     buf = io.BytesIO()
     qrcode.make(pay_link).save(buf, format="PNG")
     response = Response(buf.getvalue(), mimetype="image/png")
-    response.headers["Cache-Control"] = "private, max-age=3600"
+    # Review round 2: no-store, so an expired link or a changed payee never shows a cached QR.
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 

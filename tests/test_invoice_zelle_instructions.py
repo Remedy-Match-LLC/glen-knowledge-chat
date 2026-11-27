@@ -514,6 +514,7 @@ def test_the_block_shows_the_qr_image_and_the_scan_line_not_the_link():
     assert "Scan this in your bank\u2019s Zelle app." in _text(out)
     assert "Open the Zelle QR code" not in out
     assert "enroll.zellepay.com" not in out
+    assert "onerror=\"this.parentNode.style.display='none'\"" in out
 
 
 @pytest.mark.skipif(node is None, reason="node not installed")
@@ -530,6 +531,7 @@ def test_the_qr_route_serves_a_png_for_a_real_invoice(env):
     r = env["c"].get(f"/api/invoice/{tok}/zelle-qr.png")
     assert r.status_code == 200 and r.mimetype == "image/png"
     assert r.data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert r.headers["Cache-Control"] == "no-store"
 
 
 def test_the_qr_route_refuses_a_bad_token_or_no_link(env):
@@ -537,5 +539,6 @@ def test_the_qr_route_refuses_a_bad_token_or_no_link(env):
                       "https://enroll.zellepay.com/qr-codes?data=x")
     assert env["c"].get("/api/invoice/not-a-token/zelle-qr.png").status_code == 404
     _oid, tok = env["order"](ref="DS-902", total=4000)
-    env["mp"].setitem(env["app"]._ALT_PAY["zelle"], "pay_link", "javascript:alert(1)")
-    assert env["c"].get(f"/api/invoice/{tok}/zelle-qr.png").status_code == 404
+    for bad in ("javascript:alert(1)", "", "   ", "http://enroll.zellepay.com/qr-codes?data=x"):
+        env["mp"].setitem(env["app"]._ALT_PAY["zelle"], "pay_link", bad)
+        assert env["c"].get(f"/api/invoice/{tok}/zelle-qr.png").status_code == 404, bad
