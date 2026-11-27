@@ -216,6 +216,7 @@
   <script src="/static/text-size.js"></script>
   <script src="/static/theme-toggle.js"></script>
 <script src="/static/js/order-notes.js"></script>
+  <script src="/static/membership-month-addon.js"></script>
 </head>
 <body>
   <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode" style="position:fixed;top:14px;right:14px;z-index:9999;"></span>
@@ -444,6 +445,12 @@
     // ── State ──────────────────────────────────────────────────────────────
     var BASE = window.location.origin;
     var slug = location.pathname.split('/').filter(Boolean).pop() || '';
+    // The unticked month add-on, above the order button (Glen, 2026-11-26). Not on the
+    // month's own page, where the month is the purchase.
+    if (window.MonthAddon) {
+      MonthAddon.mount(document.getElementById('buy-btn'), BASE,
+                       { forced: slug === 'membership-month' });
+    }
     var product = null;
     var chosenMethod = '';
     var chosenFormat = '';
@@ -512,7 +519,11 @@
       }
 
       // Purchasable product.
-      if (p.price) { document.getElementById('p-price').textContent = p.price; }
+      if (slug === 'membership-month') {
+        // The buyer chooses the price (Glen, 2026-11-26): no list price, one at a time.
+        hide('p-price');
+        var _qr = document.querySelector('.qty-row'); if (_qr) _qr.style.display = 'none';
+      } else if (p.price) { document.getElementById('p-price').textContent = p.price; }
       else { hide('p-price'); }
 
       if (Array.isArray(p.benefits) && p.benefits.length) {
@@ -785,6 +796,15 @@
       if (_rc && _rc.value.trim()) { payload.referral_code = _rc.value.trim(); }
       var _gift = new URLSearchParams(location.search).get("gift");
       if (_gift) payload.gift = _gift;
+      try {
+        var _month = window.MonthAddon ? MonthAddon.value() : null;
+        if (_month && slug === 'membership-month') payload.price_cents = _month;
+        else if (_month) payload.membership_month_cents = _month;
+      } catch (e) {
+        ordering = false; buyBtn.disabled = false; buyBtn.textContent = 'Place your order';
+        document.getElementById('inline-msg').textContent = e.message;
+        return;
+      }
 
       fetch(BASE + '/begin/checkout/' + encodeURIComponent(slug), {
         method: 'POST',

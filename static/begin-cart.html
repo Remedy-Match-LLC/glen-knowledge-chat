@@ -153,6 +153,7 @@
     </div>
   </main>
   <script src="/static/optin-gate.js"></script>
+  <script src="/static/membership-month-addon.js"></script>
   <script>
   (function(){
     // A later task changes this to /shop, once /shop exists. One constant, both links.
@@ -348,6 +349,7 @@
     }
     lookUpZelleOrders();
 
+    if (window.MonthAddon) MonthAddon.mount(document.getElementById("cart-checkout"), "");
     function checkout(){
       var body = {method: payMethod()};
       var zelleRef = "";
@@ -368,6 +370,10 @@
         body.checkout_request_id = zelleRef;
         addZelleKey(zelleRef);
       }
+      try {
+        var _month = window.MonthAddon ? MonthAddon.value() : null;
+        if (_month) body.membership_month_cents = _month;
+      } catch (e) { msg.textContent = e.message; return; }
       btn.disabled = true; msg.textContent = "Starting checkout…";
       post("/api/cart/checkout", body).then(function(res){
         var status = res.status, d = res.body;

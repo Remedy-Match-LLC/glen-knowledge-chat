@@ -11560,6 +11560,8 @@ def _get_product(slug):
     p = (_PRODUCTS.get("products") or {}).get(slug)
     if not p or p.get("inactive"):
         return None  # inactive products are not sellable/visible on the funnel
+    if slug == MEMBERSHIP_MONTH_SLUG and not _month_offer_on():
+        return None  # hidden, page and checkout alike, until Glen approves its words
     out = dict(p)
     out["slug"] = slug
     out.setdefault("price_cents", _PRODUCTS.get("default_price_cents", 7000))
@@ -11714,11 +11716,40 @@ def _buyer_priced(p, chosen_cents):
                 buyer_priced=True)
 
 
+# The add-on's words. Glen approves them before MEMBERSHIP_MONTH_OFFER is turned on.
+MONTH_ADDON_LINE = "Add one month of membership at a price you choose"
+MONTH_ADDON_HELP = ("Whole dollars, $1 to $100. It adds 30 days after any membership "
+                    "you already have.")
+
+
+@app.route("/begin/membership-month-offer")
+def begin_membership_month_offer():
+    """What the checkout pages need to show the unticked add-on, or {on: false}."""
+    p = _regular_product(MEMBERSHIP_MONTH_SLUG)
+    rng = _buyer_price_range(p)
+    if not (_month_offer_on() and rng):
+        return jsonify({"on": False})
+    return jsonify({"on": True, "min_cents": rng[0], "max_cents": rng[1],
+                    "line": MONTH_ADDON_LINE, "help": MONTH_ADDON_HELP})
+
+
+def _with_month_addon(cart, data):
+    """The cart plus the ticked membership-month add-on, if the checkout asked for
+    one. The amount is checked by the pricer, never here, so every checkout refuses
+    the same things."""
+    raw = (data or {}).get("membership_month_cents")
+    if raw in (None, "", False) or not _month_offer_on():
+        return list(cart or [])
+    rest = [c for c in (cart or []) if (c.get("slug") or "") != MEMBERSHIP_MONTH_SLUG]
+    return rest + [{"slug": MEMBERSHIP_MONTH_SLUG, "qty": 1, "price_cents": raw}]
+
+
 def _buyer_priced_line_cents(order) -> int:
     """What the order's buyer-priced lines cost, kept out of its points earn."""
     tot = 0
     for it in (order or {}).get("items") or []:
-        if not _buyer_price_range(_regular_product(it.get("slug") or "")):
+        # The raw record: a paid month earns no points even if the offer is off later.
+        if not _buyer_price_range((_PRODUCTS.get("products") or {}).get(it.get("slug") or "")):
             continue
         try:
             tot += int(it.get("line_cents") if it.get("line_cents") not in (None, "")
@@ -16881,7 +16912,10 @@ def begin_checkout(slug):
         _gift_pct, _gift_coupon = 0, None
     _eff_pct = max(_ref_pct or 0, _self_pct or 0, _gift_pct or 0)
     try:
-        pc = _price_cart_checked([{"slug": slug, "qty": qty, "format": fmt}], ship=ship,
+        _main = {"slug": slug, "qty": qty, "format": fmt}
+        if _buyer_price_range(p):
+            _main["price_cents"] = data.get("price_cents")   # checked by the pricer
+        pc = _price_cart_checked(_with_month_addon([_main], data), ship=ship,
                          coupon_pct=_eff_pct,
                          points_to_redeem_cents=redeem,
                          product_points_cents=min(redeem, _product_usable_points_cents(email)),
@@ -29777,8 +29811,9 @@ def api_cart_checkout():
             redeem = 0
 
         try:
-            res = _checkout_cart(email, [{"slug": c["slug"], "qty": c["qty"],
-                                          "format": c["format"]} for c in cart],
+            res = _checkout_cart(email, _with_month_addon(
+                                     [{"slug": c["slug"], "qty": c["qty"],
+                                       "format": c["format"]} for c in cart], data),
                                  ship=ship, points_to_redeem_cents=redeem,
                                  referral_code=(data.get("referral_code") or "").strip(),
                                  cancel_to_cart=True, method=method,
@@ -30993,8 +31028,14 @@ def _portal_priced_lines(items, email=None):
         # saved per-SKU or eligible FF-flat price exists.
         # A current saved special outranks an older baked line price, but only ever
         # lowers the automatic price (Glen, 2026-10-04: "only ... a lower price").
-        _special = _client_special_for(slug, p, client_by_slug, client_ff_flat)
-        if _special is not None:
+        _special = (None if _buyer_price_range(p)
+                     else _client_special_for(slug, p, client_by_slug, client_ff_flat))
+        if _buyer_price_range(p):
+            # The buyer's own whole-dollar price, once, with nothing taken off it.
+            if slug == MEMBERSHIP_MONTH_SLUG and not _month_offer_on():
+                raise CheckoutError("That item is not available yet.")
+            unit_cents, qty = _buyer_chosen_cents(p, it.get("price_cents")), 1
+        elif _special is not None:
             unit_cents = _special_lowers_only(_special, _inhouse_line_unit_cents(
                 p, None, total_ff_qty, settings, repertoire_slugs=rep_slugs,
                 program_member=program_member, line_qty=qty))
@@ -39287,7 +39328,13 @@ def api_client_portal_checkout(token):
     # A posted line the client chose themselves was refused above.
     if posted is None:
         items, not_ready = _split_not_ready(items)
-    lines, items_rec, subtotal_cents = _portal_priced_lines(items, email=email)
+    # The ticked membership-month add-on joins whatever is being bought (2026-11-26).
+    _has_other = bool(items)
+    items = _with_month_addon(items, body) if _has_other else items
+    try:
+        lines, items_rec, subtotal_cents = _portal_priced_lines(items, email=email)
+    except CheckoutError as ce:
+        return jsonify({"error": str(ce)}), 400
     if not lines:
         return jsonify({"error": "Your remedies are no longer available — please reach out and we'll help.",
                         "not_ready": not_ready}), 400

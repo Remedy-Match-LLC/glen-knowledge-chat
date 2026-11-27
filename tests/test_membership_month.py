@@ -45,10 +45,16 @@ def test_anything_else_is_refused(pc):
         app._price_cart([_line(pc)], ship=SHIP)
 
 
-def test_the_flag_off_refuses_it(monkeypatch):
+def test_the_flag_off_hides_it_everywhere(monkeypatch):
     monkeypatch.delenv("MEMBERSHIP_MONTH_OFFER")
-    with pytest.raises(app.CheckoutError, match="not available"):
-        app._price_cart([_line(2000)], ship=SHIP)
+    assert app._get_product(SLUG) is None
+    pc = app._price_cart([_line(2000), {"slug": "nerve-pulse", "qty": 1}], ship=SHIP)
+    assert [r["slug"] for r in pc["items_rec"]] == ["nerve-pulse"]
+    assert app._with_month_addon([{"slug": "nerve-pulse"}],
+                                 {"membership_month_cents": 2000}) == [{"slug": "nerve-pulse"}]
+    c = app.app.test_client()
+    assert c.get("/begin/membership-month-offer").get_json() == {"on": False}
+    assert c.get(f"/begin/product/{SLUG}").status_code == 404
 
 
 def test_one_at_a_time():
@@ -164,3 +170,97 @@ def test_a_cancelled_or_month_free_order_grants_nothing(cx):
     o = _order(); o["items"] = [{"slug": "nerve-pulse", "qty": 1}]
     assert app._grant_bought_month_on_paid(cx, o) == "none"
     assert _ends(cx) == []
+
+
+# ---- the add-on and the store page ---------------------------------------------------
+
+def test_the_add_on_joins_the_cart_and_replaces_any_posted_month():
+    cart = app._with_month_addon([{"slug": "nerve-pulse", "qty": 1},
+                                  {"slug": SLUG, "qty": 3, "price_cents": 1}],
+                                 {"membership_month_cents": 2500})
+    assert cart == [{"slug": "nerve-pulse", "qty": 1},
+                    {"slug": SLUG, "qty": 1, "price_cents": 2500}]
+    assert app._with_month_addon([{"slug": "nerve-pulse"}], {}) == [{"slug": "nerve-pulse"}]
+
+
+def test_the_offer_route_carries_the_words_and_range():
+    o = app.app.test_client().get("/begin/membership-month-offer").get_json()
+    assert o == {"on": True, "min_cents": 100, "max_cents": 10000,
+                 "line": app.MONTH_ADDON_LINE, "help": app.MONTH_ADDON_HELP}
+
+
+def test_every_customer_checkout_passes_the_add_on():
+    import inspect
+    assert "_with_month_addon(" in inspect.getsource(app.begin_checkout)
+    assert "_with_month_addon(" in inspect.getsource(app.api_cart_checkout)
+    assert "_with_month_addon(" in inspect.getsource(app.api_client_portal_checkout)
+
+
+def test_the_portal_prices_the_month_at_the_chosen_amount():
+    lines, rec, sub = app._portal_priced_lines(
+        [{"slug": "nerve-pulse", "qty": 1}, {"slug": SLUG, "qty": 4, "price_cents": 3000}])
+    m = [r for r in rec if r["slug"] == SLUG][0]
+    assert m["unit_cents"] == 3000 and m["qty"] == 1
+    with pytest.raises(app.CheckoutError):
+        app._portal_priced_lines([{"slug": SLUG, "price_cents": 50}])
+
+
+def test_the_pages_load_the_add_on():
+    import pathlib
+    root = pathlib.Path(app.__file__).resolve().parent / "static"
+    for page in ("begin-buy.html", "begin-cart.html"):
+        src = (root / page).read_text()
+        assert "/static/membership-month-addon.js" in src and "membership_month_cents" in src
+
+
+def test_no_practitioner_or_portal_catalog_lists_it():
+    assert app._is_orderable(SLUG) is False
+    assert app._is_orderable(SLUG, app._get_product(SLUG)) is False
+
+
+# ---- the paid hook and the points -------------------------------------------------------
+
+@pytest.fixture
+def filecx(tmp_path, monkeypatch):
+    from dashboard import orders as O
+    db = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(app, "LOG_DB", db)
+    monkeypatch.setattr(app, "_member_join_welcome", lambda *a, **k: None)
+    c = sqlite3.connect(db)
+    c.row_factory = sqlite3.Row
+    O.init_orders_table(c)
+    app.init_membership_tables(c)
+    c.commit()
+    app._init_people_table()
+    yield c
+    c.close()
+
+
+def test_the_paid_hook_grants_the_month(filecx):
+    app._grant_membership_line_dep(_order("DEP-1"))
+    rows = filecx.execute("SELECT months FROM order_month_grants WHERE order_ref='DEP-1'"
+                          ).fetchall()
+    assert [r[0] for r in rows] == [1]
+    assert len(_ends(filecx)) == 1
+
+
+def test_the_month_earns_no_points_on_a_paid_order(monkeypatch, tmp_path):
+    from dashboard import points
+    db = str(tmp_path / "pts.db")
+    monkeypatch.setattr(app, "LOG_DB", db)
+    c = sqlite3.connect(db); c.row_factory = sqlite3.Row
+    points.init_points_table(c); c.commit()
+    np = app._PRODUCTS["products"]["nerve-pulse"]["price_cents"]
+
+    def settle(items, ref):
+        order = {"email": EMAIL, "total_cents": sum(i["unit_cents"] for i in items),
+                 "shipping_cents": 0, "discount_cents": 0, "points_redeemed_cents": 0,
+                 "source": "begin", "items": items}
+        before = points.balance(c, EMAIL)
+        app._settle_order_points(order, order_ref=ref)
+        return points.balance(c, EMAIL) - before
+
+    alone = settle([{"slug": "nerve-pulse", "qty": 1, "unit_cents": np}], "P-1")
+    both = settle([{"slug": "nerve-pulse", "qty": 1, "unit_cents": np},
+                   {"slug": SLUG, "qty": 1, "unit_cents": 10000}], "P-2")
+    assert alone > 0 and both == alone
