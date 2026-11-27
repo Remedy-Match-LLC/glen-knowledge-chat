@@ -1131,6 +1131,7 @@
 <script src="/static/js/portal-shell.js"></script>
 <script src="/static/js/portal-folds.js"></script>
 <script src="/static/js/portal-library.js"></script>
+<script src="/static/membership-month-addon.js"></script>
 <script src="/static/js/portal-documents.js"></script>
 <script src="/static/js/portal-historical-intakes.js"></script>
 <script src="/static/js/portal-onboarding.js?v=20261005-ctoe-video"></script>
@@ -2981,6 +2982,8 @@ function renderOrdersBasket(){
     </fieldset>
     <button type="button" class="btn full" id="orders-place-order">Place order</button>
     <p id="orders-order-message" class="small" hidden></p>`;
+  // The unticked month add-on, above Place order (Glen, 2026-11-26).
+  if (window.MonthAddon) MonthAddon.mount(document.getElementById("orders-place-order"), "");
 }
 
 // Zelle instructions for orders placed from this portal in this tab. Keyed by the
@@ -3068,6 +3071,9 @@ document.addEventListener("click", async function(ev){
   }
   if(!place || place.disabled) return;
   const msg = document.getElementById("orders-order-message");
+  let _ordersMonth = null;
+  try { _ordersMonth = window.MonthAddon ? MonthAddon.value() : null; }
+  catch(e){ if(msg){ msg.textContent = e.message; msg.hidden = false; } return; }
   place.disabled = true; place.textContent = "Setting up your order…";
   if(msg) msg.hidden = true;
   try {
@@ -3082,6 +3088,7 @@ document.addEventListener("click", async function(ev){
       checkout_request_id:place.dataset.checkoutRequestId,
       method:ordersPayMethod(),
       catalog_order:true,
+      ...(_ordersMonth ? {membership_month_cents:_ordersMonth} : {}),
       items:ordersBasket.flatMap(it => it.refillEligible ? [
         {slug:it.slug, qty:Number(it.bottleQty ?? (it.format === 'refill' ? 0 : it.qty)) || 0, format:"bottle"},
         {slug:it.slug, qty:Number(it.refillQty ?? (it.format === 'refill' ? it.qty : 0)) || 0, format:"refill"}
@@ -9041,8 +9048,13 @@ async function reorder(){
     review.hidden = false;
     btn.dataset.reviewed = "1";
     btn.textContent = "Continue to secure checkout";
+    // The unticked month add-on, before secure checkout (Glen, 2026-11-26).
+    if (window.MonthAddon) MonthAddon.mount(btn, "");
     return;
   }
+  let _monthCents = null;
+  try { _monthCents = window.MonthAddon ? MonthAddon.value() : null; }
+  catch(e){ if(err){ err.textContent = e.message; err.hidden = false; } return; }
   btn.disabled = true; const label = btn.textContent; btn.textContent = "Setting up your order…";
   try{
     // Keep one request id across the automatic retry. The server and Stripe use
@@ -9062,7 +9074,8 @@ async function reorder(){
       // above, not only historical/curated remedies. The server still validates
       // that every slug is an active, sellable catalog product.
       catalog_order:true,
-      items:items.map(it => ({slug:it.slug, qty:it.qty, format:it.format}))
+      items:items.map(it => ({slug:it.slug, qty:it.qty, format:it.format})),
+      ...(_monthCents ? {membership_month_cents:_monthCents} : {})
     });
     let cj = null;
     for(let attempt=0; attempt<2; attempt++){

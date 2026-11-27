@@ -48,10 +48,14 @@ def test_anything_else_is_refused(pc):
 def test_the_flag_off_hides_it_everywhere(monkeypatch):
     monkeypatch.delenv("MEMBERSHIP_MONTH_OFFER")
     assert app._get_product(SLUG) is None
-    pc = app._price_cart([_line(2000), {"slug": "nerve-pulse", "qty": 1}], ship=SHIP)
+    # A month chosen on a page loaded while the offer was on is refused, never dropped.
+    with pytest.raises(app.CheckoutError, match="not offered right now"):
+        app._price_cart([_line(2000), {"slug": "nerve-pulse", "qty": 1}], ship=SHIP)
+    with pytest.raises(app.CheckoutError, match="not offered right now"):
+        app._with_month_addon([{"slug": "nerve-pulse"}], {"membership_month_cents": 2000})
+    assert app._with_month_addon([{"slug": "nerve-pulse"}], {}) == [{"slug": "nerve-pulse"}]
+    pc = app._price_cart([{"slug": "nerve-pulse", "qty": 1}], ship=SHIP)
     assert [r["slug"] for r in pc["items_rec"]] == ["nerve-pulse"]
-    assert app._with_month_addon([{"slug": "nerve-pulse"}],
-                                 {"membership_month_cents": 2000}) == [{"slug": "nerve-pulse"}]
     c = app.app.test_client()
     assert c.get("/begin/membership-month-offer").get_json() == {"on": False}
     assert c.get(f"/begin/product/{SLUG}").status_code == 404
@@ -165,7 +169,9 @@ def test_two_months_add_60_days(cx):
     assert abs((end - datetime.utcnow()) - timedelta(days=60)) < timedelta(minutes=1)
 
 
-def test_a_cancelled_or_month_free_order_grants_nothing(cx):
+def test_an_order_cancelled_before_payment_or_without_a_month_grants_nothing(cx):
+    # A month already granted stays until an owner revokes it in the console, as the
+    # supply months do (review round 2 noted this).
     assert app._grant_bought_month_on_paid(cx, _order(status="cancelled")) == "none"
     o = _order(); o["items"] = [{"slug": "nerve-pulse", "qty": 1}]
     assert app._grant_bought_month_on_paid(cx, o) == "none"
@@ -208,7 +214,7 @@ def test_the_portal_prices_the_month_at_the_chosen_amount():
 def test_the_pages_load_the_add_on():
     import pathlib
     root = pathlib.Path(app.__file__).resolve().parent / "static"
-    for page in ("begin-buy.html", "begin-cart.html"):
+    for page in ("begin-buy.html", "begin-cart.html", "client-portal.html"):
         src = (root / page).read_text()
         assert "/static/membership-month-addon.js" in src and "membership_month_cents" in src
 
@@ -264,3 +270,60 @@ def test_the_month_earns_no_points_on_a_paid_order(monkeypatch, tmp_path):
     both = settle([{"slug": "nerve-pulse", "qty": 1, "unit_cents": np},
                    {"slug": SLUG, "qty": 1, "unit_cents": 10000}], "P-2")
     assert alone > 0 and both == alone
+
+
+def test_two_orders_paid_at_once_add_60_days(filecx, monkeypatch):
+    # Review round 2: both payments used to read the same furthest end and add the
+    # same 30 days. The buyer-row lock makes the second wait for the first.
+    import threading
+    _add(filecx, 10, "supply_months")
+    for ref in ("C-1", "C-2"):
+        filecx.execute("INSERT INTO people (email, created_at, updated_at) "
+                       "SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM people "
+                       "WHERE lower(email)=?)", (EMAIL, "x", "x", EMAIL))
+    filecx.commit()
+    barrier = threading.Barrier(2)
+    real = app._supply_naive
+    seen = threading.local()
+
+    def slow(v):
+        if not getattr(seen, "done", False):
+            seen.done = True
+            try:
+                barrier.wait(timeout=1.5)   # both readers meet here unless one is locked out
+            except threading.BrokenBarrierError:
+                pass
+        return real(v)
+    monkeypatch.setattr(app, "_supply_naive", slow)
+    errs = []
+
+    def pay(ref):
+        c = sqlite3.connect(app.LOG_DB, timeout=10)
+        c.row_factory = sqlite3.Row
+        try:
+            app._grant_bought_month_on_paid(c, _order(ref))
+            c.commit()
+        except Exception as e:      # surfaced below
+            import traceback
+            errs.append(traceback.format_exc()[-900:])
+        finally:
+            c.close()
+    ts = [threading.Thread(target=pay, args=(r,)) for r in ("C-1", "C-2")]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    monkeypatch.setattr(app, "_supply_naive", real)
+    ends = _ends(filecx)
+    # Postgres queues the second payment on the row lock, so both grant. SQLite may
+    # instead refuse one with "database is locked", which the settlement retries. What
+    # must never happen is two grants ending on the same day.
+    assert all("database is locked" in e for e in errs), errs
+    assert len(ends) + len(errs) == 2
+    if len(ends) == 2:
+        assert abs((ends[1] - ends[0]).total_seconds() - 30 * 86400) < 120
+
+
+def test_the_cart_will_not_hold_it(monkeypatch):
+    monkeypatch.setattr(app, "_PORTAL_CART_ENABLED", True)
+    r = app.app.test_client().post("/api/cart/add", json={"slug": SLUG, "qty": 1})
+    assert r.status_code == 400 and "not available" in r.get_json()["error"]
+    assert app._is_orderable(SLUG, app._get_product(SLUG)) is False

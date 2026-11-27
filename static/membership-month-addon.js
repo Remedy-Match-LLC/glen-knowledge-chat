@@ -4,7 +4,8 @@
    MonthAddon.value() is the chosen price in cents, null when unticked, or throws a
    plain message when the box holds something the checkout would refuse. */
 (function () {
-  var offer = null, box = null, forced = false;
+  var offer = null, box = null, forced = false, fetching = null;
+  var kept = { checked: false, dollars: '' };   // survives a page redrawing the button
   function el(tag, attrs, text) {
     var e = document.createElement(tag);
     for (var k in (attrs || {})) e.setAttribute(k, attrs[k]);
@@ -14,12 +15,19 @@
   // opts.forced: the month's own page, where the month IS the purchase. No tickbox;
   // the price box shows at once and must be filled.
   function mount(beforeEl, base, opts) {
-    if (!beforeEl || box) return;
+    if (!beforeEl) return;
+    if (box && box.isConnected && box.nextSibling === beforeEl) return;
     forced = !!(opts && opts.forced);
-    fetch((base || '') + '/begin/membership-month-offer', { credentials: 'same-origin' })
-      .then(function (r) { return r.json(); })
+    if (!fetching) {
+      fetching = fetch((base || '') + '/begin/membership-month-offer',
+                       { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); });
+    }
+    fetching
       .then(function (o) {
-        if (!o || !o.on || box) return;
+        if (!o || !o.on || !beforeEl.isConnected) return;
+        if (box && box.isConnected && box.nextSibling === beforeEl) return;
+        if (box && box.parentNode) box.parentNode.removeChild(box);
         offer = o;
         box = el('div', { 'class': 'month-addon', id: 'month-addon' });
         var label = el('label', { 'class': 'month-addon-line' });
@@ -33,10 +41,14 @@
                                 max: String(o.max_cents / 100), step: '1', inputmode: 'numeric' });
         row.appendChild(amt);
         var help = el('p', { 'class': 'month-addon-help' }, o.help);
+        cb.checked = kept.checked; amt.value = kept.dollars;
+        if (kept.checked) row.removeAttribute('hidden');
         cb.addEventListener('change', function () {
+          kept.checked = cb.checked;
           if (cb.checked) { row.removeAttribute('hidden'); amt.focus(); }
           else { row.setAttribute('hidden', ''); }
         });
+        amt.addEventListener('input', function () { kept.dollars = amt.value; });
         if (!forced) box.appendChild(label);
         box.appendChild(row); box.appendChild(help);
         beforeEl.parentNode.insertBefore(box, beforeEl);
@@ -44,7 +56,7 @@
       .catch(function () { /* no add-on: the checkout works as before */ });
   }
   function value() {
-    if (!box || !offer) return null;
+    if (!box || !offer || !box.isConnected) return null;
     if (!forced && !document.getElementById('month-addon-check').checked) return null;
     var raw = (document.getElementById('month-addon-dollars').value || '').trim();
     var lo = offer.min_cents / 100, hi = offer.max_cents / 100;

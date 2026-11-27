@@ -11716,6 +11716,8 @@ def _buyer_priced(p, chosen_cents):
                 buyer_priced=True)
 
 
+_MONTH_OFF_MESSAGE = ("The month of membership is not offered right now. Please untick "
+                      "it and place your order again.")
 # The add-on's words. Glen approves them before MEMBERSHIP_MONTH_OFFER is turned on.
 MONTH_ADDON_LINE = "Add one month of membership at a price you choose"
 MONTH_ADDON_HELP = ("Whole dollars, $1 to $100. It adds 30 days after any membership "
@@ -11738,8 +11740,12 @@ def _with_month_addon(cart, data):
     one. The amount is checked by the pricer, never here, so every checkout refuses
     the same things."""
     raw = (data or {}).get("membership_month_cents")
-    if raw in (None, "", False) or not _month_offer_on():
+    if raw in (None, "", False):
         return list(cart or [])
+    if not _month_offer_on():
+        # A page loaded while the offer was on: refuse, so nothing is charged for a
+        # basket the buyer did not choose (review round 2).
+        raise CheckoutError(_MONTH_OFF_MESSAGE)
     rest = [c for c in (cart or []) if (c.get("slug") or "") != MEMBERSHIP_MONTH_SLUG]
     return rest + [{"slug": MEMBERSHIP_MONTH_SLUG, "qty": 1, "price_cents": raw}]
 
@@ -12492,6 +12498,9 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     packaging_review = []
     for c in (cart or []):
         _cslug = (c.get("slug") or "").strip()
+        if _cslug == MEMBERSHIP_MONTH_SLUG and not _month_offer_on():
+            # Refused, never dropped: the buyer chose it (review round 2).
+            raise CheckoutError(_MONTH_OFF_MESSAGE)
         p = _get_product(_cslug) or (extra_products or {}).get(_cslug)
         if not p:
             continue
@@ -12501,8 +12510,6 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         p = _member_priced_product(p, email)
         qty = max(1, min(int(c.get("qty", 1) or 1), 99))
         if _buyer_price_range(p):
-            if p.get("slug") == MEMBERSHIP_MONTH_SLUG and not _month_offer_on():
-                raise CheckoutError("That item is not available yet.")
             # One at a time, at the price the buyer chose (2026-11-26).
             p = _buyer_priced(p, _buyer_chosen_cents(p, c.get("price_cents")))
             qty = 1
@@ -13418,6 +13425,13 @@ def _grant_bought_month_on_paid(cx, order):
         _customers.find_or_create_by_email(cx, email=email)   # commits (new person only)
     except Exception as _e:
         print(f"[bought-month] people upsert skipped: {_e!r}", flush=True)
+    # Lock this buyer's person row before reading their memberships, so two orders paid
+    # at once queue here and the second starts after the first (review round 2). The
+    # no-op UPDATE holds a row lock on Postgres and the write lock on SQLite.
+    try:
+        cx.execute("UPDATE people SET email=email WHERE lower(email)=?", (email,))
+    except Exception as _e:
+        print(f"[bought-month] buyer lock skipped: {_e!r}", flush=True)
     now = datetime.utcnow()
     prior = None
     for (exp, src) in cx.execute(
@@ -39330,8 +39344,8 @@ def api_client_portal_checkout(token):
         items, not_ready = _split_not_ready(items)
     # The ticked membership-month add-on joins whatever is being bought (2026-11-26).
     _has_other = bool(items)
-    items = _with_month_addon(items, body) if _has_other else items
     try:
+        items = _with_month_addon(items, body) if _has_other else items
         lines, items_rec, subtotal_cents = _portal_priced_lines(items, email=email)
     except CheckoutError as ce:
         return jsonify({"error": str(ce)}), 400
