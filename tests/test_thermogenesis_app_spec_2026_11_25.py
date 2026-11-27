@@ -128,6 +128,9 @@ def test_no_other_product_or_key_changes(name):
                              "warning", "copy_pinned", "content_since", "enrichment_note",
                              "note"}}
     later.update({s: {"directions"} for s in _AS_GUIDED})
+    # The Black Friday sale on Pollen Power (Glen "yes, Pollen Power with those
+    # defaults", platform tab, 2026-11-26) adds only its `sale` record.
+    later["pollen-power"] = {"sale"}
     for slug in old:
         if slug in later:
             moved = {k for k in set(old[slug]) | set(new[slug])

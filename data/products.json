@@ -14230,6 +14230,11 @@
   "pollen-power": {
    "name": "Pollen Power",
    "price_cents": 7000,
+   "sale": {
+    "price_cents": 4000,
+    "ends_at": "2026-12-01T08:00:00Z",
+    "note": "Black Friday, Glen 2026-11-26: $40 until midnight Pacific Monday 30 Nov (22:00 HST)"
+   },
    "pinecone_title": "Pollen Power",
    "url": "https://myhealingoasis.com/begin/product/pollen-power",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/92-pollen-power",

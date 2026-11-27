@@ -11546,7 +11546,93 @@ def _get_product(slug):
     out = dict(p)
     out["slug"] = slug
     out.setdefault("price_cents", _PRODUCTS.get("default_price_cents", 7000))
-    return out
+    return _sale_priced(out)
+
+
+# A timed sale price (Glen, platform tab, 2026-11-26: "yes, Pollen Power with those
+# defaults"). A catalog record may carry `sale`: {"price_cents", "ends_at"} with an
+# optional "starts_at", both ISO times with a zone. Until `ends_at`, _get_product hands
+# every consumer the sale price, so the product page and checkout read the same number:
+# the regular price becomes the page's struck-through compare-at price, and the line
+# takes no other discount (no quantity tiers, coupon or tier on top). At `ends_at` the
+# record prices as before with no deploy. The price is set when the order is priced,
+# so a cart filled before the end and paid after it pays the regular price.
+def _sale_window(p, now=None):
+    """(sale_cents, ends_at) while `p`'s sale is on, else None. A malformed sale, one
+    not below the regular price, or one with no zone on its times is ignored."""
+    s = (p or {}).get("sale")
+    if not isinstance(s, dict):
+        return None
+    try:
+        cents = int(s.get("price_cents"))
+        ends = datetime.fromisoformat(str(s.get("ends_at") or "").replace("Z", "+00:00"))
+        starts_raw = s.get("starts_at")
+        starts = (datetime.fromisoformat(str(starts_raw).replace("Z", "+00:00"))
+                  if starts_raw else None)
+        base = int(p.get("price_cents") or 0)
+        if ends.tzinfo is None or (starts is not None and starts.tzinfo is None):
+            return None
+        if not 0 < cents < base:
+            return None
+        now = now or datetime.now(timezone.utc)
+        if now >= ends or (starts is not None and now < starts):
+            return None
+        return cents, ends
+    except Exception as e:
+        print(f"[sale] ignored for {(p or {}).get('slug')!r}: {e!r}", flush=True)
+        return None
+
+
+def _sale_priced(p, now=None):
+    """`p` at its sale price while the sale is on (_sale_window), else `p` unchanged."""
+    w = _sale_window(p, now)
+    if not w:
+        return p
+    q = dict(p)
+    q.update(regular_cents=int(p["price_cents"]), price_cents=w[0], fixed_price=True,
+             qty_pricing=False, volume_eligible=False, sale_ends_at=w[1].isoformat())
+    return q
+
+
+# Shown when a cart asks for more sale bottles than the shelf count holds. Not yet
+# approved by Glen (2026-11-26).
+SALE_STOCK_LINE = "Only {n} bottles of {name} are left. Please lower the quantity."
+
+
+def _sale_stock_refusal(cart):
+    """The refusal when a cart holds more of a product on sale than its shelf count,
+    or None. Only while the sale is on and shelf counts are on; a product with no count,
+    or any read failure, never blocks (stock_counts' own rule)."""
+    want = {}
+    for c in (cart or []):
+        if not isinstance(c, dict):
+            continue
+        p = _get_product((c.get("slug") or "").strip())
+        if not p or not p.get("sale_ends_at"):
+            continue
+        try:
+            qty = max(1, min(int(c.get("qty", 1) or 1), 99))
+        except (TypeError, ValueError):
+            qty = 1
+        want[p["slug"]] = (p, want.get(p["slug"], (p, 0))[1] + qty)
+    if not want or not _stock_counts.enabled():
+        return None
+    try:
+        cx = db.connect(LOG_DB)
+        try:
+            for slug, (p, qty) in want.items():
+                if not _stock_counts.countable(p, slug):
+                    continue
+                n = _stock_counts.get_count(cx, slug)
+                if n is not None and qty > max(0, n):
+                    if n <= 0:
+                        return None  # the sold-out refusal already covers it
+                    return SALE_STOCK_LINE.format(n=n, name=p.get("name") or slug)
+        finally:
+            cx.close()
+    except Exception as e:
+        print(f"[sale] stock check skipped: {e!r}", flush=True)
+    return None
 
 
 def _live_catalog_claim(slug):
@@ -12203,6 +12289,9 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         _wl = _cart_waitlist_refusal(cart, skip_zero_qty=False)
         if _wl:
             raise CheckoutError(_wl)
+        _ss = _sale_stock_refusal(cart)
+        if _ss:
+            raise CheckoutError(_ss)
     if not pickup:
         _po = _pickup_only_refusal(cart, pickup_offered=pickup_offered,
                                    extra_products=extra_products)
