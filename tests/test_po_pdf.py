@@ -145,6 +145,13 @@ def test_create_po_stores_draft_and_lines(cx):
     ("S", [{"label": "x", "qty": "lots"}], "must be a number"),
     ("S", [{"label": "  ", "qty": 1}], "description is required"),
     ("S", [{"label": "x", "qty": 1, "cost": -1}], "cannot be negative"),
+    ("S", [{"label": "x", "qty": "1e309"}], "too large"),
+    ("S", [{"label": "x", "qty": "nan"}], "too large"),
+    ("S", [{"label": "x", "qty": 1, "cost": "NaN"}], "too large"),
+    ("S", [{"label": "x", "qty": 1, "cost": "Infinity"}], "too large"),
+    ("S", [{"label": "x", "qty": 1, "material_id": "abc"}], "bad material"),
+    ("S", {"label": "x"}, "must be a list"),
+    (2**40, [LINE], "pick a supplier"),
 ])
 def test_create_po_validation(cx, sid, lines, msg):
     from dashboard import purchase_orders as po
@@ -220,7 +227,8 @@ def _client(tmp_path, monkeypatch, secret=""):
     try:
         import app as appmod
         importlib.reload(appmod)
-    except Exception as e:
+    except ImportError as e:
+        # Only a missing optional dependency skips; any other startup error fails.
         pytest.skip(f"app not importable: {e}")
     with sqlite3.connect(db) as c:
         sid = c.execute("SELECT id FROM suppliers WHERE company='Lonza'").fetchone()[0]
@@ -302,3 +310,56 @@ def test_header_is_the_po_box_and_goods_ship_to_wailuku_drive():
     assert "PO Box" not in ship
     assert t.count("(808) 217-9647") >= 1
     assert "Wailuku" not in head
+
+
+
+# ---- review rounds 1 to 3 ------------------------------------------------------------
+
+def test_a_printed_po_cannot_have_its_lines_changed(cx):
+    from dashboard import purchase_orders as po
+    pid = po.create_po(cx, _sid(cx), [LINE])
+    n = po.assign_po_number(cx, pid)
+    with pytest.raises(ValueError, match=f"PO {n} has been printed"):
+        po.replace_draft_lines(cx, pid, [{"label": "Other", "qty": 2}])
+    assert cx.execute("SELECT item_label FROM po_items WHERE po_id=?",
+                      (pid,)).fetchall() == [("Capsule shells size 0",)]
+
+
+def test_unit_cost_is_stored_as_printed(cx):
+    from dashboard import purchase_orders as po
+    pid = po.create_po(cx, _sid(cx), [{"label": "x", "qty": 1000, "cost": "0.33333"}])
+    assert cx.execute("SELECT cost FROM po_items WHERE po_id=?", (pid,)).fetchone()[0] == 0.3333
+
+
+def test_subtotal_is_the_sum_of_the_printed_lines():
+    from dashboard import po_pdf
+    items = [{"qty": 3, "cost": 1.115}, {"qty": 1, "cost": 2.675}]
+    assert [po_pdf._money(po_pdf._amount(i)) for i in items] == ["$3.35", "$2.68"]
+    assert po_pdf.totals_rows({}, items) == [("Subtotal", "$6.03"), ("Total", "$6.03")]
+
+
+def test_shipping_alone_never_prints_under_an_unpriced_order():
+    from dashboard import po_pdf
+    rows = po_pdf.totals_rows({"shipping_amount": 10, "tax": 2},
+                              [{"qty": 1, "cost": 3}, {"qty": 1, "cost": None}])
+    assert rows == []
+
+
+def test_a_reorder_line_prices_by_the_pack():
+    # Reorder drafts store a pack price with the quantity in grams (dashboard/reorder.py).
+    import json
+    from dashboard import po_pdf
+    it = {"item_label": "Ashwagandha", "qty": 1000.0, "qty_unit": "g", "cost": 334.0,
+          "extras": json.dumps({"unit_size": 1000.0, "packs": 1, "est_cost": 334.0})}
+    assert po_pdf._amount(it) == 334
+    assert po_pdf._qty_text(it) == "1 \u00d7 1,000 g"
+    assert po_pdf.totals_rows({}, [it])[-1] == ("Total", "$334.00")
+    t = _text(po_pdf.render_po_pdf({"po_number": 1120, "supplier_name": "Lonza",
+                                    "po_date": "2026-11-26"}, [it]))
+    assert "$334,000" not in t and "$334.00" in t
+
+
+def test_a_filemaker_date_prints_as_its_own_date():
+    from dashboard import po_pdf
+    assert po_pdf.po_date_text("11/26/2025") == "Nov 26, 2025"
+    assert po_pdf.po_date_text("2025-11-26") == "Nov 26, 2025"

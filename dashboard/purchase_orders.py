@@ -3,6 +3,7 @@ Line items reference Phase-1 ingredients / Phase-3a materials / Phase-2 products
 Mirrors dashboard/ingredient_catalog.py."""
 from __future__ import annotations
 import json
+import math
 import sqlite3
 from datetime import date
 from dashboard.ingredient_catalog import _connect
@@ -169,6 +170,8 @@ def _clean_lines(lines):
     """Validate hand-entered PO lines. Raises ValueError with a plain message."""
     if not lines:
         raise ValueError("add at least one line")
+    if not isinstance(lines, list) or len(lines) > 200:
+        raise ValueError("lines must be a list of up to 200")
     out = []
     for i, ln in enumerate(lines, 1):
         ln = ln or {}
@@ -179,6 +182,8 @@ def _clean_lines(lines):
             qty = float(ln.get("qty"))
         except (TypeError, ValueError):
             raise ValueError(f"line {i}: quantity must be a number")
+        if not math.isfinite(qty) or qty > 1e9:
+            raise ValueError(f"line {i}: quantity is too large")
         if not qty > 0:
             raise ValueError(f"line {i}: quantity must be more than 0")
         c = ln.get("cost")
@@ -189,12 +194,21 @@ def _clean_lines(lines):
                 cost = float(c)
             except (TypeError, ValueError):
                 raise ValueError(f"line {i}: unit cost must be a number")
+            if not math.isfinite(cost) or cost > 1e7:
+                raise ValueError(f"line {i}: unit cost is too large")
             if cost < 0:
                 raise ValueError(f"line {i}: unit cost cannot be negative")
-        mat = ln.get("material_id")
-        ing = ln.get("ingredient_id")
-        mat = int(mat) if mat not in (None, "") else None
-        ing = int(ing) if ing not in (None, "") else None
+            # The PDF prints at most four decimals, so store what it prints.
+            cost = round(cost, 4)
+        try:
+            mat = ln.get("material_id")
+            ing = ln.get("ingredient_id")
+            mat = int(mat) if mat not in (None, "") else None
+            ing = int(ing) if ing not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ValueError(f"line {i}: bad material or ingredient")
+        if len(label) > 500:
+            raise ValueError(f"line {i}: description is too long")
         kind = "material" if mat is not None else ("ingredient" if ing is not None else "other")
         unit = str(ln.get("qty_unit") or "").strip() or None
         out.append((kind, label, ing, mat, qty, unit, cost))
@@ -216,6 +230,8 @@ def create_po(cx, supplier_id, lines, notes=None, po_date=None):
         sid = int(supplier_id)
     except (TypeError, ValueError):
         raise ValueError("pick a supplier")
+    if not 0 < sid < 2**31:
+        raise ValueError("pick a supplier")
     sup = cx.execute("SELECT company FROM suppliers WHERE id=?", (sid,)).fetchone()
     if sup is None:
         raise ValueError("supplier not found")
@@ -232,15 +248,26 @@ def create_po(cx, supplier_id, lines, notes=None, po_date=None):
 
 
 def replace_draft_lines(cx, po_id, lines):
-    """Replace every line on a draft PO. Refuses any PO that is not a draft."""
-    r = cx.execute("SELECT status FROM purchase_orders WHERE id=?", (po_id,)).fetchone()
-    if r is None:
-        raise LookupError(f"purchase order {po_id} not found")
-    if (r[0] or "") != "draft":
+    """Replace every line on a draft PO. Refuses any PO that is not a draft, or that
+    already has a printed number: a second PDF under one number with other lines would
+    leave the supplier holding two different orders."""
+    clean = _clean_lines(lines)
+    # Claim the row first. On Postgres the UPDATE takes a row lock, so a concurrent
+    # replace, post or print waits, and the status and number are re-checked under it.
+    cur = cx.execute("UPDATE purchase_orders SET status=status WHERE id=? AND status='draft' "
+                     "AND po_number IS NULL", (po_id,))
+    if not getattr(cur, "rowcount", 0):
+        cx.rollback()
+        r = cx.execute("SELECT status, po_number FROM purchase_orders WHERE id=?",
+                       (po_id,)).fetchone()
+        if r is None:
+            raise LookupError(f"purchase order {po_id} not found")
+        if r[1] is not None:
+            raise ValueError(f"PO {r[1]} has been printed; make a new purchase order instead")
         raise ValueError("only a draft purchase order can have its lines changed")
     if cx.execute("SELECT 1 FROM po_receiving WHERE po_id=? LIMIT 1", (po_id,)).fetchone():
+        cx.rollback()
         raise ValueError("this purchase order already has receiving records")
-    clean = _clean_lines(lines)
     cx.execute("DELETE FROM po_items WHERE po_id=?", (po_id,))
     _insert_lines(cx, po_id, clean)
     cx.commit()

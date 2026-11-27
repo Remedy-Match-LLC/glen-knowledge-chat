@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import date
+import json
+import math
+from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
 
 from dashboard.invoice_pdf import FONT_DIR, FOOT, GOLD, GREEN, GREY, INK, LOGO, RULE, clean
 
@@ -56,10 +59,15 @@ def _qty(q, unit) -> str:
 
 
 def po_date_text(po_date) -> str:
+    t = str(po_date or "").strip()
     try:
-        d = date.fromisoformat(str(po_date or "")[:10])
+        d = date.fromisoformat(t[:10])
     except ValueError:
-        d = date.today()
+        # FileMaker exports month/day/year.
+        try:
+            d = datetime.strptime(t.split()[0], "%m/%d/%Y").date()
+        except (ValueError, IndexError):
+            d = date.today()
     return f"{d:%b} {d.day}, {d.year}"
 
 
@@ -76,10 +84,50 @@ def filename(po, supplier=None) -> str:
     return " ".join(p for p in ("PO", str(num), sup) if p) + ".pdf"
 
 
+def _pack(it):
+    """(packs, unit_size) for a reorder-report line, whose cost is per pack, else None.
+    dashboard/reorder.py: "price is per pack (e.g. 1000 g bag), NOT a per-base-unit
+    price". Multiplying that by a quantity in grams printed 1,000 times the cost."""
+    try:
+        ex = json.loads(it.get("extras") or "{}") if isinstance(it.get("extras"), str) \
+            else (it.get("extras") or {})
+    except ValueError:
+        return None
+    size = ex.get("unit_size") if isinstance(ex, dict) else None
+    try:
+        size = float(size)
+    except (TypeError, ValueError):
+        return None
+    if not size > 0 or not math.isfinite(size):
+        return None
+    packs = ex.get("packs")
+    try:
+        packs = int(packs)
+    except (TypeError, ValueError):
+        packs = math.ceil(float(it.get("qty") or 0) / size)
+    return (packs, size) if packs > 0 else None
+
+
+def _cents(v) -> Decimal:
+    return Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def _amount(it):
+    """The line amount in dollars, rounded to the cent as printed, or None."""
     if it.get("cost") is None or it.get("qty") is None:
         return None
-    return float(it["qty"]) * float(it["cost"])
+    pk = _pack(it)
+    n = Decimal(pk[0]) if pk else Decimal(str(it["qty"]))
+    return _cents(n * Decimal(str(it["cost"])))
+
+
+def _qty_text(it) -> str:
+    pk = _pack(it)
+    if pk:
+        size = f"{pk[1]:,.3f}".rstrip("0").rstrip(".")
+        unit = f" {it.get('qty_unit')}" if it.get("qty_unit") else ""
+        return f"{pk[0]:,} \u00d7 {size}{unit}"
+    return _qty(it.get("qty"), it.get("qty_unit"))
 
 
 def totals_rows(po, items):
@@ -87,18 +135,19 @@ def totals_rows(po, items):
     cost on every line: a total over some lines would read as the whole order."""
     amounts = [_amount(it) for it in items]
     priced = bool(items) and all(a is not None for a in amounts)
-    rows = []
-    sub = sum(amounts) if priced else None
-    if sub is not None:
-        rows.append(("Subtotal", _money(sub)))
-    ship = po.get("shipping_amount")
-    if ship is not None:
-        rows.append(("Shipping", _money(ship)))
-    tax = po.get("tax")
-    if tax is not None:
-        rows.append(("Tax", _money(tax)))
-    if sub is not None:
-        rows.append(("Total", _money(sub + float(ship or 0) + float(tax or 0))))
+    if not priced:
+        # Shipping or tax alone under an unpriced order reads as the whole cost.
+        return []
+    sub = sum(amounts, Decimal("0"))
+    rows = [("Subtotal", _money(sub))]
+    extra = Decimal("0")
+    for label, key in (("Shipping", "shipping_amount"), ("Tax", "tax")):
+        v = po.get(key)
+        if v is not None:
+            v = _cents(v)
+            rows.append((label, _money(v)))
+            extra += v
+    rows.append(("Total", _money(sub + extra)))
     return rows
 
 
@@ -223,7 +272,7 @@ def render_po_pdf(po, items, supplier=None, company=None, ship_to=None) -> bytes
             head_row()
         x0, y0 = pdf.get_x(), pdf.get_y()
         pdf.set_text_color(*INK)
-        pdf.cell(_COLS[0], 7, clean(_qty(it.get("qty"), it.get("qty_unit"))))
+        pdf.cell(_COLS[0], 7, clean(_qty_text(it)))
         pdf.set_xy(x0 + _COLS[0], y0 + 1)
         pdf.multi_cell(_COLS[1], 5, desc, align="L", new_x="RIGHT", new_y="TOP")
         pdf.set_xy(x0 + _COLS[0] + _COLS[1], y0)

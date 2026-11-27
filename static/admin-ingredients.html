@@ -821,7 +821,7 @@
       </div>
       <div class="save-row">
         <button class="secondary save-btn" onclick="toggleNewPoForm()">Cancel</button>
-        <button class="save-btn confirm" onclick="createPo()">Save purchase order</button>
+        <button class="save-btn confirm" id="new-po-save" onclick="createPo()">Save purchase order</button>
       </div>
     </div>
     <div id="new-po-btn-row" style="margin-bottom:14px">
@@ -2735,6 +2735,10 @@ async function createPo() {
     lines.push({ label: v("pol-label"), qty: v("pol-qty"), qty_unit: v("pol-unit"), cost: v("pol-cost") || null });
   }
   if (!lines.length) { toast("Add at least one line", "error"); return; }
+  // One click, one purchase order.
+  const btn = document.getElementById("new-po-save");
+  if (btn.disabled) return;
+  btn.disabled = true;
   try {
     const d = await api("/api/po", {
       method: "POST",
@@ -2746,6 +2750,8 @@ async function createPo() {
     openPo(d.id);
   } catch (e) {
     if (e.message !== "unauthorized") toast(e.message, "error");
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -2765,7 +2771,10 @@ function renderPoItems(items) {
     const tr = document.createElement("tr");
     tr.id = "po-item-row-" + item.id;
     const label = item.item_label || item.ingredient_canonical || item.material_name || "—";
-    const costCell = item.cost != null ? "$" + Number(item.cost).toFixed(2) : "—";
+    // Up to four decimals, as the PDF prints a per-gram price.
+    const costCell = item.cost != null
+      ? "$" + Number(item.cost).toFixed(4).replace(/(\.\d\d\d?)0+$/, "$1").replace(/(\.\d\d)0$/, "$1")
+      : "—";
     tr.innerHTML = `
       <td><strong>${escapeHtml(label)}</strong></td>
       <td style="color:var(--muted)">${escapeHtml(item.item_kind || "—")}</td>
