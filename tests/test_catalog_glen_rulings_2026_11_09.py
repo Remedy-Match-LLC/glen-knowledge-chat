@@ -191,9 +191,10 @@ def test_pair_box_zero_or_negative_units_cost_nothing(medium_rate):
     ("Alkaline Microwater (4 L)", "microwater-alkaline"),
     ("Bioenergetic Wellness Scanner (USB)", "bioenergetic-wellness-scanner-usb"),
     ("Bioenergetic Wellness Scanner (Bluetooth)", "bioenergetic-wellness-scanner-bluetooth"),
-    # Unchanged: the $1,497 system and the bare scanner keep their own names.
+    # Unchanged: the $1,497 system keeps its own name. The bare scanner page was retired
+    # to the USB page (Glen 2026-11-26: "just 2 pages: usb and bluetooth").
     ("Miracule Water System with Molecular Hydrogen", "miracule-water-system"),
-    ("Bioenergetic Wellness Scanner", "bioenergetic-wellness-scanner"),
+    ("Bioenergetic Wellness Scanner", "bioenergetic-wellness-scanner-usb"),
     ("Capsule Filling Machine 100M", "capsule-filling-machine-100m"),
     ("Capsule Filling Machine (100M)", "capsule-filling-machine-100m"),
     ("Capsule Filling Machine 120S", "capsule-filling-machine-120s"),

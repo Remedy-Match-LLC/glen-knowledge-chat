@@ -42,14 +42,14 @@ def _settings():
 def _retail_for(slug: str) -> int:
     """Retail price in cents for a product slug. Monkeypatchable in tests."""
     import app as _app
-    p = _app._get_product(slug)
+    p = _app._regular_product(slug)
     return p["price_cents"] if p else None     # retired with no replacement: unsellable
 
 
 def _wholesale_pct_for(slug: str):
     """The product's own wholesale discount %, or None. Monkeypatchable in tests."""
     import app as _app
-    return (_app._get_product(slug) or {}).get("wholesale_discount_pct")
+    return (_app._regular_product(slug) or {}).get("wholesale_discount_pct")
 
 
 def _dropship_ff(slug: str) -> bool:
@@ -60,7 +60,7 @@ def _dropship_ff(slug: str) -> bool:
         return True
     try:
         import app as _app
-        return bool((_app._get_product(slug) or {}).get("ff_larger_size"))
+        return bool((_app._regular_product(slug) or {}).get("ff_larger_size"))
     except Exception:
         return False
 
@@ -70,7 +70,7 @@ def _bottle_share(slug: str) -> float:
     sell as a pair, priced as one bottle (Glen 2026-10-06), so each is 0.5."""
     try:
         import app as _app
-        return float((_app._get_product(slug) or {}).get("ff_bottle_share") or 1)
+        return float((_app._regular_product(slug) or {}).get("ff_bottle_share") or 1)
     except Exception:
         return 1.0
 
@@ -114,7 +114,7 @@ def _product_name(slug: str) -> str:
     """The product's public name, for anything a person reads. Falls back to the slug."""
     try:
         import app as _app
-        p = _app._get_product(slug)
+        p = _app._regular_product(slug)
         return (p or {}).get("name") or slug
     except Exception:
         return slug
@@ -139,7 +139,7 @@ def _is_ff(slug: str) -> bool:
     """A Functional Formulation (qty_pricing). Monkeypatchable in tests."""
     try:
         import app as _app
-        return bool((_app._get_product(slug) or {}).get("qty_pricing"))
+        return bool((_app._regular_product(slug) or {}).get("qty_pricing"))
     except Exception:
         return False
 
@@ -405,7 +405,7 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
     if eff:
         import app as _app  # lazy (same pattern as _retail_for) — avoids a cycle
         total_ff = sum(int(i.get("qty", 0)) for i in cart
-                       if _app._qty_eligible(_app._get_product(i["slug"]) or {}))
+                       if _app._qty_eligible(_app._regular_product(i["slug"]) or {}))
         open_pct = _pricing.open_total_pct(total_ff, eff)
         prog_pct = _pricing.program_total_pct(total_ff, eff, program_member)
 
@@ -430,7 +430,7 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
                                bottle_share=_share),
                            charge_fee=_ff)
         if eff:
-            prod = _app._get_product(slug) or {}
+            prod = _app._regular_product(slug) or {}
             elig = bool(_app._qty_eligible(prod))
             if elig:
                 t1 = _pricing.same_sku_pct(line_qty, eff)

@@ -128,16 +128,17 @@ def shelf(monkeypatch):
 def test_more_than_the_shelf_holds_is_refused(shelf):
     shelf[SLUG] = 5
     with pytest.raises(app.CheckoutError) as e:
-        app._price_cart([{"slug": SLUG, "qty": 6}], ship=SHIP)
+        app._price_cart_checked([{"slug": SLUG, "qty": 6}], ship=SHIP)
     assert str(e.value) == "Only 5 bottles of Pollen Power are left. Please lower the quantity."
-    assert _lines(app._price_cart([{"slug": SLUG, "qty": 5}], ship=SHIP)) == \
+    assert _lines(app._price_cart_checked([{"slug": SLUG, "qty": 5}], ship=SHIP)) == \
         [(SLUG, 4000, 20000)]
 
 
 def test_two_lines_of_it_are_added_together(shelf):
     shelf[SLUG] = 5
     with pytest.raises(app.CheckoutError):
-        app._price_cart([{"slug": SLUG, "qty": 3}, {"slug": SLUG, "qty": 3}], ship=SHIP)
+        app._price_cart_checked([{"slug": SLUG, "qty": 3}, {"slug": SLUG, "qty": 3}],
+                                ship=SHIP)
 
 
 def test_no_count_or_a_read_failure_never_blocks(shelf, monkeypatch):
@@ -148,9 +149,23 @@ def test_no_count_or_a_read_failure_never_blocks(shelf, monkeypatch):
     assert app._sale_stock_refusal([{"slug": SLUG, "qty": 50}]) is None
 
 
-def test_an_order_already_placed_is_not_refused(shelf):
+def test_only_customer_checkouts_check_the_shelf(shelf):
+    # Renewals, re-quotes, drop-ship and owner invoices price through _price_cart and
+    # are never refused (review rounds 1 to 3).
     shelf[SLUG] = 1
+    app._price_cart([{"slug": SLUG, "qty": 4}], ship=SHIP)
     app._price_cart([{"slug": SLUG, "qty": 4}], ship=SHIP, allow_waitlist=True)
+    with pytest.raises(app.CheckoutError):
+        app._price_cart_checked([{"slug": SLUG, "qty": 4}], ship=SHIP)
+
+
+def test_customer_checkout_routes_use_the_checked_pricer():
+    import inspect
+    for fn in (app.begin_checkout, app.api_client_portal_checkout, app._checkout_cart,
+               app.reorder_subscribe):
+        src = inspect.getsource(fn)
+        assert "_price_cart_checked(" in src and "_price_cart(" not in \
+            src.replace("_price_cart_checked(", ""), fn.__name__
 
 
 def test_counts_off_or_sale_over_means_no_check(shelf, monkeypatch):
@@ -162,6 +177,104 @@ def test_counts_off_or_sale_over_means_no_check(shelf, monkeypatch):
     assert app._sale_stock_refusal([{"slug": SLUG, "qty": 4}]) is None
 
 
-def test_zero_left_is_left_to_the_sold_out_refusal(shelf):
+def test_zero_left_is_refused_as_out_of_stock(shelf):
+    # Review round 2: the count can reach 0 after the sold-out check read it.
     shelf[SLUG] = 0
-    assert app._sale_stock_refusal([{"slug": SLUG, "qty": 1}]) is None
+    assert app._sale_stock_refusal([{"slug": SLUG, "qty": 1}]) == "Pollen Power is out of stock."
+
+
+def test_one_bottle_left_reads_singular(shelf):
+    shelf[SLUG] = 1
+    assert app._sale_stock_refusal([{"slug": SLUG, "qty": 2}]) == \
+        "Only 1 bottle of Pollen Power is left. Please lower the quantity."
+
+
+def test_every_sale_product_is_checked(shelf, monkeypatch):
+    usb = "bioenergetic-wellness-scanner-usb"
+    shelf[SLUG] = 5
+    shelf[usb] = 1
+    assert "Scanner" in app._sale_stock_refusal(
+        [{"slug": SLUG, "qty": 1}, {"slug": usb, "qty": 2}])
+
+
+# ---- review rounds 1 to 3 ------------------------------------------------------------
+
+def test_sale_bottles_still_count_toward_a_members_volume(monkeypatch):
+    _set_sale(monkeypatch, price_cents=4000, ends_at=_iso(timedelta(days=1)))
+    cart = [{"slug": SLUG, "qty": 6}, {"slug": "nerve-pulse", "qty": 1}]
+    on = app._price_cart(cart, ship=SHIP, program_member=True)
+    _set_sale(monkeypatch, price_cents=4000, ends_at=_iso(timedelta(seconds=-1)))
+    off = app._price_cart(cart, ship=SHIP, program_member=True)
+    def np_paid(pc):
+        return [l for l in pc["priced"]["lines"] if l["slug"] == "nerve-pulse"][0][
+            "line_total_cents"]
+    assert np_paid(on) == np_paid(off) < 7000
+    assert on["priced"]["volume_months"] == off["priced"]["volume_months"] == 7
+
+
+def test_in_house_volume_counts_sale_bottles(monkeypatch):
+    _set_sale(monkeypatch, price_cents=4000, ends_at=_iso(timedelta(days=1)))
+    p = app._get_product(SLUG)
+    assert app._counts_toward_volume(p)
+    assert app._is_formula(p) and not app._qty_eligible(p)
+
+
+def test_a_client_flat_rate_below_the_sale_wins(monkeypatch):
+    _set_sale(monkeypatch, price_cents=4000, ends_at=_iso(timedelta(days=1)))
+    p = app._get_product(SLUG)
+    assert app._client_special_for(SLUG, p, {}, 3500) == 3500
+
+
+def test_practitioner_channels_price_from_the_regular_record(monkeypatch):
+    _set_sale(monkeypatch, price_cents=4000, ends_at=_iso(timedelta(days=1)))
+    r = app._regular_product(SLUG)
+    assert r["price_cents"] == 7000 and r.get("qty_pricing") and "sale_ends_at" not in r
+    from dashboard import dropship_checkout as dc
+    assert dc._is_ff(SLUG)
+    import inspect
+    assert "_app._get_product(" not in inspect.getsource(dc)
+
+
+def test_an_issued_sale_line_keeps_its_price_after_the_end(monkeypatch):
+    # Glen, 2026-11-26: an order priced during the sale keeps $40 on a later edit.
+    _set_sale(monkeypatch, price_cents=4000, ends_at=_iso(timedelta(seconds=-1)))
+    assert app._sale_price_for(SLUG) == 4000
+    src = __import__("inspect").getsource(app._price_inhouse_invoice)
+    assert "_sale_price_for(slug) is not None" in src
+
+
+def test_points_skip_the_sale_line_only(monkeypatch):
+    _set_sale(monkeypatch, price_cents=4000, ends_at=_iso(timedelta(days=1)))
+    np_price = app._PRODUCTS["products"]["nerve-pulse"]["price_cents"]
+    order = {"email": "a@example.test", "items": [
+        {"slug": SLUG, "qty": 2, "unit_cents": 4000},
+        {"slug": "nerve-pulse", "qty": 1, "unit_cents": np_price}]}
+    assert app._order_has_line_below_store_price(order) is False
+    assert app._sale_line_cents(order) == 8000
+    order["items"][1]["unit_cents"] = np_price - 500
+    assert app._order_has_line_below_store_price(order) is True
+
+
+def test_no_coupon_is_spent_on_a_sale_product():
+    import inspect
+    src = inspect.getsource(app.begin_checkout)
+    assert '.get("sale_ends_at"):\n        _self_pct, _self_coupon = 0, None' in src
+
+
+def test_the_chat_card_and_the_chat_quote_show_the_sale(monkeypatch):
+    _set_sale(monkeypatch, price_cents=4000, ends_at="2099-12-01T08:00:00Z")
+    assert app._complement_store_price(SLUG) == "$40.00"
+    hint = app._alias_price_hint("Pollen Power", SLUG)
+    assert hint.startswith(" \u2014 $40.00 sale price until ") and hint.endswith("then $70.00")
+
+
+def test_the_usb_scanner_sale_and_the_two_retired_pages():
+    usb = "bioenergetic-wellness-scanner-usb"
+    rec = app._PRODUCTS["products"][usb]
+    assert rec["price_cents"] == 20000
+    assert rec["sale"]["price_cents"] == 10000
+    assert rec["sale"]["ends_at"] == "2026-12-01T08:00:00Z"
+    for slug in ("nes-scanner", "bioenergetic-wellness-scanner"):
+        assert app._PRODUCTS["products"][slug]["inactive"] is True
+        assert app._get_product(slug)["slug"] == usb
+    assert app._get_product("bioenergetic-wellness-scanner-bluetooth")["price_cents"] == 10000

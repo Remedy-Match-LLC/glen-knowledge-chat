@@ -2206,6 +2206,10 @@ def _alias_price_hint(name: str, slug: str = "") -> str:
     cents = p.get("price_cents")
     if not cents:
         return ""
+    _sw = _sale_window(dict(p, slug=resolved))
+    if _sw:
+        return (f" — ${_sw[0] / 100:,.2f} sale price until {_sale_end_words(_sw[1])}, "
+                f"then ${int(cents) / 100:,.2f}")
     return f" — ${int(cents) / 100:,.2f} list"
 
 
@@ -11557,6 +11561,12 @@ def _get_product(slug):
 # takes no other discount (no quantity tiers, coupon or tier on top). At `ends_at` the
 # record prices as before with no deploy. The price is set when the order is priced,
 # so a cart filled before the end and paid after it pays the regular price.
+def _price_cart_checked(*a, **k):
+    """_price_cart for a customer checkout: it also refuses a cart asking for more sale
+    bottles than the shelf holds."""
+    return _price_cart(*a, stock_check=True, **k)
+
+
 def _sale_window(p, now=None):
     """(sale_cents, ends_at) while `p`'s sale is on, else None. A malformed sale, one
     not below the regular price, or one with no zone on its times is ignored."""
@@ -11583,20 +11593,62 @@ def _sale_window(p, now=None):
         return None
 
 
+def _sale_end_words(ends):
+    """The end as a Hilo reader reads it, e.g. "10 pm HST Monday 30 November"."""
+    from zoneinfo import ZoneInfo
+    h = ends.astimezone(ZoneInfo("Pacific/Honolulu"))
+    hour = h.strftime("%I").lstrip("0") + (" pm" if h.hour >= 12 else " am")
+    return f"{hour} HST {h.strftime('%A')} {h.day} {h.strftime('%B')}"
+
+
 def _sale_priced(p, now=None):
     """`p` at its sale price while the sale is on (_sale_window), else `p` unchanged."""
     w = _sale_window(p, now)
     if not w:
         return p
     q = dict(p)
+    # Its bottles still count toward a member's order-wide volume rate on other Formulas
+    # (review rounds 1 and 3), and it stays a Formula for a client's own flat rate.
     q.update(regular_cents=int(p["price_cents"]), price_cents=w[0], fixed_price=True,
-             qty_pricing=False, volume_eligible=False, sale_ends_at=w[1].isoformat())
+             qty_pricing=False, volume_eligible=False, sale_ends_at=w[1].isoformat(),
+             sale_was_ff=_qty_eligible(p),
+             counts_toward_volume=bool(p.get("counts_toward_volume")
+                                       or _counts_toward_volume(p)))
     return q
+
+
+def _is_formula(p):
+    """A Functional Formulation for a client's own prices, on sale or not."""
+    return bool(p) and (_qty_eligible(p) or bool(p.get("sale_was_ff")))
+
+
+def _regular_product(slug):
+    """The product at its regular price, ignoring any sale: practitioner channels price
+    from this (Glen, 2026-11-26: the sale is retail only)."""
+    p = _get_product(slug)
+    if not p or not p.get("sale_ends_at"):
+        return p
+    raw = (_PRODUCTS.get("products") or {}).get(p["slug"]) or {}
+    out = dict(raw)
+    out["slug"] = p["slug"]
+    out.setdefault("price_cents", _PRODUCTS.get("default_price_cents", 7000))
+    return out
+
+
+def _sale_price_for(slug):
+    """The sale price in cents a catalog slug carries, on or off, or None."""
+    rec = (_PRODUCTS.get("products") or {}).get(_superseded((slug or "").strip())) or {}
+    s = rec.get("sale")
+    try:
+        return int(s.get("price_cents")) if isinstance(s, dict) else None
+    except (TypeError, ValueError):
+        return None
 
 
 # Shown when a cart asks for more sale bottles than the shelf count holds. Not yet
 # approved by Glen (2026-11-26).
 SALE_STOCK_LINE = "Only {n} bottles of {name} are left. Please lower the quantity."
+SALE_STOCK_LINE_ONE = "Only 1 bottle of {name} is left. Please lower the quantity."
 
 
 def _sale_stock_refusal(cart):
@@ -11624,10 +11676,15 @@ def _sale_stock_refusal(cart):
                 if not _stock_counts.countable(p, slug):
                     continue
                 n = _stock_counts.get_count(cx, slug)
-                if n is not None and qty > max(0, n):
-                    if n <= 0:
-                        return None  # the sold-out refusal already covers it
-                    return SALE_STOCK_LINE.format(n=n, name=p.get("name") or slug)
+                if n is None or qty <= n:
+                    continue
+                name = p.get("name") or slug
+                if n <= 0:
+                    # Sold out since the earlier check read the shelf (review round 2).
+                    from dashboard import practitioner_portal as _ppw
+                    return _ppw.out_of_stock_line(name, "")
+                return (SALE_STOCK_LINE_ONE.format(name=name) if n == 1
+                        else SALE_STOCK_LINE.format(n=n, name=name))
         finally:
             cx.close()
     except Exception as e:
@@ -12261,7 +12318,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                 points_to_redeem_cents=0, channel="retail", program_member=False,
                 email=None, allow_unknown_packaging=False, strict_packaging=False,
                 allow_waitlist=False, product_points_cents=0, extra_products=None,
-                pickup=False, pickup_offered=False):
+                pickup=False, pickup_offered=False, stock_check=False):
     """Price a reorder/checkout cart through the pricing engine + shipping.
 
     extra_products ({slug: product}): typed New Order items, passed only by the in-house
@@ -12289,7 +12346,9 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         _wl = _cart_waitlist_refusal(cart, skip_zero_qty=False)
         if _wl:
             raise CheckoutError(_wl)
-        _ss = _sale_stock_refusal(cart)
+        # Customer checkouts only (stock_check=True): never a renewal, re-quote,
+        # drop-ship or an owner's invoice (review rounds 1 and 3).
+        _ss = _sale_stock_refusal(cart) if stock_check else None
         if _ss:
             raise CheckoutError(_ss)
     if not pickup:
@@ -12538,9 +12597,26 @@ def _order_has_line_below_store_price(order) -> bool:
         p = dict(p)
         p.setdefault("price_cents", _PRODUCTS.get("default_price_cents", 7000))
         store = _member_list_cents(p, email)
+        if _sale_price_for(it.get("slug")) == unit:
+            continue   # a sale line: it earns nothing, the rest still earns (Glen 11-26)
         if store and unit < store and not _is_pre_rounding_price(unit, store):
             return True
     return False
+
+
+def _sale_line_cents(order) -> int:
+    """What the order's sale-priced lines cost, kept out of its points earn."""
+    tot = 0
+    for it in (order or {}).get("items") or []:
+        try:
+            qty = int(it.get("qty") if it.get("qty") not in (None, "") else 1)
+            unit = it.get("unit_cents")
+            unit = int(unit) if unit not in (None, "") else int(it.get("line_cents") or 0) // max(1, qty)
+        except (TypeError, ValueError):
+            continue
+        if qty > 0 and _sale_price_for(it.get("slug")) == unit:
+            tot += unit * qty
+    return tot
 
 
 def _is_pre_rounding_price(unit_cents, store_cents):
@@ -12885,8 +12961,10 @@ def _settle_order_points(order, *, order_ref):
                 except Exception as _se:
                     print(f"[rewards] suppression check failed: {_se!r}", flush=True)
             if not suppress:
-                _points.earn(cx, email, full_price_cents=product_cents, earn_pct=earn_pct,
-                             order_ref=order_ref)
+                _earn_on = product_cents - _sale_line_cents(order)
+                if _earn_on > 0:
+                    _points.earn(cx, email, full_price_cents=_earn_on, earn_pct=earn_pct,
+                                 order_ref=order_ref)
         # ── Phase 4: image-pick reward (1 point per product the buyer picked both pairs for) ──
         try:
             from dashboard import sales_votes as _sv4
@@ -16643,9 +16721,13 @@ def begin_checkout(slug):
     # a gift code is product-bound — only honor it when buying the right product
     if _gift_coupon and _gift_coupon.get("product_slug") != slug:
         _gift_pct, _gift_coupon = 0, None
+    # A sale price takes no coupon, so none is spent on it (review round 1, 2026-11-26).
+    if (_get_product(slug) or {}).get("sale_ends_at"):
+        _self_pct, _self_coupon = 0, None
+        _gift_pct, _gift_coupon = 0, None
     _eff_pct = max(_ref_pct or 0, _self_pct or 0, _gift_pct or 0)
     try:
-        pc = _price_cart([{"slug": slug, "qty": qty, "format": fmt}], ship=ship,
+        pc = _price_cart_checked([{"slug": slug, "qty": qty, "format": fmt}], ship=ship,
                          coupon_pct=_eff_pct,
                          points_to_redeem_cents=redeem,
                          product_points_cents=min(redeem, _product_usable_points_cents(email)),
@@ -18537,6 +18619,8 @@ def _complement_store_price(slug):
     cents = raw.get("price_cents")
     if cents is None:
         return None
+    if p.get("sale_ends_at"):
+        cents = p["price_cents"]   # the sale price it charges (review round 1)
     return f"${cents/100:.2f}"
 
 
@@ -18774,6 +18858,9 @@ def begin_concierge_add():
         qty = max(1, min(int(data.get("qty", 1) or 1), 99))
     except Exception:
         qty = 1
+    _ss = _sale_stock_refusal([{"slug": p["slug"], "qty": qty}])
+    if _ss:
+        return jsonify({"ok": False, "error": _ss}), 400
     unit = round(p["price_cents"] / 100.0, 2)
     cx = db.connect(LOG_DB)
     cx.row_factory = _sqlite3.Row
@@ -30762,6 +30849,10 @@ def _portal_priced_lines(items, email=None):
             # line for one came from an old courtesy price (review round 3, 2026-10-19).
             _baked = (None if p.get("fixed_price") and slug != _CUSTOM_TR_SLUG
                       else _curated_unit_cents(it))
+            if p.get("sale_ends_at"):
+                # A client's own lower price wins over the sale (Glen, 2026-11-26).
+                _cur = _curated_unit_cents(it)
+                _baked = _cur if _cur is not None and _cur < int(p["price_cents"]) else None
             unit_cents = _inhouse_line_unit_cents(p, _baked, total_ff_qty, settings,
                                                   repertoire_slugs=rep_slugs,
                                                   program_member=program_member, line_qty=qty)
@@ -39060,7 +39151,7 @@ def api_client_portal_checkout(token):
         # payload is persisted via set_order_qbo_lines for /begin/checkout-return
         # (kind=="reorder", set by _stripe_checkout_url_for_reorder below) to book a
         # line-faithful QBO Sales Receipt once the customer actually pays.
-        shipping_cents = int(_price_cart(items, ship=ship, email=email)["shipping_cents"])
+        shipping_cents = int(_price_cart_checked(items, ship=ship, email=email)["shipping_cents"])
         order_total_cents = int(subtotal_cents) + shipping_cents
         checkout_ref = (f"portal-{checkout_request_id}" if checkout_request_id
                         else _uuid.uuid4().hex)
@@ -48195,7 +48286,7 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
     if requested_redeem > 0:
         requested_redeem = max(0, min(requested_redeem, _available_points_cents(email)))
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(referral_code, email)
-    pc = _price_cart(cart, ship=ship, coupon_pct=_ref_pct, points_to_redeem_cents=requested_redeem,
+    pc = _price_cart_checked(cart, ship=ship, coupon_pct=_ref_pct, points_to_redeem_cents=requested_redeem,
                      product_points_cents=(min(requested_redeem, _product_usable_points_cents(email))
                                            if requested_redeem > 0 else 0),
                      program_member=_mix_match_member(email), email=email)
@@ -48814,7 +48905,7 @@ def reorder_subscribe():
     try:
         from dashboard import subscriptions as _subs
         try:
-            pc = _price_cart(cart, ship=ship, subscriber_order_count=0, subscriber_active=True,
+            pc = _price_cart_checked(cart, ship=ship, subscriber_order_count=0, subscriber_active=True,
                              program_member=_mix_match_member(email), email=email)
         except CheckoutError as e:
             return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
@@ -65183,7 +65274,7 @@ def _client_special_for(slug, product, by_slug, ff_flat):
     for a Formula, the all-Formula flat rate (Glen, 2026-10-04, "yes": a $60 per-SKU
     special no longer hides a $40 flat rate). None when neither applies."""
     found = [c for c in (_valid_cents((by_slug or {}).get(slug)),
-                         _valid_cents(ff_flat) if (product and _qty_eligible(product)) else None)
+                         _valid_cents(ff_flat) if (product and _is_formula(product)) else None)
              if c is not None]
     return min(found) if found else None
 
@@ -65196,7 +65287,7 @@ def _capped_override_unit(unit_cents, *, product, slug, cprices, ff_flat, price_
     saved = _client_special_for(slug, product, cprices, ff_flat)
     return _spg.capped_override(
         unit_cents, {"ff_flat_cents": None, "sku": ({slug: saved} if saved is not None else {})},
-        slug, ff_eligible=lambda _s: _qty_eligible(product), price_at=price_at)
+        slug, ff_eligible=lambda _s: _is_formula(product), price_at=price_at)
 
 
 def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
@@ -65317,15 +65408,21 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
                                                   program_member=program_member, line_qty=qty)  # volume/list/repertoire
             _is_ff = _qty_eligible(p)
             _lc = int(p.get("price_cents") or 0)
-            for _cand in (
+            # A sale price takes no automatic discount on top (Glen, 2026-11-26).
+            for _cand in (() if p.get("sale_ends_at") else (
                 _cohort_best_price(_cohorts, slug, _lc, _is_ff),
-                _cohort_loyalty_price(_loyalty, slug, _is_ff, _earned)):
+                _cohort_loyalty_price(_loyalty, slug, _is_ff, _earned))):
                 if _cand is not None:
                     unit_cents = min(unit_cents, _cand)   # lowest wins among automatics
             # A saved client special only ever lowers the line (Glen, 2026-10-04).
             unit_cents = _special_lowers_only(
                 _client_special_for(slug, p, _cprices, _ff_flat), unit_cents)
             unit_cents = _keep_issued_unit(ln.get("issued_unit_cents"), unit_cents)
+            # A product with a sale record keeps the price its unchanged line was issued
+            # at, before, during or after the sale (Glen, 2026-11-26).
+            if (ln.get("issued_unit_cents") not in (None, "")
+                    and _sale_price_for(slug) is not None):
+                unit_cents = int(ln["issued_unit_cents"])
         line_cents = unit_cents * qty
         subtotal_list += line_cents
         _fmt = _clean_format(p, ln.get("format"))   # refill/larger only where it applies
