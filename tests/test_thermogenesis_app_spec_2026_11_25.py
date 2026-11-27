@@ -133,6 +133,11 @@ def test_no_other_product_or_key_changes(name):
             moved = {k for k in set(old[slug]) | set(new[slug])
                      if old[slug].get(k) != new[slug].get(k)}
             assert moved <= later[slug] | _PROSE_COPIES.get(slug, set()), (slug, moved)
+            for k in moved & _PROSE_COPIES.get(slug, set()):
+                # Only the approved sentence may differ (review round 2).
+                from tests.test_or_as_guided_prose_copies_2026_11_26 import PAIRS as _PP
+                o, n = _PP[slug]
+                assert new[slug].get(k) == (old[slug].get(k) or "").replace(o, n), (slug, k)
         elif slug != "thermogenesis":
             assert old[slug] == new[slug], slug
     changed = {k for k in set(old["thermogenesis"]) | set(new["thermogenesis"])

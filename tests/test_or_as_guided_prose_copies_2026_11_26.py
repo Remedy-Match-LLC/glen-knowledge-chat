@@ -31,17 +31,46 @@ def _load(name):
     return d.get("products", d)
 
 
-def test_no_old_sentence_is_left_and_29_new_ones_are_there():
-    new_total = 0
-    for name in ("products.json", "products-manual-corrections.json"):
-        p = _load(name)
-        for slug, (old, new) in PAIRS.items():
-            rec = p.get(slug) or {}
+def _main(name):
+    import subprocess
+    import pytest
+    try:
+        raw = subprocess.run(["git", "show", f"origin/main:data/{name}"], cwd=ROOT,
+                             capture_output=True, text=True, check=True).stdout
+    except Exception:
+        pytest.skip("origin/main not available")
+    d = json.loads(raw)
+    return d.get("products", d)
+
+
+EXPECTED = {"products.json": 20, "products-manual-corrections.json": 9}
+
+
+def test_each_copy_is_exactly_the_approved_replacement():
+    # Per file, slug and field (review round 2): every changed field equals its old
+    # text with only its own sentence replaced, and the totals are 20 and 9.
+    for name, want in EXPECTED.items():
+        old, new = _main(name), _load(name)
+        if all(o not in (old.get(s) or {}).get(f, "") for s, (o, _n) in PAIRS.items()
+               for f in FIELDS):
+            continue   # already on main: nothing left to compare
+        got = 0
+        for slug, (o, n) in PAIRS.items():
             for f in FIELDS:
-                v = rec.get(f) or ""
-                assert old not in v, (name, slug, f)
-                new_total += v.count(new)
-    assert new_total == 29
+                before = (old.get(slug) or {}).get(f) or ""
+                after = (new.get(slug) or {}).get(f) or ""
+                assert after == before.replace(o, n), (name, slug, f)
+                assert ", or as guided, or as guided" not in after and "or or as" not in after
+                got += before.count(o)
+        assert got == want, (name, got)
+
+
+def test_no_old_sentence_is_left():
+    for name in EXPECTED:
+        p = _load(name)
+        for slug, (old, _new) in PAIRS.items():
+            for f in FIELDS:
+                assert old not in ((p.get(slug) or {}).get(f) or ""), (name, slug, f)
 
 
 def test_b17_max_biofield_timing_ends_or_as_guided():
