@@ -121,7 +121,9 @@ def test_no_other_product_or_key_changes(name):
             assert set(new[s]) == {"directions", "ingredients_source"}, s
             assert new[s]["directions"] == _AS_GUIDED[s], s
     else:
-        assert added == set(), added
+        # The membership month (Glen "yes, sell the membership month as a store page",
+        # platform tab, 2026-11-26) is the one new product record.
+        assert added <= {"membership-month"}, added
     # Later approved changes to other records, each held to its approved keys (Nerve Pulse,
     # Glen "yes" 2026-11-26; review round 2).
     later = {"nerve-repair": {"copy_pinned", "copy_pinned_note"},  # Glen 2026-11-26
