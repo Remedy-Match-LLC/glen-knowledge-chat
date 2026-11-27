@@ -489,7 +489,9 @@
     function renderProduct(p){
       document.getElementById('p-name').textContent = p.name || 'Your remedy';
       document.title = (p.name || 'Order') + ' · Dr. Glen Swartwout';
-      document.getElementById('p-desc').textContent = p.description || '';
+      // An approved description's [words](/begin/...) link reads as its words here.
+      document.getElementById('p-desc').textContent = (p.description || '')
+        .replace(/\[([^\]\n]{1,120})\]\((\/begin\/[A-Za-z0-9\/_-]{1,200})\)/g, '$1');
       show('product');
       show('back-wrap');
 

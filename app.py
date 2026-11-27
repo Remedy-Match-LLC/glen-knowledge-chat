@@ -3213,6 +3213,8 @@ def _named_product_facts(query_text: str, gated: bool = False, given_out=None,
         product = products[slug]
         name = html.unescape(product.get("name") or slug).strip()
         desc = _PRICE_SENTENCE.sub("", html.unescape(product.get("description") or ""))
+        # A page link in an approved description reads as its words in the chat.
+        desc = re.sub(r"\[([^\]\n]{1,120})\]\((/begin/[A-Za-z0-9/_-]{1,200})\)", r"\1", desc)
         # Only an approved description. Any other pin used to let a scraped one through,
         # with claims Glen never approved (Glen "yes", 2026-10-15).
         desc = (re.sub(r"[ \t]+", " ", desc).strip()

@@ -82,3 +82,19 @@ def test_an_approved_description_links_same_site_paths_only():
 def test_an_unapproved_description_is_plain_text():
     out = _render("See the [Bluetooth version](/begin/product/x-y) page.", False)
     assert out == [{"t": "See the [Bluetooth version](/begin/product/x-y) page."}]
+
+
+def test_the_buy_page_shows_the_link_words_not_the_syntax():
+    src = (pathlib.Path(__file__).resolve().parents[1] / "static" /
+           "begin-buy.html").read_text()
+    line = src[src.index("getElementById('p-desc').textContent"):]
+    line = line[:line.index(";")]
+    assert ".replace(" in line and "'$1'" in line
+
+
+def test_the_chat_facts_show_the_link_words_not_the_syntax():
+    out = app._named_product_facts(
+        "Tell me about the Energy4Life (E4L) Bioenergetic Wellness Scanner, USB")
+    text = out if isinstance(out, str) else repr(out)
+    assert "Bluetooth version" in text
+    assert "](/begin/" not in text
