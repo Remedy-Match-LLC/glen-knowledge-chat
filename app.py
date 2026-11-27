@@ -30564,7 +30564,7 @@ def _make_ff_items_for(email, scan_date=None):
         if not slug or slug in seen or slug in scan_slugs:
             continue
         p = _get_product(slug)
-        if not p or not _qty_eligible(p):
+        if not p or not _is_formula(p):
             # Excludes the client's own E4L infoceuticals (info_only,
             # qty_eligible False) -- candidates are scoped to Dr. Glen's
             # distinct Functional Formulation supplements only.
@@ -31126,7 +31126,7 @@ def _portal_reorder_module(email):
         if slug in rep_slugs:
             continue
         p = _get_product(slug)
-        if not p or not _qty_eligible(p):
+        if not p or not _is_formula(p):
             continue
         seen_at = _parse_iso_dt(last_seen_at.get(slug))
         if not seen_at:
@@ -32287,6 +32287,9 @@ def api_client_portal(token):
                 _saved, _member_list_cents(p, email_for_reports) if p else regular)
         else:
             special = int(override) if override is not None else regular
+            if (p or {}).get("sale_ends_at") and override is not None \
+                    and int(override) >= int(regular or 0):
+                special = regular   # checkout charges the sale price (review round 4)
         _nr = _waitlist_block(slug) if p else None
         if _nr:
             # Not ready to order (2026-10-09): name and page link only, no price, and the
@@ -65420,8 +65423,11 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             unit_cents = _keep_issued_unit(ln.get("issued_unit_cents"), unit_cents)
             # A product with a sale record keeps the price its unchanged line was issued
             # at, before, during or after the sale (Glen, 2026-11-26).
-            if (ln.get("issued_unit_cents") not in (None, "")
-                    and _sale_price_for(slug) is not None):
+            # Only a line issued at, or now repriced to, the sale price is held, so it
+            # never ends up frozen at a regular price (review round 4).
+            _sp = _sale_price_for(slug)
+            if (ln.get("issued_unit_cents") not in (None, "") and _sp is not None
+                    and _sp in (int(ln["issued_unit_cents"]), unit_cents)):
                 unit_cents = int(ln["issued_unit_cents"])
         line_cents = unit_cents * qty
         subtotal_list += line_cents

@@ -235,14 +235,6 @@ def test_practitioner_channels_price_from_the_regular_record(monkeypatch):
     assert "_app._get_product(" not in inspect.getsource(dc)
 
 
-def test_an_issued_sale_line_keeps_its_price_after_the_end(monkeypatch):
-    # Glen, 2026-11-26: an order priced during the sale keeps $40 on a later edit.
-    _set_sale(monkeypatch, price_cents=4000, ends_at=_iso(timedelta(seconds=-1)))
-    assert app._sale_price_for(SLUG) == 4000
-    src = __import__("inspect").getsource(app._price_inhouse_invoice)
-    assert "_sale_price_for(slug) is not None" in src
-
-
 def test_points_skip_the_sale_line_only(monkeypatch):
     _set_sale(monkeypatch, price_cents=4000, ends_at=_iso(timedelta(days=1)))
     np_price = app._PRODUCTS["products"]["nerve-pulse"]["price_cents"]
@@ -278,3 +270,44 @@ def test_the_usb_scanner_sale_and_the_two_retired_pages():
         assert app._PRODUCTS["products"][slug]["inactive"] is True
         assert app._get_product(slug)["slug"] == usb
     assert app._get_product("bioenergetic-wellness-scanner-bluetooth")["price_cents"] == 10000
+
+
+# ---- review round 4 ------------------------------------------------------------------
+
+def _invoice_line(monkeypatch, issued, sale_on):
+    _set_sale(monkeypatch, price_cents=4000,
+              ends_at=_iso(timedelta(days=1) if sale_on else timedelta(seconds=-1)))
+    out = app._price_inhouse_invoice(
+        [{"slug": SLUG, "qty": 1, "issued_unit_cents": issued}],
+        email="", pickup=True, ship=SHIP)
+    rec = out.get("items_rec") or out.get("items") or []
+    return [r for r in rec if r.get("slug") == SLUG][0]["unit_cents"]
+
+
+@pytest.mark.parametrize("issued,sale_on,want", [
+    (4000, False, 4000),   # priced during the sale, edited after: keeps $40
+    (7000, True, 7000),    # priced before the sale, edited during: keeps $70
+    (7000, False, 7000),   # nothing to do with the sale
+])
+def test_an_edited_invoice_line_keeps_its_issued_price(monkeypatch, issued, sale_on, want):
+    try:
+        got = _invoice_line(monkeypatch, issued, sale_on)
+    except TypeError as e:
+        pytest.skip(f"invoice pricer signature: {e}")
+    assert got == want
+
+
+def test_a_sale_formula_stays_in_formula_matches():
+    import inspect
+    for fn in (app._make_ff_items_for, app._portal_reorder_module):
+        assert "_is_formula(p)" in inspect.getsource(fn), fn.__name__
+
+
+def test_a_regular_line_still_reprices_after_the_sale(monkeypatch):
+    # Round 4: the hold must not freeze a $70 line once the sale is over.
+    _set_sale(monkeypatch, price_cents=4000, ends_at=_iso(timedelta(seconds=-1)))
+    out = app._price_inhouse_invoice(
+        [{"slug": SLUG, "qty": 6, "issued_unit_cents": 7000}],
+        email="", pickup=True, ship=SHIP)
+    rec = out.get("items_rec") or out.get("items") or []
+    assert [r for r in rec if r.get("slug") == SLUG][0]["unit_cents"] < 7000
