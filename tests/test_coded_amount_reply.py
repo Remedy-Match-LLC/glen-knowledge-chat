@@ -52,10 +52,21 @@ def test_how_many_with_no_number_gets_the_reply():
     "Can I take 5 Nerve Repair and 2 Moisturize a day?",
     "How much does Nerve Repair cost?",
     "Tell me about Nerve Repair",
+    "How many capsules are in a bottle of Nerve Repair?",
+    "How many reviews does Nerve Repair have?",
+    "What's the maximum benefit of Nerve Repair?",
+    "My friend Max told me about Nerve Repair, what is it?",
+    "How many Nerve Repair should my grandson take?",
+    "I'm 70, how many Nerve Repair can I take?",
+    "I take Xanax, how many Nerve Repair can I take?",
+    "I feel dizzy after Nerve Repair, how many can I take?",
+    "I've been taking 4 Nerve Repair a day, is that ok?",
+    "I have stage 4 cancer. Can I take 2 Nerve Repair a day?",
 ])
 def test_anything_else_goes_to_the_model(q):
-    r, _ = app._coded_amount_reply(q, [])
-    assert r == ""
+    assert app._coded_amount_reply(q, [])[0] == ""
+    # Review round 2: through the dispatcher production calls, too.
+    assert not app._coded_reply(q, [])[0].startswith("The label directions for Nerve Repair")
 
 
 def test_a_product_without_pinned_directions_goes_to_the_model(monkeypatch):
@@ -78,3 +89,27 @@ def test_allerfree_is_refused_even_if_the_matcher_finds_it(monkeypatch):
     monkeypatch.setattr(app, "_named_product_spans", lambda *a, **k: {slug: (0, 1)})
     monkeypatch.setattr(app, "_pinned_copy", lambda pr: {"directions", "description"})
     assert app._coded_amount_reply("How many AllerFree drops can I take?", [])[0] == ""
+
+
+@pytest.mark.parametrize("q", [
+    "Can I take 5 Nerve Repair a day?",
+    "can i take five nerve repair capsules daily?",
+    "How many Nerve Repair can I take?",
+    "How many Nerve Repair capsules should I take a day?",
+    "Is it ok to take 2 Nerve Repair a day?",
+    "What is the maximum dose of Nerve Repair?",
+    "Hi, can I take 3 Nerve Repair at once?",
+])
+def test_the_plain_forms_are_recognised(q):
+    assert app._plain_amount_question(q, "Nerve Repair")
+
+
+def test_a_label_with_or_with_is_not_read():
+    assert app._directions_most("Take 1 capsule daily with food, or with cravings for "
+                                "sugar or stimulants, or as guided.") is None
+
+
+def test_a_situation_in_an_earlier_turn_goes_to_the_model():
+    assert app._coded_reply("How many Nerve Repair can I take?", ["I am on lithium"])[0] == ""
+    assert app._coded_reply("How many Nerve Repair can I take?",
+                            ["What is Nerve Repair for?"])[0].startswith("The label directions")

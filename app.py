@@ -3027,7 +3027,7 @@ def _directions_most(directions: str):
         d = html.unescape(str(directions or "")).lower()
         d = re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty)\b",
                    lambda m: str(_DOSE_NUM_WORDS[m.group(1)]), d)
-        if re.search(r"\d\s*[/.]\s*\d|\bhalf\b|\bmax", d):
+        if re.search(r"\d\s*[/.]\s*\d|\bhalf\b|\bmax|as needed|\bor with\b", d):
             return None        # fractions, decimals, "maximum": not read (round 2)
         hits = list(re.finditer(r"(?<![\d/.])(\d+)(?:\s*(?:to|-|\u2013)\s*(\d+))?\s*" + _DOSE_UNIT
                                 + r"\b(.{0,60}?)(?=[.;]|,\s*or as guided|$)", d))
@@ -5068,8 +5068,35 @@ def _coded_compare_reply(query_text: str, prior_user_turns=None, cautions=None) 
 _CODED_AMOUNT_OPEN = "The label directions for {name} are: {directions}"
 _CODED_AMOUNT_OVER = "That is more than these directions."
 _CODED_AMOUNT_ASK = "For anything beyond these directions, please ask Dr. Glen."
-_HOW_MANY = re.compile(r"\bhow\s+many\b|\bhow\s+much\s+(?:of\s+)?[\w\s'\-]{0,40}?\b"
-                       r"(?:take|have|use)\b|\bmax(?:imum)?\b", re.I)
+_AMOUNT_NUM = (r"(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
+               r"twelve|fifteen|twenty)")
+_AMOUNT_WHEN = r"(?:\s+(?:a|per|each|every)\s+day|\s+daily|\s+at\s+once|\s+at\s+a\s+time)?"
+_AMOUNT_CAPS = r"(?:capsules?|caps|vegicaps?|tablets?)"
+
+
+def _plain_amount_question(query_text: str, name: str) -> bool:
+    """True only when the WHOLE message is one of a few plain dose questions about this
+    product: "Can I take 5 Nerve Repair a day?", "How many Nerve Repair can I take?",
+    "What is the maximum dose of Nerve Repair?". Reviews 1 to 3 found situations a word
+    list misses (a grandson, "I take Xanax", "I feel dizzy", "I've been taking 4") and
+    non-dose questions ("How many capsules are in a bottle?"), so anything else goes to
+    the model path."""
+    q = " ".join(html.unescape(str(query_text or "")).replace("\u2019", "'").split())
+    words = re.sub(r"[^a-z0-9]+", " ", html.unescape(str(name or "")).lower()).split()
+    if not words:
+        return False
+    nm = (r"(?:the\s+)?(?:" + _AMOUNT_CAPS + r"\s+of\s+)?" + r"[\s\-]+".join(map(re.escape, words))
+          + r"(?:\s+" + _AMOUNT_CAPS + r")?")
+    ask = r"(?:can|could|may|should|do)\s+i\s+take"
+    forms = (
+        r"(?:" + ask + r"|is\s+it\s+(?:ok|okay|fine|alright|all\s+right)\s+to\s+take)\s+"
+        + _AMOUNT_NUM + r"\s+" + nm + _AMOUNT_WHEN,
+        r"how\s+(?:many|much)\s+" + nm + r"\s+" + ask + _AMOUNT_WHEN,
+        r"what(?:'s|\s+is)\s+the\s+(?:max|maximum|most)\s+(?:daily\s+)?(?:dose|amount)\s+"
+        r"(?:of|for)\s+" + nm,
+    )
+    return any(re.fullmatch(r"(?:(?:hi|hello|aloha)[,!.]?\s+)?" + f + r"\s*[?.!]*", q, re.I)
+               for f in forms)
 
 
 def _coded_amount_reply(query_text: str, prior_user_turns=None):
@@ -5093,8 +5120,14 @@ def _coded_amount_reply(query_text: str, prior_user_turns=None):
         name = _coded_name(pr, slug)
         if not dirs or not name:
             return "", None
-        if _asked_amount(q, name) is None and not _HOW_MANY.search(q):
+        if not _plain_amount_question(q, name):
             return "", None
+        # Round 1: "I am on lithium" in an earlier turn. Any earlier turn that tells about
+        # the person ("I", "I'm", "my", "me") sends the question to the model path.
+        for t in prior_user_turns or []:
+            if isinstance(t, str) and re.search(r"\b(?:i|i'm|im|i've|ive|my|me|we|our)\b",
+                                                t.replace("\u2019", "'"), re.I):
+                return "", None
         if (not _coded_question_is_plain(query_text, prior_user_turns)
                 or _caution_subjects_asked(query_text, prior_user_turns)
                 or _not_on_label_lines(query_text) or _label_caffeine_lines(query_text)):
