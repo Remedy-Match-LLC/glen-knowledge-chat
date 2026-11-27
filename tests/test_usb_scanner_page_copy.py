@@ -1,6 +1,8 @@
 """Marketing's USB scanner page text, Glen 2026-11-26 platform tab:
 "yes, publish marketing's USB page text"."""
 import pathlib
+
+import pytest
 import re
 
 import app
@@ -31,15 +33,52 @@ def test_old_offers_are_gone():
     assert "—" not in t
 
 
-def test_old_name_still_finds_the_page():
-    assert app._get_product("bioenergetic-wellness-scanner-usb")["slug"] == SLUG
-    assert "Bioenergetic Wellness Scanner - USB" in _rec()["aliases"]
+@pytest.mark.parametrize("name", [
+    "Bioenergetic Wellness Scanner - USB", "Bioenergetic Wellness Scanner (USB)",
+    "Energy4Life (E4L) Bioenergetic Wellness Scanner, USB"])
+def test_old_and_new_names_resolve_to_the_page(name):
+    from dashboard.practitioner_portal import exact_name_to_slug, name_to_slug
+    products = app._PRODUCTS["products"]
+    assert name_to_slug(name, products) == SLUG
+    assert exact_name_to_slug(name, products) == SLUG
 
 
-def test_page_links_only_same_site_paths():
+def _render(body, keep):
+    """Run the page's own renderDescriptionBody in node, with a tiny DOM."""
     src = (pathlib.Path(__file__).resolve().parents[1] / "static" /
            "begin-product.html").read_text()
     fn = src[src.index("function renderDescriptionBody"):]
     fn = fn[:fn.index("function renderVideoBody")]
-    assert "keepBreaks !== true" in fn and "textContent = text" in fn
-    assert "\\/begin\\/" in fn and "innerHTML" not in fn
+    js = r"""
+    function node(t){return {tag:t,kids:[],attrs:{},className:'',textContent:'',
+      setAttribute:function(k,v){this.attrs[k]=v},appendChild:function(c){this.kids.push(c)}}}
+    var document={createElement:function(t){return node(t)},
+      createTextNode:function(x){return {tag:'#text',text:x}}};
+    """ + fn + r"""
+    var p=renderDescriptionBody(process.argv[1], process.argv[2]==='1');
+    var out=p.kids.length?p.kids.map(function(k){return k.tag==='a'?{a:k.href,t:k.textContent}:{t:k.text}}):[{t:p.textContent}];
+    console.log(JSON.stringify(out));
+    """
+    import json
+    import shutil
+    import subprocess
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    r = subprocess.run(["node", "-e", js, body, "1" if keep else "0"],
+                       capture_output=True, text=True, check=True)
+    return json.loads(r.stdout)
+
+
+def test_an_approved_description_links_same_site_paths_only():
+    out = _render("See the [Bluetooth version](/begin/product/x-y) page. "
+                  "[evil](javascript:alert(1)) [ext](https://evil.example/begin/x) "
+                  "[pr](//evil.example/begin/x)", True)
+    links = [o["a"] for o in out if "a" in o]
+    assert links == ["/begin/product/x-y"]
+    assert [o["t"] for o in out if "a" in o] == ["Bluetooth version"]
+    assert "javascript:alert(1)" in "".join(o["t"] for o in out if "a" not in o)
+
+
+def test_an_unapproved_description_is_plain_text():
+    out = _render("See the [Bluetooth version](/begin/product/x-y) page.", False)
+    assert out == [{"t": "See the [Bluetooth version](/begin/product/x-y) page."}]
