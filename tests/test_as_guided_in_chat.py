@@ -32,7 +32,7 @@ def test_no_restated_dose():
     assert rule in block
     assert "Add no other sentence about how many, how often or when to take it" in rule
     assert "do not suggest starting low or working up" in rule
-    assert 'say "That is within the Directions." in those words, without repeating the amount' in rule
-    assert "if the user names a medicine, pregnancy, surgery or condition" in rule
-    assert "keep the sentence saying to ask Dr. Glen" in rule
+    assert 'never say whether it is within these Directions' in rule
+    assert "the user names a medicine, pregnancy, surgery or condition" in rule
+    assert "Keep the sentence saying to ask Dr. Glen" in rule
     assert "This rule never shortens a caution." in rule

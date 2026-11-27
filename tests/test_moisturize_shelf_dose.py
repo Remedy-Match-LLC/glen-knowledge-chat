@@ -202,8 +202,10 @@ def test_a_named_pregnancy_gets_no_within_the_directions_yes():
     """Review round 3: the caution is linked, so "within these Directions, say so" alone
     read as a yes to a pregnant user, though the caution says not to use it."""
     b = app._named_product_facts("I am pregnant. Can I take 1 Moisturize a day?")
-    assert ("say so, unless the user names a medicine, pregnancy, surgery or condition: "
-            "then never answer whether they may take it.") in b
+    # Since 2026-11-26 code decides "within"; a named pregnancy never gets it.
+    assert 'say "That is within the Directions."' not in b
+    assert ("names a medicine, pregnancy, surgery or condition, never answer whether "
+            "they may take it") in b
 
 
 def test_a_message_naming_no_product_still_gets_no_safety_verdict():
