@@ -3031,9 +3031,14 @@ _WITHDRAWN_DOSE_EXAMPLE["b17-syntropy"] = ", such as up to 10 capsules a day"
 # repeats the new directions, which would otherwise drop the line and its rule.
 # B17 Max joins them with one dose a day (Glen, 2026-10-31, production tab): it has no
 # chat_caution, so without this its withdrawn 2-scoop dose had no rule against it.
+# Products whose code-written reply skips the Directions line because the approved
+# description already states it word for word (Nerve Repair, 2026-11-26).
+_DIRECTIONS_IN_DESCRIPTION = frozenset({"nerve-repair"})
 _DOSE_RULE_WITHOUT_CAUTION = frozenset({
     "b17-syntropy", "moisturize", "vitamin-c-syntropy", "vitamin-a-syntropy",
-    "apoptogenesis", "appestat", "breast-support", "b17-max"})
+    "apoptogenesis", "appestat", "breast-support", "b17-max",
+    # Its pinned description holds its directions word for word (2026-11-26, round 1).
+    "nerve-repair"})
 # Live with 9,400 IU in the knowledge base, the bot invented "188% of the daily value"
 # (about 313% is right), called one capsule "not excessive" though it is 94% of the adult
 # upper limit, and added "Most clients find one daily adequate" (knowledge, log 2373,
@@ -4925,10 +4930,12 @@ def _coded_compare_reply(query_text: str, prior_user_turns=None, cautions=None) 
             if desc:
                 block.append(desc)
             dirs = " ".join(html.unescape(str(pr.get("directions") or "")).split())
-            # A description that already states the directions is not followed by
-            # them a second time (Nerve Repair, 2026-11-26).
+            # Nerve Repair's approved description already states its directions, so
+            # the reply does not repeat them (2026-11-26). Only Nerve Repair: the others
+            # keep the line Glen approved on 2026-10-26 (review round 1).
             if (dirs and "directions" in _pinned_copy(pr)
-                    and dirs.lower() not in " ".join((desc or "").split()).lower()):
+                    and not (slug in _DIRECTIONS_IN_DESCRIPTION
+                             and dirs.lower() in " ".join((desc or "").split()).lower())):
                 block.append(_CODED_DIRECTIONS_LINE.format(directions=dirs))
             block.append(para)
             block.append(_CODED_PRODUCT_PAGE_LINE.format(url=_catalog_page_url(slug)))

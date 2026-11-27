@@ -231,3 +231,26 @@ def test_nerve_repair_half_carries_its_approved_text_once():
     assert "Directions:" not in repair
     pulse = r[:r.index("**Nerve Repair**")]
     assert "Directions: " in pulse
+
+
+@pytest.mark.parametrize("slug", ["moisturize", "apoptogenesis", "scar-silk", "appestat"])
+def test_the_others_keep_their_directions_line_in_a_comparison(slug):
+    # Only Nerve Repair skips the repeat; these keep the line Glen approved on 2026-10-26
+    # (review round 1 found the skip had reached them).
+    name = app._PRODUCTS["products"][slug]["name"]
+    r = app._coded_compare_reply(f"What is the difference between Nerve Pulse and {name}?")
+    if not r:
+        pytest.fail(f"no coded comparison for {slug}")
+    half = r[r.index(f"**{name}**"):]
+    half = half[:half.index("**Nerve Pulse**")] if "**Nerve Pulse**" in half else half
+    assert "Directions: " in half
+
+
+def test_the_model_still_gets_nerve_repairs_only_dose_rule():
+    # Round 1: the pinned description holds the dose, so without the set the facts block
+    # lost its Directions line and the "only dose" rule that rides on it.
+    out = app._named_product_facts("Can I take 10 Nerve Repair a day?")
+    text = out if isinstance(out, str) else repr(out)
+    assert "Directions: 1 capsule up to 5 times daily with food, or as guided." in text
+    rule = app._PINNED_DOSE_RULE.format(name="Nerve Repair", example="")[:60]
+    assert rule in text
