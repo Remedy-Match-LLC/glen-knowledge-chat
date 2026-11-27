@@ -337,7 +337,8 @@ def test_the_pricer_caps_explicit_overrides_to_the_saved_rate():
     assert not (isinstance(kw["ff_eligible"], ast.Constant)
                 and kw["ff_eligible"].value is None), \
         "ff_eligible=None lets the flat rate cap non-formulations"
-    assert any(isinstance(n, ast.Name) and n.id == "_qty_eligible"
+    # _is_formula is _qty_eligible plus a Formula on a timed sale (2026-11-26).
+    assert any(isinstance(n, ast.Name) and n.id in ("_qty_eligible", "_is_formula")
                for n in ast.walk(kw["ff_eligible"])), \
         "the adapter no longer asks whether the product is a formulation"
     assert any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name)

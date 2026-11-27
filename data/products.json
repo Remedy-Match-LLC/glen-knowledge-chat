@@ -14230,6 +14230,11 @@
   "pollen-power": {
    "name": "Pollen Power",
    "price_cents": 7000,
+   "sale": {
+    "price_cents": 4000,
+    "ends_at": "2026-12-01T08:00:00Z",
+    "note": "Black Friday, Glen 2026-11-26: $40 until midnight Pacific Monday 30 Nov (22:00 HST)"
+   },
    "pinecone_title": "Pollen Power",
    "url": "https://myhealingoasis.com/begin/product/pollen-power",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/92-pollen-power",
@@ -25597,6 +25602,9 @@
   },
   "nes-scanner": {
    "name": "NES Scanner",
+   "inactive": true,
+   "superseded_by": "bioenergetic-wellness-scanner-usb",
+   "retired_note": "Glen 2026-11-26 (marketing tab, confirmed platform tab): just two scanner pages, USB and Bluetooth",
    "price_cents": 19700,
    "bottle_type": "handcradle",
    "intro": "Together with free software for your Mac or PC desktop, this Remote Scanner will automatically scan for over 150 Biofield energy patterns in just 20 s",
@@ -25604,6 +25612,9 @@
   },
   "bioenergetic-wellness-scanner": {
    "name": "Bioenergetic Wellness Scanner",
+   "inactive": true,
+   "superseded_by": "bioenergetic-wellness-scanner-usb",
+   "retired_note": "Glen 2026-11-26 (marketing tab, confirmed platform tab): just two scanner pages, USB and Bluetooth",
    "price_cents": 10000,
    "bottle_type": "handcradle",
    "intro": "The",
@@ -26047,6 +26058,11 @@
    "name": "Bioenergetic Wellness Scanner - USB",
    "aliases": ["Bioenergetic Wellness Scanner USB", "Bioenergetic Wellness Scanner (USB)"],
    "price_cents": 20000,
+   "sale": {
+    "price_cents": 10000,
+    "ends_at": "2026-12-01T08:00:00Z",
+    "note": "Black Friday, Glen 2026-11-26: $100 until midnight Pacific Monday 30 Nov (22:00 HST), then $200"
+   },
    "fmp_id": "970",
    "bottle_type": "handcradle",
    "intro": "The USB model, for indoor use with people and indoor pets.",

@@ -128,6 +128,13 @@ def test_no_other_product_or_key_changes(name):
                              "warning", "copy_pinned", "content_since", "enrichment_note",
                              "note"}}
     later.update({s: {"directions"} for s in _AS_GUIDED})
+    # The Black Friday sale on Pollen Power (Glen "yes, Pollen Power with those
+    # defaults", platform tab, 2026-11-26) adds only its `sale` record.
+    later["pollen-power"] = {"sale"}
+    # The USB scanner's sale, and the two scanner pages retired to it (same ruling).
+    later["bioenergetic-wellness-scanner-usb"] = {"sale"}
+    later["nes-scanner"] = {"inactive", "superseded_by", "retired_note"}
+    later["bioenergetic-wellness-scanner"] = {"inactive", "superseded_by", "retired_note"}
     for slug in old:
         if slug in later:
             moved = {k for k in set(old[slug]) | set(new[slug])
